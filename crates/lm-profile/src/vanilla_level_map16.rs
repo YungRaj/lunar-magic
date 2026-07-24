@@ -30,6 +30,25 @@ pub struct LoadedSmwUsV1LevelMap16Base {
     pub common_tiles: usize,
 }
 
+impl LoadedSmwUsV1LevelMap16Base {
+    /// Converts SMW's compact ROM attribute ordering to the editor's SNES subtile ordering.
+    #[must_use]
+    pub fn editor_graphics_bytes(&self) -> [u8; SMW_US_V1_MAP16_BASE_BYTES] {
+        let mut converted = [0; SMW_US_V1_MAP16_BASE_BYTES];
+        for (source, target) in self
+            .bytes
+            .chunks_exact(2)
+            .zip(converted.chunks_exact_mut(2))
+        {
+            let word = u16::from_le_bytes([source[0], source[1]]);
+            let editor_word =
+                (word >> 2 & 0x3c00) | (word & 0xfc00).wrapping_shl(4) | word & 0x03ff;
+            target.copy_from_slice(&editor_word.to_le_bytes());
+        }
+        converted
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SmwUsV1LevelMap16BaseError {
     TilesetOutOfRange(usize),
@@ -225,6 +244,25 @@ mod tests {
         assert_eq!(
             load_smw_us_v1_level_map16_base(&fixture(), 16),
             Err(SmwUsV1LevelMap16BaseError::TilesetOutOfRange(16))
+        );
+    }
+
+    #[test]
+    fn converts_rom_attributes_to_editor_subtile_ordering() {
+        let loaded = LoadedSmwUsV1LevelMap16Base {
+            bytes: {
+                let mut bytes = [0; SMW_US_V1_MAP16_BASE_BYTES];
+                bytes[..8].copy_from_slice(&[0x70, 0x1c, 0xf8, 0x89, 0x00, 0x0c, 0x00, 0x14]);
+                bytes
+            },
+            tileset_source_offset: 0,
+            common_source_offset: 0,
+            tileset_tiles: 0,
+            common_tiles: 512,
+        };
+        assert_eq!(
+            &loaded.editor_graphics_bytes()[..8],
+            &[0x70, 0xc4, 0xf8, 0xa1, 0x00, 0xc0, 0x00, 0x44]
         );
     }
 }
