@@ -416,13 +416,14 @@ impl VanillaLevelEditor {
     }
 
     fn object_canvas(&mut self, ui: &mut egui::Ui) {
-        let (records, placements) = self
+        let (records, placements, sprite_placements) = self
             .controller
             .as_ref()
             .map(|controller| {
                 (
                     controller.level().layer1.objects.records.clone(),
                     controller.level().layer1.objects.native_placements(),
+                    controller.level().sprites.native_placements(),
                 )
             })
             .unwrap_or_default();
@@ -432,16 +433,7 @@ impl VanillaLevelEditor {
             ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
-        let major_tiles = placements
-            .iter()
-            .map(|placement| {
-                placement
-                    .major
-                    .saturating_add(u16::from(placement.major_span))
-            })
-            .max()
-            .unwrap_or(16)
-            .max(16);
+        let major_tiles = canvas_major_tiles(&placements, &sprite_placements);
         let cell = (width / f32::from(major_tiles)).clamp(2.0, 14.0);
         draw_object_grid(&painter, rect, cell, major_tiles);
         let mut hit = None;
@@ -486,6 +478,14 @@ impl VanillaLevelEditor {
                 hit = Some(index);
             }
         }
+        let hit_sprite = draw_sprite_placements(
+            &painter,
+            rect,
+            cell,
+            &sprite_placements,
+            response.interact_pointer_pos(),
+            self.selected_sprite,
+        );
         if response.clicked()
             && let Some(index) = hit
             && let Some(record) = records.get(index)
@@ -493,8 +493,18 @@ impl VanillaLevelEditor {
             self.selected_object = index;
             self.object_form = ObjectForm::from_record(record);
         }
+        if response.clicked()
+            && let Some(index) = hit_sprite
+            && let Some(controller) = &self.controller
+        {
+            self.selected_sprite = index;
+            self.sprite_form = SpriteForm::from_token(
+                controller.level().sprites.header,
+                controller.level().sprites.tokens.get(index),
+            );
+        }
         ui.label(
-            "Screen-aware native object positions (orientation-neutral major axis; stronger lines mark 16-tile screen boundaries).",
+            "Screen-aware native positions: blue object footprints and red sprite markers; stronger lines mark 16-tile screen boundaries.",
         );
     }
 
@@ -752,6 +762,66 @@ fn draw_object_grid(painter: &egui::Painter, rect: egui::Rect, cell: f32, major_
             egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
         );
     }
+}
+
+fn canvas_major_tiles(
+    objects: &[lm_level::NativeObjectPlacement],
+    sprites: &[lm_level::NativeSpritePlacement],
+) -> u16 {
+    let object_end = objects
+        .iter()
+        .map(|placement| {
+            placement
+                .major
+                .saturating_add(u16::from(placement.major_span))
+        })
+        .max()
+        .unwrap_or(16);
+    let sprite_end = sprites
+        .iter()
+        .map(|placement| placement.major.saturating_add(1))
+        .max()
+        .unwrap_or(16);
+    object_end.max(sprite_end).max(16)
+}
+
+fn draw_sprite_placements(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    cell: f32,
+    placements: &[lm_level::NativeSpritePlacement],
+    cursor: Option<egui::Pos2>,
+    selected: usize,
+) -> Option<usize> {
+    let mut hit = None;
+    for placement in placements {
+        let center = rect.min
+            + egui::vec2(
+                (f32::from(placement.major) + 0.5) * cell,
+                (f32::from(placement.minor) + 0.5) * cell,
+            );
+        let marker = egui::Rect::from_center_size(center, egui::vec2(cell.max(9.0), cell.max(9.0)));
+        painter.rect_filled(
+            marker,
+            marker.width() / 2.0,
+            if placement.token_index == selected {
+                egui::Color32::LIGHT_RED
+            } else {
+                egui::Color32::from_rgb(220, 70, 70)
+            },
+        );
+        painter.text(
+            marker.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("{:02X}", placement.sprite_number),
+            egui::FontId::monospace(7.0),
+            egui::Color32::WHITE,
+        );
+        if cursor.is_some_and(|position| marker.contains(position)) {
+            hit = Some(placement.token_index);
+        }
+    }
+    hit
 }
 
 fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
