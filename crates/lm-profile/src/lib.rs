@@ -52,6 +52,7 @@ mod text_schema;
 mod title_recording;
 mod title_tilemap;
 mod vanilla_level_map16;
+mod vanilla_level_mode;
 mod vanilla_level_palette;
 mod vanilla_object_family;
 mod vanilla_smw;
@@ -353,6 +354,7 @@ pub use vanilla_level_map16::{
     SMW_US_V1_MAP16_TILE_BYTES, SMW_US_V1_MAP16_TILESET_WORD_TABLE_OFFSET,
     SmwUsV1LevelMap16BaseError, load_smw_us_v1_level_map16_base,
 };
+pub use vanilla_level_mode::{VanillaLevelMode, smw_us_v1_level_mode};
 pub use vanilla_level_palette::{
     SmwUsV1LevelPalette, SmwUsV1LevelPaletteError, compose_smw_us_v1_level_palette,
 };

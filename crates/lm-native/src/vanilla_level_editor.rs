@@ -427,31 +427,38 @@ impl VanillaLevelEditor {
                 )
             })
             .unwrap_or_default();
+        let vertical = self.controller.as_ref().is_some_and(|controller| {
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
+        });
         let width = ui.available_width().max(320.0);
-        let height = 260.0;
+        let height = if vertical { 420.0 } else { 260.0 };
         let (rect, response) =
             ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
         let major_tiles = canvas_major_tiles(&placements, &sprite_placements);
-        let cell = (width / f32::from(major_tiles)).clamp(2.0, 14.0);
-        draw_object_grid(&painter, rect, cell, major_tiles);
+        let major_extent = if vertical { height } else { width };
+        let cell = (major_extent / f32::from(major_tiles)).clamp(2.0, 14.0);
+        draw_object_grid(&painter, rect, cell, major_tiles, vertical);
         let mut hit = None;
         for placement in placements {
             let index = placement.record_index;
             let Some(record) = records.get(index) else {
                 continue;
             };
-            let position = rect.min
-                + egui::vec2(
-                    f32::from(placement.major) * cell,
-                    f32::from(placement.minor) * cell,
-                );
+            let (tile_x, tile_y) = placement.tile_coordinates(vertical);
+            let position =
+                rect.min + egui::vec2(f32::from(tile_x) * cell, f32::from(tile_y) * cell);
+            let (tile_width, tile_height) = if vertical {
+                (placement.minor_span, placement.major_span)
+            } else {
+                (placement.major_span, placement.minor_span)
+            };
             let object_rect = egui::Rect::from_min_size(
                 position,
                 egui::vec2(
-                    (f32::from(placement.major_span) * cell).max(8.0),
-                    (f32::from(placement.minor_span) * cell).max(8.0),
+                    (f32::from(tile_width) * cell).max(8.0),
+                    (f32::from(tile_height) * cell).max(8.0),
                 ),
             );
             draw_object_marker(
@@ -475,6 +482,7 @@ impl VanillaLevelEditor {
             &sprite_placements,
             response.interact_pointer_pos(),
             self.selected_sprite,
+            vertical,
         );
         if response.clicked()
             && let Some(index) = hit
@@ -493,9 +501,10 @@ impl VanillaLevelEditor {
                 controller.level().sprites.tokens.get(index),
             );
         }
-        ui.label(
-            "Screen-aware native positions: blue object footprints and red sprite markers; stronger lines mark 16-tile screen boundaries.",
-        );
+        ui.label(format!(
+            "Screen-aware {} layout: blue object footprints and red sprite markers; stronger lines mark screen boundaries.",
+            if vertical { "vertical" } else { "horizontal" }
+        ));
     }
 
     fn object_editor(&mut self, ui: &mut egui::Ui) {
@@ -730,28 +739,49 @@ impl VanillaLevelEditor {
     }
 }
 
-fn draw_object_grid(painter: &egui::Painter, rect: egui::Rect, cell: f32, major_tiles: u16) {
-    for column in 0..=major_tiles {
-        let x = rect.left() + f32::from(column) * cell;
-        let boundary = column % 16 == 0;
-        painter.line_segment(
-            [
-                egui::pos2(x, rect.top()),
-                egui::pos2(x, rect.bottom().min(rect.top() + 16.0 * cell)),
-            ],
-            egui::Stroke::new(
-                if boundary { 1.5_f32 } else { 0.5_f32 },
-                egui::Color32::from_gray(if boundary { 90 } else { 45 }),
-            ),
-        );
+fn draw_object_grid(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    cell: f32,
+    major_tiles: u16,
+    vertical: bool,
+) {
+    let (columns, rows) = if vertical {
+        (16, major_tiles)
+    } else {
+        (major_tiles, 16)
+    };
+    for column in 0..=columns {
+        draw_grid_line(painter, rect, cell, column, vertical, true);
     }
-    for row in 0_u8..=16 {
-        let y = rect.top() + f32::from(row) * cell;
-        painter.line_segment(
-            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-            egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
-        );
+    for row in 0..=rows {
+        draw_grid_line(painter, rect, cell, row, vertical, false);
     }
+}
+
+fn draw_grid_line(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    cell: f32,
+    index: u16,
+    vertical_layout: bool,
+    column: bool,
+) {
+    let coordinate = f32::from(index) * cell;
+    let screen_axis = column != vertical_layout;
+    let boundary = screen_axis && index % 16 == 0;
+    let stroke = egui::Stroke::new(
+        if boundary { 1.5_f32 } else { 0.5_f32 },
+        egui::Color32::from_gray(if boundary { 90 } else { 45 }),
+    );
+    let points = if column {
+        let x = rect.left() + coordinate;
+        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())]
+    } else {
+        let y = rect.top() + coordinate;
+        [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)]
+    };
+    painter.line_segment(points, stroke);
 }
 
 fn canvas_major_tiles(
@@ -833,13 +863,15 @@ fn draw_sprite_placements(
     placements: &[lm_level::NativeSpritePlacement],
     cursor: Option<egui::Pos2>,
     selected: usize,
+    vertical: bool,
 ) -> Option<usize> {
     let mut hit = None;
     for placement in placements {
+        let (tile_x, tile_y) = placement.tile_coordinates(vertical);
         let center = rect.min
             + egui::vec2(
-                (f32::from(placement.major) + 0.5) * cell,
-                (f32::from(placement.minor) + 0.5) * cell,
+                (f32::from(tile_x) + 0.5) * cell,
+                (f32::from(tile_y) + 0.5) * cell,
             );
         let marker = egui::Rect::from_center_size(center, egui::vec2(cell.max(9.0), cell.max(9.0)));
         painter.rect_filled(
