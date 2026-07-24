@@ -16,6 +16,10 @@ const SHARED_SLOT_002_FILL_TILES: [u8; 8] = [0x3d, 0x3e, 0x3d, 0x3e, 0x3d, 0x3e,
 const SHARED_SLOT_010_TILES: [u8; 16] = [
     0x05, 0x06, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a,
 ];
+const SHARED_SLOT_008_TILES: [[[u8; 3]; 3]; 2] = [
+    [[0x2f, 0x25, 0x32], [0x30, 0x25, 0x33], [0x31, 0x25, 0x34]],
+    [[0x39, 0x25, 0x3c], [0x3a, 0x25, 0x3d], [0x3b, 0x25, 0x3e]],
+];
 
 /// A compact expandable Map16 pattern for one standard-object command.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -43,6 +47,7 @@ enum NativeRenderer {
     Pattern,
     SharedSlot001,
     SharedSlot002,
+    SharedSlot008,
     SharedSlot010,
 }
 
@@ -280,12 +285,59 @@ fn render_definition(
     if definition.renderer == NativeRenderer::SharedSlot010 {
         return render_shared_slot_010(cache, layout, placement, parameter);
     }
+    if definition.renderer == NativeRenderer::SharedSlot008 {
+        return render_shared_slot_008(cache, layout, placement, parameter);
+    }
     let (major_span, minor_span) = match definition.extent {
         ObjectExtent::ParameterNibbles => (placement.major_span, placement.minor_span),
         ObjectExtent::HighNibbleByOne => (placement.major_span, 1),
         ObjectExtent::FixedOne => (1, 1),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
+}
+
+fn render_shared_slot_008(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let group = usize::from((parameter & 0x0f) != 0);
+    let encoded_height = usize::from(parameter >> 4);
+    let height = if encoded_height == 0 {
+        0x100
+    } else {
+        encoded_height
+    };
+    for (minor_offset, &top_tile) in SHARED_SLOT_008_TILES[group][0].iter().enumerate() {
+        set_placement_cell(
+            cache,
+            layout,
+            placement,
+            0,
+            minor_offset,
+            u16::from(top_tile),
+        )?;
+        for major_offset in 1..height {
+            set_placement_cell(
+                cache,
+                layout,
+                placement,
+                major_offset,
+                minor_offset,
+                u16::from(SHARED_SLOT_008_TILES[group][1][minor_offset]),
+            )?;
+        }
+        set_placement_cell(
+            cache,
+            layout,
+            placement,
+            height,
+            minor_offset,
+            u16::from(SHARED_SLOT_008_TILES[group][2][minor_offset]),
+        )?;
+    }
+    Ok(())
 }
 
 fn render_shared_slot_010(
@@ -576,6 +628,21 @@ pub fn install_lunar_magic_shared_standard_objects(
             renderer: NativeRenderer::Pattern,
         },
     )?;
+    // Dispatch slot 008 (command 21): three columns with selected top/middle/bottom caps.
+    definitions.set_native(
+        21,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0x25],
+            },
+            extent: ObjectExtent::FixedOne,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::SharedSlot008,
+        },
+    )?;
     // Dispatch slot 009 (command 22): a parameter-sized rectangle of tile 0x02c.
     definitions.set(
         22,
@@ -863,6 +930,27 @@ mod tests {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     if major == 0 { 0x100 } else { 0x03f }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovered_command_21_uses_selected_three_column_caps() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x20, 0x50, 0x21]).unwrap()],
+        };
+        let report = render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
+        for (major, expected) in [[0x39, 0x25, 0x3c], [0x3a, 0x25, 0x3d], [0x3b, 0x25, 0x3e]]
+            .into_iter()
+            .enumerate()
+        {
+            for (minor, tile) in expected.into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile
                 );
             }
         }
