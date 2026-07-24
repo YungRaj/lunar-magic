@@ -51,6 +51,8 @@ use crate::{
     rom_secondary_exit_editor::RomSecondaryExitEditor,
     rom_tilemap_editor::{RomCreditsTilemapEditor, RomTitleTilemapEditor},
     rom_title_recording_editor::RomTitleRecordingEditor,
+    vanilla_graphics_editor::VanillaGraphicsEditor,
+    vanilla_level_editor::VanillaLevelEditor,
 };
 use eframe::egui;
 use lm_app::{AppState, Command, EditorMode, UiTextKey};
@@ -69,6 +71,8 @@ pub(crate) struct NativeApplication {
     effects: EffectState,
     level_text: String,
     renderer: NativeRenderState,
+    vanilla_graphics_editor: VanillaGraphicsEditor,
+    vanilla_level_editor: VanillaLevelEditor,
     palette_editor: PaletteEditor,
     graphics_editor: GraphicsEditor,
     map16_editor: Map16Editor,
@@ -319,7 +323,18 @@ impl eframe::App for NativeApplication {
             });
         });
         egui::CentralPanel::default().show(context, |ui| {
-            if !self.renderer.show(context, ui, &self.app) {
+            let vanilla_level = VanillaLevelEditor::handles(&self.app);
+            let vanilla_graphics = VanillaGraphicsEditor::handles(&self.app);
+            if vanilla_level && let Some(command) = self.vanilla_level_editor.show(ui, &self.app) {
+                self.dispatch(context, command);
+            } else if vanilla_graphics
+                && let Some(command) = self.vanilla_graphics_editor.show(ui, &self.app)
+            {
+                self.dispatch(context, command);
+            } else if !vanilla_level
+                && !vanilla_graphics
+                && !self.renderer.show(context, ui, &self.app)
+            {
                 editor_view::show(ui, self.app.mode);
             }
         });

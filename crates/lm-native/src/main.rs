@@ -92,6 +92,8 @@ mod rom_secondary_exit_editor;
 mod rom_tilemap_editor;
 mod rom_title_recording_editor;
 mod startup;
+mod vanilla_graphics_editor;
+mod vanilla_level_editor;
 
 use application::NativeApplication;
 

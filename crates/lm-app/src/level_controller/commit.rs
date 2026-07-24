@@ -30,15 +30,26 @@ impl LevelController {
             });
         }
         let mut project = Project::new(image);
-        project
-            .save_level_slot_with_checksum(
-                self.layout,
-                &self.level,
-                &self.sprite_lengths,
-                self.checksum_field_offset,
-                options,
-            )
-            .map_err(LevelControllerError::Save)?;
+        if self.level.sprites == self.baseline.sprites {
+            project
+                .save_level_layer1_with_checksum(
+                    self.layout,
+                    &self.level,
+                    self.checksum_field_offset,
+                    options,
+                )
+                .map_err(LevelControllerError::Save)?;
+        } else {
+            project
+                .save_level_slot_with_checksum(
+                    self.layout,
+                    &self.level,
+                    &self.sprite_lengths,
+                    self.checksum_field_offset,
+                    options,
+                )
+                .map_err(LevelControllerError::Save)?;
+        }
         let mutation =
             RomMutation::between(self.layout.mapper, &before, project.rom.logical_bytes())
                 .map_err(LevelControllerError::Mutation)?;

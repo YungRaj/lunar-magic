@@ -1,10 +1,13 @@
 use eframe::egui;
 use lm_app::{AppState, EditorMode, RevisionProfileControllers};
-use lm_graphics::{GraphicsInterchangeFile, PaletteInterchangeFile, PaletteOwnership};
+use lm_graphics::{
+    Bgr555, GraphicsInterchangeFile, Palette, PaletteInterchangeFile, PaletteOwnership,
+};
 use lm_level::Map16PageFile;
 use lm_render::{
     Canvas, render_portable_graphics, render_portable_map16_page, render_portable_palette,
 };
+use lm_rom::{Mapper, Region, RomImage, SupportedGame};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,19 +44,25 @@ impl NativeRenderState {
         ui: &mut egui::Ui,
         app: &AppState,
     ) -> bool {
-        let Some(profile) = app.revision_profile() else {
+        let profile_name = if let Some(profile) = app.revision_profile() {
+            profile.name.clone()
+        } else if is_builtin_vanilla_graphics(app) && matches!(app.mode, EditorMode::Graphics(_)) {
+            "Built-in SMW US revision 0".into()
+        } else {
             return false;
         };
-        if !matches!(
-            app.mode,
-            EditorMode::Graphics(_) | EditorMode::Palette(_) | EditorMode::Map16
-        ) {
+        if app.revision_profile().is_some()
+            && !matches!(
+                app.mode,
+                EditorMode::Graphics(_) | EditorMode::Palette(_) | EditorMode::Map16
+            )
+        {
             return false;
         }
         let key = RenderKey {
             revision: app.project_revision(),
             mode: app.mode,
-            profile_name: profile.name.clone(),
+            profile_name,
             generation: self.generation,
         };
         self.poll(context, &key);
@@ -88,19 +97,27 @@ impl NativeRenderState {
         self.texture = None;
         self.error = None;
         self.key = None;
-        let profiled = match app.profiled_controller_snapshot() {
-            Ok(profiled) => profiled,
+        let (sender, result) = mpsc::channel();
+        let input = app.profiled_controller_snapshot().map_or_else(
+            |_| app.controller_snapshot().map(RenderInput::Builtin),
+            |profiled| Ok(RenderInput::Profiled(Box::new(profiled))),
+        );
+        let input = match input {
+            Ok(input) => input,
             Err(error) => {
                 self.error = Some(error.to_string());
                 self.key = Some(key);
                 return;
             }
         };
-        let (sender, result) = mpsc::channel();
         match std::thread::Builder::new()
             .name("lm-native-render".into())
             .spawn(move || {
-                let _send_result = sender.send(build_canvas(&profiled));
+                let rendered = match input {
+                    RenderInput::Profiled(profiled) => build_canvas(&profiled),
+                    RenderInput::Builtin(snapshot) => build_builtin_canvas(&snapshot),
+                };
+                let _send_result = sender.send(rendered);
             }) {
             Ok(_worker) => self.running = Some(RunningRender { key, result }),
             Err(error) => {
@@ -146,6 +163,53 @@ impl NativeRenderState {
         }
         self.key = Some(running.key);
     }
+}
+
+enum RenderInput {
+    Profiled(Box<lm_app::ProfiledControllerSnapshot>),
+    Builtin(lm_app::ControllerSnapshot),
+}
+
+fn is_builtin_vanilla_graphics(app: &AppState) -> bool {
+    app.controller_snapshot().is_ok_and(|snapshot| {
+        snapshot.identity.game == SupportedGame::SuperMarioWorld
+            && snapshot.identity.region == Region::NorthAmerica
+            && snapshot.identity.revision == 0
+            && snapshot.identity.mapper == Mapper::LoRom
+    })
+}
+
+fn build_builtin_canvas(snapshot: &lm_app::ControllerSnapshot) -> Result<Canvas, String> {
+    let EditorMode::Graphics(slot) = snapshot.mode else {
+        return Err("built-in vanilla rendering currently supports graphics mode".into());
+    };
+    let image =
+        RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
+    let project = lm_project::Project::new(image);
+    let graphics = project
+        .load_graphics_file(
+            usize::from(slot),
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .map_err(|error| error.to_string())?;
+    let palette = PaletteInterchangeFile {
+        source_palette: 0,
+        palette: Palette {
+            colors: (0_u16..16)
+                .map(|component| Bgr555(component | (component << 5) | (component << 10)))
+                .collect(),
+        },
+    };
+    render_portable_graphics(
+        &GraphicsInterchangeFile {
+            source_slot: slot,
+            graphics,
+        },
+        &palette,
+        0,
+        16,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn build_canvas(profiled: &lm_app::ProfiledControllerSnapshot) -> Result<Canvas, String> {

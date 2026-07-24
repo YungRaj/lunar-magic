@@ -700,8 +700,9 @@ two-byte stride, while the bank byte is supplied separately. `LoadSpriteDataPcOf
 (`004810e0`) proves both supported forms: descriptor index 24 supplies one shared bank, or, when
 the hook marker at descriptor index 50 is `$22`, descriptor index 51 supplies a parallel bank-byte
 table. Lunar Magic 3.63's installed SMW-US descriptor contains headered offsets `0x02EE00`,
-`0x02DAF5`, and `0x077300`; their logical offsets are therefore `0x02EC00` for the low words,
-`0x02D8F5` for the `$22` marker, and `0x077100` for 512 bank bytes. The level-000 and level-105
+`0x02DAF5`, and `0x077300`; pristine SMW uses logical offset `0x02EC00` for the low words and
+the `$07` shared-bank operand at logical `0x02D8F6`. The `0x077100` parallel bank table belongs
+to Lunar Magic's expanded representation and is erased in the pristine ROM. The level-000 and level-105
 save cases independently changed bank entries 0 and `0x105` to `$10`, exactly matching MWL source
 addresses `$108549` and `$108640`. The Rust layout model therefore represents contiguous,
 split/shared-bank, and split/per-entry-bank encodings explicitly, including atomic writes and

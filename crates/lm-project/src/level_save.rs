@@ -75,6 +75,32 @@ impl From<PayloadSaveError> for LevelSaveError {
 }
 
 impl Project {
+    /// Saves only the Layer 1 object stream and repairs the checksum atomically.
+    ///
+    /// This path preserves the sprite pointer and payload byte-for-byte. It is particularly useful
+    /// for pristine SMW, whose sprite pointers share a fixed bank until the expanded sprite-pointer
+    /// runtime is installed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LevelSaveError`] for serialization, allocation, mapping, or checksum failures.
+    pub fn save_level_layer1_with_checksum(
+        &mut self,
+        layout: LevelRomLayout,
+        level: &LoadedLevelSlot,
+        checksum_field: usize,
+        options: &LevelSaveOptions,
+    ) -> Result<PayloadSaveResult, LevelSaveError> {
+        let request = layer1_save_request(layout, level, options)?;
+        Ok(self
+            .save_tagged_payloads_with_checksum(
+                format!("save level {:03x} layer 1", level.number),
+                std::slice::from_ref(&request),
+                checksum_field,
+            )?
+            .remove(0))
+    }
+
     /// Serializes, allocates, and repoints both native streams as one undoable operation.
     ///
     /// The project is unchanged if serialization, either allocation, either mapper conversion, or
@@ -157,6 +183,28 @@ impl Project {
     }
 }
 
+fn layer1_save_request(
+    layout: LevelRomLayout,
+    level: &LoadedLevelSlot,
+    options: &LevelSaveOptions,
+) -> Result<PayloadSaveRequest, LevelSaveError> {
+    let layer1 = level.layer1.encode_banked()?;
+    if LevelObjectData::parse(&layer1)? != level.layer1 {
+        return Err(LevelSaveError::NonCanonicalObjectEncoding);
+    }
+    Ok(PayloadSaveRequest {
+        description: format!("save level {:03x} layer 1", level.number),
+        payload: layer1,
+        pointer: layout.layer1.pointer_offset(level.number)?.into(),
+        mapper: layout.mapper,
+        allocation_policy: options.layer1_allocation.clone(),
+        previous_block: options.previous_layer1.clone(),
+        reuse_identical: options.reuse_identical,
+        maximum_payload_len: 0x8000,
+        erase_fill: options.erase_fill,
+    })
+}
+
 pub(crate) fn level_save_requests(
     layout: LevelRomLayout,
     level: &LoadedLevelSlot,
@@ -169,11 +217,7 @@ pub(crate) fn level_save_requests(
             stream_expanded: level.sprites.expanded,
         });
     }
-    let layer1 = level.layer1.encode_banked()?;
-    let reparsed_layer = LevelObjectData::parse(&layer1)?;
-    if reparsed_layer != level.layer1 {
-        return Err(LevelSaveError::NonCanonicalObjectEncoding);
-    }
+    let layer1_request = layer1_save_request(layout, level, options)?;
     let sprites = level.sprites.encode_for_table(sprite_lengths)?;
     let reparsed_sprites =
         NativeSpriteStream::parse(&sprites, level.sprites.expanded, sprite_lengths)
@@ -184,7 +228,6 @@ pub(crate) fn level_save_requests(
     if sprites.len() > 0x8000 {
         return Err(LevelSaveError::SpriteBankLimitExceeded(sprites.len()));
     }
-    let layer1_pointer = layout.layer1.pointer_offset(level.number)?;
     let sprite_pointer = match layout.sprites {
         crate::SpritePointerTable::Contiguous(table) => {
             crate::PayloadPointer::contiguous(table.pointer_offset(level.number)?)
@@ -206,17 +249,7 @@ pub(crate) fn level_save_requests(
         }
     };
     Ok([
-        PayloadSaveRequest {
-            description: format!("save level {:03x} layer 1", level.number),
-            payload: layer1,
-            pointer: layer1_pointer.into(),
-            mapper: layout.mapper,
-            allocation_policy: options.layer1_allocation.clone(),
-            previous_block: options.previous_layer1.clone(),
-            reuse_identical: options.reuse_identical,
-            maximum_payload_len: 0x8000,
-            erase_fill: options.erase_fill,
-        },
+        layer1_request,
         PayloadSaveRequest {
             description: format!("save level {:03x} sprites", level.number),
             payload: sprites,

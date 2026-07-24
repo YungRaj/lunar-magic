@@ -232,22 +232,15 @@ impl Project {
         let layer1 = self.load_payload(
             layer1_pointer,
             layout.mapper,
-            &PayloadReadPolicy::TaggedOrTerminated {
-                terminator: vec![0xff],
+            &PayloadReadPolicy::TaggedOrBounded {
                 maximum_len: 0x8000,
                 bank_size: Some(0x8000),
             },
         )?;
-        let sprite_terminator = if layout.expanded_sprites {
-            vec![0xff, 0xfe]
-        } else {
-            vec![0xff]
-        };
         let sprites = self.load_payload_from_pointer(
             sprite_snes,
             layout.mapper,
-            &PayloadReadPolicy::TaggedOrTerminated {
-                terminator: sprite_terminator,
+            &PayloadReadPolicy::TaggedOrBounded {
                 maximum_len: 0x8000,
                 bank_size: Some(0x8000),
             },

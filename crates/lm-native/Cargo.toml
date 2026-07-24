@@ -13,6 +13,7 @@ lm-level = { path = "../lm-level" }
 lm-overworld = { path = "../lm-overworld" }
 lm-project = { path = "../lm-project" }
 lm-profile = { path = "../lm-profile" }
+lm-rats = { path = "../lm-rats" }
 lm-render = { path = "../lm-render" }
 lm-rom = { path = "../lm-rom" }
 lm-title = { path = "../lm-title" }
@@ -20,7 +21,6 @@ rfd = "0.15"
 
 [dev-dependencies]
 lm-profile = { path = "../lm-profile", features = ["test-support"] }
-lm-rats = { path = "../lm-rats" }
 
 [lints]
 workspace = true

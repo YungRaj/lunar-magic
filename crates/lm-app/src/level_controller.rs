@@ -109,8 +109,7 @@ impl LevelController {
                     .pointer_offset(level_number)
                     .map_err(LevelControllerError::Load)?,
                 layout.mapper,
-                &PayloadReadPolicy::TaggedOrTerminated {
-                    terminator: vec![0xff],
+                &PayloadReadPolicy::TaggedOrBounded {
                     maximum_len: 0x8000,
                     bank_size: Some(0x8000),
                 },
@@ -124,12 +123,7 @@ impl LevelController {
                     .read_snes_pointer(&project.rom, level_number)
                     .map_err(LevelControllerError::Load)?,
                 layout.mapper,
-                &PayloadReadPolicy::TaggedOrTerminated {
-                    terminator: if layout.expanded_sprites {
-                        vec![0xff, 0xfe]
-                    } else {
-                        vec![0xff]
-                    },
+                &PayloadReadPolicy::TaggedOrBounded {
                     maximum_len: 0x8000,
                     bank_size: Some(0x8000),
                 },

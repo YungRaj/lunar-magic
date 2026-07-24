@@ -1,6 +1,6 @@
 use crate::{
-    LevelLoadError, LevelPointerTable, PayloadLoadError, PayloadReadPolicy, PayloadSaveError,
-    PayloadPointer, PayloadSaveRequest, PayloadSaveResult, Project, RatsOwnershipManifest,
+    LevelLoadError, LevelPointerTable, PayloadLoadError, PayloadPointer, PayloadReadPolicy,
+    PayloadSaveError, PayloadSaveRequest, PayloadSaveResult, Project, RatsOwnershipManifest,
 };
 use lm_codec::{CodecError, decode_lz2_prefix, decode_lz3_prefix, encode_lz2, encode_lz3};
 use lm_graphics::{GraphicsFile4bpp, GraphicsFileError};
@@ -143,12 +143,10 @@ impl GraphicsRomLayout {
             PayloadPointer::Contiguous { offset }
             | PayloadPointer::ContiguousLowBank { offset } => {
                 let bytes = project.rom.read(offset, 3)?;
-                Ok(SnesPointer24::new(
-                    u32::from(bytes[0])
-                        | (u32::from(bytes[1]) << 8)
-                        | (u32::from(bytes[2]) << 16),
+                SnesPointer24::new(
+                    u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16),
                 )
-                .expect("three bytes always form a 24-bit pointer"))
+                .map_err(|_| GraphicsIoError::Layout(LevelLoadError::AddressOverflow))
             }
             PayloadPointer::SplitBytes {
                 low_offset,
@@ -158,10 +156,12 @@ impl GraphicsRomLayout {
                 let low = u32::from(project.rom.read(low_offset, 1)?[0]);
                 let high = u32::from(project.rom.read(high_offset, 1)?[0]);
                 let bank = u32::from(project.rom.read(bank_offset, 1)?[0]);
-                Ok(SnesPointer24::new(low | (high << 8) | (bank << 16))
-                    .expect("three bytes always form a 24-bit pointer"))
+                SnesPointer24::new(low | (high << 8) | (bank << 16))
+                    .map_err(|_| GraphicsIoError::Layout(LevelLoadError::AddressOverflow))
             }
-            PayloadPointer::Split { .. } => unreachable!("graphics layouts do not emit split words"),
+            PayloadPointer::Split { .. } => {
+                unreachable!("graphics layouts do not emit split words")
+            }
         }
     }
 }
@@ -428,7 +428,6 @@ mod tests {
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);
     }
-
 
     #[test]
     fn saves_loads_and_undoes_an_lz3_graphics_file() {

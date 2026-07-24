@@ -345,8 +345,10 @@ pub use title_tilemap::{
 };
 pub use vanilla_smw::{
     SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET, SMW_US_V1_GRAPHICS_POINTER_HIGH_OFFSET,
-    SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET, SMW_US_V1_VANILLA_GRAPHICS_FILES,
-    smw_us_v1_vanilla_graphics_layout,
+    SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET, SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET,
+    SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET, SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET,
+    SMW_US_V1_VANILLA_GRAPHICS_FILES, SMW_US_V1_VANILLA_LEVEL_SLOTS,
+    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_level_layout,
 };
 
 /// Complete, externally recovered ROM-layout metadata for one supported game revision.
