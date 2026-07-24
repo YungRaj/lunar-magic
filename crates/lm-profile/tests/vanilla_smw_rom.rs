@@ -1,8 +1,8 @@
 use lm_level::{ObjectCoordinateNibbles, SpriteLengthTable};
 use lm_profile::{
     SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET, SMW_US_V1_VANILLA_GRAPHICS_FILES,
-    SMW_US_V1_VANILLA_LEVEL_SLOTS, smw_us_v1_vanilla_graphics_layout,
-    smw_us_v1_vanilla_level_layout,
+    SMW_US_V1_VANILLA_LEVEL_SLOTS, load_smw_us_v1_level_map16_base,
+    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_level_layout,
 };
 use lm_project::{GraphicsSaveOptions, LevelSaveOptions, Project};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -47,6 +47,23 @@ fn every_native_level_slot_in_the_local_reference_rom_decodes() {
             )
             .unwrap_or_else(|error| panic!("failed to decode level {level:03X}: {error}"));
     }
+}
+
+#[test]
+fn pristine_level_map16_sources_resolve_in_the_local_reference_rom() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("Super Mario World (USA).sfc");
+    let Ok(bytes) = fs::read(path) else {
+        return;
+    };
+    let rom = RomImage::from_bytes(bytes).unwrap();
+    let loaded = load_smw_us_v1_level_map16_base(&rom, 0, [0xaa; 8]).unwrap();
+    assert_eq!(loaded.tileset_source_offset, 0x68b70);
+    assert_eq!(loaded.common_source_offset, 0x68000);
+    assert_eq!(loaded.tileset_tiles, 32);
+    assert_eq!(loaded.common_tiles, 32);
+    assert_ne!(loaded.bytes, [0; 512]);
 }
 
 #[test]

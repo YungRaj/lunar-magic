@@ -51,6 +51,7 @@ mod text_encode;
 mod text_schema;
 mod title_recording;
 mod title_tilemap;
+mod vanilla_level_map16;
 mod vanilla_smw;
 
 use lm_level::SpriteLengthTable;
@@ -342,6 +343,12 @@ pub use title_tilemap::{
     SMW_US_V1_TITLE_TILEMAP_POINTER_OFFSET, SMW_US_V1_TITLE_TILEMAP_PRISTINE_STREAM_OFFSET,
     SMW_US_V1_TITLE_TILEMAP_SEARCH_START, smw_us_v1_title_tilemap_allocation_policy,
     smw_us_v1_title_tilemap_locator,
+};
+pub use vanilla_level_map16::{
+    LoadedSmwUsV1LevelMap16Base, SMW_US_V1_MAP16_BASE_BYTES, SMW_US_V1_MAP16_BASE_TILE_COUNT,
+    SMW_US_V1_MAP16_COMMON_WORD_OFFSET, SMW_US_V1_MAP16_SOURCE_BANK_OFFSET,
+    SMW_US_V1_MAP16_TILE_BYTES, SMW_US_V1_MAP16_TILESET_WORD_TABLE_OFFSET,
+    SmwUsV1LevelMap16BaseError, load_smw_us_v1_level_map16_base,
 };
 pub use vanilla_smw::{
     SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET, SMW_US_V1_GRAPHICS_POINTER_HIGH_OFFSET,

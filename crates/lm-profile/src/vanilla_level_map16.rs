@@ -1,0 +1,222 @@
+//! Pristine SMW level-Map16 source layout recovered from Lunar Magic's ROM descriptor.
+
+use lm_rom::{Mapper, RomError, RomImage, snes_to_pc};
+use std::fmt;
+
+/// Low-word table for the tileset-specific packed Map16 source.
+pub const SMW_US_V1_MAP16_TILESET_WORD_TABLE_OFFSET: usize = 0x28000;
+/// Bank byte shared by both packed Map16 sources.
+pub const SMW_US_V1_MAP16_SOURCE_BANK_OFFSET: usize = 0x28a3d;
+/// Low word for the common packed Map16 source.
+pub const SMW_US_V1_MAP16_COMMON_WORD_OFFSET: usize = 0x28222;
+/// Number of eight-byte Map16 definitions composed by the recovered loader.
+pub const SMW_US_V1_MAP16_BASE_TILE_COUNT: usize = 64;
+/// Size of one four-subtile Map16 definition.
+pub const SMW_US_V1_MAP16_TILE_BYTES: usize = 8;
+/// Size of the composed base table.
+pub const SMW_US_V1_MAP16_BASE_BYTES: usize =
+    SMW_US_V1_MAP16_BASE_TILE_COUNT * SMW_US_V1_MAP16_TILE_BYTES;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoadedSmwUsV1LevelMap16Base {
+    pub bytes: [u8; SMW_US_V1_MAP16_BASE_BYTES],
+    pub tileset_source_offset: usize,
+    pub common_source_offset: usize,
+    pub tileset_tiles: usize,
+    pub common_tiles: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SmwUsV1LevelMap16BaseError {
+    TilesetOutOfRange(usize),
+    Rom(RomError),
+}
+
+impl fmt::Display for SmwUsV1LevelMap16BaseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "pristine level Map16 base load failed: {self:?}")
+    }
+}
+
+impl std::error::Error for SmwUsV1LevelMap16BaseError {}
+
+impl From<RomError> for SmwUsV1LevelMap16BaseError {
+    fn from(value: RomError) -> Self {
+        Self::Rom(value)
+    }
+}
+
+/// Composes Lunar Magic's 64-entry base table from the two compact ROM streams.
+///
+/// The occupancy mask is consumed most-significant-bit first. A set bit selects the common
+/// stream and a clear bit selects the tileset-specific stream. Each compact source advances only
+/// when selected, matching `LoadMap16BaseDataFromRom` rather than treating either source as a
+/// sparse 64-entry table.
+///
+/// # Errors
+///
+/// Rejects tileset indices that cannot address the recovered 16-entry word table, invalid SNES
+/// pointers, and truncated compact sources.
+pub fn load_smw_us_v1_level_map16_base(
+    rom: &RomImage,
+    tileset: usize,
+    occupancy_mask: [u8; 8],
+) -> Result<LoadedSmwUsV1LevelMap16Base, SmwUsV1LevelMap16BaseError> {
+    const TILESET_COUNT: usize = 16;
+    if tileset >= TILESET_COUNT {
+        return Err(SmwUsV1LevelMap16BaseError::TilesetOutOfRange(tileset));
+    }
+    let bytes = rom.logical_bytes();
+    let bank = read_byte(bytes, SMW_US_V1_MAP16_SOURCE_BANK_OFFSET)?;
+    let tileset_word = read_word(
+        bytes,
+        SMW_US_V1_MAP16_TILESET_WORD_TABLE_OFFSET + tileset * 2,
+    )?;
+    let common_word = read_word(bytes, SMW_US_V1_MAP16_COMMON_WORD_OFFSET)?;
+    let tileset_source_offset = source_offset(bank, tileset_word)?;
+    let common_source_offset = source_offset(bank, common_word)?;
+
+    let common_tiles = occupancy_mask
+        .iter()
+        .map(|byte| byte.count_ones() as usize)
+        .sum();
+    let tileset_tiles = SMW_US_V1_MAP16_BASE_TILE_COUNT - common_tiles;
+    let tileset_bytes = source(
+        bytes,
+        tileset_source_offset,
+        tileset_tiles * SMW_US_V1_MAP16_TILE_BYTES,
+    )?;
+    let common_bytes = source(
+        bytes,
+        common_source_offset,
+        common_tiles * SMW_US_V1_MAP16_TILE_BYTES,
+    )?;
+
+    let mut composed = [0; SMW_US_V1_MAP16_BASE_BYTES];
+    let mut tileset_cursor = 0;
+    let mut common_cursor = 0;
+    for tile in 0..SMW_US_V1_MAP16_BASE_TILE_COUNT {
+        let use_common = occupancy_mask[tile / 8] & (0x80 >> (tile % 8)) != 0;
+        let source_cursor = if use_common {
+            &mut common_cursor
+        } else {
+            &mut tileset_cursor
+        };
+        let source = if use_common {
+            common_bytes
+        } else {
+            tileset_bytes
+        };
+        let target_start = tile * SMW_US_V1_MAP16_TILE_BYTES;
+        composed[target_start..target_start + SMW_US_V1_MAP16_TILE_BYTES]
+            .copy_from_slice(&source[*source_cursor..*source_cursor + SMW_US_V1_MAP16_TILE_BYTES]);
+        *source_cursor += SMW_US_V1_MAP16_TILE_BYTES;
+    }
+    Ok(LoadedSmwUsV1LevelMap16Base {
+        bytes: composed,
+        tileset_source_offset,
+        common_source_offset,
+        tileset_tiles,
+        common_tiles,
+    })
+}
+
+fn read_byte(bytes: &[u8], offset: usize) -> Result<u8, RomError> {
+    bytes
+        .get(offset)
+        .copied()
+        .ok_or(RomError::RangeOutOfBounds {
+            offset,
+            len: 1,
+            image_len: bytes.len(),
+        })
+}
+
+fn read_word(bytes: &[u8], offset: usize) -> Result<u16, RomError> {
+    let pair = source(bytes, offset, 2)?;
+    Ok(u16::from_le_bytes([pair[0], pair[1]]))
+}
+
+fn source(bytes: &[u8], offset: usize, len: usize) -> Result<&[u8], RomError> {
+    bytes
+        .get(offset..offset.saturating_add(len))
+        .ok_or(RomError::RangeOutOfBounds {
+            offset,
+            len,
+            image_len: bytes.len(),
+        })
+}
+
+fn source_offset(bank: u8, word: u16) -> Result<usize, RomError> {
+    snes_to_pc(Mapper::LoRom, (u32::from(bank) << 16) | u32::from(word))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_rom::pc_to_snes;
+
+    fn fixture() -> RomImage {
+        let mut rom = RomImage::from_bytes(vec![0xff; 0x70_000]).unwrap();
+        let tileset_source = 0x68b70;
+        let common_source = 0x68000;
+        let tileset_snes = pc_to_snes(Mapper::LoRom, tileset_source).unwrap();
+        let common_snes = pc_to_snes(Mapper::LoRom, common_source).unwrap();
+        rom.write(
+            SMW_US_V1_MAP16_TILESET_WORD_TABLE_OFFSET,
+            &u16::try_from(tileset_snes & 0xffff).unwrap().to_le_bytes(),
+        )
+        .unwrap();
+        rom.write(
+            SMW_US_V1_MAP16_COMMON_WORD_OFFSET,
+            &u16::try_from(common_snes & 0xffff).unwrap().to_le_bytes(),
+        )
+        .unwrap();
+        rom.write(
+            SMW_US_V1_MAP16_SOURCE_BANK_OFFSET,
+            &[u8::try_from(tileset_snes >> 16).unwrap()],
+        )
+        .unwrap();
+        let tileset = (0_u8..32).flat_map(|tile| [tile; 8]).collect::<Vec<_>>();
+        let common = (0_u8..32)
+            .map(|tile| tile + 0x80)
+            .flat_map(|tile| [tile; 8])
+            .collect::<Vec<_>>();
+        rom.write(tileset_source, &tileset).unwrap();
+        rom.write(common_source, &common).unwrap();
+        rom
+    }
+
+    #[test]
+    fn interleaves_compact_sources_msb_first() {
+        let loaded = load_smw_us_v1_level_map16_base(
+            &fixture(),
+            0,
+            [0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa],
+        )
+        .unwrap();
+        assert_eq!(loaded.tileset_tiles, 32);
+        assert_eq!(loaded.common_tiles, 32);
+        for tile in 0..64 {
+            let source_tile = u8::try_from(tile / 2).unwrap();
+            let expected = if tile % 2 == 0 {
+                0x80 + source_tile
+            } else {
+                source_tile
+            };
+            assert_eq!(
+                &loaded.bytes[tile * 8..tile * 8 + 8],
+                &[expected; 8],
+                "tile {tile}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_tilesets() {
+        assert_eq!(
+            load_smw_us_v1_level_map16_base(&fixture(), 16, [0; 8]),
+            Err(SmwUsV1LevelMap16BaseError::TilesetOutOfRange(16))
+        );
+    }
+}
