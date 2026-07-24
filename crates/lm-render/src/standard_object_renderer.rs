@@ -13,6 +13,9 @@ const SHARED_EXTENDED_TILES: [u8; 0x41] = [
 ];
 const SHARED_SLOT_002_END_TILES: [u8; 8] = [0x3b, 0x3c, 0x3b, 0x3f, 0x3b, 0x3c, 0x3b, 0x3f];
 const SHARED_SLOT_002_FILL_TILES: [u8; 8] = [0x3d, 0x3e, 0x3d, 0x3e, 0x3d, 0x3e, 0x3d, 0x3e];
+const SHARED_SLOT_010_TILES: [u8; 16] = [
+    0x05, 0x06, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a,
+];
 
 /// A compact expandable Map16 pattern for one standard-object command.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +43,7 @@ enum NativeRenderer {
     Pattern,
     SharedSlot001,
     SharedSlot002,
+    SharedSlot010,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -273,12 +277,28 @@ fn render_definition(
     if definition.renderer == NativeRenderer::SharedSlot001 {
         return render_shared_slot_001(cache, layout, placement, parameter);
     }
+    if definition.renderer == NativeRenderer::SharedSlot010 {
+        return render_shared_slot_010(cache, layout, placement, parameter);
+    }
     let (major_span, minor_span) = match definition.extent {
         ObjectExtent::ParameterNibbles => (placement.major_span, placement.minor_span),
         ObjectExtent::HighNibbleByOne => (placement.major_span, 1),
         ObjectExtent::FixedOne => (1, 1),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
+}
+
+fn render_shared_slot_010(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let tile = u16::from(SHARED_SLOT_010_TILES[usize::from(parameter >> 4)]) + 0x100;
+    for minor_offset in 0..=usize::from(parameter & 0x0f) {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
+    }
+    Ok(())
 }
 
 fn render_shared_slot_001(
@@ -540,6 +560,30 @@ pub fn install_lunar_magic_shared_standard_objects(
             minor_expansion: AxisExpansion::Clamp,
             renderer: NativeRenderer::Pattern,
         },
+    )?;
+    // Dispatch slot 009 (command 22): a parameter-sized rectangle of tile 0x02c.
+    definitions.set(
+        22,
+        StandardObjectPattern {
+            width: 1,
+            height: 1,
+            tiles: vec![0x02c],
+        },
+    )?;
+    // Dispatch slot 010 (command 23): high nibble selects one tile and low nibble its run.
+    definitions.set_native(
+        23,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0x105],
+            },
+            extent: ObjectExtent::FixedOne,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::SharedSlot010,
+        },
     )
 }
 
@@ -760,6 +804,33 @@ mod tests {
                     tile
                 );
             }
+        }
+    }
+
+    #[test]
+    fn recovered_commands_22_and_23_follow_native_extent_rules() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let stream = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0x20, 0x60, 0x11]).unwrap(),
+                ObjectRecord::new(vec![0x24, 0x70, 0x23]).unwrap(),
+            ],
+        };
+        let report = render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
+        for major in 0..2 {
+            for minor in 0..2 {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    0x02c
+                );
+            }
+        }
+        for minor in 0..4 {
+            assert_eq!(
+                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 4, minor)],
+                0x1a4
+            );
         }
     }
 }
