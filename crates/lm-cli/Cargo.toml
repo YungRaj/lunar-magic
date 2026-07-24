@@ -1,0 +1,27 @@
+[package]
+name = "lm-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lm-app = { path = "../lm-app" }
+lm-codec = { path = "../lm-codec" }
+lm-graphics = { path = "../lm-graphics" }
+lm-level = { path = "../lm-level" }
+lm-oracle = { path = "../lm-oracle" }
+lm-overworld = { path = "../lm-overworld" }
+lm-profile = { path = "../lm-profile" }
+lm-project = { path = "../lm-project" }
+lm-rats = { path = "../lm-rats" }
+lm-render = { path = "../lm-render" }
+lm-rom = { path = "../lm-rom" }
+lm-title = { path = "../lm-title" }
+png = "0.17"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+lm-profile = { path = "../lm-profile", features = ["test-support"] }

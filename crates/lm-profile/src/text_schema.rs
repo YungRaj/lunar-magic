@@ -1,0 +1,69 @@
+pub(super) const TABLES: [&str; 16] = [
+    "level.layer1",
+    "level.sprites",
+    "map16.graphics",
+    "map16.acts_like",
+    "graphics",
+    "palette",
+    "exanimation",
+    "overworld.layer1",
+    "overworld.layer2",
+    "overworld.event_sources",
+    "overworld.event_destinations",
+    "overworld.endpoints",
+    "overworld.messages",
+    "overworld.sprites",
+    "overworld.palette",
+    "overworld.animation",
+];
+
+pub(super) const SCALARS: [&str; 16] = [
+    "level.expanded_sprites",
+    "graphics.maximum_compressed_len",
+    "graphics.maximum_decompressed_len",
+    "palette.colors",
+    "exanimation.maximum_records",
+    "exanimation.maximum_encoded_len",
+    "overworld.width",
+    "overworld.height",
+    "overworld.event_reveals",
+    "overworld.endpoints_per_slot",
+    "overworld.messages_per_slot",
+    "overworld.sprites_per_slot",
+    "overworld.sprite_record_len",
+    "overworld.palette_colors",
+    "overworld.animation_maximum_records",
+    "overworld.animation_maximum_encoded_len",
+];
+
+pub(super) const EXPANDED_SETTINGS_KEYS: [&str; 3] = [
+    "expanded_settings.offset",
+    "expanded_settings.entries",
+    "expanded_settings.stride",
+];
+
+pub(super) const LAYER2_KEYS: [&str; 6] = [
+    "level.layer2.offset",
+    "level.layer2.entries",
+    "level.layer2.stride",
+    "level.layer2.maximum_compressed_len",
+    "level.layer2.tilemap_encoding",
+    "level.layer2.high_byte",
+];
+
+pub(super) const INSTALLATION_KEYS: [&str; 14] = [
+    "palette.installation",
+    "palette.marker_offset",
+    "palette.marker_value",
+    "exanimation.installation",
+    "exanimation.primary_marker_offset",
+    "exanimation.primary_marker_value",
+    "exanimation.primary_pointer_mask",
+    "exanimation.primary_locator_operand_offset",
+    "exanimation.primary_locator_displacement",
+    "exanimation.fallback_marker_offset",
+    "exanimation.fallback_marker_value",
+    "exanimation.fallback_pointer_mask",
+    "exanimation.fallback_locator_operand_offset",
+    "exanimation.fallback_locator_displacement",
+];

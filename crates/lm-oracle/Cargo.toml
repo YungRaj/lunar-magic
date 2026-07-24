@@ -1,0 +1,20 @@
+[package]
+name = "lm-oracle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lm-codec = { path = "../lm-codec" }
+lm-graphics = { path = "../lm-graphics" }
+lm-level = { path = "../lm-level" }
+lm-overworld = { path = "../lm-overworld" }
+lm-profile = { path = "../lm-profile" }
+lm-project = { path = "../lm-project" }
+lm-rats = { path = "../lm-rats" }
+lm-rom = { path = "../lm-rom" }
+lm-title = { path = "../lm-title" }
+
+[lints]
+workspace = true

@@ -1,0 +1,23 @@
+[package]
+name = "lm-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lm-graphics = { path = "../lm-graphics" }
+lm-level = { path = "../lm-level" }
+lm-overworld = { path = "../lm-overworld" }
+lm-profile = { path = "../lm-profile" }
+lm-project = { path = "../lm-project" }
+lm-rats = { path = "../lm-rats" }
+lm-rom = { path = "../lm-rom" }
+lm-title = { path = "../lm-title" }
+lm-render = { path = "../lm-render" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+lm-profile = { path = "../lm-profile", features = ["test-support"] }

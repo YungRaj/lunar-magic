@@ -1,0 +1,12 @@
+/target/
+/oracle-work/
+/lm363/
+/Lunar Magic.gpr
+/Lunar Magic.lock
+/Lunar Magic.lock~
+/Lunar Magic.rep/
+.DS_Store
+*.sfc
+*.smc
+*.fig
+*.swc

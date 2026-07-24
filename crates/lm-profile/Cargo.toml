@@ -1,0 +1,23 @@
+[package]
+name = "lm-profile"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+test-support = []
+
+[dependencies]
+lm-codec = { path = "../lm-codec" }
+lm-graphics = { path = "../lm-graphics" }
+lm-level = { path = "../lm-level" }
+lm-overworld = { path = "../lm-overworld" }
+lm-project = { path = "../lm-project" }
+lm-rats = { path = "../lm-rats" }
+lm-rom = { path = "../lm-rom" }
+lm-title = { path = "../lm-title" }
+lm-snes = { path = "../lm-snes" }
+
+[lints]
+workspace = true

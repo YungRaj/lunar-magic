@@ -1,0 +1,16 @@
+[package]
+name = "lm-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lm-graphics = { path = "../lm-graphics" }
+lm-level = { path = "../lm-level" }
+lm-overworld = { path = "../lm-overworld" }
+lm-oracle = { path = "../lm-oracle" }
+lm-project = { path = "../lm-project" }
+
+[lints]
+workspace = true

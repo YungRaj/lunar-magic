@@ -1,0 +1,315 @@
+use crate::{
+    level_editor_forms::{parse_hex_u8, parse_hex_u16},
+    overworld_editor_forms::RevealForm,
+};
+use eframe::egui;
+use lm_app::{AppState, Command};
+use lm_overworld::SpecialEventRevealTable;
+use lm_profile::smw_us_v1_special_event_reveal_locator;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingClose {
+    Editor,
+    Application,
+}
+
+struct Workspace {
+    revision: u64,
+    original: SpecialEventRevealTable,
+    current: SpecialEventRevealTable,
+}
+
+#[derive(Default)]
+pub(crate) struct RomOverworldSpecialEventEditor {
+    workspace: Option<Workspace>,
+    index: String,
+    loaded_index: Option<usize>,
+    reveal: RevealForm,
+    direction: String,
+    error: Option<String>,
+    pending_close: Option<PendingClose>,
+}
+
+impl RomOverworldSpecialEventEditor {
+    pub(crate) fn is_open(&self) -> bool {
+        self.workspace.is_some()
+    }
+
+    pub(crate) fn open(&mut self, app: &AppState) {
+        if self.is_open() {
+            return;
+        }
+        let result = app
+            .project()
+            .ok_or_else(|| "open a supported ROM first".to_owned())
+            .and_then(|project| {
+                project
+                    .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())
+                    .map_err(|error| error.to_string())
+            });
+        match result {
+            Ok(loaded) => {
+                self.index = "00".into();
+                self.loaded_index = Some(0);
+                self.reveal = RevealForm::load(loaded.table.reveals[0]);
+                self.direction = format!("{:02X}", loaded.table.directions[0]);
+                self.workspace = Some(Workspace {
+                    revision: app.project_revision(),
+                    original: loaded.table.clone(),
+                    current: loaded.table,
+                });
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    pub(crate) fn request_close(&mut self, application: bool) -> bool {
+        let Some(workspace) = &self.workspace else {
+            return true;
+        };
+        if workspace.current == workspace.original {
+            self.clear();
+            return true;
+        }
+        self.pending_close = Some(if application {
+            PendingClose::Application
+        } else {
+            PendingClose::Editor
+        });
+        false
+    }
+
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        project_revision: u64,
+    ) -> (bool, Option<Command>) {
+        let mut command = None;
+        if self.workspace.is_some() {
+            egui::Window::new("ROM Overworld Special Events")
+                .default_size([520.0, 340.0])
+                .show(context, |ui| command = self.contents(ui, project_revision));
+        }
+        let approved = self.close_confirmation(context);
+        self.show_error(context);
+        (approved, command)
+    }
+
+    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+        let workspace = self.workspace.as_ref()?;
+        let stale = workspace.revision != project_revision;
+        let dirty = workspace.current != workspace.original;
+        ui.label("All 24 native special-event reveal records. Values are hexadecimal.");
+        if stale {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                "The ROM changed after this table was opened. Reopen before committing.",
+            );
+        }
+        egui::Grid::new("rom-special-event-form")
+            .striped(true)
+            .show(ui, |ui| {
+                ui.label("Index");
+                if ui.text_edit_singleline(&mut self.index).changed() {
+                    self.loaded_index = None;
+                }
+                ui.end_row();
+                ui.label("Source tile");
+                ui.text_edit_singleline(&mut self.reveal.source);
+                ui.end_row();
+                ui.label("Destination tile");
+                ui.text_edit_singleline(&mut self.reveal.destination);
+                ui.end_row();
+                ui.label("Direction");
+                ui.text_edit_singleline(&mut self.direction);
+                ui.end_row();
+            });
+        let mut command = None;
+        ui.horizontal(|ui| {
+            if ui.button("Load entry").clicked()
+                && let Err(error) = self.load_selected()
+            {
+                self.error = Some(error);
+            }
+            if ui
+                .add_enabled(!stale, egui::Button::new("Apply entry"))
+                .clicked()
+                && let Err(error) = self.apply_selected()
+            {
+                self.error = Some(error);
+            }
+            if ui
+                .add_enabled(dirty && !stale, egui::Button::new("Commit table to ROM"))
+                .clicked()
+            {
+                match self.prepare_commit(project_revision) {
+                    Ok(prepared) => command = prepared,
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            ui.label(if dirty { "Staged" } else { "Unchanged" });
+        });
+        command
+    }
+
+    fn selected_index(&self) -> Result<usize, String> {
+        let index = usize::from(parse_hex_u16(&self.index, "special-event index")?);
+        if index >= SpecialEventRevealTable::ENTRY_COUNT {
+            return Err(format!(
+                "special-event index {index:#x} exceeds {:#x}",
+                SpecialEventRevealTable::ENTRY_COUNT - 1
+            ));
+        }
+        Ok(index)
+    }
+
+    fn load_selected(&mut self) -> Result<(), String> {
+        let index = self.selected_index()?;
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "special-event workspace is closed".to_owned())?;
+        self.reveal = RevealForm::load(workspace.current.reveals[index]);
+        self.direction = format!("{:02X}", workspace.current.directions[index]);
+        self.loaded_index = Some(index);
+        Ok(())
+    }
+
+    fn apply_selected(&mut self) -> Result<(), String> {
+        let index = self.selected_index()?;
+        if self.loaded_index != Some(index) {
+            return Err("load the selected special event before applying it".into());
+        }
+        let reveal = self.reveal.parse()?;
+        let direction = parse_hex_u8(&self.direction, "special-event direction")?;
+        let workspace = self
+            .workspace
+            .as_mut()
+            .ok_or_else(|| "special-event workspace is closed".to_owned())?;
+        let mut edited = workspace.current.clone();
+        edited.reveals[index] = reveal;
+        edited.directions[index] = direction;
+        edited.encode().map_err(|error| error.to_string())?;
+        workspace.current = edited;
+        Ok(())
+    }
+
+    fn prepare_commit(&self, project_revision: u64) -> Result<Option<Command>, String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "special-event workspace is closed".to_owned())?;
+        if workspace.revision != project_revision {
+            return Err("stale special-event workspace cannot be committed".into());
+        }
+        if workspace.current == workspace.original {
+            return Ok(None);
+        }
+        Ok(Some(Command::ReplaceNativeSpecialEventReveals {
+            rev: workspace.revision,
+            table: Box::new(workspace.current.clone()),
+        }))
+    }
+
+    fn close_confirmation(&mut self, context: &egui::Context) -> bool {
+        let Some(pending) = self.pending_close else {
+            return false;
+        };
+        let mut approved = false;
+        egui::Window::new("Discard special-event changes?")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label("The staged event table has not been committed to the ROM.");
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.pending_close = None;
+                    }
+                    if ui.button("Discard").clicked() {
+                        self.clear();
+                        approved = pending == PendingClose::Application;
+                    }
+                });
+            });
+        approved
+    }
+
+    fn show_error(&mut self, context: &egui::Context) {
+        if let Some(error) = self.error.clone() {
+            egui::Window::new("Special-event editor error").show(context, |ui| {
+                ui.label(error);
+                if ui.button("OK").clicked() {
+                    self.error = None;
+                }
+            });
+        }
+    }
+
+    fn clear(&mut self) {
+        self.workspace = None;
+        self.loaded_index = None;
+        self.pending_close = None;
+    }
+
+    pub(crate) fn commit_succeeded(&mut self) {
+        self.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, path::PathBuf};
+
+    fn pristine_app() -> AppState {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut app = AppState::default();
+        app.load_rom(fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+            .unwrap();
+        app
+    }
+
+    #[test]
+    fn pristine_special_event_edit_installs_and_reopens_all_planes() {
+        let mut app = pristine_app();
+        let mut editor = RomOverworldSpecialEventEditor::default();
+        editor.open(&app);
+        editor.index = "17".into();
+        editor.loaded_index = None;
+        editor.load_selected().unwrap();
+        editor.reveal.source = "0123".into();
+        editor.reveal.destination = "0456".into();
+        editor.direction = "87".into();
+        editor.apply_selected().unwrap();
+        let command = editor.prepare_commit(0).unwrap().unwrap();
+        app.dispatch(command).unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())
+            .unwrap()
+            .table;
+        assert_eq!(reopened.reveals[23].source_tile, 0x123);
+        assert_eq!(reopened.reveals[23].destination_tile, 0x456);
+        assert_eq!(reopened.directions[23], 0x87);
+    }
+
+    #[test]
+    fn invalid_source_unloaded_stale_and_dirty_states_are_retained() {
+        let app = pristine_app();
+        let mut editor = RomOverworldSpecialEventEditor::default();
+        editor.open(&app);
+        editor.reveal.source = "0800".into();
+        assert!(editor.apply_selected().is_err());
+        editor.index = "01".into();
+        editor.loaded_index = None;
+        assert!(editor.apply_selected().is_err());
+        editor.load_selected().unwrap();
+        editor.reveal.destination = "1234".into();
+        editor.apply_selected().unwrap();
+        assert!(editor.prepare_commit(1).is_err());
+        assert!(!editor.request_close(false));
+        assert!(editor.is_open());
+    }
+}
