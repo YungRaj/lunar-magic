@@ -28,6 +28,9 @@ impl ObjectStream {
                 screen = jump.packed_target;
                 continue;
             }
+            if record.command_id() == 0 && record.parameter() <= 3 {
+                continue;
+            }
             if record.advances_screen() {
                 screen = screen.saturating_add(1);
             }
@@ -135,6 +138,19 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn direct_map16_internal_controls_are_not_visible_objects() {
+        let stream = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0, 0, 0, 0]).unwrap(),
+                ObjectRecord::new(vec![0, 0, 2, 0, 0]).unwrap(),
+                ObjectRecord::new(vec![2, 0, 0x10]).unwrap(),
+            ],
+        };
+        assert_eq!(stream.native_placements().len(), 1);
+        assert_eq!(stream.native_placements()[0].record_index, 2);
     }
 
     #[test]
