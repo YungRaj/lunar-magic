@@ -38,6 +38,7 @@ enum AxisExpansion {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NativeRenderer {
     Pattern,
+    SharedSlot001,
     SharedSlot002,
 }
 
@@ -269,12 +270,76 @@ fn render_definition(
     if definition.renderer == NativeRenderer::SharedSlot002 {
         return render_shared_slot_002(cache, layout, placement, parameter);
     }
+    if definition.renderer == NativeRenderer::SharedSlot001 {
+        return render_shared_slot_001(cache, layout, placement, parameter);
+    }
     let (major_span, minor_span) = match definition.extent {
         ObjectExtent::ParameterNibbles => (placement.major_span, placement.minor_span),
         ObjectExtent::HighNibbleByOne => (placement.major_span, 1),
         ObjectExtent::FixedOne => (1, 1),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
+}
+
+fn render_shared_slot_001(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let shape = parameter & 0x0f;
+    let height = usize::from(parameter >> 4);
+    let mut major_offset = 0;
+    if shape < 3 {
+        let top = match shape {
+            0 => [0x133, 0x134],
+            1 => [0x137, 0x138],
+            _ => [0x139, 0x13a],
+        };
+        set_placement_pair(cache, layout, placement, major_offset, top)?;
+        major_offset += 1;
+    }
+    if shape == 5 {
+        for _ in 0..=height {
+            set_placement_pair(cache, layout, placement, major_offset, [0x168, 0x169])?;
+            major_offset += 1;
+        }
+        return Ok(());
+    }
+    let middle_rows = if shape == 2 {
+        if height == 0 { 0xff } else { height - 1 }
+    } else if height == 0 && shape > 2 {
+        0x100
+    } else {
+        height
+    };
+    for _ in 0..middle_rows {
+        set_placement_pair(cache, layout, placement, major_offset, [0x135, 0x136])?;
+        major_offset += 1;
+    }
+    let ending = match shape {
+        2 => Some([0x139, 0x13a]),
+        3 => Some([0x133, 0x134]),
+        4 => Some([0x137, 0x138]),
+        _ => None,
+    };
+    if let Some(ending) = ending {
+        set_placement_pair(cache, layout, placement, major_offset, ending)?;
+    }
+    Ok(())
+}
+
+fn set_placement_pair(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    major_offset: usize,
+    tiles: [u16; 2],
+) -> Result<(), StandardObjectRenderError> {
+    for (minor_offset, tile) in tiles.into_iter().enumerate() {
+        set_placement_cell(cache, layout, placement, major_offset, minor_offset, tile)?;
+    }
+    Ok(())
 }
 
 fn set_placement_cell(
@@ -430,6 +495,21 @@ pub fn install_lunar_magic_shared_extended_objects(
 pub fn install_lunar_magic_shared_standard_objects(
     definitions: &mut StandardObjectDefinitionSet,
 ) -> Result<(), StandardObjectRenderError> {
+    // Dispatch slot 001 (command 15): parameter-selected two-column ledges and posts.
+    definitions.set_native(
+        15,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0x135],
+            },
+            extent: ObjectExtent::FixedOne,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::SharedSlot001,
+        },
+    )?;
     // Dispatch slot 002 (command 16): two row variants selected by the high nibble.
     definitions.set_native(
         16,
@@ -651,6 +731,30 @@ mod tests {
             .enumerate()
         {
             for (minor, tile) in expected.into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovered_command_15_selects_native_top_middle_and_end_pairs() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0xf0, 0x32]).unwrap()],
+        };
+        let report = render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
+        let expected = [
+            [0x139, 0x13a],
+            [0x135, 0x136],
+            [0x135, 0x136],
+            [0x139, 0x13a],
+        ];
+        for (major, row) in expected.into_iter().enumerate() {
+            for (minor, tile) in row.into_iter().enumerate() {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
