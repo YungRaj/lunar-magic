@@ -6,6 +6,7 @@ mod editor_overlay_file;
 mod indexed;
 mod layer3_plane;
 mod level;
+mod level_map16_cache;
 mod map16;
 mod observe_editor_overlays;
 mod observe_layer3_plane;
@@ -34,6 +35,10 @@ pub use layer3_plane::{Layer3Placement, MaterializedLayer3Error, MaterializedLay
 pub use level::{
     EntityAppearance, EntitySource, GridPlacement, LevelRenderError, LevelSceneLayout,
     build_level_scene, build_level_scene_with_layer3, resolve_entity_appearances,
+};
+pub use level_map16_cache::{
+    LEVEL_MAP16_CACHE_CELLS, LEVEL_MAP16_CACHE_SENTINEL, NativeLevelMap16Cache,
+    NativeLevelMap16CacheError, NativeLevelMap16Layout,
 };
 pub use map16::draw_map16_tile;
 pub use observe_editor_overlays::observe_editor_overlays;
