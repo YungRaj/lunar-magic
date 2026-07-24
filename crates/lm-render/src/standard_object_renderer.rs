@@ -3,7 +3,7 @@ use lm_level::ObjectStream;
 use std::collections::BTreeSet;
 use std::fmt;
 
-pub const STANDARD_OBJECT_COMMANDS: usize = 0x40;
+pub const STANDARD_OBJECT_COMMANDS: usize = 78;
 const SHARED_EXTENDED_TILES: [u8; 0x41] = [
     0x1f, 0x22, 0x24, 0x42, 0x43, 0x27, 0x29, 0x25, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x45, 0x46, 0x47,
     0x48, 0x36, 0x37, 0x11, 0x12, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x29, 0x1d,
@@ -67,6 +67,7 @@ struct StandardObjectDefinition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardObjectDefinitionSet {
     definitions: Vec<Option<StandardObjectDefinition>>,
+    handler_definitions: Vec<Option<StandardObjectDefinition>>,
     extended: Vec<Option<StandardObjectDefinition>>,
 }
 
@@ -109,6 +110,7 @@ impl StandardObjectDefinitionSet {
     pub fn empty() -> Self {
         Self {
             definitions: vec![None; STANDARD_OBJECT_COMMANDS],
+            handler_definitions: vec![None; STANDARD_OBJECT_COMMANDS],
             extended: vec![None; 0x100],
         }
     }
@@ -183,6 +185,10 @@ impl StandardObjectDefinitionSet {
         self.extended[usize::from(object)].as_ref()
     }
 
+    fn handler_definition(&self, handler: u8) -> Option<&StandardObjectDefinition> {
+        self.handler_definitions.get(usize::from(handler))?.as_ref()
+    }
+
     fn set_native(
         &mut self,
         command: u8,
@@ -193,6 +199,19 @@ impl StandardObjectDefinitionSet {
             .definitions
             .get_mut(usize::from(command))
             .ok_or(StandardObjectRenderError::InvalidCommand(command))?;
+        *slot = Some(definition);
+        Ok(())
+    }
+
+    fn alias(&mut self, source: u8, target: u8) -> Result<(), StandardObjectRenderError> {
+        let definition = self
+            .definition(source)
+            .cloned()
+            .ok_or(StandardObjectRenderError::InvalidCommand(source))?;
+        let slot = self
+            .handler_definitions
+            .get_mut(usize::from(target))
+            .ok_or(StandardObjectRenderError::InvalidCommand(target))?;
         *slot = Some(definition);
         Ok(())
     }
@@ -236,6 +255,38 @@ pub fn render_standard_object_stream(
     layout: NativeLevelMap16Layout,
     blank_tile: u16,
 ) -> Result<StandardObjectRenderReport, StandardObjectRenderError> {
+    render_standard_object_stream_with_map(stream, definitions, None, layout, blank_tile)
+}
+
+/// Renders standard objects after resolving each record ID through Lunar Magic's active
+/// 64-entry family-specific handler map.
+///
+/// # Errors
+///
+/// Returns the same typed coordinate/cache errors as [`render_standard_object_stream`].
+pub fn render_mapped_standard_object_stream(
+    stream: &ObjectStream,
+    definitions: &StandardObjectDefinitionSet,
+    handler_map: &[u8; 64],
+    layout: NativeLevelMap16Layout,
+    blank_tile: u16,
+) -> Result<StandardObjectRenderReport, StandardObjectRenderError> {
+    render_standard_object_stream_with_map(
+        stream,
+        definitions,
+        Some(handler_map),
+        layout,
+        blank_tile,
+    )
+}
+
+fn render_standard_object_stream_with_map(
+    stream: &ObjectStream,
+    definitions: &StandardObjectDefinitionSet,
+    handler_map: Option<&[u8; 64]>,
+    layout: NativeLevelMap16Layout,
+    blank_tile: u16,
+) -> Result<StandardObjectRenderReport, StandardObjectRenderError> {
     let mut cache = NativeLevelMap16Cache::filled(blank_tile);
     let mut rendered_objects = 0;
     let mut missing_commands = BTreeSet::new();
@@ -243,10 +294,15 @@ pub fn render_standard_object_stream(
     for placement in stream.native_placements() {
         let record = &stream.records[placement.record_index];
         let command = record.command_id();
+        let resolved_command = handler_map
+            .and_then(|map| map.get(usize::from(command)).copied())
+            .unwrap_or(command);
         let definition = if command == 0 {
             definitions.extended_definition(record.parameter())
+        } else if handler_map.is_some() {
+            definitions.handler_definition(resolved_command)
         } else {
-            definitions.definition(command)
+            definitions.definition(resolved_command)
         };
         let Some(definition) = definition else {
             if command == 0 {
@@ -677,7 +733,8 @@ pub fn install_lunar_magic_shared_standard_objects(
             renderer: NativeRenderer::SharedSlot010,
         },
     )?;
-    install_lunar_magic_shared_standard_objects_high(definitions)
+    install_lunar_magic_shared_standard_objects_high(definitions)?;
+    install_shared_handler_aliases(definitions)
 }
 
 fn install_lunar_magic_shared_standard_objects_high(
@@ -774,7 +831,30 @@ fn install_lunar_magic_shared_standard_objects_high(
             minor_expansion: AxisExpansion::Clamp,
             renderer: NativeRenderer::Pattern,
         },
-    )
+    )?;
+    Ok(())
+}
+
+fn install_shared_handler_aliases(
+    definitions: &mut StandardObjectDefinitionSet,
+) -> Result<(), StandardObjectRenderError> {
+    for (command, handler) in [
+        (15, 1),
+        (16, 2),
+        (17, 3),
+        (20, 7),
+        (21, 8),
+        (22, 9),
+        (23, 10),
+        (28, 12),
+        (29, 13),
+        (31, 15),
+        (32, 16),
+        (33, 6),
+    ] {
+        definitions.alias(command, handler)?;
+    }
+    Ok(())
 }
 
 /// Returns the recovered Map16 tile for a shared command-zero extended object.
@@ -924,6 +1004,28 @@ mod tests {
             report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 1, 0)],
             0x123
         );
+    }
+
+    #[test]
+    fn family_map_resolves_object_id_to_handler_definition() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[15] = 1;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0xf0, 0]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        assert_eq!(report.rendered_objects, 1);
+        assert_eq!(report.cache.cells()[0], 0x133);
+        assert_eq!(report.cache.cells()[1], 0x134);
     }
 
     #[test]

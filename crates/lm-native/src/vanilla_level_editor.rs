@@ -125,6 +125,7 @@ pub(crate) struct VanillaLevelEditor {
     map16_texture: Option<egui::TextureHandle>,
     map16_summary: Option<([usize; 4], usize, usize)>,
     map16_error: Option<String>,
+    standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
 }
 
 impl VanillaLevelEditor {
@@ -281,6 +282,11 @@ impl VanillaLevelEditor {
             &SpriteLengthTable::standard(),
         ) {
             Ok(controller) => {
+                self.standard_object_map = RomImage::from_bytes(snapshot.rom_bytes.clone())
+                    .ok()
+                    .and_then(|rom| {
+                        lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).ok()
+                    });
                 self.form = HeaderForm::from_controller(&controller);
                 self.selected_object = 0;
                 self.object_form = controller
@@ -314,6 +320,7 @@ impl VanillaLevelEditor {
         self.map16_texture = None;
         self.map16_summary = None;
         self.map16_error = None;
+        self.standard_object_map = None;
     }
 
     fn show_map16_preview(
@@ -443,12 +450,15 @@ impl VanillaLevelEditor {
         if let Some(texture) = self.map16_texture.as_ref() {
             draw_recovered_object_tiles(
                 &painter,
-                texture,
-                rect,
-                cell,
-                major_tiles,
-                vertical,
-                &records,
+                RecoveredObjectDraw {
+                    texture,
+                    target: rect,
+                    cell_size: cell,
+                    major_tiles,
+                    vertical,
+                    records: &records,
+                    handler_map: self.active_standard_object_handler_map(),
+                },
             );
         }
         let mut hit = None;
@@ -512,10 +522,25 @@ impl VanillaLevelEditor {
                 controller.level().sprites.tokens.get(index),
             );
         }
-        ui.label(format!(
-            "Screen-aware {} layout: blue object footprints and red sprite markers; stronger lines mark screen boundaries.",
-            if vertical { "vertical" } else { "horizontal" }
-        ));
+        draw_canvas_caption(ui, vertical);
+    }
+
+    fn active_standard_object_handler_map(&self) -> Option<&[u8; 64]> {
+        let tileset = self
+            .controller
+            .as_ref()?
+            .level()
+            .layer1
+            .header
+            .object_tileset();
+        let family_index = match lm_profile::smw_us_v1_object_family(tileset) {
+            lm_profile::VanillaObjectFamily::Normal => 0,
+            lm_profile::VanillaObjectFamily::Castle => 1,
+            lm_profile::VanillaObjectFamily::Rope => 2,
+            lm_profile::VanillaObjectFamily::Underground => 3,
+            lm_profile::VanillaObjectFamily::GhostHouse => 4,
+        };
+        self.standard_object_map.as_ref()?.family(family_index)
     }
 
     fn object_editor(&mut self, ui: &mut egui::Ui) {
@@ -831,15 +856,34 @@ fn draw_map16_atlas_tile(
     painter.image(texture.id(), target, uv, egui::Color32::WHITE);
 }
 
-fn draw_recovered_object_tiles(
-    painter: &egui::Painter,
-    texture: &egui::TextureHandle,
+#[derive(Clone, Copy)]
+struct RecoveredObjectDraw<'a> {
+    texture: &'a egui::TextureHandle,
     target: egui::Rect,
     cell_size: f32,
     major_tiles: u16,
     vertical: bool,
-    records: &[ObjectRecord],
-) {
+    records: &'a [ObjectRecord],
+    handler_map: Option<&'a [u8; 64]>,
+}
+
+fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
+    ui.label(format!(
+        "Screen-aware {} layout: blue object footprints and red sprite markers; stronger lines mark screen boundaries.",
+        if vertical { "vertical" } else { "horizontal" }
+    ));
+}
+
+fn draw_recovered_object_tiles(painter: &egui::Painter, request: RecoveredObjectDraw<'_>) {
+    let RecoveredObjectDraw {
+        texture,
+        target,
+        cell_size,
+        major_tiles,
+        vertical,
+        records,
+        handler_map,
+    } = request;
     let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
     if lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).is_err()
         || lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).is_err()
@@ -864,9 +908,17 @@ fn draw_recovered_object_tiles(
     let stream = lm_level::ObjectStream {
         records: records.to_vec(),
     };
-    let Ok(report) =
-        lm_render::render_standard_object_stream(&stream, &definitions, layout, u16::MAX)
-    else {
+    let report = match handler_map {
+        Some(handler_map) => lm_render::render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            handler_map,
+            layout,
+            u16::MAX,
+        ),
+        None => lm_render::render_standard_object_stream(&stream, &definitions, layout, u16::MAX),
+    };
+    let Ok(report) = report else {
         return;
     };
     for y in 0..layout.height {
