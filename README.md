@@ -1321,6 +1321,11 @@ runtime with its 512-entry per-level pointer table. The dialog displays the exac
 identity, rejects a stale project revision, and closes only after application acceptance. Native
 tests route every selection through the same application commands, semantically reopen the
 installed subsystem, and prove exact input restoration with one undo.
+Complete Layer 3 installation also detects an already-valid expanded-settings allocation. In that
+state it reuses the prerequisite and installs only the five missing Layer 3 allocations, avoiding
+the guarded-hook collision that would otherwise follow selecting expanded settings first. The
+settings-only snapshot and pristine source remain separately reachable through two exact undo
+steps.
 The twelve copied runtime blocks now also have a byte-level oracle that permits differences only in
 recovered relocation/configuration spans. No Lunar Magic payload bytes are embedded in the Rust
 sources. Relocation-free descriptor blocks `$213` and `$219` are independently emitted from

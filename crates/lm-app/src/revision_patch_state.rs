@@ -37,7 +37,17 @@ impl AppState {
         {
             return Err(AppError::Layer3IdentityMismatch);
         }
-        let plans = lm_profile::smw_us_v1_complete_layer3_feature_plans()?;
+        let settings_installed = lm_profile::load_smw_us_v1_overworld_settings(project)
+            .map_err(|error| AppError::NativeOverworldSettingsStorage(error.to_string()))?
+            .installed;
+        let plans = if settings_installed {
+            vec![
+                lm_profile::smw_us_v1_complete_layer3_installation_plan()
+                    .map_err(lm_profile::CompleteLayer3BuildError::Runtime)?,
+            ]
+        } else {
+            lm_profile::smw_us_v1_complete_layer3_feature_plans()?
+        };
         project
             .install_relocatable_patch_group("install complete SMW US Layer 3 feature", &plans)?;
         self.advance_project_revision()?;
@@ -282,5 +292,21 @@ mod tests {
         assert_eq!(app.project().unwrap().history.undo_len(), 1);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().rom.logical_bytes(), original);
+    }
+
+    #[test]
+    fn layer3_reuses_an_already_installed_expanded_settings_prerequisite() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::InstallSettings { rev: 0 }).unwrap();
+        let settings_snapshot = app.project().unwrap().save_snapshot();
+        app.dispatch(Command::InstallLayer3 { rev: 1 }).unwrap();
+        assert_eq!(app.project().unwrap().history.undo_len(), 2);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), settings_snapshot);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
     }
 }

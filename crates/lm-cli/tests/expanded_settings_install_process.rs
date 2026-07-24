@@ -63,6 +63,21 @@ fn built_cli_installs_reopens_and_refuses_replacement() {
         smw_us_v1_default_special_expanded_settings_record()
     );
 
+    let layer3_output = directory.join("layer3 after settings.smc");
+    let layer3 = Command::new(env!("CARGO_BIN_EXE_lm-cli"))
+        .arg("layer3-install")
+        .arg(&output)
+        .arg(&layer3_output)
+        .output()
+        .unwrap();
+    assert!(
+        layer3.status.success(),
+        "{}",
+        String::from_utf8_lossy(&layer3.stderr)
+    );
+    let layer3_image = RomImage::from_bytes(fs::read(layer3_output).unwrap()).unwrap();
+    assert!(detect_identity(&layer3_image).unwrap().checksum_matches());
+
     let second = run();
     assert!(!second.status.success());
     fs::remove_dir_all(directory).unwrap();

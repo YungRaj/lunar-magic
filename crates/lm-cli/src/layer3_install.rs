@@ -22,7 +22,12 @@ pub(crate) fn execute(
     {
         return Err("Layer 3 installer requires SMW US revision 0 LoROM".into());
     }
-    let plans = lm_profile::smw_us_v1_complete_layer3_feature_plans()?;
+    let settings_installed = lm_profile::load_smw_us_v1_overworld_settings(&project)?.installed;
+    let plans = if settings_installed {
+        vec![lm_profile::smw_us_v1_complete_layer3_installation_plan()?]
+    } else {
+        lm_profile::smw_us_v1_complete_layer3_feature_plans()?
+    };
     let results = project
         .install_relocatable_patch_group("install complete SMW US Layer 3 feature", &plans)?;
     write_new(output_rom, project.save_snapshot())?;
