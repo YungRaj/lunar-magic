@@ -135,6 +135,11 @@ pub(super) fn stage_request(
                 staged[current_pointer_ranges[1].clone()].copy_from_slice(&pointer[2..3]);
             }
         }
+        PayloadPointer::SplitBytes { .. } => {
+            for (range, byte) in current_pointer_ranges.iter().zip(pointer) {
+                staged[range.clone()].copy_from_slice(std::slice::from_ref(&byte));
+            }
+        }
     }
 
     Ok(PayloadSaveResult {

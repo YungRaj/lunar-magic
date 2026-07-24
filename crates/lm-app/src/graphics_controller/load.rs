@@ -22,16 +22,15 @@ pub(super) fn load_graphics(
         RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(GraphicsControllerError::Rom)?;
     let project = Project::new(image);
     let pointer = layout
-        .pointers
-        .pointer_offset(usize::from(file_number))
-        .map_err(|error| GraphicsControllerError::Io(error.into()))?;
+        .read_pointer(&project, usize::from(file_number))
+        .map_err(GraphicsControllerError::Io)?;
     let previous_block = project
-        .load_payload(
+        .load_payload_from_pointer(
             pointer,
             layout.mapper,
             &PayloadReadPolicy::TaggedOrBounded {
                 maximum_len: layout.maximum_compressed_len,
-                bank_size: Some(0x8000),
+                bank_size: None,
             },
         )
         .map_err(|error| GraphicsControllerError::Io(error.into()))?

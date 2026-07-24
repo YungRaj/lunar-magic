@@ -19,6 +19,7 @@ fn layout(compression: GraphicsCompression) -> GraphicsRomLayout {
             entries: 0x100,
             stride: 3,
         },
+        split_pointer_planes: None,
         compression,
         maximum_compressed_len: 0x8000,
         maximum_decompressed_len: 0x10000,

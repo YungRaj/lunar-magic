@@ -39,6 +39,12 @@ pub enum PayloadPointer {
         bank_offset: usize,
         shared_bank: bool,
     },
+    /// Three address bytes stored in independent parallel byte planes.
+    SplitBytes {
+        low_offset: usize,
+        high_offset: usize,
+        bank_offset: usize,
+    },
 }
 
 impl PayloadPointer {

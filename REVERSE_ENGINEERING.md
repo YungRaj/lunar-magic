@@ -712,15 +712,15 @@ profile-wide protection/auditing of every component.
 `ReadGraphicsFileRomPointer` (`00463A90`) proves that pristine GFX files
 `$00..$31` do not use the contiguous 24-bit pointer table assumed by the
 expanded profile backend. Descriptor entry `$2A` (`+$A8`) supplies headered
-base `$003B33`, hence logical base `$003933`. Lunar Magic reads the pointer's
+base `$003B92`, hence logical base `$003992`. Lunar Magic reads the pointer's
 low, high, and bank bytes from three parallel 50-byte planes at logical
-`$003933`, `$003965`, and `$003997`. Entries `$32` and `$33` use the separate
+`$003992`, `$0039C4`, and `$0039F6`. Entries `$32` and `$33` use the separate
 packed-pointer operands at descriptor entries `$2C`, `$2D`, and `$2B`.
 Expanded GFX/ExGFX ranges use still other descriptor-selected tables.
 
 This distinction is now the primary automatic-profile boundary for pristine
 SMW US revision 0. The Rust layout model must represent split three-plane
-graphics pointers explicitly; treating `$003933` as a contiguous table would
+graphics pointers explicitly; treating `$003992` as a contiguous table would
 silently combine bytes belonging to different files. Native UI auto-detection
 must therefore select the split-plane backend until a verified expanded
 graphics runtime is installed.

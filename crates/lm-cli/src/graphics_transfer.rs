@@ -210,6 +210,7 @@ fn layout(
             entries: GRAPHICS_SLOTS,
             stride: 3,
         },
+        split_pointer_planes: None,
         compression,
         maximum_compressed_len,
         maximum_decompressed_len,

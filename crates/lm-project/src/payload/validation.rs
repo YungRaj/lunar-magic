@@ -49,6 +49,15 @@ pub(super) fn checked_pointer_ranges(
                     bank_offset,
                     ..
                 } => Ok(vec![range(low_word_offset, 2)?, range(bank_offset, 1)?]),
+                PayloadPointer::SplitBytes {
+                    low_offset,
+                    high_offset,
+                    bank_offset,
+                } => Ok(vec![
+                    range(low_offset, 1)?,
+                    range(high_offset, 1)?,
+                    range(bank_offset, 1)?,
+                ]),
             }
         })
         .collect::<Result<Vec<_>, PayloadSaveError>>()?;
@@ -162,6 +171,15 @@ pub(super) fn validate_request(
             ..
         } => {
             project.rom.read(low_word_offset, 2)?;
+            project.rom.read(bank_offset, 1)?;
+        }
+        PayloadPointer::SplitBytes {
+            low_offset,
+            high_offset,
+            bank_offset,
+        } => {
+            project.rom.read(low_offset, 1)?;
+            project.rom.read(high_offset, 1)?;
             project.rom.read(bank_offset, 1)?;
         }
     }

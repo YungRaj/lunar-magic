@@ -36,18 +36,21 @@ impl Project {
         if source.compression == target {
             return Ok(false);
         }
-        let files = (0..source.pointers.entries)
+        let entries = source
+            .split_pointer_planes
+            .map_or(source.pointers.entries, |planes| planes.entries);
+        let files = (0..entries)
             .map(|slot| self.load_graphics_file(slot, source))
             .collect::<Result<Vec<_>, _>>()?;
-        let previous_blocks = (0..source.pointers.entries)
+        let previous_blocks = (0..entries)
             .map(|slot| {
                 Ok(self
-                    .load_payload(
-                        source.pointers.pointer_offset(slot)?,
+                    .load_payload_from_pointer(
+                        source.read_pointer(self, slot)?,
                         source.mapper,
                         &PayloadReadPolicy::TaggedOrBounded {
                             maximum_len: source.maximum_compressed_len,
-                            bank_size: Some(0x8000),
+                            bank_size: None,
                         },
                     )?
                     .block)
@@ -84,7 +87,7 @@ impl Project {
                 Ok(PayloadSaveRequest {
                     description: format!("recompress graphics file {slot:02x}"),
                     payload,
-                    pointer: source.pointers.pointer_offset(slot)?.into(),
+                    pointer: source.payload_pointer(slot)?,
                     mapper: source.mapper,
                     allocation_policy: allocation.clone(),
                     previous_block,
@@ -131,20 +134,41 @@ fn protected_policy(
     options: &GraphicsMigrationOptions,
 ) -> Result<AllocationPolicy, GraphicsIoError> {
     let mut policy = options.allocation.clone();
-    let table_len = layout
-        .pointers
-        .entries
-        .checked_sub(1)
-        .and_then(|last| last.checked_mul(layout.pointers.stride))
-        .and_then(|last| last.checked_add(3))
-        .ok_or(PayloadSaveError::PointerRangeOverflow {
-            offset: layout.pointers.offset,
-        })?;
-    let table_end = layout.pointers.offset.checked_add(table_len).ok_or(
-        PayloadSaveError::PointerRangeOverflow {
-            offset: layout.pointers.offset,
-        },
-    )?;
+    let pointer_ranges = if let Some(planes) = layout.split_pointer_planes {
+        let plane_len = planes
+            .entries
+            .checked_sub(1)
+            .and_then(|last| last.checked_mul(planes.stride))
+            .and_then(|last| last.checked_add(1))
+            .ok_or(PayloadSaveError::PointerRangeOverflow {
+                offset: planes.low_offset,
+            })?;
+        [planes.low_offset, planes.high_offset, planes.bank_offset]
+            .into_iter()
+            .map(|offset| {
+                offset
+                    .checked_add(plane_len)
+                    .map(|end| ProtectedRange(offset..end))
+                    .ok_or(PayloadSaveError::PointerRangeOverflow { offset })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        let table_len = layout
+            .pointers
+            .entries
+            .checked_sub(1)
+            .and_then(|last| last.checked_mul(layout.pointers.stride))
+            .and_then(|last| last.checked_add(3))
+            .ok_or(PayloadSaveError::PointerRangeOverflow {
+                offset: layout.pointers.offset,
+            })?;
+        let table_end = layout.pointers.offset.checked_add(table_len).ok_or(
+            PayloadSaveError::PointerRangeOverflow {
+                offset: layout.pointers.offset,
+            },
+        )?;
+        vec![ProtectedRange(layout.pointers.offset..table_end)]
+    };
     let checksum_end =
         options
             .checksum_field
@@ -152,10 +176,10 @@ fn protected_policy(
             .ok_or(PayloadSaveError::PointerRangeOverflow {
                 offset: options.checksum_field,
             })?;
-    policy.protected.extend([
-        ProtectedRange(layout.pointers.offset..table_end),
-        ProtectedRange(options.checksum_field..checksum_end),
-    ]);
+    policy.protected.extend(pointer_ranges);
+    policy
+        .protected
+        .push(ProtectedRange(options.checksum_field..checksum_end));
     Ok(policy)
 }
 

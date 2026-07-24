@@ -51,6 +51,7 @@ mod text_encode;
 mod text_schema;
 mod title_recording;
 mod title_tilemap;
+mod vanilla_smw;
 
 use lm_level::SpriteLengthTable;
 use lm_project::{
@@ -341,6 +342,11 @@ pub use title_tilemap::{
     SMW_US_V1_TITLE_TILEMAP_POINTER_OFFSET, SMW_US_V1_TITLE_TILEMAP_PRISTINE_STREAM_OFFSET,
     SMW_US_V1_TITLE_TILEMAP_SEARCH_START, smw_us_v1_title_tilemap_allocation_policy,
     smw_us_v1_title_tilemap_locator,
+};
+pub use vanilla_smw::{
+    SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET, SMW_US_V1_GRAPHICS_POINTER_HIGH_OFFSET,
+    SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET, SMW_US_V1_VANILLA_GRAPHICS_FILES,
+    smw_us_v1_vanilla_graphics_layout,
 };
 
 /// Complete, externally recovered ROM-layout metadata for one supported game revision.

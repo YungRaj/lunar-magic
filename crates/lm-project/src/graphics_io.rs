@@ -1,11 +1,11 @@
 use crate::{
     LevelLoadError, LevelPointerTable, PayloadLoadError, PayloadReadPolicy, PayloadSaveError,
-    PayloadSaveRequest, PayloadSaveResult, Project, RatsOwnershipManifest,
+    PayloadPointer, PayloadSaveRequest, PayloadSaveResult, Project, RatsOwnershipManifest,
 };
 use lm_codec::{CodecError, decode_lz2_prefix, decode_lz3_prefix, encode_lz2, encode_lz3};
 use lm_graphics::{GraphicsFile4bpp, GraphicsFileError};
 use lm_rats::{AllocationPolicy, RatsBlock};
-use lm_rom::Mapper;
+use lm_rom::{Mapper, RomError, SnesPointer24};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -19,9 +19,19 @@ pub enum GraphicsCompression {
 pub struct GraphicsRomLayout {
     pub mapper: Mapper,
     pub pointers: LevelPointerTable,
+    pub split_pointer_planes: Option<GraphicsPointerPlanes>,
     pub compression: GraphicsCompression,
     pub maximum_compressed_len: usize,
     pub maximum_decompressed_len: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GraphicsPointerPlanes {
+    pub low_offset: usize,
+    pub high_offset: usize,
+    pub bank_offset: usize,
+    pub entries: usize,
+    pub stride: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,6 +51,7 @@ pub enum GraphicsIoError {
     DecompressedLimit { actual: usize, maximum: usize },
     CompressedLimit { actual: usize, maximum: usize },
     ReopenMismatch { slot: usize },
+    PointerBounds(RomError),
     Save(PayloadSaveError),
 }
 
@@ -78,6 +89,83 @@ impl From<PayloadSaveError> for GraphicsIoError {
     }
 }
 
+impl From<RomError> for GraphicsIoError {
+    fn from(value: RomError) -> Self {
+        Self::PointerBounds(value)
+    }
+}
+
+impl GraphicsRomLayout {
+    /// Returns the physical pointer-byte locations for one graphics file.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an out-of-range slot, unsafe stride, or address overflow.
+    pub fn payload_pointer(self, file_number: usize) -> Result<PayloadPointer, GraphicsIoError> {
+        let Some(planes) = self.split_pointer_planes else {
+            return Ok(self.pointers.pointer_offset(file_number)?.into());
+        };
+        if file_number >= planes.entries {
+            return Err(LevelLoadError::LevelOutOfRange {
+                level: file_number,
+                entries: planes.entries,
+            }
+            .into());
+        }
+        if planes.stride == 0 {
+            return Err(LevelLoadError::InvalidPointerStride(planes.stride).into());
+        }
+        let displacement = file_number
+            .checked_mul(planes.stride)
+            .ok_or(LevelLoadError::AddressOverflow)?;
+        let add = |base: usize| {
+            base.checked_add(displacement)
+                .ok_or(LevelLoadError::AddressOverflow)
+        };
+        Ok(PayloadPointer::SplitBytes {
+            low_offset: add(planes.low_offset)?,
+            high_offset: add(planes.high_offset)?,
+            bank_offset: add(planes.bank_offset)?,
+        })
+    }
+
+    /// Decodes one pointer from either contiguous or parallel-plane storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns pointer-layout, ROM-bounds, or pointer-encoding errors.
+    pub fn read_pointer(
+        self,
+        project: &Project,
+        file_number: usize,
+    ) -> Result<SnesPointer24, GraphicsIoError> {
+        match self.payload_pointer(file_number)? {
+            PayloadPointer::Contiguous { offset }
+            | PayloadPointer::ContiguousLowBank { offset } => {
+                let bytes = project.rom.read(offset, 3)?;
+                Ok(SnesPointer24::new(
+                    u32::from(bytes[0])
+                        | (u32::from(bytes[1]) << 8)
+                        | (u32::from(bytes[2]) << 16),
+                )
+                .expect("three bytes always form a 24-bit pointer"))
+            }
+            PayloadPointer::SplitBytes {
+                low_offset,
+                high_offset,
+                bank_offset,
+            } => {
+                let low = u32::from(project.rom.read(low_offset, 1)?[0]);
+                let high = u32::from(project.rom.read(high_offset, 1)?[0]);
+                let bank = u32::from(project.rom.read(bank_offset, 1)?[0]);
+                Ok(SnesPointer24::new(low | (high << 8) | (bank << 16))
+                    .expect("three bytes always form a 24-bit pointer"))
+            }
+            PayloadPointer::Split { .. } => unreachable!("graphics layouts do not emit split words"),
+        }
+    }
+}
+
 impl Project {
     /// Loads, decompresses, and decodes one native 4bpp graphics file.
     ///
@@ -89,12 +177,14 @@ impl Project {
         file_number: usize,
         layout: GraphicsRomLayout,
     ) -> Result<GraphicsFile4bpp, GraphicsIoError> {
-        let payload = self.load_payload(
-            layout.pointers.pointer_offset(file_number)?,
+        let payload = self.load_payload_from_pointer(
+            layout.read_pointer(self, file_number)?,
             layout.mapper,
             &PayloadReadPolicy::TaggedOrBounded {
                 maximum_len: layout.maximum_compressed_len,
-                bank_size: Some(0x8000),
+                // Vanilla SMW contains compressed graphics streams that cross a LoROM bank.
+                // The explicit compressed-size ceiling remains the corruption boundary.
+                bank_size: None,
             },
         )?;
         let (decoded, consumed) = match layout.compression {
@@ -212,7 +302,7 @@ fn graphics_save_request(
     Ok(PayloadSaveRequest {
         description: format!("save graphics file {file_number:02x}"),
         payload,
-        pointer: layout.pointers.pointer_offset(file_number)?.into(),
+        pointer: layout.payload_pointer(file_number)?,
         mapper: layout.mapper,
         allocation_policy: options.allocation.clone(),
         previous_block: options.previous_block.clone(),
@@ -237,6 +327,7 @@ mod tests {
                 entries: 4,
                 stride: 3,
             },
+            split_pointer_planes: None,
             compression: GraphicsCompression::Lz2,
             maximum_compressed_len: 0x8000,
             maximum_decompressed_len: 0x10000,
@@ -265,6 +356,27 @@ mod tests {
         }
     }
 
+    fn split_layout() -> GraphicsRomLayout {
+        GraphicsRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x20,
+                entries: 4,
+                stride: 1,
+            },
+            split_pointer_planes: Some(GraphicsPointerPlanes {
+                low_offset: 0x20,
+                high_offset: 0x24,
+                bank_offset: 0x28,
+                entries: 4,
+                stride: 1,
+            }),
+            compression: GraphicsCompression::Lz2,
+            maximum_compressed_len: 0x8000,
+            maximum_decompressed_len: 0x10000,
+        }
+    }
+
     #[test]
     fn saves_loads_and_undoes_a_graphics_file() {
         let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
@@ -286,6 +398,37 @@ mod tests {
         let project = Project::new(RomImage::from_bytes(bytes).unwrap());
         assert_eq!(project.load_graphics_file(0, layout()).unwrap(), graphics());
     }
+
+    #[test]
+    fn split_pointer_planes_load_save_and_undo_atomically() {
+        let encoded = encode_lz2(&graphics().encode().unwrap());
+        let mut bytes = vec![0xff; 0x8000];
+        bytes[0x20] = 0x00;
+        bytes[0x24] = 0x81;
+        bytes[0x28] = 0x80;
+        bytes[0x100..0x100 + encoded.len()].copy_from_slice(&encoded);
+        let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        assert_eq!(
+            project.load_graphics_file(0, split_layout()).unwrap(),
+            graphics()
+        );
+
+        let original = project.save_snapshot();
+        project
+            .save_graphics_file(2, &graphics(), split_layout(), &options())
+            .unwrap();
+        let pointer = split_layout().read_pointer(&project, 2).unwrap();
+        assert_eq!(project.rom.read(0x22, 1).unwrap()[0], pointer.encode()[0]);
+        assert_eq!(project.rom.read(0x26, 1).unwrap()[0], pointer.encode()[1]);
+        assert_eq!(project.rom.read(0x2a, 1).unwrap()[0], pointer.encode()[2]);
+        assert_eq!(
+            project.load_graphics_file(2, split_layout()).unwrap(),
+            graphics()
+        );
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
+    }
+
 
     #[test]
     fn saves_loads_and_undoes_an_lz3_graphics_file() {

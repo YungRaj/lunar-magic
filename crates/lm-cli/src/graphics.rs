@@ -28,6 +28,7 @@ pub fn inspect(
                 entries: GRAPHICS_SLOTS,
                 stride: 3,
             },
+            split_pointer_planes: None,
             compression: options.compression,
             maximum_compressed_len: options.maximum_compressed_len,
             maximum_decompressed_len: options.maximum_decompressed_len,

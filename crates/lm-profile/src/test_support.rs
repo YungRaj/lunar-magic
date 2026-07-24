@@ -117,6 +117,7 @@ pub fn profile() -> RevisionProfile {
         graphics: GraphicsRomLayout {
             mapper,
             pointers: pointer(0x1100, 0x100),
+            split_pointer_planes: None,
             compression: lm_project::GraphicsCompression::Lz2,
             maximum_compressed_len: 0x8000,
             maximum_decompressed_len: 0x10000,

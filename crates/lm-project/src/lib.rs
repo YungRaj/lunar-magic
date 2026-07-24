@@ -81,7 +81,8 @@ pub use exanimation_slot_options_io::{
 };
 pub use expanded_settings_io::{ExpandedLevelSettingsIoError, ExpandedLevelSettingsLayout};
 pub use graphics_io::{
-    GraphicsCompression, GraphicsIoError, GraphicsRomLayout, GraphicsSaveOptions,
+    GraphicsCompression, GraphicsIoError, GraphicsPointerPlanes, GraphicsRomLayout,
+    GraphicsSaveOptions,
 };
 pub use graphics_migration::{
     GRAPHICS_COMPRESSION_MIGRATION_DESCRIPTION, GraphicsMigrationOptions,

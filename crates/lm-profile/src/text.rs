@@ -180,6 +180,7 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
         graphics: GraphicsRomLayout {
             mapper,
             pointers: tables[4],
+            split_pointer_planes: None,
             compression: graphics_compression,
             maximum_compressed_len: graphics_maximum_compressed_len,
             maximum_decompressed_len: graphics_maximum_decompressed_len,
