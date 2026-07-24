@@ -20,6 +20,7 @@ mod portable_map16_dsc;
 mod portable_overworld;
 mod portable_palette;
 mod scene;
+mod standard_object_renderer;
 mod viewport;
 mod viewport_raster;
 mod viewport_scene;
@@ -60,6 +61,10 @@ pub use portable_map16_dsc::{PortableDscMap16RenderError, render_portable_map16_
 pub use portable_overworld::{PortableOverworldRenderError, render_portable_overworld};
 pub use portable_palette::{PortablePaletteRenderError, render_portable_palette};
 pub use scene::{Scene, TileInstance, draw_scene};
+pub use standard_object_renderer::{
+    STANDARD_OBJECT_COMMANDS, StandardObjectDefinitionSet, StandardObjectPattern,
+    StandardObjectRenderError, StandardObjectRenderReport, render_standard_object_stream,
+};
 pub use viewport::{Point, Viewport, ViewportError, WorldRect};
 pub use viewport_raster::{ViewportRasterError, rasterize_canvas_viewport};
 pub use viewport_scene::draw_scene_viewport;
