@@ -10,6 +10,8 @@ pub struct NativeObjectPlacement {
     pub screen: u16,
     pub major: u16,
     pub minor: u8,
+    pub major_span: u8,
+    pub minor_span: u8,
 }
 
 impl ObjectStream {
@@ -30,6 +32,7 @@ impl ObjectStream {
                 screen = screen.saturating_add(1);
             }
             let coordinates = record.coordinate_nibbles();
+            let parameter = record.parameter();
             placements.push(NativeObjectPlacement {
                 record_index,
                 screen,
@@ -37,6 +40,8 @@ impl ObjectStream {
                     .saturating_mul(16)
                     .saturating_add(u16::from(coordinates.first)),
                 minor: coordinates.second,
+                major_span: (parameter >> 4).saturating_add(1),
+                minor_span: (parameter & 0x0f).saturating_add(1),
             });
         }
         placements
@@ -77,18 +82,24 @@ mod tests {
                     screen: 0,
                     major: 2,
                     minor: 3,
+                    major_span: 1,
+                    minor_span: 1,
                 },
                 NativeObjectPlacement {
                     record_index: 1,
                     screen: 1,
                     major: 20,
                     minor: 5,
+                    major_span: 1,
+                    minor_span: 1,
                 },
                 NativeObjectPlacement {
                     record_index: 2,
                     screen: 1,
                     major: 22,
                     minor: 7,
+                    major_span: 1,
+                    minor_span: 1,
                 },
             ]
         );
@@ -111,12 +122,16 @@ mod tests {
                     screen: 0,
                     major: 1,
                     minor: 2,
+                    major_span: 1,
+                    minor_span: 1,
                 },
                 NativeObjectPlacement {
                     record_index: 2,
                     screen: 3,
                     major: 52,
                     minor: 5,
+                    major_span: 1,
+                    minor_span: 1,
                 },
             ]
         );
@@ -129,8 +144,20 @@ mod tests {
             screen: 2,
             major: 35,
             minor: 7,
+            major_span: 1,
+            minor_span: 1,
         };
         assert_eq!(placement.tile_coordinates(false), (35, 7));
         assert_eq!(placement.tile_coordinates(true), (7, 35));
+    }
+
+    #[test]
+    fn parameter_nibbles_recover_native_object_footprints() {
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x02, 0x13, 0x42]).unwrap()],
+        };
+        let placement = stream.native_placements()[0];
+        assert_eq!(placement.major_span, 5);
+        assert_eq!(placement.minor_span, 3);
     }
 }

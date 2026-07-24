@@ -423,35 +423,16 @@ impl VanillaLevelEditor {
         painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
         let major_tiles = placements
             .iter()
-            .map(|placement| placement.major.saturating_add(1))
+            .map(|placement| {
+                placement
+                    .major
+                    .saturating_add(u16::from(placement.major_span))
+            })
             .max()
             .unwrap_or(16)
             .max(16);
         let cell = (width / f32::from(major_tiles)).clamp(2.0, 14.0);
-        for column in 0..=major_tiles {
-            let x = rect.left() + f32::from(column) * cell;
-            painter.line_segment(
-                [
-                    egui::pos2(x, rect.top()),
-                    egui::pos2(x, rect.bottom().min(rect.top() + 16.0 * cell)),
-                ],
-                egui::Stroke::new(
-                    if column % 16 == 0 { 1.5_f32 } else { 0.5_f32 },
-                    if column % 16 == 0 {
-                        egui::Color32::from_gray(90)
-                    } else {
-                        egui::Color32::from_gray(45)
-                    },
-                ),
-            );
-        }
-        for y in 0_u8..=16 {
-            let y = rect.top() + f32::from(y) * cell;
-            painter.line_segment(
-                [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
-            );
-        }
+        draw_object_grid(&painter, rect, cell, major_tiles);
         let mut hit = None;
         for placement in placements {
             let index = placement.record_index;
@@ -463,8 +444,13 @@ impl VanillaLevelEditor {
                     f32::from(placement.major) * cell,
                     f32::from(placement.minor) * cell,
                 );
-            let object_rect =
-                egui::Rect::from_min_size(position, egui::vec2(cell.max(8.0), cell.max(8.0)));
+            let object_rect = egui::Rect::from_min_size(
+                position,
+                egui::vec2(
+                    (f32::from(placement.major_span) * cell).max(8.0),
+                    (f32::from(placement.minor_span) * cell).max(8.0),
+                ),
+            );
             let selected = index == self.selected_object;
             painter.rect_filled(
                 object_rect.shrink(1.0),
@@ -694,6 +680,30 @@ impl VanillaLevelEditor {
             }
             Err(error) => self.error = Some(error),
         }
+    }
+}
+
+fn draw_object_grid(painter: &egui::Painter, rect: egui::Rect, cell: f32, major_tiles: u16) {
+    for column in 0..=major_tiles {
+        let x = rect.left() + f32::from(column) * cell;
+        let boundary = column % 16 == 0;
+        painter.line_segment(
+            [
+                egui::pos2(x, rect.top()),
+                egui::pos2(x, rect.bottom().min(rect.top() + 16.0 * cell)),
+            ],
+            egui::Stroke::new(
+                if boundary { 1.5_f32 } else { 0.5_f32 },
+                egui::Color32::from_gray(if boundary { 90 } else { 45 }),
+            ),
+        );
+    }
+    for row in 0_u8..=16 {
+        let y = rect.top() + f32::from(row) * cell;
+        painter.line_segment(
+            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+            egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
+        );
     }
 }
 
