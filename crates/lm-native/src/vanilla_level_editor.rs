@@ -395,10 +395,15 @@ impl VanillaLevelEditor {
     }
 
     fn object_canvas(&mut self, ui: &mut egui::Ui) {
-        let records = self
+        let (records, placements) = self
             .controller
             .as_ref()
-            .map(|controller| controller.level().layer1.objects.records.clone())
+            .map(|controller| {
+                (
+                    controller.level().layer1.objects.records.clone(),
+                    controller.level().layer1.objects.native_placements(),
+                )
+            })
             .unwrap_or_default();
         let width = ui.available_width().max(320.0);
         let height = 260.0;
@@ -406,15 +411,28 @@ impl VanillaLevelEditor {
             ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
-        let cell = 14.0;
-        for x in 0_u8..=16 {
-            let x = rect.left() + f32::from(x) * cell;
+        let major_tiles = placements
+            .iter()
+            .map(|placement| placement.major.saturating_add(1))
+            .max()
+            .unwrap_or(16)
+            .max(16);
+        let cell = (width / f32::from(major_tiles)).clamp(2.0, 14.0);
+        for column in 0..=major_tiles {
+            let x = rect.left() + f32::from(column) * cell;
             painter.line_segment(
                 [
                     egui::pos2(x, rect.top()),
                     egui::pos2(x, rect.bottom().min(rect.top() + 16.0 * cell)),
                 ],
-                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
+                egui::Stroke::new(
+                    if column % 16 == 0 { 1.5_f32 } else { 0.5_f32 },
+                    if column % 16 == 0 {
+                        egui::Color32::from_gray(90)
+                    } else {
+                        egui::Color32::from_gray(45)
+                    },
+                ),
             );
         }
         for y in 0_u8..=16 {
@@ -425,12 +443,15 @@ impl VanillaLevelEditor {
             );
         }
         let mut hit = None;
-        for (index, record) in records.iter().enumerate() {
-            let coordinate = record.coordinate_nibbles();
+        for placement in placements {
+            let index = placement.record_index;
+            let Some(record) = records.get(index) else {
+                continue;
+            };
             let position = rect.min
                 + egui::vec2(
-                    f32::from(coordinate.first) * cell,
-                    f32::from(coordinate.second) * cell,
+                    f32::from(placement.major) * cell,
+                    f32::from(placement.minor) * cell,
                 );
             let object_rect =
                 egui::Rect::from_min_size(position, egui::vec2(cell.max(8.0), cell.max(8.0)));
@@ -466,7 +487,7 @@ impl VanillaLevelEditor {
             self.object_form = ObjectForm::from_record(record);
         }
         ui.label(
-            "Schematic native-object coordinates (raw orientation-neutral nibbles; command ID shown).",
+            "Screen-aware native object positions (orientation-neutral major axis; stronger lines mark 16-tile screen boundaries).",
         );
     }
 

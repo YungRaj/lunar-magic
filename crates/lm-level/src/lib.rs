@@ -31,6 +31,7 @@ mod native_sprite;
 mod object;
 mod object_editing;
 mod object_fields;
+mod object_placement;
 mod overworld_settings;
 mod property_editing;
 mod sprite;
@@ -97,6 +98,7 @@ pub use object_editing::{ObjectEdit, ObjectEditError};
 pub use object_fields::{
     ObjectCoordinateNibbles, ObjectFieldError, ObjectScreenJump, ScreenJumpEncoding,
 };
+pub use object_placement::NativeObjectPlacement;
 pub use overworld_settings::{ExpandedOverworldSettings, ExpandedOverworldSettingsError};
 pub use property_editing::{
     LayerDimensions, LegacyHeaderEdit, LevelLayer, LevelPropertyEdit, LevelPropertyEditError,
