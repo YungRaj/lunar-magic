@@ -4,6 +4,7 @@ use lm_app::{
 };
 use lm_level::{
     LegacyHeaderEdit, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteLengthTable,
+    SpriteToken,
 };
 use lm_project::LevelSaveOptions;
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -63,6 +64,29 @@ struct ObjectForm {
     advances_screen: bool,
 }
 
+#[derive(Clone, Debug, Default)]
+struct SpriteForm {
+    header: u8,
+    encoded: String,
+}
+
+impl SpriteForm {
+    fn from_token(header: u8, token: Option<&SpriteToken>) -> Self {
+        let encoded = match token {
+            Some(SpriteToken::Record(record)) => record
+                .encoded
+                .iter()
+                .map(|byte| format!("{byte:02X}"))
+                .collect::<Vec<_>>()
+                .join(" "),
+            Some(SpriteToken::Screen(value)) => format!("screen {value:02X}"),
+            Some(SpriteToken::Control(value)) => format!("control {value:02X}"),
+            None => String::new(),
+        };
+        Self { header, encoded }
+    }
+}
+
 impl ObjectForm {
     fn from_record(record: &ObjectRecord) -> Self {
         let coordinates = record.coordinate_nibbles();
@@ -83,6 +107,8 @@ pub(crate) struct VanillaLevelEditor {
     form: HeaderForm,
     selected_object: usize,
     object_form: ObjectForm,
+    selected_sprite: usize,
+    sprite_form: SpriteForm,
     error: Option<String>,
     map16_key: Option<(u64, u8)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -139,9 +165,18 @@ impl VanillaLevelEditor {
             self.object_list(&mut columns[0]);
             self.object_editor(&mut columns[1]);
         });
+        ui.separator();
+        ui.columns(2, |columns| {
+            self.sprite_list(&mut columns[0]);
+            self.sprite_editor(&mut columns[1]);
+        });
         ui.add_space(8.0);
         let expanded = snapshot.rom_bytes.len() > 0x80_000;
-        if !expanded {
+        let layer1_modified = self
+            .controller
+            .as_ref()
+            .is_some_and(LevelController::layer1_is_modified);
+        if !expanded && layer1_modified {
             ui.label("Level relocation needs one expanded free-space bank.");
             if ui.button("Expand ROM to 1 MiB").clicked() {
                 return Some(Command::ExpandRom(RomExpansionCommand {
@@ -155,7 +190,7 @@ impl VanillaLevelEditor {
         }
         if ui
             .add_enabled(
-                expanded
+                (expanded || !layer1_modified)
                     && self
                         .controller
                         .as_ref()
@@ -239,6 +274,11 @@ impl VanillaLevelEditor {
                     .records
                     .first()
                     .map_or_else(ObjectForm::default, ObjectForm::from_record);
+                self.selected_sprite = 0;
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.first(),
+                );
                 self.controller = Some(controller);
                 self.error = None;
             }
@@ -515,6 +555,115 @@ impl VanillaLevelEditor {
             }
         });
     }
+
+    fn sprite_list(&mut self, ui: &mut egui::Ui) {
+        let Some(controller) = &self.controller else {
+            return;
+        };
+        ui.label("Sprites");
+        egui::ScrollArea::vertical()
+            .max_height(260.0)
+            .show(ui, |ui| {
+                for (index, token) in controller.level().sprites.tokens.iter().enumerate() {
+                    let text =
+                        SpriteForm::from_token(controller.level().sprites.header, Some(token))
+                            .encoded;
+                    if ui
+                        .selectable_label(
+                            index == self.selected_sprite,
+                            format!("{index:03}: {text}"),
+                        )
+                        .clicked()
+                    {
+                        self.selected_sprite = index;
+                        self.sprite_form =
+                            SpriteForm::from_token(controller.level().sprites.header, Some(token));
+                    }
+                }
+            });
+    }
+
+    fn sprite_editor(&mut self, ui: &mut egui::Ui) {
+        let token_count = self
+            .controller
+            .as_ref()
+            .map_or(0, |controller| controller.level().sprites.tokens.len());
+        ui.label("Native sprite stream");
+        egui::Grid::new("vanilla-sprite-fields").show(ui, |ui| {
+            header_row(ui, "Sprite memory", &mut self.sprite_form.header, 0xff);
+            ui.label("Record bytes");
+            ui.text_edit_singleline(&mut self.sprite_form.encoded);
+            ui.end_row();
+        });
+        ui.small(
+            "Pristine ROM saves are pointer-preserving: header edits, same-size replacements, and removals are safe; growth is rejected.",
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Stage sprite header").clicked()
+                && let Some(controller) = self.controller.as_mut()
+            {
+                match controller
+                    .apply_edits(&[NativeLevelEdit::SetSpriteHeader(self.sprite_form.header)])
+                {
+                    Ok(()) => self.error = None,
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            if ui
+                .add_enabled(
+                    self.selected_sprite < token_count,
+                    egui::Button::new("Replace record"),
+                )
+                .clicked()
+            {
+                let edit = crate::native_level_document_form::parse_sprite_token(
+                    &self.sprite_form.encoded,
+                )
+                .map(|token| NativeLevelEdit::ReplaceSprite {
+                    index: self.selected_sprite,
+                    token,
+                });
+                self.apply_sprite_result(edit);
+            }
+            if ui
+                .add_enabled(
+                    self.selected_sprite < token_count,
+                    egui::Button::new("Remove sprite"),
+                )
+                .clicked()
+                && let Some(controller) = self.controller.as_mut()
+            {
+                match controller.apply_edits(&[NativeLevelEdit::RemoveSprite {
+                    index: self.selected_sprite,
+                }]) {
+                    Ok(()) => {
+                        self.selected_sprite =
+                            self.selected_sprite.min(token_count.saturating_sub(2));
+                        self.sprite_form = SpriteForm::from_token(
+                            controller.level().sprites.header,
+                            controller.level().sprites.tokens.get(self.selected_sprite),
+                        );
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        });
+    }
+
+    fn apply_sprite_result(&mut self, edit: Result<NativeLevelEdit, String>) {
+        match edit {
+            Ok(edit) => {
+                if let Some(controller) = self.controller.as_mut() {
+                    match controller.apply_edits(&[edit]) {
+                        Ok(()) => self.error = None,
+                        Err(error) => self.error = Some(error.to_string()),
+                    }
+                }
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
 }
 
 fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
@@ -537,12 +686,12 @@ fn prepare_commit(
     let image =
         RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
     let logical_len = image.logical_len();
-    if logical_len <= 0x80_000 {
+    if logical_len <= 0x80_000 && controller.layer1_is_modified() {
         return Err("expand the ROM before committing level changes".into());
     }
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
     let allocation = AllocationPolicy {
-        search: 0x80_000..logical_len,
+        search: logical_len.min(0x80_000)..logical_len,
         bank_size: Some(0x8000),
         fill_bytes: vec![0xff],
         protected: vec![

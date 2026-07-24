@@ -30,13 +30,38 @@ impl LevelController {
             });
         }
         let mut project = Project::new(image);
-        if self.level.sprites == self.baseline.sprites {
+        let sprites_changed = self.level.sprites != self.baseline.sprites;
+        let shared_bank_sprites = matches!(
+            self.layout.sprites,
+            lm_project::SpritePointerTable::SplitSharedBank { .. }
+        );
+        if !sprites_changed {
             project
                 .save_level_layer1_with_checksum(
                     self.layout,
                     &self.level,
                     self.checksum_field_offset,
                     options,
+                )
+                .map_err(LevelControllerError::Save)?;
+        } else if shared_bank_sprites {
+            if self.level.layer1 != self.baseline.layer1 {
+                project
+                    .save_level_layer1_with_checksum(
+                        self.layout,
+                        &self.level,
+                        self.checksum_field_offset,
+                        options,
+                    )
+                    .map_err(LevelControllerError::Save)?;
+            }
+            project
+                .save_level_sprites_in_place_with_checksum(
+                    self.layout,
+                    &self.baseline,
+                    &self.level,
+                    &self.sprite_lengths,
+                    self.checksum_field_offset,
                 )
                 .map_err(LevelControllerError::Save)?;
         } else {

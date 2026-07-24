@@ -7,8 +7,8 @@ use lm_profile::{
 };
 use lm_project::{GraphicsSaveOptions, LevelSaveOptions, Project};
 use lm_rats::{AllocationPolicy, ProtectedRange};
-use lm_rom::{Mapper, RomImage};
-use std::{fs, path::PathBuf};
+use lm_rom::{Mapper, RomImage, SnesChecksum, compute_snes_checksum};
+use std::{collections::BTreeMap, fs, path::PathBuf};
 
 #[test]
 fn every_ordinary_graphics_file_in_the_local_reference_rom_decodes() {
@@ -170,6 +170,78 @@ fn pristine_layer1_edit_expands_repoints_and_reopens_without_touching_sprites() 
         layout.sprites.read_snes_pointer(&project.rom, 0).unwrap(),
         original_sprite_pointer
     );
+}
+
+#[test]
+fn pristine_unique_sprite_stream_edits_in_place_and_reopens() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("Super Mario World (USA).sfc");
+    let Ok(bytes) = fs::read(path) else {
+        return;
+    };
+    let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+    let before = project.save_snapshot();
+    let layout = smw_us_v1_vanilla_level_layout();
+    let lengths = SpriteLengthTable::standard();
+    let mut owners = BTreeMap::<u32, Vec<usize>>::new();
+    for number in 0..SMW_US_V1_VANILLA_LEVEL_SLOTS {
+        let pointer = layout
+            .sprites
+            .read_snes_pointer(&project.rom, number)
+            .unwrap();
+        owners.entry(pointer.get()).or_default().push(number);
+    }
+    let original = (0..SMW_US_V1_VANILLA_LEVEL_SLOTS)
+        .filter(|number| {
+            let pointer = layout
+                .sprites
+                .read_snes_pointer(&project.rom, *number)
+                .unwrap();
+            owners[&pointer.get()].len() == 1
+        })
+        .find_map(|number| {
+            let level = project.load_level_slot(number, layout, &lengths).ok()?;
+            (!level.sprites.tokens.is_empty()).then_some(level)
+        })
+        .expect("reference ROM should contain a uniquely owned non-empty sprite stream");
+    let pointer_before = layout
+        .sprites
+        .read_snes_pointer(&project.rom, original.number)
+        .unwrap();
+    let mut replacement = original.clone();
+    replacement.sprites.header ^= 1;
+    replacement.sprites.tokens.pop();
+
+    project
+        .save_level_sprites_in_place_with_checksum(
+            layout,
+            &original,
+            &replacement,
+            &lengths,
+            0x7fdc,
+        )
+        .unwrap();
+    assert_eq!(
+        project
+            .load_level_slot(original.number, layout, &lengths)
+            .unwrap()
+            .sprites,
+        replacement.sprites
+    );
+    assert_eq!(
+        layout
+            .sprites
+            .read_snes_pointer(&project.rom, original.number)
+            .unwrap(),
+        pointer_before
+    );
+    assert_eq!(
+        SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
+        compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
+    );
+    assert!(project.undo().unwrap());
+    assert_eq!(project.save_snapshot(), before);
 }
 
 #[test]

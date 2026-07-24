@@ -161,6 +161,16 @@ impl LevelController {
         self.level != self.baseline
     }
 
+    #[must_use]
+    pub fn layer1_is_modified(&self) -> bool {
+        self.level.layer1 != self.baseline.layer1
+    }
+
+    #[must_use]
+    pub fn sprites_are_modified(&self) -> bool {
+        self.level.sprites != self.baseline.sprites
+    }
+
     /// Applies ordered native edits to a staged clone.
     ///
     /// # Errors
