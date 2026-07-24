@@ -2,11 +2,43 @@
 
 use crate::{SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_SHARED_PALETTE_OFFSET};
 use lm_graphics::{SmwPaletteBackend, SmwPaletteFile};
-use lm_project::{PatchWrite, RelocatablePatchPlan};
+use lm_project::{
+    GatedLayout, InstallationMarker, InstalledLayout, LevelPointerTable, PaletteRomLayout,
+    PatchWrite, RelocatablePatchPlan,
+};
 use lm_rats::AllocationPolicy;
 use lm_rom::Mapper;
 
 pub const SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET: usize = 0x77600;
+pub const SMW_US_V1_CUSTOM_PALETTE_ENTRIES: usize = 512;
+pub const SMW_US_V1_CUSTOM_PALETTE_COLORS: usize = 257;
+
+#[must_use]
+pub const fn smw_us_v1_custom_palette_layout() -> PaletteRomLayout {
+    PaletteRomLayout {
+        mapper: Mapper::LoRom,
+        pointers: LevelPointerTable {
+            offset: SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET,
+            entries: SMW_US_V1_CUSTOM_PALETTE_ENTRIES,
+            stride: 3,
+        },
+        colors_per_palette: SMW_US_V1_CUSTOM_PALETTE_COLORS,
+    }
+}
+
+#[must_use]
+pub const fn smw_us_v1_custom_palette_installation() -> InstalledLayout<PaletteRomLayout> {
+    InstalledLayout::Alternatives {
+        primary: GatedLayout {
+            marker: InstallationMarker {
+                offset: 0x77570,
+                expected: 0xc2,
+            },
+            layout: smw_us_v1_custom_palette_layout(),
+        },
+        fallback: None,
+    }
+}
 
 const HOOK_A_STUB: [u8; 0x10] = [
     0xa5, 0x0e, 0x8d, 0x0b, 0x01, 0x1a, 0x85, 0xfe, 0x3a, 0x0a, 0xa8, 0x6b, 0xff, 0xff, 0xff, 0xff,
@@ -108,7 +140,9 @@ fn direct(offset: usize, expected: &[u8], replacement: &[u8]) -> PatchWrite {
 mod tests {
     use super::*;
     use crate::smw_us_v1_shared_palette_layout;
-    use lm_project::Project;
+    use lm_graphics::{Bgr555, Palette};
+    use lm_project::{PaletteSaveOptions, Project};
+    use lm_rats::{AllocationPolicy, ProtectedRange};
     use lm_rom::{RomImage, SnesChecksum};
     use std::{fs, path::PathBuf};
 
@@ -195,5 +229,66 @@ mod tests {
         assert!(project.install_relocatable_patch(&plan).is_err());
         assert_eq!(project.save_snapshot(), original);
         assert!(!project.history.can_undo());
+    }
+
+    #[test]
+    fn installation_enables_transactional_per_level_palette_storage() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let mut project = Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
+        assert_eq!(
+            smw_us_v1_custom_palette_installation()
+                .resolve(&project.rom)
+                .unwrap(),
+            None
+        );
+        let expected = project
+            .rom
+            .read(
+                SMW_US_V1_SHARED_PALETTE_OFFSET,
+                SmwPaletteFile::EXPANDED_FILE_LEN,
+            )
+            .unwrap()
+            .to_vec();
+        let shared =
+            SmwPaletteFile::expanded(expected[0x10..].to_vec(), expected[..0x10].to_vec()).unwrap();
+        let plan = smw_us_v1_expanded_shared_palette_installation_plan(&shared, &expected).unwrap();
+        project.install_relocatable_patch(&plan).unwrap();
+        let layout = smw_us_v1_custom_palette_installation()
+            .resolve(&project.rom)
+            .unwrap()
+            .unwrap();
+        assert_eq!(layout, smw_us_v1_custom_palette_layout());
+
+        let palette = Palette {
+            colors: (0..SMW_US_V1_CUSTOM_PALETTE_COLORS)
+                .map(|value| Bgr555(u16::try_from(value).unwrap()))
+                .collect(),
+        };
+        let options = PaletteSaveOptions {
+            allocation: AllocationPolicy {
+                search: 0x40000..0x70000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![ProtectedRange(
+                    SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET
+                        ..SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET + 0x600,
+                )],
+            },
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let saved = project
+            .save_palette_with_checksum(0, &palette, layout, SMW_US_V1_CHECKSUM_FIELD, &options)
+            .unwrap();
+        assert_eq!(project.load_palette(0, layout).unwrap(), palette);
+        assert_eq!(
+            project
+                .rom
+                .read(SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET, 3)
+                .unwrap(),
+            &saved.snes_pointer.to_le_bytes()[..3]
+        );
     }
 }

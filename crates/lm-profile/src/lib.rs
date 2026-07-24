@@ -326,7 +326,9 @@ pub use shared_palette::{
     SMW_US_V1_SHARED_PALETTE_OFFSET, smw_us_v1_shared_palette_layout,
 };
 pub use shared_palette_install::{
+    SMW_US_V1_CUSTOM_PALETTE_COLORS, SMW_US_V1_CUSTOM_PALETTE_ENTRIES,
     SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET, SharedPaletteInstallPlanError,
+    smw_us_v1_custom_palette_installation, smw_us_v1_custom_palette_layout,
     smw_us_v1_expanded_shared_palette_installation_plan,
 };
 pub use text::RevisionProfileError;
