@@ -23,6 +23,7 @@ mod observe_expanded_settings;
 mod observe_graphics;
 mod observe_graphics_remap;
 mod observe_level;
+mod observe_live_level_map16;
 mod observe_lunar_magic_metadata;
 mod observe_map16_remaps;
 mod observe_mwl;
@@ -83,6 +84,10 @@ pub use observe_graphics::{
 pub use observe_graphics_remap::observe_graphics_remap;
 pub use observe_level::{
     observe_layer3, observe_level, observe_map16_page, observe_map16_page_file, observe_map16_set,
+};
+pub use observe_live_level_map16::{
+    LIVE_LEVEL_MAP16_BYTES, LIVE_LEVEL_MAP16_CELLS, LiveLevelMap16ObservationError,
+    observe_live_level_map16,
 };
 pub use observe_lunar_magic_metadata::observe_lunar_magic_rom_metadata;
 pub use observe_map16_remaps::observe_map16_remaps;
