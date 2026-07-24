@@ -9,8 +9,12 @@ pub const SMW_US_V1_MAP16_TILESET_WORD_TABLE_OFFSET: usize = 0x28000;
 pub const SMW_US_V1_MAP16_SOURCE_BANK_OFFSET: usize = 0x28a3d;
 /// Low word for the common packed Map16 source.
 pub const SMW_US_V1_MAP16_COMMON_WORD_OFFSET: usize = 0x28222;
+/// Fixed 512-bit source-selection mask copied by Lunar Magic when a ROM is opened.
+pub const SMW_US_V1_MAP16_OCCUPANCY_MASK_OFFSET: usize = 0x281bb;
+/// Size of the per-definition source-selection mask.
+pub const SMW_US_V1_MAP16_OCCUPANCY_MASK_BYTES: usize = 64;
 /// Number of eight-byte Map16 definitions composed by the recovered loader.
-pub const SMW_US_V1_MAP16_BASE_TILE_COUNT: usize = 64;
+pub const SMW_US_V1_MAP16_BASE_TILE_COUNT: usize = SMW_US_V1_MAP16_OCCUPANCY_MASK_BYTES * 8;
 /// Size of one four-subtile Map16 definition.
 pub const SMW_US_V1_MAP16_TILE_BYTES: usize = 8;
 /// Size of the composed base table.
@@ -46,12 +50,12 @@ impl From<RomError> for SmwUsV1LevelMap16BaseError {
     }
 }
 
-/// Composes Lunar Magic's 64-entry base table from the two compact ROM streams.
+/// Composes Lunar Magic's 512-entry base table from the two compact ROM streams.
 ///
-/// The occupancy mask is consumed most-significant-bit first. A set bit selects the common
+/// The fixed occupancy mask is consumed most-significant-bit first. A set bit selects the common
 /// stream and a clear bit selects the tileset-specific stream. Each compact source advances only
 /// when selected, matching `LoadMap16BaseDataFromRom` rather than treating either source as a
-/// sparse 64-entry table.
+/// sparse 512-entry table.
 ///
 /// # Errors
 ///
@@ -60,7 +64,6 @@ impl From<RomError> for SmwUsV1LevelMap16BaseError {
 pub fn load_smw_us_v1_level_map16_base(
     rom: &RomImage,
     tileset: usize,
-    occupancy_mask: [u8; 8],
 ) -> Result<LoadedSmwUsV1LevelMap16Base, SmwUsV1LevelMap16BaseError> {
     const TILESET_COUNT: usize = 16;
     if tileset >= TILESET_COUNT {
@@ -73,6 +76,12 @@ pub fn load_smw_us_v1_level_map16_base(
         SMW_US_V1_MAP16_TILESET_WORD_TABLE_OFFSET + tileset * 2,
     )?;
     let common_word = read_word(bytes, SMW_US_V1_MAP16_COMMON_WORD_OFFSET)?;
+    let mut occupancy_mask = [0; SMW_US_V1_MAP16_OCCUPANCY_MASK_BYTES];
+    occupancy_mask.copy_from_slice(source(
+        bytes,
+        SMW_US_V1_MAP16_OCCUPANCY_MASK_OFFSET,
+        SMW_US_V1_MAP16_OCCUPANCY_MASK_BYTES,
+    )?);
     let tileset_source_offset = source_offset(bank, tileset_word)?;
     let common_source_offset = source_offset(bank, common_word)?;
 
@@ -177,9 +186,11 @@ mod tests {
             &[u8::try_from(tileset_snes >> 16).unwrap()],
         )
         .unwrap();
-        let tileset = (0_u8..32).flat_map(|tile| [tile; 8]).collect::<Vec<_>>();
-        let common = (0_u8..32)
-            .map(|tile| tile + 0x80)
+        let tileset = (0_u16..256)
+            .flat_map(|tile| [u8::try_from(tile).unwrap(); 8])
+            .collect::<Vec<_>>();
+        let common = (0_u16..256)
+            .map(|tile| u8::try_from(tile).unwrap())
             .flat_map(|tile| [tile; 8])
             .collect::<Vec<_>>();
         rom.write(tileset_source, &tileset).unwrap();
@@ -189,21 +200,18 @@ mod tests {
 
     #[test]
     fn interleaves_compact_sources_msb_first() {
-        let loaded = load_smw_us_v1_level_map16_base(
-            &fixture(),
-            0,
-            [0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa],
-        )
-        .unwrap();
-        assert_eq!(loaded.tileset_tiles, 32);
-        assert_eq!(loaded.common_tiles, 32);
-        for tile in 0..64 {
-            let source_tile = u8::try_from(tile / 2).unwrap();
-            let expected = if tile % 2 == 0 {
-                0x80 + source_tile
-            } else {
-                source_tile
-            };
+        let mut fixture = fixture();
+        fixture
+            .write(
+                SMW_US_V1_MAP16_OCCUPANCY_MASK_OFFSET,
+                &[0xaa; SMW_US_V1_MAP16_OCCUPANCY_MASK_BYTES],
+            )
+            .unwrap();
+        let loaded = load_smw_us_v1_level_map16_base(&fixture, 0).unwrap();
+        assert_eq!(loaded.tileset_tiles, 256);
+        assert_eq!(loaded.common_tiles, 256);
+        for tile in 0..512 {
+            let expected = u8::try_from(tile / 2).unwrap();
             assert_eq!(
                 &loaded.bytes[tile * 8..tile * 8 + 8],
                 &[expected; 8],
@@ -215,7 +223,7 @@ mod tests {
     #[test]
     fn rejects_unknown_tilesets() {
         assert_eq!(
-            load_smw_us_v1_level_map16_base(&fixture(), 16, [0; 8]),
+            load_smw_us_v1_level_map16_base(&fixture(), 16),
             Err(SmwUsV1LevelMap16BaseError::TilesetOutOfRange(16))
         );
     }

@@ -58,12 +58,12 @@ fn pristine_level_map16_sources_resolve_in_the_local_reference_rom() {
         return;
     };
     let rom = RomImage::from_bytes(bytes).unwrap();
-    let loaded = load_smw_us_v1_level_map16_base(&rom, 0, [0xaa; 8]).unwrap();
+    let loaded = load_smw_us_v1_level_map16_base(&rom, 0).unwrap();
     assert_eq!(loaded.tileset_source_offset, 0x68b70);
     assert_eq!(loaded.common_source_offset, 0x68000);
-    assert_eq!(loaded.tileset_tiles, 32);
-    assert_eq!(loaded.common_tiles, 32);
-    assert_ne!(loaded.bytes, [0; 512]);
+    assert_eq!(loaded.tileset_tiles, 178);
+    assert_eq!(loaded.common_tiles, 334);
+    assert_ne!(loaded.bytes, [0; 4096]);
 }
 
 #[test]
