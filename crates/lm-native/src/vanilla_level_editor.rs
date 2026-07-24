@@ -612,6 +612,7 @@ impl VanillaLevelEditor {
             return;
         };
         ui.label("Sprites");
+        let placements = controller.level().sprites.native_placements();
         egui::ScrollArea::vertical()
             .max_height(260.0)
             .show(ui, |ui| {
@@ -619,10 +620,22 @@ impl VanillaLevelEditor {
                     let text =
                         SpriteForm::from_token(controller.level().sprites.header, Some(token))
                             .encoded;
+                    let semantic = placements
+                        .iter()
+                        .find(|placement| placement.token_index == index)
+                        .map_or_else(String::new, |placement| {
+                            format!(
+                                "sprite {:02X} @ {}:{:X},{} · ",
+                                placement.sprite_number,
+                                placement.screen,
+                                placement.major & 0x0f,
+                                placement.minor
+                            )
+                        });
                     if ui
                         .selectable_label(
                             index == self.selected_sprite,
-                            format!("{index:03}: {text}"),
+                            format!("{index:03}: {semantic}{text}"),
                         )
                         .clicked()
                     {

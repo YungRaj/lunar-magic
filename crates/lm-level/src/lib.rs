@@ -36,6 +36,7 @@ mod overworld_settings;
 mod property_editing;
 mod sprite;
 mod sprite_editing;
+mod sprite_placement;
 
 pub use binary::{BinaryError, ByteCursor};
 pub use complete_file::{CompleteLevelFile, CompleteLevelFileError, LevelCollection};
@@ -106,6 +107,7 @@ pub use property_editing::{
 };
 pub use sprite::{SpriteRecord, SpriteStream, SpriteStreamError};
 pub use sprite_editing::{SpriteEdit, SpriteEditError, SpriteEditLimits};
+pub use sprite_placement::NativeSpritePlacement;
 mod appearance_file;
 mod auxiliary_edit_script;
 mod auxiliary_editing;
