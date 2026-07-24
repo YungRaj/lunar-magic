@@ -440,6 +440,17 @@ impl VanillaLevelEditor {
         let major_extent = if vertical { height } else { width };
         let cell = (major_extent / f32::from(major_tiles)).clamp(2.0, 14.0);
         draw_object_grid(&painter, rect, cell, major_tiles, vertical);
+        if let Some(texture) = self.map16_texture.as_ref() {
+            draw_recovered_object_tiles(
+                &painter,
+                texture,
+                rect,
+                cell,
+                major_tiles,
+                vertical,
+                &records,
+            );
+        }
         let mut hit = None;
         for placement in placements {
             let index = placement.record_index;
@@ -820,6 +831,69 @@ fn draw_map16_atlas_tile(
     painter.image(texture.id(), target, uv, egui::Color32::WHITE);
 }
 
+fn draw_recovered_object_tiles(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    cell_size: f32,
+    major_tiles: u16,
+    vertical: bool,
+    records: &[ObjectRecord],
+) {
+    let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+    if lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).is_err()
+        || lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).is_err()
+    {
+        return;
+    }
+    let layout = lm_render::NativeLevelMap16Layout {
+        width: if vertical {
+            16
+        } else {
+            usize::from(major_tiles)
+        },
+        height: if vertical {
+            usize::from(major_tiles)
+        } else {
+            16
+        },
+        page_stride: 0x1b0,
+        base_cell: 0,
+        vertical,
+    };
+    let stream = lm_level::ObjectStream {
+        records: records.to_vec(),
+    };
+    let Ok(report) =
+        lm_render::render_standard_object_stream(&stream, &definitions, layout, u16::MAX)
+    else {
+        return;
+    };
+    for y in 0..layout.height {
+        for x in 0..layout.width {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+            let Some(&tile) = report.cache.cells().get(index) else {
+                continue;
+            };
+            if tile == u16::MAX {
+                continue;
+            }
+            let Ok(tile_x) = u16::try_from(x) else {
+                continue;
+            };
+            let Ok(tile_y) = u16::try_from(y) else {
+                continue;
+            };
+            let tile_rect = egui::Rect::from_min_size(
+                target.min
+                    + egui::vec2(f32::from(tile_x) * cell_size, f32::from(tile_y) * cell_size),
+                egui::vec2(cell_size, cell_size),
+            );
+            draw_map16_atlas_tile(painter, texture, tile_rect, tile);
+        }
+    }
+}
+
 fn draw_object_marker(
     painter: &egui::Painter,
     texture: Option<&egui::TextureHandle>,
@@ -830,9 +904,10 @@ fn draw_object_marker(
     let recovered_tile = (record.command_id() == 0)
         .then(|| lm_render::lunar_magic_shared_extended_object_tile(record.parameter()))
         .flatten();
+    let recovered_standard = matches!(record.command_id(), 16 | 17);
     if let (Some(tile), Some(texture)) = (recovered_tile, texture) {
         draw_map16_atlas_tile(painter, texture, target.shrink(1.0), tile);
-    } else {
+    } else if !recovered_standard {
         painter.rect_filled(
             target.shrink(1.0),
             1.0,
