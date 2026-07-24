@@ -2,7 +2,9 @@ use eframe::egui;
 use lm_app::{
     AppState, Command, EditorMode, LevelController, NativeLevelEdit, RomExpansionCommand,
 };
-use lm_level::{LegacyHeaderEdit, SpriteLengthTable};
+use lm_level::{
+    LegacyHeaderEdit, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteLengthTable,
+};
 use lm_project::LevelSaveOptions;
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
@@ -49,11 +51,35 @@ impl HeaderForm {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct ObjectForm {
+    command_id: u8,
+    parameter: u8,
+    first_coordinate: u8,
+    second_coordinate: u8,
+    advances_screen: bool,
+}
+
+impl ObjectForm {
+    fn from_record(record: &ObjectRecord) -> Self {
+        let coordinates = record.coordinate_nibbles();
+        Self {
+            command_id: record.command_id(),
+            parameter: record.parameter(),
+            first_coordinate: coordinates.first,
+            second_coordinate: coordinates.second,
+            advances_screen: record.advances_screen(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
     controller: Option<LevelController>,
     form: HeaderForm,
+    selected_object: usize,
+    object_form: ObjectForm,
     error: Option<String>,
 }
 
@@ -86,18 +112,61 @@ impl VanillaLevelEditor {
         ui.heading(format!("Level {level:03X} — built-in SMW editor"));
         ui.label("Pristine SMW-US layout detected automatically.");
         ui.separator();
-        let Some(controller) = self.controller.as_mut() else {
+        let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
                 egui::Color32::RED,
                 self.error.as_deref().unwrap_or("load failed"),
             );
             return None;
         };
-        ui.label(format!(
-            "{} objects, {} sprite records",
-            controller.level().layer1.objects.records.len(),
-            controller.level().sprites.tokens.len()
-        ));
+        let object_count = controller.level().layer1.objects.records.len();
+        let sprite_count = controller.level().sprites.tokens.len();
+        self.show_header_editor(ui, object_count, sprite_count);
+        ui.separator();
+        ui.columns(2, |columns| {
+            self.object_list(&mut columns[0]);
+            self.object_editor(&mut columns[1]);
+        });
+        ui.add_space(8.0);
+        let expanded = snapshot.rom_bytes.len() > 0x80_000;
+        if !expanded {
+            ui.label("Level relocation needs one expanded free-space bank.");
+            if ui.button("Expand ROM to 1 MiB").clicked() {
+                return Some(Command::ExpandRom(RomExpansionCommand {
+                    expected_revision: snapshot.revision,
+                    mapper: snapshot.identity.mapper,
+                    target_logical_len: 0x10_0000,
+                    fill: 0xff,
+                    checksum_field: snapshot.identity.internal_header_offset + 0x1c,
+                }));
+            }
+        }
+        if ui
+            .add_enabled(
+                expanded
+                    && self
+                        .controller
+                        .as_ref()
+                        .is_some_and(LevelController::is_modified),
+                egui::Button::new("Commit level changes to ROM"),
+            )
+            .clicked()
+        {
+            match prepare_commit(
+                self.controller
+                    .as_ref()
+                    .expect("controller presence checked above"),
+                &snapshot,
+            ) {
+                Ok(command) => return Some(command),
+                Err(error) => self.error = Some(error),
+            }
+        }
+        None
+    }
+
+    fn show_header_editor(&mut self, ui: &mut egui::Ui, objects: usize, sprites: usize) {
+        ui.label(format!("{objects} objects, {sprites} sprite records"));
         egui::Grid::new("vanilla-level-header").show(ui, |ui| {
             header_row(ui, "Level mode", &mut self.form.level_mode, 31);
             header_row(
@@ -120,43 +189,25 @@ impl VanillaLevelEditor {
         }
         ui.horizontal(|ui| {
             if ui.button("Stage header changes").clicked() {
-                match controller.apply_edits(&self.form.edits()) {
+                match self
+                    .controller
+                    .as_mut()
+                    .expect("controller presence checked above")
+                    .apply_edits(&self.form.edits())
+                {
                     Ok(()) => self.error = None,
                     Err(error) => self.error = Some(error.to_string()),
                 }
             }
             if ui.button("Reset staged values").clicked() {
-                self.form = HeaderForm::from_controller(controller);
+                self.form = HeaderForm::from_controller(
+                    self.controller
+                        .as_ref()
+                        .expect("controller presence checked above"),
+                );
                 self.error = None;
             }
         });
-        ui.add_space(8.0);
-        let expanded = snapshot.rom_bytes.len() > 0x80_000;
-        if !expanded {
-            ui.label("Level relocation needs one expanded free-space bank.");
-            if ui.button("Expand ROM to 1 MiB").clicked() {
-                return Some(Command::ExpandRom(RomExpansionCommand {
-                    expected_revision: snapshot.revision,
-                    mapper: snapshot.identity.mapper,
-                    target_logical_len: 0x10_0000,
-                    fill: 0xff,
-                    checksum_field: snapshot.identity.internal_header_offset + 0x1c,
-                }));
-            }
-        }
-        if ui
-            .add_enabled(
-                expanded && controller.is_modified(),
-                egui::Button::new("Commit level changes to ROM"),
-            )
-            .clicked()
-        {
-            match prepare_commit(controller, &snapshot) {
-                Ok(command) => return Some(command),
-                Err(error) => self.error = Some(error),
-            }
-        }
-        None
     }
 
     fn load(&mut self, snapshot: &lm_app::ControllerSnapshot, key: EditorKey) {
@@ -167,6 +218,14 @@ impl VanillaLevelEditor {
         ) {
             Ok(controller) => {
                 self.form = HeaderForm::from_controller(&controller);
+                self.selected_object = 0;
+                self.object_form = controller
+                    .level()
+                    .layer1
+                    .objects
+                    .records
+                    .first()
+                    .map_or_else(ObjectForm::default, ObjectForm::from_record);
                 self.controller = Some(controller);
                 self.error = None;
             }
@@ -182,6 +241,122 @@ impl VanillaLevelEditor {
         self.key = None;
         self.controller = None;
         self.error = None;
+    }
+
+    fn object_list(&mut self, ui: &mut egui::Ui) {
+        let Some(controller) = &self.controller else {
+            return;
+        };
+        ui.label("Layer 1 objects");
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .show(ui, |ui| {
+                for (index, record) in controller.level().layer1.objects.records.iter().enumerate()
+                {
+                    let encoded = record
+                        .encoded()
+                        .iter()
+                        .map(|byte| format!("{byte:02X}"))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if ui
+                        .selectable_label(
+                            index == self.selected_object,
+                            format!("{index:03}: {encoded}"),
+                        )
+                        .clicked()
+                    {
+                        self.selected_object = index;
+                        self.object_form = ObjectForm::from_record(record);
+                    }
+                }
+            });
+    }
+
+    fn object_editor(&mut self, ui: &mut egui::Ui) {
+        let record_count = self.controller.as_ref().map_or(0, |controller| {
+            controller.level().layer1.objects.records.len()
+        });
+        if self.selected_object >= record_count {
+            ui.label("No selected object.");
+            return;
+        }
+        ui.label(format!("Object {}", self.selected_object));
+        egui::Grid::new("vanilla-object-fields").show(ui, |ui| {
+            header_row(ui, "Command", &mut self.object_form.command_id, 0x3f);
+            header_row(ui, "Parameter", &mut self.object_form.parameter, 0xff);
+            header_row(
+                ui,
+                "Coordinate A",
+                &mut self.object_form.first_coordinate,
+                0x0f,
+            );
+            header_row(
+                ui,
+                "Coordinate B",
+                &mut self.object_form.second_coordinate,
+                0x0f,
+            );
+            ui.label("Advance screen");
+            ui.checkbox(&mut self.object_form.advances_screen, "");
+            ui.end_row();
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Apply object fields").clicked() {
+                let edits = vec![
+                    ObjectEdit::SetCommandId {
+                        index: self.selected_object,
+                        command_id: self.object_form.command_id,
+                    },
+                    ObjectEdit::SetParameter {
+                        index: self.selected_object,
+                        parameter: self.object_form.parameter,
+                    },
+                    ObjectEdit::SetCoordinateNibbles {
+                        index: self.selected_object,
+                        coordinates: ObjectCoordinateNibbles {
+                            first: self.object_form.first_coordinate,
+                            second: self.object_form.second_coordinate,
+                        },
+                    },
+                    ObjectEdit::SetAdvancesScreen {
+                        index: self.selected_object,
+                        advances: self.object_form.advances_screen,
+                    },
+                ];
+                if let Some(controller) = self.controller.as_mut() {
+                    match controller.apply_edits(&[NativeLevelEdit::Objects(edits)]) {
+                        Ok(()) => self.error = None,
+                        Err(error) => self.error = Some(error.to_string()),
+                    }
+                }
+            }
+            if ui.button("Remove object").clicked()
+                && let Some(controller) = self.controller.as_mut()
+            {
+                match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
+                    ObjectEdit::Remove {
+                        index: self.selected_object,
+                    },
+                ])]) {
+                    Ok(()) => {
+                        self.selected_object =
+                            self.selected_object.min(record_count.saturating_sub(2));
+                        if let Some(record) = controller
+                            .level()
+                            .layer1
+                            .objects
+                            .records
+                            .get(self.selected_object)
+                        {
+                            self.object_form = ObjectForm::from_record(record);
+                        }
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        });
     }
 }
 

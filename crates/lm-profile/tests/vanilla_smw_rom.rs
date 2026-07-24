@@ -1,4 +1,4 @@
-use lm_level::SpriteLengthTable;
+use lm_level::{ObjectCoordinateNibbles, SpriteLengthTable};
 use lm_profile::{
     SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET, SMW_US_V1_VANILLA_GRAPHICS_FILES,
     SMW_US_V1_VANILLA_LEVEL_SLOTS, smw_us_v1_vanilla_graphics_layout,
@@ -70,6 +70,14 @@ fn pristine_layer1_edit_expands_repoints_and_reopens_without_touching_sprites() 
         .header
         .set_background_palette(replacement)
         .unwrap();
+    let original_coordinates = level.layer1.objects.records[0].coordinate_nibbles();
+    let replacement_coordinates = ObjectCoordinateNibbles {
+        first: (original_coordinates.first + 1) & 0x0f,
+        second: original_coordinates.second,
+    };
+    level.layer1.objects.records[0]
+        .set_coordinate_nibbles(replacement_coordinates)
+        .unwrap();
 
     project
         .expand_rom(Mapper::LoRom, 0x10_0000, 0xff, 0x7fdc)
@@ -107,6 +115,10 @@ fn pristine_layer1_edit_expands_repoints_and_reopens_without_touching_sprites() 
         .load_level_slot(0, layout, &SpriteLengthTable::standard())
         .unwrap();
     assert_eq!(reopened.layer1.header.background_palette(), replacement);
+    assert_eq!(
+        reopened.layer1.objects.records[0].coordinate_nibbles(),
+        replacement_coordinates
+    );
     assert_eq!(reopened.sprites, original_sprites);
     assert_eq!(
         layout.sprites.read_snes_pointer(&project.rom, 0).unwrap(),
