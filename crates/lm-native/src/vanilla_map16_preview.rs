@@ -1,5 +1,6 @@
 use eframe::egui;
-use lm_graphics::IndexedTile;
+use lm_graphics::{IndexedTile, Palette};
+use lm_level::LegacyLevelHeader;
 use lm_project::Project;
 use lm_rom::RomImage;
 
@@ -10,9 +11,14 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) tileset_tiles: usize,
 }
 
-pub(crate) fn render(rom_bytes: Vec<u8>, tileset: u8) -> Result<VanillaMap16Preview, String> {
+pub(crate) fn render(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+) -> Result<VanillaMap16Preview, String> {
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
+    let tileset = header.object_tileset();
     let graphics_files =
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
@@ -27,6 +33,9 @@ pub(crate) fn render(rom_bytes: Vec<u8>, tileset: u8) -> Result<VanillaMap16Prev
     }
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
+    let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
+        .map_err(|error| error.to_string())?
+        .palette;
     let definitions = map16.editor_graphics_bytes();
     let width = 32 * 16;
     let height = 16 * 16;
@@ -43,11 +52,11 @@ pub(crate) fn render(rom_bytes: Vec<u8>, tileset: u8) -> Result<VanillaMap16Prev
             draw_subtile(
                 &mut rgba,
                 width,
-                definition_x + quadrant_x,
-                definition_y + quadrant_y,
+                (definition_x + quadrant_x, definition_y + quadrant_y),
                 graphics.get(tile_number),
-                word & 0x4000 != 0,
-                word & 0x8000 != 0,
+                &palette,
+                usize::from((word >> 10) & 7),
+                (word & 0x4000 != 0, word & 0x8000 != 0),
             );
         }
     }
@@ -62,31 +71,37 @@ pub(crate) fn render(rom_bytes: Vec<u8>, tileset: u8) -> Result<VanillaMap16Prev
 fn draw_subtile(
     rgba: &mut [u8],
     canvas_width: usize,
-    target_x: usize,
-    target_y: usize,
+    target: (usize, usize),
     tile: Option<&IndexedTile>,
-    x_flip: bool,
-    y_flip: bool,
+    palette: &Palette,
+    palette_row: usize,
+    flips: (bool, bool),
 ) {
+    let (target_x, target_y) = target;
+    let (x_flip, y_flip) = flips;
     for y in 0..8 {
         for x in 0..8 {
             let source_x = if x_flip { 7 - x } else { x };
             let source_y = if y_flip { 7 - y } else { y };
             let color = tile
                 .and_then(|tile| tile.pixel(source_x, source_y))
-                .map_or([0xff, 0x20, 0x80, 0xff], grayscale);
+                .and_then(|index| palette_color(palette, palette_row, index))
+                .unwrap_or([0xff, 0x20, 0x80, 0xff]);
             let output = ((target_y + y) * canvas_width + target_x + x) * 4;
             rgba[output..output + 4].copy_from_slice(&color);
         }
     }
 }
 
-fn grayscale(index: u8) -> [u8; 4] {
+fn palette_color(palette: &Palette, palette_row: usize, index: u8) -> Option<[u8; 4]> {
     if index == 0 {
-        return [12, 12, 18, 255];
+        return Some([12, 12, 18, 255]);
     }
-    let intensity = 32_u8.saturating_add(index.saturating_mul(14));
-    [intensity, intensity, intensity, 255]
+    let color = palette
+        .colors
+        .get(palette_row * Palette::COLORS_PER_ROW + usize::from(index))?
+        .to_rgb8();
+    Some([color.red, color.green, color.blue, 255])
 }
 
 #[cfg(test)]
@@ -102,9 +117,17 @@ mod tests {
         let Ok(bytes) = fs::read(path) else {
             return;
         };
-        let preview = render(bytes, 0).unwrap();
+        let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let level = project
+            .load_level_slot(
+                0,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let preview = render(bytes, 0, level.layer1.header).unwrap();
         assert_eq!(preview.image.size, [512, 256]);
-        assert_eq!(preview.graphics_files, [0x14, 0x17, 0x19, 0x15]);
+        assert_eq!(preview.graphics_files, [0x14, 0x17, 0x1b, 0x08]);
         assert_eq!(preview.common_tiles + preview.tileset_tiles, 512);
     }
 }

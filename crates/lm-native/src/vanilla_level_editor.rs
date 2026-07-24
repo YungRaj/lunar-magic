@@ -278,7 +278,14 @@ impl VanillaLevelEditor {
                 self.map16_error = None;
                 match crate::vanilla_map16_preview::render(
                     snapshot.rom_bytes.clone(),
-                    object_tileset,
+                    self.controller
+                        .as_ref()
+                        .map_or(0, |controller| {
+                            u16::try_from(controller.level().number).unwrap_or(0)
+                        }),
+                    self.controller
+                        .as_ref()
+                        .map_or_default(|controller| controller.level().layer1.header),
                 ) {
                     Ok(preview) => {
                         self.map16_summary = Some((
@@ -309,7 +316,7 @@ impl VanillaLevelEditor {
                         ui.image(texture);
                     });
                 ui.small(
-                    "Decoded 4bpp pixels and flip attributes; pink marks tiles outside the four foreground slots.",
+                    "Decoded 4bpp pixels, level palette, and flip attributes; pink marks tiles outside the four foreground slots.",
                 );
             } else if let Some(error) = &self.map16_error {
                 ui.colored_label(egui::Color32::RED, error);
