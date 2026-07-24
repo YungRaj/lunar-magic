@@ -683,6 +683,24 @@ pub fn install_lunar_magic_shared_standard_objects(
 fn install_lunar_magic_shared_standard_objects_high(
     definitions: &mut StandardObjectDefinitionSet,
 ) -> Result<(), StandardObjectRenderError> {
+    for (variant, command) in (24_u8..=27).enumerate() {
+        let top = [0x00, 0x01, 0x04, 0x08][variant];
+        let remainder = [0x02, 0x03, 0x05, 0x0b][variant];
+        definitions.set_native(
+            command,
+            StandardObjectDefinition {
+                pattern: StandardObjectPattern {
+                    width: 2,
+                    height: 1,
+                    tiles: vec![top, remainder],
+                },
+                extent: ObjectExtent::ParameterNibbles,
+                major_expansion: AxisExpansion::Clamp,
+                minor_expansion: AxisExpansion::Clamp,
+                renderer: NativeRenderer::Pattern,
+            },
+        )?;
+    }
     // Dispatch slot 012 (command 28): two rows selected from packed table word 0x4426.
     definitions.set_native(
         28,
@@ -1082,6 +1100,35 @@ mod tests {
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     if major == 2 { 0x00e } else { 0x00b }
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn recovered_commands_24_through_27_select_two_phase_tiles() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        for (command, expected) in [
+            (24, [0x00, 0x02]),
+            (25, [0x01, 0x03]),
+            (26, [0x04, 0x05]),
+            (27, [0x08, 0x0b]),
+        ] {
+            let first = (command & 0x30) << 1;
+            let second = (command & 0x0f) << 4;
+            let stream = ObjectStream {
+                records: vec![ObjectRecord::new(vec![first, second, 0x12]).unwrap()],
+            };
+            let report =
+                render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
+            for (major, &expected_tile) in expected.iter().enumerate() {
+                for minor in 0..3 {
+                    assert_eq!(
+                        report.cache.cells()
+                            [NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                        expected_tile
+                    );
+                }
             }
         }
     }
