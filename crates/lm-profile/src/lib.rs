@@ -56,6 +56,7 @@ mod vanilla_level_mode;
 mod vanilla_level_palette;
 mod vanilla_object_family;
 mod vanilla_smw;
+mod vanilla_standard_object_map;
 
 use lm_level::SpriteLengthTable;
 use lm_project::{
@@ -367,6 +368,11 @@ pub use vanilla_smw::{
     SMW_US_V1_OBJECT_TILESETS, SMW_US_V1_VANILLA_GRAPHICS_FILES, SMW_US_V1_VANILLA_LEVEL_SLOTS,
     SmwUsV1ObjectTilesetGraphicsError, smw_us_v1_object_tileset_graphics_files,
     smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_level_layout,
+};
+pub use vanilla_standard_object_map::{
+    SMW_US_V1_STANDARD_OBJECT_FAMILIES, SMW_US_V1_STANDARD_OBJECTS_PER_FAMILY,
+    SMW_US_V1_UNKNOWN_STANDARD_OBJECT_DEFINITION, SmwUsV1StandardObjectDefinitionMap,
+    SmwUsV1StandardObjectMapError, load_smw_us_v1_standard_object_definition_map,
 };
 
 /// Complete, externally recovered ROM-layout metadata for one supported game revision.
