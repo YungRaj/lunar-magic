@@ -123,6 +123,8 @@ impl VanillaLevelEditor {
         let sprite_count = controller.level().sprites.tokens.len();
         self.show_header_editor(ui, object_count, sprite_count);
         ui.separator();
+        self.object_canvas(ui);
+        ui.separator();
         ui.columns(2, |columns| {
             self.object_list(&mut columns[0]);
             self.object_editor(&mut columns[1]);
@@ -271,6 +273,82 @@ impl VanillaLevelEditor {
                     }
                 }
             });
+    }
+
+    fn object_canvas(&mut self, ui: &mut egui::Ui) {
+        let records = self
+            .controller
+            .as_ref()
+            .map(|controller| controller.level().layer1.objects.records.clone())
+            .unwrap_or_default();
+        let width = ui.available_width().max(320.0);
+        let height = 260.0;
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+        let painter = ui.painter_at(rect);
+        painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
+        let cell = 14.0;
+        for x in 0_u8..=16 {
+            let x = rect.left() + f32::from(x) * cell;
+            painter.line_segment(
+                [
+                    egui::pos2(x, rect.top()),
+                    egui::pos2(x, rect.bottom().min(rect.top() + 16.0 * cell)),
+                ],
+                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
+            );
+        }
+        for y in 0_u8..=16 {
+            let y = rect.top() + f32::from(y) * cell;
+            painter.line_segment(
+                [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                egui::Stroke::new(1.0_f32, egui::Color32::from_gray(45)),
+            );
+        }
+        let mut hit = None;
+        for (index, record) in records.iter().enumerate() {
+            let coordinate = record.coordinate_nibbles();
+            let position = rect.min
+                + egui::vec2(
+                    f32::from(coordinate.first) * cell,
+                    f32::from(coordinate.second) * cell,
+                );
+            let object_rect =
+                egui::Rect::from_min_size(position, egui::vec2(cell.max(8.0), cell.max(8.0)));
+            let selected = index == self.selected_object;
+            painter.rect_filled(
+                object_rect.shrink(1.0),
+                1.0,
+                if selected {
+                    egui::Color32::YELLOW
+                } else {
+                    egui::Color32::from_rgb(80, 170, 230)
+                },
+            );
+            painter.text(
+                object_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                format!("{:X}", record.command_id()),
+                egui::FontId::monospace(8.0),
+                egui::Color32::BLACK,
+            );
+            if response
+                .interact_pointer_pos()
+                .is_some_and(|position| object_rect.contains(position))
+            {
+                hit = Some(index);
+            }
+        }
+        if response.clicked()
+            && let Some(index) = hit
+            && let Some(record) = records.get(index)
+        {
+            self.selected_object = index;
+            self.object_form = ObjectForm::from_record(record);
+        }
+        ui.label(
+            "Schematic native-object coordinates (raw orientation-neutral nibbles; command ID shown).",
+        );
     }
 
     fn object_editor(&mut self, ui: &mut egui::Ui) {
