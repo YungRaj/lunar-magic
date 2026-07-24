@@ -707,6 +707,24 @@ addresses `$108549` and `$108640`. The Rust layout model therefore represents co
 split/shared-bank, and split/per-entry-bank encodings explicitly, including atomic writes and
 profile-wide protection/auditing of every component.
 
+### Pristine graphics pointer planes
+
+`ReadGraphicsFileRomPointer` (`00463A90`) proves that pristine GFX files
+`$00..$31` do not use the contiguous 24-bit pointer table assumed by the
+expanded profile backend. Descriptor entry `$2A` (`+$A8`) supplies headered
+base `$003B33`, hence logical base `$003933`. Lunar Magic reads the pointer's
+low, high, and bank bytes from three parallel 50-byte planes at logical
+`$003933`, `$003965`, and `$003997`. Entries `$32` and `$33` use the separate
+packed-pointer operands at descriptor entries `$2C`, `$2D`, and `$2B`.
+Expanded GFX/ExGFX ranges use still other descriptor-selected tables.
+
+This distinction is now the primary automatic-profile boundary for pristine
+SMW US revision 0. The Rust layout model must represent split three-plane
+graphics pointers explicitly; treating `$003933` as a contiguous table would
+silently combine bytes belonging to different files. Native UI auto-detection
+must therefore select the split-plane backend until a verified expanded
+graphics runtime is installed.
+
 The adjacent Layer 2 pointer table is descriptor index 26 (`+0x68`): its installed headered offset
 is `0x02E800`, hence logical offset `0x02E600`, with 512 contiguous 24-bit entries. Layer 2 storage
 depends on the five-bit level mode. Object-storage modes retain a terminated header/object stream.
