@@ -64,8 +64,8 @@ pub use scene::{Scene, TileInstance, draw_scene};
 pub use standard_object_renderer::{
     STANDARD_OBJECT_COMMANDS, StandardObjectDefinitionSet, StandardObjectPattern,
     StandardObjectRenderError, StandardObjectRenderReport,
-    install_lunar_magic_shared_extended_objects, lunar_magic_shared_extended_object_tile,
-    render_standard_object_stream,
+    install_lunar_magic_shared_extended_objects, install_lunar_magic_shared_standard_objects,
+    lunar_magic_shared_extended_object_tile, render_standard_object_stream,
 };
 pub use viewport::{Point, Viewport, ViewportError, WorldRect};
 pub use viewport_raster::{ViewportRasterError, rasterize_canvas_viewport};

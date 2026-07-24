@@ -20,10 +20,31 @@ pub struct StandardObjectPattern {
     pub tiles: Vec<u16>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ObjectExtent {
+    ParameterNibbles,
+    HighNibbleByOne,
+    FixedOne,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AxisExpansion {
+    PreserveEdges,
+    Clamp,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct StandardObjectDefinition {
+    pattern: StandardObjectPattern,
+    extent: ObjectExtent,
+    major_expansion: AxisExpansion,
+    minor_expansion: AxisExpansion,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardObjectDefinitionSet {
-    definitions: Vec<Option<StandardObjectPattern>>,
-    extended: Vec<Option<StandardObjectPattern>>,
+    definitions: Vec<Option<StandardObjectDefinition>>,
+    extended: Vec<Option<StandardObjectDefinition>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -84,13 +105,24 @@ impl StandardObjectDefinitionSet {
             .definitions
             .get_mut(usize::from(command))
             .ok_or(StandardObjectRenderError::InvalidCommand(command))?;
-        *slot = Some(pattern);
+        *slot = Some(StandardObjectDefinition {
+            pattern,
+            extent: ObjectExtent::ParameterNibbles,
+            major_expansion: AxisExpansion::PreserveEdges,
+            minor_expansion: AxisExpansion::PreserveEdges,
+        });
         Ok(())
     }
 
     #[must_use]
     pub fn get(&self, command: u8) -> Option<&StandardObjectPattern> {
-        self.definitions.get(usize::from(command))?.as_ref()
+        Some(
+            &self
+                .definitions
+                .get(usize::from(command))?
+                .as_ref()?
+                .pattern,
+        )
     }
 
     /// Installs one command-zero extended-object definition.
@@ -104,13 +136,40 @@ impl StandardObjectDefinitionSet {
         pattern: StandardObjectPattern,
     ) -> Result<(), StandardObjectRenderError> {
         validate_pattern(&pattern)?;
-        self.extended[usize::from(object)] = Some(pattern);
+        self.extended[usize::from(object)] = Some(StandardObjectDefinition {
+            pattern,
+            extent: ObjectExtent::FixedOne,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+        });
         Ok(())
     }
 
     #[must_use]
     pub fn get_extended(&self, object: u8) -> Option<&StandardObjectPattern> {
+        Some(&self.extended[usize::from(object)].as_ref()?.pattern)
+    }
+
+    fn definition(&self, command: u8) -> Option<&StandardObjectDefinition> {
+        self.definitions.get(usize::from(command))?.as_ref()
+    }
+
+    fn extended_definition(&self, object: u8) -> Option<&StandardObjectDefinition> {
         self.extended[usize::from(object)].as_ref()
+    }
+
+    fn set_native(
+        &mut self,
+        command: u8,
+        definition: StandardObjectDefinition,
+    ) -> Result<(), StandardObjectRenderError> {
+        validate_pattern(&definition.pattern)?;
+        let slot = self
+            .definitions
+            .get_mut(usize::from(command))
+            .ok_or(StandardObjectRenderError::InvalidCommand(command))?;
+        *slot = Some(definition);
+        Ok(())
     }
 }
 
@@ -159,12 +218,12 @@ pub fn render_standard_object_stream(
     for placement in stream.native_placements() {
         let record = &stream.records[placement.record_index];
         let command = record.command_id();
-        let pattern = if command == 0 {
-            definitions.get_extended(record.parameter())
+        let definition = if command == 0 {
+            definitions.extended_definition(record.parameter())
         } else {
-            definitions.get(command)
+            definitions.definition(command)
         };
-        let Some(pattern) = pattern else {
+        let Some(definition) = definition else {
             if command == 0 {
                 missing_extended_objects.insert(record.parameter());
             } else {
@@ -172,13 +231,13 @@ pub fn render_standard_object_stream(
             }
             continue;
         };
-        let (major_span, minor_span) = if command == 0 {
-            (1, 1)
-        } else {
-            (placement.major_span, placement.minor_span)
+        let (major_span, minor_span) = match definition.extent {
+            ObjectExtent::ParameterNibbles => (placement.major_span, placement.minor_span),
+            ObjectExtent::HighNibbleByOne => (placement.major_span, 1),
+            ObjectExtent::FixedOne => (1, 1),
         };
         render_pattern(
-            &mut cache, layout, placement, major_span, minor_span, pattern,
+            &mut cache, layout, placement, major_span, minor_span, definition,
         )?;
         rendered_objects += 1;
     }
@@ -196,7 +255,7 @@ fn render_pattern(
     placement: lm_level::NativeObjectPlacement,
     major_span: u8,
     minor_span: u8,
-    pattern: &StandardObjectPattern,
+    definition: &StandardObjectDefinition,
 ) -> Result<(), StandardObjectRenderError> {
     for major_offset in 0..usize::from(major_span) {
         for minor_offset in 0..usize::from(minor_span) {
@@ -211,7 +270,19 @@ fn render_pattern(
             } else {
                 (major, minor)
             };
-            cache.set(layout, x, y, pattern.tile_for(major_offset, minor_offset))?;
+            cache.set(
+                layout,
+                x,
+                y,
+                definition.pattern.tile_for(
+                    major_offset,
+                    minor_offset,
+                    usize::from(major_span),
+                    usize::from(minor_span),
+                    definition.major_expansion,
+                    definition.minor_expansion,
+                ),
+            )?;
         }
     }
     Ok(())
@@ -244,6 +315,34 @@ pub fn install_lunar_magic_shared_extended_objects(
     Ok(())
 }
 
+/// Installs shared standard-object renderers recovered from Lunar Magic's native dispatch table.
+///
+/// This set grows as each command renderer is authenticated. Unknown commands remain deliberately
+/// absent so callers can distinguish recovered output from guessed tiles.
+///
+/// # Errors
+///
+/// Returns a definition error if a recovered pattern cannot be installed.
+pub fn install_lunar_magic_shared_standard_objects(
+    definitions: &mut StandardObjectDefinitionSet,
+) -> Result<(), StandardObjectRenderError> {
+    // Dispatch slot 003 (command 17): 0x141 once, 0x142 once, then 0x143 for every
+    // remaining high-nibble cell. The low parameter nibble is ignored.
+    definitions.set_native(
+        17,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 3,
+                height: 1,
+                tiles: vec![0x141, 0x142, 0x143],
+            },
+            extent: ObjectExtent::HighNibbleByOne,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+        },
+    )
+}
+
 /// Returns the recovered Map16 tile for a shared command-zero extended object.
 #[must_use]
 pub fn lunar_magic_shared_extended_object_tile(selector: u8) -> Option<u16> {
@@ -253,19 +352,36 @@ pub fn lunar_magic_shared_extended_object_tile(selector: u8) -> Option<u16> {
 }
 
 impl StandardObjectPattern {
-    fn tile_for(&self, x: usize, y: usize) -> u16 {
-        let source_x = expandable_axis_index(x, self.width);
-        let source_y = expandable_axis_index(y, self.height);
+    fn tile_for(
+        &self,
+        x: usize,
+        y: usize,
+        target_width: usize,
+        target_height: usize,
+        x_expansion: AxisExpansion,
+        y_expansion: AxisExpansion,
+    ) -> u16 {
+        let source_x = expandable_axis_index(x, target_width, self.width, x_expansion);
+        let source_y = expandable_axis_index(y, target_height, self.height, y_expansion);
         self.tiles[source_y * self.width + source_x]
     }
 }
 
-fn expandable_axis_index(position: usize, pattern_len: usize) -> usize {
-    match pattern_len {
-        1 => 0,
-        2 => position.min(1),
-        _ if position == 0 => 0,
-        _ => 1 + (position - 1) % (pattern_len - 2),
+fn expandable_axis_index(
+    position: usize,
+    target_len: usize,
+    pattern_len: usize,
+    expansion: AxisExpansion,
+) -> usize {
+    match expansion {
+        AxisExpansion::Clamp => position.min(pattern_len - 1),
+        AxisExpansion::PreserveEdges => match pattern_len {
+            1 => 0,
+            _ if target_len <= pattern_len => position.min(pattern_len - 1),
+            _ if position == 0 => 0,
+            _ if position + 1 == target_len => pattern_len - 1,
+            _ => 1 + (position - 1) % (pattern_len - 2),
+        },
     }
 }
 
@@ -291,9 +407,39 @@ mod tests {
             height: 3,
             tiles: (1..=9).collect(),
         };
-        assert_eq!(pattern.tile_for(0, 0), 1);
-        assert_eq!(pattern.tile_for(1, 1), 5);
-        assert_eq!(pattern.tile_for(4, 3), 5);
+        assert_eq!(
+            pattern.tile_for(
+                0,
+                0,
+                5,
+                4,
+                AxisExpansion::PreserveEdges,
+                AxisExpansion::PreserveEdges
+            ),
+            1
+        );
+        assert_eq!(
+            pattern.tile_for(
+                1,
+                1,
+                5,
+                4,
+                AxisExpansion::PreserveEdges,
+                AxisExpansion::PreserveEdges
+            ),
+            5
+        );
+        assert_eq!(
+            pattern.tile_for(
+                4,
+                3,
+                5,
+                4,
+                AxisExpansion::PreserveEdges,
+                AxisExpansion::PreserveEdges
+            ),
+            9
+        );
     }
 
     #[test]
@@ -348,5 +494,27 @@ mod tests {
         assert_eq!(definitions.get_extended(0x50).unwrap().tiles, [0x128]);
         assert!(definitions.get_extended(0x0f).is_none());
         assert!(definitions.get_extended(0x51).is_none());
+    }
+
+    #[test]
+    fn recovered_command_17_ignores_low_nibble_and_clamps_trailing_tile() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x20, 0x10, 0x35]).unwrap()],
+        };
+        let report = render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
+        assert_eq!(report.rendered_objects, 1);
+        assert!(report.missing_commands.is_empty());
+        for (x, tile) in [0x141, 0x142, 0x143, 0x143].into_iter().enumerate() {
+            assert_eq!(
+                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), x, 0)],
+                tile
+            );
+        }
+        assert_eq!(
+            report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 0, 1)],
+            0x25
+        );
     }
 }
