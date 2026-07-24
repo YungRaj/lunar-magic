@@ -561,6 +561,21 @@ pub fn install_lunar_magic_shared_standard_objects(
             renderer: NativeRenderer::Pattern,
         },
     )?;
+    // Dispatch slot 007 (command 20): tile 0x100 across the first row, then 0x03f.
+    definitions.set_native(
+        20,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 2,
+                height: 1,
+                tiles: vec![0x100, 0x03f],
+            },
+            extent: ObjectExtent::ParameterNibbles,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::Pattern,
+        },
+    )?;
     // Dispatch slot 009 (command 22): a parameter-sized rectangle of tile 0x02c.
     definitions.set(
         22,
@@ -621,6 +636,7 @@ fn expandable_axis_index(
         AxisExpansion::Clamp => position.min(pattern_len - 1),
         AxisExpansion::PreserveEdges => match pattern_len {
             1 => 0,
+            2 => position.min(1),
             _ if target_len <= pattern_len => position.min(pattern_len - 1),
             _ if position == 0 => 0,
             _ if position + 1 == target_len => pattern_len - 1,
@@ -831,6 +847,24 @@ mod tests {
                 report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 4, minor)],
                 0x1a4
             );
+        }
+    }
+
+    #[test]
+    fn recovered_command_20_uses_a_distinct_top_row() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x20, 0x40, 0x22]).unwrap()],
+        };
+        let report = render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
+        for major in 0..3 {
+            for minor in 0..3 {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    if major == 0 { 0x100 } else { 0x03f }
+                );
+            }
         }
     }
 }
