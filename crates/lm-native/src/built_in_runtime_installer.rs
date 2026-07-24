@@ -62,6 +62,11 @@ impl BuiltInRuntimeInstaller {
                     BuiltInRuntime::CompleteLayer3,
                     BuiltInRuntime::CompleteLayer3.label(),
                 );
+                ui.selectable_value(
+                    &mut workspace.runtime,
+                    BuiltInRuntime::ExpandedSharedPalettes,
+                    BuiltInRuntime::ExpandedSharedPalettes.label(),
+                );
             });
         ui.label(workspace.runtime.description());
         ui.label(
@@ -114,7 +119,7 @@ impl BuiltInRuntimeInstaller {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_profile::smw_us_v1_expanded_settings_layout;
+    use lm_profile::{smw_us_v1_custom_palette_installation, smw_us_v1_expanded_settings_layout};
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -166,5 +171,32 @@ mod tests {
         assert_eq!(app.project().unwrap().history.undo_len(), 1);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), fixture);
+    }
+
+    #[test]
+    fn expanded_palette_selection_installs_and_enables_custom_palette_storage() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::ExpandedSharedPalettes;
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        app.dispatch(command).unwrap();
+        assert!(
+            smw_us_v1_custom_palette_installation()
+                .resolve(&app.project().unwrap().rom)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
     }
 }

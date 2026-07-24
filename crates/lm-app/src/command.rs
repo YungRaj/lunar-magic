@@ -78,6 +78,9 @@ pub enum Command {
     InstallLayer3 {
         rev: u64,
     },
+    InstallExpandedSharedPalettes {
+        rev: u64,
+    },
     /// Erases only manifest-owned, non-retained RATS allocations and repairs the checksum.
     ReclaimOwnedRats {
         rev: u64,

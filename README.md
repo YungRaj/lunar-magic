@@ -1314,12 +1314,13 @@ revision hooks, pointer publications, typed allocation fixups, checksum repair, 
 installation are complete. `layer3-install` groups that separately aligned plan with the five
 runtime allocations, preserving the `$087FF8` RATS header / `$088000` payload boundary while
 committing all six allocations as one undoable project operation.
-The cross-platform GUI exposes both recovered installation paths through a revision-bound
-**Install Built-in Runtime** dialog. It can install the expanded-settings family alone or the
-complete Layer 3 family (which includes expanded settings), displays the exact supported identity,
-rejects a stale project revision, and closes only after application acceptance. Native tests route
-both selections through the same commands as the shell, semantically reopen an installed
-expanded-settings record, and prove exact input restoration with one undo.
+The cross-platform GUI exposes three recovered installation paths through a revision-bound
+**Install Built-in Runtime** dialog. It can install the expanded-settings family alone, the
+complete Layer 3 family (which includes expanded settings), or the expanded shared/custom-palette
+runtime with its 512-entry per-level pointer table. The dialog displays the exact supported
+identity, rejects a stale project revision, and closes only after application acceptance. Native
+tests route every selection through the same application commands, semantically reopen the
+installed subsystem, and prove exact input restoration with one undo.
 The twelve copied runtime blocks now also have a byte-level oracle that permits differences only in
 recovered relocation/configuration spans. No Lunar Magic payload bytes are embedded in the Rust
 sources. Relocation-free descriptor blocks `$213` and `$219` are independently emitted from

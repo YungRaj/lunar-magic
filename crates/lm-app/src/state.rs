@@ -155,6 +155,7 @@ pub enum AppError {
     NativeSharedPaletteIdentityMismatch,
     NativeSharedPaletteReopenMismatch,
     NativeSharedPaletteIo(lm_project::SharedPaletteIoError),
+    NativeSharedPaletteFile(lm_graphics::SmwPaletteFileError),
     NativeSharedPaletteInstallPlan(lm_profile::SharedPaletteInstallPlanError),
     NativeOverworldPlayerStartIdentityMismatch,
     NativeOverworldPlayerStartReopenMismatch,
@@ -502,6 +503,12 @@ impl From<lm_project::SharedPaletteIoError> for AppError {
     }
 }
 
+impl From<lm_graphics::SmwPaletteFileError> for AppError {
+    fn from(value: lm_graphics::SmwPaletteFileError) -> Self {
+        Self::NativeSharedPaletteFile(value)
+    }
+}
+
 impl From<lm_project::OverworldPlayerStartIoError> for AppError {
     fn from(value: lm_project::OverworldPlayerStartIoError) -> Self {
         Self::NativeOverworldPlayerStartIo(value)
@@ -655,6 +662,9 @@ impl AppState {
             } => self.install_revision_patch(expected_revision, &template, search, fill)?,
             Command::InstallSettings { rev } => self.install(rev, false)?,
             Command::InstallLayer3 { rev } => self.install(rev, true)?,
+            Command::InstallExpandedSharedPalettes { rev } => {
+                self.install_native_expanded_shared_palettes(rev)?
+            }
             Command::ReclaimOwnedRats {
                 rev,
                 manifest,
