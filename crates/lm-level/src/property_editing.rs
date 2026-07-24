@@ -27,6 +27,7 @@ pub enum LegacyHeaderEdit {
     BackgroundColor(u8),
     SpritePalette(u8),
     ForegroundPalette(u8),
+    ObjectTileset(u8),
 }
 
 /// One ordered mutation in an atomic level-property batch.
@@ -194,6 +195,7 @@ fn apply_header_edit(level: &mut Level, edit: LegacyHeaderEdit) -> Result<(), He
         LegacyHeaderEdit::ForegroundPalette(value) => {
             level.header.legacy.set_foreground_palette(value)
         }
+        LegacyHeaderEdit::ObjectTileset(value) => level.header.legacy.set_object_tileset(value),
     }
 }
 

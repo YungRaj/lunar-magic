@@ -22,6 +22,7 @@ struct HeaderForm {
     background_color: u8,
     sprite_palette: u8,
     foreground_palette: u8,
+    object_tileset: u8,
 }
 
 impl HeaderForm {
@@ -33,10 +34,11 @@ impl HeaderForm {
             background_color: header.background_color(),
             sprite_palette: header.sprite_palette(),
             foreground_palette: header.foreground_palette(),
+            object_tileset: header.object_tileset(),
         }
     }
 
-    fn edits(self) -> [NativeLevelEdit; 5] {
+    fn edits(self) -> [NativeLevelEdit; 6] {
         [
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(
                 self.background_palette,
@@ -47,6 +49,7 @@ impl HeaderForm {
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ForegroundPalette(
                 self.foreground_palette,
             )),
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ObjectTileset(self.object_tileset)),
         ]
     }
 }
@@ -185,6 +188,7 @@ impl VanillaLevelEditor {
                 7,
             );
             header_row(ui, "Sprite palette", &mut self.form.sprite_palette, 7);
+            header_row(ui, "Object tileset", &mut self.form.object_tileset, 15);
         });
         if let Some(error) = &self.error {
             ui.colored_label(egui::Color32::RED, error);

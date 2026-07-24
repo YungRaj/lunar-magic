@@ -82,10 +82,16 @@ fn pristine_layer1_edit_expands_repoints_and_reopens_without_touching_sprites() 
     let original_sprites = level.sprites.clone();
     let original_sprite_pointer = layout.sprites.read_snes_pointer(&project.rom, 0).unwrap();
     let replacement = (level.layer1.header.background_palette() + 1) & 7;
+    let replacement_tileset = (level.layer1.header.object_tileset() + 1) & 0x0f;
     level
         .layer1
         .header
         .set_background_palette(replacement)
+        .unwrap();
+    level
+        .layer1
+        .header
+        .set_object_tileset(replacement_tileset)
         .unwrap();
     let original_coordinates = level.layer1.objects.records[0].coordinate_nibbles();
     let replacement_coordinates = ObjectCoordinateNibbles {
@@ -132,6 +138,7 @@ fn pristine_layer1_edit_expands_repoints_and_reopens_without_touching_sprites() 
         .load_level_slot(0, layout, &SpriteLengthTable::standard())
         .unwrap();
     assert_eq!(reopened.layer1.header.background_palette(), replacement);
+    assert_eq!(reopened.layer1.header.object_tileset(), replacement_tileset);
     assert_eq!(
         reopened.layer1.objects.records[0].coordinate_nibbles(),
         replacement_coordinates

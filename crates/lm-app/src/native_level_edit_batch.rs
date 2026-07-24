@@ -105,5 +105,6 @@ fn apply_header_edit(
         LegacyHeaderEdit::BackgroundColor(value) => layer1.header.set_background_color(value),
         LegacyHeaderEdit::SpritePalette(value) => layer1.header.set_sprite_palette(value),
         LegacyHeaderEdit::ForegroundPalette(value) => layer1.header.set_foreground_palette(value),
+        LegacyHeaderEdit::ObjectTileset(value) => layer1.header.set_object_tileset(value),
     }
 }

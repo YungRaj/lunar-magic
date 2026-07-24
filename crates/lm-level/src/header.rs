@@ -49,6 +49,11 @@ impl LegacyLevelHeader {
         self.bytes[3] & 7
     }
 
+    #[must_use]
+    pub const fn object_tileset(self) -> u8 {
+        self.bytes[4] & 0x0f
+    }
+
     /// Preserves every bit except the proven three-bit background-palette field.
     ///
     /// # Errors
@@ -92,6 +97,15 @@ impl LegacyLevelHeader {
     /// Returns [`HeaderValueError`] for values greater than seven.
     pub fn set_foreground_palette(&mut self, value: u8) -> Result<(), HeaderValueError> {
         set_bits(&mut self.bytes[3], value, 7, 0)
+    }
+
+    /// Preserves byte 4's upper nibble while replacing the proven object-tileset field.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HeaderValueError`] for values greater than 15.
+    pub fn set_object_tileset(&mut self, value: u8) -> Result<(), HeaderValueError> {
+        set_bits(&mut self.bytes[4], value, 0x0f, 0)
     }
 }
 
@@ -187,6 +201,7 @@ mod tests {
         header.set_background_color(7).unwrap();
         header.set_sprite_palette(1).unwrap();
         header.set_foreground_palette(5).unwrap();
+        header.set_object_tileset(9).unwrap();
         let encoded = header.encoded();
         assert_eq!(encoded[0] & 0x1f, original[0] & 0x1f);
         assert_eq!(encoded[1] & 0x1f, 3);
@@ -195,7 +210,8 @@ mod tests {
         assert_eq!(header.sprite_palette(), 1);
         assert_eq!(header.foreground_palette(), 5);
         assert_eq!(encoded[2], original[2]);
-        assert_eq!(encoded[4], original[4]);
+        assert_eq!(encoded[4] & 0xf0, original[4] & 0xf0);
+        assert_eq!(header.object_tileset(), 9);
     }
 
     #[test]
