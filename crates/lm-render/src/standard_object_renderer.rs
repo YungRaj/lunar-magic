@@ -33,6 +33,9 @@ pub struct StandardObjectPattern {
 enum ObjectExtent {
     ParameterNibbles,
     HighNibbleByOne,
+    TwoByLowNibble,
+    OneByLowNibble,
+    ThreeByParameterByte,
     FixedOne,
 }
 
@@ -40,6 +43,7 @@ enum ObjectExtent {
 enum AxisExpansion {
     PreserveEdges,
     Clamp,
+    FinalEdge,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -289,8 +293,14 @@ fn render_definition(
         return render_shared_slot_008(cache, layout, placement, parameter);
     }
     let (major_span, minor_span) = match definition.extent {
-        ObjectExtent::ParameterNibbles => (placement.major_span, placement.minor_span),
-        ObjectExtent::HighNibbleByOne => (placement.major_span, 1),
+        ObjectExtent::ParameterNibbles => (
+            usize::from(placement.major_span),
+            usize::from(placement.minor_span),
+        ),
+        ObjectExtent::HighNibbleByOne => (usize::from(placement.major_span), 1),
+        ObjectExtent::TwoByLowNibble => (2, usize::from(placement.minor_span)),
+        ObjectExtent::OneByLowNibble => (1, usize::from(placement.minor_span)),
+        ObjectExtent::ThreeByParameterByte => (3, usize::from(parameter) + 1),
         ObjectExtent::FixedOne => (1, 1),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
@@ -494,12 +504,12 @@ fn render_pattern(
     cache: &mut NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
     placement: lm_level::NativeObjectPlacement,
-    major_span: u8,
-    minor_span: u8,
+    major_span: usize,
+    minor_span: usize,
     definition: &StandardObjectDefinition,
 ) -> Result<(), StandardObjectRenderError> {
-    for major_offset in 0..usize::from(major_span) {
-        for minor_offset in 0..usize::from(minor_span) {
+    for major_offset in 0..major_span {
+        for minor_offset in 0..minor_span {
             let major = usize::from(placement.major)
                 .checked_add(major_offset)
                 .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
@@ -518,8 +528,8 @@ fn render_pattern(
                 definition.pattern.tile_for(
                     major_offset,
                     minor_offset,
-                    usize::from(major_span),
-                    usize::from(minor_span),
+                    major_span,
+                    minor_span,
                     definition.major_expansion,
                     definition.minor_expansion,
                 ),
@@ -666,6 +676,86 @@ pub fn install_lunar_magic_shared_standard_objects(
             minor_expansion: AxisExpansion::Clamp,
             renderer: NativeRenderer::SharedSlot010,
         },
+    )?;
+    install_lunar_magic_shared_standard_objects_high(definitions)
+}
+
+fn install_lunar_magic_shared_standard_objects_high(
+    definitions: &mut StandardObjectDefinitionSet,
+) -> Result<(), StandardObjectRenderError> {
+    // Dispatch slot 012 (command 28): two rows selected from packed table word 0x4426.
+    definitions.set_native(
+        28,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 2,
+                height: 1,
+                tiles: vec![0x026, 0x144],
+            },
+            extent: ObjectExtent::TwoByLowNibble,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::Pattern,
+        },
+    )?;
+    // Dispatch slot 013 (command 29): zero or more 0x00b rows and a final 0x00e row.
+    definitions.set_native(
+        29,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 2,
+                height: 1,
+                tiles: vec![0x00b, 0x00e],
+            },
+            extent: ObjectExtent::ParameterNibbles,
+            major_expansion: AxisExpansion::FinalEdge,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::Pattern,
+        },
+    )?;
+    // Dispatch slots 015/016 (commands 31/32): capped sequences on opposite axes.
+    definitions.set_native(
+        31,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 3,
+                height: 1,
+                tiles: vec![0x153, 0x154, 0x155],
+            },
+            extent: ObjectExtent::HighNibbleByOne,
+            major_expansion: AxisExpansion::PreserveEdges,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::Pattern,
+        },
+    )?;
+    definitions.set_native(
+        32,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 3,
+                tiles: vec![0x156, 0x157, 0x158],
+            },
+            extent: ObjectExtent::OneByLowNibble,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::PreserveEdges,
+            renderer: NativeRenderer::Pattern,
+        },
+    )?;
+    // Dispatch slot 006 (command 33): three rows and a full-byte run length.
+    definitions.set_native(
+        33,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 2,
+                height: 1,
+                tiles: vec![0x100, 0x03f],
+            },
+            extent: ObjectExtent::ThreeByParameterByte,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::Pattern,
+        },
     )
 }
 
@@ -701,6 +791,13 @@ fn expandable_axis_index(
 ) -> usize {
     match expansion {
         AxisExpansion::Clamp => position.min(pattern_len - 1),
+        AxisExpansion::FinalEdge => {
+            if position + 1 == target_len {
+                pattern_len - 1
+            } else {
+                position.min(pattern_len.saturating_sub(2))
+            }
+        }
         AxisExpansion::PreserveEdges => match pattern_len {
             1 => 0,
             2 => position.min(1),
@@ -951,6 +1048,92 @@ mod tests {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovered_commands_28_and_29_use_native_row_extents() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let command_28 = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x20, 0xc0, 0xf2]).unwrap()],
+        };
+        let report =
+            render_standard_object_stream(&command_28, &definitions, layout(), 0x25).unwrap();
+        for major in 0..2 {
+            for minor in 0..3 {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    if major == 0 { 0x026 } else { 0x144 }
+                );
+            }
+        }
+
+        let command_29 = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x20, 0xd0, 0x21]).unwrap()],
+        };
+        let report =
+            render_standard_object_stream(&command_29, &definitions, layout(), 0x25).unwrap();
+        for major in 0..3 {
+            for minor in 0..2 {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    if major == 2 { 0x00e } else { 0x00b }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovered_commands_31_through_33_use_command_specific_axes() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let cases = [
+            (
+                ObjectRecord::new(vec![0x20, 0xf0, 0x3f]).unwrap(),
+                vec![(0, 0x153), (1, 0x154), (2, 0x154), (3, 0x155)],
+            ),
+            (
+                ObjectRecord::new(vec![0x40, 0, 0xf3]).unwrap(),
+                vec![(0, 0x156), (1, 0x157), (2, 0x157), (3, 0x158)],
+            ),
+        ];
+        for (record, expected) in cases {
+            let command = record.command_id();
+            let report = render_standard_object_stream(
+                &ObjectStream {
+                    records: vec![record],
+                },
+                &definitions,
+                layout(),
+                0x25,
+            )
+            .unwrap();
+            for (offset, tile) in expected {
+                let (major, minor) = if command == 31 {
+                    (offset, 0)
+                } else {
+                    (0, offset)
+                };
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile
+                );
+            }
+        }
+
+        let command_33 = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x40, 0x10, 3]).unwrap()],
+        };
+        let report =
+            render_standard_object_stream(&command_33, &definitions, layout(), 0x25).unwrap();
+        for major in 0..3 {
+            for minor in 0..4 {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    if major == 0 { 0x100 } else { 0x03f }
                 );
             }
         }

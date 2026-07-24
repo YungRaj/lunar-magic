@@ -904,7 +904,10 @@ fn draw_object_marker(
     let recovered_tile = (record.command_id() == 0)
         .then(|| lm_render::lunar_magic_shared_extended_object_tile(record.parameter()))
         .flatten();
-    let recovered_standard = matches!(record.command_id(), 15..=17 | 20..=23);
+    let recovered_standard = matches!(
+        record.command_id(),
+        15..=17 | 20..=23 | 28 | 29 | 31..=33
+    );
     if let (Some(tile), Some(texture)) = (recovered_tile, texture) {
         draw_map16_atlas_tile(painter, texture, target.shrink(1.0), tile);
     } else if !recovered_standard {
