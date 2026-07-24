@@ -94,6 +94,7 @@ mod rom_title_recording_editor;
 mod startup;
 mod vanilla_graphics_editor;
 mod vanilla_level_editor;
+mod vanilla_map16_preview;
 
 use application::NativeApplication;
 

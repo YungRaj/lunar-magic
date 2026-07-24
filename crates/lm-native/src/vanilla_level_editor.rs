@@ -84,6 +84,10 @@ pub(crate) struct VanillaLevelEditor {
     selected_object: usize,
     object_form: ObjectForm,
     error: Option<String>,
+    map16_key: Option<(u64, u8)>,
+    map16_texture: Option<egui::TextureHandle>,
+    map16_summary: Option<([usize; 4], usize, usize)>,
+    map16_error: Option<String>,
 }
 
 impl VanillaLevelEditor {
@@ -127,7 +131,7 @@ impl VanillaLevelEditor {
         let object_tileset = controller.level().layer1.header.object_tileset();
         self.show_header_editor(ui, object_count, sprite_count);
         ui.separator();
-        show_map16_preview(ui, &snapshot, object_tileset);
+        self.show_map16_preview(ui, &snapshot, object_tileset);
         ui.separator();
         self.object_canvas(ui);
         ui.separator();
@@ -250,6 +254,67 @@ impl VanillaLevelEditor {
         self.key = None;
         self.controller = None;
         self.error = None;
+        self.map16_key = None;
+        self.map16_texture = None;
+        self.map16_summary = None;
+        self.map16_error = None;
+    }
+
+    fn show_map16_preview(
+        &mut self,
+        ui: &mut egui::Ui,
+        snapshot: &lm_app::ControllerSnapshot,
+        object_tileset: u8,
+    ) {
+        egui::CollapsingHeader::new(format!(
+            "Pristine Map16 graphics — object tileset {object_tileset:X}"
+        ))
+        .default_open(false)
+        .show(ui, |ui| {
+            let key = (snapshot.revision, object_tileset);
+            if self.map16_key != Some(key) {
+                self.map16_texture = None;
+                self.map16_summary = None;
+                self.map16_error = None;
+                match crate::vanilla_map16_preview::render(
+                    snapshot.rom_bytes.clone(),
+                    object_tileset,
+                ) {
+                    Ok(preview) => {
+                        self.map16_summary = Some((
+                            preview.graphics_files,
+                            preview.common_tiles,
+                            preview.tileset_tiles,
+                        ));
+                        self.map16_texture = Some(ui.ctx().load_texture(
+                            format!("vanilla-map16-{object_tileset:X}-{}", snapshot.revision),
+                            preview.image,
+                            egui::TextureOptions::NEAREST,
+                        ));
+                    }
+                    Err(error) => self.map16_error = Some(error),
+                }
+                self.map16_key = Some(key);
+            }
+            if let Some((files, common, specific)) = self.map16_summary {
+                ui.label(format!(
+                    "GFX{:02X}/GFX{:02X}/GFX{:02X}/GFX{:02X}; {common} common and {specific} tileset-specific definitions",
+                    files[0], files[1], files[2], files[3]
+                ));
+            }
+            if let Some(texture) = &self.map16_texture {
+                egui::ScrollArea::horizontal()
+                    .id_salt("vanilla-map16-preview")
+                    .show(ui, |ui| {
+                        ui.image(texture);
+                    });
+                ui.small(
+                    "Decoded 4bpp pixels and flip attributes; pink marks tiles outside the four foreground slots.",
+                );
+            } else if let Some(error) = &self.map16_error {
+                ui.colored_label(egui::Color32::RED, error);
+            }
+        });
     }
 
     fn object_list(&mut self, ui: &mut egui::Ui) {
@@ -443,79 +508,6 @@ impl VanillaLevelEditor {
             }
         });
     }
-}
-
-fn show_map16_preview(
-    ui: &mut egui::Ui,
-    snapshot: &lm_app::ControllerSnapshot,
-    object_tileset: u8,
-) {
-    egui::CollapsingHeader::new(format!(
-        "Pristine Map16 base — object tileset {object_tileset:X}"
-    ))
-    .default_open(false)
-    .show(ui, |ui| {
-        let loaded = RomImage::from_bytes(snapshot.rom_bytes.clone())
-            .map_err(|error| error.to_string())
-            .and_then(|rom| {
-                lm_profile::load_smw_us_v1_level_map16_base(&rom, usize::from(object_tileset))
-                    .map_err(|error| error.to_string())
-            });
-        let Ok(loaded) = loaded else {
-            ui.colored_label(
-                egui::Color32::RED,
-                loaded
-                    .err()
-                    .as_deref()
-                    .unwrap_or("could not load pristine Map16"),
-            );
-            return;
-        };
-        ui.label(format!(
-            "{} common and {} tileset-specific definitions",
-            loaded.common_tiles, loaded.tileset_tiles
-        ));
-        let graphics = loaded.editor_graphics_bytes();
-        egui::ScrollArea::horizontal()
-            .id_salt("vanilla-map16-preview")
-            .show(ui, |ui| {
-                let cell = 24.0_f32;
-                let size = egui::vec2(cell * 32.0, cell * 16.0);
-                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                let painter = ui.painter_at(rect);
-                for tile in 0..lm_profile::SMW_US_V1_MAP16_BASE_TILE_COUNT {
-                    let word_offset = tile * lm_profile::SMW_US_V1_MAP16_TILE_BYTES;
-                    let first_subtile =
-                        u16::from_le_bytes([graphics[word_offset], graphics[word_offset + 1]]);
-                    let tile_number = first_subtile & 0x03ff;
-                    let tile_number = u32::from(tile_number);
-                    let red = ((tile_number * 37) & 0x7f).to_le_bytes()[0] + 64;
-                    let green = ((tile_number * 67) & 0x7f).to_le_bytes()[0] + 64;
-                    let blue = ((tile_number * 97) & 0x7f).to_le_bytes()[0] + 64;
-                    let x = tile % 32;
-                    let y = tile / 32;
-                    let x = f32::from(u16::try_from(x).unwrap_or(0));
-                    let y = f32::from(u16::try_from(y).unwrap_or(0));
-                    let tile_rect = egui::Rect::from_min_size(
-                        rect.min + egui::vec2(x * cell, y * cell),
-                        egui::vec2(cell, cell),
-                    );
-                    painter.rect_filled(
-                        tile_rect.shrink(1.0),
-                        1.0,
-                        egui::Color32::from_rgb(red, green, blue),
-                    );
-                    painter.text(
-                        tile_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        format!("{tile:03X}"),
-                        egui::FontId::monospace(8.0),
-                        egui::Color32::BLACK,
-                    );
-                }
-            });
-        ui.small("Color is keyed to the first decoded 8×8 subtile; labels are Map16 IDs.");
-    });
 }
 
 fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
