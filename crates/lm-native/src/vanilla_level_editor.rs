@@ -155,6 +155,11 @@ impl VanillaLevelEditor {
         let object_count = controller.level().layer1.objects.records.len();
         let sprite_count = controller.level().sprites.tokens.len();
         let object_tileset = controller.level().layer1.header.object_tileset();
+        let object_family = lm_profile::smw_us_v1_object_family(object_tileset);
+        ui.label(format!(
+            "{} standard-object definitions (tileset {object_tileset:X})",
+            object_family.display_name()
+        ));
         self.show_header_editor(ui, object_count, sprite_count);
         ui.separator();
         self.show_map16_preview(ui, &snapshot, object_tileset);
@@ -368,7 +373,9 @@ impl VanillaLevelEditor {
         let Some(controller) = &self.controller else {
             return;
         };
-        ui.label("Layer 1 objects");
+        let family =
+            lm_profile::smw_us_v1_object_family(controller.level().layer1.header.object_tileset());
+        ui.label(format!("Layer 1 objects — {}", family.display_name()));
         egui::ScrollArea::vertical()
             .max_height(300.0)
             .show(ui, |ui| {
@@ -383,7 +390,10 @@ impl VanillaLevelEditor {
                     if ui
                         .selectable_label(
                             index == self.selected_object,
-                            format!("{index:03}: {encoded}"),
+                            format!(
+                                "{index:03}: command {:02X} · {encoded}",
+                                record.command_id()
+                            ),
                         )
                         .clicked()
                     {
