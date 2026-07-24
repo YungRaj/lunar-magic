@@ -5,6 +5,8 @@ use lm_project::{
     LevelRomLayout, SpritePointerTable,
 };
 use lm_rom::Mapper;
+use lm_rom::{RomError, RomImage};
+use std::fmt;
 
 /// Number of ordinary vanilla graphics files addressed by the parallel pointer planes.
 pub const SMW_US_V1_VANILLA_GRAPHICS_FILES: usize = 0x32;
@@ -24,6 +26,60 @@ pub const SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET: usize = 0x2e000;
 pub const SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET: usize = 0x2ec00;
 /// Shared bank operand for native sprite-stream pointers.
 pub const SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET: usize = 0x2d8f6;
+/// Four-byte graphics-file assignment rows for the 16 native object tilesets.
+pub const SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET: usize = 0x292b;
+pub const SMW_US_V1_OBJECT_TILESETS: usize = 16;
+pub const SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS: usize = 4;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SmwUsV1ObjectTilesetGraphicsError {
+    TilesetOutOfRange(usize),
+    Rom(RomError),
+}
+
+impl fmt::Display for SmwUsV1ObjectTilesetGraphicsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "pristine object-tileset graphics lookup failed: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1ObjectTilesetGraphicsError {}
+
+impl From<RomError> for SmwUsV1ObjectTilesetGraphicsError {
+    fn from(value: RomError) -> Self {
+        Self::Rom(value)
+    }
+}
+
+/// Reads the four GFX file numbers selected by one native object tileset.
+///
+/// # Errors
+///
+/// Rejects tileset indices above 15 and truncated assignment tables.
+pub fn smw_us_v1_object_tileset_graphics_files(
+    rom: &RomImage,
+    tileset: usize,
+) -> Result<[usize; SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS], SmwUsV1ObjectTilesetGraphicsError> {
+    if tileset >= SMW_US_V1_OBJECT_TILESETS {
+        return Err(SmwUsV1ObjectTilesetGraphicsError::TilesetOutOfRange(
+            tileset,
+        ));
+    }
+    let offset = SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET
+        + tileset * SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS;
+    let bytes = rom
+        .logical_bytes()
+        .get(offset..offset + SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS)
+        .ok_or(RomError::RangeOutOfBounds {
+            offset,
+            len: SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS,
+            image_len: rom.logical_len(),
+        })?;
+    Ok(std::array::from_fn(|index| usize::from(bytes[index])))
+}
 
 /// Returns the native graphics layout recovered from Lunar Magic's SMW-US descriptor and
 /// `ReadGraphicsFileRomPointer`.
@@ -68,5 +124,31 @@ pub const fn smw_us_v1_vanilla_level_layout() -> LevelRomLayout {
             bank_offset: SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET,
         },
         expanded_sprites: false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn object_tileset_assignments_are_bounded_and_ordered() {
+        let mut bytes = vec![0xff; 0x30_000];
+        bytes[SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET
+            ..SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET + 8]
+            .copy_from_slice(&[0x14, 0x17, 0x19, 0x15, 0x14, 0x17, 0x1b, 0x18]);
+        let rom = RomImage::from_bytes(bytes).unwrap();
+        assert_eq!(
+            smw_us_v1_object_tileset_graphics_files(&rom, 0).unwrap(),
+            [0x14, 0x17, 0x19, 0x15]
+        );
+        assert_eq!(
+            smw_us_v1_object_tileset_graphics_files(&rom, 1).unwrap(),
+            [0x14, 0x17, 0x1b, 0x18]
+        );
+        assert_eq!(
+            smw_us_v1_object_tileset_graphics_files(&rom, 16),
+            Err(SmwUsV1ObjectTilesetGraphicsError::TilesetOutOfRange(16))
+        );
     }
 }

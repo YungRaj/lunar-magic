@@ -2,7 +2,8 @@ use lm_level::{ObjectCoordinateNibbles, SpriteLengthTable};
 use lm_profile::{
     SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET, SMW_US_V1_VANILLA_GRAPHICS_FILES,
     SMW_US_V1_VANILLA_LEVEL_SLOTS, load_smw_us_v1_level_map16_base,
-    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_level_layout,
+    smw_us_v1_object_tileset_graphics_files, smw_us_v1_vanilla_graphics_layout,
+    smw_us_v1_vanilla_level_layout,
 };
 use lm_project::{GraphicsSaveOptions, LevelSaveOptions, Project};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -26,6 +27,27 @@ fn every_ordinary_graphics_file_in_the_local_reference_rom_decodes() {
             !graphics.tiles.is_empty(),
             "GFX{file_number:02X} decoded no tiles"
         );
+    }
+}
+
+#[test]
+fn every_object_tileset_graphics_assignment_decodes_in_the_reference_rom() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("Super Mario World (USA).sfc");
+    let Ok(bytes) = fs::read(path) else {
+        return;
+    };
+    let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+    for tileset in 0..16 {
+        let files = smw_us_v1_object_tileset_graphics_files(&project.rom, tileset).unwrap();
+        for file in files {
+            project
+                .load_graphics_file(file, smw_us_v1_vanilla_graphics_layout())
+                .unwrap_or_else(|error| {
+                    panic!("tileset {tileset:X} GFX{file:02X} failed: {error}")
+                });
+        }
     }
 }
 
