@@ -98,6 +98,17 @@ impl ObjectForm {
             advances_screen: record.advances_screen(),
         }
     }
+
+    fn ordinary_record(self) -> Result<ObjectRecord, String> {
+        if self.command_id > 0x3f || self.first_coordinate > 0x0f || self.second_coordinate > 0x0f {
+            return Err("object command or coordinate is out of range".into());
+        }
+        let first = self.first_coordinate
+            | ((self.command_id & 0x30) << 1)
+            | if self.advances_screen { 0x80 } else { 0 };
+        let second = self.second_coordinate | ((self.command_id & 0x0f) << 4);
+        ObjectRecord::new(vec![first, second, self.parameter]).map_err(|error| error.to_string())
+    }
 }
 
 #[derive(Default)]
@@ -516,6 +527,15 @@ impl VanillaLevelEditor {
             ui.end_row();
         });
         ui.horizontal(|ui| {
+            if ui.button("Insert after selection").clicked() {
+                let edit = self.object_form.ordinary_record().map(|record| {
+                    NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                        index: self.selected_object.saturating_add(1).min(record_count),
+                        record,
+                    }])
+                });
+                self.apply_object_result(edit);
+            }
             if ui.button("Apply object fields").clicked() {
                 let edits = vec![
                     ObjectEdit::SetCommandId {
@@ -571,6 +591,20 @@ impl VanillaLevelEditor {
                 }
             }
         });
+    }
+
+    fn apply_object_result(&mut self, edit: Result<NativeLevelEdit, String>) {
+        match edit {
+            Ok(edit) => {
+                if let Some(controller) = self.controller.as_mut() {
+                    match controller.apply_edits(&[edit]) {
+                        Ok(()) => self.error = None,
+                        Err(error) => self.error = Some(error.to_string()),
+                    }
+                }
+            }
+            Err(error) => self.error = Some(error),
+        }
     }
 
     fn sprite_list(&mut self, ui: &mut egui::Ui) {
@@ -760,4 +794,35 @@ fn prepare_commit(
         )
         .map(lm_app::PreparedRomCommit::into_command)
         .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn object_form_constructs_native_three_byte_record() {
+        let form = ObjectForm {
+            command_id: 0x31,
+            parameter: 0x42,
+            first_coordinate: 5,
+            second_coordinate: 6,
+            advances_screen: true,
+        };
+        let record = form.ordinary_record().unwrap();
+        assert_eq!(record.encoded(), &[0xe5, 0x16, 0x42]);
+        assert_eq!(ObjectForm::from_record(&record).command_id, 0x31);
+    }
+
+    #[test]
+    fn object_form_rejects_out_of_range_values() {
+        assert!(
+            ObjectForm {
+                command_id: 0x40,
+                ..ObjectForm::default()
+            }
+            .ordinary_record()
+            .is_err()
+        );
+    }
 }
