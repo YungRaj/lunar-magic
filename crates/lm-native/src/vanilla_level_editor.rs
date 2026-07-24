@@ -325,7 +325,7 @@ impl VanillaLevelEditor {
         egui::CollapsingHeader::new(format!(
             "Pristine Map16 graphics — object tileset {object_tileset:X}"
         ))
-        .default_open(false)
+        .default_open(true)
         .show(ui, |ui| {
             let key = (snapshot.revision, object_tileset);
             if self.map16_key != Some(key) {
@@ -454,22 +454,12 @@ impl VanillaLevelEditor {
                     (f32::from(placement.minor_span) * cell).max(8.0),
                 ),
             );
-            let selected = index == self.selected_object;
-            painter.rect_filled(
-                object_rect.shrink(1.0),
-                1.0,
-                if selected {
-                    egui::Color32::YELLOW
-                } else {
-                    egui::Color32::from_rgb(80, 170, 230)
-                },
-            );
-            painter.text(
-                object_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                format!("{:X}", record.command_id()),
-                egui::FontId::monospace(8.0),
-                egui::Color32::BLACK,
+            draw_object_marker(
+                &painter,
+                self.map16_texture.as_ref(),
+                object_rect,
+                record,
+                index == self.selected_object,
             );
             if response
                 .interact_pointer_pos()
@@ -783,6 +773,57 @@ fn canvas_major_tiles(
         .max()
         .unwrap_or(16);
     object_end.max(sprite_end).max(16)
+}
+
+fn draw_map16_atlas_tile(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    tile: u16,
+) {
+    let column = f32::from(tile % 32);
+    let row = f32::from(tile / 32);
+    let uv = egui::Rect::from_min_max(
+        egui::pos2(column / 32.0, row / 16.0),
+        egui::pos2((column + 1.0) / 32.0, (row + 1.0) / 16.0),
+    );
+    painter.image(texture.id(), target, uv, egui::Color32::WHITE);
+}
+
+fn draw_object_marker(
+    painter: &egui::Painter,
+    texture: Option<&egui::TextureHandle>,
+    target: egui::Rect,
+    record: &ObjectRecord,
+    selected: bool,
+) {
+    let recovered_tile = (record.command_id() == 0)
+        .then(|| lm_render::lunar_magic_shared_extended_object_tile(record.parameter()))
+        .flatten();
+    if let (Some(tile), Some(texture)) = (recovered_tile, texture) {
+        draw_map16_atlas_tile(painter, texture, target.shrink(1.0), tile);
+    } else {
+        painter.rect_filled(
+            target.shrink(1.0),
+            1.0,
+            egui::Color32::from_rgb(80, 170, 230),
+        );
+        painter.text(
+            target.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("{:X}", record.command_id()),
+            egui::FontId::monospace(8.0),
+            egui::Color32::BLACK,
+        );
+    }
+    if selected {
+        painter.rect_stroke(
+            target,
+            1.0,
+            egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+            egui::StrokeKind::Inside,
+        );
+    }
 }
 
 fn draw_sprite_placements(
