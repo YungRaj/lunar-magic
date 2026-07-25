@@ -87,7 +87,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x1c => parts(&[(0x25, 0, 1)]),
         0x1d => parts(&[(0x17, 0, 1)]),
         0x1f => parts(&[(0x18, 0, -15), (0x28, 0, 1)]),
-        0x20..=0x24 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0x20..=0x27 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0x20 => parts(&[(0x03, 4, 0), (0x04, -4, 8), (0x05, 12, 8)]),
         0x21 => parts(&[(0x1a, 0, 1)]),
         0x22..=0x24 => {
@@ -95,6 +95,12 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             let base = 0x50 + u16::from(sprite_number - 0x22);
             parts(&[(base + variant, 0, -4), (base + 0x10 + variant, 0, 12)])
         }
+        0x25 => {
+            let variant = u16::from(mode.placement_first & 1) * 0xd4;
+            parts(&[(0x53 + variant, 0, -4), (0x63 + variant, 0, 12)])
+        }
+        0x26 => parts(&[(0x34, 4, 1), (0x35, 20, 1), (0x44, 4, 17), (0x45, 20, 17)]),
+        0x27 => parts(&[(0x2a, 0, 1)]),
         _ => None,
     }
 }
@@ -150,18 +156,27 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x025 => [0x04a6, 0x04b6, 0x04a7, 0x04b7],
         0x026 => [0x50cf, 0x50df, 0x50ce, 0x50de],
         0x028 => [0x0dc4, 0x0dd4, 0x0dc5, 0x0dd5],
+        0x02a => [0x05a2, 0x05b2, 0x45a2, 0x45b2],
+        0x034 => [0x058e, 0x059e, 0x058f, 0x059f],
+        0x035 => [0x458e, 0x459e, 0x0419, 0x0419],
+        0x044 => [0x05ae, 0x05be, 0x05af, 0x05bf],
+        0x045 => [0x45ae, 0x45be, 0x0419, 0x0419],
         0x050 => [0x154c, 0x155c, 0x154d, 0x155d],
         0x051 => [0x114c, 0x115c, 0x114d, 0x115d],
         0x052 => [0x554d, 0x555d, 0x554c, 0x555c],
         0x060 => [0x1529, 0x1539, 0x152a, 0x153a],
         0x061 => [0x1129, 0x1139, 0x112a, 0x113a],
         0x062 => [0x552a, 0x553a, 0x5529, 0x5539],
+        0x053 => [0x514d, 0x515d, 0x514c, 0x515c],
+        0x063 => [0x512a, 0x513a, 0x5129, 0x5139],
         0x124 => [0x5508, 0x5518, 0x5507, 0x5517],
         0x125 => [0x5108, 0x5118, 0x5107, 0x5117],
         0x126 => [0x1507, 0x1517, 0x1508, 0x1518],
+        0x127 => [0x1107, 0x1117, 0x1108, 0x1118],
         0x134 => [0x5528, 0x5538, 0x5527, 0x5537],
         0x135 => [0x5128, 0x5138, 0x5127, 0x5137],
         0x136 => [0x1527, 0x1537, 0x1528, 0x1538],
+        0x137 => [0x1127, 0x1137, 0x1128, 0x1138],
         0x115 => [0x04e8, 0x04f8, 0x04e9, 0x04f9],
         0x140 => [0x14a0, 0x14b0, 0x14a1, 0x14b1],
         _ => return None,
@@ -378,6 +393,40 @@ mod tests {
         assert_eq!(geometry(0x24, 0), [(0x52, 0, -4), (0x62, 0, 12)]);
         assert_eq!(geometry(0x24, 1), [(0x126, 0, -4), (0x136, 0, 12)]);
         for sprite in 0x20..=0x24 {
+            assert_eq!(
+                render_lunar_magic_standard_sprite(sprite, true)
+                    .unwrap()
+                    .iter()
+                    .map(|part| part.definition_index)
+                    .collect::<Vec<_>>(),
+                [0x115]
+            );
+        }
+    }
+
+    #[test]
+    fn handlers_thirty_seven_through_thirty_nine_preserve_native_geometry() {
+        let geometry = |sprite, first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(geometry(0x25, 0), [(0x53, 0, -4), (0x63, 0, 12)]);
+        assert_eq!(geometry(0x25, 1), [(0x127, 0, -4), (0x137, 0, 12)]);
+        assert_eq!(
+            geometry(0x26, 0),
+            [(0x34, 4, 1), (0x35, 20, 1), (0x44, 4, 17), (0x45, 20, 17)]
+        );
+        assert_eq!(geometry(0x27, 0), [(0x2a, 0, 1)]);
+        for sprite in 0x25..=0x27 {
             assert_eq!(
                 render_lunar_magic_standard_sprite(sprite, true)
                     .unwrap()
