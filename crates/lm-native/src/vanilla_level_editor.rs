@@ -697,39 +697,47 @@ impl VanillaLevelEditor {
         cell: f32,
         vertical: bool,
     ) {
-        let placement = self.controller.as_ref().and_then(|controller| {
+        let has_placement = self.controller.as_ref().is_some_and(|controller| {
             controller
                 .level()
                 .layer1
                 .objects
                 .native_placements()
                 .into_iter()
-                .find(|placement| placement.record_index == index)
+                .any(|placement| placement.record_index == index)
         });
-        let Some(placement) = placement else {
+        if !has_placement {
             self.error = Some("selected object has no visible native placement".into());
             return;
-        };
-        let Some(coordinates) = object_coordinates_at_canvas_position(
-            position,
-            canvas,
-            cell,
-            vertical,
-            placement.screen,
-        ) else {
-            self.error =
-                Some("object drag must end inside its current 16×16-tile native screen".into());
+        }
+        let Some((screen, coordinates)) =
+            object_placement_at_canvas_position(position, canvas, cell, vertical)
+        else {
+            self.error = Some("object drag ended outside the native 16×512-tile space".into());
             return;
         };
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
+        let mut predicted = controller.level().layer1.objects.clone();
+        let new_index = match predicted.relocate_ordinary_object(index, screen, coordinates) {
+            Ok(index) => index,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
         match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
-            ObjectEdit::SetCoordinateNibbles { index, coordinates },
+            ObjectEdit::RelocateOrdinary {
+                index,
+                screen,
+                coordinates,
+            },
         ])]) {
             Ok(()) => {
-                self.object_form.first_coordinate = coordinates.first;
-                self.object_form.second_coordinate = coordinates.second;
+                self.selected_object = new_index;
+                self.object_form =
+                    ObjectForm::from_record(&controller.level().layer1.objects.records[new_index]);
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -1540,13 +1548,12 @@ fn sprite_fields_at_canvas_position(
     Some(fields)
 }
 
-fn object_coordinates_at_canvas_position(
+fn object_placement_at_canvas_position(
     position: egui::Pos2,
     canvas: egui::Rect,
     cell: f32,
     vertical: bool,
-    current_screen: u16,
-) -> Option<ObjectCoordinateNibbles> {
+) -> Option<(u16, ObjectCoordinateNibbles)> {
     if !canvas.contains(position) || !cell.is_finite() || cell <= 0.0 {
         return None;
     }
@@ -1562,13 +1569,17 @@ fn object_coordinates_at_canvas_position(
     } else {
         (column as u16, row as u16)
     };
-    if major / 16 != current_screen || minor >= 16 {
+    let screen = major / 16;
+    if screen >= 32 || minor >= 16 {
         return None;
     }
-    Some(ObjectCoordinateNibbles {
-        first: u8::try_from(major % 16).ok()?,
-        second: u8::try_from(minor).ok()?,
-    })
+    Some((
+        screen,
+        ObjectCoordinateNibbles {
+            first: u8::try_from(major % 16).ok()?,
+            second: u8::try_from(minor).ok()?,
+        },
+    ))
 }
 
 fn draw_map16_atlas_tile(
@@ -2310,52 +2321,62 @@ mod tests {
     }
 
     #[test]
-    fn canvas_object_drag_maps_both_orientations_within_the_current_screen() {
+    fn canvas_object_drag_maps_screen_and_coordinates_in_both_orientations() {
         let horizontal_canvas =
             egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(512.0, 256.0));
         assert_eq!(
-            object_coordinates_at_canvas_position(
+            object_placement_at_canvas_position(
                 egui::pos2(10.0 + 35.5 * 8.0, 20.0 + 12.5 * 8.0),
                 horizontal_canvas,
                 8.0,
                 false,
-                2,
             ),
-            Some(ObjectCoordinateNibbles {
-                first: 3,
-                second: 12,
-            })
+            Some((
+                2,
+                ObjectCoordinateNibbles {
+                    first: 3,
+                    second: 12,
+                }
+            ))
         );
         let vertical_canvas =
             egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(256.0, 512.0));
         assert_eq!(
-            object_coordinates_at_canvas_position(
+            object_placement_at_canvas_position(
                 egui::pos2(10.0 + 7.5 * 8.0, 20.0 + 31.5 * 8.0),
                 vertical_canvas,
                 8.0,
                 true,
-                1,
             ),
-            Some(ObjectCoordinateNibbles {
-                first: 15,
-                second: 7,
-            })
+            Some((
+                1,
+                ObjectCoordinateNibbles {
+                    first: 15,
+                    second: 7,
+                }
+            ))
         );
     }
 
     #[test]
-    fn canvas_object_drag_rejects_cross_screen_and_minor_overflow() {
+    fn canvas_object_drag_accepts_cross_screen_but_rejects_invalid_positions() {
         let canvas = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(512.0, 256.0));
+        assert_eq!(
+            object_placement_at_canvas_position(egui::pos2(31.0, 4.0), canvas, 1.0, false,),
+            Some((
+                1,
+                ObjectCoordinateNibbles {
+                    first: 15,
+                    second: 4,
+                }
+            ))
+        );
         assert!(
-            object_coordinates_at_canvas_position(egui::pos2(31.0, 4.0), canvas, 1.0, false, 2,)
+            object_placement_at_canvas_position(egui::pos2(35.0, 16.0), canvas, 1.0, false,)
                 .is_none()
         );
         assert!(
-            object_coordinates_at_canvas_position(egui::pos2(35.0, 16.0), canvas, 1.0, false, 2,)
-                .is_none()
-        );
-        assert!(
-            object_coordinates_at_canvas_position(egui::pos2(-1.0, 4.0), canvas, 1.0, false, 0,)
+            object_placement_at_canvas_position(egui::pos2(-1.0, 4.0), canvas, 1.0, false,)
                 .is_none()
         );
     }

@@ -1,0 +1,280 @@
+use crate::{ObjectCoordinateNibbles, ObjectFieldError, ObjectRecord, ObjectStream};
+use std::fmt;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ObjectRelocationError {
+    IndexOutOfBounds { index: usize, len: usize },
+    NotOrdinaryObject(usize),
+    UnsupportedControl(usize),
+    TargetScreenOutOfRange(u16),
+    Field(ObjectFieldError),
+}
+
+impl fmt::Display for ObjectRelocationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "invalid native object relocation: {self:?}")
+    }
+}
+
+impl std::error::Error for ObjectRelocationError {}
+
+#[derive(Clone)]
+struct PositionedObject {
+    original_index: usize,
+    screen: u16,
+    record: ObjectRecord,
+}
+
+impl ObjectStream {
+    /// Relocates an ordinary object to an absolute native screen and coordinate pair.
+    ///
+    /// Existing screen-jump controls are owned by this operation and are canonically regenerated.
+    /// Ordinary records retain source order within one screen, all extension bytes, and every
+    /// field other than coordinates and the transition-owned advance bit.
+    ///
+    /// Returns the selected ordinary record's new stream index, including regenerated jumps.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid indexes, nonordinary selections, unknown command-zero controls, screens
+    /// outside the native 0–31 editor range, and field encodings that cannot be represented.
+    /// Failure leaves the stream unchanged.
+    pub fn relocate_ordinary_object(
+        &mut self,
+        selected: usize,
+        target_screen: u16,
+        coordinates: ObjectCoordinateNibbles,
+    ) -> Result<usize, ObjectRelocationError> {
+        if selected >= self.records.len() {
+            return Err(ObjectRelocationError::IndexOutOfBounds {
+                index: selected,
+                len: self.records.len(),
+            });
+        }
+        if target_screen > 0x1f {
+            return Err(ObjectRelocationError::TargetScreenOutOfRange(target_screen));
+        }
+        let (mut positioned, trailing_controls) = decode_positioned_objects(self)?;
+        let Some(target) = positioned
+            .iter_mut()
+            .find(|object| object.original_index == selected)
+        else {
+            return Err(ObjectRelocationError::NotOrdinaryObject(selected));
+        };
+        target.screen = target_screen;
+        target
+            .record
+            .set_coordinate_nibbles(coordinates)
+            .map_err(ObjectRelocationError::Field)?;
+        positioned.sort_by_key(|object| object.screen);
+        let (mut records, new_index) = encode_positioned_objects(positioned, selected)?;
+        records.extend(trailing_controls);
+        self.records = records;
+        Ok(new_index)
+    }
+}
+
+fn decode_positioned_objects(
+    stream: &ObjectStream,
+) -> Result<(Vec<PositionedObject>, Vec<ObjectRecord>), ObjectRelocationError> {
+    let mut screen = 0_u16;
+    let mut output = Vec::with_capacity(stream.records.len());
+    let mut trailing_controls = Vec::new();
+    for (index, record) in stream.records.iter().enumerate() {
+        if let Some(jump) = record.screen_jump() {
+            if !trailing_controls.is_empty() {
+                return Err(ObjectRelocationError::UnsupportedControl(index));
+            }
+            screen = jump.packed_target;
+            continue;
+        }
+        if record.command_id() == 0 && record.parameter() <= 3 {
+            trailing_controls.push(record.clone());
+            continue;
+        }
+        if !trailing_controls.is_empty() {
+            return Err(ObjectRelocationError::UnsupportedControl(
+                index - trailing_controls.len(),
+            ));
+        }
+        if record.advances_screen() {
+            screen = screen.saturating_add(1);
+        }
+        output.push(PositionedObject {
+            original_index: index,
+            screen,
+            record: record.clone(),
+        });
+    }
+    Ok((output, trailing_controls))
+}
+
+fn encode_positioned_objects(
+    positioned: Vec<PositionedObject>,
+    selected: usize,
+) -> Result<(Vec<ObjectRecord>, usize), ObjectRelocationError> {
+    let mut screen = 0_u16;
+    let mut output = Vec::with_capacity(positioned.len());
+    let mut selected_index = None;
+    for mut object in positioned {
+        let can_advance = object.screen == screen.saturating_add(1);
+        let transition = if object.screen == screen {
+            false
+        } else if can_advance && object.record.set_advances_screen(true).is_ok() {
+            screen = object.screen;
+            true
+        } else {
+            output.push(canonical_screen_jump(object.screen)?);
+            screen = object.screen;
+            false
+        };
+        if !transition {
+            object
+                .record
+                .set_advances_screen(false)
+                .map_err(ObjectRelocationError::Field)?;
+        }
+        if object.original_index == selected {
+            selected_index = Some(output.len());
+        }
+        output.push(object.record);
+    }
+    let new_index = selected_index.ok_or(ObjectRelocationError::NotOrdinaryObject(selected))?;
+    Ok((output, new_index))
+}
+
+fn canonical_screen_jump(screen: u16) -> Result<ObjectRecord, ObjectRelocationError> {
+    let target =
+        u8::try_from(screen).map_err(|_| ObjectRelocationError::TargetScreenOutOfRange(screen))?;
+    ObjectRecord::new(vec![target, 0, 1])
+        .map_err(|_| ObjectRelocationError::Field(ObjectFieldError::UnknownEncodedLength))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn object(screen_advance: bool, first: u8, second: u8, id: u8) -> ObjectRecord {
+        ObjectRecord::new(vec![
+            first | if screen_advance { 0x80 } else { 0 },
+            0x10 | second,
+            id,
+        ])
+        .unwrap()
+    }
+
+    #[test]
+    fn relocation_reorders_stably_and_regenerates_minimal_transitions() {
+        let mut stream = ObjectStream {
+            records: vec![
+                object(false, 1, 2, 0x10),
+                object(true, 3, 4, 0x20),
+                object(false, 5, 6, 0x30),
+            ],
+        };
+        let selected = stream
+            .relocate_ordinary_object(
+                0,
+                2,
+                ObjectCoordinateNibbles {
+                    first: 7,
+                    second: 8,
+                },
+            )
+            .unwrap();
+        assert_eq!(selected, 2);
+        assert_eq!(
+            stream
+                .native_placements()
+                .into_iter()
+                .map(|placement| (placement.record_index, placement.screen))
+                .collect::<Vec<_>>(),
+            [(0, 1), (1, 1), (2, 2)]
+        );
+        assert_eq!(stream.records[2].coordinate_nibbles().first, 7);
+        assert_eq!(stream.records[2].coordinate_nibbles().second, 8);
+    }
+
+    #[test]
+    fn gaps_and_backtracking_use_canonical_screen_jumps() {
+        let mut stream = ObjectStream {
+            records: vec![object(false, 1, 2, 0x10), object(false, 3, 4, 0x20)],
+        };
+        let selected = stream
+            .relocate_ordinary_object(
+                0,
+                5,
+                ObjectCoordinateNibbles {
+                    first: 1,
+                    second: 2,
+                },
+            )
+            .unwrap();
+        assert_eq!(selected, 2);
+        assert_eq!(stream.records[1].screen_jump().unwrap().packed_target, 5);
+        assert_eq!(
+            stream
+                .native_placements()
+                .into_iter()
+                .map(|placement| placement.screen)
+                .collect::<Vec<_>>(),
+            [0, 5]
+        );
+    }
+
+    #[test]
+    fn unsupported_controls_and_invalid_targets_are_atomic() {
+        let mut stream = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0, 0, 2, 0, 0]).unwrap(),
+                object(false, 1, 2, 0x10),
+            ],
+        };
+        let original = stream.clone();
+        assert_eq!(
+            stream.relocate_ordinary_object(
+                1,
+                2,
+                ObjectCoordinateNibbles {
+                    first: 1,
+                    second: 2,
+                },
+            ),
+            Err(ObjectRelocationError::UnsupportedControl(0))
+        );
+        assert_eq!(stream, original);
+        assert!(
+            stream
+                .relocate_ordinary_object(
+                    1,
+                    32,
+                    ObjectCoordinateNibbles {
+                        first: 1,
+                        second: 2,
+                    },
+                )
+                .is_err()
+        );
+        assert_eq!(stream, original);
+    }
+
+    #[test]
+    fn trailing_opaque_controls_are_retained_byte_for_byte() {
+        let control = ObjectRecord::new(vec![7, 5, 0, 0xcb]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![object(false, 1, 2, 0x10), control.clone()],
+        };
+        stream
+            .relocate_ordinary_object(
+                0,
+                3,
+                ObjectCoordinateNibbles {
+                    first: 4,
+                    second: 5,
+                },
+            )
+            .unwrap();
+        assert_eq!(stream.records.last(), Some(&control));
+        assert_eq!(stream.native_placements()[0].screen, 3);
+    }
+}

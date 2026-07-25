@@ -48,6 +48,12 @@ pub enum ObjectEdit {
         index: usize,
         packed_target: u16,
     },
+    /// Relocates one ordinary object and canonically regenerates owned screen transitions.
+    RelocateOrdinary {
+        index: usize,
+        screen: u16,
+        coordinates: ObjectCoordinateNibbles,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -143,6 +149,14 @@ impl ObjectStream {
                         .map_err(|error| ObjectEditError::Field { command, error })?;
                     Ok(())
                 }
+                ObjectEdit::RelocateOrdinary {
+                    index,
+                    screen,
+                    coordinates,
+                } => staged
+                    .relocate_ordinary_object(*index, *screen, *coordinates)
+                    .map(drop)
+                    .map_err(LevelEditError::ObjectRelocation),
             };
             result.map_err(|error| ObjectEditError::Command { command, error })?;
         }

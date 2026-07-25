@@ -8,6 +8,7 @@ pub enum LevelEditError {
     LegacyTerminatorCollision { index: usize },
     ExpandedSpritePositionSort,
     ShortSpriteRecord { index: usize, len: usize },
+    ObjectRelocation(crate::ObjectRelocationError),
 }
 
 impl fmt::Display for LevelEditError {

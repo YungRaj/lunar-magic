@@ -305,8 +305,9 @@ fn lunar_magic_imports_and_reexports_a_rust_mwl_object_edit() {
                 index: 1,
                 record: duplicate,
             },
-            ObjectEdit::SetCoordinateNibbles {
+            ObjectEdit::RelocateOrdinary {
                 index: 0,
+                screen: 2,
                 coordinates: ObjectCoordinateNibbles {
                     first: 0x0e,
                     second: 0x0d,

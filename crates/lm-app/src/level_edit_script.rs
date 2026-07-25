@@ -165,6 +165,16 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
                 },
             ]))
         }
+        ["object", "relocate", index, screen, first, second] => Ok(NativeLevelEdit::Objects(vec![
+            ObjectEdit::RelocateOrdinary {
+                index: decimal(line, index)?,
+                screen: hex_word(line, screen)?,
+                coordinates: ObjectCoordinateNibbles {
+                    first: hex_byte(line, first)?,
+                    second: hex_byte(line, second)?,
+                },
+            },
+        ])),
         ["sprite-header", value] => Ok(NativeLevelEdit::SetSpriteHeader(hex_byte(line, value)?)),
         ["sprite", "insert", index, kind, value] => Ok(NativeLevelEdit::InsertSprite {
             index: decimal(line, index)?,
@@ -333,6 +343,7 @@ mod tests {
             object coordinates 0 0e 0d\n\
             object screen-advance 0 true\n\
             object screen-jump-target 0 0f1e\n\
+            object relocate 0 001f 0c 0b\n\
             sprite-header 10\n\
             sprite insert 0 record 000001\n\
             sprite insert 1 screen 12\n\
@@ -342,7 +353,7 @@ mod tests {
             sprite sort-screen 0\n\
             sprite remove 1\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 18);
+        assert_eq!(edits.len(), 19);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert!(matches!(edits[4], NativeLevelEdit::Objects(_)));
         assert!(matches!(
@@ -373,13 +384,22 @@ mod tests {
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetScreenJumpTarget { index: 0, packed_target: 0x0f1e }]
         ));
-        assert!(matches!(edits[10], NativeLevelEdit::SetSpriteHeader(0x10)));
         assert!(matches!(
-            edits[16],
+            edits[10],
+            NativeLevelEdit::Objects(ref edits)
+                if edits == &[ObjectEdit::RelocateOrdinary {
+                    index: 0,
+                    screen: 0x1f,
+                    coordinates: ObjectCoordinateNibbles { first: 0x0c, second: 0x0b }
+                }]
+        ));
+        assert!(matches!(edits[11], NativeLevelEdit::SetSpriteHeader(0x10)));
+        assert!(matches!(
+            edits[17],
             NativeLevelEdit::SortLegacySpritesByScreen { selected: 0 }
         ));
         assert!(matches!(
-            edits[13],
+            edits[14],
             NativeLevelEdit::InsertSprite {
                 token: SpriteToken::Control(0x90),
                 ..

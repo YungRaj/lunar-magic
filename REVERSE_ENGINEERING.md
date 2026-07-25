@@ -1729,16 +1729,21 @@ test grows and relocates level `$105`'s stream, changes screen/X/Y, invokes the
 stable ordering rule, and receives the exact same sprite stream from Lunar
 Magic 3.63's subsequent MWL export.
 
-Direct object dragging now covers the independently safe coordinate boundary.
-The canvas reverses horizontal or vertical tile coordinates into the selected
-ordinary record's first/second nibbles only when the drop remains on its
-currently resolved 16×16-tile serialized screen. It applies a typed
-`SetCoordinateNibbles` transaction and rejects cross-screen, minor-axis
-overflow, control-record, and off-canvas drops without mutation. The reciprocal
-MWL Wine oracle now changes both nibbles in addition to inserting a record;
-Lunar Magic 3.63 imports and re-exports the exact resulting Layer 1 stream.
-Cross-screen dragging remains separated because it must rewrite sequential
-advance/jump controls rather than merely changing coordinates.
+Direct object dragging now covers all 32 native screens. The canvas reverses
+horizontal or vertical tile coordinates into an absolute screen plus the
+selected ordinary record's first/second nibbles. `relocate_ordinary_object`
+decodes absolute positions, removes only owned screen-jump controls, changes
+the selected placement, stably sorts ordinary records by screen, and regenerates
+the minimal transition: no bit on the current screen, the advance bit for the
+next screen when representable, or a canonical first-low jump for other
+transitions. Ordinary extension bytes and trailing opaque command-zero controls
+remain byte-exact; interleaved unknown controls, invalid screens, control-record
+selections, and off-canvas drops fail atomically.
+
+The reciprocal MWL Wine oracle inserts an object, moves the original from its
+source screen to screen `$02`, and changes both coordinate nibbles. Lunar Magic
+3.63 imports and re-exports the exact canonically transitioned Layer 1 stream,
+including level `$105`'s trailing four-byte opaque control.
 
 The native canvas also supplies the renderer's recovered two-bit animation
 phase. It derives an 8 Hz phase from the GUI clock and requests 125 ms repaints
