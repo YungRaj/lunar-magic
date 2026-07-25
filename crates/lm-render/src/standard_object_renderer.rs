@@ -48,6 +48,12 @@ const SHARED_SLOT_017_MIDDLE_TILES: [u8; 16] = [
 const SHARED_SLOT_017_END_TILES: [u8; 16] = [
     0x79, 0x80, 0x87, 0x8e, 0xc3, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00, 0xa5, 0x59, 0x4a,
 ];
+const SHARED_SLOT_018_TILES: [[u8; 7]; 4] = [
+    [0x07, 0x0a, 0x0a, 0x08, 0x0a, 0x0a, 0x09],
+    [0x81, 0x82, 0x83, 0x81, 0x82, 0x83, 0x81],
+    [0x81, 0x25, 0x84, 0x81, 0x25, 0x84, 0x81],
+    [0x81, 0x25, 0x84, 0x81, 0x25, 0x84, 0x81],
+];
 const SHARED_SLOT_019_TILES: [u8; 16] = [
     0x93, 0x9c, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a,
 ];
@@ -104,6 +110,7 @@ enum NativeRenderer {
     SharedSlot011,
     SharedSlot014,
     SharedSlot017,
+    SharedSlot018,
     SharedSlot019,
     SharedSlot020,
     SharedSlot029,
@@ -430,6 +437,9 @@ fn render_definition(
     if definition.renderer == NativeRenderer::SharedSlot017 {
         return render_shared_slot_017(cache, layout, placement, parameter);
     }
+    if definition.renderer == NativeRenderer::SharedSlot018 {
+        return render_shared_slot_018(cache, layout, placement, parameter);
+    }
     if definition.renderer == NativeRenderer::SharedSlot019 {
         return render_shared_slot_019(cache, layout, placement, parameter);
     }
@@ -451,6 +461,57 @@ fn render_definition(
         ObjectExtent::FixedOne => (1, 1),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
+}
+
+fn render_shared_slot_018(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let encoded_repetitions = usize::from(parameter & 0x0f);
+    let repetitions = if encoded_repetitions == 0 {
+        0x100
+    } else {
+        encoded_repetitions
+    };
+    for (minor_offset, row) in SHARED_SLOT_018_TILES.iter().enumerate() {
+        let page = if minor_offset == 0 { 0x100 } else { 0 };
+        let mut major_offset = 0;
+        for &tile in &row[..3] {
+            set_placement_cell(
+                cache,
+                layout,
+                placement,
+                major_offset,
+                minor_offset,
+                u16::from(tile) + page,
+            )?;
+            major_offset += 1;
+        }
+        for _ in 1..repetitions {
+            for &tile in &row[3..6] {
+                set_placement_cell(
+                    cache,
+                    layout,
+                    placement,
+                    major_offset,
+                    minor_offset,
+                    u16::from(tile) + page,
+                )?;
+                major_offset += 1;
+            }
+        }
+        set_placement_cell(
+            cache,
+            layout,
+            placement,
+            major_offset,
+            minor_offset,
+            u16::from(row[6]) + page,
+        )?;
+    }
+    Ok(())
 }
 
 fn render_shared_slot_017(
@@ -1176,6 +1237,7 @@ fn install_shared_handler_aliases(
     )?;
     for (handler, renderer) in [
         (17, NativeRenderer::SharedSlot017),
+        (18, NativeRenderer::SharedSlot018),
         (19, NativeRenderer::SharedSlot019),
         (20, NativeRenderer::SharedSlot020),
         (29, NativeRenderer::SharedSlot029),
@@ -1209,6 +1271,22 @@ fn install_shared_handler_aliases(
             renderer: NativeRenderer::Pattern,
         },
     )?;
+    for (handler, tile) in [(24, 0x16c), (25, 0x16d)] {
+        definitions.set_handler(
+            handler,
+            StandardObjectDefinition {
+                pattern: StandardObjectPattern {
+                    width: 1,
+                    height: 1,
+                    tiles: vec![tile],
+                },
+                extent: ObjectExtent::ParameterNibbles,
+                major_expansion: AxisExpansion::Clamp,
+                minor_expansion: AxisExpansion::Clamp,
+                renderer: NativeRenderer::Pattern,
+            },
+        )?;
+    }
     for (command, handler) in [
         (15, 1),
         (16, 2),
@@ -1488,6 +1566,77 @@ mod tests {
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_18_repeats_four_authenticated_motif_rows() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 18;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x10, 0x03]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        let expected = [
+            [
+                0x107, 0x10a, 0x10a, 0x108, 0x10a, 0x10a, 0x108, 0x10a, 0x10a, 0x109,
+            ],
+            [
+                0x081, 0x082, 0x083, 0x081, 0x082, 0x083, 0x081, 0x082, 0x083, 0x081,
+            ],
+            [
+                0x081, 0x025, 0x084, 0x081, 0x025, 0x084, 0x081, 0x025, 0x084, 0x081,
+            ],
+            [
+                0x081, 0x025, 0x084, 0x081, 0x025, 0x084, 0x081, 0x025, 0x084, 0x081,
+            ],
+        ];
+        for (minor, row) in expected.into_iter().enumerate() {
+            for (major, tile) in row.into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handlers_24_and_25_fill_vanilla_page_one_tiles() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        for (handler, tile) in [(24, 0x16c), (25, 0x16d)] {
+            let mut handler_map = [0xff; 64];
+            handler_map[1] = handler;
+            let stream = ObjectStream {
+                records: vec![ObjectRecord::new(vec![0, 0x10, 0x12]).unwrap()],
+            };
+            let report = render_mapped_standard_object_stream(
+                &stream,
+                &definitions,
+                &handler_map,
+                layout(),
+                0x25,
+            )
+            .unwrap();
+            for major in 0..2 {
+                for minor in 0..3 {
+                    assert_eq!(
+                        report.cache.cells()
+                            [NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                        tile
+                    );
+                }
             }
         }
     }
