@@ -46,22 +46,22 @@ impl ToolbarAction {
     }
 
     #[must_use]
-    pub const fn activation(self) -> ToolbarActivation {
+    pub fn activation(self) -> ToolbarActivation {
         match self {
-            Self::Open => ToolbarActivation::Command(Command::Open),
-            Self::Save => ToolbarActivation::Command(Command::Save),
-            Self::SaveAs => ToolbarActivation::Command(Command::SaveAs),
-            Self::Undo => ToolbarActivation::Command(Command::Undo),
-            Self::Redo => ToolbarActivation::Command(Command::Redo),
+            Self::Open => ToolbarActivation::command(Command::Open),
+            Self::Save => ToolbarActivation::command(Command::Save),
+            Self::SaveAs => ToolbarActivation::command(Command::SaveAs),
+            Self::Undo => ToolbarActivation::command(Command::Undo),
+            Self::Redo => ToolbarActivation::command(Command::Redo),
             Self::Copy => ToolbarActivation::RequestCopyPayload,
             Self::Cut => ToolbarActivation::RequestCutPayload,
             Self::Paste => ToolbarActivation::RequestClipboardBytes,
-            Self::ShowOverworld => ToolbarActivation::Command(Command::ShowOverworld),
-            Self::ShowMap16 => ToolbarActivation::Command(Command::ShowMap16),
+            Self::ShowOverworld => ToolbarActivation::command(Command::ShowOverworld),
+            Self::ShowMap16 => ToolbarActivation::command(Command::ShowMap16),
             Self::LevelBack => {
-                ToolbarActivation::Command(Command::NavigateLevel(LevelNavigationDirection::Back))
+                ToolbarActivation::command(Command::NavigateLevel(LevelNavigationDirection::Back))
             }
-            Self::LevelForward => ToolbarActivation::Command(Command::NavigateLevel(
+            Self::LevelForward => ToolbarActivation::command(Command::NavigateLevel(
                 LevelNavigationDirection::Forward,
             )),
         }
@@ -70,13 +70,20 @@ impl ToolbarAction {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ToolbarActivation {
-    Command(Command),
+    Command(Box<Command>),
     /// The active editor must serialize the current selection before dispatching [`Command::Copy`].
     RequestCopyPayload,
     /// The active editor must serialize the current selection before dispatching [`Command::Cut`].
     RequestCutPayload,
     /// The frontend must read the application clipboard MIME type before dispatching paste.
     RequestClipboardBytes,
+}
+
+impl ToolbarActivation {
+    #[must_use]
+    pub fn command(command: Command) -> Self {
+        Self::Command(Box::new(command))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

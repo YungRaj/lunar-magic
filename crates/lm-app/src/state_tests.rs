@@ -83,7 +83,7 @@ fn toolbar_and_shortcut_activation_share_authoritative_enablement() {
     let mut app = AppState::default();
     assert_eq!(
         app.activate_toolbar_action(ToolbarAction::Open),
-        Some(ToolbarActivation::Command(Command::Open))
+        Some(ToolbarActivation::command(Command::Open))
     );
     assert_eq!(app.activate_toolbar_action(ToolbarAction::ShowMap16), None);
     app.load_rom(test_rom()).unwrap();
@@ -98,13 +98,13 @@ fn toolbar_and_shortcut_activation_share_authoritative_enablement() {
     assert!(app.toolbar_action_enabled(ToolbarAction::LevelForward));
     assert_eq!(
         app.activate_toolbar_action(ToolbarAction::LevelForward),
-        Some(ToolbarActivation::Command(Command::NavigateLevel(
+        Some(ToolbarActivation::command(Command::NavigateLevel(
             crate::LevelNavigationDirection::Forward
         )))
     );
     assert_eq!(
         app.activate_toolbar_action(ToolbarAction::ShowMap16),
-        Some(ToolbarActivation::Command(Command::ShowMap16))
+        Some(ToolbarActivation::command(Command::ShowMap16))
     );
     assert_eq!(app.activate_toolbar_action(ToolbarAction::Copy), None);
     app.dispatch(Command::ShowMap16).unwrap();

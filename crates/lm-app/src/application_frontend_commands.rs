@@ -63,16 +63,8 @@ fn activate_ui_action(
         .activate_toolbar_action(action)
         .ok_or("frontend action is currently disabled")?;
     match activation {
-        ToolbarActivation::Command(Command::Save) => save(app, allow_in_place_rom_write),
-        ToolbarActivation::Command(
-            command @ (Command::Undo
-            | Command::Redo
-            | Command::ShowOverworld
-            | Command::ShowMap16
-            | Command::NavigateLevel(_)),
-        ) => dispatch_and_print(app, command),
-        ToolbarActivation::Command(Command::Open | Command::SaveAs) => {
-            Err("this frontend action requires a path; use open PATH or save-as PATH".into())
+        ToolbarActivation::Command(command) => {
+            execute_command_activation(app, *command, allow_in_place_rom_write)
         }
         ToolbarActivation::RequestCopyPayload => {
             println!("frontend request: copy selection");
@@ -86,7 +78,25 @@ fn activate_ui_action(
             println!("frontend request: read clipboard bytes");
             Ok(())
         }
-        ToolbarActivation::Command(_) => Err("unsupported parameterized frontend action".into()),
+    }
+}
+
+fn execute_command_activation(
+    app: &mut AppState,
+    command: Command,
+    allow_in_place_rom_write: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        Command::Save => save(app, allow_in_place_rom_write),
+        command @ (Command::Undo
+        | Command::Redo
+        | Command::ShowOverworld
+        | Command::ShowMap16
+        | Command::NavigateLevel(_)) => dispatch_and_print(app, command),
+        Command::Open | Command::SaveAs => {
+            Err("this frontend action requires a path; use open PATH or save-as PATH".into())
+        }
+        _ => Err("unsupported parameterized frontend action".into()),
     }
 }
 

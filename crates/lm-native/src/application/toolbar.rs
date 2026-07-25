@@ -20,7 +20,7 @@ impl NativeApplication {
         activation: ToolbarActivation,
     ) {
         match activation {
-            ToolbarActivation::Command(command) => self.dispatch(context, command),
+            ToolbarActivation::Command(command) => self.dispatch(context, *command),
             ToolbarActivation::RequestCopyPayload
             | ToolbarActivation::RequestCutPayload
             | ToolbarActivation::RequestClipboardBytes => {
