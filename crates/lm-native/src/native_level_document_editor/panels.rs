@@ -194,7 +194,7 @@ impl NativeLevelDocumentEditor {
         }
     }
 
-    fn current_sprite_lengths(&self) -> SpriteLengthTable {
+    pub(super) fn current_sprite_lengths(&self) -> SpriteLengthTable {
         self.controller
             .as_ref()
             .expect("native level panel requires controller")

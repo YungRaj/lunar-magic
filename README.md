@@ -514,8 +514,11 @@ interactive frontends cannot bypass confirmation and request correlation through
   including expanded sprite upper-coordinate tokens, and scrolls across all screens. It draws
   screen boundaries, object footprints, authenticated standard-sprite composite geometry, and
   labeled unresolved/custom sprite markers; clicking a placement loads the corresponding semantic
-  form. It deliberately does not fabricate ROM graphics or SSC/OSC artwork that is absent from
-  this portable document boundary.
+  form. Explicit canvas tools move the selected ordinary object through transition-preserving
+  stream relocation or rewrite a selected sprite's coordinate fields as one undoable edit while
+  preserving its identity, extra bits, and custom extension bytes. Sprite moves fail closed across
+  upper-coordinate control bands that cannot be locally rewritten. The canvas deliberately does
+  not fabricate ROM graphics or SSC/OSC artwork absent from this portable document boundary.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.

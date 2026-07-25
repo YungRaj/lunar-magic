@@ -23,6 +23,14 @@ enum PasteTarget {
     Sprite,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum NativeLevelCanvasTool {
+    #[default]
+    Select,
+    MoveObject,
+    MoveSprite,
+}
+
 #[derive(Default)]
 pub(crate) struct NativeLevelDocumentEditor {
     controller: Option<NativeLevelDocumentController>,
@@ -33,6 +41,7 @@ pub(crate) struct NativeLevelDocumentEditor {
     error: Option<String>,
     pending_close: Option<PendingClose>,
     paste_target: Option<PasteTarget>,
+    canvas_tool: NativeLevelCanvasTool,
     persistence: DocumentPersistence,
     loader: DocumentLoader,
 }
@@ -245,6 +254,7 @@ impl NativeLevelDocumentEditor {
         self.controller = None;
         self.pending_close = None;
         self.paste_target = None;
+        self.canvas_tool = NativeLevelCanvasTool::Select;
     }
 }
 

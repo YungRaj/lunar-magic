@@ -1751,9 +1751,14 @@ sprites use the authenticated dispatcher with the real placement byte, level
 mode, and orientation, displaying each composite part's recovered signed
 geometry; unresolved/custom records remain clearly labeled markers. Hit
 testing includes the complete standard composite and loads the exact object or
-sprite semantic form. Since `LMLVL1` carries no graphics, palette, SSC, OSC, or
-Map16 sidecar payload, this canvas intentionally makes no unsupported artwork
-claim.
+sprite semantic form. The explicit move tools convert horizontal/vertical
+display coordinates back into the orientation-neutral native axes. Object
+moves reuse the transition-preserving stream relocation transaction. Sprite
+moves preserve the command identity, extra bits, and extension payload, and
+fail closed if a click crosses the selected record's upper-coordinate control
+band because that band is shared stream state rather than a local record
+field. Since `LMLVL1` carries no graphics, palette, SSC, OSC, or Map16 sidecar
+payload, this canvas intentionally makes no unsupported artwork claim.
 
 The reciprocal MWL Wine oracle inserts an object, moves the original from its
 source screen to screen `$02`, and changes both coordinate nibbles. Lunar Magic
