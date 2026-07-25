@@ -127,6 +127,7 @@ pub(crate) struct VanillaLevelEditor {
     map16_key: Option<(u64, u8, u8)>,
     map16_texture: Option<egui::TextureHandle>,
     sprite_texture: Option<egui::TextureHandle>,
+    foreground_texture: Option<egui::TextureHandle>,
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
     map16_error: Option<String>,
     standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
@@ -146,6 +147,7 @@ impl VanillaLevelEditor {
         app: &AppState,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) -> Option<Command> {
         let snapshot = app.controller_snapshot().ok()?;
         let EditorMode::Level(level) = snapshot.mode else {
@@ -186,7 +188,7 @@ impl VanillaLevelEditor {
         ui.separator();
         self.show_map16_preview(ui, &snapshot, object_tileset);
         ui.separator();
-        self.object_canvas(ui, custom_sprites, custom_objects);
+        self.object_canvas(ui, custom_sprites, custom_objects, custom_map16);
         ui.separator();
         ui.columns(2, |columns| {
             self.object_list(&mut columns[0]);
@@ -330,6 +332,7 @@ impl VanillaLevelEditor {
         self.map16_key = None;
         self.map16_texture = None;
         self.sprite_texture = None;
+        self.foreground_texture = None;
         self.map16_summary = None;
         self.map16_error = None;
         self.standard_object_map = None;
@@ -351,6 +354,7 @@ impl VanillaLevelEditor {
             if self.map16_key != Some(key) {
                 self.map16_texture = None;
                 self.sprite_texture = None;
+                self.foreground_texture = None;
                 self.map16_summary = None;
                 self.map16_error = None;
                 match crate::vanilla_map16_preview::render(
@@ -382,6 +386,14 @@ impl VanillaLevelEditor {
                                 snapshot.revision
                             ),
                             preview.sprite_image,
+                            egui::TextureOptions::NEAREST,
+                        ));
+                        self.foreground_texture = Some(ui.ctx().load_texture(
+                            format!(
+                                "vanilla-foreground-gfx-{object_tileset:X}-{}",
+                                snapshot.revision
+                            ),
+                            preview.foreground_image,
                             egui::TextureOptions::NEAREST,
                         ));
                     }
@@ -460,6 +472,7 @@ impl VanillaLevelEditor {
         ui: &mut egui::Ui,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         let (records, placements, sprite_placements) = self.canvas_model();
         let vertical = self.controller.as_ref().is_some_and(|controller| {
@@ -486,6 +499,7 @@ impl VanillaLevelEditor {
             &records,
             &placements,
             custom_objects,
+            custom_map16,
         );
         let mut hit = None;
         for placement in placements {
@@ -564,6 +578,7 @@ impl VanillaLevelEditor {
         records: &[ObjectRecord],
         placements: &[lm_level::NativeObjectPlacement],
         custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         let Some(texture) = self.map16_texture.as_ref() else {
             return;
@@ -592,6 +607,8 @@ impl VanillaLevelEditor {
                     placements,
                     metadata,
                     variant: self.active_object_family_index(),
+                    custom_map16,
+                    foreground_texture: self.foreground_texture.as_ref(),
                 },
             );
         }
@@ -1049,6 +1066,8 @@ struct CustomObjectDraw<'a> {
     placements: &'a [lm_level::NativeObjectPlacement],
     metadata: &'a lm_level::OscResolvedTable,
     variant: u8,
+    custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
+    foreground_texture: Option<&'a egui::TextureHandle>,
 }
 
 fn draw_custom_object_tiles(painter: &egui::Painter, request: CustomObjectDraw<'_>) {
@@ -1073,9 +1092,6 @@ fn draw_custom_object_tiles(painter: &egui::Painter, request: CustomObjectDraw<'
                 f32::from(tile_y) * request.cell_size,
             );
         for part in parts {
-            if part.tile >= 0x200 {
-                continue;
-            }
             let offset = egui::vec2(
                 f32::from(part.x) * request.cell_size / 16.0,
                 f32::from(part.y) * request.cell_size / 16.0,
@@ -1084,9 +1100,74 @@ fn draw_custom_object_tiles(painter: &egui::Painter, request: CustomObjectDraw<'
                 origin + offset,
                 egui::vec2(request.cell_size, request.cell_size),
             );
-            draw_map16_atlas_tile(painter, request.texture, target, part.tile);
+            let definition = match request.custom_map16 {
+                Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) => {
+                    sidecar.tile(usize::from(part.tile & 0x3fff))
+                }
+                Some(lm_app::NativeMap16SidecarDocument::S16(_)) | None => None,
+            };
+            if let (Some(definition), Some(texture)) = (definition, request.foreground_texture) {
+                draw_custom_map16_tile(painter, texture, target, definition);
+            } else if part.tile < 0x200 {
+                draw_map16_atlas_tile(painter, request.texture, target, part.tile);
+            }
         }
     }
+}
+
+fn draw_custom_map16_tile(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    definition: lm_level::Map16Tile,
+) {
+    let half = target.size() / 2.0;
+    for (offset, subtile) in [
+        egui::vec2(0.0, 0.0),
+        egui::vec2(half.x, 0.0),
+        egui::vec2(0.0, half.y),
+        half,
+    ]
+    .into_iter()
+    .zip([
+        definition.top_left,
+        definition.top_right,
+        definition.bottom_left,
+        definition.bottom_right,
+    ]) {
+        let position = target.min + offset;
+        let quadrant = egui::Rect::from_min_size(position, half);
+        draw_foreground_subtile(painter, texture, quadrant, subtile);
+    }
+}
+
+fn draw_foreground_subtile(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    subtile: lm_level::Subtile,
+) {
+    const COLUMNS: f32 = 32.0;
+    const ROWS: f32 = 128.0;
+    let tile = subtile.tile_number();
+    let column = f32::from(tile % 32);
+    let row = f32::from(subtile.palette()) * 16.0 + f32::from(tile / 32);
+    let (left, right) = if subtile.x_flip() {
+        ((column + 1.0) / COLUMNS, column / COLUMNS)
+    } else {
+        (column / COLUMNS, (column + 1.0) / COLUMNS)
+    };
+    let (top, bottom) = if subtile.y_flip() {
+        ((row + 1.0) / ROWS, row / ROWS)
+    } else {
+        (row / ROWS, (row + 1.0) / ROWS)
+    };
+    painter.image(
+        texture.id(),
+        target,
+        egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(right, bottom)),
+        egui::Color32::WHITE,
+    );
 }
 
 fn draw_object_marker(

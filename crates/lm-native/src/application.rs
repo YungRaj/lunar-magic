@@ -335,6 +335,7 @@ impl eframe::App for NativeApplication {
                     &self.app,
                     self.ssc_sidecar_editor.resolved(),
                     self.osc_sidecar_editor.resolved(),
+                    self.native_map16_sidecar_editor.value(),
                 )
             {
                 self.dispatch(context, command);

@@ -8,6 +8,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) image: egui::ColorImage,
     pub(crate) graphics_files: [usize; 4],
     pub(crate) sprite_image: egui::ColorImage,
+    pub(crate) foreground_image: egui::ColorImage,
     pub(crate) sprite_graphics_files: [usize; 4],
     pub(crate) common_tiles: usize,
     pub(crate) tileset_tiles: usize,
@@ -78,12 +79,41 @@ pub(crate) fn render(
     }
     Ok(VanillaMap16Preview {
         image: egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba),
+        foreground_image: render_foreground_graphics_atlas(&graphics, &palette),
         graphics_files,
         sprite_image: render_sprite_graphics_atlas(&sprite_graphics, &palette),
         sprite_graphics_files,
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn render_foreground_graphics_atlas(
+    graphics: &[IndexedTile],
+    palette: &Palette,
+) -> egui::ColorImage {
+    const COLUMNS: usize = 32;
+    const TILE_ROWS: usize = 16;
+    const PALETTE_ROWS: usize = 8;
+    const WIDTH: usize = COLUMNS * 8;
+    const HEIGHT: usize = TILE_ROWS * PALETTE_ROWS * 8;
+    let mut rgba = vec![0; WIDTH * HEIGHT * 4];
+    for palette_row in 0..PALETTE_ROWS {
+        for (tile_number, tile) in graphics.iter().enumerate().take(COLUMNS * TILE_ROWS) {
+            let x = tile_number % COLUMNS * 8;
+            let y = (palette_row * TILE_ROWS + tile_number / COLUMNS) * 8;
+            draw_subtile(
+                &mut rgba,
+                WIDTH,
+                (x, y),
+                Some(tile),
+                palette,
+                palette_row,
+                (false, false),
+            );
+        }
+    }
+    egui::ColorImage::from_rgba_unmultiplied([WIDTH, HEIGHT], &rgba)
 }
 
 fn render_sprite_graphics_atlas(
@@ -176,6 +206,7 @@ mod tests {
             .unwrap();
         let preview = render(bytes, 0, level.layer1.header).unwrap();
         assert_eq!(preview.image.size, [512, 256]);
+        assert_eq!(preview.foreground_image.size, [256, 1024]);
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x1b, 0x08]);
         assert_eq!(preview.sprite_image.size, [256, 128]);
         assert_eq!(

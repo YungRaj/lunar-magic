@@ -36,6 +36,12 @@ pub(crate) struct NativeMap16SidecarEditor {
 }
 
 impl NativeMap16SidecarEditor {
+    pub(crate) fn value(&self) -> Option<&lm_app::NativeMap16SidecarDocument> {
+        self.controller
+            .as_ref()
+            .map(NativeMap16SidecarController::value)
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.controller.is_some() || self.pending_open.is_some() || self.loader.is_running()
     }
@@ -186,9 +192,11 @@ impl NativeMap16SidecarEditor {
             NativeMap16SidecarDocumentKind::S16 => ".s16 sparse canonical",
         };
         let count = controller.value().entry_count();
+        let tile_count = controller.value().tile_count();
         let encoded_len = controller.value().encode().len();
+        let current_tile = controller.value().tile(self.form.entry / 2);
         ui.label(format!(
-            "Kind: {kind}; entries: {count}; save bytes: {encoded_len}"
+            "Kind: {kind}; raw dwords: {count}; 16×16 definitions: {tile_count}; save bytes: {encoded_len}"
         ));
         let previous = self.form.entry;
         ui.add(
@@ -207,6 +215,9 @@ impl NativeMap16SidecarEditor {
                 Ok(edit) => self.apply_edit(edit),
                 Err(error) => self.error = Some(error),
             }
+        }
+        if let Some(tile) = current_tile {
+            show_definition_preview(ui, self.form.entry / 2, tile);
         }
     }
 
@@ -334,4 +345,33 @@ impl NativeMap16SidecarEditor {
         self.pending_close = None;
         self.loaded_key = None;
     }
+}
+
+fn show_definition_preview(ui: &mut egui::Ui, index: usize, tile: lm_level::Map16Tile) {
+    ui.separator();
+    ui.label(format!("Current decoded definition {index:04X}"));
+    egui::Grid::new("native-map16-definition-preview")
+        .spacing([12.0, 6.0])
+        .show(ui, |ui| {
+            subtile_label(ui, "TL", tile.top_left);
+            subtile_label(ui, "TR", tile.top_right);
+            ui.end_row();
+            subtile_label(ui, "BL", tile.bottom_left);
+            subtile_label(ui, "BR", tile.bottom_right);
+            ui.end_row();
+        });
+}
+
+fn subtile_label(ui: &mut egui::Ui, name: &str, subtile: lm_level::Subtile) {
+    ui.group(|ui| {
+        ui.monospace(format!(
+            "{name} {:04X}\ntile {:03X} pal {}{}{}{}",
+            subtile.0,
+            subtile.tile_number(),
+            subtile.palette(),
+            if subtile.priority() { " P" } else { "" },
+            if subtile.x_flip() { " X" } else { "" },
+            if subtile.y_flip() { " Y" } else { "" },
+        ));
+    });
 }
