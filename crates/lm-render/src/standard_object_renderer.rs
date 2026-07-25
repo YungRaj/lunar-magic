@@ -140,6 +140,7 @@ enum NativeRenderer {
     SharedSlot019,
     SharedSlot020,
     SharedSlot021,
+    SharedSlot022,
     SharedSlot026,
     SharedSlot027,
     SharedSlot029,
@@ -480,6 +481,9 @@ fn render_definition(
     if definition.renderer == NativeRenderer::SharedSlot021 {
         return render_shared_slot_021(cache, layout, placement, parameter);
     }
+    if definition.renderer == NativeRenderer::SharedSlot022 {
+        return render_shared_slot_022(cache, layout, placement, parameter);
+    }
     if definition.renderer == NativeRenderer::SharedSlot026 {
         return render_shared_slot_026(cache, layout, placement, parameter);
     }
@@ -595,6 +599,129 @@ fn render_shared_slot_021(
     }
     let rows = isize::try_from(rows).map_err(|_| StandardObjectRenderError::CoordinateOverflow)?;
     set_placement_cell_signed(cache, layout, placement, rows, 1 - rows, 0x1eb)
+}
+
+fn render_shared_slot_022(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let top_left = adapt_three_way(get_placement_cell(cache, layout, placement, 0, 0)?, 0x1aa);
+    set_placement_cell(cache, layout, placement, 0, 0, top_left)?;
+    let existing_top_right = get_placement_cell(cache, layout, placement, 0, 1)?;
+    let top_right = existing_top_right & 0xff00 | adapt_two_way(existing_top_right, 0x0a1);
+    set_placement_cell(cache, layout, placement, 0, 1, top_right)?;
+
+    let widening_rows = usize::from(parameter & 0x0f);
+    let mut fill_width = 1;
+    for row in 1..=widening_rows {
+        let major = signed_offset(row)?;
+        let left_minor = -major;
+        let left = adapt_three_way(
+            get_placement_cell_signed(cache, layout, placement, major, left_minor)?,
+            0x1aa,
+        );
+        set_placement_cell_signed(cache, layout, placement, major, left_minor, left)?;
+        set_placement_cell_signed(cache, layout, placement, major, left_minor + 1, 0x1e2)?;
+        for fill in 0..fill_width {
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                major,
+                left_minor + 2 + signed_offset(fill)?,
+                0x03f,
+            )?;
+        }
+        let right_minor = left_minor + 2 + signed_offset(fill_width)?;
+        let right = adapt_two_way(
+            get_placement_cell_signed(cache, layout, placement, major, right_minor)?,
+            0x0a6,
+        );
+        set_placement_cell_signed(cache, layout, placement, major, right_minor, right)?;
+        fill_width += 2;
+    }
+
+    let bottom_major = signed_offset(widening_rows + 1)?;
+    let mut bottom_minor = -signed_offset(widening_rows)?;
+    render_adaptive_fill_row(
+        cache,
+        layout,
+        placement,
+        bottom_major,
+        bottom_minor,
+        fill_width,
+        true,
+    )?;
+    for extra in 0..usize::from(parameter >> 4) {
+        bottom_minor += 1;
+        render_adaptive_fill_row(
+            cache,
+            layout,
+            placement,
+            bottom_major + 1 + signed_offset(extra)?,
+            bottom_minor,
+            fill_width,
+            false,
+        )?;
+    }
+    Ok(())
+}
+
+fn render_adaptive_fill_row(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    major: isize,
+    left_minor: isize,
+    fill_width: usize,
+    bottom_cap: bool,
+) -> Result<(), StandardObjectRenderError> {
+    let existing_left = get_placement_cell_signed(cache, layout, placement, major, left_minor)?;
+    let left = if bottom_cap {
+        adapt_three_way(existing_left, 0x1f7)
+    } else {
+        adapt_two_way(existing_left, 0x0a3)
+    };
+    set_placement_cell_signed(cache, layout, placement, major, left_minor, left)?;
+    for fill in 0..fill_width {
+        set_placement_cell_signed(
+            cache,
+            layout,
+            placement,
+            major,
+            left_minor + 1 + signed_offset(fill)?,
+            0x03f,
+        )?;
+    }
+    let right_minor = left_minor + 1 + signed_offset(fill_width)?;
+    let right = adapt_two_way(
+        get_placement_cell_signed(cache, layout, placement, major, right_minor)?,
+        0x0a6,
+    );
+    set_placement_cell_signed(cache, layout, placement, major, right_minor, right)
+}
+
+fn adapt_three_way(existing: u16, base: u16) -> u16 {
+    base + match existing.to_le_bytes()[0] {
+        0x3f => 1,
+        0x01 => 3,
+        0x03 => 4,
+        _ => 0,
+    }
+}
+
+fn adapt_two_way(existing: u16, base: u16) -> u16 {
+    base + match existing.to_le_bytes()[0] {
+        0x25 => 0,
+        0x3f => 1,
+        _ => 2,
+    }
+}
+
+fn signed_offset(value: usize) -> Result<isize, StandardObjectRenderError> {
+    isize::try_from(value).map_err(|_| StandardObjectRenderError::CoordinateOverflow)
 }
 
 fn render_shared_slot_030(
@@ -1030,6 +1157,27 @@ fn set_placement_cell_signed(
     Ok(())
 }
 
+fn get_placement_cell_signed(
+    cache: &NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    major_offset: isize,
+    minor_offset: isize,
+) -> Result<u16, StandardObjectRenderError> {
+    let major = usize::from(placement.major)
+        .checked_add_signed(major_offset)
+        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    let minor = usize::from(placement.minor)
+        .checked_add_signed(minor_offset)
+        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    let (x, y) = if layout.vertical {
+        (minor, major)
+    } else {
+        (major, minor)
+    };
+    Ok(cache.get(layout, x, y)?)
+}
+
 fn get_placement_cell(
     cache: &NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
@@ -1440,6 +1588,7 @@ fn install_shared_handler_aliases(
         (19, NativeRenderer::SharedSlot019),
         (20, NativeRenderer::SharedSlot020),
         (21, NativeRenderer::SharedSlot021),
+        (22, NativeRenderer::SharedSlot022),
         (26, NativeRenderer::SharedSlot026),
         (27, NativeRenderer::SharedSlot027),
         (29, NativeRenderer::SharedSlot029),
@@ -1994,6 +2143,40 @@ mod tests {
             report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 3, 6)],
             0x1eb
         );
+    }
+
+    #[test]
+    fn mapped_handler_22_builds_adaptive_widening_and_body_rows() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 22;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x18, 0x12]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        for (major, start_minor, row) in [
+            (0, 8, vec![0x1aa, 0x0a1]),
+            (1, 7, vec![0x1aa, 0x1e2, 0x03f, 0x0a6]),
+            (2, 6, vec![0x1aa, 0x1e2, 0x03f, 0x03f, 0x03f, 0x0a6]),
+            (3, 6, vec![0x1f7, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x0a6]),
+            (4, 7, vec![0x0a3, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x0a6]),
+        ] {
+            for (column, tile) in row.into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.cells()
+                        [NativeLevelMap16Cache::cell_index(layout(), major, start_minor + column)],
+                    tile
+                );
+            }
+        }
     }
 
     #[test]
