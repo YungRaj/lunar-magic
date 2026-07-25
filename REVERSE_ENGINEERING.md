@@ -1711,6 +1711,13 @@ the position- and mode-dependent generator handlers (`$E5`–`$EB`), which
 previously always displayed the default horizontal mode-zero variant in the
 Rust GUI despite the renderer already modeling the recovered branches.
 
+Canvas sprite movement now reverses that same placement transform. A drag
+started on a sprite records its stable token index; dropping converts the
+horizontal or vertical canvas tile back into the five-bit screen, four-bit X,
+and low five Y bits, preserves sprite number and extra bits, and applies the
+semantic record edit transactionally. Drops outside the representable
+32-by-512-tile native space are rejected without mutating the level stream.
+
 ## Typed MWL Layer 1 interoperability
 
 The MWL Layer 1 section uses the same two-word common prefix as sprites. Its

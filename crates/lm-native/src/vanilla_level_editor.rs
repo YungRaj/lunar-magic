@@ -183,6 +183,7 @@ pub(crate) struct VanillaLevelEditor {
     object_form: ObjectForm,
     selected_sprite: usize,
     sprite_form: SpriteForm,
+    dragging_sprite: Option<usize>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
     map16_key: Option<(u64, u8, u8)>,
@@ -406,6 +407,7 @@ impl VanillaLevelEditor {
         self.map16_error = None;
         self.standard_object_map = None;
         self.paste_target = None;
+        self.dragging_sprite = None;
     }
 
     fn show_map16_preview(
@@ -556,7 +558,7 @@ impl VanillaLevelEditor {
             if vertical { 420.0 } else { 260.0 },
         );
         let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
         let major_tiles = canvas_major_tiles(&placements, &sprite_placements);
@@ -622,14 +624,29 @@ impl VanillaLevelEditor {
             custom_sprites,
             custom_map16,
         });
+        self.handle_canvas_interaction(&response, hit, hit_sprite, &records, rect, cell, vertical);
+        draw_canvas_caption(ui, vertical);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn handle_canvas_interaction(
+        &mut self,
+        response: &egui::Response,
+        hit_object: Option<usize>,
+        hit_sprite: Option<usize>,
+        records: &[ObjectRecord],
+        rect: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
         if response.clicked()
-            && let Some(index) = hit
+            && let Some(index) = hit_object
             && let Some(record) = records.get(index)
         {
             self.selected_object = index;
             self.object_form = ObjectForm::from_record(record);
         }
-        if response.clicked()
+        if (response.clicked() || response.drag_started())
             && let Some(index) = hit_sprite
             && let Some(controller) = &self.controller
         {
@@ -638,8 +655,47 @@ impl VanillaLevelEditor {
                 controller.level().sprites.header,
                 controller.level().sprites.tokens.get(index),
             );
+            if response.drag_started() {
+                self.dragging_sprite = Some(index);
+            }
         }
-        draw_canvas_caption(ui, vertical);
+        if response.drag_stopped()
+            && let (Some(index), Some(position)) =
+                (self.dragging_sprite.take(), response.interact_pointer_pos())
+        {
+            self.move_sprite_to_canvas(index, position, rect, cell, vertical);
+        }
+    }
+
+    fn move_sprite_to_canvas(
+        &mut self,
+        index: usize,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let Some(fields) = sprite_fields_at_canvas_position(
+            position,
+            canvas,
+            cell,
+            vertical,
+            NativeSpriteRecordFields {
+                y_low: self.sprite_form.y_low,
+                extra_bits: self.sprite_form.extra_bits,
+                screen: self.sprite_form.screen,
+                x: self.sprite_form.x,
+                sprite_number: self.sprite_form.sprite_number,
+            },
+        ) else {
+            self.error = Some("sprite drag ended outside the native 32×512 tile space".into());
+            return;
+        };
+        self.selected_sprite = index;
+        self.sprite_form.y_low = fields.y_low;
+        self.sprite_form.screen = fields.screen;
+        self.sprite_form.x = fields.x;
+        self.apply_sprite_semantic_fields();
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1347,6 +1403,37 @@ fn canvas_major_tiles(
     object_end.max(sprite_end).max(16)
 }
 
+fn sprite_fields_at_canvas_position(
+    position: egui::Pos2,
+    canvas: egui::Rect,
+    cell: f32,
+    vertical: bool,
+    mut fields: NativeSpriteRecordFields,
+) -> Option<NativeSpriteRecordFields> {
+    if !canvas.contains(position) || !cell.is_finite() || cell <= 0.0 {
+        return None;
+    }
+    let column = ((position.x - canvas.left()) / cell).floor();
+    let row = ((position.y - canvas.top()) / cell).floor();
+    if !(0.0..=f32::from(u16::MAX)).contains(&column) || !(0.0..=f32::from(u16::MAX)).contains(&row)
+    {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let (major, minor) = if vertical {
+        (row as u16, column as u16)
+    } else {
+        (column as u16, row as u16)
+    };
+    if major >= 0x200 || minor >= 0x20 {
+        return None;
+    }
+    fields.screen = u8::try_from(major / 16).ok()?;
+    fields.x = u8::try_from(major % 16).ok()?;
+    fields.y_low = u8::try_from(minor).ok()?;
+    Some(fields)
+}
+
 fn draw_map16_atlas_tile(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
@@ -1988,6 +2075,74 @@ mod tests {
         assert_eq!(
             vertical.level_orientation,
             lm_render::StandardLevelOrientation::Vertical
+        );
+    }
+
+    #[test]
+    fn canvas_sprite_drag_maps_both_orientations_to_native_fields() {
+        let canvas = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(512.0, 256.0));
+        let original = NativeSpriteRecordFields {
+            y_low: 1,
+            extra_bits: 2,
+            screen: 3,
+            x: 4,
+            sprite_number: 0x55,
+        };
+        let horizontal = sprite_fields_at_canvas_position(
+            egui::pos2(10.0 + 35.5 * 8.0, 20.0 + 12.5 * 8.0),
+            canvas,
+            8.0,
+            false,
+            original,
+        )
+        .unwrap();
+        assert_eq!(
+            horizontal,
+            NativeSpriteRecordFields {
+                y_low: 12,
+                extra_bits: 2,
+                screen: 2,
+                x: 3,
+                sprite_number: 0x55,
+            }
+        );
+
+        let vertical = sprite_fields_at_canvas_position(
+            egui::pos2(10.0 + 7.5 * 8.0, 20.0 + 31.5 * 8.0),
+            egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(256.0, 512.0)),
+            8.0,
+            true,
+            original,
+        )
+        .unwrap();
+        assert_eq!(vertical.y_low, 7);
+        assert_eq!(vertical.screen, 1);
+        assert_eq!(vertical.x, 15);
+        assert_eq!(vertical.extra_bits, 2);
+        assert_eq!(vertical.sprite_number, 0x55);
+    }
+
+    #[test]
+    fn canvas_sprite_drag_rejects_outside_and_unrepresentable_positions() {
+        let canvas = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(600.0, 600.0));
+        let fields = NativeSpriteRecordFields {
+            y_low: 0,
+            extra_bits: 0,
+            screen: 0,
+            x: 0,
+            sprite_number: 1,
+        };
+        assert!(
+            sprite_fields_at_canvas_position(egui::pos2(-1.0, 1.0), canvas, 1.0, false, fields,)
+                .is_none()
+        );
+        assert!(
+            sprite_fields_at_canvas_position(egui::pos2(1.0, 32.0), canvas, 1.0, false, fields,)
+                .is_none()
+        );
+        assert!(
+            sprite_fields_at_canvas_position(egui::pos2(512.0, 1.0), canvas, 1.0, false, fields,)
+                .is_none()
         );
     }
 

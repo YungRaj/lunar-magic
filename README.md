@@ -486,7 +486,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   The built-in pristine-SMW ROM editor uses the same recovered sprite field model: a selected
   record exposes its sprite number, five-bit screen, X, low five Y bits, and extra bits alongside
   the lossless raw bytes. Applying those fields repacks only the native three-byte record and
-  immediately updates the level canvas placement. Standard sprite previews also receive the
+  immediately updates the level canvas placement. A sprite can also be dragged directly on either
+  horizontal or vertical level canvases; the drop is converted back to bounded native
+  screen/X/Y fields and committed through the same controller. Standard sprite previews receive the
   level's actual mode and horizontal/vertical orientation, so the recovered position- and
   mode-dependent generator labels no longer render with a fabricated horizontal mode-zero context.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
