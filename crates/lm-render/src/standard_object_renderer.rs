@@ -63,6 +63,9 @@ const SHARED_SLOT_020_TOP_TILES: [u8; 16] = [
 const SHARED_SLOT_020_REMAINDER_TILES: [u8; 16] = [
     0x8f, 0x8f, 0x98, 0x98, 0x90, 0x90, 0x99, 0x99, 0xa4, 0x57, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a,
 ];
+const SHARED_SLOT_021_TILES: [u8; 16] = [
+    0xc4, 0xc5, 0xc7, 0xec, 0xed, 0xc6, 0xc7, 0xee, 0x59, 0x5a, 0xef, 0xc7, 0xee, 0x59, 0x5b, 0x5c,
+];
 const SHARED_SLOT_026_EVEN_TILES: [u8; 16] = [
     0xbd, 0xbf, 0xbe, 0xc0, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0xaa, 0xa5, 0x59, 0x4a, 0x4a, 0x4a,
 ];
@@ -136,6 +139,7 @@ enum NativeRenderer {
     SharedSlot018,
     SharedSlot019,
     SharedSlot020,
+    SharedSlot021,
     SharedSlot026,
     SharedSlot027,
     SharedSlot029,
@@ -473,6 +477,9 @@ fn render_definition(
     if definition.renderer == NativeRenderer::SharedSlot020 {
         return render_shared_slot_020(cache, layout, placement, parameter);
     }
+    if definition.renderer == NativeRenderer::SharedSlot021 {
+        return render_shared_slot_021(cache, layout, placement, parameter);
+    }
     if definition.renderer == NativeRenderer::SharedSlot026 {
         return render_shared_slot_026(cache, layout, placement, parameter);
     }
@@ -554,6 +561,40 @@ fn render_shared_slot_026(
         set_placement_cell(cache, layout, placement, major_offset, 0, tile)?;
     }
     Ok(())
+}
+
+fn render_shared_slot_021(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let rows = usize::from(parameter >> 4) + 1;
+    let mut table_index = 0;
+    let mut row_width = 2;
+    for major_offset in 0..rows {
+        for column in 0..row_width {
+            if table_index > 15 {
+                table_index -= 5;
+            }
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                isize::try_from(major_offset)
+                    .map_err(|_| StandardObjectRenderError::CoordinateOverflow)?,
+                isize::try_from(column)
+                    .map_err(|_| StandardObjectRenderError::CoordinateOverflow)?
+                    - isize::try_from(major_offset)
+                        .map_err(|_| StandardObjectRenderError::CoordinateOverflow)?,
+                u16::from(SHARED_SLOT_021_TILES[table_index]) + 0x100,
+            )?;
+            table_index += 1;
+        }
+        row_width = if table_index == 2 { 4 } else { 5 };
+    }
+    let rows = isize::try_from(rows).map_err(|_| StandardObjectRenderError::CoordinateOverflow)?;
+    set_placement_cell_signed(cache, layout, placement, rows, 1 - rows, 0x1eb)
 }
 
 fn render_shared_slot_030(
@@ -956,6 +997,29 @@ fn set_placement_cell(
         .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
     let minor = usize::from(placement.minor)
         .checked_add(minor_offset)
+        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    let (x, y) = if layout.vertical {
+        (minor, major)
+    } else {
+        (major, minor)
+    };
+    cache.set(layout, x, y, tile)?;
+    Ok(())
+}
+
+fn set_placement_cell_signed(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    major_offset: isize,
+    minor_offset: isize,
+    tile: u16,
+) -> Result<(), StandardObjectRenderError> {
+    let major = usize::from(placement.major)
+        .checked_add_signed(major_offset)
+        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    let minor = usize::from(placement.minor)
+        .checked_add_signed(minor_offset)
         .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
     let (x, y) = if layout.vertical {
         (minor, major)
@@ -1375,6 +1439,7 @@ fn install_shared_handler_aliases(
         (18, NativeRenderer::SharedSlot018),
         (19, NativeRenderer::SharedSlot019),
         (20, NativeRenderer::SharedSlot020),
+        (21, NativeRenderer::SharedSlot021),
         (26, NativeRenderer::SharedSlot026),
         (27, NativeRenderer::SharedSlot027),
         (29, NativeRenderer::SharedSlot029),
@@ -1893,6 +1958,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn mapped_handler_21_expands_its_diagonal_widening_rows() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 21;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x18, 0x20]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        for (major, start_minor, row) in [
+            (0, 8, vec![0x1c4, 0x1c5]),
+            (1, 7, vec![0x1c7, 0x1ec, 0x1ed, 0x1c6]),
+            (2, 6, vec![0x1c7, 0x1ee, 0x159, 0x15a, 0x1ef]),
+        ] {
+            for (column, tile) in row.into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.cells()
+                        [NativeLevelMap16Cache::cell_index(layout(), major, start_minor + column)],
+                    tile
+                );
+            }
+        }
+        assert_eq!(
+            report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 3, 6)],
+            0x1eb
+        );
     }
 
     #[test]
