@@ -17,12 +17,13 @@ use lm_overworld::{
     encode_native_overworld_message_file,
 };
 use lm_profile::{
+    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN,
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START, smw_us_v1_event_tilemap_locator,
     smw_us_v1_overworld_event_number_map_locator, smw_us_v1_overworld_event_reveal_locator,
     smw_us_v1_overworld_message_patch_locator, smw_us_v1_special_event_reveal_locator,
 };
 use lm_project::{EventTilemapCompression, MwlOptionalLevelAssets, Project};
-use lm_rats::parse_at;
+use lm_rats::{parse_at, scan};
 use lm_rom::{RomImage, detect_identity};
 use std::fs;
 use std::path::PathBuf;
@@ -189,6 +190,63 @@ fn command_script_installs_expanded_settings_and_saves_a_new_rom() {
         SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START,
     )
     .unwrap();
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn command_script_installs_complete_layer3_runtime_and_reopens_checksum_valid() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let directory = std::env::temp_dir().join(format!(
+        "lm-app-layer3-runtime-日本語-{}-{}",
+        std::process::id(),
+        NEXT_SCRIPT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let input = directory.join("pristine source.smc");
+    let output = directory.join("installed output.smc");
+    let commands = directory.join("commands.txt");
+    let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+    fs::write(&input, &original).unwrap();
+    fs::write(
+        &commands,
+        format!(
+            "open {}\nlayer3-install\nundo\nredo\nsave-as {}\nquit\n",
+            input.display(),
+            output.display()
+        ),
+    )
+    .unwrap();
+
+    let run = Command::new(env!("CARGO_BIN_EXE_lm-app"))
+        .arg("--script")
+        .arg(&commands)
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(fs::read(&input).unwrap(), original);
+    let image = RomImage::from_bytes(fs::read(&output).unwrap()).unwrap();
+    assert_eq!(image.logical_len(), 0x10_0000);
+    assert!(detect_identity(&image).unwrap().checksum_matches());
+    let blocks = scan(image.logical_bytes());
+    assert_eq!(blocks.len(), 6);
+    assert_eq!(
+        blocks
+            .iter()
+            .map(|block| block.payload.len())
+            .collect::<Vec<_>>(),
+        [
+            0x4c0,
+            0x3d0,
+            0x20,
+            0x20,
+            0x370,
+            SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN
+        ]
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 
