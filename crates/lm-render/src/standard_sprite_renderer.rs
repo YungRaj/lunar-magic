@@ -613,6 +613,11 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (if mode.alternate_display { 0x115 } else { 0x14d }, 0, 1),
             (0x114, 0, -8),
         ]),
+        0xd8 | 0xd9 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xd8 => parts(&[(if mode.alternate_graphics { 0x33 } else { 0x30 }, 0, 1)]),
+        0xd9 => parts(&[(if mode.alternate_graphics { 0x32 } else { 0x31 }, 0, 1)]),
+        0xda => parts(&[(if mode.alternate_display { 0x115 } else { 0x32 }, 0, 1)]),
+        0xdb => parts(&[(if mode.alternate_display { 0x115 } else { 0x33 }, 0, 1)]),
         _ => None,
     }
 }
@@ -936,6 +941,10 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x021 => [0x10a2, 0x10b2, 0x10a3, 0x10b3],
         0x022 => [0x0ca2, 0x0cb2, 0x0ca3, 0x0cb3],
         0x023 => [0x08a2, 0x08b2, 0x08a3, 0x08b3],
+        0x030 => [0x548d, 0x549d, 0x548c, 0x549c],
+        0x031 => [0x508d, 0x509d, 0x508c, 0x509c],
+        0x032 => [0x4c8d, 0x4c9d, 0x4c8c, 0x4c9c],
+        0x033 => [0x488d, 0x489d, 0x488c, 0x489c],
         0x040 => [0x14ca, 0x14da, 0x14cb, 0x14db],
         0x041 => [0x10ca, 0x10da, 0x10cb, 0x10db],
         0x042 => [0x0ce2, 0x0cf2, 0x0ce3, 0x0cf3],
@@ -3129,5 +3138,23 @@ mod tests {
         assert_eq!(geometry(0xd5, false), [(0x11d, 0, 0), (0x114, 0, -8)]);
         assert_eq!(geometry(0xd6, false), [(0x14d, 0, 1), (0x114, 0, -8)]);
         assert_eq!(geometry(0xd6, true), [(0x115, 0, 1), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xd8, false), [(0x30, 0, 1)]);
+        assert_eq!(geometry(0xd9, false), [(0x31, 0, 1)]);
+        for sprite in [0xd8, 0xd9, 0xda, 0xdb] {
+            assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
+        }
+        let alternate_graphics = |sprite| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    alternate_graphics: true,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()[0]
+                .definition_index
+        };
+        assert_eq!(alternate_graphics(0xd8), 0x33);
+        assert_eq!(alternate_graphics(0xd9), 0x32);
     }
 }
