@@ -153,9 +153,11 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x15 | 0x17 | 0x18 => parts(&[(0x14, 0, 1)]),
         0x16 => parts(&[(0x15, 0, 1)]),
         0x1a => parts(&[(0x16, 8, -31), (0x26, 8, -15)]),
+        0x19 => render_text_lines(&[("Display Level", 0), ("  Message 1  ", 8)]),
         0x1b => parts(&[(0x24, 0, 1)]),
         0x1c => parts(&[(0x25, 0, 1)]),
         0x1d => parts(&[(0x17, 0, 1)]),
+        0x1e => render_handler_1e(mode.placement_first),
         0x1f => parts(&[(0x18, 0, -15), (0x28, 0, 1)]),
         0x20 => parts(&[(0x03, 4, 0), (0x04, -4, 8), (0x05, 12, 8)]),
         0x21 => parts(&[(0x1a, 0, 1)]),
@@ -706,6 +708,30 @@ fn render_handler_95(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
     parts(&values)
 }
 
+fn render_handler_1e(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+    let mut values = vec![(0x27, -5, 0), (0x27, 5, 1)];
+    if placement_first & 1 != 0 {
+        values.push((0xfd, -12, -14));
+    }
+    values.extend([
+        (0x19, 1, -16),
+        (0x29, 1, 0),
+        (0x27, -3, 4),
+        (0x27, 3, 4),
+        (0x9c, 4, 8),
+    ]);
+    if placement_first & 1 != 0 {
+        values.extend([
+            (0xfe, -28, -14),
+            (0xfe, -28, 2),
+            (0xfe, -28, 18),
+            (0xfe, -28, 34),
+            (0x210, -20, 50),
+        ]);
+    }
+    parts(&values)
+}
+
 fn render_handler_9a(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
     let head = match placement_first & 3 {
         0 => 0x1bd,
@@ -1155,10 +1181,12 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x011 => [0x1082, 0x1092, 0x1083, 0x1093],
         0x012 => [0x0c82, 0x0c92, 0x0c83, 0x0c93],
         0x013 => [0x0882, 0x0892, 0x0883, 0x0893],
+        0x019 | 0x02d => [0x11ec, 0x11fc, 0x11ed, 0x11fd],
         0x020 => [0x14a2, 0x14b2, 0x14a3, 0x14b3],
         0x021 => [0x10a2, 0x10b2, 0x10a3, 0x10b3],
         0x022 => [0x0ca2, 0x0cb2, 0x0ca3, 0x0cb3],
         0x023 => [0x08a2, 0x08b2, 0x08a3, 0x08b3],
+        0x029 => [0x11ee, 0x11fe, 0x11ef, 0x11ff],
         0x030 => [0x548d, 0x549d, 0x548c, 0x549c],
         0x031 => [0x508d, 0x509d, 0x508c, 0x509c],
         0x032 => [0x4c8d, 0x4c9d, 0x4c8c, 0x4c9c],
@@ -1190,7 +1218,6 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x028 | 0x039 => [0x0dc4, 0x0dd4, 0x0dc5, 0x0dd5],
         0x02a => [0x05a2, 0x05b2, 0x45a2, 0x45b2],
         0x02b => [0xd0bf, 0xd0af, 0xd0be, 0xd0ae],
-        0x02d => [0x11ec, 0x11fc, 0x11ed, 0x11fd],
         0x02e => [0xc95d, 0xc94d, 0xc95c, 0xc94c],
         0x02f => [0xc95b, 0xc94b, 0xc95a, 0xc94a],
         0x034 | 0x1b0 => [0x058e, 0x059e, 0x058f, 0x059f],
@@ -1360,6 +1387,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0f8 => [0x09c8, 0x09d8, 0x0819, 0x09d0],
         0x0f9 => [0x090a, 0x091a, 0x090b, 0x091b],
         0x0fa => [0x490b, 0x491b, 0x490a, 0x491a],
+        0x0fd => [0x09aa, 0x09ba, 0x09ab, 0x09bb],
+        0x0fe => [0x4819, 0x4819, 0x0989, 0x0989],
         0x0ff => [0x55cc, 0x55dc, 0x55cb, 0x55db],
         0x100 => [0x5425, 0x5435, 0x5424, 0x5434],
         0x101 => [0x5025, 0x5035, 0x5024, 0x5034],
@@ -1502,6 +1531,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x20d => [0x1419, 0x1419, 0x1419, 0x350d],
         0x20e => [0x354e, 0x355e, 0x354f, 0x355f],
         0x20f => [0x1419, 0x355d, 0x1419, 0x1419],
+        0x210 => [0x1424, 0x1434, 0x1425, 0x1435],
         0x211 => [0x1024, 0x1034, 0x1025, 0x1035],
         0x21f => [0x35ae, 0x35be, 0x35af, 0x35bf],
         0x124 => [0x5508, 0x5518, 0x5507, 0x5517],
@@ -1742,11 +1772,39 @@ mod tests {
             geometry(0x1f, false).unwrap(),
             [(0x18, 0, -15), (0x28, 0, 1)]
         );
-        assert_eq!(geometry(0x19, false), None, "handler 25 draws text");
-        assert_eq!(geometry(0x1e, false), None, "handler 30 is input-dependent");
+        assert_eq!(
+            geometry(0x1e, false).unwrap(),
+            [
+                (0x27, -5, 0),
+                (0x27, 5, 1),
+                (0x19, 1, -16),
+                (0x29, 1, 0),
+                (0x27, -3, 4),
+                (0x27, 3, 4),
+                (0x9c, 4, 8)
+            ]
+        );
+        let text = geometry(0x19, false).unwrap();
+        assert_eq!(text[1], (0x3c44, 0, 0));
+        assert_eq!(text["Display Level".len() * 2 + 1], (0x3c20, 0, 8));
         for sprite in [0x15, 0x16, 0x17, 0x18, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f] {
             assert_eq!(geometry(sprite, true).unwrap(), [(0x115, 0, 1)]);
         }
+        let extended = render_lunar_magic_standard_sprite_with_mode(
+            0x1e,
+            StandardSpritePreviewMode {
+                placement_first: 1,
+                ..StandardSpritePreviewMode::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(extended.len(), 13);
+        assert_eq!(
+            extended
+                .last()
+                .map(|part| (part.definition_index, part.x, part.y)),
+            Some((0x210, -20, 50))
+        );
     }
 
     #[test]
