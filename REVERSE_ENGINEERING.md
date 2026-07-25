@@ -1742,9 +1742,11 @@ selections, and off-canvas drops fail atomically.
 
 `NativeLevelDocumentEditor` now has a stream-native placement canvas. The
 legacy level mode selects horizontal or vertical axes; decoded object spans and
-sprite positions determine a bounded, fixed-scale, two-axis-scrollable
-16-by-512-tile view with strong screen boundaries. Ordinary objects render
-their recovered footprint. Standard
+sprite positions determine a bounded, fixed-scale, two-axis-scrollable view.
+Each native axis grows from 16 through at most 512 tiles, so expanded sprite
+upper-coordinate tokens remain visible instead of being clipped; strong
+16-tile screen boundaries remain explicit. Ordinary objects render their
+recovered footprint. Standard
 sprites use the authenticated dispatcher with the real placement byte, level
 mode, and orientation, displaying each composite part's recovered signed
 geometry; unresolved/custom records remain clearly labeled markers. Hit

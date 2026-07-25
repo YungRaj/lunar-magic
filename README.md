@@ -510,11 +510,12 @@ interactive frontends cannot bypass confirmation and request correlation through
   ordinary standard/custom records. One atomic batch validates command/parameter shape and then
   uses the same transition-preserving relocation engine, retaining custom extension bytes.
   The window now includes an orientation-aware placement canvas derived solely from the document's
-  streams and header. Its fixed editing scale scrolls across all decoded screens and draws screen
-  boundaries, object footprints, authenticated standard-sprite composite geometry, and labeled
-  unresolved/custom sprite markers; clicking a placement loads the corresponding semantic form.
-  It deliberately does not fabricate ROM graphics or SSC/OSC artwork that is absent from this
-  portable document boundary.
+  streams and header. Its fixed editing scale grows both native axes for decoded placements,
+  including expanded sprite upper-coordinate tokens, and scrolls across all screens. It draws
+  screen boundaries, object footprints, authenticated standard-sprite composite geometry, and
+  labeled unresolved/custom sprite markers; clicking a placement loads the corresponding semantic
+  form. It deliberately does not fabricate ROM graphics or SSC/OSC artwork that is absent from
+  this portable document boundary.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.

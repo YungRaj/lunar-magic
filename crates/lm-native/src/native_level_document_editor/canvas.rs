@@ -14,7 +14,8 @@ impl NativeLevelDocumentEditor {
         let vertical = lm_profile::smw_us_v1_level_mode(value.layer1.header.level_mode()).vertical;
         let level_mode = value.layer1.header.level_mode();
         let major_tiles = canvas_major_tiles(&objects, &sprites);
-        let size = canvas_size(major_tiles, vertical);
+        let minor_tiles = canvas_minor_tiles(&objects, &sprites);
+        let size = canvas_size(major_tiles, minor_tiles, vertical);
         egui::ScrollArea::both()
             .id_salt("native-level-placement-canvas")
             .max_height(CANVAS_VIEW_HEIGHT)
@@ -23,7 +24,14 @@ impl NativeLevelDocumentEditor {
                 let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
                 let painter = ui.painter_at(rect);
                 painter.rect_filled(rect, 0.0, egui::Color32::from_gray(18));
-                draw_grid(&painter, rect, CANVAS_CELL, major_tiles, vertical);
+                draw_grid(
+                    &painter,
+                    rect,
+                    CANVAS_CELL,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                );
                 let cursor = response.interact_pointer_pos();
                 let object_hit = draw_objects(
                     &painter,
@@ -60,21 +68,38 @@ impl NativeLevelDocumentEditor {
                 }
             });
         ui.small(format!(
-            "{} placement canvas · {} major tiles · scroll to navigate; click a placement to load its semantic fields",
+            "{} placement canvas · {}×{} native-axis tiles · scroll to navigate; click a placement to load its semantic fields",
             if vertical { "Vertical" } else { "Horizontal" },
-            major_tiles
+            major_tiles,
+            minor_tiles
         ));
     }
 }
 
-fn canvas_size(major_tiles: u16, vertical: bool) -> egui::Vec2 {
+fn canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool) -> egui::Vec2 {
     let major = f32::from(major_tiles) * CANVAS_CELL;
-    let minor = 16.0 * CANVAS_CELL;
+    let minor = f32::from(minor_tiles) * CANVAS_CELL;
     if vertical {
         egui::vec2(minor, major)
     } else {
         egui::vec2(major, minor)
     }
+}
+
+fn canvas_minor_tiles(objects: &[NativeObjectPlacement], sprites: &[NativeSpritePlacement]) -> u16 {
+    let object_end = objects
+        .iter()
+        .map(|placement| u16::from(placement.minor).saturating_add(u16::from(placement.minor_span)))
+        .max()
+        .unwrap_or(MIN_MAJOR_TILES);
+    let sprite_end = sprites
+        .iter()
+        .map(|placement| placement.minor.saturating_add(1))
+        .max()
+        .unwrap_or(MIN_MAJOR_TILES);
+    object_end
+        .max(sprite_end)
+        .clamp(MIN_MAJOR_TILES, MAX_CANVAS_MAJOR_TILES)
 }
 
 fn canvas_major_tiles(objects: &[NativeObjectPlacement], sprites: &[NativeSpritePlacement]) -> u16 {
@@ -102,16 +127,17 @@ fn draw_grid(
     rect: egui::Rect,
     cell: f32,
     major_tiles: u16,
+    minor_tiles: u16,
     vertical: bool,
 ) {
     let (columns, rows) = if vertical {
-        (16, major_tiles)
+        (minor_tiles, major_tiles)
     } else {
-        (major_tiles, 16)
+        (major_tiles, minor_tiles)
     };
     for column in 0..=columns {
         let x = rect.left() + f32::from(column) * cell;
-        let boundary = (!vertical && column % 16 == 0) || (vertical && column == 16);
+        let boundary = column % 16 == 0;
         painter.line_segment(
             [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
             grid_stroke(boundary),
@@ -119,7 +145,7 @@ fn draw_grid(
     }
     for row in 0..=rows {
         let y = rect.top() + f32::from(row) * cell;
-        let boundary = (vertical && row % 16 == 0) || (!vertical && row == 16);
+        let boundary = row % 16 == 0;
         painter.line_segment(
             [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
             grid_stroke(boundary),
@@ -314,8 +340,23 @@ mod tests {
 
     #[test]
     fn canvas_keeps_a_fixed_editing_scale_and_swaps_axes() {
-        assert_eq!(canvas_size(32, false), egui::vec2(384.0, 192.0));
-        assert_eq!(canvas_size(32, true), egui::vec2(192.0, 384.0));
-        assert_eq!(canvas_size(512, false), egui::vec2(6144.0, 192.0));
+        assert_eq!(canvas_size(32, 16, false), egui::vec2(384.0, 192.0));
+        assert_eq!(canvas_size(32, 16, true), egui::vec2(192.0, 384.0));
+        assert_eq!(canvas_size(512, 32, false), egui::vec2(6144.0, 384.0));
+    }
+
+    #[test]
+    fn expanded_sprite_perpendicular_coordinates_expand_the_minor_axis() {
+        let sprites = [NativeSpritePlacement {
+            token_index: 0,
+            first_byte: 0,
+            screen: 0,
+            major: 1,
+            minor: 176,
+            sprite_number: 1,
+            extra_bits: 0,
+        }];
+        assert_eq!(canvas_minor_tiles(&[], &sprites), 177);
+        assert_eq!(canvas_minor_tiles(&[], &[]), 16);
     }
 }
