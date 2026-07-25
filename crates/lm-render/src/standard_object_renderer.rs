@@ -95,6 +95,8 @@ const SHARED_SLOT_030_TILES: [[u8; 16]; 6] = [
         0xb1,
     ],
 ];
+const SHARED_SLOT_033_START_TILES: [u8; 4] = [0xce, 0xd1, 0xcf, 0xd0];
+const SHARED_SLOT_033_END_TILES: [u8; 4] = [0xf3, 0xf6, 0xf4, 0xf5];
 const SHARED_SLOT_034_TILES: [u8; 16] = [
     0x5a, 0x59, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a,
 ];
@@ -155,6 +157,7 @@ enum NativeRenderer {
     SharedSlot029,
     SharedSlot030,
     SharedSlot031,
+    SharedSlot033,
     SharedSlot034,
     SharedSlot035,
     SharedSlot036,
@@ -514,6 +517,9 @@ fn render_definition(
     }
     if definition.renderer == NativeRenderer::SharedSlot031 {
         return render_shared_slot_031(cache, layout, placement, parameter);
+    }
+    if definition.renderer == NativeRenderer::SharedSlot033 {
+        return render_shared_slot_033(cache, layout, placement, parameter);
     }
     if definition.renderer == NativeRenderer::SharedSlot034 {
         return render_shared_slot_034(cache, layout, placement, parameter);
@@ -904,6 +910,47 @@ fn render_shared_slot_034(
     let tile = u16::from(SHARED_SLOT_034_TILES[usize::from(parameter >> 4)]) + 0x100;
     for minor_offset in 0..=usize::from(parameter & 0x0f) {
         set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
+    }
+    Ok(())
+}
+
+fn render_shared_slot_033(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let variant = usize::from(parameter & 3);
+    let start = u16::from(SHARED_SLOT_033_START_TILES[variant]) + 0x100;
+    let end = u16::from(SHARED_SLOT_033_END_TILES[variant]) + 0x100;
+    let expands_right = parameter & 2 != 0;
+    set_placement_cell(cache, layout, placement, 0, 0, start)?;
+    let rows = usize::from(parameter >> 4) + 1;
+    for row in 1..=rows {
+        let major = signed_offset(row)?;
+        let direction = if expands_right { 1 } else { -1 };
+        for fill in 0..row.saturating_sub(1) {
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                major,
+                direction * signed_offset(fill)?,
+                0x03f,
+            )?;
+        }
+        let end_minor = direction * signed_offset(row.saturating_sub(1))?;
+        set_placement_cell_signed(cache, layout, placement, major, end_minor, end)?;
+        if row < rows {
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                major,
+                direction * signed_offset(row)?,
+                start,
+            )?;
+        }
     }
     Ok(())
 }
@@ -1824,6 +1871,7 @@ fn install_shared_handler_aliases(
         (29, NativeRenderer::SharedSlot029),
         (30, NativeRenderer::SharedSlot030),
         (31, NativeRenderer::SharedSlot031),
+        (33, NativeRenderer::SharedSlot033),
         (34, NativeRenderer::SharedSlot034),
         (35, NativeRenderer::SharedSlot035),
         (36, NativeRenderer::SharedSlot036),
@@ -2588,6 +2636,71 @@ mod tests {
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_33_mirrors_expanding_page_one_wedges() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 33;
+        for (parameter, start_minor, start, end, direction) in [
+            (0x22, 4_usize, 0x1cf, 0x1f4, 1_isize),
+            (0x20, 8_usize, 0x1ce, 0x1f3, -1_isize),
+        ] {
+            let stream = ObjectStream {
+                records: vec![
+                    ObjectRecord::new(vec![
+                        0,
+                        0x10 | u8::try_from(start_minor).unwrap(),
+                        parameter,
+                    ])
+                    .unwrap(),
+                ],
+            };
+            let report = render_mapped_standard_object_stream(
+                &stream,
+                &definitions,
+                &handler_map,
+                layout(),
+                0x25,
+            )
+            .unwrap();
+            assert_eq!(
+                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 0, start_minor)],
+                start
+            );
+            for row in 1_usize..=3 {
+                for fill in 0..row.saturating_sub(1) {
+                    let minor = start_minor
+                        .checked_add_signed(direction * isize::try_from(fill).unwrap())
+                        .unwrap();
+                    assert_eq!(
+                        report.cache.cells()
+                            [NativeLevelMap16Cache::cell_index(layout(), row, minor)],
+                        0x03f
+                    );
+                }
+                let end_minor = start_minor
+                    .checked_add_signed(direction * isize::try_from(row.saturating_sub(1)).unwrap())
+                    .unwrap();
+                assert_eq!(
+                    report.cache.cells()
+                        [NativeLevelMap16Cache::cell_index(layout(), row, end_minor)],
+                    end
+                );
+                if row < 3 {
+                    let start_minor = start_minor
+                        .checked_add_signed(direction * isize::try_from(row).unwrap())
+                        .unwrap();
+                    assert_eq!(
+                        report.cache.cells()
+                            [NativeLevelMap16Cache::cell_index(layout(), row, start_minor)],
+                        start
+                    );
+                }
             }
         }
     }
