@@ -38,6 +38,7 @@ mod sprite;
 mod sprite_editing;
 mod sprite_placement;
 mod ssc_sidecar;
+mod ssc_sidecar_resolved;
 
 pub use binary::{BinaryError, ByteCursor};
 pub use complete_file::{CompleteLevelFile, CompleteLevelFileError, LevelCollection};
@@ -113,6 +114,7 @@ pub use ssc_sidecar::{
     MAX_SSC_DISPLAY_TILES, MAX_SSC_PALETTE_RECORDS, MAX_SSC_SOURCE_LEN, SscDirective,
     SscDisplayTile, SscEntry, SscRemapRange, SscSidecar, SscSidecarError, SscSpriteSelector,
 };
+pub use ssc_sidecar_resolved::{SSC_REMAP_ENTRY_COUNT, SscResolvedSprite, SscResolvedTable};
 mod appearance_file;
 mod auxiliary_edit_script;
 mod auxiliary_editing;

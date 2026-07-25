@@ -28,7 +28,9 @@ mod viewport_raster;
 mod viewport_scene;
 
 pub use canvas::{Canvas, CanvasError, Rgba};
-pub use custom_sprite_renderer::render_lunar_magic_custom_sprite;
+pub use custom_sprite_renderer::{
+    render_lunar_magic_custom_sprite, render_resolved_lunar_magic_custom_sprite,
+};
 pub use editor_overlay::{
     EditorOverlay, EditorOverlayError, GridOverlay, SelectionOverlay, draw_editor_overlays,
     validate_editor_overlays,

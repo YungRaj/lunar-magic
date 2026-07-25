@@ -1,6 +1,6 @@
 use crate::StandardSpritePreviewTile;
 use crate::standard_sprite_renderer::preview_definition;
-use lm_level::{SscDirective, SscEntry};
+use lm_level::{SscDirective, SscEntry, SscResolvedSprite};
 
 /// Materializes one decoded `.ssc` display record through the same preview-definition table used
 /// by Lunar Magic's standard sprite renderer.
@@ -13,6 +13,25 @@ pub fn render_lunar_magic_custom_sprite(
     let SscDirective::Display(display) = &entry.directive else {
         return None;
     };
+    display
+        .iter()
+        .map(|tile| {
+            Some(StandardSpritePreviewTile {
+                definition_index: tile.tile,
+                subtiles: preview_definition(tile.tile)?,
+                x: tile.x,
+                y: tile.y,
+            })
+        })
+        .collect()
+}
+
+/// Renders a materialized custom-sprite display after source-order replacement has been applied.
+#[must_use]
+pub fn render_resolved_lunar_magic_custom_sprite(
+    sprite: &SscResolvedSprite,
+) -> Option<Vec<StandardSpritePreviewTile>> {
+    let display = sprite.display.as_ref()?;
     display
         .iter()
         .map(|tile| {
