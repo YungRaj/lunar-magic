@@ -73,6 +73,12 @@ struct SpriteForm {
     encoded: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EntityPasteTarget {
+    Object,
+    Sprite,
+}
+
 impl SpriteForm {
     fn from_token(header: u8, token: Option<&SpriteToken>) -> Self {
         let encoded = match token {
@@ -123,6 +129,7 @@ pub(crate) struct VanillaLevelEditor {
     object_form: ObjectForm,
     selected_sprite: usize,
     sprite_form: SpriteForm,
+    paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
     map16_key: Option<(u64, u8, u8)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -344,6 +351,7 @@ impl VanillaLevelEditor {
         self.map16_summary = None;
         self.map16_error = None;
         self.standard_object_map = None;
+        self.paste_target = None;
     }
 
     fn show_map16_preview(
@@ -691,6 +699,21 @@ impl VanillaLevelEditor {
             ui.checkbox(&mut self.object_form.advances_screen, "");
             ui.end_row();
         });
+        self.object_action_buttons(ui, record_count, has_selection);
+        if self.paste_target == Some(EntityPasteTarget::Object)
+            && let Some(text) = pasted_text(ui)
+        {
+            self.paste_target = None;
+            self.paste_object(&text, record_count);
+        }
+    }
+
+    fn object_action_buttons(
+        &mut self,
+        ui: &mut egui::Ui,
+        record_count: usize,
+        has_selection: bool,
+    ) {
         ui.horizontal(|ui| {
             if ui.button("Insert after selection").clicked() {
                 let edit = self.object_form.ordinary_record().map(|record| {
@@ -761,6 +784,17 @@ impl VanillaLevelEditor {
                 }
             }
             self.object_move_buttons(ui, record_count);
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Copy"))
+                .clicked()
+            {
+                self.copy_object(ui);
+            }
+            if ui.button("Paste after selection").clicked() {
+                self.paste_target = Some(EntityPasteTarget::Object);
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
         });
     }
 
@@ -887,7 +921,36 @@ impl VanillaLevelEditor {
                 }
             }
             self.sprite_move_buttons(ui, token_count);
+            let selected_record = self
+                .controller
+                .as_ref()
+                .and_then(|controller| controller.level().sprites.tokens.get(self.selected_sprite))
+                .and_then(|token| match token {
+                    SpriteToken::Record(record) => Some(record),
+                    SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+                });
+            if ui
+                .add_enabled(selected_record.is_some(), egui::Button::new("Copy record"))
+                .clicked()
+                && let Some(record) = selected_record
+            {
+                match crate::native_clipboard::encode_level_sprite(record) {
+                    Ok(text) => ui.ctx().copy_text(text),
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            if ui.button("Paste record after selection").clicked() {
+                self.paste_target = Some(EntityPasteTarget::Sprite);
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
         });
+        if self.paste_target == Some(EntityPasteTarget::Sprite)
+            && let Some(text) = pasted_text(ui)
+        {
+            self.paste_target = None;
+            self.paste_sprite(&text, token_count);
+        }
     }
 
     fn apply_sprite_result(&mut self, edit: Result<NativeLevelEdit, String>) {
@@ -919,6 +982,72 @@ impl VanillaLevelEditor {
             return;
         };
         match controller.apply_edits(&[NativeLevelEdit::InsertSprite { index, token }]) {
+            Ok(()) => {
+                self.selected_sprite = index;
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.get(index),
+                );
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn copy_object(&mut self, ui: &egui::Ui) {
+        let Some(record) = self.controller.as_ref().and_then(|controller| {
+            controller
+                .level()
+                .layer1
+                .objects
+                .records
+                .get(self.selected_object)
+        }) else {
+            return;
+        };
+        match crate::native_clipboard::encode_level_object(record) {
+            Ok(text) => ui.ctx().copy_text(text),
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn paste_object(&mut self, text: &str, record_count: usize) {
+        let index = object_insertion_index(self.selected_object, record_count);
+        let edit = match pasted_object_edit(text, index) {
+            Ok(edit) => edit,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_edits(&[edit]) {
+            Ok(()) => {
+                self.selected_object = index;
+                if let Some(record) = controller.level().layer1.objects.records.get(index) {
+                    self.object_form = ObjectForm::from_record(record);
+                }
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn paste_sprite(&mut self, text: &str, token_count: usize) {
+        let index = sprite_insertion_index(self.selected_sprite, token_count);
+        let edit = match pasted_sprite_edit(text, index) {
+            Ok(edit) => edit,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_edits(&[edit]) {
             Ok(()) => {
                 self.selected_sprite = index;
                 self.sprite_form = SpriteForm::from_token(
@@ -1021,6 +1150,18 @@ fn object_insertion_index(selected: usize, record_count: usize) -> usize {
     selected.saturating_add(1).min(record_count)
 }
 
+fn pasted_object_edit(text: &str, index: usize) -> Result<NativeLevelEdit, String> {
+    crate::native_clipboard::decode_level_object(text)
+        .map(|record| NativeLevelEdit::Objects(vec![ObjectEdit::Insert { index, record }]))
+}
+
+fn pasted_sprite_edit(text: &str, index: usize) -> Result<NativeLevelEdit, String> {
+    crate::native_clipboard::decode_level_sprite(text).map(|record| NativeLevelEdit::InsertSprite {
+        index,
+        token: SpriteToken::Record(record),
+    })
+}
+
 const fn move_before_indexes(selected: usize, count: usize, down: bool) -> Option<(usize, usize)> {
     if down {
         if selected.saturating_add(1) < count {
@@ -1053,6 +1194,15 @@ fn draw_object_grid(
     for row in 0..=rows {
         draw_grid_line(painter, rect, cell, row, vertical, false);
     }
+}
+
+fn pasted_text(ui: &egui::Ui) -> Option<String> {
+    ui.input(|input| {
+        input.events.iter().find_map(|event| match event {
+            egui::Event::Paste(text) => Some(text.clone()),
+            _ => None,
+        })
+    })
 }
 
 fn draw_grid_line(
@@ -1643,5 +1793,32 @@ mod tests {
         assert_eq!(move_before_indexes(2, 3, true), None);
         assert_eq!(move_before_indexes(0, 3, false), None);
         assert_eq!(move_before_indexes(9, 3, false), None);
+    }
+
+    #[test]
+    fn typed_entity_paste_builds_exact_insertions_and_rejects_cross_domain_data() {
+        let object = ObjectRecord::new(vec![1, 2, 3]).unwrap();
+        let object_text = crate::native_clipboard::encode_level_object(&object).unwrap();
+        assert_eq!(
+            pasted_object_edit(&object_text, 4).unwrap(),
+            NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                index: 4,
+                record: object
+            }])
+        );
+
+        let sprite = lm_level::SpriteRecord {
+            encoded: vec![4, 5, 6],
+        };
+        let sprite_text = crate::native_clipboard::encode_level_sprite(&sprite).unwrap();
+        assert_eq!(
+            pasted_sprite_edit(&sprite_text, 2).unwrap(),
+            NativeLevelEdit::InsertSprite {
+                index: 2,
+                token: SpriteToken::Record(sprite)
+            }
+        );
+        assert!(pasted_object_edit(&sprite_text, 0).is_err());
+        assert!(pasted_sprite_edit(&object_text, 0).is_err());
     }
 }
