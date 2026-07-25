@@ -118,6 +118,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0xbb
         | 0xbc
         | 0xbf
+        | 0xc0
             if mode.alternate_display =>
         {
             parts(&[(0x115, 0, 1)])
@@ -566,7 +567,14 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             ])
         }
         0xbf => parts(&[(0x166, 0, 0)]),
+        0xc0 => parts(&[
+            (0x16b, -8, 8),
+            (0x16c, 8, 8),
+            (0x15b, -8, -8),
+            (0x15c, 8, -8),
+        ]),
         0xc1 => parts(&[(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]),
+        0xc2 => render_handler_c2(),
         0xc3 => parts(&[(0x179, 0, 0)]),
         0xc4 => parts(&[(0x8101, 0, 0)]),
         _ => None,
@@ -674,6 +682,26 @@ fn render_handler_b9(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         1 | 3 => parts(&[(0x189, 0, 1), (0x188, -8, -7), (0x14d, -24, -1)]),
         _ => unreachable!(),
     }
+}
+
+fn render_handler_c2() -> Option<Vec<StandardSpritePreviewTile>> {
+    let mut values = Vec::with_capacity(20);
+    for row in 0_u16..4 {
+        for column in 0_u16..4 {
+            values.push((
+                0xc0 + row * 0x10 + column,
+                i16::try_from(column).expect("four-column preview") * 16 - 4,
+                i16::try_from(row).expect("four-row preview") * 16,
+            ));
+        }
+    }
+    values.extend([
+        (0xe4, -7, 24),
+        (0xf4, 29, 24),
+        (0x15a, 4, 18),
+        (0x16a, 4, 34),
+    ]);
+    parts(&values)
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
@@ -974,8 +1002,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0ba => [0x01e4, 0x01f4, 0x01e5, 0x01f5],
         0x0c0 | 0x179 => [0x1980, 0x1990, 0x1981, 0x1991],
         0x0c2 => [0x1984, 0x1994, 0x1985, 0x1995],
-        0x0c3 => [0x1986, 0x1996, 0x1987, 0x1997],
-        0x0c4 => [0x19c0, 0x19d0, 0x19c1, 0x19d1],
+        0x0c3 | 0x15b => [0x1986, 0x1996, 0x1987, 0x1997],
+        0x0c4 | 0x15c => [0x19c0, 0x19d0, 0x19c1, 0x19d1],
         0x0c5 => [0x1dc0, 0x1dd0, 0x1dc1, 0x1dd1],
         0x0c6 => [0x1dc2, 0x1dd2, 0x1dc3, 0x1dd3],
         0x0c7 => [0x098a, 0x099a, 0x098b, 0x099b],
@@ -990,7 +1018,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0d0 => [0x19a0, 0x19b0, 0x19a1, 0x19b1],
         0x0d1 => [0x19a2, 0x19b2, 0x19a3, 0x19b3],
         0x0d2 => [0x19a4, 0x19b4, 0x19a5, 0x19b5],
-        0x0d3 | 0x1c9 => [0x19a6, 0x19b6, 0x19a7, 0x19b7],
+        0x0d3 | 0x16b | 0x1c9 => [0x19a6, 0x19b6, 0x19a7, 0x19b7],
         0x0d4 => [0x19e0, 0x19f0, 0x19e1, 0x19f1],
         0x0d5 => [0x1de4, 0x1df4, 0x1de5, 0x1df5],
         0x0d6 => [0x1de6, 0x1df6, 0x1de7, 0x1df7],
@@ -1090,8 +1118,10 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x199 => [0x55c5, 0x55d5, 0x55c4, 0x55d4],
         0x19a => [0x0145, 0x0019, 0x0146, 0x0156],
         0x16d => [0x815a, 0x814a, 0x815b, 0x814b],
+        0x15a | 0x16c => [0x19c2, 0x19d2, 0x19c3, 0x19d3],
         0x164 => [0x01c6, 0x01d6, 0x01c7, 0x01d7],
         0x165 => [0x01c8, 0x01d8, 0x01c9, 0x01d9],
+        0x16a => [0x19e2, 0x19f2, 0x19e3, 0x19f3],
         0x16e => [0x016a, 0x017a, 0x016b, 0x017b],
         0x174 => [0x01e6, 0x01f6, 0x01e7, 0x01f7],
         0x175 => [0x01e8, 0x01f8, 0x01e9, 0x01f9],
@@ -2882,12 +2912,36 @@ mod tests {
         );
         assert_eq!(geometry(0xbf, 0, false), [(0x166, 0, 0)]);
         assert_eq!(
+            geometry(0xc0, 0, false),
+            [
+                (0x16b, -8, 8),
+                (0x16c, 8, 8),
+                (0x15b, -8, -8),
+                (0x15c, 8, -8)
+            ]
+        );
+        assert_eq!(
             geometry(0xc1, 0, false),
             [(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]
         );
+        let c2 = geometry(0xc2, 0, false);
+        assert_eq!(c2.len(), 20);
+        assert_eq!(
+            &c2[..4],
+            &[(0xc0, -4, 0), (0xc1, 12, 0), (0xc2, 28, 0), (0xc3, 44, 0)]
+        );
+        assert_eq!(
+            &c2[16..],
+            &[
+                (0xe4, -7, 24),
+                (0xf4, 29, 24),
+                (0x15a, 4, 18),
+                (0x16a, 4, 34)
+            ]
+        );
         assert_eq!(geometry(0xc3, 0, false), [(0x179, 0, 0)]);
         assert_eq!(geometry(0xc4, 0, false), [(0x8101, 0, 0)]);
-        for sprite in [0xbc, 0xbf] {
+        for sprite in [0xbc, 0xbf, 0xc0] {
             assert_eq!(geometry(sprite, 0, true), [(0x115, 0, 1)]);
         }
     }
