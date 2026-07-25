@@ -1696,4 +1696,9 @@ header and ordered object records match the Rust model exactly, and the
 resulting ROM checksum remains valid. The native MWL window uses this same
 controller boundary for exact header editing and ordered 3–8 byte
 standard/extended/custom object insertion, replacement, deletion, and
-movement; it does not implement a second toolkit-specific serializer.
+movement. Selected records additionally expose the recovered distributed
+six-bit command ID, command-specific parameter, orientation-neutral coordinate
+nibbles, screen-advance bit, and both packed screen-jump encodings. These
+field edits use the shared lossless `ObjectEdit` engine, preserve extension
+bytes, and reject implicit record-shape changes; the GUI does not implement a
+second toolkit-specific serializer.

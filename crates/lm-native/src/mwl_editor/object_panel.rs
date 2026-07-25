@@ -1,7 +1,9 @@
 use crate::level_editor_forms;
 use eframe::egui;
 use lm_app::MwlDocumentController;
-use lm_level::{LegacyLevelHeader, LevelObjectData, ObjectEdit, ObjectRecord};
+use lm_level::{
+    LegacyLevelHeader, LevelObjectData, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
+};
 
 #[derive(Default)]
 pub(super) struct MwlObjectPanel {
@@ -10,6 +12,12 @@ pub(super) struct MwlObjectPanel {
     selected: usize,
     header: String,
     record: String,
+    command_id: String,
+    parameter: String,
+    first_coordinate: String,
+    second_coordinate: String,
+    advances_screen: bool,
+    jump_target: String,
 }
 
 impl MwlObjectPanel {
@@ -94,6 +102,7 @@ impl MwlObjectPanel {
         ui.text_edit_singleline(&mut self.record);
         self.record_controls(ui)?;
         self.reorder_controls(ui)?;
+        self.semantic_controls(ui)?;
 
         let mut committed = false;
         if ui.button("Commit typed Layer 1 objects").clicked() {
@@ -107,6 +116,94 @@ impl MwlObjectPanel {
             committed = true;
         }
         Ok(committed)
+    }
+
+    fn semantic_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
+        ui.label("Recovered packed fields (hex; coordinates are orientation-neutral nibbles):");
+        egui::Grid::new("mwl-object-semantic-fields")
+            .num_columns(2)
+            .show(ui, |ui| {
+                field(ui, "Command ID", &mut self.command_id);
+                field(ui, "Parameter", &mut self.parameter);
+                field(ui, "First coordinate", &mut self.first_coordinate);
+                field(ui, "Second coordinate", &mut self.second_coordinate);
+            });
+        ui.checkbox(&mut self.advances_screen, "Advances screen");
+        if ui.button("Stage recovered fields").clicked() {
+            self.stage_semantic_fields()?;
+        }
+        let jump = self
+            .layer1
+            .as_ref()
+            .and_then(|layer| layer.objects.records.get(self.selected))
+            .and_then(ObjectRecord::screen_jump);
+        if let Some(jump) = jump {
+            ui.label(format!("Screen-jump encoding: {:?}", jump.encoding));
+            ui.horizontal(|ui| {
+                ui.label("Packed jump target (hex)");
+                ui.text_edit_singleline(&mut self.jump_target);
+            });
+            if ui.button("Stage screen-jump target").clicked() {
+                let packed_target =
+                    level_editor_forms::parse_hex_u16(&self.jump_target, "screen-jump target")?;
+                self.apply_object_edit(ObjectEdit::SetScreenJumpTarget {
+                    index: self.selected,
+                    packed_target,
+                })?;
+                self.load_form();
+            }
+        }
+        Ok(())
+    }
+
+    fn stage_semantic_fields(&mut self) -> Result<(), String> {
+        let edits = [
+            ObjectEdit::SetCommandId {
+                index: self.selected,
+                command_id: level_editor_forms::parse_hex_u8(
+                    &self.command_id,
+                    "object command ID",
+                )?,
+            },
+            ObjectEdit::SetParameter {
+                index: self.selected,
+                parameter: level_editor_forms::parse_hex_u8(&self.parameter, "object parameter")?,
+            },
+            ObjectEdit::SetCoordinateNibbles {
+                index: self.selected,
+                coordinates: ObjectCoordinateNibbles {
+                    first: level_editor_forms::parse_hex_u8(
+                        &self.first_coordinate,
+                        "first object coordinate",
+                    )?,
+                    second: level_editor_forms::parse_hex_u8(
+                        &self.second_coordinate,
+                        "second object coordinate",
+                    )?,
+                },
+            },
+            ObjectEdit::SetAdvancesScreen {
+                index: self.selected,
+                advances: self.advances_screen,
+            },
+        ];
+        self.layer1
+            .as_mut()
+            .expect("loaded Layer 1")
+            .objects
+            .apply_edits(&edits)
+            .map_err(|error| error.to_string())?;
+        self.load_form();
+        Ok(())
+    }
+
+    fn apply_object_edit(&mut self, edit: ObjectEdit) -> Result<(), String> {
+        self.layer1
+            .as_mut()
+            .expect("loaded Layer 1")
+            .objects
+            .apply_edits(&[edit])
+            .map_err(|error| error.to_string())
     }
 
     fn record_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
@@ -222,7 +319,31 @@ impl MwlObjectPanel {
             .map_or_else(String::new, |record| {
                 level_editor_forms::format_bytes(record.encoded())
             });
+        if let Some(record) = layer1.objects.records.get(self.selected) {
+            let coordinates = record.coordinate_nibbles();
+            self.command_id = format!("{:02X}", record.command_id());
+            self.parameter = format!("{:02X}", record.parameter());
+            self.first_coordinate = format!("{:X}", coordinates.first);
+            self.second_coordinate = format!("{:X}", coordinates.second);
+            self.advances_screen = record.advances_screen();
+            self.jump_target = record
+                .screen_jump()
+                .map_or_else(String::new, |jump| format!("{:04X}", jump.packed_target));
+        } else {
+            self.command_id.clear();
+            self.parameter.clear();
+            self.first_coordinate.clear();
+            self.second_coordinate.clear();
+            self.advances_screen = false;
+            self.jump_target.clear();
+        }
     }
+}
+
+fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
+    ui.label(label);
+    ui.text_edit_singleline(value);
+    ui.end_row();
 }
 
 #[cfg(test)]
@@ -263,5 +384,35 @@ mod tests {
         assert_eq!(panel.layer1.as_ref().unwrap().objects, records);
         panel.header = "00 01".into();
         assert!(panel.stage_header().is_err());
+    }
+
+    #[test]
+    fn recovered_field_form_preserves_extension_bytes_and_rejects_shape_changes() {
+        let mut panel = MwlObjectPanel {
+            layer1: Some(LevelObjectData {
+                header: LegacyLevelHeader::decode(&[0; 5]).unwrap(),
+                objects: lm_level::ObjectStream {
+                    records: vec![ObjectRecord::new(vec![0x9f, 0x0a, 1, 0xaa]).unwrap()],
+                },
+            }),
+            selected: 0,
+            ..MwlObjectPanel::default()
+        };
+        panel.load_form();
+        panel.command_id = "22".into();
+        panel.parameter = "0F".into();
+        panel.first_coordinate = "3".into();
+        panel.second_coordinate = "4".into();
+        panel.advances_screen = true;
+        panel.stage_semantic_fields().unwrap();
+        let record = &panel.layer1.as_ref().unwrap().objects.records[0];
+        assert_eq!(record.command_id(), 0x22);
+        assert_eq!(record.parameter(), 0x0f);
+        assert_eq!(record.encoded()[3], 0xaa);
+
+        let before = record.clone();
+        panel.command_id = "01".into();
+        assert!(panel.stage_semantic_fields().is_err());
+        assert_eq!(panel.layer1.as_ref().unwrap().objects.records[0], before);
     }
 }

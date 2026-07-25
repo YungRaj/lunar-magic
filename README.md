@@ -474,6 +474,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   number from a valid 64-byte level-header section. All eight sections remain selectable opaque
   byte streams with their current lengths visible. A typed Layer 1 panel preserves the exact
   five-byte legacy header and edits ordered 3–8 byte standard, extended, and custom object records.
+  For a selected record it also exposes the recovered distributed command ID, command-specific
+  parameter, orientation-neutral coordinate nibbles, screen-advance bit, and either packed
+  screen-jump target without assigning an unsupported X/Y interpretation.
   A separate typed sprite panel exposes the stream header, ordinary/custom records, expanded
   screen/control tokens, ordering, and the four revision record-length tables without hiding
   extension bytes. Section replacement, semantic object/sprite commits, and container-header edits
