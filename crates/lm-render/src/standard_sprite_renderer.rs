@@ -601,6 +601,18 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (if mode.alternate_display { 0x115 } else { 0x14 }, 0, 1),
             (0x114, 0, -8),
         ]),
+        0xd2 => render_handler_d2(),
+        0xd3 => parts(&[
+            (if mode.alternate_display { 0x115 } else { 0x25 }, 0, 1),
+            (0x25, 8, 1),
+            (0x114, 0, -8),
+        ]),
+        0xd4 => parts(&[(0x157, 0, 0), (0x114, 0, -8)]),
+        0xd5 => parts(&[(0x11d, 0, 0), (0x114, 0, -8)]),
+        0xd6 => parts(&[
+            (if mode.alternate_display { 0x115 } else { 0x14d }, 0, 1),
+            (0x114, 0, -8),
+        ]),
         _ => None,
     }
 }
@@ -741,6 +753,27 @@ fn render_handler_ca_cb(
             (0x114, -8, -16),
         ])
     }
+}
+
+fn render_handler_d2() -> Option<Vec<StandardSpritePreviewTile>> {
+    let mut values = vec![(0x1bd, -8, 0)];
+    append_handler_3b30(&mut values, 0);
+    values.push((0x114, 0, -16));
+    values.push((0x1ad, 8, 0));
+    append_handler_3b30(&mut values, 16);
+    values.push((0x14, 24, 0));
+    append_handler_3b30(&mut values, 32);
+    parts(&values)
+}
+
+fn append_handler_3b30(values: &mut Vec<(u16, i16, i16)>, x_offset: i16) {
+    values.extend([
+        (0x1bf, x_offset - 1, 3),
+        (0x1be, x_offset - 15, 3),
+        (0x1af, x_offset - 17, 5),
+        (0x1ae, x_offset - 31, 5),
+        (0x20c, x_offset - 32, 4),
+    ]);
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
@@ -1254,6 +1287,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x13a => [0x5121, 0x5121, 0x5120, 0x5120],
         0x114 => [0x08ef, 0x0019, 0x0019, 0x0019],
         0x115 => [0x04e8, 0x04f8, 0x04e9, 0x04f9],
+        0x11d => [0x05a6, 0x05b6, 0x05a7, 0x05b7],
         0x119 => [0x0019, 0x0019, 0x09d6, 0x0019],
         0x13c => [0x0a48, 0x0a58, 0x4a48, 0x4a58],
         0x140 => [0x14a0, 0x14b0, 0x14a1, 0x14b1],
@@ -1264,6 +1298,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x154 => [0x0d88, 0x0d98, 0x0d89, 0x0d99],
         0x155 => [0x0c19, 0x0c19, 0x0da8, 0x0db8],
         0x156 => [0x0da9, 0x0db9, 0x0daa, 0x0dba],
+        0x157 => [0x05a4, 0x05b4, 0x05a5, 0x05b5],
         0x169 => [0x554c, 0x555c, 0x554b, 0x555b],
         0x1ad => [0x89dc, 0x89cc, 0x89dd, 0x89cd],
         0x1ae => [0x0da0, 0x0db0, 0x0da1, 0x2db1],
@@ -3049,5 +3084,50 @@ mod tests {
         );
         assert_eq!(geometry(0xcf, false), [(0x14, 0, 1), (0x114, 0, -8)]);
         assert_eq!(geometry(0xcf, true), [(0x115, 0, 1), (0x114, 0, -8)]);
+    }
+
+    #[test]
+    fn handlers_d2_through_d6_preserve_recovered_composites() {
+        let geometry = |sprite, alternate_display| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    alternate_display,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        let d2 = geometry(0xd2, false);
+        assert_eq!(d2.len(), 19);
+        assert_eq!(d2[0], (0x1bd, -8, 0));
+        assert_eq!(
+            &d2[1..6],
+            &[
+                (0x1bf, -1, 3),
+                (0x1be, -15, 3),
+                (0x1af, -17, 5),
+                (0x1ae, -31, 5),
+                (0x20c, -32, 4)
+            ]
+        );
+        assert_eq!(d2[6], (0x114, 0, -16));
+        assert_eq!(d2[7], (0x1ad, 8, 0));
+        assert_eq!(d2[13], (0x14, 24, 0));
+        assert_eq!(
+            geometry(0xd3, false),
+            [(0x25, 0, 1), (0x25, 8, 1), (0x114, 0, -8)]
+        );
+        assert_eq!(
+            geometry(0xd3, true),
+            [(0x115, 0, 1), (0x25, 8, 1), (0x114, 0, -8)]
+        );
+        assert_eq!(geometry(0xd4, false), [(0x157, 0, 0), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xd5, false), [(0x11d, 0, 0), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xd6, false), [(0x14d, 0, 1), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xd6, true), [(0x115, 0, 1), (0x114, 0, -8)]);
     }
 }
