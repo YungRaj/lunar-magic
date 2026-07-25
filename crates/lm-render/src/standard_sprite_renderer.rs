@@ -277,7 +277,37 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x7d => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0xcb, -5, -1)]),
         0x7e => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0x103, -5, -1)]),
         0x7f => parts(&[(0x0b, 0, 1)]),
+        0x81 => render_flagged_variant_handler(mode.placement_first, false),
+        0x82 => render_flagged_variant_handler(mode.placement_first, true),
         _ => None,
+    }
+}
+
+fn render_flagged_variant_handler(
+    placement_first: u8,
+    shifted_right: bool,
+) -> Option<Vec<StandardSpritePreviewTile>> {
+    let definition = match placement_first & 3 {
+        0 => 0x801a,
+        1 => 0x8104,
+        2 => 0x8106,
+        3 => 0x8100,
+        _ => unreachable!(),
+    };
+    if shifted_right {
+        parts(&[
+            (0x06, -8, -9),
+            (0x07, 14, -9),
+            (definition, 5, -9),
+            (0x108, 3, -1),
+        ])
+    } else {
+        parts(&[
+            (0x06, -12, -9),
+            (0x07, 8, -9),
+            (definition, -1, -9),
+            (0x108, -3, -1),
+        ])
     }
 }
 
@@ -374,7 +404,7 @@ fn parts(values: &[(u16, i16, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
 
 #[allow(clippy::too_many_lines)] // Sparse authenticated indices are clearer as one lookup table.
 fn preview_definition(index: u16) -> Option<[u16; 4]> {
-    Some(match index {
+    Some(match index & 0x7fff {
         0x001 => [0x0400, 0x0410, 0x0401, 0x0411],
         0x003 => [0x1188, 0x1019, 0x1019, 0x1019],
         0x004 => [0x0d89, 0x0c19, 0x0c19, 0x0c19],
@@ -568,6 +598,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x104 => [0x5427, 0x5437, 0x5426, 0x5436],
         0x105 => [0x4849, 0x4859, 0x4848, 0x4858],
         0x106 => [0x480f, 0x481f, 0x480e, 0x481e],
+        0x108 => [0x002a, 0x003a, 0x002b, 0x003b],
         0x124 => [0x5508, 0x5518, 0x5507, 0x5517],
         0x125 => [0x5108, 0x5118, 0x5107, 0x5117],
         0x126 => [0x1507, 0x1517, 0x1508, 0x1518],
@@ -1365,5 +1396,49 @@ mod tests {
             [(0x06, -8, -9), (0x07, 16, -9), (0x103, -5, -1)]
         );
         assert_eq!(geometry(0x7f), [(0x0b, 0, 1)]);
+    }
+
+    #[test]
+    fn handlers_one_twenty_nine_and_one_thirty_preserve_flagged_variants() {
+        let geometry = |sprite, first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(0x81, 0),
+            [
+                (0x06, -12, -9),
+                (0x07, 8, -9),
+                (0x801a, -1, -9),
+                (0x108, -3, -1)
+            ]
+        );
+        assert_eq!(geometry(0x81, 1)[2].0, 0x8104);
+        assert_eq!(geometry(0x81, 2)[2].0, 0x8106);
+        assert_eq!(geometry(0x81, 3)[2].0, 0x8100);
+        assert_eq!(
+            geometry(0x82, 0),
+            [
+                (0x06, -8, -9),
+                (0x07, 14, -9),
+                (0x801a, 5, -9),
+                (0x108, 3, -1)
+            ]
+        );
+        let flagged = render_lunar_magic_standard_sprite_with_mode(
+            0x81,
+            StandardSpritePreviewMode::default(),
+        )
+        .unwrap();
+        assert_eq!(flagged[2].subtiles, preview_definition(0x1a).unwrap());
     }
 }
