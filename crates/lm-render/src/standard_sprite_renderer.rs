@@ -585,6 +585,22 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (if mode.alternate_display { 0x115 } else { 0x38 }, 0, 1),
             (0x114, 0, -8),
         ]),
+        0xca => render_handler_ca_cb(false, mode.alternate_display),
+        0xcb => render_handler_ca_cb(true, mode.alternate_display),
+        0xcc if mode.alternate_display => parts(&[(0x115, 0, 1), (0x115, 16, 1), (0x114, 5, -16)]),
+        0xcc => parts(&[
+            (0x56, -6, -14),
+            (0x66, -6, 2),
+            (0x56, 10, -14),
+            (0x67, 10, 2),
+            (0x114, 5, -16),
+        ]),
+        0xcd => parts(&[(0x154, 0, 0), (0x114, 0, -8), (0x155, 8, 0), (0x156, 24, 0)]),
+        0xce => parts(&[(0x84, 0, 0), (0x114, 0, -8), (0x85, 16, 0), (0x86, 24, 0)]),
+        0xcf => parts(&[
+            (if mode.alternate_display { 0x115 } else { 0x14 }, 0, 1),
+            (0x114, 0, -8),
+        ]),
         _ => None,
     }
 }
@@ -710,6 +726,21 @@ fn render_handler_c2() -> Option<Vec<StandardSpritePreviewTile>> {
         (0x16a, 4, 34),
     ]);
     parts(&values)
+}
+
+fn render_handler_ca_cb(
+    right_definition: bool,
+    alternate_display: bool,
+) -> Option<Vec<StandardSpritePreviewTile>> {
+    if alternate_display {
+        parts(&[(0x115, 0, 1), (0x114, -8, -16)])
+    } else {
+        parts(&[
+            (0x56, -6, -14),
+            (if right_definition { 0x67 } else { 0x66 }, -6, 2),
+            (0x114, -8, -16),
+        ])
+    }
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
@@ -969,6 +1000,9 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x07e | 0x144 => [0x0162, 0x0172, 0x0163, 0x0173],
         0x07f => [0x45e3, 0x45f3, 0x45e2, 0x45f2],
         0x080 => [0x5681, 0x5691, 0x5680, 0x5690],
+        0x084 => [0x4daa, 0x4dba, 0x4da9, 0x4db9],
+        0x085 => [0x4da8, 0x4db8, 0x4c19, 0x4c19],
+        0x086 => [0x4d89, 0x4d99, 0x4d88, 0x4d98],
         0x087 => [0x4def, 0x4dff, 0x4dee, 0x4dfe],
         0x088 => [0x150a, 0x151a, 0x150b, 0x151b],
         0x089 => [0x59c5, 0x59d5, 0x59c4, 0x59d4],
@@ -2954,14 +2988,66 @@ mod tests {
         for sprite in [0xbc, 0xbf, 0xc0] {
             assert_eq!(geometry(sprite, 0, true), [(0x115, 0, 1)]);
         }
-        assert_eq!(geometry(0xc5, 0, false), [(0x167, 0, 1)]);
-        assert_eq!(geometry(0xc6, 0, false), [(0x25, 0, 0), (0x114, 0, -8)]);
+    }
+
+    #[test]
+    fn handlers_c5_through_cf_preserve_recovered_composites() {
+        let geometry = |sprite, alternate_display| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    alternate_display,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(geometry(0xc5, false), [(0x167, 0, 1)]);
+        assert_eq!(geometry(0xc6, false), [(0x25, 0, 0), (0x114, 0, -8)]);
         assert_eq!(
-            geometry(0xc7, 0, false),
+            geometry(0xc7, false),
             [(0x158, 0, 26), (0x159, 16, 26), (0x168, 8, 16)]
         );
-        assert_eq!(geometry(0xc8, 0, false), [(0x11b, 0, 0), (0x12b, 0, 16)]);
-        assert_eq!(geometry(0xc9, 0, false), [(0x38, 0, 1), (0x114, 0, -8)]);
-        assert_eq!(geometry(0xc9, 0, true), [(0x115, 0, 1), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xc8, false), [(0x11b, 0, 0), (0x12b, 0, 16)]);
+        assert_eq!(geometry(0xc9, false), [(0x38, 0, 1), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xc9, true), [(0x115, 0, 1), (0x114, 0, -8)]);
+        assert_eq!(
+            geometry(0xca, false),
+            [(0x56, -6, -14), (0x66, -6, 2), (0x114, -8, -16)]
+        );
+        assert_eq!(
+            geometry(0xcb, false),
+            [(0x56, -6, -14), (0x67, -6, 2), (0x114, -8, -16)]
+        );
+        for sprite in [0xca, 0xcb] {
+            assert_eq!(geometry(sprite, true), [(0x115, 0, 1), (0x114, -8, -16)]);
+        }
+        assert_eq!(
+            geometry(0xcc, false),
+            [
+                (0x56, -6, -14),
+                (0x66, -6, 2),
+                (0x56, 10, -14),
+                (0x67, 10, 2),
+                (0x114, 5, -16)
+            ]
+        );
+        assert_eq!(
+            geometry(0xcc, true),
+            [(0x115, 0, 1), (0x115, 16, 1), (0x114, 5, -16)]
+        );
+        assert_eq!(
+            geometry(0xcd, false),
+            [(0x154, 0, 0), (0x114, 0, -8), (0x155, 8, 0), (0x156, 24, 0)]
+        );
+        assert_eq!(
+            geometry(0xce, false),
+            [(0x84, 0, 0), (0x114, 0, -8), (0x85, 16, 0), (0x86, 24, 0)]
+        );
+        assert_eq!(geometry(0xcf, false), [(0x14, 0, 1), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xcf, true), [(0x115, 0, 1), (0x114, 0, -8)]);
     }
 }
