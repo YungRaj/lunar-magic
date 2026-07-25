@@ -1648,3 +1648,22 @@ fields and preservation regions independently of allocation location. The
 application shell accepts the same semantic table as one revision-checked,
 checksum-repaired, undoable replacement; pristine ROMs install the owning
 expanded-settings runtime first.
+
+## Pristine sprite-stream growth interoperability
+
+Vanilla SMW stores all level sprite pointers as low words with one shared bank
+byte. A growing stream therefore cannot be moved to an arbitrary free bank
+without first installing a different pointer format. The pristine editor now
+performs copy-on-write relocation inside that exact shared LoROM bank, writes a
+RATS-owned canonical stream, updates only the selected low-word pointer, and
+repairs the ROM checksum in the same transaction.
+
+The ignored `lm-app` integration test `sprite_growth_wine` supplies independent
+dynamic evidence for this path. It inserts a duplicate sprite into level
+`$105`, commits through the public Rust controller, opens the resulting ROM in
+Lunar Magic 3.63 under Wine, and invokes the documented `-ExportLevel`
+interface. The exported MWL sprite section decodes to the exact expected
+ordered `NativeSpriteStream`, including its header and inserted token. Lunar
+Magic also leaves the edited ROM with a valid checksum. This proves
+interoperability at the original application's loader/exporter boundary rather
+than relying solely on a Rust encode/decode round trip.
