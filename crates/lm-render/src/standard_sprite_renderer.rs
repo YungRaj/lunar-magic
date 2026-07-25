@@ -61,7 +61,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         }
         0x09 => parts(&[(0x10, 0, -14), (0x20, 0, 2), (0x07, 9, -11)]),
         0x0a => parts(&[(0x11, 0, -14), (0x21, 0, 2), (0x07, 9, -11)]),
-        0x0b | 0x0c | 0x0d | 0x0f | 0x11 | 0x13 | 0x14 if mode.alternate_display => {
+        0x0b | 0x0c | 0x0d | 0x0f | 0x11 | 0x12 | 0x13 | 0x14 if mode.alternate_display => {
             parts(&[(0x115, 0, 1)])
         }
         0x0b => parts(&[(0x11, 0, -14), (0x21, 0, 2), (0x08, 1, -10)]),
@@ -75,6 +75,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x07, 13, -7),
         ]),
         0x11 => parts(&[(0x0d, 0, 1)]),
+        0x12 => parts(&[(0x01, 0, 0)]),
         0x13 => parts(&[(0x0e, 0, 1)]),
         0x14 => parts(&[(0x0f, 0, 1)]),
         _ => None,
@@ -97,6 +98,7 @@ fn parts(values: &[(u16, i16, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
 
 fn preview_definition(index: u16) -> Option<[u16; 4]> {
     Some(match index {
+        0x001 => [0x0400, 0x0410, 0x0401, 0x0411],
         0x008 => [0x0c19, 0x0c19, 0x0c19, 0x0c5d],
         0x007 => [0x0cc6, 0x0cd6, 0x0cc7, 0x0cd7],
         0x006 => [0x4cc7, 0x4cd7, 0x4cc6, 0x4cd6],
@@ -267,14 +269,10 @@ mod tests {
             [(0x06, -10, -7), (0x115, 0, 1), (0x07, 13, -7)]
         );
         assert_eq!(geometry(0x11, false), [(0x0d, 0, 1)]);
-        assert_eq!(
-            render_lunar_magic_standard_sprite(0x12, false),
-            None,
-            "handler 18 is a separate complex dispatcher"
-        );
+        assert_eq!(geometry(0x12, false), [(0x01, 0, 0)]);
         assert_eq!(geometry(0x13, false), [(0x0e, 0, 1)]);
         assert_eq!(geometry(0x14, false), [(0x0f, 0, 1)]);
-        for sprite in [0x0b, 0x0c, 0x0d, 0x0f, 0x11, 0x13, 0x14] {
+        for sprite in [0x0b, 0x0c, 0x0d, 0x0f, 0x11, 0x12, 0x13, 0x14] {
             assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
         }
     }
