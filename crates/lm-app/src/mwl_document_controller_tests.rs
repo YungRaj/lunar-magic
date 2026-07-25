@@ -1,6 +1,9 @@
 use super::*;
 use lm_graphics::{Bgr555, CompactExAnimation, ExAnimationFrame, ExAnimationRecord, Palette};
-use lm_level::{ExpandedLevelSettingsRecord, Layer3TilemapGraphicsDescriptor};
+use lm_level::{
+    ExpandedLevelSettingsRecord, Layer3TilemapGraphicsDescriptor, MwlPayloadSection,
+    SpriteLengthTable, SpriteToken,
+};
 use lm_project::MwlOptionalLevelAssets;
 
 fn file() -> MwlFile {
@@ -21,6 +24,79 @@ fn file() -> MwlFile {
 fn controller() -> MwlDocumentController {
     let file = file();
     MwlDocumentController::decode("level.mwl".into(), &file.encode().unwrap()).unwrap()
+}
+
+fn sprite_controller() -> MwlDocumentController {
+    let mut source = file();
+    source
+        .set_payload_section(
+            MwlSectionKind::Sprites,
+            &MwlPayloadSection {
+                metadata: [0x1122_3344, 0x5566_7788],
+                payload: vec![4, 0x11, 0xd0, 0xbd, 0xff],
+            },
+        )
+        .unwrap();
+    MwlDocumentController::decode("level.mwl".into(), &source.encode().unwrap()).unwrap()
+}
+
+#[test]
+fn typed_sprite_replacement_preserves_metadata_and_unrelated_sections() {
+    let lengths = SpriteLengthTable::standard();
+    let mut controller = sprite_controller();
+    let original_layer = controller.value().section(MwlSectionKind::Layer1).to_vec();
+    let mut sprites = controller.sprites(false, &lengths).unwrap();
+    let duplicate = sprites.tokens[0].clone();
+    sprites.insert(1, duplicate).unwrap();
+
+    controller.replace_sprites(0, &sprites, &lengths).unwrap();
+
+    assert_eq!(controller.revision(), 1);
+    assert_eq!(controller.sprites(false, &lengths).unwrap(), sprites);
+    let section = controller
+        .value()
+        .payload_section(MwlSectionKind::Sprites)
+        .unwrap();
+    assert_eq!(section.metadata, [0x1122_3344, 0x5566_7788]);
+    assert_eq!(
+        controller.value().section(MwlSectionKind::Layer1),
+        original_layer
+    );
+    assert!(matches!(sprites.tokens[1], SpriteToken::Record(_)));
+    assert!(controller.undo(1).unwrap());
+    assert_eq!(
+        controller
+            .value()
+            .payload_section(MwlSectionKind::Sprites)
+            .unwrap()
+            .payload,
+        [4, 0x11, 0xd0, 0xbd, 0xff]
+    );
+}
+
+#[test]
+fn typed_sprite_replacement_rejects_stale_and_invalid_streams_atomically() {
+    let lengths = SpriteLengthTable::standard();
+    let mut controller = sprite_controller();
+    let original = controller.value().clone();
+    let mut malformed = controller.sprites(false, &lengths).unwrap();
+    malformed
+        .tokens
+        .push(SpriteToken::Record(lm_level::SpriteRecord {
+            encoded: vec![1, 2],
+        }));
+
+    assert!(matches!(
+        controller.replace_sprites(1, &malformed, &lengths),
+        Err(MwlDocumentControllerError::StaleRevision { .. })
+    ));
+    assert!(matches!(
+        controller.replace_sprites(0, &malformed, &lengths),
+        Err(MwlDocumentControllerError::SpriteEncoding(_))
+    ));
+    assert_eq!(controller.value(), &original);
+    assert_eq!(controller.revision(), 0);
+    assert!(!controller.can_undo());
 }
 
 #[test]

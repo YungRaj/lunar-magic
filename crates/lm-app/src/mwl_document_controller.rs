@@ -1,7 +1,8 @@
 use crate::portable_value_history::PortableValueHistory;
 use lm_level::{
     ExpandedLevelSettingsError, Layer3TilemapGraphicsDescriptor, MwlError, MwlFile,
-    MwlLevelHeaderSection, MwlSection, MwlSectionKind,
+    MwlLevelHeaderSection, MwlSection, MwlSectionKind, NativeSpriteEncodingError,
+    NativeSpriteStream, SpriteLengthTable, SpriteStreamError,
 };
 use lm_project::{
     MwlOptionalAssetsEdit, MwlOptionalAssetsEditError, MwlOptionalLevelAssets,
@@ -254,6 +255,65 @@ impl MwlDocumentController {
         self.commit_staged(&staged)
     }
 
+    /// Decodes the typed sprite stream carried by this MWL document.
+    ///
+    /// The expanded/legacy interpretation and record-length table are revision inputs rather than
+    /// properties invented from opaque MWL metadata.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a short common-prefix section or malformed sprite framing.
+    pub fn sprites(
+        &self,
+        expanded: bool,
+        lengths: &SpriteLengthTable,
+    ) -> Result<NativeSpriteStream, MwlDocumentControllerError> {
+        let section = self
+            .value
+            .payload_section(MwlSectionKind::Sprites)
+            .map_err(MwlDocumentControllerError::SpriteSection)?;
+        NativeSpriteStream::parse(&section.payload, expanded, lengths)
+            .map_err(MwlDocumentControllerError::SpriteParse)
+    }
+
+    /// Replaces the typed MWL sprite stream while preserving its two opaque metadata words and
+    /// every unrelated section.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale revisions, malformed existing section framing, invalid record lengths or
+    /// tokens, and any noncanonical encode/decode result without changing history.
+    pub fn replace_sprites(
+        &mut self,
+        expected_revision: u64,
+        sprites: &NativeSpriteStream,
+        lengths: &SpriteLengthTable,
+    ) -> Result<(), MwlDocumentControllerError> {
+        if expected_revision != self.revision {
+            return Err(MwlDocumentControllerError::StaleRevision {
+                expected: expected_revision,
+                actual: self.revision,
+            });
+        }
+        let encoded = sprites
+            .encode_for_table(lengths)
+            .map_err(MwlDocumentControllerError::SpriteEncoding)?;
+        let reparsed = NativeSpriteStream::parse(&encoded, sprites.expanded, lengths)
+            .map_err(MwlDocumentControllerError::SpriteParse)?;
+        if reparsed != *sprites {
+            return Err(MwlDocumentControllerError::NonCanonicalSprites);
+        }
+        let mut staged = self.value.clone();
+        let mut section = staged
+            .payload_section(MwlSectionKind::Sprites)
+            .map_err(MwlDocumentControllerError::SpriteSection)?;
+        section.payload = encoded;
+        staged
+            .set_payload_section(MwlSectionKind::Sprites, &section)
+            .map_err(MwlDocumentControllerError::SpriteSection)?;
+        self.commit_staged(&staged)
+    }
+
     fn commit_staged(&mut self, staged: &MwlFile) -> Result<(), MwlDocumentControllerError> {
         if *staged == self.value {
             return Ok(());
@@ -432,6 +492,10 @@ pub enum MwlDocumentControllerError {
         error: MwlOptionalAssetsEditError,
     },
     ExpandedSettings(ExpandedLevelSettingsError),
+    SpriteSection(MwlError),
+    SpriteParse(SpriteStreamError),
+    SpriteEncoding(NativeSpriteEncodingError),
+    NonCanonicalSprites,
     CanonicalMismatch,
     StaleRevision {
         expected: u64,

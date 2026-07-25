@@ -1667,3 +1667,14 @@ ordered `NativeSpriteStream`, including its header and inserted token. Lunar
 Magic also leaves the edited ROM with a valid checksum. This proves
 interoperability at the original application's loader/exporter boundary rather
 than relying solely on a Rust encode/decode round trip.
+
+The reciprocal direction is verified independently. `MwlDocumentController`
+now decodes and replaces a typed `NativeSpriteStream` while retaining both
+opaque MWL provenance words and every unrelated section. Its revisioned
+transaction rejects stale revisions and malformed or noncanonical records
+without changing history. The Wine oracle exports pristine level `$105`, adds
+a duplicate sprite through that public Rust API, invokes Lunar Magic
+`-ImportLevel`, then re-exports the installed level. The final sprite stream is
+semantically identical to the Rust edit and the resulting ROM checksum is
+valid. Together, the two directions prove both direct-ROM and MWL-based sprite
+editing across the Lunar Magic 3.63 compatibility boundary.
