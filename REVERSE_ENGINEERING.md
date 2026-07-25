@@ -1678,3 +1678,22 @@ a duplicate sprite through that public Rust API, invokes Lunar Magic
 semantically identical to the Rust edit and the resulting ROM checksum is
 valid. Together, the two directions prove both direct-ROM and MWL-based sprite
 editing across the Lunar Magic 3.63 compatibility boundary.
+
+## Typed MWL Layer 1 interoperability
+
+The MWL Layer 1 section uses the same two-word common prefix as sprites. Its
+payload is the exact five-byte legacy level header followed by Lunar Magic's
+terminated variable-width object stream. `MwlDocumentController` now exposes
+that payload as `LevelObjectData` and replaces it as one revisioned canonical
+transaction. Both opaque provenance words and all unrelated MWL sections are
+retained; stale revisions, malformed records, and payloads exceeding the
+single LoROM-bank limit fail without changing document history.
+
+An ignored Wine oracle exports pristine level `$105`, duplicates its first
+object through the typed Rust object-edit engine, imports the resulting MWL
+with Lunar Magic 3.63, and re-exports the level. The complete decoded legacy
+header and ordered object records match the Rust model exactly, and the
+resulting ROM checksum remains valid. The native MWL window uses this same
+controller boundary for exact header editing and ordered 3–8 byte
+standard/extended/custom object insertion, replacement, deletion, and
+movement; it does not implement a second toolkit-specific serializer.

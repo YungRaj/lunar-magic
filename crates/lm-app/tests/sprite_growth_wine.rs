@@ -1,5 +1,7 @@
 use lm_app::{AppState, Command, LevelController, MwlDocumentController, NativeLevelEdit};
-use lm_level::{MwlFile, MwlSectionKind, NativeSpriteStream, SpriteLengthTable};
+use lm_level::{
+    LevelObjectData, MwlFile, MwlSectionKind, NativeSpriteStream, ObjectEdit, SpriteLengthTable,
+};
 use lm_project::{LevelSaveOptions, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage, SnesPointer24, detect_identity};
@@ -218,6 +220,99 @@ fn lunar_magic_imports_and_reexports_a_rust_mwl_sprite_edit() {
         NativeSpriteStream::parse(&payload.payload, false, &lengths).unwrap(),
         expected
     );
+    let reopened_rom = RomImage::from_bytes(fs::read(&imported_rom).unwrap()).unwrap();
+    assert!(detect_identity(&reopened_rom).unwrap().checksum_matches());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+/// Proves that Lunar Magic imports a typed Rust MWL Layer 1 object edit and preserves its complete
+/// header/object semantics on re-export.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_imports_and_reexports_a_rust_mwl_object_edit() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("Super Mario World (USA).sfc");
+    assert!(lunar_magic.is_file(), "missing {}", lunar_magic.display());
+    assert!(original_rom.is_file(), "missing {}", original_rom.display());
+
+    let directory = std::env::temp_dir().join(format!(
+        "lm-mwl-object-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let imported_rom = directory.join("Lunar Magic object import.sfc");
+    let source_mwl = directory.join("source object level 105.mwl");
+    let edited_mwl = directory.join("Rust object edit level 105.mwl");
+    let reexported_mwl = directory.join("reexported object level 105.mwl");
+    fs::copy(&original_rom, &imported_rom).unwrap();
+
+    let export = ProcessCommand::new("wine")
+        .env("WINEDEBUG", "-all")
+        .arg(&lunar_magic)
+        .arg("-ExportLevel")
+        .arg(wine_path(&imported_rom))
+        .arg(wine_path(&source_mwl))
+        .arg("105")
+        .output()
+        .unwrap();
+    assert!(
+        export.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&export.stdout),
+        String::from_utf8_lossy(&export.stderr)
+    );
+
+    let mut document =
+        MwlDocumentController::decode(edited_mwl.clone(), &fs::read(&source_mwl).unwrap()).unwrap();
+    let mut expected = document.layer1().unwrap();
+    let duplicate = expected.objects.records[0].clone();
+    expected
+        .objects
+        .apply_edits(&[ObjectEdit::Insert {
+            index: 1,
+            record: duplicate,
+        }])
+        .unwrap();
+    document.replace_layer1(0, &expected).unwrap();
+    fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();
+
+    let import = ProcessCommand::new("wine")
+        .env("WINEDEBUG", "-all")
+        .arg(&lunar_magic)
+        .arg("-ImportLevel")
+        .arg(wine_path(&imported_rom))
+        .arg(wine_path(&edited_mwl))
+        .arg("105")
+        .output()
+        .unwrap();
+    assert!(
+        import.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&import.stdout),
+        String::from_utf8_lossy(&import.stderr)
+    );
+
+    let reexport = ProcessCommand::new("wine")
+        .env("WINEDEBUG", "-all")
+        .arg(&lunar_magic)
+        .arg("-ExportLevel")
+        .arg(wine_path(&imported_rom))
+        .arg(wine_path(&reexported_mwl))
+        .arg("105")
+        .output()
+        .unwrap();
+    assert!(
+        reexport.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&reexport.stdout),
+        String::from_utf8_lossy(&reexport.stderr)
+    );
+
+    let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
+    let payload = reexported.payload_section(MwlSectionKind::Layer1).unwrap();
+    assert_eq!(LevelObjectData::parse(&payload.payload).unwrap(), expected);
     let reopened_rom = RomImage::from_bytes(fs::read(&imported_rom).unwrap()).unwrap();
     assert!(detect_identity(&reopened_rom).unwrap().checksum_matches());
     fs::remove_dir_all(directory).unwrap();

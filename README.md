@@ -472,12 +472,14 @@ interactive frontends cannot bypass confirmation and request correlation through
   Binary MWL containers also have a lossless native editor. It preserves the source version and
   exposes only independently recovered flags, the exact 48-byte attribution field, and the level
   number from a valid 64-byte level-header section. All eight sections remain selectable opaque
-  byte streams with their current lengths visible. A separate typed sprite panel exposes the
-  stream header, ordinary/custom records, expanded screen/control tokens, ordering, and the four
-  revision record-length tables without hiding extension bytes. Section replacement, semantic
-  sprite commits, and header edits remain distinct so one operation cannot silently overwrite
-  another. Focused MWL forms feed `MwlDocumentController` canonical transactions, undo/redo,
-  recoverable saves, and dirty-document shutdown handling.
+  byte streams with their current lengths visible. A typed Layer 1 panel preserves the exact
+  five-byte legacy header and edits ordered 3–8 byte standard, extended, and custom object records.
+  A separate typed sprite panel exposes the stream header, ordinary/custom records, expanded
+  screen/control tokens, ordering, and the four revision record-length tables without hiding
+  extension bytes. Section replacement, semantic object/sprite commits, and container-header edits
+  remain distinct so one operation cannot silently overwrite another. Focused MWL forms feed
+  `MwlDocumentController` canonical transactions, undo/redo, recoverable saves, and dirty-document
+  shutdown handling.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.

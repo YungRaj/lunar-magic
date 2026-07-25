@@ -1,8 +1,8 @@
 use super::*;
 use lm_graphics::{Bgr555, CompactExAnimation, ExAnimationFrame, ExAnimationRecord, Palette};
 use lm_level::{
-    ExpandedLevelSettingsRecord, Layer3TilemapGraphicsDescriptor, MwlPayloadSection,
-    SpriteLengthTable, SpriteToken,
+    ExpandedLevelSettingsRecord, Layer3TilemapGraphicsDescriptor, MwlPayloadSection, ObjectEdit,
+    ObjectRecord, SpriteLengthTable, SpriteToken,
 };
 use lm_project::MwlOptionalLevelAssets;
 
@@ -38,6 +38,75 @@ fn sprite_controller() -> MwlDocumentController {
         )
         .unwrap();
     MwlDocumentController::decode("level.mwl".into(), &source.encode().unwrap()).unwrap()
+}
+
+fn layer1_controller() -> MwlDocumentController {
+    let mut source = file();
+    source
+        .set_payload_section(
+            MwlSectionKind::Layer1,
+            &MwlPayloadSection {
+                metadata: [0x1020_3040, 0x5060_7080],
+                payload: vec![1, 2, 3, 4, 5, 0x11, 0x22, 0x33, 0xff],
+            },
+        )
+        .unwrap();
+    MwlDocumentController::decode("level.mwl".into(), &source.encode().unwrap()).unwrap()
+}
+
+#[test]
+fn typed_layer1_replacement_preserves_metadata_and_is_undoable() {
+    let mut controller = layer1_controller();
+    let original_sprites = controller.value().section(MwlSectionKind::Sprites).to_vec();
+    let mut layer1 = controller.layer1().unwrap();
+    layer1
+        .objects
+        .apply_edits(&[ObjectEdit::Insert {
+            index: 1,
+            record: ObjectRecord::new(vec![0x21, 0x44, 0x55]).unwrap(),
+        }])
+        .unwrap();
+
+    controller.replace_layer1(0, &layer1).unwrap();
+
+    assert_eq!(controller.layer1().unwrap(), layer1);
+    assert_eq!(
+        controller
+            .value()
+            .payload_section(MwlSectionKind::Layer1)
+            .unwrap()
+            .metadata,
+        [0x1020_3040, 0x5060_7080]
+    );
+    assert_eq!(
+        controller.value().section(MwlSectionKind::Sprites),
+        original_sprites
+    );
+    assert!(controller.undo(1).unwrap());
+    assert_eq!(controller.layer1().unwrap().objects.records.len(), 1);
+}
+
+#[test]
+fn typed_layer1_replacement_rejects_stale_and_invalid_records_atomically() {
+    let mut controller = layer1_controller();
+    let original = controller.value().clone();
+    let mut layer1 = controller.layer1().unwrap();
+    let record = ObjectRecord::new(vec![1, 2, 3]).unwrap();
+    layer1.objects.records.push(record.clone());
+
+    assert!(matches!(
+        controller.replace_layer1(1, &layer1),
+        Err(MwlDocumentControllerError::StaleRevision { .. })
+    ));
+    layer1.objects.records.resize(10_922, record);
+    assert!(matches!(
+        controller.replace_layer1(0, &layer1),
+        Err(MwlDocumentControllerError::Layer1Encoding(
+            ObjectStreamError::BankLimitExceeded
+        ))
+    ));
+    assert_eq!(controller.value(), &original);
+    assert_eq!(controller.revision(), 0);
 }
 
 #[test]

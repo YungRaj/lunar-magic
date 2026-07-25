@@ -1,8 +1,8 @@
 use crate::portable_value_history::PortableValueHistory;
 use lm_level::{
-    ExpandedLevelSettingsError, Layer3TilemapGraphicsDescriptor, MwlError, MwlFile,
-    MwlLevelHeaderSection, MwlSection, MwlSectionKind, NativeSpriteEncodingError,
-    NativeSpriteStream, SpriteLengthTable, SpriteStreamError,
+    ExpandedLevelSettingsError, Layer3TilemapGraphicsDescriptor, LevelObjectData, MwlError,
+    MwlFile, MwlLevelHeaderSection, MwlSection, MwlSectionKind, NativeSpriteEncodingError,
+    NativeSpriteStream, ObjectStreamError, SpriteLengthTable, SpriteStreamError,
 };
 use lm_project::{
     MwlOptionalAssetsEdit, MwlOptionalAssetsEditError, MwlOptionalLevelAssets,
@@ -314,6 +314,56 @@ impl MwlDocumentController {
         self.commit_staged(&staged)
     }
 
+    /// Decodes the typed legacy header and Layer 1 object stream carried by this MWL document.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a short common-prefix section or malformed object framing.
+    pub fn layer1(&self) -> Result<LevelObjectData, MwlDocumentControllerError> {
+        let section = self
+            .value
+            .payload_section(MwlSectionKind::Layer1)
+            .map_err(MwlDocumentControllerError::Layer1Section)?;
+        LevelObjectData::parse(&section.payload).map_err(MwlDocumentControllerError::Layer1Parse)
+    }
+
+    /// Replaces the typed MWL Layer 1 payload while preserving its opaque metadata and every
+    /// unrelated section.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale revisions, malformed existing section framing, invalid/noncanonical object
+    /// streams, and single-bank overflow without changing document history.
+    pub fn replace_layer1(
+        &mut self,
+        expected_revision: u64,
+        layer1: &LevelObjectData,
+    ) -> Result<(), MwlDocumentControllerError> {
+        if expected_revision != self.revision {
+            return Err(MwlDocumentControllerError::StaleRevision {
+                expected: expected_revision,
+                actual: self.revision,
+            });
+        }
+        let encoded = layer1
+            .encode_banked()
+            .map_err(MwlDocumentControllerError::Layer1Encoding)?;
+        let reparsed =
+            LevelObjectData::parse(&encoded).map_err(MwlDocumentControllerError::Layer1Parse)?;
+        if reparsed != *layer1 {
+            return Err(MwlDocumentControllerError::NonCanonicalLayer1);
+        }
+        let mut staged = self.value.clone();
+        let mut section = staged
+            .payload_section(MwlSectionKind::Layer1)
+            .map_err(MwlDocumentControllerError::Layer1Section)?;
+        section.payload = encoded;
+        staged
+            .set_payload_section(MwlSectionKind::Layer1, &section)
+            .map_err(MwlDocumentControllerError::Layer1Section)?;
+        self.commit_staged(&staged)
+    }
+
     fn commit_staged(&mut self, staged: &MwlFile) -> Result<(), MwlDocumentControllerError> {
         if *staged == self.value {
             return Ok(());
@@ -496,6 +546,10 @@ pub enum MwlDocumentControllerError {
     SpriteParse(SpriteStreamError),
     SpriteEncoding(NativeSpriteEncodingError),
     NonCanonicalSprites,
+    Layer1Section(MwlError),
+    Layer1Parse(ObjectStreamError),
+    Layer1Encoding(ObjectStreamError),
+    NonCanonicalLayer1,
     CanonicalMismatch,
     StaleRevision {
         expected: u64,
