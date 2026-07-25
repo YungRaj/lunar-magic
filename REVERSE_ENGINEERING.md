@@ -255,6 +255,13 @@ The Windows DPI compatibility block through `004436f0` is now fully named. It dy
 
 The tracking-tooltip and custom sidecar-metadata subsystem through `00445f90` is now named and typed. `ExternalMetadataGroupAEntry` is a recovered 12-byte record containing three owned pointers; `ExternalMetadataGroupBEntry` is a 28-byte record with three owned pointers plus 16 bytes of fields whose individual meanings remain unresolved. Their 1024-entry and 832-entry pointer/count/dimension/flag arrays now have explicit global names and array types. The `.msc`, `.ssc`, and `.osc` loaders are separated: `.msc` supplies two 256-entry label tables, `.ssc` parses custom-sprite display/tooltip/remap data into group A, and `.osc` parses custom-object display/tooltip/attribute data into group B. Allocation helpers document the compact nibble-to-dimension mapping and preserve both one-dimensional and two-dimensional storage modes.
 
+The `.ssc` loader at `00444e50` is now represented by a lossless Rust source model. It
+authenticates the two hexadecimal selector fields, extra-bit-derived 1024-entry index, compact
+dimensions or clamped 3–15-byte record length, alternate/global flags, escaped descriptions,
+explicit display triples, `*text*` glyph expansion, four-word palette records, and both global
+range-remap forms. Display records feed the same recovered preview-definition table as standard
+sprites; malformed lines remain in the preserved source but do not materialize metadata.
+
 The custom sidecar pipeline is now connected through `.dsc`, `.m16`, and `.s16` loading. The 32768-entry description-pointer/flag/mapping tables and raw 0x2000-byte `.m16` plus 0x1C000-byte `.s16` buffers have explicit names and array types. Initialization establishes the default custom display/remap sentinels before overrides. The paired SNES BGR555/RGB conversion functions are named separately, including their alternate quantization behavior.
 
 The `.dsc` reader at `LoadAllCustomSidecarMetadata` has now been translated into a focused Rust

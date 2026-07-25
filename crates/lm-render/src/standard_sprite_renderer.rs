@@ -35,11 +35,10 @@ pub struct StandardSpritePreviewMode {
     pub level_orientation: StandardLevelOrientation,
 }
 
-/// Renders the first authenticated family of Lunar Magic standard-sprite previews.
+/// Renders Lunar Magic's authenticated standard-sprite preview handlers.
 ///
-/// Sprite IDs `$00`–`$08` use authenticated handler shapes and preview definitions.
 /// Lunar Magic substitutes tile `$115` when its alternate sprite-number display mode is active.
-/// Other IDs remain unresolved and return `None` instead of fabricating artwork.
+/// IDs routed to the native empty/default handler return `None`.
 #[must_use]
 pub fn render_lunar_magic_standard_sprite(
     sprite_number: u8,
@@ -1164,7 +1163,7 @@ fn parts(values: &[(u16, i16, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
 }
 
 #[allow(clippy::too_many_lines)] // Sparse authenticated indices are clearer as one lookup table.
-fn preview_definition(index: u16) -> Option<[u16; 4]> {
+pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
     if (0x3c00..=0x3cff).contains(&index) {
         return Some([index, 0x0019, 0x0019, 0x0019]);
     }

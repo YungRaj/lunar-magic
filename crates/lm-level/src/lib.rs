@@ -37,6 +37,7 @@ mod property_editing;
 mod sprite;
 mod sprite_editing;
 mod sprite_placement;
+mod ssc_sidecar;
 
 pub use binary::{BinaryError, ByteCursor};
 pub use complete_file::{CompleteLevelFile, CompleteLevelFileError, LevelCollection};
@@ -108,6 +109,10 @@ pub use property_editing::{
 pub use sprite::{SpriteRecord, SpriteStream, SpriteStreamError};
 pub use sprite_editing::{SpriteEdit, SpriteEditError, SpriteEditLimits};
 pub use sprite_placement::NativeSpritePlacement;
+pub use ssc_sidecar::{
+    MAX_SSC_DISPLAY_TILES, MAX_SSC_PALETTE_RECORDS, MAX_SSC_SOURCE_LEN, SscDirective,
+    SscDisplayTile, SscEntry, SscRemapRange, SscSidecar, SscSidecarError, SscSpriteSelector,
+};
 mod appearance_file;
 mod auxiliary_edit_script;
 mod auxiliary_editing;
