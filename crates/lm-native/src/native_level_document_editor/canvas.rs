@@ -4,6 +4,8 @@ use lm_level::{NativeLevelFile, NativeObjectPlacement, NativeSpritePlacement};
 
 const MIN_MAJOR_TILES: u16 = 16;
 const MAX_CANVAS_MAJOR_TILES: u16 = 512;
+const CANVAS_CELL: f32 = 12.0;
+const CANVAS_VIEW_HEIGHT: f32 = 280.0;
 
 impl NativeLevelDocumentEditor {
     pub(super) fn level_canvas(&mut self, ui: &mut egui::Ui, value: &NativeLevelFile) {
@@ -12,60 +14,66 @@ impl NativeLevelDocumentEditor {
         let vertical = lm_profile::smw_us_v1_level_mode(value.layer1.header.level_mode()).vertical;
         let level_mode = value.layer1.header.level_mode();
         let major_tiles = canvas_major_tiles(&objects, &sprites);
-        let size = if vertical {
-            egui::vec2(260.0, 420.0)
-        } else {
-            egui::vec2(ui.available_width().max(420.0), 260.0)
-        };
-        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, egui::Color32::from_gray(18));
-        let major_extent = if vertical {
-            rect.height()
-        } else {
-            rect.width()
-        };
-        let cell = (major_extent / f32::from(major_tiles)).clamp(2.0, 14.0);
-        draw_grid(&painter, rect, cell, major_tiles, vertical);
-        let cursor = response.interact_pointer_pos();
-        let object_hit = draw_objects(
-            &painter,
-            rect,
-            cell,
-            vertical,
-            &objects,
-            self.object_index,
-            cursor,
-        );
-        let sprite_hit = draw_sprites(
-            &painter,
-            rect,
-            cell,
-            vertical,
-            level_mode,
-            &sprites,
-            self.sprite_index,
-            cursor,
-        );
-        if response.clicked() {
-            if let Some(index) = sprite_hit {
-                self.sprite_index = index;
-                self.form.load_sprite(value.sprites.tokens.get(index));
-            } else if let Some(index) = object_hit {
-                self.object_index = index;
-                let screen = objects
-                    .iter()
-                    .find(|placement| placement.record_index == index)
-                    .map(|placement| placement.screen);
-                self.form
-                    .load_object(value.layer1.objects.records.get(index), screen);
-            }
-        }
+        let size = canvas_size(major_tiles, vertical);
+        egui::ScrollArea::both()
+            .id_salt("native-level-placement-canvas")
+            .max_height(CANVAS_VIEW_HEIGHT)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+                let painter = ui.painter_at(rect);
+                painter.rect_filled(rect, 0.0, egui::Color32::from_gray(18));
+                draw_grid(&painter, rect, CANVAS_CELL, major_tiles, vertical);
+                let cursor = response.interact_pointer_pos();
+                let object_hit = draw_objects(
+                    &painter,
+                    rect,
+                    CANVAS_CELL,
+                    vertical,
+                    &objects,
+                    self.object_index,
+                    cursor,
+                );
+                let sprite_hit = draw_sprites(
+                    &painter,
+                    rect,
+                    CANVAS_CELL,
+                    vertical,
+                    level_mode,
+                    &sprites,
+                    self.sprite_index,
+                    cursor,
+                );
+                if response.clicked() {
+                    if let Some(index) = sprite_hit {
+                        self.sprite_index = index;
+                        self.form.load_sprite(value.sprites.tokens.get(index));
+                    } else if let Some(index) = object_hit {
+                        self.object_index = index;
+                        let screen = objects
+                            .iter()
+                            .find(|placement| placement.record_index == index)
+                            .map(|placement| placement.screen);
+                        self.form
+                            .load_object(value.layer1.objects.records.get(index), screen);
+                    }
+                }
+            });
         ui.small(format!(
-            "{} placement canvas · {} major tiles · click an object or sprite to load its semantic fields",
+            "{} placement canvas · {} major tiles · scroll to navigate; click a placement to load its semantic fields",
             if vertical { "Vertical" } else { "Horizontal" },
             major_tiles
         ));
+    }
+}
+
+fn canvas_size(major_tiles: u16, vertical: bool) -> egui::Vec2 {
+    let major = f32::from(major_tiles) * CANVAS_CELL;
+    let minor = 16.0 * CANVAS_CELL;
+    if vertical {
+        egui::vec2(minor, major)
+    } else {
+        egui::vec2(major, minor)
     }
 }
 
@@ -302,5 +310,12 @@ mod tests {
         };
         assert_eq!(object.tile_coordinates(false), (35, 7));
         assert_eq!(object.tile_coordinates(true), (7, 35));
+    }
+
+    #[test]
+    fn canvas_keeps_a_fixed_editing_scale_and_swaps_axes() {
+        assert_eq!(canvas_size(32, false), egui::vec2(384.0, 192.0));
+        assert_eq!(canvas_size(32, true), egui::vec2(192.0, 384.0));
+        assert_eq!(canvas_size(512, false), egui::vec2(6144.0, 192.0));
     }
 }
