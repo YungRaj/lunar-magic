@@ -491,6 +491,8 @@ interactive frontends cannot bypass confirmation and request correlation through
   screen/X/Y fields and committed through the same controller. Standard sprite previews receive the
   level's actual mode and horizontal/vertical orientation, so the recovered position- and
   mode-dependent generator labels no longer render with a fabricated horizontal mode-zero context.
+  Animated standard previews advance through their recovered four phases at 8 Hz, with repaint
+  scheduling enabled only while an animated sprite is present.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.

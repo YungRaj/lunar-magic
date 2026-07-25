@@ -1718,6 +1718,13 @@ and low five Y bits, preserves sprite number and extra bits, and applies the
 semantic record edit transactionally. Drops outside the representable
 32-by-512-tile native space are rejected without mutating the level stream.
 
+The native canvas also supplies the renderer's recovered two-bit animation
+phase. It derives an 8 Hz phase from the GUI clock and requests 125 ms repaints
+only while sprite `$A6` is present. This activates all four authenticated `$A6`
+preview geometries without turning every static level canvas into a continuous
+animation loop; invalid or pre-start clock values deterministically use phase
+zero.
+
 ## Typed MWL Layer 1 interoperability
 
 The MWL Layer 1 section uses the same two-word common prefix as sprites. Its

@@ -553,6 +553,14 @@ impl VanillaLevelEditor {
         let level_mode = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.header.level_mode()
         });
+        let animation_phase = sprite_animation_phase(ui.input(|input| input.time));
+        if sprite_placements
+            .iter()
+            .any(|placement| placement.sprite_number == 0xa6)
+        {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(125));
+        }
         let (width, height) = (
             ui.available_width().max(320.0),
             if vertical { 420.0 } else { 260.0 },
@@ -621,6 +629,7 @@ impl VanillaLevelEditor {
             selected: self.selected_sprite,
             vertical,
             level_mode,
+            animation_phase,
             custom_sprites,
             custom_map16,
         });
@@ -1704,6 +1713,7 @@ struct SpritePlacementDraw<'a> {
     selected: usize,
     vertical: bool,
     level_mode: u8,
+    animation_phase: u8,
     custom_sprites: Option<&'a lm_level::SscResolvedTable>,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
 }
@@ -1719,6 +1729,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         selected,
         vertical,
         level_mode,
+        animation_phase,
         custom_sprites,
         custom_map16,
     } = request;
@@ -1744,7 +1755,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             .or_else(|| {
                 lm_render::render_lunar_magic_standard_sprite_with_mode(
                     placement.sprite_number,
-                    standard_sprite_preview_mode(placement, vertical, level_mode),
+                    standard_sprite_preview_mode(placement, vertical, level_mode, animation_phase),
                 )
             });
         if let (Some(texture), Some(parts)) = (texture, preview) {
@@ -1793,10 +1804,12 @@ fn standard_sprite_preview_mode(
     placement: &lm_level::NativeSpritePlacement,
     vertical: bool,
     level_mode: u8,
+    animation_phase: u8,
 ) -> lm_render::StandardSpritePreviewMode {
     lm_render::StandardSpritePreviewMode {
         placement_first: placement.first_byte,
         level_mode,
+        animation_phase,
         level_orientation: if vertical {
             lm_render::StandardLevelOrientation::Vertical
         } else {
@@ -1804,6 +1817,15 @@ fn standard_sprite_preview_mode(
         },
         ..lm_render::StandardSpritePreviewMode::default()
     }
+}
+
+fn sprite_animation_phase(seconds: f64) -> u8 {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return 0;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let ticks = (seconds * 8.0).floor() as u64;
+    u8::try_from(ticks & 3).expect("two-bit animation phase")
 }
 
 fn external_sprite_definition(
@@ -2063,19 +2085,32 @@ mod tests {
             sprite_number: 0xe5,
             extra_bits: 1,
         };
-        let horizontal = standard_sprite_preview_mode(&placement, false, 3);
+        let horizontal = standard_sprite_preview_mode(&placement, false, 3, 2);
         assert_eq!(horizontal.placement_first, 0x91);
         assert_eq!(horizontal.level_mode, 3);
+        assert_eq!(horizontal.animation_phase, 2);
         assert_eq!(
             horizontal.level_orientation,
             lm_render::StandardLevelOrientation::Horizontal
         );
-        let vertical = standard_sprite_preview_mode(&placement, true, 7);
+        let vertical = standard_sprite_preview_mode(&placement, true, 7, 1);
         assert_eq!(vertical.level_mode, 7);
+        assert_eq!(vertical.animation_phase, 1);
         assert_eq!(
             vertical.level_orientation,
             lm_render::StandardLevelOrientation::Vertical
         );
+    }
+
+    #[test]
+    fn sprite_animation_clock_is_bounded_and_deterministic() {
+        assert_eq!(sprite_animation_phase(f64::NAN), 0);
+        assert_eq!(sprite_animation_phase(-1.0), 0);
+        assert_eq!(sprite_animation_phase(0.0), 0);
+        assert_eq!(sprite_animation_phase(0.124), 0);
+        assert_eq!(sprite_animation_phase(0.125), 1);
+        assert_eq!(sprite_animation_phase(0.375), 3);
+        assert_eq!(sprite_animation_phase(0.5), 0);
     }
 
     #[test]
