@@ -24,9 +24,14 @@ pub(crate) struct SscSidecarEditor {
     pending_close: Option<PendingClose>,
     persistence: DocumentPersistence,
     loader: DocumentLoader,
+    resolved: Option<lm_level::SscResolvedTable>,
 }
 
 impl SscSidecarEditor {
+    pub(crate) fn resolved(&self) -> Option<&lm_level::SscResolvedTable> {
+        self.resolved.as_ref()
+    }
+
     pub(crate) fn is_open(&self) -> bool {
         self.controller.is_some() || self.loader.is_running()
     }
@@ -110,6 +115,7 @@ impl SscSidecarEditor {
         };
         if self.loaded_revision != Some(controller.revision()) {
             self.form = SscSourceForm::load(controller.value());
+            self.resolved = Some(lm_level::SscResolvedTable::from_sidecar(controller.value()));
             self.loaded_revision = Some(controller.revision());
             self.entry_index = self
                 .entry_index
@@ -256,5 +262,6 @@ impl SscSidecarEditor {
         self.controller = None;
         self.loaded_revision = None;
         self.pending_close = None;
+        self.resolved = None;
     }
 }

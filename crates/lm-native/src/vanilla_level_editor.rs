@@ -140,7 +140,12 @@ impl VanillaLevelEditor {
             })
     }
 
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, app: &AppState) -> Option<Command> {
+    pub(crate) fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        app: &AppState,
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+    ) -> Option<Command> {
         let snapshot = app.controller_snapshot().ok()?;
         let EditorMode::Level(level) = snapshot.mode else {
             self.clear();
@@ -180,7 +185,7 @@ impl VanillaLevelEditor {
         ui.separator();
         self.show_map16_preview(ui, &snapshot, object_tileset);
         ui.separator();
-        self.object_canvas(ui);
+        self.object_canvas(ui, custom_sprites);
         ui.separator();
         ui.columns(2, |columns| {
             self.object_list(&mut columns[0]);
@@ -449,7 +454,11 @@ impl VanillaLevelEditor {
             });
     }
 
-    fn object_canvas(&mut self, ui: &mut egui::Ui) {
+    fn object_canvas(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+    ) {
         let (records, placements, sprite_placements) = self.canvas_model();
         let vertical = self.controller.as_ref().is_some_and(|controller| {
             lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
@@ -524,6 +533,7 @@ impl VanillaLevelEditor {
             cursor: response.interact_pointer_pos(),
             selected: self.selected_sprite,
             vertical,
+            custom_sprites,
         });
         if response.clicked()
             && let Some(index) = hit
@@ -1035,6 +1045,7 @@ struct SpritePlacementDraw<'a> {
     cursor: Option<egui::Pos2>,
     selected: usize,
     vertical: bool,
+    custom_sprites: Option<&'a lm_level::SscResolvedTable>,
 }
 
 fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
@@ -1047,6 +1058,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         cursor,
         selected,
         vertical,
+        custom_sprites,
     } = request;
     let mut hit = None;
     for placement in placements {
@@ -1060,13 +1072,18 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             center,
             egui::vec2(cell_size.max(9.0), cell_size.max(9.0)),
         );
-        let preview = lm_render::render_lunar_magic_standard_sprite_with_mode(
-            placement.sprite_number,
-            lm_render::StandardSpritePreviewMode {
-                placement_first: placement.first_byte,
-                ..lm_render::StandardSpritePreviewMode::default()
-            },
-        );
+        let preview = custom_sprites
+            .and_then(|table| table.default_display(placement.sprite_number, placement.extra_bits))
+            .and_then(lm_render::render_resolved_lunar_magic_custom_sprite)
+            .or_else(|| {
+                lm_render::render_lunar_magic_standard_sprite_with_mode(
+                    placement.sprite_number,
+                    lm_render::StandardSpritePreviewMode {
+                        placement_first: placement.first_byte,
+                        ..lm_render::StandardSpritePreviewMode::default()
+                    },
+                )
+            });
         if let (Some(texture), Some(parts)) = (texture, preview) {
             for part in parts {
                 draw_sprite_preview_definition(

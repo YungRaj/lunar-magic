@@ -327,7 +327,13 @@ impl eframe::App for NativeApplication {
         egui::CentralPanel::default().show(context, |ui| {
             let vanilla_level = VanillaLevelEditor::handles(&self.app);
             let vanilla_graphics = VanillaGraphicsEditor::handles(&self.app);
-            if vanilla_level && let Some(command) = self.vanilla_level_editor.show(ui, &self.app) {
+            if vanilla_level
+                && let Some(command) = self.vanilla_level_editor.show(
+                    ui,
+                    &self.app,
+                    self.ssc_sidecar_editor.resolved(),
+                )
+            {
                 self.dispatch(context, command);
             } else if vanilla_graphics
                 && let Some(command) = self.vanilla_graphics_editor.show(ui, &self.app)

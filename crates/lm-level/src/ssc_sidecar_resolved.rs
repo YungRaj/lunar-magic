@@ -60,6 +60,20 @@ impl SscResolvedTable {
         self.sprites.iter().find(|entry| entry.selector == selector)
     }
 
+    /// Resolves the default display variant for a native placement.
+    ///
+    /// Dimension/extra-byte-specific variants retain source order; callers with the complete
+    /// extended record can use [`Self::get`] for an exact selector.
+    #[must_use]
+    pub fn default_display(&self, sprite_number: u8, extra_bits: u8) -> Option<&SscResolvedSprite> {
+        self.sprites.iter().find(|entry| {
+            entry.selector.sprite_number == sprite_number
+                && entry.selector.extra_bits == extra_bits
+                && !entry.selector.alternate
+                && entry.display.is_some()
+        })
+    }
+
     #[must_use]
     pub fn tile_remap(&self, source: u16) -> Option<u16> {
         self.tile_remaps.get(usize::from(source)).copied().flatten()
@@ -128,5 +142,32 @@ mod tests {
         assert_eq!(table.tile_remap(0x12), Some(0x20));
         assert_eq!(table.palette_remap(1), Some(7));
         assert_eq!(table.palette_remap(3), None);
+    }
+
+    #[test]
+    fn default_display_matches_native_number_and_extra_bits() {
+        let source =
+            SscSidecar::decode(b"10\t12\t0,0,10\n10\t22\t0,0,11\n10\t13\t0,0,12\n").unwrap();
+        let table = SscResolvedTable::from_sidecar(&source);
+        assert_eq!(
+            table
+                .default_display(0x10, 1)
+                .unwrap()
+                .display
+                .as_ref()
+                .unwrap()[0]
+                .tile,
+            0x10
+        );
+        assert_eq!(
+            table
+                .default_display(0x10, 2)
+                .unwrap()
+                .display
+                .as_ref()
+                .unwrap()[0]
+                .tile,
+            0x11
+        );
     }
 }
