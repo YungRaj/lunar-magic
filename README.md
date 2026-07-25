@@ -502,6 +502,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   controls while preserving extension bytes and trailing opaque controls. Interleaved unknown
   command-zero controls are rejected rather than guessed. Lunar Magic 3.63 Wine import/re-export
   confirms the cross-screen coordinate and transition rewrite exactly.
+  The interpretation-bound native-level document editor now exposes the same five semantic sprite
+  fields for installed/custom records. It validates edits against the exact 1,024-byte length table
+  loaded with the document, preserves all extension bytes, and rejects sprite-number/extra-bit
+  changes that would silently select a different record width.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.

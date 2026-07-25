@@ -2,7 +2,7 @@ use super::{NativeLevelDocumentEditor, PasteTarget, index_row, pasted_text};
 use crate::native_clipboard;
 use eframe::egui;
 use lm_app::NativeLevelEdit;
-use lm_level::{NativeLevelFile, SpriteToken};
+use lm_level::{NativeLevelFile, SpriteLengthTable, SpriteToken};
 
 impl NativeLevelDocumentEditor {
     pub(super) fn object_panel(&mut self, ui: &mut egui::Ui, value: &NativeLevelFile) {
@@ -86,6 +86,7 @@ impl NativeLevelDocumentEditor {
     }
 
     pub(super) fn sprite_panel(&mut self, ui: &mut egui::Ui, value: &NativeLevelFile) {
+        let lengths = self.current_sprite_lengths();
         ui.heading(format!("Sprite tokens ({})", value.sprites.tokens.len()));
         index_row(ui, &mut self.sprite_index, value.sprites.tokens.len());
         ui.horizontal(|ui| {
@@ -93,19 +94,15 @@ impl NativeLevelDocumentEditor {
             ui.text_edit_singleline(&mut self.sprite_header);
         });
         ui.text_edit_singleline(&mut self.form.sprite);
+        sprite_semantic_fields(ui, &mut self.form);
         let mut sprite_action = None;
+        let mut semantic_action = false;
         let mut remove_sprite = false;
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load record").clicked() {
-                self.form.sprite = match value.sprites.tokens.get(self.sprite_index) {
-                    Some(SpriteToken::Record(r)) => {
-                        crate::level_editor_forms::format_bytes(&r.encoded)
-                    }
-                    Some(SpriteToken::Screen(v)) => format!("yhigh {v:02X}"),
-                    Some(SpriteToken::Control(v)) => format!("control {v:02X}"),
-                    None => String::new(),
-                };
+                self.form
+                    .load_sprite(value.sprites.tokens.get(self.sprite_index));
             }
             if ui.button("Insert record").clicked() {
                 sprite_action = Some(true);
@@ -115,6 +112,16 @@ impl NativeLevelDocumentEditor {
             }
             if ui.button("Remove token").clicked() {
                 remove_sprite = true;
+            }
+            if ui
+                .add_enabled(
+                    self.form.sprite_fields_loaded
+                        && self.sprite_index < value.sprites.tokens.len(),
+                    egui::Button::new("Apply sprite fields"),
+                )
+                .clicked()
+            {
+                semantic_action = true;
             }
             let record = value
                 .sprites
@@ -162,10 +169,45 @@ impl NativeLevelDocumentEditor {
         if let Some(insert) = sprite_action {
             self.apply_result(self.form.sprite_edit(self.sprite_index, insert));
         }
+        if semantic_action {
+            let edit = self.form.sprite_field_edit(
+                self.sprite_index,
+                value.sprites.tokens.get(self.sprite_index),
+                &lengths,
+            );
+            self.apply_result(edit);
+        }
         if remove_sprite {
             self.apply(NativeLevelEdit::RemoveSprite {
                 index: self.sprite_index,
             });
         }
     }
+
+    fn current_sprite_lengths(&self) -> SpriteLengthTable {
+        self.controller
+            .as_ref()
+            .expect("native level panel requires controller")
+            .sprite_lengths()
+            .clone()
+    }
+}
+
+fn sprite_field_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
+    ui.label(label);
+    ui.add(egui::DragValue::new(value).range(0..=maximum));
+    ui.end_row();
+}
+
+fn sprite_semantic_fields(
+    ui: &mut egui::Ui,
+    form: &mut crate::native_level_document_form::NativeLevelRecordForm,
+) {
+    egui::Grid::new("native-level-sprite-semantic-fields").show(ui, |ui| {
+        sprite_field_row(ui, "Sprite number", &mut form.sprite_number, 0xff);
+        sprite_field_row(ui, "Screen", &mut form.sprite_screen, 0x1f);
+        sprite_field_row(ui, "X", &mut form.sprite_x, 0x0f);
+        sprite_field_row(ui, "Y (low 5 bits)", &mut form.sprite_y_low, 0x1f);
+        sprite_field_row(ui, "Extra bits", &mut form.sprite_extra_bits, 3);
+    });
 }

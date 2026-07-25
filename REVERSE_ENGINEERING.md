@@ -1745,6 +1745,15 @@ source screen to screen `$02`, and changes both coordinate nibbles. Lunar Magic
 3.63 imports and re-exports the exact canonically transitioned Layer 1 stream,
 including level `$105`'s trailing four-byte opaque control.
 
+The profile-backed `NativeLevelDocumentEditor` no longer limits installed or
+custom sprite records to raw hexadecimal replacement. Loading an ordinary
+record populates sprite number, screen, X, low Y, and extra-bit controls.
+Applying them calls `set_native_fields` with the controller's exact externally
+loaded 1,024-byte length table, so custom extension bytes remain untouched and
+a field change that would select another record width is rejected before
+document history changes. Upper-Y and other control tokens remain explicitly
+raw and disable the semantic action.
+
 The native canvas also supplies the renderer's recovered two-bit animation
 phase. It derives an 8 Hz phase from the GUI clock and requests 125 ms repaints
 only while sprite `$A6` is present. This activates all four authenticated `$A6`
