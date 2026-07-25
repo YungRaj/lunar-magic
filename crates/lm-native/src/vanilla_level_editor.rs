@@ -837,6 +837,9 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error.to_string()),
                 }
             }
+            if ui.button("Insert after selection").clicked() {
+                self.insert_sprite(token_count);
+            }
             if ui
                 .add_enabled(
                     self.selected_sprite < token_count,
@@ -891,6 +894,41 @@ impl VanillaLevelEditor {
             }
             Err(error) => self.error = Some(error),
         }
+    }
+
+    fn insert_sprite(&mut self, token_count: usize) {
+        let token = match crate::native_level_document_form::parse_sprite_token(
+            &self.sprite_form.encoded,
+        ) {
+            Ok(token) => token,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let index = sprite_insertion_index(self.selected_sprite, token_count);
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_edits(&[NativeLevelEdit::InsertSprite { index, token }]) {
+            Ok(()) => {
+                self.selected_sprite = index;
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.get(index),
+                );
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+}
+
+const fn sprite_insertion_index(selected: usize, token_count: usize) -> usize {
+    if selected < token_count {
+        selected + 1
+    } else {
+        token_count
     }
 }
 
@@ -1477,5 +1515,13 @@ mod tests {
         );
         assert_eq!(external_sprite_definition(Some(&s16), 1), None);
         assert_eq!(external_sprite_definition(Some(&m16), 0x400), None);
+    }
+
+    #[test]
+    fn sprite_insertion_follows_selection_or_appends_to_an_empty_stream() {
+        assert_eq!(sprite_insertion_index(0, 0), 0);
+        assert_eq!(sprite_insertion_index(0, 3), 1);
+        assert_eq!(sprite_insertion_index(2, 3), 3);
+        assert_eq!(sprite_insertion_index(99, 3), 3);
     }
 }
