@@ -368,6 +368,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1f7, 0, 1),
             (0x1ec, -24, -8),
         ]),
+        0x95 => render_handler_95(mode.placement_first),
         0x96 => parts(&[
             (0x200, 0, 0),
             (0x1f4, -8, 0),
@@ -399,6 +400,24 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x9c => render_definition_grid(0x180, 4, 1),
         _ => None,
     }
+}
+
+fn render_handler_95(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+    let variant = placement_first & 3;
+    let mut values = vec![(
+        0x1ee,
+        if variant == 0 { -6 } else { -8 },
+        if variant == 0 { -10 } else { -7 },
+    )];
+    match variant {
+        0 => values.extend([(0x1e5, -15, 5), (0x20f, -15, 1), (0x21f, 0, 1)]),
+        1 => values.extend([(0x1e6, -16, 1), (0x1e7, 0, 1)]),
+        2 => values.extend([(0x20d, -16, -1), (0x20e, 0, 1)]),
+        3 => values.extend([(0x1e5, -6, 9), (0x20d, -16, -1), (0x20e, 0, 1)]),
+        _ => unreachable!(),
+    }
+    values.push((0x1e5, -16 + [-6, 0, -2, -4][usize::from(variant)], 1));
+    parts(&values)
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
@@ -674,7 +693,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x09b => [0x55e6, 0x55f6, 0x55e5, 0x55f5],
         0x09c => [0x114d, 0x1019, 0x1019, 0x1019],
         0x0a0 => [0x1642, 0x1652, 0x1643, 0x1653],
-        0x0a4 | 0x1d2 => [0x15a4, 0x15b4, 0x15a5, 0x15b5],
+        0x0a4 | 0x1d2 | 0x1e7 => [0x15a4, 0x15b4, 0x15a5, 0x15b5],
         0x0a5 | 0x1d3 => [0x15a6, 0x15b6, 0x15a7, 0x15b7],
         0x0a6 => [0x558d, 0x559d, 0x558c, 0x559c],
         0x0a7 => [0x0186, 0x0196, 0x0187, 0x0197],
@@ -762,6 +781,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1e2 => [0x95b4, 0x95a4, 0x95b5, 0x95a5],
         0x1e3 => [0x95b6, 0x95a6, 0x95b7, 0x95a7],
         0x1e4 => [0x11b6, 0x1019, 0x1019, 0x1019],
+        0x1e5 => [0x11ad, 0x1019, 0x1019, 0x1019],
+        0x1e6 => [0x1419, 0x1419, 0x15bd, 0x1419],
         0x1e8 => [0x1419, 0x1419, 0x1544, 0x1554],
         0x1e9 => [0x1545, 0x1555, 0x1419, 0x1419],
         0x1ea => [0x1419, 0x150c, 0x1419, 0x1419],
@@ -787,6 +808,10 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1fe => [0x1523, 0x1533, 0x1524, 0x1534],
         0x1ff => [0x1525, 0x1535, 0x1419, 0x1419],
         0x200 => [0x11e2, 0x1419, 0x31e3, 0x1419],
+        0x20d => [0x1419, 0x1419, 0x1419, 0x350d],
+        0x20e => [0x354e, 0x355e, 0x354f, 0x355f],
+        0x20f => [0x1419, 0x355d, 0x1419, 0x1419],
+        0x21f => [0x35ae, 0x35be, 0x35af, 0x35bf],
         0x124 => [0x5508, 0x5518, 0x5507, 0x5517],
         0x125 => [0x5108, 0x5118, 0x5107, 0x5117],
         0x126 => [0x1507, 0x1517, 0x1508, 0x1518],
@@ -1913,5 +1938,60 @@ mod tests {
             ]
         );
         assert_eq!(geometry(0x9c, true), [(0x115, 0, 1)]);
+    }
+
+    #[test]
+    fn handler_95_preserves_all_four_placement_variants() {
+        let geometry = |first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                0x95,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(0),
+            [
+                (0x1ee, -6, -10),
+                (0x1e5, -15, 5),
+                (0x20f, -15, 1),
+                (0x21f, 0, 1),
+                (0x1e5, -22, 1)
+            ]
+        );
+        assert_eq!(
+            geometry(1),
+            [
+                (0x1ee, -8, -7),
+                (0x1e6, -16, 1),
+                (0x1e7, 0, 1),
+                (0x1e5, -16, 1)
+            ]
+        );
+        assert_eq!(
+            geometry(2),
+            [
+                (0x1ee, -8, -7),
+                (0x20d, -16, -1),
+                (0x20e, 0, 1),
+                (0x1e5, -18, 1)
+            ]
+        );
+        assert_eq!(
+            geometry(3),
+            [
+                (0x1ee, -8, -7),
+                (0x1e5, -6, 9),
+                (0x20d, -16, -1),
+                (0x20e, 0, 1),
+                (0x1e5, -20, 1)
+            ]
+        );
     }
 }
