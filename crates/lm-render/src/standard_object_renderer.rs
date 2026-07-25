@@ -113,7 +113,9 @@ enum NativeRenderer {
     SharedSlot018,
     SharedSlot019,
     SharedSlot020,
+    SharedSlot027,
     SharedSlot029,
+    SharedSlot031,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -446,8 +448,14 @@ fn render_definition(
     if definition.renderer == NativeRenderer::SharedSlot020 {
         return render_shared_slot_020(cache, layout, placement, parameter);
     }
+    if definition.renderer == NativeRenderer::SharedSlot027 {
+        return render_shared_slot_027(cache, layout, placement, parameter);
+    }
     if definition.renderer == NativeRenderer::SharedSlot029 {
         return render_shared_slot_029(cache, layout, placement, parameter);
+    }
+    if definition.renderer == NativeRenderer::SharedSlot031 {
+        return render_shared_slot_031(cache, layout, placement, parameter);
     }
     let (major_span, minor_span) = match definition.extent {
         ObjectExtent::ParameterNibbles => (
@@ -463,6 +471,47 @@ fn render_definition(
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
 }
 
+fn render_shared_slot_027(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    for major_offset in 0..=usize::from(parameter >> 4) {
+        let pair = if major_offset & 1 == 0 {
+            let existing_left = get_placement_cell(cache, layout, placement, major_offset, 0)?;
+            let existing_right = get_placement_cell(cache, layout, placement, major_offset, 1)?;
+            if existing_left.to_le_bytes()[0] == 0x0e {
+                [0x10b, existing_right & 0xff00 | 0x0c]
+            } else {
+                [
+                    existing_left & 0xff00 | 0xb9,
+                    existing_right & 0xff00 | 0xba,
+                ]
+            }
+        } else {
+            [0x0bb, 0x0bc]
+        };
+        for (minor_offset, tile) in pair.into_iter().enumerate() {
+            set_placement_cell(cache, layout, placement, major_offset, minor_offset, tile)?;
+        }
+    }
+    Ok(())
+}
+
+fn render_shared_slot_031(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    set_placement_pair(cache, layout, placement, 0, [0x161, 0x162])?;
+    for major_offset in 1..=usize::from(parameter >> 4) {
+        set_placement_pair(cache, layout, placement, major_offset, [0x163, 0x164])?;
+    }
+    Ok(())
+}
+
 fn render_shared_slot_018(
     cache: &mut NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
@@ -475,9 +524,9 @@ fn render_shared_slot_018(
     } else {
         encoded_repetitions
     };
-    for (minor_offset, row) in SHARED_SLOT_018_TILES.iter().enumerate() {
-        let page = if minor_offset == 0 { 0x100 } else { 0 };
-        let mut major_offset = 0;
+    for (major_offset, row) in SHARED_SLOT_018_TILES.iter().enumerate() {
+        let page = if major_offset == 0 { 0x100 } else { 0 };
+        let mut minor_offset = 0;
         for &tile in &row[..3] {
             set_placement_cell(
                 cache,
@@ -487,7 +536,7 @@ fn render_shared_slot_018(
                 minor_offset,
                 u16::from(tile) + page,
             )?;
-            major_offset += 1;
+            minor_offset += 1;
         }
         for _ in 1..repetitions {
             for &tile in &row[3..6] {
@@ -499,7 +548,7 @@ fn render_shared_slot_018(
                     minor_offset,
                     u16::from(tile) + page,
                 )?;
-                major_offset += 1;
+                minor_offset += 1;
             }
         }
         set_placement_cell(
@@ -535,13 +584,13 @@ fn render_shared_slot_017(
         0,
         u16::from(SHARED_SLOT_017_START_TILES[variant]),
     )?;
-    for major_offset in 0..middle_count {
+    for minor_offset in 0..middle_count {
         set_placement_cell(
             cache,
             layout,
             placement,
-            major_offset + 1,
             0,
+            minor_offset + 1,
             u16::from(SHARED_SLOT_017_MIDDLE_TILES[variant]),
         )?;
     }
@@ -549,8 +598,8 @@ fn render_shared_slot_017(
         cache,
         layout,
         placement,
-        middle_count + 1,
         0,
+        middle_count + 1,
         u16::from(SHARED_SLOT_017_END_TILES[variant]),
     )
 }
@@ -562,8 +611,8 @@ fn render_shared_slot_019(
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
     let tile = u16::from(SHARED_SLOT_019_TILES[usize::from(parameter >> 4)]);
-    for major_offset in 0..=usize::from(parameter & 0x0f) {
-        set_placement_cell(cache, layout, placement, major_offset, 0, tile)?;
+    for minor_offset in 0..=usize::from(parameter & 0x0f) {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
     }
     Ok(())
 }
@@ -583,13 +632,13 @@ fn render_shared_slot_020(
         0,
         u16::from(SHARED_SLOT_020_TOP_TILES[variant]),
     )?;
-    for minor_offset in 1..=usize::from(parameter >> 4) {
+    for major_offset in 1..=usize::from(parameter >> 4) {
         set_placement_cell(
             cache,
             layout,
             placement,
+            major_offset,
             0,
-            minor_offset,
             u16::from(SHARED_SLOT_020_REMAINDER_TILES[variant]),
         )?;
     }
@@ -611,15 +660,15 @@ fn render_shared_slot_029(
         0,
         u16::from(SHARED_SLOT_029_TOP_TILES[variant]) + 0x100,
     )?;
-    for minor_offset in 1..=usize::from(parameter >> 4) {
+    for major_offset in 1..=usize::from(parameter >> 4) {
         let remainder = u16::from(SHARED_SLOT_029_REMAINDER_TILES[variant]);
         let tile = if variant < 2 {
             remainder + 0x100
         } else {
-            let existing = get_placement_cell(cache, layout, placement, 0, minor_offset)?;
+            let existing = get_placement_cell(cache, layout, placement, major_offset, 0)?;
             existing & 0xff00 | remainder
         };
-        set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
+        set_placement_cell(cache, layout, placement, major_offset, 0, tile)?;
     }
     Ok(())
 }
@@ -1240,7 +1289,9 @@ fn install_shared_handler_aliases(
         (18, NativeRenderer::SharedSlot018),
         (19, NativeRenderer::SharedSlot019),
         (20, NativeRenderer::SharedSlot020),
+        (27, NativeRenderer::SharedSlot027),
         (29, NativeRenderer::SharedSlot029),
+        (31, NativeRenderer::SharedSlot031),
     ] {
         definitions.set_handler(
             handler,
@@ -1537,14 +1588,14 @@ mod tests {
             (
                 17,
                 0x23,
-                vec![(0, 0, 0x85), (1, 0, 0x86), (2, 0, 0x86), (3, 0, 0x87)],
+                vec![(0, 0, 0x85), (0, 1, 0x86), (0, 2, 0x86), (0, 3, 0x87)],
             ),
             (
                 19,
                 0x13,
-                vec![(0, 0, 0x9c), (1, 0, 0x9c), (2, 0, 0x9c), (3, 0, 0x9c)],
+                vec![(0, 0, 0x9c), (0, 1, 0x9c), (0, 2, 0x9c), (0, 3, 0x9c)],
             ),
-            (20, 0x23, vec![(0, 0, 0x98), (0, 1, 0x98), (0, 2, 0x98)]),
+            (20, 0x23, vec![(0, 0, 0x98), (1, 0, 0x98), (2, 0, 0x98)]),
         ];
         for (handler, parameter, expected) in cases {
             let mut handler_map = [0xff; 64];
@@ -1601,8 +1652,8 @@ mod tests {
                 0x081, 0x025, 0x084, 0x081, 0x025, 0x084, 0x081, 0x025, 0x084, 0x081,
             ],
         ];
-        for (minor, row) in expected.into_iter().enumerate() {
-            for (major, tile) in row.into_iter().enumerate() {
+        for (major, row) in expected.into_iter().enumerate() {
+            for (minor, tile) in row.into_iter().enumerate() {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
@@ -1651,7 +1702,7 @@ mod tests {
                 0x22,
                 vec![(0, 0, 0x10e), (2, 0, 0x10e), (0, 1, 0x0b8), (2, 2, 0x0b8)],
             ),
-            (29, 0x21, vec![(0, 0, 0x15e), (0, 1, 0x15d), (0, 2, 0x15d)]),
+            (29, 0x21, vec![(0, 0, 0x15e), (1, 0, 0x15d), (2, 0, 0x15d)]),
         ] {
             let mut handler_map = [0xff; 64];
             handler_map[1] = handler;
@@ -1667,6 +1718,66 @@ mod tests {
             )
             .unwrap();
             for (major, minor, tile) in expected {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_27_adapts_even_rows_and_alternates_odd_rows() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 27;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x10, 0x20]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x10e,
+        )
+        .unwrap();
+        for (major, pair) in [[0x10b, 0x10c], [0x0bb, 0x0bc], [0x10b, 0x10c]]
+            .into_iter()
+            .enumerate()
+        {
+            for (minor, tile) in pair.into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_31_renders_cap_and_body_pairs() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 31;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x10, 0x20]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        for (major, pair) in [[0x161, 0x162], [0x163, 0x164], [0x163, 0x164]]
+            .into_iter()
+            .enumerate()
+        {
+            for (minor, tile) in pair.into_iter().enumerate() {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
