@@ -483,6 +483,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   remain distinct so one operation cannot silently overwrite another. Focused MWL forms feed
   `MwlDocumentController` canonical transactions, undo/redo, recoverable saves, and dirty-document
   shutdown handling.
+  The built-in pristine-SMW ROM editor uses the same recovered sprite field model: a selected
+  record exposes its sprite number, five-bit screen, X, low five Y bits, and extra bits alongside
+  the lossless raw bytes. Applying those fields repacks only the native three-byte record and
+  immediately updates the level canvas placement.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.

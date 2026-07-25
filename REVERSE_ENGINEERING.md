@@ -1699,6 +1699,13 @@ shows decoded screen/X/Y/extra-bit placement. The strengthened Wine oracle
 changes X and Y through this API; Lunar Magic 3.63 imports and re-exports the
 exact resulting stream.
 
+The pristine-SMW native ROM editor now consumes the same field API rather than
+requiring hexadecimal record reconstruction. Its selected-record form exposes
+sprite number, screen, X, low Y, and extra bits, disables semantic application
+for expanded control commands, and sends the repacked record through the
+existing revisioned `LevelController` transaction. Raw bytes remain available
+for lossless inspection and advanced edits.
+
 ## Typed MWL Layer 1 interoperability
 
 The MWL Layer 1 section uses the same two-word common prefix as sprites. Its

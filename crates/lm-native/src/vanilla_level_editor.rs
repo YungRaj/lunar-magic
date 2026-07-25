@@ -3,8 +3,8 @@ use lm_app::{
     AppState, Command, EditorMode, LevelController, NativeLevelEdit, RomExpansionCommand,
 };
 use lm_level::{
-    LegacyHeaderEdit, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteLengthTable,
-    SpriteToken,
+    LegacyHeaderEdit, NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
+    SpriteLengthTable, SpriteToken,
 };
 use lm_project::LevelSaveOptions;
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -71,6 +71,12 @@ struct ObjectForm {
 struct SpriteForm {
     header: u8,
     encoded: String,
+    y_low: u8,
+    extra_bits: u8,
+    screen: u8,
+    x: u8,
+    sprite_number: u8,
+    semantic_record: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,7 +98,55 @@ impl SpriteForm {
             Some(SpriteToken::Control(value)) => format!("control {value:02X}"),
             None => String::new(),
         };
-        Self { header, encoded }
+        let fields = token
+            .and_then(|token| match token {
+                SpriteToken::Record(record) => record.native_fields().ok(),
+                SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+            })
+            .unwrap_or(NativeSpriteRecordFields {
+                y_low: 0,
+                extra_bits: 0,
+                screen: 0,
+                x: 0,
+                sprite_number: 0,
+            });
+        Self {
+            header,
+            encoded,
+            y_low: fields.y_low,
+            extra_bits: fields.extra_bits,
+            screen: fields.screen,
+            x: fields.x,
+            sprite_number: fields.sprite_number,
+            semantic_record: token.is_some_and(|token| matches!(token, SpriteToken::Record(_))),
+        }
+    }
+
+    fn semantic_edit(
+        &self,
+        index: usize,
+        token: Option<&SpriteToken>,
+    ) -> Result<NativeLevelEdit, String> {
+        let Some(SpriteToken::Record(record)) = token else {
+            return Err("select a sprite record before applying semantic fields".into());
+        };
+        let mut record = record.clone();
+        record
+            .set_native_fields(
+                NativeSpriteRecordFields {
+                    y_low: self.y_low,
+                    extra_bits: self.extra_bits,
+                    screen: self.screen,
+                    x: self.x,
+                    sprite_number: self.sprite_number,
+                },
+                &SpriteLengthTable::standard(),
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(NativeLevelEdit::ReplaceSprite {
+            index,
+            token: SpriteToken::Record(record),
+        })
     }
 }
 
@@ -858,15 +912,8 @@ impl VanillaLevelEditor {
             .as_ref()
             .map_or(0, |controller| controller.level().sprites.tokens.len());
         ui.label("Native sprite stream");
-        egui::Grid::new("vanilla-sprite-fields").show(ui, |ui| {
-            header_row(ui, "Sprite memory", &mut self.sprite_form.header, 0xff);
-            ui.label("Record bytes");
-            ui.text_edit_singleline(&mut self.sprite_form.encoded);
-            ui.end_row();
-        });
-        ui.small(
-            "Pristine ROM saves are pointer-preserving: header edits, same-size replacements, and removals are safe; growth is rejected.",
-        );
+        self.sprite_form_controls(ui);
+        sprite_save_constraint(ui);
         ui.horizontal(|ui| {
             if ui.button("Stage sprite header").clicked()
                 && let Some(controller) = self.controller.as_mut()
@@ -896,6 +943,15 @@ impl VanillaLevelEditor {
                     token,
                 });
                 self.apply_sprite_result(edit);
+            }
+            if ui
+                .add_enabled(
+                    self.selected_sprite < token_count && self.sprite_form.semantic_record,
+                    egui::Button::new("Apply sprite fields"),
+                )
+                .clicked()
+            {
+                self.apply_sprite_semantic_fields();
             }
             if ui
                 .add_enabled(
@@ -950,6 +1006,42 @@ impl VanillaLevelEditor {
         {
             self.paste_target = None;
             self.paste_sprite(&text, token_count);
+        }
+    }
+
+    fn sprite_form_controls(&mut self, ui: &mut egui::Ui) {
+        egui::Grid::new("vanilla-sprite-fields").show(ui, |ui| {
+            header_row(ui, "Sprite memory", &mut self.sprite_form.header, 0xff);
+            ui.label("Record bytes");
+            ui.text_edit_singleline(&mut self.sprite_form.encoded);
+            ui.end_row();
+            header_row(
+                ui,
+                "Sprite number",
+                &mut self.sprite_form.sprite_number,
+                0xff,
+            );
+            header_row(ui, "Screen", &mut self.sprite_form.screen, 0x1f);
+            header_row(ui, "X", &mut self.sprite_form.x, 0x0f);
+            header_row(ui, "Y (low 5 bits)", &mut self.sprite_form.y_low, 0x1f);
+            header_row(ui, "Extra bits", &mut self.sprite_form.extra_bits, 3);
+        });
+    }
+
+    fn apply_sprite_semantic_fields(&mut self) {
+        let token = self
+            .controller
+            .as_ref()
+            .and_then(|controller| controller.level().sprites.tokens.get(self.selected_sprite));
+        let edit = self.sprite_form.semantic_edit(self.selected_sprite, token);
+        self.apply_sprite_result(edit);
+        if self.error.is_none()
+            && let Some(controller) = self.controller.as_ref()
+        {
+            self.sprite_form = SpriteForm::from_token(
+                controller.level().sprites.header,
+                controller.level().sprites.tokens.get(self.selected_sprite),
+            );
         }
     }
 
@@ -1674,6 +1766,12 @@ fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
     ui.end_row();
 }
 
+fn sprite_save_constraint(ui: &mut egui::Ui) {
+    ui.small(
+        "Pristine ROM saves are pointer-preserving: header edits, same-size replacements, and removals are safe; growth is rejected.",
+    );
+}
+
 fn is_supported(snapshot: &lm_app::ControllerSnapshot) -> bool {
     snapshot.identity.game == SupportedGame::SuperMarioWorld
         && snapshot.identity.region == Region::NorthAmerica
@@ -1806,6 +1904,45 @@ mod tests {
         assert_eq!(sprite_insertion_index(0, 3), 1);
         assert_eq!(sprite_insertion_index(2, 3), 3);
         assert_eq!(sprite_insertion_index(99, 3), 3);
+    }
+
+    #[test]
+    fn sprite_form_edits_packed_native_fields_without_raw_bytes() {
+        let token = SpriteToken::Record(lm_level::SpriteRecord {
+            encoded: vec![0x9a, 0xc7, 0x42],
+        });
+        let mut form = SpriteForm::from_token(7, Some(&token));
+        assert_eq!(
+            (
+                form.y_low,
+                form.extra_bits,
+                form.screen,
+                form.x,
+                form.sprite_number,
+            ),
+            (9, 2, 23, 12, 0x42)
+        );
+        form.y_low = 0x1d;
+        form.screen = 0x1e;
+        form.x = 3;
+        form.sprite_number = 0x55;
+        assert_eq!(
+            form.semantic_edit(4, Some(&token)).unwrap(),
+            NativeLevelEdit::ReplaceSprite {
+                index: 4,
+                token: SpriteToken::Record(lm_level::SpriteRecord {
+                    encoded: vec![0xdb, 0x3e, 0x55],
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn sprite_form_rejects_semantic_edits_for_control_tokens() {
+        let token = SpriteToken::Screen(7);
+        let form = SpriteForm::from_token(0, Some(&token));
+        assert!(!form.semantic_record);
+        assert!(form.semantic_edit(0, Some(&token)).is_err());
     }
 
     #[test]
