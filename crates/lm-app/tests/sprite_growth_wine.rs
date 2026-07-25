@@ -1,7 +1,7 @@
 use lm_app::{AppState, Command, LevelController, MwlDocumentController, NativeLevelEdit};
 use lm_level::{
-    LevelObjectData, MwlFile, MwlSectionKind, NativeSpriteStream, ObjectEdit, SpriteLengthTable,
-    SpriteToken,
+    LevelObjectData, MwlFile, MwlSectionKind, NativeSpriteStream, ObjectCoordinateNibbles,
+    ObjectEdit, SpriteLengthTable, SpriteToken,
 };
 use lm_project::{LevelSaveOptions, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -300,10 +300,19 @@ fn lunar_magic_imports_and_reexports_a_rust_mwl_object_edit() {
     let duplicate = expected.objects.records[0].clone();
     expected
         .objects
-        .apply_edits(&[ObjectEdit::Insert {
-            index: 1,
-            record: duplicate,
-        }])
+        .apply_edits(&[
+            ObjectEdit::Insert {
+                index: 1,
+                record: duplicate,
+            },
+            ObjectEdit::SetCoordinateNibbles {
+                index: 0,
+                coordinates: ObjectCoordinateNibbles {
+                    first: 0x0e,
+                    second: 0x0d,
+                },
+            },
+        ])
         .unwrap();
     document.replace_layer1(0, &expected).unwrap();
     fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();

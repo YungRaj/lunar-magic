@@ -1729,6 +1729,17 @@ test grows and relocates level `$105`'s stream, changes screen/X/Y, invokes the
 stable ordering rule, and receives the exact same sprite stream from Lunar
 Magic 3.63's subsequent MWL export.
 
+Direct object dragging now covers the independently safe coordinate boundary.
+The canvas reverses horizontal or vertical tile coordinates into the selected
+ordinary record's first/second nibbles only when the drop remains on its
+currently resolved 16×16-tile serialized screen. It applies a typed
+`SetCoordinateNibbles` transaction and rejects cross-screen, minor-axis
+overflow, control-record, and off-canvas drops without mutation. The reciprocal
+MWL Wine oracle now changes both nibbles in addition to inserting a record;
+Lunar Magic 3.63 imports and re-exports the exact resulting Layer 1 stream.
+Cross-screen dragging remains separated because it must rewrite sequential
+advance/jump controls rather than merely changing coordinates.
+
 The native canvas also supplies the renderer's recovered two-bit animation
 phase. It derives an 8 Hz phase from the GUI clock and requests 125 ms repaints
 only while sprite `$A6` is present. This activates all four authenticated `$A6`

@@ -181,6 +181,7 @@ pub(crate) struct VanillaLevelEditor {
     form: HeaderForm,
     selected_object: usize,
     object_form: ObjectForm,
+    dragging_object: Option<usize>,
     selected_sprite: usize,
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
@@ -408,6 +409,7 @@ impl VanillaLevelEditor {
         self.standard_object_map = None;
         self.paste_target = None;
         self.dragging_sprite = None;
+        self.dragging_object = None;
     }
 
     fn show_map16_preview(
@@ -668,11 +670,69 @@ impl VanillaLevelEditor {
                 self.dragging_sprite = Some(index);
             }
         }
-        if response.drag_stopped()
-            && let (Some(index), Some(position)) =
-                (self.dragging_sprite.take(), response.interact_pointer_pos())
+        if response.drag_started()
+            && hit_sprite.is_none()
+            && let Some(index) = hit_object
+            && let Some(record) = records.get(index)
         {
-            self.move_sprite_to_canvas(index, position, rect, cell, vertical);
+            self.dragging_object = Some(index);
+            self.selected_object = index;
+            self.object_form = ObjectForm::from_record(record);
+        }
+        if response.drag_stopped() {
+            let position = response.interact_pointer_pos();
+            if let (Some(index), Some(position)) = (self.dragging_sprite.take(), position) {
+                self.move_sprite_to_canvas(index, position, rect, cell, vertical);
+            } else if let (Some(index), Some(position)) = (self.dragging_object.take(), position) {
+                self.move_object_to_canvas(index, position, rect, cell, vertical);
+            }
+        }
+    }
+
+    fn move_object_to_canvas(
+        &mut self,
+        index: usize,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let placement = self.controller.as_ref().and_then(|controller| {
+            controller
+                .level()
+                .layer1
+                .objects
+                .native_placements()
+                .into_iter()
+                .find(|placement| placement.record_index == index)
+        });
+        let Some(placement) = placement else {
+            self.error = Some("selected object has no visible native placement".into());
+            return;
+        };
+        let Some(coordinates) = object_coordinates_at_canvas_position(
+            position,
+            canvas,
+            cell,
+            vertical,
+            placement.screen,
+        ) else {
+            self.error =
+                Some("object drag must end inside its current 16×16-tile native screen".into());
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
+            ObjectEdit::SetCoordinateNibbles { index, coordinates },
+        ])]) {
+            Ok(()) => {
+                self.object_form.first_coordinate = coordinates.first;
+                self.object_form.second_coordinate = coordinates.second;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
         }
     }
 
@@ -1480,6 +1540,37 @@ fn sprite_fields_at_canvas_position(
     Some(fields)
 }
 
+fn object_coordinates_at_canvas_position(
+    position: egui::Pos2,
+    canvas: egui::Rect,
+    cell: f32,
+    vertical: bool,
+    current_screen: u16,
+) -> Option<ObjectCoordinateNibbles> {
+    if !canvas.contains(position) || !cell.is_finite() || cell <= 0.0 {
+        return None;
+    }
+    let column = ((position.x - canvas.left()) / cell).floor();
+    let row = ((position.y - canvas.top()) / cell).floor();
+    if !(0.0..=f32::from(u16::MAX)).contains(&column) || !(0.0..=f32::from(u16::MAX)).contains(&row)
+    {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let (major, minor) = if vertical {
+        (row as u16, column as u16)
+    } else {
+        (column as u16, row as u16)
+    };
+    if major / 16 != current_screen || minor >= 16 {
+        return None;
+    }
+    Some(ObjectCoordinateNibbles {
+        first: u8::try_from(major % 16).ok()?,
+        second: u8::try_from(minor).ok()?,
+    })
+}
+
 fn draw_map16_atlas_tile(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
@@ -2214,6 +2305,57 @@ mod tests {
         );
         assert!(
             sprite_fields_at_canvas_position(egui::pos2(512.0, 1.0), canvas, 1.0, false, fields,)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn canvas_object_drag_maps_both_orientations_within_the_current_screen() {
+        let horizontal_canvas =
+            egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(512.0, 256.0));
+        assert_eq!(
+            object_coordinates_at_canvas_position(
+                egui::pos2(10.0 + 35.5 * 8.0, 20.0 + 12.5 * 8.0),
+                horizontal_canvas,
+                8.0,
+                false,
+                2,
+            ),
+            Some(ObjectCoordinateNibbles {
+                first: 3,
+                second: 12,
+            })
+        );
+        let vertical_canvas =
+            egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(256.0, 512.0));
+        assert_eq!(
+            object_coordinates_at_canvas_position(
+                egui::pos2(10.0 + 7.5 * 8.0, 20.0 + 31.5 * 8.0),
+                vertical_canvas,
+                8.0,
+                true,
+                1,
+            ),
+            Some(ObjectCoordinateNibbles {
+                first: 15,
+                second: 7,
+            })
+        );
+    }
+
+    #[test]
+    fn canvas_object_drag_rejects_cross_screen_and_minor_overflow() {
+        let canvas = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(512.0, 256.0));
+        assert!(
+            object_coordinates_at_canvas_position(egui::pos2(31.0, 4.0), canvas, 1.0, false, 2,)
+                .is_none()
+        );
+        assert!(
+            object_coordinates_at_canvas_position(egui::pos2(35.0, 16.0), canvas, 1.0, false, 2,)
+                .is_none()
+        );
+        assert!(
+            object_coordinates_at_canvas_position(egui::pos2(-1.0, 4.0), canvas, 1.0, false, 0,)
                 .is_none()
         );
     }

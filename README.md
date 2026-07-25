@@ -496,6 +496,11 @@ interactive frontends cannot bypass confirmation and request correlation through
   mode-dependent generator labels no longer render with a fabricated horizontal mode-zero context.
   Animated standard previews advance through their recovered four phases at 8 Hz, with repaint
   scheduling enabled only while an animated sprite is present.
+  Ordinary objects can likewise be dragged within their current serialized 16×16-tile screen on
+  horizontal or vertical canvases. The drop updates only the two proven coordinate nibbles through
+  an atomic object edit; cross-screen drops are explicitly rejected until their screen-transition
+  rewrite is independently verified. Lunar Magic 3.63 Wine import/re-export confirms the typed
+  coordinate edit exactly.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.
