@@ -493,7 +493,7 @@ impl VanillaLevelEditor {
                 if let Some(sprite_texture) = &self.sprite_texture {
                     ui.image(sprite_texture);
                     ui.small(
-                        "Recovered SP1–SP4 graphics assignments, decoded with sprite palette row 8. Sprite-specific tile composition is the next renderer layer.",
+                        "Recovered SP1–SP4 graphics assignments, decoded with sprite palette row 8 and used by standard/custom sprite previews below.",
                     );
                 }
             } else if let Some(error) = &self.map16_error {
@@ -547,6 +547,9 @@ impl VanillaLevelEditor {
         let (records, placements, sprite_placements) = self.canvas_model();
         let vertical = self.controller.as_ref().is_some_and(|controller| {
             lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
+        });
+        let level_mode = self.controller.as_ref().map_or(0, |controller| {
+            controller.level().layer1.header.level_mode()
         });
         let (width, height) = (
             ui.available_width().max(320.0),
@@ -615,6 +618,7 @@ impl VanillaLevelEditor {
             cursor: response.interact_pointer_pos(),
             selected: self.selected_sprite,
             vertical,
+            level_mode,
             custom_sprites,
             custom_map16,
         });
@@ -1612,6 +1616,7 @@ struct SpritePlacementDraw<'a> {
     cursor: Option<egui::Pos2>,
     selected: usize,
     vertical: bool,
+    level_mode: u8,
     custom_sprites: Option<&'a lm_level::SscResolvedTable>,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
 }
@@ -1626,6 +1631,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         cursor,
         selected,
         vertical,
+        level_mode,
         custom_sprites,
         custom_map16,
     } = request;
@@ -1651,10 +1657,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             .or_else(|| {
                 lm_render::render_lunar_magic_standard_sprite_with_mode(
                     placement.sprite_number,
-                    lm_render::StandardSpritePreviewMode {
-                        placement_first: placement.first_byte,
-                        ..lm_render::StandardSpritePreviewMode::default()
-                    },
+                    standard_sprite_preview_mode(placement, vertical, level_mode),
                 )
             });
         if let (Some(texture), Some(parts)) = (texture, preview) {
@@ -1697,6 +1700,23 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         }
     }
     hit
+}
+
+fn standard_sprite_preview_mode(
+    placement: &lm_level::NativeSpritePlacement,
+    vertical: bool,
+    level_mode: u8,
+) -> lm_render::StandardSpritePreviewMode {
+    lm_render::StandardSpritePreviewMode {
+        placement_first: placement.first_byte,
+        level_mode,
+        level_orientation: if vertical {
+            lm_render::StandardLevelOrientation::Vertical
+        } else {
+            lm_render::StandardLevelOrientation::Horizontal
+        },
+        ..lm_render::StandardSpritePreviewMode::default()
+    }
 }
 
 fn external_sprite_definition(
@@ -1943,6 +1963,32 @@ mod tests {
         let form = SpriteForm::from_token(0, Some(&token));
         assert!(!form.semantic_record);
         assert!(form.semantic_edit(0, Some(&token)).is_err());
+    }
+
+    #[test]
+    fn standard_sprite_preview_receives_level_orientation_and_mode() {
+        let placement = lm_level::NativeSpritePlacement {
+            token_index: 3,
+            first_byte: 0x91,
+            screen: 2,
+            major: 0x24,
+            minor: 9,
+            sprite_number: 0xe5,
+            extra_bits: 1,
+        };
+        let horizontal = standard_sprite_preview_mode(&placement, false, 3);
+        assert_eq!(horizontal.placement_first, 0x91);
+        assert_eq!(horizontal.level_mode, 3);
+        assert_eq!(
+            horizontal.level_orientation,
+            lm_render::StandardLevelOrientation::Horizontal
+        );
+        let vertical = standard_sprite_preview_mode(&placement, true, 7);
+        assert_eq!(vertical.level_mode, 7);
+        assert_eq!(
+            vertical.level_orientation,
+            lm_render::StandardLevelOrientation::Vertical
+        );
     }
 
     #[test]

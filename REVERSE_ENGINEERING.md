@@ -1704,7 +1704,12 @@ requiring hexadecimal record reconstruction. Its selected-record form exposes
 sprite number, screen, X, low Y, and extra bits, disables semantic application
 for expanded control commands, and sends the repacked record through the
 existing revisioned `LevelController` transaction. Raw bytes remain available
-for lossless inspection and advanced edits.
+for lossless inspection and advanced edits. The canvas now forwards the real
+level-mode byte and recovered horizontal/vertical orientation to the standard
+sprite dispatcher in addition to the placement's first byte. This matters for
+the position- and mode-dependent generator handlers (`$E5`–`$EB`), which
+previously always displayed the default horizontal mode-zero variant in the
+Rust GUI despite the renderer already modeling the recovered branches.
 
 ## Typed MWL Layer 1 interoperability
 
