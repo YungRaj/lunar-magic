@@ -10,6 +10,7 @@ use lm_level::MwlFile;
 
 mod optional_import;
 mod optional_panel;
+mod sprite_panel;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -41,6 +42,7 @@ pub(crate) struct MwlEditor {
     optional_interpretation: Option<OptionalAssetsInterpretation>,
     optional_maximum_records: String,
     optional_panel: optional_panel::MwlOptionalAssetsPanel,
+    sprite_panel: sprite_panel::MwlSpritePanel,
     persistence: DocumentPersistence,
     loader: DocumentLoader,
 }
@@ -58,6 +60,7 @@ impl Default for MwlEditor {
             optional_interpretation: None,
             optional_maximum_records: "32".into(),
             optional_panel: optional_panel::MwlOptionalAssetsPanel::default(),
+            sprite_panel: sprite_panel::MwlSpritePanel::default(),
             persistence: DocumentPersistence::default(),
             loader: DocumentLoader::default(),
         }
@@ -178,6 +181,16 @@ impl MwlEditor {
         self.optional_assets_import_controls(ui);
         self.show_optional_assets_panel(ui);
         ui.separator();
+        let sprite_result = self
+            .controller
+            .as_mut()
+            .map(|controller| self.sprite_panel.show(ui, controller));
+        match sprite_result {
+            Some(Ok(true)) => self.invalidate(),
+            Some(Err(error)) => self.error = Some(error),
+            Some(Ok(false)) | None => {}
+        }
+        ui.separator();
         let previous_section = self.form.section_index;
         egui::ComboBox::from_id_salt("mwl-section")
             .selected_text(SECTION_NAMES[self.form.section_index])
@@ -277,6 +290,7 @@ impl MwlEditor {
     fn invalidate(&mut self) {
         self.loaded_header_revision = None;
         self.loaded_section_key = None;
+        self.sprite_panel.invalidate();
     }
 
     fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {
@@ -323,6 +337,7 @@ impl MwlEditor {
         self.pending_load = None;
         self.optional_interpretation = None;
         self.optional_panel.invalidate();
+        self.sprite_panel.invalidate();
         self.invalidate();
     }
 }

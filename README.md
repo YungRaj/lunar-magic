@@ -472,10 +472,12 @@ interactive frontends cannot bypass confirmation and request correlation through
   Binary MWL containers also have a lossless native editor. It preserves the source version and
   exposes only independently recovered flags, the exact 48-byte attribution field, and the level
   number from a valid 64-byte level-header section. All eight sections remain selectable opaque
-  byte streams with their current lengths visible; section replacement is deliberately separate
-  from semantic header edits so one operation cannot silently overwrite the other. Focused MWL
-  forms feed `MwlDocumentController` canonical transactions, undo/redo, recoverable saves, and
-  dirty-document shutdown handling.
+  byte streams with their current lengths visible. A separate typed sprite panel exposes the
+  stream header, ordinary/custom records, expanded screen/control tokens, ordering, and the four
+  revision record-length tables without hiding extension bytes. Section replacement, semantic
+  sprite commits, and header edits remain distinct so one operation cannot silently overwrite
+  another. Focused MWL forms feed `MwlDocumentController` canonical transactions, undo/redo,
+  recoverable saves, and dirty-document shutdown handling.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.
@@ -637,6 +639,13 @@ boundary as one undoable revision. Both the native panel and scripted shell emit
 toolkit-neutral `MwlOptionalAssetsEdit` commands, preventing their mutation semantics from drifting.
 The native panel also exposes targeted frame insertion, replacement, removal, and ordering through
 those same commands instead of rebuilding a whole record in toolkit code.
+The same window now owns a typed sprite panel. It can select legacy or expanded framing, edit the
+stream header, insert/replace/delete/reorder raw records and expanded screen/control tokens, and
+override any of the four 256-entry revision length-table entries for custom records. The panel
+stages changes independently, then delegates one canonical, revision-checked replacement to
+`MwlDocumentController`; malformed lengths, terminator collisions, stale revisions, and invalid
+tokens do not alter document history. The reciprocal Wine oracle proves Lunar Magic 3.63 imports
+the Rust-authored stream and re-exports the same semantics.
 Immutable save snapshots, failed-save retry, newer-edit retention, and dirty quit/EOF protection
 match the other portable editors.
 
