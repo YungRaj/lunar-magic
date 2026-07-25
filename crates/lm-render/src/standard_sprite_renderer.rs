@@ -87,7 +87,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x1c => parts(&[(0x25, 0, 1)]),
         0x1d => parts(&[(0x17, 0, 1)]),
         0x1f => parts(&[(0x18, 0, -15), (0x28, 0, 1)]),
-        0x20..=0x28 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0x20..=0x28 | 0x2a | 0x2b | 0x2e if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0x20 => parts(&[(0x03, 4, 0), (0x04, -4, 8), (0x05, 12, 8)]),
         0x21 => parts(&[(0x1a, 0, 1)]),
         0x22..=0x24 => {
@@ -102,6 +102,20 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x26 => parts(&[(0x34, 4, 1), (0x35, 20, 1), (0x44, 4, 17), (0x45, 20, 17)]),
         0x27 => parts(&[(0x2a, 0, 1)]),
         0x28 => render_handler_28(),
+        0x2a => parts(&[(0x1b, 8, 15), (0x2b, 8, 31)]),
+        0x2b => parts(&[(0x1ce, 0, 0)]),
+        0x2c => {
+            let definition = match mode.placement_first & 3 {
+                0 => 0x71,
+                1 | 3 => 0x72,
+                2 => 0x73,
+                _ => unreachable!(),
+            };
+            parts(&[(definition, 0, 1)])
+        }
+        0x2d => parts(&[(0x80, 0, 1)]),
+        0x2e => parts(&[(0x2d, 0, 1)]),
+        0x2f => parts(&[(0x1e, 0, 1)]),
         _ => None,
     }
 }
@@ -169,11 +183,15 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x017 => [0x098e, 0x099e, 0x098f, 0x099f],
         0x018 => [0x0da0, 0x0db4, 0x0da5, 0x0db5],
         0x01a => [0x08e8, 0x08f8, 0x08e9, 0x08f9],
+        0x01b => [0xd5df, 0xd5cf, 0xd5de, 0xd5ce],
+        0x01e => [0x1428, 0x9428, 0x5428, 0xd428],
         0x024 => [0x018a, 0x019a, 0x018b, 0x019b],
         0x025 => [0x04a6, 0x04b6, 0x04a7, 0x04b7],
         0x026 => [0x50cf, 0x50df, 0x50ce, 0x50de],
         0x028 => [0x0dc4, 0x0dd4, 0x0dc5, 0x0dd5],
         0x02a => [0x05a2, 0x05b2, 0x45a2, 0x45b2],
+        0x02b => [0xd0bf, 0xd0af, 0xd0be, 0xd0ae],
+        0x02d => [0x11ec, 0x11fc, 0x11ed, 0x11fd],
         0x034 => [0x058e, 0x059e, 0x058f, 0x059f],
         0x035 => [0x458e, 0x459e, 0x0419, 0x0419],
         0x044 => [0x05ae, 0x05be, 0x05af, 0x05bf],
@@ -186,6 +204,10 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x062 => [0x552a, 0x553a, 0x5529, 0x5539],
         0x053 => [0x514d, 0x515d, 0x514c, 0x515c],
         0x063 => [0x512a, 0x513a, 0x5129, 0x5139],
+        0x071 => [0x5101, 0x5111, 0x5100, 0x5110],
+        0x072 => [0x4d01, 0x4d11, 0x4d00, 0x4d10],
+        0x073 => [0x4901, 0x4911, 0x4900, 0x4910],
+        0x080 => [0x5681, 0x5691, 0x5680, 0x5690],
         0x0c0 => [0x1980, 0x1990, 0x1981, 0x1991],
         0x0c2 => [0x1984, 0x1994, 0x1985, 0x1995],
         0x0c3 => [0x1986, 0x1996, 0x1987, 0x1997],
@@ -215,6 +237,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x137 => [0x1127, 0x1137, 0x1128, 0x1138],
         0x115 => [0x04e8, 0x04f8, 0x04e9, 0x04f9],
         0x140 => [0x14a0, 0x14b0, 0x14a1, 0x14b1],
+        0x1ce => [0x09f3, 0xc9f3, 0x09ce, 0x09ce],
         _ => return None,
     })
 }
@@ -508,5 +531,41 @@ mod tests {
                 .collect::<Vec<_>>(),
             [0x115]
         );
+    }
+
+    #[test]
+    fn handlers_forty_two_through_forty_seven_preserve_recovered_variants() {
+        let geometry = |sprite, first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(geometry(0x2a, 0), [(0x1b, 8, 15), (0x2b, 8, 31)]);
+        assert_eq!(geometry(0x2b, 0), [(0x1ce, 0, 0)]);
+        assert_eq!(geometry(0x2c, 0), [(0x71, 0, 1)]);
+        assert_eq!(geometry(0x2c, 1), [(0x72, 0, 1)]);
+        assert_eq!(geometry(0x2c, 2), [(0x73, 0, 1)]);
+        assert_eq!(geometry(0x2c, 3), [(0x72, 0, 1)]);
+        assert_eq!(geometry(0x2d, 0), [(0x80, 0, 1)]);
+        assert_eq!(geometry(0x2e, 0), [(0x2d, 0, 1)]);
+        assert_eq!(geometry(0x2f, 0), [(0x1e, 0, 1)]);
+        for sprite in [0x2a, 0x2b, 0x2e] {
+            assert_eq!(
+                render_lunar_magic_standard_sprite(sprite, true)
+                    .unwrap()
+                    .iter()
+                    .map(|part| part.definition_index)
+                    .collect::<Vec<_>>(),
+                [0x115]
+            );
+        }
     }
 }
