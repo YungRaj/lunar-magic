@@ -48,7 +48,11 @@ impl NativeApplication {
         if self.custom_sprite_editor.show(context) {
             self.request_quit(context);
         }
-        if self.native_map16_sidecar_editor.show(context) {
+        let foreground_texture = self.vanilla_level_editor.foreground_texture().cloned();
+        if self
+            .native_map16_sidecar_editor
+            .show(context, foreground_texture.as_ref())
+        {
             self.request_quit(context);
         }
         if self.dsc_sidecar_editor.show(context) {

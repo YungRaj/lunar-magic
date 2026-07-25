@@ -134,6 +134,10 @@ pub(crate) struct VanillaLevelEditor {
 }
 
 impl VanillaLevelEditor {
+    pub(crate) fn foreground_texture(&self) -> Option<&egui::TextureHandle> {
+        self.foreground_texture.as_ref()
+    }
+
     pub(crate) fn handles(app: &AppState) -> bool {
         app.revision_profile().is_none()
             && app.controller_snapshot().is_ok_and(|snapshot| {
@@ -1115,7 +1119,7 @@ fn draw_custom_object_tiles(painter: &egui::Painter, request: CustomObjectDraw<'
     }
 }
 
-fn draw_custom_map16_tile(
+pub(crate) fn draw_custom_map16_tile(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
     target: egui::Rect,

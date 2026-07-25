@@ -90,7 +90,11 @@ impl NativeMap16SidecarEditor {
         false
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        context: &egui::Context,
+        foreground_texture: Option<&egui::TextureHandle>,
+    ) -> bool {
         if let Some(result) = self.loader.show(context) {
             let kind = self.loading_kind.take();
             match result {
@@ -127,7 +131,7 @@ impl NativeMap16SidecarEditor {
             self.clamp_and_load();
             egui::Window::new("Native Map16 Sidecar Editor")
                 .default_size([540.0, 360.0])
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| self.contents(ui, foreground_texture));
         }
         let approved = self.show_close_confirmation(context);
         self.show_error(context);
@@ -184,13 +188,14 @@ impl NativeMap16SidecarEditor {
         }
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui) {
+    fn contents(&mut self, ui: &mut egui::Ui, foreground_texture: Option<&egui::TextureHandle>) {
         self.toolbar(ui);
         ui.separator();
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
-        let kind = match controller.value().kind() {
+        let document_kind = controller.value().kind();
+        let kind = match document_kind {
             NativeMap16SidecarDocumentKind::M16 => ".m16 exact",
             NativeMap16SidecarDocumentKind::S16 => ".s16 sparse canonical",
         };
@@ -220,7 +225,14 @@ impl NativeMap16SidecarEditor {
             }
         }
         if let Some(tile) = current_tile {
-            show_definition_preview(ui, self.form.entry / 2, tile);
+            show_definition_preview(
+                ui,
+                self.form.entry / 2,
+                tile,
+                (document_kind == NativeMap16SidecarDocumentKind::M16)
+                    .then_some(foreground_texture)
+                    .flatten(),
+            );
             ui.horizontal(|ui| {
                 ui.label("Quadrant");
                 for index in 0..4 {
@@ -407,9 +419,18 @@ impl NativeMap16SidecarEditor {
     }
 }
 
-fn show_definition_preview(ui: &mut egui::Ui, index: usize, tile: lm_level::Map16Tile) {
+fn show_definition_preview(
+    ui: &mut egui::Ui,
+    index: usize,
+    tile: lm_level::Map16Tile,
+    texture: Option<&egui::TextureHandle>,
+) {
     ui.separator();
     ui.label(format!("Current decoded definition {index:04X}"));
+    if let Some(texture) = texture {
+        let (response, painter) = ui.allocate_painter(egui::vec2(96.0, 96.0), egui::Sense::hover());
+        crate::vanilla_level_editor::draw_custom_map16_tile(&painter, texture, response.rect, tile);
+    }
     egui::Grid::new("native-map16-definition-preview")
         .spacing([12.0, 6.0])
         .show(ui, |ui| {
