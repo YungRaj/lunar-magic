@@ -100,6 +100,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0xa2
         | 0xa3
         | 0xa5
+        | 0xa7
+        | 0xa8
+        | 0xac
             if mode.alternate_display =>
         {
             parts(&[(0x115, 0, 1)])
@@ -449,6 +452,23 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         }
         0xa4 => parts(&[(0xfb, 0, 0)]),
         0xa5 => parts(&[(0xfc, 0, -8)]),
+        0xa7 => parts(&[(0x1c9, 0, 1), (0x1ca, 16, 1)]),
+        0xa8 => parts(&[(0x19d, 0, 1), (0x18d, -20, 1)]),
+        0xa9 => {
+            let mut values = vec![(0x16d, 0, 1)];
+            for column in 1_i16..=4 {
+                values.push((0x208, -column * 16, 1));
+            }
+            parts(&values)
+        }
+        0xaa => {
+            let mut values = vec![(0x17d, 0, 1)];
+            for column in 1_i16..=4 {
+                values.push((0x16e, column * 16, 1));
+            }
+            parts(&values)
+        }
+        0xac => parts(&[(0x1ac, 0, 0)]),
         _ => None,
     }
 }
@@ -839,7 +859,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0d0 => [0x19a0, 0x19b0, 0x19a1, 0x19b1],
         0x0d1 => [0x19a2, 0x19b2, 0x19a3, 0x19b3],
         0x0d2 => [0x19a4, 0x19b4, 0x19a5, 0x19b5],
-        0x0d3 => [0x19a6, 0x19b6, 0x19a7, 0x19b7],
+        0x0d3 | 0x1c9 => [0x19a6, 0x19b6, 0x19a7, 0x19b7],
         0x0d4 => [0x19e0, 0x19f0, 0x19e1, 0x19f1],
         0x0d5 => [0x1de4, 0x1df4, 0x1de5, 0x1df5],
         0x0d6 => [0x1de6, 0x1df6, 0x1de7, 0x1df7],
@@ -914,6 +934,12 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x171 => [0x9957, 0x9947, 0x9958, 0x9948],
         0x172 => [0xd956, 0xd946, 0xd955, 0xd945],
         0x173 => [0x1939, 0x1819, 0x1819, 0x1819],
+        0x16d => [0x815a, 0x814a, 0x815b, 0x814b],
+        0x16e => [0x016a, 0x017a, 0x016b, 0x017b],
+        0x17d => [0x014a, 0x015a, 0x014b, 0x015b],
+        0x18d => [0x0d8a, 0x0d9a, 0x0d8b, 0x0d9b],
+        0x19d => [0x0dac, 0x0dbc, 0x0dad, 0x0dbd],
+        0x1ac => [0x05c8, 0x05d8, 0x05c9, 0x05d9],
         0x1c1 => [0x1582, 0x1592, 0x1583, 0x1593],
         0x1c2 => [0x1584, 0x1594, 0x1585, 0x1595],
         0x1c3 => [0x1586, 0x1596, 0x1587, 0x1597],
@@ -921,6 +947,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1c6 => [0x0909, 0x0019, 0x0019, 0x0019],
         0x1c7 => [0x090c, 0x091c, 0x090d, 0x091d],
         0x1c8 => [0x090e, 0x091e, 0x090f, 0x091f],
+        0x1ca => [0x19a3, 0x99a3, 0x1819, 0x1819],
         0x1d0 => [0x15a0, 0x15b0, 0x15a1, 0x15b1],
         0x1d1 => [0x15a2, 0x15b2, 0x15a3, 0x15b3],
         0x1d4 => [0x85fa, 0x85ea, 0x85fb, 0x85eb],
@@ -961,6 +988,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1fe => [0x1523, 0x1533, 0x1524, 0x1534],
         0x1ff => [0x1525, 0x1535, 0x1419, 0x1419],
         0x200 => [0x11e2, 0x1419, 0x31e3, 0x1419],
+        0x208 => [0x817a, 0x816a, 0x817b, 0x816b],
         0x20c => [0x2c19, 0x2c19, 0x2c19, 0x0599],
         0x20d => [0x1419, 0x1419, 0x1419, 0x350d],
         0x20e => [0x354e, 0x355e, 0x354f, 0x355f],
@@ -2378,6 +2406,43 @@ mod tests {
                 ),
                 [(0x115, 0, 1)]
             );
+        }
+    }
+
+    #[test]
+    fn handlers_a7_through_ac_preserve_adjacent_cell_chains() {
+        let geometry = |sprite, alternate_display| {
+            render_lunar_magic_standard_sprite(sprite, alternate_display)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(geometry(0xa7, false), [(0x1c9, 0, 1), (0x1ca, 16, 1)]);
+        assert_eq!(geometry(0xa8, false), [(0x19d, 0, 1), (0x18d, -20, 1)]);
+        assert_eq!(
+            geometry(0xa9, false),
+            [
+                (0x16d, 0, 1),
+                (0x208, -16, 1),
+                (0x208, -32, 1),
+                (0x208, -48, 1),
+                (0x208, -64, 1)
+            ]
+        );
+        assert_eq!(
+            geometry(0xaa, false),
+            [
+                (0x17d, 0, 1),
+                (0x16e, 16, 1),
+                (0x16e, 32, 1),
+                (0x16e, 48, 1),
+                (0x16e, 64, 1)
+            ]
+        );
+        assert_eq!(geometry(0xac, false), [(0x1ac, 0, 0)]);
+        for sprite in [0xa7, 0xa8, 0xac] {
+            assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
         }
     }
 }
