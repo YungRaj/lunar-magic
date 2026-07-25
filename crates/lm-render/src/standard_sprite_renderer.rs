@@ -601,6 +601,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (if mode.alternate_display { 0x115 } else { 0x14 }, 0, 1),
             (0x114, 0, -8),
         ]),
+        0xd0 => render_text_lines(&[(" Turn Off ", 0), ("Generator2", 8)]),
         0xd2 => render_handler_d2(),
         0xd3 => parts(&[
             (if mode.alternate_display { 0x115 } else { 0x25 }, 0, 1),
@@ -613,6 +614,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (if mode.alternate_display { 0x115 } else { 0x14d }, 0, 1),
             (0x114, 0, -8),
         ]),
+        0xd7 => render_text_lines(&[(" Turn Off ", 0), ("Generators", 8)]),
         0xd8 | 0xd9 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0xd8 => parts(&[(if mode.alternate_graphics { 0x33 } else { 0x30 }, 0, 1)]),
         0xd9 => parts(&[(if mode.alternate_graphics { 0x32 } else { 0x31 }, 0, 1)]),
@@ -657,6 +659,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xe2 => parts(&[(0x14c, 0, 0), (0x114, 0, 0)]),
         0xe3 => parts(&[(0x1aa, 0, 0), (0x114, 0, 0)]),
         0xe4 => parts(&[(0x14b, 0, 0), (0x114, 0, 0)]),
+        0xe8 => render_text_lines(&[("Layer 2", 0), (" Falls ", 8)]),
+        0xea => render_text_lines(&[("   Layer 2   ", 0), ("On/Off Switch", 8)]),
+        0xec => render_text_lines(&[("Fast BG Scroll", 0)]),
         _ => None,
     }
 }
@@ -820,6 +825,19 @@ fn append_handler_3b30(values: &mut Vec<(u16, i16, i16)>, x_offset: i16) {
     ]);
 }
 
+fn render_text_lines(lines: &[(&str, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
+    let capacity = lines.iter().map(|(text, _)| text.len() * 2).sum();
+    let mut values = Vec::with_capacity(capacity);
+    for &(text, y) in lines {
+        for (column, character) in text.bytes().enumerate() {
+            let x = i16::try_from(column).expect("sprite preview text fits i16") * 8;
+            values.push((0x3c7c, x, y));
+            values.push((0x3c00 + u16::from(character), x, y));
+        }
+    }
+    parts(&values)
+}
+
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
     render_definition_grid(0x1c0, -4, 0)
 }
@@ -963,6 +981,9 @@ fn parts(values: &[(u16, i16, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
 
 #[allow(clippy::too_many_lines)] // Sparse authenticated indices are clearer as one lookup table.
 fn preview_definition(index: u16) -> Option<[u16; 4]> {
+    if (0x3c00..=0x3cff).contains(&index) {
+        return Some([index, 0x0019, 0x0019, 0x0019]);
+    }
     Some(match index & 0x7fff {
         0x001 | 0x116 | 0x11b | 0x12b => [0x0400, 0x0410, 0x0401, 0x0411],
         0x002 => [0x4c87, 0x4c97, 0x4c86, 0x4c96],
@@ -3267,5 +3288,42 @@ mod tests {
         assert_eq!(geometry(0xe2), [(0x14c, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe3), [(0x1aa, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe4), [(0x14b, 0, 0), (0x114, 0, 0)]);
+    }
+
+    #[test]
+    fn fixed_text_handlers_emit_native_background_and_ascii_words() {
+        let geometry = |sprite| {
+            render_lunar_magic_standard_sprite(sprite, false)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>()
+        };
+        let d0 = geometry(0xd0);
+        assert_eq!(d0.len(), (" Turn Off ".len() + "Generator2".len()) * 2);
+        assert_eq!(
+            &d0[..4],
+            &[
+                (0x3c7c, 0, 0),
+                (0x3c20, 0, 0),
+                (0x3c7c, 8, 0),
+                (0x3c54, 8, 0)
+            ]
+        );
+        assert_eq!(&d0[d0.len() - 2..], &[(0x3c7c, 72, 8), (0x3c32, 72, 8)]);
+
+        let d7 = geometry(0xd7);
+        assert_eq!(d7[d7.len() - 1], (0x3c73, 72, 8));
+        let e8 = geometry(0xe8);
+        assert_eq!(e8[1], (0x3c4c, 0, 0));
+        assert_eq!(e8["Layer 2".len() * 2 + 1], (0x3c20, 0, 8));
+        let ea = geometry(0xea);
+        assert_eq!(ea["   Layer 2   ".len() * 2 + 1], (0x3c4f, 0, 8));
+        let ec = geometry(0xec);
+        assert_eq!(ec.len(), "Fast BG Scroll".len() * 2);
+        assert_eq!(ec[1], (0x3c46, 0, 0));
+
+        let direct = render_lunar_magic_standard_sprite(0xec, false).unwrap();
+        assert_eq!(direct[1].subtiles, [0x3c46, 0x0019, 0x0019, 0x0019]);
     }
 }
