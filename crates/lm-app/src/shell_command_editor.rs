@@ -325,8 +325,10 @@ pub(super) fn parse_level_header_edit(argument: &str) -> Result<ShellCommand, Sh
         "background-palette" => LevelHeaderField::BackgroundPalette,
         "mode" => LevelHeaderField::LevelMode,
         "background-color" => LevelHeaderField::BackgroundColor,
+        "sprite-tileset" => LevelHeaderField::SpriteTileset,
         "sprite-palette" => LevelHeaderField::SpritePalette,
         "foreground-palette" => LevelHeaderField::ForegroundPalette,
+        "object-tileset" => LevelHeaderField::ObjectTileset,
         unknown => return Err(ShellCommandError::InvalidLevelHeaderField(unknown.into())),
     };
     let value = u8::try_from(hex_value(value, "level-header")?).map_err(|_| {

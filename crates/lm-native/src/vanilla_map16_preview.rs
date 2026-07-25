@@ -7,6 +7,8 @@ use lm_rom::RomImage;
 pub(crate) struct VanillaMap16Preview {
     pub(crate) image: egui::ColorImage,
     pub(crate) graphics_files: [usize; 4],
+    pub(crate) sprite_image: egui::ColorImage,
+    pub(crate) sprite_graphics_files: [usize; 4],
     pub(crate) common_tiles: usize,
     pub(crate) tileset_tiles: usize,
 }
@@ -36,6 +38,20 @@ pub(crate) fn render(
     let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
         .map_err(|error| error.to_string())?
         .palette;
+    let sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+        &project.rom,
+        usize::from(header.sprite_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    let mut sprite_graphics = Vec::new();
+    for file in sprite_graphics_files {
+        sprite_graphics.push(
+            project
+                .load_graphics_file(file, lm_profile::smw_us_v1_vanilla_graphics_layout())
+                .map_err(|error| error.to_string())?
+                .tiles,
+        );
+    }
     let definitions = map16.editor_graphics_bytes();
     let width = 32 * 16;
     let height = 16 * 16;
@@ -63,9 +79,42 @@ pub(crate) fn render(
     Ok(VanillaMap16Preview {
         image: egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba),
         graphics_files,
+        sprite_image: render_sprite_graphics_atlas(&sprite_graphics, &palette),
+        sprite_graphics_files,
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn render_sprite_graphics_atlas(
+    graphics: &[Vec<IndexedTile>],
+    palette: &Palette,
+) -> egui::ColorImage {
+    const FILE_COLUMNS: usize = 16;
+    const FILE_ROWS: usize = 8;
+    const FILE_WIDTH: usize = FILE_COLUMNS * 8;
+    const FILE_HEIGHT: usize = FILE_ROWS * 8;
+    const WIDTH: usize = FILE_WIDTH * 2;
+    const HEIGHT: usize = FILE_HEIGHT * 2;
+    let mut rgba = vec![0; WIDTH * HEIGHT * 4];
+    for (slot, tiles) in graphics.iter().enumerate().take(4) {
+        let slot_x = slot % 2 * FILE_WIDTH;
+        let slot_y = slot / 2 * FILE_HEIGHT;
+        for (tile_number, tile) in tiles.iter().enumerate().take(FILE_COLUMNS * FILE_ROWS) {
+            let x = slot_x + tile_number % FILE_COLUMNS * 8;
+            let y = slot_y + tile_number / FILE_COLUMNS * 8;
+            draw_subtile(
+                &mut rgba,
+                WIDTH,
+                (x, y),
+                Some(tile),
+                palette,
+                8,
+                (false, false),
+            );
+        }
+    }
+    egui::ColorImage::from_rgba_unmultiplied([WIDTH, HEIGHT], &rgba)
 }
 
 fn draw_subtile(
@@ -128,6 +177,15 @@ mod tests {
         let preview = render(bytes, 0, level.layer1.header).unwrap();
         assert_eq!(preview.image.size, [512, 256]);
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x1b, 0x08]);
+        assert_eq!(preview.sprite_image.size, [256, 128]);
+        assert_eq!(
+            preview.sprite_graphics_files,
+            lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+                &project.rom,
+                usize::from(level.layer1.header.sprite_tileset()),
+            )
+            .unwrap()
+        );
         assert_eq!(preview.common_tiles + preview.tileset_tiles, 512);
     }
 }

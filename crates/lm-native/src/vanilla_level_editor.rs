@@ -21,6 +21,7 @@ struct HeaderForm {
     background_palette: u8,
     level_mode: u8,
     background_color: u8,
+    sprite_tileset: u8,
     sprite_palette: u8,
     foreground_palette: u8,
     object_tileset: u8,
@@ -33,19 +34,21 @@ impl HeaderForm {
             background_palette: header.background_palette(),
             level_mode: header.level_mode(),
             background_color: header.background_color(),
+            sprite_tileset: header.sprite_tileset(),
             sprite_palette: header.sprite_palette(),
             foreground_palette: header.foreground_palette(),
             object_tileset: header.object_tileset(),
         }
     }
 
-    fn edits(self) -> [NativeLevelEdit; 6] {
+    fn edits(self) -> [NativeLevelEdit; 7] {
         [
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(
                 self.background_palette,
             )),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(self.level_mode)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundColor(self.background_color)),
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpriteTileset(self.sprite_tileset)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpritePalette(self.sprite_palette)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ForegroundPalette(
                 self.foreground_palette,
@@ -121,9 +124,10 @@ pub(crate) struct VanillaLevelEditor {
     selected_sprite: usize,
     sprite_form: SpriteForm,
     error: Option<String>,
-    map16_key: Option<(u64, u8)>,
+    map16_key: Option<(u64, u8, u8)>,
     map16_texture: Option<egui::TextureHandle>,
-    map16_summary: Option<([usize; 4], usize, usize)>,
+    sprite_texture: Option<egui::TextureHandle>,
+    map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
     map16_error: Option<String>,
     standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
 }
@@ -240,6 +244,7 @@ impl VanillaLevelEditor {
                 7,
             );
             header_row(ui, "Background color", &mut self.form.background_color, 7);
+            header_row(ui, "Sprite tileset", &mut self.form.sprite_tileset, 15);
             header_row(
                 ui,
                 "Foreground palette",
@@ -318,6 +323,7 @@ impl VanillaLevelEditor {
         self.error = None;
         self.map16_key = None;
         self.map16_texture = None;
+        self.sprite_texture = None;
         self.map16_summary = None;
         self.map16_error = None;
         self.standard_object_map = None;
@@ -334,9 +340,11 @@ impl VanillaLevelEditor {
         ))
         .default_open(true)
         .show(ui, |ui| {
-            let key = (snapshot.revision, object_tileset);
+            let sprite_tileset = self.form.sprite_tileset;
+            let key = (snapshot.revision, object_tileset, sprite_tileset);
             if self.map16_key != Some(key) {
                 self.map16_texture = None;
+                self.sprite_texture = None;
                 self.map16_summary = None;
                 self.map16_error = None;
                 match crate::vanilla_map16_preview::render(
@@ -353,6 +361,7 @@ impl VanillaLevelEditor {
                     Ok(preview) => {
                         self.map16_summary = Some((
                             preview.graphics_files,
+                            preview.sprite_graphics_files,
                             preview.common_tiles,
                             preview.tileset_tiles,
                         ));
@@ -361,15 +370,27 @@ impl VanillaLevelEditor {
                             preview.image,
                             egui::TextureOptions::NEAREST,
                         ));
+                        self.sprite_texture = Some(ui.ctx().load_texture(
+                            format!(
+                                "vanilla-sprite-gfx-{sprite_tileset:X}-{}",
+                                snapshot.revision
+                            ),
+                            preview.sprite_image,
+                            egui::TextureOptions::NEAREST,
+                        ));
                     }
                     Err(error) => self.map16_error = Some(error),
                 }
                 self.map16_key = Some(key);
             }
-            if let Some((files, common, specific)) = self.map16_summary {
+            if let Some((files, sprite_files, common, specific)) = self.map16_summary {
                 ui.label(format!(
                     "GFX{:02X}/GFX{:02X}/GFX{:02X}/GFX{:02X}; {common} common and {specific} tileset-specific definitions",
                     files[0], files[1], files[2], files[3]
+                ));
+                ui.label(format!(
+                    "Sprite set {sprite_tileset:X}: SP1 GFX{:02X}, SP2 GFX{:02X}, SP3 GFX{:02X}, SP4 GFX{:02X}",
+                    sprite_files[0], sprite_files[1], sprite_files[2], sprite_files[3]
                 ));
             }
             if let Some(texture) = &self.map16_texture {
@@ -381,6 +402,12 @@ impl VanillaLevelEditor {
                 ui.small(
                     "Decoded 4bpp pixels, level palette, and flip attributes; pink marks tiles outside the four foreground slots.",
                 );
+                if let Some(sprite_texture) = &self.sprite_texture {
+                    ui.image(sprite_texture);
+                    ui.small(
+                        "Recovered SP1–SP4 graphics assignments, decoded with sprite palette row 8. Sprite-specific tile composition is the next renderer layer.",
+                    );
+                }
             } else if let Some(error) = &self.map16_error {
                 ui.colored_label(egui::Color32::RED, error);
             }

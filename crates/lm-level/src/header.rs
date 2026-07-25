@@ -39,6 +39,12 @@ impl LegacyLevelHeader {
         self.bytes[1] >> 5
     }
 
+    /// Returns the native four-bit sprite GFX set selected by header byte 2.
+    #[must_use]
+    pub const fn sprite_tileset(self) -> u8 {
+        self.bytes[2] & 0x0f
+    }
+
     #[must_use]
     pub const fn sprite_palette(self) -> u8 {
         self.bytes[3] >> 3 & 7
@@ -79,6 +85,15 @@ impl LegacyLevelHeader {
     /// Returns [`HeaderValueError`] for values greater than seven.
     pub fn set_background_color(&mut self, value: u8) -> Result<(), HeaderValueError> {
         set_bits(&mut self.bytes[1], value, 0xe0, 5)
+    }
+
+    /// Preserves byte 2 outside the recovered four-bit sprite GFX set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HeaderValueError`] for values greater than 15.
+    pub fn set_sprite_tileset(&mut self, value: u8) -> Result<(), HeaderValueError> {
+        set_bits(&mut self.bytes[2], value, 0x0f, 0)
     }
 
     /// Preserves byte 3 outside the proven sprite-palette field.
@@ -199,6 +214,7 @@ mod tests {
         header.set_background_palette(2).unwrap();
         header.set_level_mode(3).unwrap();
         header.set_background_color(7).unwrap();
+        header.set_sprite_tileset(6).unwrap();
         header.set_sprite_palette(1).unwrap();
         header.set_foreground_palette(5).unwrap();
         header.set_object_tileset(9).unwrap();
@@ -206,10 +222,11 @@ mod tests {
         assert_eq!(encoded[0] & 0x1f, original[0] & 0x1f);
         assert_eq!(encoded[1] & 0x1f, 3);
         assert_eq!(encoded[1] >> 5, 7);
+        assert_eq!(encoded[2] & 0xf0, original[2] & 0xf0);
+        assert_eq!(header.sprite_tileset(), 6);
         assert_eq!(encoded[3] & 0xc0, original[3] & 0xc0);
         assert_eq!(header.sprite_palette(), 1);
         assert_eq!(header.foreground_palette(), 5);
-        assert_eq!(encoded[2], original[2]);
         assert_eq!(encoded[4] & 0xf0, original[4] & 0xf0);
         assert_eq!(header.object_tileset(), 9);
     }

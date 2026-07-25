@@ -25,6 +25,7 @@ pub enum LegacyHeaderEdit {
     BackgroundPalette(u8),
     LevelMode(u8),
     BackgroundColor(u8),
+    SpriteTileset(u8),
     SpritePalette(u8),
     ForegroundPalette(u8),
     ObjectTileset(u8),
@@ -191,6 +192,7 @@ fn apply_header_edit(level: &mut Level, edit: LegacyHeaderEdit) -> Result<(), He
         }
         LegacyHeaderEdit::LevelMode(value) => level.header.legacy.set_level_mode(value),
         LegacyHeaderEdit::BackgroundColor(value) => level.header.legacy.set_background_color(value),
+        LegacyHeaderEdit::SpriteTileset(value) => level.header.legacy.set_sprite_tileset(value),
         LegacyHeaderEdit::SpritePalette(value) => level.header.legacy.set_sprite_palette(value),
         LegacyHeaderEdit::ForegroundPalette(value) => {
             level.header.legacy.set_foreground_palette(value)

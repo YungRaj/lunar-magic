@@ -103,6 +103,7 @@ fn apply_header_edit(
         LegacyHeaderEdit::BackgroundPalette(value) => layer1.header.set_background_palette(value),
         LegacyHeaderEdit::LevelMode(value) => layer1.header.set_level_mode(value),
         LegacyHeaderEdit::BackgroundColor(value) => layer1.header.set_background_color(value),
+        LegacyHeaderEdit::SpriteTileset(value) => layer1.header.set_sprite_tileset(value),
         LegacyHeaderEdit::SpritePalette(value) => layer1.header.set_sprite_palette(value),
         LegacyHeaderEdit::ForegroundPalette(value) => layer1.header.set_foreground_palette(value),
         LegacyHeaderEdit::ObjectTileset(value) => layer1.header.set_object_tileset(value),

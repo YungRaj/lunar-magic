@@ -201,8 +201,10 @@ fn parse_header(
         "background-palette" => LegacyHeaderEdit::BackgroundPalette(value),
         "mode" => LegacyHeaderEdit::LevelMode(value),
         "background-color" => LegacyHeaderEdit::BackgroundColor(value),
+        "sprite-tileset" => LegacyHeaderEdit::SpriteTileset(value),
         "sprite-palette" => LegacyHeaderEdit::SpritePalette(value),
         "foreground-palette" => LegacyHeaderEdit::ForegroundPalette(value),
+        "object-tileset" => LegacyHeaderEdit::ObjectTileset(value),
         _ => {
             return Err(LevelEditScriptError::InvalidField {
                 line,
@@ -406,5 +408,18 @@ mod tests {
             parse(&long_line),
             Err(LevelEditScriptError::LineTooLong { .. })
         ));
+    }
+
+    #[test]
+    fn parses_both_recovered_tileset_header_fields() {
+        let edits =
+            parse("LMLEDIT1\nheader sprite-tileset 0f\nheader object-tileset 0a\n").unwrap();
+        assert_eq!(
+            edits,
+            [
+                NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpriteTileset(0x0f)),
+                NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ObjectTileset(0x0a)),
+            ]
+        );
     }
 }

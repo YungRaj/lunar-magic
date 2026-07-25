@@ -23,8 +23,10 @@ pub enum LevelHeaderField {
     BackgroundPalette,
     LevelMode,
     BackgroundColor,
+    SpriteTileset,
     SpritePalette,
     ForegroundPalette,
+    ObjectTileset,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

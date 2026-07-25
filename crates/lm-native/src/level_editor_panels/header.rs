@@ -13,15 +13,19 @@ pub(super) fn show_header(
         header.background_palette(),
         header.level_mode(),
         header.background_color(),
+        header.sprite_tileset(),
         header.sprite_palette(),
         header.foreground_palette(),
+        header.object_tileset(),
     ];
     let labels = [
         "Background palette",
         "Level mode",
         "Background color",
+        "Sprite tileset",
         "Sprite palette",
         "Foreground palette",
+        "Object tileset",
     ];
     let mut changed = false;
     changed |= ui
@@ -31,7 +35,11 @@ pub(super) fn show_header(
         .add(egui::Slider::new(&mut sprite_header, 0..=u8::MAX).text("Sprite header"))
         .changed();
     for (index, value) in values.iter_mut().enumerate() {
-        let maximum = if index == 1 { 31 } else { 7 };
+        let maximum = match index {
+            1 => 31,
+            3 | 6 => 15,
+            _ => 7,
+        };
         changed |= ui
             .add(egui::Slider::new(value, 0..=maximum).text(labels[index]))
             .changed();
@@ -41,8 +49,10 @@ pub(super) fn show_header(
             LegacyHeaderEdit::BackgroundPalette(values[0]),
             LegacyHeaderEdit::LevelMode(values[1]),
             LegacyHeaderEdit::BackgroundColor(values[2]),
-            LegacyHeaderEdit::SpritePalette(values[3]),
-            LegacyHeaderEdit::ForegroundPalette(values[4]),
+            LegacyHeaderEdit::SpriteTileset(values[3]),
+            LegacyHeaderEdit::SpritePalette(values[4]),
+            LegacyHeaderEdit::ForegroundPalette(values[5]),
+            LegacyHeaderEdit::ObjectTileset(values[6]),
         ];
         let mut edits = vec![
             CompleteLevelDocumentEdit::Property(LevelPropertyEdit::SetLevelNumber(level_number)),

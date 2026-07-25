@@ -34,10 +34,12 @@ pub(crate) fn edit_level_header(
         shell_command::LevelHeaderField::BackgroundColor => {
             LegacyHeaderEdit::BackgroundColor(value)
         }
+        shell_command::LevelHeaderField::SpriteTileset => LegacyHeaderEdit::SpriteTileset(value),
         shell_command::LevelHeaderField::SpritePalette => LegacyHeaderEdit::SpritePalette(value),
         shell_command::LevelHeaderField::ForegroundPalette => {
             LegacyHeaderEdit::ForegroundPalette(value)
         }
+        shell_command::LevelHeaderField::ObjectTileset => LegacyHeaderEdit::ObjectTileset(value),
     };
     commit_level_edits(
         app,
