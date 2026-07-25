@@ -1,7 +1,7 @@
 use super::{PayloadPointer, PayloadSaveError, PayloadSaveRequest, PayloadSaveResult};
 use crate::{EditBatch, Project, RomTransaction, RomWrite};
 use lm_rats::{AllocationError, FreeSpaceAllocator, ProtectedRange, find_duplicate, parse_at};
-use lm_rom::{RomImage, pc_to_snes};
+use lm_rom::{RomImage, pc_to_snes, snes_to_pc};
 use std::ops::Range;
 
 pub(super) fn expanded_staging_image(
@@ -124,7 +124,17 @@ pub(super) fn stage_request(
             staged[current_pointer_ranges[0].clone()].copy_from_slice(&pointer[..2]);
             if shared_bank {
                 let existing = staged[bank_offset];
-                if existing != pointer[2] {
+                let low_word = u32::from(pointer[0]) | (u32::from(pointer[1]) << 8);
+                let existing_address = (u32::from(existing) << 16) | low_word;
+                let required_address = (u32::from(pointer[2]) << 16) | low_word;
+                let same_mapped_bank = matches!(
+                    (
+                        snes_to_pc(request.mapper, existing_address),
+                        snes_to_pc(request.mapper, required_address)
+                    ),
+                    (Ok(existing_pc), Ok(required_pc)) if existing_pc == required_pc
+                );
+                if !same_mapped_bank {
                     return Err(PayloadSaveError::SharedPointerBankMismatch {
                         bank_offset,
                         existing,

@@ -84,6 +84,34 @@ fn shared_bank_mismatch_is_atomic() {
 }
 
 #[test]
+fn shared_bank_accepts_an_equivalent_low_lorom_mirror() {
+    let mut bytes = vec![0xff; 0x10000];
+    bytes[0x40] = 0x00;
+    let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+    let mut save = request(vec![1, 2, 3]);
+    save.pointer = PayloadPointer::Split {
+        low_word_offset: 0x20,
+        bank_offset: 0x40,
+        shared_bank: true,
+    };
+    save.allocation_policy.protected = vec![ProtectedRange(0x20..0x22), ProtectedRange(0x40..0x41)];
+
+    let result = project.save_tagged_payload(&save).unwrap();
+
+    let encoded = result.snes_pointer.to_le_bytes();
+    assert_eq!(encoded[2], 0x80);
+    assert_eq!(project.rom.read(0x40, 1).unwrap(), &[0x00]);
+    assert_eq!(
+        snes_to_pc(
+            Mapper::LoRom,
+            u32::from_le_bytes([encoded[0], encoded[1], 0, 0])
+        )
+        .unwrap(),
+        result.block.payload.start
+    );
+}
+
+#[test]
 fn failed_allocation_does_not_touch_project() {
     let mut project = Project::new(RomImage::from_bytes(vec![0; 0x8000]).unwrap());
     let original = project.save_snapshot();

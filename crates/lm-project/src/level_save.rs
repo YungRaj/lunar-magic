@@ -97,6 +97,35 @@ impl From<crate::TransactionError> for LevelSaveError {
 }
 
 impl Project {
+    /// Relocates one native sprite stream while retaining its current pointer representation.
+    ///
+    /// This permits a pristine shared-bank stream to grow when the allocation policy is
+    /// deliberately confined to free space in that same bank. The payload allocator validates the
+    /// shared bank byte before committing, publishes a RATS-owned copy, updates the low pointer
+    /// word, and repairs the checksum as one transaction. The old unowned stream is not erased.
+    ///
+    /// # Errors
+    ///
+    /// Rejects incompatible/non-canonical streams, allocation outside a shared pointer bank,
+    /// invalid pointer layouts, exhausted space, and checksum or transaction failures.
+    pub fn relocate_level_sprites_with_checksum(
+        &mut self,
+        layout: LevelRomLayout,
+        level: &LoadedLevelSlot,
+        sprite_lengths: &SpriteLengthTable,
+        checksum_field: usize,
+        options: &LevelSaveOptions,
+    ) -> Result<PayloadSaveResult, LevelSaveError> {
+        let request = sprite_save_request(layout, level, sprite_lengths, options)?;
+        Ok(self
+            .save_tagged_payloads_with_checksum(
+                format!("relocate level {:03x} sprites", level.number),
+                std::slice::from_ref(&request),
+                checksum_field,
+            )?
+            .remove(0))
+    }
+
     /// Replaces a vanilla shared-bank sprite stream without moving it or changing any pointer.
     ///
     /// This is the safe editing path for pristine SMW. A stream may only be replaced when its
@@ -321,13 +350,23 @@ pub(crate) fn level_save_requests(
     sprite_lengths: &SpriteLengthTable,
     options: &LevelSaveOptions,
 ) -> Result<[PayloadSaveRequest; 2], LevelSaveError> {
+    let layer1_request = layer1_save_request(layout, level, options)?;
+    let sprite_request = sprite_save_request(layout, level, sprite_lengths, options)?;
+    Ok([layer1_request, sprite_request])
+}
+
+fn sprite_save_request(
+    layout: LevelRomLayout,
+    level: &LoadedLevelSlot,
+    sprite_lengths: &SpriteLengthTable,
+    options: &LevelSaveOptions,
+) -> Result<PayloadSaveRequest, LevelSaveError> {
     if layout.expanded_sprites != level.sprites.expanded {
         return Err(LevelSaveError::SpriteVariantMismatch {
             layout_expanded: layout.expanded_sprites,
             stream_expanded: level.sprites.expanded,
         });
     }
-    let layer1_request = layer1_save_request(layout, level, options)?;
     let sprites = level.sprites.encode_for_table(sprite_lengths)?;
     let reparsed_sprites =
         NativeSpriteStream::parse(&sprites, level.sprites.expanded, sprite_lengths)
@@ -358,20 +397,17 @@ pub(crate) fn level_save_requests(
             }
         }
     };
-    Ok([
-        layer1_request,
-        PayloadSaveRequest {
-            description: format!("save level {:03x} sprites", level.number),
-            payload: sprites,
-            pointer: sprite_pointer,
-            mapper: layout.mapper,
-            allocation_policy: options.sprite_allocation.clone(),
-            previous_block: options.previous_sprites.clone(),
-            reuse_identical: options.reuse_identical,
-            maximum_payload_len: 0x8000,
-            erase_fill: options.erase_fill,
-        },
-    ])
+    Ok(PayloadSaveRequest {
+        description: format!("save level {:03x} sprites", level.number),
+        payload: sprites,
+        pointer: sprite_pointer,
+        mapper: layout.mapper,
+        allocation_policy: options.sprite_allocation.clone(),
+        previous_block: options.previous_sprites.clone(),
+        reuse_identical: options.reuse_identical,
+        maximum_payload_len: 0x8000,
+        erase_fill: options.erase_fill,
+    })
 }
 
 #[cfg(test)]
@@ -447,11 +483,17 @@ mod tests {
 
     fn shared_bank_project(alias: bool) -> (Project, LoadedLevelSlot) {
         let mut bytes = vec![0xff; 0x8000];
+        bytes[0x20..0x23].copy_from_slice(
+            &lm_rom::pc_to_snes(Mapper::LoRom, 0x140)
+                .unwrap()
+                .to_le_bytes()[..3],
+        );
         bytes[0x30..0x32].copy_from_slice(&[0x00, 0x81]);
         bytes[0x32..0x34].copy_from_slice(if alias { &[0x00, 0x81] } else { &[0x20, 0x81] });
         bytes[0x34] = 0x80;
         bytes[0x100..0x108].copy_from_slice(&[0x10, 0, 0x20, 1, 0x10, 0x30, 2, 0xff]);
         bytes[0x120..0x125].copy_from_slice(&[0x20, 0, 0x40, 3, 0xff]);
+        bytes[0x140..0x146].copy_from_slice(&[0, 0, 0, 0, 0, 0xff]);
         let original = LoadedLevelSlot {
             number: 0,
             layer1: LevelObjectData::parse(&[0, 0, 0, 0, 0, 0xff]).unwrap(),
@@ -534,6 +576,61 @@ mod tests {
             ),
             Err(LevelSaveError::InPlaceSpriteGrowth { .. })
         ));
+        assert_eq!(project.save_snapshot(), before);
+    }
+
+    #[test]
+    fn shared_bank_sprite_growth_relocates_copy_on_write_and_reopens() {
+        let (mut project, original) = shared_bank_project(false);
+        let before = project.save_snapshot();
+        let old_pointer = project.rom.read(0x30, 2).unwrap().to_vec();
+        let old_stream = project.rom.read(0x100, 8).unwrap().to_vec();
+        let mut replacement = original.clone();
+        replacement
+            .sprites
+            .tokens
+            .push(SpriteToken::Record(SpriteRecord {
+                encoded: vec![0, 0, 4],
+            }));
+        let mut options = LevelSaveOptions {
+            layer1_allocation: policy(),
+            sprite_allocation: policy(),
+            previous_layer1: None,
+            previous_sprites: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        options.sprite_allocation.search = 0x200..0x8000;
+        options
+            .sprite_allocation
+            .protected
+            .push(ProtectedRange(0x7fdc..0x7fe0));
+
+        let saved = project
+            .relocate_level_sprites_with_checksum(
+                shared_bank_layout(),
+                &replacement,
+                &SpriteLengthTable::standard(),
+                0x7fdc,
+                &options,
+            )
+            .unwrap();
+
+        assert_ne!(project.rom.read(0x30, 2).unwrap(), old_pointer);
+        assert_eq!(project.rom.read(0x100, 8).unwrap(), old_stream);
+        assert_eq!(saved.snes_pointer.to_le_bytes()[2], 0x80);
+        assert_eq!(
+            project
+                .load_level_slot(
+                    replacement.number,
+                    shared_bank_layout(),
+                    &SpriteLengthTable::standard()
+                )
+                .unwrap()
+                .sprites,
+            replacement.sprites
+        );
+        assert!(project.undo().unwrap());
         assert_eq!(project.save_snapshot(), before);
     }
 

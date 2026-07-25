@@ -18,10 +18,36 @@ impl LevelController {
         description: impl Into<String>,
         options: &LevelSaveOptions,
     ) -> Result<PreparedRomCommit, LevelControllerError> {
+        self.prepare_commit_internal(description.into(), options, false)
+    }
+
+    /// Prepares a commit that may relocate a growing pristine shared-bank sprite stream.
+    ///
+    /// The caller must provide a sprite allocation policy confined to the bank named by the
+    /// shared pointer. Allocation and pointer validation fail atomically if that authority is
+    /// incorrect or the bank has insufficient free space.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same typed errors as [`Self::prepare_commit`], plus allocation or shared-bank
+    /// mismatch errors when relocation is required.
+    pub fn prepare_commit_with_shared_bank_sprite_relocation(
+        &self,
+        description: impl Into<String>,
+        options: &LevelSaveOptions,
+    ) -> Result<PreparedRomCommit, LevelControllerError> {
+        self.prepare_commit_internal(description.into(), options, true)
+    }
+
+    fn prepare_commit_internal(
+        &self,
+        description: String,
+        options: &LevelSaveOptions,
+        relocate_growing_shared_bank_sprites: bool,
+    ) -> Result<PreparedRomCommit, LevelControllerError> {
         let image = RomImage::from_bytes(self.source_file_bytes.clone())
             .map_err(LevelControllerError::Rom)?;
         let before = image.logical_bytes().to_vec();
-        let description = description.into();
         if !self.is_modified() {
             return Ok(PreparedRomCommit {
                 expected_revision: self.revision,
@@ -55,15 +81,30 @@ impl LevelController {
                     )
                     .map_err(LevelControllerError::Save)?;
             }
-            project
-                .save_level_sprites_in_place_with_checksum(
-                    self.layout,
-                    &self.baseline,
-                    &self.level,
-                    &self.sprite_lengths,
-                    self.checksum_field_offset,
-                )
-                .map_err(LevelControllerError::Save)?;
+            let in_place = project.save_level_sprites_in_place_with_checksum(
+                self.layout,
+                &self.baseline,
+                &self.level,
+                &self.sprite_lengths,
+                self.checksum_field_offset,
+            );
+            match in_place {
+                Ok(_) => {}
+                Err(lm_project::LevelSaveError::InPlaceSpriteGrowth { .. })
+                    if relocate_growing_shared_bank_sprites =>
+                {
+                    project
+                        .relocate_level_sprites_with_checksum(
+                            self.layout,
+                            &self.level,
+                            &self.sprite_lengths,
+                            self.checksum_field_offset,
+                            options,
+                        )
+                        .map_err(LevelControllerError::Save)?;
+                }
+                Err(error) => return Err(LevelControllerError::Save(error)),
+            }
         } else {
             project
                 .save_level_slot_with_checksum(

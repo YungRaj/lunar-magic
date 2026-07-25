@@ -8,7 +8,7 @@ use lm_level::{
 };
 use lm_project::LevelSaveOptions;
 use lm_rats::{AllocationPolicy, ProtectedRange};
-use lm_rom::{Mapper, Region, RomImage, SupportedGame};
+use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct EditorKey {
@@ -1707,12 +1707,18 @@ fn prepare_commit(
             ),
         ],
     };
+    let sprite_bank = pristine_sprite_bank_range(&image, layout)?;
     controller
-        .prepare_commit(
+        .prepare_commit_with_shared_bank_sprite_relocation(
             format!("Edit pristine SMW level {:03X}", controller.level().number),
             &LevelSaveOptions {
                 layer1_allocation: allocation.clone(),
-                sprite_allocation: allocation,
+                sprite_allocation: AllocationPolicy {
+                    search: sprite_bank,
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0xff],
+                    protected: allocation.protected.clone(),
+                },
                 previous_layer1: None,
                 previous_sprites: None,
                 reuse_identical: true,
@@ -1721,6 +1727,30 @@ fn prepare_commit(
         )
         .map(lm_app::PreparedRomCommit::into_command)
         .map_err(|error| error.to_string())
+}
+
+fn pristine_sprite_bank_range(
+    image: &RomImage,
+    layout: lm_project::LevelRomLayout,
+) -> Result<std::ops::Range<usize>, String> {
+    let lm_project::SpritePointerTable::SplitSharedBank { bank_offset, .. } = layout.sprites else {
+        return Err("pristine sprite layout does not use a shared bank".into());
+    };
+    let bank = *image
+        .logical_bytes()
+        .get(bank_offset)
+        .ok_or_else(|| "shared sprite bank byte lies outside the ROM".to_owned())?;
+    let first = SnesPointer24::new((u32::from(bank) << 16) | 0x8000)
+        .map_err(|error| error.to_string())?
+        .to_pc(layout.mapper)
+        .map_err(|error| error.to_string())?;
+    let end = first
+        .checked_add(0x8000)
+        .ok_or_else(|| "shared sprite bank range overflows".to_owned())?;
+    if end > image.logical_len() {
+        return Err("shared sprite bank is not fully present in the ROM".into());
+    }
+    Ok(first..end)
 }
 
 #[cfg(test)]
@@ -1820,5 +1850,55 @@ mod tests {
         );
         assert!(pasted_object_edit(&sprite_text, 0).is_err());
         assert!(pasted_sprite_edit(&object_text, 0).is_err());
+    }
+
+    #[test]
+    fn pristine_sprite_growth_relocates_in_the_shared_bank_and_reopens() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let mut controller =
+            LevelController::decode(&snapshot, layout, &SpriteLengthTable::standard()).unwrap();
+        let original_pointer = layout
+            .sprites
+            .read_snes_pointer(
+                &RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap(),
+                0x105,
+            )
+            .unwrap();
+        let token = controller.level().sprites.tokens[0].clone();
+        controller
+            .apply_edits(&[NativeLevelEdit::InsertSprite { index: 1, token }])
+            .unwrap();
+
+        let command = prepare_commit(&controller, &snapshot).unwrap();
+        app.dispatch(command).unwrap();
+
+        let project = app.project().unwrap();
+        assert_eq!(project.rom.logical_len(), 0x80_000);
+        let relocated_pointer = layout
+            .sprites
+            .read_snes_pointer(&project.rom, 0x105)
+            .unwrap();
+        assert_ne!(relocated_pointer, original_pointer);
+        assert_eq!(relocated_pointer.encode()[2], original_pointer.encode()[2]);
+        assert_eq!(
+            project
+                .load_level_slot(0x105, layout, &SpriteLengthTable::standard())
+                .unwrap()
+                .sprites,
+            controller.level().sprites
+        );
+        assert!(
+            lm_rats::parse_at(
+                project.rom.logical_bytes(),
+                relocated_pointer.to_pc(Mapper::LoRom).unwrap() - lm_rats::HEADER_LEN
+            )
+            .is_ok()
+        );
     }
 }
