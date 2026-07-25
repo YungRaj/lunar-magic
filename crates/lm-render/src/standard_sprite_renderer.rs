@@ -11,6 +11,13 @@ pub struct StandardSpritePreviewTile {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum StandardLevelOrientation {
+    #[default]
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StandardSpritePreviewMode {
     pub alternate_display: bool,
     pub alternate_graphics: bool,
@@ -22,6 +29,10 @@ pub struct StandardSpritePreviewMode {
     pub special_display_mode: bool,
     /// First native sprite-record byte used by placement-dependent handlers.
     pub placement_first: u8,
+    /// Lunar Magic's active level-mode selector used by text-based generator previews.
+    pub level_mode: u8,
+    /// Determines which native position nibble text-based generator previews inspect.
+    pub level_orientation: StandardLevelOrientation,
 }
 
 /// Renders the first authenticated family of Lunar Magic standard-sprite previews.
@@ -43,6 +54,8 @@ pub fn render_lunar_magic_standard_sprite(
             animation_phase: 0,
             special_display_mode: false,
             placement_first: 0,
+            level_mode: 0,
+            level_orientation: StandardLevelOrientation::Horizontal,
         },
     )
 }
@@ -659,8 +672,13 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xe2 => parts(&[(0x14c, 0, 0), (0x114, 0, 0)]),
         0xe3 => parts(&[(0x1aa, 0, 0), (0x114, 0, 0)]),
         0xe4 => parts(&[(0x14b, 0, 0), (0x114, 0, 0)]),
+        0xe5 => render_handler_e5(mode),
+        0xe6 => render_handler_e6(mode),
+        0xe7 => render_handler_e7(mode),
         0xe8 => render_text_lines(&[("Layer 2", 0), (" Falls ", 8)]),
+        0xe9 => render_handler_e9(mode),
         0xea => render_text_lines(&[("   Layer 2   ", 0), ("On/Off Switch", 8)]),
+        0xeb => render_handler_eb(mode),
         0xec => render_text_lines(&[("Fast BG Scroll", 0)]),
         _ => None,
     }
@@ -836,6 +854,80 @@ fn render_text_lines(lines: &[(&str, i16)]) -> Option<Vec<StandardSpritePreviewT
         }
     }
     parts(&values)
+}
+
+fn preview_position_nibble(mode: StandardSpritePreviewMode) -> u8 {
+    if mode.level_orientation == StandardLevelOrientation::Vertical {
+        mode.placement_first & 0x0f
+    } else {
+        mode.placement_first >> 4
+    }
+}
+
+fn render_handler_e5(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let position = preview_position_nibble(mode);
+    let label = match (mode.level_mode & 3, position) {
+        (0, 0) => " Special 1 ",
+        (0, 1) => "Special 1-A",
+        (1, 0) => " Special 2 ",
+        (1, 1) => "Special 2-A",
+        (2, 0) => " Special 3 ",
+        (3, 0) => " Special 4 ",
+        _ => "MAY GLITCH!",
+    };
+    render_text_lines(&[("Auto-Scroll", 0), (label, 8)])
+}
+
+fn render_handler_e6(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let position = preview_position_nibble(mode);
+    let label = match (mode.level_mode & 3, position) {
+        (0, 0) => "  Smash-1  ",
+        (1, 0) => "  Smash-2  ",
+        (2, 0) => "  Smash-3  ",
+        _ => "MAY GLITCH!",
+    };
+    render_text_lines(&[("  Layer 2  ", 0), (label, 8)])
+}
+
+fn render_handler_e7(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let position = preview_position_nibble(mode);
+    let label = match (mode.level_mode & 3, position) {
+        (0, 0) => "   Range 12   ",
+        (0 | 2, 1) => "   Range 05   ",
+        (1, 0) => "   Range 08   ",
+        (3, 0) => "   Range 06   ",
+        (3, 1) => "Smash Range 11",
+        _ => " MAY GLITCH!! ",
+    };
+    render_text_lines(&[("Layer 2 Scroll", 0), (label, 8)])
+}
+
+fn render_handler_e9(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let position = preview_position_nibble(mode);
+    let label = match (mode.level_mode & 3, position) {
+        (0, 0) => "Sideways Short",
+        (1, 0) => "Sideways  Long",
+        _ => " MAY GLITCH!! ",
+    };
+    render_text_lines(&[("Layer 2 Scroll", 0), (label, 8)])
+}
+
+fn render_handler_eb(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let position = preview_position_nibble(mode);
+    let label = if mode.level_mode & 3 == 1 {
+        match position {
+            0 | 3 => "  Medium   ",
+            5 => "  Medium 2 ",
+            _ => "   Fast    ",
+        }
+    } else {
+        match position {
+            0 | 4 => "   Slow    ",
+            1 => "  Medium 2 ",
+            _ => "   Fast    ",
+        }
+    };
+    render_text_lines(&[(label, 0), ("Auto-Scroll", 8)])
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
@@ -3325,5 +3417,93 @@ mod tests {
 
         let direct = render_lunar_magic_standard_sprite(0xec, false).unwrap();
         assert_eq!(direct[1].subtiles, [0x3c46, 0x0019, 0x0019, 0x0019]);
+    }
+
+    #[test]
+    fn configured_text_handlers_follow_level_mode_and_position_nibbles() {
+        let line = |sprite, mode: StandardSpritePreviewMode, y| {
+            render_lunar_magic_standard_sprite_with_mode(sprite, mode)
+                .unwrap()
+                .iter()
+                .filter(|part| part.y == y && part.definition_index != 0x3c7c)
+                .map(|part| {
+                    char::from_u32(u32::from(part.definition_index - 0x3c00))
+                        .expect("native preview glyph is ASCII")
+                })
+                .collect::<String>()
+        };
+        assert_eq!(
+            line(0xe5, StandardSpritePreviewMode::default(), 8),
+            " Special 1 "
+        );
+        assert_eq!(
+            line(
+                0xe5,
+                StandardSpritePreviewMode {
+                    placement_first: 0x10,
+                    ..StandardSpritePreviewMode::default()
+                },
+                8
+            ),
+            "Special 1-A"
+        );
+        assert_eq!(
+            line(
+                0xe5,
+                StandardSpritePreviewMode {
+                    level_mode: 3,
+                    ..StandardSpritePreviewMode::default()
+                },
+                8
+            ),
+            " Special 4 "
+        );
+        assert_eq!(
+            line(
+                0xe6,
+                StandardSpritePreviewMode {
+                    level_mode: 2,
+                    ..StandardSpritePreviewMode::default()
+                },
+                8
+            ),
+            "  Smash-3  "
+        );
+        assert_eq!(
+            line(
+                0xe7,
+                StandardSpritePreviewMode {
+                    level_mode: 3,
+                    placement_first: 0x10,
+                    ..StandardSpritePreviewMode::default()
+                },
+                8
+            ),
+            "Smash Range 11"
+        );
+        assert_eq!(
+            line(
+                0xe9,
+                StandardSpritePreviewMode {
+                    level_mode: 1,
+                    ..StandardSpritePreviewMode::default()
+                },
+                8
+            ),
+            "Sideways  Long"
+        );
+        assert_eq!(
+            line(
+                0xeb,
+                StandardSpritePreviewMode {
+                    level_orientation: StandardLevelOrientation::Vertical,
+                    placement_first: 5,
+                    level_mode: 1,
+                    ..StandardSpritePreviewMode::default()
+                },
+                0
+            ),
+            "  Medium 2 "
+        );
     }
 }

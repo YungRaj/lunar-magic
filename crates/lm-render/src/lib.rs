@@ -70,8 +70,8 @@ pub use standard_object_renderer::{
     render_standard_object_stream,
 };
 pub use standard_sprite_renderer::{
-    StandardSpritePreviewMode, StandardSpritePreviewTile, render_lunar_magic_standard_sprite,
-    render_lunar_magic_standard_sprite_with_mode,
+    StandardLevelOrientation, StandardSpritePreviewMode, StandardSpritePreviewTile,
+    render_lunar_magic_standard_sprite, render_lunar_magic_standard_sprite_with_mode,
 };
 pub use viewport::{Point, Viewport, ViewportError, WorldRect};
 pub use viewport_raster::{ViewportRasterError, rasterize_canvas_viewport};
