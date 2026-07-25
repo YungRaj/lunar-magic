@@ -450,22 +450,14 @@ impl VanillaLevelEditor {
     }
 
     fn object_canvas(&mut self, ui: &mut egui::Ui) {
-        let (records, placements, sprite_placements) = self
-            .controller
-            .as_ref()
-            .map(|controller| {
-                (
-                    controller.level().layer1.objects.records.clone(),
-                    controller.level().layer1.objects.native_placements(),
-                    controller.level().sprites.native_placements(),
-                )
-            })
-            .unwrap_or_default();
+        let (records, placements, sprite_placements) = self.canvas_model();
         let vertical = self.controller.as_ref().is_some_and(|controller| {
             lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
         });
-        let width = ui.available_width().max(320.0);
-        let height = if vertical { 420.0 } else { 260.0 };
+        let (width, height) = (
+            ui.available_width().max(320.0),
+            if vertical { 420.0 } else { 260.0 },
+        );
         let (rect, response) =
             ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
         let painter = ui.painter_at(rect);
@@ -523,15 +515,16 @@ impl VanillaLevelEditor {
                 hit = Some(index);
             }
         }
-        let hit_sprite = draw_sprite_placements(
-            &painter,
-            rect,
-            cell,
-            &sprite_placements,
-            response.interact_pointer_pos(),
-            self.selected_sprite,
+        let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
+            painter: &painter,
+            target: rect,
+            cell_size: cell,
+            texture: self.sprite_texture.as_ref(),
+            placements: &sprite_placements,
+            cursor: response.interact_pointer_pos(),
+            selected: self.selected_sprite,
             vertical,
-        );
+        });
         if response.clicked()
             && let Some(index) = hit
             && let Some(record) = records.get(index)
@@ -568,6 +561,25 @@ impl VanillaLevelEditor {
             lm_profile::VanillaObjectFamily::GhostHouse => 4,
         };
         self.standard_object_map.as_ref()?.family(family_index)
+    }
+
+    fn canvas_model(
+        &self,
+    ) -> (
+        Vec<ObjectRecord>,
+        Vec<lm_level::NativeObjectPlacement>,
+        Vec<lm_level::NativeSpritePlacement>,
+    ) {
+        self.controller
+            .as_ref()
+            .map(|controller| {
+                (
+                    controller.level().layer1.objects.records.clone(),
+                    controller.level().layer1.objects.native_placements(),
+                    controller.level().sprites.native_placements(),
+                )
+            })
+            .unwrap_or_default()
     }
 
     fn object_editor(&mut self, ui: &mut egui::Ui) {
@@ -896,7 +908,7 @@ struct RecoveredObjectDraw<'a> {
 
 fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
     ui.label(format!(
-        "Screen-aware {} layout: blue object footprints and red sprite markers; stronger lines mark screen boundaries.",
+        "Screen-aware {} layout: recovered object and sprite artwork with red fallbacks for unresolved sprites; stronger lines mark screen boundaries.",
         if vertical { "vertical" } else { "horizontal" }
     ));
 }
@@ -1013,45 +1025,102 @@ fn draw_object_marker(
     }
 }
 
-fn draw_sprite_placements(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    cell: f32,
-    placements: &[lm_level::NativeSpritePlacement],
+#[derive(Clone, Copy)]
+struct SpritePlacementDraw<'a> {
+    painter: &'a egui::Painter,
+    target: egui::Rect,
+    cell_size: f32,
+    texture: Option<&'a egui::TextureHandle>,
+    placements: &'a [lm_level::NativeSpritePlacement],
     cursor: Option<egui::Pos2>,
     selected: usize,
     vertical: bool,
-) -> Option<usize> {
+}
+
+fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
+    let SpritePlacementDraw {
+        painter,
+        target,
+        cell_size,
+        texture,
+        placements,
+        cursor,
+        selected,
+        vertical,
+    } = request;
     let mut hit = None;
     for placement in placements {
         let (tile_x, tile_y) = placement.tile_coordinates(vertical);
-        let center = rect.min
+        let center = target.min
             + egui::vec2(
-                (f32::from(tile_x) + 0.5) * cell,
-                (f32::from(tile_y) + 0.5) * cell,
+                (f32::from(tile_x) + 0.5) * cell_size,
+                (f32::from(tile_y) + 0.5) * cell_size,
             );
-        let marker = egui::Rect::from_center_size(center, egui::vec2(cell.max(9.0), cell.max(9.0)));
-        painter.rect_filled(
-            marker,
-            marker.width() / 2.0,
+        let marker = egui::Rect::from_center_size(
+            center,
+            egui::vec2(cell_size.max(9.0), cell_size.max(9.0)),
+        );
+        let preview = lm_render::render_lunar_magic_standard_sprite(placement.sprite_number, false);
+        if let (Some(texture), Some(parts)) = (texture, preview) {
+            for part in parts {
+                draw_sprite_atlas_tile(
+                    painter,
+                    texture,
+                    marker.translate(egui::vec2(f32::from(part.x), f32::from(part.y))),
+                    part.tile_index,
+                );
+            }
             if placement.token_index == selected {
-                egui::Color32::LIGHT_RED
-            } else {
-                egui::Color32::from_rgb(220, 70, 70)
-            },
-        );
-        painter.text(
-            marker.center(),
-            egui::Align2::CENTER_CENTER,
-            format!("{:02X}", placement.sprite_number),
-            egui::FontId::monospace(7.0),
-            egui::Color32::WHITE,
-        );
+                painter.rect_stroke(
+                    marker,
+                    marker.width() / 2.0,
+                    egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        } else {
+            painter.rect_filled(
+                marker,
+                marker.width() / 2.0,
+                if placement.token_index == selected {
+                    egui::Color32::LIGHT_RED
+                } else {
+                    egui::Color32::from_rgb(220, 70, 70)
+                },
+            );
+            painter.text(
+                marker.center(),
+                egui::Align2::CENTER_CENTER,
+                format!("{:02X}", placement.sprite_number),
+                egui::FontId::monospace(7.0),
+                egui::Color32::WHITE,
+            );
+        }
         if cursor.is_some_and(|position| marker.contains(position)) {
             hit = Some(placement.token_index);
         }
     }
     hit
+}
+
+fn draw_sprite_atlas_tile(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    tile: u16,
+) {
+    let tile = usize::from(tile);
+    let slot = tile / 128;
+    let within_slot = tile % 128;
+    let column = slot % 2 * 16 + within_slot % 16;
+    let row = slot / 2 * 8 + within_slot / 16;
+    let column = u16::try_from(column).expect("sprite atlas has 32 columns");
+    let row = u16::try_from(row).expect("sprite atlas has 16 rows");
+    let uv = egui::Rect::from_min_max(
+        egui::pos2(f32::from(column) / 32.0, f32::from(row) / 16.0),
+        egui::pos2(f32::from(column + 1) / 32.0, f32::from(row + 1) / 16.0),
+    );
+    painter.image(texture.id(), target, uv, egui::Color32::WHITE);
 }
 
 fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {

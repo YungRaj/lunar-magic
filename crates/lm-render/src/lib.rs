@@ -21,6 +21,7 @@ mod portable_overworld;
 mod portable_palette;
 mod scene;
 mod standard_object_renderer;
+mod standard_sprite_renderer;
 mod viewport;
 mod viewport_raster;
 mod viewport_scene;
@@ -68,6 +69,7 @@ pub use standard_object_renderer::{
     lunar_magic_shared_extended_object_tile, render_mapped_standard_object_stream,
     render_standard_object_stream,
 };
+pub use standard_sprite_renderer::{StandardSpritePreviewTile, render_lunar_magic_standard_sprite};
 pub use viewport::{Point, Viewport, ViewportError, WorldRect};
 pub use viewport_raster::{ViewportRasterError, rasterize_canvas_viewport};
 pub use viewport_scene::draw_scene_viewport;
