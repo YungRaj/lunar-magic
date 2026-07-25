@@ -554,6 +554,7 @@ impl VanillaLevelEditor {
             selected: self.selected_sprite,
             vertical,
             custom_sprites,
+            custom_map16,
         });
         if response.clicked()
             && let Some(index) = hit
@@ -1229,6 +1230,7 @@ struct SpritePlacementDraw<'a> {
     selected: usize,
     vertical: bool,
     custom_sprites: Option<&'a lm_level::SscResolvedTable>,
+    custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
 }
 
 fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
@@ -1242,6 +1244,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         selected,
         vertical,
         custom_sprites,
+        custom_map16,
     } = request;
     let mut hit = None;
     for placement in placements {
@@ -1257,7 +1260,11 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         );
         let preview = custom_sprites
             .and_then(|table| table.default_display(placement.sprite_number, placement.extra_bits))
-            .and_then(lm_render::render_resolved_lunar_magic_custom_sprite)
+            .and_then(|sprite| {
+                lm_render::render_resolved_lunar_magic_custom_sprite_with(sprite, |index| {
+                    external_sprite_definition(custom_map16, index)
+                })
+            })
             .or_else(|| {
                 lm_render::render_lunar_magic_standard_sprite_with_mode(
                     placement.sprite_number,
@@ -1307,6 +1314,22 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         }
     }
     hit
+}
+
+fn external_sprite_definition(
+    document: Option<&lm_app::NativeMap16SidecarDocument>,
+    index: u16,
+) -> Option<[u16; 4]> {
+    let lm_app::NativeMap16SidecarDocument::M16(sidecar) = document? else {
+        return None;
+    };
+    let tile = sidecar.tile(usize::from(index))?;
+    Some([
+        tile.top_left.0,
+        tile.top_right.0,
+        tile.bottom_left.0,
+        tile.bottom_right.0,
+    ])
 }
 
 pub(crate) fn draw_sprite_preview_definition(
@@ -1437,5 +1460,22 @@ mod tests {
             .ordinary_record()
             .is_err()
         );
+    }
+
+    #[test]
+    fn custom_sprite_definitions_use_only_the_m16_domain() {
+        let mut bytes = vec![0; lm_level::M16Sidecar::ENCODED_LEN];
+        bytes[8..16].copy_from_slice(&[0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44]);
+        let m16 =
+            lm_app::NativeMap16SidecarDocument::M16(lm_level::M16Sidecar::decode(&bytes).unwrap());
+        let s16 =
+            lm_app::NativeMap16SidecarDocument::S16(lm_level::S16Sidecar::decode(&bytes).unwrap());
+
+        assert_eq!(
+            external_sprite_definition(Some(&m16), 1),
+            Some([0x1111, 0x2222, 0x3333, 0x4444])
+        );
+        assert_eq!(external_sprite_definition(Some(&s16), 1), None);
+        assert_eq!(external_sprite_definition(Some(&m16), 0x400), None);
     }
 }

@@ -35,6 +35,7 @@ pub use custom_object_renderer::{
 };
 pub use custom_sprite_renderer::{
     render_lunar_magic_custom_sprite, render_resolved_lunar_magic_custom_sprite,
+    render_resolved_lunar_magic_custom_sprite_with,
 };
 pub use editor_overlay::{
     EditorOverlay, EditorOverlayError, GridOverlay, SelectionOverlay, draw_editor_overlays,
