@@ -1640,7 +1640,9 @@ dependencies = [
  "lm-level",
  "lm-oracle",
  "lm-overworld",
+ "lm-profile",
  "lm-project",
+ "lm-rom",
 ]
 
 [[package]]

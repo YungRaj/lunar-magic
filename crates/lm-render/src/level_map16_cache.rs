@@ -71,6 +71,26 @@ impl NativeLevelMap16Cache {
         &self.cells
     }
 
+    pub(crate) fn raw_get(&self, index: usize) -> Result<u16, NativeLevelMap16CacheError> {
+        self.cells
+            .get(index)
+            .copied()
+            .ok_or(NativeLevelMap16CacheError::CellOutOfRange(index))
+    }
+
+    pub(crate) fn raw_set(
+        &mut self,
+        index: usize,
+        tile: u16,
+    ) -> Result<(), NativeLevelMap16CacheError> {
+        let cell = self
+            .cells
+            .get_mut(index)
+            .ok_or(NativeLevelMap16CacheError::CellOutOfRange(index))?;
+        *cell = tile;
+        Ok(())
+    }
+
     /// Reads one mapped cell.
     ///
     /// # Errors

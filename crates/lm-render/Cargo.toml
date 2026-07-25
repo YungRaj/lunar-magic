@@ -12,5 +12,9 @@ lm-overworld = { path = "../lm-overworld" }
 lm-oracle = { path = "../lm-oracle" }
 lm-project = { path = "../lm-project" }
 
+[dev-dependencies]
+lm-profile = { path = "../lm-profile" }
+lm-rom = { path = "../lm-rom" }
+
 [lints]
 workspace = true
