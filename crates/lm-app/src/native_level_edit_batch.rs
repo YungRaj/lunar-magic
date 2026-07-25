@@ -53,6 +53,11 @@ pub(crate) fn apply_native_level_edits(
             NativeLevelEdit::MoveSpriteBefore { from, before } => staged_sprites
                 .move_before(*from, *before)
                 .map_err(|error| LevelControllerError::SpriteEdit { command, error })?,
+            NativeLevelEdit::SortLegacySpritesByScreen { selected } => {
+                staged_sprites
+                    .sort_legacy_records_by_screen(*selected)
+                    .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
+            }
         }
     }
     let encoded_layer = staged_layer1

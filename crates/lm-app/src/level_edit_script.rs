@@ -181,6 +181,9 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
             from: decimal(line, from)?,
             before: decimal(line, before)?,
         }),
+        ["sprite", "sort-screen", selected] => Ok(NativeLevelEdit::SortLegacySpritesByScreen {
+            selected: decimal(line, selected)?,
+        }),
         [command, ..] if !matches!(*command, "header" | "object" | "sprite-header" | "sprite") => {
             Err(LevelEditScriptError::UnknownCommand {
                 line,
@@ -336,9 +339,10 @@ mod tests {
             sprite insert 2 control 90\n\
             sprite replace 0 record 040005\n\
             sprite move 2 0\n\
+            sprite sort-screen 0\n\
             sprite remove 1\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 17);
+        assert_eq!(edits.len(), 18);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert!(matches!(edits[4], NativeLevelEdit::Objects(_)));
         assert!(matches!(
@@ -370,6 +374,10 @@ mod tests {
                 if edits == &[ObjectEdit::SetScreenJumpTarget { index: 0, packed_target: 0x0f1e }]
         ));
         assert!(matches!(edits[10], NativeLevelEdit::SetSpriteHeader(0x10)));
+        assert!(matches!(
+            edits[16],
+            NativeLevelEdit::SortLegacySpritesByScreen { selected: 0 }
+        ));
         assert!(matches!(
             edits[13],
             NativeLevelEdit::InsertSprite {

@@ -6,6 +6,8 @@ pub enum LevelEditError {
     IndexOutOfBounds { index: usize, len: usize },
     LegacyIncompatibleSpriteToken { index: usize },
     LegacyTerminatorCollision { index: usize },
+    ExpandedSpritePositionSort,
+    ShortSpriteRecord { index: usize, len: usize },
 }
 
 impl fmt::Display for LevelEditError {
@@ -74,6 +76,55 @@ impl NativeSpriteStream {
     /// Returns [`LevelEditError::IndexOutOfBounds`] for an invalid source or destination.
     pub fn move_before(&mut self, from: usize, before: usize) -> Result<(), LevelEditError> {
         move_before(&mut self.tokens, from, before)
+    }
+
+    /// Stably restores Lunar Magic's legacy sprite screen ordering.
+    ///
+    /// Returns the selected record's new index. Records on the same screen retain their prior
+    /// priority order.
+    ///
+    /// # Errors
+    ///
+    /// Rejects expanded streams, control tokens, short records, and an invalid selected index
+    /// without changing the stream.
+    pub fn sort_legacy_records_by_screen(
+        &mut self,
+        selected: usize,
+    ) -> Result<usize, LevelEditError> {
+        if selected >= self.tokens.len() {
+            return Err(LevelEditError::IndexOutOfBounds {
+                index: selected,
+                len: self.tokens.len(),
+            });
+        }
+        if self.expanded {
+            return Err(LevelEditError::ExpandedSpritePositionSort);
+        }
+        let mut staged = Vec::with_capacity(self.tokens.len());
+        for (index, token) in self.tokens.iter().cloned().enumerate() {
+            let SpriteToken::Record(record) = &token else {
+                return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+            };
+            let fields = record
+                .native_fields()
+                .map_err(|_| LevelEditError::ShortSpriteRecord {
+                    index,
+                    len: record.encoded.len(),
+                })?;
+            staged.push((fields.screen, index, token));
+        }
+        staged.sort_by_key(|(screen, _, _)| *screen);
+        let Some(new_index) = staged
+            .iter()
+            .position(|(_, original, _)| *original == selected)
+        else {
+            return Err(LevelEditError::IndexOutOfBounds {
+                index: selected,
+                len: staged.len(),
+            });
+        };
+        self.tokens = staged.into_iter().map(|(_, _, token)| token).collect();
+        Ok(new_index)
     }
 
     /// Changes the stream format after validating lossless legacy compatibility.
@@ -158,6 +209,12 @@ mod tests {
         })
     }
 
+    fn sprite_on_screen(screen: u8, id: u8) -> SpriteToken {
+        SpriteToken::Record(SpriteRecord {
+            encoded: vec![(screen >> 4) << 1, screen & 0x0f, id],
+        })
+    }
+
     #[test]
     fn object_insert_remove_and_move_preserve_expected_order() {
         let mut stream = ObjectStream {
@@ -221,5 +278,51 @@ mod tests {
             stream.set_expanded(false),
             Err(LevelEditError::LegacyTerminatorCollision { index: 0 })
         ));
+    }
+
+    #[test]
+    fn legacy_position_sort_is_stable_and_tracks_the_selected_record() {
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![
+                sprite_on_screen(2, 0x10),
+                sprite_on_screen(0, 0x20),
+                sprite_on_screen(2, 0x30),
+                sprite_on_screen(1, 0x40),
+            ],
+        };
+        assert_eq!(stream.sort_legacy_records_by_screen(0).unwrap(), 2);
+        assert_eq!(
+            stream
+                .tokens
+                .iter()
+                .map(|token| match token {
+                    SpriteToken::Record(record) => record.encoded[2],
+                    SpriteToken::Screen(_) | SpriteToken::Control(_) => unreachable!(),
+                })
+                .collect::<Vec<_>>(),
+            [0x20, 0x40, 0x10, 0x30]
+        );
+    }
+
+    #[test]
+    fn position_sort_failures_are_atomic() {
+        for mut stream in [
+            NativeSpriteStream {
+                header: 0,
+                expanded: true,
+                tokens: vec![sprite(1)],
+            },
+            NativeSpriteStream {
+                header: 0,
+                expanded: false,
+                tokens: vec![SpriteToken::Record(SpriteRecord { encoded: vec![1] })],
+            },
+        ] {
+            let original = stream.clone();
+            assert!(stream.sort_legacy_records_by_screen(0).is_err());
+            assert_eq!(stream, original);
+        }
     }
 }

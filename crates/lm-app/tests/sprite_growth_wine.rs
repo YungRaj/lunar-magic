@@ -27,6 +27,34 @@ fn shared_sprite_bank(image: &RomImage, bank_offset: usize) -> std::ops::Range<u
     first..first + 0x8000
 }
 
+fn insert_and_move_first_sprite(controller: &mut LevelController, lengths: &SpriteLengthTable) {
+    let inserted = controller.level().sprites.tokens[0].clone();
+    controller
+        .apply_edits(&[NativeLevelEdit::InsertSprite {
+            index: 1,
+            token: inserted,
+        }])
+        .unwrap();
+    let mut moved = controller.level().sprites.tokens[0].clone();
+    let SpriteToken::Record(record) = &mut moved else {
+        panic!("level 105 must begin with an ordinary sprite record");
+    };
+    let mut fields = record.native_fields().unwrap();
+    fields.screen = (fields.screen + 1) & 0x1f;
+    fields.x = (fields.x + 2) & 0x0f;
+    fields.y_low = (fields.y_low + 3) & 0x1f;
+    record.set_native_fields(fields, lengths).unwrap();
+    controller
+        .apply_edits(&[
+            NativeLevelEdit::ReplaceSprite {
+                index: 0,
+                token: moved,
+            },
+            NativeLevelEdit::SortLegacySpritesByScreen { selected: 0 },
+        ])
+        .unwrap();
+}
+
 /// Proves that Lunar Magic 3.63 accepts and semantically preserves a sprite stream grown and
 /// relocated by the Rust editor.
 ///
@@ -57,13 +85,7 @@ fn rust_sprite_growth_reopens_with_the_inserted_sprite_in_lunar_magic() {
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
     let lengths = SpriteLengthTable::standard();
     let mut controller = LevelController::decode(&snapshot, layout, &lengths).unwrap();
-    let inserted = controller.level().sprites.tokens[0].clone();
-    controller
-        .apply_edits(&[NativeLevelEdit::InsertSprite {
-            index: 1,
-            token: inserted,
-        }])
-        .unwrap();
+    insert_and_move_first_sprite(&mut controller, &lengths);
     let expected = controller.level().sprites.clone();
 
     let image = RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap();

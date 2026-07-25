@@ -23,6 +23,7 @@ pub enum NativeLevelEdit {
     ReplaceSprite { index: usize, token: SpriteToken },
     RemoveSprite { index: usize },
     MoveSpriteBefore { from: usize, before: usize },
+    SortLegacySpritesByScreen { selected: usize },
 }
 
 #[derive(Debug)]

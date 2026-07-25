@@ -1718,6 +1718,17 @@ and low five Y bits, preserves sprite number and extra bits, and applies the
 semantic record edit transactionally. Drops outside the representable
 32-by-512-tile native space are rejected without mutating the level stream.
 
+The first direct-ROM move oracle exposed one additional native invariant:
+Lunar Magic stably sorts legacy sprite records by their decoded five-bit
+screen after a cross-screen move, preserving the prior priority order among
+records on the same screen. `sort_legacy_records_by_screen` now stages and
+validates that operation, reports the selected record's new index, and rejects
+expanded/control/short streams atomically. Canvas drag batches field
+replacement and sorting in one `LevelController` edit. The strengthened Wine
+test grows and relocates level `$105`'s stream, changes screen/X/Y, invokes the
+stable ordering rule, and receives the exact same sprite stream from Lunar
+Magic 3.63's subsequent MWL export.
+
 The native canvas also supplies the renderer's recovered two-bit animation
 phase. It derives an 8 Hz phase from the GUI clock and requests 125 ms repaints
 only while sprite `$A6` is present. This activates all four authenticated `$A6`

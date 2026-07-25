@@ -704,7 +704,44 @@ impl VanillaLevelEditor {
         self.sprite_form.y_low = fields.y_low;
         self.sprite_form.screen = fields.screen;
         self.sprite_form.x = fields.x;
-        self.apply_sprite_semantic_fields();
+        self.apply_dragged_sprite_fields(index);
+    }
+
+    fn apply_dragged_sprite_fields(&mut self, index: usize) {
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let token = controller.level().sprites.tokens.get(index);
+        let Ok(replacement) = self.sprite_form.semantic_edit(index, token) else {
+            self.error = Some("selected sprite cannot be moved semantically".into());
+            return;
+        };
+        let NativeLevelEdit::ReplaceSprite { token, .. } = &replacement else {
+            unreachable!("semantic sprite edit is always a replacement");
+        };
+        let mut predicted = controller.level().sprites.clone();
+        predicted.tokens[index] = token.clone();
+        let new_index = match predicted.sort_legacy_records_by_screen(index) {
+            Ok(index) => index,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        match controller.apply_edits(&[
+            replacement,
+            NativeLevelEdit::SortLegacySpritesByScreen { selected: index },
+        ]) {
+            Ok(()) => {
+                self.selected_sprite = new_index;
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.get(new_index),
+                );
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
