@@ -1308,6 +1308,30 @@ fn install_shared_handler_aliases(
             },
         )?;
     }
+    install_simple_mapped_handlers(definitions)?;
+    for (command, handler) in [
+        (15, 1),
+        (16, 2),
+        (17, 3),
+        (20, 7),
+        (21, 8),
+        (22, 9),
+        (23, 10),
+        (28, 12),
+        (29, 13),
+        (30, 14),
+        (31, 15),
+        (32, 16),
+        (33, 6),
+    ] {
+        definitions.alias(command, handler)?;
+    }
+    Ok(())
+}
+
+fn install_simple_mapped_handlers(
+    definitions: &mut StandardObjectDefinitionSet,
+) -> Result<(), StandardObjectRenderError> {
     definitions.set_handler(
         28,
         StandardObjectDefinition {
@@ -1315,6 +1339,20 @@ fn install_shared_handler_aliases(
                 width: 1,
                 height: 2,
                 tiles: vec![0x10e, 0x0b8],
+            },
+            extent: ObjectExtent::ParameterNibbles,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::Pattern,
+        },
+    )?;
+    definitions.set_handler(
+        32,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0x065],
             },
             extent: ObjectExtent::ParameterNibbles,
             major_expansion: AxisExpansion::Clamp,
@@ -1337,23 +1375,6 @@ fn install_shared_handler_aliases(
                 renderer: NativeRenderer::Pattern,
             },
         )?;
-    }
-    for (command, handler) in [
-        (15, 1),
-        (16, 2),
-        (17, 3),
-        (20, 7),
-        (21, 8),
-        (22, 9),
-        (23, 10),
-        (28, 12),
-        (29, 13),
-        (30, 14),
-        (31, 15),
-        (32, 16),
-        (33, 6),
-    ] {
-        definitions.alias(command, handler)?;
     }
     Ok(())
 }
@@ -1781,6 +1802,33 @@ mod tests {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_32_fills_its_lookup_tile_rectangle() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 32;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x10, 0x12]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        for major in 0..2 {
+            for minor in 0..3 {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    0x065
                 );
             }
         }
