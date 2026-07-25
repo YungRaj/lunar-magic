@@ -16,6 +16,14 @@ const SHARED_SLOT_002_FILL_TILES: [u8; 8] = [0x3d, 0x3e, 0x3d, 0x3e, 0x3d, 0x3e,
 const SHARED_SLOT_010_TILES: [u8; 16] = [
     0x05, 0x06, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a,
 ];
+const SHARED_SLOT_011_TOP_TILES: [u8; 28] = [
+    0x00, 0x01, 0x04, 0x08, 0x02, 0x03, 0x05, 0x0b, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00,
+    0x85, 0x02, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a, 0x85, 0x01, 0x8a, 0x38,
+];
+const SHARED_SLOT_011_REMAINDER_TILES: [u8; 28] = [
+    0x02, 0x03, 0x05, 0x0b, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00, 0x85, 0x02, 0xa5, 0x59,
+    0x4a, 0x4a, 0x4a, 0x4a, 0x85, 0x01, 0x8a, 0x38, 0xe9, 0x17, 0xaa, 0x20,
+];
 const SHARED_SLOT_008_TILES: [[[u8; 3]; 3]; 2] = [
     [[0x2f, 0x25, 0x32], [0x30, 0x25, 0x33], [0x31, 0x25, 0x34]],
     [[0x39, 0x25, 0x3c], [0x3a, 0x25, 0x3d], [0x3b, 0x25, 0x3e]],
@@ -53,6 +61,7 @@ enum NativeRenderer {
     SharedSlot002,
     SharedSlot008,
     SharedSlot010,
+    SharedSlot011,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -215,6 +224,20 @@ impl StandardObjectDefinitionSet {
         *slot = Some(definition);
         Ok(())
     }
+
+    fn set_handler(
+        &mut self,
+        handler: u8,
+        definition: StandardObjectDefinition,
+    ) -> Result<(), StandardObjectRenderError> {
+        validate_pattern(&definition.pattern)?;
+        let slot = self
+            .handler_definitions
+            .get_mut(usize::from(handler))
+            .ok_or(StandardObjectRenderError::InvalidCommand(handler))?;
+        *slot = Some(definition);
+        Ok(())
+    }
 }
 
 impl Default for StandardObjectDefinitionSet {
@@ -316,6 +339,7 @@ fn render_standard_object_stream_with_map(
             &mut cache,
             layout,
             placement,
+            command,
             record.parameter(),
             definition,
         )?;
@@ -333,6 +357,7 @@ fn render_definition(
     cache: &mut NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
     placement: lm_level::NativeObjectPlacement,
+    command: u8,
     parameter: u8,
     definition: &StandardObjectDefinition,
 ) -> Result<(), StandardObjectRenderError> {
@@ -348,6 +373,9 @@ fn render_definition(
     if definition.renderer == NativeRenderer::SharedSlot008 {
         return render_shared_slot_008(cache, layout, placement, parameter);
     }
+    if definition.renderer == NativeRenderer::SharedSlot011 {
+        return render_shared_slot_011(cache, layout, placement, command, parameter);
+    }
     let (major_span, minor_span) = match definition.extent {
         ObjectExtent::ParameterNibbles => (
             usize::from(placement.major_span),
@@ -360,6 +388,39 @@ fn render_definition(
         ObjectExtent::FixedOne => (1, 1),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
+}
+
+fn render_shared_slot_011(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    command: u8,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let variant = usize::from(
+        command
+            .checked_sub(24)
+            .ok_or(StandardObjectRenderError::InvalidCommand(command))?,
+    );
+    let (&top, &remainder) = SHARED_SLOT_011_TOP_TILES
+        .get(variant)
+        .zip(SHARED_SLOT_011_REMAINDER_TILES.get(variant))
+        .ok_or(StandardObjectRenderError::InvalidCommand(command))?;
+    let major_span = usize::from(parameter >> 4) + 1;
+    let minor_span = usize::from(parameter & 0x0f) + 1;
+    for major_offset in 0..major_span {
+        for minor_offset in 0..minor_span {
+            set_placement_cell(
+                cache,
+                layout,
+                placement,
+                major_offset,
+                minor_offset,
+                u16::from(if major_offset == 0 { top } else { remainder }),
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn render_shared_slot_008(
@@ -838,6 +899,20 @@ fn install_lunar_magic_shared_standard_objects_high(
 fn install_shared_handler_aliases(
     definitions: &mut StandardObjectDefinitionSet,
 ) -> Result<(), StandardObjectRenderError> {
+    definitions.set_handler(
+        11,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0],
+            },
+            extent: ObjectExtent::FixedOne,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::SharedSlot011,
+        },
+    )?;
     for (command, handler) in [
         (15, 1),
         (16, 2),
@@ -1026,6 +1101,35 @@ mod tests {
         assert_eq!(report.rendered_objects, 1);
         assert_eq!(report.cache.cells()[0], 0x133);
         assert_eq!(report.cache.cells()[1], 0x134);
+    }
+
+    #[test]
+    fn mapped_handler_11_uses_the_original_object_id_as_variant() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[51] = 11;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x60, 0x30, 0x11]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        for minor in 0..2 {
+            assert_eq!(
+                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 0, minor)],
+                0x38
+            );
+            assert_eq!(
+                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 1, minor)],
+                0x20
+            );
+        }
     }
 
     #[test]
