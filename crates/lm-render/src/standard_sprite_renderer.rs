@@ -18,6 +18,8 @@ pub struct StandardSpritePreviewMode {
     pub sprite_graphics_mode: u8,
     /// Frame phase used by animated standard-sprite previews.
     pub animation_phase: u8,
+    /// Enables Lunar Magic's context-specific definition overrides.
+    pub special_display_mode: bool,
     /// First native sprite-record byte used by placement-dependent handlers.
     pub placement_first: u8,
 }
@@ -39,6 +41,7 @@ pub fn render_lunar_magic_standard_sprite(
             alternate_graphics: false,
             sprite_graphics_mode: 0,
             animation_phase: 0,
+            special_display_mode: false,
             placement_first: 0,
         },
     )
@@ -109,6 +112,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0xac
         | 0xad
         | 0xaf..=0xb2
+        | 0xb3
             if mode.alternate_display =>
         {
             parts(&[(0x115, 0, 1)])
@@ -501,6 +505,15 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xb0 => parts(&[(0x14d, 0, 1)]),
         0xb1 => parts(&[(0xab, -8, 0), (0xac, 8, 0), (0xbb, 8, 0), (0xbc, 24, 0)]),
         0xb2 => parts(&[(0x13d, 0, 0)]),
+        0xb3 => parts(&[(
+            if mode.special_display_mode && mode.sprite_graphics_mode & 0x0f == 0x0d {
+                0x116
+            } else {
+                0x12d
+            },
+            0,
+            0,
+        )]),
         _ => None,
     }
 }
@@ -743,7 +756,7 @@ fn parts(values: &[(u16, i16, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
 #[allow(clippy::too_many_lines)] // Sparse authenticated indices are clearer as one lookup table.
 fn preview_definition(index: u16) -> Option<[u16; 4]> {
     Some(match index & 0x7fff {
-        0x001 => [0x0400, 0x0410, 0x0401, 0x0411],
+        0x001 | 0x116 => [0x0400, 0x0410, 0x0401, 0x0411],
         0x003 => [0x1188, 0x1019, 0x1019, 0x1019],
         0x004 => [0x0d89, 0x0c19, 0x0c19, 0x0c19],
         0x005 => [0x0998, 0x0819, 0x0819, 0x0819],
@@ -967,6 +980,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x121 => [0x41ab, 0x41bb, 0x41aa, 0x41ba],
         0x122 => [0x01ac, 0x01bc, 0x01ad, 0x01bd],
         0x123 => [0x41ad, 0x41bd, 0x41ac, 0x41bc],
+        0x12d => [0x49ad, 0x49bd, 0x49ac, 0x49bc],
         0x130 => [0x81ba, 0x81aa, 0x81bb, 0x81ab],
         0x131 => [0xc1bb, 0xc1ab, 0xc1ba, 0xc1aa],
         0x132 => [0x81bc, 0x81ac, 0x81bd, 0x81ad],
@@ -2613,5 +2627,36 @@ mod tests {
         for sprite in [0xad, 0xaf, 0xb0, 0xb1, 0xb2] {
             assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
         }
+    }
+
+    #[test]
+    fn handler_b3_selects_the_context_specific_graphics_definition() {
+        let definition = |mode| {
+            render_lunar_magic_standard_sprite_with_mode(0xb3, mode).unwrap()[0].definition_index
+        };
+        assert_eq!(definition(StandardSpritePreviewMode::default()), 0x12d);
+        assert_eq!(
+            definition(StandardSpritePreviewMode {
+                special_display_mode: true,
+                sprite_graphics_mode: 0x0d,
+                ..StandardSpritePreviewMode::default()
+            }),
+            0x116
+        );
+        assert_eq!(
+            definition(StandardSpritePreviewMode {
+                special_display_mode: true,
+                sprite_graphics_mode: 0x0c,
+                ..StandardSpritePreviewMode::default()
+            }),
+            0x12d
+        );
+        assert_eq!(
+            definition(StandardSpritePreviewMode {
+                alternate_display: true,
+                ..StandardSpritePreviewMode::default()
+            }),
+            0x115
+        );
     }
 }
