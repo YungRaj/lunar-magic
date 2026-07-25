@@ -242,7 +242,24 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         }
         0x5f => parts(&[(0x8c, 0, 1), (0x8d, 16, 1)]),
         0x60 => parts(&[(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]),
+        0x61 => render_left_chain(false),
+        0x62 => render_left_chain(true),
+        0x63 => render_left_chain(mode.placement_first & 1 == 0),
         _ => None,
+    }
+}
+
+fn render_left_chain(long: bool) -> Option<Vec<StandardSpritePreviewTile>> {
+    if long {
+        parts(&[
+            (0x7b, -40, -7),
+            (0x6b, -24, -7),
+            (0x6b, -8, -7),
+            (0x6b, 8, -7),
+            (0x7a, 24, -7),
+        ])
+    } else {
+        parts(&[(0x7c, -24, -7), (0x7d, -8, -7), (0x7e, 8, -7)])
     }
 }
 
@@ -1158,5 +1175,34 @@ mod tests {
             geometry(0x60),
             [(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]
         );
+    }
+
+    #[test]
+    fn handlers_ninety_seven_through_ninety_nine_select_left_chains() {
+        let geometry = |sprite, first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        let short = vec![(0x7c, -24, -7), (0x7d, -8, -7), (0x7e, 8, -7)];
+        let long = vec![
+            (0x7b, -40, -7),
+            (0x6b, -24, -7),
+            (0x6b, -8, -7),
+            (0x6b, 8, -7),
+            (0x7a, 24, -7),
+        ];
+        assert_eq!(geometry(0x61, 0), short);
+        assert_eq!(geometry(0x62, 0), long);
+        assert_eq!(geometry(0x63, 0), long);
+        assert_eq!(geometry(0x63, 1), short);
     }
 }
