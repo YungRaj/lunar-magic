@@ -618,6 +618,17 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xd9 => parts(&[(if mode.alternate_graphics { 0x32 } else { 0x31 }, 0, 1)]),
         0xda => parts(&[(if mode.alternate_display { 0x115 } else { 0x32 }, 0, 1)]),
         0xdb => parts(&[(if mode.alternate_display { 0x115 } else { 0x33 }, 0, 1)]),
+        0xdc => {
+            let definition = if mode.alternate_display { 0x115 } else { 0x48 };
+            parts(&[
+                (definition, 0, 16),
+                (definition, -16, -16),
+                (definition, -32, 0),
+                (definition, 16, -16),
+                (definition, 32, 0),
+            ])
+        }
+        0xdd => parts(&[(if mode.alternate_display { 0x115 } else { 0x30 }, 0, 1)]),
         _ => None,
     }
 }
@@ -3156,5 +3167,27 @@ mod tests {
         };
         assert_eq!(alternate_graphics(0xd8), 0x33);
         assert_eq!(alternate_graphics(0xd9), 0x32);
+        assert_eq!(
+            geometry(0xdc, false),
+            [
+                (0x48, 0, 16),
+                (0x48, -16, -16),
+                (0x48, -32, 0),
+                (0x48, 16, -16),
+                (0x48, 32, 0)
+            ]
+        );
+        assert_eq!(
+            geometry(0xdc, true),
+            [
+                (0x115, 0, 16),
+                (0x115, -16, -16),
+                (0x115, -32, 0),
+                (0x115, 16, -16),
+                (0x115, 32, 0)
+            ]
+        );
+        assert_eq!(geometry(0xdd, false), [(0x30, 0, 1)]);
+        assert_eq!(geometry(0xdd, true), [(0x115, 0, 1)]);
     }
 }
