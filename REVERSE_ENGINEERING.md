@@ -1740,6 +1740,18 @@ transitions. Ordinary extension bytes and trailing opaque command-zero controls
 remain byte-exact; interleaved unknown controls, invalid screens, control-record
 selections, and off-canvas drops fail atomically.
 
+`NativeLevelDocumentEditor` now has a stream-native placement canvas. The
+legacy level mode selects horizontal or vertical axes; decoded object spans and
+sprite positions determine a bounded 16-by-512-tile view with strong screen
+boundaries. Ordinary objects render their recovered footprint. Standard
+sprites use the authenticated dispatcher with the real placement byte, level
+mode, and orientation, displaying each composite part's recovered signed
+geometry; unresolved/custom records remain clearly labeled markers. Hit
+testing includes the complete standard composite and loads the exact object or
+sprite semantic form. Since `LMLVL1` carries no graphics, palette, SSC, OSC, or
+Map16 sidecar payload, this canvas intentionally makes no unsupported artwork
+claim.
+
 The reciprocal MWL Wine oracle inserts an object, moves the original from its
 source screen to screen `$02`, and changes both coordinate nibbles. Lunar Magic
 3.63 imports and re-exports the exact canonically transitioned Layer 1 stream,

@@ -8,6 +8,7 @@ use eframe::egui;
 use lm_app::{NativeLevelDocumentController, NativeLevelEdit};
 use lm_level::{NativeLevelFile, SpriteLengthTable};
 
+mod canvas;
 mod panels;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -132,6 +133,8 @@ impl NativeLevelDocumentEditor {
             "Legacy header: {}",
             crate::level_editor_forms::format_bytes(&value.layer1.header.encoded())
         ));
+        ui.separator();
+        self.level_canvas(ui, &value);
         ui.separator();
         self.object_panel(ui, &value);
         ui.separator();
