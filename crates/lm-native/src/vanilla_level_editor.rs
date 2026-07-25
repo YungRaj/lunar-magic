@@ -1063,11 +1063,11 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         let preview = lm_render::render_lunar_magic_standard_sprite(placement.sprite_number, false);
         if let (Some(texture), Some(parts)) = (texture, preview) {
             for part in parts {
-                draw_sprite_atlas_tile(
+                draw_sprite_preview_definition(
                     painter,
                     texture,
                     marker.translate(egui::vec2(f32::from(part.x), f32::from(part.y))),
-                    part.tile_index,
+                    part.subtiles,
                 );
             }
             if placement.token_index == selected {
@@ -1103,23 +1103,48 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
     hit
 }
 
-fn draw_sprite_atlas_tile(
+fn draw_sprite_preview_definition(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
     target: egui::Rect,
-    tile: u16,
+    subtiles: [u16; 4],
 ) {
-    let tile = usize::from(tile);
+    for (quadrant, word) in subtiles.into_iter().enumerate() {
+        let half = target.size() / 2.0;
+        let x = u16::try_from(quadrant % 2).expect("quadrant x fits u16");
+        let y = u16::try_from(quadrant / 2).expect("quadrant y fits u16");
+        let minimum = target.min + egui::vec2(f32::from(x) * half.x, f32::from(y) * half.y);
+        draw_sprite_atlas_subtile(
+            painter,
+            texture,
+            egui::Rect::from_min_size(minimum, half),
+            word,
+        );
+    }
+}
+
+fn draw_sprite_atlas_subtile(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    word: u16,
+) {
+    let tile = usize::from(word & 0x03ff);
     let slot = tile / 128;
     let within_slot = tile % 128;
     let column = slot % 2 * 16 + within_slot % 16;
     let row = slot / 2 * 8 + within_slot / 16;
     let column = u16::try_from(column).expect("sprite atlas has 32 columns");
     let row = u16::try_from(row).expect("sprite atlas has 16 rows");
-    let uv = egui::Rect::from_min_max(
-        egui::pos2(f32::from(column) / 32.0, f32::from(row) / 16.0),
-        egui::pos2(f32::from(column + 1) / 32.0, f32::from(row + 1) / 16.0),
-    );
+    let mut minimum = egui::pos2(f32::from(column) / 32.0, f32::from(row) / 16.0);
+    let mut maximum = egui::pos2(f32::from(column + 1) / 32.0, f32::from(row + 1) / 16.0);
+    if word & 0x4000 != 0 {
+        std::mem::swap(&mut minimum.x, &mut maximum.x);
+    }
+    if word & 0x8000 != 0 {
+        std::mem::swap(&mut minimum.y, &mut maximum.y);
+    }
+    let uv = egui::Rect::from_min_max(minimum, maximum);
     painter.image(texture.id(), target, uv, egui::Color32::WHITE);
 }
 
