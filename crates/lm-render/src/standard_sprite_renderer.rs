@@ -629,6 +629,19 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             ])
         }
         0xdd => parts(&[(if mode.alternate_display { 0x115 } else { 0x30 }, 0, 1)]),
+        0xdf => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
+        0xe0 => parts(&[
+            (0x1a6, -77, -19),
+            (0x1ab, -58, -53),
+            (0x1a8, -26, -75),
+            (0x1a6, 13, -78),
+            (0x1a6, 48, -62),
+            (0x1ab, 73, -32),
+            (0x1a8, 80, 6),
+            (0x1a6, 68, 43),
+            (0x1a6, 40, 70),
+            (0x1ab, 3, 81),
+        ]),
         _ => None,
     }
 }
@@ -1037,7 +1050,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x06b => [0x01eb, 0x01fb, 0x01ec, 0x01fc],
         0x06c => [0x4041, 0x4051, 0x4040, 0x4050],
         0x06d => [0x01a2, 0x01b2, 0x01a3, 0x01b3],
-        0x06f => [0x4589, 0x4599, 0x4588, 0x4598],
+        0x06f | 0x1a6 => [0x4589, 0x4599, 0x4588, 0x4598],
         0x071 | 0x12a => [0x5101, 0x5111, 0x5100, 0x5110],
         0x072 => [0x4d01, 0x4d11, 0x4d00, 0x4d10],
         0x073 => [0x4901, 0x4911, 0x4900, 0x4910],
@@ -1237,6 +1250,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1ac => [0x05c8, 0x05d8, 0x05c9, 0x05d9],
         0x1a4 => [0x5965, 0x5975, 0x5964, 0x5974],
         0x1a5 => [0x518b, 0x519b, 0x518a, 0x519a],
+        0x1a8 => [0x45a9, 0x45b9, 0x45a8, 0x45b8],
+        0x1ab => [0x45ab, 0x45bb, 0x45aa, 0x45ba],
         0x1c1 => [0x1582, 0x1592, 0x1583, 0x1593],
         0x1c2 => [0x1584, 0x1594, 0x1585, 0x1595],
         0x1c3 => [0x1586, 0x1596, 0x1587, 0x1597],
@@ -3189,5 +3204,32 @@ mod tests {
         );
         assert_eq!(geometry(0xdd, false), [(0x30, 0, 1)]);
         assert_eq!(geometry(0xdd, true), [(0x115, 0, 1)]);
+    }
+
+    #[test]
+    fn handlers_df_and_e0_preserve_overlay_and_orbit_geometry() {
+        let geometry = |sprite| {
+            render_lunar_magic_standard_sprite(sprite, false)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(geometry(0xdf), [(0x1b8, 0, 0), (0x114, 0, 0)]);
+        assert_eq!(
+            geometry(0xe0),
+            [
+                (0x1a6, -77, -19),
+                (0x1ab, -58, -53),
+                (0x1a8, -26, -75),
+                (0x1a6, 13, -78),
+                (0x1a6, 48, -62),
+                (0x1ab, 73, -32),
+                (0x1a8, 80, 6),
+                (0x1a6, 68, 43),
+                (0x1a6, 40, 70),
+                (0x1ab, 3, 81)
+            ]
+        );
     }
 }
