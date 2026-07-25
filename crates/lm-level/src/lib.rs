@@ -32,6 +32,8 @@ mod object;
 mod object_editing;
 mod object_fields;
 mod object_placement;
+mod osc_sidecar;
+mod osc_sidecar_resolved;
 mod overworld_settings;
 mod property_editing;
 mod sprite;
@@ -102,6 +104,11 @@ pub use object_fields::{
     ObjectCoordinateNibbles, ObjectFieldError, ObjectScreenJump, ScreenJumpEncoding,
 };
 pub use object_placement::NativeObjectPlacement;
+pub use osc_sidecar::{
+    MAX_OSC_ATTRIBUTES, MAX_OSC_DISPLAY_TILES, MAX_OSC_SOURCE_LEN, MAX_OSC_VALUE_RECORDS,
+    OscDirective, OscDisplayTile, OscEntry, OscObjectSelector, OscSidecar, OscSidecarError,
+};
+pub use osc_sidecar_resolved::{OscResolvedObject, OscResolvedTable};
 pub use overworld_settings::{ExpandedOverworldSettings, ExpandedOverworldSettingsError};
 pub use property_editing::{
     LayerDimensions, LegacyHeaderEdit, LevelLayer, LevelPropertyEdit, LevelPropertyEditError,

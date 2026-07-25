@@ -262,6 +262,14 @@ explicit display triples, `*text*` glyph expansion, four-word palette records, a
 range-remap forms. Display records feed the same recovered preview-definition table as standard
 sprites; malformed lines remain in the preserved source but do not materialize metadata.
 
+The corresponding `.osc` loader at `00445f90` now has a lossless Rust model and resolved
+source-order overlay. Its three hexadecimal header fields select an object family, parameter, and
+flags; ordinary records either target one of five object-definition variants or expand across all
+five, while object types `$00` and `$2D` use the recovered `$140` and `$240` special index ranges.
+The model preserves compact dimensions, clamped 2–15-byte linear records, alternate storage, escaped
+descriptions, signed display triples, eight-word value records, and up to fifteen attribute bytes.
+Resolved display records feed a dedicated custom-object preview boundary.
+
 The custom sidecar pipeline is now connected through `.dsc`, `.m16`, and `.s16` loading. The 32768-entry description-pointer/flag/mapping tables and raw 0x2000-byte `.m16` plus 0x1C000-byte `.s16` buffers have explicit names and array types. Initialization establishes the default custom display/remap sentinels before overrides. The paired SNES BGR555/RGB conversion functions are named separately, including their alternate quantization behavior.
 
 The `.dsc` reader at `LoadAllCustomSidecarMetadata` has now been translated into a focused Rust
