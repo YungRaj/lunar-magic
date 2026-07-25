@@ -1,10 +1,19 @@
 use crate::level_editor_forms;
 use lm_app::NativeLevelEdit;
-use lm_level::{NativeSpriteRecordFields, ObjectEdit, SpriteLengthTable, SpriteToken};
+use lm_level::{
+    NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteLengthTable,
+    SpriteToken,
+};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct NativeLevelRecordForm {
     pub(crate) object: String,
+    pub(crate) object_command: u8,
+    pub(crate) object_parameter: u8,
+    pub(crate) object_first: u8,
+    pub(crate) object_second: u8,
+    pub(crate) object_screen: u16,
+    pub(crate) object_fields_loaded: bool,
     pub(crate) sprite: String,
     pub(crate) sprite_y_low: u8,
     pub(crate) sprite_extra_bits: u8,
@@ -26,6 +35,46 @@ impl NativeLevelRecordForm {
         } else {
             ObjectEdit::Replace { index, record }
         }]))
+    }
+
+    pub(crate) fn load_object(&mut self, record: Option<&ObjectRecord>, screen: Option<u16>) {
+        let Some(record) = record else {
+            self.object.clear();
+            self.object_fields_loaded = false;
+            return;
+        };
+        self.object = level_editor_forms::format_bytes(record.encoded());
+        let coordinates = record.coordinate_nibbles();
+        self.object_command = record.command_id();
+        self.object_parameter = record.parameter();
+        self.object_first = coordinates.first;
+        self.object_second = coordinates.second;
+        self.object_screen = screen.unwrap_or_default();
+        self.object_fields_loaded = screen.is_some();
+    }
+
+    pub(crate) fn object_field_edit(&self, index: usize) -> Result<NativeLevelEdit, String> {
+        if !self.object_fields_loaded {
+            return Err("select an ordinary object before applying semantic fields".into());
+        }
+        Ok(NativeLevelEdit::Objects(vec![
+            ObjectEdit::SetCommandId {
+                index,
+                command_id: self.object_command,
+            },
+            ObjectEdit::SetParameter {
+                index,
+                parameter: self.object_parameter,
+            },
+            ObjectEdit::RelocateOrdinary {
+                index,
+                screen: self.object_screen,
+                coordinates: ObjectCoordinateNibbles {
+                    first: self.object_first,
+                    second: self.object_second,
+                },
+            },
+        ]))
     }
 
     pub(crate) fn sprite_edit(
@@ -179,5 +228,34 @@ mod tests {
 
         form.sprite_number = 0x43;
         assert!(form.sprite_field_edit(4, Some(&token), &lengths).is_err());
+    }
+
+    #[test]
+    fn semantic_object_form_builds_one_atomic_field_and_relocation_batch() {
+        let record = ObjectRecord::new(vec![0x45, 0x26, 0x42, 0xaa]).unwrap();
+        let mut form = NativeLevelRecordForm::default();
+        form.load_object(Some(&record), Some(7));
+        assert!(form.object_fields_loaded);
+        assert_eq!(form.object_command, 0x22);
+        assert_eq!(form.object_parameter, 0x42);
+        assert_eq!((form.object_first, form.object_second), (5, 6));
+        form.object_screen = 9;
+        form.object_first = 3;
+        let NativeLevelEdit::Objects(edits) = form.object_field_edit(4).unwrap() else {
+            panic!("expected object batch");
+        };
+        assert_eq!(
+            edits.last(),
+            Some(&ObjectEdit::RelocateOrdinary {
+                index: 4,
+                screen: 9,
+                coordinates: ObjectCoordinateNibbles {
+                    first: 3,
+                    second: 6,
+                },
+            })
+        );
+        form.load_object(Some(&record), None);
+        assert!(form.object_field_edit(4).is_err());
     }
 }

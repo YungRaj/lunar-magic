@@ -13,18 +13,15 @@ impl NativeLevelDocumentEditor {
             value.layer1.objects.records.len(),
         );
         ui.text_edit_singleline(&mut self.form.object);
+        object_semantic_fields(ui, &mut self.form);
         let mut object_action = None;
+        let mut semantic_action = false;
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load selected").clicked() {
-                self.form.object = value
-                    .layer1
-                    .objects
-                    .records
-                    .get(self.object_index)
-                    .map_or_else(String::new, |r| {
-                        crate::level_editor_forms::format_bytes(r.encoded())
-                    });
+                let screen = object_screen(value, self.object_index);
+                self.form
+                    .load_object(value.layer1.objects.records.get(self.object_index), screen);
             }
             if ui.button("Insert").clicked() {
                 object_action = Some(true);
@@ -35,6 +32,16 @@ impl NativeLevelDocumentEditor {
             if ui.button("Remove").clicked() {
                 object_action = Some(false);
                 self.form.object.clear();
+            }
+            if ui
+                .add_enabled(
+                    self.form.object_fields_loaded
+                        && self.object_index < value.layer1.objects.records.len(),
+                    egui::Button::new("Apply object fields"),
+                )
+                .clicked()
+            {
+                semantic_action = true;
             }
             if ui
                 .add_enabled(
@@ -82,6 +89,9 @@ impl NativeLevelDocumentEditor {
                 self.form.object_edit(self.object_index, insert)
             };
             self.apply_result(edit);
+        }
+        if semantic_action {
+            self.apply_result(self.form.object_field_edit(self.object_index));
         }
     }
 
@@ -197,6 +207,31 @@ fn sprite_field_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8)
     ui.label(label);
     ui.add(egui::DragValue::new(value).range(0..=maximum));
     ui.end_row();
+}
+
+fn object_semantic_fields(
+    ui: &mut egui::Ui,
+    form: &mut crate::native_level_document_form::NativeLevelRecordForm,
+) {
+    egui::Grid::new("native-level-object-semantic-fields").show(ui, |ui| {
+        sprite_field_row(ui, "Command", &mut form.object_command, 0x3f);
+        sprite_field_row(ui, "Parameter", &mut form.object_parameter, 0xff);
+        sprite_field_row(ui, "First coordinate", &mut form.object_first, 0x0f);
+        sprite_field_row(ui, "Second coordinate", &mut form.object_second, 0x0f);
+        ui.label("Screen");
+        ui.add(egui::DragValue::new(&mut form.object_screen).range(0..=0x1f));
+        ui.end_row();
+    });
+}
+
+fn object_screen(value: &NativeLevelFile, index: usize) -> Option<u16> {
+    value
+        .layer1
+        .objects
+        .native_placements()
+        .into_iter()
+        .find(|placement| placement.record_index == index)
+        .map(|placement| placement.screen)
 }
 
 fn sprite_semantic_fields(

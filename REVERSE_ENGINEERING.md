@@ -1754,6 +1754,13 @@ a field change that would select another record width is rejected before
 document history changes. Upper-Y and other control tokens remain explicitly
 raw and disable the semantic action.
 
+The same interpretation-bound editor now loads ordinary object command,
+parameter, coordinate, and resolved absolute-screen fields. Applying the form
+stages command and parameter validation followed by `RelocateOrdinary` in one
+object batch. Custom extension bytes survive both the shape-checked field edits
+and any stable screen reorder; screen jumps and other nonvisible controls do
+not masquerade as editable ordinary objects.
+
 The native canvas also supplies the renderer's recovered two-bit animation
 phase. It derives an 8 Hz phase from the GUI clock and requests 125 ms repaints
 only while sprite `$A6` is present. This activates all four authenticated `$A6`

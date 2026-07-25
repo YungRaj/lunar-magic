@@ -277,4 +277,30 @@ mod tests {
         assert_eq!(stream.records.last(), Some(&control));
         assert_eq!(stream.native_placements()[0].screen, 3);
     }
+
+    #[test]
+    fn relocation_preserves_custom_object_extension_bytes() {
+        let custom = ObjectRecord::new(vec![0x45, 0x26, 0x42, 0xaa]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![object(false, 1, 2, 0x10), custom],
+        };
+        let selected = stream
+            .relocate_ordinary_object(
+                1,
+                4,
+                ObjectCoordinateNibbles {
+                    first: 9,
+                    second: 8,
+                },
+            )
+            .unwrap();
+        assert_eq!(stream.records[selected].encoded()[3], 0xaa);
+        assert_eq!(
+            stream.records[selected].coordinate_nibbles(),
+            ObjectCoordinateNibbles {
+                first: 9,
+                second: 8,
+            }
+        );
+    }
 }

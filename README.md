@@ -506,6 +506,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   fields for installed/custom records. It validates edits against the exact 1,024-byte length table
   loaded with the document, preserves all extension bytes, and rejects sprite-number/extra-bit
   changes that would silently select a different record width.
+  Its object panel likewise exposes command, parameter, coordinate nibbles, and absolute screen for
+  ordinary standard/custom records. One atomic batch validates command/parameter shape and then
+  uses the same transition-preserving relocation engine, retaining custom extension bytes.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.
