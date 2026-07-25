@@ -86,6 +86,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x47
         | 0x4b..=0x50
         | 0x6d..=0x72
+        | 0x84
             if mode.alternate_display =>
         {
             parts(&[(0x115, 0, 1)])
@@ -279,6 +280,43 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x7f => parts(&[(0x0b, 0, 1)]),
         0x81 => render_flagged_variant_handler(mode.placement_first, false),
         0x82 => render_flagged_variant_handler(mode.placement_first, true),
+        0x84 => parts(&[
+            (0xdd, 0, -15),
+            (0xdc, 24, -1),
+            (0xdb, 16, 0),
+            (0xda, 8, 1),
+            (0xdb, 32, 0),
+            (0xd9, 0, 1),
+        ]),
+        0x85 => parts(&[
+            (0x27, -5, 0),
+            (0x27, 5, 1),
+            (0x27, -3, 4),
+            (0x27, 3, 4),
+            (0x9c, 4, 8),
+        ]),
+        0x86 => parts(&[(0x06, 0, 1)]),
+        0x89 => parts(&[(0xde, 0, 0), (0xdf, 16, 0)]),
+        0x8c => {
+            let mut values = Vec::with_capacity(8);
+            for row in 0_i16..4 {
+                values.extend([(0x109, 4, row * 16 + 4), (0x10a, 2, row * 16 + 4)]);
+            }
+            parts(&values)
+        }
+        0x8d => {
+            let spacing = if mode.placement_first & 1 == 0 {
+                128
+            } else {
+                64
+            };
+            parts(&[
+                (0xe9, -8, 0),
+                (0xea, 8, 0),
+                (0xe9, spacing - 8, 0),
+                (0xea, spacing + 8, 0),
+            ])
+        }
         _ => None,
     }
 }
@@ -573,6 +611,13 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0d6 => [0x1de6, 0x1df6, 0x1de7, 0x1df7],
         0x0d7 => [0x09e8, 0x09f8, 0x09e9, 0x09f9],
         0x0d8 => [0x31ec, 0x0019, 0x0019, 0x0019],
+        0x0d9 => [0x098c, 0x099c, 0x098d, 0x099d],
+        0x0da => [0x09c4, 0x09d4, 0x09c5, 0x09d5],
+        0x0db => [0x09c6, 0x09d6, 0x09c7, 0x09d7],
+        0x0dc => [0x09c8, 0x09d8, 0x09c9, 0x09d9],
+        0x0dd => [0x0819, 0x0819, 0x0819, 0x1598],
+        0x0de => [0x09c5, 0x09d5, 0x09c6, 0x09d6],
+        0x0df => [0x49c6, 0x49d6, 0x49c5, 0x49d5],
         0x0e0 => [0x99b0, 0x99a0, 0x99b1, 0x99b1],
         0x0e1 => [0x99b2, 0x99a2, 0x99b3, 0x99a3],
         0x0e2 => [0x19c4, 0x19d4, 0x19c5, 0x19d5],
@@ -582,6 +627,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0e6 => [0x1419, 0x15f2, 0x1419, 0x1419],
         0x0e7 => [0x11f4, 0x1019, 0x11f5, 0x1019],
         0x0e8 => [0x11c8, 0x11d8, 0x1019, 0x11d0],
+        0x0e9 => [0x1580, 0x1590, 0x1581, 0x1591],
+        0x0ea => [0x5581, 0x5591, 0x5580, 0x5590],
         0x0f0 => [0x9990, 0x9980, 0x9991, 0x9981],
         0x0f1 => [0x9992, 0x9982, 0x9993, 0x9983],
         0x0f2 => [0x19e4, 0x19f4, 0x19e5, 0x19f5],
@@ -599,6 +646,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x105 => [0x4849, 0x4859, 0x4848, 0x4858],
         0x106 => [0x480f, 0x481f, 0x480e, 0x481e],
         0x108 => [0x002a, 0x003a, 0x002b, 0x003b],
+        0x109 => [0x047f, 0x0019, 0x0019, 0x0019],
+        0x10a => [0x081d, 0x0019, 0x0019, 0x0019],
         0x124 => [0x5508, 0x5518, 0x5507, 0x5517],
         0x125 => [0x5108, 0x5118, 0x5107, 0x5117],
         0x126 => [0x1507, 0x1517, 0x1508, 0x1518],
@@ -1440,5 +1489,74 @@ mod tests {
         )
         .unwrap();
         assert_eq!(flagged[2].subtiles, preview_definition(0x1a).unwrap());
+    }
+
+    #[test]
+    fn later_handlers_preserve_fixed_and_placement_spaced_shapes() {
+        let geometry = |sprite, first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(0x84, 0),
+            [
+                (0xdd, 0, -15),
+                (0xdc, 24, -1),
+                (0xdb, 16, 0),
+                (0xda, 8, 1),
+                (0xdb, 32, 0),
+                (0xd9, 0, 1)
+            ]
+        );
+        assert_eq!(
+            geometry(0x85, 0),
+            [
+                (0x27, -5, 0),
+                (0x27, 5, 1),
+                (0x27, -3, 4),
+                (0x27, 3, 4),
+                (0x9c, 4, 8)
+            ]
+        );
+        assert_eq!(geometry(0x86, 0), [(0x06, 0, 1)]);
+        assert_eq!(geometry(0x89, 0), [(0xde, 0, 0), (0xdf, 16, 0)]);
+        assert_eq!(
+            geometry(0x8c, 0),
+            [
+                (0x109, 4, 4),
+                (0x10a, 2, 4),
+                (0x109, 4, 20),
+                (0x10a, 2, 20),
+                (0x109, 4, 36),
+                (0x10a, 2, 36),
+                (0x109, 4, 52),
+                (0x10a, 2, 52)
+            ]
+        );
+        assert_eq!(
+            geometry(0x8d, 0),
+            [(0xe9, -8, 0), (0xea, 8, 0), (0xe9, 120, 0), (0xea, 136, 0)]
+        );
+        assert_eq!(
+            geometry(0x8d, 1),
+            [(0xe9, -8, 0), (0xea, 8, 0), (0xe9, 56, 0), (0xea, 72, 0)]
+        );
+        assert_eq!(
+            render_lunar_magic_standard_sprite(0x84, true)
+                .unwrap()
+                .iter()
+                .map(|part| part.definition_index)
+                .collect::<Vec<_>>(),
+            [0x115]
+        );
     }
 }
