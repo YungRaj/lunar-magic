@@ -754,6 +754,7 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error.to_string()),
                 }
             }
+            self.object_move_buttons(ui, record_count);
         });
     }
 
@@ -879,6 +880,7 @@ impl VanillaLevelEditor {
                     Err(error) => self.error = Some(error.to_string()),
                 }
             }
+            self.sprite_move_buttons(ui, token_count);
         });
     }
 
@@ -922,6 +924,83 @@ impl VanillaLevelEditor {
             Err(error) => self.error = Some(error.to_string()),
         }
     }
+
+    fn move_object(&mut self, record_count: usize, down: bool) {
+        let Some((before, selected)) =
+            move_before_indexes(self.selected_object, record_count, down)
+        else {
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::MoveBefore {
+            from: self.selected_object,
+            before,
+        }])]) {
+            Ok(()) => {
+                self.selected_object = selected;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn object_move_buttons(&mut self, ui: &mut egui::Ui, record_count: usize) {
+        if ui
+            .add_enabled(self.selected_object > 0, egui::Button::new("Move up"))
+            .clicked()
+        {
+            self.move_object(record_count, false);
+        }
+        if ui
+            .add_enabled(
+                self.selected_object.saturating_add(1) < record_count,
+                egui::Button::new("Move down"),
+            )
+            .clicked()
+        {
+            self.move_object(record_count, true);
+        }
+    }
+
+    fn move_sprite(&mut self, token_count: usize, down: bool) {
+        let Some((before, selected)) = move_before_indexes(self.selected_sprite, token_count, down)
+        else {
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_edits(&[NativeLevelEdit::MoveSpriteBefore {
+            from: self.selected_sprite,
+            before,
+        }]) {
+            Ok(()) => {
+                self.selected_sprite = selected;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn sprite_move_buttons(&mut self, ui: &mut egui::Ui, token_count: usize) {
+        if ui
+            .add_enabled(self.selected_sprite > 0, egui::Button::new("Move up"))
+            .clicked()
+        {
+            self.move_sprite(token_count, false);
+        }
+        if ui
+            .add_enabled(
+                self.selected_sprite.saturating_add(1) < token_count,
+                egui::Button::new("Move down"),
+            )
+            .clicked()
+        {
+            self.move_sprite(token_count, true);
+        }
+    }
 }
 
 const fn sprite_insertion_index(selected: usize, token_count: usize) -> usize {
@@ -929,6 +1008,20 @@ const fn sprite_insertion_index(selected: usize, token_count: usize) -> usize {
         selected + 1
     } else {
         token_count
+    }
+}
+
+const fn move_before_indexes(selected: usize, count: usize, down: bool) -> Option<(usize, usize)> {
+    if down {
+        if selected.saturating_add(1) < count {
+            Some((selected + 2, selected + 1))
+        } else {
+            None
+        }
+    } else if selected > 0 && selected < count {
+        Some((selected - 1, selected - 1))
+    } else {
+        None
     }
 }
 
@@ -1523,5 +1616,14 @@ mod tests {
         assert_eq!(sprite_insertion_index(0, 3), 1);
         assert_eq!(sprite_insertion_index(2, 3), 3);
         assert_eq!(sprite_insertion_index(99, 3), 3);
+    }
+
+    #[test]
+    fn move_buttons_translate_to_pre_move_before_indexes() {
+        assert_eq!(move_before_indexes(1, 4, false), Some((0, 0)));
+        assert_eq!(move_before_indexes(1, 4, true), Some((3, 2)));
+        assert_eq!(move_before_indexes(2, 3, true), None);
+        assert_eq!(move_before_indexes(0, 3, false), None);
+        assert_eq!(move_before_indexes(9, 3, false), None);
     }
 }
