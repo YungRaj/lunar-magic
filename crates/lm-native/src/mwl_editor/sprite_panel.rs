@@ -1,7 +1,9 @@
 use crate::level_editor_forms;
 use eframe::egui;
 use lm_app::MwlDocumentController;
-use lm_level::{NativeSpriteStream, SpriteLengthTable, SpriteRecord, SpriteToken};
+use lm_level::{
+    NativeSpriteRecordFields, NativeSpriteStream, SpriteLengthTable, SpriteRecord, SpriteToken,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TokenKind {
@@ -22,6 +24,11 @@ pub(super) struct MwlSpritePanel {
     length_table: String,
     length_id: String,
     length_value: String,
+    y_low: String,
+    extra_bits: String,
+    screen: String,
+    x: String,
+    sprite_number: String,
 }
 
 impl Default for MwlSpritePanel {
@@ -38,6 +45,11 @@ impl Default for MwlSpritePanel {
             length_table: "0".into(),
             length_id: "00".into(),
             length_value: "03".into(),
+            y_low: String::new(),
+            extra_bits: String::new(),
+            screen: String::new(),
+            x: String::new(),
+            sprite_number: String::new(),
         }
     }
 }
@@ -109,9 +121,20 @@ impl MwlSpritePanel {
             .max_height(180.0)
             .show(ui, |ui| {
                 let tokens = &self.stream.as_ref().expect("loaded sprite stream").tokens;
+                let placements = self
+                    .stream
+                    .as_ref()
+                    .expect("loaded sprite stream")
+                    .native_placements();
                 for (index, token) in tokens.iter().enumerate() {
+                    let placement = placements
+                        .iter()
+                        .find(|placement| placement.token_index == index);
                     if ui
-                        .selectable_label(self.selected == index, token_label(index, token))
+                        .selectable_label(
+                            self.selected == index,
+                            token_label(index, token, placement),
+                        )
                         .clicked()
                     {
                         new_selection = Some(index);
@@ -126,17 +149,18 @@ impl MwlSpritePanel {
         egui::ComboBox::from_id_salt("mwl-sprite-token-kind")
             .selected_text(match self.kind {
                 TokenKind::Record => "Record bytes",
-                TokenKind::Screen => "Screen token",
+                TokenKind::Screen => "Upper-Y token",
                 TokenKind::Control => "Control token",
             })
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut self.kind, TokenKind::Record, "Record bytes");
-                ui.selectable_value(&mut self.kind, TokenKind::Screen, "Screen token");
+                ui.selectable_value(&mut self.kind, TokenKind::Screen, "Upper-Y token");
                 ui.selectable_value(&mut self.kind, TokenKind::Control, "Control token");
             });
         ui.text_edit_singleline(&mut self.value);
         self.token_controls(ui)?;
         self.reorder_controls(ui)?;
+        self.semantic_controls(ui)?;
 
         let mut committed = false;
         if ui.button("Commit typed sprite stream").clicked() {
@@ -182,6 +206,54 @@ impl MwlSpritePanel {
         let length = level_editor_forms::parse_hex_u8(&self.length_value, "sprite record length")?;
         self.lengths
             .set(table, id, length)
+            .map_err(|error| error.to_string())
+    }
+
+    fn semantic_controls(&mut self, ui: &mut egui::Ui) -> Result<(), String> {
+        if !matches!(
+            self.stream
+                .as_ref()
+                .and_then(|stream| stream.tokens.get(self.selected)),
+            Some(SpriteToken::Record(_))
+        ) {
+            return Ok(());
+        }
+        ui.label("Recovered `yyyyEESY / XXXXssss / NNNNNNNN` fields (hex):");
+        egui::Grid::new("mwl-sprite-semantic-fields")
+            .num_columns(2)
+            .show(ui, |ui| {
+                field(ui, "Y low 5 bits", &mut self.y_low);
+                field(ui, "Extra bits", &mut self.extra_bits);
+                field(ui, "Screen", &mut self.screen);
+                field(ui, "X", &mut self.x);
+                field(ui, "Sprite number", &mut self.sprite_number);
+            });
+        if ui.button("Stage recovered sprite fields").clicked() {
+            self.stage_semantic_fields()?;
+            self.load_form();
+        }
+        Ok(())
+    }
+
+    fn stage_semantic_fields(&mut self) -> Result<(), String> {
+        let fields = NativeSpriteRecordFields {
+            y_low: level_editor_forms::parse_hex_u8(&self.y_low, "sprite Y low bits")?,
+            extra_bits: level_editor_forms::parse_hex_u8(&self.extra_bits, "sprite extra bits")?,
+            screen: level_editor_forms::parse_hex_u8(&self.screen, "sprite screen")?,
+            x: level_editor_forms::parse_hex_u8(&self.x, "sprite X")?,
+            sprite_number: level_editor_forms::parse_hex_u8(&self.sprite_number, "sprite number")?,
+        };
+        let Some(SpriteToken::Record(record)) = self
+            .stream
+            .as_mut()
+            .expect("loaded sprite stream")
+            .tokens
+            .get_mut(self.selected)
+        else {
+            return Err("select an ordinary sprite record to edit fields".into());
+        };
+        record
+            .set_native_fields(fields, &self.lengths)
             .map_err(|error| error.to_string())
     }
 
@@ -265,20 +337,32 @@ impl MwlSpritePanel {
         let Some(token) = stream.tokens.get(self.selected) else {
             self.kind = TokenKind::Record;
             self.value.clear();
+            self.clear_semantic_form();
             return;
         };
         match token {
             SpriteToken::Record(record) => {
                 self.kind = TokenKind::Record;
                 self.value = level_editor_forms::format_bytes(&record.encoded);
+                if let Ok(fields) = record.native_fields() {
+                    self.y_low = format!("{:02X}", fields.y_low);
+                    self.extra_bits = format!("{:X}", fields.extra_bits);
+                    self.screen = format!("{:02X}", fields.screen);
+                    self.x = format!("{:X}", fields.x);
+                    self.sprite_number = format!("{:02X}", fields.sprite_number);
+                } else {
+                    self.clear_semantic_form();
+                }
             }
             SpriteToken::Screen(value) => {
                 self.kind = TokenKind::Screen;
                 self.value = format!("{value:02X}");
+                self.clear_semantic_form();
             }
             SpriteToken::Control(value) => {
                 self.kind = TokenKind::Control;
                 self.value = format!("{value:02X}");
+                self.clear_semantic_form();
             }
         }
     }
@@ -290,7 +374,7 @@ impl MwlSpritePanel {
             })),
             TokenKind::Screen => Ok(SpriteToken::Screen(level_editor_forms::parse_hex_u8(
                 &self.value,
-                "sprite screen token",
+                "sprite upper-Y token",
             )?)),
             TokenKind::Control => Ok(SpriteToken::Control(level_editor_forms::parse_hex_u8(
                 &self.value,
@@ -298,17 +382,50 @@ impl MwlSpritePanel {
             )?)),
         }
     }
+
+    fn clear_semantic_form(&mut self) {
+        self.y_low.clear();
+        self.extra_bits.clear();
+        self.screen.clear();
+        self.x.clear();
+        self.sprite_number.clear();
+    }
 }
 
-fn token_label(index: usize, token: &SpriteToken) -> String {
+fn token_label(
+    index: usize,
+    token: &SpriteToken,
+    placement: Option<&lm_level::NativeSpritePlacement>,
+) -> String {
     match token {
-        SpriteToken::Record(record) => format!(
-            "{index:03}: record {}",
-            level_editor_forms::format_bytes(&record.encoded)
+        SpriteToken::Record(record) => placement.map_or_else(
+            || {
+                format!(
+                    "{index:03}: record {}",
+                    level_editor_forms::format_bytes(&record.encoded)
+                )
+            },
+            |placement| {
+                format!(
+                    "{index:03}: sprite {:02X} screen {:02X} X {:X} Y {:03X} extra {} · {}",
+                    placement.sprite_number,
+                    placement.screen,
+                    placement.major & 0x0f,
+                    placement.minor,
+                    placement.extra_bits,
+                    level_editor_forms::format_bytes(&record.encoded)
+                )
+            },
         ),
-        SpriteToken::Screen(value) => format!("{index:03}: screen {value:02X}"),
+        SpriteToken::Screen(value) => format!("{index:03}: upper Y {value:02X}"),
         SpriteToken::Control(value) => format!("{index:03}: control {value:02X}"),
     }
+}
+
+fn field(ui: &mut egui::Ui, label: &str, value: &mut String) {
+    ui.label(label);
+    ui.text_edit_singleline(value);
+    ui.end_row();
 }
 
 #[cfg(test)]
@@ -362,5 +479,40 @@ mod tests {
         panel.length_table = "4".into();
         assert!(panel.apply_length_form().is_err());
         assert_eq!(panel.lengths.record_len(&[0x08, 0x20, 0x42]), Some(5));
+    }
+
+    #[test]
+    fn recovered_sprite_fields_preserve_extensions_and_validate_custom_shape() {
+        let mut panel = MwlSpritePanel {
+            stream: Some(NativeSpriteStream {
+                header: 0,
+                expanded: false,
+                tokens: vec![SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0x9a, 0xc7, 0x42, 0xaa, 0xbb],
+                })],
+            }),
+            ..MwlSpritePanel::default()
+        };
+        panel.lengths.set(2, 0x42, 5).unwrap();
+        panel.load_form();
+        assert_eq!(panel.y_low, "09");
+        assert_eq!(panel.screen, "17");
+        panel.y_low = "1D".into();
+        panel.screen = "1E".into();
+        panel.x = "3".into();
+        panel.stage_semantic_fields().unwrap();
+        let SpriteToken::Record(record) = &panel.stream.as_ref().unwrap().tokens[0] else {
+            panic!("record expected");
+        };
+        assert_eq!(&record.encoded[3..], [0xaa, 0xbb]);
+        assert_eq!(record.native_fields().unwrap().y_low, 0x1d);
+
+        let before = record.clone();
+        panel.extra_bits = "1".into();
+        assert!(panel.stage_semantic_fields().is_err());
+        assert_eq!(
+            panel.stream.as_ref().unwrap().tokens[0],
+            SpriteToken::Record(before)
+        );
     }
 }

@@ -38,8 +38,11 @@ impl NativeLevelRecordForm {
 
 pub(crate) fn parse_sprite_token(text: &str) -> Result<SpriteToken, String> {
     let trimmed = text.trim();
-    if let Some(value) = trimmed.strip_prefix("screen ") {
-        return level_editor_forms::parse_hex_u8(value, "sprite screen token")
+    if let Some(value) = trimmed
+        .strip_prefix("yhigh ")
+        .or_else(|| trimmed.strip_prefix("screen "))
+    {
+        return level_editor_forms::parse_hex_u8(value, "sprite upper-Y token")
             .map(SpriteToken::Screen);
     }
     if let Some(value) = trimmed.strip_prefix("control ") {
@@ -62,6 +65,10 @@ mod tests {
             })
         );
         assert_eq!(
+            parse_sprite_token("yhigh 7F").unwrap(),
+            SpriteToken::Screen(0x7f)
+        );
+        assert_eq!(
             parse_sprite_token("screen 7F").unwrap(),
             SpriteToken::Screen(0x7f)
         );
@@ -69,6 +76,6 @@ mod tests {
             parse_sprite_token("control 80").unwrap(),
             SpriteToken::Control(0x80)
         );
-        assert!(parse_sprite_token("screen nope").is_err());
+        assert!(parse_sprite_token("yhigh nope").is_err());
     }
 }

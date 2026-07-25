@@ -8,7 +8,7 @@ pub struct NativeSpritePlacement {
     pub first_byte: u8,
     pub screen: u16,
     pub major: u16,
-    pub minor: u8,
+    pub minor: u16,
     pub sprite_number: u8,
     pub extra_bits: u8,
 }
@@ -20,23 +20,23 @@ impl NativeSpriteStream {
     /// Other control tokens emit no placement.
     #[must_use]
     pub fn native_placements(&self) -> Vec<NativeSpritePlacement> {
-        let mut selected_screen = 0_u16;
+        let mut y_high = 0_u16;
         let mut placements = Vec::new();
         for (token_index, token) in self.tokens.iter().enumerate() {
             match token {
-                SpriteToken::Screen(screen) => selected_screen = u16::from(*screen),
+                SpriteToken::Screen(value) => y_high = u16::from(*value) << 5,
                 SpriteToken::Record(record) if record.encoded.len() >= 3 => {
                     let first = record.encoded[0];
                     let second = record.encoded[1];
-                    let screen = selected_screen.saturating_add(u16::from(first & 0x02 != 0));
+                    let screen = u16::from(second & 0x0f) | (u16::from(first & 0x02 != 0) << 4);
                     placements.push(NativeSpritePlacement {
                         token_index,
                         first_byte: first,
                         screen,
                         major: screen
                             .saturating_mul(16)
-                            .saturating_add(u16::from(second & 0x0f)),
-                        minor: first & 0x0f,
+                            .saturating_add(u16::from(second >> 4)),
+                        minor: y_high | u16::from(first >> 4) | (u16::from(first & 1) << 4),
                         sprite_number: record.encoded[2],
                         extra_bits: (first >> 2) & 0x03,
                     });
@@ -53,9 +53,9 @@ impl NativeSpritePlacement {
     #[must_use]
     pub const fn tile_coordinates(self, vertical: bool) -> (u16, u16) {
         if vertical {
-            (self.minor as u16, self.major)
+            (self.minor, self.major)
         } else {
-            (self.major, self.minor as u16)
+            (self.major, self.minor)
         }
     }
 }
@@ -85,18 +85,18 @@ mod tests {
                 NativeSpritePlacement {
                     token_index: 0,
                     first_byte: 0x0b,
-                    screen: 1,
-                    major: 23,
-                    minor: 11,
+                    screen: 23,
+                    major: 368,
+                    minor: 16,
                     sprite_number: 0x42,
                     extra_bits: 2,
                 },
                 NativeSpritePlacement {
                     token_index: 1,
                     first_byte: 0x16,
-                    screen: 1,
-                    major: 29,
-                    minor: 6,
+                    screen: 29,
+                    major: 464,
+                    minor: 1,
                     sprite_number: 0x7f,
                     extra_bits: 1,
                 },
@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn expanded_screen_controls_select_later_screens() {
+    fn expanded_position_controls_supply_upper_y_bits_without_changing_screen() {
         let stream = NativeSpriteStream {
             header: 0,
             expanded: true,
@@ -116,7 +116,8 @@ mod tests {
                 }),
             ],
         };
-        assert_eq!(stream.native_placements()[0].major, 82);
-        assert_eq!(stream.native_placements()[0].screen, 5);
+        assert_eq!(stream.native_placements()[0].major, 32);
+        assert_eq!(stream.native_placements()[0].minor, 176);
+        assert_eq!(stream.native_placements()[0].screen, 2);
     }
 }

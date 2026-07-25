@@ -102,7 +102,7 @@ impl NativeLevelDocumentEditor {
                     Some(SpriteToken::Record(r)) => {
                         crate::level_editor_forms::format_bytes(&r.encoded)
                     }
-                    Some(SpriteToken::Screen(v)) => format!("screen {v:02X}"),
+                    Some(SpriteToken::Screen(v)) => format!("yhigh {v:02X}"),
                     Some(SpriteToken::Control(v)) => format!("control {v:02X}"),
                     None => String::new(),
                 };

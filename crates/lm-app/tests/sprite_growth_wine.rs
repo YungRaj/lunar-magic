@@ -1,6 +1,7 @@
 use lm_app::{AppState, Command, LevelController, MwlDocumentController, NativeLevelEdit};
 use lm_level::{
     LevelObjectData, MwlFile, MwlSectionKind, NativeSpriteStream, ObjectEdit, SpriteLengthTable,
+    SpriteToken,
 };
 use lm_project::{LevelSaveOptions, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -179,6 +180,13 @@ fn lunar_magic_imports_and_reexports_a_rust_mwl_sprite_edit() {
     let mut expected = document.sprites(false, &lengths).unwrap();
     let duplicate = expected.tokens[0].clone();
     expected.insert(1, duplicate).unwrap();
+    let SpriteToken::Record(first) = &mut expected.tokens[0] else {
+        panic!("level 105 must begin with an ordinary sprite record");
+    };
+    let mut fields = first.native_fields().unwrap();
+    fields.x = (fields.x + 1) & 0x0f;
+    fields.y_low = (fields.y_low + 1) & 0x1f;
+    first.set_native_fields(fields, &lengths).unwrap();
     document.replace_sprites(0, &expected, &lengths).unwrap();
     fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();
 

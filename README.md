@@ -478,7 +478,7 @@ interactive frontends cannot bypass confirmation and request correlation through
   parameter, orientation-neutral coordinate nibbles, screen-advance bit, and either packed
   screen-jump target without assigning an unsupported X/Y interpretation.
   A separate typed sprite panel exposes the stream header, ordinary/custom records, expanded
-  screen/control tokens, ordering, and the four revision record-length tables without hiding
+  Y-position/control tokens, ordering, and the four revision record-length tables without hiding
   extension bytes. Section replacement, semantic object/sprite commits, and container-header edits
   remain distinct so one operation cannot silently overwrite another. Focused MWL forms feed
   `MwlDocumentController` canonical transactions, undo/redo, recoverable saves, and dirty-document
@@ -645,7 +645,7 @@ toolkit-neutral `MwlOptionalAssetsEdit` commands, preventing their mutation sema
 The native panel also exposes targeted frame insertion, replacement, removal, and ordering through
 those same commands instead of rebuilding a whole record in toolkit code.
 The same window now owns a typed sprite panel. It can select legacy or expanded framing, edit the
-stream header, insert/replace/delete/reorder raw records and expanded screen/control tokens, and
+stream header, insert/replace/delete/reorder raw records and expanded Y-position/control tokens, and
 override any of the four 256-entry revision length-table entries for custom records. The panel
 stages changes independently, then delegates one canonical, revision-checked replacement to
 `MwlDocumentController`; malformed lengths, terminator collisions, stale revisions, and invalid

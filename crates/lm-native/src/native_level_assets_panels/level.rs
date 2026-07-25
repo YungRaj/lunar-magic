@@ -129,7 +129,7 @@ impl AggregatePanels {
                     Some(SpriteToken::Record(record)) => {
                         level_editor_forms::format_bytes(&record.encoded)
                     }
-                    Some(SpriteToken::Screen(value)) => format!("screen {value:02X}"),
+                    Some(SpriteToken::Screen(value)) => format!("yhigh {value:02X}"),
                     Some(SpriteToken::Control(value)) => format!("control {value:02X}"),
                     None => String::new(),
                 };

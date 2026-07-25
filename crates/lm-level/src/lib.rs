@@ -93,8 +93,8 @@ pub use native_layer2::{
 };
 pub use native_map16_sidecar::{M16Sidecar, NativeMap16SidecarError, S16Sidecar};
 pub use native_sprite::{
-    NativeSpriteEncodingError, NativeSpriteStream, SpriteLengthTable, SpriteLengthTableError,
-    SpriteToken,
+    NativeSpriteEncodingError, NativeSpriteFieldError, NativeSpriteRecordFields,
+    NativeSpriteStream, SpriteLengthTable, SpriteLengthTableError, SpriteToken,
 };
 pub use object::{
     LevelObjectData, ObjectRecord, ObjectStream, ObjectStreamError, encoded_record_length,

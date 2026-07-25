@@ -1679,6 +1679,26 @@ semantically identical to the Rust edit and the resulting ROM checksum is
 valid. Together, the two directions prove both direct-ROM and MWL-based sprite
 editing across the Lunar Magic 3.63 compatibility boundary.
 
+The native sprite placement format has also been corrected from direct format
+evidence. Its base record is `yyyyEESY / XXXXssss / NNNNNNNN`: Y is the upper
+nibble plus bit 0 of byte one, extra bits are byte-one bits 2–3, the five-bit
+screen is byte two's low nibble plus byte-one bit 1, X is byte two's upper
+nibble, and byte three is the sprite number. The expanded `FF 00..7F` command
+sets the upper seven Y-position bits; it is not a screen selector. The earlier
+portable decoder incorrectly read the low nibbles as coordinates and treated
+that command as a screen change, which displaced native GUI/render previews.
+`NativeSpritePlacement` now follows the proven packing and carries a `u16`
+minor axis for expanded Y positions.
+
+`NativeSpriteRecordFields` provides lossless editing of all five base fields.
+It reconstructs only the three-byte prefix, retains every custom extension
+byte, and rechecks the four-table `(extra bits, sprite number)` record length
+before commit. Thus an edit that would silently change a custom record's width
+is rejected atomically. The MWL sprite panel exposes these fields and its list
+shows decoded screen/X/Y/extra-bit placement. The strengthened Wine oracle
+changes X and Y through this API; Lunar Magic 3.63 imports and re-exports the
+exact resulting stream.
+
 ## Typed MWL Layer 1 interoperability
 
 The MWL Layer 1 section uses the same two-word common prefix as sprites. Its

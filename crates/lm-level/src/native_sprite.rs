@@ -1,9 +1,11 @@
 use crate::SpriteRecord;
 
 mod length_table;
+mod record_fields;
 mod stream_codec;
 
 pub use length_table::{SpriteLengthTable, SpriteLengthTableError};
+pub use record_fields::{NativeSpriteFieldError, NativeSpriteRecordFields};
 
 #[cfg(test)]
 use stream_codec::checked_native_stream_len;
@@ -11,6 +13,9 @@ use stream_codec::checked_native_stream_len;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SpriteToken {
     Record(SpriteRecord),
+    /// Lunar Magic 3.x `FF 00..7F` command setting the upper seven Y-position bits.
+    ///
+    /// The historical variant name is retained for interchange/API compatibility.
     Screen(u8),
     Control(u8),
 }

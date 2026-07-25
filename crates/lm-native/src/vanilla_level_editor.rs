@@ -88,7 +88,7 @@ impl SpriteForm {
                 .map(|byte| format!("{byte:02X}"))
                 .collect::<Vec<_>>()
                 .join(" "),
-            Some(SpriteToken::Screen(value)) => format!("screen {value:02X}"),
+            Some(SpriteToken::Screen(value)) => format!("yhigh {value:02X}"),
             Some(SpriteToken::Control(value)) => format!("control {value:02X}"),
             None => String::new(),
         };
