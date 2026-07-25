@@ -4,6 +4,8 @@ use crate::{NativeSpriteStream, SpriteToken};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeSpritePlacement {
     pub token_index: usize,
+    /// First native record byte retained for renderer variants not covered by decoded fields.
+    pub first_byte: u8,
     pub screen: u16,
     pub major: u16,
     pub minor: u8,
@@ -29,6 +31,7 @@ impl NativeSpriteStream {
                     let screen = selected_screen.saturating_add(u16::from(first & 0x02 != 0));
                     placements.push(NativeSpritePlacement {
                         token_index,
+                        first_byte: first,
                         screen,
                         major: screen
                             .saturating_mul(16)
@@ -81,6 +84,7 @@ mod tests {
             [
                 NativeSpritePlacement {
                     token_index: 0,
+                    first_byte: 0x0b,
                     screen: 1,
                     major: 23,
                     minor: 11,
@@ -89,6 +93,7 @@ mod tests {
                 },
                 NativeSpritePlacement {
                     token_index: 1,
+                    first_byte: 0x16,
                     screen: 1,
                     major: 29,
                     minor: 6,

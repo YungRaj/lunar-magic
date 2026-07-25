@@ -14,6 +14,8 @@ pub struct StandardSpritePreviewTile {
 pub struct StandardSpritePreviewMode {
     pub alternate_display: bool,
     pub alternate_graphics: bool,
+    /// First native sprite-record byte used by placement-dependent handlers.
+    pub placement_first: u8,
 }
 
 /// Renders the first authenticated family of Lunar Magic standard-sprite previews.
@@ -31,6 +33,7 @@ pub fn render_lunar_magic_standard_sprite(
         StandardSpritePreviewMode {
             alternate_display,
             alternate_graphics: false,
+            placement_first: 0,
         },
     )
 }
@@ -41,7 +44,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
     sprite_number: u8,
     mode: StandardSpritePreviewMode,
 ) -> Option<Vec<StandardSpritePreviewTile>> {
-    if mode.alternate_display && sprite_number <= 8 {
+    if mode.alternate_display && sprite_number <= 10 {
         return parts(&[(0x115, 0, 1)]);
     }
     match sprite_number {
@@ -53,6 +56,11 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x06 => parts(&[(0x12, 0, -14), (0x22, 0, 2)]),
         0x07 => parts(&[(0x13, 0, -14), (0x23, 0, 2)]),
         0x08 => parts(&[(0x10, 0, -14), (0x20, 0, 2), (0x08, 1, -10)]),
+        0x09 if mode.placement_first & 0x10 != 0 => {
+            parts(&[(0x10, 0, -15), (0x140, 0, 1), (0x08, 1, -11)])
+        }
+        0x09 => parts(&[(0x10, 0, -14), (0x20, 0, 2), (0x07, 9, -11)]),
+        0x0a => parts(&[(0x11, 0, -14), (0x21, 0, 2), (0x07, 9, -11)]),
         _ => None,
     }
 }
@@ -74,6 +82,7 @@ fn parts(values: &[(u16, i16, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
 fn preview_definition(index: u16) -> Option<[u16; 4]> {
     Some(match index {
         0x008 => [0x0c19, 0x0c19, 0x0c19, 0x0c5d],
+        0x007 => [0x0cc6, 0x0cd6, 0x0cc7, 0x0cd7],
         0x010 => [0x1482, 0x1492, 0x1483, 0x1493],
         0x011 => [0x1082, 0x1092, 0x1083, 0x1093],
         0x012 => [0x0c82, 0x0c92, 0x0c83, 0x0c93],
@@ -87,6 +96,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x042 => [0x0ce2, 0x0cf2, 0x0ce3, 0x0cf3],
         0x043 => [0x08ca, 0x08da, 0x08cb, 0x08db],
         0x115 => [0x04e8, 0x04f8, 0x04e9, 0x04f9],
+        0x140 => [0x14a0, 0x14b0, 0x14a1, 0x14b1],
         _ => return None,
     })
 }
@@ -139,6 +149,7 @@ mod tests {
                 StandardSpritePreviewMode {
                     alternate_display: false,
                     alternate_graphics: true,
+                    ..StandardSpritePreviewMode::default()
                 }
             ),
             [0x13, 0x23]
@@ -149,6 +160,7 @@ mod tests {
                 StandardSpritePreviewMode {
                     alternate_display: false,
                     alternate_graphics: true,
+                    ..StandardSpritePreviewMode::default()
                 }
             ),
             [0x12, 0x22]
@@ -159,6 +171,7 @@ mod tests {
                 StandardSpritePreviewMode {
                     alternate_display: true,
                     alternate_graphics: false,
+                    ..StandardSpritePreviewMode::default()
                 }
             ),
             [0x115]
@@ -171,6 +184,35 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(0x10, 0, -14), (0x20, 0, 2), (0x08, 1, -10)]
         );
-        assert_eq!(render_lunar_magic_standard_sprite(9, false), None);
+    }
+
+    #[test]
+    fn handlers_nine_and_ten_preserve_the_native_placement_variant() {
+        let geometry = |sprite, placement_first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite,
+                StandardSpritePreviewMode {
+                    placement_first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(9, 0),
+            [(0x10, 0, -14), (0x20, 0, 2), (0x07, 9, -11)]
+        );
+        assert_eq!(
+            geometry(9, 0x10),
+            [(0x10, 0, -15), (0x140, 0, 1), (0x08, 1, -11)]
+        );
+        assert_eq!(
+            geometry(10, 0),
+            [(0x11, 0, -14), (0x21, 0, 2), (0x07, 9, -11)]
+        );
+        assert_eq!(render_lunar_magic_standard_sprite(11, false), None);
     }
 }

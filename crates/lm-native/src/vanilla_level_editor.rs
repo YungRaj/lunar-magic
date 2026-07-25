@@ -1060,7 +1060,13 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             center,
             egui::vec2(cell_size.max(9.0), cell_size.max(9.0)),
         );
-        let preview = lm_render::render_lunar_magic_standard_sprite(placement.sprite_number, false);
+        let preview = lm_render::render_lunar_magic_standard_sprite_with_mode(
+            placement.sprite_number,
+            lm_render::StandardSpritePreviewMode {
+                placement_first: placement.first_byte,
+                ..lm_render::StandardSpritePreviewMode::default()
+            },
+        );
         if let (Some(texture), Some(parts)) = (texture, preview) {
             for part in parts {
                 draw_sprite_preview_definition(
