@@ -89,6 +89,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x84
         | 0x8e
         | 0x96
+        | 0x9c
             if mode.alternate_display =>
         {
             parts(&[(0x115, 0, 1)])
@@ -382,18 +383,40 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1cf, -14, 1),
             (0x1ce, 20, 0),
         ]),
+        0x98 => parts(&[
+            (0x1dc, -16, 1),
+            (0x1dd, 0, 1),
+            (0x1db, -32, 1),
+            (0x1cc, -32, 1),
+            (0x1cd, -16, 1),
+        ]),
+        0x99 => parts(&[
+            (0x1cb, 0, 0),
+            (0x1cb, 16, 0),
+            (0x1d9, -14, -10),
+            (0x1da, 30, -10),
+        ]),
+        0x9c => render_definition_grid(0x180, 4, 1),
         _ => None,
     }
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
+    render_definition_grid(0x1c0, -4, 0)
+}
+
+fn render_definition_grid(
+    first_definition: u16,
+    origin_x: i16,
+    origin_y: i16,
+) -> Option<Vec<StandardSpritePreviewTile>> {
     let mut values = Vec::with_capacity(16);
     for row in 0_u16..4 {
         for column in 0_u16..4 {
             values.push((
-                0x1c0 + row * 0x10 + column,
-                i16::try_from(column).expect("four-column preview") * 16 - 4,
-                i16::try_from(row).expect("four-row preview") * 16,
+                first_definition + row * 0x10 + column,
+                i16::try_from(column).expect("four-column preview") * 16 + origin_x,
+                i16::try_from(row).expect("four-row preview") * 16 + origin_y,
             ));
         }
     }
@@ -556,7 +579,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x01a => [0x08e8, 0x08f8, 0x08e9, 0x08f9],
         0x01b => [0xd5df, 0xd5cf, 0xd5de, 0xd5ce],
         0x01e => [0x1428, 0x9428, 0x5428, 0xd428],
-        0x01f | 0x06e => [0x0588, 0x0598, 0x0589, 0x0599],
+        0x01f | 0x06e | 0x191 => [0x0588, 0x0598, 0x0589, 0x0599],
         0x024 => [0x018a, 0x019a, 0x018b, 0x019b],
         0x025 => [0x04a6, 0x04b6, 0x04a7, 0x04b7],
         0x026 => [0x50cf, 0x50df, 0x50ce, 0x50de],
@@ -567,7 +590,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x02d => [0x11ec, 0x11fc, 0x11ed, 0x11fd],
         0x02e => [0xc95d, 0xc94d, 0xc95c, 0xc94c],
         0x02f => [0xc95b, 0xc94b, 0xc95a, 0xc94a],
-        0x034 => [0x058e, 0x059e, 0x058f, 0x059f],
+        0x034 | 0x1b0 => [0x058e, 0x059e, 0x058f, 0x059f],
         0x035 => [0x458e, 0x459e, 0x0419, 0x0419],
         0x036 => [0x0564, 0x0574, 0x0565, 0x0575],
         0x037 => [0x058c, 0x059c, 0x058d, 0x059d],
@@ -578,7 +601,7 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x03d => [0x0dc8, 0x0dd8, 0x0dc9, 0x0dd9],
         0x03e => [0x4dc9, 0x4dd9, 0x4dc8, 0x4dd8],
         0x03f => [0x0dca, 0x0dda, 0x0dcb, 0x0ddb],
-        0x044 => [0x05ae, 0x05be, 0x05af, 0x05bf],
+        0x044 | 0x1b1 => [0x05ae, 0x05be, 0x05af, 0x05bf],
         0x045 => [0x45ae, 0x45be, 0x0419, 0x0419],
         0x046 => [0x0568, 0x0578, 0x0569, 0x0579],
         0x048 => [0x196a, 0x197a, 0x196b, 0x197b],
@@ -790,8 +813,27 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x155 => [0x0c19, 0x0c19, 0x0da8, 0x0db8],
         0x156 => [0x0da9, 0x0db9, 0x0daa, 0x0dba],
         0x169 => [0x554c, 0x555c, 0x554b, 0x555b],
+        0x180 => [0x0580, 0x0590, 0x0581, 0x0591],
+        0x181 => [0x0582, 0x0592, 0x0583, 0x0593],
+        0x182 => [0x0584, 0x0594, 0x0585, 0x0595],
+        0x183 => [0x0586, 0x0596, 0x0587, 0x0597],
+        0x190 => [0x05a0, 0x05b0, 0x05a1, 0x05b1],
+        0x192 | 0x1a2 => [0x05ce, 0x05de, 0x05cf, 0x05df],
+        0x193 | 0x1a3 => [0x05ee, 0x05fe, 0x05ef, 0x05ff],
+        0x1a0 => [0x05c0, 0x05d0, 0x05c1, 0x05d1],
+        0x1a1 => [0x05c2, 0x05d2, 0x05c3, 0x05d3],
+        0x1b2 => [0x8594, 0x8584, 0x8595, 0x8585],
+        0x1b3 => [0x8596, 0x8586, 0x8597, 0x8587],
         0x1ce => [0x09f3, 0xc9f3, 0x09ce, 0x09ce],
         0x1cf => [0x0819, 0x0998, 0x0819, 0x0999],
+        0x1cb => [0x0440, 0x0450, 0x0441, 0x0451],
+        0x1cc => [0x0c19, 0x0c19, 0x0c19, 0x0d5a],
+        0x1cd => [0x0c19, 0x0d4a, 0x0c19, 0x0c19],
+        0x1d9 => [0x44c7, 0x44d7, 0x44c6, 0x44d6],
+        0x1da => [0x04c6, 0x04d6, 0x04c7, 0x04d7],
+        0x1db => [0x0d6d, 0x0d7d, 0x0d6e, 0x0d7e],
+        0x1dc => [0x0d46, 0x0d56, 0x0d47, 0x0d57],
+        0x1dd => [0x0d48, 0x0d58, 0x0d49, 0x0d59],
         0x21b => [0x4c41, 0x4c51, 0x4c40, 0x4c50],
         _ => return None,
     })
@@ -1820,5 +1862,56 @@ mod tests {
                 (0x1ec, -24, -8)
             ]
         );
+    }
+
+    #[test]
+    fn handlers_98_99_and_9c_preserve_wrapped_and_grid_geometry() {
+        let geometry = |sprite, alternate_display| {
+            render_lunar_magic_standard_sprite(sprite, alternate_display)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(0x98, false),
+            [
+                (0x1dc, -16, 1),
+                (0x1dd, 0, 1),
+                (0x1db, -32, 1),
+                (0x1cc, -32, 1),
+                (0x1cd, -16, 1)
+            ]
+        );
+        assert_eq!(
+            geometry(0x99, false),
+            [
+                (0x1cb, 0, 0),
+                (0x1cb, 16, 0),
+                (0x1d9, -14, -10),
+                (0x1da, 30, -10)
+            ]
+        );
+        let grid = geometry(0x9c, false);
+        assert_eq!(grid.len(), 16);
+        assert_eq!(
+            &grid[..4],
+            [
+                (0x180, 4, 1),
+                (0x181, 20, 1),
+                (0x182, 36, 1),
+                (0x183, 52, 1)
+            ]
+        );
+        assert_eq!(
+            &grid[12..],
+            [
+                (0x1b0, 4, 49),
+                (0x1b1, 20, 49),
+                (0x1b2, 36, 49),
+                (0x1b3, 52, 49)
+            ]
+        );
+        assert_eq!(geometry(0x9c, true), [(0x115, 0, 1)]);
     }
 }
