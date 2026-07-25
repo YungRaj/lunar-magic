@@ -42,6 +42,7 @@ mod native_level_document_controller;
 mod native_level_edit_batch;
 mod native_map16_sidecar_controller;
 mod navigation_state;
+mod osc_sidecar_controller;
 mod overworld_appearance_document_controller;
 mod overworld_boss_sequence_state;
 mod overworld_controller;
@@ -186,6 +187,9 @@ pub use native_level_document_controller::{
 pub use native_map16_sidecar_controller::{
     NativeMap16SidecarController, NativeMap16SidecarControllerError, NativeMap16SidecarDocument,
     NativeMap16SidecarDocumentKind, NativeMap16SidecarEdit, NativeMap16SidecarSaveSnapshot,
+};
+pub use osc_sidecar_controller::{
+    OscSidecarController, OscSidecarControllerError, OscSidecarSaveSnapshot,
 };
 pub use overworld_appearance_document_controller::{
     OverworldAppearanceDocumentController, OverworldAppearanceDocumentControllerError,
