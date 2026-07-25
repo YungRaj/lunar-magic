@@ -14,6 +14,8 @@ pub struct StandardSpritePreviewTile {
 pub struct StandardSpritePreviewMode {
     pub alternate_display: bool,
     pub alternate_graphics: bool,
+    /// Low nibble of Lunar Magic's active sprite-graphics mode selector.
+    pub sprite_graphics_mode: u8,
     /// First native sprite-record byte used by placement-dependent handlers.
     pub placement_first: u8,
 }
@@ -33,6 +35,7 @@ pub fn render_lunar_magic_standard_sprite(
         StandardSpritePreviewMode {
             alternate_display,
             alternate_graphics: false,
+            sprite_graphics_mode: 0,
             placement_first: 0,
         },
     )
@@ -94,6 +97,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x9c
         | 0x9f
         | 0xa1
+        | 0xa2
+        | 0xa3
+        | 0xa5
             if mode.alternate_display =>
         {
             parts(&[(0x115, 0, 1)])
@@ -422,6 +428,27 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
                 (base + 0x11, 8, 8),
             ])
         }
+        0xa2 => parts(&[(
+            if mode.sprite_graphics_mode & 0x0f == 2 {
+                0xa9
+            } else {
+                0xf9
+            } + u16::from(mode.placement_first & 1),
+            0,
+            1,
+        )]),
+        0xa3 => {
+            let final_x = if mode.placement_first & 1 == 0 { 0 } else { 8 };
+            parts(&[
+                (0x1d7, -8, 8),
+                (0x1d8, 8, 8),
+                (0x1c7, -24, 8),
+                (0x1c8, -8, 8),
+                (0x1c6, final_x, 0),
+            ])
+        }
+        0xa4 => parts(&[(0xfb, 0, 0)]),
+        0xa5 => parts(&[(0xfc, 0, -8)]),
         _ => None,
     }
 }
@@ -782,6 +809,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0a6 => [0x558d, 0x559d, 0x558c, 0x559c],
         0x0a7 => [0x0186, 0x0196, 0x0187, 0x0197],
         0x0a8 => [0x01ce, 0x0188, 0x01ce, 0x0189],
+        0x0a9 | 0x0dc => [0x09c8, 0x09d8, 0x09c9, 0x09d9],
+        0x0aa => [0x49c9, 0x49d9, 0x49c8, 0x49d8],
         0x0b0 => [0x003d, 0x1019, 0x1019, 0x1019],
         0x0b1 => [0xc03d, 0x1019, 0x1019, 0x1019],
         0x0b2 => [0x003c, 0x1019, 0x1019, 0x1019],
@@ -819,7 +848,6 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0d9 => [0x098c, 0x099c, 0x098d, 0x099d],
         0x0da => [0x09c4, 0x09d4, 0x09c5, 0x09d5],
         0x0db => [0x09c6, 0x09d6, 0x09c7, 0x09d7],
-        0x0dc => [0x09c8, 0x09d8, 0x09c9, 0x09d9],
         0x0dd => [0x0819, 0x0819, 0x0819, 0x1598],
         0x0de => [0x09c5, 0x09d5, 0x09c6, 0x09d6],
         0x0df => [0x49c6, 0x49d6, 0x49c5, 0x49d5],
@@ -838,6 +866,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0ec => [0x0560, 0x0570, 0x0561, 0x0571],
         0x0ed => [0x0561, 0x0571, 0x0562, 0x0572],
         0x0ee => [0x0562, 0x0572, 0x0563, 0x0573],
+        0x0fb => [0x094a, 0x095a, 0x094b, 0x095b],
+        0x0fc => [0x09a0, 0x09b0, 0x09a1, 0x09b1],
         0x0f0 => [0x9990, 0x9980, 0x9991, 0x9981],
         0x0f1 => [0x9992, 0x9982, 0x9993, 0x9983],
         0x0f2 => [0x19e4, 0x19f4, 0x19e5, 0x19f5],
@@ -847,6 +877,8 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0f6 => [0x1019, 0x11f2, 0x1019, 0x1019],
         0x0f7 => [0x09f4, 0x0819, 0x09f5, 0x0819],
         0x0f8 => [0x09c8, 0x09d8, 0x0819, 0x09d0],
+        0x0f9 => [0x090a, 0x091a, 0x090b, 0x091b],
+        0x0fa => [0x490b, 0x491b, 0x490a, 0x491a],
         0x0ff => [0x55cc, 0x55dc, 0x55cb, 0x55db],
         0x100 => [0x5425, 0x5435, 0x5424, 0x5434],
         0x101 => [0x5025, 0x5035, 0x5024, 0x5034],
@@ -886,11 +918,16 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1c2 => [0x1584, 0x1594, 0x1585, 0x1595],
         0x1c3 => [0x1586, 0x1596, 0x1587, 0x1597],
         0x1c5 => [0x45eb, 0x45fb, 0x45ea, 0x45fa],
+        0x1c6 => [0x0909, 0x0019, 0x0019, 0x0019],
+        0x1c7 => [0x090c, 0x091c, 0x090d, 0x091d],
+        0x1c8 => [0x090e, 0x091e, 0x090f, 0x091f],
         0x1d0 => [0x15a0, 0x15b0, 0x15a1, 0x15b1],
         0x1d1 => [0x15a2, 0x15b2, 0x15a3, 0x15b3],
         0x1d4 => [0x85fa, 0x85ea, 0x85fb, 0x85eb],
         0x1d5 => [0xc5fb, 0xc5eb, 0xc5fa, 0xc5ea],
         0x1d6 => [0x05e8, 0x05f8, 0x05e9, 0x05f9],
+        0x1d7 => [0x891c, 0x890c, 0x891d, 0x890d],
+        0x1d8 => [0x891e, 0x890e, 0x891f, 0x890f],
         0x1de => [0x09c1, 0x09d1, 0x09c2, 0x09d2],
         0x1df => [0x09c3, 0x09d3, 0x09c4, 0x09d4],
         0x1e0 => [0x95b0, 0x95a0, 0x95b1, 0x95b1],
@@ -2276,5 +2313,71 @@ mod tests {
             ]
         );
         assert_eq!(geometry(0xa1, 0, true), [(0x115, 0, 1)]);
+    }
+
+    #[test]
+    fn handlers_a2_through_a5_preserve_graphics_and_placement_variants() {
+        let geometry = |sprite, mode| {
+            render_lunar_magic_standard_sprite_with_mode(sprite, mode)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(0xa2, StandardSpritePreviewMode::default()),
+            [(0xf9, 0, 1)]
+        );
+        assert_eq!(
+            geometry(
+                0xa2,
+                StandardSpritePreviewMode {
+                    placement_first: 1,
+                    sprite_graphics_mode: 2,
+                    ..StandardSpritePreviewMode::default()
+                }
+            ),
+            [(0xaa, 0, 1)]
+        );
+        assert_eq!(
+            geometry(0xa3, StandardSpritePreviewMode::default()),
+            [
+                (0x1d7, -8, 8),
+                (0x1d8, 8, 8),
+                (0x1c7, -24, 8),
+                (0x1c8, -8, 8),
+                (0x1c6, 0, 0)
+            ]
+        );
+        assert_eq!(
+            geometry(
+                0xa3,
+                StandardSpritePreviewMode {
+                    placement_first: 1,
+                    ..StandardSpritePreviewMode::default()
+                }
+            )[4],
+            (0x1c6, 8, 0)
+        );
+        assert_eq!(
+            geometry(0xa4, StandardSpritePreviewMode::default()),
+            [(0xfb, 0, 0)]
+        );
+        assert_eq!(
+            geometry(0xa5, StandardSpritePreviewMode::default()),
+            [(0xfc, 0, -8)]
+        );
+        for sprite in [0xa2, 0xa3, 0xa5] {
+            assert_eq!(
+                geometry(
+                    sprite,
+                    StandardSpritePreviewMode {
+                        alternate_display: true,
+                        ..StandardSpritePreviewMode::default()
+                    }
+                ),
+                [(0x115, 0, 1)]
+            );
+        }
     }
 }
