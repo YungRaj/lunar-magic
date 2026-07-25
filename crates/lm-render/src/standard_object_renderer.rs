@@ -126,6 +126,8 @@ const SHARED_SLOT_056_BODY_TILES: [u8; 16] = [
 const SHARED_SLOT_056_END_TILES: [u8; 16] = [
     0x4d, 0x50, 0x4f, 0x51, 0xa4, 0x57, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a, 0x85, 0x00, 0xa5, 0x59,
 ];
+const SHARED_SLOT_060_TILES: [[u8; 3]; 3] =
+    [[0x45, 0x00, 0x48], [0x50, 0xf0, 0x51], [0x4d, 0x4e, 0x4f]];
 const SHARED_SLOT_008_TILES: [[[u8; 3]; 3]; 2] = [
     [[0x2f, 0x25, 0x32], [0x30, 0x25, 0x33], [0x31, 0x25, 0x34]],
     [[0x39, 0x25, 0x3c], [0x3a, 0x25, 0x3d], [0x3b, 0x25, 0x3e]],
@@ -195,6 +197,7 @@ enum NativeRenderer {
     SharedSlot051,
     SharedSlot052,
     SharedSlot056,
+    SharedSlot060,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -650,6 +653,9 @@ fn dispatch_native_renderer_high(
         }
         NativeRenderer::SharedSlot056 => {
             render_shared_slot_056(cache, layout, placement, parameter)
+        }
+        NativeRenderer::SharedSlot060 => {
+            render_shared_slot_060(cache, layout, placement, parameter)
         }
         _ => unreachable!("low native renderer routed to high dispatcher"),
     }
@@ -1435,6 +1441,57 @@ fn render_shared_slot_056(
         0,
         u16::from(SHARED_SLOT_056_END_TILES[variant]) + 0x100,
     )
+}
+
+fn render_shared_slot_060(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let encoded_width = usize::from(parameter & 0x0f);
+    let width = if encoded_width == 0 {
+        0x100
+    } else {
+        encoded_width
+    };
+    let rows = usize::from(parameter >> 4) + 1;
+    for major_offset in 0..rows {
+        let row_kind = if major_offset == 0 {
+            0
+        } else if major_offset + 1 == rows {
+            2
+        } else {
+            1
+        };
+        set_placement_cell(
+            cache,
+            layout,
+            placement,
+            major_offset,
+            0,
+            u16::from(SHARED_SLOT_060_TILES[row_kind][0]) + 0x100,
+        )?;
+        for minor_offset in 1..width {
+            set_placement_cell(
+                cache,
+                layout,
+                placement,
+                major_offset,
+                minor_offset,
+                u16::from(SHARED_SLOT_060_TILES[row_kind][1]) + 0x100,
+            )?;
+        }
+        set_placement_cell(
+            cache,
+            layout,
+            placement,
+            major_offset,
+            width,
+            u16::from(SHARED_SLOT_060_TILES[row_kind][2]) + 0x100,
+        )?;
+    }
+    Ok(())
 }
 
 fn render_shared_slot_018(
@@ -2283,6 +2340,7 @@ fn install_shared_handler_aliases(
         (51, NativeRenderer::SharedSlot051),
         (52, NativeRenderer::SharedSlot052),
         (56, NativeRenderer::SharedSlot056),
+        (60, NativeRenderer::SharedSlot060),
     ] {
         definitions.set_handler(
             handler,
@@ -3442,6 +3500,40 @@ mod tests {
                         tile
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_60_renders_page_one_bordered_rows() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 60;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x10, 0x22]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        for (major, row) in [
+            [0x145, 0x100, 0x148],
+            [0x150, 0x1f0, 0x151],
+            [0x14d, 0x14e, 0x14f],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for (minor, tile) in row.into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile
+                );
             }
         }
     }
