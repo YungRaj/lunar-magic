@@ -89,6 +89,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x84
         | 0x8e
         | 0x96
+        | 0x9a
         | 0x9c
             if mode.alternate_display =>
         {
@@ -397,6 +398,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1d9, -14, -10),
             (0x1da, 30, -10),
         ]),
+        0x9a => render_handler_9a(mode.placement_first),
         0x9c => render_definition_grid(0x180, 4, 1),
         _ => None,
     }
@@ -418,6 +420,24 @@ fn render_handler_95(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
     }
     values.push((0x1e5, -16 + [-6, 0, -2, -4][usize::from(variant)], 1));
     parts(&values)
+}
+
+fn render_handler_9a(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+    let head = match placement_first & 3 {
+        0 => 0x1bd,
+        1 => 0x1ad,
+        2 => 0x14,
+        3 => 0x211,
+        _ => unreachable!(),
+    };
+    parts(&[
+        (head, -8, 0),
+        (0x1bf, -1, 3),
+        (0x1be, -15, 3),
+        (0x1af, -17, 5),
+        (0x1ae, -31, 5),
+        (0x20c, -32, 4),
+    ])
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
@@ -808,9 +828,11 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1fe => [0x1523, 0x1533, 0x1524, 0x1534],
         0x1ff => [0x1525, 0x1535, 0x1419, 0x1419],
         0x200 => [0x11e2, 0x1419, 0x31e3, 0x1419],
+        0x20c => [0x2c19, 0x2c19, 0x2c19, 0x0599],
         0x20d => [0x1419, 0x1419, 0x1419, 0x350d],
         0x20e => [0x354e, 0x355e, 0x354f, 0x355f],
         0x20f => [0x1419, 0x355d, 0x1419, 0x1419],
+        0x211 => [0x1024, 0x1034, 0x1025, 0x1035],
         0x21f => [0x35ae, 0x35be, 0x35af, 0x35bf],
         0x124 => [0x5508, 0x5518, 0x5507, 0x5517],
         0x125 => [0x5108, 0x5118, 0x5107, 0x5117],
@@ -838,6 +860,12 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x155 => [0x0c19, 0x0c19, 0x0da8, 0x0db8],
         0x156 => [0x0da9, 0x0db9, 0x0daa, 0x0dba],
         0x169 => [0x554c, 0x555c, 0x554b, 0x555b],
+        0x1ad => [0x89dc, 0x89cc, 0x89dd, 0x89cd],
+        0x1ae => [0x0da0, 0x0db0, 0x0da1, 0x2db1],
+        0x1af => [0x4da1, 0x6db1, 0x4da0, 0x4db0],
+        0x1bd => [0x88b8, 0x88a8, 0x88b9, 0x88a9],
+        0x1be => [0x8db0, 0x8da0, 0xadb1, 0x8da1],
+        0x1bf => [0xedb1, 0xcda1, 0xcdb0, 0xcda0],
         0x180 => [0x0580, 0x0590, 0x0581, 0x0591],
         0x181 => [0x0582, 0x0592, 0x0583, 0x0593],
         0x182 => [0x0584, 0x0594, 0x0585, 0x0595],
@@ -1993,5 +2021,36 @@ mod tests {
                 (0x1e5, -20, 1)
             ]
         );
+    }
+
+    #[test]
+    fn handler_9a_preserves_variant_head_and_shared_tail() {
+        let geometry = |first, alternate_display| {
+            render_lunar_magic_standard_sprite_with_mode(
+                0x9a,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    alternate_display,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        let tail = [
+            (0x1bf, -1, 3),
+            (0x1be, -15, 3),
+            (0x1af, -17, 5),
+            (0x1ae, -31, 5),
+            (0x20c, -32, 4),
+        ];
+        for (variant, head) in [(0, 0x1bd), (1, 0x1ad), (2, 0x14), (3, 0x211)] {
+            let parts = geometry(variant, false);
+            assert_eq!(parts[0], (head, -8, 0));
+            assert_eq!(&parts[1..], tail);
+        }
+        assert_eq!(geometry(0, true), [(0x115, 0, 1)]);
     }
 }
