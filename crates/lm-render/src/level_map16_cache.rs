@@ -71,6 +71,24 @@ impl NativeLevelMap16Cache {
         &self.cells
     }
 
+    /// Reads one mapped cell.
+    ///
+    /// # Errors
+    ///
+    /// Rejects coordinates that map to Lunar Magic's 0x3800 sentinel.
+    pub fn get(
+        &self,
+        layout: NativeLevelMap16Layout,
+        x: usize,
+        y: usize,
+    ) -> Result<u16, NativeLevelMap16CacheError> {
+        let index = Self::cell_index(layout, x, y);
+        self.cells
+            .get(index)
+            .copied()
+            .ok_or(NativeLevelMap16CacheError::CellOutOfRange(index))
+    }
+
     /// Converts tile coordinates with Lunar Magic's horizontal/vertical cache formulas.
     #[must_use]
     pub fn cell_index(layout: NativeLevelMap16Layout, x: usize, y: usize) -> usize {
