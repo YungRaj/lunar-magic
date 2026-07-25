@@ -30,11 +30,41 @@ pub const SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET: usize = 0x2d8f6;
 pub const SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET: usize = 0x292b;
 pub const SMW_US_V1_OBJECT_TILESETS: usize = 16;
 pub const SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS: usize = 4;
+/// Four-byte sprite GFX assignment rows used by the 32 native sprite tilesets.
+///
+/// Lunar Magic copies this pristine table into its `g_abSpriteGraphicsSets` working array before
+/// resolving the four SP slots. The table begins at headerless PC `$0028C3`.
+pub const SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET: usize = 0x28c3;
+pub const SMW_US_V1_SPRITE_TILESETS: usize = 32;
+pub const SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS: usize = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SmwUsV1ObjectTilesetGraphicsError {
     TilesetOutOfRange(usize),
     Rom(RomError),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SmwUsV1SpriteTilesetGraphicsError {
+    TilesetOutOfRange(usize),
+    Rom(RomError),
+}
+
+impl fmt::Display for SmwUsV1SpriteTilesetGraphicsError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "pristine sprite-tileset graphics lookup failed: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1SpriteTilesetGraphicsError {}
+
+impl From<RomError> for SmwUsV1SpriteTilesetGraphicsError {
+    fn from(value: RomError) -> Self {
+        Self::Rom(value)
+    }
 }
 
 impl fmt::Display for SmwUsV1ObjectTilesetGraphicsError {
@@ -76,6 +106,33 @@ pub fn smw_us_v1_object_tileset_graphics_files(
         .ok_or(RomError::RangeOutOfBounds {
             offset,
             len: SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS,
+            image_len: rom.logical_len(),
+        })?;
+    Ok(std::array::from_fn(|index| usize::from(bytes[index])))
+}
+
+/// Reads the four SP graphics-file numbers selected by one native sprite tileset.
+///
+/// # Errors
+///
+/// Rejects tileset indices above 31 and truncated assignment tables.
+pub fn smw_us_v1_sprite_tileset_graphics_files(
+    rom: &RomImage,
+    tileset: usize,
+) -> Result<[usize; SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS], SmwUsV1SpriteTilesetGraphicsError> {
+    if tileset >= SMW_US_V1_SPRITE_TILESETS {
+        return Err(SmwUsV1SpriteTilesetGraphicsError::TilesetOutOfRange(
+            tileset,
+        ));
+    }
+    let offset = SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET
+        + tileset * SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS;
+    let bytes = rom
+        .logical_bytes()
+        .get(offset..offset + SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS)
+        .ok_or(RomError::RangeOutOfBounds {
+            offset,
+            len: SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS,
             image_len: rom.logical_len(),
         })?;
     Ok(std::array::from_fn(|index| usize::from(bytes[index])))
@@ -149,6 +206,27 @@ mod tests {
         assert_eq!(
             smw_us_v1_object_tileset_graphics_files(&rom, 16),
             Err(SmwUsV1ObjectTilesetGraphicsError::TilesetOutOfRange(16))
+        );
+    }
+
+    #[test]
+    fn sprite_tileset_assignments_are_bounded_and_ordered() {
+        let mut bytes = vec![0xff; 0x30_000];
+        bytes[SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET
+            ..SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET + 8]
+            .copy_from_slice(&[0x00, 0x01, 0x13, 0x02, 0x00, 0x01, 0x12, 0x03]);
+        let rom = RomImage::from_bytes(bytes).unwrap();
+        assert_eq!(
+            smw_us_v1_sprite_tileset_graphics_files(&rom, 0).unwrap(),
+            [0x00, 0x01, 0x13, 0x02]
+        );
+        assert_eq!(
+            smw_us_v1_sprite_tileset_graphics_files(&rom, 1).unwrap(),
+            [0x00, 0x01, 0x12, 0x03]
+        );
+        assert_eq!(
+            smw_us_v1_sprite_tileset_graphics_files(&rom, 32),
+            Err(SmwUsV1SpriteTilesetGraphicsError::TilesetOutOfRange(32))
         );
     }
 }
