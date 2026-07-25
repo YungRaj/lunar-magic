@@ -91,6 +91,8 @@ mod rom_palette_editor;
 mod rom_secondary_exit_editor;
 mod rom_tilemap_editor;
 mod rom_title_recording_editor;
+mod ssc_sidecar_editor;
+mod ssc_sidecar_editor_form;
 mod startup;
 mod vanilla_graphics_editor;
 mod vanilla_level_editor;

@@ -68,6 +68,8 @@ impl NativeApplication {
         ui.separator();
         document_pair!(ui, self.dsc_sidecar_editor, "Open DSC Sidecar…", "Close DSC Sidecar");
         ui.separator();
+        document_pair!(ui, self.ssc_sidecar_editor, "Open SSC Custom-Sprite Metadata…", "Close SSC Custom-Sprite Metadata");
+        ui.separator();
         document_pair!(ui, self.map16_set_editor, "Open Complete Map16 Set…", "Close Complete Map16 Set");
         ui.separator();
         document_pair!(ui, self.native_level_document_editor, "Open Native Level Streams…", "Close Native Level Streams");

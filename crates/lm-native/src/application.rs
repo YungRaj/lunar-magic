@@ -51,6 +51,7 @@ use crate::{
     rom_secondary_exit_editor::RomSecondaryExitEditor,
     rom_tilemap_editor::{RomCreditsTilemapEditor, RomTitleTilemapEditor},
     rom_title_recording_editor::RomTitleRecordingEditor,
+    ssc_sidecar_editor::SscSidecarEditor,
     vanilla_graphics_editor::VanillaGraphicsEditor,
     vanilla_level_editor::VanillaLevelEditor,
 };
@@ -91,6 +92,7 @@ pub(crate) struct NativeApplication {
     custom_sprite_editor: CustomSpriteEditor,
     native_map16_sidecar_editor: NativeMap16SidecarEditor,
     dsc_sidecar_editor: DscSidecarEditor,
+    ssc_sidecar_editor: SscSidecarEditor,
     map16_set_editor: Map16SetEditor,
     native_level_document_editor: NativeLevelDocumentEditor,
     native_level_assets_editor: NativeLevelAssetsEditor,

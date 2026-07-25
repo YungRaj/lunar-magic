@@ -81,6 +81,7 @@ mod selection_state;
 mod shared_palette_state;
 mod shortcut;
 mod snapshot;
+mod ssc_sidecar_controller;
 pub mod startup_args;
 mod state;
 mod title_recording_state;
@@ -221,6 +222,9 @@ pub use shortcut::{
     ShortcutBinding, ShortcutConfig, ShortcutError, ShortcutGesture, ShortcutKey, ShortcutModifiers,
 };
 pub use snapshot::{ControllerSnapshot, ProfiledControllerSnapshot};
+pub use ssc_sidecar_controller::{
+    SscSidecarController, SscSidecarControllerError, SscSidecarSaveSnapshot,
+};
 pub use state::{AppError, AppState};
 pub use tool_config::{ToolConfig, ToolConfigError};
 pub use toolbar::{ToolbarAction, ToolbarActivation, ToolbarConfig, ToolbarError, ToolbarItem};
