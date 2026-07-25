@@ -2,6 +2,7 @@ use crate::{
     dialogs,
     document_loader::{BoundedRead, DocumentLoader},
     document_persistence::DocumentPersistence,
+    map16_subtile_form::{self, SubtileForm},
     native_map16_sidecar_form::NativeMap16SidecarForm,
 };
 use eframe::egui;
@@ -27,7 +28,9 @@ pub(crate) struct NativeMap16SidecarEditor {
     controller: Option<NativeMap16SidecarController>,
     pending_open: Option<PendingOpen>,
     form: NativeMap16SidecarForm,
-    loaded_key: Option<(u64, usize)>,
+    quadrant: usize,
+    subtile: SubtileForm,
+    loaded_key: Option<(u64, usize, usize)>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     persistence: DocumentPersistence,
@@ -218,6 +221,32 @@ impl NativeMap16SidecarEditor {
         }
         if let Some(tile) = current_tile {
             show_definition_preview(ui, self.form.entry / 2, tile);
+            ui.horizontal(|ui| {
+                ui.label("Quadrant");
+                for index in 0..4 {
+                    if ui
+                        .selectable_value(
+                            &mut self.quadrant,
+                            index,
+                            map16_subtile_form::quadrant_name(index),
+                        )
+                        .changed()
+                    {
+                        self.loaded_key = None;
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("8×8 tile (hex)");
+                ui.text_edit_singleline(&mut self.subtile.tile);
+            });
+            ui.add(egui::Slider::new(&mut self.subtile.palette, 0..=7).text("Palette"));
+            ui.checkbox(&mut self.subtile.priority, "Priority");
+            ui.checkbox(&mut self.subtile.x_flip, "Horizontal flip");
+            ui.checkbox(&mut self.subtile.y_flip, "Vertical flip");
+            if ui.button("Apply decoded subtile").clicked() {
+                self.apply_subtile();
+            }
         }
     }
 
@@ -287,16 +316,47 @@ impl NativeMap16SidecarEditor {
         }
     }
 
+    fn apply_subtile(&mut self) {
+        let subtile = match self.subtile.parse() {
+            Ok(value) => value,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let tile_index = self.form.entry / 2;
+        let entry = tile_index * 2 + self.quadrant / 2;
+        let Some(current) = self
+            .controller
+            .as_ref()
+            .and_then(|controller| controller.value().entry(entry))
+        else {
+            self.error = Some("selected Map16 subtile is outside the sidecar".into());
+            return;
+        };
+        self.apply_edit(NativeMap16SidecarEdit {
+            entry,
+            value: replace_subtile_word(current, self.quadrant % 2, subtile.0),
+        });
+    }
+
     fn clamp_and_load(&mut self) {
         let Some(controller) = self.controller.as_ref() else {
             return;
         };
         let count = controller.value().entry_count();
         self.form.entry = self.form.entry.min(count.saturating_sub(1));
-        let key = (controller.revision(), self.form.entry);
+        self.quadrant = self.quadrant.min(3);
+        let key = (controller.revision(), self.form.entry, self.quadrant);
         if self.loaded_key != Some(key) {
             let value = controller.value().entry(self.form.entry).unwrap_or(0);
             self.form = NativeMap16SidecarForm::load(self.form.entry, value);
+            if let Some(tile) = controller.value().tile(self.form.entry / 2) {
+                self.subtile = SubtileForm::from_subtile(map16_subtile_form::quadrant_value(
+                    tile,
+                    self.quadrant,
+                ));
+            }
             self.loaded_key = Some(key);
         }
     }
@@ -374,4 +434,20 @@ fn subtile_label(ui: &mut egui::Ui, name: &str, subtile: lm_level::Subtile) {
             if subtile.y_flip() { " Y" } else { "" },
         ));
     });
+}
+
+fn replace_subtile_word(entry: u32, half: usize, word: u16) -> u32 {
+    let shift = if half == 0 { 0 } else { 16 };
+    (entry & !(0xffff_u32 << shift)) | (u32::from(word) << shift)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_subtile_word;
+
+    #[test]
+    fn semantic_subtile_edit_preserves_the_other_packed_word() {
+        assert_eq!(replace_subtile_word(0x4433_2211, 0, 0xaabb), 0x4433_aabb);
+        assert_eq!(replace_subtile_word(0x4433_2211, 1, 0xccdd), 0xccdd_2211);
+    }
 }
