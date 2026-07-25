@@ -146,6 +146,10 @@ const SHARED_SLOT_064_REMAINDER_TILES: [u8; 16] = [
 const SHARED_SLOT_065_TILES: [u8; 16] = [
     0x5f, 0x60, 0x5a, 0x5b, 0xa5, 0x59, 0x29, 0x0f, 0xaa, 0xa4, 0x57, 0xa5, 0x59, 0x4a, 0x4a, 0x4a,
 ];
+const SHARED_SLOT_074_MIDDLE_TILES: [[u16; 3]; 2] = [[0x163, 0x0c7, 0x164], [0x165, 0x0c8, 0x16a]];
+const SHARED_SLOT_077_TILES: [u8; 16] = [
+    0x59, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0x85, 0x00, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a, 0xaa,
+];
 const SHARED_SLOT_008_TILES: [[[u8; 3]; 3]; 2] = [
     [[0x2f, 0x25, 0x32], [0x30, 0x25, 0x33], [0x31, 0x25, 0x34]],
     [[0x39, 0x25, 0x3c], [0x3a, 0x25, 0x3d], [0x3b, 0x25, 0x3e]],
@@ -222,6 +226,10 @@ enum NativeRenderer {
     SharedSlot065,
     SharedSlot066,
     SharedSlot070,
+    SharedSlot071,
+    SharedSlot072,
+    SharedSlot074,
+    SharedSlot077,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -698,6 +706,18 @@ fn dispatch_native_renderer_high(
         }
         NativeRenderer::SharedSlot070 => {
             render_shared_slot_070(cache, layout, placement, parameter)
+        }
+        NativeRenderer::SharedSlot071 => {
+            render_shared_slot_071(cache, layout, placement, parameter)
+        }
+        NativeRenderer::SharedSlot072 => {
+            render_shared_slot_072(cache, layout, placement, parameter)
+        }
+        NativeRenderer::SharedSlot074 => {
+            render_shared_slot_074(cache, layout, placement, parameter)
+        }
+        NativeRenderer::SharedSlot077 => {
+            render_shared_slot_077(cache, layout, placement, parameter)
         }
         _ => unreachable!("low native renderer routed to high dispatcher"),
     }
@@ -1657,6 +1677,106 @@ fn render_shared_slot_070(
     Ok(())
 }
 
+fn render_shared_slot_071(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let groups = usize::from(parameter & 0x0f) + 1;
+    let horizontal_body = usize::from(parameter & 0x0f) * 4 + 1;
+    set_placement_cell(cache, layout, placement, 0, 0, 0x10a)?;
+    for minor_offset in 1..=horizontal_body {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, 0x10b)?;
+    }
+    set_placement_cell(cache, layout, placement, 0, horizontal_body + 1, 0x10c)?;
+
+    let encoded_height = usize::from(parameter >> 4);
+    let height = if encoded_height == 0 {
+        0x100
+    } else {
+        encoded_height
+    };
+    for group in 0..groups {
+        let minor_offset = group * 4 + 1;
+        for major_offset in 1..=height {
+            set_placement_cell(
+                cache,
+                layout,
+                placement,
+                major_offset,
+                minor_offset,
+                if major_offset == 1 { 0x078 } else { 0x079 },
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn render_shared_slot_072(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    render_capped_minor_run(
+        cache,
+        layout,
+        placement,
+        0,
+        parameter,
+        [0x0a0, 0x0a1, 0x0a2],
+    )
+}
+
+fn render_shared_slot_074(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let encoded_width = usize::from(parameter & 0x0f);
+    let width = if encoded_width == 0 {
+        0x100
+    } else {
+        encoded_width
+    };
+    let encoded_height = usize::from(parameter >> 4);
+    let height = if encoded_height == 0 {
+        0x100
+    } else {
+        encoded_height
+    };
+    for major_offset in 0..=height {
+        let row = if major_offset == 0 {
+            [0x161, 0x10d, 0x162]
+        } else if major_offset == height {
+            [0x16b, 0x16c, 0x16d]
+        } else {
+            SHARED_SLOT_074_MIDDLE_TILES[major_offset & 1]
+        };
+        set_placement_cell(cache, layout, placement, major_offset, 0, row[0])?;
+        for minor_offset in 1..width {
+            set_placement_cell(cache, layout, placement, major_offset, minor_offset, row[1])?;
+        }
+        set_placement_cell(cache, layout, placement, major_offset, width, row[2])?;
+    }
+    Ok(())
+}
+
+fn render_shared_slot_077(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let tile = u16::from(SHARED_SLOT_077_TILES[usize::from(parameter >> 4)]) + 0x100;
+    for minor_offset in 0..=usize::from(parameter & 0x0f) {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
+    }
+    Ok(())
+}
+
 fn render_shared_slot_018(
     cache: &mut NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
@@ -2445,20 +2565,7 @@ fn install_handler14_command(
 fn install_shared_handler_aliases(
     definitions: &mut StandardObjectDefinitionSet,
 ) -> Result<(), StandardObjectRenderError> {
-    definitions.set_handler(
-        0,
-        StandardObjectDefinition {
-            pattern: StandardObjectPattern {
-                width: 1,
-                height: 1,
-                tiles: vec![0],
-            },
-            extent: ObjectExtent::FixedOne,
-            major_expansion: AxisExpansion::Clamp,
-            minor_expansion: AxisExpansion::Clamp,
-            renderer: NativeRenderer::NoOp,
-        },
-    )?;
+    install_noop_mapped_handler(definitions)?;
     definitions.set_handler(
         11,
         StandardObjectDefinition {
@@ -2510,6 +2617,10 @@ fn install_shared_handler_aliases(
         (65, NativeRenderer::SharedSlot065),
         (66, NativeRenderer::SharedSlot066),
         (70, NativeRenderer::SharedSlot070),
+        (71, NativeRenderer::SharedSlot071),
+        (72, NativeRenderer::SharedSlot072),
+        (74, NativeRenderer::SharedSlot074),
+        (77, NativeRenderer::SharedSlot077),
     ] {
         definitions.set_handler(
             handler,
@@ -2545,6 +2656,25 @@ fn install_shared_handler_aliases(
         definitions.alias(command, handler)?;
     }
     Ok(())
+}
+
+fn install_noop_mapped_handler(
+    definitions: &mut StandardObjectDefinitionSet,
+) -> Result<(), StandardObjectRenderError> {
+    definitions.set_handler(
+        0,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0],
+            },
+            extent: ObjectExtent::FixedOne,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::NoOp,
+        },
+    )
 }
 
 fn install_simple_mapped_handlers(
@@ -2697,6 +2827,36 @@ fn install_edge_mapped_handlers(
             },
         )?;
     }
+    for (handler, top_tile, remainder_tile) in [(73, 0x10e, 0x0a3), (75, 0x10f, 0x0ea)] {
+        definitions.set_handler(
+            handler,
+            StandardObjectDefinition {
+                pattern: StandardObjectPattern {
+                    width: 2,
+                    height: 1,
+                    tiles: vec![top_tile, remainder_tile],
+                },
+                extent: ObjectExtent::ParameterNibbles,
+                major_expansion: AxisExpansion::Clamp,
+                minor_expansion: AxisExpansion::Clamp,
+                renderer: NativeRenderer::Pattern,
+            },
+        )?;
+    }
+    definitions.set_handler(
+        76,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0x082],
+            },
+            extent: ObjectExtent::ParameterNibbles,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::Pattern,
+        },
+    )?;
     Ok(())
 }
 
@@ -3821,6 +3981,108 @@ mod tests {
                     vec![0x15c, 0x153, 0x153, 0x153],
                 ],
             ),
+        ] {
+            let mut handler_map = [0xff; 64];
+            handler_map[1] = handler;
+            let stream = ObjectStream {
+                records: vec![ObjectRecord::new(vec![0, 0x10, parameter]).unwrap()],
+            };
+            let report = render_mapped_standard_object_stream(
+                &stream,
+                &definitions,
+                &handler_map,
+                layout(),
+                0x25,
+            )
+            .unwrap();
+            for (major, row) in expected.into_iter().enumerate() {
+                for (minor, tile) in row.into_iter().enumerate() {
+                    assert_eq!(
+                        report.cache.cells()
+                            [NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                        tile,
+                        "handler {handler}, cell ({major}, {minor})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_71_renders_segmented_header_and_supports() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 71;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x10, 0x22]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        let header = report.cache.cells();
+        for minor in 0..=10 {
+            let expected = if minor == 0 {
+                0x10a
+            } else if minor == 10 {
+                0x10c
+            } else {
+                0x10b
+            };
+            assert_eq!(
+                header[NativeLevelMap16Cache::cell_index(layout(), 0, minor)],
+                expected
+            );
+        }
+        for minor in [1, 5, 9] {
+            assert_eq!(
+                header[NativeLevelMap16Cache::cell_index(layout(), 1, minor)],
+                0x078
+            );
+            assert_eq!(
+                header[NativeLevelMap16Cache::cell_index(layout(), 2, minor)],
+                0x079
+            );
+        }
+    }
+
+    #[test]
+    fn mapped_handlers_72_through_77_render_recovered_shapes() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        for (handler, parameter, expected) in [
+            (72, 0x02, vec![vec![0x0a0, 0x0a1, 0x0a2]]),
+            (
+                73,
+                0x12,
+                vec![vec![0x10e, 0x10e, 0x10e], vec![0x0a3, 0x0a3, 0x0a3]],
+            ),
+            (
+                74,
+                0x32,
+                vec![
+                    vec![0x161, 0x10d, 0x162],
+                    vec![0x165, 0x0c8, 0x16a],
+                    vec![0x163, 0x0c7, 0x164],
+                    vec![0x16b, 0x16c, 0x16d],
+                ],
+            ),
+            (
+                75,
+                0x12,
+                vec![vec![0x10f, 0x10f, 0x10f], vec![0x0ea, 0x0ea, 0x0ea]],
+            ),
+            (
+                76,
+                0x12,
+                vec![vec![0x082, 0x082, 0x082], vec![0x082, 0x082, 0x082]],
+            ),
+            (77, 0x22, vec![vec![0x157, 0x157, 0x157]]),
         ] {
             let mut handler_map = [0xff; 64];
             handler_map[1] = handler;
