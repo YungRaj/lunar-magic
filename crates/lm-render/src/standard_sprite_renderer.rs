@@ -18,7 +18,7 @@ pub struct StandardSpritePreviewMode {
 
 /// Renders the first authenticated family of Lunar Magic standard-sprite previews.
 ///
-/// Sprite IDs `$00`–`$03` share one recovered handler shape and select source tiles `$40`–`$43`.
+/// Sprite IDs `$00`–`$08` use authenticated handler shapes and preview definitions.
 /// Lunar Magic substitutes tile `$115` when its alternate sprite-number display mode is active.
 /// Other IDs remain unresolved and return `None` instead of fabricating artwork.
 #[must_use]
@@ -41,17 +41,18 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
     sprite_number: u8,
     mode: StandardSpritePreviewMode,
 ) -> Option<Vec<StandardSpritePreviewTile>> {
-    if mode.alternate_display && sprite_number <= 7 {
-        return parts(&[(0x115, 0, 0)]);
+    if mode.alternate_display && sprite_number <= 8 {
+        return parts(&[(0x115, 0, 1)]);
     }
     match sprite_number {
-        0x00..=0x03 => parts(&[(0x40 + u16::from(sprite_number), 0, 0)]),
-        0x04 if mode.alternate_graphics => parts(&[(0x13, 0, -16), (0x23, 0, 0)]),
-        0x04 => parts(&[(0x10, 0, -16), (0x20, 0, 0)]),
-        0x05 if mode.alternate_graphics => parts(&[(0x12, 0, -16), (0x22, 0, 0)]),
-        0x05 => parts(&[(0x11, 0, -16), (0x21, 0, 0)]),
-        0x06 => parts(&[(0x12, 0, -16), (0x22, 0, 0)]),
-        0x07 => parts(&[(0x13, 0, -16), (0x23, 0, 0)]),
+        0x00..=0x03 => parts(&[(0x40 + u16::from(sprite_number), 0, 1)]),
+        0x04 if mode.alternate_graphics => parts(&[(0x13, 0, -14), (0x23, 0, 2)]),
+        0x04 => parts(&[(0x10, 0, -14), (0x20, 0, 2)]),
+        0x05 if mode.alternate_graphics => parts(&[(0x12, 0, -14), (0x22, 0, 2)]),
+        0x05 => parts(&[(0x11, 0, -14), (0x21, 0, 2)]),
+        0x06 => parts(&[(0x12, 0, -14), (0x22, 0, 2)]),
+        0x07 => parts(&[(0x13, 0, -14), (0x23, 0, 2)]),
+        0x08 => parts(&[(0x10, 0, -14), (0x20, 0, 2), (0x08, 1, -10)]),
         _ => None,
     }
 }
@@ -72,6 +73,7 @@ fn parts(values: &[(u16, i16, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
 
 fn preview_definition(index: u16) -> Option<[u16; 4]> {
     Some(match index {
+        0x008 => [0x0c19, 0x0c19, 0x0c19, 0x0c5d],
         0x010 => [0x1482, 0x1492, 0x1483, 0x1493],
         0x011 => [0x1082, 0x1092, 0x1083, 0x1093],
         0x012 => [0x0c82, 0x0c92, 0x0c83, 0x0c93],
@@ -102,7 +104,7 @@ mod tests {
                     definition_index: 0x40 + u16::from(sprite),
                     subtiles: preview_definition(0x40 + u16::from(sprite)).unwrap(),
                     x: 0,
-                    y: 0,
+                    y: 1,
                 }])
             );
             assert_eq!(
@@ -111,7 +113,7 @@ mod tests {
                     definition_index: 0x115,
                     subtiles: [0x04e8, 0x04f8, 0x04e9, 0x04f9],
                     x: 0,
-                    y: 0,
+                    y: 1,
                 }])
             );
         }
@@ -161,6 +163,14 @@ mod tests {
             ),
             [0x115]
         );
-        assert_eq!(render_lunar_magic_standard_sprite(8, false), None);
+        assert_eq!(
+            render_lunar_magic_standard_sprite(8, false)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>(),
+            [(0x10, 0, -14), (0x20, 0, 2), (0x08, 1, -10)]
+        );
+        assert_eq!(render_lunar_magic_standard_sprite(9, false), None);
     }
 }
