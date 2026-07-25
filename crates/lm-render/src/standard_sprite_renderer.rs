@@ -646,6 +646,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             ])
         }
         0xdd => parts(&[(if mode.alternate_display { 0x115 } else { 0x30 }, 0, 1)]),
+        0xde => render_handler_de(mode.placement_first),
         0xdf => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
         0xe0 => parts(&[
             (0x1a6, -77, -19),
@@ -946,6 +947,53 @@ fn render_handler_ed(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpri
         "MAY GLITCH!"
     };
     render_text_lines(&[("  Layer 2  ", 0), (label, 8)])
+}
+
+fn render_handler_de(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+    let values = if placement_first & 1 == 0 {
+        [
+            (0xeb, -2, 16),
+            (0xeb, -4, 32),
+            (0xeb, -6, 48),
+            (0xed, -6, 48),
+            (0xec, -22, 48),
+            (0xee, 10, 48),
+            (0xeb, -12, -10),
+            (0xeb, -24, -20),
+            (0xeb, -36, -30),
+            (0xed, -36, -30),
+            (0xec, -52, -30),
+            (0xee, -20, -30),
+            (0xeb, 15, -6),
+            (0xeb, 30, -12),
+            (0xeb, 45, -18),
+            (0xed, 45, -18),
+            (0xec, 29, -18),
+            (0xee, 61, -18),
+        ]
+    } else {
+        [
+            (0xeb, 2, 16),
+            (0xeb, 4, 32),
+            (0xeb, 6, 48),
+            (0xed, 6, 48),
+            (0xec, -10, 48),
+            (0xee, 22, 48),
+            (0xeb, -15, -6),
+            (0xeb, -30, -12),
+            (0xeb, -45, -18),
+            (0xed, -45, -18),
+            (0xec, -61, -18),
+            (0xee, -29, -18),
+            (0xeb, 12, -10),
+            (0xeb, 24, -20),
+            (0xeb, 36, -30),
+            (0xed, 36, -30),
+            (0xec, 20, -30),
+            (0xee, 52, -30),
+        ]
+    };
+    parts(&values)
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
@@ -3565,5 +3613,52 @@ mod tests {
             }),
             "MAY GLITCH!"
         );
+    }
+
+    #[test]
+    fn handler_de_preserves_both_directional_three_arm_composites() {
+        let geometry = |first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                0xde,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        let left = geometry(0);
+        assert_eq!(left.len(), 18);
+        assert_eq!(
+            &left[..6],
+            &[
+                (0xeb, -2, 16),
+                (0xeb, -4, 32),
+                (0xeb, -6, 48),
+                (0xed, -6, 48),
+                (0xec, -22, 48),
+                (0xee, 10, 48)
+            ]
+        );
+        assert_eq!(
+            &left[6..12],
+            &[
+                (0xeb, -12, -10),
+                (0xeb, -24, -20),
+                (0xeb, -36, -30),
+                (0xed, -36, -30),
+                (0xec, -52, -30),
+                (0xee, -20, -30)
+            ]
+        );
+        let right = geometry(1);
+        assert_eq!(right.len(), 18);
+        assert_eq!(right[0], (0xeb, 2, 16));
+        assert_eq!(right[6], (0xeb, -15, -6));
+        assert_eq!(right[12], (0xeb, 12, -10));
+        assert_eq!(right[17], (0xee, 52, -30));
     }
 }
