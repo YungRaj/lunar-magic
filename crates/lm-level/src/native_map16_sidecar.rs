@@ -1,3 +1,4 @@
+use crate::Map16Tile;
 use std::fmt;
 
 /// Fixed custom-object Map16 sidecar loaded and saved as exactly `0x2000` bytes.
@@ -9,6 +10,7 @@ pub struct M16Sidecar {
 impl M16Sidecar {
     pub const ENCODED_LEN: usize = 0x2000;
     pub const ENTRY_COUNT: usize = Self::ENCODED_LEN / 4;
+    pub const TILE_COUNT: usize = Self::ENCODED_LEN / Map16Tile::GRAPHICS_LEN;
 
     /// Decodes the exact native `.m16` buffer.
     ///
@@ -34,6 +36,12 @@ impl M16Sidecar {
         read_entry(&self.bytes, index)
     }
 
+    /// Decodes one four-subtile custom-object definition. `.m16` stores no Acts Like plane.
+    #[must_use]
+    pub fn tile(&self, index: usize) -> Option<Map16Tile> {
+        read_tile(&self.bytes, index)
+    }
+
     /// Replaces one raw little-endian 32-bit entry.
     ///
     /// # Errors
@@ -54,6 +62,7 @@ pub struct S16Sidecar {
 impl S16Sidecar {
     pub const CAPACITY: usize = 0x1c000;
     pub const ENTRY_COUNT: usize = Self::CAPACITY / 4;
+    pub const TILE_COUNT: usize = Self::CAPACITY / Map16Tile::GRAPHICS_LEN;
     pub const BLOCK_LEN: usize = 0x800;
 
     /// Loads an `.s16` prefix into a zeroed native-capacity buffer.
@@ -84,6 +93,12 @@ impl S16Sidecar {
     #[must_use]
     pub fn entry(&self, index: usize) -> Option<u32> {
         read_entry(&self.bytes, index)
+    }
+
+    /// Decodes one four-subtile sprite definition from the zero-filled working buffer.
+    #[must_use]
+    pub fn tile(&self, index: usize) -> Option<Map16Tile> {
+        read_tile(&self.bytes, index)
     }
 
     /// Replaces one raw entry in the complete working buffer.
@@ -118,6 +133,11 @@ fn read_entry(bytes: &[u8], index: usize) -> Option<u32> {
     Some(u32::from_le_bytes(
         bytes.get(offset..offset + 4)?.try_into().ok()?,
     ))
+}
+
+fn read_tile(bytes: &[u8], index: usize) -> Option<Map16Tile> {
+    let offset = index.checked_mul(Map16Tile::GRAPHICS_LEN)?;
+    Map16Tile::decode(bytes.get(offset..offset + Map16Tile::GRAPHICS_LEN)?, 0).ok()
 }
 
 fn write_entry(
@@ -159,6 +179,8 @@ mod tests {
         bytes[4..8].copy_from_slice(&0x4433_2211_u32.to_le_bytes());
         let mut sidecar = M16Sidecar::decode(&bytes).unwrap();
         assert_eq!(sidecar.entry(1), Some(0x4433_2211));
+        assert_eq!(sidecar.tile(0).unwrap().bottom_left.0, 0x2211);
+        assert_eq!(sidecar.tile(0).unwrap().bottom_right.0, 0x4433);
         sidecar
             .set_entry(M16Sidecar::ENTRY_COUNT - 1, 0xaabb_ccdd)
             .unwrap();
@@ -178,6 +200,8 @@ mod tests {
     #[test]
     fn s16_zero_fills_arbitrary_loaded_prefixes() {
         let sidecar = S16Sidecar::decode(&[1, 2, 3]).unwrap();
+        assert_eq!(sidecar.tile(0).unwrap().top_left.0, 0x0201);
+        assert_eq!(sidecar.tile(0).unwrap().top_right.0, 0x0003);
         assert_eq!(sidecar.loaded_len(), 3);
         assert_eq!(sidecar.entry(0), Some(0x0003_0201));
         assert_eq!(sidecar.entry(1), Some(0));

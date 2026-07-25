@@ -1,5 +1,5 @@
 use crate::portable_value_history::PortableValueHistory;
-use lm_level::{M16Sidecar, NativeMap16SidecarError, S16Sidecar};
+use lm_level::{M16Sidecar, Map16Tile, NativeMap16SidecarError, S16Sidecar};
 use std::{fmt, path::PathBuf};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -36,6 +36,22 @@ impl NativeMap16SidecarDocument {
         match self {
             Self::M16(value) => value.entry(index),
             Self::S16(value) => value.entry(index),
+        }
+    }
+
+    #[must_use]
+    pub fn tile(&self, index: usize) -> Option<Map16Tile> {
+        match self {
+            Self::M16(value) => value.tile(index),
+            Self::S16(value) => value.tile(index),
+        }
+    }
+
+    #[must_use]
+    pub const fn tile_count(&self) -> usize {
+        match self {
+            Self::M16(_) => M16Sidecar::TILE_COUNT,
+            Self::S16(_) => S16Sidecar::TILE_COUNT,
         }
     }
 
