@@ -138,6 +138,10 @@ impl VanillaLevelEditor {
         self.foreground_texture.as_ref()
     }
 
+    pub(crate) fn sprite_texture(&self) -> Option<&egui::TextureHandle> {
+        self.sprite_texture.as_ref()
+    }
+
     pub(crate) fn handles(app: &AppState) -> bool {
         app.revision_profile().is_none()
             && app.controller_snapshot().is_ok_and(|snapshot| {
@@ -1305,7 +1309,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
     hit
 }
 
-fn draw_sprite_preview_definition(
+pub(crate) fn draw_sprite_preview_definition(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
     target: egui::Rect,
