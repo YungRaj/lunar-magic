@@ -59,6 +59,7 @@ macro_rules! controller {
 controller!(lm_app::ExAnimationDocumentController);
 controller!(lm_app::DscSidecarController);
 controller!(lm_app::SscSidecarController);
+controller!(lm_app::OscSidecarController);
 controller!(lm_app::CompleteLevelDocumentController);
 controller!(lm_app::EntityAppearanceDocumentController);
 controller!(lm_app::ExpandedSettingsDocumentController);

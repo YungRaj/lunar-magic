@@ -51,6 +51,8 @@ mod native_level_document_form;
 mod native_map16_sidecar_editor;
 mod native_map16_sidecar_form;
 mod native_render;
+mod osc_sidecar_editor;
+mod osc_sidecar_editor_form;
 mod overworld_appearance_editor;
 mod overworld_appearance_editor_forms;
 mod overworld_editor;

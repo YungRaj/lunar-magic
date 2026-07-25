@@ -57,6 +57,9 @@ impl NativeApplication {
         if self.ssc_sidecar_editor.show(context) {
             self.request_quit(context);
         }
+        if self.osc_sidecar_editor.show(context) {
+            self.request_quit(context);
+        }
         if self.map16_set_editor.show(context) {
             self.request_quit(context);
         }

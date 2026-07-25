@@ -217,6 +217,12 @@ pub(crate) fn choose_ssc_sidecar() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_osc_sidecar() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Lunar Magic custom object metadata", &["osc"])
+        .pick_file()
+}
+
 /// Reads a startup-supplied ROM before the native event loop exists.
 pub(crate) fn read_rom(path: &Path) -> io::Result<Vec<u8>> {
     read_regular_bounded(path, MAX_ROM_FILE_LEN, "selected ROM")

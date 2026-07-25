@@ -145,6 +145,7 @@ impl VanillaLevelEditor {
         ui: &mut egui::Ui,
         app: &AppState,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
     ) -> Option<Command> {
         let snapshot = app.controller_snapshot().ok()?;
         let EditorMode::Level(level) = snapshot.mode else {
@@ -185,7 +186,7 @@ impl VanillaLevelEditor {
         ui.separator();
         self.show_map16_preview(ui, &snapshot, object_tileset);
         ui.separator();
-        self.object_canvas(ui, custom_sprites);
+        self.object_canvas(ui, custom_sprites, custom_objects);
         ui.separator();
         ui.columns(2, |columns| {
             self.object_list(&mut columns[0]);
@@ -458,6 +459,7 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
     ) {
         let (records, placements, sprite_placements) = self.canvas_model();
         let vertical = self.controller.as_ref().is_some_and(|controller| {
@@ -475,20 +477,16 @@ impl VanillaLevelEditor {
         let major_extent = if vertical { height } else { width };
         let cell = (major_extent / f32::from(major_tiles)).clamp(2.0, 14.0);
         draw_object_grid(&painter, rect, cell, major_tiles, vertical);
-        if let Some(texture) = self.map16_texture.as_ref() {
-            draw_recovered_object_tiles(
-                &painter,
-                RecoveredObjectDraw {
-                    texture,
-                    target: rect,
-                    cell_size: cell,
-                    major_tiles,
-                    vertical,
-                    records: &records,
-                    handler_map: self.active_standard_object_handler_map(),
-                },
-            );
-        }
+        self.draw_object_artwork(
+            &painter,
+            rect,
+            cell,
+            major_tiles,
+            vertical,
+            &records,
+            &placements,
+            custom_objects,
+        );
         let mut hit = None;
         for placement in placements {
             let index = placement.record_index;
@@ -555,22 +553,68 @@ impl VanillaLevelEditor {
         draw_canvas_caption(ui, vertical);
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn draw_object_artwork(
+        &self,
+        painter: &egui::Painter,
+        target: egui::Rect,
+        cell_size: f32,
+        major_tiles: u16,
+        vertical: bool,
+        records: &[ObjectRecord],
+        placements: &[lm_level::NativeObjectPlacement],
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+    ) {
+        let Some(texture) = self.map16_texture.as_ref() else {
+            return;
+        };
+        draw_recovered_object_tiles(
+            painter,
+            RecoveredObjectDraw {
+                texture,
+                target,
+                cell_size,
+                major_tiles,
+                vertical,
+                records,
+                handler_map: self.active_standard_object_handler_map(),
+            },
+        );
+        if let Some(metadata) = custom_objects {
+            draw_custom_object_tiles(
+                painter,
+                CustomObjectDraw {
+                    texture,
+                    target,
+                    cell_size,
+                    vertical,
+                    records,
+                    placements,
+                    metadata,
+                    variant: self.active_object_family_index(),
+                },
+            );
+        }
+    }
+
     fn active_standard_object_handler_map(&self) -> Option<&[u8; 64]> {
-        let tileset = self
-            .controller
+        let family_index = self.active_object_family_index();
+        self.standard_object_map
             .as_ref()?
-            .level()
-            .layer1
-            .header
-            .object_tileset();
-        let family_index = match lm_profile::smw_us_v1_object_family(tileset) {
+            .family(usize::from(family_index))
+    }
+
+    fn active_object_family_index(&self) -> u8 {
+        let tileset = self.controller.as_ref().map_or(0, |controller| {
+            controller.level().layer1.header.object_tileset()
+        });
+        match lm_profile::smw_us_v1_object_family(tileset) {
             lm_profile::VanillaObjectFamily::Normal => 0,
             lm_profile::VanillaObjectFamily::Castle => 1,
             lm_profile::VanillaObjectFamily::Rope => 2,
             lm_profile::VanillaObjectFamily::Underground => 3,
             lm_profile::VanillaObjectFamily::GhostHouse => 4,
-        };
-        self.standard_object_map.as_ref()?.family(family_index)
+        }
     }
 
     fn canvas_model(
@@ -991,6 +1035,56 @@ fn draw_recovered_object_tiles(painter: &egui::Painter, request: RecoveredObject
                 egui::vec2(cell_size, cell_size),
             );
             draw_map16_atlas_tile(painter, texture, tile_rect, tile);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CustomObjectDraw<'a> {
+    texture: &'a egui::TextureHandle,
+    target: egui::Rect,
+    cell_size: f32,
+    vertical: bool,
+    records: &'a [ObjectRecord],
+    placements: &'a [lm_level::NativeObjectPlacement],
+    metadata: &'a lm_level::OscResolvedTable,
+    variant: u8,
+}
+
+fn draw_custom_object_tiles(painter: &egui::Painter, request: CustomObjectDraw<'_>) {
+    for placement in request.placements {
+        let Some(record) = request.records.get(placement.record_index) else {
+            continue;
+        };
+        let Some(metadata) = request.metadata.default_display(
+            record.command_id(),
+            record.parameter(),
+            request.variant,
+        ) else {
+            continue;
+        };
+        let Some(parts) = lm_render::render_resolved_lunar_magic_custom_object(metadata) else {
+            continue;
+        };
+        let (tile_x, tile_y) = placement.tile_coordinates(request.vertical);
+        let origin = request.target.min
+            + egui::vec2(
+                f32::from(tile_x) * request.cell_size,
+                f32::from(tile_y) * request.cell_size,
+            );
+        for part in parts {
+            if part.tile >= 0x200 {
+                continue;
+            }
+            let offset = egui::vec2(
+                f32::from(part.x) * request.cell_size / 16.0,
+                f32::from(part.y) * request.cell_size / 16.0,
+            );
+            let target = egui::Rect::from_min_size(
+                origin + offset,
+                egui::vec2(request.cell_size, request.cell_size),
+            );
+            draw_map16_atlas_tile(painter, request.texture, target, part.tile);
         }
     }
 }

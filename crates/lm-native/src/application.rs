@@ -24,6 +24,7 @@ use crate::{
     native_level_document_editor::NativeLevelDocumentEditor,
     native_map16_sidecar_editor::NativeMap16SidecarEditor,
     native_render::NativeRenderState,
+    osc_sidecar_editor::OscSidecarEditor,
     overworld_appearance_editor::OverworldAppearanceEditor,
     overworld_editor::OverworldEditor,
     palette_editor::PaletteEditor,
@@ -93,6 +94,7 @@ pub(crate) struct NativeApplication {
     native_map16_sidecar_editor: NativeMap16SidecarEditor,
     dsc_sidecar_editor: DscSidecarEditor,
     ssc_sidecar_editor: SscSidecarEditor,
+    osc_sidecar_editor: OscSidecarEditor,
     map16_set_editor: Map16SetEditor,
     native_level_document_editor: NativeLevelDocumentEditor,
     native_level_assets_editor: NativeLevelAssetsEditor,
@@ -332,6 +334,7 @@ impl eframe::App for NativeApplication {
                     ui,
                     &self.app,
                     self.ssc_sidecar_editor.resolved(),
+                    self.osc_sidecar_editor.resolved(),
                 )
             {
                 self.dispatch(context, command);

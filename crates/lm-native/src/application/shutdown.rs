@@ -30,6 +30,7 @@ impl NativeApplication {
         close_or_pause!(self, native_map16_sidecar_editor);
         close_or_pause!(self, dsc_sidecar_editor);
         close_or_pause!(self, ssc_sidecar_editor);
+        close_or_pause!(self, osc_sidecar_editor);
         close_or_pause!(self, map16_set_editor);
         close_or_pause!(self, native_level_document_editor);
         close_or_pause!(self, native_level_assets_editor);
