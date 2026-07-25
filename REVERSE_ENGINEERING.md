@@ -69,6 +69,16 @@ payload SHA-256 so address relocation cannot be mistaken for content mutation. A
 `rats-observe` workflow likewise records every installed tag's logical range, length, and payload
 SHA-256.
 
+The extracted Lunar Magic 3.63 help confirms the supported level-oracle syntax as
+`-ExportLevel ROM MWL LevelNumber` and `-ImportLevel ROM MWL [LevelNumber]`. This is now exercised
+by an opt-in Wine integration test over the Rust complete Layer 3 installation: the built
+application installs all five runtime payloads plus the expanded-settings allocation, repairs the
+checksum, and saves a 1 MiB ROM; Lunar Magic reopens that ROM and exports level `$105`; and the Rust
+MWL decoder then round-trips the resulting version `$0363` file byte-for-byte. The ordinary
+cross-platform test suite leaves this case ignored because it requires the locally supplied
+proprietary executable and Wine, while the explicit `--ignored` run preserves a reproducible
+dynamic-oracle gate.
+
 ### Function-boundary completion audit
 
 The executable-gap audit found 143 regions containing decoded instructions outside recognized function bodies. Direct-control-flow analysis found no direct `CALL` target into those regions; 454 direct `JMP` targets are switch arms or disconnected basic blocks owned by surrounding functions. An aligned initialized-data pointer scan found two genuine function-entry clusters:
