@@ -615,6 +615,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x114, 0, -8),
         ]),
         0xd0 => render_text_lines(&[(" Turn Off ", 0), ("Generator2", 8)]),
+        0xd1 if mode.alternate_display => parts(&[(0x115, 0, 1), (0x114, 0, 0)]),
+        0xd1 => parts(&[(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11), (0x114, 0, 0)]),
         0xd2 => render_handler_d2(),
         0xd3 => parts(&[
             (if mode.alternate_display { 0x115 } else { 0x25 }, 0, 1),
@@ -680,6 +682,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xea => render_text_lines(&[("   Layer 2   ", 0), ("On/Off Switch", 8)]),
         0xeb => render_handler_eb(mode),
         0xec => render_text_lines(&[("Fast BG Scroll", 0)]),
+        0xed => render_handler_ed(mode),
         _ => None,
     }
 }
@@ -928,6 +931,21 @@ fn render_handler_eb(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpri
         }
     };
     render_text_lines(&[(label, 0), ("Auto-Scroll", 8)])
+}
+
+fn render_handler_ed(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let label = if preview_position_nibble(mode) == 0 {
+        match mode.level_mode & 3 {
+            0 => "Sink  Short",
+            1 => " Sink Long ",
+            2 => "  Rise Up  ",
+            3 => " Give Some ",
+            _ => unreachable!(),
+        }
+    } else {
+        "MAY GLITCH!"
+    };
+    render_text_lines(&[("  Layer 2  ", 0), (label, 8)])
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
@@ -3504,6 +3522,48 @@ mod tests {
                 0
             ),
             "  Medium 2 "
+        );
+    }
+
+    #[test]
+    fn handler_d1_preserves_native_helper_and_overlay_geometry() {
+        let geometry = |alternate_display| {
+            render_lunar_magic_standard_sprite(0xd1, alternate_display)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(false),
+            [(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11), (0x114, 0, 0)]
+        );
+        assert_eq!(geometry(true), [(0x115, 0, 1), (0x114, 0, 0)]);
+
+        let label = |mode| {
+            render_lunar_magic_standard_sprite_with_mode(0xed, mode)
+                .unwrap()
+                .iter()
+                .filter(|part| part.y == 8 && part.definition_index != 0x3c7c)
+                .map(|part| {
+                    char::from_u32(u32::from(part.definition_index - 0x3c00))
+                        .expect("native preview glyph is ASCII")
+                })
+                .collect::<String>()
+        };
+        assert_eq!(
+            label(StandardSpritePreviewMode {
+                level_mode: 2,
+                ..StandardSpritePreviewMode::default()
+            }),
+            "  Rise Up  "
+        );
+        assert_eq!(
+            label(StandardSpritePreviewMode {
+                placement_first: 0x10,
+                ..StandardSpritePreviewMode::default()
+            }),
+            "MAY GLITCH!"
         );
     }
 }
