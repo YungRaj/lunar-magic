@@ -2363,11 +2363,15 @@ is not yet honest to call it complete feature parity with the mature Lunar Magic
 first real Lunar Magic 3.63 differential corpus now covers all 512 MWL exports from pristine US SMW:
 all files parse and re-encode byte-for-byte, and `mwl-corpus` makes that gate reproducible. Real
 complete-Map16, shared-palette, and 52-file GFX exports also pass exact Rust round trips. The
-first two real level-save fixtures cover Lunar Magic's pristine-ROM expansion, 13-block RATS
-installation, checksum repair, and content-preserving MWL pointer relocation. Dynamic Wine oracles
-now also cover first-time custom-palette and ExAnimation installation. They prove the optional hook
-markers, allocated pointer tables, 257-color MWL palette layout and TPL rotation, and byte-identical
-compact ExAnimation MWL/ROM payload; both complete ROM transitions replay through `oracle-verify`.
+retained Lunar Magic 3.63 corpus now replays eleven complete ROM transitions: two level saves plus
+MWL frame, Layer 3, optional-asset, and semantic edits; overworld, title-screen, and credits
+transfers; and first-time palette and ExAnimation installation. The level-save fixtures cover
+Lunar Magic's pristine-ROM expansion, 13-block RATS installation, checksum repair, and
+content-preserving MWL pointer relocation. The palette and ExAnimation oracles prove the optional
+hook markers, allocated pointer tables, 257-color MWL palette layout and TPL rotation, and
+byte-identical compact ExAnimation MWL/ROM payload. Both canonical `case.manifest` fixtures and
+retained `oracle.manifest` captures participate in recursive suite replay; canonical manifests take
+precedence when both names exist.
 The
 remaining work depends on differential fixtures from legally supplied ROMs: identifying each
 supported ROM revision's pointer-table layout, validating every object/sprite extension and editor
