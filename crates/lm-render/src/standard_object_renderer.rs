@@ -114,6 +114,13 @@ const SHARED_SLOT_042_TILES: [u8; 16] = [
 const SHARED_SLOT_043_TILES: [u8; 16] = [
     0x90, 0x91, 0xa2, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0xaa, 0xa5, 0x59, 0x4a, 0x4a, 0x4a, 0x4a,
 ];
+const SHARED_SLOT_050_TOP_LEFT_TILES: [u8; 16] = [
+    0x9a, 0x9c, 0x9e, 0xa0, 0x9b, 0x9d, 0x9f, 0xa1, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0xa4, 0x57,
+];
+const SHARED_SLOT_050_TOP_RIGHT_TILES: [u8; 16] = [
+    0x9b, 0x9d, 0x9f, 0xa1, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f,
+];
+const SHARED_SLOT_050_LOWER_PAIRS: [[u16; 2]; 3] = [[0x161, 0x162], [0x163, 0x164], [0x165, 0x166]];
 const SHARED_SLOT_052_TOP_TILES: [u8; 16] = [
     0x5a, 0x5b, 0x5b, 0x5b, 0xa4, 0x57, 0xa5, 0x59, 0x29, 0x0f, 0xaa, 0xa5, 0x59, 0x4a, 0x4a, 0x4a,
 ];
@@ -216,8 +223,11 @@ enum NativeRenderer {
     SharedSlot047,
     SharedSlot048,
     SharedSlot049,
+    SharedSlot050,
     SharedSlot051,
+    SharedSlot053,
     SharedSlot052,
+    SharedSlot058,
     SharedSlot056,
     SharedSlot060,
     SharedSlot062,
@@ -677,14 +687,23 @@ fn dispatch_native_renderer_high(
         NativeRenderer::SharedSlot049 => {
             render_shared_slot_049(cache, layout, placement, parameter)
         }
+        NativeRenderer::SharedSlot050 => {
+            render_shared_slot_050(cache, layout, placement, parameter)
+        }
         NativeRenderer::SharedSlot051 => {
             render_shared_slot_051(cache, layout, placement, parameter)
         }
         NativeRenderer::SharedSlot052 => {
             render_shared_slot_052(cache, layout, placement, parameter)
         }
+        NativeRenderer::SharedSlot053 => {
+            render_shared_slot_053(cache, layout, placement, parameter)
+        }
         NativeRenderer::SharedSlot056 => {
             render_shared_slot_056(cache, layout, placement, parameter)
+        }
+        NativeRenderer::SharedSlot058 => {
+            render_shared_slot_058(cache, layout, placement, parameter)
         }
         NativeRenderer::SharedSlot060 => {
             render_shared_slot_060(cache, layout, placement, parameter)
@@ -1552,6 +1571,286 @@ fn render_shared_slot_060(
             width,
             u16::from(SHARED_SLOT_060_TILES[row_kind][2]) + 0x100,
         )?;
+    }
+    Ok(())
+}
+
+fn render_shared_slot_050(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let variant = usize::from(parameter & 0x0f);
+    set_placement_pair(
+        cache,
+        layout,
+        placement,
+        0,
+        [
+            u16::from(SHARED_SLOT_050_TOP_LEFT_TILES[variant]),
+            u16::from(SHARED_SLOT_050_TOP_RIGHT_TILES[variant]),
+        ],
+    )?;
+    let height = usize::from(parameter >> 4);
+    if height == 0 {
+        return Ok(());
+    }
+    set_placement_pair(cache, layout, placement, 1, [0x15f, 0x160])?;
+    for major_offset in 2..=height {
+        set_placement_pair(
+            cache,
+            layout,
+            placement,
+            major_offset,
+            SHARED_SLOT_050_LOWER_PAIRS[(major_offset - 2) % 3],
+        )?;
+    }
+    Ok(())
+}
+
+fn render_shared_slot_053(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    match parameter & 3 {
+        0 => render_family_1d2(cache, layout, placement, parameter),
+        1 => render_family_1d6(cache, layout, placement, parameter),
+        2 => render_family_1d4(cache, layout, placement, parameter),
+        3 => render_family_1d7(cache, layout, placement, parameter),
+        _ => unreachable!(),
+    }
+}
+
+fn adaptive_family_tile(existing: u16, base: u16) -> u16 {
+    adapt_three_way(existing, base)
+}
+
+fn render_adaptive_signed(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    major: isize,
+    minor: isize,
+    base: u16,
+) -> Result<(), StandardObjectRenderError> {
+    let existing = get_placement_cell_signed(cache, layout, placement, major, minor)?;
+    set_placement_cell_signed(
+        cache,
+        layout,
+        placement,
+        major,
+        minor,
+        adaptive_family_tile(existing, base),
+    )
+}
+
+fn render_family_1d2(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    render_adaptive_signed(cache, layout, placement, 0, 0, 0x1d2)?;
+    render_adaptive_signed(cache, layout, placement, 0, 1, 0x1d3)?;
+    let rows = usize::from(parameter >> 4) + 1;
+    for row in 0..rows {
+        let major = signed_offset(row + 1)?;
+        let fill = row * 2;
+        for offset in 0..fill {
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                major,
+                1 - signed_offset(offset)?,
+                0x1ff,
+            )?;
+        }
+        let interior_minor = 1 - signed_offset(fill)?;
+        set_placement_cell_signed(cache, layout, placement, major, interior_minor, 0x1ff)?;
+        set_placement_cell_signed(cache, layout, placement, major, interior_minor - 1, 0x1fb)?;
+        if row + 1 < rows {
+            render_adaptive_signed(cache, layout, placement, major, interior_minor - 3, 0x1d2)?;
+            render_adaptive_signed(cache, layout, placement, major, interior_minor - 2, 0x1d3)?;
+        }
+    }
+    Ok(())
+}
+
+fn render_family_1d6(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    set_placement_cell(cache, layout, placement, 0, 0, 0x1d6)?;
+    let rows = usize::from(parameter >> 4) + 1;
+    for row in 0..rows {
+        let major = signed_offset(row + 1)?;
+        for offset in 0..row {
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                major,
+                -signed_offset(offset)?,
+                0x1ff,
+            )?;
+        }
+        let terminal_minor = -signed_offset(row)?;
+        set_placement_cell_signed(cache, layout, placement, major, terminal_minor, 0x1fd)?;
+        if row + 1 < rows {
+            set_placement_cell_signed(cache, layout, placement, major, terminal_minor - 1, 0x1d6)?;
+        }
+    }
+    Ok(())
+}
+
+fn render_family_1d4(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    render_adaptive_signed(cache, layout, placement, 0, 0, 0x1d4)?;
+    render_adaptive_signed(cache, layout, placement, 0, 1, 0x1d5)?;
+    let rows = usize::from(parameter >> 4) + 1;
+    for row in 0..rows {
+        let major = row + 1;
+        let fill = row * 2;
+        for minor in 0..=fill {
+            set_placement_cell(cache, layout, placement, major, minor, 0x1ff)?;
+        }
+        set_placement_cell(cache, layout, placement, major, fill + 1, 0x1fc)?;
+        if row + 1 < rows {
+            render_adaptive_signed(
+                cache,
+                layout,
+                placement,
+                signed_offset(major)?,
+                signed_offset(fill + 2)?,
+                0x1d4,
+            )?;
+            render_adaptive_signed(
+                cache,
+                layout,
+                placement,
+                signed_offset(major)?,
+                signed_offset(fill + 3)?,
+                0x1d5,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn render_family_1d7(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    render_adaptive_signed(cache, layout, placement, 0, 0, 0x1d7)?;
+    let rows = usize::from(parameter >> 4) + 1;
+    for row in 0..rows {
+        let major = row + 1;
+        for minor in 0..row {
+            set_placement_cell(cache, layout, placement, major, minor, 0x1ff)?;
+        }
+        set_placement_cell(cache, layout, placement, major, row, 0x1fe)?;
+        if row + 1 < rows {
+            render_adaptive_signed(
+                cache,
+                layout,
+                placement,
+                signed_offset(major)?,
+                signed_offset(row + 1)?,
+                0x1d7,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn render_shared_slot_058(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    if parameter & 0x10 == 0 {
+        render_paired_expansion_1ca(cache, layout, placement, parameter)
+    } else {
+        render_paired_expansion_1cc(cache, layout, placement, parameter)
+    }
+}
+
+fn render_paired_expansion_1cc(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    set_placement_cell(cache, layout, placement, 0, 0, 0x1cc)?;
+    for iteration in 0..=usize::from(parameter & 0x0f) {
+        let first_major = iteration * 2 + 1;
+        for minor in 0..iteration {
+            set_placement_cell(cache, layout, placement, first_major, minor, 0x03f)?;
+            set_placement_cell(cache, layout, placement, first_major + 1, minor, 0x03f)?;
+        }
+        set_placement_cell(cache, layout, placement, first_major, iteration, 0x1cd)?;
+        set_placement_cell(cache, layout, placement, first_major + 1, iteration, 0x1f2)?;
+        if iteration < usize::from(parameter & 0x0f) {
+            set_placement_cell(
+                cache,
+                layout,
+                placement,
+                first_major + 1,
+                iteration + 1,
+                0x1cc,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn render_paired_expansion_1ca(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    set_placement_cell(cache, layout, placement, 0, 0, 0x1ca)?;
+    for iteration in 0..=usize::from(parameter & 0x0f) {
+        let first_major = signed_offset(iteration * 2 + 1)?;
+        for offset in 0..iteration {
+            let minor = -signed_offset(offset)?;
+            set_placement_cell_signed(cache, layout, placement, first_major, minor, 0x03f)?;
+            set_placement_cell_signed(cache, layout, placement, first_major + 1, minor, 0x03f)?;
+        }
+        let terminal_minor = -signed_offset(iteration)?;
+        set_placement_cell_signed(cache, layout, placement, first_major, terminal_minor, 0x1cb)?;
+        set_placement_cell_signed(
+            cache,
+            layout,
+            placement,
+            first_major + 1,
+            terminal_minor,
+            0x1f1,
+        )?;
+        if iteration < usize::from(parameter & 0x0f) {
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                first_major + 1,
+                terminal_minor - 1,
+                0x1ca,
+            )?;
+        }
     }
     Ok(())
 }
@@ -2607,9 +2906,12 @@ fn install_shared_handler_aliases(
         (47, NativeRenderer::SharedSlot047),
         (48, NativeRenderer::SharedSlot048),
         (49, NativeRenderer::SharedSlot049),
+        (50, NativeRenderer::SharedSlot050),
         (51, NativeRenderer::SharedSlot051),
         (52, NativeRenderer::SharedSlot052),
+        (53, NativeRenderer::SharedSlot053),
         (56, NativeRenderer::SharedSlot056),
+        (58, NativeRenderer::SharedSlot058),
         (60, NativeRenderer::SharedSlot060),
         (62, NativeRenderer::SharedSlot062),
         (63, NativeRenderer::SharedSlot063),
@@ -3839,6 +4141,154 @@ mod tests {
                         tile
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_50_renders_variant_top_fixed_and_cyclic_pairs() {
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 0,
+            minor: 8,
+            major_span: 4,
+            minor_span: 3,
+        };
+        render_shared_slot_050(&mut cache, layout(), placement, 0x32).unwrap();
+        for (major, pair) in [
+            [0x09e, 0x09f],
+            [0x15f, 0x160],
+            [0x161, 0x162],
+            [0x163, 0x164],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for (offset, tile) in pair.into_iter().enumerate() {
+                assert_eq!(
+                    cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, offset + 8)],
+                    tile
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_53_dispatches_all_expanding_boundary_families() {
+        for (variant, checks) in [
+            (
+                0,
+                vec![
+                    (0, 8, 0x1d2),
+                    (0, 9, 0x1d3),
+                    (1, 6, 0x1d2),
+                    (1, 7, 0x1d3),
+                    (1, 8, 0x1fb),
+                    (1, 9, 0x1ff),
+                    (2, 6, 0x1fb),
+                    (2, 7, 0x1ff),
+                ],
+            ),
+            (
+                1,
+                vec![
+                    (0, 8, 0x1d6),
+                    (1, 7, 0x1d6),
+                    (1, 8, 0x1fd),
+                    (2, 7, 0x1fd),
+                    (2, 8, 0x1ff),
+                ],
+            ),
+            (
+                2,
+                vec![
+                    (0, 8, 0x1d4),
+                    (0, 9, 0x1d5),
+                    (1, 8, 0x1ff),
+                    (1, 9, 0x1fc),
+                    (1, 10, 0x1d4),
+                    (1, 11, 0x1d5),
+                    (2, 10, 0x1ff),
+                    (2, 11, 0x1fc),
+                ],
+            ),
+            (
+                3,
+                vec![
+                    (0, 8, 0x1d7),
+                    (1, 8, 0x1fe),
+                    (1, 9, 0x1d7),
+                    (2, 8, 0x1ff),
+                    (2, 9, 0x1fe),
+                ],
+            ),
+        ] {
+            let mut cache = NativeLevelMap16Cache::filled(0x25);
+            let placement = lm_level::NativeObjectPlacement {
+                record_index: 0,
+                screen: 0,
+                major: 0,
+                minor: 8,
+                major_span: 2,
+                minor_span: 2,
+            };
+            render_shared_slot_053(&mut cache, layout(), placement, 0x10 | variant).unwrap();
+            for (major, minor, tile) in checks {
+                assert_eq!(
+                    cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile,
+                    "variant {variant}, cell ({major}, {minor})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mapped_handler_58_dispatches_both_paired_expansion_orientations() {
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 0,
+            minor: 8,
+            major_span: 2,
+            minor_span: 2,
+        };
+        for (parameter, checks) in [
+            (
+                0x01,
+                vec![
+                    (0, 8, 0x1ca),
+                    (1, 8, 0x1cb),
+                    (2, 8, 0x1f1),
+                    (2, 7, 0x1ca),
+                    (3, 8, 0x03f),
+                    (3, 7, 0x1cb),
+                    (4, 7, 0x1f1),
+                ],
+            ),
+            (
+                0x11,
+                vec![
+                    (0, 8, 0x1cc),
+                    (1, 8, 0x1cd),
+                    (2, 8, 0x1f2),
+                    (2, 9, 0x1cc),
+                    (3, 8, 0x03f),
+                    (3, 9, 0x1cd),
+                    (4, 9, 0x1f2),
+                ],
+            ),
+        ] {
+            let mut cache = NativeLevelMap16Cache::filled(0x25);
+            render_shared_slot_058(&mut cache, layout(), placement, parameter).unwrap();
+            for (major, minor, tile) in checks {
+                assert_eq!(
+                    cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
+                    tile,
+                    "parameter {parameter:#04x}, cell ({major}, {minor})"
+                );
             }
         }
     }
