@@ -71,6 +71,7 @@ enum AxisExpansion {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NativeRenderer {
+    NoOp,
     Pattern,
     SharedSlot001,
     SharedSlot002,
@@ -377,6 +378,9 @@ fn render_definition(
     parameter: u8,
     definition: &StandardObjectDefinition,
 ) -> Result<(), StandardObjectRenderError> {
+    if definition.renderer == NativeRenderer::NoOp {
+        return Ok(());
+    }
     if definition.renderer == NativeRenderer::SharedSlot002 {
         return render_shared_slot_002(cache, layout, placement, parameter);
     }
@@ -993,6 +997,20 @@ fn install_shared_handler_aliases(
     definitions: &mut StandardObjectDefinitionSet,
 ) -> Result<(), StandardObjectRenderError> {
     definitions.set_handler(
+        0,
+        StandardObjectDefinition {
+            pattern: StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0],
+            },
+            extent: ObjectExtent::FixedOne,
+            major_expansion: AxisExpansion::Clamp,
+            minor_expansion: AxisExpansion::Clamp,
+            renderer: NativeRenderer::NoOp,
+        },
+    )?;
+    definitions.set_handler(
         11,
         StandardObjectDefinition {
             pattern: StandardObjectPattern {
@@ -1195,6 +1213,28 @@ mod tests {
         assert_eq!(report.rendered_objects, 1);
         assert_eq!(report.cache.cells()[0], 0x133);
         assert_eq!(report.cache.cells()[1], 0x134);
+    }
+
+    #[test]
+    fn mapped_null_handler_is_an_explicit_rendered_no_op() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 0;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0x10, 0xff]).unwrap()],
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+        )
+        .unwrap();
+        assert_eq!(report.rendered_objects, 1);
+        assert!(report.missing_commands.is_empty());
+        assert!(report.cache.cells().iter().all(|tile| *tile == 0x25));
     }
 
     #[test]
