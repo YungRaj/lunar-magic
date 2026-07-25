@@ -1,7 +1,7 @@
-use super::fixtures::{optional_regular_file, read_regular_bounded};
+use super::fixtures::{manifest_path, optional_regular_file, read_regular_bounded};
 use super::{
-    AFTER_OBSERVATION, AFTER_ROM, BEFORE_OBSERVATION, BEFORE_ROM, EMULATOR_PNG, MANIFEST,
-    RENDER_PNG,
+    AFTER_OBSERVATION, AFTER_ROM, BEFORE_OBSERVATION, BEFORE_ROM, EMULATOR_PNG, LEGACY_MANIFEST,
+    MANIFEST, RENDER_PNG,
 };
 use crate::oracle_input::MAX_ROM_BYTES;
 use lm_oracle::{
@@ -14,8 +14,8 @@ pub(super) fn verify_case(
     directory: &Path,
     require_observations: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let manifest_text =
-        read_regular_bounded(&directory.join(MANIFEST), OracleManifest::MAX_TEXT_BYTES)?;
+    let manifest = require_manifest(directory)?;
+    let manifest_text = read_regular_bounded(&manifest, OracleManifest::MAX_TEXT_BYTES)?;
     let manifest = OracleManifest::from_text(std::str::from_utf8(&manifest_text)?)?;
     if require_observations && !manifest.errors.is_empty() {
         return Err(format!(
@@ -110,6 +110,17 @@ pub(super) fn verify_case(
     } else {
         Err(summarize(&report).into())
     }
+}
+
+fn require_manifest(directory: &Path) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    manifest_path(directory)?.ok_or_else(|| {
+        format!(
+            "oracle fixture is missing {} and {}",
+            directory.join(MANIFEST).display(),
+            directory.join(LEGACY_MANIFEST).display()
+        )
+        .into()
+    })
 }
 
 fn summarize(report: &OracleCaseReport) -> String {

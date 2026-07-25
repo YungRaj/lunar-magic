@@ -1,4 +1,4 @@
-use super::{MANIFEST, MAX_CASES, MAX_DIRECTORIES};
+use super::{LEGACY_MANIFEST, MANIFEST, MAX_CASES, MAX_DIRECTORIES};
 use crate::oracle_input::read_bounded;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,8 +17,7 @@ pub(super) fn discover(root: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::
         }
         let mut children = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
         children.sort_by_key(std::fs::DirEntry::file_name);
-        let manifest = directory.join(MANIFEST);
-        if optional_regular_file(&manifest)? {
+        if manifest_path(&directory)?.is_some() {
             cases.push(directory.clone());
             if cases.len() > MAX_CASES {
                 return Err(format!("oracle suite exceeds {MAX_CASES} cases").into());
@@ -32,6 +31,21 @@ pub(super) fn discover(root: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::
     }
     cases.sort();
     Ok(cases)
+}
+
+pub(super) fn manifest_path(
+    directory: &Path,
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    let canonical = directory.join(MANIFEST);
+    if optional_regular_file(&canonical)? {
+        return Ok(Some(canonical));
+    }
+    let legacy = directory.join(LEGACY_MANIFEST);
+    if optional_regular_file(&legacy)? {
+        Ok(Some(legacy))
+    } else {
+        Ok(None)
+    }
 }
 
 pub(super) fn optional_regular_file(path: &Path) -> Result<bool, Box<dyn std::error::Error>> {

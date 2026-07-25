@@ -294,6 +294,26 @@ fn nested_cases_are_sorted_and_verified() {
 }
 
 #[test]
+fn legacy_manifests_are_discovered_and_canonical_manifests_take_precedence() {
+    let root = temporary_directory();
+    let legacy = root.join("legacy");
+    write_case(&legacy, &[1, 2], &[1, 3]);
+    fs::rename(legacy.join(MANIFEST), legacy.join(LEGACY_MANIFEST)).unwrap();
+    assert_eq!(discover(&root).unwrap(), std::slice::from_ref(&legacy));
+    verify(&root).unwrap();
+
+    let canonical = root.join("canonical");
+    write_case(&canonical, &[4], &[5]);
+    fs::write(canonical.join(LEGACY_MANIFEST), b"malformed legacy").unwrap();
+    assert_eq!(
+        fixtures::manifest_path(&canonical).unwrap().unwrap(),
+        canonical.join(MANIFEST)
+    );
+    verify(&root).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_parent_case_cannot_hide_nested_case_manifests() {
     let root = temporary_directory();
     let parent = root.join("parent");

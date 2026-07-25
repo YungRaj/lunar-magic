@@ -10,6 +10,7 @@ use case::verify_case;
 use fixtures::{discover, relative_name};
 
 const MANIFEST: &str = "case.manifest";
+const LEGACY_MANIFEST: &str = "oracle.manifest";
 const BEFORE_ROM: &str = "before.smc";
 const AFTER_ROM: &str = "after.smc";
 const BEFORE_OBSERVATION: &str = "before.obs";

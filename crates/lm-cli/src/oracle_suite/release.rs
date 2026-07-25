@@ -1,5 +1,5 @@
-use super::fixtures::{discover, read_regular_bounded};
-use super::{MANIFEST, verify_with_policy};
+use super::fixtures::{discover, manifest_path, read_regular_bounded};
+use super::verify_with_policy;
 use crate::oracle_release_policy::{
     RELEASE_ARGUMENTS, RELEASE_COMPATIBILITY_OPERATIONS, RELEASE_OPERATIONS, RELEASE_SUBSYSTEMS,
 };
@@ -23,7 +23,9 @@ fn audit_release_compatibility_matrix(root: &Path) -> Result<(), Box<dyn std::er
     let cases = discover(root)?;
     let mut present = BTreeSet::new();
     for directory in cases {
-        let text = read_regular_bounded(&directory.join(MANIFEST), OracleManifest::MAX_TEXT_BYTES)?;
+        let manifest = manifest_path(&directory)?
+            .ok_or_else(|| format!("oracle fixture has no manifest: {}", directory.display()))?;
+        let text = read_regular_bounded(&manifest, OracleManifest::MAX_TEXT_BYTES)?;
         let manifest = OracleManifest::from_text(std::str::from_utf8(&text)?)?;
         let subsystem = manifest
             .operation
@@ -130,8 +132,10 @@ pub fn audit_coverage(
     let manifests = cases
         .iter()
         .map(|directory| {
-            let text =
-                read_regular_bounded(&directory.join(MANIFEST), OracleManifest::MAX_TEXT_BYTES)?;
+            let manifest = manifest_path(directory)?.ok_or_else(|| {
+                format!("oracle fixture has no manifest: {}", directory.display())
+            })?;
+            let text = read_regular_bounded(&manifest, OracleManifest::MAX_TEXT_BYTES)?;
             Ok(OracleManifest::from_text(std::str::from_utf8(&text)?)?)
         })
         .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
