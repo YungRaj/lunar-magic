@@ -61,7 +61,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         }
         0x09 => parts(&[(0x10, 0, -14), (0x20, 0, 2), (0x07, 9, -11)]),
         0x0a => parts(&[(0x11, 0, -14), (0x21, 0, 2), (0x07, 9, -11)]),
-        0x0b | 0x0c | 0x0d | 0x0f | 0x11 | 0x12 | 0x13 | 0x14 if mode.alternate_display => {
+        0x0b | 0x0c | 0x0d | 0x0f | 0x11 | 0x12 | 0x13..=0x18 | 0x1a | 0x1b..=0x1d | 0x1f
+            if mode.alternate_display =>
+        {
             parts(&[(0x115, 0, 1)])
         }
         0x0b => parts(&[(0x11, 0, -14), (0x21, 0, 2), (0x08, 1, -10)]),
@@ -78,6 +80,13 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x12 => parts(&[(0x01, 0, 0)]),
         0x13 => parts(&[(0x0e, 0, 1)]),
         0x14 => parts(&[(0x0f, 0, 1)]),
+        0x15 | 0x17 | 0x18 => parts(&[(0x14, 0, 1)]),
+        0x16 => parts(&[(0x15, 0, 1)]),
+        0x1a => parts(&[(0x16, 8, -31), (0x26, 8, -15)]),
+        0x1b => parts(&[(0x24, 0, 1)]),
+        0x1c => parts(&[(0x25, 0, 1)]),
+        0x1d => parts(&[(0x17, 0, 1)]),
+        0x1f => parts(&[(0x18, 0, -15), (0x28, 0, 1)]),
         _ => None,
     }
 }
@@ -120,6 +129,15 @@ fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x00d => [0x1982, 0x1992, 0x1983, 0x1993],
         0x00e => [0x1182, 0x1192, 0x1183, 0x1193],
         0x00f => [0x1184, 0x9184, 0x5184, 0xd184],
+        0x014 => [0x0967, 0x0977, 0x0968, 0x0978],
+        0x015 => [0x0969, 0x0979, 0x096a, 0x097a],
+        0x016 => [0x50af, 0x50bf, 0x50ae, 0x50be],
+        0x017 => [0x098e, 0x099e, 0x098f, 0x099f],
+        0x018 => [0x0da0, 0x0db4, 0x0da5, 0x0db5],
+        0x024 => [0x018a, 0x019a, 0x018b, 0x019b],
+        0x025 => [0x04a6, 0x04b6, 0x04a7, 0x04b7],
+        0x026 => [0x50cf, 0x50df, 0x50ce, 0x50de],
+        0x028 => [0x0dc4, 0x0dd4, 0x0dc5, 0x0dd5],
         0x115 => [0x04e8, 0x04f8, 0x04e9, 0x04f9],
         0x140 => [0x14a0, 0x14b0, 0x14a1, 0x14b1],
         _ => return None,
@@ -274,6 +292,38 @@ mod tests {
         assert_eq!(geometry(0x14, false), [(0x0f, 0, 1)]);
         for sprite in [0x0b, 0x0c, 0x0d, 0x0f, 0x11, 0x12, 0x13, 0x14] {
             assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
+        }
+    }
+
+    #[test]
+    fn handlers_twenty_one_through_thirty_one_preserve_proven_tile_geometry() {
+        let geometry = |sprite, alternate_display| {
+            render_lunar_magic_standard_sprite(sprite, alternate_display).map(|parts| {
+                parts
+                    .iter()
+                    .map(|part| (part.definition_index, part.x, part.y))
+                    .collect::<Vec<_>>()
+            })
+        };
+        for sprite in [0x15, 0x17, 0x18] {
+            assert_eq!(geometry(sprite, false).unwrap(), [(0x14, 0, 1)]);
+        }
+        assert_eq!(geometry(0x16, false).unwrap(), [(0x15, 0, 1)]);
+        assert_eq!(
+            geometry(0x1a, false).unwrap(),
+            [(0x16, 8, -31), (0x26, 8, -15)]
+        );
+        assert_eq!(geometry(0x1b, false).unwrap(), [(0x24, 0, 1)]);
+        assert_eq!(geometry(0x1c, false).unwrap(), [(0x25, 0, 1)]);
+        assert_eq!(geometry(0x1d, false).unwrap(), [(0x17, 0, 1)]);
+        assert_eq!(
+            geometry(0x1f, false).unwrap(),
+            [(0x18, 0, -15), (0x28, 0, 1)]
+        );
+        assert_eq!(geometry(0x19, false), None, "handler 25 draws text");
+        assert_eq!(geometry(0x1e, false), None, "handler 30 is input-dependent");
+        for sprite in [0x15, 0x16, 0x17, 0x18, 0x1a, 0x1b, 0x1c, 0x1d, 0x1f] {
+            assert_eq!(geometry(sprite, true).unwrap(), [(0x115, 0, 1)]);
         }
     }
 }
