@@ -666,11 +666,12 @@ impl VanillaLevelEditor {
         let record_count = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.objects.records.len()
         });
-        if self.selected_object >= record_count {
+        let has_selection = self.selected_object < record_count;
+        if has_selection {
+            ui.label(format!("Object {}", self.selected_object));
+        } else {
             ui.label("No selected object.");
-            return;
         }
-        ui.label(format!("Object {}", self.selected_object));
         egui::Grid::new("vanilla-object-fields").show(ui, |ui| {
             header_row(ui, "Command", &mut self.object_form.command_id, 0x3f);
             header_row(ui, "Parameter", &mut self.object_form.parameter, 0xff);
@@ -694,13 +695,16 @@ impl VanillaLevelEditor {
             if ui.button("Insert after selection").clicked() {
                 let edit = self.object_form.ordinary_record().map(|record| {
                     NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
-                        index: self.selected_object.saturating_add(1).min(record_count),
+                        index: object_insertion_index(self.selected_object, record_count),
                         record,
                     }])
                 });
                 self.apply_object_result(edit);
             }
-            if ui.button("Apply object fields").clicked() {
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Apply object fields"))
+                .clicked()
+            {
                 let edits = vec![
                     ObjectEdit::SetCommandId {
                         index: self.selected_object,
@@ -729,7 +733,9 @@ impl VanillaLevelEditor {
                     }
                 }
             }
-            if ui.button("Remove object").clicked()
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Remove object"))
+                .clicked()
                 && let Some(controller) = self.controller.as_mut()
             {
                 match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
@@ -1009,6 +1015,10 @@ const fn sprite_insertion_index(selected: usize, token_count: usize) -> usize {
     } else {
         token_count
     }
+}
+
+fn object_insertion_index(selected: usize, record_count: usize) -> usize {
+    selected.saturating_add(1).min(record_count)
 }
 
 const fn move_before_indexes(selected: usize, count: usize, down: bool) -> Option<(usize, usize)> {
@@ -1616,6 +1626,14 @@ mod tests {
         assert_eq!(sprite_insertion_index(0, 3), 1);
         assert_eq!(sprite_insertion_index(2, 3), 3);
         assert_eq!(sprite_insertion_index(99, 3), 3);
+    }
+
+    #[test]
+    fn object_insertion_supports_empty_and_selected_streams() {
+        assert_eq!(object_insertion_index(0, 0), 0);
+        assert_eq!(object_insertion_index(0, 3), 1);
+        assert_eq!(object_insertion_index(2, 3), 3);
+        assert_eq!(object_insertion_index(99, 3), 3);
     }
 
     #[test]
