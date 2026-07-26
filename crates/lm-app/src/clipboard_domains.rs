@@ -4,6 +4,8 @@ use super::{ClipboardError, ClipboardKind, ClipboardPayload};
 mod exanimation;
 #[path = "clipboard_domains/graphics.rs"]
 mod graphics;
+#[path = "clipboard_domains/layer2.rs"]
+mod layer2;
 #[path = "clipboard_domains/layer3.rs"]
 mod layer3;
 #[path = "clipboard_domains/level.rs"]

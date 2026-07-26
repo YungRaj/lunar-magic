@@ -1896,6 +1896,13 @@ each through the same recovered native bijection, and submits one duplicate-free
 word-edit batch. Reversed drags across the `$01FF/$0200` plane boundary produce
 the same indexes, while clearing the canvas selection restores exact raw-index
 editing.
+The GUI clipboard boundary uses a distinct `LMCLIP` kind for compressed Layer 2
+rectangles. Its record stores one-byte width/height followed by little-endian
+words in visual row-major order; native storage indexes never escape into the
+portable payload. Paste anchors at the first selected canvas cell, converts all
+words back through the recovered bijection as one aggregate edit, updates the
+visible selection to the pasted extent, and rejects any rectangle crossing the
+32×32 edge before controller mutation.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their

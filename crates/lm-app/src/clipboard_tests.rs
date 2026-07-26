@@ -179,3 +179,52 @@ fn malformed_or_unsupported_frame_widths_are_rejected() {
         ));
     }
 }
+
+#[test]
+fn layer_two_rectangles_round_trip_dimensions_and_visual_word_order() {
+    let words = [0x1234, 0xabcd, 0x5678, 0xbeef, 0, 0xffff];
+    let payload = ClipboardPayload::from_layer2_tilemap_selection(3, 2, &words).unwrap();
+    assert_eq!(
+        ClipboardPayload::decode(&payload.encode().unwrap())
+            .unwrap()
+            .to_layer2_tilemap_selection()
+            .unwrap(),
+        (3, 2, words.to_vec())
+    );
+    assert!(matches!(
+        payload.to_layer3_tilemap_bytes(),
+        Err(ClipboardError::WrongKind { .. })
+    ));
+}
+
+#[test]
+fn malformed_layer_two_rectangles_are_rejected() {
+    for (width, height, words) in [
+        (0, 1, vec![]),
+        (1, 0, vec![]),
+        (33, 1, vec![0; 33]),
+        (1, 33, vec![0; 33]),
+        (2, 2, vec![0; 3]),
+    ] {
+        assert!(matches!(
+            ClipboardPayload::from_layer2_tilemap_selection(width, height, &words),
+            Err(ClipboardError::InvalidRecord { .. })
+        ));
+    }
+    for record in [
+        vec![],
+        vec![1],
+        vec![0, 1],
+        vec![1, 0],
+        vec![2, 2, 0, 0],
+        vec![1, 1, 0],
+        vec![1, 1, 0, 0, 0],
+    ] {
+        let payload =
+            ClipboardPayload::new(ClipboardKind::Layer2TilemapSelection, vec![record]).unwrap();
+        assert!(matches!(
+            payload.to_layer2_tilemap_selection(),
+            Err(ClipboardError::InvalidRecord { .. })
+        ));
+    }
+}

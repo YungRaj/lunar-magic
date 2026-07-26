@@ -133,6 +133,22 @@ pub(crate) fn decode_level_sprites(text: &str) -> Result<Vec<SpriteRecord>, Stri
         .map_err(|error| error.to_string())
 }
 
+pub(crate) fn encode_layer2_tilemap_selection(
+    width: u8,
+    height: u8,
+    words: &[u16],
+) -> Result<String, String> {
+    let payload = ClipboardPayload::from_layer2_tilemap_selection(width, height, words)
+        .map_err(|error| error.to_string())?;
+    encode(&payload)
+}
+
+pub(crate) fn decode_layer2_tilemap_selection(text: &str) -> Result<(u8, u8, Vec<u16>), String> {
+    decode(text)?
+        .to_layer2_tilemap_selection()
+        .map_err(|error| error.to_string())
+}
+
 pub(crate) fn encode_layer3_tilemap(bytes: &[u8]) -> Result<String, String> {
     encode(&ClipboardPayload::from_layer3_tilemap_bytes(bytes))
 }
@@ -321,6 +337,17 @@ mod tests {
         assert_eq!(decode_layer3_remap(&remap_text).unwrap(), remap);
         assert!(decode_layer3_remap(&tilemap_text).is_err());
         assert!(decode_layer3_tilemap(&remap_text).is_err());
+    }
+
+    #[test]
+    fn layer2_rectangle_adapter_retains_shape_and_word_order() {
+        let words = [0x1234, 0xabcd, 0x5678, 0xbeef];
+        let text = encode_layer2_tilemap_selection(2, 2, &words).unwrap();
+        assert_eq!(
+            decode_layer2_tilemap_selection(&text).unwrap(),
+            (2, 2, words.to_vec())
+        );
+        assert!(decode_layer3_tilemap(&text).is_err());
     }
 
     #[test]

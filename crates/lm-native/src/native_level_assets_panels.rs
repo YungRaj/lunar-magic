@@ -14,6 +14,7 @@ use lm_project::NativeLevelAssetsFile;
 pub(super) enum PasteTarget {
     Object,
     Layer2Object,
+    Layer2Tilemap,
     Sprite,
     PaletteColor,
     AnimationRecord,

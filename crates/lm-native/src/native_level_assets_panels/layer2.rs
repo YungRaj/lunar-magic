@@ -54,6 +54,67 @@ fn layer2_word_edits(
     }
 }
 
+fn layer2_selection_words(
+    bytes: &[u8],
+    anchor: Option<(usize, usize)>,
+    cursor: Option<(usize, usize)>,
+) -> Result<(u8, u8, Vec<u16>), String> {
+    let (Some((anchor_x, anchor_y)), Some((cursor_x, cursor_y))) = (anchor, cursor) else {
+        return Err("select a Layer 2 canvas rectangle before copying".into());
+    };
+    let (minimum_x, maximum_x) = (anchor_x.min(cursor_x), anchor_x.max(cursor_x));
+    let (minimum_y, maximum_y) = (anchor_y.min(cursor_y), anchor_y.max(cursor_y));
+    let width = u8::try_from(maximum_x - minimum_x + 1)
+        .map_err(|_| "Layer 2 selection width is out of range".to_string())?;
+    let height = u8::try_from(maximum_y - minimum_y + 1)
+        .map_err(|_| "Layer 2 selection height is out of range".to_string())?;
+    let mut words = Vec::with_capacity(usize::from(width) * usize::from(height));
+    for y in minimum_y..=maximum_y {
+        for x in minimum_x..=maximum_x {
+            let (_, word) = layer2_tilemap_word(bytes, x, y)
+                .ok_or_else(|| "Layer 2 selection exceeds the tilemap".to_string())?;
+            words.push(word);
+        }
+    }
+    Ok((width, height, words))
+}
+
+fn layer2_paste_edits(
+    origin: Option<(usize, usize)>,
+    width: u8,
+    height: u8,
+    words: &[u16],
+) -> Result<Vec<(usize, u16)>, String> {
+    let (origin_x, origin_y) =
+        origin.ok_or_else(|| "select a Layer 2 canvas destination before pasting".to_string())?;
+    let end_x = origin_x
+        .checked_add(usize::from(width))
+        .ok_or_else(|| "Layer 2 paste width overflow".to_string())?;
+    let end_y = origin_y
+        .checked_add(usize::from(height))
+        .ok_or_else(|| "Layer 2 paste height overflow".to_string())?;
+    let expected = usize::from(width)
+        .checked_mul(usize::from(height))
+        .ok_or_else(|| "Layer 2 paste size overflow".to_string())?;
+    if width == 0
+        || height == 0
+        || end_x > lm_level::NATIVE_LAYER2_TILEMAP_WIDTH
+        || end_y > lm_level::NATIVE_LAYER2_TILEMAP_HEIGHT
+        || words.len() != expected
+    {
+        return Err("Layer 2 paste rectangle does not fit the 32×32 canvas".into());
+    }
+    let mut edits = Vec::with_capacity(expected);
+    for (offset, word) in words.iter().copied().enumerate() {
+        let x = origin_x + offset % usize::from(width);
+        let y = origin_y + offset / usize::from(width);
+        let index = lm_level::native_layer2_tilemap_index(x, y)
+            .ok_or_else(|| "Layer 2 paste coordinate is out of range".to_string())?;
+        edits.push((index, word));
+    }
+    Ok(edits)
+}
+
 impl AggregatePanels {
     pub(super) fn layer2_panel(
         &mut self,
@@ -202,6 +263,9 @@ impl AggregatePanels {
                 self.layer2_tile_cursor = None;
             }
         });
+        if let Some(edit) = self.layer2_clipboard_controls(ui, bytes) {
+            return Some(edit);
+        }
         ui.horizontal(|ui| {
             ui.label("16-bit tile word");
             ui.text_edit_singleline(&mut self.layer2_tile);
@@ -227,6 +291,63 @@ impl AggregatePanels {
                 ))
             })
         })
+    }
+
+    fn layer2_clipboard_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        bytes: &[u8],
+    ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
+        let mut copy_error = None;
+        ui.horizontal(|ui| {
+            let can_copy = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
+            if ui
+                .add_enabled(can_copy, egui::Button::new("Copy selection"))
+                .clicked()
+            {
+                let encoded =
+                    layer2_selection_words(bytes, self.layer2_tile_anchor, self.layer2_tile_cursor)
+                        .and_then(|(width, height, words)| {
+                            native_clipboard::encode_layer2_tilemap_selection(width, height, &words)
+                        });
+                match encoded {
+                    Ok(text) => ui.ctx().copy_text(text),
+                    Err(error) => copy_error = Some(error),
+                }
+            }
+            if ui
+                .add_enabled(
+                    self.layer2_tile_anchor.is_some(),
+                    egui::Button::new("Paste at anchor"),
+                )
+                .clicked()
+            {
+                self.paste_target = Some(PasteTarget::Layer2Tilemap);
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+        });
+        if let Some(error) = copy_error {
+            return Some(Err(error));
+        }
+        if self.paste_target != Some(PasteTarget::Layer2Tilemap) {
+            return None;
+        }
+        let text = pasted_text(ui)?;
+        self.paste_target = None;
+        let result = (|| {
+            let (width, height, words) = native_clipboard::decode_layer2_tilemap_selection(&text)?;
+            let edits = layer2_paste_edits(self.layer2_tile_anchor, width, height, &words)?;
+            let (anchor_x, anchor_y) = self
+                .layer2_tile_anchor
+                .ok_or_else(|| "Layer 2 paste destination disappeared".to_string())?;
+            self.layer2_tile_cursor = Some((
+                anchor_x + usize::from(width) - 1,
+                anchor_y + usize::from(height) - 1,
+            ));
+            Ok(NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits))
+        })();
+        Some(result)
     }
 
     fn layer2_tilemap_grid(&mut self, ui: &mut egui::Ui, bytes: &[u8]) {
@@ -328,5 +449,30 @@ mod tests {
             layer2_word_edits(99, None, None, 0xbeef),
             vec![(99, 0xbeef)]
         );
+    }
+
+    #[test]
+    fn rectangle_copy_is_visual_row_major_across_native_planes() {
+        let bytes = (0_u16..1024).flat_map(u16::to_le_bytes).collect::<Vec<_>>();
+        assert_eq!(
+            layer2_selection_words(&bytes, Some((1, 15)), Some((2, 16))).unwrap(),
+            (2, 2, vec![31, 47, 528, 544])
+        );
+        assert_eq!(
+            layer2_selection_words(&bytes, Some((2, 16)), Some((1, 15))).unwrap(),
+            (2, 2, vec![31, 47, 528, 544])
+        );
+        assert!(layer2_selection_words(&bytes, None, None).is_err());
+    }
+
+    #[test]
+    fn rectangle_paste_translates_visual_words_to_native_indexes() {
+        assert_eq!(
+            layer2_paste_edits(Some((1, 15)), 2, 2, &[10, 11, 12, 13]).unwrap(),
+            vec![(31, 10), (47, 11), (528, 12), (544, 13)]
+        );
+        assert!(layer2_paste_edits(Some((31, 31)), 2, 1, &[1, 2]).is_err());
+        assert!(layer2_paste_edits(Some((0, 0)), 2, 2, &[1, 2, 3]).is_err());
+        assert!(layer2_paste_edits(None, 1, 1, &[1]).is_err());
     }
 }

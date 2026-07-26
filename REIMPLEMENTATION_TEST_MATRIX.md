@@ -34,7 +34,10 @@ Object-backed levels expose the same lossless ordered record operations and nati
 framing; compressed-tilemap levels expose all 1,024 little-endian words through the recovered
 32×32 canvas order. The native panel supports ordinary single-cell selection and Shift-extended
 rectangles; one fill emits a duplicate-free ordered edit batch and commits the whole rectangle
-atomically through the aggregate controller. Focused gates require
+atomically through the aggregate controller. A dedicated typed clipboard record preserves the
+rectangle's width, height, complete 16-bit words, and visual row-major order independently from
+the native two-plane storage order. Copy/paste rejects malformed shapes, cross-domain payloads,
+and destinations crossing the 32×32 edge before producing an edit batch. Focused gates require
 five-payload semantic reopen, checksum validity, exact ownership reclamation, and rollback when a
 late edit targets the wrong storage mode, repeats a tile index, or exceeds the tilemap.
 The opt-in Wine gate additionally relocates an edited installed level-105 tilemap into a newly
