@@ -10,6 +10,13 @@ use lm_app::NativeLevelAssetsControllerEdit;
 use lm_graphics::PaletteOwnership;
 use lm_project::NativeLevelAssetsFile;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Layer2FillPattern {
+    width: u8,
+    height: u8,
+    words: Vec<u16>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PasteTarget {
     Object,
@@ -32,6 +39,7 @@ pub(crate) struct AggregatePanels {
     layer2_tile: String,
     layer2_tile_anchor: Option<(usize, usize)>,
     layer2_tile_cursor: Option<(usize, usize)>,
+    layer2_fill_pattern: Option<Layer2FillPattern>,
     sprite_index: usize,
     sprite: String,
     sprite_header: String,

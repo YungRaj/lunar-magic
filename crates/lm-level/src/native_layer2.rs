@@ -30,6 +30,91 @@ pub fn native_layer2_flood_region(
     start_x: usize,
     start_y: usize,
 ) -> Result<Vec<usize>, NativeLayer2Error> {
+    let visited = native_layer2_flood_mask(bytes, start_x, start_y)?;
+    Ok(visited
+        .iter()
+        .enumerate()
+        .filter(|(_, selected)| **selected)
+        .map(|(visual, _)| native_layer2_storage_index_from_visual(visual))
+        .collect())
+}
+
+/// Builds the edits for a repeating rectangular pattern over a matching flood region.
+///
+/// Pattern words are supplied in visual row-major order. The repeat origin is the minimum X/Y
+/// corner of the connected region, matching Lunar Magic, and every result is normalized to a
+/// 12-bit Map16 index.
+///
+/// # Errors
+///
+/// Returns [`NativeLayer2Error`] for malformed tilemap storage, an out-of-range start coordinate,
+/// an empty pattern, mismatched pattern dimensions, or a pattern larger than the 32×32 canvas.
+pub fn native_layer2_flood_pattern(
+    bytes: &[u8],
+    start_x: usize,
+    start_y: usize,
+    pattern_width: usize,
+    pattern_height: usize,
+    pattern: &[u16],
+) -> Result<Vec<(usize, u16)>, NativeLayer2Error> {
+    let expected = pattern_width.checked_mul(pattern_height);
+    if pattern_width == 0
+        || pattern_height == 0
+        || pattern_width > NATIVE_LAYER2_TILEMAP_WIDTH
+        || pattern_height > NATIVE_LAYER2_TILEMAP_HEIGHT
+        || expected != Some(pattern.len())
+    {
+        return Err(NativeLayer2Error::FloodPatternShape {
+            width: pattern_width,
+            height: pattern_height,
+            words: pattern.len(),
+        });
+    }
+    let visited = native_layer2_flood_mask(bytes, start_x, start_y)?;
+    let minimum_y = visited
+        .iter()
+        .position(|selected| *selected)
+        .map_or(start_y, |visual| visual / NATIVE_LAYER2_TILEMAP_WIDTH);
+    let minimum_x = visited
+        .iter()
+        .enumerate()
+        .filter(|(_, selected)| **selected)
+        .map(|(visual, _)| visual % NATIVE_LAYER2_TILEMAP_WIDTH)
+        .min()
+        .unwrap_or(start_x);
+    let mut edits = Vec::new();
+    for (visual, _) in visited
+        .iter()
+        .enumerate()
+        .filter(|(_, selected)| **selected)
+    {
+        let x = visual % NATIVE_LAYER2_TILEMAP_WIDTH;
+        let y = visual / NATIVE_LAYER2_TILEMAP_WIDTH;
+        let pattern_x = (x - minimum_x) % pattern_width;
+        let pattern_y = (y - minimum_y) % pattern_height;
+        let pattern_index = pattern_y * pattern_width + pattern_x;
+        let word =
+            pattern
+                .get(pattern_index)
+                .copied()
+                .ok_or(NativeLayer2Error::FloodPatternShape {
+                    width: pattern_width,
+                    height: pattern_height,
+                    words: pattern.len(),
+                })?;
+        edits.push((
+            native_layer2_storage_index_from_visual(visual),
+            word & 0x0fff,
+        ));
+    }
+    Ok(edits)
+}
+
+fn native_layer2_flood_mask(
+    bytes: &[u8],
+    start_x: usize,
+    start_y: usize,
+) -> Result<[bool; NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT], NativeLayer2Error> {
     if bytes.len() != NATIVE_LAYER2_TILEMAP_LEN {
         return Err(NativeLayer2Error::TilemapLength(bytes.len()));
     }
@@ -65,16 +150,13 @@ pub fn native_layer2_flood_region(
             pending.push_back((x, y + 1));
         }
     }
-    Ok(visited
-        .iter()
-        .enumerate()
-        .filter(|(_, selected)| **selected)
-        .map(|(visual, _)| {
-            let x = visual % NATIVE_LAYER2_TILEMAP_WIDTH;
-            let y = visual / NATIVE_LAYER2_TILEMAP_WIDTH;
-            ((y >> 4) * 31 + x) * 16 + y
-        })
-        .collect())
+    Ok(visited)
+}
+
+const fn native_layer2_storage_index_from_visual(visual: usize) -> usize {
+    let x = visual % NATIVE_LAYER2_TILEMAP_WIDTH;
+    let y = visual / NATIVE_LAYER2_TILEMAP_WIDTH;
+    ((y >> 4) * 31 + x) * 16 + y
 }
 
 fn tilemap_word(bytes: &[u8], index: usize) -> u16 {
@@ -234,6 +316,11 @@ pub enum NativeLayer2Error {
         x: usize,
         y: usize,
     },
+    FloodPatternShape {
+        width: usize,
+        height: usize,
+        words: usize,
+    },
     LegacyHighByte {
         tile: usize,
         actual: u8,
@@ -329,6 +416,47 @@ mod tests {
             native_layer2_flood_region(&[0; NATIVE_LAYER2_TILEMAP_LEN], 32, 0),
             Err(NativeLayer2Error::TilemapCoordinate { x: 32, y: 0 })
         ));
+    }
+
+    #[test]
+    fn flood_pattern_repeats_from_region_minimum_bounds_and_masks_words() {
+        let mut words = vec![0_u16; 1024];
+        for (x, y) in [(5, 0), (3, 1), (4, 1), (5, 1), (3, 2)] {
+            words[native_layer2_tilemap_index(x, y).unwrap()] = 0x7777;
+        }
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            native_layer2_flood_pattern(&bytes, 5, 0, 2, 2, &[0xf111, 0xf222, 0xf333, 0xf444],)
+                .unwrap(),
+            [
+                ((5, 0), 0x0111),
+                ((3, 1), 0x0333),
+                ((4, 1), 0x0444),
+                ((5, 1), 0x0333),
+                ((3, 2), 0x0111),
+            ]
+            .map(|((x, y), word)| (native_layer2_tilemap_index(x, y).unwrap(), word))
+        );
+    }
+
+    #[test]
+    fn flood_pattern_rejects_empty_oversized_and_mismatched_shapes() {
+        let bytes = [0; NATIVE_LAYER2_TILEMAP_LEN];
+        for (width, height, words) in [
+            (0, 1, Vec::new()),
+            (1, 0, Vec::new()),
+            (33, 1, vec![0; 33]),
+            (1, 33, vec![0; 33]),
+            (2, 2, vec![0; 3]),
+        ] {
+            assert!(matches!(
+                native_layer2_flood_pattern(&bytes, 0, 0, width, height, &words),
+                Err(NativeLayer2Error::FloodPatternShape { .. })
+            ));
+        }
     }
 
     #[test]

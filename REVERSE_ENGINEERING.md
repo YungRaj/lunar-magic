@@ -1915,12 +1915,15 @@ Flood fill is now recovered from `FloodMarkMatchingLevelBackgroundRegion` at `00
 `ValidateAndFloodFillBackgroundMap16Pattern` at `00521110`. Lunar Magic compares complete
 16-bit source words, marks a bounded four-connected region without wrapping at the 32×32
 edges, and repeats the replacement rectangle from the region's minimum X/Y bounds after
-masking every replacement word to its 12-bit Map16 index. The native panel implements the
-exact one-word-pattern specialization exposed by its current word field: it resolves the
-region in visual coordinates, masks the replacement with `$0FFF`, and submits all affected
+masking every replacement word to its 12-bit Map16 index. The native panel implements both
+the one-word specialization exposed by its word field and the complete rectangular operation.
+It can retain any selected rectangle in visual row-major order, then repeat that pattern over
+the destination region from the region's independent minimum X/Y bounds. Both paths resolve
+the region in visual coordinates, mask replacements with `$0FFF`, and submit all affected
 native-storage indexes as one aggregate transaction. An independent exhaustive oracle covers
 every binary topology in a 3×3 neighborhood at every possible start cell, in addition to
-full-word identity, disconnected islands, deterministic visual order, and edge behavior.
+full-word identity, disconnected islands, deterministic visual order, edge behavior, irregular
+region bounds, rectangular repetition, and malformed pattern dimensions.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their

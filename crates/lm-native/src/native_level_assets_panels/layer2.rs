@@ -1,4 +1,4 @@
-use super::{AggregatePanels, PasteTarget, index, pasted_text};
+use super::{AggregatePanels, Layer2FillPattern, PasteTarget, index, pasted_text};
 use crate::{level_editor_forms, native_clipboard};
 use eframe::egui;
 use lm_app::NativeLevelAssetsControllerEdit;
@@ -140,6 +140,24 @@ fn layer2_flood_edits(
         .into_iter()
         .map(|index| (index, map16_index))
         .collect())
+}
+
+fn layer2_pattern_flood_edits(
+    bytes: &[u8],
+    start: Option<(usize, usize)>,
+    pattern: &Layer2FillPattern,
+) -> Result<Vec<(usize, u16)>, String> {
+    let (x, y) =
+        start.ok_or_else(|| "select a Layer 2 canvas cell before flood filling".to_string())?;
+    lm_level::native_layer2_flood_pattern(
+        bytes,
+        x,
+        y,
+        usize::from(pattern.width),
+        usize::from(pattern.height),
+        &pattern.words,
+    )
+    .map_err(|error| error.to_string())
 }
 
 impl AggregatePanels {
@@ -327,7 +345,7 @@ impl AggregatePanels {
                 action = Some(true);
             }
         });
-        action.map(|flood| {
+        if let Some(result) = action.map(|flood| {
             level_editor_forms::parse_hex_u16(&self.layer2_tile, "Layer 2 tile").and_then(|word| {
                 let edits = if flood {
                     layer2_flood_edits(bytes, self.layer2_tile_cursor, word)
@@ -341,6 +359,79 @@ impl AggregatePanels {
                 }?;
                 Ok(NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits))
             })
+        }) {
+            return Some(result);
+        }
+        self.layer2_pattern_flood_controls(ui, bytes)
+    }
+
+    fn layer2_pattern_flood_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        bytes: &[u8],
+    ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
+        let can_capture = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
+        let mut capture_error = None;
+        let mut apply = false;
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(can_capture, egui::Button::new("Capture fill pattern"))
+                .on_hover_text(
+                    "Retain the selected rectangle as a visual row-major Map16 pattern. Then click \
+                     any destination cell and apply it to that connected region.",
+                )
+                .clicked()
+            {
+                match layer2_selection_words(
+                    bytes,
+                    self.layer2_tile_anchor,
+                    self.layer2_tile_cursor,
+                ) {
+                    Ok((width, height, words)) => {
+                        self.layer2_fill_pattern = Some(Layer2FillPattern {
+                            width,
+                            height,
+                            words,
+                        });
+                    }
+                    Err(error) => capture_error = Some(error),
+                }
+            }
+            let label = self.layer2_fill_pattern.as_ref().map_or_else(
+                || "Flood fill with captured pattern".into(),
+                |pattern| {
+                    format!(
+                        "Flood fill with {}×{} pattern",
+                        pattern.width, pattern.height
+                    )
+                },
+            );
+            if ui
+                .add_enabled(
+                    self.layer2_fill_pattern.is_some() && self.layer2_tile_cursor.is_some(),
+                    egui::Button::new(label),
+                )
+                .on_hover_text(
+                    "Repeat the captured rectangle from the connected region's minimum X/Y corner, \
+                     matching Lunar Magic's pattern anchoring.",
+                )
+                .clicked()
+            {
+                apply = true;
+            }
+        });
+        if let Some(error) = capture_error {
+            return Some(Err(error));
+        }
+        apply.then(|| {
+            layer2_pattern_flood_edits(
+                bytes,
+                self.layer2_tile_cursor,
+                self.layer2_fill_pattern
+                    .as_ref()
+                    .expect("button requires a captured pattern"),
+            )
+            .map(NativeLevelAssetsControllerEdit::Layer2TilemapWords)
         })
     }
 
@@ -564,5 +655,33 @@ mod tests {
             vec![(0, 0x0456), (16, 0x0456), (17, 0x0456)]
         );
         assert!(layer2_flood_edits(&bytes, None, 1).is_err());
+    }
+
+    #[test]
+    fn captured_pattern_flood_uses_visual_shape_and_one_edit_batch() {
+        let mut words = vec![0_u16; 1024];
+        for (x, y) in [(2, 1), (3, 1), (1, 2), (2, 2), (3, 2)] {
+            words[lm_level::native_layer2_tilemap_index(x, y).unwrap()] = 0x8123;
+        }
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        let pattern = Layer2FillPattern {
+            width: 2,
+            height: 2,
+            words: vec![0xf001, 0xf002, 0xf003, 0xf004],
+        };
+        assert_eq!(
+            layer2_pattern_flood_edits(&bytes, Some((3, 1)), &pattern).unwrap(),
+            [
+                ((2, 1), 0x0002),
+                ((3, 1), 0x0001),
+                ((1, 2), 0x0003),
+                ((2, 2), 0x0004),
+                ((3, 2), 0x0003),
+            ]
+            .map(|((x, y), word)| { (lm_level::native_layer2_tilemap_index(x, y).unwrap(), word) })
+        );
     }
 }

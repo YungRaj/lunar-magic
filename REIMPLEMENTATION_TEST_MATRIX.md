@@ -41,9 +41,13 @@ and destinations crossing the 32×32 edge before producing an edit batch. Cut fi
 same typed payload and then atomically writes Lunar Magic's recovered `$0000` deletion word to
 every selected cell.
 Flood fill compares complete 16-bit source words over a bounded four-connected region and
-emits a single aggregate edit using the recovered 12-bit Map16 replacement normalization.
+emits a single aggregate edit using the recovered 12-bit Map16 replacement normalization. The
+native panel supports both a single replacement word and a retained visual row-major rectangle;
+the latter repeats from the region's independent minimum X/Y bounds exactly as the recovered
+Lunar Magic routine does.
 An exhaustive independent reference test covers all 512 binary 3×3 topologies from every
-start cell, including edge isolation and the native two-plane storage bijection. Focused gates require
+start cell, including edge isolation, irregular pattern anchoring, malformed dimensions, and the
+native two-plane storage bijection. Focused gates require
 five-payload semantic reopen, checksum validity, exact ownership reclamation, and rollback when a
 late edit targets the wrong storage mode, repeats a tile index, or exceeds the tilemap.
 The opt-in Wine gate additionally relocates an edited installed level-105 tilemap into a newly
