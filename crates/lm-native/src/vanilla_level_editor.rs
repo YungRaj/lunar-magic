@@ -3288,13 +3288,6 @@ struct CanvasModel {
     sprite_placements: Vec<lm_level::NativeSpritePlacement>,
 }
 
-fn layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
-    if x >= 32 || y >= 32 {
-        return None;
-    }
-    Some(((y >> 4) * 31 + x) * 16 + y)
-}
-
 fn draw_layer2_tilemap(
     painter: &egui::Painter,
     target: egui::Rect,
@@ -3306,7 +3299,8 @@ fn draw_layer2_tilemap(
 ) {
     for y in 0..32 {
         for x in 0..32 {
-            let Some(&word) = layer2_tilemap_index(x, y).and_then(|index| tilemap.get(index))
+            let Some(&word) =
+                lm_level::native_layer2_tilemap_index(x, y).and_then(|index| tilemap.get(index))
             else {
                 continue;
             };
@@ -4813,15 +4807,17 @@ mod tests {
 
     #[test]
     fn compressed_layer2_index_matches_lunar_magic_column_halves() {
-        assert_eq!(layer2_tilemap_index(0, 0), Some(0));
-        assert_eq!(layer2_tilemap_index(1, 0), Some(16));
-        assert_eq!(layer2_tilemap_index(31, 15), Some(511));
-        assert_eq!(layer2_tilemap_index(0, 16), Some(512));
-        assert_eq!(layer2_tilemap_index(31, 31), Some(1023));
-        assert_eq!(layer2_tilemap_index(32, 0), None);
-        assert_eq!(layer2_tilemap_index(0, 32), None);
+        assert_eq!(lm_level::native_layer2_tilemap_index(0, 0), Some(0));
+        assert_eq!(lm_level::native_layer2_tilemap_index(1, 0), Some(16));
+        assert_eq!(lm_level::native_layer2_tilemap_index(31, 15), Some(511));
+        assert_eq!(lm_level::native_layer2_tilemap_index(0, 16), Some(512));
+        assert_eq!(lm_level::native_layer2_tilemap_index(31, 31), Some(1023));
+        assert_eq!(lm_level::native_layer2_tilemap_index(32, 0), None);
+        assert_eq!(lm_level::native_layer2_tilemap_index(0, 32), None);
         let mut indexes = (0..32)
-            .flat_map(|y| (0..32).map(move |x| layer2_tilemap_index(x, y).unwrap()))
+            .flat_map(|y| {
+                (0..32).map(move |x| lm_level::native_layer2_tilemap_index(x, y).unwrap())
+            })
             .collect::<Vec<_>>();
         indexes.sort_unstable();
         assert_eq!(indexes, (0..1024).collect::<Vec<_>>());

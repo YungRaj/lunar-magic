@@ -3,6 +3,17 @@ use std::fmt;
 
 pub const NATIVE_LAYER2_TILEMAP_LEN: usize = 0x800;
 pub const LEGACY_LAYER2_TILEMAP_LEN: usize = 0x360;
+pub const NATIVE_LAYER2_TILEMAP_WIDTH: usize = 32;
+pub const NATIVE_LAYER2_TILEMAP_HEIGHT: usize = 32;
+
+/// Maps 32×32 background-canvas coordinates to Lunar Magic's two column-major 32×16 planes.
+#[must_use]
+pub const fn native_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
+    if x >= NATIVE_LAYER2_TILEMAP_WIDTH || y >= NATIVE_LAYER2_TILEMAP_HEIGHT {
+        return None;
+    }
+    Some(((y >> 4) * 31 + x) * 16 + y)
+}
 
 /// Decoded native Layer 2 data selected by the level-mode storage class.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -193,6 +204,22 @@ mod tests {
             Layer2Storage::CompressedTilemap
         );
         assert_eq!(level_mode_layer2_storage(0x1f), Layer2Storage::Objects);
+    }
+
+    #[test]
+    fn tilemap_canvas_index_is_a_complete_bijection() {
+        assert_eq!(native_layer2_tilemap_index(0, 0), Some(0));
+        assert_eq!(native_layer2_tilemap_index(1, 0), Some(16));
+        assert_eq!(native_layer2_tilemap_index(31, 15), Some(511));
+        assert_eq!(native_layer2_tilemap_index(0, 16), Some(512));
+        assert_eq!(native_layer2_tilemap_index(31, 31), Some(1023));
+        assert_eq!(native_layer2_tilemap_index(32, 0), None);
+        assert_eq!(native_layer2_tilemap_index(0, 32), None);
+        let mut indexes = (0..32)
+            .flat_map(|y| (0..32).map(move |x| native_layer2_tilemap_index(x, y).unwrap()))
+            .collect::<Vec<_>>();
+        indexes.sort_unstable();
+        assert_eq!(indexes, (0..1024).collect::<Vec<_>>());
     }
 
     #[test]

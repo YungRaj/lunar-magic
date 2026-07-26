@@ -89,9 +89,10 @@ pub use mwl::{
 };
 pub use native_file::{NativeLevelFile, NativeLevelFileError, StreamKind};
 pub use native_layer2::{
-    LEGACY_LAYER2_TILEMAP_LEN, Layer2Storage, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
-    NativeLayer2Error, compact_legacy_layer2_tilemap, expand_legacy_layer2_tilemap,
-    interleave_layer2_tilemap_planes, level_mode_layer2_storage, split_layer2_tilemap_planes,
+    LEGACY_LAYER2_TILEMAP_LEN, Layer2Storage, NATIVE_LAYER2_TILEMAP_HEIGHT,
+    NATIVE_LAYER2_TILEMAP_LEN, NATIVE_LAYER2_TILEMAP_WIDTH, NativeLayer2Data, NativeLayer2Error,
+    compact_legacy_layer2_tilemap, expand_legacy_layer2_tilemap, interleave_layer2_tilemap_planes,
+    level_mode_layer2_storage, native_layer2_tilemap_index, split_layer2_tilemap_planes,
 };
 pub use native_map16_sidecar::{M16Sidecar, NativeMap16SidecarError, S16Sidecar};
 pub use native_sprite::{

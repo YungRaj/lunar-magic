@@ -1884,6 +1884,12 @@ pristine sentinels remain absent rather than being interpreted as pointers.
 a 32×32 Map16 plane with index `((y >> 4) * 31 + x) * 16 + y`: two
 column-major 32×16 halves. The native canvas uses that exact bijection for the
 decoded 1,024-word plane and paints it before both object layers.
+The native-assets Layer 2 panel now uses the same shared bijection to present a
+clickable 32×32 Map16 grid. Selecting a canvas cell resolves its non-linear
+storage index and loads the complete 16-bit word; applying it continues through
+the existing revision-checked aggregate transaction rather than mutating the
+frontend snapshot. Synthetic coverage proves all five boundary coordinates and
+rejects both out-of-range coordinates and truncated tilemap storage.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their
