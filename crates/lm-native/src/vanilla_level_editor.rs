@@ -88,6 +88,12 @@ enum EntityPasteTarget {
     Sprite,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CanvasPlacementMode {
+    Object,
+    Sprite,
+}
+
 impl SpriteForm {
     fn from_token(header: u8, token: Option<&SpriteToken>) -> Self {
         let encoded = match token {
@@ -188,6 +194,7 @@ pub(crate) struct VanillaLevelEditor {
     selected_sprite: usize,
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
+    placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
     map16_key: Option<(u64, u8, u8)>,
@@ -569,6 +576,23 @@ impl VanillaLevelEditor {
         let major_tiles = canvas_major_tiles(&placements, &sprite_placements);
         let minor_tiles = canvas_minor_tiles(&placements, &sprite_placements);
         let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical);
+        ui.horizontal(|ui| {
+            ui.label("Canvas tool:");
+            ui.selectable_value(&mut self.placement_mode, None, "Select / move");
+            ui.selectable_value(
+                &mut self.placement_mode,
+                Some(CanvasPlacementMode::Object),
+                "Place object",
+            );
+            ui.selectable_value(
+                &mut self.placement_mode,
+                Some(CanvasPlacementMode::Sprite),
+                "Place sprite",
+            );
+        });
+        if self.placement_mode.is_some() {
+            ui.label("Click a canvas tile to place the values from the matching editor below.");
+        }
         egui::ScrollArea::both()
             .id_salt("vanilla-rom-level-canvas")
             .max_height(ROM_LEVEL_CANVAS_VIEW_HEIGHT)
@@ -710,6 +734,20 @@ impl VanillaLevelEditor {
         vertical: bool,
     ) {
         if response.clicked()
+            && let Some(mode) = self.placement_mode
+            && let Some(position) = response.interact_pointer_pos()
+        {
+            match mode {
+                CanvasPlacementMode::Object => {
+                    self.place_object_at_canvas(position, rect, cell, vertical);
+                }
+                CanvasPlacementMode::Sprite => {
+                    self.place_sprite_at_canvas(position, rect, cell, vertical);
+                }
+            }
+            return;
+        }
+        if response.clicked()
             && let Some(index) = hit_object
             && let Some(record) = records.get(index)
         {
@@ -745,6 +783,135 @@ impl VanillaLevelEditor {
             } else if let (Some(index), Some(position)) = (self.dragging_object.take(), position) {
                 self.move_object_to_canvas(index, position, rect, cell, vertical);
             }
+        }
+    }
+
+    fn place_object_at_canvas(
+        &mut self,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let Some((screen, coordinates)) =
+            object_placement_at_canvas_position(position, canvas, cell, vertical)
+        else {
+            self.error = Some("object placement is outside the native 16×512-tile space".into());
+            return;
+        };
+        let record = match self.object_form.ordinary_record() {
+            Ok(record) if record.command_id() != 0 => record,
+            Ok(_) => {
+                self.error =
+                    Some("canvas placement requires an ordinary nonzero object command".into());
+                return;
+            }
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let mut predicted = controller.level().layer1.objects.clone();
+        let selected =
+            match predicted.insert_ordinary_object_at(record.clone(), screen, coordinates) {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            };
+        match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
+            ObjectEdit::InsertOrdinaryAt {
+                record,
+                screen,
+                coordinates,
+            },
+        ])]) {
+            Ok(()) => {
+                self.selected_object = selected;
+                self.object_form =
+                    ObjectForm::from_record(&controller.level().layer1.objects.records[selected]);
+                self.placement_mode = None;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn place_sprite_at_canvas(
+        &mut self,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let Some(fields) = sprite_fields_at_canvas_position(
+            position,
+            canvas,
+            cell,
+            vertical,
+            NativeSpriteRecordFields {
+                y_low: self.sprite_form.y_low,
+                extra_bits: self.sprite_form.extra_bits,
+                screen: self.sprite_form.screen,
+                x: self.sprite_form.x,
+                sprite_number: self.sprite_form.sprite_number,
+            },
+        ) else {
+            self.error = Some("sprite placement is outside the native 32×512-tile space".into());
+            return;
+        };
+        let token = match crate::native_level_document_form::parse_sprite_token(
+            &self.sprite_form.encoded,
+        ) {
+            Ok(SpriteToken::Record(mut record)) => {
+                if let Err(error) = record.set_native_fields(fields, &SpriteLengthTable::standard())
+                {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+                SpriteToken::Record(record)
+            }
+            Ok(_) => {
+                self.error =
+                    Some("canvas placement requires a sprite record, not a control".into());
+                return;
+            }
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let index = controller.level().sprites.tokens.len();
+        let mut predicted = controller.level().sprites.clone();
+        predicted.tokens.push(token.clone());
+        let selected = match predicted.sort_legacy_records_by_screen(index) {
+            Ok(selected) => selected,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        match controller.apply_edits(&[
+            NativeLevelEdit::InsertSprite { index, token },
+            NativeLevelEdit::SortLegacySpritesByScreen { selected: index },
+        ]) {
+            Ok(()) => {
+                self.selected_sprite = selected;
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.get(selected),
+                );
+                self.placement_mode = None;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
         }
     }
 

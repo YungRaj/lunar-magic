@@ -11,6 +11,12 @@ pub enum ObjectEdit {
         index: usize,
         record: ObjectRecord,
     },
+    /// Inserts an ordinary object at an absolute screen and canonicalizes screen transitions.
+    InsertOrdinaryAt {
+        record: ObjectRecord,
+        screen: u16,
+        coordinates: ObjectCoordinateNibbles,
+    },
     Replace {
         index: usize,
         record: ObjectRecord,
@@ -96,6 +102,14 @@ impl ObjectStream {
         for (command, edit) in edits.iter().enumerate() {
             let result = match edit {
                 ObjectEdit::Insert { index, record } => staged.insert(*index, record.clone()),
+                ObjectEdit::InsertOrdinaryAt {
+                    record,
+                    screen,
+                    coordinates,
+                } => staged
+                    .insert_ordinary_object_at(record.clone(), *screen, *coordinates)
+                    .map(drop)
+                    .map_err(LevelEditError::ObjectRelocation),
                 ObjectEdit::Replace { index, record } => {
                     let Some(target) = staged.records.get_mut(*index) else {
                         return Err(ObjectEditError::Command {
@@ -353,5 +367,27 @@ mod tests {
                 .is_err()
         );
         assert_eq!(stream, original);
+    }
+
+    #[test]
+    fn absolute_insert_is_available_through_atomic_edit_batches() {
+        let mut stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![1, 0x10, 1]).unwrap()],
+        };
+        stream
+            .apply_edits(&[ObjectEdit::InsertOrdinaryAt {
+                record: ObjectRecord::new(vec![2, 0x10, 2]).unwrap(),
+                screen: 7,
+                coordinates: ObjectCoordinateNibbles {
+                    first: 5,
+                    second: 6,
+                },
+            }])
+            .unwrap();
+        let placements = stream.native_placements();
+        assert_eq!(placements.len(), 2);
+        assert_eq!(placements[1].screen, 7);
+        assert_eq!(placements[1].major, 7 * 16 + 5);
+        assert_eq!(placements[1].minor, 6);
     }
 }

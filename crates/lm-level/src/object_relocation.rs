@@ -26,6 +26,47 @@ struct PositionedObject {
 }
 
 impl ObjectStream {
+    /// Inserts an ordinary object at an absolute native screen and coordinate pair.
+    ///
+    /// Existing owned screen transitions are regenerated canonically. The new object is placed
+    /// after existing objects on the target screen, while trailing opaque controls are preserved.
+    ///
+    /// # Errors
+    ///
+    /// Rejects command-zero controls, invalid coordinate fields, targets outside screens 0–31,
+    /// and streams containing opaque controls interleaved with ordinary objects.
+    pub fn insert_ordinary_object_at(
+        &mut self,
+        mut record: ObjectRecord,
+        target_screen: u16,
+        coordinates: ObjectCoordinateNibbles,
+    ) -> Result<usize, ObjectRelocationError> {
+        if target_screen > 0x1f {
+            return Err(ObjectRelocationError::TargetScreenOutOfRange(target_screen));
+        }
+        if record.command_id() == 0 {
+            return Err(ObjectRelocationError::NotOrdinaryObject(self.records.len()));
+        }
+        record
+            .set_coordinate_nibbles(coordinates)
+            .map_err(ObjectRelocationError::Field)?;
+        record
+            .set_advances_screen(false)
+            .map_err(ObjectRelocationError::Field)?;
+        let (mut positioned, trailing_controls) = decode_positioned_objects(self)?;
+        let inserted_id = self.records.len();
+        positioned.push(PositionedObject {
+            original_index: inserted_id,
+            screen: target_screen,
+            record,
+        });
+        positioned.sort_by_key(|object| object.screen);
+        let (mut records, new_index) = encode_positioned_objects(positioned, inserted_id)?;
+        records.extend(trailing_controls);
+        self.records = records;
+        Ok(new_index)
+    }
+
     /// Relocates an ordinary object to an absolute native screen and coordinate pair.
     ///
     /// Existing screen-jump controls are owned by this operation and are canonically regenerated.
@@ -220,6 +261,55 @@ mod tests {
                 .collect::<Vec<_>>(),
             [0, 5]
         );
+    }
+
+    #[test]
+    fn absolute_insertion_regenerates_transitions_and_preserves_trailing_controls() {
+        let control = ObjectRecord::new(vec![7, 5, 0, 0xcb]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![object(false, 1, 2, 0x10), control.clone()],
+        };
+        let inserted = stream
+            .insert_ordinary_object_at(
+                object(true, 9, 9, 0x20),
+                5,
+                ObjectCoordinateNibbles {
+                    first: 3,
+                    second: 4,
+                },
+            )
+            .unwrap();
+        assert_eq!(inserted, 2);
+        assert_eq!(stream.records[1].screen_jump().unwrap().packed_target, 5);
+        assert_eq!(stream.records[2].coordinate_nibbles().first, 3);
+        assert_eq!(stream.records[2].coordinate_nibbles().second, 4);
+        assert_eq!(stream.records.last(), Some(&control));
+        assert_eq!(
+            stream.native_placements()[1].screen,
+            5,
+            "the inserted ordinary object has an absolute placement"
+        );
+    }
+
+    #[test]
+    fn invalid_absolute_insertion_is_atomic() {
+        let mut stream = ObjectStream {
+            records: vec![object(false, 1, 2, 0x10)],
+        };
+        let original = stream.clone();
+        assert!(
+            stream
+                .insert_ordinary_object_at(
+                    ObjectRecord::new(vec![0, 0, 1]).unwrap(),
+                    2,
+                    ObjectCoordinateNibbles {
+                        first: 1,
+                        second: 2,
+                    },
+                )
+                .is_err()
+        );
+        assert_eq!(stream, original);
     }
 
     #[test]

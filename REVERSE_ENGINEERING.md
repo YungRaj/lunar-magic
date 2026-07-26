@@ -1722,6 +1722,13 @@ scroll area instead of shrinking or clipping long levels. Its major axis grows
 through all 512 native tiles and its minor axis grows from 16 to 32 when sprite
 placements use the second row; grid, artwork, selection, and drag hit testing
 all consume the same orientation-aware rectangle.
+The direct-ROM canvas now also exposes explicit one-shot object and sprite placement modes.
+`insert_ordinary_object_at` adds an ordinary object at the clicked absolute screen, stably places
+it after existing objects on that screen, regenerates minimal advance/jump transitions, and
+preserves trailing opaque controls. Sprite placement rewrites a valid form record to the clicked
+screen/X/Y through the recovered packed fields and applies the proven stable legacy screen sort.
+Invalid command-zero objects, sprite controls, width mismatches, and off-canvas clicks fail before
+the staged level changes.
 
 The first direct-ROM move oracle exposed one additional native invariant:
 Lunar Magic stably sorts legacy sprite records by their decoded five-bit
