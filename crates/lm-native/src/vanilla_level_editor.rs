@@ -3358,6 +3358,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         custom_map16,
     } = request;
     let mut hit = None;
+    let mut standard_8a_count = 0_u8;
     for placement in placements {
         let (tile_x, tile_y) = placement.tile_coordinates(vertical);
         let center = target.min
@@ -3369,19 +3370,29 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             center,
             egui::vec2(cell_size.max(9.0), cell_size.max(9.0)),
         );
-        let preview = custom_sprites
+        let custom_preview = custom_sprites
             .and_then(|table| table.default_display(placement.sprite_number, placement.extra_bits))
             .and_then(|sprite| {
                 lm_render::render_resolved_lunar_magic_custom_sprite_with(sprite, |index| {
                     external_sprite_definition(custom_map16, index)
                 })
-            })
-            .or_else(|| {
-                lm_render::render_lunar_magic_standard_sprite_with_mode(
-                    placement.sprite_number,
-                    standard_sprite_preview_mode(placement, vertical, level_mode, animation_phase),
-                )
             });
+        let uses_standard = custom_preview.is_none();
+        let preview = custom_preview.or_else(|| {
+            lm_render::render_lunar_magic_standard_sprite_with_mode(
+                placement.sprite_number,
+                standard_sprite_preview_mode(
+                    placement,
+                    vertical,
+                    level_mode,
+                    animation_phase,
+                    standard_8a_count,
+                ),
+            )
+        });
+        if uses_standard && placement.sprite_number == 0x8a {
+            standard_8a_count = standard_8a_count.saturating_add(1);
+        }
         if let (Some(texture), Some(parts)) = (texture, preview) {
             for part in parts {
                 draw_sprite_preview_definition(
@@ -3429,11 +3440,13 @@ fn standard_sprite_preview_mode(
     vertical: bool,
     level_mode: u8,
     animation_phase: u8,
+    sprite_8a_sequence_index: u8,
 ) -> lm_render::StandardSpritePreviewMode {
     lm_render::StandardSpritePreviewMode {
         placement_first: placement.first_byte,
         level_mode,
         animation_phase,
+        sprite_8a_sequence_index,
         level_orientation: if vertical {
             lm_render::StandardLevelOrientation::Vertical
         } else {
@@ -4032,17 +4045,19 @@ mod tests {
             sprite_number: 0xe5,
             extra_bits: 1,
         };
-        let horizontal = standard_sprite_preview_mode(&placement, false, 3, 2);
+        let horizontal = standard_sprite_preview_mode(&placement, false, 3, 2, 4);
         assert_eq!(horizontal.placement_first, 0x91);
         assert_eq!(horizontal.level_mode, 3);
         assert_eq!(horizontal.animation_phase, 2);
+        assert_eq!(horizontal.sprite_8a_sequence_index, 4);
         assert_eq!(
             horizontal.level_orientation,
             lm_render::StandardLevelOrientation::Horizontal
         );
-        let vertical = standard_sprite_preview_mode(&placement, true, 7, 1);
+        let vertical = standard_sprite_preview_mode(&placement, true, 7, 1, 2);
         assert_eq!(vertical.level_mode, 7);
         assert_eq!(vertical.animation_phase, 1);
+        assert_eq!(vertical.sprite_8a_sequence_index, 2);
         assert_eq!(
             vertical.level_orientation,
             lm_render::StandardLevelOrientation::Vertical

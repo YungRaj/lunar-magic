@@ -1927,5 +1927,21 @@ Tests cover the short and long `$64` stems, both first-byte branches of
 `$65`–`$68`, alternate-number display, and validator rejection.
 
 Remaining dedicated entries discovered by the same audit are tracked as
-implementation work rather than being mislabeled as native empties: `$6C`,
-`$8A`, `$9D`, `$EF`, and `$F2`–`$FF`.
+implementation work rather than being mislabeled as native empties: `$EF` and
+`$F2`–`$FF`.
+
+The remaining ordinary standard-range entries are now authenticated.
+`$6C` at `004c7030` walks two cells left and adds the same final negative-eight
+offset as `$6B`, producing its identical three-part `$B7` chain. `$9D` at
+`004c8750` selects `$1BD`, `$1AD`, `$14`, or `$211` from the first record
+byte's low two bits, then calls the same composite-tail helper used by `$9A`;
+alternate-number display emits `$115`.
+
+`$8A` at `004c7bc0` is list-stateful. `RenderAllLevelSprites` clears
+`DAT_00617932` before walking the list. The first four standard `$8A` handlers
+emit definitions `$110`–`$113` in order and increment that byte; later
+instances append definition `$001`. The embedded definition table supplies
+the exact four new definition records. Both Rust native canvases now maintain
+this counter in placement order. An SSC custom-display override does not
+consume it, matching the native path where the standard handler is never
+called.

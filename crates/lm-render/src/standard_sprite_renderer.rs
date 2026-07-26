@@ -48,6 +48,9 @@ pub struct StandardSpritePreviewMode {
     /// Context selected by Lunar Magic's two sprite-selector tables and
     /// wide-object edge validator.
     pub wide_context: StandardSpriteWideContext,
+    /// Zero-based count of earlier standard `$8A` handlers in the current
+    /// full sprite-list render.
+    pub sprite_8a_sequence_index: u8,
 }
 
 /// Renders Lunar Magic's authenticated standard-sprite preview handlers.
@@ -71,6 +74,7 @@ pub fn render_lunar_magic_standard_sprite(
             level_mode: 0,
             level_orientation: StandardLevelOrientation::Horizontal,
             wide_context: StandardSpriteWideContext::ValidShort,
+            sprite_8a_sequence_index: 0,
         },
     )
 }
@@ -129,6 +133,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x9a
         | 0x9b
         | 0x9c
+        | 0x9d
         | 0x9f
         | 0xa1
         | 0xa2
@@ -162,7 +167,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x07, 13, -7),
         ]),
         0x11 => parts(&[(0x0d, 0, 1)]),
-        0x12 => parts(&[(0x01, 0, 0)]),
+        0x8a if mode.sprite_8a_sequence_index <= 3 => {
+            parts(&[(0x110 + u16::from(mode.sprite_8a_sequence_index), 0, 1)])
+        }
+        0x12 | 0x8a => parts(&[(0x01, 0, 0)]),
         0x13 => parts(&[(0x0e, 0, 1)]),
         0x14 => parts(&[(0x0f, 0, 1)]),
         0x15 | 0x17 | 0x18 => parts(&[(0x14, 0, 1)]),
@@ -316,7 +324,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x68 => render_handler_68(mode),
         0x69 => parts(&[(0x27, 3, 0), (0x9c, 7, 4)]),
         0x6a => parts(&[(0xb7, 0, 1), (0xb7, 16, 1), (0xb7, 24, 1)]),
-        0x6b => parts(&[(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]),
+        0x6b | 0x6c => parts(&[(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]),
         0x6d => parts(&[(0xd5, -8, 1), (0xd6, 8, 1), (0xc5, -8, -15), (0xc6, 8, -15)]),
         0x6e => parts(&[(0xb9, -2, 1)]),
         0x6f => parts(&[
@@ -467,7 +475,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1d9, -14, -10),
             (0x1da, 30, -10),
         ]),
-        0x9a => render_handler_9a(mode.placement_first),
+        0x9a | 0x9d => render_handler_9a(mode.placement_first),
         0x9b => render_handler_9b(mode.placement_first),
         0x9c => render_definition_grid(0x180, 4, 1),
         0x9e => render_handler_9e(),
@@ -1542,6 +1550,10 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x10b => [0x4cc1, 0x4cd1, 0x4cc0, 0x4cd0],
         0x10c => [0x0056, 0x0019, 0x0019, 0x0019],
         0x10d => [0x0029, 0x0019, 0x0019, 0x0019],
+        0x110 => [0x4819, 0x49d2, 0x4819, 0x4819],
+        0x111 => [0x5019, 0x51d2, 0x5019, 0x5019],
+        0x112 => [0x1419, 0x55d2, 0x1419, 0x1419],
+        0x113 => [0x4c19, 0x4dd2, 0x4c19, 0x4c19],
         0x120 => [0x01aa, 0x01ba, 0x01ab, 0x01bb],
         0x121 => [0x41ab, 0x41bb, 0x41aa, 0x41ba],
         0x122 => [0x01ac, 0x01bc, 0x01ad, 0x01bd],
@@ -4015,6 +4027,64 @@ mod tests {
                 }
             )
             .unwrap(),
+            [(0x115, 0, 1)]
+        );
+    }
+
+    #[test]
+    fn remaining_standard_handlers_preserve_alias_sequence_and_composite_state() {
+        let geometry = |sprite_number, mode| {
+            render_lunar_magic_standard_sprite_with_mode(sprite_number, mode)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            geometry(0x6c, StandardSpritePreviewMode::default()),
+            geometry(0x6b, StandardSpritePreviewMode::default())
+        );
+        for (sequence_index, definition) in [(0, 0x110), (1, 0x111), (2, 0x112), (3, 0x113)] {
+            assert_eq!(
+                geometry(
+                    0x8a,
+                    StandardSpritePreviewMode {
+                        sprite_8a_sequence_index: sequence_index,
+                        ..StandardSpritePreviewMode::default()
+                    }
+                ),
+                [(definition, 0, 1)]
+            );
+        }
+        for sequence_index in [4, 5, u8::MAX] {
+            assert_eq!(
+                geometry(
+                    0x8a,
+                    StandardSpritePreviewMode {
+                        sprite_8a_sequence_index: sequence_index,
+                        ..StandardSpritePreviewMode::default()
+                    }
+                ),
+                [(0x01, 0, 0)]
+            );
+        }
+
+        for placement_first in 0..4 {
+            let mode = StandardSpritePreviewMode {
+                placement_first,
+                ..StandardSpritePreviewMode::default()
+            };
+            assert_eq!(geometry(0x9d, mode), geometry(0x9a, mode));
+        }
+        assert_eq!(
+            geometry(
+                0x9d,
+                StandardSpritePreviewMode {
+                    alternate_display: true,
+                    ..StandardSpritePreviewMode::default()
+                }
+            ),
             [(0x115, 0, 1)]
         );
     }

@@ -388,6 +388,7 @@ fn draw_sprites(
     cursor: Option<egui::Pos2>,
 ) -> Option<usize> {
     let mut hit = None;
+    let mut standard_8a_count = 0_u8;
     for placement in placements {
         let (x, y) = placement.tile_coordinates(vertical);
         let origin = canvas.min + egui::vec2(f32::from(x) * cell, f32::from(y) * cell);
@@ -398,6 +399,7 @@ fn draw_sprites(
             lm_render::StandardSpritePreviewMode {
                 placement_first: placement.first_byte,
                 level_mode,
+                sprite_8a_sequence_index: standard_8a_count,
                 level_orientation: if vertical {
                     lm_render::StandardLevelOrientation::Vertical
                 } else {
@@ -406,6 +408,9 @@ fn draw_sprites(
                 ..lm_render::StandardSpritePreviewMode::default()
             },
         );
+        if placement.sprite_number == 0x8a {
+            standard_8a_count = standard_8a_count.saturating_add(1);
+        }
         let mut hit_rect = rect;
         if let Some(parts) = &parts {
             for part in parts {
