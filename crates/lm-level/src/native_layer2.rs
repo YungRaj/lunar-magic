@@ -1,4 +1,5 @@
 use crate::{LevelObjectData, ObjectStreamError};
+use std::collections::VecDeque;
 use std::fmt;
 
 pub const NATIVE_LAYER2_TILEMAP_LEN: usize = 0x800;
@@ -13,6 +14,72 @@ pub const fn native_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
         return None;
     }
     Some(((y >> 4) * 31 + x) * 16 + y)
+}
+
+/// Returns the four-connected canvas region whose complete 16-bit words match the start cell.
+///
+/// The returned storage indexes are deterministic visual row-major order even though native
+/// storage consists of two column-major 32×16 planes.
+///
+/// # Errors
+///
+/// Returns [`NativeLayer2Error`] unless `bytes` is one complete native tilemap and the start
+/// coordinate lies inside its 32×32 canvas.
+pub fn native_layer2_flood_region(
+    bytes: &[u8],
+    start_x: usize,
+    start_y: usize,
+) -> Result<Vec<usize>, NativeLayer2Error> {
+    if bytes.len() != NATIVE_LAYER2_TILEMAP_LEN {
+        return Err(NativeLayer2Error::TilemapLength(bytes.len()));
+    }
+    let start = native_layer2_tilemap_index(start_x, start_y).ok_or(
+        NativeLayer2Error::TilemapCoordinate {
+            x: start_x,
+            y: start_y,
+        },
+    )?;
+    let target = tilemap_word(bytes, start);
+    let mut visited = [false; NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT];
+    let mut pending = VecDeque::from([(start_x, start_y)]);
+    while let Some((x, y)) = pending.pop_front() {
+        let visual = y * NATIVE_LAYER2_TILEMAP_WIDTH + x;
+        if visited[visual] {
+            continue;
+        }
+        let index = ((y >> 4) * 31 + x) * 16 + y;
+        if tilemap_word(bytes, index) != target {
+            continue;
+        }
+        visited[visual] = true;
+        if x > 0 {
+            pending.push_back((x - 1, y));
+        }
+        if x + 1 < NATIVE_LAYER2_TILEMAP_WIDTH {
+            pending.push_back((x + 1, y));
+        }
+        if y > 0 {
+            pending.push_back((x, y - 1));
+        }
+        if y + 1 < NATIVE_LAYER2_TILEMAP_HEIGHT {
+            pending.push_back((x, y + 1));
+        }
+    }
+    Ok(visited
+        .iter()
+        .enumerate()
+        .filter(|(_, selected)| **selected)
+        .map(|(visual, _)| {
+            let x = visual % NATIVE_LAYER2_TILEMAP_WIDTH;
+            let y = visual / NATIVE_LAYER2_TILEMAP_WIDTH;
+            ((y >> 4) * 31 + x) * 16 + y
+        })
+        .collect())
+}
+
+fn tilemap_word(bytes: &[u8], index: usize) -> u16 {
+    let offset = index * 2;
+    u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
 }
 
 /// Decoded native Layer 2 data selected by the level-mode storage class.
@@ -163,6 +230,10 @@ pub enum NativeLayer2Error {
     Objects(ObjectStreamError),
     TilemapLength(usize),
     CompressedTilemapLength(usize),
+    TilemapCoordinate {
+        x: usize,
+        y: usize,
+    },
     LegacyHighByte {
         tile: usize,
         actual: u8,
@@ -220,6 +291,101 @@ mod tests {
             .collect::<Vec<_>>();
         indexes.sort_unstable();
         assert_eq!(indexes, (0..1024).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn flood_region_is_four_connected_exact_word_and_visual_ordered() {
+        let mut words = vec![0_u16; 1024];
+        for (x, y) in [(0, 0), (1, 0), (1, 1), (2, 1), (31, 0)] {
+            words[native_layer2_tilemap_index(x, y).unwrap()] = 0x8123;
+        }
+        words[native_layer2_tilemap_index(2, 0).unwrap()] = 0x0123;
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            native_layer2_flood_region(&bytes, 0, 0).unwrap(),
+            vec![
+                native_layer2_tilemap_index(0, 0).unwrap(),
+                native_layer2_tilemap_index(1, 0).unwrap(),
+                native_layer2_tilemap_index(1, 1).unwrap(),
+                native_layer2_tilemap_index(2, 1).unwrap(),
+            ]
+        );
+        assert_eq!(
+            native_layer2_flood_region(&bytes, 31, 0).unwrap(),
+            vec![native_layer2_tilemap_index(31, 0).unwrap()]
+        );
+    }
+
+    #[test]
+    fn flood_region_rejects_wrong_shape_and_coordinates() {
+        assert!(matches!(
+            native_layer2_flood_region(&[0; NATIVE_LAYER2_TILEMAP_LEN - 1], 0, 0),
+            Err(NativeLayer2Error::TilemapLength(_))
+        ));
+        assert!(matches!(
+            native_layer2_flood_region(&[0; NATIVE_LAYER2_TILEMAP_LEN], 32, 0),
+            Err(NativeLayer2Error::TilemapCoordinate { x: 32, y: 0 })
+        ));
+    }
+
+    #[test]
+    fn flood_region_matches_every_three_by_three_binary_topology() {
+        for mask in 0_u16..(1 << 9) {
+            let mut words = vec![0x3333_u16; 1024];
+            for y in 0..3 {
+                for x in 0..3 {
+                    let bit = 1 << (y * 3 + x);
+                    words[native_layer2_tilemap_index(x, y).unwrap()] =
+                        if mask & bit == 0 { 0x1111 } else { 0x2222 };
+                }
+            }
+            let bytes = words
+                .iter()
+                .flat_map(|word| word.to_le_bytes())
+                .collect::<Vec<_>>();
+            for start_y in 0..3 {
+                for start_x in 0..3 {
+                    let target_set = mask & (1 << (start_y * 3 + start_x)) != 0;
+                    let mut expected = [false; 9];
+                    let mut pending = vec![(start_x, start_y)];
+                    while let Some((x, y)) = pending.pop() {
+                        let visual = y * 3 + x;
+                        if expected[visual] || (mask & (1 << visual) != 0) != target_set {
+                            continue;
+                        }
+                        expected[visual] = true;
+                        if x > 0 {
+                            pending.push((x - 1, y));
+                        }
+                        if x < 2 {
+                            pending.push((x + 1, y));
+                        }
+                        if y > 0 {
+                            pending.push((x, y - 1));
+                        }
+                        if y < 2 {
+                            pending.push((x, y + 1));
+                        }
+                    }
+                    let expected = expected
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, included)| **included)
+                        .map(|(visual, _)| {
+                            native_layer2_tilemap_index(visual % 3, visual / 3).unwrap()
+                        })
+                        .collect::<Vec<_>>();
+                    assert_eq!(
+                        native_layer2_flood_region(&bytes, start_x, start_y).unwrap(),
+                        expected,
+                        "mask {mask:#05x}, start ({start_x}, {start_y})"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

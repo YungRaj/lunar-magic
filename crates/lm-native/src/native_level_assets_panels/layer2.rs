@@ -126,6 +126,22 @@ fn layer2_cut_edits(
     Ok(indexes.into_iter().map(|index| (index, 0)).collect())
 }
 
+fn layer2_flood_edits(
+    bytes: &[u8],
+    start: Option<(usize, usize)>,
+    replacement: u16,
+) -> Result<Vec<(usize, u16)>, String> {
+    let (x, y) =
+        start.ok_or_else(|| "select a Layer 2 canvas cell before flood filling".to_string())?;
+    let indexes =
+        lm_level::native_layer2_flood_region(bytes, x, y).map_err(|error| error.to_string())?;
+    let map16_index = replacement & 0x0fff;
+    Ok(indexes
+        .into_iter()
+        .map(|index| (index, map16_index))
+        .collect())
+}
+
 impl AggregatePanels {
     pub(super) fn layer2_panel(
         &mut self,
@@ -292,14 +308,38 @@ impl AggregatePanels {
         } else {
             "Apply tile".into()
         };
-        ui.button(apply_label).clicked().then(|| {
-            level_editor_forms::parse_hex_u16(&self.layer2_tile, "Layer 2 tile").map(|word| {
-                NativeLevelAssetsControllerEdit::Layer2TilemapWords(layer2_word_edits(
-                    self.layer2_tile_index,
-                    self.layer2_tile_anchor,
-                    self.layer2_tile_cursor,
-                    word,
-                ))
+        let mut action = None;
+        ui.horizontal(|ui| {
+            if ui.button(apply_label).clicked() {
+                action = Some(false);
+            }
+            if ui
+                .add_enabled(
+                    self.layer2_tile_cursor.is_some(),
+                    egui::Button::new("Flood fill from cursor"),
+                )
+                .on_hover_text(
+                    "Replace the four-connected region matching the cursor's complete 16-bit word. \
+                     Lunar Magic normalizes the replacement to a 12-bit Map16 index.",
+                )
+                .clicked()
+            {
+                action = Some(true);
+            }
+        });
+        action.map(|flood| {
+            level_editor_forms::parse_hex_u16(&self.layer2_tile, "Layer 2 tile").and_then(|word| {
+                let edits = if flood {
+                    layer2_flood_edits(bytes, self.layer2_tile_cursor, word)
+                } else {
+                    Ok(layer2_word_edits(
+                        self.layer2_tile_index,
+                        self.layer2_tile_anchor,
+                        self.layer2_tile_cursor,
+                        word,
+                    ))
+                }?;
+                Ok(NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits))
             })
         })
     }
@@ -506,5 +546,23 @@ mod tests {
             vec![(31, 0), (47, 0), (528, 0), (544, 0)]
         );
         assert!(layer2_cut_edits(None, None).is_err());
+    }
+
+    #[test]
+    fn flood_fill_matches_complete_words_and_normalizes_replacement_to_map16() {
+        let mut words = vec![0_u16; 1024];
+        for (x, y) in [(0, 0), (1, 0), (1, 1)] {
+            words[lm_level::native_layer2_tilemap_index(x, y).unwrap()] = 0x8123;
+        }
+        words[lm_level::native_layer2_tilemap_index(2, 0).unwrap()] = 0x0123;
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            layer2_flood_edits(&bytes, Some((0, 0)), 0xf456).unwrap(),
+            vec![(0, 0x0456), (16, 0x0456), (17, 0x0456)]
+        );
+        assert!(layer2_flood_edits(&bytes, None, 1).is_err());
     }
 }

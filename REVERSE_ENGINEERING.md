@@ -1910,6 +1910,17 @@ at `00523CC0` maps Ctrl+X to command `$2274`; `DispatchLevelBackgroundEditorComm
 `005208B0` copies those words into every primary-selected live cell. The native GUI therefore
 publishes the typed rectangle first and submits one atomic `$0000` fill batch; it does not guess
 Map16 `$0025` or another visually blank tile.
+Flood fill is now recovered from `FloodMarkMatchingLevelBackgroundRegion` at `00520B40`,
+`FloodFillLevelBackgroundWithTilePattern` at `00520F10`, and
+`ValidateAndFloodFillBackgroundMap16Pattern` at `00521110`. Lunar Magic compares complete
+16-bit source words, marks a bounded four-connected region without wrapping at the 32×32
+edges, and repeats the replacement rectangle from the region's minimum X/Y bounds after
+masking every replacement word to its 12-bit Map16 index. The native panel implements the
+exact one-word-pattern specialization exposed by its current word field: it resolves the
+region in visual coordinates, masks the replacement with `$0FFF`, and submits all affected
+native-storage indexes as one aggregate transaction. An independent exhaustive oracle covers
+every binary topology in a 3×3 neighborhood at every possible start cell, in addition to
+full-word identity, disconnected islands, deterministic visual order, and edge behavior.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their

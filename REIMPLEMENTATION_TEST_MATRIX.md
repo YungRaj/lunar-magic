@@ -39,7 +39,11 @@ rectangle's width, height, complete 16-bit words, and visual row-major order ind
 the native two-plane storage order. Copy/paste rejects malformed shapes, cross-domain payloads,
 and destinations crossing the 32×32 edge before producing an edit batch. Cut first publishes the
 same typed payload and then atomically writes Lunar Magic's recovered `$0000` deletion word to
-every selected cell. Focused gates require
+every selected cell.
+Flood fill compares complete 16-bit source words over a bounded four-connected region and
+emits a single aggregate edit using the recovered 12-bit Map16 replacement normalization.
+An exhaustive independent reference test covers all 512 binary 3×3 topologies from every
+start cell, including edge isolation and the native two-plane storage bijection. Focused gates require
 five-payload semantic reopen, checksum validity, exact ownership reclamation, and rollback when a
 late edit targets the wrong storage mode, repeats a tile index, or exceeds the tilemap.
 The opt-in Wine gate additionally relocates an edited installed level-105 tilemap into a newly
