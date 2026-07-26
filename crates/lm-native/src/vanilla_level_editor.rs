@@ -192,6 +192,7 @@ pub(crate) struct VanillaLevelEditor {
     selected_object: usize,
     object_form: ObjectForm,
     dragging_object: Option<usize>,
+    object_catalog_filter: String,
     selected_sprite: usize,
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
@@ -1136,6 +1137,7 @@ impl VanillaLevelEditor {
         } else {
             ui.label("No selected object.");
         }
+        self.object_catalog(ui);
         egui::Grid::new("vanilla-object-fields").show(ui, |ui| {
             header_row(ui, "Command", &mut self.object_form.command_id, 0x3f);
             header_row(ui, "Parameter", &mut self.object_form.parameter, 0xff);
@@ -1162,6 +1164,60 @@ impl VanillaLevelEditor {
             self.paste_target = None;
             self.paste_object(&text, record_count);
         }
+    }
+
+    fn object_catalog(&mut self, ui: &mut egui::Ui) {
+        egui::CollapsingHeader::new("Add standard object visually")
+            .id_salt("vanilla-standard-object-catalog")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Hex filter");
+                    ui.text_edit_singleline(&mut self.object_catalog_filter);
+                    if ui.button("Clear").clicked() {
+                        self.object_catalog_filter.clear();
+                    }
+                });
+                ui.label("Choose a tileset-resolved object, then click its destination tile.");
+                let commands = object_catalog_commands(&self.object_catalog_filter);
+                let texture = self.map16_texture.clone();
+                let handler_map = self.active_standard_object_handler_map().copied();
+                let Some(handler_map) = handler_map else {
+                    ui.label("The active standard-object handler map is unavailable.");
+                    return;
+                };
+                let Some(definitions) = standard_object_definitions() else {
+                    ui.label("The recovered standard-object definitions are unavailable.");
+                    return;
+                };
+                let mut chosen = None;
+                egui::ScrollArea::vertical()
+                    .id_salt("vanilla-standard-object-catalog-scroll")
+                    .max_height(280.0)
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            for command in commands {
+                                let response = draw_object_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    command,
+                                    &handler_map,
+                                    &definitions,
+                                    command == self.object_form.command_id,
+                                );
+                                if response.clicked() {
+                                    chosen = Some(command);
+                                }
+                            }
+                        });
+                    });
+                if let Some(command) = chosen {
+                    self.object_form.command_id = command;
+                    self.object_form.parameter = 0;
+                    self.object_form.advances_screen = false;
+                    self.placement_mode = Some(CanvasPlacementMode::Object);
+                    self.error = None;
+                }
+            });
     }
 
     fn object_action_buttons(
@@ -1839,6 +1895,160 @@ fn rom_canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool) -> egui::
     }
 }
 
+fn object_catalog_commands(filter: &str) -> Vec<u8> {
+    let filter = filter.trim().to_ascii_uppercase();
+    (1..=0x3f)
+        .filter(|command| filter.is_empty() || format!("{command:02X}").contains(&filter))
+        .collect()
+}
+
+fn standard_object_definitions() -> Option<lm_render::StandardObjectDefinitionSet> {
+    let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+    lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).ok()?;
+    lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).ok()?;
+    Some(definitions)
+}
+
+fn draw_object_catalog_entry(
+    ui: &mut egui::Ui,
+    texture: Option<&egui::TextureHandle>,
+    command: u8,
+    handler_map: &[u8; 64],
+    definitions: &lm_render::StandardObjectDefinitionSet,
+    selected: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(62.0, 62.0), egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    draw_catalog_background(&painter, rect, selected);
+    let preview_rect = egui::Rect::from_min_max(
+        rect.min + egui::vec2(3.0, 3.0),
+        rect.max - egui::vec2(3.0, 15.0),
+    );
+    if let Some(texture) = texture
+        && let Some(tiles) = object_catalog_tiles(command, handler_map, definitions)
+    {
+        draw_fitted_object_catalog_preview(&painter, texture, preview_rect, &tiles);
+    } else {
+        painter.text(
+            preview_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("{command:02X}"),
+            egui::FontId::monospace(12.0),
+            egui::Color32::LIGHT_BLUE,
+        );
+    }
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 7.0),
+        egui::Align2::CENTER_CENTER,
+        format!("{command:02X}"),
+        egui::FontId::monospace(10.0),
+        egui::Color32::WHITE,
+    );
+    response.on_hover_text(format!("Standard object ${command:02X}"))
+}
+
+fn draw_catalog_background(painter: &egui::Painter, rect: egui::Rect, selected: bool) {
+    painter.rect_filled(
+        rect,
+        3.0,
+        if selected {
+            egui::Color32::from_rgb(65, 72, 45)
+        } else {
+            egui::Color32::from_gray(28)
+        },
+    );
+    painter.rect_stroke(
+        rect,
+        3.0,
+        egui::Stroke::new(
+            if selected { 2.0_f32 } else { 1.0_f32 },
+            if selected {
+                egui::Color32::YELLOW
+            } else {
+                egui::Color32::from_gray(70)
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+}
+
+fn object_catalog_tiles(
+    command: u8,
+    handler_map: &[u8; 64],
+    definitions: &lm_render::StandardObjectDefinitionSet,
+) -> Option<Vec<(usize, usize, u16)>> {
+    let record = ObjectForm {
+        command_id: command,
+        ..ObjectForm::default()
+    }
+    .ordinary_record()
+    .ok()?;
+    let layout = lm_render::NativeLevelMap16Layout {
+        width: 16,
+        height: 16,
+        page_stride: 0x1b0,
+        base_cell: 0,
+        vertical: false,
+    };
+    let report = lm_render::render_mapped_standard_object_stream(
+        &lm_level::ObjectStream {
+            records: vec![record],
+        },
+        definitions,
+        handler_map,
+        layout,
+        u16::MAX,
+    )
+    .ok()?;
+    (report.rendered_objects == 1)
+        .then(|| {
+            let mut tiles = Vec::new();
+            for y in 0..layout.height {
+                for x in 0..layout.width {
+                    let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+                    let tile = report.cache.cells()[index];
+                    if tile != u16::MAX {
+                        tiles.push((x, y, tile));
+                    }
+                }
+            }
+            tiles
+        })
+        .filter(|tiles| !tiles.is_empty())
+}
+
+fn draw_fitted_object_catalog_preview(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    tiles: &[(usize, usize, u16)],
+) {
+    let Some(min_x) = tiles.iter().map(|(x, _, _)| *x).min() else {
+        return;
+    };
+    let min_y = tiles.iter().map(|(_, y, _)| *y).min().unwrap_or(0);
+    let max_x = tiles.iter().map(|(x, _, _)| *x).max().unwrap_or(min_x);
+    let max_y = tiles.iter().map(|(_, y, _)| *y).max().unwrap_or(min_y);
+    let width = f32::from(u16::try_from(max_x - min_x + 1).expect("catalog width is at most 16"));
+    let height = f32::from(u16::try_from(max_y - min_y + 1).expect("catalog height is at most 16"));
+    let cell = (target.width() / width)
+        .min(target.height() / height)
+        .min(16.0);
+    let origin = target.center() - egui::vec2(width * cell, height * cell) / 2.0;
+    for &(x, y, tile) in tiles {
+        let relative_x = u16::try_from(x - min_x).expect("catalog x is at most 15");
+        let relative_y = u16::try_from(y - min_y).expect("catalog y is at most 15");
+        let position =
+            origin + egui::vec2(f32::from(relative_x) * cell, f32::from(relative_y) * cell);
+        draw_map16_atlas_tile(
+            painter,
+            texture,
+            egui::Rect::from_min_size(position, egui::vec2(cell, cell)),
+            tile,
+        );
+    }
+}
+
 fn sprite_catalog_ids(filter: &str) -> Vec<u8> {
     let filter = filter.trim().to_ascii_uppercase();
     (0..=STANDARD_SPRITE_MAX)
@@ -1886,28 +2096,7 @@ fn draw_sprite_catalog_entry(
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(62.0, 62.0), egui::Sense::click());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(
-        rect,
-        3.0,
-        if selected {
-            egui::Color32::from_rgb(65, 72, 45)
-        } else {
-            egui::Color32::from_gray(28)
-        },
-    );
-    painter.rect_stroke(
-        rect,
-        3.0,
-        egui::Stroke::new(
-            if selected { 2.0_f32 } else { 1.0_f32 },
-            if selected {
-                egui::Color32::YELLOW
-            } else {
-                egui::Color32::from_gray(70)
-            },
-        ),
-        egui::StrokeKind::Inside,
-    );
+    draw_catalog_background(&painter, rect, selected);
     let preview_rect = egui::Rect::from_min_max(
         rect.min + egui::vec2(3.0, 3.0),
         rect.max - egui::vec2(3.0, 15.0),
@@ -2685,6 +2874,34 @@ mod tests {
         assert!(with_a.contains(&0xea));
         assert_eq!(sprite_catalog_ids("ED"), vec![0xed]);
         assert!(sprite_catalog_ids("not hex").is_empty());
+    }
+
+    #[test]
+    fn standard_object_catalog_covers_every_noncontrol_command_and_filters_hex() {
+        let all = object_catalog_commands("");
+        assert_eq!(all.len(), 0x3f);
+        assert_eq!(all.first(), Some(&1));
+        assert_eq!(all.last(), Some(&0x3f));
+        assert_eq!(object_catalog_commands("3F"), vec![0x3f]);
+        assert!(object_catalog_commands("not hex").is_empty());
+    }
+
+    #[test]
+    fn standard_object_catalog_uses_the_pristine_tileset_handler_map() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom =
+            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+                .unwrap();
+        let map = lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).unwrap();
+        let definitions = standard_object_definitions().unwrap();
+        let family = map.family(0).unwrap();
+        let rendered = (1..=0x3f)
+            .filter(|&command| object_catalog_tiles(command, family, &definitions).is_some())
+            .count();
+        assert_eq!(
+            rendered, 45,
+            "normal-family authenticated artwork coverage changed"
+        );
     }
 
     #[test]

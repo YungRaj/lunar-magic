@@ -513,6 +513,11 @@ interactive frontends cannot bypass confirmation and request correlation through
   controls while preserving extension bytes and trailing opaque controls. Interleaved unknown
   command-zero controls are rejected rather than guessed. Lunar Magic 3.63 Wine import/re-export
   confirms the cross-screen coordinate and transition rewrite exactly.
+  A companion visual Add Object catalog enumerates all noncontrol commands `$01`–`$3F`, resolves
+  each through the active normal/castle/rope/underground/ghost-house handler family, and previews
+  authenticated Map16 footprints from the loaded tileset. Valid handlers without visible recovered
+  cells retain an explicit hexadecimal fallback. Choosing an object initializes its smallest
+  canonical parameter form and arms absolute canvas placement.
   The interpretation-bound native-level document editor now exposes the same five semantic sprite
   fields for installed/custom records. It validates edits against the exact 1,024-byte length table
   loaded with the document, preserves all extension bytes, and rejects sprite-number/extra-bit

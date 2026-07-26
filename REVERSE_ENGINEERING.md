@@ -1729,6 +1729,12 @@ preserves trailing opaque controls. Sprite placement rewrites a valid form recor
 screen/X/Y through the recovered packed fields and applies the proven stable legacy screen sort.
 Invalid command-zero objects, sprite controls, width mismatches, and off-canvas clicks fail before
 the staged level changes.
+The visual Add Object catalog covers every noncontrol ID `$01–$3F`. It resolves the selected
+level's normal, castle, rope, underground, or ghost-house family through the exact pristine-ROM
+handler map and renders a one-record minimum-parameter stream into an isolated 16×16 Map16 cache.
+The supplied normal-family ROM fixture currently proves authenticated visible cells for 45 IDs;
+the remaining valid commands are labeled rather than assigned speculative artwork. Selection
+initializes the minimum parameter and arms the same absolute-screen insertion transaction.
 The corresponding Add Sprite workflow now presents all standard IDs `$00–$ED` in a bounded,
 hex-filterable visual catalog. Each cell calls the authenticated standard-sprite dispatch table
 with the current packed position byte, level mode, and orientation, fits its complete composite
