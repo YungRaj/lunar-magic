@@ -167,16 +167,17 @@ impl GraphicsRomLayout {
 }
 
 impl Project {
-    /// Loads, decompresses, and decodes one native 4bpp graphics file.
+    /// Loads and decompresses one native graphics file without imposing a planar bit depth.
     ///
     /// # Errors
     ///
-    /// Returns [`GraphicsIoError`] for invalid table entries, mapping, compression, or tile data.
-    pub fn load_graphics_file(
+    /// Returns [`GraphicsIoError`] for invalid table entries, mapping, compression, bounds, or
+    /// tagged-payload trailing data.
+    pub fn load_decompressed_graphics_file(
         &self,
         file_number: usize,
         layout: GraphicsRomLayout,
-    ) -> Result<GraphicsFile4bpp, GraphicsIoError> {
+    ) -> Result<Vec<u8>, GraphicsIoError> {
         let payload = self.load_payload_from_pointer(
             layout.read_pointer(self, file_number)?,
             layout.mapper,
@@ -202,6 +203,20 @@ impl Project {
                 payload.bytes.len() - consumed,
             )));
         }
+        Ok(decoded)
+    }
+
+    /// Loads, decompresses, and decodes one native 4bpp graphics file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsIoError`] for invalid table entries, mapping, compression, or tile data.
+    pub fn load_graphics_file(
+        &self,
+        file_number: usize,
+        layout: GraphicsRomLayout,
+    ) -> Result<GraphicsFile4bpp, GraphicsIoError> {
+        let decoded = self.load_decompressed_graphics_file(file_number, layout)?;
         Ok(GraphicsFile4bpp::decode(&decoded)?)
     }
 

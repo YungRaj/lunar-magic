@@ -225,6 +225,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
     foreground_tiles: Vec<lm_graphics::IndexedTile>,
+    layer3_tiles: Vec<lm_graphics::IndexedTile>,
     sprite_palette: Option<lm_graphics::Palette>,
     foreground_texture: Option<egui::TextureHandle>,
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
@@ -688,6 +689,7 @@ impl VanillaLevelEditor {
         self.sprite_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
+        self.layer3_tiles.clear();
         self.sprite_palette = None;
         self.foreground_texture = None;
         self.map16_summary = None;
@@ -717,6 +719,7 @@ impl VanillaLevelEditor {
                 self.sprite_texture = None;
                 self.sprite_tiles.clear();
                 self.foreground_tiles.clear();
+                self.layer3_tiles.clear();
                 self.sprite_palette = None;
                 self.external_sprite_textures.clear();
                 self.foreground_texture = None;
@@ -763,6 +766,7 @@ impl VanillaLevelEditor {
                         ));
                         self.sprite_tiles = preview.sprite_tiles;
                         self.foreground_tiles = preview.foreground_tiles;
+                        self.layer3_tiles = preview.layer3_tiles;
                         self.sprite_palette = Some(preview.palette);
                     }
                     Err(error) => self.map16_error = Some(error),
@@ -859,6 +863,7 @@ impl VanillaLevelEditor {
             SpriteRasterAssets {
                 external: external_assets,
                 foreground_tiles: &self.foreground_tiles,
+                layer3_tiles: &self.layer3_tiles,
                 vanilla_tiles: &self.sprite_tiles,
                 vanilla_palette: self.sprite_palette.as_ref(),
             },
@@ -2063,6 +2068,7 @@ impl VanillaLevelEditor {
                                         SpriteRasterAssets {
                                             external: external_assets,
                                             foreground_tiles: &self.foreground_tiles,
+                                            layer3_tiles: &self.layer3_tiles,
                                             vanilla_tiles: &self.sprite_tiles,
                                             vanilla_palette: self.sprite_palette.as_ref(),
                                         },
@@ -3640,6 +3646,7 @@ fn external_sprite_definition(
 struct SpriteRasterAssets<'a> {
     external: &'a lm_graphics::ExternalSpriteAssets,
     foreground_tiles: &'a [lm_graphics::IndexedTile],
+    layer3_tiles: &'a [lm_graphics::IndexedTile],
     vanilla_tiles: &'a [lm_graphics::IndexedTile],
     vanilla_palette: Option<&'a lm_graphics::Palette>,
 }
@@ -3723,6 +3730,11 @@ fn resolve_ssc_graphics_tile(
 ) -> Option<&lm_graphics::IndexedTile> {
     if global_tile >= lm_graphics::EXTERNAL_SPRITE_GRAPHICS_BASE_TILE {
         return assets.external.graphics_tile(global_tile);
+    }
+    if let Some(layer3_tile) = global_tile.checked_sub(0x900)
+        && layer3_tile < 0x400
+    {
+        return assets.layer3_tiles.get(usize::from(layer3_tile));
     }
     if let Some(sprite_tile) = global_tile.checked_sub(0x400)
         && sprite_tile < 0x400
@@ -4558,6 +4570,7 @@ mod tests {
             SpriteRasterAssets {
                 external: &assets,
                 foreground_tiles: &[],
+                layer3_tiles: &[],
                 vanilla_tiles: &[],
                 vanilla_palette: None,
             },
@@ -4571,6 +4584,7 @@ mod tests {
             SpriteRasterAssets {
                 external: &lm_graphics::ExternalSpriteAssets::default(),
                 foreground_tiles: &[],
+                layer3_tiles: &[],
                 vanilla_tiles: &[],
                 vanilla_palette: None,
             },
@@ -4592,6 +4606,7 @@ mod tests {
             SpriteRasterAssets {
                 external: &assets,
                 foreground_tiles: std::slice::from_ref(&opaque),
+                layer3_tiles: &[],
                 vanilla_tiles: &[],
                 vanilla_palette: None,
             },
@@ -4615,6 +4630,7 @@ mod tests {
             SpriteRasterAssets {
                 external: &assets,
                 foreground_tiles: &[],
+                layer3_tiles: &[],
                 vanilla_tiles: &[],
                 vanilla_palette: Some(&lm_graphics::Palette { colors }),
             },
@@ -4626,16 +4642,19 @@ mod tests {
     fn ssc_global_graphics_regions_route_foreground_and_sprite_tiles_separately() {
         let foreground = lm_graphics::IndexedTile::new([1; lm_graphics::IndexedTile::PIXEL_COUNT]);
         let sprite = lm_graphics::IndexedTile::new([2; lm_graphics::IndexedTile::PIXEL_COUNT]);
+        let layer3 = lm_graphics::IndexedTile::new([3; lm_graphics::IndexedTile::PIXEL_COUNT]);
         let external = lm_graphics::ExternalSpriteAssets::default();
         let assets = SpriteRasterAssets {
             external: &external,
             foreground_tiles: std::slice::from_ref(&foreground),
+            layer3_tiles: std::slice::from_ref(&layer3),
             vanilla_tiles: std::slice::from_ref(&sprite),
             vanilla_palette: None,
         };
         assert_eq!(resolve_ssc_graphics_tile(assets, 0), Some(&foreground));
         assert_eq!(resolve_ssc_graphics_tile(assets, 0x400), Some(&sprite));
-        assert_eq!(resolve_ssc_graphics_tile(assets, 0x900), None);
+        assert_eq!(resolve_ssc_graphics_tile(assets, 0x900), Some(&layer3));
+        assert_eq!(resolve_ssc_graphics_tile(assets, 0xd00), None);
         assert_eq!(resolve_ssc_graphics_tile(assets, 0x2000), None);
     }
 

@@ -1824,9 +1824,12 @@ source routing: the `$10000` mode-1 bias `$0000` is the foreground cache, mode 2
 the SP cache, mode 3 bias `$0900` is the Layer 3 cache, and mode 0 bias `$2000` is external sprite
 graphics. The native renderer adds the ten-bit subtile index before reading its shared 64-byte
 decoded-tile buffer. Its ordinary palette base is rows 0–7 only when the complete graphics base is
-zero and rows 8–15 for every nonzero base. Rust now retains foreground and SP indexed tiles as
-separate sources, subtracts `$400` only for SP lookup, and refuses to alias mode 1 or the not-yet-
-loaded mode 3 cache to sprite artwork.
+zero and rows 8–15 for every nonzero base. Rust now retains foreground, SP, and pristine Layer 3
+indexed tiles as separate sources, subtracts `$400` only for SP lookup, and routes `$900`–`$CFF`
+through an exact eight-slot 2bpp Layer 3 cache. The first four `$800`-byte slots load GFX28–2B and
+the four `$7F` markers materialize as blank 128-tile slots, matching `LoadLayer3GraphicsSet` at
+`00464750`. Expanded per-level Layer 3 graphics selection remains intentionally separate until
+its active record is connected to the native preview.
 
 The standard-sprite renderer now also covers every late native dispatch-table entry beyond the
 ordinary picker boundary. Exact disassembly of `$004CAFB0–$004CB23E` proves that `$EF`, `$F2`,

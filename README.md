@@ -550,9 +550,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   use an SSC external palette, and `ExSpriteGFX` tiles can use the current level's ordinary sprite
   palette. The proven global source map is not conflated with the sprite atlas: mode 1 (`+$0000`)
   resolves the retained foreground tiles, mode 2 (`+$0400`) resolves SP1–SP4 after subtracting
-  `$400`, and mode 0 (`+$2000`) resolves external slots. Mode 3 (`+$0900`) stays visibly unresolved
-  until its Layer 3 indexed source is loaded. Reopening or closing the SSC, changing the ROM
-  revision, or changing the active graphics tilesets invalidates those textures.
+  `$400`, mode 3 (`+$0900`) resolves the pristine eight-slot Layer 3 cache (GFX28–2B followed by
+  four blank slots), and mode 0 (`+$2000`) resolves external slots. Expanded per-level Layer 3
+  graphics overrides remain a separate integration boundary. Reopening or closing the SSC,
+  changing the ROM revision, or changing the active graphics tilesets invalidates those textures.
   Ordinary objects can likewise be dragged across all 32 native screens on horizontal or vertical
   canvases. The atomic relocation updates the two proven coordinate nibbles, stably orders ordinary
   objects by absolute screen, and regenerates minimal advance bits or canonical screen-jump

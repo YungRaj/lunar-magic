@@ -12,10 +12,15 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) palette: Palette,
     pub(crate) foreground_image: egui::ColorImage,
     pub(crate) foreground_tiles: Vec<IndexedTile>,
+    pub(crate) layer3_tiles: Vec<IndexedTile>,
     pub(crate) sprite_graphics_files: [usize; 4],
     pub(crate) common_tiles: usize,
     pub(crate) tileset_tiles: usize,
 }
+
+const PRISTINE_LAYER3_GRAPHICS_FILES: [usize; 8] = [0x28, 0x29, 0x2a, 0x2b, 0x7f, 0x7f, 0x7f, 0x7f];
+const LAYER3_SLOT_BYTES: usize = 0x800;
+const LAYER3_SLOT_TILES: usize = 0x80;
 
 pub(crate) fn render(
     rom_bytes: Vec<u8>,
@@ -82,10 +87,12 @@ pub(crate) fn render(
     }
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let foreground_image = render_foreground_graphics_atlas(&graphics, &palette);
+    let layer3_tiles = load_pristine_layer3_tiles(&project)?;
     Ok(VanillaMap16Preview {
         image: egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba),
         foreground_image,
         foreground_tiles: graphics,
+        layer3_tiles,
         graphics_files,
         sprite_image,
         sprite_tiles: sprite_graphics.into_iter().flatten().collect(),
@@ -94,6 +101,33 @@ pub(crate) fn render(
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn load_pristine_layer3_tiles(project: &Project) -> Result<Vec<IndexedTile>, String> {
+    let mut tiles = Vec::with_capacity(PRISTINE_LAYER3_GRAPHICS_FILES.len() * LAYER3_SLOT_TILES);
+    for file in PRISTINE_LAYER3_GRAPHICS_FILES {
+        if file == 0x7f {
+            tiles.extend(
+                std::iter::repeat_with(|| IndexedTile::new([0; IndexedTile::PIXEL_COUNT]))
+                    .take(LAYER3_SLOT_TILES),
+            );
+            continue;
+        }
+        let mut decoded = project
+            .load_decompressed_graphics_file(file, lm_profile::smw_us_v1_vanilla_graphics_layout())
+            .map_err(|error| error.to_string())?;
+        if decoded.len() > LAYER3_SLOT_BYTES {
+            return Err(format!(
+                "Layer 3 GFX{file:02X} expands to {} bytes, exceeding its {LAYER3_SLOT_BYTES}-byte slot",
+                decoded.len()
+            ));
+        }
+        decoded.resize(LAYER3_SLOT_BYTES, 0);
+        tiles.extend(
+            lm_graphics::decode_planar_tiles(&decoded, 2).map_err(|error| error.to_string())?,
+        );
+    }
+    Ok(tiles)
 }
 
 fn render_foreground_graphics_atlas(
@@ -245,6 +279,7 @@ mod tests {
         assert_eq!(preview.foreground_image.size, [256, 1024]);
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x1b, 0x08]);
         assert_eq!(preview.sprite_image.size, [256, 1024]);
+        assert_eq!(preview.layer3_tiles.len(), 0x400);
         assert_eq!(
             preview.sprite_graphics_files,
             lm_profile::smw_us_v1_sprite_tileset_graphics_files(
