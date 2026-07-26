@@ -643,6 +643,13 @@ The LMSW emulator-plugin integration block through `004c2ed0` is fully named and
 
 The following level-editor sprite rendering and manipulation subsystem through `004ce5e0` is now substantially annotated. Recovered the per-cell linked tile renderer, signed-offset and screen-wrapping logic, 256-entry standard-sprite render dispatch table, custom metadata rendering path, entrance rendering and packed entrance-table synchronization, sprite stream parser/serializer, list sorting and insertion, selection deletion, dirty-cell invalidation, and group movement/clamping.
 
+The complete byte-sized standard-sprite preview domain is now classified against that dispatch
+table. IDs `$29`, `$30`, `$EE`, `$F0`, and `$F1` deliberately select Lunar Magic's native
+empty/default handler; IDs `$F6`–`$FF` are reserved for SSC custom-display bookkeeping; every other
+ID selects recovered built-in artwork. The Rust renderer exhaustively tests all 256 IDs against
+this partition, and the native editor leaves intentional empty handlers artwork-free while
+retaining a visible diagnostic when required custom-display data cannot be resolved.
+
 The entrance synchronization path is now tied to the binary MWL boundary. `SynchronizeEntranceNodeData` (`004ccda0`) projects 40-byte editor nodes from packed main, midway, and secondary-exit state; `RebuildLevelEntranceNodes` (`004cd7e0`) creates one main node, a conditional midway node, and secondary nodes targeting the current level. `ExportBinaryMwlLevelFile` proves that the 64-byte level-header section owns main-entrance bytes at offsets `2`-`6`, `14`, and `15`, and midway-specific bytes at offsets `9`-`12`. The Rust `MwlLevelHeaderSection` exposes these as lossless typed records and the native MWL editor can modify them without normalizing the other 53 bytes. A reciprocal Wine oracle proves Lunar Magic 3.63 imports and re-exports a changed main position exactly; it also proves that midway-only bytes are normalized to zero when the destination ROM lacks Lunar Magic's separate-midway runtime.
 
 Comparing all 512 pristine MWL exports against the source ROM locates the four vanilla

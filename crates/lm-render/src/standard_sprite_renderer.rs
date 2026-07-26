@@ -10,6 +10,29 @@ pub struct StandardSpritePreviewTile {
     pub y: i16,
 }
 
+/// The recovered source of a standard-sprite preview dispatch entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StandardSpritePreviewSource {
+    /// Lunar Magic has authenticated built-in artwork for this ID.
+    BuiltIn,
+    /// Lunar Magic deliberately routes this ID to its empty/default preview handler.
+    NativeEmpty,
+    /// Lunar Magic reserves this ID for custom-display bookkeeping supplied by SSC data.
+    CustomDisplay,
+}
+
+/// Classifies every byte-sized sprite ID by its recovered Lunar Magic preview source.
+#[must_use]
+pub const fn lunar_magic_standard_sprite_preview_source(
+    sprite_number: u8,
+) -> StandardSpritePreviewSource {
+    match sprite_number {
+        0x29 | 0x30 | 0xee | 0xf0 | 0xf1 => StandardSpritePreviewSource::NativeEmpty,
+        0xf6..=0xff => StandardSpritePreviewSource::CustomDisplay,
+        _ => StandardSpritePreviewSource::BuiltIn,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum StandardLevelOrientation {
     #[default]
@@ -4128,7 +4151,7 @@ mod tests {
 
     #[test]
     fn late_default_and_custom_fallback_entries_have_no_builtin_artwork() {
-        for sprite_number in [0xee, 0xf0, 0xf1] {
+        for sprite_number in [0x29, 0x30, 0xee, 0xf0, 0xf1] {
             assert_eq!(
                 render_lunar_magic_standard_sprite_with_mode(
                     sprite_number,
@@ -4146,5 +4169,34 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn every_sprite_id_has_exactly_its_recovered_preview_source() {
+        let mut missing_built_in = Vec::new();
+        for sprite_number in u8::MIN..=u8::MAX {
+            let preview = render_lunar_magic_standard_sprite_with_mode(
+                sprite_number,
+                StandardSpritePreviewMode::default(),
+            );
+            match lunar_magic_standard_sprite_preview_source(sprite_number) {
+                StandardSpritePreviewSource::BuiltIn => {
+                    if preview.is_none() {
+                        missing_built_in.push(sprite_number);
+                    }
+                }
+                StandardSpritePreviewSource::NativeEmpty
+                | StandardSpritePreviewSource::CustomDisplay => {
+                    assert_eq!(
+                        preview, None,
+                        "${sprite_number:02X} fabricated native artwork"
+                    );
+                }
+            }
+        }
+        assert!(
+            missing_built_in.is_empty(),
+            "IDs classified as built-in but empty in the default context: {missing_built_in:02X?}"
+        );
     }
 }

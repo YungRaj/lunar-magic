@@ -3140,6 +3140,16 @@ fn draw_sprite_catalog_entry(
     let parts = lm_render::render_lunar_magic_standard_sprite_with_mode(sprite_number, mode);
     if let (Some(texture), Some(parts)) = (texture, parts) {
         draw_fitted_sprite_catalog_preview(&painter, texture, preview_rect, &parts);
+    } else if lm_render::lunar_magic_standard_sprite_preview_source(sprite_number)
+        == lm_render::StandardSpritePreviewSource::NativeEmpty
+    {
+        painter.text(
+            preview_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "native\nempty",
+            egui::FontId::monospace(9.0),
+            egui::Color32::GRAY,
+        );
     } else {
         painter.text(
             preview_rect.center(),
@@ -3156,7 +3166,10 @@ fn draw_sprite_catalog_entry(
         egui::FontId::monospace(10.0),
         egui::Color32::WHITE,
     );
-    response.on_hover_text(format!("Standard sprite ${sprite_number:02X}"))
+    let source = lm_render::lunar_magic_standard_sprite_preview_source(sprite_number);
+    response.on_hover_text(format!(
+        "Standard sprite ${sprite_number:02X}\nPreview source: {source:?}"
+    ))
 }
 
 fn draw_fitted_sprite_catalog_preview(
@@ -3341,7 +3354,7 @@ struct RecoveredObjectDraw<'a> {
 
 fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
     ui.label(format!(
-        "Screen-aware {} layout: recovered object and sprite artwork with red fallbacks for unresolved sprites; stronger lines mark screen boundaries.",
+        "Screen-aware {} layout: recovered object and sprite artwork; red markers identify missing custom displays, while native empty handlers remain artwork-free; stronger lines mark screen boundaries.",
         if vertical { "vertical" } else { "horizontal" }
     ));
 }
@@ -3674,7 +3687,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     marker.translate(egui::vec2(f32::from(part.x), f32::from(part.y))),
                 );
             }
-        } else {
+        } else if should_draw_unresolved_sprite_marker(uses_standard, placement.sprite_number) {
             painter.rect_filled(
                 marker,
                 marker.width() / 2.0,
@@ -3705,6 +3718,12 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         }
     }
     hit
+}
+
+fn should_draw_unresolved_sprite_marker(uses_standard: bool, sprite_number: u8) -> bool {
+    !uses_standard
+        || lm_render::lunar_magic_standard_sprite_preview_source(sprite_number)
+            != lm_render::StandardSpritePreviewSource::NativeEmpty
 }
 
 fn standard_sprite_preview_mode(
@@ -4058,6 +4077,16 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unresolved_sprite_markers_preserve_lunar_magics_native_empty_handlers() {
+        for sprite_number in [0x29, 0x30, 0xee, 0xf0, 0xf1] {
+            assert!(!should_draw_unresolved_sprite_marker(true, sprite_number));
+        }
+        assert!(should_draw_unresolved_sprite_marker(true, 0x00));
+        assert!(should_draw_unresolved_sprite_marker(true, 0xf6));
+        assert!(should_draw_unresolved_sprite_marker(false, 0xee));
+    }
 
     #[test]
     fn object_form_constructs_native_three_byte_record() {
