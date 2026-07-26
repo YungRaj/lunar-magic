@@ -125,23 +125,27 @@ fn render_sprite_graphics_atlas(
     const FILE_WIDTH: usize = FILE_COLUMNS * 8;
     const FILE_HEIGHT: usize = FILE_ROWS * 8;
     const WIDTH: usize = FILE_WIDTH * 2;
-    const HEIGHT: usize = FILE_HEIGHT * 2;
+    const BASE_HEIGHT: usize = FILE_HEIGHT * 2;
+    const PALETTE_ROWS: usize = 8;
+    const HEIGHT: usize = BASE_HEIGHT * PALETTE_ROWS;
     let mut rgba = vec![0; WIDTH * HEIGHT * 4];
-    for (slot, tiles) in graphics.iter().enumerate().take(4) {
-        let slot_x = slot % 2 * FILE_WIDTH;
-        let slot_y = slot / 2 * FILE_HEIGHT;
-        for (tile_number, tile) in tiles.iter().enumerate().take(FILE_COLUMNS * FILE_ROWS) {
-            let x = slot_x + tile_number % FILE_COLUMNS * 8;
-            let y = slot_y + tile_number / FILE_COLUMNS * 8;
-            draw_subtile(
-                &mut rgba,
-                WIDTH,
-                (x, y),
-                Some(tile),
-                palette,
-                8,
-                (false, false),
-            );
+    for palette_row in 0..PALETTE_ROWS {
+        for (slot, tiles) in graphics.iter().enumerate().take(4) {
+            let slot_x = slot % 2 * FILE_WIDTH;
+            let slot_y = palette_row * BASE_HEIGHT + slot / 2 * FILE_HEIGHT;
+            for (tile_number, tile) in tiles.iter().enumerate().take(FILE_COLUMNS * FILE_ROWS) {
+                let x = slot_x + tile_number % FILE_COLUMNS * 8;
+                let y = slot_y + tile_number / FILE_COLUMNS * 8;
+                draw_subtile(
+                    &mut rgba,
+                    WIDTH,
+                    (x, y),
+                    Some(tile),
+                    palette,
+                    8 + palette_row,
+                    (false, false),
+                );
+            }
         }
     }
     egui::ColorImage::from_rgba_unmultiplied([WIDTH, HEIGHT], &rgba)
@@ -186,7 +190,31 @@ fn palette_color(palette: &Palette, palette_row: usize, index: u8) -> Option<[u8
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_graphics::{Bgr555, Rgb8};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn sprite_atlas_materializes_every_encoded_palette_row() {
+        let graphics = vec![vec![IndexedTile::new([1; IndexedTile::PIXEL_COUNT])]];
+        let mut colors = vec![Bgr555(0); 256];
+        colors[8 * 16 + 1] = Bgr555::from_rgb8(Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        });
+        colors[9 * 16 + 1] = Bgr555::from_rgb8(Rgb8 {
+            red: 0,
+            green: 255,
+            blue: 0,
+        });
+        let image = render_sprite_graphics_atlas(&graphics, &Palette { colors });
+        assert_eq!(image.size, [256, 1024]);
+        assert_eq!(image.pixels[0], egui::Color32::from_rgb(255, 0, 0));
+        assert_eq!(
+            image.pixels[128 * image.size[0]],
+            egui::Color32::from_rgb(0, 255, 0)
+        );
+    }
 
     #[test]
     fn renders_real_pristine_tileset_when_reference_rom_is_available() {
@@ -208,7 +236,7 @@ mod tests {
         assert_eq!(preview.image.size, [512, 256]);
         assert_eq!(preview.foreground_image.size, [256, 1024]);
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x1b, 0x08]);
-        assert_eq!(preview.sprite_image.size, [256, 128]);
+        assert_eq!(preview.sprite_image.size, [256, 1024]);
         assert_eq!(
             preview.sprite_graphics_files,
             lm_profile::smw_us_v1_sprite_tileset_graphics_files(

@@ -1790,6 +1790,17 @@ extension byte. A custom visual catalog deduplicates nonalternate default displa
 and descriptions, resolves built-in or external Map16 preview definitions, and constructs an exact
 declared-width record with deterministic zero extension bytes for one-shot placement.
 
+`LoadSscCustomSpriteMetadata` (`00444E50`) and
+`RenderM16SidecarObjectsToPixelBuffer` (`0044F6AE`) prove the global SSC remap semantics that were
+previously parsed but not rendered in Rust. `$10000` ranges select a graphics base (with the
+recovered mode biases `$2000`, `$0000`, `$0400`, and `$0900`) that is added to every Map16
+subtile's ten-bit graphics index. `$20000` ranges select an external palette block for the
+definition; absent entries use the normal sprite palette. The renderer now retains both values in
+its public preview model, applies bases that fit the loaded 1,024-tile atlas, and refuses to
+fabricate unavailable external pages or palettes. The native atlas itself now contains all eight
+sprite palette rows, so the three palette bits and both flip bits in every subtile affect the
+visible standard and custom preview.
+
 The standard-sprite renderer now also covers every late native dispatch-table entry beyond the
 ordinary picker boundary. Exact disassembly of `$004CAFB0–$004CB23E` proves that `$EF`, `$F2`,
 `$F3`, `$F4`, and `$F5` are compatibility aliases of the `$E7`, `$EA`, `$EB`, `$EC`, and `$ED`

@@ -1990,11 +1990,11 @@ impl VanillaLevelEditor {
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
                             for entry in entries {
-                                let parts =
-                                    lm_render::render_resolved_lunar_magic_custom_sprite_with(
-                                        entry,
-                                        |index| external_sprite_definition(custom_map16, index),
-                                    );
+                                let parts = lm_render::render_atlas_lunar_magic_custom_sprite_with(
+                                    custom_sprites,
+                                    entry,
+                                    |index| external_sprite_definition(custom_map16, index),
+                                );
                                 let response = draw_custom_sprite_catalog_entry(
                                     ui,
                                     texture.as_ref(),
@@ -3370,15 +3370,18 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             center,
             egui::vec2(cell_size.max(9.0), cell_size.max(9.0)),
         );
-        let custom_preview = custom_sprites
-            .and_then(|table| table.default_display(placement.sprite_number, placement.extra_bits))
-            .and_then(|sprite| {
-                lm_render::render_resolved_lunar_magic_custom_sprite_with(sprite, |index| {
-                    external_sprite_definition(custom_map16, index)
-                })
-            });
-        let uses_standard = custom_preview.is_none();
-        let preview = custom_preview.or_else(|| {
+        let custom_display = custom_sprites.and_then(|table| {
+            table
+                .default_display(placement.sprite_number, placement.extra_bits)
+                .map(|sprite| (table, sprite))
+        });
+        let custom_preview = custom_display.and_then(|(table, sprite)| {
+            lm_render::render_atlas_lunar_magic_custom_sprite_with(table, sprite, |index| {
+                external_sprite_definition(custom_map16, index)
+            })
+        });
+        let uses_standard = custom_display.is_none();
+        let preview = if uses_standard {
             lm_render::render_lunar_magic_standard_sprite_with_mode(
                 placement.sprite_number,
                 standard_sprite_preview_mode(
@@ -3389,7 +3392,9 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     standard_8a_count,
                 ),
             )
-        });
+        } else {
+            custom_preview
+        };
         if uses_standard && placement.sprite_number == 0x8a {
             standard_8a_count = standard_8a_count.saturating_add(1);
         }
@@ -3508,14 +3513,15 @@ fn draw_sprite_atlas_subtile(
     word: u16,
 ) {
     let tile = usize::from(word & 0x03ff);
+    let palette = usize::from((word >> 10) & 7);
     let slot = tile / 128;
     let within_slot = tile % 128;
     let column = slot % 2 * 16 + within_slot % 16;
-    let row = slot / 2 * 8 + within_slot / 16;
+    let row = palette * 16 + slot / 2 * 8 + within_slot / 16;
     let column = u16::try_from(column).expect("sprite atlas has 32 columns");
-    let row = u16::try_from(row).expect("sprite atlas has 16 rows");
-    let mut minimum = egui::pos2(f32::from(column) / 32.0, f32::from(row) / 16.0);
-    let mut maximum = egui::pos2(f32::from(column + 1) / 32.0, f32::from(row + 1) / 16.0);
+    let row = u16::try_from(row).expect("sprite atlas has 128 rows");
+    let mut minimum = egui::pos2(f32::from(column) / 32.0, f32::from(row) / 128.0);
+    let mut maximum = egui::pos2(f32::from(column + 1) / 32.0, f32::from(row + 1) / 128.0);
     if word & 0x4000 != 0 {
         std::mem::swap(&mut minimum.x, &mut maximum.x);
     }

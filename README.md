@@ -533,6 +533,13 @@ interactive frontends cannot bypass confirmation and request correlation through
   mode-dependent generator labels no longer render with a fabricated horizontal mode-zero context.
   Animated standard previews advance through their recovered four phases at 8 Hz, with repaint
   scheduling enabled only while an animated sprite is present.
+  The sprite atlas now materializes all eight native sprite palette rows instead of precoloring
+  every definition with row 8; each 16-bit subtile selects its encoded palette while retaining
+  flips. Resolved SSC previews also consume the global `$10000` graphics-base and `$20000`
+  palette-source tables. Graphics bases representable by the loaded 1,024-tile atlas are applied
+  to every subtile. External graphics pages and custom palette blocks remain explicit in the
+  toolkit-neutral preview model and produce an honest unresolved GUI marker until their
+  `ExternalGraphics` assets are loaded, rather than displaying incorrect vanilla art.
   Ordinary objects can likewise be dragged across all 32 native screens on horizontal or vertical
   canvases. The atomic relocation updates the two proven coordinate nibbles, stably orders ordinary
   objects by absolute screen, and regenerates minimal advance bits or canonical screen-jump

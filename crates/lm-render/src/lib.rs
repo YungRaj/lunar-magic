@@ -34,8 +34,9 @@ pub use custom_object_renderer::{
     render_resolved_lunar_magic_custom_object,
 };
 pub use custom_sprite_renderer::{
-    render_lunar_magic_custom_sprite, render_resolved_lunar_magic_custom_sprite,
-    render_resolved_lunar_magic_custom_sprite_with,
+    RemappedCustomSpritePreviewTile, render_atlas_lunar_magic_custom_sprite_with,
+    render_lunar_magic_custom_sprite, render_remapped_lunar_magic_custom_sprite_with,
+    render_resolved_lunar_magic_custom_sprite, render_resolved_lunar_magic_custom_sprite_with,
 };
 pub use editor_overlay::{
     EditorOverlay, EditorOverlayError, GridOverlay, SelectionOverlay, draw_editor_overlays,
