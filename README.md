@@ -1530,6 +1530,10 @@ search range, derives a profile-wide protection policy, allocates and repoints e
 payload, repairs the checksum, semantically reopens the complete aggregate, and dispatches one
 revision-checked mutation into application history. A changed ROM makes the window stale and blocks
 both further staging and commit; staged cross-domain changes also participate in the quit guard.
+An opt-in Wine differential edits the installed level-105 compressed Layer 2
+tilemap through Rust, expands into a fresh bank, and proves Lunar Magic 3.63 re-exports the exact
+decoded payload. The standalone Layer 2 writer exposes the same checksum-atomic transaction for
+callers that do not need the full aggregate.
 In Map16 mode the native Editors menu now opens a ROM-backed complete-set editor. It addresses every
 profile-declared page and tile, edits each packed 8×8 quadrant and exact Acts Like word, and routes
 changes through `Map16Controller` so graph validation covers the entire set. Persistence requires an

@@ -156,6 +156,31 @@ impl Project {
         let request = level_layer2_save_request(level, level_mode, data, layout, options)?;
         Ok(self.save_tagged_payload(&request)?)
     }
+
+    /// Compresses and saves one native Layer 2 payload while repairing the SNES checksum in the
+    /// same undoable transaction.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an incompatible model, invalid layout/allocation, or checksum field without
+    /// changing ROM bytes or history.
+    pub fn save_level_layer2_with_checksum(
+        &mut self,
+        level: usize,
+        level_mode: u8,
+        data: &NativeLayer2Data,
+        layout: LevelLayer2RomLayout,
+        options: &LevelLayer2SaveOptions,
+        checksum_field: usize,
+    ) -> Result<PayloadSaveResult, LevelLayer2IoError> {
+        let request = level_layer2_save_request(level, level_mode, data, layout, options)?;
+        let mut saved = self.save_tagged_payloads_with_checksum(
+            format!("save level {level:03x} layer 2"),
+            &[request],
+            checksum_field,
+        )?;
+        Ok(saved.remove(0))
+    }
 }
 
 pub(crate) fn level_layer2_save_request(
@@ -294,5 +319,55 @@ mod tests {
         );
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);
+    }
+
+    #[test]
+    fn checksum_save_is_atomic_and_undoable() {
+        let mut bytes = vec![0xff; 0x8000];
+        bytes[0x7fdc..0x7fe0].fill(0);
+        let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let original = project.save_snapshot();
+        let options = LevelLayer2SaveOptions {
+            allocation: AllocationPolicy {
+                search: 0x100..0x7fdc,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![ProtectedRange(0x20..0x23), ProtectedRange(0x7fc0..0x8000)],
+            },
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let expected = NativeLayer2Data::Tilemap(vec![0x34; NATIVE_LAYER2_TILEMAP_LEN]);
+        project
+            .save_level_layer2_with_checksum(0, 0, &expected, layout(1), &options, 0x7fdc)
+            .unwrap();
+        assert_eq!(
+            project.load_level_layer2(0, 0, layout(1)).unwrap(),
+            expected
+        );
+        let checksum = lm_rom::compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap();
+        assert_eq!(
+            &project.rom.logical_bytes()[0x7fdc..0x7fe0],
+            &checksum.encoded()
+        );
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
+
+        assert!(!project.history.can_undo());
+        assert!(
+            project
+                .save_level_layer2_with_checksum(
+                    0,
+                    0,
+                    &NativeLayer2Data::Tilemap(vec![0x55; NATIVE_LAYER2_TILEMAP_LEN]),
+                    layout(1),
+                    &options,
+                    usize::MAX,
+                )
+                .is_err()
+        );
+        assert_eq!(project.save_snapshot(), original);
+        assert!(!project.history.can_undo());
     }
 }

@@ -1805,6 +1805,10 @@ object edits or exact 1,024-word tilemap edits, and rejects storage-mode mismatc
 Both copy-on-write and manifest-owned reclamation commits serialize Layer 1, sprites, Layer 2,
 palette, and ExAnimation with the optional expanded-settings write and one checksum repair. The
 native window exposes the corresponding conditional Layer 2 tab.
+The standalone checksum-atomic writer is now reciprocally proven against Lunar Magic 3.63: a
+level-105 legacy tilemap edit is allocated in a newly expanded LoROM bank, repointed through the
+recovered `$02E600` table, and re-exported by Lunar Magic with the exact expected 2,048 decoded
+bytes.
 
 The first direct-ROM move oracle exposed one additional native invariant:
 Lunar Magic stably sorts legacy sprite records by their decoded five-bit
