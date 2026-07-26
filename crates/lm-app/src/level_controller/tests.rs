@@ -216,6 +216,30 @@ fn staged_history_restores_baseline_and_invalidates_divergent_redo() {
 }
 
 #[test]
+fn sprite_encoded_lengths_follow_staged_history_and_exact_record_table() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    assert_eq!(controller.sprite_encoded_lengths().unwrap(), (5, 5));
+
+    controller
+        .apply_edits(&[NativeLevelEdit::InsertSprite {
+            index: 1,
+            token: SpriteToken::Record(SpriteRecord {
+                encoded: vec![0, 0, 4],
+            }),
+        }])
+        .unwrap();
+    assert_eq!(controller.sprite_encoded_lengths().unwrap(), (5, 8));
+    assert!(controller.undo());
+    assert_eq!(controller.sprite_encoded_lengths().unwrap(), (5, 5));
+    assert!(controller.redo());
+    assert_eq!(controller.sprite_encoded_lengths().unwrap(), (5, 8));
+}
+
+#[test]
 fn failed_and_noop_staged_edits_do_not_create_history() {
     let mut app = AppState::default();
     app.load_rom(test_rom()).unwrap();

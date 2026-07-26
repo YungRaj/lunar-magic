@@ -202,6 +202,31 @@ impl LevelController {
         self.level.sprites != self.baseline.sprites
     }
 
+    /// Returns the canonical original and currently staged native sprite-stream lengths.
+    ///
+    /// Frontends use this to explain whether a pristine shared-bank save can remain in place or
+    /// requires the copy-on-write relocation path. The result is derived with the controller's
+    /// exact SSC-aware record-length table rather than assuming three-byte records.
+    ///
+    /// # Errors
+    ///
+    /// Returns the native sprite serializer error if either snapshot is not representable under
+    /// the controller's bound record-length interpretation.
+    pub fn sprite_encoded_lengths(
+        &self,
+    ) -> Result<(usize, usize), lm_level::NativeSpriteEncodingError> {
+        Ok((
+            self.baseline
+                .sprites
+                .encode_for_table(&self.sprite_lengths)?
+                .len(),
+            self.level
+                .sprites
+                .encode_for_table(&self.sprite_lengths)?
+                .len(),
+        ))
+    }
+
     #[must_use]
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()

@@ -1614,7 +1614,7 @@ impl VanillaLevelEditor {
         self.sprite_catalog(ui);
         self.custom_sprite_catalog(ui, custom_sprites, custom_map16);
         self.sprite_form_controls(ui);
-        sprite_save_constraint(ui);
+        sprite_save_constraint(ui, self.controller.as_ref());
         self.sprite_editor_actions(ui, token_count);
         if self.paste_target == Some(EntityPasteTarget::Sprite)
             && let Some(text) = pasted_text(ui)
@@ -3325,10 +3325,28 @@ fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
     ui.end_row();
 }
 
-fn sprite_save_constraint(ui: &mut egui::Ui) {
-    ui.small(
-        "Pristine ROM saves are pointer-preserving: header edits, same-size replacements, and removals are safe; growth is rejected.",
-    );
+fn sprite_save_constraint(ui: &mut egui::Ui, controller: Option<&LevelController>) {
+    let Some(controller) = controller else {
+        return;
+    };
+    match controller.sprite_encoded_lengths() {
+        Ok((original, staged)) if staged > original => {
+            ui.small(format!(
+                "Sprite stream: {original} → {staged} bytes. Commit will allocate a RATS-owned copy in the original shared bank, update only this level's low pointer, and preserve the old unowned bytes."
+            ));
+        }
+        Ok((original, staged)) => {
+            ui.small(format!(
+                "Sprite stream: {original} → {staged} bytes. Commit can replace this level's exclusive shared-bank stream in place and repairs the checksum."
+            ));
+        }
+        Err(error) => {
+            ui.colored_label(
+                egui::Color32::RED,
+                format!("Sprite stream cannot be serialized: {error}"),
+            );
+        }
+    }
 }
 
 fn is_supported(snapshot: &lm_app::ControllerSnapshot) -> bool {

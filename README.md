@@ -428,6 +428,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   abandoned branch; the visible forms and canvas selection are refreshed after either operation.
   Native screen-jump controls receive a separate packed-target editor that preserves their recovered
   low-first or high-first encoding and rejects targets that the original record form cannot hold.
+  The sprite panel reports canonical original and staged byte lengths under the active SSC record
+  table. Non-growing streams use the exclusive in-place path; growth uses the Wine-verified
+  copy-on-write path confined to the pristine shared bank, updates only the selected level's low
+  pointer, retains old unowned bytes, and repairs the checksum.
   ROM-backed aggregate level-assets editing requires `LMPALOWN` evidence for its palette domain;
   protected colors remain read-only even while level, ExAnimation, and settings edits are staged in
   the same transaction. Its native adapter separates bounded evidence/profile lifecycle, focused

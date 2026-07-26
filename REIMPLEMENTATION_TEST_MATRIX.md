@@ -238,7 +238,10 @@ staged history: exact baseline restoration, redo, divergent-branch invalidation,
 failed-batch isolation, and form/canvas resynchronization are independently exercised before ROM
 commit. Its object form distinguishes both native screen-jump encodings from ordinary objects,
 exposes only their packed target, and routes edits through the encoding-preserving semantic
-operation so an exit cannot be accidentally rewritten as an ordinary object.
+operation so an exit cannot be accidentally rewritten as an ordinary object. The sprite form
+derives original/staged serialized lengths with the active SSC table and identifies the exact
+in-place or shared-bank copy-on-write save path; a live Lunar Magic 3.63 Wine oracle reopens the
+grown RATS-owned stream and exports the identical canonical decoded sprite sequence.
 
 Auxiliary level editing stages entrances, screen exits, secondary exits, and Map16 overrides in one
 cross-domain transaction. The first three retain their explicit sequence ordering; Map16 overrides
