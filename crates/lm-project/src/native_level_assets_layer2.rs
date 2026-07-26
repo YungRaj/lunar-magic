@@ -8,8 +8,8 @@ use crate::palette_io::palette_save_request;
 use crate::{
     ExpandedLevelSettingsIoError, LevelLayer2IoError, LevelLayer2RomLayout, LevelLayer2SaveOptions,
     LevelSaveError, LoadedNativeLevelAssets, NativeLevelAssets, NativeLevelAssetsLayout,
-    NativeLevelAssetsLoadError, NativeLevelAssetsSaveOptions, PaletteIoError, PayloadSaveError,
-    PayloadSaveResult, Project, SavedNativeLevelAssets,
+    NativeLevelAssetsLoadError, NativeLevelAssetsSaveOptions, PaletteIoError, PayloadReclamation,
+    PayloadSaveError, PayloadSaveResult, Project, SavedNativeLevelAssets,
 };
 use lm_level::{NativeLayer2Data, SpriteLengthTable};
 use std::fmt;
@@ -42,6 +42,12 @@ pub struct NativeLevelAssetsLayer2<'a> {
 pub struct SavedNativeLevelAssetsLayer2 {
     pub core: SavedNativeLevelAssets,
     pub layer2: PayloadSaveResult,
+}
+
+#[derive(Clone, Copy)]
+enum Layer2AssetsCommit<'a> {
+    WithChecksum(usize),
+    WithReclamation(PayloadReclamation<'a>),
 }
 
 impl LoadedNativeLevelAssetsLayer2 {
@@ -90,6 +96,50 @@ impl Project {
         checksum_field: usize,
         options: &NativeLevelAssetsLayer2SaveOptions,
     ) -> Result<SavedNativeLevelAssetsLayer2, NativeLevelAssetsLayer2SaveError> {
+        self.save_native_level_assets_with_layer2_group(
+            assets,
+            layout,
+            sprite_lengths,
+            double_size_modes,
+            options,
+            Layer2AssetsCommit::WithChecksum(checksum_field),
+        )
+    }
+
+    /// Saves the five-payload aggregate while reclaiming exactly manifest-owned displaced blocks.
+    ///
+    /// # Errors
+    ///
+    /// Rejects stale ownership, serialization, allocation, direct-write, mapping, and checksum
+    /// failures without changing ROM bytes, history, or logical length.
+    pub fn save_native_level_assets_with_layer2_and_reclamation(
+        &mut self,
+        assets: NativeLevelAssetsLayer2<'_>,
+        layout: NativeLevelAssetsLayer2Layout,
+        sprite_lengths: &SpriteLengthTable,
+        double_size_modes: &[bool],
+        options: &NativeLevelAssetsLayer2SaveOptions,
+        reclamation: PayloadReclamation<'_>,
+    ) -> Result<SavedNativeLevelAssetsLayer2, NativeLevelAssetsLayer2SaveError> {
+        self.save_native_level_assets_with_layer2_group(
+            assets,
+            layout,
+            sprite_lengths,
+            double_size_modes,
+            options,
+            Layer2AssetsCommit::WithReclamation(reclamation),
+        )
+    }
+
+    fn save_native_level_assets_with_layer2_group(
+        &mut self,
+        assets: NativeLevelAssetsLayer2<'_>,
+        layout: NativeLevelAssetsLayer2Layout,
+        sprite_lengths: &SpriteLengthTable,
+        double_size_modes: &[bool],
+        options: &NativeLevelAssetsLayer2SaveOptions,
+        commit: Layer2AssetsCommit<'_>,
+    ) -> Result<SavedNativeLevelAssetsLayer2, NativeLevelAssetsLayer2SaveError> {
         let [layer1, sprites] = level_save_requests(
             layout.core.level,
             assets.core.level,
@@ -127,15 +177,27 @@ impl Project {
             _ => return Err(NativeLevelAssetsLayer2SaveError::ExpandedSettingsPairMismatch),
         };
         let requests = [layer1, sprites, layer2, palette, exanimation];
-        let mut saved = self.save_tagged_payloads_with_checksum_and_writes(
-            format!(
-                "save native level assets with layer 2 {:03x}",
-                assets.core.level.number
-            ),
-            &requests,
-            expanded_write.as_slice(),
-            checksum_field,
-        )?;
+        let description = format!(
+            "save native level assets with layer 2 {:03x}",
+            assets.core.level.number
+        );
+        let mut saved = match commit {
+            Layer2AssetsCommit::WithChecksum(checksum_field) => self
+                .save_tagged_payloads_with_checksum_and_writes(
+                    description,
+                    &requests,
+                    expanded_write.as_slice(),
+                    checksum_field,
+                )?,
+            Layer2AssetsCommit::WithReclamation(reclamation) => self
+                .save_tagged_payloads_with_checksum_writes_and_reclamation(
+                    description,
+                    &requests,
+                    expanded_write.as_slice(),
+                    reclamation.checksum_field,
+                    reclamation.manifest,
+                )?,
+        };
         Ok(SavedNativeLevelAssetsLayer2 {
             core: SavedNativeLevelAssets {
                 layer1: saved.remove(0),

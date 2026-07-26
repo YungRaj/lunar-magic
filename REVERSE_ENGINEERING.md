@@ -1798,6 +1798,14 @@ retain the empty default entry. `$F6–$FF` all point to `$004C3A00`, which incr
 bookkeeping and delegates custom-display handling when configured but supplies no built-in
 preview definition; the Rust renderer therefore returns no standard artwork for those IDs.
 
+The profile-qualified ROM native-assets workflow now consumes the already recovered Layer 2
+classification and I/O boundary instead of leaving it headless. `NativeLevelAssetsController`
+loads an optional fifth payload from the profile's Layer 2 pointer table, stages either ordered
+object edits or exact 1,024-word tilemap edits, and rejects storage-mode mismatches atomically.
+Both copy-on-write and manifest-owned reclamation commits serialize Layer 1, sprites, Layer 2,
+palette, and ExAnimation with the optional expanded-settings write and one checksum repair. The
+native window exposes the corresponding conditional Layer 2 tab.
+
 The first direct-ROM move oracle exposed one additional native invariant:
 Lunar Magic stably sorts legacy sprite records by their decoded five-bit
 screen after a cross-screen move, preserving the prior priority order among

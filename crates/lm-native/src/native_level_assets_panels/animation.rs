@@ -209,7 +209,10 @@ impl AggregatePanels {
                             frame,
                         }],
                     }),
-                PasteTarget::Object | PasteTarget::Sprite | PasteTarget::PaletteColor => {
+                PasteTarget::Object
+                | PasteTarget::Layer2Object
+                | PasteTarget::Sprite
+                | PasteTarget::PaletteColor => {
                     return None;
                 }
             };

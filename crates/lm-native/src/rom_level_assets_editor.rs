@@ -102,6 +102,7 @@ impl RomLevelAssetsEditor {
             ui,
             workspace.controller.revision(),
             &file,
+            workspace.controller.layer2(),
             &workspace.profile.exanimation_double_size_modes,
             &workspace.ownership,
         );

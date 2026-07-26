@@ -1,4 +1,5 @@
 mod animation;
+mod layer2;
 mod level;
 mod palette;
 mod settings;
@@ -12,6 +13,7 @@ use lm_project::NativeLevelAssetsFile;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PasteTarget {
     Object,
+    Layer2Object,
     Sprite,
     PaletteColor,
     AnimationRecord,
@@ -23,6 +25,10 @@ pub(crate) struct AggregatePanels {
     tab: usize,
     object_index: usize,
     object: String,
+    layer2_object_index: usize,
+    layer2_object: String,
+    layer2_tile_index: usize,
+    layer2_tile: String,
     sprite_index: usize,
     sprite: String,
     sprite_header: String,
@@ -49,23 +55,27 @@ impl AggregatePanels {
         ui: &mut egui::Ui,
         revision: u64,
         file: &NativeLevelAssetsFile,
+        layer2: Option<&lm_level::NativeLayer2Data>,
         modes: &[bool; 256],
         ownership: &PaletteOwnership,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         self.load(revision, file, modes);
         ui.horizontal(|ui| {
-            for (index, name) in ["Level", "Palette", "ExAnimation", "Settings"]
-                .iter()
-                .enumerate()
-            {
+            let tabs = if layer2.is_some() {
+                &["Level", "Layer 2", "Palette", "ExAnimation", "Settings"][..]
+            } else {
+                &["Level", "Palette", "ExAnimation", "Settings"][..]
+            };
+            for (index, name) in tabs.iter().enumerate() {
                 ui.selectable_value(&mut self.tab, index, *name);
             }
         });
         ui.separator();
-        match self.tab {
-            0 => self.level_panel(ui, file),
-            1 => self.palette_panel(ui, file, ownership),
-            2 => self.animation_panel(ui, file, modes),
+        match (layer2, self.tab) {
+            (_, 0) => self.level_panel(ui, file),
+            (Some(layer2), 1) => self.layer2_panel(ui, layer2),
+            (Some(_), 2) | (None, 1) => self.palette_panel(ui, file, ownership),
+            (Some(_), 3) | (None, 2) => self.animation_panel(ui, file, modes),
             _ => self.settings_panel(ui, file),
         }
     }

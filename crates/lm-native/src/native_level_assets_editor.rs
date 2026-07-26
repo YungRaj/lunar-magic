@@ -191,6 +191,7 @@ impl NativeLevelAssetsEditor {
                 ui,
                 document.controller.revision(),
                 document.controller.value(),
+                None,
                 &document.modes,
                 &document.ownership,
             )

@@ -1490,6 +1490,11 @@ profile-qualified level snapshot can stage ordered object/sprite, ownership-chec
 ExAnimation, and exact settings-word edits on one aggregate clone. Late cross-domain failure rolls
 back the complete batch, and commit preparation emits one revision-bound ROM mutation using the
 same grouped serializer as CLI import.
+When the active revision profile declares a native Layer 2 pointer table, the same controller now
+loads that selected level's mode-dependent Layer 2 representation as a fifth payload. Object modes
+support ordered lossless object insertion, replacement, and removal; tilemap modes expose all
+1,024 little-endian words. Layer 2 participates in late-failure rollback, semantic reopen,
+checksum repair, copy-on-write allocation, and exact five-payload `LMRATS01` reclamation.
 `NativeLevelAssetsDocumentController` owns a portable `LMNATAS1` file without a ROM. It binds the
 sprite-length and ExAnimation mode tables for the document lifetime, reuses the identical staged
 cross-domain edit engine, canonically reopens each accepted revision, and exposes immutable,
@@ -1518,7 +1523,9 @@ existing `ShowLayer3` application command reachable only from the terminal shell
 The profile-qualified ROM workspace can also open a native level-assets editor for the selected
 level. It reuses the aggregate domain panels while retaining a `NativeLevelAssetsController`
 against the immutable application revision. Object/sprite, palette, ExAnimation, and optional
-expanded-settings edits are staged together. Commit requires an explicit logical-PC allocation
+expanded-settings edits are staged together. Profiles with Layer 2 add a dedicated tab for
+object-record copy/paste/editing or indexed 16-bit tilemap-word editing according to the level
+mode. Commit requires an explicit logical-PC allocation
 search range, derives a profile-wide protection policy, allocates and repoints every changed tagged
 payload, repairs the checksum, semantically reopens the complete aggregate, and dispatches one
 revision-checked mutation into application history. A changed ROM makes the window stale and blocks

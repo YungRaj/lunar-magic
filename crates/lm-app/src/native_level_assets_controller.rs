@@ -5,11 +5,15 @@ use crate::{
     NativeLevelEdit, PaletteControllerEdit,
 };
 use lm_graphics::{PaletteBatchEditError, PaletteOwnership};
-use lm_level::{ExpandedLevelSettingsError, SpriteLengthTable};
+use lm_level::{
+    ExpandedLevelSettingsError, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, ObjectEdit,
+    ObjectEditError, SpriteLengthTable,
+};
 use lm_project::{
-    LevelLoadError, LevelPointerTable, LoadedNativeLevelAssets, NativeLevelAssetsLayout,
-    NativeLevelAssetsLoadError, NativeLevelAssetsSaveError, PayloadLoadError, PayloadReadPolicy,
-    Project, SpritePointerTable, TransactionError,
+    LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelPointerTable,
+    LoadedNativeLevelAssets, NativeLevelAssetsLayout, NativeLevelAssetsLoadError,
+    NativeLevelAssetsSaveError, PayloadLoadError, PayloadReadPolicy, Project, SpritePointerTable,
+    TransactionError,
 };
 use lm_rats::RatsBlock;
 use lm_rom::{Mapper, RomError, RomImage};
@@ -20,6 +24,8 @@ mod commit;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NativeLevelAssetsControllerEdit {
     Level(Vec<NativeLevelEdit>),
+    Layer2Objects(Vec<ObjectEdit>),
+    Layer2TilemapWords(Vec<(usize, u16)>),
     Palette(Vec<PaletteControllerEdit>),
     ExAnimation(Vec<ExAnimationControllerEdit>),
     ExpandedSettingsWords(Vec<(usize, u16)>),
@@ -40,6 +46,25 @@ pub enum NativeLevelAssetsControllerError {
     LevelEdit {
         command: usize,
         error: crate::LevelControllerError,
+    },
+    Layer2Unavailable {
+        command: usize,
+    },
+    Layer2StorageMismatch {
+        command: usize,
+        expected: &'static str,
+    },
+    Layer2ObjectEdit {
+        command: usize,
+        error: ObjectEditError,
+    },
+    Layer2TileIndex {
+        command: usize,
+        index: usize,
+    },
+    Layer2TileDuplicate {
+        command: usize,
+        index: usize,
     },
     PaletteEdit {
         command: usize,
@@ -63,6 +88,9 @@ pub enum NativeLevelAssetsControllerError {
         error: ExpandedLevelSettingsError,
     },
     Save(NativeLevelAssetsSaveError),
+    Layer2Load(LevelLayer2IoError),
+    Layer2Save(lm_project::NativeLevelAssetsLayer2SaveError),
+    Layer2SaveOptionsRequired,
     Mutation(TransactionError),
 }
 
@@ -79,6 +107,7 @@ impl std::error::Error for NativeLevelAssetsControllerError {}
 pub struct NativeLevelAssetsController {
     revision: u64,
     layout: NativeLevelAssetsLayout,
+    layer2_layout: Option<LevelLayer2RomLayout>,
     checksum_field: usize,
     source_file_bytes: Vec<u8>,
     sprite_lengths: SpriteLengthTable,
@@ -86,7 +115,9 @@ pub struct NativeLevelAssetsController {
     palette_ownership: PaletteOwnership,
     baseline: LoadedNativeLevelAssets,
     assets: LoadedNativeLevelAssets,
-    previous_blocks: [Option<RatsBlock>; 4],
+    baseline_layer2: Option<NativeLayer2Data>,
+    layer2: Option<NativeLayer2Data>,
+    previous_blocks: [Option<RatsBlock>; 5],
 }
 
 impl NativeLevelAssetsController {
@@ -99,6 +130,30 @@ impl NativeLevelAssetsController {
     pub fn decode(
         snapshot: &ControllerSnapshot,
         layout: NativeLevelAssetsLayout,
+        sprite_lengths: &SpriteLengthTable,
+        double_size_modes: &[bool],
+        palette_ownership: PaletteOwnership,
+    ) -> Result<Self, NativeLevelAssetsControllerError> {
+        Self::decode_with_layer2(
+            snapshot,
+            layout,
+            None,
+            sprite_lengths,
+            double_size_modes,
+            palette_ownership,
+        )
+    }
+
+    /// Decodes the established aggregate plus an optional profile-described Layer 2 payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same aggregate errors as [`Self::decode`] plus typed Layer 2 layout, pointer,
+    /// codec, or model errors.
+    pub fn decode_with_layer2(
+        snapshot: &ControllerSnapshot,
+        layout: NativeLevelAssetsLayout,
+        layer2_layout: Option<LevelLayer2RomLayout>,
         sprite_lengths: &SpriteLengthTable,
         double_size_modes: &[bool],
         palette_ownership: PaletteOwnership,
@@ -121,6 +176,16 @@ impl NativeLevelAssetsController {
         let assets = project
             .load_native_level_assets(usize::from(slot), layout, sprite_lengths, &modes)
             .map_err(NativeLevelAssetsControllerError::Load)?;
+        let layer2 = layer2_layout
+            .map(|layer2_layout| {
+                project.load_level_layer2(
+                    usize::from(slot),
+                    assets.level.layer1.header.level_mode(),
+                    layer2_layout,
+                )
+            })
+            .transpose()
+            .map_err(NativeLevelAssetsControllerError::Layer2Load)?;
         let slot = usize::from(slot);
         let previous_blocks = [
             snapshot_block(&project, layout.level.layer1, slot, layout.level.mapper)?,
@@ -137,6 +202,12 @@ impl NativeLevelAssetsController {
                 slot,
                 layout.exanimation.mapper,
             )?,
+            match layer2_layout {
+                Some(layer2_layout) => {
+                    snapshot_block(&project, layer2_layout.pointers, slot, layer2_layout.mapper)?
+                }
+                None => None,
+            },
         ];
         let mut palette = assets.palette.clone();
         crate::palette_edit_batch::apply_palette_edit_batch(&mut palette, &palette_ownership, &[])
@@ -150,6 +221,7 @@ impl NativeLevelAssetsController {
         Ok(Self {
             revision: snapshot.revision,
             layout,
+            layer2_layout,
             checksum_field: snapshot.identity.internal_header_offset + 0x1c,
             source_file_bytes: snapshot.rom_bytes.clone(),
             sprite_lengths: sprite_lengths.clone(),
@@ -157,6 +229,8 @@ impl NativeLevelAssetsController {
             palette_ownership,
             baseline: assets.clone(),
             assets,
+            baseline_layer2: layer2.clone(),
+            layer2,
             previous_blocks,
         })
     }
@@ -172,8 +246,13 @@ impl NativeLevelAssetsController {
     }
 
     #[must_use]
+    pub const fn layer2(&self) -> Option<&NativeLayer2Data> {
+        self.layer2.as_ref()
+    }
+
+    #[must_use]
     pub fn is_modified(&self) -> bool {
-        self.assets != self.baseline
+        self.assets != self.baseline || self.layer2 != self.baseline_layer2
     }
 
     /// Applies a mixed cross-domain edit batch to one staged aggregate.
@@ -187,8 +266,10 @@ impl NativeLevelAssetsController {
         edits: &[NativeLevelAssetsControllerEdit],
     ) -> Result<(), NativeLevelAssetsControllerError> {
         let mut staged = self.assets.clone();
+        let mut staged_layer2 = self.layer2.clone();
         apply_native_level_assets_edits(
             &mut staged,
+            &mut staged_layer2,
             edits,
             &self.sprite_lengths,
             self.layout.exanimation.maximum_records,
@@ -196,6 +277,7 @@ impl NativeLevelAssetsController {
             &self.palette_ownership,
         )?;
         self.assets = staged;
+        self.layer2 = staged_layer2;
         Ok(())
     }
 }
@@ -234,6 +316,7 @@ fn snapshot_sprite_block(
 
 pub(crate) fn apply_native_level_assets_edits(
     staged: &mut LoadedNativeLevelAssets,
+    staged_layer2: &mut Option<NativeLayer2Data>,
     edits: &[NativeLevelAssetsControllerEdit],
     sprite_lengths: &SpriteLengthTable,
     maximum_animation_records: usize,
@@ -250,6 +333,12 @@ pub(crate) fn apply_native_level_assets_edits(
                     sprite_lengths,
                 )
                 .map_err(|error| NativeLevelAssetsControllerError::LevelEdit { command, error })?;
+            }
+            NativeLevelAssetsControllerEdit::Layer2Objects(edits) => {
+                apply_layer2_object_edits(staged_layer2, command, edits)?;
+            }
+            NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits) => {
+                apply_layer2_tilemap_edits(staged_layer2, command, edits)?;
             }
             NativeLevelAssetsControllerEdit::Palette(edits) => {
                 crate::palette_edit_batch::apply_palette_edit_batch(
@@ -302,6 +391,59 @@ pub(crate) fn apply_native_level_assets_edits(
         }
     }
     *staged = next;
+    Ok(())
+}
+
+fn apply_layer2_object_edits(
+    layer2: &mut Option<NativeLayer2Data>,
+    command: usize,
+    edits: &[ObjectEdit],
+) -> Result<(), NativeLevelAssetsControllerError> {
+    let layer2 = layer2
+        .as_mut()
+        .ok_or(NativeLevelAssetsControllerError::Layer2Unavailable { command })?;
+    let NativeLayer2Data::Objects(objects) = layer2 else {
+        return Err(NativeLevelAssetsControllerError::Layer2StorageMismatch {
+            command,
+            expected: "objects",
+        });
+    };
+    objects
+        .objects
+        .apply_edits(edits)
+        .map_err(|error| NativeLevelAssetsControllerError::Layer2ObjectEdit { command, error })
+}
+
+fn apply_layer2_tilemap_edits(
+    layer2: &mut Option<NativeLayer2Data>,
+    command: usize,
+    edits: &[(usize, u16)],
+) -> Result<(), NativeLevelAssetsControllerError> {
+    let layer2 = layer2
+        .as_mut()
+        .ok_or(NativeLevelAssetsControllerError::Layer2Unavailable { command })?;
+    let NativeLayer2Data::Tilemap(bytes) = layer2 else {
+        return Err(NativeLevelAssetsControllerError::Layer2StorageMismatch {
+            command,
+            expected: "tilemap",
+        });
+    };
+    if bytes.len() != NATIVE_LAYER2_TILEMAP_LEN {
+        return Err(NativeLevelAssetsControllerError::Layer2TileIndex {
+            command,
+            index: bytes.len() / 2,
+        });
+    }
+    let mut seen = vec![false; bytes.len() / 2];
+    for &(index, value) in edits {
+        let Some(seen) = seen.get_mut(index) else {
+            return Err(NativeLevelAssetsControllerError::Layer2TileIndex { command, index });
+        };
+        if std::mem::replace(seen, true) {
+            return Err(NativeLevelAssetsControllerError::Layer2TileDuplicate { command, index });
+        }
+        bytes[index * 2..index * 2 + 2].copy_from_slice(&value.to_le_bytes());
+    }
     Ok(())
 }
 

@@ -1,10 +1,16 @@
 use super::*;
 use crate::PaletteControllerEdit;
+use lm_codec::encode_terminated_rle;
 use lm_graphics::{Bgr555, PaletteChange};
-use lm_level::{LegacyHeaderEdit, SpriteRecord, SpriteToken};
+use lm_level::{
+    LegacyHeaderEdit, NATIVE_LAYER2_TILEMAP_LEN, SpriteRecord, SpriteToken,
+    split_layer2_tilemap_planes,
+};
 use lm_project::{
-    ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout, LevelPointerTable,
-    LevelRomLayout, LevelSaveOptions, NativeLevelAssetsSaveOptions, PaletteRomLayout,
+    ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
+    LevelLayer2RomLayout, LevelLayer2SaveOptions, LevelLayer2TilemapEncoding, LevelPointerTable,
+    LevelRomLayout, LevelSaveOptions, NativeLevelAssetsLayer2Layout,
+    NativeLevelAssetsLayer2SaveOptions, NativeLevelAssetsSaveOptions, PaletteRomLayout,
     PaletteSaveOptions, RatsOwnershipManifest,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -46,6 +52,15 @@ fn layout() -> NativeLevelAssetsLayout {
     }
 }
 
+fn layer2_layout() -> LevelLayer2RomLayout {
+    LevelLayer2RomLayout {
+        mapper: Mapper::LoRom,
+        pointers: table(0x90),
+        maximum_compressed_len: 0x100,
+        tilemap_encoding: LevelLayer2TilemapEncoding::SplitPlanes,
+    }
+}
+
 fn pointer(bytes: &mut [u8], offset: usize, target: usize) {
     let value = pc_to_snes(Mapper::LoRom, target).unwrap().to_le_bytes();
     bytes[offset..offset + 3].copy_from_slice(&value[..3]);
@@ -61,10 +76,12 @@ fn snapshot() -> ControllerSnapshot {
     pointer(&mut bytes, 0x30, 0x120);
     pointer(&mut bytes, 0x40, 0x140);
     pointer(&mut bytes, 0x50, 0x160);
+    pointer(&mut bytes, 0x90, 0x190);
     bytes[0x100..0x109].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 0xff]);
     bytes[0x120..0x125].copy_from_slice(&[0x10, 0, 1, 2, 0xff]);
     bytes[0x140..0x144].copy_from_slice(&[1, 0, 2, 0]);
     bytes[0x160..0x187].fill(0);
+    bytes[0x190..0x199].copy_from_slice(&[1, 2, 3, 4, 5, 0x01, 0x10, 0x20, 0xff]);
     bytes[0x60..0x80].fill(0x5a);
     let checksum = compute_snes_checksum(&bytes, 0x7fdc).unwrap();
     bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
@@ -78,6 +95,20 @@ fn snapshot() -> ControllerSnapshot {
     }
 }
 
+fn tilemap_snapshot() -> ControllerSnapshot {
+    let mut snapshot = snapshot();
+    snapshot.rom_bytes[0x101] &= 0xe0;
+    let tilemap = vec![0_u8; NATIVE_LAYER2_TILEMAP_LEN];
+    let encoded =
+        encode_terminated_rle(&split_layer2_tilemap_planes(&tilemap).expect("valid tilemap"));
+    snapshot.rom_bytes[0x190..0x190 + encoded.len()].copy_from_slice(&encoded);
+    let checksum = compute_snes_checksum(&snapshot.rom_bytes, 0x7fdc).unwrap();
+    snapshot.rom_bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    snapshot.identity =
+        detect_identity(&RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap()).unwrap();
+    snapshot
+}
+
 fn options() -> NativeLevelAssetsSaveOptions {
     let allocation = AllocationPolicy {
         search: 0x200..0x7000,
@@ -86,6 +117,7 @@ fn options() -> NativeLevelAssetsSaveOptions {
         protected: vec![
             ProtectedRange(0x20..0x53),
             ProtectedRange(0x60..0x80),
+            ProtectedRange(0x90..0x93),
             ProtectedRange(0x7fc0..0x8000),
         ],
     };
@@ -110,6 +142,15 @@ fn options() -> NativeLevelAssetsSaveOptions {
             reuse_identical: true,
             erase_fill: 0xff,
         },
+    }
+}
+
+fn layer2_options() -> LevelLayer2SaveOptions {
+    LevelLayer2SaveOptions {
+        allocation: options().level.layer1_allocation,
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
     }
 }
 
@@ -145,6 +186,57 @@ fn tagged_snapshot() -> (ControllerSnapshot, RatsOwnershipManifest) {
                 saved.sprites.block,
                 saved.palette.block,
                 saved.exanimation.block,
+            ],
+            retained: Vec::new(),
+        },
+    )
+}
+
+fn tagged_layer2_snapshot() -> (ControllerSnapshot, RatsOwnershipManifest) {
+    let original = snapshot();
+    let mut project = Project::new(RomImage::from_bytes(original.rom_bytes).unwrap());
+    let layout_with_layer2 = NativeLevelAssetsLayer2Layout {
+        core: layout(),
+        layer2: layer2_layout(),
+    };
+    let assets = project
+        .load_native_level_assets_with_layer2(
+            0,
+            layout_with_layer2,
+            &SpriteLengthTable::standard(),
+            &[false; 256],
+        )
+        .unwrap();
+    let saved = project
+        .save_native_level_assets_with_layer2(
+            assets.as_save_assets(),
+            layout_with_layer2,
+            &SpriteLengthTable::standard(),
+            &[false; 256],
+            0x7fdc,
+            &NativeLevelAssetsLayer2SaveOptions {
+                core: options(),
+                layer2: layer2_options(),
+            },
+        )
+        .unwrap();
+    let bytes = project.save_snapshot();
+    let image = RomImage::from_bytes(bytes.clone()).unwrap();
+    (
+        ControllerSnapshot {
+            revision: 7,
+            mode: EditorMode::Level(0),
+            identity: detect_identity(&image).unwrap(),
+            document_path: None,
+            rom_bytes: bytes,
+        },
+        RatsOwnershipManifest {
+            owned: vec![
+                saved.core.layer1.block,
+                saved.core.sprites.block,
+                saved.core.palette.block,
+                saved.core.exanimation.block,
+                saved.layer2.block,
             ],
             retained: Vec::new(),
         },
@@ -209,7 +301,13 @@ fn owned_aggregate_reclaims_four_payloads_keeps_direct_write_atomic_and_undoes()
     .unwrap();
     assert_eq!(
         controller.previous_blocks,
-        std::array::from_fn(|index| Some(manifest.owned[index].clone()))
+        [
+            Some(manifest.owned[0].clone()),
+            Some(manifest.owned[1].clone()),
+            Some(manifest.owned[2].clone()),
+            Some(manifest.owned[3].clone()),
+            None,
+        ]
     );
     controller
         .apply_edits(&[
@@ -263,6 +361,208 @@ fn owned_aggregate_reclaims_four_payloads_keeps_direct_write_atomic_and_undoes()
         );
     }
     assert_eq!(project.rom.read(0x60, 32).unwrap(), &[0x5a; 32]);
+}
+
+#[test]
+fn layer2_object_edit_commits_with_every_core_domain_and_reopens() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let NativeLayer2Data::Objects(layer2) = controller.layer2().unwrap() else {
+        panic!("fixture level mode must use Layer 2 objects");
+    };
+    let duplicate = layer2.objects.records[0].clone();
+    controller
+        .apply_edits(&[
+            NativeLevelAssetsControllerEdit::Layer2Objects(vec![ObjectEdit::Insert {
+                index: 1,
+                record: duplicate,
+            }]),
+            NativeLevelAssetsControllerEdit::ExpandedSettingsWords(vec![(1, 0x1234)]),
+        ])
+        .unwrap();
+    let expected_core = controller.assets().clone();
+    let expected_layer2 = controller.layer2().unwrap().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2("Layer 2 aggregate", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("Layer 2 aggregate", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets_with_layer2(
+            0,
+            NativeLevelAssetsLayer2Layout {
+                core: layout(),
+                layer2: layer2_layout(),
+            },
+            &SpriteLengthTable::standard(),
+            &[false; 256],
+        )
+        .unwrap();
+    assert_eq!(reopened.core, expected_core);
+    assert_eq!(reopened.layer2, expected_layer2);
+    assert_eq!(
+        SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
+        compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
+    );
+}
+
+#[test]
+fn layer2_storage_and_late_tile_failures_are_atomic() {
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot(),
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let before_core = controller.assets().clone();
+    let before_layer2 = controller.layer2().unwrap().clone();
+    assert!(matches!(
+        controller.apply_edits(&[
+            NativeLevelAssetsControllerEdit::ExpandedSettingsWords(vec![(1, 0x1234)]),
+            NativeLevelAssetsControllerEdit::Layer2TilemapWords(vec![(0, 0xbeef)]),
+        ]),
+        Err(NativeLevelAssetsControllerError::Layer2StorageMismatch {
+            command: 1,
+            expected: "tilemap"
+        })
+    ));
+    assert_eq!(controller.assets(), &before_core);
+    assert_eq!(controller.layer2(), Some(&before_layer2));
+    assert!(!controller.is_modified());
+}
+
+#[test]
+fn layer2_tilemap_words_are_little_endian_atomic_and_reopenable() {
+    let snapshot = tilemap_snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    assert!(matches!(
+        controller.layer2(),
+        Some(NativeLayer2Data::Tilemap(_))
+    ));
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::Layer2TilemapWords(vec![
+            (0, 0x1234),
+            (0x3ff, 0xabcd),
+        ])])
+        .unwrap();
+    let expected = controller.layer2().unwrap().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2("Layer 2 tilemap", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("Layer 2 tilemap", &prepared.mutation)
+        .unwrap();
+    assert_eq!(
+        project.load_level_layer2(0, 0, layer2_layout()).unwrap(),
+        expected
+    );
+
+    let before = controller.layer2().unwrap().clone();
+    assert!(matches!(
+        controller.apply_edits(&[NativeLevelAssetsControllerEdit::Layer2TilemapWords(vec![
+            (4, 1),
+            (4, 2)
+        ])]),
+        Err(NativeLevelAssetsControllerError::Layer2TileDuplicate {
+            command: 0,
+            index: 4
+        })
+    ));
+    assert_eq!(controller.layer2(), Some(&before));
+}
+
+#[test]
+fn owned_layer2_aggregate_reclaims_all_five_payloads_atomically() {
+    let (snapshot, manifest) = tagged_layer2_snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    assert_eq!(
+        controller.previous_blocks,
+        std::array::from_fn(|index| Some(manifest.owned[index].clone()))
+    );
+    let NativeLayer2Data::Objects(layer2) = controller.layer2().unwrap() else {
+        panic!("fixture level mode must use Layer 2 objects");
+    };
+    let duplicate = layer2.objects.records[0].clone();
+    controller
+        .apply_edits(&[
+            NativeLevelAssetsControllerEdit::Level(vec![
+                NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(3)),
+                NativeLevelEdit::ReplaceSprite {
+                    index: 0,
+                    token: SpriteToken::Record(SpriteRecord {
+                        encoded: vec![0, 1, 9],
+                    }),
+                },
+            ]),
+            NativeLevelAssetsControllerEdit::Layer2Objects(vec![ObjectEdit::Insert {
+                index: 1,
+                record: duplicate,
+            }]),
+            NativeLevelAssetsControllerEdit::Palette(vec![PaletteControllerEdit::ApplyChanges(
+                vec![PaletteChange {
+                    index: 1,
+                    color: Bgr555(0x1234),
+                }],
+            )]),
+            NativeLevelAssetsControllerEdit::ExAnimation(vec![
+                ExAnimationControllerEdit::SetSetting(3),
+            ]),
+        ])
+        .unwrap();
+    let expected = controller.layer2().unwrap().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2_and_reclamation(
+            "owned Layer 2 aggregate",
+            &options(),
+            &layer2_options(),
+            &manifest,
+        )
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("owned Layer 2 aggregate", &prepared.mutation)
+        .unwrap();
+    for block in &manifest.owned {
+        assert!(
+            project.rom.logical_bytes()[block.full_range()]
+                .iter()
+                .all(|byte| *byte == 0xff)
+        );
+    }
+    assert_eq!(
+        project.load_level_layer2(0, 2, layer2_layout()).unwrap(),
+        expected
+    );
 }
 
 #[test]

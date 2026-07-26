@@ -183,7 +183,7 @@ impl RevisionProfileControllers for RevisionProfile {
             .ok_or(ProfileControllerError::ExAnimationUnavailable)?
             .resolve(&image)?
             .payload;
-        NativeLevelAssetsController::decode(
+        NativeLevelAssetsController::decode_with_layer2(
             snapshot,
             lm_project::NativeLevelAssetsLayout {
                 level: self.level,
@@ -191,6 +191,7 @@ impl RevisionProfileControllers for RevisionProfile {
                 exanimation,
                 expanded_settings: self.expanded_settings,
             },
+            self.layer2,
             &self.sprite_lengths,
             &self.exanimation_double_size_modes,
             palette_ownership,

@@ -20,4 +20,5 @@ lm-render = { path = "../lm-render" }
 workspace = true
 
 [dev-dependencies]
+lm-codec = { path = "../lm-codec" }
 lm-profile = { path = "../lm-profile", features = ["test-support"] }
