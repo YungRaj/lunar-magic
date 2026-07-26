@@ -1,12 +1,14 @@
 use eframe::egui;
 use lm_app::{
     AppState, Command, EditorMode, LevelController, NativeLevelEdit, RomExpansionCommand,
+    VanillaEntranceController,
 };
 use lm_level::{
     LegacyHeaderEdit, NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
     SpriteLengthTable, SpriteToken,
 };
 use lm_project::LevelSaveOptions;
+use lm_project::VanillaMainEntrance;
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 
@@ -198,6 +200,8 @@ impl ObjectForm {
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
     controller: Option<LevelController>,
+    entrance_controller: Option<VanillaEntranceController>,
+    entrance_form: VanillaMainEntrance,
     form: HeaderForm,
     selected_object: usize,
     object_form: ObjectForm,
@@ -284,6 +288,9 @@ impl VanillaLevelEditor {
         ));
         self.show_staged_history(ui);
         self.show_header_editor(ui, object_count, sprite_count);
+        if let Some(command) = self.show_entrance_editor(ui, level) {
+            return Some(command);
+        }
         ui.separator();
         self.show_map16_preview(ui, &snapshot, object_tileset);
         ui.separator();
@@ -387,6 +394,59 @@ impl VanillaLevelEditor {
         });
     }
 
+    fn show_entrance_editor(&mut self, ui: &mut egui::Ui, level: u16) -> Option<Command> {
+        ui.collapsing("Main entrance", |ui| {
+            ui.label("Exact four-plane vanilla SMW entrance record.");
+            egui::Grid::new("vanilla-main-entrance").show(ui, |ui| {
+                header_row(ui, "Position", &mut self.entrance_form.position, u8::MAX);
+                header_row(
+                    ui,
+                    "Vertical settings",
+                    &mut self.entrance_form.vertical_settings,
+                    u8::MAX,
+                );
+                header_row(
+                    ui,
+                    "Screen / method",
+                    &mut self.entrance_form.screen_and_method,
+                    u8::MAX,
+                );
+                header_row(
+                    ui,
+                    "Level mode / screen",
+                    &mut self.entrance_form.level_mode_and_screen,
+                    u8::MAX,
+                );
+            });
+        });
+        let controller = self.entrance_controller.as_mut()?;
+        ui.horizontal(|ui| {
+            if ui.button("Stage main entrance").clicked() {
+                controller.set_entrance(self.entrance_form);
+            }
+            if ui.button("Reset entrance").clicked() {
+                self.entrance_form = controller.entrance();
+            }
+        });
+        if ui
+            .add_enabled(
+                controller.is_modified(),
+                egui::Button::new("Commit main entrance to ROM"),
+            )
+            .clicked()
+        {
+            return match controller.prepare_commit(format!("Edit level {level:03X} main entrance"))
+            {
+                Ok(prepared) => Some(prepared.into_command()),
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    None
+                }
+            };
+        }
+        None
+    }
+
     fn show_staged_history(&mut self, ui: &mut egui::Ui) {
         let Some(controller) = self.controller.as_ref() else {
             return;
@@ -482,6 +542,15 @@ impl VanillaLevelEditor {
             &sprite_lengths,
         ) {
             Ok(controller) => {
+                self.entrance_controller = VanillaEntranceController::decode(
+                    snapshot,
+                    lm_profile::smw_us_v1_vanilla_entrance_layout(),
+                )
+                .ok();
+                self.entrance_form = self.entrance_controller.as_ref().map_or_else(
+                    VanillaMainEntrance::default,
+                    VanillaEntranceController::entrance,
+                );
                 self.standard_object_map = RomImage::from_bytes(snapshot.rom_bytes.clone())
                     .ok()
                     .and_then(|rom| {
@@ -507,6 +576,7 @@ impl VanillaLevelEditor {
             }
             Err(error) => {
                 self.controller = None;
+                self.entrance_controller = None;
                 self.error = Some(error.to_string());
             }
         }
@@ -516,6 +586,7 @@ impl VanillaLevelEditor {
     fn clear(&mut self) {
         self.key = None;
         self.controller = None;
+        self.entrance_controller = None;
         self.error = None;
         self.map16_key = None;
         self.map16_texture = None;

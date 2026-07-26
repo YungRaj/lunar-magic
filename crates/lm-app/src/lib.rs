@@ -90,6 +90,7 @@ mod title_tilemap_state;
 mod tool_config;
 mod tool_state;
 mod toolbar;
+mod vanilla_entrance_controller;
 mod viewport_rendering;
 
 pub use app_types::{
@@ -232,6 +233,7 @@ pub use ssc_sidecar_controller::{
 pub use state::{AppError, AppState};
 pub use tool_config::{ToolConfig, ToolConfigError};
 pub use toolbar::{ToolbarAction, ToolbarActivation, ToolbarConfig, ToolbarError, ToolbarItem};
+pub use vanilla_entrance_controller::{VanillaEntranceController, VanillaEntranceControllerError};
 pub use viewport_rendering::{
     EditorPreviewError, render_editor_preview, render_editor_viewport, render_level_viewport,
 };

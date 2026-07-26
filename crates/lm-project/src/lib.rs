@@ -66,6 +66,7 @@ mod shared_palette_io;
 mod title_recording_patch;
 mod title_tilemap_patch;
 mod transaction;
+mod vanilla_entrance_io;
 
 pub use credits_tilemap_io::{CreditsTilemapIoError, LegacyCreditsTilemapLayout};
 pub use credits_tilemap_patch::{
@@ -221,3 +222,6 @@ pub use title_tilemap_patch::{
     LoadedTitleTilemap, TitleTilemapPatchError, TitleTilemapPatchLocator, TitleTilemapStorage,
 };
 pub use transaction::{RomTransaction, TransactionError};
+pub use vanilla_entrance_io::{
+    VanillaEntranceIoError, VanillaEntranceRomLayout, VanillaMainEntrance,
+};
