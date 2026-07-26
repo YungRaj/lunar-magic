@@ -1,7 +1,7 @@
 use lm_app::{AppState, Command, LevelController, MwlDocumentController, NativeLevelEdit};
 use lm_level::{
-    LevelObjectData, MwlFile, MwlSectionKind, NativeSpriteStream, ObjectCoordinateNibbles,
-    ObjectEdit, SpriteLengthTable, SpriteToken,
+    LevelObjectData, MwlFile, MwlLevelHeaderSection, MwlSectionKind, NativeSpriteStream,
+    ObjectCoordinateNibbles, ObjectEdit, SpriteLengthTable, SpriteToken,
 };
 use lm_project::{LevelSaveOptions, Project, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -16,6 +16,71 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 fn wine_path(path: &Path) -> String {
     let rendered = path.display().to_string().replace('/', r"\");
     format!(r"Z:\{}", rendered.trim_start_matches('\\'))
+}
+
+/// Proves the recovered packed main/midway entrance fields at the MWL boundary.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_imports_and_reexports_rust_packed_entrance_edits() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("Super Mario World (USA).sfc");
+    let directory = std::env::temp_dir().join(format!(
+        "lm-mwl-entrance-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let imported_rom = directory.join("entrance edit.sfc");
+    let source_mwl = directory.join("source.mwl");
+    let edited_mwl = directory.join("edited.mwl");
+    let reexported_mwl = directory.join("reexported.mwl");
+    fs::copy(&original_rom, &imported_rom).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &imported_rom,
+        &source_mwl,
+        "105",
+    );
+    let mut document =
+        MwlDocumentController::decode(edited_mwl.clone(), &fs::read(&source_mwl).unwrap()).unwrap();
+    let source_header =
+        MwlLevelHeaderSection::decode(document.value().section(MwlSectionKind::LevelHeader))
+            .unwrap();
+    let mut main = source_header.main_entrance();
+    main.position ^= 0x10;
+    document
+        .apply_edits(0, &[lm_app::MwlDocumentEdit::SetMainEntrance(main)])
+        .unwrap();
+    fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ImportLevel",
+        &imported_rom,
+        &edited_mwl,
+        "105",
+    );
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &imported_rom,
+        &reexported_mwl,
+        "105",
+    );
+    let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
+    let reopened =
+        MwlLevelHeaderSection::decode(reexported.section(MwlSectionKind::LevelHeader)).unwrap();
+    assert_eq!(reopened.main_entrance(), main);
+    assert_eq!(reopened.midway_entrance(), source_header.midway_entrance());
+    for (index, byte) in source_header.0.into_iter().enumerate() {
+        if ![2, 3, 4, 5, 6, 9, 10, 11, 12, 14, 15].contains(&index) {
+            assert_eq!(reopened.0[index], byte);
+        }
+    }
+    fs::remove_dir_all(directory).unwrap();
 }
 
 fn run_lunar_magic_level_command(

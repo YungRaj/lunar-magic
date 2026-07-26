@@ -174,6 +174,7 @@ impl MwlEditor {
             "Level number (hex; blank if header is not exact 64 bytes)",
             &mut self.form.level_number,
         );
+        self.entrance_settings(ui);
         if ui.button("Apply recovered MWL header fields").clicked() {
             match self.form.header_edits() {
                 Ok(edits) => self.apply_edits(&edits),
@@ -234,6 +235,45 @@ impl MwlEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+    }
+
+    fn entrance_settings(&mut self, ui: &mut egui::Ui) {
+        ui.collapsing("Packed entrance settings", |ui| {
+            ui.label(
+                "Lossless Lunar Magic fields. Bit meanings vary by level mode and installed runtime.",
+            );
+            egui::Grid::new("mwl-main-entrance").show(ui, |ui| {
+                for (label, value) in [
+                    "Main position",
+                    "Main vertical settings",
+                    "Main screen/method",
+                    "Main level mode/screen",
+                    "Main flags",
+                    "Main high position",
+                    "Main additional flags",
+                ]
+                .into_iter()
+                .zip(&mut self.form.main_entrance)
+                {
+                    ui.label(label);
+                    ui.text_edit_singleline(value);
+                    ui.end_row();
+                }
+                for (label, value) in [
+                    "Midway position",
+                    "Midway flags",
+                    "Midway high position",
+                    "Midway additional flags",
+                ]
+                .into_iter()
+                .zip(&mut self.form.midway_entrance)
+                {
+                    ui.label(label);
+                    ui.text_edit_singleline(value);
+                    ui.end_row();
+                }
+            });
+        });
     }
 
     fn toolbar(&mut self, ui: &mut egui::Ui) {

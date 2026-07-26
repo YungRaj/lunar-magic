@@ -1,8 +1,9 @@
 use crate::portable_value_history::PortableValueHistory;
 use lm_level::{
     ExpandedLevelSettingsError, Layer3TilemapGraphicsDescriptor, LevelObjectData, MwlError,
-    MwlFile, MwlLevelHeaderSection, MwlSection, MwlSectionKind, NativeSpriteEncodingError,
-    NativeSpriteStream, ObjectStreamError, SpriteLengthTable, SpriteStreamError,
+    MwlFile, MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlSection,
+    MwlSectionKind, NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError,
+    SpriteLengthTable, SpriteStreamError,
 };
 use lm_project::{
     MwlOptionalAssetsEdit, MwlOptionalAssetsEditError, MwlOptionalLevelAssets,
@@ -17,6 +18,8 @@ pub enum MwlDocumentEdit {
     SetFlags(u32),
     SetAttribution([u8; MwlFile::ATTRIBUTION_LEN]),
     SetLevelNumber(u16),
+    SetMainEntrance(MwlMainEntranceSettings),
+    SetMidwayEntrance(MwlMidwayEntranceSettings),
     ReplaceSection {
         section: MwlSectionKind,
         bytes: Vec<u8>,
@@ -518,6 +521,18 @@ fn apply_edit(file: &mut MwlFile, edit: &MwlDocumentEdit) -> Result<(), MwlError
             let section = &mut file.sections[MwlSectionKind::LevelHeader as usize];
             let mut header = MwlLevelHeaderSection::decode(&section.bytes)?;
             header.set_level_number(*level);
+            section.bytes = header.0.to_vec();
+        }
+        MwlDocumentEdit::SetMainEntrance(entrance) => {
+            let section = &mut file.sections[MwlSectionKind::LevelHeader as usize];
+            let mut header = MwlLevelHeaderSection::decode(&section.bytes)?;
+            header.set_main_entrance(*entrance);
+            section.bytes = header.0.to_vec();
+        }
+        MwlDocumentEdit::SetMidwayEntrance(entrance) => {
+            let section = &mut file.sections[MwlSectionKind::LevelHeader as usize];
+            let mut header = MwlLevelHeaderSection::decode(&section.bytes)?;
+            header.set_midway_entrance(*entrance);
             section.bytes = header.0.to_vec();
         }
         MwlDocumentEdit::ReplaceSection { section, bytes } => {

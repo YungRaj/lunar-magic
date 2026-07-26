@@ -4,7 +4,9 @@ mod palette;
 mod sections;
 
 pub use palette::{MwlPaletteSection, MwlPaletteSectionError};
-pub use sections::{MwlLevelHeaderSection, MwlPayloadSection};
+pub use sections::{
+    MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlPayloadSection,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(usize)]

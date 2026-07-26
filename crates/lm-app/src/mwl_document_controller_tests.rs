@@ -427,6 +427,51 @@ fn mixed_edits_are_atomic_canonical_and_preserve_unowned_sections() {
 }
 
 #[test]
+fn packed_entrance_edits_preserve_every_unowned_header_byte() {
+    let mut controller = controller();
+    let original = MwlLevelHeaderSection::decode(
+        &controller.value().sections[MwlSectionKind::LevelHeader as usize].bytes,
+    )
+    .unwrap()
+    .0;
+    let main = lm_level::MwlMainEntranceSettings {
+        position: 1,
+        vertical_settings: 2,
+        screen_and_method: 3,
+        level_mode_and_screen: 4,
+        flags: 5,
+        high_position: 6,
+        additional_flags: 7,
+    };
+    let midway = lm_level::MwlMidwayEntranceSettings {
+        position: 8,
+        flags: 9,
+        high_position: 10,
+        additional_flags: 11,
+    };
+    controller
+        .apply_edits(
+            0,
+            &[
+                MwlDocumentEdit::SetMainEntrance(main),
+                MwlDocumentEdit::SetMidwayEntrance(midway),
+            ],
+        )
+        .unwrap();
+    let header = MwlLevelHeaderSection::decode(
+        &controller.value().sections[MwlSectionKind::LevelHeader as usize].bytes,
+    )
+    .unwrap();
+    assert_eq!(header.main_entrance(), main);
+    assert_eq!(header.midway_entrance(), midway);
+    for (index, byte) in original.into_iter().enumerate() {
+        if ![2, 3, 4, 5, 6, 9, 10, 11, 12, 14, 15].contains(&index) {
+            assert_eq!(header.0[index], byte);
+        }
+    }
+}
+
+#[test]
 fn late_bad_header_edit_rolls_back_the_whole_batch() {
     let mut controller = controller();
     let original = controller.value().clone();

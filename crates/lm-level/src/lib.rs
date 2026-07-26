@@ -83,8 +83,8 @@ pub use map16_set::{ActsLikeResolution, Map16Set, Map16SetError};
 pub use map16_set_file::{Map16SetFile, Map16SetFileError};
 pub use model::{LayerData, Level};
 pub use mwl::{
-    MwlError, MwlFile, MwlLevelHeaderSection, MwlPaletteSection, MwlPaletteSectionError,
-    MwlPayloadSection, MwlSection, MwlSectionKind,
+    MwlError, MwlFile, MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings,
+    MwlPaletteSection, MwlPaletteSectionError, MwlPayloadSection, MwlSection, MwlSectionKind,
 };
 pub use native_file::{NativeLevelFile, NativeLevelFileError, StreamKind};
 pub use native_layer2::{
