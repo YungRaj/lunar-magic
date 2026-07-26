@@ -177,6 +177,11 @@ impl LevelController {
     }
 
     #[must_use]
+    pub const fn sprite_lengths(&self) -> &lm_level::SpriteLengthTable {
+        &self.sprite_lengths
+    }
+
+    #[must_use]
     pub fn is_modified(&self) -> bool {
         self.level != self.baseline
     }

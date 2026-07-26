@@ -1741,6 +1741,14 @@ with the current packed position byte, level mode, and orientation, fits its com
 geometry into a preview cell, and labels empty/default handlers explicitly. Selecting an entry
 constructs the proven `yyyyEESY / XXXXssss / NNNNNNNN` record, retains the form's position and
 extra bits, and arms the same transactional canvas placement path.
+Resolved SSC selectors now supply the direct-ROM editor's actual four 256-entry native record-length
+tables instead of being used only for artwork. The editor key includes a stable length-authority
+signature, so attaching, removing, or changing the relevant SSC selectors forces a complete level
+redecode. Conflicting length declarations for one sprite/extra-bit table fail before stream
+framing. Semantic edits and canvas movement validate against that same table and preserve every
+extension byte. A custom visual catalog deduplicates nonalternate default displays, searches IDs
+and descriptions, resolves built-in or external Map16 preview definitions, and constructs an exact
+declared-width record with deterministic zero extension bytes for one-shot placement.
 
 The first direct-ROM move oracle exposed one additional native invariant:
 Lunar Magic stably sorts legacy sprite records by their decoded five-bit

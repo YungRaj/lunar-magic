@@ -18,6 +18,7 @@ const STANDARD_SPRITE_MAX: u8 = 0xed;
 struct EditorKey {
     revision: u64,
     level: u16,
+    sprite_lengths_signature: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -136,6 +137,7 @@ impl SpriteForm {
         &self,
         index: usize,
         token: Option<&SpriteToken>,
+        lengths: &SpriteLengthTable,
     ) -> Result<NativeLevelEdit, String> {
         let Some(SpriteToken::Record(record)) = token else {
             return Err("select a sprite record before applying semantic fields".into());
@@ -150,7 +152,7 @@ impl SpriteForm {
                     x: self.x,
                     sprite_number: self.sprite_number,
                 },
-                &SpriteLengthTable::standard(),
+                lengths,
             )
             .map_err(|error| error.to_string())?;
         Ok(NativeLevelEdit::ReplaceSprite {
@@ -197,6 +199,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
     sprite_catalog_filter: String,
+    custom_sprite_catalog_filter: String,
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
@@ -245,9 +248,10 @@ impl VanillaLevelEditor {
         let key = EditorKey {
             revision: snapshot.revision,
             level,
+            sprite_lengths_signature: ssc_sprite_lengths_signature(custom_sprites),
         };
         if self.key != Some(key) {
-            self.load(&snapshot, key);
+            self.load(&snapshot, key, custom_sprites);
         }
 
         ui.heading(format!("Level {level:03X} — built-in SMW editor"));
@@ -281,7 +285,7 @@ impl VanillaLevelEditor {
         ui.separator();
         ui.columns(2, |columns| {
             self.sprite_list(&mut columns[0]);
-            self.sprite_editor(&mut columns[1]);
+            self.sprite_editor(&mut columns[1], custom_sprites, custom_map16);
         });
         ui.add_space(8.0);
         let expanded = snapshot.rom_bytes.len() > 0x80_000;
@@ -372,11 +376,25 @@ impl VanillaLevelEditor {
         });
     }
 
-    fn load(&mut self, snapshot: &lm_app::ControllerSnapshot, key: EditorKey) {
+    fn load(
+        &mut self,
+        snapshot: &lm_app::ControllerSnapshot,
+        key: EditorKey,
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+    ) {
+        let sprite_lengths = match sprite_lengths_from_ssc(custom_sprites) {
+            Ok(lengths) => lengths,
+            Err(error) => {
+                self.controller = None;
+                self.error = Some(error);
+                self.key = Some(key);
+                return;
+            }
+        };
         match LevelController::decode(
             snapshot,
             lm_profile::smw_us_v1_vanilla_level_layout(),
-            &SpriteLengthTable::standard(),
+            &sprite_lengths,
         ) {
             Ok(controller) => {
                 self.standard_object_map = RomImage::from_bytes(snapshot.rom_bytes.clone())
@@ -867,12 +885,17 @@ impl VanillaLevelEditor {
             self.error = Some("sprite placement is outside the native 32×512-tile space".into());
             return;
         };
+        let lengths = self
+            .controller
+            .as_ref()
+            .map_or_else(SpriteLengthTable::standard, |controller| {
+                controller.sprite_lengths().clone()
+            });
         let token = match crate::native_level_document_form::parse_sprite_token(
             &self.sprite_form.encoded,
         ) {
             Ok(SpriteToken::Record(mut record)) => {
-                if let Err(error) = record.set_native_fields(fields, &SpriteLengthTable::standard())
-                {
+                if let Err(error) = record.set_native_fields(fields, &lengths) {
                     self.error = Some(error.to_string());
                     return;
                 }
@@ -1009,7 +1032,10 @@ impl VanillaLevelEditor {
             return;
         };
         let token = controller.level().sprites.tokens.get(index);
-        let Ok(replacement) = self.sprite_form.semantic_edit(index, token) else {
+        let Ok(replacement) =
+            self.sprite_form
+                .semantic_edit(index, token, controller.sprite_lengths())
+        else {
             self.error = Some("selected sprite cannot be moved semantically".into());
             return;
         };
@@ -1364,13 +1390,19 @@ impl VanillaLevelEditor {
             });
     }
 
-    fn sprite_editor(&mut self, ui: &mut egui::Ui) {
+    fn sprite_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
         let token_count = self
             .controller
             .as_ref()
             .map_or(0, |controller| controller.level().sprites.tokens.len());
         ui.label("Native sprite stream");
         self.sprite_catalog(ui);
+        self.custom_sprite_catalog(ui, custom_sprites, custom_map16);
         self.sprite_form_controls(ui);
         sprite_save_constraint(ui);
         self.sprite_editor_actions(ui, token_count);
@@ -1523,6 +1555,82 @@ impl VanillaLevelEditor {
             });
     }
 
+    fn custom_sprite_catalog(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
+        let Some(custom_sprites) = custom_sprites else {
+            return;
+        };
+        egui::CollapsingHeader::new("Add custom SSC sprite visually")
+            .id_salt("vanilla-custom-sprite-catalog")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Hex/name filter");
+                    ui.text_edit_singleline(&mut self.custom_sprite_catalog_filter);
+                    if ui.button("Clear").clicked() {
+                        self.custom_sprite_catalog_filter.clear();
+                    }
+                });
+                let entries = custom_sprite_catalog_entries(
+                    custom_sprites,
+                    &self.custom_sprite_catalog_filter,
+                );
+                let texture = self.sprite_texture.clone();
+                let mut chosen = None;
+                egui::ScrollArea::vertical()
+                    .id_salt("vanilla-custom-sprite-catalog-scroll")
+                    .max_height(280.0)
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            for entry in entries {
+                                let parts =
+                                    lm_render::render_resolved_lunar_magic_custom_sprite_with(
+                                        entry,
+                                        |index| external_sprite_definition(custom_map16, index),
+                                    );
+                                let response = draw_custom_sprite_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    entry,
+                                    parts.as_deref(),
+                                );
+                                if response.clicked() {
+                                    chosen = Some(entry.selector);
+                                }
+                            }
+                        });
+                    });
+                if let Some(selector) = chosen {
+                    self.choose_custom_sprite(selector);
+                }
+            });
+    }
+
+    fn choose_custom_sprite(&mut self, selector: lm_level::SscSpriteSelector) {
+        let Some(controller) = self.controller.as_ref() else {
+            self.error = Some("native level controller is unavailable".into());
+            return;
+        };
+        let fields = NativeSpriteRecordFields {
+            y_low: self.sprite_form.y_low,
+            extra_bits: selector.extra_bits,
+            screen: self.sprite_form.screen,
+            x: self.sprite_form.x,
+            sprite_number: selector.sprite_number,
+        };
+        match custom_sprite_token(fields, controller.sprite_lengths()) {
+            Ok(token) => {
+                self.sprite_form = SpriteForm::from_token(self.sprite_form.header, Some(&token));
+                self.placement_mode = Some(CanvasPlacementMode::Sprite);
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
+
     fn choose_standard_sprite(&mut self, sprite_number: u8) {
         let fields = NativeSpriteRecordFields {
             y_low: self.sprite_form.y_low,
@@ -1531,7 +1639,13 @@ impl VanillaLevelEditor {
             x: self.sprite_form.x,
             sprite_number,
         };
-        match standard_sprite_token(fields) {
+        let lengths = self
+            .controller
+            .as_ref()
+            .map_or_else(SpriteLengthTable::standard, |controller| {
+                controller.sprite_lengths().clone()
+            });
+        match standard_sprite_token(fields, &lengths) {
             Ok(token) => {
                 self.sprite_form = SpriteForm::from_token(self.sprite_form.header, Some(&token));
                 self.placement_mode = Some(CanvasPlacementMode::Sprite);
@@ -1561,11 +1675,16 @@ impl VanillaLevelEditor {
     }
 
     fn apply_sprite_semantic_fields(&mut self) {
-        let token = self
-            .controller
-            .as_ref()
-            .and_then(|controller| controller.level().sprites.tokens.get(self.selected_sprite));
-        let edit = self.sprite_form.semantic_edit(self.selected_sprite, token);
+        let edit = self.controller.as_ref().map_or_else(
+            || Err("native level controller is unavailable".into()),
+            |controller| {
+                self.sprite_form.semantic_edit(
+                    self.selected_sprite,
+                    controller.level().sprites.tokens.get(self.selected_sprite),
+                    controller.sprite_lengths(),
+                )
+            },
+        );
         self.apply_sprite_result(edit);
         if self.error.is_none()
             && let Some(controller) = self.controller.as_ref()
@@ -2056,14 +2175,127 @@ fn sprite_catalog_ids(filter: &str) -> Vec<u8> {
         .collect()
 }
 
-fn standard_sprite_token(fields: NativeSpriteRecordFields) -> Result<SpriteToken, String> {
+fn custom_sprite_catalog_entries<'a>(
+    table: &'a lm_level::SscResolvedTable,
+    filter: &str,
+) -> Vec<&'a lm_level::SscResolvedSprite> {
+    let filter = filter.trim().to_ascii_lowercase();
+    let mut entries = Vec::new();
+    for sprite in table.sprites() {
+        let selector = sprite.selector;
+        if selector.alternate || sprite.display.is_none() {
+            continue;
+        }
+        if entries.iter().any(|entry: &&lm_level::SscResolvedSprite| {
+            entry.selector.sprite_number == selector.sprite_number
+                && entry.selector.extra_bits == selector.extra_bits
+        }) {
+            continue;
+        }
+        let label = format!("{:02x}/{:x}", selector.sprite_number, selector.extra_bits);
+        let description_matches = sprite
+            .description
+            .as_deref()
+            .is_some_and(|description| description.to_ascii_lowercase().contains(&filter));
+        if filter.is_empty() || label.contains(&filter) || description_matches {
+            entries.push(sprite);
+        }
+    }
+    entries
+}
+
+fn ssc_sprite_lengths_signature(table: Option<&lm_level::SscResolvedTable>) -> u64 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = OFFSET;
+    if let Some(table) = table {
+        for sprite in table.sprites() {
+            for byte in [
+                sprite.selector.sprite_number,
+                sprite.selector.extra_bits,
+                sprite.selector.record_length.unwrap_or(0),
+                u8::from(sprite.selector.alternate),
+            ] {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(PRIME);
+            }
+        }
+    }
+    hash
+}
+
+fn sprite_lengths_from_ssc(
+    table: Option<&lm_level::SscResolvedTable>,
+) -> Result<SpriteLengthTable, String> {
+    let mut lengths = SpriteLengthTable::standard();
+    let mut assigned = [None; SpriteLengthTable::ENCODED_LEN];
+    let Some(table) = table else {
+        return Ok(lengths);
+    };
+    for sprite in table.sprites() {
+        let selector = sprite.selector;
+        let Some(record_length) = selector.record_length else {
+            continue;
+        };
+        let index = usize::from(selector.extra_bits) * 256 + usize::from(selector.sprite_number);
+        let Some(slot) = assigned.get_mut(index) else {
+            return Err(format!(
+                "SSC sprite {:02X} uses invalid extra-bit table {}",
+                selector.sprite_number, selector.extra_bits
+            ));
+        };
+        if let Some(previous) = *slot
+            && previous != record_length
+        {
+            return Err(format!(
+                "SSC sprite {:02X} table {} declares conflicting record lengths {} and {}",
+                selector.sprite_number, selector.extra_bits, previous, record_length
+            ));
+        }
+        *slot = Some(record_length);
+        lengths
+            .set(selector.extra_bits, selector.sprite_number, record_length)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(lengths)
+}
+
+fn standard_sprite_token(
+    fields: NativeSpriteRecordFields,
+    lengths: &SpriteLengthTable,
+) -> Result<SpriteToken, String> {
     let mut record = lm_level::SpriteRecord {
         encoded: vec![0, 0, fields.sprite_number],
     };
     record
-        .set_native_fields(fields, &SpriteLengthTable::standard())
+        .set_native_fields(fields, lengths)
         .map_err(|error| error.to_string())?;
     Ok(SpriteToken::Record(record))
+}
+
+fn custom_sprite_token(
+    fields: NativeSpriteRecordFields,
+    lengths: &SpriteLengthTable,
+) -> Result<SpriteToken, String> {
+    let first = packed_sprite_first(fields);
+    let record_length = lengths
+        .record_len(&[first, 0, fields.sprite_number])
+        .ok_or_else(|| "custom sprite has no valid native record length".to_string())?;
+    let mut record = lm_level::SpriteRecord {
+        encoded: vec![0; record_length],
+    };
+    record.encoded[2] = fields.sprite_number;
+    record
+        .set_native_fields(fields, lengths)
+        .map_err(|error| error.to_string())?;
+    Ok(SpriteToken::Record(record))
+}
+
+const fn packed_sprite_first(fields: NativeSpriteRecordFields) -> u8 {
+    (fields.y_low & 0x0f) << 4
+        | (fields.extra_bits & 3) << 2
+        | (fields.screen >> 4) << 1
+        | fields.y_low >> 4
 }
 
 fn sprite_catalog_preview_mode(
@@ -2071,10 +2303,13 @@ fn sprite_catalog_preview_mode(
     vertical: bool,
     level_mode: u8,
 ) -> lm_render::StandardSpritePreviewMode {
-    let placement_first = (form.y_low & 0x0f) << 4
-        | (form.extra_bits & 3) << 2
-        | (form.screen >> 4) << 1
-        | form.y_low >> 4;
+    let placement_first = packed_sprite_first(NativeSpriteRecordFields {
+        y_low: form.y_low,
+        extra_bits: form.extra_bits,
+        screen: form.screen,
+        x: form.x,
+        sprite_number: form.sprite_number,
+    });
     lm_render::StandardSpritePreviewMode {
         placement_first,
         level_mode,
@@ -2085,6 +2320,52 @@ fn sprite_catalog_preview_mode(
         },
         ..lm_render::StandardSpritePreviewMode::default()
     }
+}
+
+fn draw_custom_sprite_catalog_entry(
+    ui: &mut egui::Ui,
+    texture: Option<&egui::TextureHandle>,
+    sprite: &lm_level::SscResolvedSprite,
+    parts: Option<&[lm_render::StandardSpritePreviewTile]>,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(78.0, 70.0), egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    draw_catalog_background(&painter, rect, false);
+    let preview_rect = egui::Rect::from_min_max(
+        rect.min + egui::vec2(3.0, 3.0),
+        rect.max - egui::vec2(3.0, 22.0),
+    );
+    if let (Some(texture), Some(parts)) = (texture, parts) {
+        draw_fitted_sprite_catalog_preview(&painter, texture, preview_rect, parts);
+    } else {
+        painter.text(
+            preview_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("{:02X}", sprite.selector.sprite_number),
+            egui::FontId::monospace(12.0),
+            egui::Color32::LIGHT_RED,
+        );
+    }
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 12.0),
+        egui::Align2::CENTER_CENTER,
+        format!(
+            "${:02X} · E{}",
+            sprite.selector.sprite_number, sprite.selector.extra_bits
+        ),
+        egui::FontId::monospace(9.0),
+        egui::Color32::WHITE,
+    );
+    let description = sprite.description.as_deref().unwrap_or("custom SSC sprite");
+    response.on_hover_text(format!(
+        "{description}\nSprite ${:02X}, extra bits {}, record length {}",
+        sprite.selector.sprite_number,
+        sprite.selector.extra_bits,
+        sprite
+            .selector
+            .record_length
+            .map_or_else(|| "default".into(), |length| length.to_string())
+    ))
 }
 
 fn draw_sprite_catalog_entry(
@@ -2913,11 +3194,101 @@ mod tests {
             x: 3,
             sprite_number: 0xa6,
         };
-        let token = standard_sprite_token(fields).unwrap();
+        let token = standard_sprite_token(fields, &SpriteLengthTable::standard()).unwrap();
         let SpriteToken::Record(record) = token else {
             panic!("catalog always constructs an ordinary record");
         };
         assert_eq!(record.encoded, vec![0xdb, 0x3e, 0xa6]);
+        assert_eq!(record.native_fields().unwrap(), fields);
+    }
+
+    #[test]
+    fn ssc_record_lengths_drive_native_sprite_framing() {
+        let sidecar =
+            lm_level::SscSidecar::decode(b"10\t50002\t0,0,10\n11\t60012\t0,0,11\n").unwrap();
+        let resolved = lm_level::SscResolvedTable::from_sidecar(&sidecar);
+        let lengths = sprite_lengths_from_ssc(Some(&resolved)).unwrap();
+        assert_eq!(lengths.record_len(&[0, 0, 0x10]), Some(5));
+        assert_eq!(lengths.record_len(&[4, 0, 0x11]), Some(6));
+        assert_eq!(lengths.record_len(&[8, 0, 0x12]), Some(3));
+        assert_ne!(
+            ssc_sprite_lengths_signature(Some(&resolved)),
+            ssc_sprite_lengths_signature(None)
+        );
+    }
+
+    #[test]
+    fn conflicting_ssc_record_lengths_fail_before_level_decode() {
+        let sidecar =
+            lm_level::SscSidecar::decode(b"10\t40002\t0,0,10\n10\t50003\t0,0,10\n").unwrap();
+        let resolved = lm_level::SscResolvedTable::from_sidecar(&sidecar);
+        let error = sprite_lengths_from_ssc(Some(&resolved)).unwrap_err();
+        assert!(error.contains("conflicting record lengths 4 and 5"));
+    }
+
+    #[test]
+    fn semantic_custom_sprite_edit_preserves_declared_extension_width() {
+        let sidecar = lm_level::SscSidecar::decode(b"10\t50002\t0,0,10\n").unwrap();
+        let resolved = lm_level::SscResolvedTable::from_sidecar(&sidecar);
+        let lengths = sprite_lengths_from_ssc(Some(&resolved)).unwrap();
+        let token = SpriteToken::Record(lm_level::SpriteRecord {
+            encoded: vec![0, 0, 0x10, 0xaa, 0xbb],
+        });
+        let mut form = SpriteForm::from_token(0, Some(&token));
+        form.x = 7;
+        let NativeLevelEdit::ReplaceSprite { token, .. } =
+            form.semantic_edit(0, Some(&token), &lengths).unwrap()
+        else {
+            panic!("semantic edit must replace the selected record");
+        };
+        let SpriteToken::Record(record) = token else {
+            panic!("semantic edit must retain an ordinary record");
+        };
+        assert_eq!(&record.encoded[3..], &[0xaa, 0xbb]);
+        assert_eq!(record.native_fields().unwrap().x, 7);
+    }
+
+    #[test]
+    fn custom_sprite_catalog_deduplicates_defaults_and_filters_descriptions() {
+        let sidecar = lm_level::SscSidecar::decode(
+            b"10\t50000\tCustom Koopa\n10\t50002\t0,0,10\n10\t50003\t0,0,11\n11\t60012\t0,0,12\n",
+        )
+        .unwrap();
+        let resolved = lm_level::SscResolvedTable::from_sidecar(&sidecar);
+        let all = custom_sprite_catalog_entries(&resolved, "");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].selector.sprite_number, 0x10);
+        assert_eq!(all[1].selector.extra_bits, 1);
+        assert_eq!(
+            custom_sprite_catalog_entries(&resolved, "koopa")[0]
+                .selector
+                .sprite_number,
+            0x10
+        );
+        assert_eq!(
+            custom_sprite_catalog_entries(&resolved, "11/1")[0]
+                .selector
+                .sprite_number,
+            0x11
+        );
+    }
+
+    #[test]
+    fn custom_catalog_selection_materializes_declared_zero_filled_extension() {
+        let sidecar = lm_level::SscSidecar::decode(b"10\t50002\t0,0,10\n").unwrap();
+        let resolved = lm_level::SscResolvedTable::from_sidecar(&sidecar);
+        let lengths = sprite_lengths_from_ssc(Some(&resolved)).unwrap();
+        let fields = NativeSpriteRecordFields {
+            y_low: 4,
+            extra_bits: 0,
+            screen: 3,
+            x: 2,
+            sprite_number: 0x10,
+        };
+        let SpriteToken::Record(record) = custom_sprite_token(fields, &lengths).unwrap() else {
+            panic!("custom catalog always materializes an ordinary record");
+        };
+        assert_eq!(record.encoded, vec![0x40, 0x23, 0x10, 0, 0]);
         assert_eq!(record.native_fields().unwrap(), fields);
     }
 
@@ -2959,7 +3330,8 @@ mod tests {
         form.x = 3;
         form.sprite_number = 0x55;
         assert_eq!(
-            form.semantic_edit(4, Some(&token)).unwrap(),
+            form.semantic_edit(4, Some(&token), &SpriteLengthTable::standard())
+                .unwrap(),
             NativeLevelEdit::ReplaceSprite {
                 index: 4,
                 token: SpriteToken::Record(lm_level::SpriteRecord {
@@ -2974,7 +3346,10 @@ mod tests {
         let token = SpriteToken::Screen(7);
         let form = SpriteForm::from_token(0, Some(&token));
         assert!(!form.semantic_record);
-        assert!(form.semantic_edit(0, Some(&token)).is_err());
+        assert!(
+            form.semantic_edit(0, Some(&token), &SpriteLengthTable::standard())
+                .is_err()
+        );
     }
 
     #[test]

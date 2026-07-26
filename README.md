@@ -497,6 +497,12 @@ interactive frontends cannot bypass confirmation and request correlation through
   from `$00` through `$ED`. Catalog cells render through the same recovered mode-, orientation-,
   position-, and graphics-aware dispatcher as the canvas; choosing one constructs a valid native
   record and arms one-shot placement instead of requiring users to type packed bytes.
+  Attached `.ssc` metadata contributes a separate description/hex-searchable custom catalog.
+  Default selectors are deduplicated by sprite number and extra-bit table, render through SSC plus
+  optional external-Map16 definitions, and materialize the exact declared native record width with
+  zero-filled extension bytes. The direct-ROM decoder derives its complete four-table length model
+  from those selectors, reloads when that authority changes, preserves extensions during semantic
+  edits, and rejects conflicting declarations before parsing or mutating a stream.
   A sprite can also be dragged directly on either horizontal or vertical level canvases; the drop
   is converted back to bounded native
   screen/X/Y fields, stably restores Lunar Magic's legacy screen ordering while retaining
