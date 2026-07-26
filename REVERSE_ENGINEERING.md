@@ -1890,6 +1890,12 @@ storage index and loads the complete 16-bit word; applying it continues through
 the existing revision-checked aggregate transaction rather than mutating the
 frontend snapshot. Synthetic coverage proves all five boundary coordinates and
 rejects both out-of-range coordinates and truncated tilemap storage.
+Shift-selection now extends the anchor to an inclusive canvas-coordinate
+rectangle. Rectangle fill enumerates cells in visual row-major order, resolves
+each through the same recovered native bijection, and submits one duplicate-free
+word-edit batch. Reversed drags across the `$01FF/$0200` plane boundary produce
+the same indexes, while clearing the canvas selection restores exact raw-index
+editing.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their

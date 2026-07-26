@@ -11,6 +11,49 @@ fn layer2_tilemap_word(bytes: &[u8], x: usize, y: usize) -> Option<(usize, u16)>
     Some((index, u16::from_le_bytes([pair[0], pair[1]])))
 }
 
+fn layer2_selection_indices(
+    anchor: Option<(usize, usize)>,
+    cursor: Option<(usize, usize)>,
+) -> Vec<usize> {
+    let (Some((anchor_x, anchor_y)), Some((cursor_x, cursor_y))) = (anchor, cursor) else {
+        return Vec::new();
+    };
+    let (minimum_x, maximum_x) = (anchor_x.min(cursor_x), anchor_x.max(cursor_x));
+    let (minimum_y, maximum_y) = (anchor_y.min(cursor_y), anchor_y.max(cursor_y));
+    (minimum_y..=maximum_y)
+        .flat_map(|y| {
+            (minimum_x..=maximum_x).filter_map(move |x| lm_level::native_layer2_tilemap_index(x, y))
+        })
+        .collect()
+}
+
+fn layer2_selection_contains(
+    anchor: Option<(usize, usize)>,
+    cursor: Option<(usize, usize)>,
+    x: usize,
+    y: usize,
+) -> bool {
+    let (Some((anchor_x, anchor_y)), Some((cursor_x, cursor_y))) = (anchor, cursor) else {
+        return false;
+    };
+    (anchor_x.min(cursor_x)..=anchor_x.max(cursor_x)).contains(&x)
+        && (anchor_y.min(cursor_y)..=anchor_y.max(cursor_y)).contains(&y)
+}
+
+fn layer2_word_edits(
+    fallback_index: usize,
+    anchor: Option<(usize, usize)>,
+    cursor: Option<(usize, usize)>,
+    word: u16,
+) -> Vec<(usize, u16)> {
+    let indexes = layer2_selection_indices(anchor, cursor);
+    if indexes.is_empty() {
+        vec![(fallback_index, word)]
+    } else {
+        indexes.into_iter().map(|index| (index, word)).collect()
+    }
+}
+
 impl AggregatePanels {
     pub(super) fn layer2_panel(
         &mut self,
@@ -119,8 +162,74 @@ impl AggregatePanels {
         let words = bytes.len() / 2;
         ui.heading(format!("Layer 2 tilemap ({words} words)"));
         ui.label(
-            "Select a Map16 cell on the 32×32 canvas, then edit its complete 16-bit tile word.",
+            "Click a Map16 cell, or Shift-click a second cell to select a rectangle. Applying fills \
+             every selected cell with the complete 16-bit tile word.",
         );
+        self.layer2_tilemap_grid(ui, bytes);
+        let selected_cells =
+            layer2_selection_indices(self.layer2_tile_anchor, self.layer2_tile_cursor);
+        if let (Some(anchor), Some(cursor)) = (self.layer2_tile_anchor, self.layer2_tile_cursor) {
+            ui.label(format!(
+                "Canvas selection: ({}, {}) to ({}, {}) · {} cell{}",
+                anchor.0,
+                anchor.1,
+                cursor.0,
+                cursor.1,
+                selected_cells.len(),
+                if selected_cells.len() == 1 { "" } else { "s" }
+            ));
+        }
+        ui.horizontal(|ui| {
+            ui.label("Storage index");
+            if ui
+                .add(
+                    egui::DragValue::new(&mut self.layer2_tile_index)
+                        .range(0..=words.saturating_sub(1)),
+                )
+                .changed()
+            {
+                self.layer2_tile_anchor = None;
+                self.layer2_tile_cursor = None;
+            }
+            if ui
+                .add_enabled(
+                    self.layer2_tile_anchor.is_some(),
+                    egui::Button::new("Clear canvas selection"),
+                )
+                .clicked()
+            {
+                self.layer2_tile_anchor = None;
+                self.layer2_tile_cursor = None;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("16-bit tile word");
+            ui.text_edit_singleline(&mut self.layer2_tile);
+            if ui.button("Load").clicked()
+                && let Some(bytes) =
+                    bytes.get(self.layer2_tile_index * 2..self.layer2_tile_index * 2 + 2)
+            {
+                self.layer2_tile = format!("{:04X}", u16::from_le_bytes([bytes[0], bytes[1]]));
+            }
+        });
+        let apply_label = if selected_cells.len() > 1 {
+            format!("Fill {} selected cells", selected_cells.len())
+        } else {
+            "Apply tile".into()
+        };
+        ui.button(apply_label).clicked().then(|| {
+            level_editor_forms::parse_hex_u16(&self.layer2_tile, "Layer 2 tile").map(|word| {
+                NativeLevelAssetsControllerEdit::Layer2TilemapWords(layer2_word_edits(
+                    self.layer2_tile_index,
+                    self.layer2_tile_anchor,
+                    self.layer2_tile_cursor,
+                    word,
+                ))
+            })
+        })
+    }
+
+    fn layer2_tilemap_grid(&mut self, ui: &mut egui::Ui, bytes: &[u8]) {
         egui::ScrollArea::both()
             .id_salt("native-layer2-tilemap-grid")
             .max_height(360.0)
@@ -134,10 +243,21 @@ impl AggregatePanels {
                                     continue;
                                 };
                                 let response = ui.selectable_label(
-                                    index == self.layer2_tile_index,
+                                    layer2_selection_contains(
+                                        self.layer2_tile_anchor,
+                                        self.layer2_tile_cursor,
+                                        x,
+                                        y,
+                                    ) || (self.layer2_tile_anchor.is_none()
+                                        && index == self.layer2_tile_index),
                                     format!("{:03X}", word & 0x0fff),
                                 );
                                 if response.clicked() {
+                                    let extend = ui.input(|input| input.modifiers.shift);
+                                    if !extend || self.layer2_tile_anchor.is_none() {
+                                        self.layer2_tile_anchor = Some((x, y));
+                                    }
+                                    self.layer2_tile_cursor = Some((x, y));
                                     self.layer2_tile_index = index;
                                     self.layer2_tile = format!("{word:04X}");
                                 }
@@ -149,25 +269,6 @@ impl AggregatePanels {
                         }
                     });
             });
-        index(ui, &mut self.layer2_tile_index, words.saturating_sub(1));
-        ui.horizontal(|ui| {
-            ui.label("16-bit tile word");
-            ui.text_edit_singleline(&mut self.layer2_tile);
-            if ui.button("Load").clicked()
-                && let Some(bytes) =
-                    bytes.get(self.layer2_tile_index * 2..self.layer2_tile_index * 2 + 2)
-            {
-                self.layer2_tile = format!("{:04X}", u16::from_le_bytes([bytes[0], bytes[1]]));
-            }
-        });
-        ui.button("Apply tile").clicked().then(|| {
-            level_editor_forms::parse_hex_u16(&self.layer2_tile, "Layer 2 tile").map(|word| {
-                NativeLevelAssetsControllerEdit::Layer2TilemapWords(vec![(
-                    self.layer2_tile_index,
-                    word,
-                )])
-            })
-        })
     }
 }
 
@@ -191,5 +292,41 @@ mod tests {
     fn tilemap_grid_rejects_truncated_storage() {
         assert_eq!(layer2_tilemap_word(&[0x34], 0, 0), None);
         assert_eq!(layer2_tilemap_word(&[0x34, 0x12], 1, 0), None);
+    }
+
+    #[test]
+    fn rectangle_selection_uses_canvas_coordinates_and_native_storage_indexes() {
+        assert_eq!(
+            layer2_selection_indices(Some((1, 15)), Some((2, 16))),
+            vec![31, 47, 528, 544]
+        );
+        assert_eq!(
+            layer2_selection_indices(Some((2, 16)), Some((1, 15))),
+            vec![31, 47, 528, 544]
+        );
+        assert!(layer2_selection_contains(
+            Some((2, 16)),
+            Some((1, 15)),
+            1,
+            16
+        ));
+        assert!(!layer2_selection_contains(
+            Some((2, 16)),
+            Some((1, 15)),
+            0,
+            16
+        ));
+    }
+
+    #[test]
+    fn rectangle_fill_routes_unique_atomic_word_edits() {
+        assert_eq!(
+            layer2_word_edits(99, Some((0, 0)), Some((1, 1)), 0xbeef),
+            vec![(0, 0xbeef), (16, 0xbeef), (1, 0xbeef), (17, 0xbeef)]
+        );
+        assert_eq!(
+            layer2_word_edits(99, None, None, 0xbeef),
+            vec![(99, 0xbeef)]
+        );
     }
 }

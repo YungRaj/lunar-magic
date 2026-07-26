@@ -31,7 +31,10 @@ Unqualified projects remain explicitly without identity rather than fabricating 
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 Object-backed levels expose the same lossless ordered record operations and native clipboard
-framing; compressed-tilemap levels expose all 1,024 little-endian words. Focused gates require
+framing; compressed-tilemap levels expose all 1,024 little-endian words through the recovered
+32×32 canvas order. The native panel supports ordinary single-cell selection and Shift-extended
+rectangles; one fill emits a duplicate-free ordered edit batch and commits the whole rectangle
+atomically through the aggregate controller. Focused gates require
 five-payload semantic reopen, checksum validity, exact ownership reclamation, and rollback when a
 late edit targets the wrong storage mode, repeats a tile index, or exceeds the tilemap.
 The opt-in Wine gate additionally relocates an edited installed level-105 tilemap into a newly
