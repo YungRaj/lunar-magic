@@ -540,6 +540,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   to every subtile. External graphics pages and custom palette blocks remain explicit in the
   toolkit-neutral preview model and produce an honest unresolved GUI marker until their
   `ExternalGraphics` assets are loaded, rather than displaying incorrect vanilla art.
+  The toolkit-neutral asset path already decodes all eight bounded `ExSpriteGFX00–07.bin` slots
+  plus either SNES-word `.mw3` or RGB-triplet `.pal` custom palettes and rasterizes complete
+  16×16 SSC definitions with per-subtile palette selection, transparency, and flips. Native
+  sibling-file discovery and texture caching are the remaining GUI integration boundary.
   Ordinary objects can likewise be dragged across all 32 native screens on horizontal or vertical
   canvases. The atomic relocation updates the two proven coordinate nibbles, stably orders ordinary
   objects by absolute screen, and regenerates minimal advance bits or canonical screen-jump

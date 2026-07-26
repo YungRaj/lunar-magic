@@ -6,6 +6,7 @@ mod exanimation;
 mod exanimation_file;
 mod exanimation_frames;
 mod exanimation_slot_options;
+mod external_sprite_assets;
 mod file;
 mod graphics_editing;
 mod materialized_frame;
@@ -34,6 +35,13 @@ pub use exanimation_frames::{
 pub use exanimation_slot_options::{
     EXANIMATION_LEVEL_SLOT_COUNT, ExAnimationSlotOptionError, ExAnimationSlotOptionTable,
     ExAnimationSlotOptions,
+};
+pub use external_sprite_assets::{
+    EXTERNAL_SPRITE_GRAPHICS_BASE_TILE, EXTERNAL_SPRITE_GRAPHICS_SLOT_MAX_BYTES,
+    EXTERNAL_SPRITE_GRAPHICS_SLOTS, EXTERNAL_SPRITE_GRAPHICS_TILES_PER_SLOT,
+    EXTERNAL_SPRITE_PALETTE_COLORS, EXTERNAL_SPRITE_PALETTE_RGB_MAX_BYTES,
+    EXTERNAL_SPRITE_PALETTE_ROWS, EXTERNAL_SPRITE_PALETTE_SNES_MAX_BYTES, ExternalSpriteAssets,
+    ExternalSpriteAssetsError,
 };
 pub use file::{GraphicsInterchangeError, GraphicsInterchangeFile};
 pub use graphics_editing::{

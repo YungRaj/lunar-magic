@@ -1,5 +1,6 @@
-use crate::StandardSpritePreviewTile;
 use crate::standard_sprite_renderer::preview_definition;
+use crate::{Canvas, Rgba, StandardSpritePreviewTile};
+use lm_graphics::{ExternalSpriteAssets, IndexedTile};
 use lm_level::{SscDirective, SscEntry, SscResolvedSprite, SscResolvedTable};
 
 /// One custom-sprite display definition with Lunar Magic's global graphics/palette remaps
@@ -12,6 +13,80 @@ pub struct RemappedCustomSpritePreviewTile {
     pub palette_source: Option<u16>,
     pub x: i16,
     pub y: i16,
+}
+
+/// Rasterizes one 16×16 SSC Map16 definition backed by Lunar Magic's external sprite assets.
+///
+/// Color zero remains transparent. The Map16 palette and flip bits are applied independently to
+/// each 8×8 subtile, while `graphics_base` selects the global external-graphics tile page.
+#[must_use]
+pub fn raster_external_custom_sprite_tile(
+    part: &RemappedCustomSpritePreviewTile,
+    assets: &ExternalSpriteAssets,
+) -> Option<Canvas> {
+    let palette_source = part.palette_source?;
+    let mut canvas = Canvas::try_new(16, 16).ok()?;
+    for (quadrant, word) in part.subtiles.into_iter().enumerate() {
+        let global_tile = (word & 0x03ff).checked_add(part.graphics_base)?;
+        let tile = assets.graphics_tile(global_tile)?;
+        let palette = u8::try_from((word >> 10) & 7).ok()?;
+        draw_external_subtile(
+            &mut canvas,
+            tile,
+            assets,
+            palette_source,
+            palette,
+            word & 0x4000 != 0,
+            word & 0x8000 != 0,
+            (quadrant & 1) * 8,
+            (quadrant >> 1) * 8,
+        )?;
+    }
+    Some(canvas)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_external_subtile(
+    canvas: &mut Canvas,
+    tile: &IndexedTile,
+    assets: &ExternalSpriteAssets,
+    palette_source: u16,
+    palette: u8,
+    flip_x: bool,
+    flip_y: bool,
+    target_x: usize,
+    target_y: usize,
+) -> Option<()> {
+    for row in 0..IndexedTile::HEIGHT {
+        for column in 0..IndexedTile::WIDTH {
+            let source_x = if flip_x {
+                IndexedTile::WIDTH - 1 - column
+            } else {
+                column
+            };
+            let source_y = if flip_y {
+                IndexedTile::HEIGHT - 1 - row
+            } else {
+                row
+            };
+            let color = tile.pixels()[source_y * IndexedTile::WIDTH + source_x];
+            if color == 0 {
+                continue;
+            }
+            let rgb = assets.palette_color(palette_source, palette, color)?;
+            canvas.set(
+                target_x + column,
+                target_y + row,
+                Rgba {
+                    red: rgb.red,
+                    green: rgb.green,
+                    blue: rgb.blue,
+                    alpha: 255,
+                },
+            );
+        }
+    }
+    Some(())
 }
 
 /// Materializes one decoded `.ssc` display record through the same preview-definition table used
@@ -139,6 +214,7 @@ fn remap_atlas_subtile(word: u16, graphics_base: u16) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_graphics::{Bgr555, Rgb8, encode_4bpp_tile};
     use lm_level::SscSidecar;
 
     #[test]
@@ -222,5 +298,67 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn external_raster_applies_palette_rows_transparency_and_subtile_flips() {
+        let mut assets = ExternalSpriteAssets::default();
+        let pixels = std::array::from_fn(|index| {
+            if index == 0 {
+                1
+            } else if index == IndexedTile::PIXEL_COUNT - 1 {
+                2
+            } else {
+                0
+            }
+        });
+        assets
+            .set_graphics_slot(0, &encode_4bpp_tile(&IndexedTile::new(pixels)).unwrap())
+            .unwrap();
+        let red = Bgr555::from_rgb8(Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        });
+        let blue = Bgr555::from_rgb8(Rgb8 {
+            red: 0,
+            green: 0,
+            blue: 255,
+        });
+        let mut palette = vec![0; 0x43 * 2];
+        palette[0x41 * 2..0x41 * 2 + 2].copy_from_slice(&red.0.to_le_bytes());
+        palette[0x42 * 2..0x42 * 2 + 2].copy_from_slice(&blue.0.to_le_bytes());
+        assets.set_snes_palette(&palette).unwrap();
+
+        let part = RemappedCustomSpritePreviewTile {
+            definition_index: 0x20,
+            subtiles: [0x0800, 0x4800, 0x8800, 0xc800],
+            graphics_base: 0x2000,
+            palette_source: Some(2),
+            x: 0,
+            y: 0,
+        };
+        let raster = raster_external_custom_sprite_tile(&part, &assets).unwrap();
+        let red = Rgba {
+            red: red.to_rgb8().red,
+            green: red.to_rgb8().green,
+            blue: red.to_rgb8().blue,
+            alpha: 255,
+        };
+        let blue = Rgba {
+            red: blue.to_rgb8().red,
+            green: blue.to_rgb8().green,
+            blue: blue.to_rgb8().blue,
+            alpha: 255,
+        };
+        assert_eq!(raster.get(0, 0), Some(red));
+        assert_eq!(raster.get(15, 0), Some(red));
+        assert_eq!(raster.get(0, 15), Some(red));
+        assert_eq!(raster.get(15, 15), Some(red));
+        assert_eq!(raster.get(7, 7), Some(blue));
+        assert_eq!(raster.get(8, 7), Some(blue));
+        assert_eq!(raster.get(7, 8), Some(blue));
+        assert_eq!(raster.get(8, 8), Some(blue));
+        assert_eq!(raster.get(1, 0), Some(Rgba::default()));
     }
 }

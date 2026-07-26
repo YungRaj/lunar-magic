@@ -1801,6 +1801,15 @@ fabricate unavailable external pages or palettes. The native atlas itself now co
 sprite palette rows, so the three palette bits and both flip bits in every subtile affect the
 visible standard and custom preview.
 
+`LoadExternalSpriteGraphicsAndPalette` (`0045BAE8`) completes the backing-file boundary. It reads
+eight sibling `ExternalGraphics/ExSpriteGFX%02X.bin` files into fixed `$8000`-byte regions whose
+global tile bases are `$2000`, `$2400`, `$2800`, `$2C00`, `$3000`, `$3400`, `$3800`, and `$3C00`.
+It then prefers `ExSpritePalette00.mw3` and falls back to `ExSpritePalette00.pal`.
+`LoadExternalPaletteFile` (`0045B1D0`) bounds those formats to `$8000` bytes of little-endian
+SNES BGR555 words or `$C000` bytes of RGB triplets (1,024 rows of 16 colors). Rust now models that
+boundary with atomic bounded decoders and a software SSC rasterizer that combines the global
+graphics base, external palette base row, each subtile's palette bits, transparency, and flips.
+
 The standard-sprite renderer now also covers every late native dispatch-table entry beyond the
 ordinary picker boundary. Exact disassembly of `$004CAFB0–$004CB23E` proves that `$EF`, `$F2`,
 `$F3`, `$F4`, and `$F5` are compatibility aliases of the `$E7`, `$EA`, `$EB`, `$EC`, and `$ED`
