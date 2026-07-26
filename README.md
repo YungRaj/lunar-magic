@@ -422,6 +422,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   Controller batches can also atomically span properties, either object layer, sprites, Layer 3,
   and every auxiliary domain; one invalid late command rolls the entire batch back. Rendering,
   record/form parsing, panel composition, and lifecycle/persistence are separate native modules.
+  The automatically detected pristine SMW-US ROM editor also keeps a bounded staged history across
+  header, Layer 1 object, and sprite mutations. Undo can return byte-for-byte to the opened-ROM
+  baseline, redo survives ordinary navigation, and a divergent semantic edit invalidates only the
+  abandoned branch; the visible forms and canvas selection are refreshed after either operation.
   ROM-backed aggregate level-assets editing requires `LMPALOWN` evidence for its palette domain;
   protected colors remain read-only even while level, ExAnimation, and settings edits are staged in
   the same transaction. Its native adapter separates bounded evidence/profile lifecycle, focused

@@ -274,6 +274,7 @@ impl VanillaLevelEditor {
             "{} standard-object definitions (tileset {object_tileset:X})",
             object_family.display_name()
         ));
+        self.show_staged_history(ui);
         self.show_header_editor(ui, object_count, sprite_count);
         ui.separator();
         self.show_map16_preview(ui, &snapshot, object_tileset);
@@ -376,6 +377,80 @@ impl VanillaLevelEditor {
                 self.error = None;
             }
         });
+    }
+
+    fn show_staged_history(&mut self, ui: &mut egui::Ui) {
+        let Some(controller) = self.controller.as_ref() else {
+            return;
+        };
+        let can_undo = controller.can_undo();
+        let can_redo = controller.can_redo();
+        let modified = controller.is_modified();
+        let mut undo = false;
+        let mut redo = false;
+        ui.horizontal(|ui| {
+            undo = ui
+                .add_enabled(can_undo, egui::Button::new("Undo staged edit"))
+                .clicked();
+            redo = ui
+                .add_enabled(can_redo, egui::Button::new("Redo staged edit"))
+                .clicked();
+            ui.label(if modified {
+                "ROM has uncommitted level changes"
+            } else {
+                "Level matches the opened ROM"
+            });
+        });
+        if undo || redo {
+            let changed = if undo {
+                self.controller
+                    .as_mut()
+                    .expect("controller presence checked above")
+                    .undo()
+            } else {
+                self.controller
+                    .as_mut()
+                    .expect("controller presence checked above")
+                    .redo()
+            };
+            if changed {
+                self.refresh_forms_after_history();
+                self.error = None;
+            }
+        }
+    }
+
+    fn refresh_forms_after_history(&mut self) {
+        let Some(controller) = self.controller.as_ref() else {
+            return;
+        };
+        self.form = HeaderForm::from_controller(controller);
+        self.selected_object = self.selected_object.min(
+            controller
+                .level()
+                .layer1
+                .objects
+                .records
+                .len()
+                .saturating_sub(1),
+        );
+        self.object_form = controller
+            .level()
+            .layer1
+            .objects
+            .records
+            .get(self.selected_object)
+            .map_or_else(ObjectForm::default, ObjectForm::from_record);
+        self.selected_sprite = self
+            .selected_sprite
+            .min(controller.level().sprites.tokens.len().saturating_sub(1));
+        self.sprite_form = SpriteForm::from_token(
+            controller.level().sprites.header,
+            controller.level().sprites.tokens.get(self.selected_sprite),
+        );
+        self.object_placement_template = None;
+        self.dragging_object = None;
+        self.dragging_sprite = None;
     }
 
     fn load(

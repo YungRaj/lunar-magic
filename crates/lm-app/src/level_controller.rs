@@ -93,11 +93,15 @@ pub struct LevelController {
     sprite_lengths: lm_level::SpriteLengthTable,
     baseline: LoadedLevelSlot,
     level: LoadedLevelSlot,
+    undo: Vec<LoadedLevelSlot>,
+    redo: Vec<LoadedLevelSlot>,
     previous_layer1: Option<RatsBlock>,
     previous_sprites: Option<RatsBlock>,
 }
 
 impl LevelController {
+    const HISTORY_LIMIT: usize = 256;
+
     /// Decodes the level selected by a controller snapshot using explicit revision layout data.
     ///
     /// # Errors
@@ -161,6 +165,8 @@ impl LevelController {
             sprite_lengths: sprite_lengths.clone(),
             baseline: level.clone(),
             level,
+            undo: Vec::new(),
+            redo: Vec::new(),
             previous_layer1,
             previous_sprites,
         })
@@ -196,6 +202,34 @@ impl LevelController {
         self.level.sprites != self.baseline.sprites
     }
 
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    /// Restores the previous staged native level without touching the ROM snapshot.
+    pub fn undo(&mut self) -> bool {
+        let Some(previous) = self.undo.pop() else {
+            return false;
+        };
+        push_bounded(&mut self.redo, std::mem::replace(&mut self.level, previous));
+        true
+    }
+
+    /// Reapplies the next staged native level without touching the ROM snapshot.
+    pub fn redo(&mut self) -> bool {
+        let Some(next) = self.redo.pop() else {
+            return false;
+        };
+        push_bounded(&mut self.undo, std::mem::replace(&mut self.level, next));
+        true
+    }
+
     /// Applies ordered native edits to a staged clone.
     ///
     /// # Errors
@@ -203,12 +237,25 @@ impl LevelController {
     /// Returns [`LevelControllerError`] with the failing command index. A failure leaves both the
     /// decoded model and its source snapshot unchanged.
     pub fn apply_edits(&mut self, edits: &[NativeLevelEdit]) -> Result<(), LevelControllerError> {
+        let previous = self.level.clone();
         crate::native_level_edit_batch::apply_loaded_level_edits(
             &mut self.level,
             edits,
             &self.sprite_lengths,
-        )
+        )?;
+        if self.level != previous {
+            push_bounded(&mut self.undo, previous);
+            self.redo.clear();
+        }
+        Ok(())
     }
+}
+
+fn push_bounded(history: &mut Vec<LoadedLevelSlot>, value: LoadedLevelSlot) {
+    if history.len() == LevelController::HISTORY_LIMIT {
+        history.remove(0);
+    }
+    history.push(value);
 }
 
 #[cfg(test)]

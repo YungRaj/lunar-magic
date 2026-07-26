@@ -166,6 +166,76 @@ fn decoded_edit_allocates_through_app_and_reloads_natively() {
 }
 
 #[test]
+fn staged_history_restores_baseline_and_invalidates_divergent_redo() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    let baseline = controller.level().clone();
+
+    assert!(!controller.can_undo());
+    assert!(!controller.can_redo());
+    assert!(!controller.undo());
+    assert!(!controller.redo());
+
+    controller
+        .apply_edits(&[NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(
+            3,
+        ))])
+        .unwrap();
+    controller
+        .apply_edits(&[NativeLevelEdit::ReplaceSprite {
+            index: 0,
+            token: SpriteToken::Record(SpriteRecord {
+                encoded: vec![0, 0, 9],
+            }),
+        }])
+        .unwrap();
+    assert!(controller.can_undo());
+    assert!(!controller.can_redo());
+    assert!(controller.is_modified());
+
+    assert!(controller.undo());
+    assert_eq!(controller.level().sprites, baseline.sprites);
+    assert!(controller.undo());
+    assert_eq!(*controller.level(), baseline);
+    assert!(!controller.is_modified());
+    assert!(controller.can_redo());
+
+    assert!(controller.redo());
+    controller
+        .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
+            index: 0,
+            record: ObjectRecord::new(vec![6, 5, 4]).unwrap(),
+        }])])
+        .unwrap();
+    assert!(!controller.can_redo());
+    assert!(controller.undo());
+    assert_eq!(controller.level().layer1.objects, baseline.layer1.objects);
+}
+
+#[test]
+fn failed_and_noop_staged_edits_do_not_create_history() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    let original = controller.level().clone();
+
+    controller.apply_edits(&[]).unwrap();
+    assert!(!controller.can_undo());
+    assert!(
+        controller
+            .apply_edits(&[NativeLevelEdit::RemoveSprite { index: 99 }])
+            .is_err()
+    );
+    assert_eq!(*controller.level(), original);
+    assert!(!controller.can_undo());
+}
+
+#[test]
 fn owned_level_commit_reclaims_both_snapshot_streams_and_undo_restores_them() {
     let (rom, manifest) = tagged_test_rom();
     let mut app = AppState::default();

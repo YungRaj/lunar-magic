@@ -233,7 +233,10 @@ batches use an explicit policy so revision-native bank limits and the larger bou
 semantic boundary remain distinct; every raw record retains its revision-specific extension bytes.
 Late index failures, malformed records, count/length overflow, and final encoded-size failure leave
 the original ordering and bytes unchanged. Successful native batches are reparsed to prove lossless
-serialization.
+serialization. The direct pristine-ROM editor wraps successful mixed-domain batches in a bounded
+staged history: exact baseline restoration, redo, divergent-branch invalidation, no-op suppression,
+failed-batch isolation, and form/canvas resynchronization are independently exercised before ROM
+commit.
 
 Auxiliary level editing stages entrances, screen exits, secondary exits, and Map16 overrides in one
 cross-domain transaction. The first three retain their explicit sequence ordering; Map16 overrides
