@@ -102,7 +102,8 @@ pub use object::{
 };
 pub use object_editing::{ObjectEdit, ObjectEditError};
 pub use object_fields::{
-    ObjectCoordinateNibbles, ObjectFieldError, ObjectScreenJump, ScreenJumpEncoding,
+    ObjectCoordinateNibbles, ObjectFieldError, ObjectScreenExit, ObjectScreenJump,
+    ScreenExitObjectEncoding, ScreenJumpEncoding,
 };
 pub use object_placement::NativeObjectPlacement;
 pub use object_relocation::ObjectRelocationError;

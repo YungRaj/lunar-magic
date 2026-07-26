@@ -6,6 +6,8 @@ pub enum ObjectFieldError {
     InvalidCoordinateNibble { first: u8, second: u8 },
     NotScreenJump,
     InvalidScreenJumpTarget(u16),
+    NotScreenExit,
+    InvalidScreenExitScreen(u8),
     TerminatorCollision,
     UnknownEncodedLength,
     EncodedLengthMismatch { expected: usize, actual: usize },
@@ -70,6 +72,31 @@ impl ObjectRecord {
         Some(ObjectScreenJump {
             encoding,
             packed_target,
+        })
+    }
+
+    /// Decodes a native Layer 1 screen-exit object.
+    ///
+    /// Lunar Magic uses command zero with parameter `0` for the compact four-byte form and
+    /// parameter `2` for the five-byte form. The screen index occupies byte 0's low five bits.
+    /// The compact form stores the destination high nibble in byte 1; the extended form stores
+    /// the complete high byte in its second extension byte.
+    #[must_use]
+    pub fn screen_exit(&self) -> Option<ObjectScreenExit> {
+        if self.command_id() != 0 {
+            return None;
+        }
+        let (encoding, destination_high) = match self.parameter() {
+            0 if self.encoded.len() == 4 => {
+                (ScreenExitObjectEncoding::Compact, self.encoded[1] & 0x0f)
+            }
+            2 if self.encoded.len() == 5 => (ScreenExitObjectEncoding::Extended, self.encoded[4]),
+            _ => return None,
+        };
+        Some(ObjectScreenExit {
+            encoding,
+            screen: self.encoded[0] & 0x1f,
+            destination_and_flags: u16::from_le_bytes([self.encoded[3], destination_high]),
         })
     }
 
@@ -173,6 +200,39 @@ impl ObjectRecord {
         self.encoded = candidate;
         Ok(())
     }
+
+    /// Rewrites an existing screen-exit object using Lunar Magic's canonical compact/extended
+    /// selection while preserving the unrelated new-screen bit in byte 0.
+    ///
+    /// Destinations whose high byte fits in four bits use parameter `0`; all others use parameter
+    /// `2` and the five-byte representation. This deliberately permits the record shape to change,
+    /// matching Lunar Magic's recovered `SetScreenExitObjectForScreen` routine.
+    ///
+    /// # Errors
+    ///
+    /// Rejects ordinary objects and screen indices above 31 without changing the record.
+    pub fn set_screen_exit(
+        &mut self,
+        screen: u8,
+        destination_and_flags: u16,
+    ) -> Result<(), ObjectFieldError> {
+        if self.screen_exit().is_none() {
+            return Err(ObjectFieldError::NotScreenExit);
+        }
+        if screen > 0x1f {
+            return Err(ObjectFieldError::InvalidScreenExitScreen(screen));
+        }
+        let [low, high] = destination_and_flags.to_le_bytes();
+        let advance = self.encoded[0] & 0x80;
+        let candidate = if destination_and_flags & 0xf000 == 0 {
+            vec![advance | screen, high & 0x0f, 0, low]
+        } else {
+            vec![advance | screen, 0, 2, low, high]
+        };
+        validate_candidate(&candidate)?;
+        self.encoded = candidate;
+        Ok(())
+    }
 }
 
 /// The two raw coordinate nibbles whose X/Y interpretation depends on level orientation.
@@ -194,6 +254,20 @@ pub enum ScreenJumpEncoding {
 pub struct ObjectScreenJump {
     pub encoding: ScreenJumpEncoding,
     pub packed_target: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScreenExitObjectEncoding {
+    Compact,
+    Extended,
+}
+
+/// Exact native screen-exit fields recovered from Lunar Magic's Layer 1 object synchronizer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObjectScreenExit {
+    pub encoding: ScreenExitObjectEncoding,
+    pub screen: u8,
+    pub destination_and_flags: u16,
 }
 
 fn validate_candidate(encoded: &[u8]) -> Result<(), ObjectFieldError> {
@@ -251,6 +325,50 @@ mod tests {
             })
         );
         assert_eq!(record, original);
+    }
+
+    #[test]
+    fn screen_exit_forms_decode_and_canonically_change_shape() {
+        let mut compact = ObjectRecord::new(vec![0x85, 0x0a, 0, 0x34]).unwrap();
+        assert_eq!(
+            compact.screen_exit(),
+            Some(ObjectScreenExit {
+                encoding: ScreenExitObjectEncoding::Compact,
+                screen: 5,
+                destination_and_flags: 0x0a34,
+            })
+        );
+        compact.set_screen_exit(0x1f, 0xbcde).unwrap();
+        assert_eq!(compact.encoded(), &[0x9f, 0, 2, 0xde, 0xbc]);
+        assert_eq!(
+            compact.screen_exit(),
+            Some(ObjectScreenExit {
+                encoding: ScreenExitObjectEncoding::Extended,
+                screen: 0x1f,
+                destination_and_flags: 0xbcde,
+            })
+        );
+        compact.set_screen_exit(2, 0x0123).unwrap();
+        assert_eq!(compact.encoded(), &[0x82, 1, 0, 0x23]);
+    }
+
+    #[test]
+    fn screen_exit_edit_rejects_wrong_record_and_screen_atomically() {
+        let mut ordinary = ObjectRecord::new(vec![1, 0x10, 2]).unwrap();
+        let original = ordinary.clone();
+        assert_eq!(
+            ordinary.set_screen_exit(0, 0x1234),
+            Err(ObjectFieldError::NotScreenExit)
+        );
+        assert_eq!(ordinary, original);
+
+        let mut exit = ObjectRecord::new(vec![0, 0, 0, 0]).unwrap();
+        let original = exit.clone();
+        assert_eq!(
+            exit.set_screen_exit(0x20, 0x1234),
+            Err(ObjectFieldError::InvalidScreenExitScreen(0x20))
+        );
+        assert_eq!(exit, original);
     }
 
     #[test]

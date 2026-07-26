@@ -71,6 +71,7 @@ struct ObjectForm {
     second_coordinate: u8,
     advances_screen: bool,
     screen_jump: Option<(lm_level::ScreenJumpEncoding, u16)>,
+    screen_exit: Option<(u8, u16)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -175,6 +176,9 @@ impl ObjectForm {
             screen_jump: record
                 .screen_jump()
                 .map(|jump| (jump.encoding, jump.packed_target)),
+            screen_exit: record
+                .screen_exit()
+                .map(|exit| (exit.screen, exit.destination_and_flags)),
         }
     }
 
@@ -1277,7 +1281,24 @@ impl VanillaLevelEditor {
         }
         self.object_catalog(ui);
         self.custom_object_catalog(ui, custom_objects, custom_map16);
-        if let Some((encoding, target)) = &mut self.object_form.screen_jump {
+        if let Some((screen, destination_and_flags)) = &mut self.object_form.screen_exit {
+            ui.label("Native screen-exit object");
+            egui::Grid::new("vanilla-screen-exit-fields").show(ui, |ui| {
+                ui.label("Source screen");
+                ui.add(egui::DragValue::new(screen).range(0..=0x1f));
+                ui.end_row();
+                ui.label("Destination / flags");
+                ui.add(
+                    egui::DragValue::new(destination_and_flags)
+                        .range(0..=u16::MAX)
+                        .hexadecimal(4, false, true),
+                );
+                ui.end_row();
+            });
+            ui.small(
+                "Values below 1000 use the compact four-byte form; higher flag values use Lunar Magic's five-byte extended form.",
+            );
+        } else if let Some((encoding, target)) = &mut self.object_form.screen_jump {
             ui.label(format!(
                 "Screen-jump control ({})",
                 match encoding {
@@ -1462,39 +1483,20 @@ impl VanillaLevelEditor {
                     has_selection,
                     egui::Button::new(if self.object_form.screen_jump.is_some() {
                         "Apply screen jump"
+                    } else if self.object_form.screen_exit.is_some() {
+                        "Apply screen exit"
                     } else {
                         "Apply object fields"
                     }),
                 )
                 .clicked()
             {
-                let edits = if let Some((_, packed_target)) = self.object_form.screen_jump {
-                    vec![ObjectEdit::SetScreenJumpTarget {
-                        index: self.selected_object,
-                        packed_target,
-                    }]
-                } else {
-                    vec![
-                        ObjectEdit::SetCommandId {
-                            index: self.selected_object,
-                            command_id: self.object_form.command_id,
-                        },
-                        ObjectEdit::SetParameter {
-                            index: self.selected_object,
-                            parameter: self.object_form.parameter,
-                        },
-                        ObjectEdit::SetCoordinateNibbles {
-                            index: self.selected_object,
-                            coordinates: ObjectCoordinateNibbles {
-                                first: self.object_form.first_coordinate,
-                                second: self.object_form.second_coordinate,
-                            },
-                        },
-                        ObjectEdit::SetAdvancesScreen {
-                            index: self.selected_object,
-                            advances: self.object_form.advances_screen,
-                        },
-                    ]
+                let edits = match self.selected_object_field_edits() {
+                    Ok(edits) => edits,
+                    Err(error) => {
+                        self.error = Some(error);
+                        return;
+                    }
                 };
                 if let Some(controller) = self.controller.as_mut() {
                     match controller.apply_edits(&[NativeLevelEdit::Objects(edits)]) {
@@ -1544,6 +1546,58 @@ impl VanillaLevelEditor {
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
         });
+    }
+
+    fn selected_object_field_edits(&self) -> Result<Vec<ObjectEdit>, String> {
+        if let Some((screen, destination_and_flags)) = self.object_form.screen_exit {
+            let mut record = self
+                .controller
+                .as_ref()
+                .and_then(|controller| {
+                    controller
+                        .level()
+                        .layer1
+                        .objects
+                        .records
+                        .get(self.selected_object)
+                })
+                .cloned()
+                .ok_or_else(|| "selected screen-exit object no longer exists".to_owned())?;
+            record
+                .set_screen_exit(screen, destination_and_flags)
+                .map_err(|error| error.to_string())?;
+            return Ok(vec![ObjectEdit::Replace {
+                index: self.selected_object,
+                record,
+            }]);
+        }
+        if let Some((_, packed_target)) = self.object_form.screen_jump {
+            return Ok(vec![ObjectEdit::SetScreenJumpTarget {
+                index: self.selected_object,
+                packed_target,
+            }]);
+        }
+        Ok(vec![
+            ObjectEdit::SetCommandId {
+                index: self.selected_object,
+                command_id: self.object_form.command_id,
+            },
+            ObjectEdit::SetParameter {
+                index: self.selected_object,
+                parameter: self.object_form.parameter,
+            },
+            ObjectEdit::SetCoordinateNibbles {
+                index: self.selected_object,
+                coordinates: ObjectCoordinateNibbles {
+                    first: self.object_form.first_coordinate,
+                    second: self.object_form.second_coordinate,
+                },
+            },
+            ObjectEdit::SetAdvancesScreen {
+                index: self.selected_object,
+                advances: self.object_form.advances_screen,
+            },
+        ])
     }
 
     fn apply_object_result(&mut self, edit: Result<NativeLevelEdit, String>) {
@@ -3441,6 +3495,7 @@ mod tests {
             second_coordinate: 6,
             advances_screen: true,
             screen_jump: None,
+            screen_exit: None,
         };
         let record = form.ordinary_record().unwrap();
         assert_eq!(record.encoded(), &[0xe5, 0x16, 0x42]);
@@ -3474,6 +3529,20 @@ mod tests {
         assert_eq!(
             ObjectForm::from_record(&ObjectRecord::new(vec![0, 0, 0]).unwrap()).screen_jump,
             None
+        );
+    }
+
+    #[test]
+    fn object_form_recognizes_native_screen_exit_fields() {
+        let compact = ObjectRecord::new(vec![0x85, 0x0a, 0, 0x34]).unwrap();
+        assert_eq!(
+            ObjectForm::from_record(&compact).screen_exit,
+            Some((5, 0x0a34))
+        );
+        let extended = ObjectRecord::new(vec![0x1f, 0, 2, 0xde, 0xbc]).unwrap();
+        assert_eq!(
+            ObjectForm::from_record(&extended).screen_exit,
+            Some((0x1f, 0xbcde))
         );
     }
 

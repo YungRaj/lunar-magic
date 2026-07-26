@@ -241,7 +241,11 @@ exposes only their packed target, and routes edits through the encoding-preservi
 operation so an exit cannot be accidentally rewritten as an ordinary object. The sprite form
 derives original/staged serialized lengths with the active SSC table and identifies the exact
 in-place or shared-bank copy-on-write save path; a live Lunar Magic 3.63 Wine oracle reopens the
-grown RATS-owned stream and exports the identical canonical decoded sprite sequence.
+grown RATS-owned stream and exports the identical canonical decoded sprite sequence. Native
+screen-exit records expose their five-bit source screen and exact 16-bit destination/flags value;
+semantic edits canonically switch between parameter-0 compact and parameter-2 extended shapes,
+preserve the unrelated new-screen bit, reject non-exit records/out-of-range screens atomically, and
+round-trip through a real Lunar Magic 3.63 MWL import/re-export.
 
 Auxiliary level editing stages entrances, screen exits, secondary exits, and Map16 overrides in one
 cross-domain transaction. The first three retain their explicit sequence ordering; Map16 overrides

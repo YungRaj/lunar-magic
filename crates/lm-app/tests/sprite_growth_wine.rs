@@ -3,7 +3,7 @@ use lm_level::{
     LevelObjectData, MwlFile, MwlSectionKind, NativeSpriteStream, ObjectCoordinateNibbles,
     ObjectEdit, SpriteLengthTable, SpriteToken,
 };
-use lm_project::{LevelSaveOptions, SpritePointerTable};
+use lm_project::{LevelSaveOptions, Project, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage, SnesPointer24, detect_identity};
 use std::fs;
@@ -16,6 +16,30 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 fn wine_path(path: &Path) -> String {
     let rendered = path.display().to_string().replace('/', r"\");
     format!(r"Z:\{}", rendered.trim_start_matches('\\'))
+}
+
+fn run_lunar_magic_level_command(
+    lunar_magic: &Path,
+    operation: &str,
+    rom: &Path,
+    artifact: &Path,
+    level: &str,
+) {
+    let output = ProcessCommand::new("wine")
+        .env("WINEDEBUG", "-all")
+        .arg(lunar_magic)
+        .arg(operation)
+        .arg(wine_path(rom))
+        .arg(wine_path(artifact))
+        .arg(level)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{operation} stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn shared_sprite_bank(image: &RomImage, bank_offset: usize) -> std::ops::Range<usize> {
@@ -355,5 +379,102 @@ fn lunar_magic_imports_and_reexports_a_rust_mwl_object_edit() {
     assert_eq!(LevelObjectData::parse(&payload.payload).unwrap(), expected);
     let reopened_rom = RomImage::from_bytes(fs::read(&imported_rom).unwrap()).unwrap();
     assert!(detect_identity(&reopened_rom).unwrap().checksum_matches());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+/// Proves Lunar Magic's recovered command-zero screen-exit forms reciprocally: Rust changes a real
+/// pristine exit across the compact/extended representation boundary, Lunar Magic imports it, and
+/// its own exporter emits the identical decoded Layer 1 stream.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_imports_and_reexports_a_rust_screen_exit_edit() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("Super Mario World (USA).sfc");
+    let rom_bytes = fs::read(&original_rom).unwrap();
+    let lengths = SpriteLengthTable::standard();
+    let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    let project = Project::new(RomImage::from_bytes(rom_bytes).unwrap());
+    let (level_number, record_index) = (0..layout.layer1.entries)
+        .find_map(|level| {
+            let loaded = project.load_level_slot(level, layout, &lengths).ok()?;
+            loaded
+                .layer1
+                .objects
+                .records
+                .iter()
+                .position(|record| record.screen_exit().is_some())
+                .map(|index| (level, index))
+        })
+        .expect("pristine SMW must contain a native screen-exit object");
+
+    let directory = std::env::temp_dir().join(format!(
+        "lm-screen-exit-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let imported_rom = directory.join("Lunar Magic screen exit import.sfc");
+    let source_mwl = directory.join("source screen exit.mwl");
+    let edited_mwl = directory.join("Rust edited screen exit.mwl");
+    let reexported_mwl = directory.join("reexported screen exit.mwl");
+    fs::copy(&original_rom, &imported_rom).unwrap();
+
+    let level = format!("{level_number:X}");
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &imported_rom,
+        &source_mwl,
+        &level,
+    );
+
+    let mut document =
+        MwlDocumentController::decode(edited_mwl.clone(), &fs::read(&source_mwl).unwrap()).unwrap();
+    let mut expected = document.layer1().unwrap();
+    let exit = expected.objects.records[record_index]
+        .screen_exit()
+        .expect("Rust and Lunar Magic object ordering must identify the same exit");
+    let replacement_destination = match exit.encoding {
+        lm_level::ScreenExitObjectEncoding::Compact => exit.destination_and_flags | 0x1000,
+        lm_level::ScreenExitObjectEncoding::Extended => exit.destination_and_flags & 0x0fff,
+    };
+    let mut replacement = expected.objects.records[record_index].clone();
+    replacement
+        .set_screen_exit(exit.screen, replacement_destination)
+        .unwrap();
+    expected
+        .objects
+        .apply_edits(&[ObjectEdit::Replace {
+            index: record_index,
+            record: replacement,
+        }])
+        .unwrap();
+    document.replace_layer1(0, &expected).unwrap();
+    fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ImportLevel",
+        &imported_rom,
+        &edited_mwl,
+        &level,
+    );
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &imported_rom,
+        &reexported_mwl,
+        &level,
+    );
+
+    let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
+    let payload = reexported.payload_section(MwlSectionKind::Layer1).unwrap();
+    assert_eq!(LevelObjectData::parse(&payload.payload).unwrap(), expected);
+    assert!(
+        detect_identity(&RomImage::from_bytes(fs::read(&imported_rom).unwrap()).unwrap())
+            .unwrap()
+            .checksum_matches()
+    );
     fs::remove_dir_all(directory).unwrap();
 }

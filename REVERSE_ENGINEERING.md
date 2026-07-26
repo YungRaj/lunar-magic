@@ -135,6 +135,18 @@ Most recent address-ordered batch (`004026f0`-`004039b0`) recovered dialog numer
 
 The `00403a50`-`00407a40` batches recovered the level-mode/property dialog: entrance and completion actions, FG/BG indices and offsets, horizontal/vertical scroll modes, Layer 3 choices, music and tileset names, manual object/sprite command parsing, and level-mode table editing.
 
+The screen-exit object boundary is now independently recovered across
+`DeduplicateScreenExitObjectsByScreen` (`00437190`),
+`BuildPackedScreenExitArrayFromObjects` (`0043acd0`), and
+`SetScreenExitObjectForScreen` (`0043ad90`). Layer 1 command-zero records use parameter `0` for a
+four-byte compact exit and parameter `2` for a five-byte extended exit. Byte 0's low five bits are
+the source screen. The compact form stores the destination/flag high nibble in byte 1 and its low
+byte in the first extension; the extended form stores the complete high byte in a second extension.
+Lunar Magic keeps at most one exit per screen, selects the compact form when the destination's top
+nibble is clear, upgrades to the extended form otherwise, and preserves byte 0's unrelated
+new-screen bit. A reciprocal Wine import/re-export now confirms this interpretation on an actual
+pristine-ROM screen-exit record.
+
 ## Confirmed subsystem map
 
 | Address | Ghidra name | Role | Confidence |

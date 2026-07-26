@@ -428,6 +428,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   abandoned branch; the visible forms and canvas selection are refreshed after either operation.
   Native screen-jump controls receive a separate packed-target editor that preserves their recovered
   low-first or high-first encoding and rejects targets that the original record form cannot hold.
+  Native screen-exit objects likewise have a dedicated source-screen and destination/flags form.
+  Editing follows Lunar Magic's recovered command-zero parameter-0/parameter-2 compact and extended
+  representations, can change record shape without losing the unrelated new-screen bit, and has a
+  reciprocal Lunar Magic 3.63 MWL import/re-export oracle.
   The sprite panel reports canonical original and staged byte lengths under the active SSC record
   table. Non-growing streams use the exclusive in-place path; growth uses the Wine-verified
   copy-on-write path confined to the pristine shared bank, updates only the selected level's low
