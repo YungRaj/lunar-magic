@@ -1819,6 +1819,14 @@ the indexed SP1–SP4 tiles and composed level palette alongside their display a
 external palettes work with ordinary sprite graphics and external graphics work without a
 `$20000` override by using palette rows 8–15. A ROM, tileset, or palette reload clears the remapped
 texture cache in addition to an SSC asset change.
+Fresh inspection of `RenderM16SidecarObjectsToPixelBuffer` (`0044F6AE`) also corrects the global
+source routing: the `$10000` mode-1 bias `$0000` is the foreground cache, mode 2 bias `$0400` is
+the SP cache, mode 3 bias `$0900` is the Layer 3 cache, and mode 0 bias `$2000` is external sprite
+graphics. The native renderer adds the ten-bit subtile index before reading its shared 64-byte
+decoded-tile buffer. Its ordinary palette base is rows 0–7 only when the complete graphics base is
+zero and rows 8–15 for every nonzero base. Rust now retains foreground and SP indexed tiles as
+separate sources, subtracts `$400` only for SP lookup, and refuses to alias mode 1 or the not-yet-
+loaded mode 3 cache to sprite artwork.
 
 The standard-sprite renderer now also covers every late native dispatch-table entry beyond the
 ordinary picker boundary. Exact disassembly of `$004CAFB0–$004CB23E` proves that `$EF`, `$F2`,

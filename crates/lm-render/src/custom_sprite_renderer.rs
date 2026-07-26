@@ -190,10 +190,11 @@ pub fn render_remapped_lunar_magic_custom_sprite_with(
         .collect()
 }
 
-/// Resolves a remapped SSC display when it can be drawn by the ordinary 1,024-tile sprite atlas.
+/// Resolves a remapped SSC display when it selects Lunar Magic's `$400` sprite-graphics region.
 ///
 /// Custom palette blocks require a palette-aware raster source and therefore return `None` here
-/// instead of silently drawing with the wrong vanilla colors.
+/// instead of silently drawing with the wrong vanilla colors. Foreground (`$000`) and Layer 3
+/// (`$900`) sources also return `None`; they are not aliases of the sprite atlas.
 #[must_use]
 pub fn render_atlas_lunar_magic_custom_sprite_with(
     table: &SscResolvedTable,
@@ -224,7 +225,9 @@ pub fn render_atlas_lunar_magic_custom_sprite_with(
 }
 
 fn remap_atlas_subtile(word: u16, graphics_base: u16) -> Option<u16> {
-    let tile = (word & 0x03ff).checked_add(graphics_base)?;
+    let tile = (word & 0x03ff)
+        .checked_add(graphics_base)?
+        .checked_sub(0x400)?;
     (tile < 0x400).then_some((word & !0x03ff) | tile)
 }
 
@@ -296,7 +299,7 @@ mod tests {
 
     #[test]
     fn atlas_render_applies_representable_tile_bases_and_rejects_external_pages() {
-        let source = SscSidecar::decode(b"10\t2\t0,0,20\n10000\t1\t20-20,30\n").unwrap();
+        let source = SscSidecar::decode(b"10\t2\t0,0,20\n10000\t2\t20-20,30\n").unwrap();
         let table = lm_level::SscResolvedTable::from_sidecar(&source);
         let sprite = table.default_display(0x10, 0).unwrap();
         let parts = render_atlas_lunar_magic_custom_sprite_with(&table, sprite, |_| {
@@ -305,7 +308,18 @@ mod tests {
         .unwrap();
         assert_eq!(parts[0].subtiles, [0x31, 0x4032, 0x8033, 0xc034]);
 
-        let external = SscSidecar::decode(b"10\t2\t0,0,20\n10000\t2\t20-20,30\n").unwrap();
+        let foreground = SscSidecar::decode(b"10\t2\t0,0,20\n10000\t1\t20-20,30\n").unwrap();
+        let table = lm_level::SscResolvedTable::from_sidecar(&foreground);
+        assert!(
+            render_atlas_lunar_magic_custom_sprite_with(
+                &table,
+                table.default_display(0x10, 0).unwrap(),
+                |_| Some([1, 2, 3, 4]),
+            )
+            .is_none()
+        );
+
+        let external = SscSidecar::decode(b"10\t2\t0,0,20\n10000\t0\t20-20,30\n").unwrap();
         let table = lm_level::SscResolvedTable::from_sidecar(&external);
         assert!(
             render_atlas_lunar_magic_custom_sprite_with(

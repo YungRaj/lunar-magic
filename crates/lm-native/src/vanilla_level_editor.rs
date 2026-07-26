@@ -224,6 +224,7 @@ pub(crate) struct VanillaLevelEditor {
     map16_texture: Option<egui::TextureHandle>,
     sprite_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
+    foreground_tiles: Vec<lm_graphics::IndexedTile>,
     sprite_palette: Option<lm_graphics::Palette>,
     foreground_texture: Option<egui::TextureHandle>,
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
@@ -686,6 +687,7 @@ impl VanillaLevelEditor {
         self.map16_texture = None;
         self.sprite_texture = None;
         self.sprite_tiles.clear();
+        self.foreground_tiles.clear();
         self.sprite_palette = None;
         self.foreground_texture = None;
         self.map16_summary = None;
@@ -714,6 +716,7 @@ impl VanillaLevelEditor {
                 self.map16_texture = None;
                 self.sprite_texture = None;
                 self.sprite_tiles.clear();
+                self.foreground_tiles.clear();
                 self.sprite_palette = None;
                 self.external_sprite_textures.clear();
                 self.foreground_texture = None;
@@ -759,6 +762,7 @@ impl VanillaLevelEditor {
                             egui::TextureOptions::NEAREST,
                         ));
                         self.sprite_tiles = preview.sprite_tiles;
+                        self.foreground_tiles = preview.foreground_tiles;
                         self.sprite_palette = Some(preview.palette);
                     }
                     Err(error) => self.map16_error = Some(error),
@@ -854,6 +858,7 @@ impl VanillaLevelEditor {
             custom_sprites,
             SpriteRasterAssets {
                 external: external_assets,
+                foreground_tiles: &self.foreground_tiles,
                 vanilla_tiles: &self.sprite_tiles,
                 vanilla_palette: self.sprite_palette.as_ref(),
             },
@@ -2057,6 +2062,7 @@ impl VanillaLevelEditor {
                                         parts,
                                         SpriteRasterAssets {
                                             external: external_assets,
+                                            foreground_tiles: &self.foreground_tiles,
                                             vanilla_tiles: &self.sprite_tiles,
                                             vanilla_palette: self.sprite_palette.as_ref(),
                                         },
@@ -3633,6 +3639,7 @@ fn external_sprite_definition(
 #[derive(Clone, Copy)]
 struct SpriteRasterAssets<'a> {
     external: &'a lm_graphics::ExternalSpriteAssets,
+    foreground_tiles: &'a [lm_graphics::IndexedTile],
     vanilla_tiles: &'a [lm_graphics::IndexedTile],
     vanilla_palette: Option<&'a lm_graphics::Palette>,
 }
@@ -3676,15 +3683,15 @@ fn ensure_remapped_part_textures(
         }
         let Some(canvas) = lm_render::raster_remapped_custom_sprite_tile_with(
             part,
-            |global_tile| {
-                assets
-                    .external
-                    .graphics_tile(global_tile)
-                    .or_else(|| assets.vanilla_tiles.get(usize::from(global_tile)))
-            },
+            |global_tile| resolve_ssc_graphics_tile(assets, global_tile),
             |source, palette, color| match source {
                 Some(source) => assets.external.palette_color(source, palette, color),
-                None => vanilla_sprite_palette_color(assets.vanilla_palette?, palette, color),
+                None => ordinary_ssc_palette_color(
+                    assets.vanilla_palette?,
+                    part.graphics_base,
+                    palette,
+                    color,
+                ),
             },
         ) else {
             continue;
@@ -3710,15 +3717,32 @@ fn ensure_remapped_part_textures(
     }
 }
 
-fn vanilla_sprite_palette_color(
+fn resolve_ssc_graphics_tile(
+    assets: SpriteRasterAssets<'_>,
+    global_tile: u16,
+) -> Option<&lm_graphics::IndexedTile> {
+    if global_tile >= lm_graphics::EXTERNAL_SPRITE_GRAPHICS_BASE_TILE {
+        return assets.external.graphics_tile(global_tile);
+    }
+    if let Some(sprite_tile) = global_tile.checked_sub(0x400)
+        && sprite_tile < 0x400
+    {
+        return assets.vanilla_tiles.get(usize::from(sprite_tile));
+    }
+    assets.foreground_tiles.get(usize::from(global_tile))
+}
+
+fn ordinary_ssc_palette_color(
     palette: &lm_graphics::Palette,
+    graphics_base: u16,
     subtile_palette: u8,
     color: u8,
 ) -> Option<lm_graphics::Rgb8> {
     if subtile_palette > 7 || !(1..=15).contains(&color) {
         return None;
     }
-    let row = 8_usize.checked_add(usize::from(subtile_palette))?;
+    let base_row = usize::from(graphics_base != 0) * 8;
+    let row = base_row.checked_add(usize::from(subtile_palette))?;
     palette
         .colors
         .get(row.checked_mul(16)?.checked_add(usize::from(color))?)
@@ -4533,6 +4557,7 @@ mod tests {
             &parts,
             SpriteRasterAssets {
                 external: &assets,
+                foreground_tiles: &[],
                 vanilla_tiles: &[],
                 vanilla_palette: None,
             },
@@ -4545,6 +4570,7 @@ mod tests {
             &parts,
             SpriteRasterAssets {
                 external: &lm_graphics::ExternalSpriteAssets::default(),
+                foreground_tiles: &[],
                 vanilla_tiles: &[],
                 vanilla_palette: None,
             },
@@ -4565,7 +4591,8 @@ mod tests {
             &[vanilla_graphics_part],
             SpriteRasterAssets {
                 external: &assets,
-                vanilla_tiles: std::slice::from_ref(&opaque),
+                foreground_tiles: std::slice::from_ref(&opaque),
+                vanilla_tiles: &[],
                 vanilla_palette: None,
             },
         );
@@ -4587,11 +4614,60 @@ mod tests {
             &[vanilla_palette_part],
             SpriteRasterAssets {
                 external: &assets,
+                foreground_tiles: &[],
                 vanilla_tiles: &[],
                 vanilla_palette: Some(&lm_graphics::Palette { colors }),
             },
         );
         assert!(textures.contains_key(&vanilla_palette_part));
+    }
+
+    #[test]
+    fn ssc_global_graphics_regions_route_foreground_and_sprite_tiles_separately() {
+        let foreground = lm_graphics::IndexedTile::new([1; lm_graphics::IndexedTile::PIXEL_COUNT]);
+        let sprite = lm_graphics::IndexedTile::new([2; lm_graphics::IndexedTile::PIXEL_COUNT]);
+        let external = lm_graphics::ExternalSpriteAssets::default();
+        let assets = SpriteRasterAssets {
+            external: &external,
+            foreground_tiles: std::slice::from_ref(&foreground),
+            vanilla_tiles: std::slice::from_ref(&sprite),
+            vanilla_palette: None,
+        };
+        assert_eq!(resolve_ssc_graphics_tile(assets, 0), Some(&foreground));
+        assert_eq!(resolve_ssc_graphics_tile(assets, 0x400), Some(&sprite));
+        assert_eq!(resolve_ssc_graphics_tile(assets, 0x900), None);
+        assert_eq!(resolve_ssc_graphics_tile(assets, 0x2000), None);
+    }
+
+    #[test]
+    fn ordinary_ssc_palette_base_matches_zero_versus_nonzero_graphics_base() {
+        let foreground = lm_graphics::Bgr555::from_rgb8(lm_graphics::Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        });
+        let sprite = lm_graphics::Bgr555::from_rgb8(lm_graphics::Rgb8 {
+            red: 0,
+            green: 0,
+            blue: 255,
+        });
+        let mut colors = vec![lm_graphics::Bgr555::default(); 16 * 16];
+        colors[1] = foreground;
+        colors[8 * 16 + 1] = sprite;
+        let palette = lm_graphics::Palette { colors };
+        assert_eq!(
+            ordinary_ssc_palette_color(&palette, 0, 0, 1),
+            Some(foreground.to_rgb8())
+        );
+        assert_eq!(
+            ordinary_ssc_palette_color(&palette, 0x400, 0, 1),
+            Some(sprite.to_rgb8())
+        );
+        assert_eq!(
+            ordinary_ssc_palette_color(&palette, 0x30, 0, 1),
+            Some(sprite.to_rgb8()),
+            "the native renderer selects rows 8–15 for every nonzero graphics base"
+        );
     }
 
     #[test]

@@ -548,8 +548,11 @@ interactive frontends cannot bypass confirmation and request correlation through
   background I/O, and caches successfully rasterized definitions in both the custom catalog and
   level canvas. Mixed definitions are supported as well: ordinary SP1–SP4 indexed graphics can
   use an SSC external palette, and `ExSpriteGFX` tiles can use the current level's ordinary sprite
-  palette. Reopening or closing the SSC, changing the ROM revision, or changing the active sprite
-  tileset invalidates those textures.
+  palette. The proven global source map is not conflated with the sprite atlas: mode 1 (`+$0000`)
+  resolves the retained foreground tiles, mode 2 (`+$0400`) resolves SP1–SP4 after subtracting
+  `$400`, and mode 0 (`+$2000`) resolves external slots. Mode 3 (`+$0900`) stays visibly unresolved
+  until its Layer 3 indexed source is loaded. Reopening or closing the SSC, changing the ROM
+  revision, or changing the active graphics tilesets invalidates those textures.
   Ordinary objects can likewise be dragged across all 32 native screens on horizontal or vertical
   canvases. The atomic relocation updates the two proven coordinate nibbles, stably orders ordinary
   objects by absolute screen, and regenerates minimal advance bits or canonical screen-jump
