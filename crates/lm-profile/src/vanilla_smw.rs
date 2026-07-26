@@ -2,7 +2,7 @@
 
 use lm_project::{
     GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout, LevelPointerTable,
-    LevelRomLayout, SpritePointerTable, VanillaEntranceRomLayout,
+    LevelRomLayout, SeparateMidwayPatchLocator, SpritePointerTable, VanillaEntranceRomLayout,
 };
 use lm_rom::Mapper;
 use lm_rom::{RomError, RomImage};
@@ -31,6 +31,8 @@ pub const SMW_US_V1_ENTRANCE_POSITION_OFFSET: usize = 0x2f000;
 pub const SMW_US_V1_ENTRANCE_VERTICAL_SETTINGS_OFFSET: usize = 0x2f200;
 pub const SMW_US_V1_ENTRANCE_SCREEN_AND_METHOD_OFFSET: usize = 0x2f400;
 pub const SMW_US_V1_ENTRANCE_LEVEL_MODE_AND_SCREEN_OFFSET: usize = 0x2f600;
+/// JSL hook installed by Lunar Magic's separate-midway runtime.
+pub const SMW_US_V1_SEPARATE_MIDWAY_HOOK_OFFSET: usize = 0x2d9e3;
 /// Four-byte graphics-file assignment rows for the 16 native object tilesets.
 pub const SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET: usize = 0x292b;
 pub const SMW_US_V1_OBJECT_TILESETS: usize = 16;
@@ -199,6 +201,14 @@ pub const fn smw_us_v1_vanilla_entrance_layout() -> VanillaEntranceRomLayout {
         screen_and_method_offset: SMW_US_V1_ENTRANCE_SCREEN_AND_METHOD_OFFSET,
         level_mode_and_screen_offset: SMW_US_V1_ENTRANCE_LEVEL_MODE_AND_SCREEN_OFFSET,
         entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+    }
+}
+
+#[must_use]
+pub const fn smw_us_v1_separate_midway_locator() -> SeparateMidwayPatchLocator {
+    SeparateMidwayPatchLocator {
+        mapper: Mapper::LoRom,
+        hook_offset: SMW_US_V1_SEPARATE_MIDWAY_HOOK_OFFSET,
     }
 }
 

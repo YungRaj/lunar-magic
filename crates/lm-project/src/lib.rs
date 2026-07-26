@@ -62,6 +62,7 @@ mod rats_reclamation;
 mod relocatable_patch;
 mod rom_expansion;
 mod secondary_exit_patch;
+mod separate_midway_patch;
 mod shared_palette_io;
 mod title_recording_patch;
 mod title_tilemap_patch;
@@ -212,6 +213,9 @@ pub use relocatable_patch::{
 pub use secondary_exit_patch::{
     LoadedSecondaryExitTable, SecondaryExitPatchError, SecondaryExitPatchLocator,
     SecondaryExitStorage,
+};
+pub use separate_midway_patch::{
+    LoadedSeparateMidwayTable, SeparateMidwayPatchError, SeparateMidwayPatchLocator,
 };
 pub use shared_palette_io::{SharedPaletteIoError, SharedPaletteRomLayout};
 pub use title_recording_patch::{

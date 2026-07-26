@@ -62,6 +62,7 @@ pub use editing::LevelEditError;
 pub use entrance::{
     Entrance, EntranceKind, MwlSecondaryExit, MwlSecondaryExitDecodeError, ScreenExit,
     SecondaryExit, SecondaryExitEncodingError, SecondaryExitTable, SecondaryExitTableFileError,
+    SeparateMidwayEntrance, SeparateMidwayEntranceTable, SeparateMidwayEntranceTableError,
 };
 pub use expanded_settings::{ExpandedLevelSettingsError, ExpandedLevelSettingsRecord};
 pub use expanded_settings_layer3::{

@@ -5,7 +5,7 @@ use lm_app::{
 };
 use lm_level::{
     LegacyHeaderEdit, NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
-    SpriteLengthTable, SpriteToken,
+    SeparateMidwayEntrance, SpriteLengthTable, SpriteToken,
 };
 use lm_project::LevelSaveOptions;
 use lm_project::VanillaMainEntrance;
@@ -202,6 +202,8 @@ pub(crate) struct VanillaLevelEditor {
     controller: Option<LevelController>,
     entrance_controller: Option<VanillaEntranceController>,
     entrance_form: VanillaMainEntrance,
+    midway_form: Option<SeparateMidwayEntrance>,
+    midway_install_form: SeparateMidwayEntrance,
     form: HeaderForm,
     selected_object: usize,
     object_form: ObjectForm,
@@ -418,25 +420,75 @@ impl VanillaLevelEditor {
                     u8::MAX,
                 );
             });
+            if let Some(midway) = &mut self.midway_form {
+                ui.separator();
+                ui.label("Installed separate midway entrance");
+                egui::Grid::new("installed-midway-entrance").show(ui, |ui| {
+                    header_row(ui, "Flags", &mut midway.flags, u8::MAX);
+                    header_row(ui, "Position", &mut midway.position, u8::MAX);
+                    header_row(
+                        ui,
+                        "Additional flags",
+                        &mut midway.additional_flags,
+                        u8::MAX,
+                    );
+                    header_row(ui, "High position", &mut midway.high_position, u8::MAX);
+                });
+            } else {
+                ui.label("Separate-midway runtime is not installed. Initial values:");
+                egui::Grid::new("new-midway-entrance").show(ui, |ui| {
+                    header_row(ui, "Flags", &mut self.midway_install_form.flags, u8::MAX);
+                    header_row(
+                        ui,
+                        "Position",
+                        &mut self.midway_install_form.position,
+                        u8::MAX,
+                    );
+                    header_row(
+                        ui,
+                        "Additional flags",
+                        &mut self.midway_install_form.additional_flags,
+                        u8::MAX,
+                    );
+                    header_row(
+                        ui,
+                        "High position",
+                        &mut self.midway_install_form.high_position,
+                        u8::MAX,
+                    );
+                });
+            }
         });
         let controller = self.entrance_controller.as_mut()?;
+        if self.midway_form.is_none() && ui.button("Install separate midway runtime").clicked() {
+            return match controller.prepare_midway_install(self.midway_install_form) {
+                Ok(prepared) => Some(prepared.into_command()),
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    None
+                }
+            };
+        }
         ui.horizontal(|ui| {
-            if ui.button("Stage main entrance").clicked() {
+            if ui.button("Stage entrance fields").clicked() {
                 controller.set_entrance(self.entrance_form);
+                if let Some(midway) = self.midway_form {
+                    controller.set_midway_entrance(midway);
+                }
             }
             if ui.button("Reset entrance").clicked() {
                 self.entrance_form = controller.entrance();
+                self.midway_form = controller.midway_entrance();
             }
         });
         if ui
             .add_enabled(
                 controller.is_modified(),
-                egui::Button::new("Commit main entrance to ROM"),
+                egui::Button::new("Commit entrances to ROM"),
             )
             .clicked()
         {
-            return match controller.prepare_commit(format!("Edit level {level:03X} main entrance"))
-            {
+            return match controller.prepare_commit(format!("Edit level {level:03X} entrances")) {
                 Ok(prepared) => Some(prepared.into_command()),
                 Err(error) => {
                     self.error = Some(error.to_string());
@@ -542,15 +594,29 @@ impl VanillaLevelEditor {
             &sprite_lengths,
         ) {
             Ok(controller) => {
-                self.entrance_controller = VanillaEntranceController::decode(
+                let entrance_error = match VanillaEntranceController::decode_with_midway(
                     snapshot,
                     lm_profile::smw_us_v1_vanilla_entrance_layout(),
-                )
-                .ok();
+                    lm_profile::smw_us_v1_separate_midway_locator(),
+                ) {
+                    Ok(entrance) => {
+                        self.entrance_controller = Some(entrance);
+                        None
+                    }
+                    Err(error) => {
+                        self.entrance_controller = None;
+                        Some(error.to_string())
+                    }
+                };
                 self.entrance_form = self.entrance_controller.as_ref().map_or_else(
                     VanillaMainEntrance::default,
                     VanillaEntranceController::entrance,
                 );
+                self.midway_form = self
+                    .entrance_controller
+                    .as_ref()
+                    .and_then(VanillaEntranceController::midway_entrance);
+                self.midway_install_form = SeparateMidwayEntrance::default();
                 self.standard_object_map = RomImage::from_bytes(snapshot.rom_bytes.clone())
                     .ok()
                     .and_then(|rom| {
@@ -572,11 +638,12 @@ impl VanillaLevelEditor {
                     controller.level().sprites.tokens.first(),
                 );
                 self.controller = Some(controller);
-                self.error = None;
+                self.error = entrance_error;
             }
             Err(error) => {
                 self.controller = None;
                 self.entrance_controller = None;
+                self.midway_form = None;
                 self.error = Some(error.to_string());
             }
         }
@@ -587,6 +654,8 @@ impl VanillaLevelEditor {
         self.key = None;
         self.controller = None;
         self.entrance_controller = None;
+        self.midway_form = None;
+        self.midway_install_form = SeparateMidwayEntrance::default();
         self.error = None;
         self.map16_key = None;
         self.map16_texture = None;

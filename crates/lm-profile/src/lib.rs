@@ -44,6 +44,7 @@ mod revision_patch;
 mod secondary_exit;
 mod secondary_exit_install;
 mod secondary_exit_runtime;
+mod separate_midway_install;
 mod shared_palette;
 mod shared_palette_install;
 mod text;
@@ -327,6 +328,9 @@ pub use secondary_exit_runtime::{
     SMW_US_V1_SECONDARY_EXIT_INDEX_SUPPORT_LEN, SMW_US_V1_SECONDARY_EXIT_SECOND_READER_LEN,
     smw_us_v1_secondary_exit_first_reader, smw_us_v1_secondary_exit_second_reader,
 };
+pub use separate_midway_install::{
+    SeparateMidwayInstallBuildError, smw_us_v1_separate_midway_installation_plan,
+};
 pub use shared_palette::{
     SMW_US_V1_SHARED_PALETTE_EXPANDED_MARKER, SMW_US_V1_SHARED_PALETTE_EXPANDED_MARKER_OFFSET,
     SMW_US_V1_SHARED_PALETTE_OFFSET, smw_us_v1_shared_palette_layout,
@@ -367,13 +371,13 @@ pub use vanilla_smw::{
     SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET, SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET,
     SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET, SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET,
     SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET, SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS,
-    SMW_US_V1_OBJECT_TILESETS, SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET,
-    SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS, SMW_US_V1_SPRITE_TILESETS,
-    SMW_US_V1_VANILLA_GRAPHICS_FILES, SMW_US_V1_VANILLA_LEVEL_SLOTS,
+    SMW_US_V1_OBJECT_TILESETS, SMW_US_V1_SEPARATE_MIDWAY_HOOK_OFFSET,
+    SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET, SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS,
+    SMW_US_V1_SPRITE_TILESETS, SMW_US_V1_VANILLA_GRAPHICS_FILES, SMW_US_V1_VANILLA_LEVEL_SLOTS,
     SmwUsV1ObjectTilesetGraphicsError, SmwUsV1SpriteTilesetGraphicsError,
-    smw_us_v1_object_tileset_graphics_files, smw_us_v1_sprite_tileset_graphics_files,
-    smw_us_v1_vanilla_entrance_layout, smw_us_v1_vanilla_graphics_layout,
-    smw_us_v1_vanilla_level_layout,
+    smw_us_v1_object_tileset_graphics_files, smw_us_v1_separate_midway_locator,
+    smw_us_v1_sprite_tileset_graphics_files, smw_us_v1_vanilla_entrance_layout,
+    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_level_layout,
 };
 pub use vanilla_standard_object_map::{
     SMW_US_V1_STANDARD_OBJECT_FAMILIES, SMW_US_V1_STANDARD_OBJECTS_PER_FAMILY,

@@ -15,6 +15,90 @@ pub struct Entrance {
     pub raw_flags: u16,
 }
 
+/// One record from Lunar Magic's four-plane separate-midway table.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SeparateMidwayEntrance {
+    pub flags: u8,
+    pub position: u8,
+    pub additional_flags: u8,
+    pub high_position: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SeparateMidwayEntranceTable {
+    pub entries: Vec<SeparateMidwayEntrance>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SeparateMidwayEntranceTableError {
+    pub actual: usize,
+    pub expected: usize,
+}
+
+impl std::fmt::Display for SeparateMidwayEntranceTableError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "separate-midway table has {} items, expected {}",
+            self.actual, self.expected
+        )
+    }
+}
+
+impl std::error::Error for SeparateMidwayEntranceTableError {}
+
+impl SeparateMidwayEntranceTable {
+    pub const ENTRY_COUNT: usize = 0x200;
+    pub const PLANE_COUNT: usize = 4;
+    pub const ENCODED_LEN: usize = Self::ENTRY_COUNT * Self::PLANE_COUNT;
+
+    /// Decodes the exact flags, position, additional-flags, and high-position planes.
+    ///
+    /// # Errors
+    ///
+    /// Rejects any input other than the recovered `$800`-byte table shape.
+    pub fn decode(bytes: &[u8]) -> Result<Self, SeparateMidwayEntranceTableError> {
+        if bytes.len() != Self::ENCODED_LEN {
+            return Err(SeparateMidwayEntranceTableError {
+                actual: bytes.len(),
+                expected: Self::ENCODED_LEN,
+            });
+        }
+        Ok(Self {
+            entries: (0..Self::ENTRY_COUNT)
+                .map(|index| SeparateMidwayEntrance {
+                    flags: bytes[index],
+                    position: bytes[Self::ENTRY_COUNT + index],
+                    additional_flags: bytes[Self::ENTRY_COUNT * 2 + index],
+                    high_position: bytes[Self::ENTRY_COUNT * 3 + index],
+                })
+                .collect(),
+        })
+    }
+
+    /// Encodes all four planes without normalizing any flag bits.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a record vector that is not exactly 512 entries.
+    pub fn encode(&self) -> Result<Vec<u8>, SeparateMidwayEntranceTableError> {
+        if self.entries.len() != Self::ENTRY_COUNT {
+            return Err(SeparateMidwayEntranceTableError {
+                actual: self.entries.len(),
+                expected: Self::ENTRY_COUNT,
+            });
+        }
+        let mut bytes = vec![0; Self::ENCODED_LEN];
+        for (index, entrance) in self.entries.iter().enumerate() {
+            bytes[index] = entrance.flags;
+            bytes[Self::ENTRY_COUNT + index] = entrance.position;
+            bytes[Self::ENTRY_COUNT * 2 + index] = entrance.additional_flags;
+            bytes[Self::ENTRY_COUNT * 3 + index] = entrance.high_position;
+        }
+        Ok(bytes)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ScreenExit {
     pub encoded: u32,
@@ -116,6 +200,26 @@ mod tests {
         assert_eq!(exit.destination_low(), 0x34);
         assert_eq!(exit.destination_high_and_flags(), 0x92);
         assert!(exit.is_present());
+    }
+
+    #[test]
+    fn separate_midway_planes_round_trip_in_native_order() {
+        let mut bytes = vec![0; SeparateMidwayEntranceTable::ENCODED_LEN];
+        bytes[5] = 0xa1;
+        bytes[0x205] = 0xb2;
+        bytes[0x405] = 0xc3;
+        bytes[0x605] = 0xd4;
+        let table = SeparateMidwayEntranceTable::decode(&bytes).unwrap();
+        assert_eq!(
+            table.entries[5],
+            SeparateMidwayEntrance {
+                flags: 0xa1,
+                position: 0xb2,
+                additional_flags: 0xc3,
+                high_position: 0xd4,
+            }
+        );
+        assert_eq!(table.encode().unwrap(), bytes);
     }
 
     #[test]

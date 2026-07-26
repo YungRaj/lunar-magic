@@ -138,6 +138,176 @@ fn rust_direct_rom_main_entrance_edit_is_exported_by_lunar_magic() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Proves owned direct updates to Lunar Magic's installed four-plane separate-midway table.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn rust_updates_installed_separate_midway_table_and_lunar_magic_reexports_it() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("Super Mario World (USA).sfc");
+    let directory = std::env::temp_dir().join(format!(
+        "lm-rom-midway-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let edited_rom = directory.join("installed midway.sfc");
+    let source_mwl = directory.join("source.mwl");
+    let install_mwl = directory.join("install.mwl");
+    let exported_mwl = directory.join("exported.mwl");
+    fs::copy(&original_rom, &edited_rom).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &source_mwl,
+        "105",
+    );
+    let mut mwl =
+        MwlDocumentController::decode(install_mwl.clone(), &fs::read(&source_mwl).unwrap())
+            .unwrap();
+    let header =
+        MwlLevelHeaderSection::decode(mwl.value().section(MwlSectionKind::LevelHeader)).unwrap();
+    let mut main = header.main_entrance();
+    main.flags |= 0x20;
+    let initial = lm_level::MwlMidwayEntranceSettings {
+        flags: 0xa5,
+        position: 0x6c,
+        high_position: 0x21,
+        additional_flags: 0x87,
+    };
+    mwl.apply_edits(
+        0,
+        &[
+            lm_app::MwlDocumentEdit::SetMainEntrance(main),
+            lm_app::MwlDocumentEdit::SetMidwayEntrance(initial),
+        ],
+    )
+    .unwrap();
+    fs::write(&install_mwl, mwl.begin_save().unwrap().bytes).unwrap();
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ImportLevel",
+        &edited_rom,
+        &install_mwl,
+        "105",
+    );
+
+    let mut app = AppState::default();
+    app.load_rom(fs::read(&edited_rom).unwrap()).unwrap();
+    app.dispatch(Command::SelectLevel(0x105)).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller = lm_app::VanillaEntranceController::decode_with_midway(
+        &snapshot,
+        lm_profile::smw_us_v1_vanilla_entrance_layout(),
+        lm_profile::smw_us_v1_separate_midway_locator(),
+    )
+    .unwrap();
+    let mut expected = controller.midway_entrance().unwrap();
+    assert_eq!(expected.flags, initial.flags);
+    assert_eq!(expected.position, initial.position);
+    assert_eq!(expected.additional_flags, initial.additional_flags);
+    assert_eq!(expected.high_position, initial.high_position);
+    expected.position ^= 1;
+    expected.high_position ^= 2;
+    controller.set_midway_entrance(expected);
+    app.dispatch(
+        controller
+            .prepare_commit("Wine installed midway oracle")
+            .unwrap()
+            .into_command(),
+    )
+    .unwrap();
+    fs::write(&edited_rom, app.project().unwrap().save_snapshot()).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &exported_mwl,
+        "105",
+    );
+    let exported = MwlFile::decode(&fs::read(&exported_mwl).unwrap()).unwrap();
+    let actual =
+        MwlLevelHeaderSection::decode(exported.section(MwlSectionKind::LevelHeader)).unwrap();
+    assert_eq!(
+        actual.midway_entrance(),
+        lm_level::MwlMidwayEntranceSettings {
+            flags: expected.flags,
+            position: expected.position,
+            high_position: expected.high_position,
+            additional_flags: expected.additional_flags,
+        }
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+/// Proves the clean-room first-time separate-midway installer is accepted by Lunar Magic.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn rust_installs_separate_midway_runtime_that_lunar_magic_reexports() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("Super Mario World (USA).sfc");
+    let directory = std::env::temp_dir().join(format!(
+        "lm-midway-install-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let installed_rom = directory.join("Rust installed midway.sfc");
+    let exported_mwl = directory.join("exported.mwl");
+
+    let mut app = AppState::default();
+    app.load_rom(fs::read(&original_rom).unwrap()).unwrap();
+    app.dispatch(Command::SelectLevel(0x105)).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let controller = lm_app::VanillaEntranceController::decode_with_midway(
+        &snapshot,
+        lm_profile::smw_us_v1_vanilla_entrance_layout(),
+        lm_profile::smw_us_v1_separate_midway_locator(),
+    )
+    .unwrap();
+    assert!(controller.midway_entrance().is_none());
+    let expected = lm_level::SeparateMidwayEntrance {
+        flags: 0xa5,
+        position: 0x6c,
+        additional_flags: 0x87,
+        high_position: 0x21,
+    };
+    app.dispatch(
+        controller
+            .prepare_midway_install(expected)
+            .unwrap()
+            .into_command(),
+    )
+    .unwrap();
+    fs::write(&installed_rom, app.project().unwrap().save_snapshot()).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &installed_rom,
+        &exported_mwl,
+        "105",
+    );
+    let exported = MwlFile::decode(&fs::read(&exported_mwl).unwrap()).unwrap();
+    let header =
+        MwlLevelHeaderSection::decode(exported.section(MwlSectionKind::LevelHeader)).unwrap();
+    assert_ne!(header.main_entrance().flags & 0x20, 0);
+    assert_eq!(
+        header.midway_entrance(),
+        lm_level::MwlMidwayEntranceSettings {
+            flags: expected.flags,
+            position: expected.position,
+            high_position: expected.high_position,
+            additional_flags: expected.additional_flags,
+        }
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
 fn run_lunar_magic_level_command(
     lunar_magic: &Path,
     operation: &str,

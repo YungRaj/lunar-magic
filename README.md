@@ -432,6 +432,12 @@ interactive frontends cannot bypass confirmation and request correlation through
   Editing follows Lunar Magic's recovered command-zero parameter-0/parameter-2 compact and extended
   representations, can change record shape without losing the unrelated new-screen bit, and has a
   reciprocal Lunar Magic 3.63 MWL import/re-export oracle.
+  The same workspace edits the four pristine main-entrance planes and detects Lunar Magic's
+  separately owned midway runtime. Installed midway records retain all four packed bytes and update
+  only after hook, helper, table-pointer, and RATS-ownership validation. On a pristine ROM the GUI
+  can install the complete Lfix3 core, `$D0` helper, `$800` midway table, enable flag, relocations,
+  and checksum repair as one undoable mutation. Wine oracles prove Lunar Magic 3.63 re-exports both
+  direct installed-table updates and first-time Rust installations with exact entrance semantics.
   The sprite panel reports canonical original and staged byte lengths under the active SSC record
   table. Non-growing streams use the exclusive in-place path; growth uses the Wine-verified
   copy-on-write path confined to the pristine shared bank, updates only the selected level's low

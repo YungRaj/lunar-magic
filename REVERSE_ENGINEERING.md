@@ -651,6 +651,19 @@ They correspond to MWL header offsets `2`-`5` for position, vertical settings, s
 level-mode/screen respectively. The Rust project layer now loads and transactionally saves these
 planes with checksum repair and undo support, and the built-in pristine-SMW GUI exposes the record.
 
+The optional separate-midway path is now fully recovered and implemented.
+`LoadCurrentSecondaryExitRuntimeState` (`00473130`) follows the installed JSL helper and reads four
+`$200`-byte planes; the save path at `00473280` requires the allocation to be exactly `$800` bytes
+before writing them. A dynamic Lunar Magic installation maps MWL header offsets `9`-`12` to flags,
+position, additional flags, and high position at plane offsets `+$000`, `+$200`, `+$400`, and
+`+$600`. The fixed hook is at headerless PC `$2D9E3`; its `$D0`-byte RATS-owned helper contains four
+table operands and one self-call relocation. Rust validates the hook, both RATS owners, helper
+opcodes/version marker, all plane pointers, and exact table length before editing. Its pristine
+installer composes Lfix3, the helper, table, selected-level `$20` enable flag, checksum repair, and
+all relocations in one undoable transaction. Reciprocal Wine oracles prove both updating a Lunar
+Magic-installed table and opening/exporting a Rust-installed table preserve the exact midway
+fields.
+
 Added `EditorRenderTileNode` (12 bytes) and `LevelSpriteNode` (40-byte allocation with 34 bytes of currently recovered fields), applied `LevelSpriteNode` prototypes to the parser, serializer, sorter, and destructor, and typed/named the active sprite-list head, the 0x3800-entry render-list array, current rendered sprite, and 256-entry renderer dispatch table. Fixed-pattern sprite handlers whose exact gameplay identity is not yet proven use conservative tile-pattern names and medium-confidence annotations rather than speculative sprite names.
 
 The level-sprite selection, clipboard, undo, and placement-preview layer through `004d0aa0` is now named and annotated. Recovered behavior includes render-node hit testing, point and rectangle selection, additive/removal operations, select-all filtering, group drag clamping, duplication, forward/backward z-order changes, undo snapshot export/import, the `Lunar Magic Sprites V7` clipboard format, compatibility-mode sprite-ID translation, clipboard paste placement, and temporary sprite-placement preview rendering.
