@@ -323,9 +323,12 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x7c => parts(&[(0xba, 4, -1)]),
         0x7d => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0xcb, -5, -1)]),
         0x7e => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0x103, -5, -1)]),
-        0x7f => parts(&[(0x0b, 0, 1)]),
+        // Native handlers $7F and $80 are byte-distinct dispatch entries with the
+        // same recovered one-tile preview.
+        0x7f | 0x80 => parts(&[(0x0b, 0, 1)]),
         0x81 => render_flagged_variant_handler(mode.placement_first, false),
         0x82 => render_flagged_variant_handler(mode.placement_first, true),
+        0x83 => render_handler_83(mode.placement_first),
         0x84 => parts(&[
             (0xdd, 0, -15),
             (0xdc, 24, -1),
@@ -334,15 +337,18 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0xdb, 32, 0),
             (0xd9, 0, 1),
         ]),
-        0x85 => parts(&[
+        // The native $87/$88 entries reuse the complete $85/$86 geometry.
+        0x85 | 0x87 => parts(&[
             (0x27, -5, 0),
             (0x27, 5, 1),
             (0x27, -3, 4),
             (0x27, 3, 4),
             (0x9c, 4, 8),
         ]),
-        0x86 => parts(&[(0x06, 0, 1)]),
-        0x89 => parts(&[(0xde, 0, 0), (0xdf, 16, 0)]),
+        0x86 | 0x88 => parts(&[(0x06, 0, 1)]),
+        // Handler $8B is the native two-tile DE/DF renderer.  $89 has an
+        // independently installed handler but reaches the same tile geometry.
+        0x89 | 0x8b => parts(&[(0xde, 0, 0), (0xdf, 16, 0)]),
         0x8c => {
             let mut values = Vec::with_capacity(8);
             for row in 0_i16..4 {
@@ -705,6 +711,25 @@ fn render_handler_95(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
     }
     values.push((0x1e5, -16 + [-6, 0, -2, -4][usize::from(variant)], 1));
     parts(&values)
+}
+
+fn render_handler_83(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+    // 004c7850: the low two placement bits choose the central definition.  The
+    // high bit in these words is part of Lunar Magic's preview-definition
+    // selector and must not be mistaken for a Map16 flip flag.
+    let center = match placement_first & 3 {
+        0 => 0x801a,
+        1 => 0x8104,
+        2 => 0x8106,
+        3 => 0x8100,
+        _ => unreachable!(),
+    };
+    parts(&[
+        (0x06, -12, -9),
+        (0x07, -6, -9),
+        (center, -1, -9),
+        (0x108, -3, -1),
+    ])
 }
 
 fn render_handler_1e(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
@@ -3717,5 +3742,39 @@ mod tests {
         assert_eq!(right[6], (0xeb, -15, -6));
         assert_eq!(right[12], (0xeb, 12, -10));
         assert_eq!(right[17], (0xee, 52, -30));
+    }
+
+    #[test]
+    fn recovered_80_through_8b_aliases_and_variant_geometry_are_not_fallbacks() {
+        let geometry = |sprite_number, placement_first| {
+            render_lunar_magic_standard_sprite_with_mode(
+                sprite_number,
+                StandardSpritePreviewMode {
+                    placement_first,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+
+        assert_eq!(geometry(0x80, 0), [(0x0b, 0, 1)]);
+        assert_eq!(
+            geometry(0x83, 0),
+            [
+                (0x06, -12, -9),
+                (0x07, -6, -9),
+                (0x801a, -1, -9),
+                (0x108, -3, -1)
+            ]
+        );
+        assert_eq!(geometry(0x83, 1)[2], (0x8104, -1, -9));
+        assert_eq!(geometry(0x83, 2)[2], (0x8106, -1, -9));
+        assert_eq!(geometry(0x83, 3)[2], (0x8100, -1, -9));
+        assert_eq!(geometry(0x87, 0), geometry(0x85, 0));
+        assert_eq!(geometry(0x88, 0), geometry(0x86, 0));
+        assert_eq!(geometry(0x8b, 0), geometry(0x89, 0));
     }
 }

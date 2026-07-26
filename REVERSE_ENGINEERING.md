@@ -1886,3 +1886,28 @@ nibbles, screen-advance bit, and both packed screen-jump encodings. These
 field edits use the shared lossless `ObjectEdit` engine, preserve extension
 bytes, and reject implicit record-shape changes; the GUI does not implement a
 second toolkit-specific serializer.
+
+## Standard-sprite dispatch coverage audit
+
+The live `InitializeSpriteRenderDispatchTable` at `004cb250` proves that the
+256-entry table is initialized to `004c3810` and then sparsely overwritten.
+This matters because an absent Rust preview cannot automatically be classified
+as Lunar Magic's native empty handler. A renewed table-to-renderer audit found
+additional dedicated handlers inside the standard `$00`–`$ED` range.
+
+The first corrected cluster covers `$80`, `$83`, `$87`, `$88`, and `$8B`.
+Disassembly at `004c7680`, `004c7850`, `004c7af0`, `004c7b60`, and
+`004c7c20` authenticates their complete definition indexes and signed pixel
+offsets. `$83` selects `$801A`, `$8104`, `$8106`, or `$8100` from the low two
+bits of the native first record byte; its three surrounding parts remain fixed.
+`$87` and `$88` intentionally reuse the geometry of `$85` and `$86`, while
+`$80` repeats `$7F` and `$8B` repeats the two-part `$DE/$DF` geometry. These
+entries now render in both the shared Rust renderer and the native picker/canvas
+instead of reaching the unresolved red marker. Tests enumerate all four `$83`
+branches and every authenticated alias.
+
+Remaining dedicated entries discovered by the same audit are tracked as
+implementation work rather than being mislabeled as native empties: `$64`–`$68`,
+`$6C`, `$8A`, `$9D`, `$EF`, and `$F2`–`$FF`. Several are stateful or
+level-layout-dependent, so their required global inputs must be modeled before
+their geometry can be claimed as faithful.
