@@ -45,6 +45,10 @@ emits a single aggregate edit using the recovered 12-bit Map16 replacement norma
 native panel supports both a single replacement word and a retained visual row-major rectangle;
 the latter repeats from the region's independent minimum X/Y bounds exactly as the recovered
 Lunar Magic routine does.
+Selected rectangles can also move one cell in any cardinal direction. Movement snapshots all
+source words before clearing, gives overlapping destination cells precedence, preserves reversed
+anchor/cursor orientation, and commits the duplicate-free source/destination diff as one aggregate
+edit. Invalid sources and any destination crossing the 32×32 edge fail before controller mutation.
 An exhaustive independent reference test covers all 512 binary 3×3 topologies from every
 start cell, including edge isolation, irregular pattern anchoring, malformed dimensions, and the
 native two-plane storage bijection. Focused gates require

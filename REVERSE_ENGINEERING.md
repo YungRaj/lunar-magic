@@ -1924,6 +1924,18 @@ native-storage indexes as one aggregate transaction. An independent exhaustive o
 every binary topology in a 3×3 neighborhood at every possible start cell, in addition to
 full-word identity, disconnected islands, deterministic visual order, edge behavior, irregular
 region bounds, rectangular repetition, and malformed pattern dimensions.
+Rectangle relocation is now tied to the staged-selection pipeline at
+`SwapLevelBackgroundTransferTilesAtOffset` (`0051F370`),
+`TranslateLevelBackgroundPrimarySelection` (`0051F4E0`),
+`MoveLevelBackgroundSelectionByPixels` (`0051F5A0`), and
+`ClampLevelBackgroundSelectionPlacement` (`0051F7B0`). Lunar Magic snapshots selected words
+outside the live plane, translates only in whole Map16 cells, and validates every selected cell
+against the 32×32 boundary before committing. The native final-state model performs the equivalent
+snapshot-first operation: clear the complete source rectangle to `$0000`, then place the captured
+words at the destination so overlapping destination cells win. Directional GUI actions retain
+reversed selection endpoints, update the non-linear storage cursor, and submit every changed source
+and destination word as one duplicate-free aggregate transaction. Tests cover overlap, zero-delta
+no-ops, all four crossed edges, malformed sources, and reversed selections.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their

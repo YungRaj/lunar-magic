@@ -110,6 +110,93 @@ pub fn native_layer2_flood_pattern(
     Ok(edits)
 }
 
+/// Builds the final-state edits for moving one rectangular selection by a whole-cell delta.
+///
+/// The source rectangle is snapshotted first, every source cell is cleared to `$0000`, and the
+/// snapshot is then placed at the destination. Consequently, overlapping moves retain all selected
+/// words and destination cells take precedence over source clearing.
+///
+/// # Errors
+///
+/// Returns [`NativeLayer2Error`] for malformed tilemap storage, an empty or out-of-range source
+/// rectangle, or a destination rectangle outside the 32×32 canvas.
+pub fn native_layer2_move_rectangle(
+    bytes: &[u8],
+    source_x: usize,
+    source_y: usize,
+    width: usize,
+    height: usize,
+    delta_x: i32,
+    delta_y: i32,
+) -> Result<Vec<(usize, u16)>, NativeLayer2Error> {
+    if bytes.len() != NATIVE_LAYER2_TILEMAP_LEN {
+        return Err(NativeLayer2Error::TilemapLength(bytes.len()));
+    }
+    let source_end_x = source_x.checked_add(width);
+    let source_end_y = source_y.checked_add(height);
+    if width == 0
+        || height == 0
+        || source_end_x.is_none_or(|end| end > NATIVE_LAYER2_TILEMAP_WIDTH)
+        || source_end_y.is_none_or(|end| end > NATIVE_LAYER2_TILEMAP_HEIGHT)
+    {
+        return Err(NativeLayer2Error::TilemapRectangle {
+            x: source_x,
+            y: source_y,
+            width,
+            height,
+        });
+    }
+    let destination_x = i64::try_from(source_x)
+        .ok()
+        .and_then(|x| x.checked_add(i64::from(delta_x)));
+    let destination_y = i64::try_from(source_y)
+        .ok()
+        .and_then(|y| y.checked_add(i64::from(delta_y)));
+    let valid_destination = destination_x.zip(destination_y).and_then(|(x, y)| {
+        let x = usize::try_from(x).ok()?;
+        let y = usize::try_from(y).ok()?;
+        let end_x = x.checked_add(width)?;
+        let end_y = y.checked_add(height)?;
+        (end_x <= NATIVE_LAYER2_TILEMAP_WIDTH && end_y <= NATIVE_LAYER2_TILEMAP_HEIGHT)
+            .then_some((x, y))
+    });
+    let Some((destination_x, destination_y)) = valid_destination else {
+        return Err(NativeLayer2Error::TilemapMove {
+            x: source_x,
+            y: source_y,
+            width,
+            height,
+            delta_x,
+            delta_y,
+        });
+    };
+
+    let mut original = [0_u16; NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT];
+    for (visual, word) in original.iter_mut().enumerate() {
+        *word = tilemap_word(bytes, native_layer2_storage_index_from_visual(visual));
+    }
+    let mut moved = original;
+    let mut snapshot = Vec::with_capacity(width * height);
+    for y in source_y..source_y + height {
+        for x in source_x..source_x + width {
+            snapshot.push(original[y * NATIVE_LAYER2_TILEMAP_WIDTH + x]);
+            moved[y * NATIVE_LAYER2_TILEMAP_WIDTH + x] = 0;
+        }
+    }
+    for (offset, word) in snapshot.into_iter().enumerate() {
+        let x = destination_x + offset % width;
+        let y = destination_y + offset / width;
+        moved[y * NATIVE_LAYER2_TILEMAP_WIDTH + x] = word;
+    }
+    Ok(original
+        .iter()
+        .zip(moved)
+        .enumerate()
+        .filter(|(_, (before, after))| **before != *after)
+        .map(|(visual, (_, word))| (native_layer2_storage_index_from_visual(visual), word))
+        .collect())
+}
+
 fn native_layer2_flood_mask(
     bytes: &[u8],
     start_x: usize,
@@ -321,6 +408,20 @@ pub enum NativeLayer2Error {
         height: usize,
         words: usize,
     },
+    TilemapRectangle {
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    },
+    TilemapMove {
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+        delta_x: i32,
+        delta_y: i32,
+    },
     LegacyHighByte {
         tile: usize,
         actual: u8,
@@ -455,6 +556,61 @@ mod tests {
             assert!(matches!(
                 native_layer2_flood_pattern(&bytes, 0, 0, width, height, &words),
                 Err(NativeLayer2Error::FloodPatternShape { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn rectangle_move_snapshots_before_clear_and_destination_wins_overlap() {
+        let mut words = vec![0_u16; 1024];
+        for (offset, word) in (1_u16..=6).enumerate() {
+            let x = 1 + offset % 3;
+            let y = 1 + offset / 3;
+            words[native_layer2_tilemap_index(x, y).unwrap()] = word;
+        }
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        let expected = [
+            ((1, 1), 0),
+            ((2, 1), 0),
+            ((3, 1), 0),
+            ((1, 2), 0),
+            ((2, 2), 1),
+            ((3, 2), 2),
+            ((4, 2), 3),
+            ((2, 3), 4),
+            ((3, 3), 5),
+            ((4, 3), 6),
+        ]
+        .map(|((x, y), word)| (native_layer2_tilemap_index(x, y).unwrap(), word));
+        assert_eq!(
+            native_layer2_move_rectangle(&bytes, 1, 1, 3, 2, 1, 1).unwrap(),
+            expected
+        );
+        assert!(
+            native_layer2_move_rectangle(&bytes, 1, 1, 3, 2, 0, 0)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn rectangle_move_rejects_bad_source_and_every_crossed_edge() {
+        let bytes = [0; NATIVE_LAYER2_TILEMAP_LEN];
+        for (x, y, width, height) in [(0, 0, 0, 1), (0, 0, 1, 0), (31, 0, 2, 1), (0, 31, 1, 2)] {
+            assert!(matches!(
+                native_layer2_move_rectangle(&bytes, x, y, width, height, 0, 0),
+                Err(NativeLayer2Error::TilemapRectangle { .. })
+            ));
+        }
+        for (x, y, delta_x, delta_y) in
+            [(0, 0, -1, 0), (0, 0, 0, -1), (31, 31, 1, 0), (31, 31, 0, 1)]
+        {
+            assert!(matches!(
+                native_layer2_move_rectangle(&bytes, x, y, 1, 1, delta_x, delta_y),
+                Err(NativeLayer2Error::TilemapMove { .. })
             ));
         }
     }

@@ -160,6 +160,46 @@ fn layer2_pattern_flood_edits(
     .map_err(|error| error.to_string())
 }
 
+type Layer2Move = (Vec<(usize, u16)>, (usize, usize), (usize, usize));
+
+fn layer2_move_edits(
+    bytes: &[u8],
+    anchor: Option<(usize, usize)>,
+    cursor: Option<(usize, usize)>,
+    delta_x: i32,
+    delta_y: i32,
+) -> Result<Layer2Move, String> {
+    let (Some((anchor_x, anchor_y)), Some((cursor_x, cursor_y))) = (anchor, cursor) else {
+        return Err("select a Layer 2 canvas rectangle before moving".into());
+    };
+    let minimum_x = anchor_x.min(cursor_x);
+    let minimum_y = anchor_y.min(cursor_y);
+    let width = anchor_x.max(cursor_x) - minimum_x + 1;
+    let height = anchor_y.max(cursor_y) - minimum_y + 1;
+    let edits = lm_level::native_layer2_move_rectangle(
+        bytes, minimum_x, minimum_y, width, height, delta_x, delta_y,
+    )
+    .map_err(|error| error.to_string())?;
+    let shifted = |coordinate: (usize, usize)| -> Result<(usize, usize), String> {
+        let x = i64::try_from(coordinate.0)
+            .ok()
+            .and_then(|value| value.checked_add(i64::from(delta_x)))
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| "Layer 2 horizontal move exceeds the canvas".to_string())?;
+        let y = i64::try_from(coordinate.1)
+            .ok()
+            .and_then(|value| value.checked_add(i64::from(delta_y)))
+            .and_then(|value| usize::try_from(value).ok())
+            .ok_or_else(|| "Layer 2 vertical move exceeds the canvas".to_string())?;
+        Ok((x, y))
+    };
+    Ok((
+        edits,
+        shifted((anchor_x, anchor_y))?,
+        shifted((cursor_x, cursor_y))?,
+    ))
+}
+
 impl AggregatePanels {
     pub(super) fn layer2_panel(
         &mut self,
@@ -311,6 +351,21 @@ impl AggregatePanels {
         if let Some(edit) = self.layer2_clipboard_controls(ui, bytes) {
             return Some(edit);
         }
+        if let Some(edit) = self.layer2_move_controls(ui, bytes) {
+            return Some(edit);
+        }
+        if let Some(edit) = self.layer2_word_controls(ui, bytes, selected_cells.len()) {
+            return Some(edit);
+        }
+        self.layer2_pattern_flood_controls(ui, bytes)
+    }
+
+    fn layer2_word_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        bytes: &[u8],
+        selected_cells: usize,
+    ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         ui.horizontal(|ui| {
             ui.label("16-bit tile word");
             ui.text_edit_singleline(&mut self.layer2_tile);
@@ -321,8 +376,8 @@ impl AggregatePanels {
                 self.layer2_tile = format!("{:04X}", u16::from_le_bytes([bytes[0], bytes[1]]));
             }
         });
-        let apply_label = if selected_cells.len() > 1 {
-            format!("Fill {} selected cells", selected_cells.len())
+        let apply_label = if selected_cells > 1 {
+            format!("Fill {selected_cells} selected cells")
         } else {
             "Apply tile".into()
         };
@@ -345,7 +400,7 @@ impl AggregatePanels {
                 action = Some(true);
             }
         });
-        if let Some(result) = action.map(|flood| {
+        action.map(|flood| {
             level_editor_forms::parse_hex_u16(&self.layer2_tile, "Layer 2 tile").and_then(|word| {
                 let edits = if flood {
                     layer2_flood_edits(bytes, self.layer2_tile_cursor, word)
@@ -359,10 +414,45 @@ impl AggregatePanels {
                 }?;
                 Ok(NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits))
             })
-        }) {
-            return Some(result);
-        }
-        self.layer2_pattern_flood_controls(ui, bytes)
+        })
+    }
+
+    fn layer2_move_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        bytes: &[u8],
+    ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
+        let enabled = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
+        let mut requested = None;
+        ui.horizontal(|ui| {
+            ui.label("Move selection");
+            for (label, delta_x, delta_y) in [("←", -1, 0), ("↑", 0, -1), ("↓", 0, 1), ("→", 1, 0)]
+            {
+                if ui
+                    .add_enabled(enabled, egui::Button::new(label))
+                    .on_hover_text(
+                        "Move the complete rectangle by one Map16 cell as one undoable edit.",
+                    )
+                    .clicked()
+                {
+                    requested = Some((delta_x, delta_y));
+                }
+            }
+        });
+        requested.map(|(delta_x, delta_y)| {
+            let (edits, anchor, cursor) = layer2_move_edits(
+                bytes,
+                self.layer2_tile_anchor,
+                self.layer2_tile_cursor,
+                delta_x,
+                delta_y,
+            )?;
+            self.layer2_tile_anchor = Some(anchor);
+            self.layer2_tile_cursor = Some(cursor);
+            self.layer2_tile_index = lm_level::native_layer2_tilemap_index(cursor.0, cursor.1)
+                .ok_or_else(|| "moved Layer 2 cursor exceeds the canvas".to_string())?;
+            Ok(NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits))
+        })
     }
 
     fn layer2_pattern_flood_controls(
@@ -683,5 +773,28 @@ mod tests {
             ]
             .map(|((x, y), word)| { (lm_level::native_layer2_tilemap_index(x, y).unwrap(), word) })
         );
+    }
+
+    #[test]
+    fn move_selection_preserves_reversed_endpoints_and_rejects_edges() {
+        let mut words = vec![0_u16; 1024];
+        words[lm_level::native_layer2_tilemap_index(2, 2).unwrap()] = 0x1111;
+        words[lm_level::native_layer2_tilemap_index(3, 2).unwrap()] = 0x2222;
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        let (edits, anchor, cursor) =
+            layer2_move_edits(&bytes, Some((3, 2)), Some((2, 2)), 0, 1).unwrap();
+        assert_eq!(anchor, (3, 3));
+        assert_eq!(cursor, (2, 3));
+        assert_eq!(
+            edits,
+            [((2, 2), 0), ((3, 2), 0), ((2, 3), 0x1111), ((3, 3), 0x2222),].map(
+                |((x, y), word)| { (lm_level::native_layer2_tilemap_index(x, y).unwrap(), word,) }
+            )
+        );
+        assert!(layer2_move_edits(&bytes, Some((0, 0)), Some((1, 1)), -1, 0).is_err());
+        assert!(layer2_move_edits(&bytes, None, None, 1, 0).is_err());
     }
 }
