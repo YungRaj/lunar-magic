@@ -6,7 +6,13 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::SscSidecarController;
+use lm_graphics::{
+    EXTERNAL_SPRITE_GRAPHICS_SLOT_MAX_BYTES, EXTERNAL_SPRITE_GRAPHICS_SLOTS,
+    EXTERNAL_SPRITE_PALETTE_RGB_MAX_BYTES, EXTERNAL_SPRITE_PALETTE_SNES_MAX_BYTES,
+    ExternalSpriteAssets,
+};
 use lm_level::MAX_SSC_SOURCE_LEN;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -25,11 +31,21 @@ pub(crate) struct SscSidecarEditor {
     persistence: DocumentPersistence,
     loader: DocumentLoader,
     resolved: Option<lm_level::SscResolvedTable>,
+    external_assets: ExternalSpriteAssets,
+    asset_revision: u64,
 }
 
 impl SscSidecarEditor {
     pub(crate) fn resolved(&self) -> Option<&lm_level::SscResolvedTable> {
         self.resolved.as_ref()
+    }
+
+    pub(crate) const fn external_assets(&self) -> &ExternalSpriteAssets {
+        &self.external_assets
+    }
+
+    pub(crate) const fn asset_revision(&self) -> u64 {
+        self.asset_revision
     }
 
     pub(crate) fn is_open(&self) -> bool {
@@ -43,11 +59,16 @@ impl SscSidecarEditor {
         let Some(path) = dialogs::choose_ssc_sidecar() else {
             return;
         };
-        if let Err(error) = self.loader.start(vec![BoundedRead::new(
-            path,
-            u64::try_from(MAX_SSC_SOURCE_LEN).unwrap_or(u64::MAX),
-            "SSC sidecar",
-        )]) {
+        let mut requests = external_sprite_requests(&path);
+        requests.insert(
+            0,
+            BoundedRead::new(
+                path,
+                u64::try_from(MAX_SSC_SOURCE_LEN).unwrap_or(u64::MAX),
+                "SSC sidecar",
+            ),
+        );
+        if let Err(error) = self.loader.start(requests) {
             self.error = Some(error);
         }
     }
@@ -88,15 +109,20 @@ impl SscSidecarEditor {
 
     fn poll_io(&mut self, context: &egui::Context) {
         if let Some(result) = self.loader.show(context) {
-            match result.and_then(|mut loaded| {
-                let (path, bytes) = loaded
-                    .files
-                    .pop()
+            match result.and_then(|loaded| {
+                let mut files = loaded.files.into_iter();
+                let (path, bytes) = files
+                    .next()
                     .ok_or_else(|| "SSC loader returned no file".to_string())?;
-                SscSidecarController::decode(path, &bytes).map_err(|error| error.to_string())
+                let controller = SscSidecarController::decode(path, &bytes)
+                    .map_err(|error| error.to_string())?;
+                let assets = decode_external_sprite_assets(files)?;
+                Ok((controller, assets))
             }) {
-                Ok(controller) => {
+                Ok((controller, assets)) => {
                     self.controller = Some(controller);
+                    self.external_assets = assets;
+                    self.asset_revision = self.asset_revision.wrapping_add(1);
                     self.loaded_revision = None;
                 }
                 Err(error) => self.error = Some(error),
@@ -138,6 +164,18 @@ impl SscSidecarEditor {
             .map(diagnostic);
         ui.label(format!(
             "Lossless source: {source_len} bytes; valid metadata records: {entry_count}"
+        ));
+        let graphics_slots = (0..EXTERNAL_SPRITE_GRAPHICS_SLOTS)
+            .filter(|&slot| self.external_assets.has_graphics_slot(slot))
+            .count();
+        ui.label(format!(
+            "External sprite assets: {graphics_slots}/{} graphics slots; palette {}",
+            EXTERNAL_SPRITE_GRAPHICS_SLOTS,
+            if self.external_assets.has_palette() {
+                "loaded"
+            } else {
+                "not found"
+            }
         ));
         ui.add(
             egui::TextEdit::multiline(&mut self.form.bytes)
@@ -263,5 +301,142 @@ impl SscSidecarEditor {
         self.loaded_revision = None;
         self.pending_close = None;
         self.resolved = None;
+        self.external_assets = ExternalSpriteAssets::default();
+        self.asset_revision = self.asset_revision.wrapping_add(1);
+    }
+}
+
+fn external_sprite_requests(ssc_path: &Path) -> Vec<BoundedRead> {
+    let Some(parent) = ssc_path.parent() else {
+        return Vec::new();
+    };
+    let directory = parent
+        .ancestors()
+        .take(3)
+        .map(|ancestor| ancestor.join("ExternalGraphics"))
+        .find(|candidate| candidate.is_dir());
+    let Some(directory) = directory else {
+        return Vec::new();
+    };
+    let mut requests = Vec::new();
+    for slot in 0..EXTERNAL_SPRITE_GRAPHICS_SLOTS {
+        let path = directory.join(format!("ExSpriteGFX{slot:02X}.bin"));
+        if path.is_file() {
+            requests.push(BoundedRead::new(
+                path,
+                u64::try_from(EXTERNAL_SPRITE_GRAPHICS_SLOT_MAX_BYTES).unwrap_or(u64::MAX),
+                format!("external sprite graphics slot {slot:02X}"),
+            ));
+        }
+    }
+    let mw3 = directory.join("ExSpritePalette00.mw3");
+    let pal = directory.join("ExSpritePalette00.pal");
+    if mw3.is_file() {
+        requests.push(BoundedRead::new(
+            mw3,
+            u64::try_from(EXTERNAL_SPRITE_PALETTE_SNES_MAX_BYTES).unwrap_or(u64::MAX),
+            "external sprite MW3 palette",
+        ));
+    } else if pal.is_file() {
+        requests.push(BoundedRead::new(
+            pal,
+            u64::try_from(EXTERNAL_SPRITE_PALETTE_RGB_MAX_BYTES).unwrap_or(u64::MAX),
+            "external sprite RGB palette",
+        ));
+    }
+    requests
+}
+
+fn decode_external_sprite_assets(
+    files: impl Iterator<Item = (PathBuf, Vec<u8>)>,
+) -> Result<ExternalSpriteAssets, String> {
+    let mut assets = ExternalSpriteAssets::default();
+    for (path, bytes) in files {
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            return Err(format!(
+                "external sprite asset has a non-Unicode filename: {}",
+                path.display()
+            ));
+        };
+        if let Some(slot) = name
+            .strip_prefix("ExSpriteGFX")
+            .and_then(|suffix| suffix.strip_suffix(".bin"))
+            .and_then(|slot| usize::from_str_radix(slot, 16).ok())
+        {
+            assets
+                .set_graphics_slot(slot, &bytes)
+                .map_err(|error| format!("could not decode {}: {error}", path.display()))?;
+        } else if name == "ExSpritePalette00.mw3" {
+            assets
+                .set_snes_palette(&bytes)
+                .map_err(|error| format!("could not decode {}: {error}", path.display()))?;
+        } else if name == "ExSpritePalette00.pal" {
+            assets
+                .set_rgb_palette(&bytes)
+                .map_err(|error| format!("could not decode {}: {error}", path.display()))?;
+        } else {
+            return Err(format!(
+                "SSC loader returned an unexpected external asset: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(assets)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    fn fixture_directory() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "lm-ssc-external-assets-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
+
+    #[test]
+    fn discovers_nearest_external_directory_and_prefers_mw3_palette() {
+        let root = fixture_directory();
+        let sprites = root.join("Sprites");
+        let external = root.join("ExternalGraphics");
+        fs::create_dir_all(&sprites).unwrap();
+        fs::create_dir_all(&external).unwrap();
+        fs::write(external.join("ExSpriteGFX00.bin"), [0; 32]).unwrap();
+        fs::write(external.join("ExSpritePalette00.mw3"), [0; 2]).unwrap();
+        fs::write(external.join("ExSpritePalette00.pal"), [0; 3]).unwrap();
+        let requests = external_sprite_requests(&sprites.join("list.ssc"));
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[0].path.file_name().and_then(|name| name.to_str()),
+            Some("ExSpriteGFX00.bin")
+        );
+        assert_eq!(
+            requests[1].path.file_name().and_then(|name| name.to_str()),
+            Some("ExSpritePalette00.mw3")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn decoded_group_preserves_slots_and_palette_and_rejects_unknown_files() {
+        let files = vec![
+            (PathBuf::from("ExSpriteGFX07.bin"), vec![0; 32]),
+            (PathBuf::from("ExSpritePalette00.pal"), vec![1, 2, 3]),
+        ];
+        let assets = decode_external_sprite_assets(files.into_iter()).unwrap();
+        assert!(assets.has_graphics_slot(7));
+        assert!(assets.has_palette());
+        assert!(
+            decode_external_sprite_assets(
+                vec![(PathBuf::from("unexpected.bin"), vec![0])].into_iter()
+            )
+            .is_err()
+        );
     }
 }

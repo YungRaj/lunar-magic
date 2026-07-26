@@ -334,6 +334,8 @@ impl eframe::App for NativeApplication {
                     ui,
                     &self.app,
                     self.ssc_sidecar_editor.resolved(),
+                    self.ssc_sidecar_editor.external_assets(),
+                    self.ssc_sidecar_editor.asset_revision(),
                     self.osc_sidecar_editor.resolved(),
                     self.native_map16_sidecar_editor.value(),
                 )

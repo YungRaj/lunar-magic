@@ -5,7 +5,7 @@ use lm_level::{SscDirective, SscEntry, SscResolvedSprite, SscResolvedTable};
 
 /// One custom-sprite display definition with Lunar Magic's global graphics/palette remaps
 /// retained explicitly.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RemappedCustomSpritePreviewTile {
     pub definition_index: u16,
     pub subtiles: [u16; 4],

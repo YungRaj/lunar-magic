@@ -1809,6 +1809,11 @@ It then prefers `ExSpritePalette00.mw3` and falls back to `ExSpritePalette00.pal
 SNES BGR555 words or `$C000` bytes of RGB triplets (1,024 rows of 16 colors). Rust now models that
 boundary with atomic bounded decoders and a software SSC rasterizer that combines the global
 graphics base, external palette base row, each subtile's palette bits, transparency, and flips.
+The native SSC workflow searches the selected sidecar's nearest project ancestors for
+`ExternalGraphics`, loads only present files on its bounded document worker, honors the recovered
+palette preference, and publishes one asset revision. Custom catalog and level-canvas textures are
+keyed by the complete remapped definition and discarded whenever that revision changes, preventing
+art from a previously opened sidecar from leaking into a new project.
 
 The standard-sprite renderer now also covers every late native dispatch-table entry beyond the
 ordinary picker boundary. Exact disassembly of `$004CAFB0–$004CB23E` proves that `$EF`, `$F2`,

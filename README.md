@@ -542,8 +542,11 @@ interactive frontends cannot bypass confirmation and request correlation through
   `ExternalGraphics` assets are loaded, rather than displaying incorrect vanilla art.
   The toolkit-neutral asset path already decodes all eight bounded `ExSpriteGFX00–07.bin` slots
   plus either SNES-word `.mw3` or RGB-triplet `.pal` custom palettes and rasterizes complete
-  16×16 SSC definitions with per-subtile palette selection, transparency, and flips. Native
-  sibling-file discovery and texture caching are the remaining GUI integration boundary.
+  16×16 SSC definitions with per-subtile palette selection, transparency, and flips. Opening an
+  SSC in the native frontend now discovers the nearest project `ExternalGraphics` directory,
+  applies Lunar Magic's `.mw3`-before-`.pal` preference, reads only present assets through bounded
+  background I/O, and caches successfully rasterized definitions in both the custom catalog and
+  level canvas. Reopening or closing the SSC invalidates those textures.
   Ordinary objects can likewise be dragged across all 32 native screens on horizontal or vertical
   canvases. The atomic relocation updates the two proven coordinate nibbles, stably orders ordinary
   objects by absolute screen, and regenerates minimal advance bits or canonical screen-jump

@@ -11,6 +11,7 @@ use lm_project::LevelSaveOptions;
 use lm_project::VanillaMainEntrance;
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
+use std::collections::HashMap;
 
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
 const ROM_LEVEL_CANVAS_VIEW_HEIGHT: f32 = 420.0;
@@ -226,6 +227,9 @@ pub(crate) struct VanillaLevelEditor {
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
     map16_error: Option<String>,
     standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
+    external_asset_revision: u64,
+    external_sprite_textures:
+        HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
 }
 
 impl VanillaLevelEditor {
@@ -244,11 +248,14 @@ impl VanillaLevelEditor {
             })
     }
 
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     pub(crate) fn show(
         &mut self,
         ui: &mut egui::Ui,
         app: &AppState,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
+        external_assets: &lm_graphics::ExternalSpriteAssets,
+        external_asset_revision: u64,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) -> Option<Command> {
@@ -268,6 +275,10 @@ impl VanillaLevelEditor {
         };
         if self.key != Some(key) {
             self.load(&snapshot, key, custom_sprites);
+        }
+        if self.external_asset_revision != external_asset_revision {
+            self.external_asset_revision = external_asset_revision;
+            self.external_sprite_textures.clear();
         }
 
         ui.heading(format!("Level {level:03X} — built-in SMW editor"));
@@ -296,7 +307,13 @@ impl VanillaLevelEditor {
         ui.separator();
         self.show_map16_preview(ui, &snapshot, object_tileset);
         ui.separator();
-        self.object_canvas(ui, custom_sprites, custom_objects, custom_map16);
+        self.object_canvas(
+            ui,
+            custom_sprites,
+            external_assets,
+            custom_objects,
+            custom_map16,
+        );
         ui.separator();
         ui.columns(2, |columns| {
             self.object_list(&mut columns[0]);
@@ -305,7 +322,12 @@ impl VanillaLevelEditor {
         ui.separator();
         ui.columns(2, |columns| {
             self.sprite_list(&mut columns[0]);
-            self.sprite_editor(&mut columns[1], custom_sprites, custom_map16);
+            self.sprite_editor(
+                &mut columns[1],
+                custom_sprites,
+                external_assets,
+                custom_map16,
+            );
         });
         ui.add_space(8.0);
         let expanded = snapshot.rom_bytes.len() > 0x80_000;
@@ -570,6 +592,7 @@ impl VanillaLevelEditor {
         );
         self.object_placement_template = None;
         self.dragging_object = None;
+        self.external_sprite_textures.clear();
         self.dragging_sprite = None;
     }
 
@@ -804,6 +827,7 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
+        external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
@@ -815,6 +839,14 @@ impl VanillaLevelEditor {
             controller.level().layer1.header.level_mode()
         });
         let animation_phase = sprite_animation_phase(ui.input(|input| input.time));
+        ensure_external_placement_textures(
+            ui.ctx(),
+            &mut self.external_sprite_textures,
+            custom_sprites,
+            external_assets,
+            custom_map16,
+            &sprite_placements,
+        );
         if sprite_placements
             .iter()
             .any(|placement| placement.sprite_number == 0xa6)
@@ -959,6 +991,7 @@ impl VanillaLevelEditor {
             animation_phase,
             custom_sprites,
             custom_map16,
+            external_textures: &self.external_sprite_textures,
         });
         self.handle_canvas_interaction(
             response,
@@ -1798,6 +1831,7 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
+        external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         let token_count = self
@@ -1806,7 +1840,7 @@ impl VanillaLevelEditor {
             .map_or(0, |controller| controller.level().sprites.tokens.len());
         ui.label("Native sprite stream");
         self.sprite_catalog(ui);
-        self.custom_sprite_catalog(ui, custom_sprites, custom_map16);
+        self.custom_sprite_catalog(ui, custom_sprites, external_assets, custom_map16);
         self.sprite_form_controls(ui);
         sprite_save_constraint(ui, self.controller.as_ref());
         self.sprite_editor_actions(ui, token_count);
@@ -1963,6 +1997,7 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
+        external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         let Some(custom_sprites) = custom_sprites else {
@@ -1990,16 +2025,33 @@ impl VanillaLevelEditor {
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
                             for entry in entries {
-                                let parts = lm_render::render_atlas_lunar_magic_custom_sprite_with(
-                                    custom_sprites,
-                                    entry,
-                                    |index| external_sprite_definition(custom_map16, index),
-                                );
+                                let atlas_parts =
+                                    lm_render::render_atlas_lunar_magic_custom_sprite_with(
+                                        custom_sprites,
+                                        entry,
+                                        |index| external_sprite_definition(custom_map16, index),
+                                    );
+                                let external_parts =
+                                    lm_render::render_remapped_lunar_magic_custom_sprite_with(
+                                        custom_sprites,
+                                        entry,
+                                        |index| external_sprite_definition(custom_map16, index),
+                                    );
+                                if let Some(parts) = external_parts.as_deref() {
+                                    ensure_external_part_textures(
+                                        ui.ctx(),
+                                        &mut self.external_sprite_textures,
+                                        parts,
+                                        external_assets,
+                                    );
+                                }
                                 let response = draw_custom_sprite_catalog_entry(
                                     ui,
                                     texture.as_ref(),
                                     entry,
-                                    parts.as_deref(),
+                                    atlas_parts.as_deref(),
+                                    external_parts.as_deref(),
+                                    &self.external_sprite_textures,
                                 );
                                 if response.clicked() {
                                     chosen = Some(entry.selector);
@@ -2886,6 +2938,8 @@ fn draw_custom_sprite_catalog_entry(
     texture: Option<&egui::TextureHandle>,
     sprite: &lm_level::SscResolvedSprite,
     parts: Option<&[lm_render::StandardSpritePreviewTile]>,
+    external_parts: Option<&[lm_render::RemappedCustomSpritePreviewTile]>,
+    external_textures: &HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(78.0, 70.0), egui::Sense::click());
     let painter = ui.painter_at(rect);
@@ -2896,6 +2950,17 @@ fn draw_custom_sprite_catalog_entry(
     );
     if let (Some(texture), Some(parts)) = (texture, parts) {
         draw_fitted_sprite_catalog_preview(&painter, texture, preview_rect, parts);
+    } else if let Some(parts) = external_parts
+        && parts
+            .iter()
+            .all(|part| external_textures.contains_key(part))
+    {
+        draw_fitted_external_sprite_catalog_preview(
+            &painter,
+            preview_rect,
+            parts,
+            external_textures,
+        );
     } else {
         painter.text(
             preview_rect.center(),
@@ -2925,6 +2990,47 @@ fn draw_custom_sprite_catalog_entry(
             .record_length
             .map_or_else(|| "default".into(), |length| length.to_string())
     ))
+}
+
+fn draw_fitted_external_sprite_catalog_preview(
+    painter: &egui::Painter,
+    target: egui::Rect,
+    parts: &[lm_render::RemappedCustomSpritePreviewTile],
+    textures: &HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
+) {
+    let min_x = parts.iter().map(|part| part.x).min().unwrap_or(0);
+    let min_y = parts.iter().map(|part| part.y).min().unwrap_or(0);
+    let max_x = parts
+        .iter()
+        .map(|part| part.x.saturating_add(16))
+        .max()
+        .unwrap_or(16);
+    let max_y = parts
+        .iter()
+        .map(|part| part.y.saturating_add(16))
+        .max()
+        .unwrap_or(16);
+    let width = f32::from(max_x.saturating_sub(min_x).max(1));
+    let height = f32::from(max_y.saturating_sub(min_y).max(1));
+    let scale = (target.width() / width)
+        .min(target.height() / height)
+        .min(1.0);
+    let origin = target.center() - egui::vec2(width * scale, height * scale) / 2.0;
+    for part in parts {
+        let Some(texture) = textures.get(part) else {
+            continue;
+        };
+        let position = origin
+            + egui::vec2(
+                f32::from(part.x.saturating_sub(min_x)) * scale,
+                f32::from(part.y.saturating_sub(min_y)) * scale,
+            );
+        draw_external_sprite_part(
+            painter,
+            texture,
+            egui::Rect::from_min_size(position, egui::vec2(16.0 * scale, 16.0 * scale)),
+        );
+    }
 }
 
 fn draw_sprite_catalog_entry(
@@ -3340,8 +3446,10 @@ struct SpritePlacementDraw<'a> {
     animation_phase: u8,
     custom_sprites: Option<&'a lm_level::SscResolvedTable>,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
+    external_textures: &'a HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
 }
 
+#[allow(clippy::too_many_lines)]
 fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
     let SpritePlacementDraw {
         painter,
@@ -3356,6 +3464,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         animation_phase,
         custom_sprites,
         custom_map16,
+        external_textures,
     } = request;
     let mut hit = None;
     let mut standard_8a_count = 0_u8;
@@ -3377,6 +3486,11 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         });
         let custom_preview = custom_display.and_then(|(table, sprite)| {
             lm_render::render_atlas_lunar_magic_custom_sprite_with(table, sprite, |index| {
+                external_sprite_definition(custom_map16, index)
+            })
+        });
+        let external_preview = custom_display.and_then(|(table, sprite)| {
+            lm_render::render_remapped_lunar_magic_custom_sprite_with(table, sprite, |index| {
                 external_sprite_definition(custom_map16, index)
             })
         });
@@ -3407,12 +3521,17 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     part.subtiles,
                 );
             }
-            if placement.token_index == selected {
-                painter.rect_stroke(
-                    marker,
-                    marker.width() / 2.0,
-                    egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
-                    egui::StrokeKind::Inside,
+        } else if let Some(parts) = external_preview.as_deref()
+            && parts
+                .iter()
+                .all(|part| external_textures.contains_key(part))
+        {
+            for part in parts {
+                let texture = &external_textures[part];
+                draw_external_sprite_part(
+                    painter,
+                    texture,
+                    marker.translate(egui::vec2(f32::from(part.x), f32::from(part.y))),
                 );
             }
         } else {
@@ -3431,6 +3550,14 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 format!("{:02X}", placement.sprite_number),
                 egui::FontId::monospace(7.0),
                 egui::Color32::WHITE,
+            );
+        }
+        if placement.token_index == selected {
+            painter.rect_stroke(
+                marker,
+                marker.width() / 2.0,
+                egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+                egui::StrokeKind::Inside,
             );
         }
         if cursor.is_some_and(|position| marker.contains(position)) {
@@ -3484,6 +3611,80 @@ fn external_sprite_definition(
         tile.bottom_left.0,
         tile.bottom_right.0,
     ])
+}
+
+fn ensure_external_placement_textures(
+    context: &egui::Context,
+    textures: &mut HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
+    custom_sprites: Option<&lm_level::SscResolvedTable>,
+    assets: &lm_graphics::ExternalSpriteAssets,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    placements: &[lm_level::NativeSpritePlacement],
+) {
+    let Some(table) = custom_sprites else {
+        return;
+    };
+    for placement in placements {
+        let Some(sprite) = table.default_display(placement.sprite_number, placement.extra_bits)
+        else {
+            continue;
+        };
+        let Some(parts) =
+            lm_render::render_remapped_lunar_magic_custom_sprite_with(table, sprite, |index| {
+                external_sprite_definition(custom_map16, index)
+            })
+        else {
+            continue;
+        };
+        ensure_external_part_textures(context, textures, &parts, assets);
+    }
+}
+
+fn ensure_external_part_textures(
+    context: &egui::Context,
+    textures: &mut HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
+    parts: &[lm_render::RemappedCustomSpritePreviewTile],
+    assets: &lm_graphics::ExternalSpriteAssets,
+) {
+    for part in parts {
+        if textures.contains_key(part) {
+            continue;
+        }
+        let Some(canvas) = lm_render::raster_external_custom_sprite_tile(part, assets) else {
+            continue;
+        };
+        let rgba = canvas
+            .pixels()
+            .iter()
+            .flat_map(|pixel| [pixel.red, pixel.green, pixel.blue, pixel.alpha])
+            .collect::<Vec<_>>();
+        let image =
+            egui::ColorImage::from_rgba_unmultiplied([canvas.width(), canvas.height()], &rgba);
+        let texture = context.load_texture(
+            format!(
+                "ssc-external-{:04X}-{:04X}-{:04X}",
+                part.definition_index,
+                part.graphics_base,
+                part.palette_source.unwrap_or(0)
+            ),
+            image,
+            egui::TextureOptions::NEAREST,
+        );
+        textures.insert(*part, texture);
+    }
+}
+
+fn draw_external_sprite_part(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+) {
+    painter.image(
+        texture.id(),
+        target,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
 }
 
 pub(crate) fn draw_sprite_preview_definition(
@@ -4252,6 +4453,39 @@ mod tests {
         );
         assert!(pasted_object_edit(&sprite_text, 0).is_err());
         assert!(pasted_sprite_edit(&object_text, 0).is_err());
+    }
+
+    #[test]
+    fn external_sprite_texture_cache_materializes_complete_remapped_definition() {
+        let source =
+            lm_level::SscSidecar::decode(b"10\t2\t0,0,0\n10000\t0\t0-0,0\n20000\t0\t0-0,0\n")
+                .unwrap();
+        let table = lm_level::SscResolvedTable::from_sidecar(&source);
+        let sprite = table.default_display(0x10, 0).unwrap();
+        let parts =
+            lm_render::render_remapped_lunar_magic_custom_sprite_with(&table, sprite, |index| {
+                (index == 0).then_some([0; 4])
+            })
+            .unwrap();
+        assert_eq!(parts[0].graphics_base, 0x2000);
+        let mut assets = lm_graphics::ExternalSpriteAssets::default();
+        assets.set_graphics_slot(0, &vec![0; 0x8000]).unwrap();
+        assets.set_rgb_palette(&[0, 0, 0]).unwrap();
+        let mut textures = HashMap::new();
+        ensure_external_part_textures(&egui::Context::default(), &mut textures, &parts, &assets);
+        assert_eq!(textures.len(), parts.len());
+
+        ensure_external_part_textures(
+            &egui::Context::default(),
+            &mut textures,
+            &parts,
+            &lm_graphics::ExternalSpriteAssets::default(),
+        );
+        assert_eq!(
+            textures.len(),
+            parts.len(),
+            "existing textures remain stable until the owning asset revision invalidates them"
+        );
     }
 
     #[test]
