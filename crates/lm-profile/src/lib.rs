@@ -281,9 +281,10 @@ pub use overworld_player_start::{
     smw_us_v1_overworld_player_start_layout,
 };
 pub use overworld_settings::{
-    LoadedSmwUsV1OverworldLayer3Settings, LoadedSmwUsV1OverworldSettings,
-    SMW_US_V1_EXPANDED_SETTINGS_PAYLOAD_OFFSET, SMW_US_V1_EXPANDED_SETTINGS_TABLE_OFFSET,
-    SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT, SmwUsV1OverworldSettingsLoadError,
+    LoadedSmwUsV1ExpandedLevelSettings, LoadedSmwUsV1OverworldLayer3Settings,
+    LoadedSmwUsV1OverworldSettings, SMW_US_V1_EXPANDED_SETTINGS_PAYLOAD_OFFSET,
+    SMW_US_V1_EXPANDED_SETTINGS_TABLE_OFFSET, SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT,
+    SmwUsV1OverworldSettingsLoadError, load_smw_us_v1_expanded_level_settings,
     load_smw_us_v1_overworld_layer3_settings, load_smw_us_v1_overworld_settings,
     smw_us_v1_expanded_settings_layout, smw_us_v1_overworld_layer3_settings_layout,
 };

@@ -551,8 +551,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   palette. The proven global source map is not conflated with the sprite atlas: mode 1 (`+$0000`)
   resolves the retained foreground tiles, mode 2 (`+$0400`) resolves SP1–SP4 after subtracting
   `$400`, mode 3 (`+$0900`) resolves the pristine eight-slot Layer 3 cache (GFX28–2B followed by
-  four blank slots), and mode 0 (`+$2000`) resolves external slots. Expanded per-level Layer 3
-  graphics overrides remain a separate integration boundary. Reopening or closing the SSC,
+  four blank slots), and mode 0 (`+$2000`) resolves external slots. When the validated expanded
+  settings allocation is installed, words 15→12 select the active level's four Layer 3 files;
+  otherwise the same loader materializes Lunar Magic's pristine defaults. Reopening or closing the SSC,
   changing the ROM revision, or changing the active graphics tilesets invalidates those textures.
   Ordinary objects can likewise be dragged across all 32 native screens on horizontal or vertical
   canvases. The atomic relocation updates the two proven coordinate nibbles, stably orders ordinary

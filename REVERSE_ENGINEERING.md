@@ -1828,8 +1828,8 @@ zero and rows 8–15 for every nonzero base. Rust now retains foreground, SP, an
 indexed tiles as separate sources, subtracts `$400` only for SP lookup, and routes `$900`–`$CFF`
 through an exact eight-slot 2bpp Layer 3 cache. The first four `$800`-byte slots load GFX28–2B and
 the four `$7F` markers materialize as blank 128-tile slots, matching `LoadLayer3GraphicsSet` at
-`00464750`. Expanded per-level Layer 3 graphics selection remains intentionally separate until
-its active record is connected to the native preview.
+`00464750`. A validated installed `STAR` allocation supplies words 15→12 of the active level's
+expanded record in that slot order; an absent allocation supplies the recovered pristine record.
 
 The standard-sprite renderer now also covers every late native dispatch-table entry beyond the
 ordinary picker boundary. Exact disassembly of `$004CAFB0–$004CB23E` proves that `$EF`, `$F2`,

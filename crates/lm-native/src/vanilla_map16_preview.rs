@@ -18,7 +18,6 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) tileset_tiles: usize,
 }
 
-const PRISTINE_LAYER3_GRAPHICS_FILES: [usize; 8] = [0x28, 0x29, 0x2a, 0x2b, 0x7f, 0x7f, 0x7f, 0x7f];
 const LAYER3_SLOT_BYTES: usize = 0x800;
 const LAYER3_SLOT_TILES: usize = 0x80;
 
@@ -87,7 +86,7 @@ pub(crate) fn render(
     }
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let foreground_image = render_foreground_graphics_atlas(&graphics, &palette);
-    let layer3_tiles = load_pristine_layer3_tiles(&project)?;
+    let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
     Ok(VanillaMap16Preview {
         image: egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba),
         foreground_image,
@@ -103,9 +102,22 @@ pub(crate) fn render(
     })
 }
 
-fn load_pristine_layer3_tiles(project: &Project) -> Result<Vec<IndexedTile>, String> {
-    let mut tiles = Vec::with_capacity(PRISTINE_LAYER3_GRAPHICS_FILES.len() * LAYER3_SLOT_TILES);
-    for file in PRISTINE_LAYER3_GRAPHICS_FILES {
+fn load_layer3_tiles(project: &Project, level: usize) -> Result<Vec<IndexedTile>, String> {
+    let settings = lm_profile::load_smw_us_v1_expanded_level_settings(project, level)
+        .map_err(|error| error.to_string())?
+        .settings;
+    let files = [
+        usize::from(settings.word(15).map_err(|error| error.to_string())? & 0x0fff),
+        usize::from(settings.word(14).map_err(|error| error.to_string())? & 0x0fff),
+        usize::from(settings.word(13).map_err(|error| error.to_string())? & 0x0fff),
+        usize::from(settings.word(12).map_err(|error| error.to_string())? & 0x0fff),
+        0x7f,
+        0x7f,
+        0x7f,
+        0x7f,
+    ];
+    let mut tiles = Vec::with_capacity(files.len() * LAYER3_SLOT_TILES);
+    for file in files {
         if file == 0x7f {
             tiles.extend(
                 std::iter::repeat_with(|| IndexedTile::new([0; IndexedTile::PIXEL_COUNT]))

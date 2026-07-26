@@ -1,5 +1,6 @@
 //! SMW US revision-0 expanded overworld settings slots.
 
+use lm_level::ExpandedLevelSettingsRecord;
 use lm_level::ExpandedOverworldSettings;
 use lm_overworld::{OverworldLayer3SettingsError, OverworldLayer3SettingsTable};
 use lm_project::{
@@ -25,6 +26,12 @@ pub const SMW_US_V1_EXPANDED_SETTINGS_TABLE_OFFSET: usize =
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoadedSmwUsV1OverworldSettings {
     pub settings: ExpandedOverworldSettings,
+    pub installed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoadedSmwUsV1ExpandedLevelSettings {
+    pub settings: ExpandedLevelSettingsRecord,
     pub installed: bool,
 }
 
@@ -134,6 +141,38 @@ pub fn load_smw_us_v1_overworld_settings(
     })
 }
 
+/// Loads one standard level's expanded settings through the validated owner, or returns the
+/// recovered pristine default when the feature is absent.
+///
+/// # Errors
+///
+/// Rejects an out-of-range level or malformed installed allocation.
+pub fn load_smw_us_v1_expanded_level_settings(
+    project: &Project,
+    level: usize,
+) -> Result<LoadedSmwUsV1ExpandedLevelSettings, SmwUsV1OverworldSettingsLoadError> {
+    let bytes = project.rom.logical_bytes();
+    let header = SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START;
+    if bytes.get(header..header + 4) != Some(b"STAR") {
+        return Ok(LoadedSmwUsV1ExpandedLevelSettings {
+            settings: crate::smw_us_v1_default_expanded_settings_record(),
+            installed: false,
+        });
+    }
+    let block = parse_at(bytes, header)
+        .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidOwnedBlock)?;
+    if block.payload.len() != SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN {
+        return Err(SmwUsV1OverworldSettingsLoadError::WrongOwnedLength(
+            block.payload.len(),
+        ));
+    }
+    let allocation = SmwUsV1ExpandedSettingsAllocation::decode(&bytes[block.payload])?;
+    Ok(LoadedSmwUsV1ExpandedLevelSettings {
+        settings: allocation.record(level)?.clone(),
+        installed: true,
+    })
+}
+
 /// Loads the seven records through the validated expanded-settings owner and gives them their
 /// recovered overworld Layer 3 semantics.
 ///
@@ -219,6 +258,12 @@ mod tests {
                 .iter()
                 .all(|record| { record == &smw_us_v1_default_special_expanded_settings_record() })
         );
+        let level = load_smw_us_v1_expanded_level_settings(&project, 0).unwrap();
+        assert!(!level.installed);
+        assert_eq!(
+            level.settings,
+            crate::smw_us_v1_default_expanded_settings_record()
+        );
     }
 
     #[test]
@@ -236,6 +281,14 @@ mod tests {
             loaded.settings,
             project
                 .load_overworld_layer3_settings(smw_us_v1_overworld_layer3_settings_layout())
+                .unwrap()
+        );
+        let level = load_smw_us_v1_expanded_level_settings(&project, 0).unwrap();
+        assert!(level.installed);
+        assert_eq!(
+            level.settings,
+            project
+                .load_expanded_level_settings(0, smw_us_v1_expanded_settings_layout())
                 .unwrap()
         );
     }
