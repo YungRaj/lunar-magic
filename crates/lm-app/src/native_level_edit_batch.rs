@@ -58,6 +58,16 @@ pub(crate) fn apply_native_level_edits(
                     .sort_legacy_records_by_screen(*selected)
                     .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
             }
+            NativeLevelEdit::RelocateExpandedSprite {
+                selected,
+                screen,
+                x,
+                y,
+            } => {
+                staged_sprites
+                    .relocate_expanded_record(*selected, *screen, *x, *y, sprite_lengths)
+                    .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
+            }
         }
     }
     let encoded_layer = staged_layer1

@@ -1,5 +1,7 @@
 use super::*;
-use lm_level::{LegacyHeaderEdit, LevelObjectData, NativeSpriteStream, ObjectEdit, ObjectRecord};
+use lm_level::{
+    LegacyHeaderEdit, LevelObjectData, NativeSpriteStream, ObjectEdit, ObjectRecord, SpriteToken,
+};
 
 fn file() -> NativeLevelFile {
     NativeLevelFile {
@@ -22,6 +24,44 @@ fn controller() -> NativeLevelDocumentController {
         SpriteLengthTable::standard(),
     )
     .unwrap()
+}
+
+#[test]
+fn expanded_sprite_relocation_is_one_revision_and_reopens_canonically() {
+    let mut value = file();
+    value.sprites.expanded = true;
+    value.sprites.tokens.insert(0, SpriteToken::Screen(2));
+    let mut controller = NativeLevelDocumentController::decode(
+        "expanded.lmlvl".into(),
+        &value.encode().unwrap(),
+        SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    controller
+        .apply_edits(
+            0,
+            &[NativeLevelEdit::RelocateExpandedSprite {
+                selected: 1,
+                screen: 4,
+                x: 3,
+                y: 5 * 32 + 7,
+            }],
+        )
+        .unwrap();
+    assert_eq!(controller.revision(), 1);
+    let placement = controller.value().sprites.native_placements()[0];
+    assert_eq!(
+        (placement.screen, placement.major, placement.minor),
+        (4, 67, 167)
+    );
+    let snapshot = controller.begin_save().unwrap();
+    assert_eq!(
+        NativeLevelFile::decode(&snapshot.bytes, controller.sprite_lengths()).unwrap(),
+        *controller.value()
+    );
+    controller.cancel_save(snapshot.request_id).unwrap();
+    assert!(controller.undo(1).unwrap());
+    assert_eq!(controller.value(), &value);
 }
 
 #[test]

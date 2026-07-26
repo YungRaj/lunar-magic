@@ -1,4 +1,7 @@
-use crate::{NativeSpriteStream, ObjectRecord, ObjectStream, SpriteToken};
+use crate::{
+    NativeSpriteFieldError, NativeSpriteStream, ObjectRecord, ObjectStream, SpriteLengthTable,
+    SpriteToken,
+};
 use std::fmt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -7,7 +10,11 @@ pub enum LevelEditError {
     LegacyIncompatibleSpriteToken { index: usize },
     LegacyTerminatorCollision { index: usize },
     ExpandedSpritePositionSort,
+    ExpandedSpriteRelocationRequiresExpanded,
+    ExpandedSpriteYOutOfRange(u16),
+    OpaqueExpandedSpriteControl { index: usize },
     ShortSpriteRecord { index: usize, len: usize },
+    SpriteField(NativeSpriteFieldError),
     ObjectRelocation(crate::ObjectRelocationError),
 }
 
@@ -126,6 +133,91 @@ impl NativeSpriteStream {
         };
         self.tokens = staged.into_iter().map(|(_, _, token)| token).collect();
         Ok(new_index)
+    }
+
+    /// Relocates one expanded sprite record and canonically rebuilds shared upper-Y controls.
+    ///
+    /// Record order, base identity fields, and extension bytes remain unchanged. Redundant screen
+    /// controls are removed and the minimum state transitions needed by the record sequence are
+    /// emitted. Returns the selected record's new token index.
+    ///
+    /// # Errors
+    ///
+    /// Rejects legacy streams, invalid/non-record selections, out-of-range coordinates, opaque
+    /// control tokens, and revision-table width changes without mutating the stream.
+    pub fn relocate_expanded_record(
+        &mut self,
+        selected: usize,
+        screen: u8,
+        x: u8,
+        y: u16,
+        lengths: &SpriteLengthTable,
+    ) -> Result<usize, LevelEditError> {
+        if !self.expanded {
+            return Err(LevelEditError::ExpandedSpriteRelocationRequiresExpanded);
+        }
+        if selected >= self.tokens.len() {
+            return Err(LevelEditError::IndexOutOfBounds {
+                index: selected,
+                len: self.tokens.len(),
+            });
+        }
+        let upper_y = u8::try_from(y / 32)
+            .ok()
+            .filter(|value| *value <= 0x7f)
+            .ok_or(LevelEditError::ExpandedSpriteYOutOfRange(y))?;
+        let y_low =
+            u8::try_from(y % 32).map_err(|_| LevelEditError::ExpandedSpriteYOutOfRange(y))?;
+        let mut active_upper_y = 0_u8;
+        let mut records = Vec::with_capacity(self.tokens.len());
+        for (index, token) in self.tokens.iter().enumerate() {
+            match token {
+                SpriteToken::Screen(value) => active_upper_y = *value,
+                SpriteToken::Control(_) => {
+                    return Err(LevelEditError::OpaqueExpandedSpriteControl { index });
+                }
+                SpriteToken::Record(record) => {
+                    let mut record = record.clone();
+                    let mut fields = record
+                        .native_fields()
+                        .map_err(LevelEditError::SpriteField)?;
+                    let record_upper_y = if index == selected {
+                        fields.screen = screen;
+                        fields.x = x;
+                        fields.y_low = y_low;
+                        record
+                            .set_native_fields(fields, lengths)
+                            .map_err(LevelEditError::SpriteField)?;
+                        upper_y
+                    } else {
+                        active_upper_y
+                    };
+                    records.push((index, record_upper_y, record));
+                }
+            }
+        }
+        if !records.iter().any(|(index, _, _)| *index == selected) {
+            return Err(LevelEditError::LegacyIncompatibleSpriteToken { index: selected });
+        }
+        let mut rebuilt = Vec::with_capacity(records.len().saturating_mul(2));
+        let mut emitted_upper_y = 0_u8;
+        let mut new_selected = None;
+        for (original_index, record_upper_y, record) in records {
+            if record_upper_y != emitted_upper_y {
+                rebuilt.push(SpriteToken::Screen(record_upper_y));
+                emitted_upper_y = record_upper_y;
+            }
+            if original_index == selected {
+                new_selected = Some(rebuilt.len());
+            }
+            rebuilt.push(SpriteToken::Record(record));
+        }
+        let new_selected = new_selected.ok_or(LevelEditError::IndexOutOfBounds {
+            index: selected,
+            len: rebuilt.len(),
+        })?;
+        self.tokens = rebuilt;
+        Ok(new_selected)
     }
 
     /// Changes the stream format after validating lossless legacy compatibility.
@@ -323,6 +415,107 @@ mod tests {
         ] {
             let original = stream.clone();
             assert!(stream.sort_legacy_records_by_screen(0).is_err());
+            assert_eq!(stream, original);
+        }
+    }
+
+    #[test]
+    fn expanded_relocation_rebuilds_minimal_upper_y_transitions() {
+        let mut stream = NativeSpriteStream {
+            header: 0x5a,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Screen(2),
+                sprite(1),
+                SpriteToken::Screen(2),
+                sprite(2),
+                SpriteToken::Screen(5),
+                sprite(3),
+            ],
+        };
+        let selected = stream
+            .relocate_expanded_record(3, 7, 9, 6 * 32 + 29, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(selected, 3);
+        assert_eq!(
+            stream.tokens,
+            [
+                SpriteToken::Screen(2),
+                sprite(1),
+                SpriteToken::Screen(6),
+                SpriteToken::Record(crate::SpriteRecord {
+                    encoded: vec![0xd1, 0x97, 2],
+                }),
+                SpriteToken::Screen(5),
+                sprite(3),
+            ]
+        );
+        assert_eq!(stream.header, 0x5a);
+    }
+
+    #[test]
+    fn expanded_relocation_preserves_custom_extension_bytes() {
+        let mut lengths = SpriteLengthTable::standard();
+        lengths.set(2, 0x42, 5).unwrap();
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: true,
+            tokens: vec![SpriteToken::Record(crate::SpriteRecord {
+                encoded: vec![0x08, 0x00, 0x42, 0xaa, 0xbb],
+            })],
+        };
+        assert_eq!(
+            stream
+                .relocate_expanded_record(0, 0x1e, 3, 0x7f, &lengths)
+                .unwrap(),
+            1
+        );
+        let SpriteToken::Record(record) = &stream.tokens[1] else {
+            panic!("relocated record must remain a record");
+        };
+        assert_eq!(&record.encoded[3..], [0xaa, 0xbb]);
+        assert_eq!(record.native_fields().unwrap().screen, 0x1e);
+        assert_eq!(record.native_fields().unwrap().x, 3);
+        assert_eq!(record.native_fields().unwrap().y_low, 0x1f);
+    }
+
+    #[test]
+    fn expanded_relocation_failures_are_atomic() {
+        for (mut stream, index, y) in [
+            (
+                NativeSpriteStream {
+                    header: 0,
+                    expanded: false,
+                    tokens: vec![sprite(1)],
+                },
+                0,
+                0,
+            ),
+            (
+                NativeSpriteStream {
+                    header: 0,
+                    expanded: true,
+                    tokens: vec![SpriteToken::Control(0x80), sprite(1)],
+                },
+                1,
+                0,
+            ),
+            (
+                NativeSpriteStream {
+                    header: 0,
+                    expanded: true,
+                    tokens: vec![sprite(1)],
+                },
+                0,
+                0x1000,
+            ),
+        ] {
+            let original = stream.clone();
+            assert!(
+                stream
+                    .relocate_expanded_record(index, 0, 0, y, &SpriteLengthTable::standard())
+                    .is_err()
+            );
             assert_eq!(stream, original);
         }
     }

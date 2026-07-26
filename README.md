@@ -516,9 +516,11 @@ interactive frontends cannot bypass confirmation and request correlation through
   labeled unresolved/custom sprite markers; clicking a placement loads the corresponding semantic
   form. Explicit canvas tools move the selected ordinary object through transition-preserving
   stream relocation or rewrite a selected sprite's coordinate fields as one undoable edit while
-  preserving its identity, extra bits, and custom extension bytes. Sprite moves fail closed across
-  upper-coordinate control bands that cannot be locally rewritten. The canvas deliberately does
-  not fabricate ROM graphics or SSC/OSC artwork absent from this portable document boundary.
+  preserving its identity, extra bits, and custom extension bytes. Expanded sprite moves can cross
+  upper-coordinate bands: shared screen controls are rebuilt into minimal canonical transitions,
+  record order is retained, and the selected token index is tracked. Still-uninterpreted opaque
+  control tokens fail closed rather than being silently reordered. The canvas deliberately does not
+  fabricate ROM graphics or SSC/OSC artwork absent from this portable document boundary.
   Exact 32-byte expanded-settings records have a standalone native editor as well. All sixteen
   little-endian words are visible as four-digit hexadecimal values and applied as one duplicate-
   free atomic batch; the UI deliberately does not label meanings that have not been proven.

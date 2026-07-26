@@ -197,18 +197,23 @@ impl NativeLevelDocumentEditor {
         }
     }
 
-    fn apply_result(&mut self, edit: Result<NativeLevelEdit, String>) {
+    fn apply_result(&mut self, edit: Result<NativeLevelEdit, String>) -> bool {
         match edit {
             Ok(edit) => self.apply(edit),
-            Err(e) => self.error = Some(e),
+            Err(e) => {
+                self.error = Some(e);
+                false
+            }
         }
     }
-    fn apply(&mut self, edit: NativeLevelEdit) {
+    fn apply(&mut self, edit: NativeLevelEdit) -> bool {
         if let Some(c) = self.controller.as_mut() {
             if let Err(e) = c.apply_edits(c.revision(), &[edit]) {
                 self.error = Some(e.to_string());
+                return false;
             }
         }
+        true
     }
     fn save(&mut self) {
         let Some(c) = self.controller.as_mut() else {

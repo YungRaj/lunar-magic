@@ -19,11 +19,30 @@ pub enum NativeLevelEdit {
     LegacyHeader(LegacyHeaderEdit),
     Objects(Vec<ObjectEdit>),
     SetSpriteHeader(u8),
-    InsertSprite { index: usize, token: SpriteToken },
-    ReplaceSprite { index: usize, token: SpriteToken },
-    RemoveSprite { index: usize },
-    MoveSpriteBefore { from: usize, before: usize },
-    SortLegacySpritesByScreen { selected: usize },
+    InsertSprite {
+        index: usize,
+        token: SpriteToken,
+    },
+    ReplaceSprite {
+        index: usize,
+        token: SpriteToken,
+    },
+    RemoveSprite {
+        index: usize,
+    },
+    MoveSpriteBefore {
+        from: usize,
+        before: usize,
+    },
+    SortLegacySpritesByScreen {
+        selected: usize,
+    },
+    RelocateExpandedSprite {
+        selected: usize,
+        screen: u8,
+        x: u8,
+        y: u16,
+    },
 }
 
 #[derive(Debug)]

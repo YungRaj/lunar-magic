@@ -81,6 +81,7 @@ impl NativeLevelDocumentEditor {
                                     |(major, minor)| match self.canvas_tool {
                                         NativeLevelCanvasTool::MoveObject => {
                                             object_move_edit(value, self.object_index, major, minor)
+                                                .map(|edit| (edit, None))
                                         }
                                         NativeLevelCanvasTool::MoveSprite => sprite_move_edit(
                                             value,
@@ -99,7 +100,7 @@ impl NativeLevelDocumentEditor {
                 }
             });
         if let Some(edit) = canvas_edit {
-            self.apply_result(edit);
+            self.apply_canvas_edit(edit);
         }
         ui.small(format!(
             "{} placement canvas · {}×{} native-axis tiles · Select loads fields; move tools commit one undoable placement edit",
@@ -107,6 +108,19 @@ impl NativeLevelDocumentEditor {
             major_tiles,
             minor_tiles
         ));
+    }
+
+    fn apply_canvas_edit(&mut self, result: Result<(NativeLevelEdit, Option<usize>), String>) {
+        match result {
+            Ok((edit, selected)) => {
+                if self.apply(edit)
+                    && let Some(selected) = selected
+                {
+                    self.sprite_index = selected;
+                }
+            }
+            Err(error) => self.error = Some(error),
+        }
     }
 }
 
@@ -166,16 +180,38 @@ fn sprite_move_edit(
     major: u16,
     minor: u16,
     placements: &[NativeSpritePlacement],
-) -> Result<NativeLevelEdit, String> {
+) -> Result<(NativeLevelEdit, Option<usize>), String> {
     let placement = placements
         .iter()
         .find(|placement| placement.token_index == index)
         .ok_or_else(|| "select a sprite record before moving it on the canvas".to_owned())?;
     let screen = major / 16;
-    if screen > 0x1f || (minor / 32) != (placement.minor / 32) {
-        return Err(
-            "sprite move must stay inside its native upper-coordinate band and screen range".into(),
-        );
+    if screen > 0x1f {
+        return Err("sprite canvas destination is outside the native screen range".into());
+    }
+    if value.sprites.expanded {
+        let mut relocated = value.sprites.clone();
+        let selected = relocated
+            .relocate_expanded_record(
+                index,
+                u8::try_from(screen).expect("screen was bounded to 31"),
+                u8::try_from(major % 16).expect("major remainder is at most 15"),
+                minor,
+                lengths,
+            )
+            .map_err(|error| error.to_string())?;
+        return Ok((
+            NativeLevelEdit::RelocateExpandedSprite {
+                selected: index,
+                screen: u8::try_from(screen).expect("screen was bounded to 31"),
+                x: u8::try_from(major % 16).expect("major remainder is at most 15"),
+                y: minor,
+            },
+            Some(selected),
+        ));
+    }
+    if (minor / 32) != (placement.minor / 32) {
+        return Err("legacy sprite destination is outside its coordinate band".into());
     }
     let Some(SpriteToken::Record(record)) = value.sprites.tokens.get(index) else {
         return Err("select a sprite record before moving it on the canvas".into());
@@ -193,10 +229,13 @@ fn sprite_move_edit(
             lengths,
         )
         .map_err(|error| error.to_string())?;
-    Ok(NativeLevelEdit::ReplaceSprite {
-        index,
-        token: SpriteToken::Record(moved),
-    })
+    Ok((
+        NativeLevelEdit::ReplaceSprite {
+            index,
+            token: SpriteToken::Record(moved),
+        },
+        None,
+    ))
 }
 
 fn canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool) -> egui::Vec2 {
@@ -527,7 +566,7 @@ mod tests {
     fn sprite_canvas_move_preserves_identity_and_extra_bits() {
         let value = native_file();
         let placements = value.sprites.native_placements();
-        let edit = sprite_move_edit(
+        let (edit, selected) = sprite_move_edit(
             &value,
             &SpriteLengthTable::standard(),
             0,
@@ -536,6 +575,7 @@ mod tests {
             &placements,
         )
         .unwrap();
+        assert_eq!(selected, None);
         let NativeLevelEdit::ReplaceSprite {
             index,
             token: SpriteToken::Record(record),
@@ -560,6 +600,33 @@ mod tests {
                 &placements
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn expanded_sprite_canvas_move_can_cross_upper_coordinate_bands() {
+        let mut value = native_file();
+        value.sprites.expanded = true;
+        value.sprites.tokens.insert(0, SpriteToken::Screen(2));
+        let placements = value.sprites.native_placements();
+        let (edit, selected) = sprite_move_edit(
+            &value,
+            &SpriteLengthTable::standard(),
+            1,
+            4 * 16 + 3,
+            5 * 32 + 7,
+            &placements,
+        )
+        .unwrap();
+        assert_eq!(selected, Some(1));
+        assert_eq!(
+            edit,
+            NativeLevelEdit::RelocateExpandedSprite {
+                selected: 1,
+                screen: 4,
+                x: 3,
+                y: 167,
+            }
         );
     }
 }

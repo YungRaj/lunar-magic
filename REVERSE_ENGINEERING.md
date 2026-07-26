@@ -1754,11 +1754,14 @@ testing includes the complete standard composite and loads the exact object or
 sprite semantic form. The explicit move tools convert horizontal/vertical
 display coordinates back into the orientation-neutral native axes. Object
 moves reuse the transition-preserving stream relocation transaction. Sprite
-moves preserve the command identity, extra bits, and extension payload, and
-fail closed if a click crosses the selected record's upper-coordinate control
-band because that band is shared stream state rather than a local record
-field. Since `LMLVL1` carries no graphics, palette, SSC, OSC, or Map16 sidecar
-payload, this canvas intentionally makes no unsupported artwork claim.
+moves preserve the command identity, extra bits, extension payload, and record
+priority order. For expanded streams the editor first resolves every record's
+effective upper-Y state, changes the selected record, then emits the minimal
+sequence of shared `$FF vv` transitions and returns the selected record's new
+token index. Opaque `$FF 80..FD` controls remain a typed atomic rejection until
+their state interaction is proved. Since `LMLVL1` carries no graphics,
+palette, SSC, OSC, or Map16 sidecar payload, this canvas intentionally makes
+no unsupported artwork claim.
 
 The reciprocal MWL Wine oracle inserts an object, moves the original from its
 source screen to screen `$02`, and changes both coordinate nibbles. Lunar Magic

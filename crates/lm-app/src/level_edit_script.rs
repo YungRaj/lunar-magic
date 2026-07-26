@@ -176,28 +176,46 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
             },
         ])),
         ["sprite-header", value] => Ok(NativeLevelEdit::SetSpriteHeader(hex_byte(line, value)?)),
-        ["sprite", "insert", index, kind, value] => Ok(NativeLevelEdit::InsertSprite {
-            index: decimal(line, index)?,
-            token: sprite_token(line, kind, value)?,
-        }),
-        ["sprite", "replace", index, kind, value] => Ok(NativeLevelEdit::ReplaceSprite {
-            index: decimal(line, index)?,
-            token: sprite_token(line, kind, value)?,
-        }),
-        ["sprite", "remove", index] => Ok(NativeLevelEdit::RemoveSprite {
-            index: decimal(line, index)?,
-        }),
-        ["sprite", "move", from, before] => Ok(NativeLevelEdit::MoveSpriteBefore {
-            from: decimal(line, from)?,
-            before: decimal(line, before)?,
-        }),
-        ["sprite", "sort-screen", selected] => Ok(NativeLevelEdit::SortLegacySpritesByScreen {
-            selected: decimal(line, selected)?,
-        }),
+        ["sprite", command @ ..] => parse_sprite_command(line, command),
         [command, ..] if !matches!(*command, "header" | "object" | "sprite-header" | "sprite") => {
             Err(LevelEditScriptError::UnknownCommand {
                 line,
                 command: (*command).into(),
+            })
+        }
+        _ => Err(LevelEditScriptError::WrongArity { line }),
+    }
+}
+
+fn parse_sprite_command(
+    line: usize,
+    command: &[&str],
+) -> Result<NativeLevelEdit, LevelEditScriptError> {
+    match command {
+        ["insert", index, kind, value] => Ok(NativeLevelEdit::InsertSprite {
+            index: decimal(line, index)?,
+            token: sprite_token(line, kind, value)?,
+        }),
+        ["replace", index, kind, value] => Ok(NativeLevelEdit::ReplaceSprite {
+            index: decimal(line, index)?,
+            token: sprite_token(line, kind, value)?,
+        }),
+        ["remove", index] => Ok(NativeLevelEdit::RemoveSprite {
+            index: decimal(line, index)?,
+        }),
+        ["move", from, before] => Ok(NativeLevelEdit::MoveSpriteBefore {
+            from: decimal(line, from)?,
+            before: decimal(line, before)?,
+        }),
+        ["sort-screen", selected] => Ok(NativeLevelEdit::SortLegacySpritesByScreen {
+            selected: decimal(line, selected)?,
+        }),
+        ["relocate-expanded", selected, screen, x, y] => {
+            Ok(NativeLevelEdit::RelocateExpandedSprite {
+                selected: decimal(line, selected)?,
+                screen: hex_byte(line, screen)?,
+                x: hex_byte(line, x)?,
+                y: hex_word(line, y)?,
             })
         }
         _ => Err(LevelEditScriptError::WrongArity { line }),
@@ -351,9 +369,10 @@ mod tests {
             sprite replace 0 record 040005\n\
             sprite move 2 0\n\
             sprite sort-screen 0\n\
+            sprite relocate-expanded 0 04 03 00A7\n\
             sprite remove 1\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 19);
+        assert_eq!(edits.len(), 20);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert!(matches!(edits[4], NativeLevelEdit::Objects(_)));
         assert!(matches!(
@@ -397,6 +416,15 @@ mod tests {
         assert!(matches!(
             edits[17],
             NativeLevelEdit::SortLegacySpritesByScreen { selected: 0 }
+        ));
+        assert!(matches!(
+            edits[18],
+            NativeLevelEdit::RelocateExpandedSprite {
+                selected: 0,
+                screen: 4,
+                x: 3,
+                y: 0xa7
+            }
         ));
         assert!(matches!(
             edits[14],
