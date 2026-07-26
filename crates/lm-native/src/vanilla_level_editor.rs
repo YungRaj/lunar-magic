@@ -12,6 +12,7 @@ use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
 const ROM_LEVEL_CANVAS_VIEW_HEIGHT: f32 = 420.0;
+const STANDARD_SPRITE_MAX: u8 = 0xed;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct EditorKey {
@@ -194,6 +195,7 @@ pub(crate) struct VanillaLevelEditor {
     selected_sprite: usize,
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
+    sprite_catalog_filter: String,
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
@@ -1312,8 +1314,19 @@ impl VanillaLevelEditor {
             .as_ref()
             .map_or(0, |controller| controller.level().sprites.tokens.len());
         ui.label("Native sprite stream");
+        self.sprite_catalog(ui);
         self.sprite_form_controls(ui);
         sprite_save_constraint(ui);
+        self.sprite_editor_actions(ui, token_count);
+        if self.paste_target == Some(EntityPasteTarget::Sprite)
+            && let Some(text) = pasted_text(ui)
+        {
+            self.paste_target = None;
+            self.paste_sprite(&text, token_count);
+        }
+    }
+
+    fn sprite_editor_actions(&mut self, ui: &mut egui::Ui, token_count: usize) {
         ui.horizontal(|ui| {
             if ui.button("Stage sprite header").clicked()
                 && let Some(controller) = self.controller.as_mut()
@@ -1401,11 +1414,74 @@ impl VanillaLevelEditor {
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
         });
-        if self.paste_target == Some(EntityPasteTarget::Sprite)
-            && let Some(text) = pasted_text(ui)
-        {
-            self.paste_target = None;
-            self.paste_sprite(&text, token_count);
+    }
+
+    fn sprite_catalog(&mut self, ui: &mut egui::Ui) {
+        egui::CollapsingHeader::new("Add standard sprite visually")
+            .id_salt("vanilla-standard-sprite-catalog")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Hex filter");
+                    ui.text_edit_singleline(&mut self.sprite_catalog_filter);
+                    if ui.button("Clear").clicked() {
+                        self.sprite_catalog_filter.clear();
+                    }
+                });
+                ui.label(
+                    "Choose a recovered standard-sprite preview, then click its destination tile.",
+                );
+                let ids = sprite_catalog_ids(&self.sprite_catalog_filter);
+                let texture = self.sprite_texture.clone();
+                let (vertical, level_mode) =
+                    self.controller.as_ref().map_or((false, 0), |controller| {
+                        let header = &controller.level().layer1.header;
+                        (
+                            lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical,
+                            header.level_mode(),
+                        )
+                    });
+                let mode = sprite_catalog_preview_mode(&self.sprite_form, vertical, level_mode);
+                let mut chosen = None;
+                egui::ScrollArea::vertical()
+                    .id_salt("vanilla-standard-sprite-catalog-scroll")
+                    .max_height(280.0)
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            for id in ids {
+                                let response = draw_sprite_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    id,
+                                    mode,
+                                    id == self.sprite_form.sprite_number,
+                                );
+                                if response.clicked() {
+                                    chosen = Some(id);
+                                }
+                            }
+                        });
+                    });
+                if let Some(id) = chosen {
+                    self.choose_standard_sprite(id);
+                }
+            });
+    }
+
+    fn choose_standard_sprite(&mut self, sprite_number: u8) {
+        let fields = NativeSpriteRecordFields {
+            y_low: self.sprite_form.y_low,
+            extra_bits: self.sprite_form.extra_bits,
+            screen: self.sprite_form.screen,
+            x: self.sprite_form.x,
+            sprite_number,
+        };
+        match standard_sprite_token(fields) {
+            Ok(token) => {
+                self.sprite_form = SpriteForm::from_token(self.sprite_form.header, Some(&token));
+                self.placement_mode = Some(CanvasPlacementMode::Sprite);
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
         }
     }
 
@@ -1760,6 +1836,140 @@ fn rom_canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool) -> egui::
         egui::vec2(minor, major)
     } else {
         egui::vec2(major, minor)
+    }
+}
+
+fn sprite_catalog_ids(filter: &str) -> Vec<u8> {
+    let filter = filter.trim().to_ascii_uppercase();
+    (0..=STANDARD_SPRITE_MAX)
+        .filter(|id| filter.is_empty() || format!("{id:02X}").contains(&filter))
+        .collect()
+}
+
+fn standard_sprite_token(fields: NativeSpriteRecordFields) -> Result<SpriteToken, String> {
+    let mut record = lm_level::SpriteRecord {
+        encoded: vec![0, 0, fields.sprite_number],
+    };
+    record
+        .set_native_fields(fields, &SpriteLengthTable::standard())
+        .map_err(|error| error.to_string())?;
+    Ok(SpriteToken::Record(record))
+}
+
+fn sprite_catalog_preview_mode(
+    form: &SpriteForm,
+    vertical: bool,
+    level_mode: u8,
+) -> lm_render::StandardSpritePreviewMode {
+    let placement_first = (form.y_low & 0x0f) << 4
+        | (form.extra_bits & 3) << 2
+        | (form.screen >> 4) << 1
+        | form.y_low >> 4;
+    lm_render::StandardSpritePreviewMode {
+        placement_first,
+        level_mode,
+        level_orientation: if vertical {
+            lm_render::StandardLevelOrientation::Vertical
+        } else {
+            lm_render::StandardLevelOrientation::Horizontal
+        },
+        ..lm_render::StandardSpritePreviewMode::default()
+    }
+}
+
+fn draw_sprite_catalog_entry(
+    ui: &mut egui::Ui,
+    texture: Option<&egui::TextureHandle>,
+    sprite_number: u8,
+    mode: lm_render::StandardSpritePreviewMode,
+    selected: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(62.0, 62.0), egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(
+        rect,
+        3.0,
+        if selected {
+            egui::Color32::from_rgb(65, 72, 45)
+        } else {
+            egui::Color32::from_gray(28)
+        },
+    );
+    painter.rect_stroke(
+        rect,
+        3.0,
+        egui::Stroke::new(
+            if selected { 2.0_f32 } else { 1.0_f32 },
+            if selected {
+                egui::Color32::YELLOW
+            } else {
+                egui::Color32::from_gray(70)
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    let preview_rect = egui::Rect::from_min_max(
+        rect.min + egui::vec2(3.0, 3.0),
+        rect.max - egui::vec2(3.0, 15.0),
+    );
+    let parts = lm_render::render_lunar_magic_standard_sprite_with_mode(sprite_number, mode);
+    if let (Some(texture), Some(parts)) = (texture, parts) {
+        draw_fitted_sprite_catalog_preview(&painter, texture, preview_rect, &parts);
+    } else {
+        painter.text(
+            preview_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("{sprite_number:02X}"),
+            egui::FontId::monospace(12.0),
+            egui::Color32::LIGHT_RED,
+        );
+    }
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 7.0),
+        egui::Align2::CENTER_CENTER,
+        format!("{sprite_number:02X}"),
+        egui::FontId::monospace(10.0),
+        egui::Color32::WHITE,
+    );
+    response.on_hover_text(format!("Standard sprite ${sprite_number:02X}"))
+}
+
+fn draw_fitted_sprite_catalog_preview(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    parts: &[lm_render::StandardSpritePreviewTile],
+) {
+    let min_x = parts.iter().map(|part| part.x).min().unwrap_or(0);
+    let min_y = parts.iter().map(|part| part.y).min().unwrap_or(0);
+    let max_x = parts
+        .iter()
+        .map(|part| part.x.saturating_add(16))
+        .max()
+        .unwrap_or(16);
+    let max_y = parts
+        .iter()
+        .map(|part| part.y.saturating_add(16))
+        .max()
+        .unwrap_or(16);
+    let width = f32::from(max_x.saturating_sub(min_x).max(1));
+    let height = f32::from(max_y.saturating_sub(min_y).max(1));
+    let scale = (target.width() / width)
+        .min(target.height() / height)
+        .min(1.0);
+    let origin = target.center() - egui::vec2(width * scale, height * scale) / 2.0;
+    for part in parts {
+        let position = origin
+            + egui::vec2(
+                f32::from(part.x.saturating_sub(min_x)) * scale,
+                f32::from(part.y.saturating_sub(min_y)) * scale,
+            );
+        draw_sprite_preview_definition(
+            painter,
+            texture,
+            egui::Rect::from_min_size(position, egui::vec2(16.0 * scale, 16.0 * scale)),
+            part.subtiles,
+        );
     }
 }
 
@@ -2459,6 +2669,56 @@ mod tests {
             ..sprites[0]
         }];
         assert_eq!(canvas_major_tiles(&[], &out_of_model), 512);
+    }
+
+    #[test]
+    fn standard_sprite_catalog_is_complete_and_hex_filterable() {
+        let all = sprite_catalog_ids("");
+        assert_eq!(all.len(), usize::from(STANDARD_SPRITE_MAX) + 1);
+        assert_eq!(all.first(), Some(&0));
+        assert_eq!(all.last(), Some(&STANDARD_SPRITE_MAX));
+        let with_a = sprite_catalog_ids("a");
+        assert_eq!(with_a.len(), 30);
+        assert!(with_a.contains(&0x0a));
+        assert!(with_a.contains(&0xa0));
+        assert!(with_a.contains(&0xaf));
+        assert!(with_a.contains(&0xea));
+        assert_eq!(sprite_catalog_ids("ED"), vec![0xed]);
+        assert!(sprite_catalog_ids("not hex").is_empty());
+    }
+
+    #[test]
+    fn catalog_selection_constructs_a_valid_native_sprite_record() {
+        let fields = NativeSpriteRecordFields {
+            y_low: 0x1d,
+            extra_bits: 2,
+            screen: 0x1e,
+            x: 3,
+            sprite_number: 0xa6,
+        };
+        let token = standard_sprite_token(fields).unwrap();
+        let SpriteToken::Record(record) = token else {
+            panic!("catalog always constructs an ordinary record");
+        };
+        assert_eq!(record.encoded, vec![0xdb, 0x3e, 0xa6]);
+        assert_eq!(record.native_fields().unwrap(), fields);
+    }
+
+    #[test]
+    fn catalog_preview_uses_current_packed_position_and_orientation() {
+        let form = SpriteForm {
+            y_low: 0x11,
+            extra_bits: 3,
+            screen: 0x1f,
+            ..SpriteForm::default()
+        };
+        let mode = sprite_catalog_preview_mode(&form, true, 7);
+        assert_eq!(mode.placement_first, 0x1f);
+        assert_eq!(mode.level_mode, 7);
+        assert_eq!(
+            mode.level_orientation,
+            lm_render::StandardLevelOrientation::Vertical
+        );
     }
 
     #[test]

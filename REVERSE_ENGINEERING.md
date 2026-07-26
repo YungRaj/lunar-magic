@@ -1729,6 +1729,12 @@ preserves trailing opaque controls. Sprite placement rewrites a valid form recor
 screen/X/Y through the recovered packed fields and applies the proven stable legacy screen sort.
 Invalid command-zero objects, sprite controls, width mismatches, and off-canvas clicks fail before
 the staged level changes.
+The corresponding Add Sprite workflow now presents all standard IDs `$00–$ED` in a bounded,
+hex-filterable visual catalog. Each cell calls the authenticated standard-sprite dispatch table
+with the current packed position byte, level mode, and orientation, fits its complete composite
+geometry into a preview cell, and labels empty/default handlers explicitly. Selecting an entry
+constructs the proven `yyyyEESY / XXXXssss / NNNNNNNN` record, retains the form's position and
+extra bits, and arms the same transactional canvas placement path.
 
 The first direct-ROM move oracle exposed one additional native invariant:
 Lunar Magic stably sorts legacy sprite records by their decoded five-bit

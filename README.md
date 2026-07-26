@@ -493,6 +493,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   the matching semantic form. Object creation inserts at an absolute screen and regenerates only
   owned transitions; sprite creation validates the selected native width and restores stable
   cross-screen order. Failed placements leave the staged stream unchanged.
+  The sprite form includes a searchable visual catalog for every authenticated standard handler
+  from `$00` through `$ED`. Catalog cells render through the same recovered mode-, orientation-,
+  position-, and graphics-aware dispatcher as the canvas; choosing one constructs a valid native
+  record and arms one-shot placement instead of requiring users to type packed bytes.
   A sprite can also be dragged directly on either horizontal or vertical level canvases; the drop
   is converted back to bounded native
   screen/X/Y fields, stably restores Lunar Magic's legacy screen ordering while retaining
