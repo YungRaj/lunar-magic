@@ -195,6 +195,8 @@ pub(crate) struct VanillaLevelEditor {
     object_form: ObjectForm,
     dragging_object: Option<usize>,
     object_catalog_filter: String,
+    custom_object_catalog_filter: String,
+    object_placement_template: Option<ObjectRecord>,
     selected_sprite: usize,
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
@@ -280,7 +282,7 @@ impl VanillaLevelEditor {
         ui.separator();
         ui.columns(2, |columns| {
             self.object_list(&mut columns[0]);
-            self.object_editor(&mut columns[1]);
+            self.object_editor(&mut columns[1], custom_objects, custom_map16);
         });
         ui.separator();
         ui.columns(2, |columns| {
@@ -411,6 +413,7 @@ impl VanillaLevelEditor {
                     .records
                     .first()
                     .map_or_else(ObjectForm::default, ObjectForm::from_record);
+                self.object_placement_template = None;
                 self.selected_sprite = 0;
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
@@ -438,6 +441,7 @@ impl VanillaLevelEditor {
         self.map16_summary = None;
         self.map16_error = None;
         self.standard_object_map = None;
+        self.object_placement_template = None;
         self.paste_target = None;
         self.dragging_sprite = None;
         self.dragging_object = None;
@@ -567,6 +571,7 @@ impl VanillaLevelEditor {
                     {
                         self.selected_object = index;
                         self.object_form = ObjectForm::from_record(record);
+                        self.object_placement_template = None;
                     }
                 }
             });
@@ -774,6 +779,7 @@ impl VanillaLevelEditor {
         {
             self.selected_object = index;
             self.object_form = ObjectForm::from_record(record);
+            self.object_placement_template = None;
         }
         if (response.clicked() || response.drag_started())
             && let Some(index) = hit_sprite
@@ -796,6 +802,7 @@ impl VanillaLevelEditor {
             self.dragging_object = Some(index);
             self.selected_object = index;
             self.object_form = ObjectForm::from_record(record);
+            self.object_placement_template = None;
         }
         if response.drag_stopped() {
             let position = response.interact_pointer_pos();
@@ -820,7 +827,7 @@ impl VanillaLevelEditor {
             self.error = Some("object placement is outside the native 16×512-tile space".into());
             return;
         };
-        let record = match self.object_form.ordinary_record() {
+        let record = match self.object_record_for_placement() {
             Ok(record) if record.command_id() != 0 => record,
             Ok(_) => {
                 self.error =
@@ -855,11 +862,31 @@ impl VanillaLevelEditor {
                 self.selected_object = selected;
                 self.object_form =
                     ObjectForm::from_record(&controller.level().layer1.objects.records[selected]);
+                self.object_placement_template = None;
                 self.placement_mode = None;
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
         }
+    }
+
+    fn object_record_for_placement(&self) -> Result<ObjectRecord, String> {
+        if let Some(mut record) = self.object_placement_template.clone()
+            && record.command_id() == self.object_form.command_id
+            && record.parameter() == self.object_form.parameter
+        {
+            record
+                .set_coordinate_nibbles(ObjectCoordinateNibbles {
+                    first: self.object_form.first_coordinate,
+                    second: self.object_form.second_coordinate,
+                })
+                .map_err(|error| error.to_string())?;
+            record
+                .set_advances_screen(self.object_form.advances_screen)
+                .map_err(|error| error.to_string())?;
+            return Ok(record);
+        }
+        self.object_form.ordinary_record()
     }
 
     fn place_sprite_at_canvas(
@@ -990,6 +1017,7 @@ impl VanillaLevelEditor {
                 self.selected_object = new_index;
                 self.object_form =
                     ObjectForm::from_record(&controller.level().layer1.objects.records[new_index]);
+                self.object_placement_template = None;
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -1153,7 +1181,12 @@ impl VanillaLevelEditor {
             .unwrap_or_default()
     }
 
-    fn object_editor(&mut self, ui: &mut egui::Ui) {
+    fn object_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
         let record_count = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.objects.records.len()
         });
@@ -1164,6 +1197,7 @@ impl VanillaLevelEditor {
             ui.label("No selected object.");
         }
         self.object_catalog(ui);
+        self.custom_object_catalog(ui, custom_objects, custom_map16);
         egui::Grid::new("vanilla-object-fields").show(ui, |ui| {
             header_row(ui, "Command", &mut self.object_form.command_id, 0x3f);
             header_row(ui, "Parameter", &mut self.object_form.parameter, 0xff);
@@ -1240,8 +1274,70 @@ impl VanillaLevelEditor {
                     self.object_form.command_id = command;
                     self.object_form.parameter = 0;
                     self.object_form.advances_screen = false;
+                    self.object_placement_template = None;
                     self.placement_mode = Some(CanvasPlacementMode::Object);
                     self.error = None;
+                }
+            });
+    }
+
+    fn custom_object_catalog(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
+        let Some(custom_objects) = custom_objects else {
+            return;
+        };
+        egui::CollapsingHeader::new("Add custom OSC object visually")
+            .id_salt("vanilla-custom-object-catalog")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Hex/name filter");
+                    ui.text_edit_singleline(&mut self.custom_object_catalog_filter);
+                    if ui.button("Clear").clicked() {
+                        self.custom_object_catalog_filter.clear();
+                    }
+                });
+                let variant = self.active_object_family_index();
+                let entries = custom_object_catalog_entries(
+                    custom_objects,
+                    variant,
+                    &self.custom_object_catalog_filter,
+                );
+                let map16_texture = self.map16_texture.clone();
+                let foreground_texture = self.foreground_texture.clone();
+                let mut chosen = None;
+                egui::ScrollArea::vertical()
+                    .id_salt("vanilla-custom-object-catalog-scroll")
+                    .max_height(280.0)
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            for entry in entries {
+                                let response = draw_custom_object_catalog_entry(
+                                    ui,
+                                    map16_texture.as_ref(),
+                                    foreground_texture.as_ref(),
+                                    custom_map16,
+                                    entry,
+                                );
+                                if response.clicked() {
+                                    chosen = Some(entry.selector);
+                                }
+                            }
+                        });
+                    });
+                if let Some(selector) = chosen {
+                    match custom_object_native_record(selector) {
+                        Ok(record) => {
+                            self.object_form = ObjectForm::from_record(&record);
+                            self.object_placement_template = Some(record);
+                            self.placement_mode = Some(CanvasPlacementMode::Object);
+                            self.error = None;
+                        }
+                        Err(error) => self.error = Some(error),
+                    }
                 }
             });
     }
@@ -1315,6 +1411,7 @@ impl VanillaLevelEditor {
                             .get(self.selected_object)
                         {
                             self.object_form = ObjectForm::from_record(record);
+                            self.object_placement_template = None;
                         }
                         self.error = None;
                     }
@@ -1771,6 +1868,7 @@ impl VanillaLevelEditor {
                 self.selected_object = index;
                 if let Some(record) = controller.level().layer1.objects.records.get(index) {
                     self.object_form = ObjectForm::from_record(record);
+                    self.object_placement_template = None;
                 }
                 self.error = None;
             }
@@ -2019,6 +2117,160 @@ fn object_catalog_commands(filter: &str) -> Vec<u8> {
     (1..=0x3f)
         .filter(|command| filter.is_empty() || format!("{command:02X}").contains(&filter))
         .collect()
+}
+
+fn custom_object_catalog_entries<'a>(
+    table: &'a lm_level::OscResolvedTable,
+    variant: u8,
+    filter: &str,
+) -> Vec<&'a lm_level::OscResolvedObject> {
+    let filter = filter.trim().to_ascii_lowercase();
+    let mut entries = Vec::new();
+    for object in table.objects() {
+        let selector = object.selector;
+        if selector.object_type == 0 || selector.variant != variant || object.display.is_none() {
+            continue;
+        }
+        if entries.iter().any(|entry: &&lm_level::OscResolvedObject| {
+            entry.selector.object_type == selector.object_type
+                && entry.selector.parameter == selector.parameter
+        }) {
+            continue;
+        }
+        let label = format!("{:02x}/{:02x}", selector.object_type, selector.parameter);
+        let description_matches = object
+            .description
+            .as_deref()
+            .is_some_and(|description| description.to_ascii_lowercase().contains(&filter));
+        if filter.is_empty() || label.contains(&filter) || description_matches {
+            entries.push(object);
+        }
+    }
+    entries
+}
+
+fn custom_object_native_record(
+    selector: lm_level::OscObjectSelector,
+) -> Result<ObjectRecord, String> {
+    if selector.object_type == 0 || selector.object_type > 0x3f {
+        return Err(format!(
+            "OSC object type {:02X} is not an ordinary placeable command",
+            selector.object_type
+        ));
+    }
+    let command = selector.object_type;
+    let mut encoded = vec![
+        (command & 0x30) << 1,
+        (command & 0x0f) << 4,
+        selector.parameter,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
+    let length = lm_level::encoded_record_length(&encoded)
+        .ok_or_else(|| "OSC object has no representable native record shape".to_string())?;
+    if !(3..=8).contains(&length) {
+        return Err(format!(
+            "OSC object requires unsupported native record length {length}"
+        ));
+    }
+    encoded.truncate(length);
+    ObjectRecord::new(encoded).map_err(|error| error.to_string())
+}
+
+fn draw_custom_object_catalog_entry(
+    ui: &mut egui::Ui,
+    map16_texture: Option<&egui::TextureHandle>,
+    foreground_texture: Option<&egui::TextureHandle>,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    object: &lm_level::OscResolvedObject,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(78.0, 70.0), egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    draw_catalog_background(&painter, rect, false);
+    let preview_rect = egui::Rect::from_min_max(
+        rect.min + egui::vec2(3.0, 3.0),
+        rect.max - egui::vec2(3.0, 22.0),
+    );
+    let parts = lm_render::render_resolved_lunar_magic_custom_object(object);
+    if let Some(parts) = parts {
+        draw_fitted_custom_object_preview(
+            &painter,
+            map16_texture,
+            foreground_texture,
+            custom_map16,
+            preview_rect,
+            &parts,
+        );
+    }
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 12.0),
+        egui::Align2::CENTER_CENTER,
+        format!(
+            "${:02X}/${:02X}",
+            object.selector.object_type, object.selector.parameter
+        ),
+        egui::FontId::monospace(9.0),
+        egui::Color32::WHITE,
+    );
+    response.on_hover_text(format!(
+        "{}\nObject ${:02X}, parameter ${:02X}, variant {}",
+        object.description.as_deref().unwrap_or("custom OSC object"),
+        object.selector.object_type,
+        object.selector.parameter,
+        object.selector.variant
+    ))
+}
+
+fn draw_fitted_custom_object_preview(
+    painter: &egui::Painter,
+    map16_texture: Option<&egui::TextureHandle>,
+    foreground_texture: Option<&egui::TextureHandle>,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    target: egui::Rect,
+    parts: &[lm_render::CustomObjectPreviewTile],
+) {
+    let min_x = parts.iter().map(|part| part.x).min().unwrap_or(0);
+    let min_y = parts.iter().map(|part| part.y).min().unwrap_or(0);
+    let max_x = parts
+        .iter()
+        .map(|part| part.x.saturating_add(16))
+        .max()
+        .unwrap_or(16);
+    let max_y = parts
+        .iter()
+        .map(|part| part.y.saturating_add(16))
+        .max()
+        .unwrap_or(16);
+    let width = f32::from(max_x.saturating_sub(min_x).max(1));
+    let height = f32::from(max_y.saturating_sub(min_y).max(1));
+    let scale = (target.width() / width)
+        .min(target.height() / height)
+        .min(1.0);
+    let origin = target.center() - egui::vec2(width * scale, height * scale) / 2.0;
+    for part in parts {
+        let position = origin
+            + egui::vec2(
+                f32::from(part.x.saturating_sub(min_x)) * scale,
+                f32::from(part.y.saturating_sub(min_y)) * scale,
+            );
+        let tile_rect = egui::Rect::from_min_size(position, egui::vec2(16.0 * scale, 16.0 * scale));
+        let definition = match custom_map16 {
+            Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) => {
+                sidecar.tile(usize::from(part.tile & 0x3fff))
+            }
+            Some(lm_app::NativeMap16SidecarDocument::S16(_)) | None => None,
+        };
+        if let (Some(definition), Some(texture)) = (definition, foreground_texture) {
+            draw_custom_map16_tile(painter, texture, tile_rect, definition);
+        } else if part.tile < 0x200
+            && let Some(texture) = map16_texture
+        {
+            draw_map16_atlas_tile(painter, texture, tile_rect, part.tile);
+        }
+    }
 }
 
 fn standard_object_definitions() -> Option<lm_render::StandardObjectDefinitionSet> {
@@ -3183,6 +3435,64 @@ mod tests {
             rendered, 45,
             "normal-family authenticated artwork coverage changed"
         );
+    }
+
+    #[test]
+    fn custom_object_catalog_selects_active_variant_and_filters_descriptions() {
+        let sidecar = lm_level::OscSidecar::decode(
+            b"10\t2\t11\tCustom Pipe\n10\t2\t13\t0,0,10\n10\t2\t23\t0,0,11\n11\t3\t2\t0,0,12\n",
+        )
+        .unwrap();
+        let resolved = lm_level::OscResolvedTable::from_sidecar(&sidecar);
+        let variant_one = custom_object_catalog_entries(&resolved, 1, "");
+        assert_eq!(variant_one.len(), 2);
+        assert_eq!(variant_one[0].selector.object_type, 0x10);
+        assert_eq!(variant_one[1].selector.object_type, 0x11);
+        assert_eq!(
+            custom_object_catalog_entries(&resolved, 1, "pipe")[0]
+                .selector
+                .parameter,
+            2
+        );
+        assert_eq!(
+            custom_object_catalog_entries(&resolved, 2, "")[0]
+                .display
+                .as_ref()
+                .unwrap()[0]
+                .tile,
+            0x11
+        );
+    }
+
+    #[test]
+    fn custom_object_catalog_materializes_native_command_specific_shapes() {
+        let sidecar = lm_level::OscSidecar::decode(
+            b"22\t2\t13\t0,0,10\n2D\t3\t13\t0,0,11\n27\t4\t13\t0,0,12\n",
+        )
+        .unwrap();
+        let resolved = lm_level::OscResolvedTable::from_sidecar(&sidecar);
+        let records = resolved
+            .objects()
+            .iter()
+            .map(|object| custom_object_native_record(object.selector).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(records[0].encoded(), &[0x40, 0x20, 2, 0]);
+        assert_eq!(records[1].encoded(), &[0x40, 0xd0, 3, 0, 0]);
+        assert_eq!(records[2].encoded(), &[0x40, 0x70, 4, 0, 0]);
+    }
+
+    #[test]
+    fn custom_object_placement_retains_required_extension_bytes() {
+        let record = ObjectRecord::new(vec![0x40, 0x20, 2, 0xaa]).unwrap();
+        let mut editor = VanillaLevelEditor {
+            object_form: ObjectForm::from_record(&record),
+            object_placement_template: Some(record),
+            ..VanillaLevelEditor::default()
+        };
+        editor.object_form.first_coordinate = 5;
+        editor.object_form.second_coordinate = 6;
+        let placed = editor.object_record_for_placement().unwrap();
+        assert_eq!(placed.encoded(), &[0x45, 0x26, 2, 0xaa]);
     }
 
     #[test]

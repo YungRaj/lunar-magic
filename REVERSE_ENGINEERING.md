@@ -1735,6 +1735,13 @@ handler map and renders a one-record minimum-parameter stream into an isolated 1
 The supplied normal-family ROM fixture currently proves authenticated visible cells for 45 IDs;
 the remaining valid commands are labeled rather than assigned speculative artwork. Selection
 initializes the minimum parameter and arms the same absolute-screen insertion transaction.
+Resolved OSC displays now supply a second active-variant Add Object catalog. It deduplicates
+object/parameter selectors for the current normal, castle, rope, underground, or ghost-house
+family; searches hexadecimal pairs and descriptions; and fits composite Map16 artwork using
+built-in or external definitions. Native placement deliberately derives its 3–8-byte record shape
+from `GetEncodedLevelObjectRecordLength` rules for the selected command, retaining required
+extension bytes through coordinate placement. The OSC 2–15-byte compact/linear metadata field is
+not treated as level-stream framing, matching the recovered loader boundary.
 The corresponding Add Sprite workflow now presents all standard IDs `$00–$ED` in a bounded,
 hex-filterable visual catalog. Each cell calls the authenticated standard-sprite dispatch table
 with the current packed position byte, level mode, and orientation, fits its complete composite

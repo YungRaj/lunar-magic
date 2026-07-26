@@ -524,6 +524,11 @@ interactive frontends cannot bypass confirmation and request correlation through
   authenticated Map16 footprints from the loaded tileset. Valid handlers without visible recovered
   cells retain an explicit hexadecimal fallback. Choosing an object initializes its smallest
   canonical parameter form and arms absolute canvas placement.
+  Attached `.osc` metadata adds an active-tileset custom catalog searchable by hexadecimal
+  object/parameter pair or description. Its composites resolve ordinary and external Map16
+  definitions, while placement constructs the native command-derived 3–8-byte stream shape and
+  retains required extension bytes. OSC compact/linear metadata lengths are not misused as native
+  level-stream framing.
   The interpretation-bound native-level document editor now exposes the same five semantic sprite
   fields for installed/custom records. It validates edits against the exact 1,024-byte length table
   loaded with the document, preserves all extension bytes, and rejects sprite-number/extra-bit
