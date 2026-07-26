@@ -70,6 +70,7 @@ struct ObjectForm {
     first_coordinate: u8,
     second_coordinate: u8,
     advances_screen: bool,
+    screen_jump: Option<(lm_level::ScreenJumpEncoding, u16)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -171,6 +172,9 @@ impl ObjectForm {
             first_coordinate: coordinates.first,
             second_coordinate: coordinates.second,
             advances_screen: record.advances_screen(),
+            screen_jump: record
+                .screen_jump()
+                .map(|jump| (jump.encoding, jump.packed_target)),
         }
     }
 
@@ -1273,25 +1277,45 @@ impl VanillaLevelEditor {
         }
         self.object_catalog(ui);
         self.custom_object_catalog(ui, custom_objects, custom_map16);
-        egui::Grid::new("vanilla-object-fields").show(ui, |ui| {
-            header_row(ui, "Command", &mut self.object_form.command_id, 0x3f);
-            header_row(ui, "Parameter", &mut self.object_form.parameter, 0xff);
-            header_row(
-                ui,
-                "Coordinate A",
-                &mut self.object_form.first_coordinate,
-                0x0f,
-            );
-            header_row(
-                ui,
-                "Coordinate B",
-                &mut self.object_form.second_coordinate,
-                0x0f,
-            );
-            ui.label("Advance screen");
-            ui.checkbox(&mut self.object_form.advances_screen, "");
-            ui.end_row();
-        });
+        if let Some((encoding, target)) = &mut self.object_form.screen_jump {
+            ui.label(format!(
+                "Screen-jump control ({})",
+                match encoding {
+                    lm_level::ScreenJumpEncoding::FirstLow => "low byte first",
+                    lm_level::ScreenJumpEncoding::FirstHigh => "high byte first",
+                }
+            ));
+            egui::Grid::new("vanilla-screen-jump-fields").show(ui, |ui| {
+                ui.label("Packed target");
+                ui.add(
+                    egui::DragValue::new(target)
+                        .range(0..=0x1f1f)
+                        .hexadecimal(4, false, true),
+                );
+                ui.end_row();
+            });
+            ui.small("Only bits representable by the selected native encoding are accepted.");
+        } else {
+            egui::Grid::new("vanilla-object-fields").show(ui, |ui| {
+                header_row(ui, "Command", &mut self.object_form.command_id, 0x3f);
+                header_row(ui, "Parameter", &mut self.object_form.parameter, 0xff);
+                header_row(
+                    ui,
+                    "Coordinate A",
+                    &mut self.object_form.first_coordinate,
+                    0x0f,
+                );
+                header_row(
+                    ui,
+                    "Coordinate B",
+                    &mut self.object_form.second_coordinate,
+                    0x0f,
+                );
+                ui.label("Advance screen");
+                ui.checkbox(&mut self.object_form.advances_screen, "");
+                ui.end_row();
+            });
+        }
         self.object_action_buttons(ui, record_count, has_selection);
         if self.paste_target == Some(EntityPasteTarget::Object)
             && let Some(text) = pasted_text(ui)
@@ -1434,30 +1458,44 @@ impl VanillaLevelEditor {
                 self.apply_object_result(edit);
             }
             if ui
-                .add_enabled(has_selection, egui::Button::new("Apply object fields"))
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(if self.object_form.screen_jump.is_some() {
+                        "Apply screen jump"
+                    } else {
+                        "Apply object fields"
+                    }),
+                )
                 .clicked()
             {
-                let edits = vec![
-                    ObjectEdit::SetCommandId {
+                let edits = if let Some((_, packed_target)) = self.object_form.screen_jump {
+                    vec![ObjectEdit::SetScreenJumpTarget {
                         index: self.selected_object,
-                        command_id: self.object_form.command_id,
-                    },
-                    ObjectEdit::SetParameter {
-                        index: self.selected_object,
-                        parameter: self.object_form.parameter,
-                    },
-                    ObjectEdit::SetCoordinateNibbles {
-                        index: self.selected_object,
-                        coordinates: ObjectCoordinateNibbles {
-                            first: self.object_form.first_coordinate,
-                            second: self.object_form.second_coordinate,
+                        packed_target,
+                    }]
+                } else {
+                    vec![
+                        ObjectEdit::SetCommandId {
+                            index: self.selected_object,
+                            command_id: self.object_form.command_id,
                         },
-                    },
-                    ObjectEdit::SetAdvancesScreen {
-                        index: self.selected_object,
-                        advances: self.object_form.advances_screen,
-                    },
-                ];
+                        ObjectEdit::SetParameter {
+                            index: self.selected_object,
+                            parameter: self.object_form.parameter,
+                        },
+                        ObjectEdit::SetCoordinateNibbles {
+                            index: self.selected_object,
+                            coordinates: ObjectCoordinateNibbles {
+                                first: self.object_form.first_coordinate,
+                                second: self.object_form.second_coordinate,
+                            },
+                        },
+                        ObjectEdit::SetAdvancesScreen {
+                            index: self.selected_object,
+                            advances: self.object_form.advances_screen,
+                        },
+                    ]
+                };
                 if let Some(controller) = self.controller.as_mut() {
                     match controller.apply_edits(&[NativeLevelEdit::Objects(edits)]) {
                         Ok(()) => self.error = None,
@@ -3384,6 +3422,7 @@ mod tests {
             first_coordinate: 5,
             second_coordinate: 6,
             advances_screen: true,
+            screen_jump: None,
         };
         let record = form.ordinary_record().unwrap();
         assert_eq!(record.encoded(), &[0xe5, 0x16, 0x42]);
@@ -3399,6 +3438,24 @@ mod tests {
             }
             .ordinary_record()
             .is_err()
+        );
+    }
+
+    #[test]
+    fn object_form_recognizes_both_native_screen_jump_encodings() {
+        let low_first = ObjectRecord::new(vec![0x0d, 0x0c, 1]).unwrap();
+        assert_eq!(
+            ObjectForm::from_record(&low_first).screen_jump,
+            Some((lm_level::ScreenJumpEncoding::FirstLow, 0x0c0d))
+        );
+        let high_first = ObjectRecord::new(vec![0x1c, 0x0d, 3]).unwrap();
+        assert_eq!(
+            ObjectForm::from_record(&high_first).screen_jump,
+            Some((lm_level::ScreenJumpEncoding::FirstHigh, 0x1c0d))
+        );
+        assert_eq!(
+            ObjectForm::from_record(&ObjectRecord::new(vec![0, 0, 0]).unwrap()).screen_jump,
+            None
         );
     }
 

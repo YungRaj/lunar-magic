@@ -236,7 +236,9 @@ the original ordering and bytes unchanged. Successful native batches are reparse
 serialization. The direct pristine-ROM editor wraps successful mixed-domain batches in a bounded
 staged history: exact baseline restoration, redo, divergent-branch invalidation, no-op suppression,
 failed-batch isolation, and form/canvas resynchronization are independently exercised before ROM
-commit.
+commit. Its object form distinguishes both native screen-jump encodings from ordinary objects,
+exposes only their packed target, and routes edits through the encoding-preserving semantic
+operation so an exit cannot be accidentally rewritten as an ordinary object.
 
 Auxiliary level editing stages entrances, screen exits, secondary exits, and Map16 overrides in one
 cross-domain transaction. The first three retain their explicit sequence ordering; Map16 overrides

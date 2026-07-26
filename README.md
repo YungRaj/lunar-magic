@@ -426,6 +426,8 @@ interactive frontends cannot bypass confirmation and request correlation through
   header, Layer 1 object, and sprite mutations. Undo can return byte-for-byte to the opened-ROM
   baseline, redo survives ordinary navigation, and a divergent semantic edit invalidates only the
   abandoned branch; the visible forms and canvas selection are refreshed after either operation.
+  Native screen-jump controls receive a separate packed-target editor that preserves their recovered
+  low-first or high-first encoding and rejects targets that the original record form cannot hold.
   ROM-backed aggregate level-assets editing requires `LMPALOWN` evidence for its palette domain;
   protected colors remain read-only even while level, ExAnimation, and settings edits are staged in
   the same transaction. Its native adapter separates bounded evidence/profile lifecycle, focused
