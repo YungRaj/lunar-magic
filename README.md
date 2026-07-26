@@ -486,8 +486,11 @@ interactive frontends cannot bypass confirmation and request correlation through
   The built-in pristine-SMW ROM editor uses the same recovered sprite field model: a selected
   record exposes its sprite number, five-bit screen, X, low five Y bits, and extra bits alongside
   the lossless raw bytes. Applying those fields repacks only the native three-byte record and
-  immediately updates the level canvas placement. A sprite can also be dragged directly on either
-  horizontal or vertical level canvases; the drop is converted back to bounded native
+  immediately updates the level canvas placement. The ROM canvas uses a fixed tile scale with
+  two-axis scrolling across all 32 screens and grows its perpendicular axis to keep the second
+  native sprite row visible; artwork, hit testing, and drag coordinates share that exact space.
+  A sprite can also be dragged directly on either horizontal or vertical level canvases; the drop
+  is converted back to bounded native
   screen/X/Y fields, stably restores Lunar Magic's legacy screen ordering while retaining
   within-screen priority, and commits both changes through the same controller transaction. A
   direct-ROM Wine oracle confirms that Lunar Magic 3.63 exports the exact Rust-relocated,

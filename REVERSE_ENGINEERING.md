@@ -1717,6 +1717,11 @@ horizontal or vertical canvas tile back into the five-bit screen, four-bit X,
 and low five Y bits, preserves sprite number and extra bits, and applies the
 semantic record edit transactionally. Drops outside the representable
 32-by-512-tile native space are rejected without mutating the level stream.
+The direct-ROM view now retains a fixed 12-pixel tile scale inside a two-axis
+scroll area instead of shrinking or clipping long levels. Its major axis grows
+through all 512 native tiles and its minor axis grows from 16 to 32 when sprite
+placements use the second row; grid, artwork, selection, and drag hit testing
+all consume the same orientation-aware rectangle.
 
 The first direct-ROM move oracle exposed one additional native invariant:
 Lunar Magic stably sorts legacy sprite records by their decoded five-bit

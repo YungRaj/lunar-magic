@@ -10,6 +10,9 @@ use lm_project::LevelSaveOptions;
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 
+const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
+const ROM_LEVEL_CANVAS_VIEW_HEIGHT: f32 = 420.0;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct EditorKey {
     revision: u64,
@@ -563,26 +566,72 @@ impl VanillaLevelEditor {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(125));
         }
-        let (width, height) = (
-            ui.available_width().max(320.0),
-            if vertical { 420.0 } else { 260.0 },
-        );
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click_and_drag());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
         let major_tiles = canvas_major_tiles(&placements, &sprite_placements);
-        let major_extent = if vertical { height } else { width };
-        let cell = (major_extent / f32::from(major_tiles)).clamp(2.0, 14.0);
-        draw_object_grid(&painter, rect, cell, major_tiles, vertical);
-        self.draw_object_artwork(
-            &painter,
+        let minor_tiles = canvas_minor_tiles(&placements, &sprite_placements);
+        let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical);
+        egui::ScrollArea::both()
+            .id_salt("vanilla-rom-level-canvas")
+            .max_height(ROM_LEVEL_CANVAS_VIEW_HEIGHT)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let (rect, response) =
+                    ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
+                let painter = ui.painter_at(rect);
+                self.paint_object_canvas(
+                    &painter,
+                    &response,
+                    rect,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                    level_mode,
+                    animation_phase,
+                    &records,
+                    &placements,
+                    &sprite_placements,
+                    custom_sprites,
+                    custom_objects,
+                    custom_map16,
+                );
+            });
+        draw_canvas_caption(ui, vertical);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn paint_object_canvas(
+        &mut self,
+        painter: &egui::Painter,
+        response: &egui::Response,
+        rect: egui::Rect,
+        major_tiles: u16,
+        minor_tiles: u16,
+        vertical: bool,
+        level_mode: u8,
+        animation_phase: u8,
+        records: &[ObjectRecord],
+        placements: &[lm_level::NativeObjectPlacement],
+        sprite_placements: &[lm_level::NativeSpritePlacement],
+        custom_sprites: Option<&lm_level::SscResolvedTable>,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
+        painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
+        draw_object_grid(
+            painter,
             rect,
-            cell,
+            ROM_LEVEL_CANVAS_CELL,
+            major_tiles,
+            minor_tiles,
+            vertical,
+        );
+        self.draw_object_artwork(
+            painter,
+            rect,
+            ROM_LEVEL_CANVAS_CELL,
             major_tiles,
             vertical,
-            &records,
-            &placements,
+            records,
+            placements,
             custom_objects,
             custom_map16,
         );
@@ -593,8 +642,11 @@ impl VanillaLevelEditor {
                 continue;
             };
             let (tile_x, tile_y) = placement.tile_coordinates(vertical);
-            let position =
-                rect.min + egui::vec2(f32::from(tile_x) * cell, f32::from(tile_y) * cell);
+            let position = rect.min
+                + egui::vec2(
+                    f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
+                    f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
+                );
             let (tile_width, tile_height) = if vertical {
                 (placement.minor_span, placement.major_span)
             } else {
@@ -603,12 +655,12 @@ impl VanillaLevelEditor {
             let object_rect = egui::Rect::from_min_size(
                 position,
                 egui::vec2(
-                    (f32::from(tile_width) * cell).max(8.0),
-                    (f32::from(tile_height) * cell).max(8.0),
+                    (f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL).max(8.0),
+                    (f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL).max(8.0),
                 ),
             );
             draw_object_marker(
-                &painter,
+                painter,
                 self.map16_texture.as_ref(),
                 object_rect,
                 record,
@@ -622,11 +674,11 @@ impl VanillaLevelEditor {
             }
         }
         let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
-            painter: &painter,
+            painter,
             target: rect,
-            cell_size: cell,
+            cell_size: ROM_LEVEL_CANVAS_CELL,
             texture: self.sprite_texture.as_ref(),
-            placements: &sprite_placements,
+            placements: sprite_placements,
             cursor: response.interact_pointer_pos(),
             selected: self.selected_sprite,
             vertical,
@@ -635,8 +687,15 @@ impl VanillaLevelEditor {
             custom_sprites,
             custom_map16,
         });
-        self.handle_canvas_interaction(&response, hit, hit_sprite, &records, rect, cell, vertical);
-        draw_canvas_caption(ui, vertical);
+        self.handle_canvas_interaction(
+            response,
+            hit,
+            hit_sprite,
+            records,
+            rect,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1447,18 +1506,19 @@ fn draw_object_grid(
     rect: egui::Rect,
     cell: f32,
     major_tiles: u16,
+    minor_tiles: u16,
     vertical: bool,
 ) {
     let (columns, rows) = if vertical {
-        (16, major_tiles)
+        (minor_tiles, major_tiles)
     } else {
-        (major_tiles, 16)
+        (major_tiles, minor_tiles)
     };
     for column in 0..=columns {
-        draw_grid_line(painter, rect, cell, column, vertical, true);
+        draw_grid_line(painter, rect, cell, column, true);
     }
     for row in 0..=rows {
-        draw_grid_line(painter, rect, cell, row, vertical, false);
+        draw_grid_line(painter, rect, cell, row, false);
     }
 }
 
@@ -1471,17 +1531,9 @@ fn pasted_text(ui: &egui::Ui) -> Option<String> {
     })
 }
 
-fn draw_grid_line(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    cell: f32,
-    index: u16,
-    vertical_layout: bool,
-    column: bool,
-) {
+fn draw_grid_line(painter: &egui::Painter, rect: egui::Rect, cell: f32, index: u16, column: bool) {
     let coordinate = f32::from(index) * cell;
-    let screen_axis = column != vertical_layout;
-    let boundary = screen_axis && index % 16 == 0;
+    let boundary = index % 16 == 0;
     let stroke = egui::Stroke::new(
         if boundary { 1.5_f32 } else { 0.5_f32 },
         egui::Color32::from_gray(if boundary { 90 } else { 45 }),
@@ -1514,7 +1566,34 @@ fn canvas_major_tiles(
         .map(|placement| placement.major.saturating_add(1))
         .max()
         .unwrap_or(16);
-    object_end.max(sprite_end).max(16)
+    object_end.max(sprite_end).clamp(16, 512)
+}
+
+fn canvas_minor_tiles(
+    objects: &[lm_level::NativeObjectPlacement],
+    sprites: &[lm_level::NativeSpritePlacement],
+) -> u16 {
+    let object_end = objects
+        .iter()
+        .map(|placement| u16::from(placement.minor).saturating_add(u16::from(placement.minor_span)))
+        .max()
+        .unwrap_or(16);
+    let sprite_end = sprites
+        .iter()
+        .map(|placement| placement.minor.saturating_add(1))
+        .max()
+        .unwrap_or(16);
+    object_end.max(sprite_end).clamp(16, 32)
+}
+
+fn rom_canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool) -> egui::Vec2 {
+    let major = f32::from(major_tiles) * ROM_LEVEL_CANVAS_CELL;
+    let minor = f32::from(minor_tiles) * ROM_LEVEL_CANVAS_CELL;
+    if vertical {
+        egui::vec2(minor, major)
+    } else {
+        egui::vec2(major, minor)
+    }
 }
 
 fn sprite_fields_at_canvas_position(
@@ -2172,6 +2251,47 @@ mod tests {
         assert_eq!(sprite_insertion_index(0, 3), 1);
         assert_eq!(sprite_insertion_index(2, 3), 3);
         assert_eq!(sprite_insertion_index(99, 3), 3);
+    }
+
+    #[test]
+    fn rom_canvas_has_fixed_scale_and_swaps_orientation_axes() {
+        assert_eq!(rom_canvas_size(32, 16, false), egui::vec2(384.0, 192.0));
+        assert_eq!(rom_canvas_size(32, 16, true), egui::vec2(192.0, 384.0));
+        assert_eq!(rom_canvas_size(512, 32, false), egui::vec2(6144.0, 384.0));
+    }
+
+    #[test]
+    fn rom_canvas_minor_extent_keeps_second_sprite_row_visible() {
+        let sprites = [lm_level::NativeSpritePlacement {
+            token_index: 0,
+            first_byte: 1,
+            screen: 0,
+            major: 3,
+            minor: 31,
+            sprite_number: 1,
+            extra_bits: 0,
+        }];
+        assert_eq!(canvas_minor_tiles(&[], &sprites), 32);
+        assert_eq!(canvas_minor_tiles(&[], &[]), 16);
+    }
+
+    #[test]
+    fn rom_canvas_major_extent_is_bounded_to_native_screen_space() {
+        let sprites = [lm_level::NativeSpritePlacement {
+            token_index: 0,
+            first_byte: 0,
+            screen: 31,
+            major: 511,
+            minor: 0,
+            sprite_number: 1,
+            extra_bits: 0,
+        }];
+        assert_eq!(canvas_major_tiles(&[], &sprites), 512);
+        let out_of_model = [lm_level::NativeSpritePlacement {
+            major: u16::MAX,
+            ..sprites[0]
+        }];
+        assert_eq!(canvas_major_tiles(&[], &out_of_model), 512);
     }
 
     #[test]
