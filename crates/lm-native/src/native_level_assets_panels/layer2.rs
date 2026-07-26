@@ -160,7 +160,15 @@ fn layer2_pattern_flood_edits(
     .map_err(|error| error.to_string())
 }
 
-type Layer2Move = (Vec<(usize, u16)>, (usize, usize), (usize, usize));
+type Layer2SelectionEdit = (Vec<(usize, u16)>, (usize, usize), (usize, usize));
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Layer2ResizeEdge {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
 
 fn layer2_move_edits(
     bytes: &[u8],
@@ -168,7 +176,7 @@ fn layer2_move_edits(
     cursor: Option<(usize, usize)>,
     delta_x: i32,
     delta_y: i32,
-) -> Result<Layer2Move, String> {
+) -> Result<Layer2SelectionEdit, String> {
     let (Some((anchor_x, anchor_y)), Some((cursor_x, cursor_y))) = (anchor, cursor) else {
         return Err("select a Layer 2 canvas rectangle before moving".into());
     };
@@ -198,6 +206,94 @@ fn layer2_move_edits(
         shifted((anchor_x, anchor_y))?,
         shifted((cursor_x, cursor_y))?,
     ))
+}
+
+fn layer2_resize_edits(
+    bytes: &[u8],
+    anchor: Option<(usize, usize)>,
+    cursor: Option<(usize, usize)>,
+    edge: Layer2ResizeEdge,
+    grow: bool,
+) -> Result<Layer2SelectionEdit, String> {
+    let (Some((anchor_x, anchor_y)), Some((cursor_x, cursor_y))) = (anchor, cursor) else {
+        return Err("select a Layer 2 canvas rectangle before resizing".into());
+    };
+    let minimum_x = anchor_x.min(cursor_x);
+    let maximum_x = anchor_x.max(cursor_x);
+    let minimum_y = anchor_y.min(cursor_y);
+    let maximum_y = anchor_y.max(cursor_y);
+    let source = lm_level::NativeLayer2Rectangle {
+        x: minimum_x,
+        y: minimum_y,
+        width: maximum_x - minimum_x + 1,
+        height: maximum_y - minimum_y + 1,
+    };
+    let mut resized = source;
+    match (edge, grow) {
+        (Layer2ResizeEdge::Left, true) if resized.x > 0 => {
+            resized.x -= 1;
+            resized.width += 1;
+        }
+        (Layer2ResizeEdge::Left, false) if resized.width > 1 => {
+            resized.x += 1;
+            resized.width -= 1;
+        }
+        (Layer2ResizeEdge::Right, true)
+            if resized.x + resized.width < lm_level::NATIVE_LAYER2_TILEMAP_WIDTH =>
+        {
+            resized.width += 1;
+        }
+        (Layer2ResizeEdge::Right, false) if resized.width > 1 => resized.width -= 1,
+        (Layer2ResizeEdge::Top, true) if resized.y > 0 => {
+            resized.y -= 1;
+            resized.height += 1;
+        }
+        (Layer2ResizeEdge::Top, false) if resized.height > 1 => {
+            resized.y += 1;
+            resized.height -= 1;
+        }
+        (Layer2ResizeEdge::Bottom, true)
+            if resized.y + resized.height < lm_level::NATIVE_LAYER2_TILEMAP_HEIGHT =>
+        {
+            resized.height += 1;
+        }
+        (Layer2ResizeEdge::Bottom, false) if resized.height > 1 => resized.height -= 1,
+        _ => return Err("Layer 2 selection cannot resize past the canvas or below 1×1".into()),
+    }
+    let edits = lm_level::native_layer2_resize_rectangle(bytes, source, resized)
+        .map_err(|error| error.to_string())?;
+    let horizontal_forward = anchor_x <= cursor_x;
+    let vertical_forward = anchor_y <= cursor_y;
+    let new_minimum = (resized.x, resized.y);
+    let new_maximum = (
+        resized.x + resized.width - 1,
+        resized.y + resized.height - 1,
+    );
+    let anchor = (
+        if horizontal_forward {
+            new_minimum.0
+        } else {
+            new_maximum.0
+        },
+        if vertical_forward {
+            new_minimum.1
+        } else {
+            new_maximum.1
+        },
+    );
+    let cursor = (
+        if horizontal_forward {
+            new_maximum.0
+        } else {
+            new_minimum.0
+        },
+        if vertical_forward {
+            new_maximum.1
+        } else {
+            new_minimum.1
+        },
+    );
+    Ok((edits, anchor, cursor))
 }
 
 impl AggregatePanels {
@@ -354,6 +450,9 @@ impl AggregatePanels {
         if let Some(edit) = self.layer2_move_controls(ui, bytes) {
             return Some(edit);
         }
+        if let Some(edit) = self.layer2_resize_controls(ui, bytes) {
+            return Some(edit);
+        }
         if let Some(edit) = self.layer2_word_controls(ui, bytes, selected_cells.len()) {
             return Some(edit);
         }
@@ -451,6 +550,53 @@ impl AggregatePanels {
             self.layer2_tile_cursor = Some(cursor);
             self.layer2_tile_index = lm_level::native_layer2_tilemap_index(cursor.0, cursor.1)
                 .ok_or_else(|| "moved Layer 2 cursor exceeds the canvas".to_string())?;
+            Ok(NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits))
+        })
+    }
+
+    fn layer2_resize_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        bytes: &[u8],
+    ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
+        let enabled = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
+        let mut requested = None;
+        ui.horizontal(|ui| {
+            ui.label("Resize selection");
+            for (label, edge, grow) in [
+                ("L+", Layer2ResizeEdge::Left, true),
+                ("L−", Layer2ResizeEdge::Left, false),
+                ("R−", Layer2ResizeEdge::Right, false),
+                ("R+", Layer2ResizeEdge::Right, true),
+                ("T+", Layer2ResizeEdge::Top, true),
+                ("T−", Layer2ResizeEdge::Top, false),
+                ("B−", Layer2ResizeEdge::Bottom, false),
+                ("B+", Layer2ResizeEdge::Bottom, true),
+            ] {
+                if ui
+                    .add_enabled(enabled, egui::Button::new(label))
+                    .on_hover_text(
+                        "Grow (+) or shrink (−) this edge by one cell, repeating the original \
+                         selection pattern from the resized top-left corner.",
+                    )
+                    .clicked()
+                {
+                    requested = Some((edge, grow));
+                }
+            }
+        });
+        requested.map(|(edge, grow)| {
+            let (edits, anchor, cursor) = layer2_resize_edits(
+                bytes,
+                self.layer2_tile_anchor,
+                self.layer2_tile_cursor,
+                edge,
+                grow,
+            )?;
+            self.layer2_tile_anchor = Some(anchor);
+            self.layer2_tile_cursor = Some(cursor);
+            self.layer2_tile_index = lm_level::native_layer2_tilemap_index(cursor.0, cursor.1)
+                .ok_or_else(|| "resized Layer 2 cursor exceeds the canvas".to_string())?;
             Ok(NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits))
         })
     }
@@ -796,5 +942,46 @@ mod tests {
         );
         assert!(layer2_move_edits(&bytes, Some((0, 0)), Some((1, 1)), -1, 0).is_err());
         assert!(layer2_move_edits(&bytes, None, None, 1, 0).is_err());
+    }
+
+    #[test]
+    fn resize_selection_preserves_orientation_and_enforces_edge_limits() {
+        let mut words = vec![0_u16; 1024];
+        for (offset, word) in [1_u16, 2, 3, 4].into_iter().enumerate() {
+            let x = 2 + offset % 2;
+            let y = 2 + offset / 2;
+            words[lm_level::native_layer2_tilemap_index(x, y).unwrap()] = word;
+        }
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        let (_, anchor, cursor) = layer2_resize_edits(
+            &bytes,
+            Some((3, 3)),
+            Some((2, 2)),
+            Layer2ResizeEdge::Left,
+            true,
+        )
+        .unwrap();
+        assert_eq!(anchor, (3, 3));
+        assert_eq!(cursor, (1, 2));
+
+        for (anchor, cursor, edge, grow) in [
+            ((0, 0), (1, 1), Layer2ResizeEdge::Left, true),
+            ((30, 0), (31, 1), Layer2ResizeEdge::Right, true),
+            ((0, 0), (1, 1), Layer2ResizeEdge::Top, true),
+            ((0, 30), (1, 31), Layer2ResizeEdge::Bottom, true),
+            ((0, 0), (0, 1), Layer2ResizeEdge::Left, false),
+            ((0, 0), (0, 1), Layer2ResizeEdge::Right, false),
+            ((0, 0), (1, 0), Layer2ResizeEdge::Top, false),
+            ((0, 0), (1, 0), Layer2ResizeEdge::Bottom, false),
+        ] {
+            assert!(
+                layer2_resize_edits(&bytes, Some(anchor), Some(cursor), edge, grow).is_err(),
+                "{edge:?} grow={grow}"
+            );
+        }
+        assert!(layer2_resize_edits(&bytes, None, None, Layer2ResizeEdge::Right, true).is_err());
     }
 }

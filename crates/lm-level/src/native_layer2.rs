@@ -7,6 +7,14 @@ pub const LEGACY_LAYER2_TILEMAP_LEN: usize = 0x360;
 pub const NATIVE_LAYER2_TILEMAP_WIDTH: usize = 32;
 pub const NATIVE_LAYER2_TILEMAP_HEIGHT: usize = 32;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeLayer2Rectangle {
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
 /// Maps 32×32 background-canvas coordinates to Lunar Magic's two column-major 32×16 planes.
 #[must_use]
 pub const fn native_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
@@ -171,10 +179,7 @@ pub fn native_layer2_move_rectangle(
         });
     };
 
-    let mut original = [0_u16; NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT];
-    for (visual, word) in original.iter_mut().enumerate() {
-        *word = tilemap_word(bytes, native_layer2_storage_index_from_visual(visual));
-    }
+    let original = decode_visual_tilemap(bytes);
     let mut moved = original;
     let mut snapshot = Vec::with_capacity(width * height);
     for y in source_y..source_y + height {
@@ -188,13 +193,98 @@ pub fn native_layer2_move_rectangle(
         let y = destination_y + offset / width;
         moved[y * NATIVE_LAYER2_TILEMAP_WIDTH + x] = word;
     }
-    Ok(original
+    Ok(visual_tilemap_diff(&original, &moved))
+}
+
+/// Builds final-state edits for resizing a rectangle with its original words as a repeat pattern.
+///
+/// The complete source is snapshotted and cleared before the pattern is tiled in visual row-major
+/// order from the resized rectangle's minimum corner. Pattern words are normalized to 12-bit Map16
+/// indexes, including words that remain inside overlapping source and destination bounds.
+///
+/// # Errors
+///
+/// Returns [`NativeLayer2Error`] for malformed tilemap storage or if either rectangle is empty or
+/// outside the 32×32 canvas.
+pub fn native_layer2_resize_rectangle(
+    bytes: &[u8],
+    source: NativeLayer2Rectangle,
+    resized_bounds: NativeLayer2Rectangle,
+) -> Result<Vec<(usize, u16)>, NativeLayer2Error> {
+    if bytes.len() != NATIVE_LAYER2_TILEMAP_LEN {
+        return Err(NativeLayer2Error::TilemapLength(bytes.len()));
+    }
+    if !rectangle_fits(source.x, source.y, source.width, source.height) {
+        return Err(NativeLayer2Error::TilemapRectangle {
+            x: source.x,
+            y: source.y,
+            width: source.width,
+            height: source.height,
+        });
+    }
+    if !rectangle_fits(
+        resized_bounds.x,
+        resized_bounds.y,
+        resized_bounds.width,
+        resized_bounds.height,
+    ) {
+        return Err(NativeLayer2Error::TilemapResize {
+            x: resized_bounds.x,
+            y: resized_bounds.y,
+            width: resized_bounds.width,
+            height: resized_bounds.height,
+        });
+    }
+    let original = decode_visual_tilemap(bytes);
+    let mut resized = original;
+    let mut pattern = Vec::with_capacity(source.width * source.height);
+    for y in source.y..source.y + source.height {
+        for x in source.x..source.x + source.width {
+            pattern.push(original[y * NATIVE_LAYER2_TILEMAP_WIDTH + x]);
+            resized[y * NATIVE_LAYER2_TILEMAP_WIDTH + x] = 0;
+        }
+    }
+    for y in resized_bounds.y..resized_bounds.y + resized_bounds.height {
+        for x in resized_bounds.x..resized_bounds.x + resized_bounds.width {
+            let pattern_x = (x - resized_bounds.x) % source.width;
+            let pattern_y = (y - resized_bounds.y) % source.height;
+            resized[y * NATIVE_LAYER2_TILEMAP_WIDTH + x] =
+                pattern[pattern_y * source.width + pattern_x] & 0x0fff;
+        }
+    }
+    Ok(visual_tilemap_diff(&original, &resized))
+}
+
+fn rectangle_fits(x: usize, y: usize, width: usize, height: usize) -> bool {
+    width != 0
+        && height != 0
+        && x.checked_add(width)
+            .is_some_and(|end| end <= NATIVE_LAYER2_TILEMAP_WIDTH)
+        && y.checked_add(height)
+            .is_some_and(|end| end <= NATIVE_LAYER2_TILEMAP_HEIGHT)
+}
+
+fn decode_visual_tilemap(
+    bytes: &[u8],
+) -> [u16; NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT] {
+    let mut words = [0_u16; NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT];
+    for (visual, word) in words.iter_mut().enumerate() {
+        *word = tilemap_word(bytes, native_layer2_storage_index_from_visual(visual));
+    }
+    words
+}
+
+fn visual_tilemap_diff(
+    before: &[u16; NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT],
+    after: &[u16; NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT],
+) -> Vec<(usize, u16)> {
+    before
         .iter()
-        .zip(moved)
+        .zip(after)
         .enumerate()
-        .filter(|(_, (before, after))| **before != *after)
-        .map(|(visual, (_, word))| (native_layer2_storage_index_from_visual(visual), word))
-        .collect())
+        .filter(|(_, (before, after))| before != after)
+        .map(|(visual, (_, word))| (native_layer2_storage_index_from_visual(visual), *word))
+        .collect()
 }
 
 fn native_layer2_flood_mask(
@@ -422,6 +512,12 @@ pub enum NativeLayer2Error {
         delta_x: i32,
         delta_y: i32,
     },
+    TilemapResize {
+        x: usize,
+        y: usize,
+        width: usize,
+        height: usize,
+    },
     LegacyHighByte {
         tile: usize,
         actual: u8,
@@ -613,6 +709,88 @@ mod tests {
                 Err(NativeLayer2Error::TilemapMove { .. })
             ));
         }
+    }
+
+    #[test]
+    fn rectangle_resize_reanchors_repeats_and_normalizes_complete_pattern() {
+        let mut words = vec![0_u16; 1024];
+        for (offset, word) in [0xf001, 0xf002, 0xf003, 0xf004].into_iter().enumerate() {
+            let x = 2 + offset % 2;
+            let y = 2 + offset / 2;
+            words[native_layer2_tilemap_index(x, y).unwrap()] = word;
+        }
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        let source = NativeLayer2Rectangle {
+            x: 2,
+            y: 2,
+            width: 2,
+            height: 2,
+        };
+        let grown = NativeLayer2Rectangle {
+            x: 1,
+            y: 1,
+            width: 3,
+            height: 3,
+        };
+        let expected = [
+            ((1, 1), 0x001),
+            ((2, 1), 0x002),
+            ((3, 1), 0x001),
+            ((1, 2), 0x003),
+            ((2, 2), 0x004),
+            ((3, 2), 0x003),
+            ((1, 3), 0x001),
+            ((2, 3), 0x002),
+            ((3, 3), 0x001),
+        ]
+        .map(|((x, y), word)| (native_layer2_tilemap_index(x, y).unwrap(), word));
+        assert_eq!(
+            native_layer2_resize_rectangle(&bytes, source, grown).unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn rectangle_resize_shrink_clears_removed_edge_and_rejects_bad_bounds() {
+        let mut words = vec![0_u16; 1024];
+        for (offset, word) in [0xf001, 0xf002, 0xf003, 0xf004].into_iter().enumerate() {
+            let x = 2 + offset % 2;
+            let y = 2 + offset / 2;
+            words[native_layer2_tilemap_index(x, y).unwrap()] = word;
+        }
+        let bytes = words
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        let source = NativeLayer2Rectangle {
+            x: 2,
+            y: 2,
+            width: 2,
+            height: 2,
+        };
+        let shrunk = NativeLayer2Rectangle { width: 1, ..source };
+        assert_eq!(
+            native_layer2_resize_rectangle(&bytes, source, shrunk).unwrap(),
+            [((2, 2), 0x001), ((3, 2), 0), ((2, 3), 0x003), ((3, 3), 0),]
+                .map(|((x, y), word)| (native_layer2_tilemap_index(x, y).unwrap(), word))
+        );
+        let empty = NativeLayer2Rectangle { width: 0, ..source };
+        assert!(matches!(
+            native_layer2_resize_rectangle(&bytes, empty, source),
+            Err(NativeLayer2Error::TilemapRectangle { .. })
+        ));
+        let crossed = NativeLayer2Rectangle {
+            x: 31,
+            width: 2,
+            ..source
+        };
+        assert!(matches!(
+            native_layer2_resize_rectangle(&bytes, source, crossed),
+            Err(NativeLayer2Error::TilemapResize { .. })
+        ));
     }
 
     #[test]

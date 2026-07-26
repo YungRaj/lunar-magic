@@ -49,6 +49,10 @@ Selected rectangles can also move one cell in any cardinal direction. Movement s
 source words before clearing, gives overlapping destination cells precedence, preserves reversed
 anchor/cursor orientation, and commits the duplicate-free source/destination diff as one aggregate
 edit. Invalid sources and any destination crossing the 32×32 edge fail before controller mutation.
+All four rectangle edges can independently grow or shrink by one cell. Resize restores/clears the
+old source, repeats its captured visual pattern from the resized top-left corner with 12-bit
+normalization, preserves reversed endpoints, and rejects inversion below 1×1 or any crossed edge
+before emitting one aggregate edit.
 An exhaustive independent reference test covers all 512 binary 3×3 topologies from every
 start cell, including edge isolation, irregular pattern anchoring, malformed dimensions, and the
 native two-plane storage bijection. Focused gates require

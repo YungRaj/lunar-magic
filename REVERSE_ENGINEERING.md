@@ -1936,6 +1936,16 @@ words at the destination so overlapping destination cells win. Directional GUI a
 reversed selection endpoints, update the non-linear storage cursor, and submit every changed source
 and destination word as one duplicate-free aggregate transaction. Tests cover overlap, zero-delta
 no-ops, all four crossed edges, malformed sources, and reversed selections.
+Pattern resize follows `ClampLevelBackgroundResizeDelta` at `005202C0` and
+`ResizeLevelBackgroundSelectionPattern` at `00520590`. Each drag edge is independently fixed or
+moving; the clamp prevents inversion below one cell and prevents any new cell from leaving the
+32×32 plane. Lunar Magic restores the previous selected cells, clears both transfer buffers, then
+repeats the originally captured rectangle across the complete resized bounds from the new
+top-left corner, masking each word with `$0FFF`. The native panel exposes one-cell grow/shrink
+controls for all four edges and uses the same final-state contract: snapshot and clear the source,
+tile the source pattern from the resized minimum corner, preserve endpoint orientation, and submit
+one duplicate-free aggregate edit. Focused coverage proves left/top re-anchoring, overlap
+normalization, removed-edge clearing, every crossed boundary, and the 1×1 minimum.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their
