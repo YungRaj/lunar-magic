@@ -115,6 +115,17 @@ fn layer2_paste_edits(
     Ok(edits)
 }
 
+fn layer2_cut_edits(
+    anchor: Option<(usize, usize)>,
+    cursor: Option<(usize, usize)>,
+) -> Result<Vec<(usize, u16)>, String> {
+    let indexes = layer2_selection_indices(anchor, cursor);
+    if indexes.is_empty() {
+        return Err("select a Layer 2 canvas rectangle before cutting".into());
+    }
+    Ok(indexes.into_iter().map(|index| (index, 0)).collect())
+}
+
 impl AggregatePanels {
     pub(super) fn layer2_panel(
         &mut self,
@@ -299,20 +310,26 @@ impl AggregatePanels {
         bytes: &[u8],
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let mut copy_error = None;
+        let mut cut_requested = false;
         ui.horizontal(|ui| {
             let can_copy = self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
-            if ui
-                .add_enabled(can_copy, egui::Button::new("Copy selection"))
-                .clicked()
-            {
-                let encoded =
-                    layer2_selection_words(bytes, self.layer2_tile_anchor, self.layer2_tile_cursor)
-                        .and_then(|(width, height, words)| {
-                            native_clipboard::encode_layer2_tilemap_selection(width, height, &words)
-                        });
-                match encoded {
-                    Ok(text) => ui.ctx().copy_text(text),
-                    Err(error) => copy_error = Some(error),
+            for (label, cut) in [("Copy selection", false), ("Cut selection", true)] {
+                if ui.add_enabled(can_copy, egui::Button::new(label)).clicked() {
+                    let encoded = layer2_selection_words(
+                        bytes,
+                        self.layer2_tile_anchor,
+                        self.layer2_tile_cursor,
+                    )
+                    .and_then(|(width, height, words)| {
+                        native_clipboard::encode_layer2_tilemap_selection(width, height, &words)
+                    });
+                    match encoded {
+                        Ok(text) => {
+                            ui.ctx().copy_text(text);
+                            cut_requested = cut;
+                        }
+                        Err(error) => copy_error = Some(error),
+                    }
                 }
             }
             if ui
@@ -329,6 +346,12 @@ impl AggregatePanels {
         });
         if let Some(error) = copy_error {
             return Some(Err(error));
+        }
+        if cut_requested {
+            return Some(
+                layer2_cut_edits(self.layer2_tile_anchor, self.layer2_tile_cursor)
+                    .map(NativeLevelAssetsControllerEdit::Layer2TilemapWords),
+            );
         }
         if self.paste_target != Some(PasteTarget::Layer2Tilemap) {
             return None;
@@ -474,5 +497,14 @@ mod tests {
         assert!(layer2_paste_edits(Some((31, 31)), 2, 1, &[1, 2]).is_err());
         assert!(layer2_paste_edits(Some((0, 0)), 2, 2, &[1, 2, 3]).is_err());
         assert!(layer2_paste_edits(None, 1, 1, &[1]).is_err());
+    }
+
+    #[test]
+    fn cut_uses_lunar_magics_proven_zero_word_for_every_selected_cell() {
+        assert_eq!(
+            layer2_cut_edits(Some((1, 15)), Some((2, 16))).unwrap(),
+            vec![(31, 0), (47, 0), (528, 0), (544, 0)]
+        );
+        assert!(layer2_cut_edits(None, None).is_err());
     }
 }

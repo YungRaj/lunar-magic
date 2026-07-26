@@ -1903,6 +1903,13 @@ portable payload. Paste anchors at the first selected canvas cell, converts all
 words back through the recovered bijection as one aggregate edit, updates the
 visible selection to the pasted extent, and rejects any rectangle crossing the
 32×32 edge before controller mutation.
+Cut/delete semantics are now static-evidence-backed. `HandleLevelBackgroundCharacterShortcut`
+at `00523CC0` maps Ctrl+X to command `$2274`; `DispatchLevelBackgroundEditorCommand` at
+`00524B30` copies the selection and then sends Delete `$2277`. Rectangle finalization at
+`0051F040` zeroes all 1,024 transfer words, and `RestoreLevelBackgroundSelectedTiles` at
+`005208B0` copies those words into every primary-selected live cell. The native GUI therefore
+publishes the typed rectangle first and submits one atomic `$0000` fill batch; it does not guess
+Map16 `$0025` or another visually blank tile.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their
