@@ -223,6 +223,8 @@ pub(crate) struct VanillaLevelEditor {
     map16_key: Option<(u64, u8, u8)>,
     map16_texture: Option<egui::TextureHandle>,
     sprite_texture: Option<egui::TextureHandle>,
+    sprite_tiles: Vec<lm_graphics::IndexedTile>,
+    sprite_palette: Option<lm_graphics::Palette>,
     foreground_texture: Option<egui::TextureHandle>,
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
     map16_error: Option<String>,
@@ -683,6 +685,8 @@ impl VanillaLevelEditor {
         self.map16_key = None;
         self.map16_texture = None;
         self.sprite_texture = None;
+        self.sprite_tiles.clear();
+        self.sprite_palette = None;
         self.foreground_texture = None;
         self.map16_summary = None;
         self.map16_error = None;
@@ -709,6 +713,9 @@ impl VanillaLevelEditor {
             if self.map16_key != Some(key) {
                 self.map16_texture = None;
                 self.sprite_texture = None;
+                self.sprite_tiles.clear();
+                self.sprite_palette = None;
+                self.external_sprite_textures.clear();
                 self.foreground_texture = None;
                 self.map16_summary = None;
                 self.map16_error = None;
@@ -751,6 +758,8 @@ impl VanillaLevelEditor {
                             preview.foreground_image,
                             egui::TextureOptions::NEAREST,
                         ));
+                        self.sprite_tiles = preview.sprite_tiles;
+                        self.sprite_palette = Some(preview.palette);
                     }
                     Err(error) => self.map16_error = Some(error),
                 }
@@ -839,11 +848,15 @@ impl VanillaLevelEditor {
             controller.level().layer1.header.level_mode()
         });
         let animation_phase = sprite_animation_phase(ui.input(|input| input.time));
-        ensure_external_placement_textures(
+        ensure_remapped_placement_textures(
             ui.ctx(),
             &mut self.external_sprite_textures,
             custom_sprites,
-            external_assets,
+            SpriteRasterAssets {
+                external: external_assets,
+                vanilla_tiles: &self.sprite_tiles,
+                vanilla_palette: self.sprite_palette.as_ref(),
+            },
             custom_map16,
             &sprite_placements,
         );
@@ -2038,11 +2051,15 @@ impl VanillaLevelEditor {
                                         |index| external_sprite_definition(custom_map16, index),
                                     );
                                 if let Some(parts) = external_parts.as_deref() {
-                                    ensure_external_part_textures(
+                                    ensure_remapped_part_textures(
                                         ui.ctx(),
                                         &mut self.external_sprite_textures,
                                         parts,
-                                        external_assets,
+                                        SpriteRasterAssets {
+                                            external: external_assets,
+                                            vanilla_tiles: &self.sprite_tiles,
+                                            vanilla_palette: self.sprite_palette.as_ref(),
+                                        },
                                     );
                                 }
                                 let response = draw_custom_sprite_catalog_entry(
@@ -3613,11 +3630,18 @@ fn external_sprite_definition(
     ])
 }
 
-fn ensure_external_placement_textures(
+#[derive(Clone, Copy)]
+struct SpriteRasterAssets<'a> {
+    external: &'a lm_graphics::ExternalSpriteAssets,
+    vanilla_tiles: &'a [lm_graphics::IndexedTile],
+    vanilla_palette: Option<&'a lm_graphics::Palette>,
+}
+
+fn ensure_remapped_placement_textures(
     context: &egui::Context,
     textures: &mut HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
     custom_sprites: Option<&lm_level::SscResolvedTable>,
-    assets: &lm_graphics::ExternalSpriteAssets,
+    assets: SpriteRasterAssets<'_>,
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     placements: &[lm_level::NativeSpritePlacement],
 ) {
@@ -3636,21 +3660,33 @@ fn ensure_external_placement_textures(
         else {
             continue;
         };
-        ensure_external_part_textures(context, textures, &parts, assets);
+        ensure_remapped_part_textures(context, textures, &parts, assets);
     }
 }
 
-fn ensure_external_part_textures(
+fn ensure_remapped_part_textures(
     context: &egui::Context,
     textures: &mut HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
     parts: &[lm_render::RemappedCustomSpritePreviewTile],
-    assets: &lm_graphics::ExternalSpriteAssets,
+    assets: SpriteRasterAssets<'_>,
 ) {
     for part in parts {
         if textures.contains_key(part) {
             continue;
         }
-        let Some(canvas) = lm_render::raster_external_custom_sprite_tile(part, assets) else {
+        let Some(canvas) = lm_render::raster_remapped_custom_sprite_tile_with(
+            part,
+            |global_tile| {
+                assets
+                    .external
+                    .graphics_tile(global_tile)
+                    .or_else(|| assets.vanilla_tiles.get(usize::from(global_tile)))
+            },
+            |source, palette, color| match source {
+                Some(source) => assets.external.palette_color(source, palette, color),
+                None => vanilla_sprite_palette_color(assets.vanilla_palette?, palette, color),
+            },
+        ) else {
             continue;
         };
         let rgba = canvas
@@ -3672,6 +3708,22 @@ fn ensure_external_part_textures(
         );
         textures.insert(*part, texture);
     }
+}
+
+fn vanilla_sprite_palette_color(
+    palette: &lm_graphics::Palette,
+    subtile_palette: u8,
+    color: u8,
+) -> Option<lm_graphics::Rgb8> {
+    if subtile_palette > 7 || !(1..=15).contains(&color) {
+        return None;
+    }
+    let row = 8_usize.checked_add(usize::from(subtile_palette))?;
+    palette
+        .colors
+        .get(row.checked_mul(16)?.checked_add(usize::from(color))?)
+        .copied()
+        .map(lm_graphics::Bgr555::to_rgb8)
 }
 
 fn draw_external_sprite_part(
@@ -4469,23 +4521,77 @@ mod tests {
             .unwrap();
         assert_eq!(parts[0].graphics_base, 0x2000);
         let mut assets = lm_graphics::ExternalSpriteAssets::default();
-        assets.set_graphics_slot(0, &vec![0; 0x8000]).unwrap();
-        assets.set_rgb_palette(&[0, 0, 0]).unwrap();
+        let opaque = lm_graphics::IndexedTile::new([1; lm_graphics::IndexedTile::PIXEL_COUNT]);
+        assets
+            .set_graphics_slot(0, &lm_graphics::encode_4bpp_tile(&opaque).unwrap())
+            .unwrap();
+        assets.set_rgb_palette(&[0, 0, 0, 255, 0, 0]).unwrap();
         let mut textures = HashMap::new();
-        ensure_external_part_textures(&egui::Context::default(), &mut textures, &parts, &assets);
-        assert_eq!(textures.len(), parts.len());
-
-        ensure_external_part_textures(
+        ensure_remapped_part_textures(
             &egui::Context::default(),
             &mut textures,
             &parts,
-            &lm_graphics::ExternalSpriteAssets::default(),
+            SpriteRasterAssets {
+                external: &assets,
+                vanilla_tiles: &[],
+                vanilla_palette: None,
+            },
+        );
+        assert_eq!(textures.len(), parts.len());
+
+        ensure_remapped_part_textures(
+            &egui::Context::default(),
+            &mut textures,
+            &parts,
+            SpriteRasterAssets {
+                external: &lm_graphics::ExternalSpriteAssets::default(),
+                vanilla_tiles: &[],
+                vanilla_palette: None,
+            },
         );
         assert_eq!(
             textures.len(),
             parts.len(),
             "existing textures remain stable until the owning asset revision invalidates them"
         );
+
+        let vanilla_graphics_part = lm_render::RemappedCustomSpritePreviewTile {
+            graphics_base: 0,
+            ..parts[0]
+        };
+        ensure_remapped_part_textures(
+            &egui::Context::default(),
+            &mut textures,
+            &[vanilla_graphics_part],
+            SpriteRasterAssets {
+                external: &assets,
+                vanilla_tiles: std::slice::from_ref(&opaque),
+                vanilla_palette: None,
+            },
+        );
+        assert!(textures.contains_key(&vanilla_graphics_part));
+
+        let vanilla_palette_part = lm_render::RemappedCustomSpritePreviewTile {
+            palette_source: None,
+            ..parts[0]
+        };
+        let mut colors = vec![lm_graphics::Bgr555::default(); 16 * 16];
+        colors[8 * 16 + 1] = lm_graphics::Bgr555::from_rgb8(lm_graphics::Rgb8 {
+            red: 0,
+            green: 0,
+            blue: 255,
+        });
+        ensure_remapped_part_textures(
+            &egui::Context::default(),
+            &mut textures,
+            &[vanilla_palette_part],
+            SpriteRasterAssets {
+                external: &assets,
+                vanilla_tiles: &[],
+                vanilla_palette: Some(&lm_graphics::Palette { colors }),
+            },
+        );
+        assert!(textures.contains_key(&vanilla_palette_part));
     }
 
     #[test]

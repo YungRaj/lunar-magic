@@ -546,7 +546,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   SSC in the native frontend now discovers the nearest project `ExternalGraphics` directory,
   applies Lunar Magic's `.mw3`-before-`.pal` preference, reads only present assets through bounded
   background I/O, and caches successfully rasterized definitions in both the custom catalog and
-  level canvas. Reopening or closing the SSC invalidates those textures.
+  level canvas. Mixed definitions are supported as well: ordinary SP1–SP4 indexed graphics can
+  use an SSC external palette, and `ExSpriteGFX` tiles can use the current level's ordinary sprite
+  palette. Reopening or closing the SSC, changing the ROM revision, or changing the active sprite
+  tileset invalidates those textures.
   Ordinary objects can likewise be dragged across all 32 native screens on horizontal or vertical
   canvases. The atomic relocation updates the two proven coordinate nibbles, stably orders ordinary
   objects by absolute screen, and regenerates minimal advance bits or canonical screen-jump

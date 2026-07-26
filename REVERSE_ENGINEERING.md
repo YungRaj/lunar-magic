@@ -1814,6 +1814,11 @@ The native SSC workflow searches the selected sidecar's nearest project ancestor
 palette preference, and publishes one asset revision. Custom catalog and level-canvas textures are
 keyed by the complete remapped definition and discarded whenever that revision changes, preventing
 art from a previously opened sidecar from leaking into a new project.
+The raster boundary accepts graphics and color resolvers independently. The native editor retains
+the indexed SP1–SP4 tiles and composed level palette alongside their display atlases, so SSC
+external palettes work with ordinary sprite graphics and external graphics work without a
+`$20000` override by using palette rows 8–15. A ROM, tileset, or palette reload clears the remapped
+texture cache in addition to an SSC asset change.
 
 The standard-sprite renderer now also covers every late native dispatch-table entry beyond the
 ordinary picker boundary. Exact disassembly of `$004CAFB0–$004CB23E` proves that `$EF`, `$F2`,

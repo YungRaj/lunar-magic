@@ -8,6 +8,8 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) image: egui::ColorImage,
     pub(crate) graphics_files: [usize; 4],
     pub(crate) sprite_image: egui::ColorImage,
+    pub(crate) sprite_tiles: Vec<IndexedTile>,
+    pub(crate) palette: Palette,
     pub(crate) foreground_image: egui::ColorImage,
     pub(crate) sprite_graphics_files: [usize; 4],
     pub(crate) common_tiles: usize,
@@ -77,11 +79,14 @@ pub(crate) fn render(
             );
         }
     }
+    let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     Ok(VanillaMap16Preview {
         image: egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba),
         foreground_image: render_foreground_graphics_atlas(&graphics, &palette),
         graphics_files,
-        sprite_image: render_sprite_graphics_atlas(&sprite_graphics, &palette),
+        sprite_image,
+        sprite_tiles: sprite_graphics.into_iter().flatten().collect(),
+        palette,
         sprite_graphics_files,
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,

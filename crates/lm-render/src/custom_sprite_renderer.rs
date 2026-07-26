@@ -1,6 +1,6 @@
 use crate::standard_sprite_renderer::preview_definition;
 use crate::{Canvas, Rgba, StandardSpritePreviewTile};
-use lm_graphics::{ExternalSpriteAssets, IndexedTile};
+use lm_graphics::{ExternalSpriteAssets, IndexedTile, Rgb8};
 use lm_level::{SscDirective, SscEntry, SscResolvedSprite, SscResolvedTable};
 
 /// One custom-sprite display definition with Lunar Magic's global graphics/palette remaps
@@ -25,37 +25,54 @@ pub fn raster_external_custom_sprite_tile(
     assets: &ExternalSpriteAssets,
 ) -> Option<Canvas> {
     let palette_source = part.palette_source?;
+    raster_remapped_custom_sprite_tile_with(
+        part,
+        |global_tile| assets.graphics_tile(global_tile),
+        |_, palette, color| assets.palette_color(palette_source, palette, color),
+    )
+}
+
+/// Rasterizes one remapped SSC definition with caller-owned indexed graphics and palette sources.
+///
+/// This handles mixed definitions that combine ordinary SP graphics with an external palette or
+/// external graphics with the level's ordinary sprite palette.
+#[must_use]
+pub fn raster_remapped_custom_sprite_tile_with<'a>(
+    part: &RemappedCustomSpritePreviewTile,
+    mut tile: impl FnMut(u16) -> Option<&'a IndexedTile>,
+    mut color: impl FnMut(Option<u16>, u8, u8) -> Option<Rgb8>,
+) -> Option<Canvas> {
     let mut canvas = Canvas::try_new(16, 16).ok()?;
     for (quadrant, word) in part.subtiles.into_iter().enumerate() {
         let global_tile = (word & 0x03ff).checked_add(part.graphics_base)?;
-        let tile = assets.graphics_tile(global_tile)?;
+        let tile = tile(global_tile)?;
         let palette = u8::try_from((word >> 10) & 7).ok()?;
-        draw_external_subtile(
+        draw_remapped_subtile(
             &mut canvas,
             tile,
-            assets,
-            palette_source,
+            part.palette_source,
             palette,
             word & 0x4000 != 0,
             word & 0x8000 != 0,
             (quadrant & 1) * 8,
             (quadrant >> 1) * 8,
+            &mut color,
         )?;
     }
     Some(canvas)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn draw_external_subtile(
+fn draw_remapped_subtile(
     canvas: &mut Canvas,
     tile: &IndexedTile,
-    assets: &ExternalSpriteAssets,
-    palette_source: u16,
+    palette_source: Option<u16>,
     palette: u8,
     flip_x: bool,
     flip_y: bool,
     target_x: usize,
     target_y: usize,
+    color_resolver: &mut impl FnMut(Option<u16>, u8, u8) -> Option<Rgb8>,
 ) -> Option<()> {
     for row in 0..IndexedTile::HEIGHT {
         for column in 0..IndexedTile::WIDTH {
@@ -73,7 +90,7 @@ fn draw_external_subtile(
             if color == 0 {
                 continue;
             }
-            let rgb = assets.palette_color(palette_source, palette, color)?;
+            let rgb = color_resolver(palette_source, palette, color)?;
             canvas.set(
                 target_x + column,
                 target_y + row,
@@ -360,5 +377,66 @@ mod tests {
         assert_eq!(raster.get(7, 8), Some(blue));
         assert_eq!(raster.get(8, 8), Some(blue));
         assert_eq!(raster.get(1, 0), Some(Rgba::default()));
+    }
+
+    #[test]
+    fn mixed_raster_accepts_vanilla_tiles_or_vanilla_palette_independently() {
+        let tile = IndexedTile::new([1; IndexedTile::PIXEL_COUNT]);
+        let custom_palette_part = RemappedCustomSpritePreviewTile {
+            definition_index: 1,
+            subtiles: [0x0800; 4],
+            graphics_base: 0,
+            palette_source: Some(3),
+            x: 0,
+            y: 0,
+        };
+        let red = Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        };
+        let raster = raster_remapped_custom_sprite_tile_with(
+            &custom_palette_part,
+            |index| (index == 0).then_some(&tile),
+            |source, palette, color| {
+                (source == Some(3) && palette == 2 && color == 1).then_some(red)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            raster.get(0, 0),
+            Some(Rgba {
+                red: 255,
+                alpha: 255,
+                ..Rgba::default()
+            })
+        );
+
+        let vanilla_palette_part = RemappedCustomSpritePreviewTile {
+            palette_source: None,
+            graphics_base: 0x2000,
+            ..custom_palette_part
+        };
+        let blue = Rgb8 {
+            red: 0,
+            green: 0,
+            blue: 255,
+        };
+        let raster = raster_remapped_custom_sprite_tile_with(
+            &vanilla_palette_part,
+            |index| (index == 0x2000).then_some(&tile),
+            |source, palette, color| {
+                (source.is_none() && palette == 2 && color == 1).then_some(blue)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            raster.get(15, 15),
+            Some(Rgba {
+                blue: 255,
+                alpha: 255,
+                ..Rgba::default()
+            })
+        );
     }
 }
