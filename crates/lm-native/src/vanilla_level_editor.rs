@@ -231,6 +231,7 @@ pub(crate) struct VanillaLevelEditor {
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
     map16_error: Option<String>,
     standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
+    layer2_objects: Option<lm_level::LevelObjectData>,
     external_asset_revision: u64,
     external_sprite_textures:
         HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
@@ -610,6 +611,7 @@ impl VanillaLevelEditor {
             Ok(lengths) => lengths,
             Err(error) => {
                 self.controller = None;
+                self.layer2_objects = None;
                 self.error = Some(error);
                 self.key = Some(key);
                 return;
@@ -649,6 +651,22 @@ impl VanillaLevelEditor {
                     .and_then(|rom| {
                         lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).ok()
                     });
+                self.layer2_objects = RomImage::from_bytes(snapshot.rom_bytes.clone())
+                    .ok()
+                    .and_then(|rom| {
+                        let project = lm_project::Project::new(rom);
+                        project
+                            .load_level_layer2(
+                                controller.level().number,
+                                controller.level().layer1.header.level_mode(),
+                                lm_profile::smw_us_v1_vanilla_layer2_layout(),
+                            )
+                            .ok()
+                    })
+                    .and_then(|layer2| match layer2 {
+                        lm_level::NativeLayer2Data::Objects(objects) => Some(objects),
+                        lm_level::NativeLayer2Data::Tilemap(_) => None,
+                    });
                 self.form = HeaderForm::from_controller(&controller);
                 self.selected_object = 0;
                 self.object_form = controller
@@ -672,6 +690,7 @@ impl VanillaLevelEditor {
                 self.entrance_controller = None;
                 self.midway_form = None;
                 self.error = Some(error.to_string());
+                self.layer2_objects = None;
             }
         }
         self.key = Some(key);
@@ -695,6 +714,7 @@ impl VanillaLevelEditor {
         self.map16_summary = None;
         self.map16_error = None;
         self.standard_object_map = None;
+        self.layer2_objects = None;
         self.object_placement_template = None;
         self.paste_target = None;
         self.dragging_sprite = None;
@@ -848,7 +868,13 @@ impl VanillaLevelEditor {
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
-        let (records, placements, sprite_placements) = self.canvas_model();
+        let CanvasModel {
+            layer1_records: records,
+            layer1_placements: placements,
+            layer2_records,
+            layer2_placements,
+            sprite_placements,
+        } = self.canvas_model();
         let vertical = self.controller.as_ref().is_some_and(|controller| {
             lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
         });
@@ -877,8 +903,13 @@ impl VanillaLevelEditor {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(125));
         }
-        let major_tiles = canvas_major_tiles(&placements, &sprite_placements);
-        let minor_tiles = canvas_minor_tiles(&placements, &sprite_placements);
+        let visible_objects = layer2_placements
+            .iter()
+            .chain(&placements)
+            .copied()
+            .collect::<Vec<_>>();
+        let major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
+        let minor_tiles = canvas_minor_tiles(&visible_objects, &sprite_placements);
         let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical);
         ui.horizontal(|ui| {
             ui.label("Canvas tool:");
@@ -914,6 +945,8 @@ impl VanillaLevelEditor {
                     vertical,
                     level_mode,
                     animation_phase,
+                    &layer2_records,
+                    &layer2_placements,
                     &records,
                     &placements,
                     &sprite_placements,
@@ -936,6 +969,8 @@ impl VanillaLevelEditor {
         vertical: bool,
         level_mode: u8,
         animation_phase: u8,
+        layer2_records: &[ObjectRecord],
+        layer2_placements: &[lm_level::NativeObjectPlacement],
         records: &[ObjectRecord],
         placements: &[lm_level::NativeObjectPlacement],
         sprite_placements: &[lm_level::NativeSpritePlacement],
@@ -952,17 +987,21 @@ impl VanillaLevelEditor {
             minor_tiles,
             vertical,
         );
-        self.draw_object_artwork(
-            painter,
-            rect,
-            ROM_LEVEL_CANVAS_CELL,
-            major_tiles,
-            vertical,
-            records,
-            placements,
-            custom_objects,
-            custom_map16,
-        );
+        for (layer_records, layer_placements) in
+            object_draw_layers(layer2_records, layer2_placements, records, placements)
+        {
+            self.draw_object_artwork(
+                painter,
+                rect,
+                ROM_LEVEL_CANVAS_CELL,
+                major_tiles,
+                vertical,
+                layer_records,
+                layer_placements,
+                custom_objects,
+                custom_map16,
+            );
+        }
         let mut hit = None;
         for placement in placements {
             let index = placement.record_index;
@@ -1441,21 +1480,27 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn canvas_model(
-        &self,
-    ) -> (
-        Vec<ObjectRecord>,
-        Vec<lm_level::NativeObjectPlacement>,
-        Vec<lm_level::NativeSpritePlacement>,
-    ) {
+    fn canvas_model(&self) -> CanvasModel {
         self.controller
             .as_ref()
             .map(|controller| {
-                (
-                    controller.level().layer1.objects.records.clone(),
-                    controller.level().layer1.objects.native_placements(),
-                    controller.level().sprites.native_placements(),
-                )
+                let layer2 = if lm_level::level_mode_layer2_storage(
+                    controller.level().layer1.header.level_mode(),
+                ) == lm_level::Layer2Storage::Objects
+                {
+                    self.layer2_objects.as_ref()
+                } else {
+                    None
+                };
+                CanvasModel {
+                    layer1_records: controller.level().layer1.objects.records.clone(),
+                    layer1_placements: controller.level().layer1.objects.native_placements(),
+                    layer2_records: layer2
+                        .map_or_else(Vec::new, |layer2| layer2.objects.records.clone()),
+                    layer2_placements: layer2
+                        .map_or_else(Vec::new, |layer2| layer2.objects.native_placements()),
+                    sprite_placements: controller.level().sprites.native_placements(),
+                }
             })
             .unwrap_or_default()
     }
@@ -3217,6 +3262,15 @@ fn draw_map16_atlas_tile(
     painter.image(texture.id(), target, uv, egui::Color32::WHITE);
 }
 
+#[derive(Default)]
+struct CanvasModel {
+    layer1_records: Vec<ObjectRecord>,
+    layer1_placements: Vec<lm_level::NativeObjectPlacement>,
+    layer2_records: Vec<ObjectRecord>,
+    layer2_placements: Vec<lm_level::NativeObjectPlacement>,
+    sprite_placements: Vec<lm_level::NativeSpritePlacement>,
+}
+
 #[derive(Clone, Copy)]
 struct RecoveredObjectDraw<'a> {
     texture: &'a egui::TextureHandle,
@@ -3640,6 +3694,20 @@ fn external_sprite_definition(
         tile.bottom_left.0,
         tile.bottom_right.0,
     ])
+}
+
+type ObjectDrawLayer<'a> = (&'a [ObjectRecord], &'a [lm_level::NativeObjectPlacement]);
+
+fn object_draw_layers<'a>(
+    layer2_records: &'a [ObjectRecord],
+    layer2_placements: &'a [lm_level::NativeObjectPlacement],
+    layer1_records: &'a [ObjectRecord],
+    layer1_placements: &'a [lm_level::NativeObjectPlacement],
+) -> [ObjectDrawLayer<'a>; 2] {
+    [
+        (layer2_records, layer2_placements),
+        (layer1_records, layer1_placements),
+    ]
 }
 
 #[derive(Clone, Copy)]
@@ -4656,6 +4724,28 @@ mod tests {
         assert_eq!(resolve_ssc_graphics_tile(assets, 0x900), Some(&layer3));
         assert_eq!(resolve_ssc_graphics_tile(assets, 0xd00), None);
         assert_eq!(resolve_ssc_graphics_tile(assets, 0x2000), None);
+    }
+
+    #[test]
+    fn native_canvas_draws_layer2_before_layer1() {
+        let layer2_records = vec![ObjectRecord::new(vec![0, 0x10, 0]).unwrap()];
+        let layer1_records = vec![ObjectRecord::new(vec![0, 0x20, 0]).unwrap()];
+        let layer2_placements = lm_level::ObjectStream {
+            records: layer2_records.clone(),
+        }
+        .native_placements();
+        let layer1_placements = lm_level::ObjectStream {
+            records: layer1_records.clone(),
+        }
+        .native_placements();
+        let layers = object_draw_layers(
+            &layer2_records,
+            &layer2_placements,
+            &layer1_records,
+            &layer1_placements,
+        );
+        assert_eq!(layers[0].0[0].command_id(), 1);
+        assert_eq!(layers[1].0[0].command_id(), 2);
     }
 
     #[test]

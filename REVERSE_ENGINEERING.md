@@ -1876,6 +1876,10 @@ selections, and off-canvas drops fail atomically.
 `NativeLevelDocumentEditor` now has a stream-native placement canvas. The
 legacy level mode selects horizontal or vertical axes; decoded object spans and
 sprite positions determine a bounded, fixed-scale, two-axis-scrollable view.
+For object-storage modes, the native frontend also decodes the recovered
+`$02E600` Layer 2 pointer and paints that object stream first, so Layer 1
+correctly overlays it and either layer can extend the canvas. `$FF`-bank
+pristine sentinels remain absent rather than being interpreted as pointers.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their

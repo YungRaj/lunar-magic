@@ -509,6 +509,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   immediately updates the level canvas placement. The ROM canvas uses a fixed tile scale with
   two-axis scrolling across all 32 screens and grows its perpendicular axis to keep the second
   native sprite row visible; artwork, hit testing, and drag coordinates share that exact space.
+  Object-backed Layer 2 streams are decoded through the adjacent `$02E600` pointer table and
+  painted behind Layer 1 with the same tileset handler map; both layers contribute to the bounded
+  canvas extent. Compressed Layer 2 tilemaps stay in their exact word editor until their
+  mode-specific canvas geometry is independently established.
   Explicit one-shot canvas tools also create an ordinary object or sprite at the clicked tile from
   the matching semantic form. Object creation inserts at an absolute screen and regenerates only
   owned transitions; sprite creation validates the selected native width and restores stable

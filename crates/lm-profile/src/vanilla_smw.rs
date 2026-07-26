@@ -1,8 +1,9 @@
 //! Recovered native layouts used by an unmodified North American SMW revision 0 ROM.
 
 use lm_project::{
-    GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout, LevelPointerTable,
-    LevelRomLayout, SeparateMidwayPatchLocator, SpritePointerTable, VanillaEntranceRomLayout,
+    GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout, LevelLayer2RomLayout,
+    LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout, SeparateMidwayPatchLocator,
+    SpritePointerTable, VanillaEntranceRomLayout,
 };
 use lm_rom::Mapper;
 use lm_rom::{RomError, RomImage};
@@ -22,6 +23,8 @@ pub const SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET: usize = 0x39f6;
 pub const SMW_US_V1_VANILLA_LEVEL_SLOTS: usize = 0x200;
 /// Contiguous 24-bit Layer 1 object-stream pointer table.
 pub const SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET: usize = 0x2e000;
+/// Contiguous 24-bit Layer 2 object/tilemap pointer table.
+pub const SMW_US_V1_LEVEL_LAYER2_POINTER_TABLE_OFFSET: usize = 0x2e600;
 /// Parallel low-word table for native sprite-stream pointers.
 pub const SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET: usize = 0x2ec00;
 /// Shared bank operand for native sprite-stream pointers.
@@ -49,6 +52,21 @@ pub const SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS: usize = 4;
 pub enum SmwUsV1ObjectTilesetGraphicsError {
     TilesetOutOfRange(usize),
     Rom(RomError),
+}
+
+/// Returns the pristine SMW-US Layer 2 layout recovered from descriptor entry 26.
+#[must_use]
+pub const fn smw_us_v1_vanilla_layer2_layout() -> LevelLayer2RomLayout {
+    LevelLayer2RomLayout {
+        mapper: Mapper::LoRom,
+        pointers: LevelPointerTable {
+            offset: SMW_US_V1_LEVEL_LAYER2_POINTER_TABLE_OFFSET,
+            entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+            stride: 3,
+        },
+        maximum_compressed_len: 0x8000,
+        tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -215,6 +233,9 @@ pub const fn smw_us_v1_separate_midway_locator() -> SeparateMidwayPatchLocator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_level::SpriteLengthTable;
+    use lm_project::Project;
+    use std::{fs, path::PathBuf};
 
     #[test]
     fn object_tileset_assignments_are_bounded_and_ordered() {
@@ -256,5 +277,42 @@ mod tests {
             smw_us_v1_sprite_tileset_graphics_files(&rom, 32),
             Err(SmwUsV1SpriteTilesetGraphicsError::TilesetOutOfRange(32))
         );
+    }
+
+    #[test]
+    fn every_present_pristine_layer2_pointer_decodes_under_its_level_mode() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("Super Mario World (USA).sfc");
+        let Ok(bytes) = fs::read(path) else {
+            return;
+        };
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let layer2 = smw_us_v1_vanilla_layer2_layout();
+        let level = smw_us_v1_vanilla_level_layout();
+        let mut decoded = 0;
+        let mut object_layers = 0;
+        for slot in 0..SMW_US_V1_VANILLA_LEVEL_SLOTS {
+            let pointer = project
+                .rom
+                .read(SMW_US_V1_LEVEL_LAYER2_POINTER_TABLE_OFFSET + slot * 3, 3)
+                .unwrap();
+            if pointer[2] == 0xff {
+                continue;
+            }
+            let loaded = project
+                .load_level_slot(slot, level, &SpriteLengthTable::standard())
+                .unwrap();
+            match project
+                .load_level_layer2(slot, loaded.layer1.header.level_mode(), layer2)
+                .unwrap()
+            {
+                lm_level::NativeLayer2Data::Objects(_) => object_layers += 1,
+                lm_level::NativeLayer2Data::Tilemap(_) => {}
+            }
+            decoded += 1;
+        }
+        assert!(decoded > 0);
+        assert_eq!(object_layers, decoded);
     }
 }
