@@ -1880,6 +1880,10 @@ For object-storage modes, the native frontend also decodes the recovered
 `$02E600` Layer 2 pointer and paints that object stream first, so Layer 1
 correctly overlays it and either layer can extend the canvas. `$FF`-bank
 pristine sentinels remain absent rather than being interpreted as pointers.
+`RenderLevelBackgroundMap16Canvas` at `0051C550` proves the compressed form is
+a 32×32 Map16 plane with index `((y >> 4) * 31 + x) * 16 + y`: two
+column-major 32×16 halves. The native canvas uses that exact bijection for the
+decoded 1,024-word plane and paints it before both object layers.
 Each native axis grows from 16 through at most 512 tiles, so expanded sprite
 upper-coordinate tokens remain visible instead of being clipped; strong
 16-tile screen boundaries remain explicit. Ordinary objects render their

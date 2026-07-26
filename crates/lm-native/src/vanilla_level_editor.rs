@@ -231,7 +231,7 @@ pub(crate) struct VanillaLevelEditor {
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
     map16_error: Option<String>,
     standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
-    layer2_objects: Option<lm_level::LevelObjectData>,
+    layer2: Option<lm_level::NativeLayer2Data>,
     external_asset_revision: u64,
     external_sprite_textures:
         HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
@@ -611,7 +611,7 @@ impl VanillaLevelEditor {
             Ok(lengths) => lengths,
             Err(error) => {
                 self.controller = None;
-                self.layer2_objects = None;
+                self.layer2 = None;
                 self.error = Some(error);
                 self.key = Some(key);
                 return;
@@ -651,7 +651,7 @@ impl VanillaLevelEditor {
                     .and_then(|rom| {
                         lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).ok()
                     });
-                self.layer2_objects = RomImage::from_bytes(snapshot.rom_bytes.clone())
+                self.layer2 = RomImage::from_bytes(snapshot.rom_bytes.clone())
                     .ok()
                     .and_then(|rom| {
                         let project = lm_project::Project::new(rom);
@@ -662,10 +662,6 @@ impl VanillaLevelEditor {
                                 lm_profile::smw_us_v1_vanilla_layer2_layout(),
                             )
                             .ok()
-                    })
-                    .and_then(|layer2| match layer2 {
-                        lm_level::NativeLayer2Data::Objects(objects) => Some(objects),
-                        lm_level::NativeLayer2Data::Tilemap(_) => None,
                     });
                 self.form = HeaderForm::from_controller(&controller);
                 self.selected_object = 0;
@@ -690,7 +686,7 @@ impl VanillaLevelEditor {
                 self.entrance_controller = None;
                 self.midway_form = None;
                 self.error = Some(error.to_string());
-                self.layer2_objects = None;
+                self.layer2 = None;
             }
         }
         self.key = Some(key);
@@ -714,7 +710,7 @@ impl VanillaLevelEditor {
         self.map16_summary = None;
         self.map16_error = None;
         self.standard_object_map = None;
-        self.layer2_objects = None;
+        self.layer2 = None;
         self.object_placement_template = None;
         self.paste_target = None;
         self.dragging_sprite = None;
@@ -873,6 +869,7 @@ impl VanillaLevelEditor {
             layer1_placements: placements,
             layer2_records,
             layer2_placements,
+            layer2_tilemap,
             sprite_placements,
         } = self.canvas_model();
         let vertical = self.controller.as_ref().is_some_and(|controller| {
@@ -908,8 +905,12 @@ impl VanillaLevelEditor {
             .chain(&placements)
             .copied()
             .collect::<Vec<_>>();
-        let major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
-        let minor_tiles = canvas_minor_tiles(&visible_objects, &sprite_placements);
+        let mut major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
+        let mut minor_tiles = canvas_minor_tiles(&visible_objects, &sprite_placements);
+        if !layer2_tilemap.is_empty() {
+            major_tiles = major_tiles.max(32);
+            minor_tiles = minor_tiles.max(32);
+        }
         let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical);
         ui.horizontal(|ui| {
             ui.label("Canvas tool:");
@@ -947,6 +948,7 @@ impl VanillaLevelEditor {
                     animation_phase,
                     &layer2_records,
                     &layer2_placements,
+                    &layer2_tilemap,
                     &records,
                     &placements,
                     &sprite_placements,
@@ -971,6 +973,7 @@ impl VanillaLevelEditor {
         animation_phase: u8,
         layer2_records: &[ObjectRecord],
         layer2_placements: &[lm_level::NativeObjectPlacement],
+        layer2_tilemap: &[u16],
         records: &[ObjectRecord],
         placements: &[lm_level::NativeObjectPlacement],
         sprite_placements: &[lm_level::NativeSpritePlacement],
@@ -986,6 +989,15 @@ impl VanillaLevelEditor {
             major_tiles,
             minor_tiles,
             vertical,
+        );
+        draw_layer2_tilemap(
+            painter,
+            rect,
+            ROM_LEVEL_CANVAS_CELL,
+            layer2_tilemap,
+            self.map16_texture.as_ref(),
+            self.foreground_texture.as_ref(),
+            custom_map16,
         );
         for (layer_records, layer_placements) in
             object_draw_layers(layer2_records, layer2_placements, records, placements)
@@ -1484,21 +1496,25 @@ impl VanillaLevelEditor {
         self.controller
             .as_ref()
             .map(|controller| {
-                let layer2 = if lm_level::level_mode_layer2_storage(
-                    controller.level().layer1.header.level_mode(),
-                ) == lm_level::Layer2Storage::Objects
-                {
-                    self.layer2_objects.as_ref()
-                } else {
-                    None
+                let layer2_objects = match self.layer2.as_ref() {
+                    Some(lm_level::NativeLayer2Data::Objects(objects)) => Some(objects),
+                    Some(lm_level::NativeLayer2Data::Tilemap(_)) | None => None,
+                };
+                let layer2_tilemap = match self.layer2.as_ref() {
+                    Some(lm_level::NativeLayer2Data::Tilemap(bytes)) => bytes
+                        .chunks_exact(2)
+                        .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                        .collect(),
+                    Some(lm_level::NativeLayer2Data::Objects(_)) | None => Vec::new(),
                 };
                 CanvasModel {
                     layer1_records: controller.level().layer1.objects.records.clone(),
                     layer1_placements: controller.level().layer1.objects.native_placements(),
-                    layer2_records: layer2
+                    layer2_records: layer2_objects
                         .map_or_else(Vec::new, |layer2| layer2.objects.records.clone()),
-                    layer2_placements: layer2
+                    layer2_placements: layer2_objects
                         .map_or_else(Vec::new, |layer2| layer2.objects.native_placements()),
+                    layer2_tilemap,
                     sprite_placements: controller.level().sprites.native_placements(),
                 }
             })
@@ -3268,7 +3284,54 @@ struct CanvasModel {
     layer1_placements: Vec<lm_level::NativeObjectPlacement>,
     layer2_records: Vec<ObjectRecord>,
     layer2_placements: Vec<lm_level::NativeObjectPlacement>,
+    layer2_tilemap: Vec<u16>,
     sprite_placements: Vec<lm_level::NativeSpritePlacement>,
+}
+
+fn layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
+    if x >= 32 || y >= 32 {
+        return None;
+    }
+    Some(((y >> 4) * 31 + x) * 16 + y)
+}
+
+fn draw_layer2_tilemap(
+    painter: &egui::Painter,
+    target: egui::Rect,
+    cell_size: f32,
+    tilemap: &[u16],
+    map16_texture: Option<&egui::TextureHandle>,
+    foreground_texture: Option<&egui::TextureHandle>,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+) {
+    for y in 0..32 {
+        for x in 0..32 {
+            let Some(&word) = layer2_tilemap_index(x, y).and_then(|index| tilemap.get(index))
+            else {
+                continue;
+            };
+            let tile = word & 0x0fff;
+            let x_offset = f32::from(u8::try_from(x).unwrap_or_default()) * cell_size;
+            let y_offset = f32::from(u8::try_from(y).unwrap_or_default()) * cell_size;
+            let cell = egui::Rect::from_min_size(
+                target.min + egui::vec2(x_offset, y_offset),
+                egui::vec2(cell_size, cell_size),
+            );
+            let definition = match custom_map16 {
+                Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) => {
+                    sidecar.tile(usize::from(tile))
+                }
+                Some(lm_app::NativeMap16SidecarDocument::S16(_)) | None => None,
+            };
+            if let (Some(definition), Some(texture)) = (definition, foreground_texture) {
+                draw_custom_map16_tile(painter, texture, cell, definition);
+            } else if tile < 0x200
+                && let Some(texture) = map16_texture
+            {
+                draw_map16_atlas_tile(painter, texture, cell, tile);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -4746,6 +4809,42 @@ mod tests {
         );
         assert_eq!(layers[0].0[0].command_id(), 1);
         assert_eq!(layers[1].0[0].command_id(), 2);
+    }
+
+    #[test]
+    fn compressed_layer2_index_matches_lunar_magic_column_halves() {
+        assert_eq!(layer2_tilemap_index(0, 0), Some(0));
+        assert_eq!(layer2_tilemap_index(1, 0), Some(16));
+        assert_eq!(layer2_tilemap_index(31, 15), Some(511));
+        assert_eq!(layer2_tilemap_index(0, 16), Some(512));
+        assert_eq!(layer2_tilemap_index(31, 31), Some(1023));
+        assert_eq!(layer2_tilemap_index(32, 0), None);
+        assert_eq!(layer2_tilemap_index(0, 32), None);
+        let mut indexes = (0..32)
+            .flat_map(|y| (0..32).map(move |x| layer2_tilemap_index(x, y).unwrap()))
+            .collect::<Vec<_>>();
+        indexes.sort_unstable();
+        assert_eq!(indexes, (0..1024).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn retained_lunar_magic_level_105_supplies_complete_compressed_layer2_plane() {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/level-save-105/after.smc");
+        let Ok(bytes) = std::fs::read(path) else {
+            return;
+        };
+        let project =
+            lm_project::Project::new(lm_rom::RomImage::from_bytes(bytes).expect("fixture ROM"));
+        let layer2 = project
+            .load_level_layer2(0x105, 0, lm_profile::smw_us_v1_vanilla_layer2_layout())
+            .expect("Lunar Magic Layer 2 fixture");
+        let lm_level::NativeLayer2Data::Tilemap(bytes) = layer2 else {
+            panic!("level 105 fixture must contain a compressed Layer 2 tilemap");
+        };
+        assert_eq!(bytes.len(), 0x800);
+        assert_eq!(bytes.chunks_exact(2).count(), 0x400);
     }
 
     #[test]

@@ -511,8 +511,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   native sprite row visible; artwork, hit testing, and drag coordinates share that exact space.
   Object-backed Layer 2 streams are decoded through the adjacent `$02E600` pointer table and
   painted behind Layer 1 with the same tileset handler map; both layers contribute to the bounded
-  canvas extent. Compressed Layer 2 tilemaps stay in their exact word editor until their
-  mode-specific canvas geometry is independently established.
+  canvas extent. Compressed Layer 2 tilemaps are also projected behind Layer 1 as the recovered
+  32×32 Map16 plane. Their storage uses column-major 16-row halves rather than ordinary row-major
+  order; the native canvas applies Lunar Magic's exact index formula and expands to show the plane.
   Explicit one-shot canvas tools also create an ordinary object or sprite at the clicked tile from
   the matching semantic form. Object creation inserts at an absolute screen and regenerates only
   owned transitions; sprite creation validates the selected native width and restores stable
