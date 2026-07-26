@@ -1906,8 +1906,26 @@ entries now render in both the shared Rust renderer and the native picker/canvas
 instead of reaching the unresolved red marker. Tests enumerate all four `$83`
 branches and every authenticated alias.
 
+The contiguous `$64`–`$68` cluster is now recovered as well. Its handler entry
+points are `004c69a0`, `004c6af0`, `004c6c80`, `004c6e10`, and `004c6f10`.
+`$64` emits `$8E`, three or seven `$8F` middle segments, and `$9F`; the long
+branch requires both first-byte bit zero and a `$64` selection in either of the
+active context tables. `$65/$66` are opposite six-part arms, selecting the
+`$8E/$9E` and `$201`–`$205` families from the same first-byte bit. `$67` selects
+the `$AB`–`$BE` four-part family, and `$68` selects `$A9/$AA`. The latter four
+handlers invoke `ValidateWideObjectHorizontalPosition` for their even branch;
+the shared mode therefore carries explicit long-stem and invalid-wide-placement
+inputs instead of silently assuming that hidden editor state.
+
+The preview-definition table itself is embedded at executable file offset
+`0x26F66C`, with four little-endian tile words per eight-byte entry. Index `$01`
+reproduces the previously authenticated `$0400/$0410/$0401/$0411` definition,
+which independently anchors the table base and stride. Direct table extraction
+now supplies the formerly missing `$8E/$8F/$9E/$9F`, `$AD/$AE/$AF`,
+`$BD/$BE/$BF`, `$11C/$12C`, and `$201`–`$205` definitions used by this cluster.
+Tests cover the short and long `$64` stems, both first-byte branches of
+`$65`–`$68`, alternate-number display, and validator rejection.
+
 Remaining dedicated entries discovered by the same audit are tracked as
-implementation work rather than being mislabeled as native empties: `$64`–`$68`,
-`$6C`, `$8A`, `$9D`, `$EF`, and `$F2`–`$FF`. Several are stateful or
-level-layout-dependent, so their required global inputs must be modeled before
-their geometry can be claimed as faithful.
+implementation work rather than being mislabeled as native empties: `$6C`,
+`$8A`, `$9D`, `$EF`, and `$F2`–`$FF`.

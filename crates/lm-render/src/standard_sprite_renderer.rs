@@ -18,6 +18,18 @@ pub enum StandardLevelOrientation {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum StandardSpriteWideContext {
+    /// The native edge validator accepts the placement and `$64` uses its
+    /// ordinary three-middle-segment stem.
+    #[default]
+    ValidShort,
+    /// The active native context tables select `$64`'s seven-middle-segment stem.
+    ValidLong64,
+    /// The native wide-object edge validator rejects the placement.
+    Invalid,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct StandardSpritePreviewMode {
     pub alternate_display: bool,
     pub alternate_graphics: bool,
@@ -33,6 +45,9 @@ pub struct StandardSpritePreviewMode {
     pub level_mode: u8,
     /// Determines which native position nibble text-based generator previews inspect.
     pub level_orientation: StandardLevelOrientation,
+    /// Context selected by Lunar Magic's two sprite-selector tables and
+    /// wide-object edge validator.
+    pub wide_context: StandardSpriteWideContext,
 }
 
 /// Renders Lunar Magic's authenticated standard-sprite preview handlers.
@@ -55,6 +70,7 @@ pub fn render_lunar_magic_standard_sprite(
             placement_first: 0,
             level_mode: 0,
             level_orientation: StandardLevelOrientation::Horizontal,
+            wide_context: StandardSpriteWideContext::ValidShort,
         },
     )
 }
@@ -293,6 +309,11 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x61 => render_left_chain(false),
         0x62 => render_left_chain(true),
         0x63 => render_left_chain(mode.placement_first & 1 == 0),
+        0x64 => render_handler_64(mode),
+        0x65 => render_handler_65_66(mode, false),
+        0x66 => render_handler_65_66(mode, true),
+        0x67 => render_handler_67(mode),
+        0x68 => render_handler_68(mode),
         0x69 => parts(&[(0x27, 3, 0), (0x9c, 7, 4)]),
         0x6a => parts(&[(0xb7, 0, 1), (0xb7, 16, 1), (0xb7, 24, 1)]),
         0x6b => parts(&[(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]),
@@ -730,6 +751,92 @@ fn render_handler_83(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         (center, -1, -9),
         (0x108, -3, -1),
     ])
+}
+
+fn render_handler_64(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let middle_count = if mode.placement_first & 1 != 0
+        && mode.wide_context == StandardSpriteWideContext::ValidLong64
+    {
+        7
+    } else {
+        3
+    };
+    let mut values = Vec::with_capacity(middle_count + 2);
+    values.push((0x8e, -8, -7));
+    for middle in 0..middle_count {
+        values.push((0x8f, -8, 9 + i16::try_from(middle).ok()? * 16));
+    }
+    values.push((0x9f, -8, 9 + i16::try_from(middle_count).ok()? * 16));
+    parts(&values)
+}
+
+fn render_handler_65_66(
+    mode: StandardSpritePreviewMode,
+    lower_arm: bool,
+) -> Option<Vec<StandardSpritePreviewTile>> {
+    let odd = mode.placement_first & 1 != 0;
+    if !odd && mode.wide_context == StandardSpriteWideContext::Invalid {
+        return None;
+    }
+    let variant_delta = if odd { 2 } else { 0 };
+    let mut values = Vec::with_capacity(6);
+    if lower_arm {
+        values.extend([
+            (0x12c, 8, 23 - variant_delta),
+            (0x11c, 8, 9 - variant_delta),
+        ]);
+    } else {
+        values.extend([
+            (0xaf, 8, -33 - variant_delta),
+            (0xbf, 8, -19 - variant_delta),
+        ]);
+    }
+    values.push((if odd { 0x9e } else { 0x8e }, 8, -7));
+    values.push((0x201, if odd { 16 } else { 8 }, -13));
+    if odd {
+        values.extend([(0x204, 13, -13), (0x205, 13, -13)]);
+    } else {
+        values.extend([(0x202, 3, -13), (0x203, 3, -13)]);
+    }
+    parts(&values)
+}
+
+fn render_handler_67(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    if mode.alternate_display {
+        return parts(&[(0x115, 0, 1)]);
+    }
+    if mode.placement_first & 1 == 0 && mode.wide_context == StandardSpriteWideContext::Invalid {
+        return None;
+    }
+    let base = if mode.placement_first & 1 == 0 {
+        0xad
+    } else {
+        0xab
+    };
+    parts(&[
+        (base + 0x10, 0, 1),
+        (base + 0x11, 16, 1),
+        (base, 0, -15),
+        (base + 1, 16, -15),
+    ])
+}
+
+fn render_handler_68(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    if mode.alternate_display {
+        return parts(&[(0x115, 0, 1)]);
+    }
+    if mode.placement_first & 1 == 0 && mode.wide_context == StandardSpriteWideContext::Invalid {
+        return None;
+    }
+    parts(&[(
+        if mode.placement_first & 1 == 0 {
+            0xaa
+        } else {
+            0xa9
+        },
+        8,
+        -7,
+    )])
 }
 
 fn render_handler_1e(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
@@ -1244,7 +1351,7 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x02b => [0xd0bf, 0xd0af, 0xd0be, 0xd0ae],
         0x02e => [0xc95d, 0xc94d, 0xc95c, 0xc94c],
         0x02f => [0xc95b, 0xc94b, 0xc95a, 0xc94a],
-        0x034 | 0x1b0 => [0x058e, 0x059e, 0x058f, 0x059f],
+        0x034 | 0x0af | 0x1b0 => [0x058e, 0x059e, 0x058f, 0x059f],
         0x035 => [0x458e, 0x459e, 0x0419, 0x0419],
         0x036 => [0x0564, 0x0574, 0x0565, 0x0575],
         0x037 => [0x058c, 0x059c, 0x058d, 0x059d],
@@ -1255,7 +1362,7 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x03d => [0x0dc8, 0x0dd8, 0x0dc9, 0x0dd9],
         0x03e => [0x4dc9, 0x4dd9, 0x4dc8, 0x4dd8],
         0x03f => [0x0dca, 0x0dda, 0x0dcb, 0x0ddb],
-        0x044 | 0x1b1 => [0x05ae, 0x05be, 0x05af, 0x05bf],
+        0x044 | 0x0bf | 0x1b1 => [0x05ae, 0x05be, 0x05af, 0x05bf],
         0x045 => [0x45ae, 0x45be, 0x0419, 0x0419],
         0x046 => [0x0568, 0x0578, 0x0569, 0x0579],
         0x048 => [0x196a, 0x197a, 0x196b, 0x197b],
@@ -1321,6 +1428,8 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x08b => [0x55cd, 0x55dd, 0x55cc, 0x55dc],
         0x08c => [0x1500, 0x0110, 0x1501, 0x0111],
         0x08d => [0x5501, 0x4111, 0x5500, 0x4110],
+        0x08e => [0x0dc0, 0x0dd0, 0x0dc1, 0x0dd1],
+        0x08f => [0x01ce, 0x01de, 0x01cf, 0x01df],
         0x090 => [0x1640, 0x1650, 0x1641, 0x1651],
         0x094 => [0x4583, 0x4593, 0x4582, 0x4592],
         0x095 => [0x4581, 0x4591, 0x4580, 0x4590],
@@ -1330,6 +1439,8 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x09a | 0x185 => [0x15e4, 0x15f4, 0x15e5, 0x15f5],
         0x09b => [0x55e6, 0x55f6, 0x55e5, 0x55f5],
         0x09c => [0x114d, 0x1019, 0x1019, 0x1019],
+        0x09e => [0x0de0, 0x0df0, 0x0de1, 0x0df1],
+        0x09f => [0x01ce, 0x01ee, 0x01cf, 0x01ef],
         0x0a0 => [0x1642, 0x1652, 0x1643, 0x1653],
         0x0a4 | 0x1d2 | 0x1e7 => [0x15a4, 0x15b4, 0x15a5, 0x15b5],
         0x0a5 | 0x1d3 => [0x15a6, 0x15b6, 0x15a7, 0x15b7],
@@ -1340,6 +1451,8 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0aa => [0x49c9, 0x49d9, 0x49c8, 0x49d8],
         0x0ab => [0x056c, 0x057c, 0x056d, 0x057d],
         0x0ac => [0x456d, 0x457d, 0x456c, 0x457c],
+        0x0ad => [0x056e, 0x057e, 0x056f, 0x057f],
+        0x0ae => [0x456f, 0x457f, 0x456e, 0x457e],
         0x0b0 => [0x003d, 0x1019, 0x1019, 0x1019],
         0x0b1 => [0xc03d, 0x1019, 0x1019, 0x1019],
         0x0b2 => [0x003c, 0x1019, 0x1019, 0x1019],
@@ -1352,6 +1465,8 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x0b9 | 0x1bb => [0x1daa, 0x1dba, 0x1dab, 0x1dbb],
         0x0bb => [0x857c, 0x856c, 0x857d, 0x856d],
         0x0bc => [0xc57d, 0xc56d, 0xc57c, 0xc56c],
+        0x0bd => [0x857e, 0x856e, 0x857f, 0x856f],
+        0x0be => [0xc57f, 0xc56f, 0xc57e, 0xc56e],
         0x0ba => [0x01e4, 0x01f4, 0x01e5, 0x01f5],
         0x0c0 | 0x179 => [0x1980, 0x1990, 0x1981, 0x1991],
         0x0c2 => [0x1984, 0x1994, 0x1985, 0x1995],
@@ -1431,6 +1546,8 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x121 => [0x41ab, 0x41bb, 0x41aa, 0x41ba],
         0x122 => [0x01ac, 0x01bc, 0x01ad, 0x01bd],
         0x123 => [0x41ad, 0x41bd, 0x41ac, 0x41bc],
+        0x11c => [0x85be, 0x85ae, 0x85bf, 0x85af],
+        0x12c => [0x859e, 0x858e, 0x859f, 0x858f],
         0x12d => [0x49ad, 0x49bd, 0x49ac, 0x49bc],
         0x130 => [0x81ba, 0x81aa, 0x81bb, 0x81ab],
         0x131 => [0xc1bb, 0xc1ab, 0xc1ba, 0xc1aa],
@@ -1550,6 +1667,11 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1fe => [0x1523, 0x1533, 0x1524, 0x1534],
         0x1ff => [0x1525, 0x1535, 0x1419, 0x1419],
         0x200 => [0x11e2, 0x1419, 0x31e3, 0x1419],
+        0x201 => [0x0062, 0x1019, 0x1019, 0x1019],
+        0x202 => [0x0064, 0x1019, 0x1019, 0x1019],
+        0x203 => [0x0066, 0x1019, 0x1019, 0x1019],
+        0x204 => [0x1019, 0x1019, 0x0064, 0x1019],
+        0x205 => [0x1019, 0x1019, 0x0066, 0x1019],
         0x208 => [0x817a, 0x816a, 0x817b, 0x816b],
         0x20c => [0x2c19, 0x2c19, 0x2c19, 0x0599],
         0x20d => [0x1419, 0x1419, 0x1419, 0x350d],
@@ -3776,5 +3898,124 @@ mod tests {
         assert_eq!(geometry(0x87, 0), geometry(0x85, 0));
         assert_eq!(geometry(0x88, 0), geometry(0x86, 0));
         assert_eq!(geometry(0x8b, 0), geometry(0x89, 0));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)] // Enumerates every native branch in one contiguous cluster.
+    fn handlers_64_67_and_68_preserve_context_and_edge_branches() {
+        let geometry = |sprite_number, mode| {
+            render_lunar_magic_standard_sprite_with_mode(sprite_number, mode).map(|parts| {
+                parts
+                    .iter()
+                    .map(|part| (part.definition_index, part.x, part.y))
+                    .collect::<Vec<_>>()
+            })
+        };
+
+        let short = geometry(0x64, StandardSpritePreviewMode::default()).unwrap();
+        assert_eq!(
+            short,
+            [
+                (0x8e, -8, -7),
+                (0x8f, -8, 9),
+                (0x8f, -8, 25),
+                (0x8f, -8, 41),
+                (0x9f, -8, 57)
+            ]
+        );
+        let long = geometry(
+            0x64,
+            StandardSpritePreviewMode {
+                placement_first: 1,
+                wide_context: StandardSpriteWideContext::ValidLong64,
+                ..StandardSpritePreviewMode::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(long.len(), 9);
+        assert_eq!(long.last(), Some(&(0x9f, -8, 121)));
+
+        assert_eq!(
+            geometry(0x65, StandardSpritePreviewMode::default()).unwrap(),
+            [
+                (0xaf, 8, -33),
+                (0xbf, 8, -19),
+                (0x8e, 8, -7),
+                (0x201, 8, -13),
+                (0x202, 3, -13),
+                (0x203, 3, -13)
+            ]
+        );
+        assert_eq!(
+            geometry(0x66, StandardSpritePreviewMode::default()).unwrap(),
+            [
+                (0x12c, 8, 23),
+                (0x11c, 8, 9),
+                (0x8e, 8, -7),
+                (0x201, 8, -13),
+                (0x202, 3, -13),
+                (0x203, 3, -13)
+            ]
+        );
+        assert_eq!(
+            geometry(0x67, StandardSpritePreviewMode::default()).unwrap(),
+            [(0xbd, 0, 1), (0xbe, 16, 1), (0xad, 0, -15), (0xae, 16, -15)]
+        );
+        let odd = StandardSpritePreviewMode {
+            placement_first: 1,
+            ..StandardSpritePreviewMode::default()
+        };
+        assert_eq!(
+            geometry(0x65, odd).unwrap(),
+            [
+                (0xaf, 8, -35),
+                (0xbf, 8, -21),
+                (0x9e, 8, -7),
+                (0x201, 16, -13),
+                (0x204, 13, -13),
+                (0x205, 13, -13)
+            ]
+        );
+        assert_eq!(
+            geometry(0x66, odd).unwrap(),
+            [
+                (0x12c, 8, 21),
+                (0x11c, 8, 7),
+                (0x9e, 8, -7),
+                (0x201, 16, -13),
+                (0x204, 13, -13),
+                (0x205, 13, -13)
+            ]
+        );
+        assert_eq!(
+            geometry(0x67, odd).unwrap(),
+            [(0xbb, 0, 1), (0xbc, 16, 1), (0xab, 0, -15), (0xac, 16, -15)]
+        );
+        assert_eq!(
+            geometry(0x68, StandardSpritePreviewMode::default()).unwrap(),
+            [(0xaa, 8, -7)]
+        );
+        assert_eq!(geometry(0x68, odd).unwrap(), [(0xa9, 8, -7)]);
+
+        let invalid = StandardSpritePreviewMode {
+            wide_context: StandardSpriteWideContext::Invalid,
+            ..StandardSpritePreviewMode::default()
+        };
+        assert!(geometry(0x65, invalid).is_none());
+        assert!(geometry(0x66, invalid).is_none());
+        assert!(geometry(0x67, invalid).is_none());
+        assert!(geometry(0x68, invalid).is_none());
+        assert_eq!(
+            geometry(
+                0x67,
+                StandardSpritePreviewMode {
+                    alternate_display: true,
+                    wide_context: StandardSpriteWideContext::Invalid,
+                    ..StandardSpritePreviewMode::default()
+                }
+            )
+            .unwrap(),
+            [(0x115, 0, 1)]
+        );
     }
 }
