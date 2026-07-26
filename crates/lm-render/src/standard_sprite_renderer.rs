@@ -713,13 +713,16 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xe4 => parts(&[(0x14b, 0, 0), (0x114, 0, 0)]),
         0xe5 => render_handler_e5(mode),
         0xe6 => render_handler_e6(mode),
-        0xe7 => render_handler_e7(mode),
+        0xe7 | 0xef => render_handler_e7(mode),
         0xe8 => render_text_lines(&[("Layer 2", 0), (" Falls ", 8)]),
         0xe9 => render_handler_e9(mode),
-        0xea => render_text_lines(&[("   Layer 2   ", 0), ("On/Off Switch", 8)]),
-        0xeb => render_handler_eb(mode),
-        0xec => render_text_lines(&[("Fast BG Scroll", 0)]),
-        0xed => render_handler_ed(mode),
+        0xea | 0xf2 => render_text_lines(&[("   Layer 2   ", 0), ("On/Off Switch", 8)]),
+        0xeb | 0xf3 => render_handler_eb(mode),
+        0xec | 0xf4 => render_text_lines(&[("Fast BG Scroll", 0)]),
+        0xed | 0xf5 => render_handler_ed(mode),
+        // $EE/$F0/$F1 retain the native empty/default dispatch entry.
+        // $F6-$FF share Lunar Magic's custom-display bookkeeping fallback:
+        // it records the placement but has no built-in preview definition.
         _ => None,
     }
 }
@@ -4087,5 +4090,61 @@ mod tests {
             ),
             [(0x115, 0, 1)]
         );
+    }
+
+    #[test]
+    fn late_compatibility_dispatch_entries_match_their_native_aliases() {
+        let modes = [
+            StandardSpritePreviewMode::default(),
+            StandardSpritePreviewMode {
+                placement_first: 0x10,
+                level_mode: 1,
+                ..StandardSpritePreviewMode::default()
+            },
+            StandardSpritePreviewMode {
+                placement_first: 0x03,
+                level_mode: 3,
+                level_orientation: StandardLevelOrientation::Vertical,
+                ..StandardSpritePreviewMode::default()
+            },
+        ];
+
+        for mode in modes {
+            for (compatibility_id, ordinary_id) in [
+                (0xef, 0xe7),
+                (0xf2, 0xea),
+                (0xf3, 0xeb),
+                (0xf4, 0xec),
+                (0xf5, 0xed),
+            ] {
+                assert_eq!(
+                    render_lunar_magic_standard_sprite_with_mode(compatibility_id, mode),
+                    render_lunar_magic_standard_sprite_with_mode(ordinary_id, mode),
+                    "${compatibility_id:02X} must alias ${ordinary_id:02X}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn late_default_and_custom_fallback_entries_have_no_builtin_artwork() {
+        for sprite_number in [0xee, 0xf0, 0xf1] {
+            assert_eq!(
+                render_lunar_magic_standard_sprite_with_mode(
+                    sprite_number,
+                    StandardSpritePreviewMode::default()
+                ),
+                None
+            );
+        }
+        for sprite_number in 0xf6..=0xff {
+            assert_eq!(
+                render_lunar_magic_standard_sprite_with_mode(
+                    sprite_number,
+                    StandardSpritePreviewMode::default()
+                ),
+                None
+            );
+        }
     }
 }

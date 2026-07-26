@@ -1790,6 +1790,14 @@ extension byte. A custom visual catalog deduplicates nonalternate default displa
 and descriptions, resolves built-in or external Map16 preview definitions, and constructs an exact
 declared-width record with deterministic zero extension bytes for one-shot placement.
 
+The standard-sprite renderer now also covers every late native dispatch-table entry beyond the
+ordinary picker boundary. Exact disassembly of `$004CAFB0–$004CB23E` proves that `$EF`, `$F2`,
+`$F3`, `$F4`, and `$F5` are compatibility aliases of the `$E7`, `$EA`, `$EB`, `$EC`, and `$ED`
+text previews, including their level-mode and placement-nibble branches. `$EE`, `$F0`, and `$F1`
+retain the empty default entry. `$F6–$FF` all point to `$004C3A00`, which increments native
+bookkeeping and delegates custom-display handling when configured but supplies no built-in
+preview definition; the Rust renderer therefore returns no standard artwork for those IDs.
+
 The first direct-ROM move oracle exposed one additional native invariant:
 Lunar Magic stably sorts legacy sprite records by their decoded five-bit
 screen after a cross-screen move, preserving the prior priority order among
