@@ -58,6 +58,13 @@ start cell, including edge isolation, irregular pattern anchoring, malformed dim
 native two-plane storage bijection. Focused gates require
 five-payload semantic reopen, checksum validity, exact ownership reclamation, and rollback when a
 late edit targets the wrong storage mode, repeats a tile index, or exceeds the tilemap.
+The recovered background-remap gate additionally parses the bounded `$8000`–`$FFFF` textual
+language into a 32,768-entry transformation table and covers absolute/ranged replacement,
+saturating addition/subtraction, `M` linear and two-dimensional generation, `R` source rectangles,
+global offset, selection versus whole-map application, 12-bit storage normalization, and active
+bank transitions. It rejects malformed pairs, out-of-domain values, oversized scripts, invalid or
+duplicate selection indexes, malformed tilemaps, invalid banks, and excessive offsets before
+emitting edits.
 The opt-in Wine gate additionally relocates an edited installed level-105 tilemap into a newly
 expanded bank with one checksum-atomic Rust save and requires Lunar Magic 3.63 to re-export the
 exact decoded Layer 2 payload.

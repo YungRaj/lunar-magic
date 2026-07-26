@@ -26,6 +26,7 @@ mod model;
 mod mwl;
 mod native_file;
 mod native_layer2;
+mod native_layer2_remap;
 mod native_map16_sidecar;
 mod native_sprite;
 mod object;
@@ -95,6 +96,9 @@ pub use native_layer2::{
     interleave_layer2_tilemap_planes, level_mode_layer2_storage, native_layer2_flood_pattern,
     native_layer2_flood_region, native_layer2_move_rectangle, native_layer2_resize_rectangle,
     native_layer2_tilemap_index, split_layer2_tilemap_planes,
+};
+pub use native_layer2_remap::{
+    NativeLayer2RemapError, NativeLayer2RemapProgram, NativeLayer2RemapResult,
 };
 pub use native_map16_sidecar::{M16Sidecar, NativeMap16SidecarError, S16Sidecar};
 pub use native_sprite::{
