@@ -3,7 +3,8 @@ use crate::ObjectStream;
 /// Orientation-neutral position recovered while walking the serialized object stream.
 ///
 /// `major` is the coordinate along the level's screen axis and `minor` is the coordinate within
-/// the perpendicular 16-tile span. A caller with level-mode knowledge may map these to X/Y.
+/// the perpendicular 32-value encoded span (normally 27 visible tiles). A caller with level-mode
+/// knowledge may map these to X/Y.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeObjectPlacement {
     pub record_index: usize,
@@ -47,11 +48,17 @@ impl ObjectStream {
             }
             let coordinates = record.coordinate_nibbles();
             let parameter = record.parameter();
-            let (major_nibble, minor) = if vertical {
+            let (major_nibble, minor_nibble) = if vertical {
                 (coordinates.first, coordinates.second)
             } else {
                 (coordinates.second, coordinates.first)
             };
+            let minor = minor_nibble
+                | if record.perpendicular_high_coordinate() {
+                    0x10
+                } else {
+                    0
+                };
             placements.push(NativeObjectPlacement {
                 record_index,
                 screen,
@@ -122,6 +129,18 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn byte_zero_bit_four_extends_the_perpendicular_coordinate() {
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x15, 0x17, 0]).unwrap()],
+        };
+        let horizontal = stream.native_placements_for_orientation(false)[0];
+        assert_eq!((horizontal.major, horizontal.minor), (7, 0x15));
+
+        let vertical = stream.native_placements_for_orientation(true)[0];
+        assert_eq!((vertical.major, vertical.minor), (5, 0x17));
     }
 
     #[test]

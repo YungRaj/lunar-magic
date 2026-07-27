@@ -17,7 +17,7 @@ const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
 const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 50;
 const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 400;
 const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
-const NATIVE_LEVEL_MINOR_TILES: u16 = 16;
+const NATIVE_LEVEL_MINOR_TILES: u16 = 27;
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 380.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 
@@ -1305,9 +1305,8 @@ impl VanillaLevelEditor {
             .copied()
             .collect::<Vec<_>>();
         let mut major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
-        // The perpendicular level axis is one native 16-tile screen. Parameter nibbles describe
-        // command-specific geometry and cannot be used as generic canvas bounds: for example,
-        // pristine level $105 contains a fixed-shape command at row 15 whose low nibble is $B.
+        // A horizontal SMW screen is 16×27 tiles. Byte 0 bit $10 places objects in its lower
+        // 11-tile region; parameter nibbles describe command geometry and are not canvas bounds.
         let mut minor_tiles = NATIVE_LEVEL_MINOR_TILES;
         for (records, placements) in [
             (records.as_slice(), placements.as_slice()),
@@ -1466,9 +1465,8 @@ impl VanillaLevelEditor {
             minor_tiles,
             vertical,
         );
-        // Native object records have a four-bit minor coordinate. The 32×32 Layer 2 plane may
-        // enlarge the visible canvas, but must not enlarge the Layer 1/2 object cache: doing so
-        // aliases its second 16-row half through Lunar Magic's 0x1B0 page stride.
+        // The object cache uses SMW's 0x1B0-byte 16×27 screen pages. The 32×32 Layer 2 plane may
+        // enlarge the visible canvas, but its final five rows are not object-cache coordinates.
         let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles);
         let layer2_artwork_bounds = self.draw_object_artwork(
             painter,
@@ -4200,17 +4198,17 @@ fn sprite_fields_at_canvas_position(
     } else {
         (column as u16, row as u16)
     };
-    if major >= 0x200 || minor >= 0x10 {
+    if major >= 0x200 || minor >= NATIVE_LEVEL_MINOR_TILES {
         return None;
     }
     fields.screen = u8::try_from(major / 16).ok()?;
     fields.x = u8::try_from(major % 16).ok()?;
-    fields.y_low = (fields.y_low & 0x10) | u8::try_from(minor).ok()?;
+    fields.y_low = u8::try_from(minor).ok()?;
     Some(fields)
 }
 
 const fn presented_sprite_minor(placement: lm_level::NativeSpritePlacement) -> u16 {
-    placement.minor & 0x0f
+    placement.minor
 }
 
 const fn presented_sprite_tile_coordinates(
@@ -4249,13 +4247,18 @@ fn object_placement_at_canvas_position(
     if screen >= 32 || minor >= 16 {
         return None;
     }
-    Some((
-        screen,
-        ObjectCoordinateNibbles {
-            first: u8::try_from(major % 16).ok()?,
-            second: u8::try_from(minor).ok()?,
-        },
-    ))
+    let (first, second) = if vertical {
+        (
+            u8::try_from(major % 16).ok()?,
+            u8::try_from(minor % 16).ok()?,
+        )
+    } else {
+        (
+            u8::try_from(minor % 16).ok()?,
+            u8::try_from(major % 16).ok()?,
+        )
+    };
+    Some((screen, ObjectCoordinateNibbles { first, second }))
 }
 
 fn layer2_tile_at_canvas_position(
@@ -4372,10 +4375,10 @@ fn presented_layer2_tilemap_index(x: usize, y: usize, shared_background: bool) -
 }
 
 const fn native_object_cache_minor_tiles(canvas_minor_tiles: u16) -> u16 {
-    if canvas_minor_tiles < 16 {
+    if canvas_minor_tiles < NATIVE_LEVEL_MINOR_TILES {
         canvas_minor_tiles
     } else {
-        16
+        NATIVE_LEVEL_MINOR_TILES
     }
 }
 
@@ -6252,10 +6255,19 @@ mod tests {
                 if bytes.len() == lm_level::NATIVE_LAYER2_TILEMAP_LEN
         ));
         let model = editor.canvas_model();
-        assert!(model.layer1_placements.iter().any(|placement| {
-            u16::from(placement.minor) + u16::from(placement.minor_span) > NATIVE_LEVEL_MINOR_TILES
-        }));
-        assert_eq!(NATIVE_LEVEL_MINOR_TILES, 16);
+        assert!(
+            model
+                .layer1_placements
+                .iter()
+                .any(|placement| placement.minor >= 16)
+        );
+        assert!(
+            model
+                .layer1_placements
+                .iter()
+                .all(|placement| u16::from(placement.minor) < NATIVE_LEVEL_MINOR_TILES)
+        );
+        assert_eq!(NATIVE_LEVEL_MINOR_TILES, 27);
         assert!(editor.error.is_none());
     }
 
@@ -6921,8 +6933,8 @@ mod tests {
             vertical: false,
         };
         let placements = level.layer1.objects.native_placements();
-        assert_eq!(placements[0].tile_coordinates(false), (0, 8));
-        assert_eq!(placements[1].tile_coordinates(false), (4, 7));
+        assert_eq!(placements[0].tile_coordinates(false), (0, 24));
+        assert_eq!(placements[1].tile_coordinates(false), (4, 23));
         assert_eq!(handler_map[0x3f], 17);
         let ground = lm_render::render_mapped_standard_object_placement(
             &level.layer1.objects.records[placements[0].record_index],
@@ -6934,9 +6946,9 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        assert_eq!(ground.get(layout, 0, 8).unwrap(), 0x100);
-        assert_eq!(ground.get(layout, 10, 8).unwrap(), 0x100);
-        assert_eq!(ground.get(layout, 0, 9).unwrap(), 0x03f);
+        assert_eq!(ground.get(layout, 0, 24).unwrap(), 0x100);
+        assert_eq!(ground.get(layout, 10, 24).unwrap(), 0x100);
+        assert_eq!(ground.get(layout, 0, 25).unwrap(), 0x03f);
         let first_bush = lm_render::render_mapped_standard_object_placement(
             &level.layer1.objects.records[placements[1].record_index],
             placements[1],
@@ -6949,13 +6961,13 @@ mod tests {
         .unwrap();
         assert_eq!(
             [
-                first_bush.get(layout, 4, 7).unwrap(),
-                first_bush.get(layout, 5, 7).unwrap(),
-                first_bush.get(layout, 6, 7).unwrap(),
+                first_bush.get(layout, 4, 23).unwrap(),
+                first_bush.get(layout, 5, 23).unwrap(),
+                first_bush.get(layout, 6, 23).unwrap(),
             ],
             [0x073, 0x074, 0x079]
         );
-        assert_eq!(first_bush.get(layout, 4, 8).unwrap(), u16::MAX);
+        assert_eq!(first_bush.get(layout, 4, 24).unwrap(), u16::MAX);
         let missing = placements
             .into_iter()
             .filter_map(|placement| {
@@ -6971,7 +6983,10 @@ mod tests {
                     layout,
                     u16::MAX,
                 ) {
-                    Ok(Some(_)) => None,
+                    Ok(Some(_))
+                    | Err(lm_render::StandardObjectRenderError::Cache(
+                        lm_render::NativeLevelMap16CacheError::CellOutOfRange(_),
+                    )) => None,
                     Ok(None) => Some((
                         placement.record_index,
                         record.command_id(),
@@ -7148,7 +7163,7 @@ mod tests {
     }
 
     #[test]
-    fn native_sprite_subscreen_coordinates_present_within_the_fixed_minor_axis() {
+    fn native_sprite_subscreen_coordinates_preserve_the_encoded_fifth_bit() {
         let sprites = [lm_level::NativeSpritePlacement {
             token_index: 0,
             first_byte: 1,
@@ -7158,12 +7173,12 @@ mod tests {
             sprite_number: 1,
             extra_bits: 0,
         }];
-        assert_eq!(NATIVE_LEVEL_MINOR_TILES, 16);
+        assert_eq!(NATIVE_LEVEL_MINOR_TILES, 27);
         assert_eq!(
             presented_sprite_tile_coordinates(sprites[0], false),
-            (3, 15)
+            (3, 31)
         );
-        assert_eq!(presented_sprite_tile_coordinates(sprites[0], true), (15, 3));
+        assert_eq!(presented_sprite_tile_coordinates(sprites[0], true), (31, 3));
     }
 
     #[test]
@@ -7662,7 +7677,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(lower_subscreen.y_low, 0x16);
+        assert_eq!(lower_subscreen.y_low, 6);
     }
 
     #[test]
@@ -7680,7 +7695,7 @@ mod tests {
                 .is_none()
         );
         assert!(
-            sprite_fields_at_canvas_position(egui::pos2(1.0, 16.0), canvas, 1.0, false, fields,)
+            sprite_fields_at_canvas_position(egui::pos2(1.0, 27.0), canvas, 1.0, false, fields,)
                 .is_none()
         );
         assert!(
@@ -7703,8 +7718,8 @@ mod tests {
             Some((
                 2,
                 ObjectCoordinateNibbles {
-                    first: 3,
-                    second: 12,
+                    first: 12,
+                    second: 3,
                 }
             ))
         );
@@ -7735,8 +7750,8 @@ mod tests {
             Some((
                 1,
                 ObjectCoordinateNibbles {
-                    first: 15,
-                    second: 4,
+                    first: 4,
+                    second: 15,
                 }
             ))
         );
@@ -7970,7 +7985,8 @@ mod tests {
     #[test]
     fn background_canvas_height_does_not_expand_the_native_object_cache() {
         assert_eq!(native_object_cache_minor_tiles(16), 16);
-        assert_eq!(native_object_cache_minor_tiles(32), 16);
+        assert_eq!(native_object_cache_minor_tiles(27), 27);
+        assert_eq!(native_object_cache_minor_tiles(32), 27);
     }
 
     #[test]

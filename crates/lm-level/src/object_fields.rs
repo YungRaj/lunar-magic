@@ -84,7 +84,7 @@ impl ObjectRecord {
         Ok(())
     }
 
-    /// Returns the two encoded four-bit coordinates before level-orientation interpretation.
+    /// Returns the encoded coordinates before level-orientation interpretation.
     ///
     /// Lunar Magic swaps these nibbles when decoding the alternate level orientation. Keeping the
     /// pair orientation-neutral prevents a standalone record from claiming an absolute X/Y axis.
@@ -94,6 +94,13 @@ impl ObjectRecord {
             first: self.encoded[0] & 0x0f,
             second: self.encoded[1] & 0x0f,
         }
+    }
+
+    /// Returns whether the object occupies the lower half of a horizontal screen or the right
+    /// half of a vertical screen.
+    #[must_use]
+    pub fn perpendicular_high_coordinate(&self) -> bool {
+        self.encoded[0] & 0x10 != 0
     }
 
     /// Returns the encoded new-screen/advance-screen bit recovered from stream normalization.
