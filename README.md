@@ -274,13 +274,15 @@ tool access, enable the opt-in visual-smoke feature:
 
 ```sh
 LM_NATIVE_SCREENSHOT_TO=/tmp/lm-native.png \
-  cargo run -p lm-native --features visual-smoke -- "Super Mario World (USA).sfc"
+  cargo run -p lm-native --features visual-smoke -- \
+  --level 105 "Super Mario World (USA).sfc"
 ```
 
 The process waits for the populated workspace to settle, captures its own main viewport, writes a
 PNG, and exits. This exercises real window creation, GPU painting, startup ROM loading, and native
-editor composition; it does not simulate pointer or keyboard interaction. Treat the output as a
-local diagnostic and never commit screenshots containing ROM-derived graphics.
+editor composition; it does not simulate pointer or keyboard interaction. Level numbers use Lunar
+Magic's hexadecimal notation, so `--level 102` opens level `$102`. Treat the output as a local
+diagnostic and never commit screenshots containing ROM-derived graphics.
 
 Some integration tests use the legally supplied `Super Mario World (USA).sfc` fixture at the
 repository root. The expected pristine SHA-1 is:
