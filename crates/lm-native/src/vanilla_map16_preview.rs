@@ -20,6 +20,9 @@ pub(crate) struct VanillaMap16Preview {
 
 const LAYER3_SLOT_BYTES: usize = 0x800;
 const LAYER3_SLOT_TILES: usize = 0x80;
+const LAYER1_SPRITE_SLOT_TILES: usize = 0x80;
+const LAYER1_SPRITE_SLOT_STRIDE: usize = LAYER1_SPRITE_SLOT_TILES;
+const LAYER1_SPRITE_GLOBAL_TILES: usize = 4 * LAYER1_SPRITE_SLOT_STRIDE;
 
 pub(crate) fn render(
     rom_bytes: Vec<u8>,
@@ -32,15 +35,8 @@ pub(crate) fn render(
     let graphics_files =
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
-    let mut graphics = Vec::new();
-    for file in graphics_files {
-        graphics.extend(
-            project
-                .load_graphics_file(file, lm_profile::smw_us_v1_vanilla_graphics_layout())
-                .map_err(|error| error.to_string())?
-                .tiles,
-        );
-    }
+    let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
+    let graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
     let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
@@ -51,16 +47,12 @@ pub(crate) fn render(
         usize::from(header.sprite_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    let mut sprite_graphics = Vec::new();
-    for file in sprite_graphics_files {
-        sprite_graphics.push(
-            project
-                .load_graphics_file(file, lm_profile::smw_us_v1_vanilla_graphics_layout())
-                .map_err(|error| error.to_string())?
-                .tiles,
-        );
-    }
-    let definitions = map16.editor_graphics_bytes();
+    let sprite_graphics = load_layer1_sprite_graphics_slots(&project, sprite_graphics_files)?;
+    // The pristine ROM stores ordinary SNES 16-bit tilemap words here. Lunar Magic expands
+    // those words into a wider internal descriptor while loading them, but the native renderer
+    // consumes `Subtile`'s SNES layout directly. Feeding the widened-and-truncated representation
+    // back into this path corrupts palette and flip attributes.
+    let definitions = map16.bytes;
     let width = 32 * 16;
     let height = 16 * 16;
     let mut rgba = vec![0; width * height * 4];
@@ -94,7 +86,7 @@ pub(crate) fn render(
         layer3_tiles,
         graphics_files,
         sprite_image,
-        sprite_tiles: sprite_graphics.into_iter().flatten().collect(),
+        sprite_tiles: materialize_layer1_sprite_vram(&sprite_graphics),
         palette,
         sprite_graphics_files,
         common_tiles: map16.common_tiles,
@@ -124,15 +116,8 @@ pub(crate) fn render_rom_map16_page(
         usize::from(header.object_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    let mut graphics = Vec::new();
-    for file in graphics_files {
-        graphics.extend(
-            project
-                .load_graphics_file(file, lm_profile::smw_us_v1_vanilla_graphics_layout())
-                .map_err(|error| error.to_string())?
-                .tiles,
-        );
-    }
+    let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
+    let graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
         .map_err(|error| error.to_string())?
         .palette;
@@ -207,6 +192,46 @@ fn load_layer3_tiles(project: &Project, level: usize) -> Result<Vec<IndexedTile>
         );
     }
     Ok(tiles)
+}
+
+fn load_layer1_sprite_graphics_slots(
+    project: &Project,
+    files: [usize; 4],
+) -> Result<Vec<Vec<IndexedTile>>, String> {
+    files
+        .into_iter()
+        .map(|file| {
+            let decoded = project
+                .load_decompressed_graphics_file(
+                    file,
+                    lm_profile::smw_us_v1_vanilla_graphics_layout(),
+                )
+                .map_err(|error| error.to_string())?;
+            let mut tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
+                .map_err(|error| format!("cannot decode pristine 3bpp GFX{file:02X}: {error}"))?;
+            if tiles.len() > LAYER1_SPRITE_SLOT_TILES {
+                return Err(format!(
+                    "GFX{file:02X} contains {} tiles, exceeding its {LAYER1_SPRITE_SLOT_TILES}-tile VRAM slot",
+                    tiles.len()
+                ));
+            }
+            tiles.resize_with(LAYER1_SPRITE_SLOT_TILES, || {
+                IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
+            });
+            Ok(tiles)
+        })
+        .collect()
+}
+
+fn materialize_layer1_sprite_vram(slots: &[Vec<IndexedTile>]) -> Vec<IndexedTile> {
+    let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+    let mut tiles = vec![blank; LAYER1_SPRITE_GLOBAL_TILES];
+    for (slot, source) in slots.iter().take(4).enumerate() {
+        let start = slot * LAYER1_SPRITE_SLOT_STRIDE;
+        let len = source.len().min(LAYER1_SPRITE_SLOT_TILES);
+        tiles[start..start + len].clone_from_slice(&source[..len]);
+    }
+    tiles
 }
 
 fn render_foreground_graphics_atlas(
@@ -354,6 +379,22 @@ mod tests {
             )
             .unwrap();
         let preview = render(bytes, 0, level.layer1.header).unwrap();
+        let map16 = lm_profile::load_smw_us_v1_level_map16_base(
+            &project.rom,
+            usize::from(level.layer1.header.object_tileset()),
+        )
+        .unwrap()
+        .bytes;
+        let unavailable_subtiles = map16
+            .chunks_exact(2)
+            .filter(|word| {
+                usize::from(u16::from_le_bytes([word[0], word[1]]) & 0x03ff)
+                    >= preview.foreground_tiles.len()
+            })
+            .count();
+        assert_eq!(preview.foreground_tiles.len(), LAYER1_SPRITE_GLOBAL_TILES);
+        assert_eq!(preview.sprite_tiles.len(), LAYER1_SPRITE_GLOBAL_TILES);
+        assert_eq!(unavailable_subtiles, 0);
         assert_eq!(preview.image.size, [512, 256]);
         assert_eq!(preview.foreground_image.size, [256, 1024]);
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x1b, 0x08]);
@@ -368,5 +409,48 @@ mod tests {
             .unwrap()
         );
         assert_eq!(preview.common_tiles + preview.tileset_tiles, 512);
+    }
+
+    #[test]
+    fn level_105_palette_matches_lunar_magic_mwl_export() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let Ok(bytes) = fs::read(root.join("Super Mario World (USA).sfc")) else {
+            return;
+        };
+        let Ok(mwl_bytes) =
+            fs::read(root.join("oracle-work/lm363/pristine-us/levels/Level 105.mwl"))
+        else {
+            return;
+        };
+        let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let actual =
+            lm_profile::compose_smw_us_v1_level_palette(&project, 0x105, level.layer1.header, 0)
+                .unwrap();
+        let mwl = lm_level::MwlFile::decode(&mwl_bytes).unwrap();
+        let expected = mwl.palette_section().unwrap();
+        let expected_colors = expected.tpl_order_colors();
+        let differences = actual
+            .palette
+            .colors
+            .iter()
+            .zip(expected_colors)
+            .enumerate()
+            .filter_map(|(index, (actual, expected))| {
+                (actual.0 != expected).then_some((index, actual.0, expected))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            differences.is_empty(),
+            "backdrop actual={:04X} expected={:04X}; palette differences: {differences:02X?}",
+            actual.backdrop.0,
+            expected.backdrop
+        );
     }
 }

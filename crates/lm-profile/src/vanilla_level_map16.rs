@@ -20,6 +20,9 @@ pub const SMW_US_V1_MAP16_TILE_BYTES: usize = 8;
 /// Size of the composed base table.
 pub const SMW_US_V1_MAP16_BASE_BYTES: usize =
     SMW_US_V1_MAP16_BASE_TILE_COUNT * SMW_US_V1_MAP16_TILE_BYTES;
+/// Size of Lunar Magic's widened four-byte-per-subtile graphics table.
+pub const SMW_US_V1_MAP16_EDITOR_GRAPHICS_BYTES: usize =
+    SMW_US_V1_MAP16_BASE_TILE_COUNT * 4 * size_of::<u32>();
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoadedSmwUsV1LevelMap16Base {
@@ -31,18 +34,21 @@ pub struct LoadedSmwUsV1LevelMap16Base {
 }
 
 impl LoadedSmwUsV1LevelMap16Base {
-    /// Converts SMW's compact ROM attribute ordering to the editor's SNES subtile ordering.
+    /// Widens SMW's SNES tilemap words into Lunar Magic's internal graphics descriptor ordering.
+    ///
+    /// The recovered loader stores each result in a 32-bit cell. Bits 16-19 carry attributes and
+    /// must not be truncated by treating this as another SNES tilemap-word table.
     #[must_use]
-    pub fn editor_graphics_bytes(&self) -> [u8; SMW_US_V1_MAP16_BASE_BYTES] {
-        let mut converted = [0; SMW_US_V1_MAP16_BASE_BYTES];
+    pub fn editor_graphics_bytes(&self) -> [u8; SMW_US_V1_MAP16_EDITOR_GRAPHICS_BYTES] {
+        let mut converted = [0; SMW_US_V1_MAP16_EDITOR_GRAPHICS_BYTES];
         for (source, target) in self
             .bytes
             .chunks_exact(2)
-            .zip(converted.chunks_exact_mut(2))
+            .zip(converted.chunks_exact_mut(4))
         {
             let word = u16::from_le_bytes([source[0], source[1]]);
-            let editor_word =
-                (word >> 2 & 0x3c00) | (word & 0xfc00).wrapping_shl(4) | word & 0x03ff;
+            let word = u32::from(word);
+            let editor_word = (word >> 2 & 0x3c00) | (word & 0xfc00) << 4 | word & 0x03ff;
             target.copy_from_slice(&editor_word.to_le_bytes());
         }
         converted
@@ -183,6 +189,7 @@ fn source_offset(bank: u8, word: u16) -> Result<usize, RomError> {
 mod tests {
     use super::*;
     use lm_rom::pc_to_snes;
+    use std::{fs, path::PathBuf};
 
     fn fixture() -> RomImage {
         let mut rom = RomImage::from_bytes(vec![0xff; 0x70_000]).unwrap();
@@ -261,8 +268,43 @@ mod tests {
             common_tiles: 512,
         };
         assert_eq!(
-            &loaded.editor_graphics_bytes()[..8],
-            &[0x70, 0xc4, 0xf8, 0xa1, 0x00, 0xc0, 0x00, 0x44]
+            &loaded.editor_graphics_bytes()[..16],
+            &[
+                0x70, 0xc4, 0x01, 0x00, 0xf8, 0xa1, 0x08, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x44,
+                0x01, 0x00,
+            ]
+        );
+    }
+
+    #[test]
+    fn tileset_seven_matches_lunar_magic_complete_map16_export() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let Ok(rom_bytes) = fs::read(root.join("Super Mario World (USA).sfc")) else {
+            return;
+        };
+        let Ok(exported_bytes) =
+            fs::read(root.join("oracle-work/lm363/pristine-us/map16/all.map16"))
+        else {
+            return;
+        };
+        let rom = RomImage::from_bytes(rom_bytes).unwrap();
+        let actual = load_smw_us_v1_level_map16_base(&rom, 7).unwrap();
+        let exported = lm_level::Lm16Map16File::decode(&exported_bytes).unwrap();
+        let auxiliary = exported.section(lm_level::Lm16Map16SectionKind::AuxiliaryTiles);
+        let expected = &auxiliary[7 * SMW_US_V1_MAP16_BASE_BYTES..8 * SMW_US_V1_MAP16_BASE_BYTES];
+        let differences = actual
+            .bytes
+            .iter()
+            .zip(expected)
+            .enumerate()
+            .filter_map(|(index, (actual, expected))| {
+                (actual != expected).then_some((index, *actual, *expected))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            differences.is_empty(),
+            "Map16 byte differences: {:02X?}",
+            &differences[..differences.len().min(32)]
         );
     }
 }

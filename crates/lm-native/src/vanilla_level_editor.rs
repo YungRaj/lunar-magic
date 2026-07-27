@@ -14,6 +14,9 @@ use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 use std::collections::HashMap;
 
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
+const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 50;
+const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 400;
+const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 380.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 
@@ -240,6 +243,7 @@ pub(crate) struct VanillaLevelEditor {
     dragging_sprite: Option<usize>,
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
+    canvas_zoom_percent: Option<u16>,
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
@@ -1277,7 +1281,8 @@ impl VanillaLevelEditor {
             major_tiles = major_tiles.max(32);
             minor_tiles = minor_tiles.max(32);
         }
-        let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical);
+        let cell = self.canvas_cell();
+        let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
         self.show_canvas_tools(ui);
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
@@ -1294,6 +1299,7 @@ impl VanillaLevelEditor {
                     &painter,
                     &response,
                     rect,
+                    cell,
                     major_tiles,
                     minor_tiles,
                     vertical,
@@ -1314,7 +1320,7 @@ impl VanillaLevelEditor {
     }
 
     fn show_canvas_tools(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label("Canvas tool:");
             ui.selectable_value(&mut self.placement_mode, None, "Select / move");
             ui.selectable_value(
@@ -1346,7 +1352,35 @@ impl VanillaLevelEditor {
                     "Place Layer 2 object",
                 );
             }
+            ui.separator();
+            ui.label("Zoom:");
+            let mut zoom = self.canvas_zoom_percent();
+            if ui.small_button("−").clicked() {
+                zoom = zoom.saturating_sub(ROM_LEVEL_CANVAS_ZOOM_STEP);
+            }
+            let slider = egui::Slider::new(
+                &mut zoom,
+                ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM,
+            )
+            .suffix("%")
+            .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
+            ui.add(slider);
+            if ui.small_button("Reset").clicked() {
+                zoom = 100;
+            }
+            if ui.small_button("+").clicked() {
+                zoom = zoom.saturating_add(ROM_LEVEL_CANVAS_ZOOM_STEP);
+            }
+            self.canvas_zoom_percent = Some(clamp_canvas_zoom(zoom));
         });
+    }
+
+    fn canvas_zoom_percent(&self) -> u16 {
+        clamp_canvas_zoom(self.canvas_zoom_percent.unwrap_or(100))
+    }
+
+    fn canvas_cell(&self) -> f32 {
+        ROM_LEVEL_CANVAS_CELL * f32::from(self.canvas_zoom_percent()) / 100.0
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1355,6 +1389,7 @@ impl VanillaLevelEditor {
         painter: &egui::Painter,
         response: &egui::Response,
         rect: egui::Rect,
+        cell: f32,
         major_tiles: u16,
         minor_tiles: u16,
         vertical: bool,
@@ -1371,18 +1406,11 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
-        draw_object_grid(
-            painter,
-            rect,
-            ROM_LEVEL_CANVAS_CELL,
-            major_tiles,
-            minor_tiles,
-            vertical,
-        );
+        draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
         draw_layer2_tilemap(
             painter,
             rect,
-            ROM_LEVEL_CANVAS_CELL,
+            cell,
             layer2_tilemap,
             self.map16_texture.as_ref(),
             self.foreground_texture.as_ref(),
@@ -1391,8 +1419,9 @@ impl VanillaLevelEditor {
         let layer2_artwork_bounds = self.draw_object_artwork(
             painter,
             rect,
-            ROM_LEVEL_CANVAS_CELL,
+            cell,
             major_tiles,
+            minor_tiles,
             vertical,
             layer2_records,
             layer2_placements,
@@ -1402,8 +1431,9 @@ impl VanillaLevelEditor {
         let layer1_artwork_bounds = self.draw_object_artwork(
             painter,
             rect,
-            ROM_LEVEL_CANVAS_CELL,
+            cell,
             major_tiles,
+            minor_tiles,
             vertical,
             records,
             placements,
@@ -1423,6 +1453,7 @@ impl VanillaLevelEditor {
             self.map16_texture.as_ref(),
             &layer2_artwork_bounds,
             &layer2_resize_models,
+            cell,
         );
         let hit = draw_object_placement_markers(
             painter,
@@ -1435,11 +1466,12 @@ impl VanillaLevelEditor {
             self.map16_texture.as_ref(),
             &layer1_artwork_bounds,
             &layer1_resize_models,
+            cell,
         );
         let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
             painter,
             target: rect,
-            cell_size: ROM_LEVEL_CANVAS_CELL,
+            cell_size: cell,
             texture: self.sprite_texture.as_ref(),
             placements: sprite_placements,
             cursor: response.interact_pointer_pos(),
@@ -1461,7 +1493,7 @@ impl VanillaLevelEditor {
             layer2_records,
             records,
             rect,
-            ROM_LEVEL_CANVAS_CELL,
+            cell,
             vertical,
         );
     }
@@ -2147,6 +2179,7 @@ impl VanillaLevelEditor {
         target: egui::Rect,
         cell_size: f32,
         major_tiles: u16,
+        minor_tiles: u16,
         vertical: bool,
         records: &[ObjectRecord],
         placements: &[lm_level::NativeObjectPlacement],
@@ -2163,6 +2196,7 @@ impl VanillaLevelEditor {
                 target,
                 cell_size,
                 major_tiles,
+                minor_tiles,
                 vertical,
                 records,
                 placements,
@@ -3411,9 +3445,13 @@ fn extended_command27_canvas_extent(
     (major.clamp(16, 512), minor.clamp(16, 32))
 }
 
-fn rom_canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool) -> egui::Vec2 {
-    let major = f32::from(major_tiles) * ROM_LEVEL_CANVAS_CELL;
-    let minor = f32::from(minor_tiles) * ROM_LEVEL_CANVAS_CELL;
+fn clamp_canvas_zoom(zoom: u16) -> u16 {
+    zoom.clamp(ROM_LEVEL_CANVAS_MIN_ZOOM, ROM_LEVEL_CANVAS_MAX_ZOOM)
+}
+
+fn rom_canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool, cell: f32) -> egui::Vec2 {
+    let major = f32::from(major_tiles) * cell;
+    let minor = f32::from(minor_tiles) * cell;
     if vertical {
         egui::vec2(minor, major)
     } else {
@@ -4224,6 +4262,7 @@ struct OrderedObjectDraw<'a> {
     target: egui::Rect,
     cell_size: f32,
     major_tiles: u16,
+    minor_tiles: u16,
     vertical: bool,
     records: &'a [ObjectRecord],
     placements: &'a [lm_level::NativeObjectPlacement],
@@ -4254,14 +4293,14 @@ fn draw_ordered_object_tiles(
     }
     let layout = lm_render::NativeLevelMap16Layout {
         width: if request.vertical {
-            16
+            usize::from(request.minor_tiles)
         } else {
             usize::from(request.major_tiles)
         },
         height: if request.vertical {
             usize::from(request.major_tiles)
         } else {
-            16
+            usize::from(request.minor_tiles)
         },
         page_stride: 0x1b0,
         base_cell: 0,
@@ -4276,7 +4315,12 @@ fn draw_ordered_object_tiles(
             .and_then(|metadata| resolved_custom_object_parts(record, metadata, request.variant))
         {
             draw_custom_object_parts(painter, request, *placement, &parts);
-            let encoded = encoded_object_rect(request.target, *placement, request.vertical);
+            let encoded = encoded_object_rect(
+                request.target,
+                *placement,
+                request.vertical,
+                request.cell_size,
+            );
             let (tile_x, tile_y) = placement.tile_coordinates(request.vertical);
             let origin = request.target.min
                 + egui::vec2(
@@ -4285,7 +4329,7 @@ fn draw_ordered_object_tiles(
                 );
             artwork_bounds.insert(
                 placement.record_index,
-                custom_object_display_rect(encoded, origin, &parts),
+                custom_object_display_rect(encoded, origin, &parts, request.cell_size),
             );
             continue;
         }
@@ -4306,10 +4350,16 @@ fn draw_ordered_object_tiles(
         artwork_bounds.insert(
             placement.record_index,
             standard_object_cache_display_rect(
-                encoded_object_rect(request.target, *placement, request.vertical),
+                encoded_object_rect(
+                    request.target,
+                    *placement,
+                    request.vertical,
+                    request.cell_size,
+                ),
                 request.target,
                 layout,
                 &cache,
+                request.cell_size,
             ),
         );
     }
@@ -4503,6 +4553,7 @@ fn draw_object_placement_markers(
     map16_texture: Option<&egui::TextureHandle>,
     artwork_bounds: &HashMap<usize, egui::Rect>,
     resize_models: &HashMap<usize, lm_render::StandardObjectResizeModel>,
+    cell: f32,
 ) -> ObjectPlacementHits {
     let mut hits = ObjectPlacementHits::default();
     for placement in placements {
@@ -4510,21 +4561,21 @@ fn draw_object_placement_markers(
         let Some(record) = records.get(index) else {
             continue;
         };
-        let object_rect = artwork_bounds
-            .get(&index)
-            .copied()
-            .unwrap_or_else(|| encoded_object_rect(canvas, *placement, vertical));
+        let artwork_rect = artwork_bounds.get(&index).copied();
+        let object_rect =
+            artwork_rect.unwrap_or_else(|| encoded_object_rect(canvas, *placement, vertical, cell));
         draw_object_marker(
             painter,
             map16_texture,
             object_rect,
             record,
             index == selected,
+            artwork_rect.is_some(),
         );
         if index == selected
             && let Some(&model) = resize_models.get(&index)
             && let Some(handle) =
-                standard_object_resize_handle(canvas, *placement, record, model, vertical)
+                standard_object_resize_handle(canvas, *placement, record, model, vertical, cell)
         {
             painter.rect_filled(handle, 1.0, egui::Color32::YELLOW);
             painter.rect_stroke(
@@ -4562,15 +4613,20 @@ fn standard_object_resize_handle(
     record: &ObjectRecord,
     model: lm_render::StandardObjectResizeModel,
     vertical: bool,
+    cell: f32,
 ) -> Option<egui::Rect> {
     use lm_render::StandardObjectResizeModel::{
-        ExtendedCommand27Axes, Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
+        ExtendedCommand27Axes, Fixed, MajorByte, MajorNibble, MinorByte, MinorNibble,
+        ParameterNibbles,
     };
-    let encoded = authenticated_standard_object_rect(canvas, placement, record, model, vertical)?;
+    let encoded =
+        authenticated_standard_object_rect(canvas, placement, record, model, vertical, cell)?;
     let center = match model {
         ParameterNibbles | ExtendedCommand27Axes => encoded.max,
-        MajorNibble if vertical => egui::pos2(encoded.center().x, encoded.bottom()),
-        MajorNibble => egui::pos2(encoded.right(), encoded.center().y),
+        MajorNibble | MajorByte { .. } if vertical => {
+            egui::pos2(encoded.center().x, encoded.bottom())
+        }
+        MajorNibble | MajorByte { .. } => egui::pos2(encoded.right(), encoded.center().y),
         MinorNibble { .. } | MinorByte { .. } if vertical => {
             egui::pos2(encoded.right(), encoded.center().y)
         }
@@ -4586,23 +4642,18 @@ fn authenticated_standard_object_rect(
     record: &ObjectRecord,
     model: lm_render::StandardObjectResizeModel,
     vertical: bool,
+    cell: f32,
 ) -> Option<egui::Rect> {
     use lm_render::StandardObjectResizeModel::{
-        ExtendedCommand27Axes, Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
+        ExtendedCommand27Axes, Fixed, MajorByte, MajorNibble, MinorByte, MinorNibble,
+        ParameterNibbles,
     };
     if model == ExtendedCommand27Axes {
         let (width, height) = record.extended_command27_tile_size()?;
         let (tile_x, tile_y) = placement.tile_coordinates(vertical);
         return Some(egui::Rect::from_min_size(
-            canvas.min
-                + egui::vec2(
-                    f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
-                    f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
-                ),
-            egui::vec2(
-                f32::from(width) * ROM_LEVEL_CANVAS_CELL,
-                f32::from(height) * ROM_LEVEL_CANVAS_CELL,
-            ),
+            canvas.min + egui::vec2(f32::from(tile_x) * cell, f32::from(tile_y) * cell),
+            egui::vec2(f32::from(width) * cell, f32::from(height) * cell),
         ));
     }
     let (major_span, minor_span) = match model {
@@ -4611,6 +4662,10 @@ fn authenticated_standard_object_rect(
             u16::from(placement.minor_span),
         ),
         MajorNibble => (u16::from(placement.major_span), 1),
+        MajorByte { fixed_minor_tiles } => (
+            u16::from(record.parameter()) + 1,
+            u16::from(fixed_minor_tiles),
+        ),
         MinorNibble { fixed_major_tiles } => (
             u16::from(fixed_major_tiles),
             u16::from(placement.minor_span),
@@ -4623,11 +4678,7 @@ fn authenticated_standard_object_rect(
         Fixed => return None,
     };
     let (tile_x, tile_y) = placement.tile_coordinates(vertical);
-    let position = canvas.min
-        + egui::vec2(
-            f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
-            f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
-        );
+    let position = canvas.min + egui::vec2(f32::from(tile_x) * cell, f32::from(tile_y) * cell);
     let (tile_width, tile_height) = if vertical {
         (minor_span, major_span)
     } else {
@@ -4635,10 +4686,7 @@ fn authenticated_standard_object_rect(
     };
     Some(egui::Rect::from_min_size(
         position,
-        egui::vec2(
-            f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL,
-            f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL,
-        ),
+        egui::vec2(f32::from(tile_width) * cell, f32::from(tile_height) * cell),
     ))
 }
 
@@ -4646,13 +4694,10 @@ fn encoded_object_rect(
     canvas: egui::Rect,
     placement: lm_level::NativeObjectPlacement,
     vertical: bool,
+    cell: f32,
 ) -> egui::Rect {
     let (tile_x, tile_y) = placement.tile_coordinates(vertical);
-    let position = canvas.min
-        + egui::vec2(
-            f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
-            f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
-        );
+    let position = canvas.min + egui::vec2(f32::from(tile_x) * cell, f32::from(tile_y) * cell);
     let (tile_width, tile_height) = if vertical {
         (placement.minor_span, placement.major_span)
     } else {
@@ -4661,8 +4706,8 @@ fn encoded_object_rect(
     egui::Rect::from_min_size(
         position,
         egui::vec2(
-            (f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL).max(8.0),
-            (f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL).max(8.0),
+            (f32::from(tile_width) * cell).max(8.0),
+            (f32::from(tile_height) * cell).max(8.0),
         ),
     )
 }
@@ -4672,6 +4717,7 @@ fn standard_object_cache_display_rect(
     canvas: egui::Rect,
     layout: lm_render::NativeLevelMap16Layout,
     cache: &lm_render::NativeLevelMap16Cache,
+    cell: f32,
 ) -> egui::Rect {
     let mut bounds = encoded_rect;
     for y in 0..layout.height {
@@ -4687,12 +4733,8 @@ fn standard_object_cache_display_rect(
                 continue;
             };
             bounds = bounds.union(egui::Rect::from_min_size(
-                canvas.min
-                    + egui::vec2(
-                        f32::from(x) * ROM_LEVEL_CANVAS_CELL,
-                        f32::from(y) * ROM_LEVEL_CANVAS_CELL,
-                    ),
-                egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
+                canvas.min + egui::vec2(f32::from(x) * cell, f32::from(y) * cell),
+                egui::vec2(cell, cell),
             ));
         }
     }
@@ -4703,17 +4745,15 @@ fn custom_object_display_rect(
     encoded_rect: egui::Rect,
     origin: egui::Pos2,
     parts: &[lm_render::CustomObjectPreviewTile],
+    cell: f32,
 ) -> egui::Rect {
     parts.iter().fold(encoded_rect, |bounds, part| {
         let part_min = origin
             + egui::vec2(
-                f32::from(part.x) * ROM_LEVEL_CANVAS_CELL / 16.0,
-                f32::from(part.y) * ROM_LEVEL_CANVAS_CELL / 16.0,
+                f32::from(part.x) * cell / 16.0,
+                f32::from(part.y) * cell / 16.0,
             );
-        bounds.union(egui::Rect::from_min_size(
-            part_min,
-            egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
-        ))
+        bounds.union(egui::Rect::from_min_size(part_min, egui::vec2(cell, cell)))
     })
 }
 
@@ -4723,17 +4763,14 @@ fn draw_object_marker(
     target: egui::Rect,
     record: &ObjectRecord,
     selected: bool,
+    artwork_rendered: bool,
 ) {
     let recovered_tile = (record.command_id() == 0)
         .then(|| lm_render::lunar_magic_shared_extended_object_tile(record.parameter()))
         .flatten();
-    let recovered_standard = matches!(
-        record.command_id(),
-        15..=17 | 20..=29 | 31..=33
-    );
     if let (Some(tile), Some(texture)) = (recovered_tile, texture) {
         draw_map16_atlas_tile(painter, texture, target.shrink(1.0), tile);
-    } else if !recovered_standard {
+    } else if !artwork_rendered {
         painter.rect_filled(
             target.shrink(1.0),
             1.0,
@@ -5223,6 +5260,7 @@ fn show_raw_object_record(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm) {
         });
 }
 
+#[allow(clippy::too_many_lines)]
 fn show_standard_object_resize_fields(
     ui: &mut egui::Ui,
     model: Option<lm_render::StandardObjectResizeModel>,
@@ -5286,6 +5324,21 @@ fn show_standard_object_resize_fields(
                         set_standard_object_minor_tiles(model, form.parameter, u16::from(minor))
                             .expect("bounded minor-axis control");
                 }
+                ui.end_row();
+            }
+            lm_render::StandardObjectResizeModel::MajorByte { fixed_minor_tiles } => {
+                let mut major = u16::from(form.parameter) + 1;
+                ui.label("Major-axis tiles");
+                if ui
+                    .add(egui::DragValue::new(&mut major).range(1..=256))
+                    .changed()
+                {
+                    form.parameter = set_standard_object_major_byte_tiles(model, major)
+                        .expect("bounded full-byte major-axis control");
+                }
+                ui.end_row();
+                ui.label("Minor-axis tiles");
+                ui.label(format!("{fixed_minor_tiles} (fixed)"));
                 ui.end_row();
             }
             lm_render::StandardObjectResizeModel::MinorByte { fixed_major_tiles } => {
@@ -5366,6 +5419,22 @@ fn set_standard_object_minor_tiles(
         }
         _ => Err("active object handler does not encode a resizable minor axis".into()),
     }
+}
+
+fn set_standard_object_major_byte_tiles(
+    model: lm_render::StandardObjectResizeModel,
+    tiles: u16,
+) -> Result<u8, String> {
+    if !matches!(
+        model,
+        lm_render::StandardObjectResizeModel::MajorByte { .. }
+    ) {
+        return Err("active object handler does not encode a full-byte major axis".into());
+    }
+    tiles
+        .checked_sub(1)
+        .and_then(|tiles| u8::try_from(tiles).ok())
+        .ok_or_else(|| "major-axis byte size must be 1–256 tiles".to_owned())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -5470,6 +5539,17 @@ fn resized_standard_object_parameter_at_canvas_position(
                 model,
                 parameter,
                 u8::try_from(major).map_err(|_| "major-axis object size is too large")?,
+            )
+        }
+        lm_render::StandardObjectResizeModel::MajorByte { .. } => {
+            if major < 1 {
+                return Err(
+                    "major-axis object resize handle cannot move before the object origin".into(),
+                );
+            }
+            set_standard_object_major_byte_tiles(
+                model,
+                u16::try_from(major).map_err(|_| "major-axis object size is too large")?,
             )
         }
         lm_render::StandardObjectResizeModel::MinorNibble { .. }
@@ -5838,6 +5918,7 @@ mod tests {
             &record,
             lm_render::StandardObjectResizeModel::ExtendedCommand27Axes,
             false,
+            ROM_LEVEL_CANVAS_CELL,
         )
         .unwrap();
         let vertical = standard_object_resize_handle(
@@ -5846,6 +5927,7 @@ mod tests {
             &record,
             lm_render::StandardObjectResizeModel::ExtendedCommand27Axes,
             true,
+            ROM_LEVEL_CANVAS_CELL,
         )
         .unwrap();
         assert_eq!(
@@ -5868,6 +5950,7 @@ mod tests {
             &record,
             lm_render::StandardObjectResizeModel::MajorNibble,
             false,
+            ROM_LEVEL_CANVAS_CELL,
         )
         .unwrap();
         let vertical = standard_object_resize_handle(
@@ -5876,6 +5959,7 @@ mod tests {
             &record,
             lm_render::StandardObjectResizeModel::MajorNibble,
             true,
+            ROM_LEVEL_CANVAS_CELL,
         )
         .unwrap();
         assert_eq!(
@@ -5893,6 +5977,7 @@ mod tests {
                 &record,
                 lm_render::StandardObjectResizeModel::Fixed,
                 false,
+                ROM_LEVEL_CANVAS_CELL,
             )
             .is_none()
         );
@@ -5911,6 +5996,7 @@ mod tests {
             &record,
             model,
             false,
+            ROM_LEVEL_CANVAS_CELL,
         )
         .unwrap();
         let vertical = authenticated_standard_object_rect(
@@ -5919,6 +6005,7 @@ mod tests {
             &record,
             model,
             true,
+            ROM_LEVEL_CANVAS_CELL,
         )
         .unwrap();
         assert_eq!(
@@ -6398,8 +6485,10 @@ mod tests {
             lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
                 .vertical;
         let (origin_x, origin_y) = placement.tile_coordinates(vertical);
-        let canvas =
-            egui::Rect::from_min_size(egui::Pos2::ZERO, rom_canvas_size(512, 32, vertical));
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            rom_canvas_size(512, 32, vertical, ROM_LEVEL_CANVAS_CELL),
+        );
         let resized = resized_standard_object_record_at_canvas_position(
             &current,
             placement,
@@ -6511,10 +6600,13 @@ mod tests {
         ];
 
         assert_eq!(
-            custom_object_display_rect(encoded, origin, &parts),
+            custom_object_display_rect(encoded, origin, &parts, ROM_LEVEL_CANVAS_CELL),
             egui::Rect::from_min_max(egui::pos2(94.0, 88.0), egui::pos2(136.0, 115.0))
         );
-        assert_eq!(custom_object_display_rect(encoded, origin, &[]), encoded);
+        assert_eq!(
+            custom_object_display_rect(encoded, origin, &[], ROM_LEVEL_CANVAS_CELL),
+            encoded
+        );
     }
 
     #[test]
@@ -6561,7 +6653,8 @@ mod tests {
             };
             for placement in level.layer1.objects.native_placements() {
                 let record = &level.layer1.objects.records[placement.record_index];
-                let encoded = encoded_object_rect(canvas, placement, vertical);
+                let encoded =
+                    encoded_object_rect(canvas, placement, vertical, ROM_LEVEL_CANVAS_CELL);
                 let Ok(Some(cache)) = lm_render::render_mapped_standard_object_placement(
                     record,
                     placement,
@@ -6572,7 +6665,13 @@ mod tests {
                 ) else {
                     continue;
                 };
-                let rendered = standard_object_cache_display_rect(encoded, canvas, layout, &cache);
+                let rendered = standard_object_cache_display_rect(
+                    encoded,
+                    canvas,
+                    layout,
+                    &cache,
+                    ROM_LEVEL_CANVAS_CELL,
+                );
                 if rendered != encoded {
                     expanded = Some((level_number, record.command_id(), encoded, rendered));
                     break 'levels;
@@ -6589,6 +6688,79 @@ mod tests {
     }
 
     #[test]
+    fn pristine_level_105_has_authenticated_artwork_for_every_nonzero_object() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image =
+            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+                .unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let family = match lm_profile::smw_us_v1_object_family(level.layer1.header.object_tileset())
+        {
+            lm_profile::VanillaObjectFamily::Normal => 0,
+            lm_profile::VanillaObjectFamily::Castle => 1,
+            lm_profile::VanillaObjectFamily::Rope => 2,
+            lm_profile::VanillaObjectFamily::Underground => 3,
+            lm_profile::VanillaObjectFamily::GhostHouse => 4,
+        };
+        let handler_map = definition_map.family(family).unwrap();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 512,
+            height: 32,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let missing = level
+            .layer1
+            .objects
+            .native_placements()
+            .into_iter()
+            .filter_map(|placement| {
+                let record = &level.layer1.objects.records[placement.record_index];
+                if record.command_id() == 0 {
+                    return None;
+                }
+                match lm_render::render_mapped_standard_object_placement(
+                    record,
+                    placement,
+                    &definitions,
+                    handler_map,
+                    layout,
+                    u16::MAX,
+                ) {
+                    Ok(Some(_)) => None,
+                    Ok(None) => Some((
+                        placement.record_index,
+                        record.command_id(),
+                        handler_map[usize::from(record.command_id())],
+                        format!("missing at {placement:?}, bytes={:02X?}", record.encoded()),
+                    )),
+                    Err(error) => Some((
+                        placement.record_index,
+                        record.command_id(),
+                        handler_map[usize::from(record.command_id())],
+                        format!("{error} at {placement:?}, bytes={:02X?}", record.encoded()),
+                    )),
+                }
+            })
+            .collect::<Vec<_>>();
+        assert!(missing.is_empty(), "missing mapped artwork: {missing:02X?}");
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
     fn pristine_standard_object_resize_commits_reopens_and_undoes() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let source = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
@@ -6638,6 +6810,11 @@ mod tests {
                         let current = u16::from(parameter) + 1;
                         let next = if current == 256 { 255 } else { current + 1 };
                         set_standard_object_minor_tiles(model, parameter, next).unwrap()
+                    }
+                    lm_render::StandardObjectResizeModel::MajorByte { .. } => {
+                        let current = u16::from(parameter) + 1;
+                        let next = if current == 256 { 255 } else { current + 1 };
+                        set_standard_object_major_byte_tiles(model, next).unwrap()
                     }
                     lm_render::StandardObjectResizeModel::ExtendedCommand27Axes
                     | lm_render::StandardObjectResizeModel::Fixed => continue,
@@ -6721,10 +6898,22 @@ mod tests {
     }
 
     #[test]
-    fn rom_canvas_has_fixed_scale_and_swaps_orientation_axes() {
-        assert_eq!(rom_canvas_size(32, 16, false), egui::vec2(384.0, 192.0));
-        assert_eq!(rom_canvas_size(32, 16, true), egui::vec2(192.0, 384.0));
-        assert_eq!(rom_canvas_size(512, 32, false), egui::vec2(6144.0, 384.0));
+    fn rom_canvas_zoom_scales_and_swaps_orientation_axes() {
+        assert_eq!(
+            rom_canvas_size(32, 16, false, 12.0),
+            egui::vec2(384.0, 192.0)
+        );
+        assert_eq!(
+            rom_canvas_size(32, 16, true, 24.0),
+            egui::vec2(384.0, 768.0)
+        );
+        assert_eq!(
+            rom_canvas_size(512, 32, false, 6.0),
+            egui::vec2(3072.0, 192.0)
+        );
+        assert_eq!(clamp_canvas_zoom(0), ROM_LEVEL_CANVAS_MIN_ZOOM);
+        assert_eq!(clamp_canvas_zoom(275), 275);
+        assert_eq!(clamp_canvas_zoom(u16::MAX), ROM_LEVEL_CANVAS_MAX_ZOOM);
     }
 
     #[test]
@@ -6940,7 +7129,7 @@ mod tests {
             egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
         );
         assert_eq!(
-            custom_object_display_rect(encoded, origin, &reopened_parts),
+            custom_object_display_rect(encoded, origin, &reopened_parts, ROM_LEVEL_CANVAS_CELL,),
             egui::Rect::from_min_size(
                 origin,
                 egui::vec2(ROM_LEVEL_CANVAS_CELL * 2.0, ROM_LEVEL_CANVAS_CELL)

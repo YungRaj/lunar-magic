@@ -185,8 +185,9 @@ pub fn compose_smw_us_v1_level_palette(
     let backdrop = read_word(source, background_color)?;
     write_word(&mut cache, 0x200, backdrop);
     let mut palette = Palette::decode_snes(&cache[2..]).map_err(SmwPaletteFileError::ColorData)?;
-    for row in 0..15 {
-        palette.colors[row * Palette::COLORS_PER_ROW + 15] = Bgr555(0);
+    palette.colors.rotate_right(1);
+    for row in 1..16 {
+        palette.colors[row * Palette::COLORS_PER_ROW] = Bgr555(0);
     }
     Ok(SmwUsV1LevelPalette {
         palette,
@@ -253,11 +254,15 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        // Standalone TPL files serialize the backdrop after the 256 display colors, while the
+        // editor/MWL cache exposes it as CGRAM color zero.
+        let mut expected_colors = expected.palette.colors.clone();
+        expected_colors.rotate_right(1);
         let differences: Vec<_> = actual
             .palette
             .colors
             .iter()
-            .zip(&expected.palette.colors)
+            .zip(&expected_colors)
             .enumerate()
             .filter_map(|(index, (actual, expected))| {
                 (actual != expected).then_some((index, *actual, *expected))
@@ -265,7 +270,7 @@ mod tests {
             .collect();
         assert_eq!(
             differences,
-            [(1, Bgr555(0x1462), Bgr555(0x147d))],
+            [(2, Bgr555(0x1462), Bgr555(0x147d))],
             "the retained oracle intentionally edits this one shared color during installation"
         );
     }

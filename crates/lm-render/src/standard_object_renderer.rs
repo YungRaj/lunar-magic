@@ -213,6 +213,8 @@ pub enum StandardObjectResizeModel {
     ParameterNibbles,
     /// Only the high parameter nibble encodes the major tile count minus one.
     MajorNibble,
+    /// The complete parameter byte encodes the major count minus one.
+    MajorByte { fixed_minor_tiles: u8 },
     /// The low nibble encodes the minor count minus one; the major count is fixed.
     MinorNibble { fixed_major_tiles: u8 },
     /// The complete parameter byte encodes the minor count minus one.
@@ -461,8 +463,8 @@ impl StandardObjectDefinitionSet {
             ObjectExtent::OneByLowNibble => StandardObjectResizeModel::MinorNibble {
                 fixed_major_tiles: 1,
             },
-            ObjectExtent::ThreeByParameterByte => StandardObjectResizeModel::MinorByte {
-                fixed_major_tiles: 3,
+            ObjectExtent::ThreeByParameterByte => StandardObjectResizeModel::MajorByte {
+                fixed_minor_tiles: 3,
             },
             ObjectExtent::FixedOne => StandardObjectResizeModel::Fixed,
         })
@@ -691,7 +693,7 @@ fn render_definition(
         ObjectExtent::HighNibbleByOne => (usize::from(placement.major_span), 1),
         ObjectExtent::TwoByLowNibble => (2, usize::from(placement.minor_span)),
         ObjectExtent::OneByLowNibble => (1, usize::from(placement.minor_span)),
-        ObjectExtent::ThreeByParameterByte => (3, usize::from(parameter) + 1),
+        ObjectExtent::ThreeByParameterByte => (usize::from(parameter) + 1, 3),
         ObjectExtent::FixedOne => (1, 1),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
@@ -3178,17 +3180,20 @@ fn set_placement_cell_signed(
     minor_offset: isize,
     tile: u16,
 ) -> Result<(), StandardObjectRenderError> {
-    let major = usize::from(placement.major)
-        .checked_add_signed(major_offset)
-        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
-    let minor = usize::from(placement.minor)
-        .checked_add_signed(minor_offset)
-        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    let Some(major) = usize::from(placement.major).checked_add_signed(major_offset) else {
+        return Ok(());
+    };
+    let Some(minor) = usize::from(placement.minor).checked_add_signed(minor_offset) else {
+        return Ok(());
+    };
     let (x, y) = if layout.vertical {
         (minor, major)
     } else {
         (major, minor)
     };
+    if x >= layout.width || y >= layout.height {
+        return Ok(());
+    }
     cache.set(layout, x, y, tile)?;
     Ok(())
 }
@@ -3200,17 +3205,20 @@ fn get_placement_cell_signed(
     major_offset: isize,
     minor_offset: isize,
 ) -> Result<u16, StandardObjectRenderError> {
-    let major = usize::from(placement.major)
-        .checked_add_signed(major_offset)
-        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
-    let minor = usize::from(placement.minor)
-        .checked_add_signed(minor_offset)
-        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    let Some(major) = usize::from(placement.major).checked_add_signed(major_offset) else {
+        return Ok(u16::MAX);
+    };
+    let Some(minor) = usize::from(placement.minor).checked_add_signed(minor_offset) else {
+        return Ok(u16::MAX);
+    };
     let (x, y) = if layout.vertical {
         (minor, major)
     } else {
         (major, minor)
     };
+    if x >= layout.width || y >= layout.height {
+        return Ok(u16::MAX);
+    }
     Ok(cache.get(layout, x, y)?)
 }
 
@@ -4094,8 +4102,8 @@ mod tests {
             ),
             (
                 6,
-                StandardObjectResizeModel::MinorByte {
-                    fixed_major_tiles: 3,
+                StandardObjectResizeModel::MajorByte {
+                    fixed_minor_tiles: 3,
                 },
             ),
             (1, StandardObjectResizeModel::Fixed),
@@ -5823,8 +5831,8 @@ mod tests {
         };
         let report =
             render_standard_object_stream(&command_33, &definitions, layout(), 0x25).unwrap();
-        for major in 0..3 {
-            for minor in 0..4 {
+        for major in 0..4 {
+            for minor in 0..3 {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     if major == 0 { 0x100 } else { 0x03f }
