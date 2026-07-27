@@ -103,6 +103,24 @@ impl ObjectRecord {
         self.encoded[0] & 0x10 != 0
     }
 
+    /// Changes only the perpendicular high-coordinate bit.
+    ///
+    /// This is Y bit 4 in horizontal levels and X bit 4 in vertical levels.
+    ///
+    /// # Errors
+    ///
+    /// Rejects the change if the resulting bytes would collide with a control encoding.
+    pub fn set_perpendicular_high_coordinate(
+        &mut self,
+        high: bool,
+    ) -> Result<(), ObjectFieldError> {
+        let mut candidate = self.encoded.clone();
+        candidate[0] = (candidate[0] & !0x10) | (u8::from(high) << 4);
+        validate_candidate(&candidate)?;
+        self.encoded = candidate;
+        Ok(())
+    }
+
     /// Returns the encoded new-screen/advance-screen bit recovered from stream normalization.
     #[must_use]
     pub fn advances_screen(&self) -> bool {
@@ -484,6 +502,8 @@ mod tests {
             })
             .unwrap();
         record.set_advances_screen(true).unwrap();
+        record.set_perpendicular_high_coordinate(true).unwrap();
+        assert!(record.perpendicular_high_coordinate());
         assert_eq!(
             record.coordinate_nibbles(),
             ObjectCoordinateNibbles {
@@ -492,7 +512,7 @@ mod tests {
             }
         );
         assert!(record.advances_screen());
-        assert_eq!(record.encoded(), &[0xae, 0xad, 1]);
+        assert_eq!(record.encoded(), &[0xbe, 0xad, 1]);
     }
 
     #[test]

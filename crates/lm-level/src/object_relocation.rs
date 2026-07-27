@@ -37,9 +37,31 @@ impl ObjectStream {
     /// and streams containing opaque controls interleaved with ordinary objects.
     pub fn insert_ordinary_object_at(
         &mut self,
+        record: ObjectRecord,
+        target_screen: u16,
+        coordinates: ObjectCoordinateNibbles,
+    ) -> Result<usize, ObjectRelocationError> {
+        let perpendicular_high = record.perpendicular_high_coordinate();
+        self.insert_ordinary_object_at_position(
+            record,
+            target_screen,
+            coordinates,
+            perpendicular_high,
+        )
+    }
+
+    /// Inserts an ordinary object and explicitly sets its perpendicular coordinate bit 4.
+    ///
+    /// # Errors
+    ///
+    /// Applies the same validation and atomicity guarantees as
+    /// [`Self::insert_ordinary_object_at`].
+    pub fn insert_ordinary_object_at_position(
+        &mut self,
         mut record: ObjectRecord,
         target_screen: u16,
         coordinates: ObjectCoordinateNibbles,
+        perpendicular_high: bool,
     ) -> Result<usize, ObjectRelocationError> {
         if target_screen > 0x1f {
             return Err(ObjectRelocationError::TargetScreenOutOfRange(target_screen));
@@ -49,6 +71,9 @@ impl ObjectStream {
         }
         record
             .set_coordinate_nibbles(coordinates)
+            .map_err(ObjectRelocationError::Field)?;
+        record
+            .set_perpendicular_high_coordinate(perpendicular_high)
             .map_err(ObjectRelocationError::Field)?;
         record
             .set_advances_screen(false)
@@ -86,6 +111,35 @@ impl ObjectStream {
         target_screen: u16,
         coordinates: ObjectCoordinateNibbles,
     ) -> Result<usize, ObjectRelocationError> {
+        let perpendicular_high = self
+            .records
+            .get(selected)
+            .ok_or(ObjectRelocationError::IndexOutOfBounds {
+                index: selected,
+                len: self.records.len(),
+            })?
+            .perpendicular_high_coordinate();
+        self.relocate_ordinary_object_position(
+            selected,
+            target_screen,
+            coordinates,
+            perpendicular_high,
+        )
+    }
+
+    /// Relocates an ordinary object and explicitly sets its perpendicular coordinate bit 4.
+    ///
+    /// # Errors
+    ///
+    /// Applies the same validation and atomicity guarantees as
+    /// [`Self::relocate_ordinary_object`].
+    pub fn relocate_ordinary_object_position(
+        &mut self,
+        selected: usize,
+        target_screen: u16,
+        coordinates: ObjectCoordinateNibbles,
+        perpendicular_high: bool,
+    ) -> Result<usize, ObjectRelocationError> {
         if selected >= self.records.len() {
             return Err(ObjectRelocationError::IndexOutOfBounds {
                 index: selected,
@@ -106,6 +160,10 @@ impl ObjectStream {
         target
             .record
             .set_coordinate_nibbles(coordinates)
+            .map_err(ObjectRelocationError::Field)?;
+        target
+            .record
+            .set_perpendicular_high_coordinate(perpendicular_high)
             .map_err(ObjectRelocationError::Field)?;
         positioned.sort_by_key(|object| object.screen);
         let (mut records, new_index) = encode_positioned_objects(positioned, selected)?;
@@ -202,6 +260,28 @@ mod tests {
             id,
         ])
         .unwrap()
+    }
+
+    #[test]
+    fn explicit_position_mutations_cross_the_perpendicular_half_boundary() {
+        let mut stream = ObjectStream {
+            records: vec![object(false, 2, 3, 4)],
+        };
+        let coordinates = ObjectCoordinateNibbles {
+            first: 5,
+            second: 6,
+        };
+        let index = stream
+            .relocate_ordinary_object_position(0, 0, coordinates, true)
+            .unwrap();
+        assert!(stream.records[index].perpendicular_high_coordinate());
+        assert_eq!(stream.native_placements()[0].minor, 0x15);
+
+        let index = stream
+            .relocate_ordinary_object_position(index, 0, coordinates, false)
+            .unwrap();
+        assert!(!stream.records[index].perpendicular_high_coordinate());
+        assert_eq!(stream.native_placements()[0].minor, 5);
     }
 
     #[test]

@@ -17,6 +17,13 @@ pub enum ObjectEdit {
         screen: u16,
         coordinates: ObjectCoordinateNibbles,
     },
+    /// Inserts an ordinary object with an explicit perpendicular coordinate bit 4.
+    InsertOrdinaryAtPosition {
+        record: ObjectRecord,
+        screen: u16,
+        coordinates: ObjectCoordinateNibbles,
+        perpendicular_high: bool,
+    },
     Replace {
         index: usize,
         record: ObjectRecord,
@@ -60,6 +67,13 @@ pub enum ObjectEdit {
         screen: u16,
         coordinates: ObjectCoordinateNibbles,
     },
+    /// Relocates an ordinary object with an explicit perpendicular coordinate bit 4.
+    RelocateOrdinaryPosition {
+        index: usize,
+        screen: u16,
+        coordinates: ObjectCoordinateNibbles,
+        perpendicular_high: bool,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -94,6 +108,7 @@ impl ObjectStream {
     ///
     /// Returns [`ObjectEditError`] with the failing command index, or
     /// [`ObjectEditError::BankLimitExceeded`] when the resulting stream cannot be stored natively.
+    #[allow(clippy::too_many_lines)]
     pub fn apply_edits(&mut self, edits: &[ObjectEdit]) -> Result<(), ObjectEditError> {
         if edits.is_empty() {
             return Ok(());
@@ -108,6 +123,20 @@ impl ObjectStream {
                     coordinates,
                 } => staged
                     .insert_ordinary_object_at(record.clone(), *screen, *coordinates)
+                    .map(drop)
+                    .map_err(LevelEditError::ObjectRelocation),
+                ObjectEdit::InsertOrdinaryAtPosition {
+                    record,
+                    screen,
+                    coordinates,
+                    perpendicular_high,
+                } => staged
+                    .insert_ordinary_object_at_position(
+                        record.clone(),
+                        *screen,
+                        *coordinates,
+                        *perpendicular_high,
+                    )
                     .map(drop)
                     .map_err(LevelEditError::ObjectRelocation),
                 ObjectEdit::Replace { index, record } => {
@@ -169,6 +198,20 @@ impl ObjectStream {
                     coordinates,
                 } => staged
                     .relocate_ordinary_object(*index, *screen, *coordinates)
+                    .map(drop)
+                    .map_err(LevelEditError::ObjectRelocation),
+                ObjectEdit::RelocateOrdinaryPosition {
+                    index,
+                    screen,
+                    coordinates,
+                    perpendicular_high,
+                } => staged
+                    .relocate_ordinary_object_position(
+                        *index,
+                        *screen,
+                        *coordinates,
+                        *perpendicular_high,
+                    )
                     .map(drop)
                     .map_err(LevelEditError::ObjectRelocation),
             };

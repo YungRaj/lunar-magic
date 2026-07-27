@@ -1721,7 +1721,7 @@ impl VanillaLevelEditor {
         cell: f32,
         vertical: bool,
     ) {
-        let Some((screen, coordinates)) =
+        let Some((screen, coordinates, perpendicular_high)) =
             object_placement_at_canvas_position(position, canvas, cell, vertical)
         else {
             self.error = Some("object placement is outside the native 16×512-tile space".into());
@@ -1743,19 +1743,24 @@ impl VanillaLevelEditor {
             return;
         };
         let mut predicted = controller.level().layer1.objects.clone();
-        let selected =
-            match predicted.insert_ordinary_object_at(record.clone(), screen, coordinates) {
-                Ok(selected) => selected,
-                Err(error) => {
-                    self.error = Some(error.to_string());
-                    return;
-                }
-            };
+        let selected = match predicted.insert_ordinary_object_at_position(
+            record.clone(),
+            screen,
+            coordinates,
+            perpendicular_high,
+        ) {
+            Ok(selected) => selected,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
         match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
-            ObjectEdit::InsertOrdinaryAt {
+            ObjectEdit::InsertOrdinaryAtPosition {
                 record,
                 screen,
                 coordinates,
+                perpendicular_high,
             },
         ])]) {
             Ok(()) => {
@@ -1777,7 +1782,7 @@ impl VanillaLevelEditor {
         cell: f32,
         vertical: bool,
     ) {
-        let Some((screen, coordinates)) =
+        let Some((screen, coordinates, perpendicular_high)) =
             object_placement_at_canvas_position(position, canvas, cell, vertical)
         else {
             self.error =
@@ -1804,18 +1809,23 @@ impl VanillaLevelEditor {
             return;
         };
         let mut predicted = layer2.objects.clone();
-        let selected =
-            match predicted.insert_ordinary_object_at(record.clone(), screen, coordinates) {
-                Ok(selected) => selected,
-                Err(error) => {
-                    self.error = Some(error.to_string());
-                    return;
-                }
-            };
-        match controller.apply_layer2_object_edits(&[ObjectEdit::InsertOrdinaryAt {
+        let selected = match predicted.insert_ordinary_object_at_position(
+            record.clone(),
+            screen,
+            coordinates,
+            perpendicular_high,
+        ) {
+            Ok(selected) => selected,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        match controller.apply_layer2_object_edits(&[ObjectEdit::InsertOrdinaryAtPosition {
             record: record.clone(),
             screen,
             coordinates,
+            perpendicular_high,
         }]) {
             Ok(()) => {
                 self.selected_layer2_object = selected;
@@ -1969,7 +1979,7 @@ impl VanillaLevelEditor {
             self.error = Some("selected object has no visible native placement".into());
             return;
         }
-        let Some((screen, coordinates)) =
+        let Some((screen, coordinates, perpendicular_high)) =
             object_placement_at_canvas_position(position, canvas, cell, vertical)
         else {
             self.error = Some("object drag ended outside the native 16×512-tile space".into());
@@ -1979,7 +1989,12 @@ impl VanillaLevelEditor {
             return;
         };
         let mut predicted = controller.level().layer1.objects.clone();
-        let new_index = match predicted.relocate_ordinary_object(index, screen, coordinates) {
+        let new_index = match predicted.relocate_ordinary_object_position(
+            index,
+            screen,
+            coordinates,
+            perpendicular_high,
+        ) {
             Ok(index) => index,
             Err(error) => {
                 self.error = Some(error.to_string());
@@ -1987,10 +2002,11 @@ impl VanillaLevelEditor {
             }
         };
         match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
-            ObjectEdit::RelocateOrdinary {
+            ObjectEdit::RelocateOrdinaryPosition {
                 index,
                 screen,
                 coordinates,
+                perpendicular_high,
             },
         ])]) {
             Ok(()) => {
@@ -2063,7 +2079,7 @@ impl VanillaLevelEditor {
         cell: f32,
         vertical: bool,
     ) {
-        let Some((screen, coordinates)) =
+        let Some((screen, coordinates, perpendicular_high)) =
             object_placement_at_canvas_position(position, canvas, cell, vertical)
         else {
             self.error =
@@ -2087,17 +2103,23 @@ impl VanillaLevelEditor {
             return;
         }
         let mut predicted = layer2.objects.clone();
-        let new_index = match predicted.relocate_ordinary_object(index, screen, coordinates) {
+        let new_index = match predicted.relocate_ordinary_object_position(
+            index,
+            screen,
+            coordinates,
+            perpendicular_high,
+        ) {
             Ok(index) => index,
             Err(error) => {
                 self.error = Some(error.to_string());
                 return;
             }
         };
-        match controller.apply_layer2_object_edits(&[ObjectEdit::RelocateOrdinary {
+        match controller.apply_layer2_object_edits(&[ObjectEdit::RelocateOrdinaryPosition {
             index,
             screen,
             coordinates,
+            perpendicular_high,
         }]) {
             Ok(()) => {
                 self.selected_layer2_object = new_index;
@@ -4227,7 +4249,7 @@ fn object_placement_at_canvas_position(
     canvas: egui::Rect,
     cell: f32,
     vertical: bool,
-) -> Option<(u16, ObjectCoordinateNibbles)> {
+) -> Option<(u16, ObjectCoordinateNibbles, bool)> {
     if !canvas.contains(position) || !cell.is_finite() || cell <= 0.0 {
         return None;
     }
@@ -4244,7 +4266,7 @@ fn object_placement_at_canvas_position(
         (column as u16, row as u16)
     };
     let screen = major / 16;
-    if screen >= 32 || minor >= 16 {
+    if screen >= 32 || minor >= NATIVE_LEVEL_MINOR_TILES {
         return None;
     }
     let (first, second) = if vertical {
@@ -4258,7 +4280,11 @@ fn object_placement_at_canvas_position(
             u8::try_from(major % 16).ok()?,
         )
     };
-    Some((screen, ObjectCoordinateNibbles { first, second }))
+    Some((
+        screen,
+        ObjectCoordinateNibbles { first, second },
+        minor >= 16,
+    ))
 }
 
 fn layer2_tile_at_canvas_position(
@@ -7720,7 +7746,8 @@ mod tests {
                 ObjectCoordinateNibbles {
                     first: 12,
                     second: 3,
-                }
+                },
+                false,
             ))
         );
         let vertical_canvas =
@@ -7737,7 +7764,8 @@ mod tests {
                 ObjectCoordinateNibbles {
                     first: 15,
                     second: 7,
-                }
+                },
+                false,
             ))
         );
     }
@@ -7752,12 +7780,20 @@ mod tests {
                 ObjectCoordinateNibbles {
                     first: 4,
                     second: 15,
-                }
+                },
+                false,
             ))
         );
-        assert!(
-            object_placement_at_canvas_position(egui::pos2(35.0, 16.0), canvas, 1.0, false,)
-                .is_none()
+        assert_eq!(
+            object_placement_at_canvas_position(egui::pos2(35.0, 16.0), canvas, 1.0, false,),
+            Some((
+                2,
+                ObjectCoordinateNibbles {
+                    first: 0,
+                    second: 3,
+                },
+                true,
+            ))
         );
         assert!(
             object_placement_at_canvas_position(egui::pos2(-1.0, 4.0), canvas, 1.0, false,)
