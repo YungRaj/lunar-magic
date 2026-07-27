@@ -3335,14 +3335,14 @@ fn render_pattern(
     Ok(())
 }
 
-/// Installs the shared command-zero single-tile definitions recovered from
-/// `PlaceCommandMappedSingleTile`.
+/// Installs the shared command-zero definitions recovered from Lunar Magic and SMW's loader.
 ///
-/// The 0x10–0x50 selector range uses page 0 below 0x23 and page 1 thereafter.
+/// The 0x10–0x50 selector range uses page 0 below 0x23 and page 1 thereafter. This also installs
+/// SMW's fixed 2×2 selector `$86` pattern and the switch-off form of selector `$8E`.
 ///
 /// # Errors
 ///
-/// Returns a definition error if the recovered single-tile pattern cannot be installed.
+/// Returns a definition error if a recovered pattern cannot be installed.
 pub fn install_lunar_magic_shared_extended_objects(
     definitions: &mut StandardObjectDefinitionSet,
 ) -> Result<(), StandardObjectRenderError> {
@@ -3359,7 +3359,40 @@ pub fn install_lunar_magic_shared_extended_objects(
             },
         )?;
     }
+    definitions.set_extended(
+        0x86,
+        StandardObjectPattern {
+            width: 2,
+            height: 2,
+            tiles: vec![0x066, 0x067, 0x068, 0x069],
+        },
+    )?;
+    definitions.set_extended(
+        0x8e,
+        StandardObjectPattern {
+            width: 1,
+            height: 1,
+            tiles: vec![0x06b],
+        },
+    )?;
     Ok(())
+}
+
+/// Resolves the two vanilla switch-sensitive extended objects recovered from SMW's loader.
+///
+/// Selector `$87` uses Map16 tile `$06A` and selector `$8E` uses `$06B`. An active switch selects
+/// the equivalent page-one tile, exactly matching Lunar Magic's switch-view renderer.
+#[must_use]
+pub const fn lunar_magic_conditional_extended_object_tile(
+    selector: u8,
+    switch_active: bool,
+) -> Option<u16> {
+    let tile = match selector {
+        0x87 => 0x06a,
+        0x8e => 0x06b,
+        _ => return None,
+    };
+    Some(tile + if switch_active { 0x100 } else { 0 })
 }
 
 /// Installs shared standard-object renderers recovered from Lunar Magic's native dispatch table.
@@ -5546,8 +5579,33 @@ mod tests {
         assert_eq!(definitions.get_extended(0x22).unwrap().tiles, [0x37]);
         assert_eq!(definitions.get_extended(0x23).unwrap().tiles, [0x111]);
         assert_eq!(definitions.get_extended(0x50).unwrap().tiles, [0x128]);
+        assert_eq!(
+            definitions.get_extended(0x86).unwrap(),
+            &StandardObjectPattern {
+                width: 2,
+                height: 2,
+                tiles: vec![0x066, 0x067, 0x068, 0x069],
+            }
+        );
+        assert_eq!(definitions.get_extended(0x8e).unwrap().tiles, [0x06b]);
+        assert_eq!(
+            lunar_magic_conditional_extended_object_tile(0x87, false),
+            Some(0x06a)
+        );
+        assert_eq!(
+            lunar_magic_conditional_extended_object_tile(0x87, true),
+            Some(0x16a)
+        );
+        assert_eq!(
+            lunar_magic_conditional_extended_object_tile(0x8e, true),
+            Some(0x16b)
+        );
         assert!(definitions.get_extended(0x0f).is_none());
         assert!(definitions.get_extended(0x51).is_none());
+        assert_eq!(
+            lunar_magic_conditional_extended_object_tile(0x86, false),
+            None
+        );
     }
 
     #[test]

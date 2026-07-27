@@ -254,6 +254,7 @@ pub(crate) struct VanillaLevelEditor {
     foreground_tiles: Vec<lm_graphics::IndexedTile>,
     layer3_tiles: Vec<lm_graphics::IndexedTile>,
     sprite_palette: Option<lm_graphics::Palette>,
+    canvas_backdrop: Option<lm_graphics::Bgr555>,
     foreground_texture: Option<egui::TextureHandle>,
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
     map16_error: Option<String>,
@@ -1063,6 +1064,7 @@ impl VanillaLevelEditor {
         self.foreground_tiles.clear();
         self.layer3_tiles.clear();
         self.sprite_palette = None;
+        self.canvas_backdrop = None;
         self.foreground_texture = None;
         self.map16_summary = None;
         self.map16_error = None;
@@ -1097,6 +1099,7 @@ impl VanillaLevelEditor {
                 self.foreground_tiles.clear();
                 self.layer3_tiles.clear();
                 self.sprite_palette = None;
+                self.canvas_backdrop = None;
                 self.external_sprite_textures.clear();
                 self.foreground_texture = None;
                 self.map16_summary = None;
@@ -1143,6 +1146,7 @@ impl VanillaLevelEditor {
                         self.sprite_tiles = preview.sprite_tiles;
                         self.foreground_tiles = preview.foreground_tiles;
                         self.layer3_tiles = preview.layer3_tiles;
+                        self.canvas_backdrop = Some(preview.backdrop);
                         self.sprite_palette = Some(preview.palette);
                     }
                     Err(error) => self.map16_error = Some(error),
@@ -1405,7 +1409,7 @@ impl VanillaLevelEditor {
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
-        painter.rect_filled(rect, 0.0, egui::Color32::from_gray(20));
+        painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
         draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
         draw_layer2_tilemap(
             painter,
@@ -4206,6 +4210,16 @@ fn draw_map16_atlas_tile(
     painter.image(texture.id(), target, uv, egui::Color32::WHITE);
 }
 
+fn canvas_background_color(backdrop: Option<lm_graphics::Bgr555>) -> egui::Color32 {
+    backdrop.map_or_else(
+        || egui::Color32::from_gray(20),
+        |color| {
+            let color = color.to_rgb8();
+            egui::Color32::from_rgb(color.red, color.green, color.blue)
+        },
+    )
+}
+
 #[derive(Default)]
 struct CanvasModel {
     layer1_records: Vec<ObjectRecord>,
@@ -6688,7 +6702,7 @@ mod tests {
     }
 
     #[test]
-    fn pristine_level_105_has_authenticated_artwork_for_every_nonzero_object() {
+    fn pristine_level_105_has_authenticated_artwork_for_every_renderable_object() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let image =
             RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
@@ -6729,7 +6743,7 @@ mod tests {
             .into_iter()
             .filter_map(|placement| {
                 let record = &level.layer1.objects.records[placement.record_index];
-                if record.command_id() == 0 {
+                if record.command_id() == 0 && record.parameter() < 4 {
                     return None;
                 }
                 match lm_render::render_mapped_standard_object_placement(

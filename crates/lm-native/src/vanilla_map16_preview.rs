@@ -10,6 +10,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) sprite_image: egui::ColorImage,
     pub(crate) sprite_tiles: Vec<IndexedTile>,
     pub(crate) palette: Palette,
+    pub(crate) backdrop: lm_graphics::Bgr555,
     pub(crate) foreground_image: egui::ColorImage,
     pub(crate) foreground_tiles: Vec<IndexedTile>,
     pub(crate) layer3_tiles: Vec<IndexedTile>,
@@ -39,9 +40,10 @@ pub(crate) fn render(
     let graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
-    let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
-        .map_err(|error| error.to_string())?
-        .palette;
+    let composed_palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
+        .map_err(|error| error.to_string())?;
+    let backdrop = composed_palette.backdrop;
+    let palette = composed_palette.palette;
     let sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
         &project.rom,
         usize::from(header.sprite_tileset()),
@@ -88,6 +90,7 @@ pub(crate) fn render(
         sprite_image,
         sprite_tiles: materialize_layer1_sprite_vram(&sprite_graphics),
         palette,
+        backdrop,
         sprite_graphics_files,
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
@@ -324,7 +327,7 @@ fn draw_subtile(
 
 fn palette_color(palette: &Palette, palette_row: usize, index: u8) -> Option<[u8; 4]> {
     if index == 0 {
-        return Some([12, 12, 18, 255]);
+        return Some([0, 0, 0, 0]);
     }
     let color = palette
         .colors
@@ -338,6 +341,14 @@ mod tests {
     use super::*;
     use lm_graphics::{Bgr555, Rgb8};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn snes_palette_color_zero_is_transparent_in_editor_atlases() {
+        let palette = Palette {
+            colors: vec![Bgr555(0x7fff); 256],
+        };
+        assert_eq!(palette_color(&palette, 0, 0), Some([0, 0, 0, 0]));
+    }
 
     #[test]
     fn sprite_atlas_materializes_every_encoded_palette_row() {
