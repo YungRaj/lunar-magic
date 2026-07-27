@@ -2,7 +2,12 @@ use crate::expanded_settings_editor_form::ExpandedSettingsForm;
 use eframe::egui;
 use lm_app::{AppState, Command};
 use lm_level::ExpandedOverworldSettings;
+use lm_overworld::{OverworldLayer3SettingsRecord, OverworldLayer3SettingsTable};
 use lm_profile::load_smw_us_v1_overworld_settings;
+
+mod layer3_form;
+
+use layer3_form::Layer3Form;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -23,6 +28,7 @@ pub(crate) struct RomOverworldSettingsEditor {
     submap: usize,
     loaded_submap: Option<usize>,
     form: ExpandedSettingsForm,
+    layer3_form: Layer3Form,
     error: Option<String>,
     pending_close: Option<PendingClose>,
 }
@@ -47,6 +53,9 @@ impl RomOverworldSettingsEditor {
                 self.submap = 0;
                 self.loaded_submap = Some(0);
                 self.form = ExpandedSettingsForm::load(&loaded.settings.records[0]);
+                self.layer3_form = Layer3Form::load(&OverworldLayer3SettingsRecord::from_bytes(
+                    *loaded.settings.records[0].encoded(),
+                ));
                 self.workspace = Some(Workspace {
                     revision: app.project_revision(),
                     installed: loaded.installed,
@@ -139,6 +148,7 @@ impl RomOverworldSettingsEditor {
                     }
                 }
             });
+        self.show_layer3_form(ui, stale);
         let mut command = None;
         ui.horizontal(|ui| {
             if ui
@@ -162,6 +172,80 @@ impl RomOverworldSettingsEditor {
         command
     }
 
+    fn show_layer3_form(&mut self, ui: &mut egui::Ui, stale: bool) {
+        egui::CollapsingHeader::new("Semantic Layer 3 settings")
+            .default_open(true)
+            .show(ui, |ui| {
+                egui::Grid::new("rom-overworld-layer3-semantic-fields")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label("Use custom tilemap");
+                        ui.checkbox(&mut self.layer3_form.uses_custom_tilemap, "");
+                        ui.end_row();
+                        ui.label("Use custom graphics");
+                        ui.checkbox(&mut self.layer3_form.uses_custom_graphics, "");
+                        ui.end_row();
+                        ui.label("Tilemap file");
+                        ui.add(
+                            egui::DragValue::new(&mut self.layer3_form.tilemap_file)
+                                .range(0..=0x0fff)
+                                .hexadecimal(3, false, true),
+                        );
+                        ui.end_row();
+                        ui.label("Tilemap size");
+                        ui.add(
+                            egui::DragValue::new(&mut self.layer3_form.tilemap_size).range(0..=3),
+                        );
+                        ui.end_row();
+                        ui.label("Tilemap position");
+                        ui.add(
+                            egui::DragValue::new(&mut self.layer3_form.tilemap_position)
+                                .range(0..=3),
+                        );
+                        ui.end_row();
+                    });
+                ui.label("Address-layout words");
+                egui::Grid::new("rom-overworld-layer3-layout-words")
+                    .num_columns(4)
+                    .show(ui, |ui| {
+                        for (index, value) in
+                            self.layer3_form.layout_words.iter_mut().enumerate()
+                        {
+                            ui.label(format!("{index}"));
+                            ui.add(
+                                egui::DragValue::new(value).hexadecimal(4, false, true),
+                            );
+                            if index % 2 == 1 {
+                                ui.end_row();
+                            }
+                        }
+                    });
+                ui.label("Graphics files");
+                ui.horizontal(|ui| {
+                    for (index, value) in
+                        self.layer3_form.graphics_files.iter_mut().enumerate()
+                    {
+                        ui.label(format!("GFX {index}"));
+                        ui.add(
+                            egui::DragValue::new(value)
+                                .range(0..=0x0fff)
+                                .hexadecimal(3, false, true),
+                        );
+                    }
+                });
+                if ui
+                    .add_enabled(!stale, egui::Button::new("Apply Layer 3 fields"))
+                    .clicked()
+                    && let Err(error) = self.apply_layer3_selected()
+                {
+                    self.error = Some(error);
+                }
+                ui.small(
+                    "Semantic edits preserve opaque feature bits, reserved bytes, and high graphics-word nibbles.",
+                );
+            });
+    }
+
     fn load_selected(&mut self) -> Result<(), String> {
         let workspace = self
             .workspace
@@ -173,6 +257,9 @@ impl RomOverworldSettingsEditor {
             .get(self.submap)
             .ok_or_else(|| "invalid overworld-settings submap".to_owned())?;
         self.form = ExpandedSettingsForm::load(record);
+        self.layer3_form = Layer3Form::load(&OverworldLayer3SettingsRecord::from_bytes(
+            *record.encoded(),
+        ));
         self.loaded_submap = Some(self.submap);
         Ok(())
     }
@@ -196,6 +283,29 @@ impl RomOverworldSettingsEditor {
                 .set_word(index, value)
                 .map_err(|error| error.to_string())?;
         }
+        self.layer3_form = Layer3Form::load(&OverworldLayer3SettingsRecord::from_bytes(
+            *record.encoded(),
+        ));
+        Ok(())
+    }
+
+    fn apply_layer3_selected(&mut self) -> Result<(), String> {
+        if self.loaded_submap != Some(self.submap) {
+            return Err("load the selected submap record before applying it".into());
+        }
+        let workspace = self
+            .workspace
+            .as_mut()
+            .ok_or_else(|| "overworld-settings workspace is closed".to_owned())?;
+        let record = workspace
+            .current
+            .records
+            .get_mut(self.submap)
+            .ok_or_else(|| "invalid overworld-settings submap".to_owned())?;
+        let source = OverworldLayer3SettingsRecord::from_bytes(*record.encoded());
+        let edited = self.layer3_form.apply(&source)?;
+        *record = lm_level::ExpandedLevelSettingsRecord::from_encoded(*edited.encoded());
+        self.form = ExpandedSettingsForm::load(record);
         Ok(())
     }
 
@@ -210,9 +320,16 @@ impl RomOverworldSettingsEditor {
         if workspace.current == workspace.original {
             return Ok(None);
         }
-        Ok(Some(Command::ReplaceNativeOverworldSettings {
+        let mut bytes = [0; OverworldLayer3SettingsTable::ENCODED_LEN];
+        for (index, record) in workspace.current.records.iter().enumerate() {
+            let start = index * record.encoded().len();
+            bytes[start..start + record.encoded().len()].copy_from_slice(record.encoded());
+        }
+        let settings =
+            OverworldLayer3SettingsTable::decode(&bytes).map_err(|error| error.to_string())?;
+        Ok(Some(Command::ReplaceNativeOverworldLayer3Settings {
             rev: workspace.revision,
-            settings: Box::new(workspace.current.clone()),
+            settings: Box::new(settings),
         }))
     }
 
@@ -310,5 +427,52 @@ mod tests {
         assert!(editor.prepare_commit(1).is_err());
         assert!(!editor.request_close(false));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn semantic_layer3_gui_installs_reopens_preserves_opaque_bytes_and_undoes() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut editor = RomOverworldSettingsEditor::default();
+        editor.open(&app);
+        editor.submap = 4;
+        editor.loaded_submap = None;
+        editor.load_selected().unwrap();
+        let before = OverworldLayer3SettingsRecord::from_bytes(
+            *editor.workspace.as_ref().unwrap().current.records[4].encoded(),
+        );
+        editor.layer3_form.uses_custom_tilemap = true;
+        editor.layer3_form.uses_custom_graphics = true;
+        editor.layer3_form.tilemap_file = 0x345;
+        editor.layer3_form.tilemap_size = 3;
+        editor.layer3_form.tilemap_position = 2;
+        editor.layer3_form.graphics_files[2] = 0x678;
+        editor.apply_layer3_selected().unwrap();
+        let after = OverworldLayer3SettingsRecord::from_bytes(
+            *editor.workspace.as_ref().unwrap().current.records[4].encoded(),
+        );
+        assert_eq!(after.preserved_bytes(), before.preserved_bytes());
+        assert_eq!(
+            after.feature_flags() & !0x6000,
+            before.feature_flags() & !0x6000
+        );
+        let command = editor.prepare_commit(0).unwrap().unwrap();
+        assert!(matches!(
+            &command,
+            Command::ReplaceNativeOverworldLayer3Settings { .. }
+        ));
+        app.dispatch(command).unwrap();
+        let reopened =
+            app.project()
+                .unwrap()
+                .load_overworld_layer3_settings(
+                    lm_profile::smw_us_v1_overworld_layer3_settings_layout(),
+                )
+                .unwrap();
+        assert_eq!(reopened.maps[4], after);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
     }
 }

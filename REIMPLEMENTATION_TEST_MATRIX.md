@@ -284,6 +284,11 @@ revision-checked commit. A typed profile detector distinguishes pristine overwor
 from an exact installed allocation, rejects malformed present ownership, and feeds a seven-record,
 sixteen-word graphical editor. Both workspaces reject unloaded selections and stale revisions and
 protect staged changes during close and application shutdown.
+The same seven-record overworld workspace now exposes the recovered semantic Layer 3 view:
+custom-tilemap/custom-graphics flags, 12-bit tilemap file, two-bit size and position, eight
+address-layout words, and four 12-bit graphics files. It dispatches the dedicated semantic
+application command while preserving every opaque feature bit, reserved byte, and graphics-word
+high nibble; a pristine fixture installs, semantically reopens, and undoes to exact source bytes.
 The level-name graphical adapter selects by canonical SMW level number and exact tile index,
 requires load-before-apply identity, fills any newly materialized positional prefix with `$1F`,
 and tests a pristine-ROM installation followed by semantic reopen. Invalid number gaps, tile
