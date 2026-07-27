@@ -266,6 +266,8 @@ pub(crate) struct VanillaLevelEditor {
     map16_key: Option<(u64, u8, u8)>,
     map16_texture: Option<egui::TextureHandle>,
     background_map16_texture: Option<egui::TextureHandle>,
+    animated_map16_textures: Vec<egui::TextureHandle>,
+    animated_background_map16_textures: Vec<egui::TextureHandle>,
     shared_vanilla_background: bool,
     sprite_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
@@ -1131,6 +1133,8 @@ impl VanillaLevelEditor {
         self.map16_key = None;
         self.map16_texture = None;
         self.background_map16_texture = None;
+        self.animated_map16_textures.clear();
+        self.animated_background_map16_textures.clear();
         self.shared_vanilla_background = false;
         self.sprite_texture = None;
         self.sprite_tiles.clear();
@@ -1204,6 +1208,8 @@ impl VanillaLevelEditor {
         }
         self.map16_texture = None;
         self.background_map16_texture = None;
+        self.animated_map16_textures.clear();
+        self.animated_background_map16_textures.clear();
         self.sprite_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
@@ -1243,6 +1249,19 @@ impl VanillaLevelEditor {
                     preview.background_image,
                     egui::TextureOptions::NEAREST,
                 ));
+                self.animated_map16_textures = load_animation_textures(
+                    context,
+                    &format!("vanilla-map16-{object_tileset:X}-{}", snapshot.revision),
+                    preview.animated_images,
+                );
+                self.animated_background_map16_textures = load_animation_textures(
+                    context,
+                    &format!(
+                        "vanilla-background-map16-{object_tileset:X}-{}",
+                        snapshot.revision
+                    ),
+                    preview.animated_background_images,
+                );
                 self.sprite_texture = Some(context.load_texture(
                     format!(
                         "vanilla-sprite-gfx-{sprite_tileset:X}-{}",
@@ -1330,6 +1349,8 @@ impl VanillaLevelEditor {
             controller.level().layer1.header.level_mode()
         });
         let animation_phase = sprite_animation_phase(ui.input(|input| input.time));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(125));
         ensure_remapped_placement_textures(
             ui.ctx(),
             &mut self.external_sprite_textures,
@@ -1554,6 +1575,15 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
+        let animation_phase_index = usize::from(animation_phase);
+        let map16_texture = self
+            .animated_map16_textures
+            .get(animation_phase_index)
+            .or(self.map16_texture.as_ref());
+        let background_map16_texture = self
+            .animated_background_map16_textures
+            .get(animation_phase_index)
+            .or(self.background_map16_texture.as_ref());
         let game_camera = (self.game_preview() && self.snes_viewport())
             .then(|| game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical));
         draw_layer2_tilemap(
@@ -1561,10 +1591,10 @@ impl VanillaLevelEditor {
             rect,
             cell,
             layer2_tilemap,
-            self.map16_texture.as_ref(),
+            map16_texture,
             self.shared_vanilla_background
                 .then_some(())
-                .and(self.background_map16_texture.as_ref()),
+                .and(background_map16_texture),
             self.foreground_texture.as_ref(),
             custom_map16,
             self.entrance_form,
@@ -1619,7 +1649,7 @@ impl VanillaLevelEditor {
                     layer2_records,
                     layer2_placements,
                     self.selected_layer2_object,
-                    self.map16_texture.as_ref(),
+                    map16_texture,
                     &layer2_artwork_bounds,
                     &layer2_resize_models,
                     cell,
@@ -1632,7 +1662,7 @@ impl VanillaLevelEditor {
                     records,
                     placements,
                     self.selected_object,
-                    self.map16_texture.as_ref(),
+                    map16_texture,
                     &layer1_artwork_bounds,
                     &layer1_resize_models,
                     cell,
@@ -6004,6 +6034,24 @@ fn editor_layer2_layout(
 
 fn workspace_tool_width(available_width: f32) -> f32 {
     ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.42).max(280.0))
+}
+
+fn load_animation_textures(
+    context: &egui::Context,
+    name_prefix: &str,
+    images: Vec<egui::ColorImage>,
+) -> Vec<egui::TextureHandle> {
+    images
+        .into_iter()
+        .enumerate()
+        .map(|(phase, image)| {
+            context.load_texture(
+                format!("{name_prefix}-phase-{phase}"),
+                image,
+                egui::TextureOptions::NEAREST,
+            )
+        })
+        .collect()
 }
 
 fn clamped_scroll_offset(requested: f32, content_extent: f32, viewport_extent: f32) -> f32 {

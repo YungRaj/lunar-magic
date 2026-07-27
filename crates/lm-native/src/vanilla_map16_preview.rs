@@ -7,6 +7,8 @@ use lm_rom::RomImage;
 pub(crate) struct VanillaMap16Preview {
     pub(crate) image: egui::ColorImage,
     pub(crate) background_image: egui::ColorImage,
+    pub(crate) animated_images: Vec<egui::ColorImage>,
+    pub(crate) animated_background_images: Vec<egui::ColorImage>,
     pub(crate) graphics_files: [usize; 4],
     pub(crate) sprite_image: egui::ColorImage,
     pub(crate) sprite_tiles: Vec<IndexedTile>,
@@ -38,8 +40,7 @@ pub(crate) fn render(
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
     let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
-    let mut graphics = materialize_layer1_sprite_vram(&graphics_slots);
-    apply_vanilla_common_animation_frame_zero(&project, &mut graphics)?;
+    let base_graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
     let background_map16 = lm_profile::load_smw_us_v1_background_map16(&project.rom)
@@ -58,14 +59,35 @@ pub(crate) fn render(
     // those words into a wider internal descriptor while loading them, but the native renderer
     // consumes `Subtile`'s SNES layout directly. Feeding the widened-and-truncated representation
     // back into this path corrupts palette and flip attributes.
-    let image = render_map16_definition_atlas(&map16.bytes, &graphics, &palette);
-    let background_image = render_map16_definition_atlas(&background_map16, &graphics, &palette);
+    let mut animated_graphics = Vec::with_capacity(4);
+    let mut animated_images = Vec::with_capacity(4);
+    let mut animated_background_images = Vec::with_capacity(4);
+    for phase in 0..4 {
+        let mut graphics = base_graphics.clone();
+        apply_vanilla_common_animation_frame(&project, &mut graphics, phase)?;
+        animated_images.push(render_map16_definition_atlas(
+            &map16.bytes,
+            &graphics,
+            &palette,
+        ));
+        animated_background_images.push(render_map16_definition_atlas(
+            &background_map16,
+            &graphics,
+            &palette,
+        ));
+        animated_graphics.push(graphics);
+    }
+    let graphics = animated_graphics.remove(0);
+    let image = animated_images[0].clone();
+    let background_image = animated_background_images[0].clone();
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let foreground_image = render_foreground_graphics_atlas(&graphics, &palette);
     let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
     Ok(VanillaMap16Preview {
         image,
         background_image,
+        animated_images,
+        animated_background_images,
         foreground_image,
         foreground_tiles: graphics,
         layer3_tiles,
@@ -80,24 +102,39 @@ pub(crate) fn render(
     })
 }
 
-fn apply_vanilla_common_animation_frame_zero(
+fn apply_vanilla_common_animation_frame(
     project: &Project,
     graphics: &mut [IndexedTile],
+    phase: usize,
 ) -> Result<(), String> {
-    const FRAME_ZERO_COPIES: [(usize, usize); 3] = [
+    const FRAME_ZERO_SOURCES: [(usize, usize); 3] = [
         (0x60, (0x9500 - 0x7d00) / 32),
         (0x64, (0x9580 - 0x7d00) / 32),
         (0x68, (0x9600 - 0x7d00) / 32),
     ];
+    const ANIMATED_SOURCE_STRIDE_TILES: usize = 0x200 / 32;
     const TILES_PER_COPY: usize = 4;
 
+    if phase >= 4 {
+        return Err(format!(
+            "vanilla common animation phase {phase} is outside 0..4"
+        ));
+    }
     let decoded = project
         .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
         .map_err(|error| error.to_string())?;
     let animation_tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
         .map_err(|error| format!("cannot decode pristine animated GFX33: {error}"))?;
     let graphics_len = graphics.len();
-    for (destination, source) in FRAME_ZERO_COPIES {
+    for (copy_index, (destination, frame_zero_source)) in FRAME_ZERO_SOURCES.into_iter().enumerate()
+    {
+        // The third group is the ordinary turn block and does not advance unless gameplay puts
+        // it into its separate spinning state.
+        let source = if copy_index < 2 {
+            frame_zero_source + phase * ANIMATED_SOURCE_STRIDE_TILES
+        } else {
+            frame_zero_source
+        };
         let source_end = source + TILES_PER_COPY;
         let destination_end = destination + TILES_PER_COPY;
         let source_tiles = animation_tiles.get(source..source_end).ok_or_else(|| {
@@ -474,6 +511,14 @@ mod tests {
         let animated = lm_graphics::decode_planar_tiles(&animated, 3).unwrap();
         assert_eq!(preview.foreground_tiles[0x60], animated[192]);
         assert_eq!(preview.foreground_tiles[0x6b], animated[203]);
+        let mut last_phase = preview.foreground_tiles.clone();
+        apply_vanilla_common_animation_frame(&project, &mut last_phase, 3).unwrap();
+        assert_eq!(last_phase[0x60], animated[240]);
+        assert_eq!(last_phase[0x64], animated[244]);
+        assert_eq!(last_phase[0x68], animated[200]);
+        assert_eq!(preview.animated_images.len(), 4);
+        assert_eq!(preview.animated_background_images.len(), 4);
+        assert_ne!(preview.animated_images[0], preview.animated_images[3]);
         assert_eq!(preview.sprite_tiles.len(), LAYER1_SPRITE_GLOBAL_TILES);
         assert_eq!(unavailable_subtiles, 0);
         assert_eq!(preview.image.size, [512, 256]);
