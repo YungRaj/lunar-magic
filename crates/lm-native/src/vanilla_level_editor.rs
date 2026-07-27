@@ -25,7 +25,6 @@ const VANILLA_ENTRANCE_Y_LOW: [u8; 16] = [
 const VANILLA_ENTRANCE_Y_HIGH: [u8; 16] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
 ];
-const VANILLA_LAYER2_HORIZONTAL_SCROLL: [u8; 16] = [2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const VANILLA_LAYER2_VERTICAL_SCROLL: [u8; 16] = [3, 1, 1, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0];
 const VANILLA_INITIAL_LAYER2_Y: [u8; 4] = [0x60, 0x90, 0xc0, 0x00];
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 380.0;
@@ -4459,12 +4458,12 @@ fn vanilla_shared_background_coordinates(
     layer1_y: usize,
     entrance: VanillaMainEntrance,
 ) -> (usize, usize) {
+    // Lunar Magic presents the materialized Layer 2 Map16 plane at native tile scale. The
+    // horizontal scroll rate changes the camera relationship during play; applying it as a
+    // sampling divisor here duplicates every source column and visibly stretches the background.
+    // Vertical placement still incorporates the entrance-derived editor origin and initial BG
+    // position recovered from the native viewport setup.
     let setting = usize::from(entrance.position >> 4);
-    let background_x = match VANILLA_LAYER2_HORIZONTAL_SCROLL[setting] {
-        0 => 0,
-        1 => layer1_x,
-        _ => layer1_x / 2,
-    };
     let initial_layer2_y =
         usize::from(VANILLA_INITIAL_LAYER2_Y[usize::from(entrance.screen_and_method & 3)]) / 16;
     let editor_origin_y = usize::from(vanilla_horizontal_entrance_scroll_row(entrance));
@@ -4482,7 +4481,7 @@ fn vanilla_shared_background_coordinates(
         _ => editor_origin_y / 16,
     };
     (
-        background_x,
+        layer1_x,
         scaled_y
             .saturating_add(initial_layer2_y)
             .saturating_sub(scaled_editor_origin_y),
@@ -7340,7 +7339,7 @@ mod tests {
     }
 
     #[test]
-    fn level_105_shared_background_uses_vanilla_half_scroll() {
+    fn level_105_shared_background_keeps_native_x_scale_and_vertical_alignment() {
         let entrance = VanillaMainEntrance {
             position: 0x5b,
             screen_and_method: 0x9a,
@@ -7352,7 +7351,7 @@ mod tests {
         );
         assert_eq!(
             vanilla_shared_background_coordinates(20, 16, entrance),
-            (10, 12)
+            (20, 12)
         );
     }
 

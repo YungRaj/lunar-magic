@@ -239,6 +239,13 @@ object routine actually wrote and retains explicit writes of `$0025`. A real lev
 framebuffer audit covers the resulting diagonal terrain, extended object, shared-background,
 standard-sprite, and entrance-camera composition; focused cache tests prove that serialization
 does not confuse transient write provenance with the debugger-visible 0x3800-word tile cache.
+The same framebuffer audit caught two presentation-only corruptions. Extended objects whose
+authenticated Map16 artwork was already present are no longer repainted as one marker tile
+stretched across their complete interactive bounds. Pristine shared backgrounds retain the native
+one-source-column-per-editor-column scale while preserving entrance-derived vertical alignment;
+gameplay horizontal scroll rates are camera behavior and no longer duplicate Map16 columns in the
+editor. The resulting level `$105` view visibly contains the Yoshi's Island hill field, grass
+ground, diagonal dirt slope, bushes, Banzai Bill, Rex, and message block without synthetic artwork.
 
 Before the external release corpus qualifies, runnable-shell ROM persistence is create-new by
 default. Tests require `save` and UI-equivalent save actions to reject replacement before creating
