@@ -238,6 +238,7 @@ pub(crate) struct VanillaLevelEditor {
     layer2_word: u16,
     selected_layer2_object: usize,
     layer2_object_form: ObjectForm,
+    layer2_object_placement_template: Option<ObjectRecord>,
     external_asset_revision: u64,
     external_sprite_textures:
         HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
@@ -459,6 +460,7 @@ impl VanillaLevelEditor {
                     {
                         self.selected_layer2_object = index;
                         self.layer2_object_form = ObjectForm::from_record(record);
+                        self.layer2_object_placement_template = Some(record.clone());
                     }
                 }
             });
@@ -474,8 +476,7 @@ impl VanillaLevelEditor {
             }
             if ui.button("Insert after selection").clicked() {
                 let result = self
-                    .layer2_object_form
-                    .ordinary_record()
+                    .layer2_object_record_for_placement()
                     .and_then(|record| {
                         self.controller
                             .as_mut()
@@ -778,6 +779,11 @@ impl VanillaLevelEditor {
                 .records
                 .get(self.selected_layer2_object)
                 .map_or_else(ObjectForm::default, ObjectForm::from_record);
+            self.layer2_object_placement_template = objects
+                .objects
+                .records
+                .get(self.selected_layer2_object)
+                .cloned();
         }
         self.object_placement_template = None;
         self.dragging_object = None;
@@ -859,6 +865,13 @@ impl VanillaLevelEditor {
                         lm_level::NativeLayer2Data::Tilemap(_) => None,
                     })
                     .map_or_else(ObjectForm::default, ObjectForm::from_record);
+                self.layer2_object_placement_template =
+                    controller.layer2().and_then(|layer2| match layer2 {
+                        lm_level::NativeLayer2Data::Objects(objects) => {
+                            objects.objects.records.first().cloned()
+                        }
+                        lm_level::NativeLayer2Data::Tilemap(_) => None,
+                    });
                 self.form = HeaderForm::from_controller(&controller);
                 self.selected_object = 0;
                 self.object_form = controller
@@ -906,6 +919,7 @@ impl VanillaLevelEditor {
         self.map16_error = None;
         self.standard_object_map = None;
         self.object_placement_template = None;
+        self.layer2_object_placement_template = None;
         self.paste_target = None;
         self.dragging_sprite = None;
         self.dragging_object = None;
@@ -1476,7 +1490,7 @@ impl VanillaLevelEditor {
                 Some("Layer 2 object placement is outside the native 16×512-tile space".into());
             return;
         };
-        let record = match self.layer2_object_form.ordinary_record() {
+        let record = match self.layer2_object_record_for_placement() {
             Ok(record) if record.command_id() != 0 => record,
             Ok(_) => {
                 self.error =
@@ -1505,7 +1519,7 @@ impl VanillaLevelEditor {
                 }
             };
         match controller.apply_layer2_object_edits(&[ObjectEdit::InsertOrdinaryAt {
-            record,
+            record: record.clone(),
             screen,
             coordinates,
         }]) {
@@ -1515,11 +1529,31 @@ impl VanillaLevelEditor {
                     self.layer2_object_form =
                         ObjectForm::from_record(&layer2.objects.records[selected]);
                 }
+                self.layer2_object_placement_template = Some(record);
                 self.placement_mode = None;
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
         }
+    }
+
+    fn layer2_object_record_for_placement(&self) -> Result<ObjectRecord, String> {
+        if let Some(mut record) = self.layer2_object_placement_template.clone()
+            && record.command_id() == self.layer2_object_form.command_id
+            && record.parameter() == self.layer2_object_form.parameter
+        {
+            record
+                .set_coordinate_nibbles(ObjectCoordinateNibbles {
+                    first: self.layer2_object_form.first_coordinate,
+                    second: self.layer2_object_form.second_coordinate,
+                })
+                .map_err(|error| error.to_string())?;
+            record
+                .set_advances_screen(self.layer2_object_form.advances_screen)
+                .map_err(|error| error.to_string())?;
+            return Ok(record);
+        }
+        self.layer2_object_form.ordinary_record()
     }
 
     fn object_record_for_placement(&self) -> Result<ObjectRecord, String> {
@@ -1723,8 +1757,9 @@ impl VanillaLevelEditor {
             Ok(()) => {
                 self.selected_layer2_object = new_index;
                 if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() {
-                    self.layer2_object_form =
-                        ObjectForm::from_record(&layer2.objects.records[new_index]);
+                    let record = &layer2.objects.records[new_index];
+                    self.layer2_object_form = ObjectForm::from_record(record);
+                    self.layer2_object_placement_template = Some(record.clone());
                 }
                 self.error = None;
             }
@@ -4903,6 +4938,20 @@ mod tests {
         editor.object_form.second_coordinate = 6;
         let placed = editor.object_record_for_placement().unwrap();
         assert_eq!(placed.encoded(), &[0x45, 0x26, 2, 0xaa]);
+    }
+
+    #[test]
+    fn layer2_custom_object_placement_retains_required_extension_bytes() {
+        let record = ObjectRecord::new(vec![0x40, 0xd0, 3, 0xaa, 0xbb]).unwrap();
+        let mut editor = VanillaLevelEditor {
+            layer2_object_form: ObjectForm::from_record(&record),
+            layer2_object_placement_template: Some(record),
+            ..VanillaLevelEditor::default()
+        };
+        editor.layer2_object_form.first_coordinate = 7;
+        editor.layer2_object_form.second_coordinate = 8;
+        let placed = editor.layer2_object_record_for_placement().unwrap();
+        assert_eq!(placed.encoded(), &[0x47, 0xd8, 3, 0xaa, 0xbb]);
     }
 
     #[test]
