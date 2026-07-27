@@ -268,6 +268,7 @@ pub(crate) struct VanillaLevelEditor {
     background_map16_texture: Option<egui::TextureHandle>,
     animated_map16_textures: Vec<egui::TextureHandle>,
     animated_background_map16_textures: Vec<egui::TextureHandle>,
+    animated_background_plane_textures: Vec<egui::TextureHandle>,
     shared_vanilla_background: bool,
     sprite_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
@@ -1135,6 +1136,7 @@ impl VanillaLevelEditor {
         self.background_map16_texture = None;
         self.animated_map16_textures.clear();
         self.animated_background_map16_textures.clear();
+        self.animated_background_plane_textures.clear();
         self.shared_vanilla_background = false;
         self.sprite_texture = None;
         self.sprite_tiles.clear();
@@ -1195,6 +1197,7 @@ impl VanillaLevelEditor {
         });
     }
 
+    #[allow(clippy::too_many_lines)]
     fn ensure_map16_assets(
         &mut self,
         context: &egui::Context,
@@ -1210,6 +1213,7 @@ impl VanillaLevelEditor {
         self.background_map16_texture = None;
         self.animated_map16_textures.clear();
         self.animated_background_map16_textures.clear();
+        self.animated_background_plane_textures.clear();
         self.sprite_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
@@ -1230,6 +1234,31 @@ impl VanillaLevelEditor {
                 .map_or_default(|controller| controller.level().layer1.header),
         ) {
             Ok(preview) => {
+                let background_planes = self
+                    .controller
+                    .as_ref()
+                    .and_then(|controller| controller.layer2())
+                    .and_then(|layer2| match layer2 {
+                        lm_level::NativeLayer2Data::Tilemap(bytes) => Some(
+                            bytes
+                                .chunks_exact(2)
+                                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                                .collect::<Vec<_>>(),
+                        ),
+                        lm_level::NativeLayer2Data::Objects(_) => None,
+                    })
+                    .map(|tilemap| {
+                        preview
+                            .animated_background_images
+                            .iter()
+                            .map(|image| {
+                                crate::vanilla_map16_preview::compose_native_map16_plane(
+                                    image, &tilemap,
+                                )
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .transpose();
                 self.map16_summary = Some((
                     preview.graphics_files,
                     preview.sprite_graphics_files,
@@ -1262,6 +1291,20 @@ impl VanillaLevelEditor {
                     ),
                     preview.animated_background_images,
                 );
+                match background_planes {
+                    Ok(Some(images)) => {
+                        self.animated_background_plane_textures = load_animation_textures(
+                            context,
+                            &format!(
+                                "vanilla-background-plane-{object_tileset:X}-{}",
+                                snapshot.revision
+                            ),
+                            images,
+                        );
+                    }
+                    Ok(None) => {}
+                    Err(error) => self.map16_error = Some(error),
+                }
                 self.sprite_texture = Some(context.load_texture(
                     format!(
                         "vanilla-sprite-gfx-{sprite_tileset:X}-{}",
@@ -1584,6 +1627,9 @@ impl VanillaLevelEditor {
             .animated_background_map16_textures
             .get(animation_phase_index)
             .or(self.background_map16_texture.as_ref());
+        let background_plane_texture = self
+            .animated_background_plane_textures
+            .get(animation_phase_index);
         let game_camera = (self.game_preview() && self.snes_viewport())
             .then(|| game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical));
         draw_layer2_tilemap(
@@ -1595,6 +1641,9 @@ impl VanillaLevelEditor {
             self.shared_vanilla_background
                 .then_some(())
                 .and(background_map16_texture),
+            self.shared_vanilla_background
+                .then_some(())
+                .and(background_plane_texture),
             self.foreground_texture.as_ref(),
             custom_map16,
             self.entrance_form,
@@ -4512,6 +4561,7 @@ fn draw_layer2_tilemap(
     tilemap: &[u16],
     map16_texture: Option<&egui::TextureHandle>,
     background_map16_texture: Option<&egui::TextureHandle>,
+    background_plane_texture: Option<&egui::TextureHandle>,
     foreground_texture: Option<&egui::TextureHandle>,
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     entrance: VanillaMainEntrance,
@@ -4520,6 +4570,10 @@ fn draw_layer2_tilemap(
     vertical: bool,
     game_camera: Option<(u16, u16)>,
 ) {
+    if let (Some(texture), Some(camera)) = (background_plane_texture, game_camera) {
+        draw_wrapped_background_viewport(painter, target, cell_size, texture, entrance, camera);
+        return;
+    }
     let (columns, rows) = if vertical {
         (usize::from(minor_tiles), usize::from(major_tiles))
     } else {
@@ -4568,6 +4622,74 @@ fn draw_layer2_tilemap(
                 draw_map16_atlas_tile(painter, texture, cell, tile);
             }
         }
+    }
+}
+
+fn draw_wrapped_background_viewport(
+    painter: &egui::Painter,
+    world: egui::Rect,
+    cell_size: f32,
+    texture: &egui::TextureHandle,
+    entrance: VanillaMainEntrance,
+    camera: (u16, u16),
+) {
+    const PLANE_TILES: usize = 32;
+    const VIEW_WIDTH: usize = 16;
+    const VIEW_HEIGHT: usize = 14;
+    let (source_x, source_y) = vanilla_game_background_coordinates(
+        usize::from(camera.0),
+        usize::from(camera.1),
+        entrance,
+        camera,
+    );
+    let viewport = egui::Rect::from_min_size(
+        world.min
+            + egui::vec2(
+                f32::from(camera.0) * cell_size,
+                f32::from(camera.1) * cell_size,
+            ),
+        egui::vec2(
+            f32::from(u8::try_from(VIEW_WIDTH).unwrap()) * cell_size,
+            f32::from(u8::try_from(VIEW_HEIGHT).unwrap()) * cell_size,
+        ),
+    );
+    let mut output_y = 0;
+    while output_y < VIEW_HEIGHT {
+        let plane_y = (source_y + output_y) % PLANE_TILES;
+        let rows = (PLANE_TILES - plane_y).min(VIEW_HEIGHT - output_y);
+        let mut output_x = 0;
+        while output_x < VIEW_WIDTH {
+            let plane_x = (source_x + output_x) % PLANE_TILES;
+            let columns = (PLANE_TILES - plane_x).min(VIEW_WIDTH - output_x);
+            let target = egui::Rect::from_min_size(
+                viewport.min
+                    + egui::vec2(
+                        f32::from(u8::try_from(output_x).unwrap()) * cell_size,
+                        f32::from(u8::try_from(output_y).unwrap()) * cell_size,
+                    ),
+                egui::vec2(
+                    f32::from(u8::try_from(columns).unwrap()) * cell_size,
+                    f32::from(u8::try_from(rows).unwrap()) * cell_size,
+                ),
+            );
+            let uv = egui::Rect::from_min_max(
+                egui::pos2(
+                    f32::from(u8::try_from(plane_x).unwrap())
+                        / f32::from(u8::try_from(PLANE_TILES).unwrap()),
+                    f32::from(u8::try_from(plane_y).unwrap())
+                        / f32::from(u8::try_from(PLANE_TILES).unwrap()),
+                ),
+                egui::pos2(
+                    f32::from(u8::try_from(plane_x + columns).unwrap())
+                        / f32::from(u8::try_from(PLANE_TILES).unwrap()),
+                    f32::from(u8::try_from(plane_y + rows).unwrap())
+                        / f32::from(u8::try_from(PLANE_TILES).unwrap()),
+                ),
+            );
+            painter.image(texture.id(), target, uv, egui::Color32::WHITE);
+            output_x += columns;
+        }
+        output_y += rows;
     }
 }
 
