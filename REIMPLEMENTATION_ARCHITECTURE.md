@@ -644,6 +644,30 @@ the primary transition commits, preventing optional tools from blocking editor o
 
 No tier is complete until its rows in `REIMPLEMENTATION_TEST_MATRIX.md` pass on clean, headered, expanded, and ecosystem-modified fixtures.
 
+## Planned MCP agent automation
+
+After the core compatibility tiers are qualified, the editor should optionally host an MCP server
+so Codex, Claude, Gemini, and other compatible clients can construct and test ROM hacks through
+the same semantic controllers as the native UI. This is a roadmap requirement, not permission for
+agents to write arbitrary ROM offsets. The server boundary should expose:
+
+- bounded project, level, overworld, Map16, graphics, palette, sprite, object, entrance, exit,
+  Layer 2, Layer 3, and ExAnimation inspection;
+- revision-bound transactional edits, preview, diff, validation, undo, redo, save-as, and rollback;
+- catalog and constraint queries sufficient to design ordinary and complex/Kaizo levels without
+  guessing command shapes, sprite extensions, screen transitions, or resource ownership;
+- deterministic rendering, emulator launch/boot gates, screenshot and diagnostic collection, and
+  structured play-test results;
+- capability discovery and explicit policy gates for filesystem publication, external processes,
+  destructive replacement, and any operation that can invalidate an existing hack.
+
+Every MCP mutation must carry the open project revision, pass the same serializer and overlap
+checks as an interactive edit, and return a semantic observation that can be replayed in the
+compatibility corpus. Long-running agent sessions should work on recoverable branches or Save As
+artifacts, never silently overwrite the only ROM copy. Protocol conformance, stale requests,
+malformed/excessive batches, disconnected clients, concurrent edit conflicts, emulator failure,
+and exact rollback belong in the compatibility matrix before this interface is considered stable.
+
 Layer 3 currently has a deliberately lossless semantic boundary: `LMLAY3V1` preserves raw selector
 and feature bytes, four validated 12-bit graphics identifiers, the recovered 0x2000-byte tilemap
 workspace, and the remap command stream. Optional state is embedded in `LMLEVEL2` version 2,

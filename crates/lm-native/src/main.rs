@@ -91,6 +91,7 @@ mod rom_overworld_special_event_editor;
 mod rom_ownership;
 mod rom_palette_editor;
 mod rom_secondary_exit_editor;
+mod rom_shared_palette_editor;
 mod rom_tilemap_editor;
 mod rom_title_recording_editor;
 mod ssc_sidecar_editor;

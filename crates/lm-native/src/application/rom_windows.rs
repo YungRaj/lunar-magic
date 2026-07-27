@@ -31,6 +31,7 @@ impl NativeApplication {
     pub(super) fn show_rom_editors(&mut self, context: &egui::Context) {
         show_rom_editor!(self, context, rom_expanded_settings_editor);
         show_rom_editor!(self, context, rom_lunar_magic_metadata_editor);
+        show_rom_editor!(self, context, rom_shared_palette_editor);
         show_rom_editor!(self, context, rom_boss_sequence_editor);
         show_rom_editor!(self, context, rom_overworld_message_editor);
         show_rom_editor!(self, context, rom_overworld_path_link_editor);

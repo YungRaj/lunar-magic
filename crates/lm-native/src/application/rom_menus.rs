@@ -111,6 +111,15 @@ impl NativeApplication {
         rom_editor_pair!(
             ui,
             enabled,
+            self.rom_shared_palette_editor,
+            &self.app,
+            "Edit Shared/Custom SMW Palettes…",
+            "Close Shared/Custom SMW Palettes"
+        );
+        ui.separator();
+        rom_editor_pair!(
+            ui,
+            enabled,
             self.rom_secondary_exit_editor,
             &self.app,
             "Edit Global Secondary Exits…",
