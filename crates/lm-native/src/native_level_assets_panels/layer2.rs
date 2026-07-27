@@ -301,10 +301,11 @@ impl AggregatePanels {
         &mut self,
         ui: &mut egui::Ui,
         layer2: &NativeLayer2Data,
+        descriptor: Option<lm_level::MwlLayer2Descriptor>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         match layer2 {
             NativeLayer2Data::Objects(objects) => self.layer2_objects_panel(ui, objects),
-            NativeLayer2Data::Tilemap(bytes) => self.layer2_tilemap_panel(ui, bytes),
+            NativeLayer2Data::Tilemap(bytes) => self.layer2_tilemap_panel(ui, bytes, descriptor),
         }
     }
 
@@ -400,9 +401,19 @@ impl AggregatePanels {
         &mut self,
         ui: &mut egui::Ui,
         bytes: &[u8],
+        descriptor: Option<lm_level::MwlLayer2Descriptor>,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let words = bytes.len() / 2;
         ui.heading(format!("Layer 2 tilemap ({words} words)"));
+        if let Some(descriptor) = descriptor {
+            ui.label(format!(
+                "Installed descriptor ${:02X} · active Map16 bank ${:X}",
+                descriptor.raw(),
+                descriptor.active_bank()
+            ));
+        } else {
+            ui.label("Pristine/legacy descriptor · active Map16 bank $0");
+        }
         ui.label(
             "Click a Map16 cell, or Shift-click a second cell to select a rectangle. Applying fills \
              every selected cell with the complete 16-bit tile word.",
@@ -494,8 +505,9 @@ impl AggregatePanels {
             let enabled = !self.layer2_remap_selection_only || has_selection;
             ui.add_enabled(enabled, egui::Button::new("Apply remap"))
                 .on_hover_text(
-                    "Apply the complete program as one undoable edit. Cross-bank mappings are \
-                     rejected until the installed Layer 2 descriptor-table save path is active.",
+                    "Apply the complete program as one undoable edit. Cross-bank mappings persist \
+                     when this ROM profile supplies Lunar Magic's installed descriptor table; \
+                     pristine/legacy layouts reject them before mutation.",
                 )
                 .clicked()
         })

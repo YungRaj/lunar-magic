@@ -123,6 +123,7 @@ pub fn export_layer2(
                 entries: LEVEL_SLOTS,
                 stride: 3,
             },
+            descriptor_table: None,
             maximum_compressed_len: 0x8000,
             tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },
         },

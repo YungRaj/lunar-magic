@@ -1,9 +1,9 @@
 //! Recovered native layouts used by an unmodified North American SMW revision 0 ROM.
 
 use lm_project::{
-    GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout, LevelLayer2RomLayout,
-    LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout, SeparateMidwayPatchLocator,
-    SpritePointerTable, VanillaEntranceRomLayout,
+    GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout, LevelLayer2DescriptorTable,
+    LevelLayer2RomLayout, LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout,
+    SeparateMidwayPatchLocator, SpritePointerTable, VanillaEntranceRomLayout,
 };
 use lm_rom::Mapper;
 use lm_rom::{RomError, RomImage};
@@ -25,6 +25,12 @@ pub const SMW_US_V1_VANILLA_LEVEL_SLOTS: usize = 0x200;
 pub const SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET: usize = 0x2e000;
 /// Contiguous 24-bit Layer 2 object/tilemap pointer table.
 pub const SMW_US_V1_LEVEL_LAYER2_POINTER_TABLE_OFFSET: usize = 0x2e600;
+/// One-byte per-level descriptor table installed by Lunar Magic's format-$103 Layer 2 runtime.
+pub const SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET: usize = 0x77310;
+/// Format-$103 hook base and its identifying `LM` marker.
+pub const SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET: usize = 0x77510;
+pub const SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET: usize =
+    SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + 0x3c;
 /// Parallel low-word table for native sprite-stream pointers.
 pub const SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET: usize = 0x2ec00;
 /// Shared bank operand for native sprite-stream pointers.
@@ -64,9 +70,39 @@ pub const fn smw_us_v1_vanilla_layer2_layout() -> LevelLayer2RomLayout {
             entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
             stride: 3,
         },
+        descriptor_table: None,
         maximum_compressed_len: 0x8000,
         tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },
     }
+}
+
+/// Detects the exact format-$103 Layer 2 descriptor table installed by Lunar Magic 3.63.
+///
+/// A pristine ROM retains the legacy layout. The installed layout points at the recovered
+/// one-byte descriptor table so cross-bank background remaps can be loaded and persisted.
+///
+/// # Errors
+///
+/// Returns a ROM bounds error when the image is too short to contain the recovered format marker
+/// or descriptor table.
+pub fn smw_us_v1_layer2_layout(rom: &RomImage) -> Result<LevelLayer2RomLayout, RomError> {
+    let marker = rom.read(SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET, 2)?;
+    let mut layout = smw_us_v1_vanilla_layer2_layout();
+    if marker == b"LM" {
+        rom.read(
+            SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
+            SMW_US_V1_VANILLA_LEVEL_SLOTS,
+        )?;
+        layout.descriptor_table = Some(LevelLayer2DescriptorTable {
+            offset: SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
+            entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+            stride: 1,
+        });
+        // Format $103 can still load pre-migration $360 tilemaps, but Lunar Magic's next save
+        // normalizes them to the current split-plane representation together with the descriptor.
+        layout.tilemap_encoding = LevelLayer2TilemapEncoding::SplitPlanes;
+    }
+    Ok(layout)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -236,6 +272,68 @@ mod tests {
     use lm_level::SpriteLengthTable;
     use lm_project::Project;
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn layer2_layout_detects_only_the_exact_format_103_marker() {
+        let mut bytes = vec![0xff; 0x80_000];
+        let pristine = RomImage::from_bytes(bytes.clone()).unwrap();
+        assert_eq!(
+            smw_us_v1_layer2_layout(&pristine).unwrap(),
+            smw_us_v1_vanilla_layer2_layout()
+        );
+
+        bytes[SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET
+            ..SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET + 2]
+            .copy_from_slice(b"LM");
+        let installed = RomImage::from_bytes(bytes).unwrap();
+        let installed_layout = smw_us_v1_layer2_layout(&installed).unwrap();
+        assert_eq!(
+            installed_layout.descriptor_table,
+            Some(LevelLayer2DescriptorTable {
+                offset: SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
+                entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+                stride: 1,
+            })
+        );
+        assert_eq!(
+            installed_layout.tilemap_encoding,
+            LevelLayer2TilemapEncoding::SplitPlanes
+        );
+    }
+
+    #[test]
+    fn retained_format_103_level_normalizes_legacy_descriptor_before_split_plane_save() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/level-save-105/after.smc");
+        let Ok(bytes) = fs::read(path) else {
+            return;
+        };
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let layout = smw_us_v1_layer2_layout(&project.rom).unwrap();
+        assert_eq!(
+            layout.tilemap_encoding,
+            LevelLayer2TilemapEncoding::SplitPlanes
+        );
+        let level = project
+            .load_level_slot(
+                0x105,
+                smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let layer2 = project
+            .load_level_layer2_with_descriptor(0x105, level.layer1.header.level_mode(), layout)
+            .unwrap();
+        assert_eq!(
+            layer2.descriptor,
+            Some(lm_level::MwlLayer2Descriptor::from_raw(0x0c))
+        );
+        assert!(matches!(
+            layer2.data,
+            lm_level::NativeLayer2Data::Tilemap(ref bytes) if bytes.len() == 0x800
+        ));
+    }
 
     #[test]
     fn object_tileset_assignments_are_bounded_and_ordered() {

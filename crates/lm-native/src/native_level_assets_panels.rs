@@ -69,10 +69,14 @@ impl AggregatePanels {
         ui: &mut egui::Ui,
         revision: u64,
         file: &NativeLevelAssetsFile,
-        layer2: Option<&lm_level::NativeLayer2Data>,
+        layer2: (
+            Option<&lm_level::NativeLayer2Data>,
+            Option<lm_level::MwlLayer2Descriptor>,
+        ),
         modes: &[bool; 256],
         ownership: &PaletteOwnership,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
+        let (layer2, layer2_descriptor) = layer2;
         self.load(revision, file, modes);
         ui.horizontal(|ui| {
             let tabs = if layer2.is_some() {
@@ -87,7 +91,7 @@ impl AggregatePanels {
         ui.separator();
         match (layer2, self.tab) {
             (_, 0) => self.level_panel(ui, file),
-            (Some(layer2), 1) => self.layer2_panel(ui, layer2),
+            (Some(layer2), 1) => self.layer2_panel(ui, layer2, layer2_descriptor),
             (Some(_), 2) | (None, 1) => self.palette_panel(ui, file, ownership),
             (Some(_), 3) | (None, 2) => self.animation_panel(ui, file, modes),
             _ => self.settings_panel(ui, file),

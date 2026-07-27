@@ -8,10 +8,10 @@ use lm_level::{
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
-    LevelLayer2RomLayout, LevelLayer2SaveOptions, LevelLayer2TilemapEncoding, LevelPointerTable,
-    LevelRomLayout, LevelSaveOptions, NativeLevelAssetsLayer2Layout,
-    NativeLevelAssetsLayer2SaveOptions, NativeLevelAssetsSaveOptions, PaletteRomLayout,
-    PaletteSaveOptions, RatsOwnershipManifest,
+    LevelLayer2DescriptorTable, LevelLayer2RomLayout, LevelLayer2SaveOptions,
+    LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout, LevelSaveOptions,
+    NativeLevelAssetsLayer2Layout, NativeLevelAssetsLayer2SaveOptions,
+    NativeLevelAssetsSaveOptions, PaletteRomLayout, PaletteSaveOptions, RatsOwnershipManifest,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{SnesChecksum, compute_snes_checksum, detect_identity, pc_to_snes};
@@ -56,6 +56,7 @@ fn layer2_layout() -> LevelLayer2RomLayout {
     LevelLayer2RomLayout {
         mapper: Mapper::LoRom,
         pointers: table(0x90),
+        descriptor_table: None,
         maximum_compressed_len: 0x100,
         tilemap_encoding: LevelLayer2TilemapEncoding::SplitPlanes,
     }
@@ -118,6 +119,7 @@ fn options() -> NativeLevelAssetsSaveOptions {
             ProtectedRange(0x20..0x53),
             ProtectedRange(0x60..0x80),
             ProtectedRange(0x90..0x93),
+            ProtectedRange(0xb0..0xb1),
             ProtectedRange(0x7fc0..0x8000),
         ],
     };
@@ -547,6 +549,59 @@ fn layer2_remap_is_selection_scoped_reopenable_and_rejects_unmodeled_bank_change
         )
     ));
     assert_eq!(controller.layer2(), Some(&before));
+}
+
+#[test]
+fn installed_layer2_descriptor_persists_cross_bank_remap_atomically() {
+    let mut snapshot = tilemap_snapshot();
+    snapshot.rom_bytes[0xb0] = 0x06;
+    let checksum = compute_snes_checksum(&snapshot.rom_bytes, 0x7fdc).unwrap();
+    snapshot.rom_bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    let mut installed_layout = layer2_layout();
+    installed_layout.descriptor_table = Some(LevelLayer2DescriptorTable {
+        offset: 0xb0,
+        entries: 1,
+        stride: 1,
+    });
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(installed_layout),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    assert_eq!(controller.layer2_descriptor().unwrap().raw(), 0x06);
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::Layer2TilemapRemap {
+            script: "8000,9000".into(),
+            global_offset: 0,
+            selection: Some(vec![0]),
+        }])
+        .unwrap();
+    assert_eq!(controller.layer2_descriptor().unwrap().raw(), 0x16);
+
+    let expected = controller.layer2().unwrap().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2("cross-bank Layer 2 remap", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap());
+    project
+        .apply_mutation("cross-bank Layer 2 remap", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_level_layer2_with_descriptor(0, 0, installed_layout)
+        .unwrap();
+    assert_eq!(reopened.data, expected);
+    assert_eq!(reopened.descriptor.unwrap().raw(), 0x16);
+    assert_eq!(project.rom.logical_bytes()[0xb0], 0x16);
+    assert_eq!(
+        SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
+        compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
+    );
+    assert!(project.history.undo(&mut project.rom).unwrap());
+    assert_eq!(project.save_snapshot(), snapshot.rom_bytes);
 }
 
 #[test]

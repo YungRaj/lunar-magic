@@ -12,9 +12,9 @@ use lm_project::{
     ChainedSnesPointerLocator, CompleteOverworldRomLayout, CompleteOverworldShape,
     EndpointRomLayout, EventRevealRomLayout, ExAnimationRomLayout, ExpandedLevelSettingsLayout,
     GatedLayout, GraphicsRomLayout, InstallationMarker, InstalledExAnimationRomLayout,
-    InstalledLayout, LevelLayer2RomLayout, LevelLayer2TilemapEncoding, LevelPointerTable,
-    LevelRomLayout, Map16RomLayout, MessageRomLayout, OverworldLayersRomLayout, PaletteRomLayout,
-    SpritePointerTable, SpriteRomLayout,
+    InstalledLayout, LevelLayer2DescriptorTable, LevelLayer2RomLayout, LevelLayer2TilemapEncoding,
+    LevelPointerTable, LevelRomLayout, Map16RomLayout, MessageRomLayout, OverworldLayersRomLayout,
+    PaletteRomLayout, SpritePointerTable, SpriteRomLayout,
 };
 use lm_rom::{Mapper, Region, SupportedGame};
 use std::collections::BTreeMap;
@@ -423,6 +423,18 @@ fn parse_layer2(
         }
         _ => return Err(RevisionProfileError::InvalidLayer2TilemapEncoding(encoding)),
     };
+    let descriptor_offset = values.remove("level.layer2.descriptor_offset");
+    let descriptor_entries = values.remove("level.layer2.descriptor_entries");
+    let descriptor_stride = values.remove("level.layer2.descriptor_stride");
+    let descriptor_table = match (descriptor_offset, descriptor_entries, descriptor_stride) {
+        (None, None, None) => None,
+        (Some(offset), Some(entries), Some(stride)) => Some(LevelLayer2DescriptorTable {
+            offset: parse_number_value("level.layer2.descriptor_offset", offset)?,
+            entries: parse_number_value("level.layer2.descriptor_entries", entries)?,
+            stride: parse_number_value("level.layer2.descriptor_stride", stride)?,
+        }),
+        _ => return Err(RevisionProfileError::IncompleteLayer2Layout),
+    };
     Ok(Some(LevelLayer2RomLayout {
         mapper,
         pointers: LevelPointerTable {
@@ -430,9 +442,20 @@ fn parse_layer2(
             entries: number(values, "level.layer2.entries")?,
             stride: number(values, "level.layer2.stride")?,
         },
+        descriptor_table,
         maximum_compressed_len: number(values, "level.layer2.maximum_compressed_len")?,
         tilemap_encoding,
     }))
+}
+
+fn parse_number_value(key: &str, value: String) -> Result<usize, RevisionProfileError> {
+    value
+        .strip_prefix("0x")
+        .map_or_else(|| value.parse(), |hex| usize::from_str_radix(hex, 16))
+        .map_err(|_| RevisionProfileError::InvalidNumber {
+            key: key.into(),
+            value,
+        })
 }
 
 fn parse_byte_value(key: &str, value: String) -> Result<u8, RevisionProfileError> {

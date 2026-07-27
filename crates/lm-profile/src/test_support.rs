@@ -229,6 +229,7 @@ fn optional_layer2_layout_round_trips_canonically() {
     expected.layer2 = Some(lm_project::LevelLayer2RomLayout {
         mapper: expected.mapper,
         pointers: pointer(0x2_9000, 0x200),
+        descriptor_table: None,
         maximum_compressed_len: 0x8000,
         tilemap_encoding: lm_project::LevelLayer2TilemapEncoding::Legacy { high_byte: 1 },
     });
@@ -621,5 +622,34 @@ fn legacy_profiles_without_expanded_settings_remain_canonical() {
     assert!(matches!(
         RevisionProfile::parse(&partial),
         Err(RevisionProfileError::IncompleteExpandedSettingsLayout)
+    ));
+}
+
+#[test]
+fn installed_layer2_descriptor_layout_round_trips_and_requires_all_fields() {
+    let mut expected = profile();
+    expected.layer2 = Some(lm_project::LevelLayer2RomLayout {
+        mapper: expected.mapper,
+        pointers: pointer(0x2_9000, 0x200),
+        descriptor_table: Some(lm_project::LevelLayer2DescriptorTable {
+            offset: 0x2_8800,
+            entries: 0x200,
+            stride: 1,
+        }),
+        maximum_compressed_len: 0x8000,
+        tilemap_encoding: lm_project::LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },
+    });
+    let encoded = expected.encode();
+    assert!(encoded.contains("level.layer2.descriptor_offset=0x28800\n"));
+    assert_eq!(RevisionProfile::parse(&encoded).unwrap(), expected);
+
+    let partial = encoded
+        .lines()
+        .filter(|line| !line.starts_with("level.layer2.descriptor_stride="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(matches!(
+        RevisionProfile::parse(&partial),
+        Err(RevisionProfileError::IncompleteLayer2Layout)
     ));
 }

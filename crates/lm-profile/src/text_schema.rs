@@ -42,13 +42,16 @@ pub(super) const EXPANDED_SETTINGS_KEYS: [&str; 3] = [
     "expanded_settings.stride",
 ];
 
-pub(super) const LAYER2_KEYS: [&str; 6] = [
+pub(super) const LAYER2_KEYS: [&str; 9] = [
     "level.layer2.offset",
     "level.layer2.entries",
     "level.layer2.stride",
     "level.layer2.maximum_compressed_len",
     "level.layer2.tilemap_encoding",
     "level.layer2.high_byte",
+    "level.layer2.descriptor_offset",
+    "level.layer2.descriptor_entries",
+    "level.layer2.descriptor_stride",
 ];
 
 pub(super) const INSTALLATION_KEYS: [&str; 14] = [

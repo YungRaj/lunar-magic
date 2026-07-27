@@ -132,9 +132,10 @@ impl NativeLevelAssetsDocumentController {
         }
         let mut staged = self.value.clone();
         let mut unavailable_layer2 = None;
+        let mut unavailable_layer2_descriptor = None;
         apply_native_level_assets_edits(
             &mut staged.assets,
-            &mut unavailable_layer2,
+            (&mut unavailable_layer2, &mut unavailable_layer2_descriptor),
             edits,
             &self.sprite_lengths,
             self.maximum_animation_records,

@@ -1,12 +1,13 @@
 use crate::{
     LevelLoadError, LevelPointerTable, PayloadLoadError, PayloadReadPolicy, PayloadSaveError,
-    PayloadSaveRequest, PayloadSaveResult, Project,
+    PayloadSaveRequest, PayloadSaveResult, Project, RomWrite,
 };
 use lm_codec::{CodecError, decode_terminated_rle_prefix, encode_terminated_rle};
 use lm_level::{
-    LEGACY_LAYER2_TILEMAP_LEN, Layer2Storage, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
-    NativeLayer2Error, compact_legacy_layer2_tilemap, expand_legacy_layer2_tilemap,
-    interleave_layer2_tilemap_planes, level_mode_layer2_storage, split_layer2_tilemap_planes,
+    LEGACY_LAYER2_TILEMAP_LEN, Layer2Storage, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
+    NativeLayer2Data, NativeLayer2Error, compact_legacy_layer2_tilemap,
+    expand_legacy_layer2_tilemap, interleave_layer2_tilemap_planes, level_mode_layer2_storage,
+    split_layer2_tilemap_planes,
 };
 use lm_rats::{AllocationPolicy, RatsBlock};
 use lm_rom::Mapper;
@@ -16,8 +17,24 @@ use std::fmt;
 pub struct LevelLayer2RomLayout {
     pub mapper: Mapper,
     pub pointers: LevelPointerTable,
+    /// Format-$103 one-byte descriptor table. `None` selects pristine/legacy synthesized state.
+    pub descriptor_table: Option<LevelLayer2DescriptorTable>,
     pub maximum_compressed_len: usize,
     pub tilemap_encoding: LevelLayer2TilemapEncoding,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LevelLayer2DescriptorTable {
+    pub offset: usize,
+    pub entries: usize,
+    pub stride: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoadedLevelLayer2 {
+    pub data: NativeLayer2Data,
+    /// Lossless installed-table descriptor after Lunar Magic's load-time normalization.
+    pub descriptor: Option<MwlLayer2Descriptor>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -48,6 +65,14 @@ pub enum LevelLayer2IoError {
         level_mode: u8,
         actual: &'static str,
     },
+    DescriptorLayout,
+    DescriptorSlot {
+        slot: usize,
+        entries: usize,
+    },
+    DescriptorOffsetOverflow,
+    DescriptorValue(u32),
+    DescriptorRom(lm_rom::RomError),
     Save(PayloadSaveError),
 }
 
@@ -84,6 +109,11 @@ impl From<PayloadSaveError> for LevelLayer2IoError {
         Self::Save(value)
     }
 }
+impl From<lm_rom::RomError> for LevelLayer2IoError {
+    fn from(value: lm_rom::RomError) -> Self {
+        Self::DescriptorRom(value)
+    }
+}
 
 impl Project {
     /// Loads one level's native Layer 2 object stream or compressed tilemap.
@@ -98,7 +128,28 @@ impl Project {
         level_mode: u8,
         layout: LevelLayer2RomLayout,
     ) -> Result<NativeLayer2Data, LevelLayer2IoError> {
+        Ok(self
+            .load_level_layer2_with_descriptor(level, level_mode, layout)?
+            .data)
+    }
+
+    /// Loads native Layer 2 plus a lossless installed format-$103 descriptor when configured.
+    ///
+    /// # Errors
+    ///
+    /// Rejects the same pointer, codec, and model failures as [`Self::load_level_layer2`], plus an
+    /// invalid or out-of-range descriptor table.
+    pub fn load_level_layer2_with_descriptor(
+        &self,
+        level: usize,
+        level_mode: u8,
+        layout: LevelLayer2RomLayout,
+    ) -> Result<LoadedLevelLayer2, LevelLayer2IoError> {
         let pointer = layout.pointers.pointer_offset(level)?;
+        let raw_descriptor = layout
+            .descriptor_table
+            .map(|table| read_layer2_descriptor(self, level, table))
+            .transpose()?;
         match level_mode_layer2_storage(level_mode) {
             Layer2Storage::Objects => {
                 let payload = self.load_payload(
@@ -110,7 +161,10 @@ impl Project {
                         bank_size: Some(0x8000),
                     },
                 )?;
-                Ok(NativeLayer2Data::decode_mwl(level_mode, &payload.bytes)?)
+                Ok(LoadedLevelLayer2 {
+                    data: NativeLayer2Data::decode_mwl(level_mode, &payload.bytes)?,
+                    descriptor: raw_descriptor,
+                })
             }
             Layer2Storage::CompressedTilemap => {
                 let payload = self.load_payload(
@@ -123,18 +177,32 @@ impl Project {
                 )?;
                 let decoded =
                     decode_terminated_rle_prefix(&payload.bytes, NATIVE_LAYER2_TILEMAP_LEN)?.bytes;
-                let tilemap = match decoded.len() {
+                let (tilemap, descriptor) = match decoded.len() {
                     LEGACY_LAYER2_TILEMAP_LEN => {
                         let high_byte = match layout.tilemap_encoding {
                             LevelLayer2TilemapEncoding::Legacy { high_byte } => high_byte,
                             LevelLayer2TilemapEncoding::SplitPlanes => 0,
                         };
-                        expand_legacy_layer2_tilemap(&decoded, high_byte)?
+                        let high_byte =
+                            raw_descriptor.map_or(high_byte, MwlLayer2Descriptor::active_bank);
+                        (
+                            expand_legacy_layer2_tilemap(&decoded, high_byte)?,
+                            raw_descriptor.map(|descriptor| {
+                                MwlLayer2Descriptor::from_raw(
+                                    (descriptor.raw() & 0x0a) | MwlLayer2Descriptor::SPLIT_PLANES,
+                                )
+                            }),
+                        )
                     }
-                    NATIVE_LAYER2_TILEMAP_LEN => interleave_layer2_tilemap_planes(&decoded)?,
+                    NATIVE_LAYER2_TILEMAP_LEN => {
+                        (interleave_layer2_tilemap_planes(&decoded)?, raw_descriptor)
+                    }
                     actual => return Err(LevelLayer2IoError::DecompressedLength(actual)),
                 };
-                Ok(NativeLayer2Data::Tilemap(tilemap))
+                Ok(LoadedLevelLayer2 {
+                    data: NativeLayer2Data::Tilemap(tilemap),
+                    descriptor,
+                })
             }
         }
     }
@@ -181,6 +249,49 @@ impl Project {
         )?;
         Ok(saved.remove(0))
     }
+}
+
+fn descriptor_offset(
+    slot: usize,
+    table: LevelLayer2DescriptorTable,
+) -> Result<usize, LevelLayer2IoError> {
+    if table.entries == 0 || table.stride == 0 {
+        return Err(LevelLayer2IoError::DescriptorLayout);
+    }
+    if slot >= table.entries {
+        return Err(LevelLayer2IoError::DescriptorSlot {
+            slot,
+            entries: table.entries,
+        });
+    }
+    slot.checked_mul(table.stride)
+        .and_then(|relative| table.offset.checked_add(relative))
+        .ok_or(LevelLayer2IoError::DescriptorOffsetOverflow)
+}
+
+fn read_layer2_descriptor(
+    project: &Project,
+    slot: usize,
+    table: LevelLayer2DescriptorTable,
+) -> Result<MwlLayer2Descriptor, LevelLayer2IoError> {
+    let byte = project.rom.read(descriptor_offset(slot, table)?, 1)?[0];
+    Ok(MwlLayer2Descriptor::from_raw(u32::from(byte)))
+}
+
+pub(crate) fn level_layer2_descriptor_write(
+    project: &Project,
+    slot: usize,
+    descriptor: MwlLayer2Descriptor,
+    table: LevelLayer2DescriptorTable,
+) -> Result<RomWrite, LevelLayer2IoError> {
+    let byte = u8::try_from(descriptor.raw())
+        .map_err(|_| LevelLayer2IoError::DescriptorValue(descriptor.raw()))?;
+    let offset = descriptor_offset(slot, table)?;
+    project.rom.read(offset, 1)?;
+    Ok(RomWrite {
+        offset,
+        bytes: vec![byte],
+    })
 }
 
 pub(crate) fn level_layer2_save_request(
@@ -248,6 +359,7 @@ mod tests {
                 entries,
                 stride: 3,
             },
+            descriptor_table: None,
             maximum_compressed_len: 0x8000,
             tilemap_encoding: LevelLayer2TilemapEncoding::SplitPlanes,
         }
@@ -292,6 +404,83 @@ mod tests {
             panic!("level mode zero must decode as a tilemap");
         };
         assert_eq!(&tilemap[..4], &[0x34, 0x12, 0x34, 0x12]);
+    }
+
+    #[test]
+    fn installed_legacy_tilemap_uses_and_normalizes_its_descriptor() {
+        let legacy = vec![0x34; LEGACY_LAYER2_TILEMAP_LEN];
+        let compressed = encode_terminated_rle(&legacy);
+        let mut bytes = vec![0xff; 0x8000];
+        bytes[0x20..0x23]
+            .copy_from_slice(&pc_to_snes(Mapper::LoRom, 0x100).unwrap().to_le_bytes()[..3]);
+        bytes[0x40] = 0x18;
+        bytes[0x100..0x100 + compressed.len()].copy_from_slice(&compressed);
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let mut installed = layout(1);
+        installed.tilemap_encoding = LevelLayer2TilemapEncoding::Legacy { high_byte: 0x7f };
+        installed.descriptor_table = Some(LevelLayer2DescriptorTable {
+            offset: 0x40,
+            entries: 1,
+            stride: 1,
+        });
+
+        let loaded = project
+            .load_level_layer2_with_descriptor(0, 0, installed)
+            .unwrap();
+        let NativeLayer2Data::Tilemap(tilemap) = loaded.data else {
+            panic!("level mode zero must decode as a tilemap");
+        };
+        assert_eq!(&tilemap[..4], &[0x34, 1, 0x34, 1]);
+        assert_eq!(loaded.descriptor, Some(MwlLayer2Descriptor::from_raw(0x0c)));
+    }
+
+    #[test]
+    fn descriptor_tables_fail_closed_before_rom_access() {
+        let project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        for table in [
+            LevelLayer2DescriptorTable {
+                offset: 0x40,
+                entries: 0,
+                stride: 1,
+            },
+            LevelLayer2DescriptorTable {
+                offset: 0x40,
+                entries: 1,
+                stride: 0,
+            },
+        ] {
+            assert!(matches!(
+                read_layer2_descriptor(&project, 1, table),
+                Err(LevelLayer2IoError::DescriptorLayout)
+            ));
+        }
+        assert!(matches!(
+            read_layer2_descriptor(
+                &project,
+                1,
+                LevelLayer2DescriptorTable {
+                    offset: 0x40,
+                    entries: 1,
+                    stride: 1,
+                }
+            ),
+            Err(LevelLayer2IoError::DescriptorSlot {
+                slot: 1,
+                entries: 1
+            })
+        ));
+        assert!(matches!(
+            read_layer2_descriptor(
+                &project,
+                0,
+                LevelLayer2DescriptorTable {
+                    offset: 0x8000,
+                    entries: 1,
+                    stride: 1,
+                }
+            ),
+            Err(LevelLayer2IoError::DescriptorRom(_))
+        ));
     }
 
     #[test]

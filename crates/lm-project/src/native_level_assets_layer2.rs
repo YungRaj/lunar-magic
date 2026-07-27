@@ -2,7 +2,7 @@
 
 use crate::exanimation_io::exanimation_save_request;
 use crate::expanded_settings_io::expanded_settings_write;
-use crate::level_layer2_io::level_layer2_save_request;
+use crate::level_layer2_io::{level_layer2_descriptor_write, level_layer2_save_request};
 use crate::level_save::level_save_requests;
 use crate::palette_io::palette_save_request;
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
     NativeLevelAssetsLoadError, NativeLevelAssetsSaveOptions, PaletteIoError, PayloadReclamation,
     PayloadSaveError, PayloadSaveResult, Project, SavedNativeLevelAssets,
 };
-use lm_level::{NativeLayer2Data, SpriteLengthTable};
+use lm_level::{MwlLayer2Descriptor, NativeLayer2Data, SpriteLengthTable};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,12 +30,14 @@ pub struct NativeLevelAssetsLayer2SaveOptions {
 pub struct LoadedNativeLevelAssetsLayer2 {
     pub core: LoadedNativeLevelAssets,
     pub layer2: NativeLayer2Data,
+    pub layer2_descriptor: Option<MwlLayer2Descriptor>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativeLevelAssetsLayer2<'a> {
     pub core: NativeLevelAssets<'a>,
     pub layer2: &'a NativeLayer2Data,
+    pub layer2_descriptor: Option<MwlLayer2Descriptor>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,6 +58,7 @@ impl LoadedNativeLevelAssetsLayer2 {
         NativeLevelAssetsLayer2 {
             core: self.core.as_save_assets(),
             layer2: &self.layer2,
+            layer2_descriptor: self.layer2_descriptor,
         }
     }
 }
@@ -76,8 +79,12 @@ impl Project {
         let core =
             self.load_native_level_assets(slot, layout.core, sprite_lengths, double_size_modes)?;
         let mode = core.level.layer1.header.level_mode();
-        let layer2 = self.load_level_layer2(slot, mode, layout.layer2)?;
-        Ok(LoadedNativeLevelAssetsLayer2 { core, layer2 })
+        let layer2 = self.load_level_layer2_with_descriptor(slot, mode, layout.layer2)?;
+        Ok(LoadedNativeLevelAssetsLayer2 {
+            core,
+            layer2: layer2.data,
+            layer2_descriptor: layer2.descriptor,
+        })
     }
 
     /// Saves Layer 1, Layer 2, sprites, palette, `ExAnimation`, optional expanded settings, and the
@@ -98,7 +105,7 @@ impl Project {
     ) -> Result<SavedNativeLevelAssetsLayer2, NativeLevelAssetsLayer2SaveError> {
         self.save_native_level_assets_with_layer2_group(
             assets,
-            layout,
+            &layout,
             sprite_lengths,
             double_size_modes,
             options,
@@ -123,7 +130,7 @@ impl Project {
     ) -> Result<SavedNativeLevelAssetsLayer2, NativeLevelAssetsLayer2SaveError> {
         self.save_native_level_assets_with_layer2_group(
             assets,
-            layout,
+            &layout,
             sprite_lengths,
             double_size_modes,
             options,
@@ -134,7 +141,7 @@ impl Project {
     fn save_native_level_assets_with_layer2_group(
         &mut self,
         assets: NativeLevelAssetsLayer2<'_>,
-        layout: NativeLevelAssetsLayer2Layout,
+        layout: &NativeLevelAssetsLayer2Layout,
         sprite_lengths: &SpriteLengthTable,
         double_size_modes: &[bool],
         options: &NativeLevelAssetsLayer2SaveOptions,
@@ -176,6 +183,21 @@ impl Project {
             )?),
             _ => return Err(NativeLevelAssetsLayer2SaveError::ExpandedSettingsPairMismatch),
         };
+        let descriptor_write = match (assets.layer2_descriptor, layout.layer2.descriptor_table) {
+            (None, None) => None,
+            (Some(descriptor), Some(table)) => Some(level_layer2_descriptor_write(
+                self,
+                assets.core.level.number,
+                descriptor,
+                table,
+            )?),
+            _ => return Err(NativeLevelAssetsLayer2SaveError::DescriptorPairMismatch),
+        };
+        let direct_writes = expanded_write
+            .iter()
+            .chain(descriptor_write.iter())
+            .cloned()
+            .collect::<Vec<_>>();
         let requests = [layer1, sprites, layer2, palette, exanimation];
         let description = format!(
             "save native level assets with layer 2 {:03x}",
@@ -186,14 +208,14 @@ impl Project {
                 .save_tagged_payloads_with_checksum_and_writes(
                     description,
                     &requests,
-                    expanded_write.as_slice(),
+                    &direct_writes,
                     checksum_field,
                 )?,
             Layer2AssetsCommit::WithReclamation(reclamation) => self
                 .save_tagged_payloads_with_checksum_writes_and_reclamation(
                     description,
                     &requests,
-                    expanded_write.as_slice(),
+                    &direct_writes,
                     reclamation.checksum_field,
                     reclamation.manifest,
                 )?,
@@ -248,6 +270,7 @@ pub enum NativeLevelAssetsLayer2SaveError {
     ExAnimation(crate::ExAnimationIoError),
     ExpandedSettings(ExpandedLevelSettingsIoError),
     ExpandedSettingsPairMismatch,
+    DescriptorPairMismatch,
     Payload(PayloadSaveError),
 }
 
@@ -333,6 +356,7 @@ mod tests {
             layer2: LevelLayer2RomLayout {
                 mapper: Mapper::LoRom,
                 pointers: table(0x60),
+                descriptor_table: None,
                 maximum_compressed_len: 0x8000,
                 tilemap_encoding: crate::LevelLayer2TilemapEncoding::SplitPlanes,
             },
@@ -401,6 +425,7 @@ mod tests {
                         expanded_settings: None,
                     },
                     layer2: &layer2,
+                    layer2_descriptor: None,
                 },
                 layout,
                 &SpriteLengthTable::standard(),

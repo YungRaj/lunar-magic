@@ -655,11 +655,12 @@ impl VanillaLevelEditor {
                     .ok()
                     .and_then(|rom| {
                         let project = lm_project::Project::new(rom);
+                        let layout = lm_profile::smw_us_v1_layer2_layout(&project.rom).ok()?;
                         project
                             .load_level_layer2(
                                 controller.level().number,
                                 controller.level().layer1.header.level_mode(),
-                                lm_profile::smw_us_v1_vanilla_layer2_layout(),
+                                layout,
                             )
                             .ok()
                     });

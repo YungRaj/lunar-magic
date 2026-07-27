@@ -385,6 +385,11 @@ mod tests {
         assert_eq!(normalized.active_bank(), 3);
         assert!(normalized.uses_compressed_tilemap());
         assert!(normalized.uses_split_planes());
+        let normalized_legacy = MwlLayer2Descriptor::from_raw(0x08)
+            .after_native_remap(2)
+            .unwrap();
+        assert_eq!(normalized_legacy.raw(), 0x22);
+        assert!(!normalized_legacy.uses_split_planes());
         assert_eq!(
             source.descriptor.with_active_bank(8),
             Err(MwlLayer2DescriptorError::ActiveBank(8))

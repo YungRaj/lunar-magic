@@ -145,6 +145,14 @@ fn encode_layer2(out: &mut String, profile: &RevisionProfile) {
         layout.maximum_compressed_len
     )
     .unwrap();
+    if let Some(descriptor) = layout.descriptor_table {
+        writeln!(
+            out,
+            "level.layer2.descriptor_offset=0x{:x}\nlevel.layer2.descriptor_entries={}\nlevel.layer2.descriptor_stride={}",
+            descriptor.offset, descriptor.entries, descriptor.stride
+        )
+        .unwrap();
+    }
     match layout.tilemap_encoding {
         lm_project::LevelLayer2TilemapEncoding::Legacy { high_byte } => {
             writeln!(

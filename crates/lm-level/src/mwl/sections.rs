@@ -60,9 +60,10 @@ impl MwlLayer2Descriptor {
 
     /// Applies the exact descriptor normalization performed after a native remap.
     ///
-    /// Lunar Magic promotes the data to compressed split-plane tilemap storage, records the
-    /// resulting bank, and clears the legacy/direct-pointer flag. This method is intentionally
-    /// distinct from [`Self::with_active_bank`], which is lossless outside the bank field.
+    /// Lunar Magic marks the data as compressed tilemap storage, retains the existing layout bit,
+    /// records the resulting bank, and clears the legacy/direct-pointer flag. This method is
+    /// intentionally distinct from [`Self::with_active_bank`], which is lossless outside the bank
+    /// field.
     ///
     /// # Errors
     ///
@@ -72,7 +73,7 @@ impl MwlLayer2Descriptor {
             return Err(MwlLayer2DescriptorError::ActiveBank(bank));
         }
         Ok(Self(
-            (self.0 & 0x05) | Self::COMPRESSED_TILEMAP | Self::SPLIT_PLANES | ((bank as u32) << 4),
+            (self.0 & 0x05) | Self::COMPRESSED_TILEMAP | ((bank as u32) << 4),
         ))
     }
 }

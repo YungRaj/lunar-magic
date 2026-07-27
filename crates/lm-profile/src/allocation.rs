@@ -87,6 +87,18 @@ impl RevisionProfile {
         protected.extend(installation_marker_ranges(self, image_len)?);
         if let Some(layer2) = self.layer2 {
             protected.push(table_range("level.layer2", layer2.pointers, image_len)?);
+            if let Some(descriptor) = layer2.descriptor_table {
+                protected.push(component_range(
+                    "level.layer2.descriptor",
+                    LevelPointerTable {
+                        offset: descriptor.offset,
+                        entries: descriptor.entries,
+                        stride: descriptor.stride,
+                    },
+                    1,
+                    image_len,
+                )?);
+            }
         }
         if let Some(layout) = self.expanded_settings {
             protected.push(expanded_settings_range(layout, image_len)?);
@@ -415,16 +427,22 @@ mod tests {
     }
 
     #[test]
-    fn optional_layer2_pointer_table_is_protected() {
+    fn optional_layer2_pointer_and_descriptor_tables_are_protected() {
         let mut profile = crate::test_support::profile();
         let pointers = LevelPointerTable {
             offset: 0x2_9000,
             entries: 0x200,
             stride: 3,
         };
+        let descriptor = lm_project::LevelLayer2DescriptorTable {
+            offset: 0x2_8800,
+            entries: 0x200,
+            stride: 1,
+        };
         profile.layer2 = Some(lm_project::LevelLayer2RomLayout {
             mapper: profile.mapper,
             pointers,
+            descriptor_table: Some(descriptor),
             maximum_compressed_len: 0x8000,
             tilemap_encoding: lm_project::LevelLayer2TilemapEncoding::SplitPlanes,
         });
@@ -433,6 +451,9 @@ mod tests {
             .unwrap();
         assert!(policy.protected.contains(&ProtectedRange(
             pointers.offset..pointers.offset + pointers.entries * pointers.stride
+        )));
+        assert!(policy.protected.contains(&ProtectedRange(
+            descriptor.offset..descriptor.offset + descriptor.entries
         )));
     }
 

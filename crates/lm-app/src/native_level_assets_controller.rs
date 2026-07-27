@@ -6,7 +6,7 @@ use crate::{
 };
 use lm_graphics::{PaletteBatchEditError, PaletteOwnership};
 use lm_level::{
-    ExpandedLevelSettingsError, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
+    ExpandedLevelSettingsError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
     NativeLayer2RemapError, NativeLayer2RemapProgram, ObjectEdit, ObjectEditError,
     SpriteLengthTable,
 };
@@ -131,6 +131,8 @@ pub struct NativeLevelAssetsController {
     assets: LoadedNativeLevelAssets,
     baseline_layer2: Option<NativeLayer2Data>,
     layer2: Option<NativeLayer2Data>,
+    baseline_layer2_descriptor: Option<MwlLayer2Descriptor>,
+    layer2_descriptor: Option<MwlLayer2Descriptor>,
     previous_blocks: [Option<RatsBlock>; 5],
 }
 
@@ -190,9 +192,9 @@ impl NativeLevelAssetsController {
         let assets = project
             .load_native_level_assets(usize::from(slot), layout, sprite_lengths, &modes)
             .map_err(NativeLevelAssetsControllerError::Load)?;
-        let layer2 = layer2_layout
+        let loaded_layer2 = layer2_layout
             .map(|layer2_layout| {
-                project.load_level_layer2(
+                project.load_level_layer2_with_descriptor(
                     usize::from(slot),
                     assets.level.layer1.header.level_mode(),
                     layer2_layout,
@@ -200,6 +202,8 @@ impl NativeLevelAssetsController {
             })
             .transpose()
             .map_err(NativeLevelAssetsControllerError::Layer2Load)?;
+        let layer2 = loaded_layer2.as_ref().map(|loaded| loaded.data.clone());
+        let layer2_descriptor = loaded_layer2.and_then(|loaded| loaded.descriptor);
         let slot = usize::from(slot);
         let previous_blocks = [
             snapshot_block(&project, layout.level.layer1, slot, layout.level.mapper)?,
@@ -245,6 +249,8 @@ impl NativeLevelAssetsController {
             assets,
             baseline_layer2: layer2.clone(),
             layer2,
+            baseline_layer2_descriptor: layer2_descriptor,
+            layer2_descriptor,
             previous_blocks,
         })
     }
@@ -265,8 +271,15 @@ impl NativeLevelAssetsController {
     }
 
     #[must_use]
+    pub const fn layer2_descriptor(&self) -> Option<MwlLayer2Descriptor> {
+        self.layer2_descriptor
+    }
+
+    #[must_use]
     pub fn is_modified(&self) -> bool {
-        self.assets != self.baseline || self.layer2 != self.baseline_layer2
+        self.assets != self.baseline
+            || self.layer2 != self.baseline_layer2
+            || self.layer2_descriptor != self.baseline_layer2_descriptor
     }
 
     /// Applies a mixed cross-domain edit batch to one staged aggregate.
@@ -281,9 +294,10 @@ impl NativeLevelAssetsController {
     ) -> Result<(), NativeLevelAssetsControllerError> {
         let mut staged = self.assets.clone();
         let mut staged_layer2 = self.layer2.clone();
+        let mut staged_layer2_descriptor = self.layer2_descriptor;
         apply_native_level_assets_edits(
             &mut staged,
-            &mut staged_layer2,
+            (&mut staged_layer2, &mut staged_layer2_descriptor),
             edits,
             &self.sprite_lengths,
             self.layout.exanimation.maximum_records,
@@ -292,6 +306,7 @@ impl NativeLevelAssetsController {
         )?;
         self.assets = staged;
         self.layer2 = staged_layer2;
+        self.layer2_descriptor = staged_layer2_descriptor;
         Ok(())
     }
 }
@@ -330,13 +345,17 @@ fn snapshot_sprite_block(
 
 pub(crate) fn apply_native_level_assets_edits(
     staged: &mut LoadedNativeLevelAssets,
-    staged_layer2: &mut Option<NativeLayer2Data>,
+    layer2: (
+        &mut Option<NativeLayer2Data>,
+        &mut Option<MwlLayer2Descriptor>,
+    ),
     edits: &[NativeLevelAssetsControllerEdit],
     sprite_lengths: &SpriteLengthTable,
     maximum_animation_records: usize,
     double_size_modes: &[bool; 256],
     palette_ownership: &PaletteOwnership,
 ) -> Result<(), NativeLevelAssetsControllerError> {
+    let (staged_layer2, staged_layer2_descriptor) = layer2;
     let mut next = staged.clone();
     for (command, edit) in edits.iter().enumerate() {
         match edit {
@@ -361,6 +380,7 @@ pub(crate) fn apply_native_level_assets_edits(
             } => {
                 apply_layer2_tilemap_remap(
                     staged_layer2,
+                    staged_layer2_descriptor,
                     command,
                     script,
                     *global_offset,
@@ -484,6 +504,7 @@ fn apply_layer2_tilemap_byte_edits(
 
 fn apply_layer2_tilemap_remap(
     layer2: &mut Option<NativeLayer2Data>,
+    descriptor: &mut Option<MwlLayer2Descriptor>,
     command: usize,
     script: &str,
     global_offset: i32,
@@ -500,16 +521,22 @@ fn apply_layer2_tilemap_remap(
     };
     let program = NativeLayer2RemapProgram::parse(script)
         .map_err(|error| NativeLevelAssetsControllerError::Layer2Remap { command, error })?;
+    let active_bank = descriptor.map_or(0, MwlLayer2Descriptor::active_bank);
     let result = program
-        .apply(bytes, 0, global_offset, selection)
+        .apply(bytes, active_bank, global_offset, selection)
         .map_err(|error| NativeLevelAssetsControllerError::Layer2Remap { command, error })?;
-    if result.active_bank != 0 {
+    if result.active_bank != active_bank && descriptor.is_none() {
         return Err(
             NativeLevelAssetsControllerError::Layer2RemapRequiresInstalledBank {
                 command,
                 bank: result.active_bank,
             },
         );
+    }
+    if let Some(current) = descriptor {
+        *current = current
+            .after_native_remap(result.active_bank)
+            .expect("remap engine returns a bounded active bank");
     }
     apply_layer2_tilemap_byte_edits(bytes, command, &result.edits)
 }

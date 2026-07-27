@@ -1,4 +1,4 @@
-use lm_level::{MwlFile, MwlSectionKind, NativeLayer2Data};
+use lm_level::{MwlFile, MwlLayer2Descriptor, MwlSectionKind, NativeLayer2Data};
 use lm_project::{
     LevelLayer2RomLayout, LevelLayer2SaveOptions, LevelLayer2TilemapEncoding, LevelPointerTable,
     Project,
@@ -39,11 +39,24 @@ fn lunar_magic_reexports_rust_checksum_atomic_layer2_tilemap_edit() {
             entries: 0x200,
             stride: 3,
         },
+        descriptor_table: Some(lm_project::LevelLayer2DescriptorTable {
+            offset: 0x77310,
+            entries: 0x200,
+            stride: 1,
+        }),
         maximum_compressed_len: 0x8000,
         tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },
     };
     let mut project = Project::new(RomImage::from_bytes(fs::read(&installed).unwrap()).unwrap());
-    let mut expected = project.load_level_layer2(0x105, 0, layout).unwrap();
+    let loaded = project
+        .load_level_layer2_with_descriptor(0x105, 0, layout)
+        .unwrap();
+    assert_eq!(
+        loaded.descriptor,
+        Some(MwlLayer2Descriptor::from_raw(0x0c)),
+        "installed raw descriptor $08 must normalize like Lunar Magic's legacy tilemap loader"
+    );
+    let mut expected = loaded.data;
     let NativeLayer2Data::Tilemap(bytes) = &mut expected else {
         panic!("level 105 mode zero must use a compressed Layer 2 tilemap");
     };

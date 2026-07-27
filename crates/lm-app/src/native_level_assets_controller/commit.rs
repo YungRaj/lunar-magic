@@ -150,6 +150,7 @@ impl NativeLevelAssetsController {
             let assets = NativeLevelAssetsLayer2 {
                 core: self.assets.as_save_assets(),
                 layer2,
+                layer2_descriptor: self.layer2_descriptor,
             };
             let layout = NativeLevelAssetsLayer2Layout {
                 core: self.layout,

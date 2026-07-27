@@ -187,6 +187,7 @@ mod tests {
         profile.layer2 = Some(LevelLayer2RomLayout {
             mapper: profile.mapper,
             pointers,
+            descriptor_table: None,
             maximum_compressed_len: 0x8000,
             tilemap_encoding: lm_project::LevelLayer2TilemapEncoding::SplitPlanes,
         });
