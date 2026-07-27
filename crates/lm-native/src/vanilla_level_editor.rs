@@ -1445,7 +1445,6 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
-        draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
         draw_layer2_tilemap(
             painter,
             rect,
@@ -1532,6 +1531,9 @@ impl VanillaLevelEditor {
             custom_map16,
             external_textures: &self.external_sprite_textures,
         });
+        // Paint the editor grid after the level artwork. Drawing opaque grid lines underneath
+        // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
+        draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
         self.handle_canvas_interaction(
             response,
             hit.body,
@@ -3431,11 +3433,7 @@ fn pasted_text(ui: &egui::Ui) -> Option<String> {
 
 fn draw_grid_line(painter: &egui::Painter, rect: egui::Rect, cell: f32, index: u16, column: bool) {
     let coordinate = f32::from(index) * cell;
-    let boundary = index % 16 == 0;
-    let stroke = egui::Stroke::new(
-        if boundary { 1.5_f32 } else { 0.5_f32 },
-        egui::Color32::from_gray(if boundary { 90 } else { 45 }),
-    );
+    let stroke = grid_line_stroke(index);
     let points = if column {
         let x = rect.left() + coordinate;
         [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())]
@@ -3444,6 +3442,20 @@ fn draw_grid_line(painter: &egui::Painter, rect: egui::Rect, cell: f32, index: u
         [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)]
     };
     painter.line_segment(points, stroke);
+}
+
+fn grid_line_stroke(index: u16) -> egui::Stroke {
+    if index % 16 == 0 {
+        egui::Stroke::new(
+            1.5_f32,
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 72),
+        )
+    } else {
+        egui::Stroke::new(
+            0.5_f32,
+            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 24),
+        )
+    }
 }
 
 fn canvas_major_tiles(
@@ -6127,6 +6139,17 @@ mod tests {
     fn shared_pristine_backgrounds_require_copy_on_write_before_editing() {
         assert!(layer2_tilemap_editable(false));
         assert!(!layer2_tilemap_editable(true));
+    }
+
+    #[test]
+    fn canvas_grid_is_translucent_and_emphasizes_screen_boundaries() {
+        let ordinary = grid_line_stroke(1);
+        let boundary = grid_line_stroke(16);
+
+        assert!(ordinary.color.a() < boundary.color.a());
+        assert!(ordinary.color.a() < 64);
+        assert!(boundary.color.a() < 128);
+        assert!(ordinary.width < boundary.width);
     }
 
     #[test]
