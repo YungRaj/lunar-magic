@@ -5318,12 +5318,12 @@ fn standard_object_resize_handle(
 ) -> Option<egui::Rect> {
     use lm_render::StandardObjectResizeModel::{
         ExtendedCommand27Axes, Fixed, MajorByte, MajorNibble, MinorByte, MinorNibble,
-        ParameterNibbles,
+        ParameterNibbles, SwappedParameterNibbles,
     };
     let encoded =
         authenticated_standard_object_rect(canvas, placement, record, model, vertical, cell)?;
     let center = match model {
-        ParameterNibbles | ExtendedCommand27Axes => encoded.max,
+        ParameterNibbles | SwappedParameterNibbles | ExtendedCommand27Axes => encoded.max,
         MajorNibble | MajorByte { .. } if vertical => {
             egui::pos2(encoded.center().x, encoded.bottom())
         }
@@ -5347,7 +5347,7 @@ fn authenticated_standard_object_rect(
 ) -> Option<egui::Rect> {
     use lm_render::StandardObjectResizeModel::{
         ExtendedCommand27Axes, Fixed, MajorByte, MajorNibble, MinorByte, MinorNibble,
-        ParameterNibbles,
+        ParameterNibbles, SwappedParameterNibbles,
     };
     if model == ExtendedCommand27Axes {
         let (width, height) = record.extended_command27_tile_size()?;
@@ -5361,6 +5361,10 @@ fn authenticated_standard_object_rect(
         ParameterNibbles => (
             u16::from(placement.major_span),
             u16::from(placement.minor_span),
+        ),
+        SwappedParameterNibbles => (
+            u16::from(placement.minor_span),
+            u16::from(placement.major_span),
         ),
         MajorNibble => (u16::from(placement.major_span), 1),
         MajorByte { fixed_minor_tiles } => (
@@ -6009,6 +6013,29 @@ fn show_standard_object_resize_fields(
                 }
                 ui.end_row();
             }
+            lm_render::StandardObjectResizeModel::SwappedParameterNibbles => {
+                let mut major = (form.parameter & 0x0f) + 1;
+                ui.label("Major-axis tiles");
+                if ui
+                    .add(egui::DragValue::new(&mut major).range(1..=16))
+                    .changed()
+                {
+                    form.parameter = set_standard_object_major_tiles(model, form.parameter, major)
+                        .expect("bounded swapped major-axis control");
+                }
+                ui.end_row();
+                let mut minor = (form.parameter >> 4) + 1;
+                ui.label("Minor-axis tiles");
+                if ui
+                    .add(egui::DragValue::new(&mut minor).range(1..=16))
+                    .changed()
+                {
+                    form.parameter =
+                        set_standard_object_minor_tiles(model, form.parameter, u16::from(minor))
+                            .expect("bounded swapped minor-axis control");
+                }
+                ui.end_row();
+            }
             lm_render::StandardObjectResizeModel::MajorNibble => {
                 let mut major = (form.parameter >> 4) + 1;
                 ui.label("Major-axis tiles");
@@ -6106,6 +6133,9 @@ fn set_standard_object_major_tiles(
         | lm_render::StandardObjectResizeModel::MajorNibble => {
             Ok(((tiles - 1) << 4) | (parameter & 0x0f))
         }
+        lm_render::StandardObjectResizeModel::SwappedParameterNibbles => {
+            Ok((parameter & 0xf0) | (tiles - 1))
+        }
         _ => Err("active object handler does not encode a resizable major axis".into()),
     }
 }
@@ -6130,6 +6160,13 @@ fn set_standard_object_minor_tiles(
                 .and_then(|tiles| u8::try_from(tiles).ok())
                 .ok_or_else(|| "minor-axis byte size must be 1–256 tiles".to_owned())?;
             Ok(encoded)
+        }
+        lm_render::StandardObjectResizeModel::SwappedParameterNibbles => {
+            let tiles = u8::try_from(tiles)
+                .ok()
+                .filter(|tiles| (1..=16).contains(tiles))
+                .ok_or_else(|| "minor-axis nibble size must be 1–16 tiles".to_owned())?;
+            Ok(((tiles - 1) << 4) | (parameter & 0x0f))
         }
         _ => Err("active object handler does not encode a resizable minor axis".into()),
     }
@@ -6228,7 +6265,8 @@ fn resized_standard_object_parameter_at_canvas_position(
     };
     let mut parameter = record.parameter();
     match model {
-        lm_render::StandardObjectResizeModel::ParameterNibbles => {
+        lm_render::StandardObjectResizeModel::ParameterNibbles
+        | lm_render::StandardObjectResizeModel::SwappedParameterNibbles => {
             if major < 1 || minor < 1 {
                 return Err("object resize handle cannot move before the object origin".into());
             }
@@ -7543,6 +7581,85 @@ mod tests {
     }
 
     #[test]
+    fn every_pristine_level_object_has_authenticated_builtin_artwork() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image =
+            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+                .unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut loaded_levels = 0;
+        let mut missing = Vec::new();
+
+        for level_number in 0..0x200 {
+            let level = project
+                .load_level_slot(level_number, level_layout, &SpriteLengthTable::standard())
+                .unwrap_or_else(|error| panic!("level {level_number:03X} failed to load: {error}"));
+            loaded_levels += 1;
+            let header = level.layer1.header;
+            let vertical = lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical;
+            let family = match lm_profile::smw_us_v1_object_family(header.object_tileset()) {
+                lm_profile::VanillaObjectFamily::Normal => 0,
+                lm_profile::VanillaObjectFamily::Castle => 1,
+                lm_profile::VanillaObjectFamily::Rope => 2,
+                lm_profile::VanillaObjectFamily::Underground => 3,
+                lm_profile::VanillaObjectFamily::GhostHouse => 4,
+            };
+            let handler_map = definition_map.family(family).unwrap();
+            let layout = lm_render::NativeLevelMap16Layout {
+                width: if vertical { 27 } else { 512 },
+                height: if vertical { 512 } else { 27 },
+                page_stride: 0x1b0,
+                base_cell: 0,
+                vertical,
+            };
+            for placement in level
+                .layer1
+                .objects
+                .native_placements_for_orientation(vertical)
+            {
+                let record = &level.layer1.objects.records[placement.record_index];
+                if record.command_id() == 0 && record.parameter() < 4 {
+                    continue;
+                }
+                match lm_render::render_mapped_standard_object_placement(
+                    record,
+                    placement,
+                    &definitions,
+                    handler_map,
+                    layout,
+                    VANILLA_EMPTY_MAP16_TILE,
+                ) {
+                    Ok(Some(_))
+                    | Err(lm_render::StandardObjectRenderError::Cache(
+                        lm_render::NativeLevelMap16CacheError::CellOutOfRange(_),
+                    )) => {}
+                    Ok(None) => {
+                        missing.push((level_number, record.command_id(), record.parameter()));
+                    }
+                    Err(error) => panic!(
+                        "level {level_number:03X} record {} failed to render: {error}",
+                        placement.record_index
+                    ),
+                }
+            }
+        }
+
+        assert_eq!(loaded_levels, 0x200);
+        missing.sort_unstable();
+        missing.dedup();
+        assert!(
+            missing.is_empty(),
+            "pristine levels with missing built-in artwork: {missing:02X?}"
+        );
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn pristine_level_105_has_authenticated_artwork_for_every_renderable_object() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -7839,6 +7956,11 @@ mod tests {
                     lm_render::StandardObjectResizeModel::ParameterNibbles
                     | lm_render::StandardObjectResizeModel::MajorNibble => {
                         let current = (parameter >> 4) + 1;
+                        let next = if current == 16 { 15 } else { current + 1 };
+                        set_standard_object_major_tiles(model, parameter, next).unwrap()
+                    }
+                    lm_render::StandardObjectResizeModel::SwappedParameterNibbles => {
+                        let current = (parameter & 0x0f) + 1;
                         let next = if current == 16 { 15 } else { current + 1 };
                         set_standard_object_major_tiles(model, parameter, next).unwrap()
                     }
