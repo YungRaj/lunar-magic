@@ -20,6 +20,10 @@ pub const SMW_US_V1_MAP16_TILE_BYTES: usize = 8;
 /// Size of the composed base table.
 pub const SMW_US_V1_MAP16_BASE_BYTES: usize =
     SMW_US_V1_MAP16_BASE_TILE_COUNT * SMW_US_V1_MAP16_TILE_BYTES;
+/// Fixed ROM table behind vanilla background Map16 pages `$10` and `$11`.
+pub const SMW_US_V1_MAP16_BACKGROUND_OFFSET: usize = 0x69100;
+/// Size of the two 256-definition vanilla background pages.
+pub const SMW_US_V1_MAP16_BACKGROUND_BYTES: usize = SMW_US_V1_MAP16_BASE_BYTES;
 /// Size of Lunar Magic's widened four-byte-per-subtile graphics table.
 pub const SMW_US_V1_MAP16_EDITOR_GRAPHICS_BYTES: usize =
     SMW_US_V1_MAP16_BASE_TILE_COUNT * 4 * size_of::<u32>();
@@ -31,6 +35,26 @@ pub struct LoadedSmwUsV1LevelMap16Base {
     pub common_source_offset: usize,
     pub tileset_tiles: usize,
     pub common_tiles: usize,
+}
+
+/// Loads the fixed two-page vanilla background Map16 definition table.
+///
+/// # Errors
+///
+/// Returns a ROM bounds error when the image does not contain the complete bank-$0D table.
+pub fn load_smw_us_v1_background_map16(
+    rom: &RomImage,
+) -> Result<[u8; SMW_US_V1_MAP16_BACKGROUND_BYTES], RomError> {
+    rom.read(
+        SMW_US_V1_MAP16_BACKGROUND_OFFSET,
+        SMW_US_V1_MAP16_BACKGROUND_BYTES,
+    )?
+    .try_into()
+    .map_err(|_| RomError::RangeOutOfBounds {
+        offset: SMW_US_V1_MAP16_BACKGROUND_OFFSET,
+        len: SMW_US_V1_MAP16_BACKGROUND_BYTES,
+        image_len: rom.logical_len(),
+    })
 }
 
 impl LoadedSmwUsV1LevelMap16Base {

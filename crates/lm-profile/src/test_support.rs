@@ -229,6 +229,7 @@ fn optional_layer2_layout_round_trips_canonically() {
     expected.layer2 = Some(lm_project::LevelLayer2RomLayout {
         mapper: expected.mapper,
         pointers: pointer(0x2_9000, 0x200),
+        background_bank_substitution: None,
         descriptor_table: None,
         maximum_compressed_len: 0x8000,
         tilemap_encoding: lm_project::LevelLayer2TilemapEncoding::Legacy { high_byte: 1 },
@@ -631,6 +632,7 @@ fn installed_layer2_descriptor_layout_round_trips_and_requires_all_fields() {
     expected.layer2 = Some(lm_project::LevelLayer2RomLayout {
         mapper: expected.mapper,
         pointers: pointer(0x2_9000, 0x200),
+        background_bank_substitution: None,
         descriptor_table: Some(lm_project::LevelLayer2DescriptorTable {
             offset: 0x2_8800,
             entries: 0x200,

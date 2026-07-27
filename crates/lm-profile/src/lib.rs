@@ -356,11 +356,12 @@ pub use title_tilemap::{
     smw_us_v1_title_tilemap_locator,
 };
 pub use vanilla_level_map16::{
-    LoadedSmwUsV1LevelMap16Base, SMW_US_V1_MAP16_BASE_BYTES, SMW_US_V1_MAP16_BASE_TILE_COUNT,
+    LoadedSmwUsV1LevelMap16Base, SMW_US_V1_MAP16_BACKGROUND_BYTES,
+    SMW_US_V1_MAP16_BACKGROUND_OFFSET, SMW_US_V1_MAP16_BASE_BYTES, SMW_US_V1_MAP16_BASE_TILE_COUNT,
     SMW_US_V1_MAP16_COMMON_WORD_OFFSET, SMW_US_V1_MAP16_OCCUPANCY_MASK_BYTES,
     SMW_US_V1_MAP16_OCCUPANCY_MASK_OFFSET, SMW_US_V1_MAP16_SOURCE_BANK_OFFSET,
     SMW_US_V1_MAP16_TILE_BYTES, SMW_US_V1_MAP16_TILESET_WORD_TABLE_OFFSET,
-    SmwUsV1LevelMap16BaseError, load_smw_us_v1_level_map16_base,
+    SmwUsV1LevelMap16BaseError, load_smw_us_v1_background_map16, load_smw_us_v1_level_map16_base,
 };
 pub use vanilla_level_mode::{VanillaLevelMode, smw_us_v1_level_mode};
 pub use vanilla_level_palette::{

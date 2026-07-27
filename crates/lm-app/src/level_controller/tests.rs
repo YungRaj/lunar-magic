@@ -83,6 +83,7 @@ fn layer2_layout() -> LevelLayer2RomLayout {
             entries: 0x200,
             stride: 3,
         },
+        background_bank_substitution: None,
         descriptor_table: None,
         maximum_compressed_len: 0x8000,
         tilemap_encoding: LevelLayer2TilemapEncoding::SplitPlanes,

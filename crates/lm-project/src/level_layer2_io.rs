@@ -10,13 +10,15 @@ use lm_level::{
     split_layer2_tilemap_planes,
 };
 use lm_rats::{AllocationPolicy, RatsBlock};
-use lm_rom::Mapper;
+use lm_rom::{Mapper, SnesPointer24};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LevelLayer2RomLayout {
     pub mapper: Mapper,
     pub pointers: LevelPointerTable,
+    /// Optional bank substituted when a pointer entry uses `$FF` to identify a shared background.
+    pub background_bank_substitution: Option<u8>,
     /// Format-$103 one-byte descriptor table. `None` selects pristine/legacy synthesized state.
     pub descriptor_table: Option<LevelLayer2DescriptorTable>,
     pub maximum_compressed_len: usize,
@@ -146,42 +148,72 @@ impl Project {
         layout: LevelLayer2RomLayout,
     ) -> Result<LoadedLevelLayer2, LevelLayer2IoError> {
         let pointer = layout.pointers.pointer_offset(level)?;
+        let pointer_bytes = self.rom.read(pointer, 3)?;
+        let substituted_pointer = layout
+            .background_bank_substitution
+            .filter(|_| pointer_bytes[2] == 0xff)
+            .map(|bank| {
+                SnesPointer24::decode(&[pointer_bytes[0], pointer_bytes[1], bank])
+                    .map_err(|_| LevelLayer2IoError::DescriptorLayout)
+            })
+            .transpose()?;
         let raw_descriptor = layout
             .descriptor_table
             .map(|table| read_layer2_descriptor(self, level, table))
             .transpose()?;
-        match level_mode_layer2_storage(level_mode) {
+        let storage = if substituted_pointer.is_some() {
+            Layer2Storage::CompressedTilemap
+        } else {
+            level_mode_layer2_storage(level_mode)
+        };
+        match storage {
             Layer2Storage::Objects => {
-                let payload = self.load_payload(
-                    pointer,
-                    layout.mapper,
-                    &PayloadReadPolicy::TaggedOrTerminated {
-                        terminator: vec![0xff],
-                        maximum_len: 0x8000,
-                        bank_size: Some(0x8000),
-                    },
-                )?;
+                let policy = PayloadReadPolicy::TaggedOrTerminated {
+                    terminator: vec![0xff],
+                    maximum_len: 0x8000,
+                    bank_size: Some(0x8000),
+                };
+                let payload = if let Some(pointer) = substituted_pointer {
+                    self.load_payload_from_pointer(pointer, layout.mapper, &policy)?
+                } else {
+                    self.load_payload(pointer, layout.mapper, &policy)?
+                };
                 Ok(LoadedLevelLayer2 {
                     data: NativeLayer2Data::decode_mwl(level_mode, &payload.bytes)?,
                     descriptor: raw_descriptor,
                 })
             }
             Layer2Storage::CompressedTilemap => {
-                let payload = self.load_payload(
-                    pointer,
-                    layout.mapper,
-                    &PayloadReadPolicy::TaggedOrBounded {
-                        maximum_len: layout.maximum_compressed_len,
-                        bank_size: Some(0x8000),
-                    },
-                )?;
-                let decoded =
+                let policy = PayloadReadPolicy::TaggedOrBounded {
+                    maximum_len: layout.maximum_compressed_len,
+                    bank_size: Some(0x8000),
+                };
+                let payload = if let Some(pointer) = substituted_pointer {
+                    self.load_payload_from_pointer(pointer, layout.mapper, &policy)?
+                } else {
+                    self.load_payload(pointer, layout.mapper, &policy)?
+                };
+                let mut decoded =
                     decode_terminated_rle_prefix(&payload.bytes, NATIVE_LAYER2_TILEMAP_LEN)?.bytes;
+                // The original loader writes shared-background RLE directly into the low-byte
+                // plane and only consumes its first 0x360 bytes. A small number of pristine
+                // streams emit one trailing padding byte before the terminator.
+                if substituted_pointer.is_some() && decoded.len() == LEGACY_LAYER2_TILEMAP_LEN + 1 {
+                    decoded.truncate(LEGACY_LAYER2_TILEMAP_LEN);
+                }
                 let (tilemap, descriptor) = match decoded.len() {
                     LEGACY_LAYER2_TILEMAP_LEN => {
-                        let high_byte = match layout.tilemap_encoding {
-                            LevelLayer2TilemapEncoding::Legacy { high_byte } => high_byte,
-                            LevelLayer2TilemapEncoding::SplitPlanes => 0,
+                        let high_byte = if substituted_pointer.is_some()
+                            && u16::from_le_bytes([pointer_bytes[0], pointer_bytes[1]]) >= 0xe8fe
+                        {
+                            0x01
+                        } else if substituted_pointer.is_some() {
+                            0x00
+                        } else {
+                            match layout.tilemap_encoding {
+                                LevelLayer2TilemapEncoding::Legacy { high_byte } => high_byte,
+                                LevelLayer2TilemapEncoding::SplitPlanes => 0,
+                            }
                         };
                         let high_byte =
                             raw_descriptor.map_or(high_byte, MwlLayer2Descriptor::active_bank);
@@ -395,6 +427,7 @@ mod tests {
                 entries,
                 stride: 3,
             },
+            background_bank_substitution: None,
             descriptor_table: None,
             maximum_compressed_len: 0x8000,
             tilemap_encoding: LevelLayer2TilemapEncoding::SplitPlanes,

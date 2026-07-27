@@ -249,6 +249,7 @@ pub(crate) struct VanillaLevelEditor {
     error: Option<String>,
     map16_key: Option<(u64, u8, u8)>,
     map16_texture: Option<egui::TextureHandle>,
+    background_map16_texture: Option<egui::TextureHandle>,
     sprite_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
     foreground_tiles: Vec<lm_graphics::IndexedTile>,
@@ -1059,6 +1060,7 @@ impl VanillaLevelEditor {
         self.error = None;
         self.map16_key = None;
         self.map16_texture = None;
+        self.background_map16_texture = None;
         self.sprite_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
@@ -1079,6 +1081,7 @@ impl VanillaLevelEditor {
         self.resizing_layer2_object = None;
     }
 
+    #[allow(clippy::too_many_lines)]
     fn show_map16_preview(
         &mut self,
         ui: &mut egui::Ui,
@@ -1094,6 +1097,7 @@ impl VanillaLevelEditor {
             let key = (snapshot.revision, object_tileset, sprite_tileset);
             if self.map16_key != Some(key) {
                 self.map16_texture = None;
+                self.background_map16_texture = None;
                 self.sprite_texture = None;
                 self.sprite_tiles.clear();
                 self.foreground_tiles.clear();
@@ -1125,6 +1129,14 @@ impl VanillaLevelEditor {
                         self.map16_texture = Some(ui.ctx().load_texture(
                             format!("vanilla-map16-{object_tileset:X}-{}", snapshot.revision),
                             preview.image,
+                            egui::TextureOptions::NEAREST,
+                        ));
+                        self.background_map16_texture = Some(ui.ctx().load_texture(
+                            format!(
+                                "vanilla-background-map16-{object_tileset:X}-{}",
+                                snapshot.revision
+                            ),
+                            preview.background_image,
                             egui::TextureOptions::NEAREST,
                         ));
                         self.sprite_texture = Some(ui.ctx().load_texture(
@@ -1417,6 +1429,7 @@ impl VanillaLevelEditor {
             cell,
             layer2_tilemap,
             self.map16_texture.as_ref(),
+            self.background_map16_texture.as_ref(),
             self.foreground_texture.as_ref(),
             custom_map16,
         );
@@ -4238,12 +4251,14 @@ struct CanvasModel {
     sprite_placements: Vec<lm_level::NativeSpritePlacement>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_layer2_tilemap(
     painter: &egui::Painter,
     target: egui::Rect,
     cell_size: f32,
     tilemap: &[u16],
     map16_texture: Option<&egui::TextureHandle>,
+    background_map16_texture: Option<&egui::TextureHandle>,
     foreground_texture: Option<&egui::TextureHandle>,
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
 ) {
@@ -4254,7 +4269,7 @@ fn draw_layer2_tilemap(
             else {
                 continue;
             };
-            let tile = word & 0x0fff;
+            let tile = word & 0x3fff;
             let x_offset = f32::from(u8::try_from(x).unwrap_or_default()) * cell_size;
             let y_offset = f32::from(u8::try_from(y).unwrap_or_default()) * cell_size;
             let cell = egui::Rect::from_min_size(
@@ -4269,6 +4284,11 @@ fn draw_layer2_tilemap(
             };
             if let (Some(definition), Some(texture)) = (definition, foreground_texture) {
                 draw_custom_map16_tile(painter, texture, cell, definition);
+            } else if background_map16_texture.is_some()
+                && tile < 0x200
+                && let Some(texture) = background_map16_texture
+            {
+                draw_map16_atlas_tile(painter, texture, cell, tile);
             } else if tile < 0x200
                 && let Some(texture) = map16_texture
             {
@@ -4302,6 +4322,7 @@ fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
     ));
 }
 
+#[allow(clippy::too_many_lines)]
 fn draw_ordered_object_tiles(
     painter: &egui::Painter,
     request: OrderedObjectDraw<'_>,
@@ -4327,6 +4348,36 @@ fn draw_ordered_object_tiles(
         page_stride: 0x1b0,
         base_cell: 0,
         vertical: request.vertical,
+    };
+    let has_custom_displays = request.placements.iter().any(|placement| {
+        request
+            .records
+            .get(placement.record_index)
+            .is_some_and(|record| {
+                request.metadata.is_some_and(|metadata| {
+                    resolved_custom_object_parts(record, metadata, request.variant).is_some()
+                })
+            })
+    });
+    let shared_standard_cache = if has_custom_displays {
+        false
+    } else {
+        request.handler_map.is_some_and(|handler_map| {
+            let stream = lm_level::ObjectStream {
+                records: request.records.to_vec(),
+            };
+            lm_render::render_mapped_standard_object_stream(
+                &stream,
+                &definitions,
+                handler_map,
+                layout,
+                u16::MAX,
+            )
+            .is_ok_and(|report| {
+                draw_standard_object_cache(painter, request, layout, &report.cache);
+                true
+            })
+        })
     };
     for placement in request.placements {
         let Some(record) = request.records.get(placement.record_index) else {
@@ -4368,7 +4419,9 @@ fn draw_ordered_object_tiles(
         ) else {
             continue;
         };
-        draw_standard_object_cache(painter, request, layout, &cache);
+        if !shared_standard_cache {
+            draw_standard_object_cache(painter, request, layout, &cache);
+        }
         artwork_bounds.insert(
             placement.record_index,
             standard_object_cache_display_rect(
@@ -6062,7 +6115,7 @@ mod tests {
     }
 
     #[test]
-    fn pristine_level_105_opens_without_fabricating_absent_layer2() {
+    fn pristine_level_105_opens_its_shared_vanilla_background() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
         let mut app = AppState::default();
@@ -6080,7 +6133,12 @@ mod tests {
             None,
         );
         assert!(editor.controller.is_some(), "{:?}", editor.error);
-        assert!(editor.controller.as_ref().unwrap().layer2().is_none());
+        let layer2 = editor.controller.as_ref().unwrap().layer2();
+        assert!(matches!(
+            layer2,
+            Some(lm_level::NativeLayer2Data::Tilemap(bytes))
+                if bytes.len() == lm_level::NATIVE_LAYER2_TILEMAP_LEN
+        ));
         assert!(editor.error.is_none());
     }
 

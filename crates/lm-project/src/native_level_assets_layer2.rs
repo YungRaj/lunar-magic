@@ -356,6 +356,7 @@ mod tests {
             layer2: LevelLayer2RomLayout {
                 mapper: Mapper::LoRom,
                 pointers: table(0x60),
+                background_bank_substitution: None,
                 descriptor_table: None,
                 maximum_compressed_len: 0x8000,
                 tilemap_encoding: crate::LevelLayer2TilemapEncoding::SplitPlanes,

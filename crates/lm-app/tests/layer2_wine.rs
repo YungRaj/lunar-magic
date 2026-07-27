@@ -39,6 +39,7 @@ fn lunar_magic_reexports_rust_checksum_atomic_layer2_tilemap_edit() {
             entries: 0x200,
             stride: 3,
         },
+        background_bank_substitution: None,
         descriptor_table: Some(lm_project::LevelLayer2DescriptorTable {
             offset: 0x77310,
             entries: 0x200,

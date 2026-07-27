@@ -56,6 +56,7 @@ fn layer2_layout() -> LevelLayer2RomLayout {
     LevelLayer2RomLayout {
         mapper: Mapper::LoRom,
         pointers: table(0x90),
+        background_bank_substitution: None,
         descriptor_table: None,
         maximum_compressed_len: 0x100,
         tilemap_encoding: LevelLayer2TilemapEncoding::SplitPlanes,

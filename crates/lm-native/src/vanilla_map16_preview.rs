@@ -6,6 +6,7 @@ use lm_rom::RomImage;
 
 pub(crate) struct VanillaMap16Preview {
     pub(crate) image: egui::ColorImage,
+    pub(crate) background_image: egui::ColorImage,
     pub(crate) graphics_files: [usize; 4],
     pub(crate) sprite_image: egui::ColorImage,
     pub(crate) sprite_tiles: Vec<IndexedTile>,
@@ -40,6 +41,8 @@ pub(crate) fn render(
     let graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
+    let background_map16 = lm_profile::load_smw_us_v1_background_map16(&project.rom)
+        .map_err(|error| error.to_string())?;
     let composed_palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
         .map_err(|error| error.to_string())?;
     let backdrop = composed_palette.backdrop;
@@ -54,7 +57,33 @@ pub(crate) fn render(
     // those words into a wider internal descriptor while loading them, but the native renderer
     // consumes `Subtile`'s SNES layout directly. Feeding the widened-and-truncated representation
     // back into this path corrupts palette and flip attributes.
-    let definitions = map16.bytes;
+    let image = render_map16_definition_atlas(&map16.bytes, &graphics, &palette);
+    let background_image = render_map16_definition_atlas(&background_map16, &graphics, &palette);
+    let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
+    let foreground_image = render_foreground_graphics_atlas(&graphics, &palette);
+    let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
+    Ok(VanillaMap16Preview {
+        image,
+        background_image,
+        foreground_image,
+        foreground_tiles: graphics,
+        layer3_tiles,
+        graphics_files,
+        sprite_image,
+        sprite_tiles: materialize_layer1_sprite_vram(&sprite_graphics),
+        palette,
+        backdrop,
+        sprite_graphics_files,
+        common_tiles: map16.common_tiles,
+        tileset_tiles: map16.tileset_tiles,
+    })
+}
+
+fn render_map16_definition_atlas(
+    definitions: &[u8],
+    graphics: &[IndexedTile],
+    palette: &Palette,
+) -> egui::ColorImage {
     let width = 32 * 16;
     let height = 16 * 16;
     let mut rgba = vec![0; width * height * 4];
@@ -72,29 +101,13 @@ pub(crate) fn render(
                 width,
                 (definition_x + quadrant_x, definition_y + quadrant_y),
                 graphics.get(tile_number),
-                &palette,
+                palette,
                 usize::from((word >> 10) & 7),
                 (word & 0x4000 != 0, word & 0x8000 != 0),
             );
         }
     }
-    let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
-    let foreground_image = render_foreground_graphics_atlas(&graphics, &palette);
-    let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
-    Ok(VanillaMap16Preview {
-        image: egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba),
-        foreground_image,
-        foreground_tiles: graphics,
-        layer3_tiles,
-        graphics_files,
-        sprite_image,
-        sprite_tiles: materialize_layer1_sprite_vram(&sprite_graphics),
-        palette,
-        backdrop,
-        sprite_graphics_files,
-        common_tiles: map16.common_tiles,
-        tileset_tiles: map16.tileset_tiles,
-    })
+    egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
 }
 
 pub(crate) fn render_rom_map16_page(

@@ -91,16 +91,17 @@ pub const fn smw_us_v1_vanilla_layer2_layout() -> LevelLayer2RomLayout {
             entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
             stride: 3,
         },
+        background_bank_substitution: Some(0x0c),
         descriptor_table: None,
         maximum_compressed_len: 0x8000,
         tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },
     }
 }
 
-/// Resolves the Layer 2 layout only when the selected level has a native pointer.
+/// Resolves the Layer 2 layout for one pristine or Lunar Magic-installed level.
 ///
-/// Pristine SMW uses an `$FF` bank byte as its no-Layer-2 sentinel. Treating that value as a `LoROM`
-/// pointer would incorrectly address expanded space beyond a 512-KiB image.
+/// Pristine SMW uses an `$FF` pointer bank to select a shared background in bank `$0C`; the layout
+/// retains that native substitution instead of mistaking it for an absent Layer 2 payload.
 ///
 /// # Errors
 ///
@@ -120,12 +121,8 @@ pub fn smw_us_v1_level_layer2_layout(
                 .ok_or(SmwUsV1Layer2LayoutError::AddressOverflow)?,
         )
         .ok_or(SmwUsV1Layer2LayoutError::AddressOverflow)?;
-    let pointer = rom.read(pointer_offset, 3)?;
-    if pointer[2] == 0xff {
-        Ok(None)
-    } else {
-        smw_us_v1_layer2_layout(rom).map(Some).map_err(Into::into)
-    }
+    rom.read(pointer_offset, 3)?;
+    smw_us_v1_layer2_layout(rom).map(Some).map_err(Into::into)
 }
 
 /// Detects the exact format-$103 Layer 2 descriptor table installed by Lunar Magic 3.63.
@@ -430,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    fn every_present_pristine_layer2_pointer_decodes_under_its_level_mode() {
+    fn every_pristine_layer2_pointer_decodes_with_shared_background_substitution() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .join("Super Mario World (USA).sfc");
@@ -442,32 +439,34 @@ mod tests {
         let level = smw_us_v1_vanilla_level_layout();
         let mut decoded = 0;
         let mut object_layers = 0;
+        let mut shared_backgrounds = 0;
         for slot in 0..SMW_US_V1_VANILLA_LEVEL_SLOTS {
             let pointer = project
                 .rom
                 .read(SMW_US_V1_LEVEL_LAYER2_POINTER_TABLE_OFFSET + slot * 3, 3)
                 .unwrap();
             if pointer[2] == 0xff {
-                continue;
+                shared_backgrounds += 1;
             }
             let loaded = project
                 .load_level_slot(slot, level, &SpriteLengthTable::standard())
                 .unwrap();
             match project
                 .load_level_layer2(slot, loaded.layer1.header.level_mode(), layer2)
-                .unwrap()
+                .unwrap_or_else(|error| panic!("slot {slot:03X}: {error}"))
             {
                 lm_level::NativeLayer2Data::Objects(_) => object_layers += 1,
                 lm_level::NativeLayer2Data::Tilemap(_) => {}
             }
             decoded += 1;
         }
-        assert!(decoded > 0);
-        assert_eq!(object_layers, decoded);
+        assert_eq!(decoded, SMW_US_V1_VANILLA_LEVEL_SLOTS);
+        assert!(object_layers > 0);
+        assert!(shared_backgrounds > 0);
     }
 
     #[test]
-    fn pristine_layer2_resolver_distinguishes_absent_and_present_slots() {
+    fn pristine_layer2_resolver_retains_shared_background_slots() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .join("Super Mario World (USA).sfc");
@@ -475,7 +474,13 @@ mod tests {
             return;
         };
         let rom = RomImage::from_bytes(bytes).unwrap();
-        assert_eq!(smw_us_v1_level_layer2_layout(&rom, 0x105).unwrap(), None);
+        assert_eq!(
+            smw_us_v1_level_layer2_layout(&rom, 0x105)
+                .unwrap()
+                .unwrap()
+                .background_bank_substitution,
+            Some(0x0c)
+        );
         let present = (0..SMW_US_V1_VANILLA_LEVEL_SLOTS)
             .find(|&level| {
                 smw_us_v1_level_layer2_layout(&rom, level).is_ok_and(|layout| layout.is_some())
