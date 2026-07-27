@@ -2505,6 +2505,12 @@ error page. The SMW-US profile now resolves Layer 2 per level, returns `None` fo
 retains authenticated layouts for present pointers, and rejects out-of-range slots. Focused profile
 and native-editor tests cover both branches; the post-fix framebuffer contains the populated level
 workspace. Captures remain local because they include ROM-derived graphics.
+The level workspace was subsequently changed from one unbounded vertical document into a
+window-filling split view. Its 280–380-point tool column owns an independent vertical scrollbar and
+the level canvas owns more than 57% of every supported 720-point-or-wider viewport, plus the
+remaining editor height and its own two-axis scrolling. A real 1100×720-point macOS framebuffer
+shows the canvas beside—not below—the Map16 and settings controls. A pure width-allocation test
+guards the minimum, default, large, and high-resolution window cases.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The

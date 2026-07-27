@@ -14,7 +14,7 @@ use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 use std::collections::HashMap;
 
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
-const ROM_LEVEL_CANVAS_VIEW_HEIGHT: f32 = 420.0;
+const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 380.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -331,38 +331,76 @@ impl VanillaLevelEditor {
             "{} standard-object definitions (tileset {object_tileset:X})",
             object_family.display_name()
         ));
-        self.show_staged_history(ui);
-        self.show_header_editor(ui, object_count, sprite_count);
-        self.show_layer2_editor(ui, custom_objects);
-        if let Some(command) = self.show_entrance_editor(ui, level) {
-            return Some(command);
-        }
-        ui.separator();
-        self.show_map16_preview(ui, &snapshot, object_tileset);
-        ui.separator();
-        self.object_canvas(
-            ui,
-            custom_sprites,
-            external_assets,
-            custom_objects,
-            custom_map16,
-        );
-        ui.separator();
-        ui.columns(2, |columns| {
-            self.object_list(&mut columns[0]);
-            self.object_editor(&mut columns[1], custom_objects, custom_map16);
-        });
-        ui.separator();
-        ui.columns(2, |columns| {
-            self.sprite_list(&mut columns[0]);
-            self.sprite_editor(
-                &mut columns[1],
-                custom_sprites,
-                external_assets,
-                custom_map16,
+        let workspace_size = ui.available_size();
+        let tool_width = workspace_tool_width(workspace_size.x);
+        let mut pending_command = None;
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(tool_width, workspace_size.y),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("vanilla-level-tool-panel")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            self.show_staged_history(ui);
+                            egui::CollapsingHeader::new("Level and entrance settings")
+                                .id_salt("vanilla-level-settings")
+                                .show(ui, |ui| {
+                                    self.show_header_editor(ui, object_count, sprite_count);
+                                    if pending_command.is_none() {
+                                        pending_command = self.show_entrance_editor(ui, level);
+                                    }
+                                });
+                            self.show_layer2_editor(ui, custom_objects);
+                            self.show_map16_preview(ui, &snapshot, object_tileset);
+                            egui::CollapsingHeader::new("Layer 1 objects")
+                                .id_salt("vanilla-layer1-tools")
+                                .show(ui, |ui| {
+                                    self.object_list(ui);
+                                    self.object_editor(ui, custom_objects, custom_map16);
+                                });
+                            egui::CollapsingHeader::new("Sprites")
+                                .id_salt("vanilla-sprite-tools")
+                                .show(ui, |ui| {
+                                    self.sprite_list(ui);
+                                    self.sprite_editor(
+                                        ui,
+                                        custom_sprites,
+                                        external_assets,
+                                        custom_map16,
+                                    );
+                                });
+                            if pending_command.is_none() {
+                                pending_command = self.show_commit_controls(ui, &snapshot);
+                            }
+                        });
+                },
+            );
+            ui.separator();
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), workspace_size.y),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    self.object_canvas(
+                        ui,
+                        custom_sprites,
+                        external_assets,
+                        custom_objects,
+                        custom_map16,
+                    );
+                },
             );
         });
-        ui.add_space(8.0);
+        pending_command
+    }
+
+    fn show_commit_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        snapshot: &lm_app::ControllerSnapshot,
+    ) -> Option<Command> {
+        ui.separator();
         let expanded = snapshot.rom_bytes.len() > 0x80_000;
         let relocation_needed = self.controller.as_ref().is_some_and(|controller| {
             controller.layer1_is_modified() || controller.layer2_is_modified()
@@ -390,15 +428,18 @@ impl VanillaLevelEditor {
             )
             .clicked()
         {
-            match prepare_commit(
+            return match prepare_commit(
                 self.controller
                     .as_ref()
                     .expect("controller presence checked above"),
-                &snapshot,
+                snapshot,
             ) {
-                Ok(command) => return Some(command),
-                Err(error) => self.error = Some(error),
-            }
+                Ok(command) => Some(command),
+                Err(error) => {
+                    self.error = Some(error);
+                    None
+                }
+            };
         }
         None
     }
@@ -1243,7 +1284,7 @@ impl VanillaLevelEditor {
         }
         egui::ScrollArea::both()
             .id_salt("vanilla-rom-level-canvas")
-            .max_height(ROM_LEVEL_CANVAS_VIEW_HEIGHT)
+            .max_height(ui.available_height().max(160.0))
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 let (rect, response) =
@@ -5463,6 +5504,10 @@ fn editor_layer2_layout(
         .map_err(|error| error.to_string())
 }
 
+fn workspace_tool_width(available_width: f32) -> f32 {
+    ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.42).max(280.0))
+}
+
 fn object_field_edits(
     form: &ObjectForm,
     index: usize,
@@ -5928,6 +5973,16 @@ mod tests {
         assert!(editor.controller.is_some(), "{:?}", editor.error);
         assert!(editor.controller.as_ref().unwrap().layer2().is_none());
         assert!(editor.error.is_none());
+    }
+
+    #[test]
+    fn window_workspace_reserves_the_majority_for_the_canvas() {
+        for width in [720.0_f32, 1_100.0, 1_600.0, 3_200.0] {
+            let tools = workspace_tool_width(width);
+            assert!(tools >= 280.0);
+            assert!(tools <= ROM_LEVEL_TOOL_PANEL_WIDTH);
+            assert!(width - tools > width * 0.57);
+        }
     }
 
     #[test]

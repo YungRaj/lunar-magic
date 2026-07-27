@@ -50,6 +50,11 @@ Open a ROM at startup:
 cargo run -p lm-native -- "/path/to/Super Mario World (USA).sfc"
 ```
 
+The built-in level workspace uses the complete remaining window: a bounded, independently
+scrollable tool panel stays on the left while the level canvas retains the majority of the width
+and all available editor height. The canvas has its own two-axis scrolling, so long horizontal or
+vertical levels no longer push the editing surface below header, Map16, object, or sprite controls.
+
 You can also use **File → Open ROM** after the application starts. Use **Save As** and choose a new
 output path. Do not use your only copy of a ROM as a working file.
 
