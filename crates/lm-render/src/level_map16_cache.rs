@@ -13,10 +13,19 @@ pub struct NativeLevelMap16Layout {
     pub vertical: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct NativeLevelMap16Cache {
     cells: Vec<u16>,
+    written: Vec<bool>,
 }
+
+impl PartialEq for NativeLevelMap16Cache {
+    fn eq(&self, other: &Self) -> bool {
+        self.cells == other.cells
+    }
+}
+
+impl Eq for NativeLevelMap16Cache {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeLevelMap16CacheError {
@@ -38,6 +47,7 @@ impl NativeLevelMap16Cache {
     pub fn filled(tile: u16) -> Self {
         Self {
             cells: vec![tile; LEVEL_MAP16_CACHE_CELLS],
+            written: vec![false; LEVEL_MAP16_CACHE_CELLS],
         }
     }
 
@@ -55,6 +65,7 @@ impl NativeLevelMap16Cache {
                 .chunks_exact(2)
                 .map(|word| u16::from_le_bytes([word[0], word[1]]))
                 .collect(),
+            written: vec![false; LEVEL_MAP16_CACHE_CELLS],
         })
     }
 
@@ -69,6 +80,12 @@ impl NativeLevelMap16Cache {
     #[must_use]
     pub fn cells(&self) -> &[u16] {
         &self.cells
+    }
+
+    /// Reports whether a renderer explicitly wrote the indexed cell after cache construction.
+    #[must_use]
+    pub fn was_written(&self, index: usize) -> bool {
+        self.written.get(index).copied().unwrap_or(false)
     }
 
     pub(crate) fn raw_get(&self, index: usize) -> Result<u16, NativeLevelMap16CacheError> {
@@ -88,6 +105,7 @@ impl NativeLevelMap16Cache {
             .get_mut(index)
             .ok_or(NativeLevelMap16CacheError::CellOutOfRange(index))?;
         *cell = tile;
+        self.written[index] = true;
         Ok(())
     }
 
@@ -152,6 +170,7 @@ impl NativeLevelMap16Cache {
             .get_mut(index)
             .ok_or(NativeLevelMap16CacheError::CellOutOfRange(index))?;
         *cell = tile;
+        self.written[index] = true;
         Ok(())
     }
 }
@@ -192,9 +211,14 @@ mod tests {
     #[test]
     fn live_cache_bytes_round_trip_and_bounds_are_typed() {
         let mut cache = NativeLevelMap16Cache::filled(0x25);
+        let written = NativeLevelMap16Cache::cell_index(horizontal(), 2, 3);
+        assert!(!cache.was_written(written));
         cache.set(horizontal(), 2, 3, 0x142).unwrap();
+        assert!(cache.was_written(written));
         let bytes = cache.encode();
-        assert_eq!(NativeLevelMap16Cache::decode(&bytes).unwrap(), cache);
+        let decoded = NativeLevelMap16Cache::decode(&bytes).unwrap();
+        assert_eq!(decoded, cache);
+        assert!(!decoded.was_written(written));
         assert_eq!(
             cache.set(horizontal(), 99, 0, 1),
             Err(NativeLevelMap16CacheError::CellOutOfRange(

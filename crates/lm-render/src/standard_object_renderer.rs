@@ -5605,6 +5605,34 @@ mod tests {
     }
 
     #[test]
+    fn extended_object_write_mask_is_independent_from_native_blank_cells() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        let layout = NativeLevelMap16Layout {
+            width: 32,
+            height: 27,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let stream = ObjectStream {
+            records: vec![lm_level::ObjectRecord::new(vec![0x10, 0x01, 0x41]).unwrap()],
+        };
+        let report =
+            render_mapped_standard_object_stream(&stream, &definitions, &[0; 64], layout, 0x25)
+                .unwrap();
+        let written = (0..LEVEL_MAP16_CACHE_CELLS)
+            .filter(|index| report.cache.was_written(*index))
+            .collect::<Vec<_>>();
+        assert_eq!(written.len(), 1);
+        let index = written[0];
+        assert_eq!(
+            report.cache.cells()[index],
+            lunar_magic_shared_extended_object_tile(0x41).unwrap()
+        );
+    }
+
+    #[test]
     fn recovered_command_17_ignores_low_nibble_and_clamps_trailing_tile() {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();

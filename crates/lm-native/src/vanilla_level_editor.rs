@@ -18,6 +18,7 @@ const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 50;
 const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 400;
 const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
 const NATIVE_LEVEL_MINOR_TILES: u16 = 27;
+const VANILLA_EMPTY_MAP16_TILE: u16 = 0x25;
 const VANILLA_ENTRANCE_Y_LOW: [u8; 16] = [
     0x00, 0x30, 0x60, 0x80, 0xa0, 0xb0, 0xc0, 0xe0, 0x10, 0x30, 0x50, 0x60, 0x70, 0x90, 0x00, 0x00,
 ];
@@ -4571,7 +4572,7 @@ fn draw_ordered_object_tiles(
                 &definitions,
                 handler_map,
                 layout,
-                u16::MAX,
+                VANILLA_EMPTY_MAP16_TILE,
             )
             .is_ok_and(|report| {
                 draw_standard_object_cache(painter, request, layout, &report.cache);
@@ -4615,7 +4616,7 @@ fn draw_ordered_object_tiles(
             &definitions,
             handler_map,
             layout,
-            u16::MAX,
+            VANILLA_EMPTY_MAP16_TILE,
         ) else {
             continue;
         };
@@ -4653,7 +4654,7 @@ fn draw_standard_object_cache(
             let Some(&tile) = cache.cells().get(index) else {
                 continue;
             };
-            if tile == u16::MAX {
+            if !cache.was_written(index) {
                 continue;
             }
             let Ok(tile_x) = u16::try_from(x) else {
@@ -4998,7 +4999,7 @@ fn standard_object_cache_display_rect(
     for y in 0..layout.height {
         for x in 0..layout.width {
             let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
-            if cache.cells().get(index) == Some(&u16::MAX) {
+            if !cache.was_written(index) {
                 continue;
             }
             let Ok(x) = u16::try_from(x) else {

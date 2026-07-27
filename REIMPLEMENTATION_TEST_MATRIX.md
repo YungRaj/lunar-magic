@@ -232,6 +232,14 @@ identity, index, palette, and count failures; stale revisions and save acknowled
 reopen; dirty close/discard; and a built-binary Unicode-and-space-path lifecycle through bounded
 `LMOWAED1` scripts.
 
+The native standard-object canvas now keeps Lunar Magic's semantic Map16 `$0025` initial cell
+value separate from a transient per-cell write mask. Neighbor-sensitive object handlers therefore
+observe the same blank Map16 state as the native renderer, while the GUI composites only cells an
+object routine actually wrote and retains explicit writes of `$0025`. A real level `$105`
+framebuffer audit covers the resulting diagonal terrain, extended object, shared-background,
+standard-sprite, and entrance-camera composition; focused cache tests prove that serialization
+does not confuse transient write provenance with the debugger-visible 0x3800-word tile cache.
+
 Before the external release corpus qualifies, runnable-shell ROM persistence is create-new by
 default. Tests require `save` and UI-equivalent save actions to reject replacement before creating
 a persistence request, preserve the source bytes, accept strict non-duplicated
