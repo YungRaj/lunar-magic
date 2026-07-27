@@ -139,6 +139,19 @@ Do not infer feature parity from the number of implemented formats. A format is 
 only when its decode, edit, save, reopen, undo/redo, GUI, and differential compatibility evidence
 all pass.
 
+### Future automation and AI tooling
+
+After the core editor and ROM formats are sufficiently complete, expose the reusable editing
+operations through an optional MCP server. The server should let local automation clients such as
+Codex, Claude, or Gemini inspect a project, construct and modify levels, build a ROM, launch an
+emulator test, and consume structured validation results.
+
+This interface must use the same validated project transactions as the GUI and CLI rather than
+editing ROM bytes directly. Planned validation includes parse/reopen checks, preserved-range and
+checksum checks, sprite/object boundary checks, emulator smoke tests, and deterministic snapshots.
+Complex and Kaizo-style level support must come from complete format and gameplay-semantics
+coverage; an AI-facing API is not a substitute for that compatibility work.
+
 ## Typical editing workflow
 
 1. Make an immutable backup of the source ROM.
