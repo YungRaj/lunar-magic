@@ -472,28 +472,38 @@ impl VanillaLevelEditor {
                     "Compressed 32×32 background tilemap · selected storage word {}",
                     self.selected_layer2_tile
                 ));
-                ui.horizontal(|ui| {
-                    ui.label("Map16 word");
-                    ui.add(egui::DragValue::new(&mut self.layer2_word).hexadecimal(4, false, true));
-                    if ui.button("Stage selected tile").clicked() {
-                        let result = self
-                            .controller
-                            .as_mut()
-                            .expect("controller presence checked above")
-                            .apply_layer2_tilemap_words(&[(
-                                self.selected_layer2_tile,
-                                self.layer2_word,
-                            )]);
-                        match result {
-                            Ok(()) => self.error = None,
-                            Err(error) => self.error = Some(error.to_string()),
+                if layer2_tilemap_editable(self.shared_vanilla_background) {
+                    ui.horizontal(|ui| {
+                        ui.label("Map16 word");
+                        ui.add(
+                            egui::DragValue::new(&mut self.layer2_word).hexadecimal(4, false, true),
+                        );
+                        if ui.button("Stage selected tile").clicked() {
+                            let result = self
+                                .controller
+                                .as_mut()
+                                .expect("controller presence checked above")
+                                .apply_layer2_tilemap_words(&[(
+                                    self.selected_layer2_tile,
+                                    self.layer2_word,
+                                )]);
+                            match result {
+                                Ok(()) => self.error = None,
+                                Err(error) => self.error = Some(error.to_string()),
+                            }
                         }
-                    }
-                });
-                ui.small(
-                    "Choose “Paint Layer 2 tile” and click the canvas to write this word. \
-                     Selection follows Lunar Magic's column-major two-plane storage.",
-                );
+                    });
+                    ui.small(
+                        "Choose “Paint Layer 2 tile” and click the canvas to write this word. \
+                         Selection follows Lunar Magic's column-major two-plane storage.",
+                    );
+                } else {
+                    ui.small(
+                        "This is a shared pristine SMW background. It remains read-only until the \
+                         format-$103 Layer 2 runtime can be installed copy-on-write; editing the \
+                         shared bank-$0C payload directly would change every level that uses it.",
+                    );
+                }
             }
             lm_level::NativeLayer2Data::Objects(objects) => {
                 ui.label(format!(
@@ -1364,7 +1374,8 @@ impl VanillaLevelEditor {
             if matches!(
                 self.controller.as_ref().and_then(LevelController::layer2),
                 Some(lm_level::NativeLayer2Data::Tilemap(_))
-            ) {
+            ) && layer2_tilemap_editable(self.shared_vanilla_background)
+            {
                 ui.selectable_value(
                     &mut self.placement_mode,
                     Some(CanvasPlacementMode::Layer2Tile),
@@ -1674,6 +1685,13 @@ impl VanillaLevelEditor {
     }
 
     fn paint_layer2_tile_at_canvas(&mut self, position: egui::Pos2, canvas: egui::Rect, cell: f32) {
+        if !layer2_tilemap_editable(self.shared_vanilla_background) {
+            self.error = Some(
+                "shared pristine backgrounds require a copy-on-write Layer 2 runtime installation"
+                    .into(),
+            );
+            return;
+        }
         let Some(index) = layer2_tile_at_canvas_position(position, canvas, cell) else {
             self.error = Some("Layer 2 tile lies outside the native 32×32 background".into());
             return;
@@ -3337,6 +3355,10 @@ impl VanillaLevelEditor {
             self.move_sprite(token_count, true);
         }
     }
+}
+
+const fn layer2_tilemap_editable(shared_vanilla_background: bool) -> bool {
+    !shared_vanilla_background
 }
 
 const fn sprite_insertion_index(selected: usize, token_count: usize) -> usize {
@@ -6099,6 +6121,12 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn shared_pristine_backgrounds_require_copy_on_write_before_editing() {
+        assert!(layer2_tilemap_editable(false));
+        assert!(!layer2_tilemap_editable(true));
     }
 
     #[test]
