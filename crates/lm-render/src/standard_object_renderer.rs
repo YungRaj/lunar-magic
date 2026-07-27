@@ -1073,59 +1073,59 @@ fn render_shared_slot_023(
     let existing_top_left = get_placement_cell(cache, layout, placement, 0, 0)?;
     let top_left = existing_top_left & 0xff00 | adapt_two_way(existing_top_left, 0x0af);
     set_placement_cell(cache, layout, placement, 0, 0, top_left)?;
-    let top_right = adapt_three_way(get_placement_cell(cache, layout, placement, 0, 1)?, 0x1af);
-    set_placement_cell(cache, layout, placement, 0, 1, top_right)?;
+    let top_right = adapt_three_way(get_placement_cell(cache, layout, placement, 1, 0)?, 0x1af);
+    set_placement_cell(cache, layout, placement, 1, 0, top_right)?;
 
     let widening_rows = usize::from(parameter & 0x0f);
     let mut fill_width = 1;
     for row in 1..=widening_rows {
-        let major = signed_offset(row)?;
-        let left_minor = -major;
+        let minor = signed_offset(row)?;
+        let left_major = -minor;
         let left = adapt_two_way(
-            get_placement_cell_signed(cache, layout, placement, major, left_minor)?,
+            get_placement_cell_signed(cache, layout, placement, left_major, minor)?,
             0x0a9,
         );
-        set_placement_cell_signed(cache, layout, placement, major, left_minor, left)?;
+        set_placement_cell_signed(cache, layout, placement, left_major, minor, left)?;
         for fill in 0..fill_width {
             set_placement_cell_signed(
                 cache,
                 layout,
                 placement,
-                major,
-                left_minor + 1 + signed_offset(fill)?,
+                left_major + 1 + signed_offset(fill)?,
+                minor,
                 0x03f,
             )?;
         }
-        let separator_minor = left_minor + 1 + signed_offset(fill_width)?;
-        set_placement_cell_signed(cache, layout, placement, major, separator_minor, 0x1e4)?;
-        let right_minor = separator_minor + 1;
+        let separator_major = left_major + 1 + signed_offset(fill_width)?;
+        set_placement_cell_signed(cache, layout, placement, separator_major, minor, 0x1e4)?;
+        let right_major = separator_major + 1;
         let right = adapt_three_way(
-            get_placement_cell_signed(cache, layout, placement, major, right_minor)?,
+            get_placement_cell_signed(cache, layout, placement, right_major, minor)?,
             0x1af,
         );
-        set_placement_cell_signed(cache, layout, placement, major, right_minor, right)?;
+        set_placement_cell_signed(cache, layout, placement, right_major, minor, right)?;
         fill_width += 2;
     }
 
-    let bottom_major = signed_offset(widening_rows + 1)?;
-    let mut bottom_minor = -signed_offset(widening_rows)?;
+    let bottom_minor = signed_offset(widening_rows + 1)?;
+    let mut left_major = -signed_offset(widening_rows)?;
     render_handler_23_fill_row(
         cache,
         layout,
         placement,
-        bottom_major,
+        left_major,
         bottom_minor,
         fill_width,
         0x1f9,
     )?;
     for extra in 0..usize::from(parameter >> 4) {
-        bottom_minor += 1;
+        left_major += 1;
         render_handler_23_fill_row(
             cache,
             layout,
             placement,
-            bottom_major + 1 + signed_offset(extra)?,
-            bottom_minor,
+            left_major,
+            bottom_minor + 1 + signed_offset(extra)?,
             fill_width,
             0x0ac,
         )?;
@@ -1137,32 +1137,32 @@ fn render_handler_23_fill_row(
     cache: &mut NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
     placement: lm_level::NativeObjectPlacement,
-    major: isize,
-    left_minor: isize,
+    left_major: isize,
+    minor: isize,
     fill_width: usize,
     right_base: u16,
 ) -> Result<(), StandardObjectRenderError> {
     let left = adapt_two_way(
-        get_placement_cell_signed(cache, layout, placement, major, left_minor)?,
+        get_placement_cell_signed(cache, layout, placement, left_major, minor)?,
         0x0a9,
     );
-    set_placement_cell_signed(cache, layout, placement, major, left_minor, left)?;
+    set_placement_cell_signed(cache, layout, placement, left_major, minor, left)?;
     for fill in 0..fill_width {
         set_placement_cell_signed(
             cache,
             layout,
             placement,
-            major,
-            left_minor + 1 + signed_offset(fill)?,
+            left_major + 1 + signed_offset(fill)?,
+            minor,
             0x03f,
         )?;
     }
-    let right_minor = left_minor + 1 + signed_offset(fill_width)?;
+    let right_major = left_major + 1 + signed_offset(fill_width)?;
     let right = adapt_two_way(
-        get_placement_cell_signed(cache, layout, placement, major, right_minor)?,
+        get_placement_cell_signed(cache, layout, placement, right_major, minor)?,
         right_base,
     );
-    set_placement_cell_signed(cache, layout, placement, major, right_minor, right)
+    set_placement_cell_signed(cache, layout, placement, right_major, minor, right)
 }
 
 fn render_adaptive_fill_horizontal_row(
@@ -4564,7 +4564,7 @@ mod tests {
         let mut handler_map = [0xff; 64];
         handler_map[1] = 23;
         let stream = ObjectStream {
-            records: vec![ObjectRecord::new(vec![8, 0x10, 0x12]).unwrap()],
+            records: vec![ObjectRecord::new(vec![8, 0x14, 0x12]).unwrap()],
         };
         let report = render_mapped_standard_object_stream(
             &stream,
@@ -4574,17 +4574,17 @@ mod tests {
             0x25,
         )
         .unwrap();
-        for (major, start_minor, row) in [
-            (0, 8, vec![0x0af, 0x1af]),
-            (1, 7, vec![0x0a9, 0x03f, 0x1e4, 0x1af]),
-            (2, 6, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x1e4, 0x1af]),
-            (3, 6, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x1f9]),
-            (4, 7, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x0ac]),
+        for (minor, start_major, row) in [
+            (8, 4, vec![0x0af, 0x1af]),
+            (9, 3, vec![0x0a9, 0x03f, 0x1e4, 0x1af]),
+            (10, 2, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x1e4, 0x1af]),
+            (11, 2, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x1f9]),
+            (12, 3, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x0ac]),
         ] {
             for (column, tile) in row.into_iter().enumerate() {
                 assert_eq!(
                     report.cache.cells()
-                        [NativeLevelMap16Cache::cell_index(layout(), major, start_minor + column)],
+                        [NativeLevelMap16Cache::cell_index(layout(), start_major + column, minor)],
                     tile
                 );
             }
