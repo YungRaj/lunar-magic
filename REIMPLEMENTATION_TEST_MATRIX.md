@@ -84,9 +84,11 @@ selection, cross-screen dragging in either orientation, stable move-up/move-down
 same typed native-object copy/paste framing as Layer 1. Selected custom-width Layer 2 object
 templates retain every extension byte during list, canvas, or clipboard duplication; malformed and
 cross-domain clipboard text fails before mutation. Both storage classes share Layer 1/sprite undo
-and redo and commit through one revision-checked mutation. The save path reopens all changed level
-streams semantically; format-$103 saves persist the normalized descriptor beside the relocated
-tilemap and checksum.
+and redo and commit through one revision-checked mutation. The pristine-ROM native-GUI fixture
+combines canvas insertion and relocation with typed paste and ordered movement, commits the complete
+object-backed Layer 2 stream, semantically reopens it, and undoes to the exact expanded baseline.
+The save path reopens all changed level streams semantically; format-$103 saves persist the
+normalized descriptor beside the relocated tilemap and checksum.
 Object-backed levels expose the same lossless ordered record operations and native clipboard
 framing; compressed-tilemap levels expose all 1,024 little-endian words through the recovered
 32×32 canvas order. The native panel supports ordinary single-cell selection and Shift-extended

@@ -5620,6 +5620,15 @@ mod tests {
 
         let mut app = AppState::default();
         app.load_rom(bytes).unwrap();
+        app.dispatch(Command::ExpandRom(lm_app::RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        let expanded_baseline = app.project().unwrap().rom.logical_bytes().to_vec();
         app.dispatch(Command::SelectLevel(level)).unwrap();
         let snapshot = app.controller_snapshot().unwrap();
         let mut editor = VanillaLevelEditor::default();
@@ -5700,6 +5709,40 @@ mod tests {
         };
         assert_eq!(count_after_invalid, count_before_invalid);
         assert!(editor.error.is_some());
+
+        let staged_layer2 = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .layer2()
+            .unwrap()
+            .clone();
+        let command = prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap();
+        app.dispatch(command).unwrap();
+        let reopened_slot = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                usize::from(level),
+                level_layout,
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let reopened_layer2 = app
+            .project()
+            .unwrap()
+            .load_level_layer2(
+                usize::from(level),
+                reopened_slot.layer1.header.level_mode(),
+                layer2_layout,
+            )
+            .unwrap();
+        assert_eq!(reopened_layer2, staged_layer2);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_bytes(),
+            expanded_baseline
+        );
     }
 
     #[test]
