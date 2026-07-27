@@ -399,6 +399,17 @@ fn inspect_mwl(bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     ] {
         println!("section-{kind:?}: {:#x}", file.section(kind).len());
     }
+    if !file.section(MwlSectionKind::Layer2).is_empty() {
+        let layer2 = file.layer2_section()?;
+        println!(
+            "layer2-descriptor: {:#010x} (active-bank: {}, compressed: {}, split-planes: {})",
+            layer2.descriptor.raw(),
+            layer2.descriptor.active_bank(),
+            layer2.descriptor.uses_compressed_tilemap(),
+            layer2.descriptor.uses_split_planes()
+        );
+        println!("layer2-source-address: {:#010x}", layer2.source_address);
+    }
     Ok(())
 }
 

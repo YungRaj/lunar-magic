@@ -6,8 +6,9 @@ use crate::{
 };
 use lm_graphics::{PaletteBatchEditError, PaletteOwnership};
 use lm_level::{
-    ExpandedLevelSettingsError, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, ObjectEdit,
-    ObjectEditError, SpriteLengthTable,
+    ExpandedLevelSettingsError, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
+    NativeLayer2RemapError, NativeLayer2RemapProgram, ObjectEdit, ObjectEditError,
+    SpriteLengthTable,
 };
 use lm_project::{
     LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelPointerTable,
@@ -26,6 +27,11 @@ pub enum NativeLevelAssetsControllerEdit {
     Level(Vec<NativeLevelEdit>),
     Layer2Objects(Vec<ObjectEdit>),
     Layer2TilemapWords(Vec<(usize, u16)>),
+    Layer2TilemapRemap {
+        script: String,
+        global_offset: i32,
+        selection: Option<Vec<usize>>,
+    },
     Palette(Vec<PaletteControllerEdit>),
     ExAnimation(Vec<ExAnimationControllerEdit>),
     ExpandedSettingsWords(Vec<(usize, u16)>),
@@ -65,6 +71,14 @@ pub enum NativeLevelAssetsControllerError {
     Layer2TileDuplicate {
         command: usize,
         index: usize,
+    },
+    Layer2Remap {
+        command: usize,
+        error: NativeLayer2RemapError,
+    },
+    Layer2RemapRequiresInstalledBank {
+        command: usize,
+        bank: u8,
     },
     PaletteEdit {
         command: usize,
@@ -340,6 +354,19 @@ pub(crate) fn apply_native_level_assets_edits(
             NativeLevelAssetsControllerEdit::Layer2TilemapWords(edits) => {
                 apply_layer2_tilemap_edits(staged_layer2, command, edits)?;
             }
+            NativeLevelAssetsControllerEdit::Layer2TilemapRemap {
+                script,
+                global_offset,
+                selection,
+            } => {
+                apply_layer2_tilemap_remap(
+                    staged_layer2,
+                    command,
+                    script,
+                    *global_offset,
+                    selection.as_deref(),
+                )?;
+            }
             NativeLevelAssetsControllerEdit::Palette(edits) => {
                 crate::palette_edit_batch::apply_palette_edit_batch(
                     &mut next.palette,
@@ -428,6 +455,14 @@ fn apply_layer2_tilemap_edits(
             expected: "tilemap",
         });
     };
+    apply_layer2_tilemap_byte_edits(bytes, command, edits)
+}
+
+fn apply_layer2_tilemap_byte_edits(
+    bytes: &mut [u8],
+    command: usize,
+    edits: &[(usize, u16)],
+) -> Result<(), NativeLevelAssetsControllerError> {
     if bytes.len() != NATIVE_LAYER2_TILEMAP_LEN {
         return Err(NativeLevelAssetsControllerError::Layer2TileIndex {
             command,
@@ -445,6 +480,38 @@ fn apply_layer2_tilemap_edits(
         bytes[index * 2..index * 2 + 2].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
+}
+
+fn apply_layer2_tilemap_remap(
+    layer2: &mut Option<NativeLayer2Data>,
+    command: usize,
+    script: &str,
+    global_offset: i32,
+    selection: Option<&[usize]>,
+) -> Result<(), NativeLevelAssetsControllerError> {
+    let layer2 = layer2
+        .as_mut()
+        .ok_or(NativeLevelAssetsControllerError::Layer2Unavailable { command })?;
+    let NativeLayer2Data::Tilemap(bytes) = layer2 else {
+        return Err(NativeLevelAssetsControllerError::Layer2StorageMismatch {
+            command,
+            expected: "tilemap",
+        });
+    };
+    let program = NativeLayer2RemapProgram::parse(script)
+        .map_err(|error| NativeLevelAssetsControllerError::Layer2Remap { command, error })?;
+    let result = program
+        .apply(bytes, 0, global_offset, selection)
+        .map_err(|error| NativeLevelAssetsControllerError::Layer2Remap { command, error })?;
+    if result.active_bank != 0 {
+        return Err(
+            NativeLevelAssetsControllerError::Layer2RemapRequiresInstalledBank {
+                command,
+                bank: result.active_bank,
+            },
+        );
+    }
+    apply_layer2_tilemap_byte_edits(bytes, command, &result.edits)
 }
 
 #[cfg(test)]

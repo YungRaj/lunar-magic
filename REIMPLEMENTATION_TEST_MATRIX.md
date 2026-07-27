@@ -64,7 +64,11 @@ saturating addition/subtraction, `M` linear and two-dimensional generation, `R` 
 global offset, selection versus whole-map application, 12-bit storage normalization, and active
 bank transitions. It rejects malformed pairs, out-of-domain values, oversized scripts, invalid or
 duplicate selection indexes, malformed tilemaps, invalid banks, and excessive offsets before
-emitting edits.
+emitting edits. The native aggregate controller and GUI apply bank-0 whole-map or selected-rectangle
+programs as one revision-bound edit and require semantic ROM reopen. Cross-bank results are rejected
+before mutation until the installed Layer 2 descriptor table can be persisted. Typed MWL access
+losslessly retains both metadata words, exposes descriptor storage bits and active bank, and tests
+the exact native post-remap normalization independently from the lossless bank-only setter.
 The opt-in Wine gate additionally relocates an edited installed level-105 tilemap into a newly
 expanded bank with one checksum-atomic Rust save and requires Lunar Magic 3.63 to re-export the
 exact decoded Layer 2 payload.

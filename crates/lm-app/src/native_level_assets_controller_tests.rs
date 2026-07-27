@@ -494,6 +494,62 @@ fn layer2_tilemap_words_are_little_endian_atomic_and_reopenable() {
 }
 
 #[test]
+fn layer2_remap_is_selection_scoped_reopenable_and_rejects_unmodeled_bank_changes() {
+    let snapshot = tilemap_snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::Layer2TilemapRemap {
+            script: "8000,8001".into(),
+            global_offset: 0,
+            selection: Some(vec![0, 16]),
+        }])
+        .unwrap();
+    let NativeLayer2Data::Tilemap(bytes) = controller.layer2().unwrap() else {
+        panic!("mode zero must load a Layer 2 tilemap");
+    };
+    assert_eq!(&bytes[0..2], &[1, 0]);
+    assert_eq!(&bytes[32..34], &[1, 0]);
+    assert_eq!(&bytes[2..4], &[0, 0]);
+
+    let expected = controller.layer2().unwrap().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2("Layer 2 remap", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("Layer 2 remap", &prepared.mutation)
+        .unwrap();
+    assert_eq!(
+        project.load_level_layer2(0, 0, layer2_layout()).unwrap(),
+        expected
+    );
+
+    let before = controller.layer2().unwrap().clone();
+    assert!(matches!(
+        controller.apply_edits(&[NativeLevelAssetsControllerEdit::Layer2TilemapRemap {
+            script: "8001,9000".into(),
+            global_offset: 0,
+            selection: Some(vec![0]),
+        }]),
+        Err(
+            NativeLevelAssetsControllerError::Layer2RemapRequiresInstalledBank {
+                command: 0,
+                bank: 1
+            }
+        )
+    ));
+    assert_eq!(controller.layer2(), Some(&before));
+}
+
+#[test]
 fn owned_layer2_aggregate_reclaims_all_five_payloads_atomically() {
     let (snapshot, manifest) = tagged_layer2_snapshot();
     let mut controller = NativeLevelAssetsController::decode_with_layer2(

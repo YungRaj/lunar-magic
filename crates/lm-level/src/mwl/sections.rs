@@ -6,6 +6,128 @@ pub struct MwlPayloadSection {
     pub payload: Vec<u8>,
 }
 
+/// Lossless interpretation of Lunar Magic's first Layer 2 MWL metadata word.
+///
+/// The complete word is retained because several low-bit combinations describe historical
+/// storage forms. Bits 4–6 are the active 4-KiB Map16 bank used by Lunar Magic's background
+/// remapper. Accessors deliberately leave every unrelated bit unchanged.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MwlLayer2Descriptor(u32);
+
+impl MwlLayer2Descriptor {
+    pub const ACTIVE_BANK_MASK: u32 = 0x70;
+    pub const COMPRESSED_TILEMAP: u32 = 0x02;
+    pub const SPLIT_PLANES: u32 = 0x04;
+
+    #[must_use]
+    pub const fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    #[must_use]
+    pub const fn raw(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn active_bank(self) -> u8 {
+        ((self.0 & Self::ACTIVE_BANK_MASK) >> 4) as u8
+    }
+
+    #[must_use]
+    pub const fn uses_compressed_tilemap(self) -> bool {
+        self.0 & Self::COMPRESSED_TILEMAP != 0
+    }
+
+    #[must_use]
+    pub const fn uses_split_planes(self) -> bool {
+        self.0 & Self::SPLIT_PLANES != 0
+    }
+
+    /// Replaces only the recovered three-bit active-bank field.
+    ///
+    /// # Errors
+    ///
+    /// Rejects banks outside Lunar Magic's accepted `$0..$7` range.
+    pub const fn with_active_bank(self, bank: u8) -> Result<Self, MwlLayer2DescriptorError> {
+        if bank >= 8 {
+            return Err(MwlLayer2DescriptorError::ActiveBank(bank));
+        }
+        Ok(Self(
+            (self.0 & !Self::ACTIVE_BANK_MASK) | ((bank as u32) << 4),
+        ))
+    }
+
+    /// Applies the exact descriptor normalization performed after a native remap.
+    ///
+    /// Lunar Magic promotes the data to compressed split-plane tilemap storage, records the
+    /// resulting bank, and clears the legacy/direct-pointer flag. This method is intentionally
+    /// distinct from [`Self::with_active_bank`], which is lossless outside the bank field.
+    ///
+    /// # Errors
+    ///
+    /// Rejects banks outside Lunar Magic's accepted `$0..$7` range.
+    pub const fn after_native_remap(self, bank: u8) -> Result<Self, MwlLayer2DescriptorError> {
+        if bank >= 8 {
+            return Err(MwlLayer2DescriptorError::ActiveBank(bank));
+        }
+        Ok(Self(
+            (self.0 & 0x05) | Self::COMPRESSED_TILEMAP | Self::SPLIT_PLANES | ((bank as u32) << 4),
+        ))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MwlLayer2DescriptorError {
+    ActiveBank(u8),
+}
+
+impl std::fmt::Display for MwlLayer2DescriptorError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "invalid MWL Layer 2 descriptor: {self:?}")
+    }
+}
+
+impl std::error::Error for MwlLayer2DescriptorError {}
+
+/// Typed form of the common-prefix MWL Layer 2 section.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct MwlLayer2Section {
+    pub descriptor: MwlLayer2Descriptor,
+    /// Lunar Magic's second metadata word, retained as an opaque source/storage address.
+    pub source_address: u32,
+    pub payload: Vec<u8>,
+}
+
+impl MwlLayer2Section {
+    /// Decodes the exact two-word Layer 2 prefix without normalizing either word.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MwlError::Truncated`] when fewer than eight bytes are available.
+    pub fn decode(bytes: &[u8]) -> Result<Self, MwlError> {
+        let section = MwlPayloadSection::decode(bytes)?;
+        Ok(Self {
+            descriptor: MwlLayer2Descriptor::from_raw(section.metadata[0]),
+            source_address: section.metadata[1],
+            payload: section.payload,
+        })
+    }
+
+    /// Encodes the descriptor, opaque source address, and payload exactly.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MwlError::Overflow`] if the aggregate length cannot be represented.
+    pub fn encode(&self) -> Result<Vec<u8>, MwlError> {
+        MwlPayloadSection {
+            metadata: [self.descriptor.raw(), self.source_address],
+            payload: self.payload.clone(),
+        }
+        .encode()
+    }
+}
+
 impl MwlPayloadSection {
     pub const METADATA_LEN: usize = 8;
 

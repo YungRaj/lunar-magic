@@ -456,7 +456,64 @@ impl AggregatePanels {
         if let Some(edit) = self.layer2_word_controls(ui, bytes, selected_cells.len()) {
             return Some(edit);
         }
+        if let Some(edit) = self.layer2_remap_controls(ui) {
+            return Some(edit);
+        }
         self.layer2_pattern_flood_controls(ui, bytes)
+    }
+
+    fn layer2_remap_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+    ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
+        ui.separator();
+        ui.collapsing("Remap Map16 tiles", |ui| {
+            ui.label(
+                "Enter Lunar Magic source,destination pairs using displayed $8000–$FFFF values. \
+                 Ranges and the +, −, M, and R prefixes are supported.",
+            );
+            ui.add(
+                egui::TextEdit::multiline(&mut self.layer2_remap_script)
+                    .desired_rows(4)
+                    .code_editor(),
+            );
+            ui.horizontal(|ui| {
+                ui.label("Global offset");
+                ui.add(
+                    egui::DragValue::new(&mut self.layer2_remap_offset)
+                        .range(-0x7fff..=0x7fff)
+                        .hexadecimal(4, true, true),
+                );
+                ui.checkbox(
+                    &mut self.layer2_remap_selection_only,
+                    "Selected rectangle only",
+                );
+            });
+            let has_selection =
+                self.layer2_tile_anchor.is_some() && self.layer2_tile_cursor.is_some();
+            let enabled = !self.layer2_remap_selection_only || has_selection;
+            ui.add_enabled(enabled, egui::Button::new("Apply remap"))
+                .on_hover_text(
+                    "Apply the complete program as one undoable edit. Cross-bank mappings are \
+                     rejected until the installed Layer 2 descriptor-table save path is active.",
+                )
+                .clicked()
+        })
+        .body_returned
+        .filter(|clicked| *clicked)
+        .map(|_| {
+            let selection = self.layer2_remap_selection_only.then(|| {
+                layer2_selection_indices(self.layer2_tile_anchor, self.layer2_tile_cursor)
+            });
+            if selection.as_ref().is_some_and(Vec::is_empty) {
+                return Err("select a Layer 2 rectangle before applying a scoped remap".into());
+            }
+            Ok(NativeLevelAssetsControllerEdit::Layer2TilemapRemap {
+                script: self.layer2_remap_script.clone(),
+                global_offset: self.layer2_remap_offset,
+                selection,
+            })
+        })
     }
 
     fn layer2_word_controls(

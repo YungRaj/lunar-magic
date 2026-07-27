@@ -5,7 +5,8 @@ mod sections;
 
 pub use palette::{MwlPaletteSection, MwlPaletteSectionError};
 pub use sections::{
-    MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlPayloadSection,
+    MwlLayer2Descriptor, MwlLayer2DescriptorError, MwlLayer2Section, MwlLevelHeaderSection,
+    MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlPayloadSection,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -216,6 +217,25 @@ impl MwlFile {
         Ok(())
     }
 
+    /// Decodes the Layer 2 section with its lossless descriptor and source-address metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MwlError`] when the section is shorter than its two-word metadata prefix.
+    pub fn layer2_section(&self) -> Result<MwlLayer2Section, MwlError> {
+        MwlLayer2Section::decode(self.section(MwlSectionKind::Layer2))
+    }
+
+    /// Encodes and installs a typed Layer 2 section without changing unknown descriptor bits.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`MwlError::Overflow`] if the encoded section length cannot be represented.
+    pub fn set_layer2_section(&mut self, section: &MwlLayer2Section) -> Result<(), MwlError> {
+        self.set_section(MwlSectionKind::Layer2, section.encode()?);
+        Ok(())
+    }
+
     /// Decodes the exact 257-color palette section exported by Lunar Magic.
     ///
     /// # Errors
@@ -341,6 +361,38 @@ mod tests {
         let mut header = MwlLevelHeaderSection([0; 0x40]);
         header.set_level_number(0x105);
         assert_eq!(header.level_number(), 0x105);
+    }
+
+    #[test]
+    fn typed_layer2_section_preserves_unknown_metadata_and_models_native_bank_transition() {
+        let source = MwlLayer2Section {
+            descriptor: MwlLayer2Descriptor::from_raw(0xdead_be8d),
+            source_address: 0x00ff_d900,
+            payload: vec![0xf1; 0x800],
+        };
+        let mut file = MwlFile::default();
+        file.set_layer2_section(&source).unwrap();
+        assert_eq!(file.layer2_section().unwrap(), source);
+
+        let changed = source.descriptor.with_active_bank(5).unwrap();
+        assert_eq!(changed.raw(), 0xdead_bedd);
+        assert_eq!(changed.active_bank(), 5);
+        assert!(!changed.uses_compressed_tilemap());
+        assert!(changed.uses_split_planes());
+
+        let normalized = source.descriptor.after_native_remap(3).unwrap();
+        assert_eq!(normalized.raw(), 0x37);
+        assert_eq!(normalized.active_bank(), 3);
+        assert!(normalized.uses_compressed_tilemap());
+        assert!(normalized.uses_split_planes());
+        assert_eq!(
+            source.descriptor.with_active_bank(8),
+            Err(MwlLayer2DescriptorError::ActiveBank(8))
+        );
+        assert_eq!(
+            source.descriptor.after_native_remap(8),
+            Err(MwlLayer2DescriptorError::ActiveBank(8))
+        );
     }
 
     #[test]
