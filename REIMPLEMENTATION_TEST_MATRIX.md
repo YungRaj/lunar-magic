@@ -67,10 +67,13 @@ parameter bits, reject every out-of-domain axis, and suppress standard resize co
 for OSC-selected custom records. Selected nonfixed standard objects also expose an
 orientation-aware canvas handle: dragging its authenticated axis updates the same
 lossless parameter field for Layer 1 or object-backed Layer 2, while fixed and OSC
-custom objects expose no misleading handle. Geometry tests cover horizontal and
-vertical axes, fixed-bit preservation, invalid backward/out-of-canvas drags, and handle
-placement. A pristine-ROM fixture expands once, resizes a discovered nonfixed object,
-commits and semantically reopens it, then undoes to the exact expanded baseline.
+custom objects expose no misleading handle. Handle geometry uses the handler's fixed
+axis rather than ignored parameter bits and retains the complete 1–256-tile full-byte
+minor range. Geometry tests cover horizontal and vertical axes, fixed-bit preservation,
+movement before the origin on an unowned axis, invalid owned-axis/out-of-canvas drags,
+and handle placement. A pristine-ROM fixture expands once, resizes a discovered
+nonfixed object, commits and semantically reopens it, then undoes to the exact expanded
+baseline.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary

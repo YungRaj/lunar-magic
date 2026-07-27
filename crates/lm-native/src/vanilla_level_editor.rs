@@ -4257,7 +4257,8 @@ fn draw_object_placement_markers(
         );
         if index == selected
             && let Some(&model) = resize_models.get(&index)
-            && let Some(handle) = standard_object_resize_handle(canvas, *placement, model, vertical)
+            && let Some(handle) =
+                standard_object_resize_handle(canvas, *placement, record, model, vertical)
         {
             painter.rect_filled(handle, 1.0, egui::Color32::YELLOW);
             painter.rect_stroke(
@@ -4292,13 +4293,14 @@ struct ObjectPlacementHits {
 fn standard_object_resize_handle(
     canvas: egui::Rect,
     placement: lm_level::NativeObjectPlacement,
+    record: &ObjectRecord,
     model: lm_render::StandardObjectResizeModel,
     vertical: bool,
 ) -> Option<egui::Rect> {
     use lm_render::StandardObjectResizeModel::{
         Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
     };
-    let encoded = encoded_object_rect(canvas, placement, vertical);
+    let encoded = authenticated_standard_object_rect(canvas, placement, record, model, vertical)?;
     let center = match model {
         ParameterNibbles => encoded.max,
         MajorNibble if vertical => egui::pos2(encoded.center().x, encoded.bottom()),
@@ -4310,6 +4312,52 @@ fn standard_object_resize_handle(
         Fixed => return None,
     };
     Some(egui::Rect::from_center_size(center, egui::vec2(8.0, 8.0)))
+}
+
+fn authenticated_standard_object_rect(
+    canvas: egui::Rect,
+    placement: lm_level::NativeObjectPlacement,
+    record: &ObjectRecord,
+    model: lm_render::StandardObjectResizeModel,
+    vertical: bool,
+) -> Option<egui::Rect> {
+    use lm_render::StandardObjectResizeModel::{
+        Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
+    };
+    let (major_span, minor_span) = match model {
+        ParameterNibbles => (
+            u16::from(placement.major_span),
+            u16::from(placement.minor_span),
+        ),
+        MajorNibble => (u16::from(placement.major_span), 1),
+        MinorNibble { fixed_major_tiles } => (
+            u16::from(fixed_major_tiles),
+            u16::from(placement.minor_span),
+        ),
+        MinorByte { fixed_major_tiles } => (
+            u16::from(fixed_major_tiles),
+            u16::from(record.parameter()) + 1,
+        ),
+        Fixed => return None,
+    };
+    let (tile_x, tile_y) = placement.tile_coordinates(vertical);
+    let position = canvas.min
+        + egui::vec2(
+            f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
+            f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
+        );
+    let (tile_width, tile_height) = if vertical {
+        (minor_span, major_span)
+    } else {
+        (major_span, minor_span)
+    };
+    Some(egui::Rect::from_min_size(
+        position,
+        egui::vec2(
+            f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL,
+            f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL,
+        ),
+    ))
 }
 
 fn encoded_object_rect(
@@ -5033,9 +5081,6 @@ fn resized_standard_object_parameter_at_canvas_position(
     let (origin_x, origin_y) = placement.tile_coordinates(vertical);
     let width = target_x - i32::from(origin_x) + 1;
     let height = target_y - i32::from(origin_y) + 1;
-    if width < 1 || height < 1 {
-        return Err("object resize handle cannot move before the object origin".into());
-    }
     let (major, minor) = if vertical {
         (height, width)
     } else {
@@ -5044,6 +5089,9 @@ fn resized_standard_object_parameter_at_canvas_position(
     let mut parameter = record.parameter();
     match model {
         lm_render::StandardObjectResizeModel::ParameterNibbles => {
+            if major < 1 || minor < 1 {
+                return Err("object resize handle cannot move before the object origin".into());
+            }
             parameter = set_standard_object_major_tiles(
                 model,
                 parameter,
@@ -5055,13 +5103,25 @@ fn resized_standard_object_parameter_at_canvas_position(
                 u16::try_from(minor).map_err(|_| "minor-axis object size is too large")?,
             )
         }
-        lm_render::StandardObjectResizeModel::MajorNibble => set_standard_object_major_tiles(
-            model,
-            parameter,
-            u8::try_from(major).map_err(|_| "major-axis object size is too large")?,
-        ),
+        lm_render::StandardObjectResizeModel::MajorNibble => {
+            if major < 1 {
+                return Err(
+                    "major-axis object resize handle cannot move before the object origin".into(),
+                );
+            }
+            set_standard_object_major_tiles(
+                model,
+                parameter,
+                u8::try_from(major).map_err(|_| "major-axis object size is too large")?,
+            )
+        }
         lm_render::StandardObjectResizeModel::MinorNibble { .. }
         | lm_render::StandardObjectResizeModel::MinorByte { .. } => {
+            if minor < 1 {
+                return Err(
+                    "minor-axis object resize handle cannot move before the object origin".into(),
+                );
+            }
             set_standard_object_minor_tiles(
                 model,
                 parameter,
@@ -5268,7 +5328,7 @@ mod tests {
             &record,
             resize_test_placement(),
             lm_render::StandardObjectResizeModel::MajorNibble,
-            egui::pos2(14.5 * 16.0, 3.5 * 16.0),
+            egui::pos2(14.5 * 16.0, 2.5 * 16.0),
             canvas,
             16.0,
             false,
@@ -5286,8 +5346,22 @@ mod tests {
             false,
         )
         .unwrap();
+        let minor_with_ignored_major_position =
+            resized_standard_object_parameter_at_canvas_position(
+                &record,
+                resize_test_placement(),
+                lm_render::StandardObjectResizeModel::MinorNibble {
+                    fixed_major_tiles: 1,
+                },
+                egui::pos2(9.5 * 16.0, 7.5 * 16.0),
+                canvas,
+                16.0,
+                false,
+            )
+            .unwrap();
         assert_eq!(major, 0x43);
         assert_eq!(minor, 0xa4);
+        assert_eq!(minor_with_ignored_major_position, 0xa4);
         assert!(
             resized_standard_object_parameter_at_canvas_position(
                 &record,
@@ -5316,10 +5390,12 @@ mod tests {
 
     #[test]
     fn resize_handles_follow_the_encoded_axis_for_level_orientation() {
+        let record = ObjectRecord::new(vec![0x00, 0x10, 0xa3]).unwrap();
         let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 256.0));
         let horizontal = standard_object_resize_handle(
             canvas,
             resize_test_placement(),
+            &record,
             lm_render::StandardObjectResizeModel::MajorNibble,
             false,
         )
@@ -5327,26 +5403,61 @@ mod tests {
         let vertical = standard_object_resize_handle(
             canvas,
             resize_test_placement(),
+            &record,
             lm_render::StandardObjectResizeModel::MajorNibble,
             true,
         )
         .unwrap();
         assert_eq!(
             horizontal.center(),
-            egui::pos2(12.0 * ROM_LEVEL_CANVAS_CELL, 4.0 * ROM_LEVEL_CANVAS_CELL)
+            egui::pos2(12.0 * ROM_LEVEL_CANVAS_CELL, 3.5 * ROM_LEVEL_CANVAS_CELL)
         );
         assert_eq!(
             vertical.center(),
-            egui::pos2(4.0 * ROM_LEVEL_CANVAS_CELL, 12.0 * ROM_LEVEL_CANVAS_CELL)
+            egui::pos2(3.5 * ROM_LEVEL_CANVAS_CELL, 12.0 * ROM_LEVEL_CANVAS_CELL)
         );
         assert!(
             standard_object_resize_handle(
                 canvas,
                 resize_test_placement(),
+                &record,
                 lm_render::StandardObjectResizeModel::Fixed,
                 false,
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn full_byte_minor_resize_handle_uses_all_256_lengths() {
+        let record = ObjectRecord::new(vec![0x00, 0x10, 0x1f]).unwrap();
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 512.0));
+        let model = lm_render::StandardObjectResizeModel::MinorByte {
+            fixed_major_tiles: 3,
+        };
+        let horizontal = authenticated_standard_object_rect(
+            canvas,
+            resize_test_placement(),
+            &record,
+            model,
+            false,
+        )
+        .unwrap();
+        let vertical = authenticated_standard_object_rect(
+            canvas,
+            resize_test_placement(),
+            &record,
+            model,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            horizontal.size(),
+            egui::vec2(3.0 * ROM_LEVEL_CANVAS_CELL, 32.0 * ROM_LEVEL_CANVAS_CELL)
+        );
+        assert_eq!(
+            vertical.size(),
+            egui::vec2(32.0 * ROM_LEVEL_CANVAS_CELL, 3.0 * ROM_LEVEL_CANVAS_CELL)
         );
     }
 
