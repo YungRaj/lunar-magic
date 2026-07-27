@@ -446,7 +446,7 @@ impl VanillaLevelEditor {
     }
 
     fn snes_viewport(&self) -> bool {
-        self.snes_viewport.unwrap_or(false)
+        self.snes_viewport.unwrap_or(true)
     }
 
     fn show_commit_controls(
@@ -1440,16 +1440,20 @@ impl VanillaLevelEditor {
             // second half must not double the editable minor axis of an ordinary level.
             major_tiles = major_tiles.max(32);
         }
-        let cell = self.canvas_cell();
-        let world_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
         let game_preview = self.game_preview();
         let snes_viewport = game_preview && self.snes_viewport();
+        self.show_canvas_tools(ui);
+        let cell = if snes_viewport {
+            fitted_snes_viewport_cell(ui.available_size(), self.canvas_zoom_percent())
+        } else {
+            self.canvas_cell()
+        };
+        let world_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
         let canvas_size = if snes_viewport {
             egui::vec2(16.0 * cell, 14.0 * cell)
         } else {
             world_size
         };
-        self.show_canvas_tools(ui);
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
         }
@@ -6180,6 +6184,15 @@ fn clamped_scroll_offset(requested: f32, content_extent: f32, viewport_extent: f
     requested.clamp(0.0, (content_extent - viewport_extent).max(0.0))
 }
 
+fn fitted_snes_viewport_cell(available: egui::Vec2, zoom_percent: u16) -> f32 {
+    const VIEWPORT_COLUMNS: f32 = 16.0;
+    const VIEWPORT_ROWS: f32 = 14.0;
+    const CAPTION_RESERVE: f32 = 28.0;
+    let horizontal = available.x.max(VIEWPORT_COLUMNS) / VIEWPORT_COLUMNS;
+    let vertical = (available.y - CAPTION_RESERVE).max(VIEWPORT_ROWS) / VIEWPORT_ROWS;
+    horizontal.min(vertical).floor().max(1.0) * f32::from(clamp_canvas_zoom(zoom_percent)) / 100.0
+}
+
 fn game_preview_origin(
     entrance: VanillaMainEntrance,
     major_tiles: u16,
@@ -6733,17 +6746,17 @@ mod tests {
     }
 
     #[test]
-    fn level_tools_default_visible_and_can_yield_the_complete_workspace() {
+    fn level_tools_default_to_the_exact_game_viewport_and_can_yield_the_complete_workspace() {
         let mut editor = VanillaLevelEditor::default();
         assert!(editor.tools_panel_visible());
         assert!(editor.game_preview());
-        assert!(!editor.snes_viewport());
+        assert!(editor.snes_viewport());
         editor.tools_panel_visible = Some(false);
         assert!(!editor.tools_panel_visible());
         editor.tools_panel_visible = Some(true);
         assert!(editor.tools_panel_visible());
-        editor.snes_viewport = Some(true);
-        assert!(editor.snes_viewport());
+        editor.snes_viewport = Some(false);
+        assert!(!editor.snes_viewport());
     }
 
     #[test]
@@ -7646,6 +7659,17 @@ mod tests {
         assert_eq!(clamp_canvas_zoom(0), ROM_LEVEL_CANVAS_MIN_ZOOM);
         assert_eq!(clamp_canvas_zoom(275), 275);
         assert_eq!(clamp_canvas_zoom(u16::MAX), ROM_LEVEL_CANVAS_MAX_ZOOM);
+    }
+
+    #[test]
+    fn exact_snes_viewport_fits_the_available_editor_area_and_preserves_zoom() {
+        for (available, zoom, expected) in [
+            (egui::vec2(800.0, 600.0), 100, 40.0),
+            (egui::vec2(800.0, 600.0), 200, 80.0),
+            (egui::vec2(256.0, 252.0), 100, 16.0),
+        ] {
+            assert!((fitted_snes_viewport_cell(available, zoom) - expected).abs() < f32::EPSILON);
+        }
     }
 
     #[test]
