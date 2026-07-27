@@ -502,13 +502,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x9b => render_handler_9b(mode.placement_first),
         0x9c => render_definition_grid(0x180, 4, 1),
         0x9e => render_handler_9e(),
-        0x9f => parts(&[
-            (0x14e, -8, -7),
-            (0x14f, 6, -7),
-            (0x15e, -8, 9),
-            (0x15f, 8, 9),
-            (0x16f, 7, 1),
-        ]),
+        // Sprite $9F is Banzai Bill. The game draws it as a 4×4 grid of 16×16 OAM
+        // tiles; using the unrelated five-part preview made the level-$105 obstacle
+        // appear at roughly one quarter of its native 64×64 size.
+        0x9f => render_banzai_bill(),
         0xa0 => render_handler_a0(mode.placement_first),
         0xa1 => {
             let base = 0x120 + u16::from(mode.placement_first & 1) * 2;
@@ -1322,10 +1319,48 @@ fn parts(values: &[(u16, i16, i16)]) -> Option<Vec<StandardSpritePreviewTile>> {
         .collect()
 }
 
+fn render_banzai_bill() -> Option<Vec<StandardSpritePreviewTile>> {
+    let mut values = Vec::with_capacity(16);
+    for index in 0_u16..16 {
+        let x = i16::try_from(index % 4).ok()?.saturating_mul(16);
+        let y = i16::try_from(index / 4).ok()?.saturating_mul(16);
+        values.push(StandardSpritePreviewTile {
+            definition_index: 0x220 + index,
+            subtiles: preview_definition(0x220 + index)?,
+            x,
+            y,
+        });
+    }
+    Some(values)
+}
+
 #[allow(clippy::too_many_lines)] // Sparse authenticated indices are clearer as one lookup table.
 pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
     if (0x3c00..=0x3cff).contains(&index) {
         return Some([index, 0x0019, 0x0019, 0x0019]);
+    }
+    if (0x220..=0x22f).contains(&index) {
+        const TILES: [u16; 16] = [
+            0x80, 0x82, 0x84, 0x86, 0xa0, 0x88, 0xce, 0xee, 0xc0, 0xc2, 0xce, 0xee, 0x8e, 0xae,
+            0x84, 0x86,
+        ];
+        let entry = usize::from(index - 0x220);
+        let tile = TILES[entry] | 0x0100;
+        let palette_and_page = 0x0400;
+        if entry >= 14 {
+            return Some([
+                palette_and_page | 0x8000 | tile.saturating_add(0x10),
+                palette_and_page | 0x8000 | tile,
+                palette_and_page | 0x8000 | tile.saturating_add(0x11),
+                palette_and_page | 0x8000 | tile.saturating_add(1),
+            ]);
+        }
+        return Some([
+            palette_and_page | tile,
+            palette_and_page | tile.saturating_add(0x10),
+            palette_and_page | tile.saturating_add(1),
+            palette_and_page | tile.saturating_add(0x11),
+        ]);
     }
     Some(match index & 0x7fff {
         0x001 | 0x116 | 0x11b | 0x12b => [0x0400, 0x0410, 0x0401, 0x0411],
@@ -3041,17 +3076,6 @@ mod tests {
             ]
         );
         assert_eq!(
-            geometry(0x9f, 0, false),
-            [
-                (0x14e, -8, -7),
-                (0x14f, 6, -7),
-                (0x15e, -8, 9),
-                (0x15f, 8, 9),
-                (0x16f, 7, 1)
-            ]
-        );
-        assert_eq!(geometry(0x9f, 0, true), [(0x115, 0, 1)]);
-        assert_eq!(
             geometry(0xa0, 0, false),
             [
                 (0xeb, 15, 0),
@@ -3092,6 +3116,41 @@ mod tests {
             ]
         );
         assert_eq!(geometry(0xa1, 0, true), [(0x115, 0, 1)]);
+    }
+
+    #[test]
+    fn banzai_bill_uses_the_native_four_by_four_oam_composition() {
+        let geometry = render_lunar_magic_standard_sprite(0x9f, false)
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>();
+        let expected = (0_u16..16)
+            .map(|index| {
+                (
+                    0x220 + index,
+                    i16::try_from(index % 4).unwrap() * 16,
+                    i16::try_from(index / 4).unwrap() * 16,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(geometry, expected);
+        assert_eq!(
+            render_lunar_magic_standard_sprite(0x9f, true)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>(),
+            [(0x115, 0, 1)]
+        );
+        assert_eq!(
+            preview_definition(0x220),
+            Some([0x0580, 0x0590, 0x0581, 0x0591])
+        );
+        assert_eq!(
+            preview_definition(0x22e),
+            Some([0x8594, 0x8584, 0x8595, 0x8585])
+        );
     }
 
     #[test]
