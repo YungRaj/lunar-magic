@@ -1381,18 +1381,16 @@ impl VanillaLevelEditor {
                 custom_objects,
                 custom_map16,
             );
-            // Lunar Magic permits the entrance-derived viewport origin to remain at the bottom of
-            // the 27-row horizontal canvas. Give egui an equivalent scroll tail instead of
-            // clamping that origin back upward merely because the host window is tall enough to
-            // show the complete canvas.
-            if !vertical {
-                ui.allocate_space(egui::vec2(0.0, f32::from(NATIVE_LEVEL_MINOR_TILES) * cell));
-            }
         });
-        if requested_vertical_scroll
-            .is_some_and(|requested| (scroll_output.state.offset.y - requested).abs() < 0.5)
-        {
-            self.initial_vertical_scroll_tiles = None;
+        if let Some(requested) = requested_vertical_scroll {
+            let target = clamped_scroll_offset(
+                requested,
+                scroll_output.content_size.y,
+                scroll_output.inner_rect.height(),
+            );
+            if (scroll_output.state.offset.y - target).abs() < 0.5 {
+                self.initial_vertical_scroll_tiles = None;
+            }
         }
         draw_canvas_caption(ui, vertical);
     }
@@ -5041,10 +5039,7 @@ fn draw_object_marker(
     selected: bool,
     artwork_rendered: bool,
 ) {
-    let recovered_tile = (record.command_id() == 0)
-        .then(|| lm_render::lunar_magic_shared_extended_object_tile(record.parameter()))
-        .flatten();
-    if let (Some(tile), Some(texture)) = (recovered_tile, texture) {
+    if let (Some(tile), Some(texture)) = (marker_fallback_tile(record, artwork_rendered), texture) {
         draw_map16_atlas_tile(painter, texture, target.shrink(1.0), tile);
     } else if !artwork_rendered {
         painter.rect_filled(
@@ -5068,6 +5063,12 @@ fn draw_object_marker(
             egui::StrokeKind::Inside,
         );
     }
+}
+
+fn marker_fallback_tile(record: &ObjectRecord, artwork_rendered: bool) -> Option<u16> {
+    (!artwork_rendered && record.command_id() == 0)
+        .then(|| lm_render::lunar_magic_shared_extended_object_tile(record.parameter()))
+        .flatten()
 }
 
 #[derive(Clone, Copy)]
@@ -5870,6 +5871,10 @@ fn workspace_tool_width(available_width: f32) -> f32 {
     ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.42).max(280.0))
 }
 
+fn clamped_scroll_offset(requested: f32, content_extent: f32, viewport_extent: f32) -> f32 {
+    requested.clamp(0.0, (content_extent - viewport_extent).max(0.0))
+}
+
 fn object_field_edits(
     form: &ObjectForm,
     index: usize,
@@ -6396,6 +6401,27 @@ mod tests {
             assert!(tools <= ROM_LEVEL_TOOL_PANEL_WIDTH);
             assert!(width - tools > width * 0.57);
         }
+    }
+
+    #[test]
+    fn entrance_scroll_is_clamped_to_the_measured_canvas_viewport() {
+        for (requested, content, viewport, expected) in [
+            (256.0, 432.0, 224.0, 208.0),
+            (128.0, 432.0, 224.0, 128.0),
+            (256.0, 432.0, 720.0, 0.0),
+        ] {
+            assert!(
+                (clamped_scroll_offset(requested, content, viewport) - expected).abs()
+                    < f32::EPSILON
+            );
+        }
+    }
+
+    #[test]
+    fn rendered_extended_object_is_not_repainted_as_a_stretched_marker() {
+        let record = ObjectRecord::new(vec![0x10, 0x01, 0x41]).unwrap();
+        assert!(marker_fallback_tile(&record, false).is_some());
+        assert_eq!(marker_fallback_tile(&record, true), None);
     }
 
     #[test]
