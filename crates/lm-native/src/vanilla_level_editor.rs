@@ -18,6 +18,15 @@ const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 50;
 const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 400;
 const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
 const NATIVE_LEVEL_MINOR_TILES: u16 = 27;
+const VANILLA_ENTRANCE_Y_LOW: [u8; 16] = [
+    0x00, 0x30, 0x60, 0x80, 0xa0, 0xb0, 0xc0, 0xe0, 0x10, 0x30, 0x50, 0x60, 0x70, 0x90, 0x00, 0x00,
+];
+const VANILLA_ENTRANCE_Y_HIGH: [u8; 16] = [
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+];
+const VANILLA_LAYER2_HORIZONTAL_SCROLL: [u8; 16] = [2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const VANILLA_LAYER2_VERTICAL_SCROLL: [u8; 16] = [3, 1, 1, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+const VANILLA_INITIAL_LAYER2_Y: [u8; 4] = [0x60, 0x90, 0xc0, 0x00];
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 380.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 
@@ -245,6 +254,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
     canvas_zoom_percent: Option<u16>,
+    initial_vertical_scroll_tiles: Option<u16>,
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
@@ -998,6 +1008,11 @@ impl VanillaLevelEditor {
                     VanillaMainEntrance::default,
                     VanillaEntranceController::entrance,
                 );
+                self.initial_vertical_scroll_tiles = (!lm_profile::smw_us_v1_level_mode(
+                    controller.level().layer1.header.level_mode(),
+                )
+                .vertical)
+                    .then(|| vanilla_horizontal_entrance_scroll_row(self.entrance_form));
                 self.midway_form = self
                     .entrance_controller
                     .as_ref()
@@ -1255,6 +1270,7 @@ impl VanillaLevelEditor {
             });
     }
 
+    #[allow(clippy::too_many_lines)]
     fn object_canvas(
         &mut self,
         ui: &mut egui::Ui,
@@ -1330,35 +1346,53 @@ impl VanillaLevelEditor {
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
         }
-        egui::ScrollArea::both()
+        let mut scroll_area = egui::ScrollArea::both()
             .id_salt("vanilla-rom-level-canvas")
             .max_height(ui.available_height().max(160.0))
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                let (rect, response) =
-                    ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
-                let painter = ui.painter_at(rect);
-                self.paint_object_canvas(
-                    &painter,
-                    &response,
-                    rect,
-                    cell,
-                    major_tiles,
-                    minor_tiles,
-                    vertical,
-                    level_mode,
-                    animation_phase,
-                    &layer2_records,
-                    &layer2_placements,
-                    &layer2_tilemap,
-                    &records,
-                    &placements,
-                    &sprite_placements,
-                    custom_sprites,
-                    custom_objects,
-                    custom_map16,
-                );
-            });
+            .auto_shrink([false, false]);
+        let requested_vertical_scroll = self
+            .initial_vertical_scroll_tiles
+            .map(|row| f32::from(row) * cell);
+        if let Some(offset) = requested_vertical_scroll {
+            scroll_area = scroll_area.vertical_scroll_offset(offset);
+        }
+        let scroll_output = scroll_area.show(ui, |ui| {
+            let (rect, response) =
+                ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
+            let painter = ui.painter_at(rect);
+            self.paint_object_canvas(
+                &painter,
+                &response,
+                rect,
+                cell,
+                major_tiles,
+                minor_tiles,
+                vertical,
+                level_mode,
+                animation_phase,
+                &layer2_records,
+                &layer2_placements,
+                &layer2_tilemap,
+                &records,
+                &placements,
+                &sprite_placements,
+                custom_sprites,
+                custom_objects,
+                custom_map16,
+            );
+            // Lunar Magic permits the entrance-derived viewport origin to remain at the bottom of
+            // the 27-row horizontal canvas. Give egui an equivalent scroll tail instead of
+            // clamping that origin back upward merely because the host window is tall enough to
+            // show the complete canvas.
+            if !vertical {
+                ui.allocate_space(egui::vec2(0.0, f32::from(NATIVE_LEVEL_MINOR_TILES) * cell));
+            }
+        });
+        if requested_vertical_scroll
+            .is_some_and(|requested| (scroll_output.state.offset.y - requested).abs() < 0.5)
+        {
+            self.initial_vertical_scroll_tiles = None;
+        }
         draw_canvas_caption(ui, vertical);
     }
 
@@ -1461,6 +1495,7 @@ impl VanillaLevelEditor {
                 .and(self.background_map16_texture.as_ref()),
             self.foreground_texture.as_ref(),
             custom_map16,
+            self.entrance_form,
             major_tiles,
             minor_tiles,
             vertical,
@@ -4229,6 +4264,19 @@ fn sprite_fields_at_canvas_position(
     Some(fields)
 }
 
+/// Reproduces Lunar Magic's horizontal-level entrance scroll calculation in
+/// `FinalizeLoadedLevelEditorState`: the entrance Y table selects the 16-tile page, with a
+/// three-tile correction only for low positions `$E0` and `$F0`.
+fn vanilla_horizontal_entrance_scroll_row(entrance: VanillaMainEntrance) -> u16 {
+    let index = usize::from(entrance.position & 0x0f);
+    let low = VANILLA_ENTRANCE_Y_LOW[index];
+    let mut row = u16::from(VANILLA_ENTRANCE_Y_HIGH[index]) * 16;
+    if low >> 4 > 0x0d {
+        row += 3;
+    }
+    row
+}
+
 const fn presented_sprite_minor(placement: lm_level::NativeSpritePlacement) -> u16 {
     placement.minor
 }
@@ -4349,6 +4397,7 @@ fn draw_layer2_tilemap(
     background_map16_texture: Option<&egui::TextureHandle>,
     foreground_texture: Option<&egui::TextureHandle>,
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    entrance: VanillaMainEntrance,
     major_tiles: u16,
     minor_tiles: u16,
     vertical: bool,
@@ -4360,8 +4409,14 @@ fn draw_layer2_tilemap(
     };
     for y in 0..rows {
         for x in 0..columns {
+            let shared_background = background_map16_texture.is_some();
+            let (background_x, background_y) = if shared_background {
+                vanilla_shared_background_coordinates(x, y, entrance)
+            } else {
+                (x, y)
+            };
             let Some(&word) =
-                presented_layer2_tilemap_index(x, y, background_map16_texture.is_some())
+                presented_layer2_tilemap_index(background_x, background_y, shared_background)
                     .and_then(|index| tilemap.get(index))
             else {
                 continue;
@@ -4398,6 +4453,41 @@ fn draw_layer2_tilemap(
 fn presented_layer2_tilemap_index(x: usize, y: usize, shared_background: bool) -> Option<usize> {
     let columns = if shared_background { 27 } else { 32 };
     lm_level::native_layer2_tilemap_index(x % columns, y % 32)
+}
+
+fn vanilla_shared_background_coordinates(
+    layer1_x: usize,
+    layer1_y: usize,
+    entrance: VanillaMainEntrance,
+) -> (usize, usize) {
+    let setting = usize::from(entrance.position >> 4);
+    let background_x = match VANILLA_LAYER2_HORIZONTAL_SCROLL[setting] {
+        0 => 0,
+        1 => layer1_x,
+        _ => layer1_x / 2,
+    };
+    let initial_layer2_y =
+        usize::from(VANILLA_INITIAL_LAYER2_Y[usize::from(entrance.screen_and_method & 3)]) / 16;
+    let editor_origin_y = usize::from(vanilla_horizontal_entrance_scroll_row(entrance));
+    let vertical_setting = VANILLA_LAYER2_VERTICAL_SCROLL[setting];
+    let scaled_y = match vertical_setting {
+        0 => 0,
+        1 => layer1_y,
+        2 => layer1_y / 2,
+        _ => layer1_y / 16,
+    };
+    let scaled_editor_origin_y = match vertical_setting {
+        0 => 0,
+        1 => editor_origin_y,
+        2 => editor_origin_y / 2,
+        _ => editor_origin_y / 16,
+    };
+    (
+        background_x,
+        scaled_y
+            .saturating_add(initial_layer2_y)
+            .saturating_sub(scaled_editor_origin_y),
+    )
 }
 
 const fn native_object_cache_minor_tiles(canvas_minor_tiles: u16) -> u16 {
@@ -7205,6 +7295,38 @@ mod tests {
             (3, 31)
         );
         assert_eq!(presented_sprite_tile_coordinates(sprites[0], true), (31, 3));
+    }
+
+    #[test]
+    fn vanilla_horizontal_entrance_scroll_matches_lunar_magic_tables() {
+        let mut entrance = VanillaMainEntrance {
+            position: 0x0b,
+            ..VanillaMainEntrance::default()
+        };
+        assert_eq!(vanilla_horizontal_entrance_scroll_row(entrance), 16);
+
+        entrance.position = 0x07;
+        assert_eq!(vanilla_horizontal_entrance_scroll_row(entrance), 3);
+
+        entrance.position = 0x0d;
+        assert_eq!(vanilla_horizontal_entrance_scroll_row(entrance), 16);
+    }
+
+    #[test]
+    fn level_105_shared_background_uses_vanilla_half_scroll() {
+        let entrance = VanillaMainEntrance {
+            position: 0x5b,
+            screen_and_method: 0x9a,
+            ..VanillaMainEntrance::default()
+        };
+        assert_eq!(
+            vanilla_shared_background_coordinates(0, 16, entrance),
+            (0, 12)
+        );
+        assert_eq!(
+            vanilla_shared_background_coordinates(20, 16, entrance),
+            (10, 12)
+        );
     }
 
     #[test]
