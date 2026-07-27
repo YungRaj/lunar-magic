@@ -523,6 +523,48 @@ pub fn render_mapped_standard_object_stream(
     )
 }
 
+/// Expands one already-positioned object through the active family handler map.
+///
+/// Frontends use this to interleave standard artwork with OSC custom displays in native stream
+/// painter order without reconstructing screen-transition controls. `None` means the command or
+/// extended selector has no authenticated built-in definition.
+///
+/// # Errors
+///
+/// Returns a typed coordinate/cache error without a partial cache.
+pub fn render_mapped_standard_object_placement(
+    record: &lm_level::ObjectRecord,
+    placement: lm_level::NativeObjectPlacement,
+    definitions: &StandardObjectDefinitionSet,
+    handler_map: &[u8; 64],
+    layout: NativeLevelMap16Layout,
+    blank_tile: u16,
+) -> Result<Option<NativeLevelMap16Cache>, StandardObjectRenderError> {
+    let command = record.command_id();
+    let definition = if command == 0 {
+        definitions.extended_definition(record.parameter())
+    } else {
+        let resolved = handler_map
+            .get(usize::from(command))
+            .copied()
+            .unwrap_or(command);
+        definitions.handler_definition(resolved)
+    };
+    let Some(definition) = definition else {
+        return Ok(None);
+    };
+    let mut cache = NativeLevelMap16Cache::filled(blank_tile);
+    render_definition(
+        &mut cache,
+        layout,
+        placement,
+        command,
+        record.parameter(),
+        definition,
+    )?;
+    Ok(Some(cache))
+}
+
 fn render_standard_object_stream_with_map(
     stream: &ObjectStream,
     definitions: &StandardObjectDefinitionSet,
@@ -5691,5 +5733,49 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn one_placement_renderer_preserves_resolved_absolute_screen_position() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let record = ObjectRecord::new(vec![0, 0x10, 0x22]).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[1] = 17;
+        let layout = NativeLevelMap16Layout {
+            width: 64,
+            height: 16,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 2,
+            major: 33,
+            minor: 4,
+            major_span: 3,
+            minor_span: 3,
+        };
+        let cache = render_mapped_standard_object_placement(
+            &record,
+            placement,
+            &definitions,
+            &handler_map,
+            layout,
+            u16::MAX,
+        )
+        .unwrap()
+        .unwrap();
+        for (y, tile) in [(4, 0x85), (5, 0x86), (6, 0x87)] {
+            assert_eq!(
+                cache.cells()[NativeLevelMap16Cache::cell_index(layout, 33, y)],
+                tile
+            );
+        }
+        assert_eq!(
+            cache.cells()[NativeLevelMap16Cache::cell_index(layout, 1, 4)],
+            u16::MAX
+        );
     }
 }

@@ -1854,35 +1854,23 @@ impl VanillaLevelEditor {
         let Some(texture) = self.map16_texture.as_ref() else {
             return;
         };
-        draw_recovered_object_tiles(
+        draw_ordered_object_tiles(
             painter,
-            RecoveredObjectDraw {
+            OrderedObjectDraw {
                 texture,
                 target,
                 cell_size,
                 major_tiles,
                 vertical,
                 records,
+                placements,
                 handler_map: self.active_standard_object_handler_map(),
+                metadata: custom_objects,
+                variant: self.active_object_family_index(),
+                custom_map16,
+                foreground_texture: self.foreground_texture.as_ref(),
             },
         );
-        if let Some(metadata) = custom_objects {
-            draw_custom_object_tiles(
-                painter,
-                CustomObjectDraw {
-                    texture,
-                    target,
-                    cell_size,
-                    vertical,
-                    records,
-                    placements,
-                    metadata,
-                    variant: self.active_object_family_index(),
-                    custom_map16,
-                    foreground_texture: self.foreground_texture.as_ref(),
-                },
-            );
-        }
     }
 
     fn active_standard_object_handler_map(&self) -> Option<&[u8; 64]> {
@@ -3732,14 +3720,19 @@ fn draw_layer2_tilemap(
 }
 
 #[derive(Clone, Copy)]
-struct RecoveredObjectDraw<'a> {
+struct OrderedObjectDraw<'a> {
     texture: &'a egui::TextureHandle,
     target: egui::Rect,
     cell_size: f32,
     major_tiles: u16,
     vertical: bool,
     records: &'a [ObjectRecord],
+    placements: &'a [lm_level::NativeObjectPlacement],
     handler_map: Option<&'a [u8; 64]>,
+    metadata: Option<&'a lm_level::OscResolvedTable>,
+    variant: u8,
+    custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
+    foreground_texture: Option<&'a egui::TextureHandle>,
 }
 
 fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
@@ -3749,16 +3742,7 @@ fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
     ));
 }
 
-fn draw_recovered_object_tiles(painter: &egui::Painter, request: RecoveredObjectDraw<'_>) {
-    let RecoveredObjectDraw {
-        texture,
-        target,
-        cell_size,
-        major_tiles,
-        vertical,
-        records,
-        handler_map,
-    } = request;
+fn draw_ordered_object_tiles(painter: &egui::Painter, request: OrderedObjectDraw<'_>) {
     let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
     if lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).is_err()
         || lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).is_err()
@@ -3766,40 +3750,58 @@ fn draw_recovered_object_tiles(painter: &egui::Painter, request: RecoveredObject
         return;
     }
     let layout = lm_render::NativeLevelMap16Layout {
-        width: if vertical {
+        width: if request.vertical {
             16
         } else {
-            usize::from(major_tiles)
+            usize::from(request.major_tiles)
         },
-        height: if vertical {
-            usize::from(major_tiles)
+        height: if request.vertical {
+            usize::from(request.major_tiles)
         } else {
             16
         },
         page_stride: 0x1b0,
         base_cell: 0,
-        vertical,
+        vertical: request.vertical,
     };
-    let stream = lm_level::ObjectStream {
-        records: records.to_vec(),
-    };
-    let report = match handler_map {
-        Some(handler_map) => lm_render::render_mapped_standard_object_stream(
-            &stream,
+    for placement in request.placements {
+        let Some(record) = request.records.get(placement.record_index) else {
+            continue;
+        };
+        if let Some(parts) = request
+            .metadata
+            .and_then(|metadata| resolved_custom_object_parts(record, metadata, request.variant))
+        {
+            draw_custom_object_parts(painter, request, *placement, &parts);
+            continue;
+        }
+        let Some(handler_map) = request.handler_map else {
+            continue;
+        };
+        let Ok(Some(cache)) = lm_render::render_mapped_standard_object_placement(
+            record,
+            *placement,
             &definitions,
             handler_map,
             layout,
             u16::MAX,
-        ),
-        None => lm_render::render_standard_object_stream(&stream, &definitions, layout, u16::MAX),
-    };
-    let Ok(report) = report else {
-        return;
-    };
+        ) else {
+            continue;
+        };
+        draw_standard_object_cache(painter, request, layout, &cache);
+    }
+}
+
+fn draw_standard_object_cache(
+    painter: &egui::Painter,
+    request: OrderedObjectDraw<'_>,
+    layout: lm_render::NativeLevelMap16Layout,
+    cache: &lm_render::NativeLevelMap16Cache,
+) {
     for y in 0..layout.height {
         for x in 0..layout.width {
             let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
-            let Some(&tile) = report.cache.cells().get(index) else {
+            let Some(&tile) = cache.cells().get(index) else {
                 continue;
             };
             if tile == u16::MAX {
@@ -3812,70 +3814,58 @@ fn draw_recovered_object_tiles(painter: &egui::Painter, request: RecoveredObject
                 continue;
             };
             let tile_rect = egui::Rect::from_min_size(
-                target.min
-                    + egui::vec2(f32::from(tile_x) * cell_size, f32::from(tile_y) * cell_size),
-                egui::vec2(cell_size, cell_size),
+                request.target.min
+                    + egui::vec2(
+                        f32::from(tile_x) * request.cell_size,
+                        f32::from(tile_y) * request.cell_size,
+                    ),
+                egui::vec2(request.cell_size, request.cell_size),
             );
-            draw_map16_atlas_tile(painter, texture, tile_rect, tile);
+            draw_map16_atlas_tile(painter, request.texture, tile_rect, tile);
         }
     }
 }
 
-#[derive(Clone, Copy)]
-struct CustomObjectDraw<'a> {
-    texture: &'a egui::TextureHandle,
-    target: egui::Rect,
-    cell_size: f32,
-    vertical: bool,
-    records: &'a [ObjectRecord],
-    placements: &'a [lm_level::NativeObjectPlacement],
-    metadata: &'a lm_level::OscResolvedTable,
+fn resolved_custom_object_parts(
+    record: &ObjectRecord,
+    metadata: &lm_level::OscResolvedTable,
     variant: u8,
-    custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
-    foreground_texture: Option<&'a egui::TextureHandle>,
+) -> Option<Vec<lm_render::CustomObjectPreviewTile>> {
+    let object = metadata.default_display(record.command_id(), record.parameter(), variant)?;
+    lm_render::render_resolved_lunar_magic_custom_object(object)
 }
 
-fn draw_custom_object_tiles(painter: &egui::Painter, request: CustomObjectDraw<'_>) {
-    for placement in request.placements {
-        let Some(record) = request.records.get(placement.record_index) else {
-            continue;
-        };
-        let Some(metadata) = request.metadata.default_display(
-            record.command_id(),
-            record.parameter(),
-            request.variant,
-        ) else {
-            continue;
-        };
-        let Some(parts) = lm_render::render_resolved_lunar_magic_custom_object(metadata) else {
-            continue;
-        };
-        let (tile_x, tile_y) = placement.tile_coordinates(request.vertical);
-        let origin = request.target.min
-            + egui::vec2(
-                f32::from(tile_x) * request.cell_size,
-                f32::from(tile_y) * request.cell_size,
-            );
-        for part in parts {
-            let offset = egui::vec2(
-                f32::from(part.x) * request.cell_size / 16.0,
-                f32::from(part.y) * request.cell_size / 16.0,
-            );
-            let target = egui::Rect::from_min_size(
-                origin + offset,
-                egui::vec2(request.cell_size, request.cell_size),
-            );
-            let definition = match request.custom_map16 {
-                Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) => {
-                    sidecar.tile(usize::from(part.tile & 0x3fff))
-                }
-                Some(lm_app::NativeMap16SidecarDocument::S16(_)) | None => None,
-            };
-            if let (Some(definition), Some(texture)) = (definition, request.foreground_texture) {
-                draw_custom_map16_tile(painter, texture, target, definition);
-            } else if part.tile < 0x200 {
-                draw_map16_atlas_tile(painter, request.texture, target, part.tile);
+fn draw_custom_object_parts(
+    painter: &egui::Painter,
+    request: OrderedObjectDraw<'_>,
+    placement: lm_level::NativeObjectPlacement,
+    parts: &[lm_render::CustomObjectPreviewTile],
+) {
+    let (tile_x, tile_y) = placement.tile_coordinates(request.vertical);
+    let origin = request.target.min
+        + egui::vec2(
+            f32::from(tile_x) * request.cell_size,
+            f32::from(tile_y) * request.cell_size,
+        );
+    for part in parts {
+        let offset = egui::vec2(
+            f32::from(part.x) * request.cell_size / 16.0,
+            f32::from(part.y) * request.cell_size / 16.0,
+        );
+        let target = egui::Rect::from_min_size(
+            origin + offset,
+            egui::vec2(request.cell_size, request.cell_size),
+        );
+        let definition = match request.custom_map16 {
+            Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) => {
+                sidecar.tile(usize::from(part.tile & 0x3fff))
             }
+            Some(lm_app::NativeMap16SidecarDocument::S16(_)) | None => None,
+        };
+        if let (Some(definition), Some(texture)) = (definition, request.foreground_texture) {
+            draw_custom_map16_tile(painter, texture, target, definition);
+        } else if part.tile < 0x200 {
+            draw_map16_atlas_tile(painter, request.texture, target, part.tile);
         }
     }
 }
@@ -4924,6 +4914,96 @@ mod tests {
         assert_eq!(records[0].encoded(), &[0x40, 0x20, 2, 0]);
         assert_eq!(records[1].encoded(), &[0x40, 0xd0, 3, 0, 0]);
         assert_eq!(records[2].encoded(), &[0x40, 0x70, 4, 0, 0]);
+    }
+
+    #[test]
+    fn osc_display_presence_overrides_builtin_artwork_even_when_empty() {
+        let displayed =
+            lm_level::OscSidecar::decode(b"10\t2\t13\t\n10\t3\t11\tDescription only\n").unwrap();
+        let resolved = lm_level::OscResolvedTable::from_sidecar(&displayed);
+        let display_record = custom_object_native_record(
+            resolved
+                .objects()
+                .iter()
+                .find(|object| object.selector.parameter == 2)
+                .unwrap()
+                .selector,
+        )
+        .unwrap();
+        let description_record = custom_object_native_record(
+            resolved
+                .objects()
+                .iter()
+                .find(|object| object.selector.parameter == 3)
+                .unwrap()
+                .selector,
+        )
+        .unwrap();
+        assert_eq!(
+            resolved_custom_object_parts(&display_record, &resolved, 1),
+            Some(Vec::new())
+        );
+        assert_eq!(
+            resolved_custom_object_parts(&description_record, &resolved, 1),
+            None
+        );
+    }
+
+    #[test]
+    fn osc_custom_object_inserts_commits_reopens_and_retains_display() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let sidecar = lm_level::OscSidecar::decode(b"10\t2\t2\t0,0,10;16,0,11\n").unwrap();
+        let resolved = lm_level::OscResolvedTable::from_sidecar(&sidecar);
+        let object = resolved.objects().first().unwrap();
+        let record = custom_object_native_record(object.selector).unwrap();
+        assert_eq!(
+            resolved_custom_object_parts(&record, &resolved, object.selector.variant)
+                .unwrap()
+                .len(),
+            2
+        );
+
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::ExpandRom(lm_app::RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let mut controller =
+            LevelController::decode(&snapshot, layout, &SpriteLengthTable::standard()).unwrap();
+        let insertion = controller.level().layer1.objects.records.len();
+        controller
+            .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                index: insertion,
+                record: record.clone(),
+            }])])
+            .unwrap();
+        app.dispatch(prepare_commit(&controller, &snapshot).unwrap())
+            .unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(0x105, layout, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(reopened.layer1.objects.records[insertion], record);
+        assert_eq!(
+            resolved_custom_object_parts(
+                &reopened.layer1.objects.records[insertion],
+                &resolved,
+                object.selector.variant,
+            )
+            .unwrap()
+            .len(),
+            2
+        );
     }
 
     #[test]
