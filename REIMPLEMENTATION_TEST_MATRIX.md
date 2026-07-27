@@ -41,14 +41,17 @@ left column while the live canvas owns the majority of every supported window wi
 remaining editor height. These ROM-derived screenshots remain local rather than repository
 fixtures.
 The ROM level workspace also offers an overlay-free `Game pixels` presentation at native
-16-pixel Map16 scale in an entrance-framed 256×224 viewport, plus a `Hide tools` control that gives
-the canvas the full editor width. Differential inspection of SMW's
+16-pixel Map16 scale across the complete scrollable level, an optional entrance-framed 256×224
+viewport, and a `Hide tools` control that gives the canvas the full editor width. Differential
+inspection of SMW's
 `BufferScrollingTiles_Layer2_Background` established that pristine shared backgrounds are two
 row-major 16×27 screens rather than two column-major 27×16 regions. The corrected lossless
 legacy/native codec, initial Layer 1/Layer 2 camera tables, and scroll-rate transform now assemble
 level `$105`'s hills, clouds, bushes, ground, slope, and resolved sprites in the same geometry as
-the Lunar Magic reference; focused codec, gap-prefill, camera, and real-ROM GUI tests cover the
-recovered invariants.
+the Lunar Magic reference. The renderer also follows SMW's direct GFX33 pointer and recovered
+`$7D00` animation-buffer layout to populate frame-zero foreground VRAM slots `$60`–`$6B`, replacing
+static placeholder pixels with the real question/music/turn-block artwork. Focused codec,
+gap-prefill, camera, animated-tile, and real-ROM GUI tests cover the recovered invariants.
 | Copier-header conversion | Detect absent/present 512-byte file prefixes independently from logical ROM offsets and compare-replace exact optional prefixes | Add caller-filled headers and remove them through model, CLI, application specification, built-process, revision-checked open-project, and native-dialog workflows while preserving every logical byte; require header-only dirty/save state, byte-exact restoration of nonuniform removed headers, and guarded one-step undo/redo | Reject no-op states, stale dialogs/revisions, pending saves, mismatched history bytes, invalid exact-prefix shapes, oversized headered results, malformed specifications, aliases, and existing outputs without changing project/source state or publishing partial files |
 | IPS patching | Parse exact `PATCH`/record/`EOF` framing, raw and RLE records, ordered overlaps, optional 24-bit truncate metadata, bounded application specifications, and native-dialog logical-size/change previews | Deterministically create and reapply patches for equal-size edits, zero-filled bank-aligned growth, bank-aligned shrinkage, RLE runs, and changes at the reserved `EOF` offset; exercise create-new CLI/application-shell workflows and revision-checked open-project application; require exact copier-header preservation, one-step undo/redo, checksum-evidence synchronization, and revision-profile invalidation after a successful arbitrary patch | Reject wrong magic, truncation, zero-length RLE, malformed trailers/specifications, 24-bit offset/result overflow, oversized images/patches, input/output aliases, existing destinations, stale revisions, stable-identity changes, partial-bank results, and no-op commits without mutation or partial publication |
 | SNES/PC addressing | Golden vectors at bank edges and mapped/unmapped regions | Round-trip every valid address class | Reject overflow, WRAM, hardware, and unmapped holes |

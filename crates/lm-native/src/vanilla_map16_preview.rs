@@ -38,7 +38,8 @@ pub(crate) fn render(
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
     let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
-    let graphics = materialize_layer1_sprite_vram(&graphics_slots);
+    let mut graphics = materialize_layer1_sprite_vram(&graphics_slots);
+    apply_vanilla_common_animation_frame_zero(&project, &mut graphics)?;
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
     let background_map16 = lm_profile::load_smw_us_v1_background_map16(&project.rom)
@@ -77,6 +78,44 @@ pub(crate) fn render(
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn apply_vanilla_common_animation_frame_zero(
+    project: &Project,
+    graphics: &mut [IndexedTile],
+) -> Result<(), String> {
+    const FRAME_ZERO_COPIES: [(usize, usize); 3] = [
+        (0x60, (0x9500 - 0x7d00) / 32),
+        (0x64, (0x9580 - 0x7d00) / 32),
+        (0x68, (0x9600 - 0x7d00) / 32),
+    ];
+    const TILES_PER_COPY: usize = 4;
+
+    let decoded = project
+        .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    let animation_tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
+        .map_err(|error| format!("cannot decode pristine animated GFX33: {error}"))?;
+    let graphics_len = graphics.len();
+    for (destination, source) in FRAME_ZERO_COPIES {
+        let source_end = source + TILES_PER_COPY;
+        let destination_end = destination + TILES_PER_COPY;
+        let source_tiles = animation_tiles.get(source..source_end).ok_or_else(|| {
+            format!(
+                "animated GFX33 has {} tiles; frame zero requires tiles {source}..{source_end}",
+                animation_tiles.len()
+            )
+        })?;
+        let destination_tiles = graphics
+            .get_mut(destination..destination_end)
+            .ok_or_else(|| {
+                format!(
+                    "foreground VRAM has {graphics_len} tiles; animation requires slots {destination}..{destination_end}"
+                )
+            })?;
+        destination_tiles.clone_from_slice(source_tiles);
+    }
+    Ok(())
 }
 
 fn render_map16_definition_atlas(
@@ -426,6 +465,15 @@ mod tests {
             })
             .count();
         assert_eq!(preview.foreground_tiles.len(), LAYER1_SPRITE_GLOBAL_TILES);
+        let animated = project
+            .load_decompressed_graphics_file(
+                0,
+                lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+            )
+            .unwrap();
+        let animated = lm_graphics::decode_planar_tiles(&animated, 3).unwrap();
+        assert_eq!(preview.foreground_tiles[0x60], animated[192]);
+        assert_eq!(preview.foreground_tiles[0x6b], animated[203]);
         assert_eq!(preview.sprite_tiles.len(), LAYER1_SPRITE_GLOBAL_TILES);
         assert_eq!(unavailable_subtiles, 0);
         assert_eq!(preview.image.size, [512, 256]);

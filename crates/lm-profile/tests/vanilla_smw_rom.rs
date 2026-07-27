@@ -4,6 +4,7 @@ use lm_profile::{
     SMW_US_V1_VANILLA_LEVEL_SLOTS, load_smw_us_v1_level_map16_base,
     smw_us_v1_object_tileset_graphics_files, smw_us_v1_sprite_tileset_graphics_files,
     smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_level_layout,
+    smw_us_v1_vanilla_special_graphics_layout,
 };
 use lm_project::{GraphicsSaveOptions, LevelSaveOptions, Project};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -27,6 +28,28 @@ fn every_ordinary_graphics_file_in_the_local_reference_rom_decodes() {
             !graphics.tiles.is_empty(),
             "GFX{file_number:02X} decoded no tiles"
         );
+    }
+}
+
+#[test]
+fn special_graphics_pointers_match_gfx33_and_gfx32_in_the_reference_rom() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("Super Mario World (USA).sfc");
+    let Ok(bytes) = fs::read(path) else {
+        return;
+    };
+    let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+    let layout = smw_us_v1_vanilla_special_graphics_layout();
+    assert_eq!(layout.read_pointer(&project, 0).unwrap().get(), 0x08_bfc0);
+    assert_eq!(layout.read_pointer(&project, 1).unwrap().get(), 0x08_8000);
+    for file_number in 0..2 {
+        let graphics = project
+            .load_graphics_file(file_number, layout)
+            .unwrap_or_else(|error| {
+                panic!("failed to decode special GFX{file_number:02X}: {error}")
+            });
+        assert!(!graphics.tiles.is_empty());
     }
 }
 

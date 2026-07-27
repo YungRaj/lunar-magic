@@ -18,6 +18,9 @@ pub const SMW_US_V1_GRAPHICS_POINTER_LOW_OFFSET: usize = 0x3992;
 pub const SMW_US_V1_GRAPHICS_POINTER_HIGH_OFFSET: usize = 0x39c4;
 /// Bank-byte plane for the vanilla graphics pointers, in headerless PC coordinates.
 pub const SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET: usize = 0x39f6;
+/// Contiguous pointers for GFX33 animated tiles followed by GFX32 player graphics.
+pub const SMW_US_V1_SPECIAL_GRAPHICS_POINTER_OFFSET: usize = 0x3882;
+pub const SMW_US_V1_SPECIAL_GRAPHICS_FILES: usize = 2;
 
 /// Number of native level slots in SMW's primary and secondary level ranges.
 pub const SMW_US_V1_VANILLA_LEVEL_SLOTS: usize = 0x200;
@@ -288,6 +291,23 @@ pub const fn smw_us_v1_vanilla_graphics_layout() -> GraphicsRomLayout {
             entries: SMW_US_V1_VANILLA_GRAPHICS_FILES,
             stride: 1,
         }),
+        compression: GraphicsCompression::Lz2,
+        maximum_compressed_len: 0x8000,
+        maximum_decompressed_len: 0x10000,
+    }
+}
+
+/// Returns the direct two-entry GFX33/GFX32 layout used during SMW startup.
+#[must_use]
+pub const fn smw_us_v1_vanilla_special_graphics_layout() -> GraphicsRomLayout {
+    GraphicsRomLayout {
+        mapper: Mapper::LoRom,
+        pointers: LevelPointerTable {
+            offset: SMW_US_V1_SPECIAL_GRAPHICS_POINTER_OFFSET,
+            entries: SMW_US_V1_SPECIAL_GRAPHICS_FILES,
+            stride: 3,
+        },
+        split_pointer_planes: None,
         compression: GraphicsCompression::Lz2,
         maximum_compressed_len: 0x8000,
         maximum_decompressed_len: 0x10000,

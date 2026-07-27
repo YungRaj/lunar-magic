@@ -258,6 +258,7 @@ pub(crate) struct VanillaLevelEditor {
     canvas_zoom_percent: Option<u16>,
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
+    snes_viewport: Option<bool>,
     initial_vertical_scroll_tiles: Option<u16>,
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
@@ -439,6 +440,10 @@ impl VanillaLevelEditor {
 
     fn game_preview(&self) -> bool {
         self.game_preview.unwrap_or(true)
+    }
+
+    fn snes_viewport(&self) -> bool {
+        self.snes_viewport.unwrap_or(false)
     }
 
     fn show_commit_controls(
@@ -1374,7 +1379,8 @@ impl VanillaLevelEditor {
         let cell = self.canvas_cell();
         let world_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
         let game_preview = self.game_preview();
-        let canvas_size = if game_preview {
+        let snes_viewport = game_preview && self.snes_viewport();
+        let canvas_size = if snes_viewport {
             egui::vec2(16.0 * cell, 14.0 * cell)
         } else {
             world_size
@@ -1390,14 +1396,14 @@ impl VanillaLevelEditor {
         let requested_vertical_scroll = self
             .initial_vertical_scroll_tiles
             .map(|row| f32::from(row) * cell);
-        if !game_preview && let Some(offset) = requested_vertical_scroll {
+        if !snes_viewport && let Some(offset) = requested_vertical_scroll {
             scroll_area = scroll_area.vertical_scroll_offset(offset);
         }
         let scroll_output = scroll_area.show(ui, |ui| {
             let (rect, response) =
                 ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
-            let paint_rect = if game_preview {
+            let paint_rect = if snes_viewport {
                 let (origin_x, origin_y) =
                     game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical);
                 egui::Rect::from_min_size(
@@ -1428,7 +1434,7 @@ impl VanillaLevelEditor {
                 custom_map16,
             );
         });
-        if !game_preview && let Some(requested) = requested_vertical_scroll {
+        if !snes_viewport && let Some(requested) = requested_vertical_scroll {
             let target = clamped_scroll_offset(
                 requested,
                 scroll_output.content_size.y,
@@ -1446,6 +1452,15 @@ impl VanillaLevelEditor {
             let mut game_preview = self.game_preview();
             if ui.toggle_value(&mut game_preview, "Game pixels").changed() {
                 self.game_preview = Some(game_preview);
+            }
+            if game_preview {
+                let mut snes_viewport = self.snes_viewport();
+                if ui
+                    .toggle_value(&mut snes_viewport, "256×224 viewport")
+                    .changed()
+                {
+                    self.snes_viewport = Some(snes_viewport);
+                }
             }
             ui.separator();
             ui.label("Canvas tool:");
@@ -1539,8 +1554,7 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
-        let game_camera = self
-            .game_preview()
+        let game_camera = (self.game_preview() && self.snes_viewport())
             .then(|| game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical));
         draw_layer2_tilemap(
             painter,
@@ -6552,10 +6566,14 @@ mod tests {
     fn level_tools_default_visible_and_can_yield_the_complete_workspace() {
         let mut editor = VanillaLevelEditor::default();
         assert!(editor.tools_panel_visible());
+        assert!(editor.game_preview());
+        assert!(!editor.snes_viewport());
         editor.tools_panel_visible = Some(false);
         assert!(!editor.tools_panel_visible());
         editor.tools_panel_visible = Some(true);
         assert!(editor.tools_panel_visible());
+        editor.snes_viewport = Some(true);
+        assert!(editor.snes_viewport());
     }
 
     #[test]
