@@ -234,6 +234,8 @@ pub(crate) struct VanillaLevelEditor {
     standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
     selected_layer2_tile: usize,
     layer2_word: u16,
+    selected_layer2_object: usize,
+    layer2_object_form: ObjectForm,
     external_asset_revision: u64,
     external_sprite_textures:
         HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
@@ -423,9 +425,114 @@ impl VanillaLevelEditor {
                     "{} native Layer 2 object records are decoded and rendered.",
                     objects.objects.records.len()
                 ));
-                ui.small("Layer 2 object-list editing is the next editor workflow.");
+                self.show_layer2_object_editor(ui, &objects.objects.records);
             }
         });
+    }
+
+    fn show_layer2_object_editor(&mut self, ui: &mut egui::Ui, records: &[ObjectRecord]) {
+        self.selected_layer2_object = self
+            .selected_layer2_object
+            .min(records.len().saturating_sub(1));
+        egui::ScrollArea::vertical()
+            .id_salt("vanilla-layer2-object-list")
+            .max_height(180.0)
+            .show(ui, |ui| {
+                for (index, record) in records.iter().enumerate() {
+                    let encoded = record
+                        .encoded()
+                        .iter()
+                        .map(|byte| format!("{byte:02X}"))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if ui
+                        .selectable_label(
+                            index == self.selected_layer2_object,
+                            format!(
+                                "{index:03}: command {:02X} · {encoded}",
+                                record.command_id()
+                            ),
+                        )
+                        .clicked()
+                    {
+                        self.selected_layer2_object = index;
+                        self.layer2_object_form = ObjectForm::from_record(record);
+                    }
+                }
+            });
+        show_compact_object_fields(
+            ui,
+            "vanilla-layer2-object-fields",
+            &mut self.layer2_object_form,
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Insert after selection").clicked() {
+                let result = self
+                    .layer2_object_form
+                    .ordinary_record()
+                    .and_then(|record| {
+                        self.controller
+                            .as_mut()
+                            .ok_or_else(|| "level controller is unavailable".to_owned())?
+                            .apply_layer2_object_edits(&[ObjectEdit::Insert {
+                                index: object_insertion_index(
+                                    self.selected_layer2_object,
+                                    records.len(),
+                                ),
+                                record,
+                            }])
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
+                    Ok(()) => self.error = None,
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            let has_selection = self.selected_layer2_object < records.len();
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Apply fields"))
+                .clicked()
+            {
+                let edits = object_field_edits(
+                    &self.layer2_object_form,
+                    self.selected_layer2_object,
+                    records.get(self.selected_layer2_object),
+                );
+                self.apply_layer2_object_result(edits);
+            }
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Remove object"))
+                .clicked()
+            {
+                self.apply_layer2_object_result(Ok(vec![ObjectEdit::Remove {
+                    index: self.selected_layer2_object,
+                }]));
+                self.selected_layer2_object = self
+                    .selected_layer2_object
+                    .min(records.len().saturating_sub(2));
+            }
+        });
+    }
+
+    fn apply_layer2_object_result(&mut self, edits: Result<Vec<ObjectEdit>, String>) {
+        match edits {
+            Ok(edits) => {
+                let result = self
+                    .controller
+                    .as_mut()
+                    .ok_or_else(|| "level controller is unavailable".to_owned())
+                    .and_then(|controller| {
+                        controller
+                            .apply_layer2_object_edits(&edits)
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
+                    Ok(()) => self.error = None,
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            Err(error) => self.error = Some(error),
+        }
     }
 
     fn show_header_editor(&mut self, ui: &mut egui::Ui, objects: usize, sprites: usize) {
@@ -656,6 +763,15 @@ impl VanillaLevelEditor {
             {
                 self.layer2_word = u16::from_le_bytes([word[0], word[1]]);
             }
+        } else if let Some(lm_level::NativeLayer2Data::Objects(objects)) = controller.layer2() {
+            self.selected_layer2_object = self
+                .selected_layer2_object
+                .min(objects.objects.records.len().saturating_sub(1));
+            self.layer2_object_form = objects
+                .objects
+                .records
+                .get(self.selected_layer2_object)
+                .map_or_else(ObjectForm::default, ObjectForm::from_record);
         }
         self.object_placement_template = None;
         self.dragging_object = None;
@@ -717,6 +833,7 @@ impl VanillaLevelEditor {
                         lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).ok()
                     });
                 self.selected_layer2_tile = 0;
+                self.selected_layer2_object = 0;
                 self.layer2_word = controller
                     .layer2()
                     .and_then(|layer2| match layer2 {
@@ -726,6 +843,15 @@ impl VanillaLevelEditor {
                         lm_level::NativeLayer2Data::Objects(_) => None,
                     })
                     .unwrap_or_default();
+                self.layer2_object_form = controller
+                    .layer2()
+                    .and_then(|layer2| match layer2 {
+                        lm_level::NativeLayer2Data::Objects(objects) => {
+                            objects.objects.records.first()
+                        }
+                        lm_level::NativeLayer2Data::Tilemap(_) => None,
+                    })
+                    .map_or_else(ObjectForm::default, ObjectForm::from_record);
                 self.form = HeaderForm::from_controller(&controller);
                 self.selected_object = 0;
                 self.object_form = controller
@@ -1913,55 +2039,15 @@ impl VanillaLevelEditor {
     }
 
     fn selected_object_field_edits(&self) -> Result<Vec<ObjectEdit>, String> {
-        if let Some((screen, destination_and_flags)) = self.object_form.screen_exit {
-            let mut record = self
-                .controller
-                .as_ref()
-                .and_then(|controller| {
-                    controller
-                        .level()
-                        .layer1
-                        .objects
-                        .records
-                        .get(self.selected_object)
-                })
-                .cloned()
-                .ok_or_else(|| "selected screen-exit object no longer exists".to_owned())?;
-            record
-                .set_screen_exit(screen, destination_and_flags)
-                .map_err(|error| error.to_string())?;
-            return Ok(vec![ObjectEdit::Replace {
-                index: self.selected_object,
-                record,
-            }]);
-        }
-        if let Some((_, packed_target)) = self.object_form.screen_jump {
-            return Ok(vec![ObjectEdit::SetScreenJumpTarget {
-                index: self.selected_object,
-                packed_target,
-            }]);
-        }
-        Ok(vec![
-            ObjectEdit::SetCommandId {
-                index: self.selected_object,
-                command_id: self.object_form.command_id,
-            },
-            ObjectEdit::SetParameter {
-                index: self.selected_object,
-                parameter: self.object_form.parameter,
-            },
-            ObjectEdit::SetCoordinateNibbles {
-                index: self.selected_object,
-                coordinates: ObjectCoordinateNibbles {
-                    first: self.object_form.first_coordinate,
-                    second: self.object_form.second_coordinate,
-                },
-            },
-            ObjectEdit::SetAdvancesScreen {
-                index: self.selected_object,
-                advances: self.object_form.advances_screen,
-            },
-        ])
+        let current = self.controller.as_ref().and_then(|controller| {
+            controller
+                .level()
+                .layer1
+                .objects
+                .records
+                .get(self.selected_object)
+        });
+        object_field_edits(&self.object_form, self.selected_object, current)
     }
 
     fn apply_object_result(&mut self, edit: Result<NativeLevelEdit, String>) {
@@ -4117,6 +4203,65 @@ fn sprite_save_constraint(ui: &mut egui::Ui, controller: Option<&LevelController
             );
         }
     }
+}
+
+fn show_compact_object_fields(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm) {
+    if form.screen_exit.is_some() || form.screen_jump.is_some() {
+        ui.small("Select an ordinary Layer 2 object to edit semantic fields.");
+        return;
+    }
+    egui::Grid::new(id).show(ui, |ui| {
+        header_row(ui, "Command", &mut form.command_id, 0x3f);
+        header_row(ui, "Parameter", &mut form.parameter, 0xff);
+        header_row(ui, "Coordinate A", &mut form.first_coordinate, 0x0f);
+        header_row(ui, "Coordinate B", &mut form.second_coordinate, 0x0f);
+        ui.label("Advance screen");
+        ui.checkbox(&mut form.advances_screen, "");
+        ui.end_row();
+    });
+}
+
+fn object_field_edits(
+    form: &ObjectForm,
+    index: usize,
+    current: Option<&ObjectRecord>,
+) -> Result<Vec<ObjectEdit>, String> {
+    if let Some((screen, destination_and_flags)) = form.screen_exit {
+        let mut record = current
+            .cloned()
+            .ok_or_else(|| "selected screen-exit object no longer exists".to_owned())?;
+        record
+            .set_screen_exit(screen, destination_and_flags)
+            .map_err(|error| error.to_string())?;
+        return Ok(vec![ObjectEdit::Replace { index, record }]);
+    }
+    if let Some((_, packed_target)) = form.screen_jump {
+        return Ok(vec![ObjectEdit::SetScreenJumpTarget {
+            index,
+            packed_target,
+        }]);
+    }
+    Ok(vec![
+        ObjectEdit::SetCommandId {
+            index,
+            command_id: form.command_id,
+        },
+        ObjectEdit::SetParameter {
+            index,
+            parameter: form.parameter,
+        },
+        ObjectEdit::SetCoordinateNibbles {
+            index,
+            coordinates: ObjectCoordinateNibbles {
+                first: form.first_coordinate,
+                second: form.second_coordinate,
+            },
+        },
+        ObjectEdit::SetAdvancesScreen {
+            index,
+            advances: form.advances_screen,
+        },
+    ])
 }
 
 fn is_supported(snapshot: &lm_app::ControllerSnapshot) -> bool {

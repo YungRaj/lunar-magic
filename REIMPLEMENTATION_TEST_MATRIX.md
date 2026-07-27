@@ -39,9 +39,11 @@ input-driven gameplay assertions.
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary
 level controller instead of retaining a display-only copy: compressed tiles can be selected or
-painted on the main canvas by exact 16-bit Map16 word, share Layer 1/sprite undo and redo, and commit
-through one revision-checked mutation. The save path reopens all changed level streams semantically;
-format-$103 saves persist the normalized descriptor beside the relocated tilemap and checksum.
+painted on the main canvas by exact 16-bit Map16 word, while object-backed levels expose their
+ordered native record list and lossless field/insert/remove operations. Both storage classes share
+Layer 1/sprite undo and redo and commit through one revision-checked mutation. The save path reopens
+all changed level streams semantically; format-$103 saves persist the normalized descriptor beside
+the relocated tilemap and checksum.
 Object-backed levels expose the same lossless ordered record operations and native clipboard
 framing; compressed-tilemap levels expose all 1,024 little-endian words through the recovered
 32×32 canvas order. The native panel supports ordinary single-cell selection and Shift-extended

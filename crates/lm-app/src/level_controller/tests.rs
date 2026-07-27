@@ -105,6 +105,20 @@ fn layer2_test_rom() -> Vec<u8> {
     bytes
 }
 
+fn layer2_object_test_rom() -> Vec<u8> {
+    let mut bytes = test_rom();
+    bytes.resize(0x1_0000, 0xff);
+    let pointer = layer2_layout().pointers.pointer_offset(0x105).unwrap();
+    let snes = lm_rom::pc_to_snes(Mapper::LoRom, 0x1400)
+        .unwrap()
+        .to_le_bytes();
+    bytes[pointer..pointer + 3].copy_from_slice(&snes[..3]);
+    bytes[0x1400..0x1409].copy_from_slice(&[1, 2, 3, 4, 5, 9, 8, 7, 0xff]);
+    let checksum = lm_rom::compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+    bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    bytes
+}
+
 fn tagged_test_rom() -> (Vec<u8>, RatsOwnershipManifest) {
     let mut project = Project::new(RomImage::from_bytes(test_rom()).unwrap());
     let level = project
@@ -210,6 +224,12 @@ fn layer2_tilemap_shares_history_and_commits_with_semantic_reopen() {
         &SpriteLengthTable::standard(),
     )
     .unwrap();
+    let original = controller.layer2().cloned();
+    assert!(matches!(
+        controller.apply_layer2_tilemap_words(&[(0, 0x9999), (1024, 0x8888)]),
+        Err(LevelControllerError::Layer2TileIndex(1024))
+    ));
+    assert_eq!(controller.layer2().cloned(), original);
     controller
         .apply_layer2_tilemap_words(&[(0, 0x0123), (511, 0x0456)])
         .unwrap();
@@ -240,6 +260,57 @@ fn layer2_tilemap_shares_history_and_commits_with_semantic_reopen() {
     };
     assert_eq!(u16::from_le_bytes([bytes[0], bytes[1]]), 0x0123);
     assert_eq!(u16::from_le_bytes([bytes[1022], bytes[1023]]), 0x0456);
+}
+
+#[test]
+fn layer2_object_edits_share_history_and_commit_with_the_level() {
+    let mut app = AppState::default();
+    app.load_rom(layer2_object_test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller = LevelController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    controller
+        .apply_layer2_object_edits(&[ObjectEdit::Replace {
+            index: 0,
+            record: ObjectRecord::new(vec![6, 5, 4]).unwrap(),
+        }])
+        .unwrap();
+    assert!(controller.layer2_is_modified());
+    assert!(controller.undo());
+    assert!(!controller.layer2_is_modified());
+    assert!(controller.redo());
+
+    let layer2_options = LevelLayer2SaveOptions {
+        allocation: options().layer1_allocation,
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let prepared = controller
+        .prepare_commit_with_layer2(
+            "Edit level 105 object-backed Layer 2",
+            &options(),
+            &layer2_options,
+            false,
+        )
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    let reopened = LevelController::decode_with_layer2(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    let NativeLayer2Data::Objects(objects) = reopened.layer2().unwrap() else {
+        panic!("expected object-backed Layer 2");
+    };
+    assert_eq!(objects.objects.records[0].encoded(), &[6, 5, 4]);
 }
 
 #[test]

@@ -351,11 +351,11 @@ impl LevelController {
         edits: &[ObjectEdit],
     ) -> Result<(), LevelControllerError> {
         let previous = self.state();
-        let layer2 = self
+        let mut staged = self
             .layer2
-            .as_mut()
+            .clone()
             .ok_or(LevelControllerError::Layer2Unavailable)?;
-        let NativeLayer2Data::Objects(objects) = layer2 else {
+        let NativeLayer2Data::Objects(objects) = &mut staged else {
             return Err(LevelControllerError::Layer2StorageMismatch {
                 expected: "objects",
             });
@@ -364,6 +364,7 @@ impl LevelController {
             .objects
             .apply_edits(edits)
             .map_err(LevelControllerError::Layer2ObjectEdit)?;
+        self.layer2 = Some(staged);
         self.finish_edit(previous);
         Ok(())
     }
@@ -378,11 +379,11 @@ impl LevelController {
         edits: &[(usize, u16)],
     ) -> Result<(), LevelControllerError> {
         let previous = self.state();
-        let layer2 = self
+        let mut staged = self
             .layer2
-            .as_mut()
+            .clone()
             .ok_or(LevelControllerError::Layer2Unavailable)?;
-        let NativeLayer2Data::Tilemap(bytes) = layer2 else {
+        let NativeLayer2Data::Tilemap(bytes) = &mut staged else {
             return Err(LevelControllerError::Layer2StorageMismatch {
                 expected: "tilemap",
             });
@@ -400,6 +401,7 @@ impl LevelController {
             }
             bytes[index * 2..index * 2 + 2].copy_from_slice(&word.to_le_bytes());
         }
+        self.layer2 = Some(staged);
         self.finish_edit(previous);
         Ok(())
     }

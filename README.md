@@ -101,8 +101,9 @@ The project currently has tested support for substantial parts of the SMW editin
 - Native rendering for Map16, graphics, palettes, Layer 1, object-backed Layer 2, compressed Layer 2,
   selected Layer 3 content, entities with known appearance definitions, and editor overlays.
 - A graphical level workspace with level navigation, camera controls, selection, object/sprite
-  editing, compressed Layer 2 tile selection/painting in the automatically detected vanilla
-  workspace, native asset panels, shared undo/redo, and revision-checked atomic saves.
+  editing, compressed Layer 2 tile selection/painting and object-backed Layer 2 record editing in
+  the automatically detected vanilla workspace, native asset panels, shared undo/redo, and
+  revision-checked atomic saves.
 - Overworld models and editors for layers, events, paths, warps, messages, level names, player
   starts, sprites, palettes, ExAnimation, title-screen assets, credits, and related installed
   runtimes.
