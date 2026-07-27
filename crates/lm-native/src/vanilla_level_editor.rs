@@ -1432,6 +1432,9 @@ impl VanillaLevelEditor {
             self.background_map16_texture.as_ref(),
             self.foreground_texture.as_ref(),
             custom_map16,
+            major_tiles,
+            minor_tiles,
+            vertical,
         );
         let layer2_artwork_bounds = self.draw_object_artwork(
             painter,
@@ -4261,11 +4264,19 @@ fn draw_layer2_tilemap(
     background_map16_texture: Option<&egui::TextureHandle>,
     foreground_texture: Option<&egui::TextureHandle>,
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
 ) {
-    for y in 0..32 {
-        for x in 0..32 {
+    let (columns, rows) = if vertical {
+        (usize::from(minor_tiles), usize::from(major_tiles))
+    } else {
+        (usize::from(major_tiles), usize::from(minor_tiles))
+    };
+    for y in 0..rows {
+        for x in 0..columns {
             let Some(&word) =
-                lm_level::native_layer2_tilemap_index(x, y).and_then(|index| tilemap.get(index))
+                wrapped_layer2_tilemap_index(x, y).and_then(|index| tilemap.get(index))
             else {
                 continue;
             };
@@ -4296,6 +4307,10 @@ fn draw_layer2_tilemap(
             }
         }
     }
+}
+
+fn wrapped_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
+    lm_level::native_layer2_tilemap_index(x % 32, y % 32)
 }
 
 #[derive(Clone, Copy)]
@@ -7779,6 +7794,16 @@ mod tests {
             .collect::<Vec<_>>();
         indexes.sort_unstable();
         assert_eq!(indexes, (0..1024).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn native_layer2_canvas_wraps_the_snes_tilemap_plane() {
+        for (x, y) in [(32, 0), (63, 31), (0, 32), (95, 79)] {
+            assert_eq!(
+                wrapped_layer2_tilemap_index(x, y),
+                lm_level::native_layer2_tilemap_index(x % 32, y % 32)
+            );
+        }
     }
 
     #[test]
