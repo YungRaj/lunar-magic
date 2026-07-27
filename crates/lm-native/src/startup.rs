@@ -54,6 +54,10 @@ pub(crate) fn initialize(options: StartupOptions) -> Result<InitializedNative, S
         )
         .map_err(|error| error.to_string())?;
     }
+    if let Some(level) = options.level {
+        app.dispatch(Command::SelectLevel(level))
+            .map_err(|error| error.to_string())?;
+    }
     if let Some(path) = options.revision_profile {
         let profile = profile_loader::read(&path).map_err(|error| error.to_string())?;
         app.dispatch(Command::InstallRevisionProfile(Box::new(profile)))
@@ -62,7 +66,7 @@ pub(crate) fn initialize(options: StartupOptions) -> Result<InitializedNative, S
     Ok(InitializedNative { app, recent_state })
 }
 
-pub(crate) const HELP: &str = "usage: lm-native [ROM] [--rom ROM] [--profile FILE] \
+pub(crate) const HELP: &str = "usage: lm-native [ROM] [--rom ROM] [--level HEX] [--profile FILE] \
     [--ui-config FILE] [--tools-config FILE] [--recent-state FILE]";
 
 #[cfg(test)]

@@ -263,7 +263,7 @@ pub(crate) struct VanillaLevelEditor {
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
-    map16_key: Option<(u64, u8, u8)>,
+    map16_key: Option<(u64, u16, u8, u8)>,
     map16_texture: Option<egui::TextureHandle>,
     background_map16_texture: Option<egui::TextureHandle>,
     animated_map16_textures: Vec<egui::TextureHandle>,
@@ -274,6 +274,8 @@ pub(crate) struct VanillaLevelEditor {
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
     foreground_tiles: Vec<lm_graphics::IndexedTile>,
     layer3_tiles: Vec<lm_graphics::IndexedTile>,
+    layer3_texture: Option<egui::TextureHandle>,
+    layer3_position: Option<(i16, i16)>,
     sprite_palette: Option<lm_graphics::Palette>,
     canvas_backdrop: Option<lm_graphics::Bgr555>,
     foreground_texture: Option<egui::TextureHandle>,
@@ -1142,6 +1144,8 @@ impl VanillaLevelEditor {
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
         self.layer3_tiles.clear();
+        self.layer3_texture = None;
+        self.layer3_position = None;
         self.sprite_palette = None;
         self.canvas_backdrop = None;
         self.foreground_texture = None;
@@ -1205,7 +1209,10 @@ impl VanillaLevelEditor {
         object_tileset: u8,
     ) {
         let sprite_tileset = self.form.sprite_tileset;
-        let key = (snapshot.revision, object_tileset, sprite_tileset);
+        let level = self.controller.as_ref().map_or(0, |controller| {
+            u16::try_from(controller.level().number).unwrap_or(0)
+        });
+        let key = (snapshot.revision, level, object_tileset, sprite_tileset);
         if self.map16_key == Some(key) {
             return;
         }
@@ -1218,6 +1225,8 @@ impl VanillaLevelEditor {
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
         self.layer3_tiles.clear();
+        self.layer3_texture = None;
+        self.layer3_position = None;
         self.sprite_palette = None;
         self.canvas_backdrop = None;
         self.external_sprite_textures.clear();
@@ -1226,9 +1235,7 @@ impl VanillaLevelEditor {
         self.map16_error = None;
         match crate::vanilla_map16_preview::render(
             snapshot.rom_bytes.clone(),
-            self.controller.as_ref().map_or(0, |controller| {
-                u16::try_from(controller.level().number).unwrap_or(0)
-            }),
+            level,
             self.controller
                 .as_ref()
                 .map_or_default(|controller| controller.level().layer1.header),
@@ -1324,6 +1331,14 @@ impl VanillaLevelEditor {
                 self.sprite_tiles = preview.sprite_tiles;
                 self.foreground_tiles = preview.foreground_tiles;
                 self.layer3_tiles = preview.layer3_tiles;
+                self.layer3_texture = preview.layer3_image.map(|image| {
+                    context.load_texture(
+                        format!("vanilla-layer3-{level:03X}-{}", snapshot.revision),
+                        image,
+                        egui::TextureOptions::NEAREST,
+                    )
+                });
+                self.layer3_position = preview.layer3_position;
                 self.canvas_backdrop = Some(preview.backdrop);
                 self.sprite_palette = Some(preview.palette);
             }
@@ -1738,6 +1753,15 @@ impl VanillaLevelEditor {
             external_textures: &self.external_sprite_textures,
             editor_overlays: !game_preview,
         });
+        if game_preview
+            && let (Some(texture), Some(position), Some(camera)) = (
+                self.layer3_texture.as_ref(),
+                self.layer3_position,
+                game_camera,
+            )
+        {
+            draw_wrapped_layer3_viewport(painter, rect, cell, texture, position, camera);
+        }
         // Paint the editor grid after the level artwork. Drawing opaque grid lines underneath
         // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
         if !game_preview {
@@ -4697,6 +4721,63 @@ fn draw_wrapped_background_viewport(
     }
 }
 
+fn draw_wrapped_layer3_viewport(
+    painter: &egui::Painter,
+    world: egui::Rect,
+    cell_size: f32,
+    texture: &egui::TextureHandle,
+    position: (i16, i16),
+    camera: (u16, u16),
+) {
+    const PLANE_PIXELS: i32 = 512;
+    const VIEW_WIDTH: i32 = 256;
+    const VIEW_HEIGHT: i32 = 224;
+    let viewport = egui::Rect::from_min_size(
+        world.min
+            + egui::vec2(
+                f32::from(camera.0) * cell_size,
+                f32::from(camera.1) * cell_size,
+            ),
+        egui::vec2(16.0 * cell_size, 14.0 * cell_size),
+    );
+    let pixel_scale = cell_size / 16.0;
+    let source_x = i32::from(position.0).rem_euclid(PLANE_PIXELS);
+    let source_y = i32::from(position.1).rem_euclid(PLANE_PIXELS);
+    let mut output_y = 0;
+    while output_y < VIEW_HEIGHT {
+        let plane_y = (source_y + output_y).rem_euclid(PLANE_PIXELS);
+        let rows = (PLANE_PIXELS - plane_y).min(VIEW_HEIGHT - output_y);
+        let mut output_x = 0;
+        while output_x < VIEW_WIDTH {
+            let plane_x = (source_x + output_x).rem_euclid(PLANE_PIXELS);
+            let columns = (PLANE_PIXELS - plane_x).min(VIEW_WIDTH - output_x);
+            let pixels = |value| f32::from(u16::try_from(value).unwrap_or_default());
+            let plane_extent = pixels(PLANE_PIXELS);
+            let target = egui::Rect::from_min_size(
+                viewport.min
+                    + egui::vec2(
+                        pixels(output_x) * pixel_scale,
+                        pixels(output_y) * pixel_scale,
+                    ),
+                egui::vec2(pixels(columns) * pixel_scale, pixels(rows) * pixel_scale),
+            );
+            let uv = egui::Rect::from_min_max(
+                egui::pos2(
+                    pixels(plane_x) / plane_extent,
+                    pixels(plane_y) / plane_extent,
+                ),
+                egui::pos2(
+                    pixels(plane_x + columns) / plane_extent,
+                    pixels(plane_y + rows) / plane_extent,
+                ),
+            );
+            painter.image(texture.id(), target, uv, egui::Color32::WHITE);
+            output_x += columns;
+        }
+        output_y += rows;
+    }
+}
+
 fn vanilla_game_background_coordinates(
     layer1_x: usize,
     layer1_y: usize,
@@ -7502,6 +7583,75 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert!(missing.is_empty(), "missing mapped artwork: {missing:02X?}");
+    }
+
+    #[test]
+    fn pristine_level_102_matches_live_snes_map16_rows_around_high_tide() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image =
+            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+                .unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level = project
+            .load_level_slot(
+                0x102,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 512,
+            height: 27,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let report = lm_render::render_mapped_standard_object_stream(
+            &level.layer1.objects,
+            &definitions,
+            definition_map.family(2).unwrap(),
+            layout,
+            VANILLA_EMPTY_MAP16_TILE,
+        )
+        .unwrap();
+        let expected = [
+            [
+                0x025, 0x025, 0x073, 0x074, 0x074, 0x074, 0x074, 0x074, 0x074, 0x074, 0x074, 0x075,
+                0x025, 0x025, 0x025, 0x025,
+            ],
+            [
+                0x107, 0x108, 0x108, 0x108, 0x108, 0x108, 0x108, 0x108, 0x108, 0x108, 0x108, 0x108,
+                0x108, 0x108, 0x108, 0x109,
+            ],
+            [
+                0x025, 0x073, 0x074, 0x074, 0x074, 0x074, 0x074, 0x074, 0x074, 0x074, 0x074, 0x074,
+                0x074, 0x074, 0x075, 0x025,
+            ],
+        ];
+        for (row_offset, expected_row) in expected.into_iter().enumerate() {
+            let y = 18 + row_offset;
+            for (x, tile) in expected_row.into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.get(layout, x, y).unwrap(),
+                    tile,
+                    "live Snes9x Map16 mismatch at ({x}, {y})"
+                );
+            }
+        }
+        for y in 21..27 {
+            for (x, tile) in expected[2].into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.get(layout, x, y).unwrap(),
+                    tile,
+                    "live Snes9x Map16 mismatch at ({x}, {y})"
+                );
+            }
+        }
     }
 
     #[test]

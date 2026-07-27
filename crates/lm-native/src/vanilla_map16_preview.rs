@@ -17,6 +17,8 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) foreground_image: egui::ColorImage,
     pub(crate) foreground_tiles: Vec<IndexedTile>,
     pub(crate) layer3_tiles: Vec<IndexedTile>,
+    pub(crate) layer3_image: Option<egui::ColorImage>,
+    pub(crate) layer3_position: Option<(i16, i16)>,
     pub(crate) sprite_graphics_files: [usize; 4],
     pub(crate) common_tiles: usize,
     pub(crate) tileset_tiles: usize,
@@ -127,6 +129,21 @@ pub(crate) fn render(
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let foreground_image = render_foreground_graphics_atlas(&graphics, &palette);
     let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
+    let entrance = project
+        .load_vanilla_main_entrance(
+            usize::from(level),
+            lm_profile::smw_us_v1_vanilla_entrance_layout(),
+        )
+        .map_err(|error| error.to_string())?;
+    let layer3 =
+        lm_profile::load_smw_us_v1_level_layer3(&project, entrance, header.object_tileset())
+            .map_err(|error| error.to_string())?;
+    let layer3_position = layer3
+        .as_ref()
+        .map(|layer3| (layer3.initial_x, layer3.initial_y));
+    let layer3_image = layer3
+        .as_ref()
+        .map(|layer3| render_layer3_plane(&layer3.tilemap, &layer3_tiles, &palette));
     Ok(VanillaMap16Preview {
         image,
         background_image,
@@ -135,6 +152,8 @@ pub(crate) fn render(
         foreground_image,
         foreground_tiles: graphics,
         layer3_tiles,
+        layer3_image,
+        layer3_position,
         graphics_files,
         sprite_image,
         sprite_tiles: materialize_layer1_sprite_vram(&sprite_graphics),
@@ -144,6 +163,49 @@ pub(crate) fn render(
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn render_layer3_plane(
+    tilemap: &[u16],
+    graphics: &[IndexedTile],
+    palette: &Palette,
+) -> egui::ColorImage {
+    const TILES: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
+    const TILE_PIXELS: usize = IndexedTile::WIDTH;
+    const EXTENT: usize = TILES * TILE_PIXELS;
+    let mut image = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
+    for (position, &word) in tilemap.iter().take(TILES * TILES).enumerate() {
+        let tile_x = position % TILES;
+        let tile_y = position / TILES;
+        let Some(tile) = graphics.get(usize::from(word & 0x03ff)) else {
+            continue;
+        };
+        let palette_number = usize::from((word >> 10) & 7);
+        let x_flip = word & 0x4000 != 0;
+        let y_flip = word & 0x8000 != 0;
+        for y in 0..TILE_PIXELS {
+            for x in 0..TILE_PIXELS {
+                let source_x = if x_flip { TILE_PIXELS - 1 - x } else { x };
+                let source_y = if y_flip { TILE_PIXELS - 1 - y } else { y };
+                let Some(index) = tile.pixel(source_x, source_y) else {
+                    continue;
+                };
+                if index == 0 {
+                    continue;
+                }
+                // BG3 is 2bpp in SMW's normal level mode: each tile palette selects four
+                // consecutive CGRAM colors rather than one sixteen-color 4bpp row.
+                let color_index = palette_number * 4 + usize::from(index);
+                let Some(color) = palette.colors.get(color_index) else {
+                    continue;
+                };
+                let color = color.to_rgb8();
+                image.pixels[(tile_y * TILE_PIXELS + y) * EXTENT + tile_x * TILE_PIXELS + x] =
+                    egui::Color32::from_rgb(color.red, color.green, color.blue);
+            }
+        }
+    }
+    image
 }
 
 fn apply_vanilla_common_animation_frame(
@@ -541,6 +603,32 @@ mod tests {
         assert!(compose_native_map16_plane(&atlas, &[0; 1024]).is_err());
         let atlas = egui::ColorImage::new([512, 256], egui::Color32::TRANSPARENT);
         assert!(compose_native_map16_plane(&atlas, &[0; 1023]).is_err());
+    }
+
+    #[test]
+    fn layer3_plane_uses_two_bit_palettes_transparency_and_flip_bits() {
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let mut pixels = [0; IndexedTile::PIXEL_COUNT];
+        pixels[0] = 1;
+        let graphics = vec![blank, IndexedTile::new(pixels)];
+        let mut colors = vec![Bgr555(0); 256];
+        colors[2 * 4 + 1] = Bgr555::from_rgb8(Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        });
+        let palette = Palette { colors };
+        let mut tilemap = vec![0; lm_profile::SMW_US_V1_LAYER3_TILEMAP_WORDS];
+        tilemap[0] = 1 | 2 << 10;
+        tilemap[1] = 1 | 2 << 10 | 0x4000;
+        tilemap[64] = 1 | 2 << 10 | 0x8000;
+
+        let image = render_layer3_plane(&tilemap, &graphics, &palette);
+        assert_eq!(image.size, [512, 512]);
+        assert_eq!(image.pixels[0], egui::Color32::RED);
+        assert_eq!(image.pixels[8 + 7], egui::Color32::RED);
+        assert_eq!(image.pixels[15 * 512], egui::Color32::RED);
+        assert_eq!(image.pixels[1], egui::Color32::TRANSPARENT);
     }
 
     #[test]

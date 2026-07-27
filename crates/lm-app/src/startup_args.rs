@@ -10,6 +10,7 @@ pub struct StartupOptions {
     pub recent_state: Option<PathBuf>,
     pub revision_profile: Option<PathBuf>,
     pub command_script: Option<PathBuf>,
+    pub level: Option<u16>,
     pub allow_in_place_rom_write: bool,
     pub help: bool,
 }
@@ -19,6 +20,7 @@ pub enum StartupArgumentError {
     MissingValue(&'static str),
     Duplicate(&'static str),
     UnknownOption(OsString),
+    InvalidLevel(OsString),
     UnexpectedPositional(PathBuf),
 }
 
@@ -59,6 +61,27 @@ impl StartupOptions {
                     ));
                 }
                 options.allow_in_place_rom_write = true;
+                continue;
+            }
+            if !positional_only && argument == "--level" {
+                if options.level.is_some() {
+                    return Err(StartupArgumentError::Duplicate("--level"));
+                }
+                let value = arguments
+                    .next()
+                    .ok_or(StartupArgumentError::MissingValue("--level"))?;
+                let text = value
+                    .to_str()
+                    .ok_or_else(|| StartupArgumentError::InvalidLevel(value.clone()))?;
+                let digits = text
+                    .strip_prefix("0x")
+                    .or_else(|| text.strip_prefix("0X"))
+                    .or_else(|| text.strip_prefix('$'))
+                    .unwrap_or(text);
+                options.level = Some(
+                    u16::from_str_radix(digits, 16)
+                        .map_err(|_| StartupArgumentError::InvalidLevel(value))?,
+                );
                 continue;
             }
             let destination = if !positional_only && argument == "--rom" {
@@ -133,6 +156,8 @@ mod tests {
             "--script",
             "Build Hack.lmscript",
             "--allow-in-place-rom-write",
+            "--level",
+            "102",
             "game.smc",
         ])
         .unwrap();
@@ -142,6 +167,7 @@ mod tests {
         assert_eq!(options.recent_state, Some("Recent Files.lmrecent".into()));
         assert_eq!(options.revision_profile, Some("SMW US.lmrev".into()));
         assert_eq!(options.command_script, Some("Build Hack.lmscript".into()));
+        assert_eq!(options.level, Some(0x102));
         assert!(options.allow_in_place_rom_write);
     }
 
@@ -177,6 +203,18 @@ mod tests {
             parse(&["--profile", "one", "--profile", "two"]),
             Err(StartupArgumentError::Duplicate("--profile"))
         );
+        assert_eq!(
+            parse(&["--level"]),
+            Err(StartupArgumentError::MissingValue("--level"))
+        );
+        assert_eq!(
+            parse(&["--level", "102", "--level", "105"]),
+            Err(StartupArgumentError::Duplicate("--level"))
+        );
+        assert!(matches!(
+            parse(&["--level", "not-a-level"]),
+            Err(StartupArgumentError::InvalidLevel(_))
+        ));
     }
 
     #[test]

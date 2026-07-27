@@ -130,21 +130,21 @@ impl NativeLevelMap16Cache {
     /// Converts tile coordinates with Lunar Magic's horizontal/vertical cache formulas.
     #[must_use]
     pub fn cell_index(layout: NativeLevelMap16Layout, x: usize, y: usize) -> usize {
-        if x >= layout.width || y >= layout.height || layout.page_stride < 16 {
+        if x >= layout.width || y >= layout.height || (!layout.vertical && layout.page_stride < 16)
+        {
             return LEVEL_MAP16_CACHE_SENTINEL;
         }
         let relative = if layout.vertical {
-            (x & !0x0f)
-                .checked_add((y >> 4).saturating_mul(15))
-                .and_then(|value| value.checked_mul(16))
-                .and_then(|value| value.checked_add(x.saturating_mul(16)))
-                .and_then(|value| value.checked_add(y))
+            (y >> 4)
+                .checked_mul(0x200)
+                .and_then(|value| value.checked_add((x >> 4).saturating_mul(0x100)))
+                .and_then(|value| value.checked_add((y & 0x0f).saturating_mul(16)))
+                .and_then(|value| value.checked_add(x & 0x0f))
         } else {
-            x.checked_mul(16)
-                .and_then(|value| value.checked_add(y))
-                .and_then(|value| {
-                    value.checked_add((layout.page_stride - 16).saturating_mul(y >> 4))
-                })
+            (x >> 4)
+                .checked_mul(layout.page_stride)
+                .and_then(|value| value.checked_add(y.saturating_mul(16)))
+                .and_then(|value| value.checked_add(x & 0x0f))
         };
         relative
             .and_then(|value| value.checked_add(layout.base_cell))
@@ -191,17 +191,14 @@ mod tests {
 
     #[test]
     fn recovered_horizontal_and_vertical_index_formulas_are_exact() {
-        assert_eq!(NativeLevelMap16Cache::cell_index(horizontal(), 2, 3), 35);
-        assert_eq!(
-            NativeLevelMap16Cache::cell_index(horizontal(), 2, 19),
-            51 + 0x1a0
-        );
+        assert_eq!(NativeLevelMap16Cache::cell_index(horizontal(), 2, 3), 50);
+        assert_eq!(NativeLevelMap16Cache::cell_index(horizontal(), 2, 19), 306);
         let vertical = NativeLevelMap16Layout {
             vertical: true,
             ..horizontal()
         };
-        assert_eq!(NativeLevelMap16Cache::cell_index(vertical, 2, 3), 35);
-        assert_eq!(NativeLevelMap16Cache::cell_index(vertical, 2, 19), 291);
+        assert_eq!(NativeLevelMap16Cache::cell_index(vertical, 2, 3), 50);
+        assert_eq!(NativeLevelMap16Cache::cell_index(vertical, 2, 19), 562);
         assert_eq!(
             NativeLevelMap16Cache::cell_index(horizontal(), 32, 0),
             LEVEL_MAP16_CACHE_SENTINEL

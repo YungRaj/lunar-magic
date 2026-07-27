@@ -1,7 +1,7 @@
 use crate::application_frontend_commands::install_ui_config;
 use crate::application_rom_commands::{MAX_ROM_BYTES, install_profile, read_bounded_bytes};
 use crate::application_tool_commands::show_tool_status;
-use lm_app::{AppState, ToolConfig, recent_state_file, startup_args};
+use lm_app::{AppState, Command, ToolConfig, recent_state_file, startup_args};
 
 pub(super) struct InitializedShell {
     pub(super) recent_state: Option<recent_state_file::RecentStateFile>,
@@ -53,6 +53,10 @@ pub(super) fn initialize(
     if let Some(path) = options.revision_profile {
         install_profile(app, &path)?;
     }
+    if let Some(level) = options.level {
+        app.dispatch(Command::SelectLevel(level))?;
+        println!("{}", app.status);
+    }
     if let Some(state) = recent_state.as_mut() {
         state.persist_if_changed(app)?;
     }
@@ -68,7 +72,7 @@ pub(super) fn initialize(
 
 fn print_startup_help() {
     println!(
-        "usage: lm-app [ROM] [--rom ROM] [--profile FILE] [--ui-config FILE] \
+        "usage: lm-app [ROM] [--rom ROM] [--level HEX] [--profile FILE] [--ui-config FILE] \
          [--tools-config FILE] [--recent-state FILE] [--script FILE] \
          [--allow-in-place-rom-write]\n\
          ROM may be supplied either positionally or with --rom, but not both. Use -- before a \

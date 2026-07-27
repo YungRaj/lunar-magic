@@ -1591,16 +1591,16 @@ fn render_shared_slot_046(
         encoded_middle
     };
     set_placement_cell(cache, layout, placement, 0, 0, start)?;
-    for minor_offset in 1..run {
-        set_placement_cell(cache, layout, placement, 0, minor_offset, 0x108)?;
+    for major_offset in 1..run {
+        set_placement_cell(cache, layout, placement, major_offset, 0, 0x108)?;
     }
-    let existing_end = get_placement_cell(cache, layout, placement, 0, run)?;
+    let existing_end = get_placement_cell(cache, layout, placement, run, 0)?;
     let end = if (0x73..=0x75).contains(&existing_end.to_le_bytes()[0]) {
         0x10b
     } else {
         0x109
     };
-    set_placement_cell(cache, layout, placement, 0, run, end)
+    set_placement_cell(cache, layout, placement, run, 0, end)
 }
 
 fn render_shared_slot_047(
@@ -1610,15 +1610,18 @@ fn render_shared_slot_047(
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
     let rows = usize::from(parameter >> 4) + 1;
-    for major_offset in 0..rows {
-        render_capped_minor_run(
-            cache,
-            layout,
-            placement,
-            major_offset,
-            parameter,
-            [0x73, 0x74, 0x75],
-        )?;
+    let encoded_middle = usize::from(parameter & 0x0f);
+    let run = if encoded_middle == 0 {
+        0x100
+    } else {
+        encoded_middle
+    };
+    for minor_offset in 0..rows {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, 0x73)?;
+        for major_offset in 1..run {
+            set_placement_cell(cache, layout, placement, major_offset, minor_offset, 0x74)?;
+        }
+        set_placement_cell(cache, layout, placement, run, minor_offset, 0x75)?;
     }
     Ok(())
 }
@@ -1629,14 +1632,17 @@ fn render_shared_slot_048(
     placement: lm_level::NativeObjectPlacement,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
-    render_capped_minor_run(
-        cache,
-        layout,
-        placement,
-        0,
-        parameter,
-        [0x159, 0x15a, 0x15b],
-    )
+    let encoded_middle = usize::from(parameter & 0x0f);
+    let run = if encoded_middle == 0 {
+        0x100
+    } else {
+        encoded_middle
+    };
+    set_placement_cell(cache, layout, placement, 0, 0, 0x159)?;
+    for major_offset in 1..run {
+        set_placement_cell(cache, layout, placement, major_offset, 0, 0x15a)?;
+    }
+    set_placement_cell(cache, layout, placement, run, 0, 0x15b)
 }
 
 fn render_capped_minor_run(
@@ -1680,10 +1686,10 @@ fn render_shared_slot_049(
         encoded_middle
     };
     set_placement_cell(cache, layout, placement, 0, 0, 0x15c)?;
-    for major_offset in 1..run {
-        set_placement_cell(cache, layout, placement, major_offset, 0, 0x15d)?;
+    for minor_offset in 1..run {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, 0x15d)?;
     }
-    set_placement_cell(cache, layout, placement, run, 0, 0x15e)
+    set_placement_cell(cache, layout, placement, 0, run, 0x15e)
 }
 
 fn render_shared_slot_051(
@@ -4107,8 +4113,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(report.rendered_objects, 1);
-        assert_eq!(report.cache.cells()[0], 0x133);
-        assert_eq!(report.cache.cells()[1], 0x134);
+        assert_eq!(report.cache.get(layout(), 0, 0).unwrap(), 0x133);
+        assert_eq!(report.cache.get(layout(), 0, 1).unwrap(), 0x134);
     }
 
     #[test]
@@ -4912,14 +4918,31 @@ mod tests {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         for (handler, parameter, blank, expected) in [
-            (46, 0x03, 0x073, vec![vec![0x10a, 0x108, 0x108, 0x10b]]),
+            (
+                46,
+                0x03,
+                0x073,
+                vec![(0, 0, 0x10a), (1, 0, 0x108), (2, 0, 0x108), (3, 0, 0x10b)],
+            ),
             (
                 47,
                 0x12,
                 0x025,
-                vec![vec![0x073, 0x074, 0x075], vec![0x073, 0x074, 0x075]],
+                vec![
+                    (0, 0, 0x073),
+                    (1, 0, 0x074),
+                    (2, 0, 0x075),
+                    (0, 1, 0x073),
+                    (1, 1, 0x074),
+                    (2, 1, 0x075),
+                ],
             ),
-            (48, 0x02, 0x025, vec![vec![0x159, 0x15a, 0x15b]]),
+            (
+                48,
+                0x02,
+                0x025,
+                vec![(0, 0, 0x159), (1, 0, 0x15a), (2, 0, 0x15b)],
+            ),
         ] {
             let mut handler_map = [0xff; 64];
             handler_map[1] = handler;
@@ -4934,14 +4957,8 @@ mod tests {
                 blank,
             )
             .unwrap();
-            for (major, row) in expected.into_iter().enumerate() {
-                for (minor, tile) in row.into_iter().enumerate() {
-                    assert_eq!(
-                        report.cache.cells()
-                            [NativeLevelMap16Cache::cell_index(layout(), major, minor)],
-                        tile
-                    );
-                }
+            for (major, minor, tile) in expected {
+                assert_eq!(report.cache.get(layout(), major, minor).unwrap(), tile);
             }
         }
     }
@@ -5053,7 +5070,7 @@ mod tests {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         for (handler, parameter, expected) in [
-            (49, 0x20, vec![vec![0x15c], vec![0x15d], vec![0x15e]]),
+            (49, 0x20, vec![vec![0x15c, 0x15d, 0x15e]]),
             (
                 51,
                 0x02,
@@ -5965,5 +5982,52 @@ mod tests {
             cache.cells()[NativeLevelMap16Cache::cell_index(layout, 1, 4)],
             u16::MAX
         );
+    }
+
+    #[test]
+    fn rope_mushroom_top_expands_horizontally_and_adapts_to_columns() {
+        let layout = layout();
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 3,
+            minor: 4,
+            major_span: 1,
+            minor_span: 4,
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        cache.set(layout, 3, 4, 0x73).unwrap();
+        cache.set(layout, 6, 4, 0x75).unwrap();
+
+        render_shared_slot_046(&mut cache, layout, placement, 3).unwrap();
+
+        for (x, tile) in [(3, 0x10a), (4, 0x108), (5, 0x108), (6, 0x10b)] {
+            assert_eq!(cache.get(layout, x, 4).unwrap(), tile);
+        }
+        assert_eq!(cache.get(layout, 3, 5).unwrap(), 0x25);
+    }
+
+    #[test]
+    fn rope_mushroom_column_expands_across_then_down() {
+        let layout = layout();
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 2,
+            minor: 3,
+            major_span: 3,
+            minor_span: 4,
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+
+        render_shared_slot_047(&mut cache, layout, placement, 0x23).unwrap();
+
+        for y in 3..=5 {
+            for (x, tile) in [(2, 0x73), (3, 0x74), (4, 0x74), (5, 0x75)] {
+                assert_eq!(cache.get(layout, x, y).unwrap(), tile);
+            }
+        }
+        assert_eq!(cache.get(layout, 2, 6).unwrap(), 0x25);
+        assert_eq!(cache.get(layout, 6, 3).unwrap(), 0x25);
     }
 }

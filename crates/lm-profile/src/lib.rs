@@ -52,6 +52,7 @@ mod text_encode;
 mod text_schema;
 mod title_recording;
 mod title_tilemap;
+mod vanilla_layer3;
 mod vanilla_level_map16;
 mod vanilla_level_mode;
 mod vanilla_level_palette;
@@ -354,6 +355,12 @@ pub use title_tilemap::{
     SMW_US_V1_TITLE_TILEMAP_POINTER_OFFSET, SMW_US_V1_TITLE_TILEMAP_PRISTINE_STREAM_OFFSET,
     SMW_US_V1_TITLE_TILEMAP_SEARCH_START, smw_us_v1_title_tilemap_allocation_policy,
     smw_us_v1_title_tilemap_locator,
+};
+pub use vanilla_layer3::{
+    SMW_US_V1_LAYER3_BEHAVIOR_TABLE_OFFSET, SMW_US_V1_LAYER3_IMAGE_COUNT,
+    SMW_US_V1_LAYER3_IMAGE_POINTER_TABLE_OFFSET, SMW_US_V1_LAYER3_TILEMAP_SIDE,
+    SMW_US_V1_LAYER3_TILEMAP_WORDS, SmwUsV1Layer3Behavior, SmwUsV1Layer3Error, SmwUsV1LevelLayer3,
+    load_smw_us_v1_level_layer3,
 };
 pub use vanilla_level_map16::{
     LoadedSmwUsV1LevelMap16Base, SMW_US_V1_MAP16_BACKGROUND_BYTES,
