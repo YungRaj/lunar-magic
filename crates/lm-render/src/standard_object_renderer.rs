@@ -3346,7 +3346,7 @@ fn render_pattern(
 /// Installs the shared command-zero definitions recovered from Lunar Magic and SMW's loader.
 ///
 /// The 0x10–0x50 selector range uses page 0 below 0x23 and page 1 thereafter. This also installs
-/// SMW's fixed 2×2 selector `$86` pattern and the switch-off form of selector `$8E`.
+/// SMW's fixed 2×2 selector `$86` pattern and the switch-off forms of selectors `$87`/`$8E`.
 ///
 /// # Errors
 ///
@@ -3373,6 +3373,14 @@ pub fn install_lunar_magic_shared_extended_objects(
             width: 2,
             height: 2,
             tiles: vec![0x066, 0x067, 0x068, 0x069],
+        },
+    )?;
+    definitions.set_extended(
+        0x87,
+        StandardObjectPattern {
+            width: 1,
+            height: 1,
+            tiles: vec![0x06a],
         },
     )?;
     definitions.set_extended(
@@ -5622,6 +5630,7 @@ mod tests {
                 tiles: vec![0x066, 0x067, 0x068, 0x069],
             }
         );
+        assert_eq!(definitions.get_extended(0x87).unwrap().tiles, [0x06a]);
         assert_eq!(definitions.get_extended(0x8e).unwrap().tiles, [0x06b]);
         assert_eq!(
             lunar_magic_conditional_extended_object_tile(0x87, false),
