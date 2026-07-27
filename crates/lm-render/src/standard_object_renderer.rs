@@ -2876,13 +2876,13 @@ fn render_shared_slot_017(
         0,
         u16::from(SHARED_SLOT_017_START_TILES[variant]),
     )?;
-    for minor_offset in 0..middle_count {
+    for major_offset in 0..middle_count {
         set_placement_cell(
             cache,
             layout,
             placement,
+            major_offset + 1,
             0,
-            minor_offset + 1,
             u16::from(SHARED_SLOT_017_MIDDLE_TILES[variant]),
         )?;
     }
@@ -2890,8 +2890,8 @@ fn render_shared_slot_017(
         cache,
         layout,
         placement,
-        0,
         middle_count + 1,
+        0,
         u16::from(SHARED_SLOT_017_END_TILES[variant]),
     )
 }
@@ -3024,7 +3024,7 @@ fn render_shared_slot_011(
                 placement,
                 major_offset,
                 minor_offset,
-                u16::from(if major_offset == 0 { top } else { remainder }),
+                u16::from(if minor_offset == 0 { top } else { remainder }),
             )?;
         }
     }
@@ -3457,8 +3457,8 @@ pub fn install_lunar_magic_shared_standard_objects(
         20,
         StandardObjectDefinition {
             pattern: StandardObjectPattern {
-                width: 2,
-                height: 1,
+                width: 1,
+                height: 2,
                 tiles: vec![0x100, 0x03f],
             },
             extent: ObjectExtent::ParameterNibbles,
@@ -3596,8 +3596,8 @@ fn install_lunar_magic_shared_standard_objects_high(
         33,
         StandardObjectDefinition {
             pattern: StandardObjectPattern {
-                width: 2,
-                height: 1,
+                width: 1,
+                height: 2,
                 tiles: vec![0x100, 0x03f],
             },
             extent: ObjectExtent::ThreeByParameterByte,
@@ -4221,13 +4221,13 @@ mod tests {
             0x25,
         )
         .unwrap();
-        for minor in 0..2 {
+        for major in 0..2 {
             assert_eq!(
-                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 0, minor)],
+                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, 0)],
                 0x38
             );
             assert_eq!(
-                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 1, minor)],
+                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, 1)],
                 0x20
             );
         }
@@ -4289,7 +4289,7 @@ mod tests {
             (
                 17,
                 0x23,
-                vec![(0, 0, 0x85), (0, 1, 0x86), (0, 2, 0x86), (0, 3, 0x87)],
+                vec![(0, 0, 0x85), (1, 0, 0x86), (2, 0, 0x86), (3, 0, 0x87)],
             ),
             (
                 19,
@@ -5710,7 +5710,7 @@ mod tests {
             for minor in 0..3 {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
-                    if major == 0 { 0x100 } else { 0x03f }
+                    if minor == 0 { 0x100 } else { 0x03f }
                 );
             }
         }
@@ -5889,7 +5889,7 @@ mod tests {
             for minor in 0..3 {
                 assert_eq!(
                     report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
-                    if major == 0 { 0x100 } else { 0x03f }
+                    if minor == 0 { 0x100 } else { 0x03f }
                 );
             }
         }
@@ -5927,9 +5927,9 @@ mod tests {
         )
         .unwrap()
         .unwrap();
-        for (y, tile) in [(4, 0x85), (5, 0x86), (6, 0x87)] {
+        for (x, tile) in [(33, 0x85), (34, 0x86), (35, 0x87)] {
             assert_eq!(
-                cache.cells()[NativeLevelMap16Cache::cell_index(layout, 33, y)],
+                cache.cells()[NativeLevelMap16Cache::cell_index(layout, x, 4)],
                 tile
             );
         }

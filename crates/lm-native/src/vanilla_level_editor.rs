@@ -6885,6 +6885,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn pristine_level_105_has_authenticated_artwork_for_every_renderable_object() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let image =
@@ -6922,6 +6923,39 @@ mod tests {
         let placements = level.layer1.objects.native_placements();
         assert_eq!(placements[0].tile_coordinates(false), (0, 8));
         assert_eq!(placements[1].tile_coordinates(false), (4, 7));
+        assert_eq!(handler_map[0x3f], 17);
+        let ground = lm_render::render_mapped_standard_object_placement(
+            &level.layer1.objects.records[placements[0].record_index],
+            placements[0],
+            &definitions,
+            handler_map,
+            layout,
+            u16::MAX,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(ground.get(layout, 0, 8).unwrap(), 0x100);
+        assert_eq!(ground.get(layout, 10, 8).unwrap(), 0x100);
+        assert_eq!(ground.get(layout, 0, 9).unwrap(), 0x03f);
+        let first_bush = lm_render::render_mapped_standard_object_placement(
+            &level.layer1.objects.records[placements[1].record_index],
+            placements[1],
+            &definitions,
+            handler_map,
+            layout,
+            u16::MAX,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            [
+                first_bush.get(layout, 4, 7).unwrap(),
+                first_bush.get(layout, 5, 7).unwrap(),
+                first_bush.get(layout, 6, 7).unwrap(),
+            ],
+            [0x073, 0x074, 0x079]
+        );
+        assert_eq!(first_bush.get(layout, 4, 8).unwrap(), u16::MAX);
         let missing = placements
             .into_iter()
             .filter_map(|placement| {
