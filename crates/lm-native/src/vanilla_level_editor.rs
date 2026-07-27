@@ -17,6 +17,7 @@ const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
 const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 50;
 const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 400;
 const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
+const NATIVE_LEVEL_MINOR_TILES: u16 = 16;
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 380.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 
@@ -1304,7 +1305,10 @@ impl VanillaLevelEditor {
             .copied()
             .collect::<Vec<_>>();
         let mut major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
-        let mut minor_tiles = canvas_minor_tiles(&visible_objects, &sprite_placements);
+        // The perpendicular level axis is one native 16-tile screen. Parameter nibbles describe
+        // command-specific geometry and cannot be used as generic canvas bounds: for example,
+        // pristine level $105 contains a fixed-shape command at row 15 whose low nibble is $B.
+        let mut minor_tiles = NATIVE_LEVEL_MINOR_TILES;
         for (records, placements) in [
             (records.as_slice(), placements.as_slice()),
             (layer2_records.as_slice(), layer2_placements.as_slice()),
@@ -1316,8 +1320,10 @@ impl VanillaLevelEditor {
             minor_tiles = minor_tiles.max(extended_minor);
         }
         if !layer2_tilemap.is_empty() {
+            // The SNES background plane is 32×32 and wraps while the camera traverses the level.
+            // It guarantees one screen-pair along the level's major axis, but its off-viewport
+            // second half must not double the editable minor axis of an ordinary level.
             major_tiles = major_tiles.max(32);
-            minor_tiles = minor_tiles.max(32);
         }
         let cell = self.canvas_cell();
         let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
@@ -3477,23 +3483,6 @@ fn canvas_major_tiles(
         .max()
         .unwrap_or(16);
     object_end.max(sprite_end).clamp(16, 512)
-}
-
-fn canvas_minor_tiles(
-    objects: &[lm_level::NativeObjectPlacement],
-    sprites: &[lm_level::NativeSpritePlacement],
-) -> u16 {
-    let object_end = objects
-        .iter()
-        .map(|placement| u16::from(placement.minor).saturating_add(u16::from(placement.minor_span)))
-        .max()
-        .unwrap_or(16);
-    let sprite_end = sprites
-        .iter()
-        .map(|placement| presented_sprite_minor(*placement).saturating_add(1))
-        .max()
-        .unwrap_or(16);
-    object_end.max(sprite_end).clamp(16, 32)
 }
 
 fn extended_command27_canvas_extent(
@@ -6262,6 +6251,11 @@ mod tests {
             Some(lm_level::NativeLayer2Data::Tilemap(bytes))
                 if bytes.len() == lm_level::NATIVE_LAYER2_TILEMAP_LEN
         ));
+        let model = editor.canvas_model();
+        assert!(model.layer1_placements.iter().any(|placement| {
+            u16::from(placement.minor) + u16::from(placement.minor_span) > NATIVE_LEVEL_MINOR_TILES
+        }));
+        assert_eq!(NATIVE_LEVEL_MINOR_TILES, 16);
         assert!(editor.error.is_none());
     }
 
@@ -7120,7 +7114,7 @@ mod tests {
     }
 
     #[test]
-    fn rom_canvas_minor_extent_presents_native_sprite_subscreen_coordinates() {
+    fn native_sprite_subscreen_coordinates_present_within_the_fixed_minor_axis() {
         let sprites = [lm_level::NativeSpritePlacement {
             token_index: 0,
             first_byte: 1,
@@ -7130,13 +7124,12 @@ mod tests {
             sprite_number: 1,
             extra_bits: 0,
         }];
-        assert_eq!(canvas_minor_tiles(&[], &sprites), 16);
+        assert_eq!(NATIVE_LEVEL_MINOR_TILES, 16);
         assert_eq!(
             presented_sprite_tile_coordinates(sprites[0], false),
             (3, 15)
         );
         assert_eq!(presented_sprite_tile_coordinates(sprites[0], true), (15, 3));
-        assert_eq!(canvas_minor_tiles(&[], &[]), 16);
     }
 
     #[test]
