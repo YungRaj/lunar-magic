@@ -2495,6 +2495,17 @@ target a new file until those differential gates pass.
 
 ## Current boundary
 
+The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
+workspace has rendered across multiple frames, requests the real Glow viewport through egui, and
+publishes the returned framebuffer through `lm-render`'s bounded PNG encoder. This avoids relying
+on macOS Screen Recording or Accessibility permissions and distinguishes visible composition from
+controller-only tests. The first supplied-ROM capture found a real pristine level `$105` startup
+failure: the `$FF` no-Layer-2 bank sentinel was mapped to expanded PC `$3FD900`, producing an empty
+error page. The SMW-US profile now resolves Layer 2 per level, returns `None` for the sentinel,
+retains authenticated layouts for present pointers, and rejects out-of-range slots. Focused profile
+and native-editor tests cover both branches; the post-fix framebuffer contains the populated level
+workspace. Captures remain local because they include ROM-derived graphics.
+
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The
 first real Lunar Magic 3.63 differential corpus now covers all 512 MWL exports from pristine US SMW:

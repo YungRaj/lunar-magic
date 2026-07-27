@@ -379,12 +379,12 @@ pub use vanilla_smw::{
     SMW_US_V1_OBJECT_TILESET_GRAPHICS_SLOTS, SMW_US_V1_OBJECT_TILESETS,
     SMW_US_V1_SEPARATE_MIDWAY_HOOK_OFFSET, SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET,
     SMW_US_V1_SPRITE_TILESET_GRAPHICS_SLOTS, SMW_US_V1_SPRITE_TILESETS,
-    SMW_US_V1_VANILLA_GRAPHICS_FILES, SMW_US_V1_VANILLA_LEVEL_SLOTS,
+    SMW_US_V1_VANILLA_GRAPHICS_FILES, SMW_US_V1_VANILLA_LEVEL_SLOTS, SmwUsV1Layer2LayoutError,
     SmwUsV1ObjectTilesetGraphicsError, SmwUsV1SpriteTilesetGraphicsError, smw_us_v1_layer2_layout,
-    smw_us_v1_object_tileset_graphics_files, smw_us_v1_separate_midway_locator,
-    smw_us_v1_sprite_tileset_graphics_files, smw_us_v1_vanilla_entrance_layout,
-    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_layer2_layout,
-    smw_us_v1_vanilla_level_layout,
+    smw_us_v1_level_layer2_layout, smw_us_v1_object_tileset_graphics_files,
+    smw_us_v1_separate_midway_locator, smw_us_v1_sprite_tileset_graphics_files,
+    smw_us_v1_vanilla_entrance_layout, smw_us_v1_vanilla_graphics_layout,
+    smw_us_v1_vanilla_layer2_layout, smw_us_v1_vanilla_level_layout,
 };
 pub use vanilla_standard_object_map::{
     SMW_US_V1_STANDARD_OBJECT_FAMILIES, SMW_US_V1_STANDARD_OBJECTS_PER_FAMILY,

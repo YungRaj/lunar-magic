@@ -132,6 +132,10 @@ pub(crate) struct NativeApplication {
     recent_state: Option<lm_app::recent_state_file::RecentStateFile>,
     configuration_loader: ConfigurationLoader,
     profile_loader: crate::profile_loader::ProfileLoader,
+    #[cfg(feature = "visual-smoke")]
+    visual_smoke_frames: u8,
+    #[cfg(feature = "visual-smoke")]
+    visual_smoke_requested: bool,
 }
 
 impl NativeApplication {
@@ -357,7 +361,84 @@ impl eframe::App for NativeApplication {
         self.show_confirmation(context);
         self.show_editor_windows(context);
         self.show_global_effects(context);
+        #[cfg(feature = "visual-smoke")]
+        self.capture_visual_smoke(context);
     }
+}
+
+#[cfg(feature = "visual-smoke")]
+impl NativeApplication {
+    fn capture_visual_smoke(&mut self, context: &egui::Context) {
+        let Ok(path) = std::env::var("LM_NATIVE_SCREENSHOT_TO") else {
+            return;
+        };
+        let screenshot = context.input(|input| {
+            input.events.iter().find_map(|event| {
+                let egui::Event::Screenshot {
+                    user_data, image, ..
+                } = event
+                else {
+                    return None;
+                };
+                user_data
+                    .data
+                    .as_deref()
+                    .and_then(|data| data.downcast_ref::<String>())
+                    .filter(|marker| marker.as_str() == "lm-native-visual-smoke")
+                    .map(|_| image.clone())
+            })
+        });
+        if let Some(image) = screenshot {
+            if let Err(error) = save_visual_smoke_image(&image, &path) {
+                eprintln!("native visual-smoke capture failed: {error}");
+                #[allow(clippy::exit)]
+                std::process::exit(1);
+            }
+            #[allow(clippy::exit)]
+            std::process::exit(0);
+        }
+        self.visual_smoke_frames = self.visual_smoke_frames.saturating_add(1);
+        if self.visual_smoke_frames >= 8 && !self.visual_smoke_requested {
+            self.visual_smoke_requested = true;
+            context.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(
+                "lm-native-visual-smoke".to_owned(),
+            )));
+        }
+        context.request_repaint();
+    }
+}
+
+#[cfg(feature = "visual-smoke")]
+fn save_visual_smoke_image(image: &egui::ColorImage, path: &str) -> Result<(), String> {
+    if !std::path::Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
+    {
+        return Err("LM_NATIVE_SCREENSHOT_TO must name a .png file".into());
+    }
+    let pixels = image
+        .pixels
+        .iter()
+        .map(|color| {
+            let [red, green, blue, alpha] = color.to_srgba_unmultiplied();
+            lm_render::Rgba {
+                red,
+                green,
+                blue,
+                alpha,
+            }
+        })
+        .collect();
+    let canvas = lm_render::Canvas::from_pixels(image.size[0], image.size[1], pixels)
+        .map_err(|error| error.to_string())?;
+    let png = lm_render::encode_png(&canvas).map_err(|error| error.to_string())?;
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| format!("cannot create {path}: {error}"))?;
+    std::io::Write::write_all(&mut output, &png)
+        .map_err(|error| format!("cannot write {path}: {error}"))
 }
 
 #[cfg(test)]

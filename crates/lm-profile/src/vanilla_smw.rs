@@ -60,6 +60,27 @@ pub enum SmwUsV1ObjectTilesetGraphicsError {
     Rom(RomError),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SmwUsV1Layer2LayoutError {
+    LevelOutOfRange(usize),
+    AddressOverflow,
+    Rom(RomError),
+}
+
+impl fmt::Display for SmwUsV1Layer2LayoutError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "cannot resolve SMW-US Layer 2 layout: {self:?}")
+    }
+}
+
+impl std::error::Error for SmwUsV1Layer2LayoutError {}
+
+impl From<RomError> for SmwUsV1Layer2LayoutError {
+    fn from(value: RomError) -> Self {
+        Self::Rom(value)
+    }
+}
+
 /// Returns the pristine SMW-US Layer 2 layout recovered from descriptor entry 26.
 #[must_use]
 pub const fn smw_us_v1_vanilla_layer2_layout() -> LevelLayer2RomLayout {
@@ -73,6 +94,37 @@ pub const fn smw_us_v1_vanilla_layer2_layout() -> LevelLayer2RomLayout {
         descriptor_table: None,
         maximum_compressed_len: 0x8000,
         tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },
+    }
+}
+
+/// Resolves the Layer 2 layout only when the selected level has a native pointer.
+///
+/// Pristine SMW uses an `$FF` bank byte as its no-Layer-2 sentinel. Treating that value as a `LoROM`
+/// pointer would incorrectly address expanded space beyond a 512-KiB image.
+///
+/// # Errors
+///
+/// Rejects level indexes outside the 512 native slots, address overflow, truncated pointer tables,
+/// and malformed installed format-$103 metadata.
+pub fn smw_us_v1_level_layer2_layout(
+    rom: &RomImage,
+    level: usize,
+) -> Result<Option<LevelLayer2RomLayout>, SmwUsV1Layer2LayoutError> {
+    if level >= SMW_US_V1_VANILLA_LEVEL_SLOTS {
+        return Err(SmwUsV1Layer2LayoutError::LevelOutOfRange(level));
+    }
+    let pointer_offset = SMW_US_V1_LEVEL_LAYER2_POINTER_TABLE_OFFSET
+        .checked_add(
+            level
+                .checked_mul(3)
+                .ok_or(SmwUsV1Layer2LayoutError::AddressOverflow)?,
+        )
+        .ok_or(SmwUsV1Layer2LayoutError::AddressOverflow)?;
+    let pointer = rom.read(pointer_offset, 3)?;
+    if pointer[2] == 0xff {
+        Ok(None)
+    } else {
+        smw_us_v1_layer2_layout(rom).map(Some).map_err(Into::into)
     }
 }
 
@@ -412,5 +464,32 @@ mod tests {
         }
         assert!(decoded > 0);
         assert_eq!(object_layers, decoded);
+    }
+
+    #[test]
+    fn pristine_layer2_resolver_distinguishes_absent_and_present_slots() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("Super Mario World (USA).sfc");
+        let Ok(bytes) = fs::read(path) else {
+            return;
+        };
+        let rom = RomImage::from_bytes(bytes).unwrap();
+        assert_eq!(smw_us_v1_level_layer2_layout(&rom, 0x105).unwrap(), None);
+        let present = (0..SMW_US_V1_VANILLA_LEVEL_SLOTS)
+            .find(|&level| {
+                smw_us_v1_level_layer2_layout(&rom, level).is_ok_and(|layout| layout.is_some())
+            })
+            .expect("pristine SMW must contain at least one Layer 2 level");
+        assert_eq!(
+            smw_us_v1_level_layer2_layout(&rom, present).unwrap(),
+            Some(smw_us_v1_vanilla_layer2_layout())
+        );
+        assert_eq!(
+            smw_us_v1_level_layer2_layout(&rom, SMW_US_V1_VANILLA_LEVEL_SLOTS),
+            Err(SmwUsV1Layer2LayoutError::LevelOutOfRange(
+                SMW_US_V1_VANILLA_LEVEL_SLOTS
+            ))
+        );
     }
 }

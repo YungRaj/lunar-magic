@@ -264,6 +264,19 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 git diff --check
 ```
 
+To capture the actual native framebuffer after startup without granting an external screen-recording
+tool access, enable the opt-in visual-smoke feature:
+
+```sh
+LM_NATIVE_SCREENSHOT_TO=/tmp/lm-native.png \
+  cargo run -p lm-native --features visual-smoke -- "Super Mario World (USA).sfc"
+```
+
+The process waits for the populated workspace to settle, captures its own main viewport, writes a
+PNG, and exits. This exercises real window creation, GPU painting, startup ROM loading, and native
+editor composition; it does not simulate pointer or keyboard interaction. Treat the output as a
+local diagnostic and never commit screenshots containing ROM-derived graphics.
+
 Some integration tests use the legally supplied `Super Mario World (USA).sfc` fixture at the
 repository root. The expected pristine SHA-1 is:
 

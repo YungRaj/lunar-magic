@@ -886,6 +886,10 @@ impl VanillaLevelEditor {
         self.dragging_sprite = None;
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "keeps one failure-atomic level, Layer 2, entrance, and visual-asset snapshot load together"
+    )]
     fn load(
         &mut self,
         snapshot: &lm_app::ControllerSnapshot,
@@ -901,9 +905,15 @@ impl VanillaLevelEditor {
                 return;
             }
         };
-        let layer2_layout = RomImage::from_bytes(snapshot.rom_bytes.clone())
-            .ok()
-            .and_then(|rom| lm_profile::smw_us_v1_layer2_layout(&rom).ok());
+        let layer2_layout = match editor_layer2_layout(snapshot, key.level) {
+            Ok(layout) => layout,
+            Err(error) => {
+                self.controller = None;
+                self.error = Some(error);
+                self.key = Some(key);
+                return;
+            }
+        };
         match LevelController::decode_with_layer2(
             snapshot,
             lm_profile::smw_us_v1_vanilla_level_layout(),
@@ -5443,6 +5453,16 @@ fn resized_standard_object_parameter_at_canvas_position(
     }
 }
 
+fn editor_layer2_layout(
+    snapshot: &lm_app::ControllerSnapshot,
+    level: u16,
+) -> Result<Option<lm_project::LevelLayer2RomLayout>, String> {
+    let rom =
+        RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
+    lm_profile::smw_us_v1_level_layer2_layout(&rom, usize::from(level))
+        .map_err(|error| error.to_string())
+}
+
 fn object_field_edits(
     form: &ObjectForm,
     index: usize,
@@ -5885,6 +5905,29 @@ mod tests {
             layer2_tile_at_canvas_position(egui::pos2(513.0, 8.0), canvas, 16.0),
             None
         );
+    }
+
+    #[test]
+    fn pristine_level_105_opens_without_fabricating_absent_layer2() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        assert!(editor.controller.is_some(), "{:?}", editor.error);
+        assert!(editor.controller.as_ref().unwrap().layer2().is_none());
+        assert!(editor.error.is_none());
     }
 
     #[test]
