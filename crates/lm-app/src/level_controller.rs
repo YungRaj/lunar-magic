@@ -1,11 +1,12 @@
 use crate::{ControllerSnapshot, EditorMode};
 use lm_level::{
-    HeaderValueError, LegacyHeaderEdit, LevelEditError, ObjectEdit, ObjectEditError,
-    ObjectStreamError, SpriteToken,
+    HeaderValueError, LegacyHeaderEdit, LevelEditError, MwlLayer2Descriptor,
+    NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, ObjectEdit, ObjectEditError, ObjectStreamError,
+    SpriteToken,
 };
 use lm_project::{
-    LevelLoadError, LevelRomLayout, LevelSaveError, LoadedLevelSlot, PayloadReadPolicy, Project,
-    TransactionError,
+    LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelRomLayout, LevelSaveError,
+    LoadedLevelSlot, PayloadReadPolicy, Project, TransactionError,
 };
 use lm_rats::RatsBlock;
 use lm_rom::{Mapper, RomError, RomImage};
@@ -71,8 +72,18 @@ pub enum LevelControllerError {
     NonCanonicalSpriteEncoding,
     InvalidObjectEncoding(ObjectStreamError),
     NonCanonicalObjectEncoding,
+    NonCanonicalLevelEncoding,
     Save(LevelSaveError),
     Mutation(TransactionError),
+    Layer2Load(LevelLayer2IoError),
+    Layer2Unavailable,
+    Layer2StorageMismatch {
+        expected: &'static str,
+    },
+    Layer2ObjectEdit(ObjectEditError),
+    Layer2TileIndex(usize),
+    Layer2TileDuplicate(usize),
+    NonCanonicalLayer2Encoding,
 }
 
 impl fmt::Display for LevelControllerError {
@@ -93,10 +104,20 @@ pub struct LevelController {
     sprite_lengths: lm_level::SpriteLengthTable,
     baseline: LoadedLevelSlot,
     level: LoadedLevelSlot,
-    undo: Vec<LoadedLevelSlot>,
-    redo: Vec<LoadedLevelSlot>,
+    layer2_layout: Option<LevelLayer2RomLayout>,
+    baseline_layer2: Option<NativeLayer2Data>,
+    layer2: Option<NativeLayer2Data>,
+    layer2_descriptor: Option<MwlLayer2Descriptor>,
+    undo: Vec<LevelControllerState>,
+    redo: Vec<LevelControllerState>,
     previous_layer1: Option<RatsBlock>,
     previous_sprites: Option<RatsBlock>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LevelControllerState {
+    level: LoadedLevelSlot,
+    layer2: Option<NativeLayer2Data>,
 }
 
 impl LevelController {
@@ -111,6 +132,21 @@ impl LevelController {
     pub fn decode(
         snapshot: &ControllerSnapshot,
         layout: LevelRomLayout,
+        sprite_lengths: &lm_level::SpriteLengthTable,
+    ) -> Result<Self, LevelControllerError> {
+        Self::decode_with_layer2(snapshot, layout, None, sprite_lengths)
+    }
+
+    /// Decodes the selected native level and, when supplied, its Layer 2 stream into one staged
+    /// revision-bound controller.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::decode`] plus typed Layer 2 load failures.
+    pub fn decode_with_layer2(
+        snapshot: &ControllerSnapshot,
+        layout: LevelRomLayout,
+        layer2_layout: Option<LevelLayer2RomLayout>,
         sprite_lengths: &lm_level::SpriteLengthTable,
     ) -> Result<Self, LevelControllerError> {
         let EditorMode::Level(number) = snapshot.mode else {
@@ -157,6 +193,18 @@ impl LevelController {
         let level = project
             .load_level_slot(level_number, layout, sprite_lengths)
             .map_err(LevelControllerError::Load)?;
+        let loaded_layer2 = layer2_layout
+            .map(|layer2_layout| {
+                project.load_level_layer2_with_descriptor(
+                    level_number,
+                    level.layer1.header.level_mode(),
+                    layer2_layout,
+                )
+            })
+            .transpose()
+            .map_err(LevelControllerError::Layer2Load)?;
+        let layer2 = loaded_layer2.as_ref().map(|loaded| loaded.data.clone());
+        let layer2_descriptor = loaded_layer2.and_then(|loaded| loaded.descriptor);
         Ok(Self {
             revision: snapshot.revision,
             layout,
@@ -165,6 +213,10 @@ impl LevelController {
             sprite_lengths: sprite_lengths.clone(),
             baseline: level.clone(),
             level,
+            layer2_layout,
+            baseline_layer2: layer2.clone(),
+            layer2,
+            layer2_descriptor,
             undo: Vec::new(),
             redo: Vec::new(),
             previous_layer1,
@@ -188,8 +240,13 @@ impl LevelController {
     }
 
     #[must_use]
+    pub const fn layer2(&self) -> Option<&NativeLayer2Data> {
+        self.layer2.as_ref()
+    }
+
+    #[must_use]
     pub fn is_modified(&self) -> bool {
-        self.level != self.baseline
+        self.level != self.baseline || self.layer2 != self.baseline_layer2
     }
 
     #[must_use]
@@ -200,6 +257,11 @@ impl LevelController {
     #[must_use]
     pub fn sprites_are_modified(&self) -> bool {
         self.level.sprites != self.baseline.sprites
+    }
+
+    #[must_use]
+    pub fn layer2_is_modified(&self) -> bool {
+        self.layer2 != self.baseline_layer2
     }
 
     /// Returns the canonical original and currently staged native sprite-stream lengths.
@@ -242,7 +304,9 @@ impl LevelController {
         let Some(previous) = self.undo.pop() else {
             return false;
         };
-        push_bounded(&mut self.redo, std::mem::replace(&mut self.level, previous));
+        let current = self.state();
+        self.restore(previous);
+        push_bounded(&mut self.redo, current);
         true
     }
 
@@ -251,7 +315,9 @@ impl LevelController {
         let Some(next) = self.redo.pop() else {
             return false;
         };
-        push_bounded(&mut self.undo, std::mem::replace(&mut self.level, next));
+        let current = self.state();
+        self.restore(next);
+        push_bounded(&mut self.undo, current);
         true
     }
 
@@ -262,21 +328,103 @@ impl LevelController {
     /// Returns [`LevelControllerError`] with the failing command index. A failure leaves both the
     /// decoded model and its source snapshot unchanged.
     pub fn apply_edits(&mut self, edits: &[NativeLevelEdit]) -> Result<(), LevelControllerError> {
-        let previous = self.level.clone();
+        let previous = self.state();
         crate::native_level_edit_batch::apply_loaded_level_edits(
             &mut self.level,
             edits,
             &self.sprite_lengths,
         )?;
-        if self.level != previous {
+        if self.state() != previous {
             push_bounded(&mut self.undo, previous);
             self.redo.clear();
         }
         Ok(())
     }
+
+    /// Applies ordered Layer 2 object edits to the same history used by Layer 1 and sprites.
+    ///
+    /// # Errors
+    ///
+    /// Rejects unavailable or tilemap-backed Layer 2 and preserves the staged state on failure.
+    pub fn apply_layer2_object_edits(
+        &mut self,
+        edits: &[ObjectEdit],
+    ) -> Result<(), LevelControllerError> {
+        let previous = self.state();
+        let layer2 = self
+            .layer2
+            .as_mut()
+            .ok_or(LevelControllerError::Layer2Unavailable)?;
+        let NativeLayer2Data::Objects(objects) = layer2 else {
+            return Err(LevelControllerError::Layer2StorageMismatch {
+                expected: "objects",
+            });
+        };
+        objects
+            .objects
+            .apply_edits(edits)
+            .map_err(LevelControllerError::Layer2ObjectEdit)?;
+        self.finish_edit(previous);
+        Ok(())
+    }
+
+    /// Replaces selected little-endian Layer 2 tilemap words atomically.
+    ///
+    /// # Errors
+    ///
+    /// Rejects unavailable/object-backed Layer 2, invalid or duplicate word indices.
+    pub fn apply_layer2_tilemap_words(
+        &mut self,
+        edits: &[(usize, u16)],
+    ) -> Result<(), LevelControllerError> {
+        let previous = self.state();
+        let layer2 = self
+            .layer2
+            .as_mut()
+            .ok_or(LevelControllerError::Layer2Unavailable)?;
+        let NativeLayer2Data::Tilemap(bytes) = layer2 else {
+            return Err(LevelControllerError::Layer2StorageMismatch {
+                expected: "tilemap",
+            });
+        };
+        if bytes.len() != NATIVE_LAYER2_TILEMAP_LEN {
+            return Err(LevelControllerError::Layer2TileIndex(bytes.len() / 2));
+        }
+        let mut seen = vec![false; bytes.len() / 2];
+        for &(index, word) in edits {
+            let Some(seen) = seen.get_mut(index) else {
+                return Err(LevelControllerError::Layer2TileIndex(index));
+            };
+            if std::mem::replace(seen, true) {
+                return Err(LevelControllerError::Layer2TileDuplicate(index));
+            }
+            bytes[index * 2..index * 2 + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        self.finish_edit(previous);
+        Ok(())
+    }
+
+    fn state(&self) -> LevelControllerState {
+        LevelControllerState {
+            level: self.level.clone(),
+            layer2: self.layer2.clone(),
+        }
+    }
+
+    fn restore(&mut self, state: LevelControllerState) {
+        self.level = state.level;
+        self.layer2 = state.layer2;
+    }
+
+    fn finish_edit(&mut self, previous: LevelControllerState) {
+        if self.state() != previous {
+            push_bounded(&mut self.undo, previous);
+            self.redo.clear();
+        }
+    }
 }
 
-fn push_bounded(history: &mut Vec<LoadedLevelSlot>, value: LoadedLevelSlot) {
+fn push_bounded(history: &mut Vec<LevelControllerState>, value: LevelControllerState) {
     if history.len() == LevelController::HISTORY_LIMIT {
         history.remove(0);
     }

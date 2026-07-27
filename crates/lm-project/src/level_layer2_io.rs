@@ -249,6 +249,42 @@ impl Project {
         )?;
         Ok(saved.remove(0))
     }
+
+    /// Saves Layer 2 and its optional format-$103 descriptor with one checksum transaction.
+    ///
+    /// The descriptor/layout pair must either both be present or both be absent. This is the
+    /// narrow per-level equivalent of the full native-assets aggregate save path.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid payloads, descriptor pairing, allocation, direct writes, or checksum
+    /// fields without changing the ROM.
+    pub fn save_level_layer2_with_descriptor_and_checksum(
+        &mut self,
+        level: usize,
+        level_mode: u8,
+        loaded: &LoadedLevelLayer2,
+        layout: LevelLayer2RomLayout,
+        options: &LevelLayer2SaveOptions,
+        checksum_field: usize,
+    ) -> Result<PayloadSaveResult, LevelLayer2IoError> {
+        let request = level_layer2_save_request(level, level_mode, &loaded.data, layout, options)?;
+        let descriptor_write = match (loaded.descriptor, layout.descriptor_table) {
+            (None, None) => None,
+            (Some(descriptor), Some(table)) => Some(level_layer2_descriptor_write(
+                self, level, descriptor, table,
+            )?),
+            _ => return Err(LevelLayer2IoError::DescriptorLayout),
+        };
+        let writes = descriptor_write.into_iter().collect::<Vec<_>>();
+        let mut saved = self.save_tagged_payloads_with_checksum_and_writes(
+            format!("save level {level:03x} layer 2"),
+            &[request],
+            &writes,
+            checksum_field,
+        )?;
+        Ok(saved.remove(0))
+    }
 }
 
 fn descriptor_offset(

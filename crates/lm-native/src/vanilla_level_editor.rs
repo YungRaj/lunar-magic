@@ -99,6 +99,7 @@ enum EntityPasteTarget {
 enum CanvasPlacementMode {
     Object,
     Sprite,
+    Layer2Tile,
 }
 
 impl SpriteForm {
@@ -231,7 +232,8 @@ pub(crate) struct VanillaLevelEditor {
     map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
     map16_error: Option<String>,
     standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
-    layer2: Option<lm_level::NativeLayer2Data>,
+    selected_layer2_tile: usize,
+    layer2_word: u16,
     external_asset_revision: u64,
     external_sprite_textures:
         HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
@@ -306,6 +308,7 @@ impl VanillaLevelEditor {
         ));
         self.show_staged_history(ui);
         self.show_header_editor(ui, object_count, sprite_count);
+        self.show_layer2_editor(ui);
         if let Some(command) = self.show_entrance_editor(ui, level) {
             return Some(command);
         }
@@ -336,12 +339,11 @@ impl VanillaLevelEditor {
         });
         ui.add_space(8.0);
         let expanded = snapshot.rom_bytes.len() > 0x80_000;
-        let layer1_modified = self
-            .controller
-            .as_ref()
-            .is_some_and(LevelController::layer1_is_modified);
-        if !expanded && layer1_modified {
-            ui.label("Level relocation needs one expanded free-space bank.");
+        let relocation_needed = self.controller.as_ref().is_some_and(|controller| {
+            controller.layer1_is_modified() || controller.layer2_is_modified()
+        });
+        if !expanded && relocation_needed {
+            ui.label("Layer 1/2 relocation needs one expanded free-space bank.");
             if ui.button("Expand ROM to 1 MiB").clicked() {
                 return Some(Command::ExpandRom(RomExpansionCommand {
                     expected_revision: snapshot.revision,
@@ -354,7 +356,7 @@ impl VanillaLevelEditor {
         }
         if ui
             .add_enabled(
-                (expanded || !layer1_modified)
+                (expanded || !relocation_needed)
                     && self
                         .controller
                         .as_ref()
@@ -374,6 +376,56 @@ impl VanillaLevelEditor {
             }
         }
         None
+    }
+
+    fn show_layer2_editor(&mut self, ui: &mut egui::Ui) {
+        let Some(layer2) = self
+            .controller
+            .as_ref()
+            .and_then(LevelController::layer2)
+            .cloned()
+        else {
+            return;
+        };
+        ui.collapsing("Layer 2", |ui| match &layer2 {
+            lm_level::NativeLayer2Data::Tilemap(bytes) => {
+                let count = bytes.len() / 2;
+                self.selected_layer2_tile = self.selected_layer2_tile.min(count.saturating_sub(1));
+                ui.label(format!(
+                    "Compressed 32×32 background tilemap · selected storage word {}",
+                    self.selected_layer2_tile
+                ));
+                ui.horizontal(|ui| {
+                    ui.label("Map16 word");
+                    ui.add(egui::DragValue::new(&mut self.layer2_word).hexadecimal(4, false, true));
+                    if ui.button("Stage selected tile").clicked() {
+                        let result = self
+                            .controller
+                            .as_mut()
+                            .expect("controller presence checked above")
+                            .apply_layer2_tilemap_words(&[(
+                                self.selected_layer2_tile,
+                                self.layer2_word,
+                            )]);
+                        match result {
+                            Ok(()) => self.error = None,
+                            Err(error) => self.error = Some(error.to_string()),
+                        }
+                    }
+                });
+                ui.small(
+                    "Choose “Paint Layer 2 tile” and click the canvas to write this word. \
+                     Selection follows Lunar Magic's column-major two-plane storage.",
+                );
+            }
+            lm_level::NativeLayer2Data::Objects(objects) => {
+                ui.label(format!(
+                    "{} native Layer 2 object records are decoded and rendered.",
+                    objects.objects.records.len()
+                ));
+                ui.small("Layer 2 object-list editing is the next editor workflow.");
+            }
+        });
     }
 
     fn show_header_editor(&mut self, ui: &mut egui::Ui, objects: usize, sprites: usize) {
@@ -595,6 +647,16 @@ impl VanillaLevelEditor {
             controller.level().sprites.header,
             controller.level().sprites.tokens.get(self.selected_sprite),
         );
+        if let Some(lm_level::NativeLayer2Data::Tilemap(bytes)) = controller.layer2() {
+            self.selected_layer2_tile = self
+                .selected_layer2_tile
+                .min((bytes.len() / 2).saturating_sub(1));
+            if let Some(word) =
+                bytes.get(self.selected_layer2_tile * 2..self.selected_layer2_tile * 2 + 2)
+            {
+                self.layer2_word = u16::from_le_bytes([word[0], word[1]]);
+            }
+        }
         self.object_placement_template = None;
         self.dragging_object = None;
         self.external_sprite_textures.clear();
@@ -611,15 +673,18 @@ impl VanillaLevelEditor {
             Ok(lengths) => lengths,
             Err(error) => {
                 self.controller = None;
-                self.layer2 = None;
                 self.error = Some(error);
                 self.key = Some(key);
                 return;
             }
         };
-        match LevelController::decode(
+        let layer2_layout = RomImage::from_bytes(snapshot.rom_bytes.clone())
+            .ok()
+            .and_then(|rom| lm_profile::smw_us_v1_layer2_layout(&rom).ok());
+        match LevelController::decode_with_layer2(
             snapshot,
             lm_profile::smw_us_v1_vanilla_level_layout(),
+            layer2_layout,
             &sprite_lengths,
         ) {
             Ok(controller) => {
@@ -651,19 +716,16 @@ impl VanillaLevelEditor {
                     .and_then(|rom| {
                         lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).ok()
                     });
-                self.layer2 = RomImage::from_bytes(snapshot.rom_bytes.clone())
-                    .ok()
-                    .and_then(|rom| {
-                        let project = lm_project::Project::new(rom);
-                        let layout = lm_profile::smw_us_v1_layer2_layout(&project.rom).ok()?;
-                        project
-                            .load_level_layer2(
-                                controller.level().number,
-                                controller.level().layer1.header.level_mode(),
-                                layout,
-                            )
-                            .ok()
-                    });
+                self.selected_layer2_tile = 0;
+                self.layer2_word = controller
+                    .layer2()
+                    .and_then(|layer2| match layer2 {
+                        lm_level::NativeLayer2Data::Tilemap(bytes) => bytes
+                            .get(..2)
+                            .map(|word| u16::from_le_bytes([word[0], word[1]])),
+                        lm_level::NativeLayer2Data::Objects(_) => None,
+                    })
+                    .unwrap_or_default();
                 self.form = HeaderForm::from_controller(&controller);
                 self.selected_object = 0;
                 self.object_form = controller
@@ -687,7 +749,6 @@ impl VanillaLevelEditor {
                 self.entrance_controller = None;
                 self.midway_form = None;
                 self.error = Some(error.to_string());
-                self.layer2 = None;
             }
         }
         self.key = Some(key);
@@ -711,7 +772,6 @@ impl VanillaLevelEditor {
         self.map16_summary = None;
         self.map16_error = None;
         self.standard_object_map = None;
-        self.layer2 = None;
         self.object_placement_template = None;
         self.paste_target = None;
         self.dragging_sprite = None;
@@ -913,20 +973,7 @@ impl VanillaLevelEditor {
             minor_tiles = minor_tiles.max(32);
         }
         let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical);
-        ui.horizontal(|ui| {
-            ui.label("Canvas tool:");
-            ui.selectable_value(&mut self.placement_mode, None, "Select / move");
-            ui.selectable_value(
-                &mut self.placement_mode,
-                Some(CanvasPlacementMode::Object),
-                "Place object",
-            );
-            ui.selectable_value(
-                &mut self.placement_mode,
-                Some(CanvasPlacementMode::Sprite),
-                "Place sprite",
-            );
-        });
+        self.show_canvas_tools(ui);
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
         }
@@ -959,6 +1006,33 @@ impl VanillaLevelEditor {
                 );
             });
         draw_canvas_caption(ui, vertical);
+    }
+
+    fn show_canvas_tools(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Canvas tool:");
+            ui.selectable_value(&mut self.placement_mode, None, "Select / move");
+            ui.selectable_value(
+                &mut self.placement_mode,
+                Some(CanvasPlacementMode::Object),
+                "Place object",
+            );
+            ui.selectable_value(
+                &mut self.placement_mode,
+                Some(CanvasPlacementMode::Sprite),
+                "Place sprite",
+            );
+            if matches!(
+                self.controller.as_ref().and_then(LevelController::layer2),
+                Some(lm_level::NativeLayer2Data::Tilemap(_))
+            ) {
+                ui.selectable_value(
+                    &mut self.placement_mode,
+                    Some(CanvasPlacementMode::Layer2Tile),
+                    "Paint Layer 2 tile",
+                );
+            }
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1101,6 +1175,9 @@ impl VanillaLevelEditor {
                 CanvasPlacementMode::Sprite => {
                     self.place_sprite_at_canvas(position, rect, cell, vertical);
                 }
+                CanvasPlacementMode::Layer2Tile => {
+                    self.paint_layer2_tile_at_canvas(position, rect, cell);
+                }
             }
             return;
         }
@@ -1111,6 +1188,18 @@ impl VanillaLevelEditor {
             self.selected_object = index;
             self.object_form = ObjectForm::from_record(record);
             self.object_placement_template = None;
+        }
+        if response.clicked()
+            && hit_object.is_none()
+            && hit_sprite.is_none()
+            && let Some(position) = response.interact_pointer_pos()
+            && let Some(index) = layer2_tile_at_canvas_position(position, rect, cell)
+            && let Some(lm_level::NativeLayer2Data::Tilemap(bytes)) =
+                self.controller.as_ref().and_then(LevelController::layer2)
+            && let Some(word) = bytes.get(index * 2..index * 2 + 2)
+        {
+            self.selected_layer2_tile = index;
+            self.layer2_word = u16::from_le_bytes([word[0], word[1]]);
         }
         if (response.clicked() || response.drag_started())
             && let Some(index) = hit_sprite
@@ -1142,6 +1231,23 @@ impl VanillaLevelEditor {
             } else if let (Some(index), Some(position)) = (self.dragging_object.take(), position) {
                 self.move_object_to_canvas(index, position, rect, cell, vertical);
             }
+        }
+    }
+
+    fn paint_layer2_tile_at_canvas(&mut self, position: egui::Pos2, canvas: egui::Rect, cell: f32) {
+        let Some(index) = layer2_tile_at_canvas_position(position, canvas, cell) else {
+            self.error = Some("Layer 2 tile lies outside the native 32×32 background".into());
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_layer2_tilemap_words(&[(index, self.layer2_word)]) {
+            Ok(()) => {
+                self.selected_layer2_tile = index;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
         }
     }
 
@@ -1497,11 +1603,11 @@ impl VanillaLevelEditor {
         self.controller
             .as_ref()
             .map(|controller| {
-                let layer2_objects = match self.layer2.as_ref() {
+                let layer2_objects = match controller.layer2() {
                     Some(lm_level::NativeLayer2Data::Objects(objects)) => Some(objects),
                     Some(lm_level::NativeLayer2Data::Tilemap(_)) | None => None,
                 };
-                let layer2_tilemap = match self.layer2.as_ref() {
+                let layer2_tilemap = match controller.layer2() {
                     Some(lm_level::NativeLayer2Data::Tilemap(bytes)) => bytes
                         .chunks_exact(2)
                         .map(|word| u16::from_le_bytes([word[0], word[1]]))
@@ -3277,6 +3383,23 @@ fn object_placement_at_canvas_position(
     ))
 }
 
+fn layer2_tile_at_canvas_position(
+    position: egui::Pos2,
+    canvas: egui::Rect,
+    cell: f32,
+) -> Option<usize> {
+    if !canvas.contains(position) || !cell.is_finite() || cell <= 0.0 {
+        return None;
+    }
+    let x = ((position.x - canvas.left()) / cell).floor();
+    let y = ((position.y - canvas.top()) / cell).floor();
+    if !(0.0..32.0).contains(&x) || !(0.0..32.0).contains(&y) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    lm_level::native_layer2_tilemap_index(x as usize, y as usize)
+}
+
 fn draw_map16_atlas_tile(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
@@ -4014,6 +4137,8 @@ fn prepare_commit(
         return Err("expand the ROM before committing level changes".into());
     }
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    let layer2_layout =
+        lm_profile::smw_us_v1_layer2_layout(&image).map_err(|error| error.to_string())?;
     let allocation = AllocationPolicy {
         search: logical_len.min(0x80_000)..logical_len,
         bank_size: Some(0x8000),
@@ -4027,28 +4152,47 @@ fn prepare_commit(
                 snapshot.identity.internal_header_offset
                     ..snapshot.identity.internal_header_offset + 0x40,
             ),
+            ProtectedRange(
+                layer2_layout.pointers.offset
+                    ..layer2_layout.pointers.offset
+                        + layer2_layout.pointers.entries * layer2_layout.pointers.stride,
+            ),
         ],
     };
     let sprite_bank = pristine_sprite_bank_range(&image, layout)?;
-    controller
-        .prepare_commit_with_shared_bank_sprite_relocation(
+    let level_options = LevelSaveOptions {
+        layer1_allocation: allocation.clone(),
+        sprite_allocation: AllocationPolicy {
+            search: sprite_bank,
+            bank_size: Some(0x8000),
+            fill_bytes: vec![0xff],
+            protected: allocation.protected.clone(),
+        },
+        previous_layer1: None,
+        previous_sprites: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    if controller.layer2_is_modified() {
+        controller.prepare_commit_with_layer2(
             format!("Edit pristine SMW level {:03X}", controller.level().number),
-            &LevelSaveOptions {
-                layer1_allocation: allocation.clone(),
-                sprite_allocation: AllocationPolicy {
-                    search: sprite_bank,
-                    bank_size: Some(0x8000),
-                    fill_bytes: vec![0xff],
-                    protected: allocation.protected.clone(),
-                },
-                previous_layer1: None,
-                previous_sprites: None,
+            &level_options,
+            &lm_project::LevelLayer2SaveOptions {
+                allocation,
+                previous_block: None,
                 reuse_identical: true,
                 erase_fill: 0xff,
             },
+            true,
         )
-        .map(lm_app::PreparedRomCommit::into_command)
-        .map_err(|error| error.to_string())
+    } else {
+        controller.prepare_commit_with_shared_bank_sprite_relocation(
+            format!("Edit pristine SMW level {:03X}", controller.level().number),
+            &level_options,
+        )
+    }
+    .map(lm_app::PreparedRomCommit::into_command)
+    .map_err(|error| error.to_string())
 }
 
 fn pristine_sprite_bank_range(
@@ -4078,6 +4222,27 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layer2_canvas_hit_testing_matches_native_two_plane_storage() {
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 512.0));
+        assert_eq!(
+            layer2_tile_at_canvas_position(egui::pos2(8.0, 8.0), canvas, 16.0),
+            Some(0)
+        );
+        assert_eq!(
+            layer2_tile_at_canvas_position(egui::pos2(24.0, 8.0), canvas, 16.0),
+            Some(16)
+        );
+        assert_eq!(
+            layer2_tile_at_canvas_position(egui::pos2(504.0, 504.0), canvas, 16.0),
+            Some(1023)
+        );
+        assert_eq!(
+            layer2_tile_at_canvas_position(egui::pos2(513.0, 8.0), canvas, 16.0),
+            None
+        );
+    }
 
     #[test]
     fn unresolved_sprite_markers_preserve_lunar_magics_native_empty_handlers() {

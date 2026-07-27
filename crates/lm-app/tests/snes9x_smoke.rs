@@ -2,10 +2,7 @@
 
 use lm_level::{NativeLayer2Data, ObjectEdit, SpriteLengthTable, SpriteToken};
 use lm_project::Project;
-use lm_project::{
-    LevelLayer2DescriptorTable, LevelLayer2RomLayout, LevelLayer2SaveOptions,
-    LevelLayer2TilemapEncoding, LevelPointerTable, LevelSaveOptions,
-};
+use lm_project::{LevelLayer2SaveOptions, LevelSaveOptions};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage};
 use std::fs;
@@ -97,29 +94,16 @@ fn rust_layer2_edit_survives_snes9x_initialization() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snes9x = snes9x_binary();
     let installed = root.join("oracle-work/lm363/pristine-us/level-save-105/after.smc");
-    let layout = LevelLayer2RomLayout {
-        mapper: Mapper::LoRom,
-        pointers: LevelPointerTable {
-            offset: 0x2e600,
-            entries: 0x200,
-            stride: 3,
-        },
-        descriptor_table: Some(LevelLayer2DescriptorTable {
-            offset: 0x77310,
-            entries: 0x200,
-            stride: 1,
-        }),
-        maximum_compressed_len: 0x8000,
-        tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },
-    };
     let mut project = Project::new(
         RomImage::from_bytes(fs::read(installed).expect("read installed SMW fixture"))
             .expect("decode installed SMW fixture"),
     );
-    let mut layer2 = project
-        .load_level_layer2(0x105, 0, layout)
+    let layout =
+        lm_profile::smw_us_v1_layer2_layout(&project.rom).expect("detect installed Layer 2 layout");
+    let mut loaded = project
+        .load_level_layer2_with_descriptor(0x105, 0, layout)
         .expect("load level 105 Layer 2");
-    let NativeLayer2Data::Tilemap(bytes) = &mut layer2 else {
+    let NativeLayer2Data::Tilemap(bytes) = &mut loaded.data else {
         panic!("level 105 must use compressed Layer 2 tilemap storage");
     };
     bytes[0] ^= 1;
@@ -130,10 +114,10 @@ fn rust_layer2_edit_survives_snes9x_initialization() {
         .expand_rom(Mapper::LoRom, logical_len, 0xff, 0x7fdc)
         .expect("expand edited ROM");
     project
-        .save_level_layer2_with_checksum(
+        .save_level_layer2_with_descriptor_and_checksum(
             0x105,
             0,
-            &layer2,
+            &loaded,
             layout,
             &LevelLayer2SaveOptions {
                 allocation: AllocationPolicy {
@@ -155,9 +139,9 @@ fn rust_layer2_edit_survives_snes9x_initialization() {
         .expect("save edited Layer 2 and checksum");
     assert_eq!(
         project
-            .load_level_layer2(0x105, 0, layout)
+            .load_level_layer2_with_descriptor(0x105, 0, layout)
             .expect("reopen edited Layer 2"),
-        layer2
+        loaded
     );
 
     let directory = smoke_directory();

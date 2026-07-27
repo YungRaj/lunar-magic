@@ -1,7 +1,8 @@
 use super::{LevelController, LevelControllerError};
 use crate::PreparedRomCommit;
 use lm_project::{
-    LevelSaveOptions, PayloadReclamation, Project, RatsOwnershipManifest, RomMutation,
+    LevelLayer2SaveOptions, LevelSaveOptions, PayloadReclamation, Project, RatsOwnershipManifest,
+    RomMutation,
 };
 use lm_rom::RomImage;
 
@@ -18,7 +19,7 @@ impl LevelController {
         description: impl Into<String>,
         options: &LevelSaveOptions,
     ) -> Result<PreparedRomCommit, LevelControllerError> {
-        self.prepare_commit_internal(description.into(), options, false)
+        self.prepare_commit_internal(description.into(), options, None, false)
     }
 
     /// Prepares a commit that may relocate a growing pristine shared-bank sprite stream.
@@ -36,13 +37,34 @@ impl LevelController {
         description: impl Into<String>,
         options: &LevelSaveOptions,
     ) -> Result<PreparedRomCommit, LevelControllerError> {
-        self.prepare_commit_internal(description.into(), options, true)
+        self.prepare_commit_internal(description.into(), options, None, true)
+    }
+
+    /// Prepares one atomic mutation for Layer 1, sprites, and the optional staged Layer 2 stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed controller error for serialization, allocation, or snapshot failures.
+    pub fn prepare_commit_with_layer2(
+        &self,
+        description: impl Into<String>,
+        options: &LevelSaveOptions,
+        layer2_options: &LevelLayer2SaveOptions,
+        relocate_growing_shared_bank_sprites: bool,
+    ) -> Result<PreparedRomCommit, LevelControllerError> {
+        self.prepare_commit_internal(
+            description.into(),
+            options,
+            Some(layer2_options),
+            relocate_growing_shared_bank_sprites,
+        )
     }
 
     fn prepare_commit_internal(
         &self,
         description: String,
         options: &LevelSaveOptions,
+        layer2_options: Option<&LevelLayer2SaveOptions>,
         relocate_growing_shared_bank_sprites: bool,
     ) -> Result<PreparedRomCommit, LevelControllerError> {
         let image = RomImage::from_bytes(self.source_file_bytes.clone())
@@ -56,12 +78,38 @@ impl LevelController {
             });
         }
         let mut project = Project::new(image);
+        let level_changed = self.level != self.baseline;
+        self.save_staged_level(
+            &mut project,
+            options,
+            level_changed,
+            relocate_growing_shared_bank_sprites,
+        )?;
+        self.save_staged_layer2(&mut project, layer2_options)?;
+        self.validate_semantic_reopen(&project, level_changed)?;
+        let mutation =
+            RomMutation::between(self.layout.mapper, &before, project.rom.logical_bytes())
+                .map_err(LevelControllerError::Mutation)?;
+        Ok(PreparedRomCommit {
+            expected_revision: self.revision,
+            description,
+            mutation,
+        })
+    }
+
+    fn save_staged_level(
+        &self,
+        project: &mut Project,
+        options: &LevelSaveOptions,
+        level_changed: bool,
+        relocate_growing_shared_bank_sprites: bool,
+    ) -> Result<(), LevelControllerError> {
         let sprites_changed = self.level.sprites != self.baseline.sprites;
         let shared_bank_sprites = matches!(
             self.layout.sprites,
             lm_project::SpritePointerTable::SplitSharedBank { .. }
         );
-        if !sprites_changed {
+        if level_changed && !sprites_changed {
             project
                 .save_level_layer1_with_checksum(
                     self.layout,
@@ -70,7 +118,7 @@ impl LevelController {
                     options,
                 )
                 .map_err(LevelControllerError::Save)?;
-        } else if shared_bank_sprites {
+        } else if level_changed && shared_bank_sprites {
             if self.level.layer1 != self.baseline.layer1 {
                 project
                     .save_level_layer1_with_checksum(
@@ -105,7 +153,7 @@ impl LevelController {
                 }
                 Err(error) => return Err(LevelControllerError::Save(error)),
             }
-        } else {
+        } else if level_changed {
             project
                 .save_level_slot_with_checksum(
                     self.layout,
@@ -116,14 +164,67 @@ impl LevelController {
                 )
                 .map_err(LevelControllerError::Save)?;
         }
-        let mutation =
-            RomMutation::between(self.layout.mapper, &before, project.rom.logical_bytes())
-                .map_err(LevelControllerError::Mutation)?;
-        Ok(PreparedRomCommit {
-            expected_revision: self.revision,
-            description,
-            mutation,
-        })
+        Ok(())
+    }
+
+    fn save_staged_layer2(
+        &self,
+        project: &mut Project,
+        layer2_options: Option<&LevelLayer2SaveOptions>,
+    ) -> Result<(), LevelControllerError> {
+        if self.layer2 != self.baseline_layer2 {
+            let layout = self
+                .layer2_layout
+                .ok_or(LevelControllerError::Layer2Unavailable)?;
+            let layer2 = self
+                .layer2
+                .as_ref()
+                .ok_or(LevelControllerError::Layer2Unavailable)?;
+            let layer2_options = layer2_options.ok_or(LevelControllerError::Layer2Unavailable)?;
+            project
+                .save_level_layer2_with_descriptor_and_checksum(
+                    self.level.number,
+                    self.level.layer1.header.level_mode(),
+                    &lm_project::LoadedLevelLayer2 {
+                        data: layer2.clone(),
+                        descriptor: self.layer2_descriptor,
+                    },
+                    layout,
+                    layer2_options,
+                    self.checksum_field_offset,
+                )
+                .map_err(LevelControllerError::Layer2Load)?;
+        }
+        Ok(())
+    }
+
+    fn validate_semantic_reopen(
+        &self,
+        project: &Project,
+        level_changed: bool,
+    ) -> Result<(), LevelControllerError> {
+        if level_changed {
+            let reopened = project
+                .load_level_slot(self.level.number, self.layout, &self.sprite_lengths)
+                .map_err(LevelControllerError::Load)?;
+            if reopened != self.level {
+                return Err(LevelControllerError::NonCanonicalLevelEncoding);
+            }
+        }
+        if self.layer2 != self.baseline_layer2 {
+            let reopened = project
+                .load_level_layer2_with_descriptor(
+                    self.level.number,
+                    self.level.layer1.header.level_mode(),
+                    self.layer2_layout
+                        .ok_or(LevelControllerError::Layer2Unavailable)?,
+                )
+                .map_err(LevelControllerError::Layer2Load)?;
+            if Some(reopened.data) != self.layer2 || reopened.descriptor != self.layer2_descriptor {
+                return Err(LevelControllerError::NonCanonicalLayer2Encoding);
+            }
+        }
+        Ok(())
     }
 
     /// Prepares one snapshot-bound two-stream level relocation and reclamation mutation.
