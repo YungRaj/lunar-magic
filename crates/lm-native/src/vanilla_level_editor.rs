@@ -1231,21 +1231,28 @@ impl VanillaLevelEditor {
             self.foreground_texture.as_ref(),
             custom_map16,
         );
-        for (layer_records, layer_placements) in
-            object_draw_layers(layer2_records, layer2_placements, records, placements)
-        {
-            self.draw_object_artwork(
-                painter,
-                rect,
-                ROM_LEVEL_CANVAS_CELL,
-                major_tiles,
-                vertical,
-                layer_records,
-                layer_placements,
-                custom_objects,
-                custom_map16,
-            );
-        }
+        let layer2_artwork_bounds = self.draw_object_artwork(
+            painter,
+            rect,
+            ROM_LEVEL_CANVAS_CELL,
+            major_tiles,
+            vertical,
+            layer2_records,
+            layer2_placements,
+            custom_objects,
+            custom_map16,
+        );
+        let layer1_artwork_bounds = self.draw_object_artwork(
+            painter,
+            rect,
+            ROM_LEVEL_CANVAS_CELL,
+            major_tiles,
+            vertical,
+            records,
+            placements,
+            custom_objects,
+            custom_map16,
+        );
         let hit_layer2 = draw_object_placement_markers(
             painter,
             response,
@@ -1255,8 +1262,7 @@ impl VanillaLevelEditor {
             layer2_placements,
             self.selected_layer2_object,
             self.map16_texture.as_ref(),
-            custom_objects,
-            self.active_object_family_index(),
+            &layer2_artwork_bounds,
         );
         let hit = draw_object_placement_markers(
             painter,
@@ -1267,8 +1273,7 @@ impl VanillaLevelEditor {
             placements,
             self.selected_object,
             self.map16_texture.as_ref(),
-            custom_objects,
-            self.active_object_family_index(),
+            &layer1_artwork_bounds,
         );
         let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
             painter,
@@ -1854,9 +1859,9 @@ impl VanillaLevelEditor {
         placements: &[lm_level::NativeObjectPlacement],
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
-    ) {
+    ) -> HashMap<usize, egui::Rect> {
         let Some(texture) = self.map16_texture.as_ref() else {
-            return;
+            return HashMap::new();
         };
         draw_ordered_object_tiles(
             painter,
@@ -1874,7 +1879,7 @@ impl VanillaLevelEditor {
                 custom_map16,
                 foreground_texture: self.foreground_texture.as_ref(),
             },
-        );
+        )
     }
 
     fn active_standard_object_handler_map(&self) -> Option<&[u8; 64]> {
@@ -3746,12 +3751,16 @@ fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
     ));
 }
 
-fn draw_ordered_object_tiles(painter: &egui::Painter, request: OrderedObjectDraw<'_>) {
+fn draw_ordered_object_tiles(
+    painter: &egui::Painter,
+    request: OrderedObjectDraw<'_>,
+) -> HashMap<usize, egui::Rect> {
+    let mut artwork_bounds = HashMap::new();
     let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
     if lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).is_err()
         || lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).is_err()
     {
-        return;
+        return artwork_bounds;
     }
     let layout = lm_render::NativeLevelMap16Layout {
         width: if request.vertical {
@@ -3777,6 +3786,17 @@ fn draw_ordered_object_tiles(painter: &egui::Painter, request: OrderedObjectDraw
             .and_then(|metadata| resolved_custom_object_parts(record, metadata, request.variant))
         {
             draw_custom_object_parts(painter, request, *placement, &parts);
+            let encoded = encoded_object_rect(request.target, *placement, request.vertical);
+            let (tile_x, tile_y) = placement.tile_coordinates(request.vertical);
+            let origin = request.target.min
+                + egui::vec2(
+                    f32::from(tile_x) * request.cell_size,
+                    f32::from(tile_y) * request.cell_size,
+                );
+            artwork_bounds.insert(
+                placement.record_index,
+                custom_object_display_rect(encoded, origin, &parts),
+            );
             continue;
         }
         let Some(handler_map) = request.handler_map else {
@@ -3793,7 +3813,17 @@ fn draw_ordered_object_tiles(painter: &egui::Painter, request: OrderedObjectDraw
             continue;
         };
         draw_standard_object_cache(painter, request, layout, &cache);
+        artwork_bounds.insert(
+            placement.record_index,
+            standard_object_cache_display_rect(
+                encoded_object_rect(request.target, *placement, request.vertical),
+                request.target,
+                layout,
+                &cache,
+            ),
+        );
     }
+    artwork_bounds
 }
 
 fn draw_standard_object_cache(
@@ -3981,8 +4011,7 @@ fn draw_object_placement_markers(
     placements: &[lm_level::NativeObjectPlacement],
     selected: usize,
     map16_texture: Option<&egui::TextureHandle>,
-    custom_objects: Option<&lm_level::OscResolvedTable>,
-    object_variant: u8,
+    artwork_bounds: &HashMap<usize, egui::Rect>,
 ) -> Option<usize> {
     let mut hit = None;
     for placement in placements {
@@ -3990,29 +4019,10 @@ fn draw_object_placement_markers(
         let Some(record) = records.get(index) else {
             continue;
         };
-        let (tile_x, tile_y) = placement.tile_coordinates(vertical);
-        let position = canvas.min
-            + egui::vec2(
-                f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
-                f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
-            );
-        let (tile_width, tile_height) = if vertical {
-            (placement.minor_span, placement.major_span)
-        } else {
-            (placement.major_span, placement.minor_span)
-        };
-        let mut object_rect = egui::Rect::from_min_size(
-            position,
-            egui::vec2(
-                (f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL).max(8.0),
-                (f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL).max(8.0),
-            ),
-        );
-        if let Some(parts) = custom_objects
-            .and_then(|metadata| resolved_custom_object_parts(record, metadata, object_variant))
-        {
-            object_rect = custom_object_display_rect(object_rect, position, &parts);
-        }
+        let object_rect = artwork_bounds
+            .get(&index)
+            .copied()
+            .unwrap_or_else(|| encoded_object_rect(canvas, *placement, vertical));
         draw_object_marker(
             painter,
             map16_texture,
@@ -4028,6 +4038,63 @@ fn draw_object_placement_markers(
         }
     }
     hit
+}
+
+fn encoded_object_rect(
+    canvas: egui::Rect,
+    placement: lm_level::NativeObjectPlacement,
+    vertical: bool,
+) -> egui::Rect {
+    let (tile_x, tile_y) = placement.tile_coordinates(vertical);
+    let position = canvas.min
+        + egui::vec2(
+            f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
+            f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
+        );
+    let (tile_width, tile_height) = if vertical {
+        (placement.minor_span, placement.major_span)
+    } else {
+        (placement.major_span, placement.minor_span)
+    };
+    egui::Rect::from_min_size(
+        position,
+        egui::vec2(
+            (f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL).max(8.0),
+            (f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL).max(8.0),
+        ),
+    )
+}
+
+fn standard_object_cache_display_rect(
+    encoded_rect: egui::Rect,
+    canvas: egui::Rect,
+    layout: lm_render::NativeLevelMap16Layout,
+    cache: &lm_render::NativeLevelMap16Cache,
+) -> egui::Rect {
+    let mut bounds = encoded_rect;
+    for y in 0..layout.height {
+        for x in 0..layout.width {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+            if cache.cells().get(index) == Some(&u16::MAX) {
+                continue;
+            }
+            let Ok(x) = u16::try_from(x) else {
+                continue;
+            };
+            let Ok(y) = u16::try_from(y) else {
+                continue;
+            };
+            bounds = bounds.union(egui::Rect::from_min_size(
+                canvas.min
+                    + egui::vec2(
+                        f32::from(x) * ROM_LEVEL_CANVAS_CELL,
+                        f32::from(y) * ROM_LEVEL_CANVAS_CELL,
+                    ),
+                egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
+            ));
+        }
+    }
+    bounds
 }
 
 fn custom_object_display_rect(
@@ -4297,8 +4364,10 @@ fn external_sprite_definition(
     ])
 }
 
+#[cfg(test)]
 type ObjectDrawLayer<'a> = (&'a [ObjectRecord], &'a [lm_level::NativeObjectPlacement]);
 
+#[cfg(test)]
 fn object_draw_layers<'a>(
     layer2_records: &'a [ObjectRecord],
     layer2_placements: &'a [lm_level::NativeObjectPlacement],
@@ -4926,6 +4995,77 @@ mod tests {
             egui::Rect::from_min_max(egui::pos2(94.0, 88.0), egui::pos2(136.0, 115.0))
         );
         assert_eq!(custom_object_display_rect(encoded, origin, &[]), encoded);
+    }
+
+    #[test]
+    fn pristine_standard_object_artwork_expands_interactive_footprints() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image =
+            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+                .unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0 * ROM_LEVEL_CANVAS_CELL, 16.0 * ROM_LEVEL_CANVAS_CELL),
+        );
+        let mut expanded = None;
+
+        'levels: for level_number in 0..0x200 {
+            let Ok(level) =
+                project.load_level_slot(level_number, level_layout, &SpriteLengthTable::standard())
+            else {
+                continue;
+            };
+            let header = level.layer1.header;
+            let vertical = lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical;
+            let variant = match lm_profile::smw_us_v1_object_family(header.object_tileset()) {
+                lm_profile::VanillaObjectFamily::Normal => 0,
+                lm_profile::VanillaObjectFamily::Castle => 1,
+                lm_profile::VanillaObjectFamily::Rope => 2,
+                lm_profile::VanillaObjectFamily::Underground => 3,
+                lm_profile::VanillaObjectFamily::GhostHouse => 4,
+            };
+            let handler_map = definition_map.family(variant).unwrap();
+            let layout = lm_render::NativeLevelMap16Layout {
+                width: if vertical { 16 } else { 512 },
+                height: if vertical { 512 } else { 16 },
+                page_stride: 0x1b0,
+                base_cell: 0,
+                vertical,
+            };
+            for placement in level.layer1.objects.native_placements() {
+                let record = &level.layer1.objects.records[placement.record_index];
+                let encoded = encoded_object_rect(canvas, placement, vertical);
+                let Ok(Some(cache)) = lm_render::render_mapped_standard_object_placement(
+                    record,
+                    placement,
+                    &definitions,
+                    handler_map,
+                    layout,
+                    u16::MAX,
+                ) else {
+                    continue;
+                };
+                let rendered = standard_object_cache_display_rect(encoded, canvas, layout, &cache);
+                if rendered != encoded {
+                    expanded = Some((level_number, record.command_id(), encoded, rendered));
+                    break 'levels;
+                }
+            }
+        }
+
+        let (level, command, encoded, rendered) =
+            expanded.expect("pristine SMW must contain artwork beyond a generic parameter span");
+        assert!(
+            rendered.contains(encoded.min) && rendered.contains(encoded.max),
+            "level {level:03X} command {command:02X} lost its encoded footprint"
+        );
     }
 
     #[test]

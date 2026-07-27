@@ -54,6 +54,11 @@ Native-canvas selection and drag hit-testing unions the encoded placement footpr
 with every resolved OSC display tile, including negative and extended offsets, while
 an explicitly empty display retains the encoded target. Focused geometry coverage and
 the real-ROM level-`$105` custom-object commit/reopen test verify those interactive bounds.
+Tileset-dispatched standard objects likewise retain the bounds of every nonempty Map16
+cell from the exact cache already painted for that placement, avoiding a second render
+pass while making extended authenticated artwork selectable. A pristine-ROM sweep across
+all 512 level slots requires a recovered object whose artwork exceeds its generic packed
+parameter span and proves the complete encoded footprint remains interactive.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary
