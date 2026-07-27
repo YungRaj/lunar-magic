@@ -99,6 +99,7 @@ enum EntityPasteTarget {
 enum CanvasPlacementMode {
     Object,
     Sprite,
+    Layer2Object,
     Layer2Tile,
 }
 
@@ -210,6 +211,7 @@ pub(crate) struct VanillaLevelEditor {
     selected_object: usize,
     object_form: ObjectForm,
     dragging_object: Option<usize>,
+    dragging_layer2_object: Option<usize>,
     object_catalog_filter: String,
     custom_object_catalog_filter: String,
     object_placement_template: Option<ObjectRecord>,
@@ -466,6 +468,10 @@ impl VanillaLevelEditor {
             &mut self.layer2_object_form,
         );
         ui.horizontal(|ui| {
+            if ui.button("Place on canvas").clicked() {
+                self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
+                self.error = None;
+            }
             if ui.button("Insert after selection").clicked() {
                 let result = self
                     .layer2_object_form
@@ -775,6 +781,7 @@ impl VanillaLevelEditor {
         }
         self.object_placement_template = None;
         self.dragging_object = None;
+        self.dragging_layer2_object = None;
         self.external_sprite_textures.clear();
         self.dragging_sprite = None;
     }
@@ -902,6 +909,7 @@ impl VanillaLevelEditor {
         self.paste_target = None;
         self.dragging_sprite = None;
         self.dragging_object = None;
+        self.dragging_layer2_object = None;
     }
 
     fn show_map16_preview(
@@ -1157,6 +1165,15 @@ impl VanillaLevelEditor {
                     Some(CanvasPlacementMode::Layer2Tile),
                     "Paint Layer 2 tile",
                 );
+            } else if matches!(
+                self.controller.as_ref().and_then(LevelController::layer2),
+                Some(lm_level::NativeLayer2Data::Objects(_))
+            ) {
+                ui.selectable_value(
+                    &mut self.placement_mode,
+                    Some(CanvasPlacementMode::Layer2Object),
+                    "Place Layer 2 object",
+                );
             }
         });
     }
@@ -1215,44 +1232,26 @@ impl VanillaLevelEditor {
                 custom_map16,
             );
         }
-        let mut hit = None;
-        for placement in placements {
-            let index = placement.record_index;
-            let Some(record) = records.get(index) else {
-                continue;
-            };
-            let (tile_x, tile_y) = placement.tile_coordinates(vertical);
-            let position = rect.min
-                + egui::vec2(
-                    f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
-                    f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
-                );
-            let (tile_width, tile_height) = if vertical {
-                (placement.minor_span, placement.major_span)
-            } else {
-                (placement.major_span, placement.minor_span)
-            };
-            let object_rect = egui::Rect::from_min_size(
-                position,
-                egui::vec2(
-                    (f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL).max(8.0),
-                    (f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL).max(8.0),
-                ),
-            );
-            draw_object_marker(
-                painter,
-                self.map16_texture.as_ref(),
-                object_rect,
-                record,
-                index == self.selected_object,
-            );
-            if response
-                .interact_pointer_pos()
-                .is_some_and(|position| object_rect.contains(position))
-            {
-                hit = Some(index);
-            }
-        }
+        let hit_layer2 = draw_object_placement_markers(
+            painter,
+            response,
+            rect,
+            vertical,
+            layer2_records,
+            layer2_placements,
+            self.selected_layer2_object,
+            self.map16_texture.as_ref(),
+        );
+        let hit = draw_object_placement_markers(
+            painter,
+            response,
+            rect,
+            vertical,
+            records,
+            placements,
+            self.selected_object,
+            self.map16_texture.as_ref(),
+        );
         let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
             painter,
             target: rect,
@@ -1271,7 +1270,9 @@ impl VanillaLevelEditor {
         self.handle_canvas_interaction(
             response,
             hit,
+            hit_layer2,
             hit_sprite,
+            layer2_records,
             records,
             rect,
             ROM_LEVEL_CANVAS_CELL,
@@ -1284,7 +1285,9 @@ impl VanillaLevelEditor {
         &mut self,
         response: &egui::Response,
         hit_object: Option<usize>,
+        hit_layer2_object: Option<usize>,
         hit_sprite: Option<usize>,
+        layer2_records: &[ObjectRecord],
         records: &[ObjectRecord],
         rect: egui::Rect,
         cell: f32,
@@ -1300,6 +1303,9 @@ impl VanillaLevelEditor {
                 }
                 CanvasPlacementMode::Sprite => {
                     self.place_sprite_at_canvas(position, rect, cell, vertical);
+                }
+                CanvasPlacementMode::Layer2Object => {
+                    self.place_layer2_object_at_canvas(position, rect, cell, vertical);
                 }
                 CanvasPlacementMode::Layer2Tile => {
                     self.paint_layer2_tile_at_canvas(position, rect, cell);
@@ -1317,6 +1323,15 @@ impl VanillaLevelEditor {
         }
         if response.clicked()
             && hit_object.is_none()
+            && let Some(index) = hit_layer2_object
+            && let Some(record) = layer2_records.get(index)
+        {
+            self.selected_layer2_object = index;
+            self.layer2_object_form = ObjectForm::from_record(record);
+        }
+        if response.clicked()
+            && hit_object.is_none()
+            && hit_layer2_object.is_none()
             && hit_sprite.is_none()
             && let Some(position) = response.interact_pointer_pos()
             && let Some(index) = layer2_tile_at_canvas_position(position, rect, cell)
@@ -1350,12 +1365,26 @@ impl VanillaLevelEditor {
             self.object_form = ObjectForm::from_record(record);
             self.object_placement_template = None;
         }
+        if response.drag_started()
+            && hit_sprite.is_none()
+            && hit_object.is_none()
+            && let Some(index) = hit_layer2_object
+            && let Some(record) = layer2_records.get(index)
+        {
+            self.dragging_layer2_object = Some(index);
+            self.selected_layer2_object = index;
+            self.layer2_object_form = ObjectForm::from_record(record);
+        }
         if response.drag_stopped() {
             let position = response.interact_pointer_pos();
             if let (Some(index), Some(position)) = (self.dragging_sprite.take(), position) {
                 self.move_sprite_to_canvas(index, position, rect, cell, vertical);
             } else if let (Some(index), Some(position)) = (self.dragging_object.take(), position) {
                 self.move_object_to_canvas(index, position, rect, cell, vertical);
+            } else if let (Some(index), Some(position)) =
+                (self.dragging_layer2_object.take(), position)
+            {
+                self.move_layer2_object_to_canvas(index, position, rect, cell, vertical);
             }
         }
     }
@@ -1426,6 +1455,66 @@ impl VanillaLevelEditor {
                 self.object_form =
                     ObjectForm::from_record(&controller.level().layer1.objects.records[selected]);
                 self.object_placement_template = None;
+                self.placement_mode = None;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn place_layer2_object_at_canvas(
+        &mut self,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let Some((screen, coordinates)) =
+            object_placement_at_canvas_position(position, canvas, cell, vertical)
+        else {
+            self.error =
+                Some("Layer 2 object placement is outside the native 16×512-tile space".into());
+            return;
+        };
+        let record = match self.layer2_object_form.ordinary_record() {
+            Ok(record) if record.command_id() != 0 => record,
+            Ok(_) => {
+                self.error =
+                    Some("canvas placement requires an ordinary nonzero Layer 2 command".into());
+                return;
+            }
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() else {
+            self.error = Some("the current level does not use object-backed Layer 2".into());
+            return;
+        };
+        let mut predicted = layer2.objects.clone();
+        let selected =
+            match predicted.insert_ordinary_object_at(record.clone(), screen, coordinates) {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            };
+        match controller.apply_layer2_object_edits(&[ObjectEdit::InsertOrdinaryAt {
+            record,
+            screen,
+            coordinates,
+        }]) {
+            Ok(()) => {
+                self.selected_layer2_object = selected;
+                if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() {
+                    self.layer2_object_form =
+                        ObjectForm::from_record(&layer2.objects.records[selected]);
+                }
                 self.placement_mode = None;
                 self.error = None;
             }
@@ -1581,6 +1670,62 @@ impl VanillaLevelEditor {
                 self.object_form =
                     ObjectForm::from_record(&controller.level().layer1.objects.records[new_index]);
                 self.object_placement_template = None;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn move_layer2_object_to_canvas(
+        &mut self,
+        index: usize,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let Some((screen, coordinates)) =
+            object_placement_at_canvas_position(position, canvas, cell, vertical)
+        else {
+            self.error =
+                Some("Layer 2 object drag ended outside the native 16×512-tile space".into());
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() else {
+            self.error = Some("the current level does not use object-backed Layer 2".into());
+            return;
+        };
+        if !layer2
+            .objects
+            .native_placements()
+            .iter()
+            .any(|placement| placement.record_index == index)
+        {
+            self.error = Some("selected Layer 2 object has no visible native placement".into());
+            return;
+        }
+        let mut predicted = layer2.objects.clone();
+        let new_index = match predicted.relocate_ordinary_object(index, screen, coordinates) {
+            Ok(index) => index,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        match controller.apply_layer2_object_edits(&[ObjectEdit::RelocateOrdinary {
+            index,
+            screen,
+            coordinates,
+        }]) {
+            Ok(()) => {
+                self.selected_layer2_object = new_index;
+                if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() {
+                    self.layer2_object_form =
+                        ObjectForm::from_record(&layer2.objects.records[new_index]);
+                }
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -3755,6 +3900,58 @@ fn draw_foreground_subtile(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
+fn draw_object_placement_markers(
+    painter: &egui::Painter,
+    response: &egui::Response,
+    canvas: egui::Rect,
+    vertical: bool,
+    records: &[ObjectRecord],
+    placements: &[lm_level::NativeObjectPlacement],
+    selected: usize,
+    map16_texture: Option<&egui::TextureHandle>,
+) -> Option<usize> {
+    let mut hit = None;
+    for placement in placements {
+        let index = placement.record_index;
+        let Some(record) = records.get(index) else {
+            continue;
+        };
+        let (tile_x, tile_y) = placement.tile_coordinates(vertical);
+        let position = canvas.min
+            + egui::vec2(
+                f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
+                f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
+            );
+        let (tile_width, tile_height) = if vertical {
+            (placement.minor_span, placement.major_span)
+        } else {
+            (placement.major_span, placement.minor_span)
+        };
+        let object_rect = egui::Rect::from_min_size(
+            position,
+            egui::vec2(
+                (f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL).max(8.0),
+                (f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL).max(8.0),
+            ),
+        );
+        draw_object_marker(
+            painter,
+            map16_texture,
+            object_rect,
+            record,
+            index == selected,
+        );
+        if response
+            .interact_pointer_pos()
+            .is_some_and(|position| object_rect.contains(position))
+        {
+            hit = Some(index);
+        }
+    }
+    hit
+}
+
 fn draw_object_marker(
     painter: &egui::Painter,
     texture: Option<&egui::TextureHandle>,
@@ -4387,6 +4584,87 @@ mod tests {
             layer2_tile_at_canvas_position(egui::pos2(513.0, 8.0), canvas, 16.0),
             None
         );
+    }
+
+    #[test]
+    fn primary_canvas_places_and_drags_object_backed_layer2() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let project = lm_project::Project::new(image);
+        let level_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let layer2_layout = lm_profile::smw_us_v1_layer2_layout(&project.rom).unwrap();
+        let lengths = SpriteLengthTable::standard();
+        let (level, template) = (0..0x200)
+            .find_map(|level| {
+                let slot = project
+                    .load_level_slot(level, level_layout, &lengths)
+                    .ok()?;
+                let layer2 = project
+                    .load_level_layer2(level, slot.layer1.header.level_mode(), layer2_layout)
+                    .ok()?;
+                let lm_level::NativeLayer2Data::Objects(objects) = layer2 else {
+                    return None;
+                };
+                let template = objects
+                    .objects
+                    .records
+                    .iter()
+                    .find(|record| record.command_id() != 0)?
+                    .clone();
+                Some((u16::try_from(level).ok()?, template))
+            })
+            .expect("pristine SMW must contain an object-backed Layer 2 level");
+
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(level)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        editor.layer2_object_form = ObjectForm::from_record(&template);
+        let before = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(6144.0, 384.0));
+        let vertical = editor.controller.as_ref().is_some_and(|controller| {
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
+        });
+        editor.place_layer2_object_at_canvas(
+            egui::pos2(ROM_LEVEL_CANVAS_CELL * 2.5, ROM_LEVEL_CANVAS_CELL * 3.5),
+            canvas,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        );
+        let selected = editor.selected_layer2_object;
+        let after_insert = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(after_insert, before + 1);
+        let drag_target = if vertical {
+            egui::pos2(ROM_LEVEL_CANVAS_CELL * 4.5, ROM_LEVEL_CANVAS_CELL * 18.5)
+        } else {
+            egui::pos2(ROM_LEVEL_CANVAS_CELL * 18.5, ROM_LEVEL_CANVAS_CELL * 4.5)
+        };
+        editor.move_layer2_object_to_canvas(
+            selected,
+            drag_target,
+            canvas,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        );
+        assert!(editor.controller.as_ref().unwrap().layer2_is_modified());
+        assert!(editor.error.is_none());
     }
 
     #[test]
