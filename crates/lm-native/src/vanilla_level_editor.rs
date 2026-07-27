@@ -313,7 +313,7 @@ impl VanillaLevelEditor {
         ));
         self.show_staged_history(ui);
         self.show_header_editor(ui, object_count, sprite_count);
-        self.show_layer2_editor(ui);
+        self.show_layer2_editor(ui, custom_objects);
         if let Some(command) = self.show_entrance_editor(ui, level) {
             return Some(command);
         }
@@ -383,7 +383,11 @@ impl VanillaLevelEditor {
         None
     }
 
-    fn show_layer2_editor(&mut self, ui: &mut egui::Ui) {
+    fn show_layer2_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+    ) {
         let Some(layer2) = self
             .controller
             .as_ref()
@@ -428,12 +432,17 @@ impl VanillaLevelEditor {
                     "{} native Layer 2 object records are decoded and rendered.",
                     objects.objects.records.len()
                 ));
-                self.show_layer2_object_editor(ui, &objects.objects.records);
+                self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
             }
         });
     }
 
-    fn show_layer2_object_editor(&mut self, ui: &mut egui::Ui, records: &[ObjectRecord]) {
+    fn show_layer2_object_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        records: &[ObjectRecord],
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+    ) {
         self.selected_layer2_object = self
             .selected_layer2_object
             .min(records.len().saturating_sub(1));
@@ -464,10 +473,18 @@ impl VanillaLevelEditor {
                     }
                 }
             });
+        let resize_model = records
+            .get(self.selected_layer2_object)
+            .and_then(|record| self.active_object_resize_model(record, custom_objects));
         show_compact_object_fields(
             ui,
             "vanilla-layer2-object-fields",
             &mut self.layer2_object_form,
+        );
+        show_standard_object_resize_fields(
+            ui,
+            resize_model,
+            &mut self.layer2_object_form.parameter,
         );
         ui.horizontal(|ui| {
             if ui.button("Place on canvas").clicked() {
@@ -1889,6 +1906,29 @@ impl VanillaLevelEditor {
             .family(usize::from(family_index))
     }
 
+    fn active_object_resize_model(
+        &self,
+        record: &ObjectRecord,
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+    ) -> Option<lm_render::StandardObjectResizeModel> {
+        if custom_objects.is_some_and(|metadata| {
+            metadata
+                .default_display(
+                    record.command_id(),
+                    record.parameter(),
+                    self.active_object_family_index(),
+                )
+                .is_some()
+        }) {
+            return None;
+        }
+        let handler_map = self.active_standard_object_handler_map()?;
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).ok()?;
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).ok()?;
+        definitions.mapped_resize_model(record, handler_map)
+    }
+
     fn active_object_family_index(&self) -> u8 {
         let tileset = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.header.object_tileset()
@@ -1941,6 +1981,18 @@ impl VanillaLevelEditor {
             controller.level().layer1.objects.records.len()
         });
         let has_selection = self.selected_object < record_count;
+        let resize_model = self
+            .controller
+            .as_ref()
+            .and_then(|controller| {
+                controller
+                    .level()
+                    .layer1
+                    .objects
+                    .records
+                    .get(self.selected_object)
+            })
+            .and_then(|record| self.active_object_resize_model(record, custom_objects));
         if has_selection {
             ui.label(format!("Object {}", self.selected_object));
         } else {
@@ -2003,6 +2055,7 @@ impl VanillaLevelEditor {
                 ui.checkbox(&mut self.object_form.advances_screen, "");
                 ui.end_row();
             });
+            show_standard_object_resize_fields(ui, resize_model, &mut self.object_form.parameter);
         }
         self.object_action_buttons(ui, record_count, has_selection);
         if self.paste_target == Some(EntityPasteTarget::Object)
@@ -4605,6 +4658,140 @@ fn show_compact_object_fields(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm
     });
 }
 
+fn show_standard_object_resize_fields(
+    ui: &mut egui::Ui,
+    model: Option<lm_render::StandardObjectResizeModel>,
+    parameter: &mut u8,
+) {
+    let Some(model) = model else {
+        return;
+    };
+    ui.group(|ui| {
+        ui.label("Authenticated object size");
+        egui::Grid::new(("standard-object-resize", ui.id())).show(ui, |ui| match model {
+            lm_render::StandardObjectResizeModel::ParameterNibbles => {
+                let mut major = (*parameter >> 4) + 1;
+                ui.label("Major-axis tiles");
+                if ui
+                    .add(egui::DragValue::new(&mut major).range(1..=16))
+                    .changed()
+                {
+                    *parameter = set_standard_object_major_tiles(model, *parameter, major)
+                        .expect("bounded major-axis control");
+                }
+                ui.end_row();
+                let mut minor = (*parameter & 0x0f) + 1;
+                ui.label("Minor-axis tiles");
+                if ui
+                    .add(egui::DragValue::new(&mut minor).range(1..=16))
+                    .changed()
+                {
+                    *parameter =
+                        set_standard_object_minor_tiles(model, *parameter, u16::from(minor))
+                            .expect("bounded minor-axis control");
+                }
+                ui.end_row();
+            }
+            lm_render::StandardObjectResizeModel::MajorNibble => {
+                let mut major = (*parameter >> 4) + 1;
+                ui.label("Major-axis tiles");
+                if ui
+                    .add(egui::DragValue::new(&mut major).range(1..=16))
+                    .changed()
+                {
+                    *parameter = set_standard_object_major_tiles(model, *parameter, major)
+                        .expect("bounded major-axis control");
+                }
+                ui.end_row();
+                ui.label("Minor-axis tiles");
+                ui.label("1 (fixed)");
+                ui.end_row();
+            }
+            lm_render::StandardObjectResizeModel::MinorNibble { fixed_major_tiles } => {
+                ui.label("Major-axis tiles");
+                ui.label(format!("{fixed_major_tiles} (fixed)"));
+                ui.end_row();
+                let mut minor = (*parameter & 0x0f) + 1;
+                ui.label("Minor-axis tiles");
+                if ui
+                    .add(egui::DragValue::new(&mut minor).range(1..=16))
+                    .changed()
+                {
+                    *parameter =
+                        set_standard_object_minor_tiles(model, *parameter, u16::from(minor))
+                            .expect("bounded minor-axis control");
+                }
+                ui.end_row();
+            }
+            lm_render::StandardObjectResizeModel::MinorByte { fixed_major_tiles } => {
+                ui.label("Major-axis tiles");
+                ui.label(format!("{fixed_major_tiles} (fixed)"));
+                ui.end_row();
+                let mut minor = u16::from(*parameter) + 1;
+                ui.label("Minor-axis tiles");
+                if ui
+                    .add(egui::DragValue::new(&mut minor).range(1..=256))
+                    .changed()
+                {
+                    *parameter = set_standard_object_minor_tiles(model, *parameter, minor)
+                        .expect("bounded full-byte minor-axis control");
+                }
+                ui.end_row();
+            }
+            lm_render::StandardObjectResizeModel::Fixed => {
+                ui.label("Size");
+                ui.label("fixed by active tileset handler");
+                ui.end_row();
+            }
+        });
+        ui.small(
+            "Size controls update the lossless parameter field; use Apply object fields to commit.",
+        );
+    });
+}
+
+fn set_standard_object_major_tiles(
+    model: lm_render::StandardObjectResizeModel,
+    parameter: u8,
+    tiles: u8,
+) -> Result<u8, String> {
+    if !(1..=16).contains(&tiles) {
+        return Err("major-axis object size must be 1–16 tiles".into());
+    }
+    match model {
+        lm_render::StandardObjectResizeModel::ParameterNibbles
+        | lm_render::StandardObjectResizeModel::MajorNibble => {
+            Ok(((tiles - 1) << 4) | (parameter & 0x0f))
+        }
+        _ => Err("active object handler does not encode a resizable major axis".into()),
+    }
+}
+
+fn set_standard_object_minor_tiles(
+    model: lm_render::StandardObjectResizeModel,
+    parameter: u8,
+    tiles: u16,
+) -> Result<u8, String> {
+    match model {
+        lm_render::StandardObjectResizeModel::ParameterNibbles
+        | lm_render::StandardObjectResizeModel::MinorNibble { .. } => {
+            let tiles = u8::try_from(tiles)
+                .ok()
+                .filter(|tiles| (1..=16).contains(tiles))
+                .ok_or_else(|| "minor-axis nibble size must be 1–16 tiles".to_owned())?;
+            Ok((parameter & 0xf0) | (tiles - 1))
+        }
+        lm_render::StandardObjectResizeModel::MinorByte { .. } => {
+            let encoded = tiles
+                .checked_sub(1)
+                .and_then(|tiles| u8::try_from(tiles).ok())
+                .ok_or_else(|| "minor-axis byte size must be 1–256 tiles".to_owned())?;
+            Ok(encoded)
+        }
+        _ => Err("active object handler does not encode a resizable minor axis".into()),
+    }
+}
+
 fn object_field_edits(
     form: &ObjectForm,
     index: usize,
@@ -4925,6 +5112,62 @@ mod tests {
     }
 
     #[test]
+    fn authenticated_object_resize_fields_preserve_unowned_parameter_bits() {
+        use lm_render::StandardObjectResizeModel::{
+            Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
+        };
+
+        assert_eq!(
+            set_standard_object_major_tiles(ParameterNibbles, 0xab, 4).unwrap(),
+            0x3b
+        );
+        assert_eq!(
+            set_standard_object_minor_tiles(ParameterNibbles, 0xab, 5).unwrap(),
+            0xa4
+        );
+        assert_eq!(
+            set_standard_object_major_tiles(MajorNibble, 0x2d, 16).unwrap(),
+            0xfd
+        );
+        assert_eq!(
+            set_standard_object_minor_tiles(
+                MinorNibble {
+                    fixed_major_tiles: 2,
+                },
+                0xc8,
+                1,
+            )
+            .unwrap(),
+            0xc0
+        );
+        assert_eq!(
+            set_standard_object_minor_tiles(
+                MinorByte {
+                    fixed_major_tiles: 3,
+                },
+                0,
+                256,
+            )
+            .unwrap(),
+            0xff
+        );
+        assert!(set_standard_object_major_tiles(Fixed, 0x55, 2).is_err());
+        assert!(set_standard_object_minor_tiles(MajorNibble, 0x55, 2).is_err());
+        assert!(set_standard_object_major_tiles(ParameterNibbles, 0, 0).is_err());
+        assert!(set_standard_object_minor_tiles(ParameterNibbles, 0, 17).is_err());
+        assert!(
+            set_standard_object_minor_tiles(
+                MinorByte {
+                    fixed_major_tiles: 3,
+                },
+                0,
+                257,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn custom_sprite_definitions_use_only_the_m16_domain() {
         let mut bytes = vec![0; lm_level::M16Sidecar::ENCODED_LEN];
         bytes[8..16].copy_from_slice(&[0x11, 0x11, 0x22, 0x22, 0x33, 0x33, 0x44, 0x44]);
@@ -5065,6 +5308,109 @@ mod tests {
         assert!(
             rendered.contains(encoded.min) && rendered.contains(encoded.max),
             "level {level:03X} command {command:02X} lost its encoded footprint"
+        );
+    }
+
+    #[test]
+    fn pristine_standard_object_resize_commits_reopens_and_undoes() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let image = RomImage::from_bytes(source.clone()).unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut candidate = None;
+
+        'levels: for level_number in 0..0x200 {
+            let Ok(level) =
+                project.load_level_slot(level_number, level_layout, &SpriteLengthTable::standard())
+            else {
+                continue;
+            };
+            let family =
+                match lm_profile::smw_us_v1_object_family(level.layer1.header.object_tileset()) {
+                    lm_profile::VanillaObjectFamily::Normal => 0,
+                    lm_profile::VanillaObjectFamily::Castle => 1,
+                    lm_profile::VanillaObjectFamily::Rope => 2,
+                    lm_profile::VanillaObjectFamily::Underground => 3,
+                    lm_profile::VanillaObjectFamily::GhostHouse => 4,
+                };
+            let handler_map = definition_map.family(family).unwrap();
+            for (index, record) in level.layer1.objects.records.iter().enumerate() {
+                let Some(model) = definitions.mapped_resize_model(record, handler_map) else {
+                    continue;
+                };
+                let parameter = record.parameter();
+                let resized = match model {
+                    lm_render::StandardObjectResizeModel::ParameterNibbles
+                    | lm_render::StandardObjectResizeModel::MajorNibble => {
+                        let current = (parameter >> 4) + 1;
+                        let next = if current == 16 { 15 } else { current + 1 };
+                        set_standard_object_major_tiles(model, parameter, next).unwrap()
+                    }
+                    lm_render::StandardObjectResizeModel::MinorNibble { .. } => {
+                        let current = (parameter & 0x0f) + 1;
+                        let next = if current == 16 { 15 } else { current + 1 };
+                        set_standard_object_minor_tiles(model, parameter, u16::from(next)).unwrap()
+                    }
+                    lm_render::StandardObjectResizeModel::MinorByte { .. } => {
+                        let current = u16::from(parameter) + 1;
+                        let next = if current == 256 { 255 } else { current + 1 };
+                        set_standard_object_minor_tiles(model, parameter, next).unwrap()
+                    }
+                    lm_render::StandardObjectResizeModel::Fixed => continue,
+                };
+                if resized != parameter {
+                    candidate = Some((u16::try_from(level_number).unwrap(), index, resized));
+                    break 'levels;
+                }
+            }
+        }
+
+        let (level_number, index, resized) =
+            candidate.expect("pristine SMW must contain a resizable standard object");
+        let mut app = AppState::default();
+        app.load_rom(source.clone()).unwrap();
+        app.dispatch(Command::ExpandRom(lm_app::RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        let expanded_baseline = app.project().unwrap().rom.logical_bytes().to_vec();
+        app.dispatch(Command::SelectLevel(level_number)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller =
+            LevelController::decode(&snapshot, level_layout, &SpriteLengthTable::standard())
+                .unwrap();
+        controller
+            .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::SetParameter {
+                index,
+                parameter: resized,
+            }])])
+            .unwrap();
+        app.dispatch(prepare_commit(&controller, &snapshot).unwrap())
+            .unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                usize::from(level_number),
+                level_layout,
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        assert_eq!(reopened.layer1.objects.records[index].parameter(), resized);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_bytes(),
+            expanded_baseline
         );
     }
 

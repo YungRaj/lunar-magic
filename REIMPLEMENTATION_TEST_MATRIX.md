@@ -59,6 +59,14 @@ cell from the exact cache already painted for that placement, avoiding a second 
 pass while making extended authenticated artwork selectable. A pristine-ROM sweep across
 all 512 level slots requires a recovered object whose artwork exceeds its generic packed
 parameter span and proves the complete encoded footprint remains interactive.
+The renderer exposes the active family handler's authenticated resize encoding as a
+typed model: two parameter nibbles, major-only nibble, one- or two-tile fixed-major
+minor nibble, three-tile fixed-major full byte, or fixed size. Native Layer 1 and
+object-backed Layer 2 forms edit tile counts through that model, preserve ignored
+parameter bits, reject every out-of-domain axis, and suppress standard resize controls
+for OSC-selected custom records. A pristine-ROM fixture expands once, resizes a
+discovered nonfixed object, commits and semantically reopens it, then undoes to the
+exact expanded baseline.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary

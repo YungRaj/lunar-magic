@@ -206,6 +206,21 @@ pub struct StandardObjectPattern {
     pub tiles: Vec<u16>,
 }
 
+/// Authenticated parameter encoding used to resize one mapped standard object.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StandardObjectResizeModel {
+    /// High and low parameter nibbles encode major/minor tile counts minus one.
+    ParameterNibbles,
+    /// Only the high parameter nibble encodes the major tile count minus one.
+    MajorNibble,
+    /// The low nibble encodes the minor count minus one; the major count is fixed.
+    MinorNibble { fixed_major_tiles: u8 },
+    /// The complete parameter byte encodes the minor count minus one.
+    MinorByte { fixed_major_tiles: u8 },
+    /// The definition has no authenticated size parameter.
+    Fixed,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ObjectExtent {
     ParameterNibbles,
@@ -416,6 +431,36 @@ impl StandardObjectDefinitionSet {
 
     fn handler_definition(&self, handler: u8) -> Option<&StandardObjectDefinition> {
         self.handler_definitions.get(usize::from(handler))?.as_ref()
+    }
+
+    /// Returns the recovered parameter-to-size model for one object in an active tileset family.
+    #[must_use]
+    pub fn mapped_resize_model(
+        &self,
+        record: &lm_level::ObjectRecord,
+        handler_map: &[u8; 64],
+    ) -> Option<StandardObjectResizeModel> {
+        let command = record.command_id();
+        let definition = if command == 0 {
+            self.extended_definition(record.parameter())
+        } else {
+            let handler = handler_map.get(usize::from(command)).copied()?;
+            self.handler_definition(handler)
+        }?;
+        Some(match definition.extent {
+            ObjectExtent::ParameterNibbles => StandardObjectResizeModel::ParameterNibbles,
+            ObjectExtent::HighNibbleByOne => StandardObjectResizeModel::MajorNibble,
+            ObjectExtent::TwoByLowNibble => StandardObjectResizeModel::MinorNibble {
+                fixed_major_tiles: 2,
+            },
+            ObjectExtent::OneByLowNibble => StandardObjectResizeModel::MinorNibble {
+                fixed_major_tiles: 1,
+            },
+            ObjectExtent::ThreeByParameterByte => StandardObjectResizeModel::MinorByte {
+                fixed_major_tiles: 3,
+            },
+            ObjectExtent::FixedOne => StandardObjectResizeModel::Fixed,
+        })
     }
 
     fn set_native(
@@ -4018,6 +4063,49 @@ mod tests {
         assert_eq!(report.rendered_objects, 1);
         assert_eq!(report.cache.cells()[0], 0x133);
         assert_eq!(report.cache.cells()[1], 0x134);
+    }
+
+    #[test]
+    fn mapped_resize_models_preserve_every_recovered_parameter_encoding() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let record = ObjectRecord::new(vec![0, 0x10, 0]).unwrap();
+        let mut handler_map = [0xff; 64];
+        for (handler, expected) in [
+            (9, StandardObjectResizeModel::ParameterNibbles),
+            (3, StandardObjectResizeModel::MajorNibble),
+            (
+                12,
+                StandardObjectResizeModel::MinorNibble {
+                    fixed_major_tiles: 2,
+                },
+            ),
+            (
+                16,
+                StandardObjectResizeModel::MinorNibble {
+                    fixed_major_tiles: 1,
+                },
+            ),
+            (
+                6,
+                StandardObjectResizeModel::MinorByte {
+                    fixed_major_tiles: 3,
+                },
+            ),
+            (1, StandardObjectResizeModel::Fixed),
+        ] {
+            handler_map[1] = handler;
+            assert_eq!(
+                definitions.mapped_resize_model(&record, &handler_map),
+                Some(expected)
+            );
+        }
+        let extended = ObjectRecord::new(vec![0, 0, 0x10]).unwrap();
+        assert_eq!(
+            definitions.mapped_resize_model(&extended, &handler_map),
+            Some(StandardObjectResizeModel::Fixed)
+        );
     }
 
     #[test]
