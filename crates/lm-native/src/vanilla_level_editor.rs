@@ -1255,6 +1255,8 @@ impl VanillaLevelEditor {
             layer2_placements,
             self.selected_layer2_object,
             self.map16_texture.as_ref(),
+            custom_objects,
+            self.active_object_family_index(),
         );
         let hit = draw_object_placement_markers(
             painter,
@@ -1265,6 +1267,8 @@ impl VanillaLevelEditor {
             placements,
             self.selected_object,
             self.map16_texture.as_ref(),
+            custom_objects,
+            self.active_object_family_index(),
         );
         let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
             painter,
@@ -3977,6 +3981,8 @@ fn draw_object_placement_markers(
     placements: &[lm_level::NativeObjectPlacement],
     selected: usize,
     map16_texture: Option<&egui::TextureHandle>,
+    custom_objects: Option<&lm_level::OscResolvedTable>,
+    object_variant: u8,
 ) -> Option<usize> {
     let mut hit = None;
     for placement in placements {
@@ -3995,13 +4001,18 @@ fn draw_object_placement_markers(
         } else {
             (placement.major_span, placement.minor_span)
         };
-        let object_rect = egui::Rect::from_min_size(
+        let mut object_rect = egui::Rect::from_min_size(
             position,
             egui::vec2(
                 (f32::from(tile_width) * ROM_LEVEL_CANVAS_CELL).max(8.0),
                 (f32::from(tile_height) * ROM_LEVEL_CANVAS_CELL).max(8.0),
             ),
         );
+        if let Some(parts) = custom_objects
+            .and_then(|metadata| resolved_custom_object_parts(record, metadata, object_variant))
+        {
+            object_rect = custom_object_display_rect(object_rect, position, &parts);
+        }
         draw_object_marker(
             painter,
             map16_texture,
@@ -4017,6 +4028,24 @@ fn draw_object_placement_markers(
         }
     }
     hit
+}
+
+fn custom_object_display_rect(
+    encoded_rect: egui::Rect,
+    origin: egui::Pos2,
+    parts: &[lm_render::CustomObjectPreviewTile],
+) -> egui::Rect {
+    parts.iter().fold(encoded_rect, |bounds, part| {
+        let part_min = origin
+            + egui::vec2(
+                f32::from(part.x) * ROM_LEVEL_CANVAS_CELL / 16.0,
+                f32::from(part.y) * ROM_LEVEL_CANVAS_CELL / 16.0,
+            );
+        bounds.union(egui::Rect::from_min_size(
+            part_min,
+            egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
+        ))
+    })
 }
 
 fn draw_object_marker(
@@ -4851,6 +4880,33 @@ mod tests {
     }
 
     #[test]
+    fn custom_object_selection_bounds_include_negative_and_extended_display_parts() {
+        let origin = egui::pos2(100.0, 100.0);
+        let encoded = egui::Rect::from_min_size(
+            origin,
+            egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
+        );
+        let parts = [
+            lm_render::CustomObjectPreviewTile {
+                tile: 0x123,
+                x: -8,
+                y: 4,
+            },
+            lm_render::CustomObjectPreviewTile {
+                tile: 0x124,
+                x: 32,
+                y: -16,
+            },
+        ];
+
+        assert_eq!(
+            custom_object_display_rect(encoded, origin, &parts),
+            egui::Rect::from_min_max(egui::pos2(94.0, 88.0), egui::pos2(136.0, 115.0))
+        );
+        assert_eq!(custom_object_display_rect(encoded, origin, &[]), encoded);
+    }
+
+    #[test]
     fn sprite_insertion_follows_selection_or_appends_to_an_empty_stream() {
         assert_eq!(sprite_insertion_index(0, 0), 0);
         assert_eq!(sprite_insertion_index(0, 3), 1);
@@ -5065,15 +5121,24 @@ mod tests {
             .load_level_slot(0x105, layout, &SpriteLengthTable::standard())
             .unwrap();
         assert_eq!(reopened.layer1.objects.records[insertion], record);
+        let reopened_parts = resolved_custom_object_parts(
+            &reopened.layer1.objects.records[insertion],
+            &resolved,
+            object.selector.variant,
+        )
+        .unwrap();
+        assert_eq!(reopened_parts.len(), 2);
+        let origin = egui::pos2(64.0, 32.0);
+        let encoded = egui::Rect::from_min_size(
+            origin,
+            egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
+        );
         assert_eq!(
-            resolved_custom_object_parts(
-                &reopened.layer1.objects.records[insertion],
-                &resolved,
-                object.selector.variant,
+            custom_object_display_rect(encoded, origin, &reopened_parts),
+            egui::Rect::from_min_size(
+                origin,
+                egui::vec2(ROM_LEVEL_CANVAS_CELL * 2.0, ROM_LEVEL_CANVAS_CELL)
             )
-            .unwrap()
-            .len(),
-            2
         );
     }
 

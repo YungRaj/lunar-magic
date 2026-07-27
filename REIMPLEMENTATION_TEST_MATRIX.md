@@ -50,6 +50,10 @@ against an available M16 custom-Map16 definition. Missing definitions, S16-only
 metadata, out-of-range indexes, and unavailable foreground assets now produce a
 bounded red marker labeled with the unresolved tile ID instead of silently
 disappearing; focused tests distinguish base, resolved-custom, and unresolved cases.
+Native-canvas selection and drag hit-testing unions the encoded placement footprint
+with every resolved OSC display tile, including negative and extended offsets, while
+an explicitly empty display retains the encoded target. Focused geometry coverage and
+the real-ROM level-`$105` custom-object commit/reopen test verify those interactive bounds.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary
