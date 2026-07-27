@@ -94,8 +94,7 @@ fn render_map16_definition_atlas(
             let word_offset = definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES + quadrant * 2;
             let word = u16::from_le_bytes([definitions[word_offset], definitions[word_offset + 1]]);
             let tile_number = usize::from(word & 0x03ff);
-            let quadrant_x = quadrant % 2 * 8;
-            let quadrant_y = quadrant / 2 * 8;
+            let (quadrant_x, quadrant_y) = map16_quadrant_offset(quadrant);
             draw_subtile(
                 &mut rgba,
                 width,
@@ -150,13 +149,11 @@ pub(crate) fn render_rom_map16_page(
         .into_iter()
         .enumerate()
         {
+            let (quadrant_x, quadrant_y) = map16_quadrant_offset(quadrant);
             draw_subtile(
                 &mut rgba,
                 WIDTH,
-                (
-                    definition_x + quadrant % 2 * 8,
-                    definition_y + quadrant / 2 * 8,
-                ),
+                (definition_x + quadrant_x, definition_y + quadrant_y),
                 graphics.get(usize::from(word & 0x03ff)),
                 &palette,
                 usize::from((word >> 10) & 7),
@@ -168,6 +165,10 @@ pub(crate) fn render_rom_map16_page(
         [WIDTH, HEIGHT],
         &rgba,
     ))
+}
+
+const fn map16_quadrant_offset(quadrant: usize) -> (usize, usize) {
+    (quadrant / 2 * 8, quadrant % 2 * 8)
 }
 
 fn load_layer3_tiles(project: &Project, level: usize) -> Result<Vec<IndexedTile>, String> {
@@ -361,6 +362,14 @@ mod tests {
             colors: vec![Bgr555(0x7fff); 256],
         };
         assert_eq!(palette_color(&palette, 0, 0), Some([0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn native_map16_quadrants_are_column_major() {
+        assert_eq!(
+            (0..4).map(map16_quadrant_offset).collect::<Vec<_>>(),
+            [(0, 0), (0, 8), (8, 0), (8, 8)]
+        );
     }
 
     #[test]
