@@ -1,6 +1,6 @@
 #![cfg(target_os = "macos")]
 
-use lm_level::{NativeLayer2Data, ObjectEdit, SpriteLengthTable};
+use lm_level::{NativeLayer2Data, ObjectEdit, SpriteLengthTable, SpriteToken};
 use lm_project::Project;
 use lm_project::{
     LevelLayer2DescriptorTable, LevelLayer2RomLayout, LevelLayer2SaveOptions,
@@ -239,6 +239,64 @@ fn rust_layer1_object_edit_survives_snes9x_initialization() {
     fs::create_dir(&directory).expect("create Snes9x smoke directory");
     let output = directory.join("Rust-Layer1-object-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write Layer 1 object-edited ROM");
+    require_snes9x_initialization(&snes9x, &output);
+    fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
+}
+
+#[test]
+#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
+fn rust_standard_sprite_edit_survives_snes9x_initialization() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = snes9x_binary();
+    let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    let sprite_lengths = SpriteLengthTable::standard();
+    let mut project = Project::new(
+        RomImage::from_bytes(fs::read(source_rom(&root)).expect("read source SMW ROM"))
+            .expect("decode source SMW ROM"),
+    );
+    let original = project
+        .load_level_slot(0x105, layout, &sprite_lengths)
+        .expect("load level 105");
+    let mut replacement = original.clone();
+    let SpriteToken::Record(sprite) = replacement
+        .sprites
+        .tokens
+        .first_mut()
+        .expect("level 105 must contain a sprite")
+    else {
+        panic!("level 105 must begin with an ordinary sprite");
+    };
+    let mut fields = sprite
+        .native_fields()
+        .expect("decode standard sprite placement fields");
+    fields.x = (fields.x + 1) & 0x0f;
+    sprite
+        .set_native_fields(fields, &sprite_lengths)
+        .expect("encode standard sprite placement fields");
+
+    assert!(
+        project
+            .save_level_sprites_in_place_with_checksum(
+                layout,
+                &original,
+                &replacement,
+                &sprite_lengths,
+                0x7fdc,
+            )
+            .expect("save standard sprite edit in place")
+    );
+    assert_eq!(
+        project
+            .load_level_slot(0x105, layout, &sprite_lengths)
+            .expect("reopen sprite-edited level")
+            .sprites,
+        replacement.sprites
+    );
+
+    let directory = smoke_directory();
+    fs::create_dir(&directory).expect("create Snes9x smoke directory");
+    let output = directory.join("Rust-standard-sprite-edited-SMW.sfc");
+    fs::write(&output, project.save_snapshot()).expect("write sprite-edited ROM");
     require_snes9x_initialization(&snes9x, &output);
     fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
 }
