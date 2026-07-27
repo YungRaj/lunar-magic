@@ -1436,12 +1436,16 @@ impl VanillaLevelEditor {
             minor_tiles,
             vertical,
         );
+        // Native object records have a four-bit minor coordinate. The 32×32 Layer 2 plane may
+        // enlarge the visible canvas, but must not enlarge the Layer 1/2 object cache: doing so
+        // aliases its second 16-row half through Lunar Magic's 0x1B0 page stride.
+        let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles);
         let layer2_artwork_bounds = self.draw_object_artwork(
             painter,
             rect,
             cell,
             major_tiles,
-            minor_tiles,
+            object_minor_tiles,
             vertical,
             layer2_records,
             layer2_placements,
@@ -1453,7 +1457,7 @@ impl VanillaLevelEditor {
             rect,
             cell,
             major_tiles,
-            minor_tiles,
+            object_minor_tiles,
             vertical,
             records,
             placements,
@@ -4311,6 +4315,14 @@ fn draw_layer2_tilemap(
 
 fn wrapped_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
     lm_level::native_layer2_tilemap_index(x % 32, y % 32)
+}
+
+const fn native_object_cache_minor_tiles(canvas_minor_tiles: u16) -> u16 {
+    if canvas_minor_tiles < 16 {
+        canvas_minor_tiles
+    } else {
+        16
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -7804,6 +7816,12 @@ mod tests {
                 lm_level::native_layer2_tilemap_index(x % 32, y % 32)
             );
         }
+    }
+
+    #[test]
+    fn background_canvas_height_does_not_expand_the_native_object_cache() {
+        assert_eq!(native_object_cache_minor_tiles(16), 16);
+        assert_eq!(native_object_cache_minor_tiles(32), 16);
     }
 
     #[test]
