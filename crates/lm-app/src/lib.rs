@@ -81,6 +81,7 @@ mod selection;
 mod selection_state;
 mod shared_palette_state;
 mod shortcut;
+mod smw_map16_controller;
 mod snapshot;
 mod ssc_sidecar_controller;
 pub mod startup_args;
@@ -226,6 +227,7 @@ pub use selection::{EditorSelection, SelectionError};
 pub use shortcut::{
     ShortcutBinding, ShortcutConfig, ShortcutError, ShortcutGesture, ShortcutKey, ShortcutModifiers,
 };
+pub use smw_map16_controller::{SmwMap16Controller, SmwMap16ControllerError};
 pub use snapshot::{ControllerSnapshot, ProfiledControllerSnapshot};
 pub use ssc_sidecar_controller::{
     SscSidecarController, SscSidecarControllerError, SscSidecarSaveSnapshot,

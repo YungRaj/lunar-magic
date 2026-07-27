@@ -1,4 +1,4 @@
-use super::{AppState, PendingClose, RomMap16Editor, Workspace, egui};
+use super::{AppState, Controller, PendingClose, RomMap16Editor, Workspace, egui};
 use lm_app::RevisionProfileControllers;
 use lm_rom::RomImage;
 
@@ -90,19 +90,34 @@ impl RomMap16Editor {
 }
 
 fn decode(app: &AppState) -> Result<Workspace, String> {
-    let profiled = app
-        .profiled_controller_snapshot()
+    let snapshot = app
+        .controller_snapshot()
         .map_err(|error| error.to_string())?;
-    let controller = profiled
-        .profile
-        .decode_map16(&profiled.snapshot)
-        .map_err(|error| error.to_string())?;
-    let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
-        .map_err(|error| error.to_string())?;
+    let (controller, profile) = if let Ok(profiled) = app.profiled_controller_snapshot() {
+        match profiled.profile.decode_map16(&profiled.snapshot) {
+            Ok(controller) => (Controller::Profile(controller), Some(profiled.profile)),
+            Err(_) => (
+                Controller::Smw(
+                    lm_app::SmwMap16Controller::decode(&snapshot)
+                        .map_err(|error| error.to_string())?,
+                ),
+                None,
+            ),
+        }
+    } else {
+        (
+            Controller::Smw(
+                lm_app::SmwMap16Controller::decode(&snapshot).map_err(|error| error.to_string())?,
+            ),
+            None,
+        )
+    };
+    let image =
+        RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
     Ok(Workspace {
         controller,
-        profile: profiled.profile,
+        profile,
         image,
-        internal_header: profiled.snapshot.identity.internal_header_offset,
+        internal_header: snapshot.identity.internal_header_offset,
     })
 }

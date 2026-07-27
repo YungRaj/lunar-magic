@@ -558,6 +558,15 @@ returns one expandable commit. Tests force expansion, compare a full native relo
 set, exercise exact undo/redo length restoration, and prove that late invalid addresses, stale
 revisions, mapper/mode disagreement, and unequal table counts cannot partially change state.
 
+The ordinary SMW-US Map16 workspace no longer requires an external revision profile. Its separate
+snapshot-bound controller presents all eight graphical-definition pages through the native GUI,
+retains the additional 836 Acts-Like entries outside that graphical domain, accepts raw native
+Acts-Like semantics without applying the parallel-page graph invariant, and commits through the
+recovered split-table writer. Real pristine-ROM application and frontend-routing tests edit a
+quadrant and Acts-Like value, install the tables into an expanded ROM, dispatch one
+revision-checked mutation, semantically reopen all 2884 Acts-Like entries, and undo to the original
+definitions.
+
 The graphics controller loads and decompresses the file selected by `EditorMode::Graphics` through
 an explicit pointer-table and size layout. Decode immediately validates an exact per-tile ownership
 map. Ordered change/range batches preserve that ownership boundary across the complete call, so a

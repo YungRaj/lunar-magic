@@ -53,7 +53,7 @@ impl NativeApplication {
         ui.separator();
         rom_editor_pair!(
             ui,
-            enabled && profile && matches!(self.app.mode, EditorMode::Map16),
+            enabled && matches!(self.app.mode, EditorMode::Map16),
             self.rom_map16_editor,
             &self.app,
             "Edit Native Map16 Set…",

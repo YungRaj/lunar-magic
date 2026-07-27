@@ -1,10 +1,14 @@
 use crate::{level_editor_forms, map16_subtile_form, native_clipboard};
 use eframe::egui;
-use lm_app::{AppState, Command, Map16Controller, Map16ControllerEdit, RevisionProfile};
+use lm_app::{
+    AppState, Command, Map16Controller, Map16ControllerEdit, RevisionProfile, SmwMap16Controller,
+};
 use lm_level::{Map16Address, Map16Page};
 
 mod commit;
 mod lifecycle;
+#[cfg(test)]
+mod tests;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -13,10 +17,49 @@ enum PendingClose {
 }
 
 struct Workspace {
-    controller: Map16Controller,
-    profile: RevisionProfile,
+    controller: Controller,
+    profile: Option<RevisionProfile>,
     image: lm_rom::RomImage,
     internal_header: usize,
+}
+
+enum Controller {
+    Profile(Map16Controller),
+    Smw(SmwMap16Controller),
+}
+
+impl Controller {
+    fn revision(&self) -> u64 {
+        match self {
+            Self::Profile(controller) => controller.revision(),
+            Self::Smw(controller) => controller.revision(),
+        }
+    }
+
+    fn set(&self) -> &lm_level::Map16Set {
+        match self {
+            Self::Profile(controller) => controller.set(),
+            Self::Smw(controller) => controller.set(),
+        }
+    }
+
+    fn is_modified(&self) -> bool {
+        match self {
+            Self::Profile(controller) => controller.is_modified(),
+            Self::Smw(controller) => controller.is_modified(),
+        }
+    }
+
+    fn apply_edits(&mut self, edits: &[Map16ControllerEdit]) -> Result<(), String> {
+        match self {
+            Self::Profile(controller) => controller.apply_edits(edits).map_err(|e| e.to_string()),
+            Self::Smw(controller) => controller.apply_edits(edits).map_err(|e| e.to_string()),
+        }
+    }
+
+    const fn supports_reclamation(&self) -> bool {
+        matches!(self, Self::Profile(_))
+    }
 }
 
 #[derive(Default)]
@@ -233,7 +276,13 @@ impl RomMap16Editor {
         }
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified
+                    && !stale
+                    && !self.manifest_loader.is_running()
+                    && self
+                        .workspace
+                        .as_ref()
+                        .is_some_and(|workspace| workspace.controller.supports_reclamation()),
                 egui::Button::new("Commit and reclaim"),
             )
             .clicked()
@@ -255,7 +304,7 @@ impl RomMap16Editor {
             return;
         };
         if let Err(error) = workspace.controller.apply_edits(&[edit]) {
-            self.error = Some(error.to_string());
+            self.error = Some(error);
         } else {
             self.invalidate();
         }

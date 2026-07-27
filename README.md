@@ -104,6 +104,8 @@ The project currently has tested support for substantial parts of the SMW editin
   editing, compressed Layer 2 tile selection/painting, and object-backed Layer 2 list/canvas
   placement and dragging in the automatically detected vanilla workspace, native asset panels,
   shared undo/redo, and revision-checked atomic saves.
+- A profile-free graphical SMW-US Map16 workspace for editing all eight native definition pages
+  and their Acts-Like values, with protected transactional installation into an expanded ROM.
 - Overworld models and editors for layers, events, paths, warps, messages, level names, player
   starts, sprites, palettes, ExAnimation, title-screen assets, credits, and related installed
   runtimes.
