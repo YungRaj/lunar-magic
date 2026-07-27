@@ -4168,12 +4168,15 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         if uses_standard && placement.sprite_number == 0x8a {
             standard_8a_count = standard_8a_count.saturating_add(1);
         }
-        if let (Some(texture), Some(parts)) = (texture, preview) {
+        let mut interactive_rect = marker;
+        if let (Some(texture), Some(parts)) = (texture, preview.as_deref()) {
+            interactive_rect =
+                sprite_preview_bounds(marker, parts.iter().map(|part| (part.x, part.y)), cell_size);
             for part in parts {
                 draw_sprite_preview_definition(
                     painter,
                     texture,
-                    marker.translate(egui::vec2(f32::from(part.x), f32::from(part.y))),
+                    sprite_preview_part_rect(marker, part.x, part.y, cell_size),
                     part.subtiles,
                 );
             }
@@ -4182,12 +4185,14 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 .iter()
                 .all(|part| external_textures.contains_key(part))
         {
+            interactive_rect =
+                sprite_preview_bounds(marker, parts.iter().map(|part| (part.x, part.y)), cell_size);
             for part in parts {
                 let texture = &external_textures[part];
                 draw_external_sprite_part(
                     painter,
                     texture,
-                    marker.translate(egui::vec2(f32::from(part.x), f32::from(part.y))),
+                    sprite_preview_part_rect(marker, part.x, part.y, cell_size),
                 );
             }
         } else if should_draw_unresolved_sprite_marker(uses_standard, placement.sprite_number) {
@@ -4210,17 +4215,34 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         }
         if placement.token_index == selected {
             painter.rect_stroke(
-                marker,
+                interactive_rect,
                 marker.width() / 2.0,
                 egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
                 egui::StrokeKind::Inside,
             );
         }
-        if cursor.is_some_and(|position| marker.contains(position)) {
+        if cursor.is_some_and(|position| interactive_rect.contains(position)) {
             hit = Some(placement.token_index);
         }
     }
     hit
+}
+
+fn sprite_preview_part_rect(marker: egui::Rect, x: i16, y: i16, cell_size: f32) -> egui::Rect {
+    marker.translate(egui::vec2(
+        f32::from(x) * cell_size / 16.0,
+        f32::from(y) * cell_size / 16.0,
+    ))
+}
+
+fn sprite_preview_bounds(
+    marker: egui::Rect,
+    offsets: impl IntoIterator<Item = (i16, i16)>,
+    cell_size: f32,
+) -> egui::Rect {
+    offsets.into_iter().fold(marker, |bounds, (x, y)| {
+        bounds.union(sprite_preview_part_rect(marker, x, y, cell_size))
+    })
 }
 
 fn should_draw_unresolved_sprite_marker(uses_standard: bool, sprite_number: u8) -> bool {
@@ -4904,6 +4926,26 @@ mod tests {
             egui::Rect::from_min_max(egui::pos2(94.0, 88.0), egui::pos2(136.0, 115.0))
         );
         assert_eq!(custom_object_display_rect(encoded, origin, &[]), encoded);
+    }
+
+    #[test]
+    fn sprite_preview_geometry_scales_offsets_and_unions_complete_artwork() {
+        let marker = egui::Rect::from_min_size(
+            egui::pos2(100.0, 100.0),
+            egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
+        );
+        assert_eq!(
+            sprite_preview_part_rect(marker, 16, -8, ROM_LEVEL_CANVAS_CELL),
+            marker.translate(egui::vec2(12.0, -6.0))
+        );
+        assert_eq!(
+            sprite_preview_bounds(marker, [(-8, 4), (32, -16)], ROM_LEVEL_CANVAS_CELL),
+            egui::Rect::from_min_max(egui::pos2(94.0, 88.0), egui::pos2(136.0, 115.0))
+        );
+        assert_eq!(
+            sprite_preview_bounds(marker, [], ROM_LEVEL_CANVAS_CELL),
+            marker
+        );
     }
 
     #[test]
@@ -5791,13 +5833,44 @@ mod tests {
             .unwrap();
         assert_ne!(relocated_pointer, original_pointer);
         assert_eq!(relocated_pointer.encode()[2], original_pointer.encode()[2]);
-        assert_eq!(
-            project
-                .load_level_slot(0x105, layout, &SpriteLengthTable::standard())
-                .unwrap()
-                .sprites,
-            controller.level().sprites
+        let reopened = project
+            .load_level_slot(0x105, layout, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(reopened.sprites, controller.level().sprites);
+        let vertical =
+            lm_profile::smw_us_v1_level_mode(reopened.layer1.header.level_mode()).vertical;
+        let (placement, parts) = reopened
+            .sprites
+            .native_placements()
+            .into_iter()
+            .find_map(|placement| {
+                let parts = lm_render::render_lunar_magic_standard_sprite_with_mode(
+                    placement.sprite_number,
+                    standard_sprite_preview_mode(
+                        &placement,
+                        vertical,
+                        reopened.layer1.header.level_mode(),
+                        0,
+                        0,
+                    ),
+                )?;
+                parts
+                    .iter()
+                    .any(|part| part.x != 0 || part.y != 0)
+                    .then_some((placement, parts))
+            })
+            .expect("pristine level 105 must retain a composite standard-sprite preview");
+        let marker = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(ROM_LEVEL_CANVAS_CELL, ROM_LEVEL_CANVAS_CELL),
         );
+        let bounds = sprite_preview_bounds(
+            marker,
+            parts.iter().map(|part| (part.x, part.y)),
+            ROM_LEVEL_CANVAS_CELL,
+        );
+        assert_ne!(bounds, marker);
+        assert!(reopened.sprites.tokens.get(placement.token_index).is_some());
         assert!(
             lm_rats::parse_at(
                 project.rom.logical_bytes(),
