@@ -1661,9 +1661,23 @@ impl VanillaLevelEditor {
             .get(animation_phase_index);
         let game_camera = (self.game_preview() && self.snes_viewport())
             .then(|| game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical));
+        let layer2_target = game_camera.map_or(rect, |camera| {
+            let layer1_x = i32::from(camera.0) * 16;
+            let layer1_y = i32::from(camera.1) * 16;
+            let (layer2_x, layer2_y) =
+                vanilla_layer2_camera_pixels(self.entrance_form, (layer1_x, layer1_y));
+            rect.translate(egui::vec2(
+                screen_pixels_f32(layer1_x - layer2_x) * cell / 16.0,
+                screen_pixels_f32(layer1_y - layer2_y) * cell / 16.0,
+            ))
+        });
         draw_layer2_tilemap(
             painter,
-            rect,
+            if self.shared_vanilla_background {
+                rect
+            } else {
+                layer2_target
+            },
             cell,
             layer2_tilemap,
             map16_texture,
@@ -1686,7 +1700,7 @@ impl VanillaLevelEditor {
         let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles);
         let layer2_artwork_bounds = self.draw_object_artwork(
             painter,
-            rect,
+            layer2_target,
             cell,
             major_tiles,
             object_minor_tiles,
@@ -4680,15 +4694,11 @@ fn draw_wrapped_background_viewport(
     entrance: VanillaMainEntrance,
     camera: (u16, u16),
 ) {
-    const PLANE_TILES: usize = 32;
-    const VIEW_WIDTH: usize = 16;
-    const VIEW_HEIGHT: usize = 14;
-    let (source_x, source_y) = vanilla_game_background_coordinates(
-        usize::from(camera.0),
-        usize::from(camera.1),
-        entrance,
-        camera,
-    );
+    const PLANE_PIXELS: i32 = 512;
+    const VIEW_WIDTH: i32 = 256;
+    const VIEW_HEIGHT: i32 = 224;
+    let layer1_camera = (i32::from(camera.0) * 16, i32::from(camera.1) * 16);
+    let (source_x, source_y) = vanilla_layer2_camera_pixels(entrance, layer1_camera);
     let viewport = egui::Rect::from_min_size(
         world.min
             + egui::vec2(
@@ -4696,41 +4706,37 @@ fn draw_wrapped_background_viewport(
                 f32::from(camera.1) * cell_size,
             ),
         egui::vec2(
-            f32::from(u8::try_from(VIEW_WIDTH).unwrap()) * cell_size,
-            f32::from(u8::try_from(VIEW_HEIGHT).unwrap()) * cell_size,
+            f32::from(u8::try_from(VIEW_WIDTH / 16).unwrap()) * cell_size,
+            f32::from(u8::try_from(VIEW_HEIGHT / 16).unwrap()) * cell_size,
         ),
     );
     let mut output_y = 0;
     while output_y < VIEW_HEIGHT {
-        let plane_y = (source_y + output_y) % PLANE_TILES;
-        let rows = (PLANE_TILES - plane_y).min(VIEW_HEIGHT - output_y);
+        let plane_y = (source_y + output_y).rem_euclid(PLANE_PIXELS);
+        let rows = (PLANE_PIXELS - plane_y).min(VIEW_HEIGHT - output_y);
         let mut output_x = 0;
         while output_x < VIEW_WIDTH {
-            let plane_x = (source_x + output_x) % PLANE_TILES;
-            let columns = (PLANE_TILES - plane_x).min(VIEW_WIDTH - output_x);
+            let plane_x = (source_x + output_x).rem_euclid(PLANE_PIXELS);
+            let columns = (PLANE_PIXELS - plane_x).min(VIEW_WIDTH - output_x);
             let target = egui::Rect::from_min_size(
                 viewport.min
                     + egui::vec2(
-                        f32::from(u8::try_from(output_x).unwrap()) * cell_size,
-                        f32::from(u8::try_from(output_y).unwrap()) * cell_size,
+                        screen_pixels_f32(output_x) * cell_size / 16.0,
+                        screen_pixels_f32(output_y) * cell_size / 16.0,
                     ),
                 egui::vec2(
-                    f32::from(u8::try_from(columns).unwrap()) * cell_size,
-                    f32::from(u8::try_from(rows).unwrap()) * cell_size,
+                    screen_pixels_f32(columns) * cell_size / 16.0,
+                    screen_pixels_f32(rows) * cell_size / 16.0,
                 ),
             );
             let uv = egui::Rect::from_min_max(
                 egui::pos2(
-                    f32::from(u8::try_from(plane_x).unwrap())
-                        / f32::from(u8::try_from(PLANE_TILES).unwrap()),
-                    f32::from(u8::try_from(plane_y).unwrap())
-                        / f32::from(u8::try_from(PLANE_TILES).unwrap()),
+                    screen_pixels_f32(plane_x) / 512.0,
+                    screen_pixels_f32(plane_y) / 512.0,
                 ),
                 egui::pos2(
-                    f32::from(u8::try_from(plane_x + columns).unwrap())
-                        / f32::from(u8::try_from(PLANE_TILES).unwrap()),
-                    f32::from(u8::try_from(plane_y + rows).unwrap())
-                        / f32::from(u8::try_from(PLANE_TILES).unwrap()),
+                    screen_pixels_f32(plane_x + columns) / 512.0,
+                    screen_pixels_f32(plane_y + rows) / 512.0,
                 ),
             );
             painter.image(texture.id(), target, uv, egui::Color32::WHITE);
@@ -4825,6 +4831,40 @@ fn vanilla_game_background_coordinates(
     (
         usize::try_from(source_x.rem_euclid(32)).unwrap_or_default(),
         usize::try_from(source_y.rem_euclid(32)).unwrap_or_default(),
+    )
+}
+
+fn vanilla_layer2_camera_pixels(
+    entrance: VanillaMainEntrance,
+    layer1_camera: (i32, i32),
+) -> (i32, i32) {
+    let setting = usize::from(entrance.position >> 4);
+    let horizontal = VANILLA_LAYER2_HORIZONTAL_SCROLL[setting];
+    let layer2_x = match horizontal {
+        0 => 0,
+        1 => layer1_camera.0,
+        _ => layer1_camera.0 / 2,
+    };
+    let vertical = VANILLA_LAYER2_VERTICAL_SCROLL[setting];
+    let initial_layer1 =
+        i32::from(VANILLA_INITIAL_LAYER1_Y[usize::from((entrance.screen_and_method >> 2) & 3)]);
+    let initial_layer2 =
+        i32::from(VANILLA_INITIAL_LAYER2_Y[usize::from(entrance.screen_and_method & 3)]);
+    let layer2_y = match vertical {
+        0 => initial_layer2,
+        1 => initial_layer2 - initial_layer1 + layer1_camera.1,
+        2 => initial_layer2 - initial_layer1 / 2 + layer1_camera.1 / 2,
+        // GameMode11_LoadSublevel initializes setting 3 relative to L1/8,
+        // while HandleStandardLevelCameraScroll subsequently applies L1/32.
+        _ => initial_layer2 - initial_layer1 / 8 + layer1_camera.1 / 32,
+    };
+    (layer2_x, layer2_y)
+}
+
+fn screen_pixels_f32(value: i32) -> f32 {
+    f32::from(
+        i16::try_from(value)
+            .expect("SMW layer planes and level-camera coordinates fit signed 16-bit pixels"),
     )
 }
 
@@ -6285,12 +6325,15 @@ fn clamped_scroll_offset(requested: f32, content_extent: f32, viewport_extent: f
 }
 
 fn fitted_snes_viewport_cell(available: egui::Vec2, zoom_percent: u16) -> f32 {
-    const VIEWPORT_COLUMNS: f32 = 16.0;
-    const VIEWPORT_ROWS: f32 = 14.0;
+    const TILE_PIXELS: f32 = 16.0;
+    const VIEWPORT_WIDTH: f32 = 256.0;
+    const VIEWPORT_HEIGHT: f32 = 224.0;
     const CAPTION_RESERVE: f32 = 28.0;
-    let horizontal = available.x.max(VIEWPORT_COLUMNS) / VIEWPORT_COLUMNS;
-    let vertical = (available.y - CAPTION_RESERVE).max(VIEWPORT_ROWS) / VIEWPORT_ROWS;
-    horizontal.min(vertical).floor().max(1.0) * f32::from(clamp_canvas_zoom(zoom_percent)) / 100.0
+    let horizontal_scale = available.x.max(VIEWPORT_WIDTH) / VIEWPORT_WIDTH;
+    let vertical_scale = (available.y - CAPTION_RESERVE).max(VIEWPORT_HEIGHT) / VIEWPORT_HEIGHT;
+    let fitted_pixel_scale = horizontal_scale.min(vertical_scale).floor().max(1.0);
+    let zoom_steps = f32::from(clamp_canvas_zoom(zoom_percent)) / 100.0;
+    (fitted_pixel_scale * zoom_steps).max(1.0).floor() * TILE_PIXELS
 }
 
 fn game_preview_origin(
@@ -7917,9 +7960,10 @@ mod tests {
     #[test]
     fn exact_snes_viewport_fits_the_available_editor_area_and_preserves_zoom() {
         for (available, zoom, expected) in [
-            (egui::vec2(800.0, 600.0), 100, 40.0),
-            (egui::vec2(800.0, 600.0), 200, 80.0),
+            (egui::vec2(800.0, 600.0), 100, 32.0),
+            (egui::vec2(800.0, 600.0), 200, 64.0),
             (egui::vec2(256.0, 252.0), 100, 16.0),
+            (egui::vec2(1_200.0, 1_000.0), 125, 80.0),
         ] {
             assert!((fitted_snes_viewport_cell(available, zoom) - expected).abs() < f32::EPSILON);
         }
@@ -8001,6 +8045,7 @@ mod tests {
             ..VanillaMainEntrance::default()
         };
         assert_eq!(game_preview_origin(entrance, 512, 27, true), (0, 12));
+        assert_eq!(vanilla_layer2_camera_pixels(entrance, (0, 0xc0)), (0, 0xae));
     }
 
     #[test]
