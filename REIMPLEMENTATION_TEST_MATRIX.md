@@ -64,9 +64,13 @@ typed model: two parameter nibbles, major-only nibble, one- or two-tile fixed-ma
 minor nibble, three-tile fixed-major full byte, or fixed size. Native Layer 1 and
 object-backed Layer 2 forms edit tile counts through that model, preserve ignored
 parameter bits, reject every out-of-domain axis, and suppress standard resize controls
-for OSC-selected custom records. A pristine-ROM fixture expands once, resizes a
-discovered nonfixed object, commits and semantically reopens it, then undoes to the
-exact expanded baseline.
+for OSC-selected custom records. Selected nonfixed standard objects also expose an
+orientation-aware canvas handle: dragging its authenticated axis updates the same
+lossless parameter field for Layer 1 or object-backed Layer 2, while fixed and OSC
+custom objects expose no misleading handle. Geometry tests cover horizontal and
+vertical axes, fixed-bit preservation, invalid backward/out-of-canvas drags, and handle
+placement. A pristine-ROM fixture expands once, resizes a discovered nonfixed object,
+commits and semantically reopens it, then undoes to the exact expanded baseline.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary

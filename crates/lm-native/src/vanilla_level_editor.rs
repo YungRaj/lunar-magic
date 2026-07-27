@@ -212,6 +212,8 @@ pub(crate) struct VanillaLevelEditor {
     object_form: ObjectForm,
     dragging_object: Option<usize>,
     dragging_layer2_object: Option<usize>,
+    resizing_object: Option<usize>,
+    resizing_layer2_object: Option<usize>,
     object_catalog_filter: String,
     custom_object_catalog_filter: String,
     object_placement_template: Option<ObjectRecord>,
@@ -1270,6 +1272,8 @@ impl VanillaLevelEditor {
             custom_objects,
             custom_map16,
         );
+        let layer2_resize_models = self.active_object_resize_models(layer2_records, custom_objects);
+        let layer1_resize_models = self.active_object_resize_models(records, custom_objects);
         let hit_layer2 = draw_object_placement_markers(
             painter,
             response,
@@ -1280,6 +1284,7 @@ impl VanillaLevelEditor {
             self.selected_layer2_object,
             self.map16_texture.as_ref(),
             &layer2_artwork_bounds,
+            &layer2_resize_models,
         );
         let hit = draw_object_placement_markers(
             painter,
@@ -1291,6 +1296,7 @@ impl VanillaLevelEditor {
             self.selected_object,
             self.map16_texture.as_ref(),
             &layer1_artwork_bounds,
+            &layer1_resize_models,
         );
         let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
             painter,
@@ -1309,8 +1315,10 @@ impl VanillaLevelEditor {
         });
         self.handle_canvas_interaction(
             response,
-            hit,
-            hit_layer2,
+            hit.body,
+            hit.resize,
+            hit_layer2.body,
+            hit_layer2.resize,
             hit_sprite,
             layer2_records,
             records,
@@ -1320,12 +1328,14 @@ impl VanillaLevelEditor {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn handle_canvas_interaction(
         &mut self,
         response: &egui::Response,
         hit_object: Option<usize>,
+        hit_object_resize: Option<usize>,
         hit_layer2_object: Option<usize>,
+        hit_layer2_resize: Option<usize>,
         hit_sprite: Option<usize>,
         layer2_records: &[ObjectRecord],
         records: &[ObjectRecord],
@@ -1397,6 +1407,16 @@ impl VanillaLevelEditor {
         }
         if response.drag_started()
             && hit_sprite.is_none()
+            && let Some(index) = hit_object_resize
+        {
+            self.resizing_object = Some(index);
+            self.selected_object = index;
+            if let Some(record) = records.get(index) {
+                self.object_form = ObjectForm::from_record(record);
+                self.object_placement_template = None;
+            }
+        } else if response.drag_started()
+            && hit_sprite.is_none()
             && let Some(index) = hit_object
             && let Some(record) = records.get(index)
         {
@@ -1408,6 +1428,16 @@ impl VanillaLevelEditor {
         if response.drag_started()
             && hit_sprite.is_none()
             && hit_object.is_none()
+            && let Some(index) = hit_layer2_resize
+        {
+            self.resizing_layer2_object = Some(index);
+            self.selected_layer2_object = index;
+            if let Some(record) = layer2_records.get(index) {
+                self.layer2_object_form = ObjectForm::from_record(record);
+            }
+        } else if response.drag_started()
+            && hit_sprite.is_none()
+            && hit_object.is_none()
             && let Some(index) = hit_layer2_object
             && let Some(record) = layer2_records.get(index)
         {
@@ -1417,7 +1447,13 @@ impl VanillaLevelEditor {
         }
         if response.drag_stopped() {
             let position = response.interact_pointer_pos();
-            if let (Some(index), Some(position)) = (self.dragging_sprite.take(), position) {
+            if let (Some(index), Some(position)) = (self.resizing_object.take(), position) {
+                self.resize_object_to_canvas(index, position, rect, cell, vertical);
+            } else if let (Some(index), Some(position)) =
+                (self.resizing_layer2_object.take(), position)
+            {
+                self.resize_layer2_object_to_canvas(index, position, rect, cell, vertical);
+            } else if let (Some(index), Some(position)) = (self.dragging_sprite.take(), position) {
                 self.move_sprite_to_canvas(index, position, rect, cell, vertical);
             } else if let (Some(index), Some(position)) = (self.dragging_object.take(), position) {
                 self.move_object_to_canvas(index, position, rect, cell, vertical);
@@ -1736,6 +1772,57 @@ impl VanillaLevelEditor {
         }
     }
 
+    fn resize_object_to_canvas(
+        &mut self,
+        index: usize,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let result = self.controller.as_ref().and_then(|controller| {
+            let record = controller.level().layer1.objects.records.get(index)?;
+            let placement = controller
+                .level()
+                .layer1
+                .objects
+                .native_placements()
+                .into_iter()
+                .find(|placement| placement.record_index == index)?;
+            let model = self.active_object_resize_model(record, None)?;
+            Some(resized_standard_object_parameter_at_canvas_position(
+                record, placement, model, position, canvas, cell, vertical,
+            ))
+        });
+        let Some(result) = result else {
+            self.error = Some("selected object has no authenticated resize handle".into());
+            return;
+        };
+        let parameter = match result {
+            Ok(parameter) => parameter,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::SetParameter {
+            index,
+            parameter,
+        }])]) {
+            Ok(()) => {
+                self.selected_object = index;
+                self.object_form =
+                    ObjectForm::from_record(&controller.level().layer1.objects.records[index]);
+                self.object_placement_template = None;
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
     fn move_layer2_object_to_canvas(
         &mut self,
         index: usize,
@@ -1784,6 +1871,58 @@ impl VanillaLevelEditor {
                 self.selected_layer2_object = new_index;
                 if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() {
                     let record = &layer2.objects.records[new_index];
+                    self.layer2_object_form = ObjectForm::from_record(record);
+                    self.layer2_object_placement_template = Some(record.clone());
+                }
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn resize_layer2_object_to_canvas(
+        &mut self,
+        index: usize,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let result = self.controller.as_ref().and_then(|controller| {
+            let lm_level::NativeLayer2Data::Objects(layer2) = controller.layer2()? else {
+                return None;
+            };
+            let record = layer2.objects.records.get(index)?;
+            let placement = layer2
+                .objects
+                .native_placements()
+                .into_iter()
+                .find(|placement| placement.record_index == index)?;
+            let model = self.active_object_resize_model(record, None)?;
+            Some(resized_standard_object_parameter_at_canvas_position(
+                record, placement, model, position, canvas, cell, vertical,
+            ))
+        });
+        let Some(result) = result else {
+            self.error = Some("selected Layer 2 object has no authenticated resize handle".into());
+            return;
+        };
+        let parameter = match result {
+            Ok(parameter) => parameter,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_layer2_object_edits(&[ObjectEdit::SetParameter { index, parameter }])
+        {
+            Ok(()) => {
+                self.selected_layer2_object = index;
+                if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() {
+                    let record = &layer2.objects.records[index];
                     self.layer2_object_form = ObjectForm::from_record(record);
                     self.layer2_object_placement_template = Some(record.clone());
                 }
@@ -1927,6 +2066,38 @@ impl VanillaLevelEditor {
         lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).ok()?;
         lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).ok()?;
         definitions.mapped_resize_model(record, handler_map)
+    }
+
+    fn active_object_resize_models(
+        &self,
+        records: &[ObjectRecord],
+        custom_objects: Option<&lm_level::OscResolvedTable>,
+    ) -> HashMap<usize, lm_render::StandardObjectResizeModel> {
+        let Some(handler_map) = self.active_standard_object_handler_map() else {
+            return HashMap::new();
+        };
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        if lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).is_err()
+            || lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).is_err()
+        {
+            return HashMap::new();
+        }
+        let variant = self.active_object_family_index();
+        records
+            .iter()
+            .enumerate()
+            .filter_map(|(index, record)| {
+                if custom_objects.is_some_and(|metadata| {
+                    metadata
+                        .default_display(record.command_id(), record.parameter(), variant)
+                        .is_some()
+                }) {
+                    return None;
+                }
+                let model = definitions.mapped_resize_model(record, handler_map)?;
+                (model != lm_render::StandardObjectResizeModel::Fixed).then_some((index, model))
+            })
+            .collect()
     }
 
     fn active_object_family_index(&self) -> u8 {
@@ -4065,8 +4236,9 @@ fn draw_object_placement_markers(
     selected: usize,
     map16_texture: Option<&egui::TextureHandle>,
     artwork_bounds: &HashMap<usize, egui::Rect>,
-) -> Option<usize> {
-    let mut hit = None;
+    resize_models: &HashMap<usize, lm_render::StandardObjectResizeModel>,
+) -> ObjectPlacementHits {
+    let mut hits = ObjectPlacementHits::default();
     for placement in placements {
         let index = placement.record_index;
         let Some(record) = records.get(index) else {
@@ -4083,14 +4255,61 @@ fn draw_object_placement_markers(
             record,
             index == selected,
         );
+        if index == selected
+            && let Some(&model) = resize_models.get(&index)
+            && let Some(handle) = standard_object_resize_handle(canvas, *placement, model, vertical)
+        {
+            painter.rect_filled(handle, 1.0, egui::Color32::YELLOW);
+            painter.rect_stroke(
+                handle,
+                1.0,
+                egui::Stroke::new(1.0_f32, egui::Color32::BLACK),
+                egui::StrokeKind::Inside,
+            );
+            if response
+                .interact_pointer_pos()
+                .is_some_and(|position| handle.contains(position))
+            {
+                hits.resize = Some(index);
+            }
+        }
         if response
             .interact_pointer_pos()
             .is_some_and(|position| object_rect.contains(position))
         {
-            hit = Some(index);
+            hits.body = Some(index);
         }
     }
-    hit
+    hits
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct ObjectPlacementHits {
+    body: Option<usize>,
+    resize: Option<usize>,
+}
+
+fn standard_object_resize_handle(
+    canvas: egui::Rect,
+    placement: lm_level::NativeObjectPlacement,
+    model: lm_render::StandardObjectResizeModel,
+    vertical: bool,
+) -> Option<egui::Rect> {
+    use lm_render::StandardObjectResizeModel::{
+        Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
+    };
+    let encoded = encoded_object_rect(canvas, placement, vertical);
+    let center = match model {
+        ParameterNibbles => encoded.max,
+        MajorNibble if vertical => egui::pos2(encoded.center().x, encoded.bottom()),
+        MajorNibble => egui::pos2(encoded.right(), encoded.center().y),
+        MinorNibble { .. } | MinorByte { .. } if vertical => {
+            egui::pos2(encoded.right(), encoded.center().y)
+        }
+        MinorNibble { .. } | MinorByte { .. } => egui::pos2(encoded.center().x, encoded.bottom()),
+        Fixed => return None,
+    };
+    Some(egui::Rect::from_center_size(center, egui::vec2(8.0, 8.0)))
 }
 
 fn encoded_object_rect(
@@ -4792,6 +5011,69 @@ fn set_standard_object_minor_tiles(
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    clippy::cast_possible_truncation,
+    reason = "validated finite canvas coordinates are intentionally quantized to tile indexes"
+)]
+fn resized_standard_object_parameter_at_canvas_position(
+    record: &ObjectRecord,
+    placement: lm_level::NativeObjectPlacement,
+    model: lm_render::StandardObjectResizeModel,
+    position: egui::Pos2,
+    canvas: egui::Rect,
+    cell: f32,
+    vertical: bool,
+) -> Result<u8, String> {
+    if cell <= 0.0 || !canvas.contains(position) {
+        return Err("object resize ended outside the native level canvas".into());
+    }
+    let target_x = ((position.x - canvas.left()) / cell).floor() as i32;
+    let target_y = ((position.y - canvas.top()) / cell).floor() as i32;
+    let (origin_x, origin_y) = placement.tile_coordinates(vertical);
+    let width = target_x - i32::from(origin_x) + 1;
+    let height = target_y - i32::from(origin_y) + 1;
+    if width < 1 || height < 1 {
+        return Err("object resize handle cannot move before the object origin".into());
+    }
+    let (major, minor) = if vertical {
+        (height, width)
+    } else {
+        (width, height)
+    };
+    let mut parameter = record.parameter();
+    match model {
+        lm_render::StandardObjectResizeModel::ParameterNibbles => {
+            parameter = set_standard_object_major_tiles(
+                model,
+                parameter,
+                u8::try_from(major).map_err(|_| "major-axis object size is too large")?,
+            )?;
+            set_standard_object_minor_tiles(
+                model,
+                parameter,
+                u16::try_from(minor).map_err(|_| "minor-axis object size is too large")?,
+            )
+        }
+        lm_render::StandardObjectResizeModel::MajorNibble => set_standard_object_major_tiles(
+            model,
+            parameter,
+            u8::try_from(major).map_err(|_| "major-axis object size is too large")?,
+        ),
+        lm_render::StandardObjectResizeModel::MinorNibble { .. }
+        | lm_render::StandardObjectResizeModel::MinorByte { .. } => {
+            set_standard_object_minor_tiles(
+                model,
+                parameter,
+                u16::try_from(minor).map_err(|_| "minor-axis object size is too large")?,
+            )
+        }
+        lm_render::StandardObjectResizeModel::Fixed => {
+            Err("active object handler has a fixed size".into())
+        }
+    }
+}
+
 fn object_field_edits(
     form: &ObjectForm,
     index: usize,
@@ -4938,6 +5220,135 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn resize_test_placement() -> lm_level::NativeObjectPlacement {
+        lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 10,
+            minor: 3,
+            major_span: 2,
+            minor_span: 2,
+        }
+    }
+
+    #[test]
+    fn canvas_resize_encodes_both_axes_in_horizontal_and_vertical_levels() {
+        let record = ObjectRecord::new(vec![0x00, 0x10, 0x00]).unwrap();
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 256.0));
+        let horizontal = resized_standard_object_parameter_at_canvas_position(
+            &record,
+            resize_test_placement(),
+            lm_render::StandardObjectResizeModel::ParameterNibbles,
+            egui::pos2(14.5 * 16.0, 7.5 * 16.0),
+            canvas,
+            16.0,
+            false,
+        )
+        .unwrap();
+        let vertical = resized_standard_object_parameter_at_canvas_position(
+            &record,
+            resize_test_placement(),
+            lm_render::StandardObjectResizeModel::ParameterNibbles,
+            egui::pos2(7.5 * 16.0, 14.5 * 16.0),
+            canvas,
+            16.0,
+            true,
+        )
+        .unwrap();
+        assert_eq!(horizontal, 0x44);
+        assert_eq!(vertical, 0x44);
+    }
+
+    #[test]
+    fn canvas_resize_preserves_fixed_axis_bits_and_rejects_invalid_drags() {
+        let record = ObjectRecord::new(vec![0x00, 0x10, 0xa3]).unwrap();
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 256.0));
+        let major = resized_standard_object_parameter_at_canvas_position(
+            &record,
+            resize_test_placement(),
+            lm_render::StandardObjectResizeModel::MajorNibble,
+            egui::pos2(14.5 * 16.0, 3.5 * 16.0),
+            canvas,
+            16.0,
+            false,
+        )
+        .unwrap();
+        let minor = resized_standard_object_parameter_at_canvas_position(
+            &record,
+            resize_test_placement(),
+            lm_render::StandardObjectResizeModel::MinorNibble {
+                fixed_major_tiles: 1,
+            },
+            egui::pos2(10.5 * 16.0, 7.5 * 16.0),
+            canvas,
+            16.0,
+            false,
+        )
+        .unwrap();
+        assert_eq!(major, 0x43);
+        assert_eq!(minor, 0xa4);
+        assert!(
+            resized_standard_object_parameter_at_canvas_position(
+                &record,
+                resize_test_placement(),
+                lm_render::StandardObjectResizeModel::MajorNibble,
+                egui::pos2(9.5 * 16.0, 3.5 * 16.0),
+                canvas,
+                16.0,
+                false,
+            )
+            .is_err()
+        );
+        assert!(
+            resized_standard_object_parameter_at_canvas_position(
+                &record,
+                resize_test_placement(),
+                lm_render::StandardObjectResizeModel::Fixed,
+                egui::pos2(10.5 * 16.0, 3.5 * 16.0),
+                canvas,
+                16.0,
+                false,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn resize_handles_follow_the_encoded_axis_for_level_orientation() {
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(256.0, 256.0));
+        let horizontal = standard_object_resize_handle(
+            canvas,
+            resize_test_placement(),
+            lm_render::StandardObjectResizeModel::MajorNibble,
+            false,
+        )
+        .unwrap();
+        let vertical = standard_object_resize_handle(
+            canvas,
+            resize_test_placement(),
+            lm_render::StandardObjectResizeModel::MajorNibble,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            horizontal.center(),
+            egui::pos2(12.0 * ROM_LEVEL_CANVAS_CELL, 4.0 * ROM_LEVEL_CANVAS_CELL)
+        );
+        assert_eq!(
+            vertical.center(),
+            egui::pos2(4.0 * ROM_LEVEL_CANVAS_CELL, 12.0 * ROM_LEVEL_CANVAS_CELL)
+        );
+        assert!(
+            standard_object_resize_handle(
+                canvas,
+                resize_test_placement(),
+                lm_render::StandardObjectResizeModel::Fixed,
+                false,
+            )
+            .is_none()
+        );
+    }
 
     #[test]
     fn layer2_canvas_hit_testing_matches_native_two_plane_storage() {
