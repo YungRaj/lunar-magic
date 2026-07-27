@@ -1,9 +1,14 @@
 //! Lunar Magic's installed SMW US revision-0 Map16 transfer tables.
 
-use lm_codec::{CodecError, decode_sized_rle_prefix, decode_terminated_rle_prefix};
-use lm_project::Project;
-use lm_rats::{HEADER_LEN, HeaderError, RatsBlock, parse_at};
-use lm_rom::{Mapper, RomError, snes_to_pc};
+use lm_codec::{
+    CodecError, decode_sized_rle_prefix, decode_terminated_rle_prefix, encode_sized_rle,
+    encode_terminated_rle,
+};
+use lm_project::{
+    PayloadPointer, PayloadSaveError, PayloadSaveRequest, PayloadSaveResult, Project, RomWrite,
+};
+use lm_rats::{AllocationPolicy, HEADER_LEN, HeaderError, RatsBlock, parse_at};
+use lm_rom::{Mapper, RomError, pc_to_snes, snes_to_pc};
 use std::fmt;
 
 pub const SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET: usize = 0x25c72;
@@ -28,6 +33,20 @@ pub struct LoadedSmwUsV1TransferredMap16 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmwUsV1TransferredMap16SaveOptions {
+    pub allocation: AllocationPolicy,
+    pub reuse_identical: bool,
+    pub erase_fill: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SavedSmwUsV1TransferredMap16 {
+    pub definitions: PayloadSaveResult,
+    pub acts_low: PayloadSaveResult,
+    pub acts_high: PayloadSaveResult,
+}
+
+#[derive(Debug)]
 pub enum SmwUsV1TransferredMap16Error {
     Rom(RomError),
     Header(HeaderError),
@@ -36,6 +55,11 @@ pub enum SmwUsV1TransferredMap16Error {
     StreamPointerMismatch { expected: usize, actual: usize },
     ActsPlaneLengthMismatch { low: usize, high: usize },
     TooManyActsLikeEntries(usize),
+    DefinitionWordCount(usize),
+    DefinitionByteLengthOverflow,
+    DefinitionOddPointerBank { even: u32, odd: u32 },
+    EmptyActsLike,
+    Save(PayloadSaveError),
 }
 
 impl fmt::Display for SmwUsV1TransferredMap16Error {
@@ -64,6 +88,12 @@ impl From<HeaderError> for SmwUsV1TransferredMap16Error {
 impl From<CodecError> for SmwUsV1TransferredMap16Error {
     fn from(value: CodecError) -> Self {
         Self::Codec(value)
+    }
+}
+
+impl From<PayloadSaveError> for SmwUsV1TransferredMap16Error {
+    fn from(value: PayloadSaveError) -> Self {
+        Self::Save(value)
     }
 }
 
@@ -179,6 +209,219 @@ pub fn load_smw_us_v1_transferred_map16(
     })
 }
 
+/// Saves Lunar Magic's installed split-pointer Map16 transfer tables and checksum.
+///
+/// The definition even/odd streams share one RATS allocation and bank byte. Acts-Like low bytes
+/// and terminated-RLE high bytes remain independently allocated, matching the recovered runtime.
+///
+/// # Errors
+///
+/// Rejects malformed table shapes, empty Acts-Like state, allocation or mapping failures, and any
+/// definition stream pair that cannot share the recovered bank byte.
+pub fn save_smw_us_v1_transferred_map16(
+    project: &mut Project,
+    definitions: &[u16],
+    acts_like: &[u16],
+    checksum_field: usize,
+    options: &SmwUsV1TransferredMap16SaveOptions,
+) -> Result<SavedSmwUsV1TransferredMap16, SmwUsV1TransferredMap16Error> {
+    let mut staged = project.clone();
+    let saved = save_smw_us_v1_transferred_map16_staged(
+        &mut staged,
+        definitions,
+        acts_like,
+        checksum_field,
+        options,
+    )?;
+    *project = staged;
+    Ok(saved)
+}
+
+fn save_smw_us_v1_transferred_map16_staged(
+    project: &mut Project,
+    definitions: &[u16],
+    acts_like: &[u16],
+    checksum_field: usize,
+    options: &SmwUsV1TransferredMap16SaveOptions,
+) -> Result<SavedSmwUsV1TransferredMap16, SmwUsV1TransferredMap16Error> {
+    if definitions
+        .len()
+        .checked_mul(2)
+        .ok_or(SmwUsV1TransferredMap16Error::DefinitionByteLengthOverflow)?
+        != SMW_US_V1_MAP16_DEFINITION_BYTES
+    {
+        return Err(SmwUsV1TransferredMap16Error::DefinitionWordCount(
+            definitions.len(),
+        ));
+    }
+    if acts_like.is_empty() {
+        return Err(SmwUsV1TransferredMap16Error::EmptyActsLike);
+    }
+    if acts_like.len() > SMW_US_V1_MAP16_MAX_ENTRIES {
+        return Err(SmwUsV1TransferredMap16Error::TooManyActsLikeEntries(
+            acts_like.len(),
+        ));
+    }
+    let (definition_payload, odd_relative) = encoded_definition_payload(definitions);
+    let definitions_saved =
+        save_definition_payload(project, definition_payload, checksum_field, options)?;
+    let odd_snes = definition_odd_pointer(&definitions_saved, odd_relative)?;
+    let saved = save_acts_payloads(project, acts_like, odd_snes, checksum_field, options)?;
+    Ok(SavedSmwUsV1TransferredMap16 {
+        definitions: definitions_saved,
+        acts_low: saved[0].clone(),
+        acts_high: saved[1].clone(),
+    })
+}
+
+fn save_definition_payload(
+    project: &mut Project,
+    payload: Vec<u8>,
+    checksum_field: usize,
+    options: &SmwUsV1TransferredMap16SaveOptions,
+) -> Result<PayloadSaveResult, SmwUsV1TransferredMap16Error> {
+    let mut definition_allocation = options.allocation.clone();
+    definition_allocation.bank_size = Some(0x8000);
+    Ok(project
+        .save_tagged_payloads_with_checksum(
+            "save installed SMW Map16 definitions",
+            &[PayloadSaveRequest {
+                description: "save installed SMW Map16 definitions".into(),
+                payload,
+                pointer: PayloadPointer::Split {
+                    low_word_offset: SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET,
+                    bank_offset: SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET,
+                    shared_bank: false,
+                },
+                mapper: Mapper::LoRom,
+                allocation_policy: definition_allocation,
+                previous_block: None,
+                reuse_identical: options.reuse_identical,
+                maximum_payload_len: 0x8000,
+                erase_fill: options.erase_fill,
+            }],
+            checksum_field,
+        )?
+        .remove(0))
+}
+
+fn definition_odd_pointer(
+    definitions: &PayloadSaveResult,
+    odd_relative: usize,
+) -> Result<u32, SmwUsV1TransferredMap16Error> {
+    let odd_pc = definitions
+        .block
+        .payload
+        .start
+        .checked_add(odd_relative)
+        .ok_or(SmwUsV1TransferredMap16Error::DefinitionByteLengthOverflow)?;
+    let odd_snes = pc_to_snes(Mapper::LoRom, odd_pc)?;
+    if (definitions.snes_pointer >> 16) != (odd_snes >> 16) {
+        return Err(SmwUsV1TransferredMap16Error::DefinitionOddPointerBank {
+            even: definitions.snes_pointer,
+            odd: odd_snes,
+        });
+    }
+    Ok(odd_snes)
+}
+
+fn save_acts_payloads(
+    project: &mut Project,
+    acts_like: &[u16],
+    odd_snes: u32,
+    checksum_field: usize,
+    options: &SmwUsV1TransferredMap16SaveOptions,
+) -> Result<Vec<PayloadSaveResult>, SmwUsV1TransferredMap16Error> {
+    let native_acts = acts_like
+        .iter()
+        .copied()
+        .map(|word| {
+            if word == SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE {
+                0x0cba
+            } else {
+                word
+            }
+        })
+        .collect::<Vec<_>>();
+    let acts_low = native_acts
+        .iter()
+        .map(|word| word.to_le_bytes()[0])
+        .collect();
+    let acts_high_bytes = native_acts
+        .iter()
+        .map(|word| word.to_le_bytes()[1])
+        .collect::<Vec<_>>();
+    let acts_high = encode_terminated_rle(&acts_high_bytes);
+    let odd_word = odd_snes.to_le_bytes();
+    Ok(project.save_tagged_payloads_with_checksum_and_writes(
+        "save installed SMW Map16 Acts-Like tables",
+        &[
+            PayloadSaveRequest {
+                description: "save installed SMW Map16 Acts-Like low bytes".into(),
+                payload: acts_low,
+                pointer: PayloadPointer::Split {
+                    low_word_offset: SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET,
+                    bank_offset: SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET,
+                    shared_bank: false,
+                },
+                mapper: Mapper::LoRom,
+                allocation_policy: options.allocation.clone(),
+                previous_block: None,
+                reuse_identical: options.reuse_identical,
+                maximum_payload_len: SMW_US_V1_MAP16_MAX_ENTRIES,
+                erase_fill: options.erase_fill,
+            },
+            PayloadSaveRequest {
+                description: "save installed SMW Map16 Acts-Like high bytes".into(),
+                payload: acts_high,
+                pointer: PayloadPointer::Split {
+                    low_word_offset: SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET,
+                    bank_offset: SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET,
+                    shared_bank: false,
+                },
+                mapper: Mapper::LoRom,
+                allocation_policy: options.allocation.clone(),
+                previous_block: None,
+                reuse_identical: options.reuse_identical,
+                maximum_payload_len: 0x8000,
+                erase_fill: options.erase_fill,
+            },
+        ],
+        &[RomWrite {
+            offset: SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET,
+            bytes: odd_word[..2].to_vec(),
+        }],
+        checksum_field,
+    )?)
+}
+
+fn encoded_definition_payload(definitions: &[u16]) -> (Vec<u8>, usize) {
+    let definition_bytes = words_to_le_bytes(definitions);
+    let even = encode_sized_rle(
+        &definition_bytes
+            .iter()
+            .step_by(2)
+            .copied()
+            .collect::<Vec<_>>(),
+    );
+    let odd = encode_sized_rle(
+        &definition_bytes
+            .iter()
+            .skip(1)
+            .step_by(2)
+            .copied()
+            .collect::<Vec<_>>(),
+    );
+    let odd_relative = even.len();
+    let mut payload = even;
+    payload.extend_from_slice(&odd);
+    (payload, odd_relative)
+}
+
+fn words_to_le_bytes(words: &[u16]) -> Vec<u8> {
+    words.iter().flat_map(|word| word.to_le_bytes()).collect()
+}
+
 fn split_pointer(
     bytes: &[u8],
     word_offset: usize,
@@ -245,7 +488,8 @@ fn le_words(bytes: &[u8]) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_rom::RomImage;
+    use lm_rats::ProtectedRange;
+    use lm_rom::{RomImage, compute_snes_checksum};
     use std::{fs, path::Path};
 
     #[test]
@@ -284,5 +528,86 @@ mod tests {
         assert!(before.definition_block.is_none());
         assert!(before.acts_low_block.is_none());
         assert!(before.acts_high_block.is_none());
+    }
+
+    #[test]
+    fn pristine_tables_edit_repoint_checksum_and_reopen_atomically() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/overworld-transfer-positive");
+        let image = RomImage::from_bytes(fs::read(root.join("before.smc")).unwrap()).unwrap();
+        let mut project = Project::new(image);
+        let mut loaded = load_smw_us_v1_transferred_map16(&project).unwrap();
+        loaded.definitions[0] ^= 1;
+        loaded.acts_like[0] ^= 1;
+        project
+            .expand_rom(Mapper::LoRom, 0x10_0000, 0xff, 0x7fdc)
+            .unwrap();
+        let options = SmwUsV1TransferredMap16SaveOptions {
+            allocation: AllocationPolicy {
+                search: 0x80_000..0x10_0000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![
+                    ProtectedRange(0x7fc0..0x8000),
+                    ProtectedRange(
+                        SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET
+                            ..SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET + 2,
+                    ),
+                    ProtectedRange(
+                        SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET
+                            ..SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET + 1,
+                    ),
+                    ProtectedRange(
+                        SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET
+                            ..SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET + 2,
+                    ),
+                    ProtectedRange(
+                        SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET
+                            ..SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET + 2,
+                    ),
+                    ProtectedRange(
+                        SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET
+                            ..SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET + 1,
+                    ),
+                    ProtectedRange(
+                        SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET
+                            ..SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET + 2,
+                    ),
+                    ProtectedRange(
+                        SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET
+                            ..SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET + 1,
+                    ),
+                ],
+            },
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        save_smw_us_v1_transferred_map16(
+            &mut project,
+            &loaded.definitions,
+            &loaded.acts_like,
+            0x7fdc,
+            &options,
+        )
+        .unwrap();
+        let reopened = load_smw_us_v1_transferred_map16(&project).unwrap();
+        assert_eq!(reopened.definitions, loaded.definitions);
+        assert_eq!(reopened.acts_like, loaded.acts_like);
+        let checksum = compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap();
+        assert_eq!(project.rom.read(0x7fdc, 4).unwrap(), checksum.encoded());
+
+        let before_failure = project.save_snapshot();
+        assert!(matches!(
+            save_smw_us_v1_transferred_map16(
+                &mut project,
+                &loaded.definitions,
+                &[],
+                0x7fdc,
+                &options,
+            ),
+            Err(SmwUsV1TransferredMap16Error::EmptyActsLike)
+        ));
+        assert_eq!(project.save_snapshot(), before_failure);
     }
 }

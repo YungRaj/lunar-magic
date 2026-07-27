@@ -214,7 +214,9 @@ pub use native_map16_transfer::{
     SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET, SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE,
     SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET, SMW_US_V1_MAP16_DEFINITION_BYTES,
     SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET, SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET,
-    SMW_US_V1_MAP16_MAX_ENTRIES, SmwUsV1TransferredMap16Error, load_smw_us_v1_transferred_map16,
+    SMW_US_V1_MAP16_MAX_ENTRIES, SavedSmwUsV1TransferredMap16, SmwUsV1TransferredMap16Error,
+    SmwUsV1TransferredMap16SaveOptions, load_smw_us_v1_transferred_map16,
+    save_smw_us_v1_transferred_map16,
 };
 pub use overworld_boss_sequence::{
     SMW_US_V1_BOSS_SEQUENCE_FIRST_POINTER, SMW_US_V1_BOSS_SEQUENCE_SEARCH_END,

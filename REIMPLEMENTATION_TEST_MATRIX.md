@@ -697,6 +697,14 @@ overworld settings, ordinary messages, and boss messages while the manifest sepa
 124 physical ranges and 23 RATS owners.
 Pristine conversion establishes the exact 27-to-54 warp and 93-to-96 level-name materializations.
 
+Native SMW-US Map16 persistence additionally loads both the pristine tables and the exact
+Lunar Magic 3.63 transferred fixture into identical editor meaning, edits the complete 0x2000-word
+definition domain and 2884-entry Acts-Like domain, and installs the recovered split even/odd
+sized-RLE definitions plus independent low-byte and terminated-RLE high-byte tables in protected
+bank-confined RATS allocations. The save gate verifies pointer republication, the shared
+definition-bank invariant, default Acts-Like normalization, checksum repair, exact semantic reopen,
+and failure-atomic rejection of invalid table shapes.
+
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination
 planes, source normalization bounds, and the 255-entry editor maximum. Detection rejects mixed
