@@ -74,9 +74,9 @@ impl RomMap16Editor {
     ) -> Result<SmwUsV1TransferredMap16SaveOptions, String> {
         let search = parse_search_range(&self.search_start, &self.search_end)?;
         let image_len = workspace.image.logical_len();
-        if search.start >= search.end || search.end > image_len {
+        if search.start >= search.end {
             return Err(format!(
-                "allocation range must be nonempty and within the {image_len:X}-byte ROM"
+                "allocation range must be nonempty (current ROM length is {image_len:X})"
             ));
         }
         let mut protected = vec![ProtectedRange(

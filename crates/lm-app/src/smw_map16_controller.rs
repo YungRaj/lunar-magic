@@ -206,6 +206,16 @@ impl SmwMap16Controller {
         }
         acts_like.extend_from_slice(&self.acts_like_tail);
         let mut project = Project::new(image);
+        if options.allocation.search.end > project.rom.logical_len() {
+            project
+                .expand_rom(
+                    Mapper::LoRom,
+                    options.allocation.search.end,
+                    options.erase_fill,
+                    self.checksum_field_offset,
+                )
+                .map_err(SmwMap16ControllerError::Mutation)?;
+        }
         save_smw_us_v1_transferred_map16(
             &mut project,
             &definitions,
@@ -275,12 +285,7 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .join("oracle-work/lm363/pristine-us/overworld-transfer-positive/before.smc");
-        let image = RomImage::from_bytes(fs::read(path).unwrap()).unwrap();
-        let mut project = Project::new(image);
-        project
-            .expand_rom(Mapper::LoRom, 0x10_0000, 0xff, 0x7fdc)
-            .unwrap();
-        project.rom.as_file_bytes().to_vec()
+        fs::read(path).unwrap()
     }
 
     fn options() -> SmwUsV1TransferredMap16SaveOptions {
@@ -336,12 +341,14 @@ mod tests {
             .prepare_commit("Edit SMW Map16", &options())
             .unwrap();
         app.dispatch(prepared.into_command()).unwrap();
+        assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
         let reopened = load_smw_us_v1_transferred_map16(app.project().unwrap()).unwrap();
         assert_eq!(reopened.definitions[0], 0x4321);
         assert_eq!(reopened.acts_like[0], 0x1234);
         assert_eq!(reopened.acts_like[2048..], before.acts_like[2048..]);
         assert_eq!(reopened.acts_like.len(), 2884);
         app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.logical_len(), 0x80_000);
         assert_eq!(
             load_smw_us_v1_transferred_map16(app.project().unwrap())
                 .unwrap()

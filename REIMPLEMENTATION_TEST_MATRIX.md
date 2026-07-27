@@ -568,7 +568,10 @@ revision-checked mutation, semantically reopen all 2884 Acts-Like entries, and u
 definitions. The same GUI renders each complete 16×16-tile page from native 4bpp graphics under a
 user-selected level, object-tileset, and foreground-palette context; click hit-testing selects the
 exact tile, staged subtile changes invalidate the texture, and fixture coverage proves the
-256×256 render changes before commit.
+256×256 render changes before commit. A pristine 512-KiB GUI workspace supplies explicit
+`80000..100000` allocation defaults; commit preparation expands on its private project, installs
+and semantically reopens the tables, dispatches expansion plus edits as one application revision,
+and one undo restores the exact original ROM length and definitions.
 
 The graphics controller loads and decompresses the file selected by `EditorMode::Graphics` through
 an explicit pointer-table and size layout. Decode immediately validates an exact per-tile ownership

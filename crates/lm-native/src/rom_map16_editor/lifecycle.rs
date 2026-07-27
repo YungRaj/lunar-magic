@@ -13,11 +13,17 @@ impl RomMap16Editor {
         }
         match decode(app) {
             Ok(workspace) => {
+                let logical_len = workspace.image.logical_len();
                 self.workspace = Some(workspace);
                 self.page = 0;
                 self.tile = 0;
-                self.search_start.clear();
-                self.search_end.clear();
+                if logical_len == 0x80_000 {
+                    self.search_start = "80000".into();
+                    self.search_end = "100000".into();
+                } else {
+                    self.search_start.clear();
+                    self.search_end.clear();
+                }
                 self.preview_level = "105".into();
                 self.preview_tileset = 0;
                 self.preview_palette = 0;

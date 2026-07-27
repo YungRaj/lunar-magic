@@ -106,7 +106,8 @@ The project currently has tested support for substantial parts of the SMW editin
   shared undo/redo, and revision-checked atomic saves.
 - A profile-free graphical SMW-US Map16 workspace for visually selecting tiles across all eight
   native definition pages, editing their four subtiles and Acts-Like values, previewing selectable
-  level/tileset/palette contexts, and protected transactional installation into an expanded ROM.
+  level/tileset/palette contexts, and protected transactional installation. Pristine 512 KiB ROMs
+  receive safe default allocation bounds and expand to 1 MiB in the same undoable commit.
 - Overworld models and editors for layers, events, paths, warps, messages, level names, player
   starts, sprites, palettes, ExAnimation, title-screen assets, credits, and related installed
   runtimes.
