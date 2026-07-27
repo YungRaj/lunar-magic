@@ -18,6 +18,11 @@ impl RomMap16Editor {
                 self.tile = 0;
                 self.search_start.clear();
                 self.search_end.clear();
+                self.preview_level = "105".into();
+                self.preview_tileset = 0;
+                self.preview_palette = 0;
+                self.page_texture = None;
+                self.page_texture_key = None;
                 self.invalidate();
             }
             Err(error) => self.error = Some(error),

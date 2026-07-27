@@ -565,7 +565,10 @@ Acts-Like semantics without applying the parallel-page graph invariant, and comm
 recovered split-table writer. Real pristine-ROM application and frontend-routing tests edit a
 quadrant and Acts-Like value, install the tables into an expanded ROM, dispatch one
 revision-checked mutation, semantically reopen all 2884 Acts-Like entries, and undo to the original
-definitions.
+definitions. The same GUI renders each complete 16×16-tile page from native 4bpp graphics under a
+user-selected level, object-tileset, and foreground-palette context; click hit-testing selects the
+exact tile, staged subtile changes invalidate the texture, and fixture coverage proves the
+256×256 render changes before commit.
 
 The graphics controller loads and decompresses the file selected by `EditorMode::Graphics` through
 an explicit pointer-table and size layout. Decode immediately validates an exact per-tile ownership

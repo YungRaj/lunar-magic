@@ -76,6 +76,11 @@ pub(crate) struct RomMap16Editor {
     error: Option<String>,
     pending_close: Option<PendingClose>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
+    page_texture: Option<egui::TextureHandle>,
+    page_texture_key: Option<(usize, u64, u16, u8, u8)>,
+    preview_level: String,
+    preview_tileset: u8,
+    preview_palette: u8,
 }
 
 impl RomMap16Editor {
@@ -134,8 +139,110 @@ impl RomMap16Editor {
             );
         }
         self.selection_and_clipboard(ui, stale, pages, pasted.as_deref());
+        self.visual_page(ui);
         self.tile_fields(ui, stale, pages);
         self.commit_controls(ui, stale, project_revision)
+    }
+    fn visual_page(&mut self, ui: &mut egui::Ui) {
+        let changed = ui
+            .horizontal(|ui| {
+                ui.label("Preview level");
+                let level = ui.text_edit_singleline(&mut self.preview_level).changed();
+                let tileset = ui
+                    .add(egui::Slider::new(&mut self.preview_tileset, 0..=15).text("Object set"))
+                    .changed();
+                let palette = ui
+                    .add(egui::Slider::new(&mut self.preview_palette, 0..=7).text("FG palette"))
+                    .changed();
+                level || tileset || palette
+            })
+            .inner;
+        if changed {
+            self.page_texture = None;
+            self.page_texture_key = None;
+        }
+        let Ok(level) = u16::from_str_radix(self.preview_level.trim(), 16) else {
+            ui.colored_label(egui::Color32::RED, "Preview level must be hexadecimal.");
+            return;
+        };
+        if level > 0x01ff {
+            ui.colored_label(
+                egui::Color32::RED,
+                "Preview level must be between 000 and 1FF.",
+            );
+            return;
+        }
+        let mut header = lm_level::LegacyLevelHeader::default();
+        if header.set_object_tileset(self.preview_tileset).is_err()
+            || header.set_foreground_palette(self.preview_palette).is_err()
+        {
+            return;
+        }
+        let Some(workspace) = self.workspace.as_ref() else {
+            return;
+        };
+        let key = (
+            self.page,
+            workspace.controller.revision(),
+            level,
+            self.preview_tileset,
+            self.preview_palette,
+        );
+        if self.page_texture_key != Some(key) {
+            self.page_texture = None;
+            if let Some(page) = workspace.controller.set().pages.get(self.page) {
+                match crate::vanilla_map16_preview::render_rom_map16_page(
+                    workspace.image.as_file_bytes().to_vec(),
+                    level,
+                    header,
+                    page,
+                ) {
+                    Ok(image) => {
+                        self.page_texture = Some(ui.ctx().load_texture(
+                            format!(
+                                "rom-map16-page-{}-{}-{}-{}-{}",
+                                key.0, key.1, key.2, key.3, key.4
+                            ),
+                            image,
+                            egui::TextureOptions::NEAREST,
+                        ));
+                    }
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            self.page_texture_key = Some(key);
+        }
+        let Some(texture) = &self.page_texture else {
+            return;
+        };
+        let response = ui.add(
+            egui::Image::new(texture)
+                .fit_to_exact_size(egui::Vec2::splat(256.0))
+                .sense(egui::Sense::click()),
+        );
+        if response.clicked()
+            && let Some(position) = response.interact_pointer_pos()
+            && let Some(tile) = crate::map16_editor_render::selected_tile(response.rect, position)
+        {
+            self.tile = tile;
+            self.invalidate();
+            self.load();
+        }
+        let column = self.tile % 16;
+        let row = self.tile / 16;
+        let column = f32::from(u8::try_from(column).unwrap_or(0));
+        let row = f32::from(u8::try_from(row).unwrap_or(0));
+        let cell = egui::Rect::from_min_size(
+            response.rect.min + egui::vec2(column * 16.0, row * 16.0),
+            egui::Vec2::splat(16.0),
+        );
+        ui.painter().rect_stroke(
+            cell,
+            0.0,
+            egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+            egui::StrokeKind::Inside,
+        );
+        ui.small("Click a rendered 16×16 tile to select it.");
     }
 
     fn selection_and_clipboard(
@@ -306,6 +413,8 @@ impl RomMap16Editor {
         if let Err(error) = workspace.controller.apply_edits(&[edit]) {
             self.error = Some(error);
         } else {
+            self.page_texture = None;
+            self.page_texture_key = None;
             self.invalidate();
         }
     }

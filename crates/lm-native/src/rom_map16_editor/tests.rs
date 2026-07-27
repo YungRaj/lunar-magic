@@ -32,6 +32,16 @@ fn ordinary_rom_gui_route_edits_and_commits_native_map16() {
             .map(|workspace| &workspace.controller),
         Some(Controller::Smw(_))
     ));
+    let workspace = editor.workspace.as_ref().unwrap();
+    let image = crate::vanilla_map16_preview::render_rom_map16_page(
+        workspace.image.as_file_bytes().to_vec(),
+        0x105,
+        lm_level::LegacyLevelHeader::default(),
+        &workspace.controller.set().pages[0],
+    )
+    .unwrap();
+    assert_eq!(image.size, [256, 256]);
+    let original_pixels = image.pixels;
     editor.search_start = "80000".into();
     editor.search_end = "100000".into();
     editor.apply(Map16ControllerEdit::SetSubtile {
@@ -41,6 +51,15 @@ fn ordinary_rom_gui_route_edits_and_commits_native_map16() {
         resolution_limit: 2048,
     });
     assert!(editor.error.is_none());
+    let workspace = editor.workspace.as_ref().unwrap();
+    let edited_image = crate::vanilla_map16_preview::render_rom_map16_page(
+        workspace.image.as_file_bytes().to_vec(),
+        0x105,
+        lm_level::LegacyLevelHeader::default(),
+        &workspace.controller.set().pages[0],
+    )
+    .unwrap();
+    assert_ne!(edited_image.pixels, original_pixels);
     let command = editor.prepare_commit().unwrap();
     app.dispatch(command).unwrap();
     let reopened = load_smw_us_v1_transferred_map16(app.project().unwrap()).unwrap();

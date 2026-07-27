@@ -102,6 +102,73 @@ pub(crate) fn render(
     })
 }
 
+pub(crate) fn render_rom_map16_page(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    page: &lm_level::Map16Page,
+) -> Result<egui::ColorImage, String> {
+    const WIDTH: usize = 16 * 16;
+    const HEIGHT: usize = 16 * 16;
+    if page.tiles.len() != lm_level::Map16Page::TILE_COUNT {
+        return Err(format!(
+            "Map16 page contains {} tiles instead of {}",
+            page.tiles.len(),
+            lm_level::Map16Page::TILE_COUNT
+        ));
+    }
+    let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
+    let project = Project::new(rom);
+    let graphics_files = lm_profile::smw_us_v1_object_tileset_graphics_files(
+        &project.rom,
+        usize::from(header.object_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    let mut graphics = Vec::new();
+    for file in graphics_files {
+        graphics.extend(
+            project
+                .load_graphics_file(file, lm_profile::smw_us_v1_vanilla_graphics_layout())
+                .map_err(|error| error.to_string())?
+                .tiles,
+        );
+    }
+    let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
+        .map_err(|error| error.to_string())?
+        .palette;
+    let mut rgba = vec![0; WIDTH * HEIGHT * 4];
+    for (definition, tile) in page.tiles.iter().enumerate() {
+        let definition_x = definition % 16 * 16;
+        let definition_y = definition / 16 * 16;
+        for (quadrant, word) in [
+            tile.top_left.0,
+            tile.top_right.0,
+            tile.bottom_left.0,
+            tile.bottom_right.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            draw_subtile(
+                &mut rgba,
+                WIDTH,
+                (
+                    definition_x + quadrant % 2 * 8,
+                    definition_y + quadrant / 2 * 8,
+                ),
+                graphics.get(usize::from(word & 0x03ff)),
+                &palette,
+                usize::from((word >> 10) & 7),
+                (word & 0x4000 != 0, word & 0x8000 != 0),
+            );
+        }
+    }
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [WIDTH, HEIGHT],
+        &rgba,
+    ))
+}
+
 fn load_layer3_tiles(project: &Project, level: usize) -> Result<Vec<IndexedTile>, String> {
     let settings = lm_profile::load_smw_us_v1_expanded_level_settings(project, level)
         .map_err(|error| error.to_string())?
