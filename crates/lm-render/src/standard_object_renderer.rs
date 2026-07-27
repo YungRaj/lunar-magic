@@ -233,6 +233,7 @@ enum ObjectExtent {
     OneByLowNibble,
     ThreeByParameterByte,
     FixedOne,
+    FixedPattern,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -412,7 +413,7 @@ impl StandardObjectDefinitionSet {
         validate_pattern(&pattern)?;
         self.extended[usize::from(object)] = Some(StandardObjectDefinition {
             pattern,
-            extent: ObjectExtent::FixedOne,
+            extent: ObjectExtent::FixedPattern,
             major_expansion: AxisExpansion::Clamp,
             minor_expansion: AxisExpansion::Clamp,
             renderer: NativeRenderer::Pattern,
@@ -466,7 +467,7 @@ impl StandardObjectDefinitionSet {
             ObjectExtent::ThreeByParameterByte => StandardObjectResizeModel::MajorByte {
                 fixed_minor_tiles: 3,
             },
-            ObjectExtent::FixedOne => StandardObjectResizeModel::Fixed,
+            ObjectExtent::FixedOne | ObjectExtent::FixedPattern => StandardObjectResizeModel::Fixed,
         })
     }
 
@@ -695,6 +696,7 @@ fn render_definition(
         ObjectExtent::OneByLowNibble => (1, usize::from(placement.minor_span)),
         ObjectExtent::ThreeByParameterByte => (usize::from(parameter) + 1, 3),
         ObjectExtent::FixedOne => (1, 1),
+        ObjectExtent::FixedPattern => (definition.pattern.width, definition.pattern.height),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
 }
@@ -3381,6 +3383,26 @@ pub fn install_lunar_magic_shared_extended_objects(
             tiles: vec![0x06b],
         },
     )?;
+    // Vertical-level slope caps at $0DA80D-$0DA8A2. Paired selectors choose
+    // left/right artwork; pattern X follows the serialized level-major axis,
+    // while pattern Y follows the perpendicular axis.
+    for (selector, width, height, tiles) in [
+        (0x91, 2, 1, vec![0x1aa, 0x1e2]),
+        (0x92, 2, 1, vec![0x1af, 0x1e4]),
+        (0x93, 2, 2, vec![0x196, 0x1de, 0x19b, 0x1e6]),
+        (0x94, 2, 2, vec![0x1a0, 0x1e6, 0x1a5, 0x1e0]),
+        (0x95, 3, 1, vec![0x1ca, 0x1cb, 0x1f1]),
+        (0x96, 3, 1, vec![0x1cc, 0x1cd, 0x1f2]),
+    ] {
+        definitions.set_extended(
+            selector,
+            StandardObjectPattern {
+                width,
+                height,
+                tiles,
+            },
+        )?;
+    }
     Ok(())
 }
 
@@ -5619,6 +5641,21 @@ mod tests {
             lunar_magic_conditional_extended_object_tile(0x86, false),
             None
         );
+    }
+
+    #[test]
+    fn recovered_fixed_extended_patterns_render_their_complete_shape() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0, 0, 0x86]).unwrap()],
+        };
+        let report =
+            render_mapped_standard_object_stream(&stream, &definitions, &[0; 64], layout(), 0x25)
+                .unwrap();
+        for (x, y, expected) in [(0, 0, 0x066), (1, 0, 0x067), (0, 1, 0x068), (1, 1, 0x069)] {
+            assert_eq!(report.cache.get(layout(), x, y).unwrap(), expected);
+        }
     }
 
     #[test]

@@ -28,11 +28,11 @@ impl ObjectStream {
     /// Resolves ordinary object records onto the selected native sequential screen axis.
     ///
     /// The high bit on a record advances one screen before placing that record. Internal screen
-    /// jump records reset the running screen and are not returned as visible objects. SMW always
-    /// stores Y in the first coordinate nibble and X in the second; level orientation determines
-    /// which nibble receives the sequential screen offset.
+    /// jump records reset the running screen and are not returned as visible objects. Byte zero
+    /// stores the perpendicular coordinate and byte one stores the coordinate along the screen
+    /// axis; orientation maps those abstract axes to X/Y after placement.
     #[must_use]
-    pub fn native_placements_for_orientation(&self, vertical: bool) -> Vec<NativeObjectPlacement> {
+    pub fn native_placements_for_orientation(&self, _vertical: bool) -> Vec<NativeObjectPlacement> {
         let mut screen = 0_u16;
         let mut placements = Vec::with_capacity(self.records.len());
         for (record_index, record) in self.records.iter().enumerate() {
@@ -48,11 +48,10 @@ impl ObjectStream {
             }
             let coordinates = record.coordinate_nibbles();
             let parameter = record.parameter();
-            let (major_nibble, minor_nibble) = if vertical {
-                (coordinates.first, coordinates.second)
-            } else {
-                (coordinates.second, coordinates.first)
-            };
+            // Byte zero always stores the perpendicular coordinate and byte one
+            // stores the coordinate along the screen axis. Orientation changes
+            // how those abstract axes map to X/Y, not their serialized order.
+            let (major_nibble, minor_nibble) = (coordinates.second, coordinates.first);
             let minor = minor_nibble
                 | if record.perpendicular_high_coordinate() {
                     0x10
@@ -140,7 +139,8 @@ mod tests {
         assert_eq!((horizontal.major, horizontal.minor), (7, 0x15));
 
         let vertical = stream.native_placements_for_orientation(true)[0];
-        assert_eq!((vertical.major, vertical.minor), (5, 0x17));
+        assert_eq!((vertical.major, vertical.minor), (7, 0x15));
+        assert_eq!(vertical.tile_coordinates(true), (0x15, 7));
     }
 
     #[test]
@@ -212,8 +212,8 @@ mod tests {
             [NativeObjectPlacement {
                 record_index: 0,
                 screen: 1,
-                major: 18,
-                minor: 3,
+                major: 19,
+                minor: 2,
                 major_span: 1,
                 minor_span: 1,
             }]

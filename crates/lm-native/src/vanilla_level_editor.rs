@@ -6301,8 +6301,12 @@ fn game_preview_origin(
 ) -> (u16, u16) {
     let entrance_screen = u16::from(entrance.level_mode_and_screen & 0x1f);
     if vertical {
+        let initial_y =
+            u16::from(VANILLA_INITIAL_LAYER1_Y[usize::from((entrance.screen_and_method >> 2) & 3)])
+                / 16;
         let y = entrance_screen
             .saturating_mul(16)
+            .saturating_add(initial_y)
             .min(major_tiles.saturating_sub(14));
         (0, y)
     } else {
@@ -7674,6 +7678,86 @@ mod tests {
     }
 
     #[test]
+    fn pristine_level_108_matches_live_snes_vertical_slope_rows() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image =
+            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+                .unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level = project
+            .load_level_slot(
+                0x108,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 27,
+            height: 512,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: true,
+        };
+        let report = lm_render::render_mapped_standard_object_stream(
+            &level.layer1.objects,
+            &definitions,
+            definition_map.family(3).unwrap(),
+            layout,
+            VANILLA_EMPTY_MAP16_TILE,
+        )
+        .unwrap();
+        assert_eq!(report.rendered_objects, 11);
+        assert!(report.missing_commands.is_empty());
+        assert!(report.missing_extended_objects.is_empty());
+        let live_nonblank = [
+            (10, 14, 0x1ca),
+            (11, 14, 0x1cc),
+            (2, 15, 0x1aa),
+            (3, 15, 0x1af),
+            (4, 15, 0x196),
+            (5, 15, 0x19b),
+            (6, 15, 0x1a0),
+            (7, 15, 0x1a5),
+            (8, 15, 0x1ca),
+            (9, 15, 0x1cc),
+            (10, 15, 0x1cb),
+            (11, 15, 0x1cd),
+            (2, 16, 0x1e2),
+            (3, 16, 0x1e4),
+            (4, 16, 0x1de),
+            (5, 16, 0x1e6),
+            (6, 16, 0x1e6),
+            (7, 16, 0x1e0),
+            (8, 16, 0x1cb),
+            (9, 16, 0x1cd),
+            (10, 16, 0x1f1),
+            (11, 16, 0x1f2),
+            (8, 17, 0x1f1),
+            (9, 17, 0x1f2),
+        ];
+        for y in 14..=17 {
+            for x in 0..27 {
+                let expected = live_nonblank
+                    .iter()
+                    .find_map(|&(live_x, live_y, tile)| {
+                        (live_x == x && live_y == y).then_some(tile)
+                    })
+                    .unwrap_or(VANILLA_EMPTY_MAP16_TILE);
+                assert_eq!(
+                    report.cache.get(layout, x, y).unwrap(),
+                    expected,
+                    "live Snes9x vertical Map16 mismatch at ({x}, {y})"
+                );
+            }
+        }
+    }
+
+    #[test]
     #[allow(clippy::too_many_lines)]
     fn pristine_standard_object_resize_commits_reopens_and_undoes() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -7908,6 +7992,15 @@ mod tests {
             vanilla_game_background_coordinates(15, 25, entrance, (0, 12)),
             (15, 25)
         );
+    }
+
+    #[test]
+    fn vertical_game_preview_uses_the_recovered_initial_camera_row() {
+        let entrance = VanillaMainEntrance {
+            screen_and_method: 0x0a,
+            ..VanillaMainEntrance::default()
+        };
+        assert_eq!(game_preview_origin(entrance, 512, 27, true), (0, 12));
     }
 
     #[test]
