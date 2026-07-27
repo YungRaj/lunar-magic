@@ -557,18 +557,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             }
             parts(&values)
         }
-        0xab => parts(&[
-            (0x141, -4, 12),
-            (0x107, 6, 12),
-            (0x1a4, 1, 1),
-            (0x1a5, 15, 4),
-            (0x141, -2, 16),
-            (0x107, 4, 16),
-            (0x1b4, 23, 20),
-            (0x1b4, 39, 20),
-            (0x1b4, 55, 20),
-            (0x1b5, 71, 20),
-        ]),
+        // Sprite $AB is Rex. Its ordinary standing frame uses the recovered two-part Rex
+        // definitions; the former long Blargg-like composite belonged to a different dispatch
+        // entry and visibly stretched each Rex across five tiles in pristine level $105.
+        0xab => parts(&[(0x18d, -4, -15), (0x20b, 0, 0)]),
         0xac => parts(&[(0x1ac, 0, 0)]),
         0xad => parts(&[
             (0x1b6, 4, 4),
@@ -627,7 +619,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x164, -16, 1),
             (0x165, 0, 1),
         ]),
-        0xbd => parts(&[(0x176, 0, 3), (0x177, 16, 3), (0x178, 32, 3)]),
+        // Sprite $BD is the sliding shell-less Koopa. Its initial runtime state selects
+        // common-page OAM tile $86; tile $E0 is only used by its later smushed state.
+        0xbd => parts(&[(0x20a, 0, 1)]),
         0xbe => {
             let direction_y = if mode.placement_first & 1 == 0 { -2 } else { 2 };
             parts(&[
@@ -1758,6 +1752,8 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1a0 => [0x05c0, 0x05d0, 0x05c1, 0x05d1],
         0x1a1 => [0x05c2, 0x05d2, 0x05c3, 0x05d3],
         0x1b2 => [0x8594, 0x8584, 0x8595, 0x8585],
+        0x20a => [0x0c86, 0x0c96, 0x0c87, 0x0c97],
+        0x20b => [0x0daa, 0x0dba, 0x0dab, 0x0dbb],
         0x1b3 => [0x8596, 0x8586, 0x8597, 0x8587],
         0x1b4 => [0x59ad, 0x59bd, 0x59ac, 0x59bc],
         0x1b6 => [0x1d88, 0x1d98, 0x1d89, 0x1d99],
@@ -3202,7 +3198,7 @@ mod tests {
     }
 
     #[test]
-    fn handlers_a6_and_ab_preserve_animation_and_long_composite() {
+    fn handlers_a6_and_ab_preserve_animation_and_rex_composite() {
         let geometry = |sprite, mode| {
             render_lunar_magic_standard_sprite_with_mode(sprite, mode)
                 .unwrap()
@@ -3240,18 +3236,7 @@ mod tests {
         );
         assert_eq!(
             geometry(0xab, StandardSpritePreviewMode::default()),
-            [
-                (0x141, -4, 12),
-                (0x107, 6, 12),
-                (0x1a4, 1, 1),
-                (0x1a5, 15, 4),
-                (0x141, -2, 16),
-                (0x107, 4, 16),
-                (0x1b4, 23, 20),
-                (0x1b4, 39, 20),
-                (0x1b4, 55, 20),
-                (0x1b5, 71, 20)
-            ]
+            [(0x18d, -4, -15), (0x20b, 0, 0)]
         );
         assert_eq!(
             geometry(
@@ -3439,10 +3424,7 @@ mod tests {
                 (0x165, 0, 1)
             ]
         );
-        assert_eq!(
-            geometry(0xbd, 0, false),
-            [(0x176, 0, 3), (0x177, 16, 3), (0x178, 32, 3)]
-        );
+        assert_eq!(geometry(0xbd, 0, false), [(0x20a, 0, 1)]);
         assert_eq!(
             geometry(0xbe, 0, false),
             [

@@ -3490,7 +3490,7 @@ fn canvas_minor_tiles(
         .unwrap_or(16);
     let sprite_end = sprites
         .iter()
-        .map(|placement| placement.minor.saturating_add(1))
+        .map(|placement| presented_sprite_minor(*placement).saturating_add(1))
         .max()
         .unwrap_or(16);
     object_end.max(sprite_end).clamp(16, 32)
@@ -4211,13 +4211,28 @@ fn sprite_fields_at_canvas_position(
     } else {
         (column as u16, row as u16)
     };
-    if major >= 0x200 || minor >= 0x20 {
+    if major >= 0x200 || minor >= 0x10 {
         return None;
     }
     fields.screen = u8::try_from(major / 16).ok()?;
     fields.x = u8::try_from(major % 16).ok()?;
-    fields.y_low = u8::try_from(minor).ok()?;
+    fields.y_low = (fields.y_low & 0x10) | u8::try_from(minor).ok()?;
     Some(fields)
+}
+
+const fn presented_sprite_minor(placement: lm_level::NativeSpritePlacement) -> u16 {
+    placement.minor & 0x0f
+}
+
+const fn presented_sprite_tile_coordinates(
+    placement: lm_level::NativeSpritePlacement,
+    vertical: bool,
+) -> (u16, u16) {
+    if vertical {
+        (presented_sprite_minor(placement), placement.major)
+    } else {
+        (placement.major, presented_sprite_minor(placement))
+    }
 }
 
 fn object_placement_at_canvas_position(
@@ -4983,7 +4998,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
     let mut hit = None;
     let mut standard_8a_count = 0_u8;
     for placement in placements {
-        let (tile_x, tile_y) = placement.tile_coordinates(vertical);
+        let (tile_x, tile_y) = presented_sprite_tile_coordinates(*placement, vertical);
         let center = target.min
             + egui::vec2(
                 (f32::from(tile_x) + 0.5) * cell_size,
@@ -5312,8 +5327,7 @@ pub(crate) fn draw_sprite_preview_definition(
 ) {
     for (quadrant, word) in subtiles.into_iter().enumerate() {
         let half = target.size() / 2.0;
-        let x = u16::try_from(quadrant % 2).expect("quadrant x fits u16");
-        let y = u16::try_from(quadrant / 2).expect("quadrant y fits u16");
+        let (x, y) = sprite_definition_quadrant_position(quadrant);
         let minimum = target.min + egui::vec2(f32::from(x) * half.x, f32::from(y) * half.y);
         draw_sprite_atlas_subtile(
             painter,
@@ -5322,6 +5336,13 @@ pub(crate) fn draw_sprite_preview_definition(
             word,
         );
     }
+}
+
+fn sprite_definition_quadrant_position(quadrant: usize) -> (u16, u16) {
+    (
+        u16::try_from(quadrant / 2).expect("quadrant x fits u16"),
+        u16::try_from(quadrant % 2).expect("quadrant y fits u16"),
+    )
 }
 
 fn draw_sprite_atlas_subtile(
@@ -6150,6 +6171,14 @@ mod tests {
         assert!(ordinary.color.a() < 64);
         assert!(boundary.color.a() < 128);
         assert!(ordinary.width < boundary.width);
+    }
+
+    #[test]
+    fn sprite_preview_definitions_use_native_column_major_quadrants() {
+        assert_eq!(sprite_definition_quadrant_position(0), (0, 0));
+        assert_eq!(sprite_definition_quadrant_position(1), (0, 1));
+        assert_eq!(sprite_definition_quadrant_position(2), (1, 0));
+        assert_eq!(sprite_definition_quadrant_position(3), (1, 1));
     }
 
     #[test]
@@ -7091,7 +7120,7 @@ mod tests {
     }
 
     #[test]
-    fn rom_canvas_minor_extent_keeps_second_sprite_row_visible() {
+    fn rom_canvas_minor_extent_presents_native_sprite_subscreen_coordinates() {
         let sprites = [lm_level::NativeSpritePlacement {
             token_index: 0,
             first_byte: 1,
@@ -7101,7 +7130,12 @@ mod tests {
             sprite_number: 1,
             extra_bits: 0,
         }];
-        assert_eq!(canvas_minor_tiles(&[], &sprites), 32);
+        assert_eq!(canvas_minor_tiles(&[], &sprites), 16);
+        assert_eq!(
+            presented_sprite_tile_coordinates(sprites[0], false),
+            (3, 15)
+        );
+        assert_eq!(presented_sprite_tile_coordinates(sprites[0], true), (15, 3));
         assert_eq!(canvas_minor_tiles(&[], &[]), 16);
     }
 
@@ -7589,6 +7623,19 @@ mod tests {
         assert_eq!(vertical.x, 15);
         assert_eq!(vertical.extra_bits, 2);
         assert_eq!(vertical.sprite_number, 0x55);
+
+        let lower_subscreen = sprite_fields_at_canvas_position(
+            egui::pos2(10.0 + 35.5 * 8.0, 20.0 + 6.5 * 8.0),
+            canvas,
+            8.0,
+            false,
+            NativeSpriteRecordFields {
+                y_low: 0x11,
+                ..original
+            },
+        )
+        .unwrap();
+        assert_eq!(lower_subscreen.y_low, 0x16);
     }
 
     #[test]
@@ -7606,7 +7653,7 @@ mod tests {
                 .is_none()
         );
         assert!(
-            sprite_fields_at_canvas_position(egui::pos2(1.0, 32.0), canvas, 1.0, false, fields,)
+            sprite_fields_at_canvas_position(egui::pos2(1.0, 16.0), canvas, 1.0, false, fields,)
                 .is_none()
         );
         assert!(
