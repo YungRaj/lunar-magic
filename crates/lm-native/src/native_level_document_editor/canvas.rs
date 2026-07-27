@@ -13,9 +13,12 @@ const CANVAS_VIEW_HEIGHT: f32 = 280.0;
 
 impl NativeLevelDocumentEditor {
     pub(super) fn level_canvas(&mut self, ui: &mut egui::Ui, value: &NativeLevelFile) {
-        let objects = value.layer1.objects.native_placements();
-        let sprites = value.sprites.native_placements();
         let vertical = lm_profile::smw_us_v1_level_mode(value.layer1.header.level_mode()).vertical;
+        let objects = value
+            .layer1
+            .objects
+            .native_placements_for_orientation(vertical);
+        let sprites = value.sprites.native_placements();
         let level_mode = value.layer1.header.level_mode();
         let sprite_lengths = self.current_sprite_lengths();
         let major_tiles = canvas_major_tiles(&objects, &sprites);

@@ -15,12 +15,23 @@ pub struct NativeObjectPlacement {
 }
 
 impl ObjectStream {
-    /// Resolves ordinary object records onto the native sequential screen axis.
+    /// Resolves ordinary object records for a horizontal level.
     ///
-    /// The high bit on a record advances one screen before placing that record. Internal screen
-    /// jump records reset the running screen and are not returned as visible objects.
+    /// This is the common SMW layout and is equivalent to
+    /// [`Self::native_placements_for_orientation`] with `vertical` set to `false`.
     #[must_use]
     pub fn native_placements(&self) -> Vec<NativeObjectPlacement> {
+        self.native_placements_for_orientation(false)
+    }
+
+    /// Resolves ordinary object records onto the selected native sequential screen axis.
+    ///
+    /// The high bit on a record advances one screen before placing that record. Internal screen
+    /// jump records reset the running screen and are not returned as visible objects. SMW always
+    /// stores Y in the first coordinate nibble and X in the second; level orientation determines
+    /// which nibble receives the sequential screen offset.
+    #[must_use]
+    pub fn native_placements_for_orientation(&self, vertical: bool) -> Vec<NativeObjectPlacement> {
         let mut screen = 0_u16;
         let mut placements = Vec::with_capacity(self.records.len());
         for (record_index, record) in self.records.iter().enumerate() {
@@ -36,13 +47,18 @@ impl ObjectStream {
             }
             let coordinates = record.coordinate_nibbles();
             let parameter = record.parameter();
+            let (major_nibble, minor) = if vertical {
+                (coordinates.first, coordinates.second)
+            } else {
+                (coordinates.second, coordinates.first)
+            };
             placements.push(NativeObjectPlacement {
                 record_index,
                 screen,
                 major: screen
                     .saturating_mul(16)
-                    .saturating_add(u16::from(coordinates.first)),
-                minor: coordinates.second,
+                    .saturating_add(u16::from(major_nibble)),
+                minor,
                 major_span: (parameter >> 4).saturating_add(1),
                 minor_span: (parameter & 0x0f).saturating_add(1),
             });
@@ -83,24 +99,24 @@ mod tests {
                 NativeObjectPlacement {
                     record_index: 0,
                     screen: 0,
-                    major: 2,
-                    minor: 3,
+                    major: 3,
+                    minor: 2,
                     major_span: 1,
                     minor_span: 1,
                 },
                 NativeObjectPlacement {
                     record_index: 1,
                     screen: 1,
-                    major: 20,
-                    minor: 5,
+                    major: 21,
+                    minor: 4,
                     major_span: 1,
                     minor_span: 1,
                 },
                 NativeObjectPlacement {
                     record_index: 2,
                     screen: 1,
-                    major: 22,
-                    minor: 7,
+                    major: 23,
+                    minor: 6,
                     major_span: 1,
                     minor_span: 1,
                 },
@@ -123,16 +139,16 @@ mod tests {
                 NativeObjectPlacement {
                     record_index: 0,
                     screen: 0,
-                    major: 1,
-                    minor: 2,
+                    major: 2,
+                    minor: 1,
                     major_span: 1,
                     minor_span: 1,
                 },
                 NativeObjectPlacement {
                     record_index: 2,
                     screen: 3,
-                    major: 52,
-                    minor: 5,
+                    major: 53,
+                    minor: 4,
                     major_span: 1,
                     minor_span: 1,
                 },
@@ -165,6 +181,24 @@ mod tests {
         };
         assert_eq!(placement.tile_coordinates(false), (35, 7));
         assert_eq!(placement.tile_coordinates(true), (7, 35));
+    }
+
+    #[test]
+    fn vertical_levels_apply_the_screen_axis_to_encoded_y() {
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x82, 0x13, 0]).unwrap()],
+        };
+        assert_eq!(
+            stream.native_placements_for_orientation(true),
+            [NativeObjectPlacement {
+                record_index: 0,
+                screen: 1,
+                major: 18,
+                minor: 3,
+                major_span: 1,
+                minor_span: 1,
+            }]
+        );
     }
 
     #[test]

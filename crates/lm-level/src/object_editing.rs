@@ -387,7 +387,7 @@ mod tests {
         let placements = stream.native_placements();
         assert_eq!(placements.len(), 2);
         assert_eq!(placements[1].screen, 7);
-        assert_eq!(placements[1].major, 7 * 16 + 5);
-        assert_eq!(placements[1].minor, 6);
+        assert_eq!(placements[1].major, 7 * 16 + 6);
+        assert_eq!(placements[1].minor, 5);
     }
 }

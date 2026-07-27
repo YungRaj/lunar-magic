@@ -628,7 +628,7 @@ fn render_standard_object_stream_with_map(
     let mut rendered_objects = 0;
     let mut missing_commands = BTreeSet::new();
     let mut missing_extended_objects = BTreeSet::new();
-    for placement in stream.native_placements() {
+    for placement in stream.native_placements_for_orientation(layout.vertical) {
         let record = &stream.records[placement.record_index];
         let command = record.command_id();
         let resolved_command = handler_map
@@ -4494,7 +4494,7 @@ mod tests {
         let mut handler_map = [0xff; 64];
         handler_map[1] = 21;
         let stream = ObjectStream {
-            records: vec![ObjectRecord::new(vec![0, 0x18, 0x20]).unwrap()],
+            records: vec![ObjectRecord::new(vec![8, 0x10, 0x20]).unwrap()],
         };
         let report = render_mapped_standard_object_stream(
             &stream,
@@ -4530,7 +4530,7 @@ mod tests {
         let mut handler_map = [0xff; 64];
         handler_map[1] = 22;
         let stream = ObjectStream {
-            records: vec![ObjectRecord::new(vec![0, 0x18, 0x12]).unwrap()],
+            records: vec![ObjectRecord::new(vec![8, 0x10, 0x12]).unwrap()],
         };
         let report = render_mapped_standard_object_stream(
             &stream,
@@ -4564,7 +4564,7 @@ mod tests {
         let mut handler_map = [0xff; 64];
         handler_map[1] = 23;
         let stream = ObjectStream {
-            records: vec![ObjectRecord::new(vec![0, 0x18, 0x12]).unwrap()],
+            records: vec![ObjectRecord::new(vec![8, 0x10, 0x12]).unwrap()],
         };
         let report = render_mapped_standard_object_stream(
             &stream,
@@ -4734,12 +4734,8 @@ mod tests {
         ] {
             let stream = ObjectStream {
                 records: vec![
-                    ObjectRecord::new(vec![
-                        0,
-                        0x10 | u8::try_from(start_minor).unwrap(),
-                        parameter,
-                    ])
-                    .unwrap(),
+                    ObjectRecord::new(vec![u8::try_from(start_minor).unwrap(), 0x10, parameter])
+                        .unwrap(),
                 ],
             };
             let report = render_mapped_standard_object_stream(
@@ -4983,7 +4979,7 @@ mod tests {
             (0x25, vec![(0, 8, 0x095), (1, 9, 0x095), (2, 10, 0x095)]),
         ] {
             let stream = ObjectStream {
-                records: vec![ObjectRecord::new(vec![0, 0x18, parameter]).unwrap()],
+                records: vec![ObjectRecord::new(vec![8, 0x10, parameter]).unwrap()],
             };
             let report = render_mapped_standard_object_stream(
                 &stream,
@@ -5033,7 +5029,7 @@ mod tests {
             ),
         ] {
             let stream = ObjectStream {
-                records: vec![ObjectRecord::new(vec![0, 0x18, parameter]).unwrap()],
+                records: vec![ObjectRecord::new(vec![8, 0x10, parameter]).unwrap()],
             };
             let report = render_mapped_standard_object_stream(
                 &stream,
@@ -5682,7 +5678,7 @@ mod tests {
         let stream = ObjectStream {
             records: vec![
                 ObjectRecord::new(vec![0x20, 0x60, 0x11]).unwrap(),
-                ObjectRecord::new(vec![0x24, 0x70, 0x23]).unwrap(),
+                ObjectRecord::new(vec![0x20, 0x74, 0x23]).unwrap(),
             ],
         };
         let report = render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
@@ -5801,7 +5797,7 @@ mod tests {
         let stream = ObjectStream {
             records: vec![
                 ObjectRecord::new(vec![0, 0x10, 0]).unwrap(),
-                ObjectRecord::new(vec![2, 0x20, 0]).unwrap(),
+                ObjectRecord::new(vec![0, 0x22, 0]).unwrap(),
                 ObjectRecord::new(vec![0x20, 0xe0, 0x20]).unwrap(),
             ],
         };

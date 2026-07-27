@@ -2292,6 +2292,9 @@ impl VanillaLevelEditor {
         self.controller
             .as_ref()
             .map(|controller| {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                        .vertical;
                 let layer2_objects = match controller.layer2() {
                     Some(lm_level::NativeLayer2Data::Objects(objects)) => Some(objects),
                     Some(lm_level::NativeLayer2Data::Tilemap(_)) | None => None,
@@ -2305,11 +2308,16 @@ impl VanillaLevelEditor {
                 };
                 CanvasModel {
                     layer1_records: controller.level().layer1.objects.records.clone(),
-                    layer1_placements: controller.level().layer1.objects.native_placements(),
+                    layer1_placements: controller
+                        .level()
+                        .layer1
+                        .objects
+                        .native_placements_for_orientation(vertical),
                     layer2_records: layer2_objects
                         .map_or_else(Vec::new, |layer2| layer2.objects.records.clone()),
-                    layer2_placements: layer2_objects
-                        .map_or_else(Vec::new, |layer2| layer2.objects.native_placements()),
+                    layer2_placements: layer2_objects.map_or_else(Vec::new, |layer2| {
+                        layer2.objects.native_placements_for_orientation(vertical)
+                    }),
                     layer2_tilemap,
                     sprite_placements: controller.level().sprites.native_placements(),
                 }
@@ -6736,10 +6744,10 @@ mod tests {
             base_cell: 0,
             vertical: false,
         };
-        let missing = level
-            .layer1
-            .objects
-            .native_placements()
+        let placements = level.layer1.objects.native_placements();
+        assert_eq!(placements[0].tile_coordinates(false), (0, 8));
+        assert_eq!(placements[1].tile_coordinates(false), (4, 7));
+        let missing = placements
             .into_iter()
             .filter_map(|placement| {
                 let record = &level.layer1.objects.records[placement.record_index];
