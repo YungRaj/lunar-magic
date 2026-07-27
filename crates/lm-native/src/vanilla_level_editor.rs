@@ -832,6 +832,8 @@ impl VanillaLevelEditor {
         self.object_placement_template = None;
         self.dragging_object = None;
         self.dragging_layer2_object = None;
+        self.resizing_object = None;
+        self.resizing_layer2_object = None;
         self.external_sprite_textures.clear();
         self.dragging_sprite = None;
     }
@@ -968,6 +970,8 @@ impl VanillaLevelEditor {
         self.dragging_sprite = None;
         self.dragging_object = None;
         self.dragging_layer2_object = None;
+        self.resizing_object = None;
+        self.resizing_layer2_object = None;
     }
 
     fn show_map16_preview(
@@ -1160,6 +1164,16 @@ impl VanillaLevelEditor {
             .collect::<Vec<_>>();
         let mut major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
         let mut minor_tiles = canvas_minor_tiles(&visible_objects, &sprite_placements);
+        for (records, placements) in [
+            (records.as_slice(), placements.as_slice()),
+            (layer2_records.as_slice(), layer2_placements.as_slice()),
+        ] {
+            let resize_models = self.active_object_resize_models(records, custom_objects);
+            let (extended_major, extended_minor) =
+                extended_command27_canvas_extent(records, placements, &resize_models, vertical);
+            major_tiles = major_tiles.max(extended_major);
+            minor_tiles = minor_tiles.max(extended_minor);
+        }
         if !layer2_tilemap.is_empty() {
             major_tiles = major_tiles.max(32);
             minor_tiles = minor_tiles.max(32);
@@ -1815,7 +1829,7 @@ impl VanillaLevelEditor {
                 .into_iter()
                 .find(|placement| placement.record_index == index)?;
             let model = self.active_object_resize_model(record, None)?;
-            Some(resized_standard_object_parameter_at_canvas_position(
+            Some(resized_standard_object_record_at_canvas_position(
                 record, placement, model, position, canvas, cell, vertical,
             ))
         });
@@ -1823,8 +1837,8 @@ impl VanillaLevelEditor {
             self.error = Some("selected object has no authenticated resize handle".into());
             return;
         };
-        let parameter = match result {
-            Ok(parameter) => parameter,
+        let record = match result {
+            Ok(record) => record,
             Err(error) => {
                 self.error = Some(error);
                 return;
@@ -1833,9 +1847,9 @@ impl VanillaLevelEditor {
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
-        match controller.apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::SetParameter {
+        match controller.apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
             index,
-            parameter,
+            record,
         }])]) {
             Ok(()) => {
                 self.selected_object = index;
@@ -1924,7 +1938,7 @@ impl VanillaLevelEditor {
                 .into_iter()
                 .find(|placement| placement.record_index == index)?;
             let model = self.active_object_resize_model(record, None)?;
-            Some(resized_standard_object_parameter_at_canvas_position(
+            Some(resized_standard_object_record_at_canvas_position(
                 record, placement, model, position, canvas, cell, vertical,
             ))
         });
@@ -1932,8 +1946,8 @@ impl VanillaLevelEditor {
             self.error = Some("selected Layer 2 object has no authenticated resize handle".into());
             return;
         };
-        let parameter = match result {
-            Ok(parameter) => parameter,
+        let record = match result {
+            Ok(record) => record,
             Err(error) => {
                 self.error = Some(error);
                 return;
@@ -1942,8 +1956,7 @@ impl VanillaLevelEditor {
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
-        match controller.apply_layer2_object_edits(&[ObjectEdit::SetParameter { index, parameter }])
-        {
+        match controller.apply_layer2_object_edits(&[ObjectEdit::Replace { index, record }]) {
             Ok(()) => {
                 self.selected_layer2_object = index;
                 if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() {
@@ -2120,12 +2133,7 @@ impl VanillaLevelEditor {
                     return None;
                 }
                 let model = definitions.mapped_resize_model(record, handler_map)?;
-                (!matches!(
-                    model,
-                    lm_render::StandardObjectResizeModel::Fixed
-                        | lm_render::StandardObjectResizeModel::ExtendedCommand27Axes
-                ))
-                .then_some((index, model))
+                (model != lm_render::StandardObjectResizeModel::Fixed).then_some((index, model))
             })
             .collect()
     }
@@ -3248,6 +3256,35 @@ fn canvas_minor_tiles(
         .max()
         .unwrap_or(16);
     object_end.max(sprite_end).clamp(16, 32)
+}
+
+fn extended_command27_canvas_extent(
+    records: &[ObjectRecord],
+    placements: &[lm_level::NativeObjectPlacement],
+    resize_models: &HashMap<usize, lm_render::StandardObjectResizeModel>,
+    vertical: bool,
+) -> (u16, u16) {
+    let (major, minor) = placements
+        .iter()
+        .filter_map(|placement| {
+            (resize_models.get(&placement.record_index)
+                == Some(&lm_render::StandardObjectResizeModel::ExtendedCommand27Axes))
+            .then_some(())?;
+            let record = records.get(placement.record_index)?;
+            let (width, height) = record.extended_command27_tile_size()?;
+            let (x, y) = placement.tile_coordinates(vertical);
+            let x_end = x.saturating_add(u16::from(width));
+            let y_end = y.saturating_add(u16::from(height));
+            Some(if vertical {
+                (y_end, x_end)
+            } else {
+                (x_end, y_end)
+            })
+        })
+        .fold((16, 16), |(major, minor), (next_major, next_minor)| {
+            (major.max(next_major), minor.max(next_minor))
+        });
+    (major.clamp(16, 512), minor.clamp(16, 32))
 }
 
 fn rom_canvas_size(major_tiles: u16, minor_tiles: u16, vertical: bool) -> egui::Vec2 {
@@ -4407,14 +4444,14 @@ fn standard_object_resize_handle(
     };
     let encoded = authenticated_standard_object_rect(canvas, placement, record, model, vertical)?;
     let center = match model {
-        ParameterNibbles => encoded.max,
+        ParameterNibbles | ExtendedCommand27Axes => encoded.max,
         MajorNibble if vertical => egui::pos2(encoded.center().x, encoded.bottom()),
         MajorNibble => egui::pos2(encoded.right(), encoded.center().y),
         MinorNibble { .. } | MinorByte { .. } if vertical => {
             egui::pos2(encoded.right(), encoded.center().y)
         }
         MinorNibble { .. } | MinorByte { .. } => egui::pos2(encoded.center().x, encoded.bottom()),
-        ExtendedCommand27Axes | Fixed => return None,
+        Fixed => return None,
     };
     Some(egui::Rect::from_center_size(center, egui::vec2(8.0, 8.0)))
 }
@@ -4429,6 +4466,21 @@ fn authenticated_standard_object_rect(
     use lm_render::StandardObjectResizeModel::{
         ExtendedCommand27Axes, Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
     };
+    if model == ExtendedCommand27Axes {
+        let (width, height) = record.extended_command27_tile_size()?;
+        let (tile_x, tile_y) = placement.tile_coordinates(vertical);
+        return Some(egui::Rect::from_min_size(
+            canvas.min
+                + egui::vec2(
+                    f32::from(tile_x) * ROM_LEVEL_CANVAS_CELL,
+                    f32::from(tile_y) * ROM_LEVEL_CANVAS_CELL,
+                ),
+            egui::vec2(
+                f32::from(width) * ROM_LEVEL_CANVAS_CELL,
+                f32::from(height) * ROM_LEVEL_CANVAS_CELL,
+            ),
+        ));
+    }
     let (major_span, minor_span) = match model {
         ParameterNibbles => (
             u16::from(placement.major_span),
@@ -4443,7 +4495,8 @@ fn authenticated_standard_object_rect(
             u16::from(fixed_major_tiles),
             u16::from(record.parameter()) + 1,
         ),
-        ExtendedCommand27Axes | Fixed => return None,
+        ExtendedCommand27Axes => unreachable!("handled above"),
+        Fixed => return None,
     };
     let (tile_x, tile_y) = placement.tile_coordinates(vertical);
     let position = canvas.min
@@ -5175,6 +5228,54 @@ fn set_standard_object_minor_tiles(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn resized_standard_object_record_at_canvas_position(
+    record: &ObjectRecord,
+    placement: lm_level::NativeObjectPlacement,
+    model: lm_render::StandardObjectResizeModel,
+    position: egui::Pos2,
+    canvas: egui::Rect,
+    cell: f32,
+    vertical: bool,
+) -> Result<ObjectRecord, String> {
+    let mut resized = record.clone();
+    if model == lm_render::StandardObjectResizeModel::ExtendedCommand27Axes {
+        if cell <= 0.0 || !canvas.contains(position) {
+            return Err("object resize ended outside the native level canvas".into());
+        }
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "validated finite canvas coordinates are intentionally quantized to tile indexes"
+        )]
+        let target_x = ((position.x - canvas.left()) / cell).floor() as i32;
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "validated finite canvas coordinates are intentionally quantized to tile indexes"
+        )]
+        let target_y = ((position.y - canvas.top()) / cell).floor() as i32;
+        let (origin_x, origin_y) = placement.tile_coordinates(vertical);
+        let width = target_x - i32::from(origin_x) + 1;
+        let height = target_y - i32::from(origin_y) + 1;
+        if width < 1 || height < 1 {
+            return Err("object resize handle cannot move before the object origin".into());
+        }
+        resized
+            .set_extended_command27_tile_size(
+                u8::try_from(width).map_err(|_| "horizontal object size is too large")?,
+                u8::try_from(height).map_err(|_| "vertical object size is too large")?,
+            )
+            .map_err(|error| error.to_string())?;
+        return Ok(resized);
+    }
+    let parameter = resized_standard_object_parameter_at_canvas_position(
+        record, placement, model, position, canvas, cell, vertical,
+    )?;
+    resized
+        .set_parameter(parameter)
+        .map_err(|error| error.to_string())?;
+    Ok(resized)
+}
+
 #[allow(
     clippy::too_many_arguments,
     clippy::cast_possible_truncation,
@@ -5522,6 +5623,84 @@ mod tests {
                 false,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn extended_command27_canvas_resize_uses_physical_axes_in_both_level_orientations() {
+        let record =
+            ObjectRecord::new(vec![0x40, 0x70, 0x84, 0xc3, 0xaa, 0xbb, 0x06, 0xdd]).unwrap();
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 512.0));
+        let horizontal = resized_standard_object_record_at_canvas_position(
+            &record,
+            resize_test_placement(),
+            lm_render::StandardObjectResizeModel::ExtendedCommand27Axes,
+            egui::pos2(14.5 * 16.0, 8.5 * 16.0),
+            canvas,
+            16.0,
+            false,
+        )
+        .unwrap();
+        let vertical = resized_standard_object_record_at_canvas_position(
+            &record,
+            resize_test_placement(),
+            lm_render::StandardObjectResizeModel::ExtendedCommand27Axes,
+            egui::pos2(7.5 * 16.0, 15.5 * 16.0),
+            canvas,
+            16.0,
+            true,
+        )
+        .unwrap();
+        assert_eq!(horizontal.extended_command27_tile_size(), Some((5, 6)));
+        assert_eq!(vertical.extended_command27_tile_size(), Some((5, 6)));
+        for index in [3, 4, 5, 7] {
+            assert_eq!(horizontal.encoded()[index], record.encoded()[index]);
+            assert_eq!(vertical.encoded()[index], record.encoded()[index]);
+        }
+    }
+
+    #[test]
+    fn extended_command27_canvas_extent_and_handle_follow_physical_bounds() {
+        let record = ObjectRecord::new(vec![0x40, 0x70, 29, 0xc0, 0, 0, 19]).unwrap();
+        let placement = resize_test_placement();
+        let records = [record.clone()];
+        let placements = [placement];
+        let models = HashMap::from([(
+            0,
+            lm_render::StandardObjectResizeModel::ExtendedCommand27Axes,
+        )]);
+        assert_eq!(
+            extended_command27_canvas_extent(&records, &placements, &models, false),
+            (40, 23)
+        );
+        assert_eq!(
+            extended_command27_canvas_extent(&records, &placements, &models, true),
+            (30, 32)
+        );
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 512.0));
+        let horizontal = standard_object_resize_handle(
+            canvas,
+            placement,
+            &record,
+            lm_render::StandardObjectResizeModel::ExtendedCommand27Axes,
+            false,
+        )
+        .unwrap();
+        let vertical = standard_object_resize_handle(
+            canvas,
+            placement,
+            &record,
+            lm_render::StandardObjectResizeModel::ExtendedCommand27Axes,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            horizontal.center(),
+            egui::pos2(40.0 * ROM_LEVEL_CANVAS_CELL, 23.0 * ROM_LEVEL_CANVAS_CELL)
+        );
+        assert_eq!(
+            vertical.center(),
+            egui::pos2(33.0 * ROM_LEVEL_CANVAS_CELL, 30.0 * ROM_LEVEL_CANVAS_CELL)
         );
     }
 
@@ -5934,7 +6113,7 @@ mod tests {
     }
 
     #[test]
-    fn extended_command27_form_commits_reopens_and_undoes_in_pristine_rom() {
+    fn extended_command27_form_and_canvas_commit_reopen_and_undo_in_pristine_rom() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let source = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
         let mut app = AppState::default();
@@ -5972,7 +6151,42 @@ mod tests {
                 object_field_edits(&form, index, Some(&record)).unwrap(),
             )])
             .unwrap();
+        let current = controller.level().layer1.objects.records[index].clone();
+        let placement = controller
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .into_iter()
+            .find(|placement| placement.record_index == index)
+            .unwrap();
+        let vertical =
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                .vertical;
+        let (origin_x, origin_y) = placement.tile_coordinates(vertical);
+        let canvas =
+            egui::Rect::from_min_size(egui::Pos2::ZERO, rom_canvas_size(512, 32, vertical));
+        let resized = resized_standard_object_record_at_canvas_position(
+            &current,
+            placement,
+            lm_render::StandardObjectResizeModel::ExtendedCommand27Axes,
+            egui::pos2(
+                (f32::from(origin_x) + 4.5) * ROM_LEVEL_CANVAS_CELL,
+                (f32::from(origin_y) + 5.5) * ROM_LEVEL_CANVAS_CELL,
+            ),
+            canvas,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        )
+        .unwrap();
+        controller
+            .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
+                index,
+                record: resized,
+            }])])
+            .unwrap();
         let expected = controller.level().layer1.objects.records[index].clone();
+        assert_eq!(expected.extended_command27_tile_size(), Some((5, 6)));
         app.dispatch(prepare_commit(&controller, &snapshot).unwrap())
             .unwrap();
         let reopened = app

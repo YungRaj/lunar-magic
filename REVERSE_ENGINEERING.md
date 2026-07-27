@@ -269,6 +269,11 @@ record byte and is not part of the size. `GetSelectedObjectResizeDirectionMask` 
 confirms separate horizontal/vertical capability masks, while `SerializeLevelObjectList` at
 `00435650` confirms the seven/eight-byte framing. The Rust record model and native Layer 1/Layer 2
 forms now expose these two fields without disturbing mode flags or unrelated extension bytes.
+The complete live gesture chain also fixes their canvas interpretation: `UpdateSelectedObjectResizeDrag`
+at `004880A0` passes physical mouse X/Y deltas through `ResizeSelectionFromDragHandles` at
+`0043C560` to the first/second fields of `AdjustSelectedObjectDimensions` without consulting or
+swapping for vertical level mode. The Rust canvas therefore uses a physical bottom-right handle,
+retaining horizontal/vertical field identity in both level orientations.
 
 The custom object clipboard and template-placement subsystem through `0043b100` is now named. `LevelObjectClipboardHeader` is a recovered 32-byte structure followed by fixed 0x28-byte node records in registered format `Lunar Magic Objects V6`; copy computes selection-origin and rendered-margin metadata, while paste validates format/version fields, filters incompatible extended objects, converts encodings, translates clones, and reinserts them. The same node-stream decoder supports temporary multi-object templates, isolated preview rendering with full live-Map16 save/restore, and placement of cloned template groups. Screen-exit object evidence also upgraded the earlier generic per-screen control-node interpretation: dedicated helpers now deduplicate, create/delete, normalize flags, and synchronize the 32-entry packed screen-exit array.
 

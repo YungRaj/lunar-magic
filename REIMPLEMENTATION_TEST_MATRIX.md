@@ -80,9 +80,11 @@ The extended command-`$27` form is oracle-bound to Lunar Magic 3.63 functions at
 records, 1/128 bounds, atomic rejection, typed model selection, form conversion, and
 one lossless replacement retaining every unrelated extension byte. A supplied pristine-ROM
 fixture inserts the eight-byte form, edits both sizes through the native form, commits,
-semantically reopens the exact record, and undoes to the expanded byte baseline. Its
-two-axis canvas gesture remains disabled until physical-axis behavior in vertical modes
-is independently qualified.
+resizes it again through the canvas, semantically reopens the exact record, and undoes to
+the expanded byte baseline. Live gesture tracing through `004880A0` and `0043C560` proves
+the fields remain physical X/Y in vertical modes; canvas tests cover both orientations,
+bottom-right handle geometry, bounded extents, 1/128 rejection, and preservation of the
+optional eighth byte and unrelated extensions.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary
