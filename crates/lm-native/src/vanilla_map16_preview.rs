@@ -17,7 +17,8 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) foreground_image: egui::ColorImage,
     pub(crate) foreground_tiles: Vec<IndexedTile>,
     pub(crate) layer3_tiles: Vec<IndexedTile>,
-    pub(crate) layer3_image: Option<egui::ColorImage>,
+    pub(crate) layer3_low_image: Option<egui::ColorImage>,
+    pub(crate) layer3_high_image: Option<egui::ColorImage>,
     pub(crate) layer3_position: Option<(i16, i16)>,
     pub(crate) sprite_graphics_files: [usize; 4],
     pub(crate) common_tiles: usize,
@@ -141,9 +142,10 @@ pub(crate) fn render(
     let layer3_position = layer3
         .as_ref()
         .map(|layer3| (layer3.initial_x, layer3.initial_y));
-    let layer3_image = layer3
-        .as_ref()
-        .map(|layer3| render_layer3_plane(&layer3.tilemap, &layer3_tiles, &palette));
+    let (layer3_low_image, layer3_high_image) = layer3.as_ref().map_or((None, None), |layer3| {
+        let (low, high) = render_layer3_planes(&layer3.tilemap, &layer3_tiles, &palette);
+        (Some(low), Some(high))
+    });
     Ok(VanillaMap16Preview {
         image,
         background_image,
@@ -152,7 +154,8 @@ pub(crate) fn render(
         foreground_image,
         foreground_tiles: graphics,
         layer3_tiles,
-        layer3_image,
+        layer3_low_image,
+        layer3_high_image,
         layer3_position,
         graphics_files,
         sprite_image,
@@ -165,15 +168,16 @@ pub(crate) fn render(
     })
 }
 
-fn render_layer3_plane(
+fn render_layer3_planes(
     tilemap: &[u16],
     graphics: &[IndexedTile],
     palette: &Palette,
-) -> egui::ColorImage {
+) -> (egui::ColorImage, egui::ColorImage) {
     const TILES: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
     const TILE_PIXELS: usize = IndexedTile::WIDTH;
     const EXTENT: usize = TILES * TILE_PIXELS;
-    let mut image = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
+    let mut low = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
+    let mut high = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
     for (position, &word) in tilemap.iter().take(TILES * TILES).enumerate() {
         let tile_x = position % TILES;
         let tile_y = position / TILES;
@@ -200,12 +204,17 @@ fn render_layer3_plane(
                     continue;
                 };
                 let color = color.to_rgb8();
-                image.pixels[(tile_y * TILE_PIXELS + y) * EXTENT + tile_x * TILE_PIXELS + x] =
+                let target = if word & 0x2000 == 0 {
+                    &mut low
+                } else {
+                    &mut high
+                };
+                target.pixels[(tile_y * TILE_PIXELS + y) * EXTENT + tile_x * TILE_PIXELS + x] =
                     egui::Color32::from_rgb(color.red, color.green, color.blue);
             }
         }
     }
-    image
+    (low, high)
 }
 
 fn apply_vanilla_common_animation_frame(
@@ -606,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    fn layer3_plane_uses_two_bit_palettes_transparency_and_flip_bits() {
+    fn layer3_planes_use_priority_two_bit_palettes_transparency_and_flips() {
         let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
         let mut pixels = [0; IndexedTile::PIXEL_COUNT];
         pixels[0] = 1;
@@ -620,15 +629,18 @@ mod tests {
         let palette = Palette { colors };
         let mut tilemap = vec![0; lm_profile::SMW_US_V1_LAYER3_TILEMAP_WORDS];
         tilemap[0] = 1 | 2 << 10;
-        tilemap[1] = 1 | 2 << 10 | 0x4000;
+        tilemap[1] = 1 | 2 << 10 | 0x2000 | 0x4000;
         tilemap[64] = 1 | 2 << 10 | 0x8000;
 
-        let image = render_layer3_plane(&tilemap, &graphics, &palette);
-        assert_eq!(image.size, [512, 512]);
-        assert_eq!(image.pixels[0], egui::Color32::RED);
-        assert_eq!(image.pixels[8 + 7], egui::Color32::RED);
-        assert_eq!(image.pixels[15 * 512], egui::Color32::RED);
-        assert_eq!(image.pixels[1], egui::Color32::TRANSPARENT);
+        let (low, high) = render_layer3_planes(&tilemap, &graphics, &palette);
+        assert_eq!(low.size, [512, 512]);
+        assert_eq!(high.size, [512, 512]);
+        assert_eq!(low.pixels[0], egui::Color32::RED);
+        assert_eq!(high.pixels[8 + 7], egui::Color32::RED);
+        assert_eq!(low.pixels[15 * 512], egui::Color32::RED);
+        assert_eq!(low.pixels[8 + 7], egui::Color32::TRANSPARENT);
+        assert_eq!(high.pixels[0], egui::Color32::TRANSPARENT);
+        assert_eq!(low.pixels[1], egui::Color32::TRANSPARENT);
     }
 
     #[test]

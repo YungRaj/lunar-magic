@@ -274,7 +274,8 @@ pub(crate) struct VanillaLevelEditor {
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
     foreground_tiles: Vec<lm_graphics::IndexedTile>,
     layer3_tiles: Vec<lm_graphics::IndexedTile>,
-    layer3_texture: Option<egui::TextureHandle>,
+    layer3_low_texture: Option<egui::TextureHandle>,
+    layer3_high_texture: Option<egui::TextureHandle>,
     layer3_position: Option<(i16, i16)>,
     sprite_palette: Option<lm_graphics::Palette>,
     canvas_backdrop: Option<lm_graphics::Bgr555>,
@@ -1144,7 +1145,8 @@ impl VanillaLevelEditor {
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
         self.layer3_tiles.clear();
-        self.layer3_texture = None;
+        self.layer3_low_texture = None;
+        self.layer3_high_texture = None;
         self.layer3_position = None;
         self.sprite_palette = None;
         self.canvas_backdrop = None;
@@ -1225,7 +1227,8 @@ impl VanillaLevelEditor {
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
         self.layer3_tiles.clear();
-        self.layer3_texture = None;
+        self.layer3_low_texture = None;
+        self.layer3_high_texture = None;
         self.layer3_position = None;
         self.sprite_palette = None;
         self.canvas_backdrop = None;
@@ -1331,9 +1334,16 @@ impl VanillaLevelEditor {
                 self.sprite_tiles = preview.sprite_tiles;
                 self.foreground_tiles = preview.foreground_tiles;
                 self.layer3_tiles = preview.layer3_tiles;
-                self.layer3_texture = preview.layer3_image.map(|image| {
+                self.layer3_low_texture = preview.layer3_low_image.map(|image| {
                     context.load_texture(
-                        format!("vanilla-layer3-{level:03X}-{}", snapshot.revision),
+                        format!("vanilla-layer3-low-{level:03X}-{}", snapshot.revision),
+                        image,
+                        egui::TextureOptions::NEAREST,
+                    )
+                });
+                self.layer3_high_texture = preview.layer3_high_image.map(|image| {
+                    context.load_texture(
+                        format!("vanilla-layer3-high-{level:03X}-{}", snapshot.revision),
                         image,
                         egui::TextureOptions::NEAREST,
                     )
@@ -1686,6 +1696,16 @@ impl VanillaLevelEditor {
             custom_objects,
             custom_map16,
         );
+        let game_preview = self.game_preview();
+        if game_preview
+            && let (Some(texture), Some(position), Some(camera)) = (
+                self.layer3_low_texture.as_ref(),
+                self.layer3_position,
+                game_camera,
+            )
+        {
+            draw_wrapped_layer3_viewport(painter, rect, cell, texture, position, camera);
+        }
         let layer1_artwork_bounds = self.draw_object_artwork(
             painter,
             rect,
@@ -1698,7 +1718,6 @@ impl VanillaLevelEditor {
             custom_objects,
             custom_map16,
         );
-        let game_preview = self.game_preview();
         let (hit_layer2, hit) = if game_preview {
             (
                 ObjectPlacementHits::default(),
@@ -1755,7 +1774,7 @@ impl VanillaLevelEditor {
         });
         if game_preview
             && let (Some(texture), Some(position), Some(camera)) = (
-                self.layer3_texture.as_ref(),
+                self.layer3_high_texture.as_ref(),
                 self.layer3_position,
                 game_camera,
             )
