@@ -10,6 +10,7 @@ mod layer3_plane;
 mod level;
 mod level_map16_cache;
 mod map16;
+mod native_level_raster;
 mod observe_editor_overlays;
 mod observe_layer3_plane;
 mod overworld;
@@ -55,6 +56,10 @@ pub use level_map16_cache::{
     NativeLevelMap16CacheError, NativeLevelMap16Layout,
 };
 pub use map16::draw_map16_tile;
+pub use native_level_raster::{
+    NativeLevelRasterError, NativeLevelRasterRequest, NativeMap16Placement,
+    render_native_level_framebuffer,
+};
 pub use observe_editor_overlays::observe_editor_overlays;
 pub use observe_layer3_plane::observe_materialized_layer3_plane;
 pub use overworld::{
