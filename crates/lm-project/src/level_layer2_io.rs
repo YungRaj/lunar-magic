@@ -324,14 +324,14 @@ impl Project {
 }
 
 fn initialize_shared_background_gaps(tilemap: &mut [u8], high_byte: u8) {
-    const USED_COLUMNS: usize = 27;
-    const PLANE_COLUMNS: usize = 32;
-    const COLUMN_TILES: usize = 16;
-    for plane in 0..2 {
-        let first_gap_tile = (plane * PLANE_COLUMNS + USED_COLUMNS) * COLUMN_TILES;
-        let end_tile = (plane + 1) * PLANE_COLUMNS * COLUMN_TILES;
-        for word in tilemap[first_gap_tile * 2..end_tile * 2].chunks_exact_mut(2) {
-            word.copy_from_slice(&[0x25, high_byte]);
+    for y in 27..32 {
+        for x in 0..32 {
+            let Some(tile) = lm_level::native_layer2_tilemap_index(x, y) else {
+                continue;
+            };
+            for word in tilemap[tile * 2..tile * 2 + 2].chunks_exact_mut(2) {
+                word.copy_from_slice(&[0x25, high_byte]);
+            }
         }
     }
 }
@@ -455,13 +455,11 @@ mod tests {
     fn shared_background_gaps_match_the_vanilla_tile_25_prefill() {
         let mut tilemap = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
         initialize_shared_background_gaps(&mut tilemap, 1);
-        for plane in 0..2 {
-            for column in 0..32 {
-                for row in 0..16 {
-                    let tile = (plane * 32 + column) * 16 + row;
-                    let expected = if column >= 27 { [0x25, 1] } else { [0, 0] };
-                    assert_eq!(&tilemap[tile * 2..tile * 2 + 2], &expected);
-                }
+        for y in 0..32 {
+            for x in 0..32 {
+                let tile = lm_level::native_layer2_tilemap_index(x, y).unwrap();
+                let expected = if y >= 27 { [0x25, 1] } else { [0, 0] };
+                assert_eq!(&tilemap[tile * 2..tile * 2 + 2], &expected);
             }
         }
     }

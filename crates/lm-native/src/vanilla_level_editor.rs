@@ -26,6 +26,8 @@ const VANILLA_ENTRANCE_Y_HIGH: [u8; 16] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
 ];
 const VANILLA_LAYER2_VERTICAL_SCROLL: [u8; 16] = [3, 1, 1, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+const VANILLA_LAYER2_HORIZONTAL_SCROLL: [u8; 16] = [2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const VANILLA_INITIAL_LAYER1_Y: [u8; 4] = [0x00, 0x60, 0xc0, 0x00];
 const VANILLA_INITIAL_LAYER2_Y: [u8; 4] = [0x60, 0x90, 0xc0, 0x00];
 const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 380.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
@@ -254,6 +256,8 @@ pub(crate) struct VanillaLevelEditor {
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
     canvas_zoom_percent: Option<u16>,
+    tools_panel_visible: Option<bool>,
+    game_preview: Option<bool>,
     initial_vertical_scroll_tiles: Option<u16>,
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
@@ -345,57 +349,73 @@ impl VanillaLevelEditor {
         let sprite_count = controller.level().sprites.tokens.len();
         let object_tileset = controller.level().layer1.header.object_tileset();
         let object_family = lm_profile::smw_us_v1_object_family(object_tileset);
-        ui.label(format!(
-            "{} standard-object definitions (tileset {object_tileset:X})",
-            object_family.display_name()
-        ));
+        self.ensure_map16_assets(ui.ctx(), &snapshot, object_tileset);
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "{} standard-object definitions (tileset {object_tileset:X})",
+                object_family.display_name()
+            ));
+            let tools_visible = self.tools_panel_visible();
+            if ui
+                .button(if tools_visible {
+                    "Hide tools"
+                } else {
+                    "Show tools"
+                })
+                .clicked()
+            {
+                self.tools_panel_visible = Some(!tools_visible);
+            }
+        });
         let workspace_size = ui.available_size();
         let tool_width = workspace_tool_width(workspace_size.x);
         let mut pending_command = None;
         ui.horizontal_top(|ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(tool_width, workspace_size.y),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("vanilla-level-tool-panel")
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            self.show_staged_history(ui);
-                            egui::CollapsingHeader::new("Level and entrance settings")
-                                .id_salt("vanilla-level-settings")
-                                .show(ui, |ui| {
-                                    self.show_header_editor(ui, object_count, sprite_count);
-                                    if pending_command.is_none() {
-                                        pending_command = self.show_entrance_editor(ui, level);
-                                    }
-                                });
-                            self.show_layer2_editor(ui, custom_objects);
-                            self.show_map16_preview(ui, &snapshot, object_tileset);
-                            egui::CollapsingHeader::new("Layer 1 objects")
-                                .id_salt("vanilla-layer1-tools")
-                                .show(ui, |ui| {
-                                    self.object_list(ui);
-                                    self.object_editor(ui, custom_objects, custom_map16);
-                                });
-                            egui::CollapsingHeader::new("Sprites")
-                                .id_salt("vanilla-sprite-tools")
-                                .show(ui, |ui| {
-                                    self.sprite_list(ui);
-                                    self.sprite_editor(
-                                        ui,
-                                        custom_sprites,
-                                        external_assets,
-                                        custom_map16,
-                                    );
-                                });
-                            if pending_command.is_none() {
-                                pending_command = self.show_commit_controls(ui, &snapshot);
-                            }
-                        });
-                },
-            );
-            ui.separator();
+            if self.tools_panel_visible() {
+                ui.allocate_ui_with_layout(
+                    egui::vec2(tool_width, workspace_size.y),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt("vanilla-level-tool-panel")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                self.show_staged_history(ui);
+                                egui::CollapsingHeader::new("Level and entrance settings")
+                                    .id_salt("vanilla-level-settings")
+                                    .show(ui, |ui| {
+                                        self.show_header_editor(ui, object_count, sprite_count);
+                                        if pending_command.is_none() {
+                                            pending_command = self.show_entrance_editor(ui, level);
+                                        }
+                                    });
+                                self.show_layer2_editor(ui, custom_objects);
+                                self.show_map16_preview(ui, object_tileset);
+                                egui::CollapsingHeader::new("Layer 1 objects")
+                                    .id_salt("vanilla-layer1-tools")
+                                    .show(ui, |ui| {
+                                        self.object_list(ui);
+                                        self.object_editor(ui, custom_objects, custom_map16);
+                                    });
+                                egui::CollapsingHeader::new("Sprites")
+                                    .id_salt("vanilla-sprite-tools")
+                                    .show(ui, |ui| {
+                                        self.sprite_list(ui);
+                                        self.sprite_editor(
+                                            ui,
+                                            custom_sprites,
+                                            external_assets,
+                                            custom_map16,
+                                        );
+                                    });
+                                if pending_command.is_none() {
+                                    pending_command = self.show_commit_controls(ui, &snapshot);
+                                }
+                            });
+                    },
+                );
+                ui.separator();
+            }
             ui.allocate_ui_with_layout(
                 egui::vec2(ui.available_width(), workspace_size.y),
                 egui::Layout::top_down(egui::Align::Min),
@@ -411,6 +431,14 @@ impl VanillaLevelEditor {
             );
         });
         pending_command
+    }
+
+    fn tools_panel_visible(&self) -> bool {
+        self.tools_panel_visible.unwrap_or(true)
+    }
+
+    fn game_preview(&self) -> bool {
+        self.game_preview.unwrap_or(true)
     }
 
     fn show_commit_controls(
@@ -1120,89 +1148,13 @@ impl VanillaLevelEditor {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn show_map16_preview(
-        &mut self,
-        ui: &mut egui::Ui,
-        snapshot: &lm_app::ControllerSnapshot,
-        object_tileset: u8,
-    ) {
+    fn show_map16_preview(&mut self, ui: &mut egui::Ui, object_tileset: u8) {
         egui::CollapsingHeader::new(format!(
             "Pristine Map16 graphics — object tileset {object_tileset:X}"
         ))
         .default_open(true)
         .show(ui, |ui| {
             let sprite_tileset = self.form.sprite_tileset;
-            let key = (snapshot.revision, object_tileset, sprite_tileset);
-            if self.map16_key != Some(key) {
-                self.map16_texture = None;
-                self.background_map16_texture = None;
-                self.sprite_texture = None;
-                self.sprite_tiles.clear();
-                self.foreground_tiles.clear();
-                self.layer3_tiles.clear();
-                self.sprite_palette = None;
-                self.canvas_backdrop = None;
-                self.external_sprite_textures.clear();
-                self.foreground_texture = None;
-                self.map16_summary = None;
-                self.map16_error = None;
-                match crate::vanilla_map16_preview::render(
-                    snapshot.rom_bytes.clone(),
-                    self.controller
-                        .as_ref()
-                        .map_or(0, |controller| {
-                            u16::try_from(controller.level().number).unwrap_or(0)
-                        }),
-                    self.controller
-                        .as_ref()
-                        .map_or_default(|controller| controller.level().layer1.header),
-                ) {
-                    Ok(preview) => {
-                        self.map16_summary = Some((
-                            preview.graphics_files,
-                            preview.sprite_graphics_files,
-                            preview.common_tiles,
-                            preview.tileset_tiles,
-                        ));
-                        self.map16_texture = Some(ui.ctx().load_texture(
-                            format!("vanilla-map16-{object_tileset:X}-{}", snapshot.revision),
-                            preview.image,
-                            egui::TextureOptions::NEAREST,
-                        ));
-                        self.background_map16_texture = Some(ui.ctx().load_texture(
-                            format!(
-                                "vanilla-background-map16-{object_tileset:X}-{}",
-                                snapshot.revision
-                            ),
-                            preview.background_image,
-                            egui::TextureOptions::NEAREST,
-                        ));
-                        self.sprite_texture = Some(ui.ctx().load_texture(
-                            format!(
-                                "vanilla-sprite-gfx-{sprite_tileset:X}-{}",
-                                snapshot.revision
-                            ),
-                            preview.sprite_image,
-                            egui::TextureOptions::NEAREST,
-                        ));
-                        self.foreground_texture = Some(ui.ctx().load_texture(
-                            format!(
-                                "vanilla-foreground-gfx-{object_tileset:X}-{}",
-                                snapshot.revision
-                            ),
-                            preview.foreground_image,
-                            egui::TextureOptions::NEAREST,
-                        ));
-                        self.sprite_tiles = preview.sprite_tiles;
-                        self.foreground_tiles = preview.foreground_tiles;
-                        self.layer3_tiles = preview.layer3_tiles;
-                        self.canvas_backdrop = Some(preview.backdrop);
-                        self.sprite_palette = Some(preview.palette);
-                    }
-                    Err(error) => self.map16_error = Some(error),
-                }
-                self.map16_key = Some(key);
-            }
             if let Some((files, sprite_files, common, specific)) = self.map16_summary {
                 ui.label(format!(
                     "GFX{:02X}/GFX{:02X}/GFX{:02X}/GFX{:02X}; {common} common and {specific} tileset-specific definitions",
@@ -1232,6 +1184,85 @@ impl VanillaLevelEditor {
                 ui.colored_label(egui::Color32::RED, error);
             }
         });
+    }
+
+    fn ensure_map16_assets(
+        &mut self,
+        context: &egui::Context,
+        snapshot: &lm_app::ControllerSnapshot,
+        object_tileset: u8,
+    ) {
+        let sprite_tileset = self.form.sprite_tileset;
+        let key = (snapshot.revision, object_tileset, sprite_tileset);
+        if self.map16_key == Some(key) {
+            return;
+        }
+        self.map16_texture = None;
+        self.background_map16_texture = None;
+        self.sprite_texture = None;
+        self.sprite_tiles.clear();
+        self.foreground_tiles.clear();
+        self.layer3_tiles.clear();
+        self.sprite_palette = None;
+        self.canvas_backdrop = None;
+        self.external_sprite_textures.clear();
+        self.foreground_texture = None;
+        self.map16_summary = None;
+        self.map16_error = None;
+        match crate::vanilla_map16_preview::render(
+            snapshot.rom_bytes.clone(),
+            self.controller.as_ref().map_or(0, |controller| {
+                u16::try_from(controller.level().number).unwrap_or(0)
+            }),
+            self.controller
+                .as_ref()
+                .map_or_default(|controller| controller.level().layer1.header),
+        ) {
+            Ok(preview) => {
+                self.map16_summary = Some((
+                    preview.graphics_files,
+                    preview.sprite_graphics_files,
+                    preview.common_tiles,
+                    preview.tileset_tiles,
+                ));
+                self.map16_texture = Some(context.load_texture(
+                    format!("vanilla-map16-{object_tileset:X}-{}", snapshot.revision),
+                    preview.image,
+                    egui::TextureOptions::NEAREST,
+                ));
+                self.background_map16_texture = Some(context.load_texture(
+                    format!(
+                        "vanilla-background-map16-{object_tileset:X}-{}",
+                        snapshot.revision
+                    ),
+                    preview.background_image,
+                    egui::TextureOptions::NEAREST,
+                ));
+                self.sprite_texture = Some(context.load_texture(
+                    format!(
+                        "vanilla-sprite-gfx-{sprite_tileset:X}-{}",
+                        snapshot.revision
+                    ),
+                    preview.sprite_image,
+                    egui::TextureOptions::NEAREST,
+                ));
+                self.foreground_texture = Some(context.load_texture(
+                    format!(
+                        "vanilla-foreground-gfx-{object_tileset:X}-{}",
+                        snapshot.revision
+                    ),
+                    preview.foreground_image,
+                    egui::TextureOptions::NEAREST,
+                ));
+                self.sprite_tiles = preview.sprite_tiles;
+                self.foreground_tiles = preview.foreground_tiles;
+                self.layer3_tiles = preview.layer3_tiles;
+                self.canvas_backdrop = Some(preview.backdrop);
+                self.sprite_palette = Some(preview.palette);
+            }
+            Err(error) => self.map16_error = Some(error),
+        }
+        self.map16_key = Some(key);
     }
 
     fn object_list(&mut self, ui: &mut egui::Ui) {
@@ -1341,7 +1372,13 @@ impl VanillaLevelEditor {
             major_tiles = major_tiles.max(32);
         }
         let cell = self.canvas_cell();
-        let canvas_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
+        let world_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
+        let game_preview = self.game_preview();
+        let canvas_size = if game_preview {
+            egui::vec2(16.0 * cell, 14.0 * cell)
+        } else {
+            world_size
+        };
         self.show_canvas_tools(ui);
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
@@ -1353,17 +1390,27 @@ impl VanillaLevelEditor {
         let requested_vertical_scroll = self
             .initial_vertical_scroll_tiles
             .map(|row| f32::from(row) * cell);
-        if let Some(offset) = requested_vertical_scroll {
+        if !game_preview && let Some(offset) = requested_vertical_scroll {
             scroll_area = scroll_area.vertical_scroll_offset(offset);
         }
         let scroll_output = scroll_area.show(ui, |ui| {
             let (rect, response) =
                 ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
+            let paint_rect = if game_preview {
+                let (origin_x, origin_y) =
+                    game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical);
+                egui::Rect::from_min_size(
+                    rect.min - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell),
+                    world_size,
+                )
+            } else {
+                rect
+            };
             self.paint_object_canvas(
                 &painter,
                 &response,
-                rect,
+                paint_rect,
                 cell,
                 major_tiles,
                 minor_tiles,
@@ -1381,7 +1428,7 @@ impl VanillaLevelEditor {
                 custom_map16,
             );
         });
-        if let Some(requested) = requested_vertical_scroll {
+        if !game_preview && let Some(requested) = requested_vertical_scroll {
             let target = clamped_scroll_offset(
                 requested,
                 scroll_output.content_size.y,
@@ -1396,6 +1443,11 @@ impl VanillaLevelEditor {
 
     fn show_canvas_tools(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
+            let mut game_preview = self.game_preview();
+            if ui.toggle_value(&mut game_preview, "Game pixels").changed() {
+                self.game_preview = Some(game_preview);
+            }
+            ui.separator();
             ui.label("Canvas tool:");
             ui.selectable_value(&mut self.placement_mode, None, "Select / move");
             ui.selectable_value(
@@ -1456,10 +1508,15 @@ impl VanillaLevelEditor {
     }
 
     fn canvas_cell(&self) -> f32 {
-        ROM_LEVEL_CANVAS_CELL * f32::from(self.canvas_zoom_percent()) / 100.0
+        let base = if self.game_preview() {
+            16.0
+        } else {
+            ROM_LEVEL_CANVAS_CELL
+        };
+        base * f32::from(self.canvas_zoom_percent()) / 100.0
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn paint_object_canvas(
         &mut self,
         painter: &egui::Painter,
@@ -1482,6 +1539,9 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
+        let game_camera = self
+            .game_preview()
+            .then(|| game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical));
         draw_layer2_tilemap(
             painter,
             rect,
@@ -1497,6 +1557,7 @@ impl VanillaLevelEditor {
             major_tiles,
             minor_tiles,
             vertical,
+            game_camera,
         );
         // The object cache uses SMW's 0x1B0-byte 16×27 screen pages. The 32×32 Layer 2 plane may
         // enlarge the visible canvas, but its final five rows are not object-cache coordinates.
@@ -1525,34 +1586,45 @@ impl VanillaLevelEditor {
             custom_objects,
             custom_map16,
         );
-        let layer2_resize_models = self.active_object_resize_models(layer2_records, custom_objects);
-        let layer1_resize_models = self.active_object_resize_models(records, custom_objects);
-        let hit_layer2 = draw_object_placement_markers(
-            painter,
-            response,
-            rect,
-            vertical,
-            layer2_records,
-            layer2_placements,
-            self.selected_layer2_object,
-            self.map16_texture.as_ref(),
-            &layer2_artwork_bounds,
-            &layer2_resize_models,
-            cell,
-        );
-        let hit = draw_object_placement_markers(
-            painter,
-            response,
-            rect,
-            vertical,
-            records,
-            placements,
-            self.selected_object,
-            self.map16_texture.as_ref(),
-            &layer1_artwork_bounds,
-            &layer1_resize_models,
-            cell,
-        );
+        let game_preview = self.game_preview();
+        let (hit_layer2, hit) = if game_preview {
+            (
+                ObjectPlacementHits::default(),
+                ObjectPlacementHits::default(),
+            )
+        } else {
+            let layer2_resize_models =
+                self.active_object_resize_models(layer2_records, custom_objects);
+            let layer1_resize_models = self.active_object_resize_models(records, custom_objects);
+            (
+                draw_object_placement_markers(
+                    painter,
+                    response,
+                    rect,
+                    vertical,
+                    layer2_records,
+                    layer2_placements,
+                    self.selected_layer2_object,
+                    self.map16_texture.as_ref(),
+                    &layer2_artwork_bounds,
+                    &layer2_resize_models,
+                    cell,
+                ),
+                draw_object_placement_markers(
+                    painter,
+                    response,
+                    rect,
+                    vertical,
+                    records,
+                    placements,
+                    self.selected_object,
+                    self.map16_texture.as_ref(),
+                    &layer1_artwork_bounds,
+                    &layer1_resize_models,
+                    cell,
+                ),
+            )
+        };
         let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
             painter,
             target: rect,
@@ -1567,23 +1639,26 @@ impl VanillaLevelEditor {
             custom_sprites,
             custom_map16,
             external_textures: &self.external_sprite_textures,
+            editor_overlays: !game_preview,
         });
         // Paint the editor grid after the level artwork. Drawing opaque grid lines underneath
         // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
-        draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
-        self.handle_canvas_interaction(
-            response,
-            hit.body,
-            hit.resize,
-            hit_layer2.body,
-            hit_layer2.resize,
-            hit_sprite,
-            layer2_records,
-            records,
-            rect,
-            cell,
-            vertical,
-        );
+        if !game_preview {
+            draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+            self.handle_canvas_interaction(
+                response,
+                hit.body,
+                hit.resize,
+                hit_layer2.body,
+                hit_layer2.resize,
+                hit_sprite,
+                layer2_records,
+                records,
+                rect,
+                cell,
+                vertical,
+            );
+        }
     }
 
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -4399,6 +4474,7 @@ fn draw_layer2_tilemap(
     major_tiles: u16,
     minor_tiles: u16,
     vertical: bool,
+    game_camera: Option<(u16, u16)>,
 ) {
     let (columns, rows) = if vertical {
         (usize::from(minor_tiles), usize::from(major_tiles))
@@ -4409,7 +4485,10 @@ fn draw_layer2_tilemap(
         for x in 0..columns {
             let shared_background = background_map16_texture.is_some();
             let (background_x, background_y) = if shared_background {
-                vanilla_shared_background_coordinates(x, y, entrance)
+                game_camera.map_or_else(
+                    || vanilla_shared_background_coordinates(x, y, entrance),
+                    |camera| vanilla_game_background_coordinates(x, y, entrance, camera),
+                )
             } else {
                 (x, y)
             };
@@ -4448,9 +4527,48 @@ fn draw_layer2_tilemap(
     }
 }
 
-fn presented_layer2_tilemap_index(x: usize, y: usize, shared_background: bool) -> Option<usize> {
-    let columns = if shared_background { 27 } else { 32 };
-    lm_level::native_layer2_tilemap_index(x % columns, y % 32)
+fn vanilla_game_background_coordinates(
+    layer1_x: usize,
+    layer1_y: usize,
+    entrance: VanillaMainEntrance,
+    camera: (u16, u16),
+) -> (usize, usize) {
+    let setting = usize::from(entrance.position >> 4);
+    let camera_x = usize::from(camera.0);
+    let camera_y = usize::from(camera.1);
+    let initial_layer1_y =
+        usize::from(VANILLA_INITIAL_LAYER1_Y[usize::from((entrance.screen_and_method >> 2) & 3)])
+            / 16;
+    let initial_layer2_y =
+        usize::from(VANILLA_INITIAL_LAYER2_Y[usize::from(entrance.screen_and_method & 3)]) / 16;
+    let layer2_camera_x = scale_layer2_camera(camera_x, VANILLA_LAYER2_HORIZONTAL_SCROLL[setting]);
+    let vertical_scroll = VANILLA_LAYER2_VERTICAL_SCROLL[setting];
+    let layer2_camera_y = i64::try_from(initial_layer2_y).unwrap_or_default()
+        + i64::try_from(scale_layer2_camera(camera_y, vertical_scroll)).unwrap_or_default()
+        - i64::try_from(scale_layer2_camera(initial_layer1_y, vertical_scroll)).unwrap_or_default();
+
+    let source_x = i64::try_from(layer2_camera_x).unwrap_or_default()
+        + i64::try_from(layer1_x).unwrap_or_default()
+        - i64::try_from(camera_x).unwrap_or_default();
+    let source_y = layer2_camera_y + i64::try_from(layer1_y).unwrap_or_default()
+        - i64::try_from(camera_y).unwrap_or_default();
+    (
+        usize::try_from(source_x.rem_euclid(32)).unwrap_or_default(),
+        usize::try_from(source_y.rem_euclid(32)).unwrap_or_default(),
+    )
+}
+
+const fn scale_layer2_camera(position: usize, scroll_setting: u8) -> usize {
+    match scroll_setting {
+        0 => 0,
+        1 => position,
+        2 => position / 2,
+        _ => position / 32,
+    }
+}
+
+fn presented_layer2_tilemap_index(x: usize, y: usize, _shared_background: bool) -> Option<usize> {
+    lm_level::native_layer2_tilemap_index(x % 32, y % 32)
 }
 
 fn vanilla_shared_background_coordinates(
@@ -5085,6 +5203,7 @@ struct SpritePlacementDraw<'a> {
     custom_sprites: Option<&'a lm_level::SscResolvedTable>,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
     external_textures: &'a HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
+    editor_overlays: bool,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -5103,6 +5222,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         custom_sprites,
         custom_map16,
         external_textures,
+        editor_overlays,
     } = request;
     let mut hit = None;
     let mut standard_8a_count = 0_u8;
@@ -5177,7 +5297,9 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     sprite_preview_part_rect(marker, part.x, part.y, cell_size),
                 );
             }
-        } else if should_draw_unresolved_sprite_marker(uses_standard, placement.sprite_number) {
+        } else if editor_overlays
+            && should_draw_unresolved_sprite_marker(uses_standard, placement.sprite_number)
+        {
             painter.rect_filled(
                 marker,
                 marker.width() / 2.0,
@@ -5195,7 +5317,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 egui::Color32::WHITE,
             );
         }
-        if placement.token_index == selected {
+        if editor_overlays && placement.token_index == selected {
             painter.rect_stroke(
                 interactive_rect,
                 marker.width() / 2.0,
@@ -5203,7 +5325,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 egui::StrokeKind::Inside,
             );
         }
-        if cursor.is_some_and(|position| interactive_rect.contains(position)) {
+        if editor_overlays && cursor.is_some_and(|position| interactive_rect.contains(position)) {
             hit = Some(placement.token_index);
         }
     }
@@ -5874,6 +5996,30 @@ fn clamped_scroll_offset(requested: f32, content_extent: f32, viewport_extent: f
     requested.clamp(0.0, (content_extent - viewport_extent).max(0.0))
 }
 
+fn game_preview_origin(
+    entrance: VanillaMainEntrance,
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+) -> (u16, u16) {
+    let entrance_screen = u16::from(entrance.level_mode_and_screen & 0x1f);
+    if vertical {
+        let y = entrance_screen
+            .saturating_mul(16)
+            .min(major_tiles.saturating_sub(14));
+        (0, y)
+    } else {
+        let x = entrance_screen
+            .saturating_mul(16)
+            .min(major_tiles.saturating_sub(16));
+        let y =
+            u16::from(VANILLA_INITIAL_LAYER1_Y[usize::from((entrance.screen_and_method >> 2) & 3)])
+                / 16;
+        let y = y.min(minor_tiles.saturating_sub(14));
+        (x, y)
+    }
+}
+
 fn object_field_edits(
     form: &ObjectForm,
     index: usize,
@@ -6400,6 +6546,16 @@ mod tests {
             assert!(tools <= ROM_LEVEL_TOOL_PANEL_WIDTH);
             assert!(width - tools > width * 0.57);
         }
+    }
+
+    #[test]
+    fn level_tools_default_visible_and_can_yield_the_complete_workspace() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(editor.tools_panel_visible());
+        editor.tools_panel_visible = Some(false);
+        assert!(!editor.tools_panel_visible());
+        editor.tools_panel_visible = Some(true);
+        assert!(editor.tools_panel_visible());
     }
 
     #[test]
@@ -7356,6 +7512,24 @@ mod tests {
     }
 
     #[test]
+    fn level_105_game_preview_uses_initial_smw_camera_positions() {
+        let entrance = VanillaMainEntrance {
+            position: 0x5b,
+            screen_and_method: 0x9a,
+            ..VanillaMainEntrance::default()
+        };
+        assert_eq!(game_preview_origin(entrance, 512, 27, false), (0, 12));
+        assert_eq!(
+            vanilla_game_background_coordinates(0, 12, entrance, (0, 12)),
+            (0, 12)
+        );
+        assert_eq!(
+            vanilla_game_background_coordinates(15, 25, entrance, (0, 12)),
+            (15, 25)
+        );
+    }
+
+    #[test]
     fn rom_canvas_major_extent_is_bounded_to_native_screen_space() {
         let sprites = [lm_level::NativeSpritePlacement {
             token_index: 0,
@@ -8158,11 +8332,11 @@ mod tests {
         }
         assert_eq!(
             presented_layer2_tilemap_index(27, 0, true),
-            lm_level::native_layer2_tilemap_index(0, 0)
+            lm_level::native_layer2_tilemap_index(27, 0)
         );
         assert_eq!(
             presented_layer2_tilemap_index(53, 15, true),
-            lm_level::native_layer2_tilemap_index(26, 15)
+            lm_level::native_layer2_tilemap_index(21, 15)
         );
     }
 

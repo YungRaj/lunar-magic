@@ -348,7 +348,7 @@ pub enum NativeLayer2Data {
     Tilemap(Vec<u8>),
 }
 
-/// Expands the legacy 0x360-byte tile-number layout into 0x400 little-endian tile words.
+/// Expands vanilla SMW's two row-major 16×27 background screens into the native 32×32 canvas.
 ///
 /// # Errors
 ///
@@ -362,18 +362,18 @@ pub fn expand_legacy_layer2_tilemap(
     }
     let mut output = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
     for (source, value) in bytes.iter().copied().enumerate() {
-        let tile = if source < 0x1b0 {
-            source
-        } else {
-            source + 0x50
-        };
+        let screen = source / 0x1b0;
+        let within_screen = source % 0x1b0;
+        let screen_x = within_screen % 16;
+        let y = within_screen / 16;
+        let tile = legacy_background_native_index(screen, screen_x, y);
         output[tile * 2] = value;
         output[tile * 2 + 1] = high_byte;
     }
     Ok(output)
 }
 
-/// Compacts the legacy-representable portion of an interleaved tilemap.
+/// Compacts the native canvas into vanilla SMW's two row-major 16×27 background screens.
 ///
 /// # Errors
 ///
@@ -386,23 +386,38 @@ pub fn compact_legacy_layer2_tilemap(
         return Err(NativeLayer2Error::TilemapLength(bytes.len()));
     }
     let mut output = Vec::with_capacity(LEGACY_LAYER2_TILEMAP_LEN);
-    for tile in 0..0x400 {
-        let represented = tile < 0x1b0 || (0x200..0x3b0).contains(&tile);
-        let word = &bytes[tile * 2..tile * 2 + 2];
-        if represented {
-            if word[1] != high_byte {
-                return Err(NativeLayer2Error::LegacyHighByte {
-                    tile,
-                    actual: word[1],
-                    expected: high_byte,
-                });
+    let mut represented = [false; 1024];
+    for screen in 0..2 {
+        for y in 0..27 {
+            for screen_x in 0..16 {
+                let tile = legacy_background_native_index(screen, screen_x, y);
+                represented[tile] = true;
+                let word = &bytes[tile * 2..tile * 2 + 2];
+                if word[1] != high_byte {
+                    return Err(NativeLayer2Error::LegacyHighByte {
+                        tile,
+                        actual: word[1],
+                        expected: high_byte,
+                    });
+                }
+                output.push(word[0]);
             }
-            output.push(word[0]);
-        } else if word != [0, 0] {
-            return Err(NativeLayer2Error::LegacyUnusedWord { tile });
+        }
+    }
+    for (tile, represented) in represented.into_iter().enumerate() {
+        if !represented {
+            let word = &bytes[tile * 2..tile * 2 + 2];
+            if word != [0, 0] {
+                return Err(NativeLayer2Error::LegacyUnusedWord { tile });
+            }
         }
     }
     Ok(output)
+}
+
+const fn legacy_background_native_index(screen: usize, screen_x: usize, y: usize) -> usize {
+    let x = screen * 16 + screen_x;
+    ((y >> 4) * 31 + x) * 16 + y
 }
 
 /// Interleaves two 0x400-byte low/high planes into 0x400 little-endian tile words.
@@ -875,9 +890,14 @@ mod tests {
 
         let legacy = vec![0xf1; LEGACY_LAYER2_TILEMAP_LEN];
         let expanded = expand_legacy_layer2_tilemap(&legacy, 0).unwrap();
-        assert_eq!(&expanded[..4], &[0xf1, 0, 0xf1, 0]);
-        assert_eq!(&expanded[0x360..0x400], &[0; 0xa0]);
-        assert_eq!(&expanded[0x400..0x404], &[0xf1, 0, 0xf1, 0]);
+        for (x, y) in [(0, 0), (15, 26), (16, 0), (31, 26)] {
+            let tile = native_layer2_tilemap_index(x, y).unwrap();
+            assert_eq!(&expanded[tile * 2..tile * 2 + 2], &[0xf1, 0]);
+        }
+        for x in 0..32 {
+            let tile = native_layer2_tilemap_index(x, 27).unwrap();
+            assert_eq!(&expanded[tile * 2..tile * 2 + 2], &[0, 0]);
+        }
         assert_eq!(compact_legacy_layer2_tilemap(&expanded, 0).unwrap(), legacy);
     }
 }
