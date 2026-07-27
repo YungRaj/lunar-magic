@@ -45,6 +45,11 @@ suppresses built-in artwork even when its part list is empty, while description-
 retains the authenticated standard fallback. A real-ROM test constructs a two-part OSC object,
 inserts its command-specific native record into level `$105`, commits and reopens the exact record,
 and resolves the same display after reopen.
+OSC parts below `$200` use the base Map16 atlas, while higher parts resolve only
+against an available M16 custom-Map16 definition. Missing definitions, S16-only
+metadata, out-of-range indexes, and unavailable foreground assets now produce a
+bounded red marker labeled with the unresolved tile ID instead of silently
+disappearing; focused tests distinguish base, resolved-custom, and unresolved cases.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary

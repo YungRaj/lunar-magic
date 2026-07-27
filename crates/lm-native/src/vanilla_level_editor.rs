@@ -3856,18 +3856,60 @@ fn draw_custom_object_parts(
             origin + offset,
             egui::vec2(request.cell_size, request.cell_size),
         );
-        let definition = match request.custom_map16 {
-            Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) => {
-                sidecar.tile(usize::from(part.tile & 0x3fff))
+        match custom_object_part_source(part.tile, request.custom_map16) {
+            CustomObjectPartSource::Base(tile) => {
+                draw_map16_atlas_tile(painter, request.texture, target, tile);
             }
-            Some(lm_app::NativeMap16SidecarDocument::S16(_)) | None => None,
-        };
-        if let (Some(definition), Some(texture)) = (definition, request.foreground_texture) {
-            draw_custom_map16_tile(painter, texture, target, definition);
-        } else if part.tile < 0x200 {
-            draw_map16_atlas_tile(painter, request.texture, target, part.tile);
+            CustomObjectPartSource::Custom(definition) => {
+                if let Some(texture) = request.foreground_texture {
+                    draw_custom_map16_tile(painter, texture, target, definition);
+                } else {
+                    draw_unresolved_custom_object_part(painter, target, part.tile);
+                }
+            }
+            CustomObjectPartSource::Unresolved => {
+                draw_unresolved_custom_object_part(painter, target, part.tile);
+            }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CustomObjectPartSource {
+    Base(u16),
+    Custom(lm_level::Map16Tile),
+    Unresolved,
+}
+
+fn custom_object_part_source(
+    tile: u16,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+) -> CustomObjectPartSource {
+    if tile < 0x200 {
+        return CustomObjectPartSource::Base(tile);
+    }
+    let Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) = custom_map16 else {
+        return CustomObjectPartSource::Unresolved;
+    };
+    sidecar.tile(usize::from(tile & 0x3fff)).map_or(
+        CustomObjectPartSource::Unresolved,
+        CustomObjectPartSource::Custom,
+    )
+}
+
+fn draw_unresolved_custom_object_part(painter: &egui::Painter, target: egui::Rect, tile: u16) {
+    painter.rect_filled(
+        target.shrink(1.0),
+        1.0,
+        egui::Color32::from_rgb(220, 70, 70),
+    );
+    painter.text(
+        target.center(),
+        egui::Align2::CENTER_CENTER,
+        format!("{:03X}", tile & 0x3fff),
+        egui::FontId::monospace(6.0),
+        egui::Color32::WHITE,
+    );
 }
 
 pub(crate) fn draw_custom_map16_tile(
@@ -4777,6 +4819,35 @@ mod tests {
         );
         assert_eq!(external_sprite_definition(Some(&s16), 1), None);
         assert_eq!(external_sprite_definition(Some(&m16), 0x400), None);
+    }
+
+    #[test]
+    fn custom_object_parts_distinguish_base_external_and_unresolved_tiles() {
+        let bytes = vec![0; lm_level::M16Sidecar::ENCODED_LEN];
+        let m16 =
+            lm_app::NativeMap16SidecarDocument::M16(lm_level::M16Sidecar::decode(&bytes).unwrap());
+        let s16 =
+            lm_app::NativeMap16SidecarDocument::S16(lm_level::S16Sidecar::decode(&bytes).unwrap());
+        assert_eq!(
+            custom_object_part_source(0x1ff, None),
+            CustomObjectPartSource::Base(0x1ff)
+        );
+        assert_eq!(
+            custom_object_part_source(0x200, Some(&m16)),
+            CustomObjectPartSource::Custom(lm_level::Map16Tile::default())
+        );
+        assert_eq!(
+            custom_object_part_source(0x200, None),
+            CustomObjectPartSource::Unresolved
+        );
+        assert_eq!(
+            custom_object_part_source(0x200, Some(&s16)),
+            CustomObjectPartSource::Unresolved
+        );
+        assert_eq!(
+            custom_object_part_source(0x400, Some(&m16)),
+            CustomObjectPartSource::Unresolved
+        );
     }
 
     #[test]
