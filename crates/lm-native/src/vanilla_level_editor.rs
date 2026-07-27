@@ -92,6 +92,7 @@ struct SpriteForm {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EntityPasteTarget {
     Object,
+    Layer2Object,
     Sprite,
 }
 
@@ -439,6 +440,10 @@ impl VanillaLevelEditor {
         });
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "keeps the complete Layer 2 object list, semantic fields, and ordered actions together"
+    )]
     fn show_layer2_object_editor(
         &mut self,
         ui: &mut egui::Ui,
@@ -537,7 +542,29 @@ impl VanillaLevelEditor {
                     .selected_layer2_object
                     .min(records.len().saturating_sub(2));
             }
+            self.layer2_object_move_buttons(ui, records.len());
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Copy"))
+                .clicked()
+                && let Some(record) = records.get(self.selected_layer2_object)
+            {
+                match crate::native_clipboard::encode_level_object(record) {
+                    Ok(text) => ui.ctx().copy_text(text),
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            if ui.button("Paste after selection").clicked() {
+                self.paste_target = Some(EntityPasteTarget::Layer2Object);
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
         });
+        if self.paste_target == Some(EntityPasteTarget::Layer2Object)
+            && let Some(text) = pasted_text(ui)
+        {
+            self.paste_target = None;
+            self.paste_layer2_object(&text, records.len());
+        }
     }
 
     fn apply_layer2_object_result(&mut self, edits: Result<Vec<ObjectEdit>, String>) {
@@ -2919,6 +2946,33 @@ impl VanillaLevelEditor {
         }
     }
 
+    fn paste_layer2_object(&mut self, text: &str, record_count: usize) {
+        let index = object_insertion_index(self.selected_layer2_object, record_count);
+        let record = match crate::native_clipboard::decode_level_object(text) {
+            Ok(record) => record,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_layer2_object_edits(&[ObjectEdit::Insert { index, record }]) {
+            Ok(()) => {
+                self.selected_layer2_object = index;
+                if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2()
+                    && let Some(record) = layer2.objects.records.get(index)
+                {
+                    self.layer2_object_form = ObjectForm::from_record(record);
+                    self.layer2_object_placement_template = Some(record.clone());
+                }
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
     fn paste_sprite(&mut self, text: &str, token_count: usize) {
         let index = sprite_insertion_index(self.selected_sprite, token_count);
         let edit = match pasted_sprite_edit(text, index) {
@@ -2980,6 +3034,54 @@ impl VanillaLevelEditor {
             .clicked()
         {
             self.move_object(record_count, true);
+        }
+    }
+
+    fn move_layer2_object(&mut self, record_count: usize, down: bool) {
+        let Some((before, selected)) =
+            move_before_indexes(self.selected_layer2_object, record_count, down)
+        else {
+            return;
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        match controller.apply_layer2_object_edits(&[ObjectEdit::MoveBefore {
+            from: self.selected_layer2_object,
+            before,
+        }]) {
+            Ok(()) => {
+                self.selected_layer2_object = selected;
+                if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2()
+                    && let Some(record) = layer2.objects.records.get(selected)
+                {
+                    self.layer2_object_form = ObjectForm::from_record(record);
+                    self.layer2_object_placement_template = Some(record.clone());
+                }
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn layer2_object_move_buttons(&mut self, ui: &mut egui::Ui, record_count: usize) {
+        if ui
+            .add_enabled(
+                self.selected_layer2_object > 0,
+                egui::Button::new("Move up"),
+            )
+            .clicked()
+        {
+            self.move_layer2_object(record_count, false);
+        }
+        if ui
+            .add_enabled(
+                self.selected_layer2_object.saturating_add(1) < record_count,
+                egui::Button::new("Move down"),
+            )
+            .clicked()
+        {
+            self.move_layer2_object(record_count, true);
         }
     }
 
@@ -5483,6 +5585,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one real-ROM workflow proves placement, drag, typed paste, ordering, and rejection"
+    )]
     fn primary_canvas_places_and_drags_object_backed_layer2() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
@@ -5561,6 +5667,39 @@ mod tests {
         );
         assert!(editor.controller.as_ref().unwrap().layer2_is_modified());
         assert!(editor.error.is_none());
+
+        let clipboard = crate::native_clipboard::encode_level_object(&template).unwrap();
+        let before_paste = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        editor.paste_layer2_object(&clipboard, before_paste);
+        let pasted_index = editor.selected_layer2_object;
+        let pasted = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => {
+                assert_eq!(objects.objects.records.len(), before_paste + 1);
+                objects.objects.records[pasted_index].clone()
+            }
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(pasted, template);
+        editor.move_layer2_object(before_paste + 1, false);
+        assert_eq!(editor.selected_layer2_object, pasted_index - 1);
+        let reordered = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => {
+                objects.objects.records[editor.selected_layer2_object].clone()
+            }
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(reordered, template);
+        let count_before_invalid = before_paste + 1;
+        editor.paste_layer2_object("not a typed object", count_before_invalid);
+        let count_after_invalid = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(count_after_invalid, count_before_invalid);
+        assert!(editor.error.is_some());
     }
 
     #[test]
