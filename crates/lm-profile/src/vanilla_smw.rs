@@ -125,6 +125,28 @@ pub fn smw_us_v1_level_layer2_layout(
     smw_us_v1_layer2_layout(rom).map(Some).map_err(Into::into)
 }
 
+/// Reports whether a pristine level entry selects SMW's shared bank-$0C background path.
+///
+/// # Errors
+///
+/// Rejects indexes outside the 512 native slots and truncated pointer tables.
+pub fn smw_us_v1_level_uses_shared_background(
+    rom: &RomImage,
+    level: usize,
+) -> Result<bool, SmwUsV1Layer2LayoutError> {
+    if level >= SMW_US_V1_VANILLA_LEVEL_SLOTS {
+        return Err(SmwUsV1Layer2LayoutError::LevelOutOfRange(level));
+    }
+    let offset = SMW_US_V1_LEVEL_LAYER2_POINTER_TABLE_OFFSET
+        .checked_add(
+            level
+                .checked_mul(3)
+                .ok_or(SmwUsV1Layer2LayoutError::AddressOverflow)?,
+        )
+        .ok_or(SmwUsV1Layer2LayoutError::AddressOverflow)?;
+    Ok(rom.read(offset, 3)?[2] == 0xff)
+}
+
 /// Detects the exact format-$103 Layer 2 descriptor table installed by Lunar Magic 3.63.
 ///
 /// A pristine ROM retains the legacy layout. The installed layout points at the recovered
@@ -480,6 +502,11 @@ mod tests {
                 .unwrap()
                 .background_bank_substitution,
             Some(0x0c)
+        );
+        assert!(smw_us_v1_level_uses_shared_background(&rom, 0x105).unwrap());
+        assert!(
+            (0..SMW_US_V1_VANILLA_LEVEL_SLOTS)
+                .any(|level| { !smw_us_v1_level_uses_shared_background(&rom, level).unwrap() })
         );
         let present = (0..SMW_US_V1_VANILLA_LEVEL_SLOTS)
             .find(|&level| {

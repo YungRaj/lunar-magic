@@ -250,6 +250,7 @@ pub(crate) struct VanillaLevelEditor {
     map16_key: Option<(u64, u8, u8)>,
     map16_texture: Option<egui::TextureHandle>,
     background_map16_texture: Option<egui::TextureHandle>,
+    shared_vanilla_background: bool,
     sprite_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
     foreground_tiles: Vec<lm_graphics::IndexedTile>,
@@ -996,6 +997,16 @@ impl VanillaLevelEditor {
                     .and_then(|rom| {
                         lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).ok()
                     });
+                self.shared_vanilla_background = RomImage::from_bytes(snapshot.rom_bytes.clone())
+                    .ok()
+                    .and_then(|rom| {
+                        lm_profile::smw_us_v1_level_uses_shared_background(
+                            &rom,
+                            controller.level().number,
+                        )
+                        .ok()
+                    })
+                    .unwrap_or(false);
                 self.selected_layer2_tile = 0;
                 self.selected_layer2_object = 0;
                 self.layer2_word = controller
@@ -1061,6 +1072,7 @@ impl VanillaLevelEditor {
         self.map16_key = None;
         self.map16_texture = None;
         self.background_map16_texture = None;
+        self.shared_vanilla_background = false;
         self.sprite_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
@@ -1429,7 +1441,9 @@ impl VanillaLevelEditor {
             cell,
             layer2_tilemap,
             self.map16_texture.as_ref(),
-            self.background_map16_texture.as_ref(),
+            self.shared_vanilla_background
+                .then_some(())
+                .and(self.background_map16_texture.as_ref()),
             self.foreground_texture.as_ref(),
             custom_map16,
             major_tiles,
@@ -4280,7 +4294,8 @@ fn draw_layer2_tilemap(
     for y in 0..rows {
         for x in 0..columns {
             let Some(&word) =
-                wrapped_layer2_tilemap_index(x, y).and_then(|index| tilemap.get(index))
+                presented_layer2_tilemap_index(x, y, background_map16_texture.is_some())
+                    .and_then(|index| tilemap.get(index))
             else {
                 continue;
             };
@@ -4313,8 +4328,9 @@ fn draw_layer2_tilemap(
     }
 }
 
-fn wrapped_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
-    lm_level::native_layer2_tilemap_index(x % 32, y % 32)
+fn presented_layer2_tilemap_index(x: usize, y: usize, shared_background: bool) -> Option<usize> {
+    let columns = if shared_background { 27 } else { 32 };
+    lm_level::native_layer2_tilemap_index(x % columns, y % 32)
 }
 
 const fn native_object_cache_minor_tiles(canvas_minor_tiles: u16) -> u16 {
@@ -7812,10 +7828,18 @@ mod tests {
     fn native_layer2_canvas_wraps_the_snes_tilemap_plane() {
         for (x, y) in [(32, 0), (63, 31), (0, 32), (95, 79)] {
             assert_eq!(
-                wrapped_layer2_tilemap_index(x, y),
+                presented_layer2_tilemap_index(x, y, false),
                 lm_level::native_layer2_tilemap_index(x % 32, y % 32)
             );
         }
+        assert_eq!(
+            presented_layer2_tilemap_index(27, 0, true),
+            lm_level::native_layer2_tilemap_index(0, 0)
+        );
+        assert_eq!(
+            presented_layer2_tilemap_index(53, 15, true),
+            lm_level::native_layer2_tilemap_index(26, 15)
+        );
     }
 
     #[test]
