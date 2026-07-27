@@ -85,6 +85,13 @@ the expanded byte baseline. Live gesture tracing through `004880A0` and `0043C56
 the fields remain physical X/Y in vertical modes; canvas tests cover both orientations,
 bottom-right handle geometry, bounded extents, 1/128 rejection, and preservation of the
 optional eighth byte and unrelated extensions.
+Layer 1 and object-backed Layer 2 additionally expose a lossless hexadecimal native-record editor
+for every three- through eight-byte object shape. The editor derives the required length from the
+encoded command and mode before replacement, so malformed `$22`, `$23`, `$27`, `$29`, and `$2D`
+records cannot desynchronize the following stream. Focused tests round-trip every native length
+class and reject short, long, and nonhexadecimal input without mutation; the supplied pristine-ROM
+command-`$27` fixture applies raw extension-byte changes before semantic resize, commits, reopens
+the exact eight bytes, and undoes to the expanded baseline.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary

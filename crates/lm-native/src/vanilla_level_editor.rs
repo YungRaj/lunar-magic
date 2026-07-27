@@ -66,8 +66,9 @@ impl HeaderForm {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct ObjectForm {
+    encoded: String,
     command_id: u8,
     parameter: u8,
     first_coordinate: u8,
@@ -175,6 +176,7 @@ impl ObjectForm {
     fn from_record(record: &ObjectRecord) -> Self {
         let coordinates = record.coordinate_nibbles();
         Self {
+            encoded: crate::level_editor_forms::format_bytes(record.encoded()),
             command_id: record.command_id(),
             parameter: record.parameter(),
             first_coordinate: coordinates.first,
@@ -190,7 +192,7 @@ impl ObjectForm {
         }
     }
 
-    fn ordinary_record(self) -> Result<ObjectRecord, String> {
+    fn ordinary_record(&self) -> Result<ObjectRecord, String> {
         if self.command_id > 0x3f || self.first_coordinate > 0x0f || self.second_coordinate > 0x0f {
             return Err("object command or coordinate is out of range".into());
         }
@@ -199,6 +201,19 @@ impl ObjectForm {
             | if self.advances_screen { 0x80 } else { 0 };
         let second = self.second_coordinate | ((self.command_id & 0x0f) << 4);
         ObjectRecord::new(vec![first, second, self.parameter]).map_err(|error| error.to_string())
+    }
+
+    fn raw_record(&self) -> Result<ObjectRecord, String> {
+        let record = crate::level_editor_forms::parse_object(&self.encoded)?;
+        let expected = lm_level::encoded_record_length(record.encoded())
+            .ok_or_else(|| "raw object record has an incomplete native header".to_owned())?;
+        if expected != record.encoded().len() {
+            return Err(format!(
+                "raw object record has {} bytes, but its native command encoding requires {expected}",
+                record.encoded().len()
+            ));
+        }
+        Ok(record)
     }
 }
 
@@ -491,6 +506,11 @@ impl VanillaLevelEditor {
             &mut self.layer2_object_form,
         );
         show_standard_object_resize_fields(ui, resize_model, &mut self.layer2_object_form);
+        show_raw_object_record(
+            ui,
+            "vanilla-layer2-raw-object",
+            &mut self.layer2_object_form,
+        );
         ui.horizontal(|ui| {
             if ui.button("Place on canvas").clicked() {
                 self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
@@ -513,7 +533,23 @@ impl VanillaLevelEditor {
                             .map_err(|error| error.to_string())
                     });
                 match result {
-                    Ok(()) => self.error = None,
+                    Ok(()) => {
+                        if let Some(record) = self.controller.as_ref().and_then(|controller| {
+                            controller
+                                .layer2()
+                                .and_then(|layer2| match layer2 {
+                                    lm_level::NativeLayer2Data::Objects(objects) => Some(objects),
+                                    lm_level::NativeLayer2Data::Tilemap(_) => None,
+                                })
+                                .and_then(|objects| {
+                                    objects.objects.records.get(self.selected_layer2_object)
+                                })
+                        }) {
+                            self.layer2_object_form = ObjectForm::from_record(record);
+                            self.layer2_object_placement_template = Some(record.clone());
+                        }
+                        self.error = None;
+                    }
                     Err(error) => self.error = Some(error),
                 }
             }
@@ -528,6 +564,18 @@ impl VanillaLevelEditor {
                     records.get(self.selected_layer2_object),
                 );
                 self.apply_layer2_object_result(edits);
+            }
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Apply raw record"))
+                .clicked()
+            {
+                let edit = self.layer2_object_form.raw_record().map(|record| {
+                    vec![ObjectEdit::Replace {
+                        index: self.selected_layer2_object,
+                        record,
+                    }]
+                });
+                self.apply_layer2_object_result(edit);
             }
             if ui
                 .add_enabled(has_selection, egui::Button::new("Remove object"))
@@ -2266,6 +2314,7 @@ impl VanillaLevelEditor {
             });
             show_standard_object_resize_fields(ui, resize_model, &mut self.object_form);
         }
+        show_raw_object_record(ui, "vanilla-layer1-raw-object", &mut self.object_form);
         self.object_action_buttons(ui, record_count, has_selection);
         if self.paste_target == Some(EntityPasteTarget::Object)
             && let Some(text) = pasted_text(ui)
@@ -2435,6 +2484,18 @@ impl VanillaLevelEditor {
                 }
             }
             if ui
+                .add_enabled(has_selection, egui::Button::new("Apply raw record"))
+                .clicked()
+            {
+                let edit = self.object_form.raw_record().map(|record| {
+                    NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
+                        index: self.selected_object,
+                        record,
+                    }])
+                });
+                self.apply_object_result(edit);
+            }
+            if ui
                 .add_enabled(has_selection, egui::Button::new("Remove object"))
                 .clicked()
                 && let Some(controller) = self.controller.as_mut()
@@ -2494,7 +2555,19 @@ impl VanillaLevelEditor {
             Ok(edit) => {
                 if let Some(controller) = self.controller.as_mut() {
                     match controller.apply_edits(&[edit]) {
-                        Ok(()) => self.error = None,
+                        Ok(()) => {
+                            if let Some(record) = controller
+                                .level()
+                                .layer1
+                                .objects
+                                .records
+                                .get(self.selected_object)
+                            {
+                                self.object_form = ObjectForm::from_record(record);
+                                self.object_placement_template = None;
+                            }
+                            self.error = None;
+                        }
                         Err(error) => self.error = Some(error.to_string()),
                     }
                 }
@@ -5083,6 +5156,22 @@ fn show_compact_object_fields(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm
     });
 }
 
+fn show_raw_object_record(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm) {
+    egui::CollapsingHeader::new("Raw native object record")
+        .id_salt(id)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Bytes");
+                ui.text_edit_singleline(&mut form.encoded)
+                    .on_hover_text("Three to eight hexadecimal bytes separated by whitespace");
+            });
+            ui.small(
+                "Apply raw record preserves and exposes command-specific extension bytes. \
+                 The encoded command must declare exactly the supplied native record length.",
+            );
+        });
+}
+
 fn show_standard_object_resize_fields(
     ui: &mut egui::Ui,
     model: Option<lm_render::StandardObjectResizeModel>,
@@ -5972,6 +6061,7 @@ mod tests {
     #[test]
     fn object_form_constructs_native_three_byte_record() {
         let form = ObjectForm {
+            encoded: String::new(),
             command_id: 0x31,
             parameter: 0x42,
             first_coordinate: 5,
@@ -5984,6 +6074,39 @@ mod tests {
         let record = form.ordinary_record().unwrap();
         assert_eq!(record.encoded(), &[0xe5, 0x16, 0x42]);
         assert_eq!(ObjectForm::from_record(&record).command_id, 0x31);
+    }
+
+    #[test]
+    fn raw_object_form_round_trips_every_native_extension_shape() {
+        for bytes in [
+            vec![0x01, 0x10, 0x20],
+            vec![0x40, 0x20, 0x80, 0x99],
+            vec![0x40, 0x70, 0x01, 0x00, 0xaa],
+            vec![0x40, 0x70, 0x01, 0x80, 0xaa, 0xbb],
+            vec![0x40, 0x70, 0x01, 0xc0, 0xaa, 0xbb, 0x02],
+            vec![0x40, 0x70, 0x81, 0xc0, 0xaa, 0xbb, 0x02, 0xcc],
+        ] {
+            let record = ObjectRecord::new(bytes.clone()).unwrap();
+            let form = ObjectForm::from_record(&record);
+            assert_eq!(form.raw_record().unwrap().encoded(), bytes);
+        }
+    }
+
+    #[test]
+    fn raw_object_form_rejects_declared_length_mismatch_atomically() {
+        let record =
+            ObjectRecord::new(vec![0x40, 0x70, 0x81, 0xc0, 0xaa, 0xbb, 0x02, 0xcc]).unwrap();
+        let mut form = ObjectForm::from_record(&record);
+        form.encoded = "40 70 81 C0 AA BB 02".into();
+        assert!(form.raw_record().is_err());
+        assert_eq!(
+            record.encoded(),
+            &[0x40, 0x70, 0x81, 0xc0, 0xaa, 0xbb, 0x02, 0xcc]
+        );
+        form.encoded = "40 70 01 C0 AA BB 02 CC".into();
+        assert!(form.raw_record().is_err());
+        form.encoded = "GG 70 01".into();
+        assert!(form.raw_record().is_err());
     }
 
     #[test]
@@ -6113,6 +6236,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "keeps the raw form, semantic resize, canvas resize, ROM reopen, and undo assertions in one end-to-end fixture"
+    )]
     fn extended_command27_form_and_canvas_commit_reopen_and_undo_in_pristine_rom() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let source = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
@@ -6144,11 +6271,20 @@ mod tests {
                 record: record.clone(),
             }])])
             .unwrap();
-        let mut form = ObjectForm::from_record(&record);
+        let mut raw_form = ObjectForm::from_record(&record);
+        raw_form.encoded = "41 72 84 C3 11 22 06 EE".into();
+        let raw_record = raw_form.raw_record().unwrap();
+        controller
+            .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
+                index,
+                record: raw_record.clone(),
+            }])])
+            .unwrap();
+        let mut form = ObjectForm::from_record(&raw_record);
         form.extended_command27_size = Some((128, 64));
         controller
             .apply_edits(&[NativeLevelEdit::Objects(
-                object_field_edits(&form, index, Some(&record)).unwrap(),
+                object_field_edits(&form, index, Some(&raw_record)).unwrap(),
             )])
             .unwrap();
         let current = controller.level().layer1.objects.records[index].clone();
@@ -6187,6 +6323,10 @@ mod tests {
             .unwrap();
         let expected = controller.level().layer1.objects.records[index].clone();
         assert_eq!(expected.extended_command27_tile_size(), Some((5, 6)));
+        assert_eq!(
+            expected.encoded(),
+            &[0x41, 0x72, 0x84, 0xc3, 0x11, 0x22, 0x05, 0xee]
+        );
         app.dispatch(prepare_commit(&controller, &snapshot).unwrap())
             .unwrap();
         let reopened = app

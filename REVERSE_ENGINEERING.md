@@ -275,6 +275,14 @@ at `004880A0` passes physical mouse X/Y deltas through `ResizeSelectionFromDragH
 swapping for vertical level mode. The Rust canvas therefore uses a physical bottom-right handle,
 retaining horizontal/vertical field identity in both level orientations.
 
+Rendering was separately traced through `RenderLevelObjectNodeListAndCacheCells` (`00435CF0`),
+`InstallStandardObjectDefinitionsForTileset` (`00433BC0`), and
+`DispatchStandardObjectByCommandId` (`00433F90`). The command-`$27` mode-`$C0` extension fields are
+used for physical selection/resize geometry; they do not replace the active tileset family's
+standard-object renderer or its ordinary parameter semantics. The Rust editor therefore uses the
+fields for interaction bounds while continuing to dispatch artwork through the authenticated
+handler map.
+
 The custom object clipboard and template-placement subsystem through `0043b100` is now named. `LevelObjectClipboardHeader` is a recovered 32-byte structure followed by fixed 0x28-byte node records in registered format `Lunar Magic Objects V6`; copy computes selection-origin and rendered-margin metadata, while paste validates format/version fields, filters incompatible extended objects, converts encodings, translates clones, and reinserts them. The same node-stream decoder supports temporary multi-object templates, isolated preview rendering with full live-Map16 save/restore, and placement of cloned template groups. Screen-exit object evidence also upgraded the earlier generic per-screen control-node interpretation: dedicated helpers now deduplicate, create/delete, normalize flags, and synchronize the 32-entry packed screen-exit array.
 
 The object-edit pipeline through `0043cb20` is now named and commented. It clones selections into template lists, converts connected Map16 regions into rectangular Direct Map16 object commands, performs handle-driven resizing with transition-safe detach/reinsert ordering, and rebuilds/redraws cached modified-cell regions. Three helpers isolate the packed properties and 15-bit reference-remapping behavior of encoded extended command ID `0x27`; the bit packing is established, while the user-facing meaning of that referenced resource remains intentionally marked medium confidence.
