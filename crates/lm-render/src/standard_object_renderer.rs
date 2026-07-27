@@ -217,6 +217,8 @@ pub enum StandardObjectResizeModel {
     MinorNibble { fixed_major_tiles: u8 },
     /// The complete parameter byte encodes the minor count minus one.
     MinorByte { fixed_major_tiles: u8 },
+    /// Lunar Magic command `$27` mode `$C0` stores independent 1–128-tile X/Y sizes.
+    ExtendedCommand27Axes,
     /// The definition has no authenticated size parameter.
     Fixed,
 }
@@ -441,6 +443,9 @@ impl StandardObjectDefinitionSet {
         handler_map: &[u8; 64],
     ) -> Option<StandardObjectResizeModel> {
         let command = record.command_id();
+        if record.extended_command27_tile_size().is_some() {
+            return Some(StandardObjectResizeModel::ExtendedCommand27Axes);
+        }
         let definition = if command == 0 {
             self.extended_definition(record.parameter())
         } else {
@@ -4105,6 +4110,11 @@ mod tests {
         assert_eq!(
             definitions.mapped_resize_model(&extended, &handler_map),
             Some(StandardObjectResizeModel::Fixed)
+        );
+        let command27 = ObjectRecord::new(vec![0x40, 0x70, 0x04, 0xc0, 0, 0, 0x06]).unwrap();
+        assert_eq!(
+            definitions.mapped_resize_model(&command27, &handler_map),
+            Some(StandardObjectResizeModel::ExtendedCommand27Axes)
         );
     }
 

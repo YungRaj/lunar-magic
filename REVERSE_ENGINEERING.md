@@ -261,6 +261,15 @@ Selection commands through `00439720` now cover deletion, membership testing, cu
 
 Visibility-order operations through `0043a2a0` are also recovered. Lunar Magic tests whether all cells covered by a selection are already frontmost/backmost, snapshots both ownership and tile output, and repeatedly reorders until the visible ordering objective is reached or a render change establishes the boundary. Additional helpers detach/reinsert a selection in either order, compute a four-direction resize mask from neighboring selected cells and object size metadata, and reconstruct either layer list from contiguous 0x28-byte node snapshots.
 
+Live port-8089 revalidation of `AdjustSelectedObjectDimensions` at `0043C2B0` recovered one
+previously omitted size encoding. Command `$27` records whose fourth byte has mode `$C0` use the
+low seven bits of byte 2 for horizontal size minus one and byte 6 for vertical size minus one,
+independently supporting 1–128 tiles per axis. Byte 2's high bit still controls the optional eighth
+record byte and is not part of the size. `GetSelectedObjectResizeDirectionMask` at `0043A000`
+confirms separate horizontal/vertical capability masks, while `SerializeLevelObjectList` at
+`00435650` confirms the seven/eight-byte framing. The Rust record model and native Layer 1/Layer 2
+forms now expose these two fields without disturbing mode flags or unrelated extension bytes.
+
 The custom object clipboard and template-placement subsystem through `0043b100` is now named. `LevelObjectClipboardHeader` is a recovered 32-byte structure followed by fixed 0x28-byte node records in registered format `Lunar Magic Objects V6`; copy computes selection-origin and rendered-margin metadata, while paste validates format/version fields, filters incompatible extended objects, converts encodings, translates clones, and reinserts them. The same node-stream decoder supports temporary multi-object templates, isolated preview rendering with full live-Map16 save/restore, and placement of cloned template groups. Screen-exit object evidence also upgraded the earlier generic per-screen control-node interpretation: dedicated helpers now deduplicate, create/delete, normalize flags, and synchronize the 32-entry packed screen-exit array.
 
 The object-edit pipeline through `0043cb20` is now named and commented. It clones selections into template lists, converts connected Map16 regions into rectangular Direct Map16 object commands, performs handle-driven resizing with transition-safe detach/reinsert ordering, and rebuilds/redraws cached modified-cell regions. Three helpers isolate the packed properties and 15-bit reference-remapping behavior of encoded extended command ID `0x27`; the bit packing is established, while the user-facing meaning of that referenced resource remains intentionally marked medium confidence.

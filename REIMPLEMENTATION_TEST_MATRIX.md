@@ -61,7 +61,8 @@ all 512 level slots requires a recovered object whose artwork exceeds its generi
 parameter span and proves the complete encoded footprint remains interactive.
 The renderer exposes the active family handler's authenticated resize encoding as a
 typed model: two parameter nibbles, major-only nibble, one- or two-tile fixed-major
-minor nibble, three-tile fixed-major full byte, or fixed size. Native Layer 1 and
+minor nibble, three-tile fixed-major full byte, independent command-`$27` mode-`$C0`
+seven-bit horizontal/vertical fields, or fixed size. Native Layer 1 and
 object-backed Layer 2 forms edit tile counts through that model, preserve ignored
 parameter bits, reject every out-of-domain axis, and suppress standard resize controls
 for OSC-selected custom records. Selected nonfixed standard objects also expose an
@@ -74,6 +75,14 @@ movement before the origin on an unowned axis, invalid owned-axis/out-of-canvas 
 and handle placement. A pristine-ROM fixture expands once, resizes a discovered
 nonfixed object, commits and semantically reopens it, then undoes to the exact expanded
 baseline.
+The extended command-`$27` form is oracle-bound to Lunar Magic 3.63 functions at
+`0043C2B0`, `0043A000`, and `00435650`; focused tests cover seven- and eight-byte
+records, 1/128 bounds, atomic rejection, typed model selection, form conversion, and
+one lossless replacement retaining every unrelated extension byte. A supplied pristine-ROM
+fixture inserts the eight-byte form, edits both sizes through the native form, commits,
+semantically reopens the exact record, and undoes to the expanded byte baseline. Its
+two-axis canvas gesture remains disabled until physical-axis behavior in vertical modes
+is independently qualified.
 
 Profile-qualified native level assets additionally treat Layer 2 as a mode-selected fifth payload.
 The automatically detected pristine/installed SMW-US level editor also binds Layer 2 to its primary

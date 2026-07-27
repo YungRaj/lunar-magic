@@ -11,6 +11,8 @@ pub enum ObjectFieldError {
     TerminatorCollision,
     UnknownEncodedLength,
     EncodedLengthMismatch { expected: usize, actual: usize },
+    NotExtendedCommand27,
+    InvalidExtendedSize { horizontal: u8, vertical: u8 },
 }
 
 impl std::fmt::Display for ObjectFieldError {
@@ -32,6 +34,54 @@ impl ObjectRecord {
     #[must_use]
     pub fn parameter(&self) -> u8 {
         self.encoded[2]
+    }
+
+    /// Returns Lunar Magic's two seven-bit size components for the extended command `$27` form.
+    ///
+    /// The recovered editor recognizes command `$27` with byte 3's mode bits set to `$C0`.
+    /// Horizontal size minus one occupies byte 2's low seven bits and vertical size minus one
+    /// occupies extension byte 6. Byte 2's high bit controls the optional eighth record byte and
+    /// is deliberately excluded from the size.
+    #[must_use]
+    pub fn extended_command27_tile_size(&self) -> Option<(u8, u8)> {
+        (self.command_id() == 0x27
+            && self
+                .encoded
+                .get(3)
+                .is_some_and(|flags| flags & 0xc0 == 0xc0)
+            && self.encoded.len() >= 7)
+            .then(|| ((self.encoded[2] & 0x7f) + 1, (self.encoded[6] & 0x7f) + 1))
+    }
+
+    /// Changes only Lunar Magic's recovered extended command `$27` size fields.
+    ///
+    /// Both axes accept 1–128 tiles. The optional-record flag in byte 2 and every unrelated
+    /// extension byte remain byte-exact.
+    ///
+    /// # Errors
+    ///
+    /// Rejects records outside command `$27` mode `$C0`, sizes outside 1–128, and any candidate
+    /// whose native encoded length would no longer match the retained record.
+    pub fn set_extended_command27_tile_size(
+        &mut self,
+        horizontal: u8,
+        vertical: u8,
+    ) -> Result<(), ObjectFieldError> {
+        if self.extended_command27_tile_size().is_none() {
+            return Err(ObjectFieldError::NotExtendedCommand27);
+        }
+        if !(1..=128).contains(&horizontal) || !(1..=128).contains(&vertical) {
+            return Err(ObjectFieldError::InvalidExtendedSize {
+                horizontal,
+                vertical,
+            });
+        }
+        let mut candidate = self.encoded.clone();
+        candidate[2] = (candidate[2] & 0x80) | (horizontal - 1);
+        candidate[6] = vertical - 1;
+        validate_candidate(&candidate)?;
+        self.encoded = candidate;
+        Ok(())
     }
 
     /// Returns the two encoded four-bit coordinates before level-orientation interpretation.
@@ -381,6 +431,40 @@ mod tests {
         extended.set_command_id(0x22).unwrap();
         assert_eq!(extended.command_id(), 0x22);
         assert_eq!(extended.encoded()[3], 0xaa);
+    }
+
+    #[test]
+    fn extended_command27_size_edits_preserve_every_unowned_byte() {
+        let mut record =
+            ObjectRecord::new(vec![0x40, 0x70, 0x84, 0xc3, 0xaa, 0xbb, 0x06, 0xdd]).unwrap();
+        assert_eq!(record.command_id(), 0x27);
+        assert_eq!(record.extended_command27_tile_size(), Some((5, 7)));
+        record.set_extended_command27_tile_size(128, 64).unwrap();
+        assert_eq!(
+            record.encoded(),
+            &[0x40, 0x70, 0xff, 0xc3, 0xaa, 0xbb, 0x3f, 0xdd]
+        );
+        assert_eq!(record.extended_command27_tile_size(), Some((128, 64)));
+    }
+
+    #[test]
+    fn extended_command27_size_rejects_wrong_shape_and_bounds_atomically() {
+        let mut ordinary = ObjectRecord::new(vec![0x40, 0x70, 0x04, 0x80, 0xaa, 0xbb]).unwrap();
+        let original = ordinary.clone();
+        assert_eq!(
+            ordinary.set_extended_command27_tile_size(2, 3),
+            Err(ObjectFieldError::NotExtendedCommand27)
+        );
+        assert_eq!(ordinary, original);
+
+        let mut extended =
+            ObjectRecord::new(vec![0x40, 0x70, 0x04, 0xc0, 0xaa, 0xbb, 0x06]).unwrap();
+        let original = extended.clone();
+        assert!(matches!(
+            extended.set_extended_command27_tile_size(0, 3),
+            Err(ObjectFieldError::InvalidExtendedSize { .. })
+        ));
+        assert_eq!(extended, original);
     }
 
     #[test]

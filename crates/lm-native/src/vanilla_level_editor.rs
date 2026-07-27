@@ -75,6 +75,7 @@ struct ObjectForm {
     advances_screen: bool,
     screen_jump: Option<(lm_level::ScreenJumpEncoding, u16)>,
     screen_exit: Option<(u8, u16)>,
+    extended_command27_size: Option<(u8, u8)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -185,6 +186,7 @@ impl ObjectForm {
             screen_exit: record
                 .screen_exit()
                 .map(|exit| (exit.screen, exit.destination_and_flags)),
+            extended_command27_size: record.extended_command27_tile_size(),
         }
     }
 
@@ -488,11 +490,7 @@ impl VanillaLevelEditor {
             "vanilla-layer2-object-fields",
             &mut self.layer2_object_form,
         );
-        show_standard_object_resize_fields(
-            ui,
-            resize_model,
-            &mut self.layer2_object_form.parameter,
-        );
+        show_standard_object_resize_fields(ui, resize_model, &mut self.layer2_object_form);
         ui.horizontal(|ui| {
             if ui.button("Place on canvas").clicked() {
                 self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
@@ -2122,7 +2120,12 @@ impl VanillaLevelEditor {
                     return None;
                 }
                 let model = definitions.mapped_resize_model(record, handler_map)?;
-                (model != lm_render::StandardObjectResizeModel::Fixed).then_some((index, model))
+                (!matches!(
+                    model,
+                    lm_render::StandardObjectResizeModel::Fixed
+                        | lm_render::StandardObjectResizeModel::ExtendedCommand27Axes
+                ))
+                .then_some((index, model))
             })
             .collect()
     }
@@ -2253,7 +2256,7 @@ impl VanillaLevelEditor {
                 ui.checkbox(&mut self.object_form.advances_screen, "");
                 ui.end_row();
             });
-            show_standard_object_resize_fields(ui, resize_model, &mut self.object_form.parameter);
+            show_standard_object_resize_fields(ui, resize_model, &mut self.object_form);
         }
         self.object_action_buttons(ui, record_count, has_selection);
         if self.paste_target == Some(EntityPasteTarget::Object)
@@ -4400,7 +4403,7 @@ fn standard_object_resize_handle(
     vertical: bool,
 ) -> Option<egui::Rect> {
     use lm_render::StandardObjectResizeModel::{
-        Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
+        ExtendedCommand27Axes, Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
     };
     let encoded = authenticated_standard_object_rect(canvas, placement, record, model, vertical)?;
     let center = match model {
@@ -4411,7 +4414,7 @@ fn standard_object_resize_handle(
             egui::pos2(encoded.right(), encoded.center().y)
         }
         MinorNibble { .. } | MinorByte { .. } => egui::pos2(encoded.center().x, encoded.bottom()),
-        Fixed => return None,
+        ExtendedCommand27Axes | Fixed => return None,
     };
     Some(egui::Rect::from_center_size(center, egui::vec2(8.0, 8.0)))
 }
@@ -4424,7 +4427,7 @@ fn authenticated_standard_object_rect(
     vertical: bool,
 ) -> Option<egui::Rect> {
     use lm_render::StandardObjectResizeModel::{
-        Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
+        ExtendedCommand27Axes, Fixed, MajorNibble, MinorByte, MinorNibble, ParameterNibbles,
     };
     let (major_span, minor_span) = match model {
         ParameterNibbles => (
@@ -4440,7 +4443,7 @@ fn authenticated_standard_object_rect(
             u16::from(fixed_major_tiles),
             u16::from(record.parameter()) + 1,
         ),
-        Fixed => return None,
+        ExtendedCommand27Axes | Fixed => return None,
     };
     let (tile_x, tile_y) = placement.tile_coordinates(vertical);
     let position = canvas.min
@@ -5030,7 +5033,7 @@ fn show_compact_object_fields(ui: &mut egui::Ui, id: &str, form: &mut ObjectForm
 fn show_standard_object_resize_fields(
     ui: &mut egui::Ui,
     model: Option<lm_render::StandardObjectResizeModel>,
-    parameter: &mut u8,
+    form: &mut ObjectForm,
 ) {
     let Some(model) = model else {
         return;
@@ -5039,36 +5042,36 @@ fn show_standard_object_resize_fields(
         ui.label("Authenticated object size");
         egui::Grid::new(("standard-object-resize", ui.id())).show(ui, |ui| match model {
             lm_render::StandardObjectResizeModel::ParameterNibbles => {
-                let mut major = (*parameter >> 4) + 1;
+                let mut major = (form.parameter >> 4) + 1;
                 ui.label("Major-axis tiles");
                 if ui
                     .add(egui::DragValue::new(&mut major).range(1..=16))
                     .changed()
                 {
-                    *parameter = set_standard_object_major_tiles(model, *parameter, major)
+                    form.parameter = set_standard_object_major_tiles(model, form.parameter, major)
                         .expect("bounded major-axis control");
                 }
                 ui.end_row();
-                let mut minor = (*parameter & 0x0f) + 1;
+                let mut minor = (form.parameter & 0x0f) + 1;
                 ui.label("Minor-axis tiles");
                 if ui
                     .add(egui::DragValue::new(&mut minor).range(1..=16))
                     .changed()
                 {
-                    *parameter =
-                        set_standard_object_minor_tiles(model, *parameter, u16::from(minor))
+                    form.parameter =
+                        set_standard_object_minor_tiles(model, form.parameter, u16::from(minor))
                             .expect("bounded minor-axis control");
                 }
                 ui.end_row();
             }
             lm_render::StandardObjectResizeModel::MajorNibble => {
-                let mut major = (*parameter >> 4) + 1;
+                let mut major = (form.parameter >> 4) + 1;
                 ui.label("Major-axis tiles");
                 if ui
                     .add(egui::DragValue::new(&mut major).range(1..=16))
                     .changed()
                 {
-                    *parameter = set_standard_object_major_tiles(model, *parameter, major)
+                    form.parameter = set_standard_object_major_tiles(model, form.parameter, major)
                         .expect("bounded major-axis control");
                 }
                 ui.end_row();
@@ -5080,14 +5083,14 @@ fn show_standard_object_resize_fields(
                 ui.label("Major-axis tiles");
                 ui.label(format!("{fixed_major_tiles} (fixed)"));
                 ui.end_row();
-                let mut minor = (*parameter & 0x0f) + 1;
+                let mut minor = (form.parameter & 0x0f) + 1;
                 ui.label("Minor-axis tiles");
                 if ui
                     .add(egui::DragValue::new(&mut minor).range(1..=16))
                     .changed()
                 {
-                    *parameter =
-                        set_standard_object_minor_tiles(model, *parameter, u16::from(minor))
+                    form.parameter =
+                        set_standard_object_minor_tiles(model, form.parameter, u16::from(minor))
                             .expect("bounded minor-axis control");
                 }
                 ui.end_row();
@@ -5096,16 +5099,27 @@ fn show_standard_object_resize_fields(
                 ui.label("Major-axis tiles");
                 ui.label(format!("{fixed_major_tiles} (fixed)"));
                 ui.end_row();
-                let mut minor = u16::from(*parameter) + 1;
+                let mut minor = u16::from(form.parameter) + 1;
                 ui.label("Minor-axis tiles");
                 if ui
                     .add(egui::DragValue::new(&mut minor).range(1..=256))
                     .changed()
                 {
-                    *parameter = set_standard_object_minor_tiles(model, *parameter, minor)
+                    form.parameter = set_standard_object_minor_tiles(model, form.parameter, minor)
                         .expect("bounded full-byte minor-axis control");
                 }
                 ui.end_row();
+            }
+            lm_render::StandardObjectResizeModel::ExtendedCommand27Axes => {
+                let (mut horizontal, mut vertical) =
+                    form.extended_command27_size.unwrap_or((1, 1));
+                ui.label("Horizontal tiles");
+                ui.add(egui::DragValue::new(&mut horizontal).range(1..=128));
+                ui.end_row();
+                ui.label("Vertical tiles");
+                ui.add(egui::DragValue::new(&mut vertical).range(1..=128));
+                ui.end_row();
+                form.extended_command27_size = Some((horizontal, vertical));
             }
             lm_render::StandardObjectResizeModel::Fixed => {
                 ui.label("Size");
@@ -5114,7 +5128,7 @@ fn show_standard_object_resize_fields(
             }
         });
         ui.small(
-            "Size controls update the lossless parameter field; use Apply object fields to commit.",
+            "Size controls update only the authenticated native fields; use Apply object fields to commit.",
         );
     });
 }
@@ -5230,6 +5244,9 @@ fn resized_standard_object_parameter_at_canvas_position(
                 u16::try_from(minor).map_err(|_| "minor-axis object size is too large")?,
             )
         }
+        lm_render::StandardObjectResizeModel::ExtendedCommand27Axes => {
+            Err("extended command $27 sizes are edited through their two native fields".into())
+        }
         lm_render::StandardObjectResizeModel::Fixed => {
             Err("active object handler has a fixed size".into())
         }
@@ -5255,6 +5272,24 @@ fn object_field_edits(
             index,
             packed_target,
         }]);
+    }
+    if let Some((horizontal, vertical)) = form.extended_command27_size {
+        let mut record = current
+            .cloned()
+            .ok_or_else(|| "selected extended command $27 object no longer exists".to_owned())?;
+        record
+            .set_command_id(form.command_id)
+            .and_then(|()| record.set_parameter(form.parameter))
+            .and_then(|()| {
+                record.set_coordinate_nibbles(ObjectCoordinateNibbles {
+                    first: form.first_coordinate,
+                    second: form.second_coordinate,
+                })
+            })
+            .and_then(|()| record.set_advances_screen(form.advances_screen))
+            .and_then(|()| record.set_extended_command27_tile_size(horizontal, vertical))
+            .map_err(|error| error.to_string())?;
+        return Ok(vec![ObjectEdit::Replace { index, record }]);
     }
     Ok(vec![
         ObjectEdit::SetCommandId {
@@ -5765,6 +5800,7 @@ mod tests {
             advances_screen: true,
             screen_jump: None,
             screen_exit: None,
+            extended_command27_size: None,
         };
         let record = form.ordinary_record().unwrap();
         assert_eq!(record.encoded(), &[0xe5, 0x16, 0x42]);
@@ -5868,6 +5904,91 @@ mod tests {
                 257,
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn extended_command27_form_replaces_only_recovered_size_and_semantic_fields() {
+        let record =
+            ObjectRecord::new(vec![0x41, 0x72, 0x84, 0xc3, 0xaa, 0xbb, 0x06, 0xdd]).unwrap();
+        let mut form = ObjectForm::from_record(&record);
+        assert_eq!(form.extended_command27_size, Some((5, 7)));
+        form.first_coordinate = 3;
+        form.second_coordinate = 4;
+        form.extended_command27_size = Some((128, 64));
+        let edits = object_field_edits(&form, 2, Some(&record)).unwrap();
+        let [
+            ObjectEdit::Replace {
+                index,
+                record: replacement,
+            },
+        ] = edits.as_slice()
+        else {
+            panic!("extended command $27 must remain one lossless replacement");
+        };
+        assert_eq!(*index, 2);
+        assert_eq!(
+            replacement.encoded(),
+            &[0x43, 0x74, 0xff, 0xc3, 0xaa, 0xbb, 0x3f, 0xdd]
+        );
+    }
+
+    #[test]
+    fn extended_command27_form_commits_reopens_and_undoes_in_pristine_rom() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(source).unwrap();
+        app.dispatch(Command::ExpandRom(lm_app::RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        let expanded_baseline = app.project().unwrap().rom.logical_bytes().to_vec();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let index = controller.level().layer1.objects.records.len();
+        let record =
+            ObjectRecord::new(vec![0x41, 0x72, 0x84, 0xc3, 0xaa, 0xbb, 0x06, 0xdd]).unwrap();
+        controller
+            .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                index,
+                record: record.clone(),
+            }])])
+            .unwrap();
+        let mut form = ObjectForm::from_record(&record);
+        form.extended_command27_size = Some((128, 64));
+        controller
+            .apply_edits(&[NativeLevelEdit::Objects(
+                object_field_edits(&form, index, Some(&record)).unwrap(),
+            )])
+            .unwrap();
+        let expected = controller.level().layer1.objects.records[index].clone();
+        app.dispatch(prepare_commit(&controller, &snapshot).unwrap())
+            .unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        assert_eq!(reopened.layer1.objects.records[index], expected);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_bytes(),
+            expanded_baseline
         );
     }
 
@@ -6066,7 +6187,8 @@ mod tests {
                         let next = if current == 256 { 255 } else { current + 1 };
                         set_standard_object_minor_tiles(model, parameter, next).unwrap()
                     }
-                    lm_render::StandardObjectResizeModel::Fixed => continue,
+                    lm_render::StandardObjectResizeModel::ExtendedCommand27Axes
+                    | lm_render::StandardObjectResizeModel::Fixed => continue,
                 };
                 if resized != parameter {
                     candidate = Some((u16::try_from(level_number).unwrap(), index, resized));
