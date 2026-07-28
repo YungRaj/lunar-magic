@@ -1233,21 +1233,26 @@ fn render_shared_slot_021(
     let rows = usize::from(parameter >> 4) + 1;
     let mut table_index = 0;
     let mut row_width = 2;
-    for major_offset in 0..rows {
+    for row in 0..rows {
         for column in 0..row_width {
             if table_index > 15 {
                 table_index -= 5;
             }
+            let row =
+                isize::try_from(row).map_err(|_| StandardObjectRenderError::CoordinateOverflow)?;
+            let column = isize::try_from(column)
+                .map_err(|_| StandardObjectRenderError::CoordinateOverflow)?;
+            let (major_offset, minor_offset) = if layout.vertical {
+                (row, column - row)
+            } else {
+                (column - row, row)
+            };
             set_placement_cell_signed(
                 cache,
                 layout,
                 placement,
-                isize::try_from(major_offset)
-                    .map_err(|_| StandardObjectRenderError::CoordinateOverflow)?,
-                isize::try_from(column)
-                    .map_err(|_| StandardObjectRenderError::CoordinateOverflow)?
-                    - isize::try_from(major_offset)
-                        .map_err(|_| StandardObjectRenderError::CoordinateOverflow)?,
+                major_offset,
+                minor_offset,
                 u16::from(SHARED_SLOT_021_TILES[table_index]) + 0x100,
             )?;
             table_index += 1;
@@ -1255,7 +1260,12 @@ fn render_shared_slot_021(
         row_width = if table_index == 2 { 4 } else { 5 };
     }
     let rows = isize::try_from(rows).map_err(|_| StandardObjectRenderError::CoordinateOverflow)?;
-    set_placement_cell_signed(cache, layout, placement, rows, 1 - rows, 0x1eb)
+    let (major_offset, minor_offset) = if layout.vertical {
+        (rows, 1 - rows)
+    } else {
+        (1 - rows, rows)
+    };
+    set_placement_cell_signed(cache, layout, placement, major_offset, minor_offset, 0x1eb)
 }
 
 fn render_shared_slot_022(
@@ -5300,7 +5310,7 @@ mod tests {
         let mut handler_map = [0xff; 64];
         handler_map[1] = 21;
         let stream = ObjectStream {
-            records: vec![ObjectRecord::new(vec![8, 0x10, 0x20]).unwrap()],
+            records: vec![ObjectRecord::new(vec![8, 0x18, 0x20]).unwrap()],
         };
         let report = render_mapped_standard_object_stream(
             &stream,
@@ -5310,21 +5320,21 @@ mod tests {
             0x25,
         )
         .unwrap();
-        for (major, start_minor, row) in [
-            (0, 8, vec![0x1c4, 0x1c5]),
-            (1, 7, vec![0x1c7, 0x1ec, 0x1ed, 0x1c6]),
-            (2, 6, vec![0x1c7, 0x1ee, 0x159, 0x15a, 0x1ef]),
+        for (minor, start_major, row) in [
+            (8, 8, vec![0x1c4, 0x1c5]),
+            (9, 7, vec![0x1c7, 0x1ec, 0x1ed, 0x1c6]),
+            (10, 6, vec![0x1c7, 0x1ee, 0x159, 0x15a, 0x1ef]),
         ] {
             for (column, tile) in row.into_iter().enumerate() {
                 assert_eq!(
                     report.cache.cells()
-                        [NativeLevelMap16Cache::cell_index(layout(), major, start_minor + column)],
+                        [NativeLevelMap16Cache::cell_index(layout(), start_major + column, minor)],
                     tile
                 );
             }
         }
         assert_eq!(
-            report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 3, 6)],
+            report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 6, 11)],
             0x1eb
         );
     }
