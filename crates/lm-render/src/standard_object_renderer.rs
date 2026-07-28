@@ -1040,7 +1040,7 @@ fn render_extended_midway_bar(
         } else {
             (major, minor)
         };
-        cache.set(layout, x, y, tile)?;
+        set_rendered_cell(cache, layout, x, y, tile)?;
     }
     Ok(())
 }
@@ -1074,7 +1074,7 @@ fn render_extended_canvas(
         } else {
             (major, minor)
         };
-        cache.set(layout, x, y, tile)?;
+        set_rendered_cell(cache, layout, x, y, tile)?;
     }
     Ok(())
 }
@@ -1105,7 +1105,7 @@ fn render_extended_bush(
         } else {
             (major, minor)
         };
-        let current = cache.get(layout, x, y)?;
+        let current = get_rendered_cell(cache, layout, x, y)?;
         let current_low = current & 0xff;
         let tile = if source_tile < 0x054 || current_low == 0x025 {
             source_tile
@@ -1114,7 +1114,7 @@ fn render_extended_bush(
         } else {
             source_tile + 2
         };
-        cache.set(layout, x, y, tile)?;
+        set_rendered_cell(cache, layout, x, y, tile)?;
     }
     Ok(())
 }
@@ -3153,7 +3153,13 @@ fn render_shared_slot_007(
             let y = usize::from(origin_y)
                 .checked_add(y_offset)
                 .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
-            cache.set(layout, x, y, if y_offset == 0 { 0x100 } else { 0x03f })?;
+            set_rendered_cell(
+                cache,
+                layout,
+                x,
+                y,
+                if y_offset == 0 { 0x100 } else { 0x03f },
+            )?;
         }
     }
     Ok(())
@@ -3434,8 +3440,41 @@ fn set_placement_cell(
     } else {
         (major, minor)
     };
+    set_rendered_cell(cache, layout, x, y, tile)
+}
+
+fn set_rendered_cell(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    x: usize,
+    y: usize,
+    tile: u16,
+) -> Result<(), StandardObjectRenderError> {
+    if x >= layout.width
+        || y >= layout.height
+        || NativeLevelMap16Cache::cell_index(layout, x, y) >= LEVEL_MAP16_CACHE_CELLS
+    {
+        // Lunar Magic sets its renderer bounds flags and keeps the cells already written by the
+        // object. Vanilla levels rely on this clipping at vertical plane edges.
+        return Ok(());
+    }
     cache.set(layout, x, y, tile)?;
     Ok(())
+}
+
+fn get_rendered_cell(
+    cache: &NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    x: usize,
+    y: usize,
+) -> Result<u16, StandardObjectRenderError> {
+    if x >= layout.width
+        || y >= layout.height
+        || NativeLevelMap16Cache::cell_index(layout, x, y) >= LEVEL_MAP16_CACHE_CELLS
+    {
+        return Ok(u16::MAX);
+    }
+    Ok(cache.get(layout, x, y)?)
 }
 
 fn set_placement_cell_signed(
@@ -3460,8 +3499,7 @@ fn set_placement_cell_signed(
     if x >= layout.width || y >= layout.height {
         return Ok(());
     }
-    cache.set(layout, x, y, tile)?;
-    Ok(())
+    set_rendered_cell(cache, layout, x, y, tile)
 }
 
 fn get_placement_cell_signed(
@@ -3482,10 +3520,7 @@ fn get_placement_cell_signed(
     } else {
         (major, minor)
     };
-    if x >= layout.width || y >= layout.height {
-        return Ok(u16::MAX);
-    }
-    Ok(cache.get(layout, x, y)?)
+    get_rendered_cell(cache, layout, x, y)
 }
 
 fn get_placement_cell(
@@ -3506,7 +3541,7 @@ fn get_placement_cell(
     } else {
         (major, minor)
     };
-    Ok(cache.get(layout, x, y)?)
+    get_rendered_cell(cache, layout, x, y)
 }
 
 fn render_shared_slot_002(
@@ -3583,7 +3618,8 @@ fn render_pattern(
             } else {
                 (major, minor)
             };
-            cache.set(
+            set_rendered_cell(
+                cache,
                 layout,
                 x,
                 y,

@@ -18,6 +18,7 @@ const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 50;
 const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 400;
 const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
 const NATIVE_LEVEL_MINOR_TILES: u16 = 27;
+const VERTICAL_LEVEL_MINOR_TILES: u16 = 32;
 const VANILLA_EMPTY_MAP16_TILE: u16 = 0x25;
 const VANILLA_ENTRANCE_Y_LOW: [u8; 16] = [
     0x00, 0x30, 0x60, 0x80, 0xa0, 0xb0, 0xc0, 0xe0, 0x10, 0x30, 0x50, 0x60, 0x70, 0x90, 0x00, 0x00,
@@ -1483,7 +1484,11 @@ impl VanillaLevelEditor {
         let mut major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
         // A horizontal SMW screen is 16×27 tiles. Byte 0 bit $10 places objects in its lower
         // 11-tile region; parameter nibbles describe command geometry and are not canvas bounds.
-        let mut minor_tiles = NATIVE_LEVEL_MINOR_TILES;
+        let mut minor_tiles = if vertical {
+            VERTICAL_LEVEL_MINOR_TILES
+        } else {
+            NATIVE_LEVEL_MINOR_TILES
+        };
         for (records, placements) in [
             (records.as_slice(), placements.as_slice()),
             (layer2_records.as_slice(), layer2_placements.as_slice()),
@@ -1796,7 +1801,7 @@ impl VanillaLevelEditor {
         );
         // The object cache uses SMW's 0x1B0-byte 16×27 screen pages. The 32×32 Layer 2 plane may
         // enlarge the visible canvas, but its final five rows are not object-cache coordinates.
-        let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles);
+        let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles, vertical);
         let layer2_artwork_bounds = self.draw_object_artwork(
             painter,
             layer2_target,
@@ -3937,7 +3942,7 @@ fn rendered_standard_object_canvas_extent(
     lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).ok()?;
     let layout = lm_render::NativeLevelMap16Layout {
         width: if vertical {
-            usize::from(NATIVE_LEVEL_MINOR_TILES)
+            usize::from(VERTICAL_LEVEL_MINOR_TILES)
         } else {
             512
         },
@@ -4663,7 +4668,7 @@ fn sprite_fields_at_canvas_position(
     } else {
         (column as u16, row as u16)
     };
-    if major >= 0x200 || minor >= NATIVE_LEVEL_MINOR_TILES {
+    if major >= 0x200 || minor >= level_minor_tile_limit(vertical) {
         return None;
     }
     fields.screen = u8::try_from(major / 16).ok()?;
@@ -4877,7 +4882,7 @@ fn object_placement_at_canvas_position(
         (column as u16, row as u16)
     };
     let screen = major / 16;
-    if screen >= 32 || minor >= NATIVE_LEVEL_MINOR_TILES {
+    if screen >= 32 || minor >= level_minor_tile_limit(vertical) {
         return None;
     }
     let (first, second) = if vertical {
@@ -5236,9 +5241,18 @@ fn vanilla_shared_background_coordinates(
     (layer1_x, layer1_y)
 }
 
-const fn native_object_cache_minor_tiles(canvas_minor_tiles: u16) -> u16 {
-    if canvas_minor_tiles < NATIVE_LEVEL_MINOR_TILES {
+const fn native_object_cache_minor_tiles(canvas_minor_tiles: u16, vertical: bool) -> u16 {
+    let native_minor_tiles = level_minor_tile_limit(vertical);
+    if canvas_minor_tiles < native_minor_tiles {
         canvas_minor_tiles
+    } else {
+        native_minor_tiles
+    }
+}
+
+const fn level_minor_tile_limit(vertical: bool) -> u16 {
+    if vertical {
+        VERTICAL_LEVEL_MINOR_TILES
     } else {
         NATIVE_LEVEL_MINOR_TILES
     }
@@ -8294,7 +8308,7 @@ mod tests {
         lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
         lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         let layout = lm_render::NativeLevelMap16Layout {
-            width: 27,
+            width: 32,
             height: 512,
             page_stride: 0x1b0,
             base_cell: 0,
@@ -8360,6 +8374,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn pristine_level_109_clips_vertical_plane_edge_artwork() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level = project
+            .load_level_slot(
+                0x109,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let vertical = true;
+        let handler_map = definition_map.family(3).unwrap();
+        assert_eq!(
+            rendered_standard_object_canvas_extent(
+                &level.layer1.objects.records,
+                handler_map,
+                true,
+            ),
+            Some((112, 32))
+        );
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 32,
+            height: 512,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical,
+        };
+        let report = lm_render::render_mapped_standard_object_stream(
+            &level.layer1.objects,
+            &definitions,
+            handler_map,
+            layout,
+            VANILLA_EMPTY_MAP16_TILE,
+        )
+        .unwrap();
+        assert_eq!(report.rendered_objects, 159);
+        assert!(report.missing_commands.is_empty());
+        assert!(report.missing_extended_objects.is_empty());
     }
 
     #[test]
@@ -8759,7 +8819,7 @@ mod tests {
             .filter(|&command| object_catalog_tiles(command, family, &definitions).is_some())
             .count();
         assert_eq!(
-            rendered, 59,
+            rendered, 63,
             "normal-family authenticated artwork coverage changed"
         );
     }
@@ -9514,9 +9574,11 @@ mod tests {
 
     #[test]
     fn background_canvas_height_does_not_expand_the_native_object_cache() {
-        assert_eq!(native_object_cache_minor_tiles(16), 16);
-        assert_eq!(native_object_cache_minor_tiles(27), 27);
-        assert_eq!(native_object_cache_minor_tiles(32), 27);
+        assert_eq!(native_object_cache_minor_tiles(16, false), 16);
+        assert_eq!(native_object_cache_minor_tiles(27, false), 27);
+        assert_eq!(native_object_cache_minor_tiles(32, false), 27);
+        assert_eq!(native_object_cache_minor_tiles(27, true), 27);
+        assert_eq!(native_object_cache_minor_tiles(32, true), 32);
     }
 
     #[test]
