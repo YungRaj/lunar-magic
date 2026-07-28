@@ -1727,15 +1727,17 @@ fn render_shared_slot_040(
     } else {
         encoded_height
     };
-    for major_offset in 0..body_rows {
-        let pair = if major_offset == 0 {
+    for minor_offset in 0..body_rows {
+        let pair = if minor_offset == 0 {
             [0x133, 0x134]
         } else {
             [0x09d, 0x09e]
         };
-        set_placement_pair(cache, layout, placement, major_offset, pair)?;
+        set_placement_horizontal_pair(cache, layout, placement, minor_offset, pair)?;
     }
-    set_placement_pair(cache, layout, placement, body_rows, [0x133, 0x134])
+    // RenderTwoColumnVerticalTransitionObject at 0042d080 advances rows by
+    // raw +0x10 and writes each pair across adjacent columns.
+    set_placement_horizontal_pair(cache, layout, placement, body_rows, [0x133, 0x134])
 }
 
 fn render_shared_slot_041(
@@ -3547,19 +3549,6 @@ fn set_placement_horizontal_pair(
     tiles: [u16; 2],
 ) -> Result<(), StandardObjectRenderError> {
     for (major_offset, tile) in tiles.into_iter().enumerate() {
-        set_placement_cell(cache, layout, placement, major_offset, minor_offset, tile)?;
-    }
-    Ok(())
-}
-
-fn set_placement_pair(
-    cache: &mut NativeLevelMap16Cache,
-    layout: NativeLevelMap16Layout,
-    placement: lm_level::NativeObjectPlacement,
-    major_offset: usize,
-    tiles: [u16; 2],
-) -> Result<(), StandardObjectRenderError> {
-    for (minor_offset, tile) in tiles.into_iter().enumerate() {
         set_placement_cell(cache, layout, placement, major_offset, minor_offset, tile)?;
     }
     Ok(())
@@ -5577,11 +5566,7 @@ mod tests {
             .unwrap();
             for (row, tiles) in expected.into_iter().enumerate() {
                 for (column, tile) in tiles.into_iter().enumerate() {
-                    let (major, minor) = if handler == 36 {
-                        (column, row)
-                    } else {
-                        (row, column)
-                    };
+                    let (major, minor) = (column, row);
                     assert_eq!(
                         report.cache.cells()
                             [NativeLevelMap16Cache::cell_index(layout(), major, minor)],
