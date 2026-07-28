@@ -469,7 +469,14 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1f7, 0, 1),
             (0x1ec, -24, -8),
         ]),
-        0x95 => render_handler_95(mode.placement_first),
+        // Dispatch-table entry $95 points at $004C81E0 and always emits this four-part
+        // two-row composite. The placement-dependent tongue-like handler is entry $98.
+        0x95 => parts(&[
+            (0x1f8, -8, -1),
+            (0x1f9, 8, -1),
+            (0x1e8, -8, -17),
+            (0x1e9, 8, -17),
+        ]),
         0x96 => parts(&[
             (0x200, 0, 0),
             (0x1f4, -8, 0),
@@ -743,24 +750,6 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // it records the placement but has no built-in preview definition.
         _ => None,
     }
-}
-
-fn render_handler_95(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
-    let variant = placement_first & 3;
-    let mut values = vec![(
-        0x1ee,
-        if variant == 0 { -6 } else { -8 },
-        if variant == 0 { -10 } else { -7 },
-    )];
-    match variant {
-        0 => values.extend([(0x1e5, -15, 5), (0x20f, -15, 1), (0x21f, 0, 1)]),
-        1 => values.extend([(0x1e6, -16, 1), (0x1e7, 0, 1)]),
-        2 => values.extend([(0x20d, -16, -1), (0x20e, 0, 1)]),
-        3 => values.extend([(0x1e5, -6, 9), (0x20d, -16, -1), (0x20e, 0, 1)]),
-        _ => unreachable!(),
-    }
-    values.push((0x1e5, -16 + [-6, 0, -2, -4][usize::from(variant)], 1));
-    parts(&values)
 }
 
 fn render_handler_83(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
@@ -2900,7 +2889,7 @@ mod tests {
     }
 
     #[test]
-    fn handler_95_preserves_all_four_placement_variants() {
+    fn handler_95_uses_the_fixed_native_two_row_composite() {
         let geometry = |first| {
             render_lunar_magic_standard_sprite_with_mode(
                 0x95,
@@ -2914,44 +2903,15 @@ mod tests {
             .map(|part| (part.definition_index, part.x, part.y))
             .collect::<Vec<_>>()
         };
-        assert_eq!(
-            geometry(0),
-            [
-                (0x1ee, -6, -10),
-                (0x1e5, -15, 5),
-                (0x20f, -15, 1),
-                (0x21f, 0, 1),
-                (0x1e5, -22, 1)
-            ]
-        );
-        assert_eq!(
-            geometry(1),
-            [
-                (0x1ee, -8, -7),
-                (0x1e6, -16, 1),
-                (0x1e7, 0, 1),
-                (0x1e5, -16, 1)
-            ]
-        );
-        assert_eq!(
-            geometry(2),
-            [
-                (0x1ee, -8, -7),
-                (0x20d, -16, -1),
-                (0x20e, 0, 1),
-                (0x1e5, -18, 1)
-            ]
-        );
-        assert_eq!(
-            geometry(3),
-            [
-                (0x1ee, -8, -7),
-                (0x1e5, -6, 9),
-                (0x20d, -16, -1),
-                (0x20e, 0, 1),
-                (0x1e5, -20, 1)
-            ]
-        );
+        let expected = [
+            (0x1f8, -8, -1),
+            (0x1f9, 8, -1),
+            (0x1e8, -8, -17),
+            (0x1e9, 8, -17),
+        ];
+        for first in 0..4 {
+            assert_eq!(geometry(first), expected);
+        }
     }
 
     #[test]
