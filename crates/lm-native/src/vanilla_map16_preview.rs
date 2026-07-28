@@ -187,7 +187,12 @@ pub(crate) fn render(
         .as_ref()
         .map(|layer3| (layer3.initial_x, layer3.initial_y));
     let (layer3_low_image, layer3_high_image) = layer3.as_ref().map_or((None, None), |layer3| {
-        let (low, high) = render_layer3_planes(&layer3.tilemap, &layer3_tiles, &palette);
+        let (low, high) = render_layer3_planes(
+            &layer3.tilemap,
+            &layer3_tiles,
+            &palette,
+            header.level_mode() == 0x0e,
+        );
         (Some(low), Some(high))
     });
     Ok(VanillaMap16Preview {
@@ -301,6 +306,7 @@ fn render_layer3_planes(
     tilemap: &[u16],
     graphics: &[IndexedTile],
     palette: &Palette,
+    additive: bool,
 ) -> (egui::ColorImage, egui::ColorImage) {
     const TILES: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
     const TILE_PIXELS: usize = IndexedTile::WIDTH;
@@ -345,7 +351,11 @@ fn render_layer3_planes(
                     &mut high
                 };
                 target.pixels[(tile_y * TILE_PIXELS + y) * EXTENT + tile_x * TILE_PIXELS + x] =
-                    egui::Color32::from_rgb(color.red, color.green, color.blue);
+                    if additive {
+                        egui::Color32::from_rgb_additive(color.red, color.green, color.blue)
+                    } else {
+                        egui::Color32::from_rgb(color.red, color.green, color.blue)
+                    };
             }
         }
     }
@@ -905,7 +915,7 @@ mod tests {
         tilemap[1] = 1 | 2 << 10 | 0x2000 | 0x4000;
         tilemap[64] = 1 | 2 << 10 | 0x8000;
 
-        let (low, high) = render_layer3_planes(&tilemap, &graphics, &palette);
+        let (low, high) = render_layer3_planes(&tilemap, &graphics, &palette, false);
         assert_eq!(low.size, [512, 512]);
         assert_eq!(high.size, [512, 512]);
         assert_eq!(low.pixels[0], egui::Color32::RED);
@@ -1253,6 +1263,59 @@ mod tests {
         }
         assert_eq!(actual.backdrop.0, live_words[256]);
         assert!(differences.is_empty());
+    }
+
+    #[test]
+    fn diagnostic_lunar_magic_map16_graphics_cache_matches_when_requested() {
+        let (Ok(slot), Ok(cache_path)) = (
+            std::env::var("LM_LEVEL_SLOT"),
+            std::env::var("LM_LEVEL_MAP16_GRAPHICS_CACHE"),
+        ) else {
+            return;
+        };
+        let slot = usize::from_str_radix(&slot, 16).unwrap();
+        let project = Project::new(
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
+        );
+        let level = project
+            .load_level_slot(
+                slot,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let actual = lm_profile::load_smw_us_v1_level_map16_base(
+            &project.rom,
+            usize::from(level.layer1.header.object_tileset()),
+        )
+        .unwrap();
+        let expected = std::fs::read(cache_path).unwrap();
+        assert_eq!(expected.len(), actual.bytes.len());
+        let differences = actual
+            .bytes
+            .iter()
+            .zip(&expected)
+            .filter(|(actual, expected)| actual != expected)
+            .count();
+        eprintln!(
+            "level {slot:03X} Map16 graphics differences={differences} / {} bytes",
+            expected.len()
+        );
+        for (index, (actual, expected)) in actual
+            .bytes
+            .chunks_exact(2)
+            .zip(expected.chunks_exact(2))
+            .enumerate()
+            .filter(|(_, (actual, expected))| actual != expected)
+            .take(16)
+        {
+            eprintln!(
+                "{index:03X}: rust={:04X} wine={:04X}",
+                u16::from_le_bytes([actual[0], actual[1]]),
+                u16::from_le_bytes([expected[0], expected[1]])
+            );
+        }
+        assert_eq!(differences, 0);
     }
 
     #[test]

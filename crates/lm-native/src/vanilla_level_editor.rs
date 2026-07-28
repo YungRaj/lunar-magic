@@ -1805,12 +1805,13 @@ impl VanillaLevelEditor {
                 match y {
                     112 => (x, -32),
                     64 => (x, -128),
+                    -48 if level_mode == 0x0e => (x, 0),
                     _ => (x, y),
                 }
             }
         });
         let layer3_camera = game_camera.or_else(|| {
-            (!self.game_preview() && editor_tide).then(|| {
+            (!self.game_preview() && (editor_tide || level_mode == 0x0e)).then(|| {
                 (
                     visual_smoke_editor_scroll_column().unwrap_or_default(),
                     visual_smoke_editor_scroll_row()
