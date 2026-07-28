@@ -8294,7 +8294,7 @@ mod tests {
                     base_cell: 16 * 0x1b0,
                     ..layout
                 };
-                Some(
+                Some((
                     lm_render::render_mapped_standard_object_stream(
                         &layer2.objects,
                         &definitions,
@@ -8304,7 +8304,8 @@ mod tests {
                     )
                     .unwrap()
                     .cache,
-                )
+                    layer2.objects,
+                ))
             });
         let mut mismatches = Vec::new();
         for x in 0..layout.width {
@@ -8315,7 +8316,7 @@ mod tests {
                 } else {
                     layer2_rendered
                         .as_ref()
-                        .map_or(VANILLA_EMPTY_MAP16_TILE, |layer2| {
+                        .map_or(VANILLA_EMPTY_MAP16_TILE, |(layer2, _)| {
                             layer2.get(layout, x, y).unwrap()
                         })
                 };
@@ -8356,9 +8357,63 @@ mod tests {
                 }
                 previous = next;
             }
+            let mut layer2_owners = vec![None; layout.width * layout.height];
+            if let Some((_, layer2_objects)) = layer2_rendered.as_ref() {
+                let layer2_layout = lm_render::NativeLevelMap16Layout {
+                    base_cell: 16 * 0x1b0,
+                    ..layout
+                };
+                let mut previous =
+                    lm_render::NativeLevelMap16Cache::filled(VANILLA_EMPTY_MAP16_TILE);
+                for end in 1..=layer2_objects.records.len() {
+                    let prefix = lm_level::ObjectStream {
+                        records: layer2_objects.records[..end].to_vec(),
+                    };
+                    let next = lm_render::render_mapped_standard_object_stream(
+                        &prefix,
+                        &definitions,
+                        handler_map,
+                        layer2_layout,
+                        VANILLA_EMPTY_MAP16_TILE,
+                    )
+                    .unwrap()
+                    .cache;
+                    for x in 0..layout.width {
+                        for y in 0..layout.height {
+                            if next.get(layout, x, y).unwrap()
+                                != previous.get(layout, x, y).unwrap()
+                            {
+                                layer2_owners[y * layout.width + x] = Some(end - 1);
+                            }
+                        }
+                    }
+                    previous = next;
+                }
+            }
             for &(x, y, actual, expected) in mismatches.iter().take(100) {
                 let owner = owners[y * layout.width + x].map_or_else(
-                    || "unwritten".to_owned(),
+                    || {
+                        layer2_owners[y * layout.width + x].map_or_else(
+                            || "unwritten".to_owned(),
+                            |owner| {
+                                let (_, layer2_objects) = layer2_rendered.as_ref().unwrap();
+                                let record = &layer2_objects.records[owner];
+                                let placement = layer2_objects
+                                    .native_placements()
+                                    .into_iter()
+                                    .find(|placement| placement.record_index == owner)
+                                    .unwrap();
+                                let (placement_x, placement_y) =
+                                    placement.tile_coordinates(vertical);
+                                format!(
+                                    "L2:{owner}@({placement_x},{placement_y}): command={:02X} handler={} parameter={:02X}",
+                                    record.command_id(),
+                                    handler_map[usize::from(record.command_id())],
+                                    record.parameter(),
+                                )
+                            },
+                        )
+                    },
                     |owner| {
                         let record = &level.layer1.objects.records[owner];
                         let placement = level

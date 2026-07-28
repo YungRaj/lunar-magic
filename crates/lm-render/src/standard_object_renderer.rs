@@ -2950,13 +2950,13 @@ fn render_shared_slot_062(
         0,
         u16::from(SHARED_SLOT_062_START_TILES[variant]),
     )?;
-    for minor_offset in 1..run {
+    for major_offset in 1..run {
         set_placement_cell(
             cache,
             layout,
             placement,
+            major_offset,
             0,
-            minor_offset,
             u16::from(SHARED_SLOT_062_MIDDLE_TILES[variant]),
         )?;
     }
@@ -2964,8 +2964,8 @@ fn render_shared_slot_062(
         cache,
         layout,
         placement,
-        0,
         run,
+        0,
         u16::from(SHARED_SLOT_062_END_TILES[variant]),
     )
 }
@@ -3044,10 +3044,12 @@ fn render_shared_slot_070(
     placement: lm_level::NativeObjectPlacement,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
-    for major_offset in 0..=usize::from(parameter >> 4) {
-        set_placement_cell(cache, layout, placement, major_offset, 0, 0x15c)?;
+    // RenderStandardObjectDefinitionSlot070 at 004338c0 advances 0x10 between rows and
+    // walks columns for the low-nibble body.
+    for minor_offset in 0..=usize::from(parameter >> 4) {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, 0x15c)?;
         if parameter & 0x0f != 0 {
-            for minor_offset in 1..=usize::from(parameter & 0x0f) + 1 {
+            for major_offset in 1..=usize::from(parameter & 0x0f) + 1 {
                 set_placement_cell(cache, layout, placement, major_offset, minor_offset, 0x153)?;
             }
         }
@@ -3922,6 +3924,7 @@ pub fn install_lunar_magic_shared_extended_objects(
         (0x8b, 2, 2, vec![0x0f0, 0x0f1, 0x0f2, 0x0f3]),
         (0x8c, 2, 2, vec![0x0f4, 0x0f5, 0x0f6, 0x0f7]),
         (0x8d, 2, 2, vec![0x0f8, 0x0f9, 0x0fa, 0x0fb]),
+        (0x8f, 2, 2, vec![0x0fc, 0x0fd, 0x0fe, 0x0ff]),
         (0x90, 2, 3, vec![0x098, 0x099, 0x09a, 0x09b, 0x09c, 0x09c]),
         (0x97, 1, 1, vec![0x110]),
     ] {
@@ -4497,18 +4500,18 @@ fn install_edge_mapped_handlers(
         (
             67,
             StandardObjectPattern {
-                width: 2,
-                height: 1,
+                width: 1,
+                height: 2,
                 tiles: vec![0x153, 0x154],
             },
-            AxisExpansion::FinalEdge,
             AxisExpansion::Clamp,
+            AxisExpansion::FinalEdge,
         ),
         (
             68,
             StandardObjectPattern {
-                width: 2,
-                height: 1,
+                width: 1,
+                height: 2,
                 tiles: vec![0x15d, 0x153],
             },
             AxisExpansion::Clamp,
@@ -4517,19 +4520,19 @@ fn install_edge_mapped_handlers(
         (
             69,
             StandardObjectPattern {
-                width: 1,
-                height: 2,
+                width: 2,
+                height: 1,
                 tiles: vec![0x153, 0x155],
             },
-            AxisExpansion::Clamp,
             AxisExpansion::FinalEdge,
+            AxisExpansion::Clamp,
         ),
     ] {
         definitions.set_handler(
             handler,
             StandardObjectDefinition {
                 pattern,
-                extent: ObjectExtent::ParameterNibbles,
+                extent: ObjectExtent::SwappedParameterNibbles,
                 major_expansion,
                 minor_expansion,
                 renderer: NativeRenderer::Pattern,
@@ -6181,7 +6184,11 @@ mod tests {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         for (handler, parameter, expected) in [
-            (62, 0x12, vec![vec![0x089, 0x08a, 0x08b]]),
+            (
+                62,
+                0x12,
+                vec![vec![0x089], vec![0x08a], vec![0x08b]],
+            ),
             (63, 0x02, vec![vec![0x10a], vec![0x10b], vec![0x10c]]),
             (64, 0x21, vec![vec![0x078, 0x079, 0x079]]),
             (65, 0x21, vec![vec![0x160, 0x160, 0x160]]),
@@ -6221,24 +6228,38 @@ mod tests {
             (
                 67,
                 0x12,
-                vec![vec![0x153, 0x153, 0x153], vec![0x154, 0x154, 0x154]],
+                vec![
+                    vec![0x153, 0x154],
+                    vec![0x153, 0x154],
+                    vec![0x153, 0x154],
+                ],
             ),
             (
                 68,
                 0x12,
-                vec![vec![0x15d, 0x15d, 0x15d], vec![0x153, 0x153, 0x153]],
+                vec![
+                    vec![0x15d, 0x153],
+                    vec![0x15d, 0x153],
+                    vec![0x15d, 0x153],
+                ],
             ),
             (
                 69,
                 0x12,
-                vec![vec![0x153, 0x153, 0x155], vec![0x153, 0x153, 0x155]],
+                vec![
+                    vec![0x153, 0x153],
+                    vec![0x153, 0x153],
+                    vec![0x155, 0x155],
+                ],
             ),
             (
                 70,
                 0x12,
                 vec![
-                    vec![0x15c, 0x153, 0x153, 0x153],
-                    vec![0x15c, 0x153, 0x153, 0x153],
+                    vec![0x15c, 0x15c],
+                    vec![0x153, 0x153],
+                    vec![0x153, 0x153],
+                    vec![0x153, 0x153],
                 ],
             ),
         ] {
@@ -6469,14 +6490,28 @@ mod tests {
     fn recovered_fixed_extended_patterns_render_their_complete_shape() {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
-        let stream = ObjectStream {
-            records: vec![ObjectRecord::new(vec![0, 0, 0x86]).unwrap()],
-        };
-        let report =
-            render_mapped_standard_object_stream(&stream, &definitions, &[0; 64], layout(), 0x25)
-                .unwrap();
-        for (x, y, expected) in [(0, 0, 0x066), (1, 0, 0x067), (0, 1, 0x068), (1, 1, 0x069)] {
-            assert_eq!(report.cache.get(layout(), x, y).unwrap(), expected);
+        for (selector, expected) in [
+            (0x86, [0x066, 0x067, 0x068, 0x069]),
+            (0x8f, [0x0fc, 0x0fd, 0x0fe, 0x0ff]),
+        ] {
+            let stream = ObjectStream {
+                records: vec![ObjectRecord::new(vec![0, 0, selector]).unwrap()],
+            };
+            let report = render_mapped_standard_object_stream(
+                &stream,
+                &definitions,
+                &[0; 64],
+                layout(),
+                0x25,
+            )
+            .unwrap();
+            for (index, (x, y)) in [(0, 0), (1, 0), (0, 1), (1, 1)].into_iter().enumerate() {
+                assert_eq!(
+                    report.cache.get(layout(), x, y).unwrap(),
+                    expected[index],
+                    "selector {selector:02X}, cell ({x}, {y})",
+                );
+            }
         }
     }
 
