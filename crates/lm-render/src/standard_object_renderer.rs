@@ -4116,7 +4116,7 @@ pub fn install_lunar_magic_shared_standard_objects(
             },
             extent: ObjectExtent::OneByHighNibble,
             major_expansion: AxisExpansion::Clamp,
-            minor_expansion: AxisExpansion::PreserveEdges,
+            minor_expansion: AxisExpansion::Clamp,
             renderer: NativeRenderer::Pattern,
         },
     )?;
@@ -6616,7 +6616,7 @@ mod tests {
         let report = render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
         assert_eq!(report.rendered_objects, 1);
         assert!(report.missing_commands.is_empty());
-        for (y, tile) in [0x141, 0x142, 0x142, 0x143].into_iter().enumerate() {
+        for (y, tile) in [0x141, 0x142, 0x143, 0x143].into_iter().enumerate() {
             assert_eq!(
                 report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 0, y)],
                 tile
