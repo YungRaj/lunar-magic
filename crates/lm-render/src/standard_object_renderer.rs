@@ -4184,7 +4184,7 @@ pub fn install_lunar_magic_tileset_extended_objects(
     definitions: &mut StandardObjectDefinitionSet,
     object_tileset: u8,
 ) -> Result<(), StandardObjectRenderError> {
-    if object_tileset == 8 {
+    if matches!(object_tileset, 0 | 8) {
         definitions.set_extended(
             0x17,
             StandardObjectPattern {
@@ -5454,7 +5454,7 @@ mod tests {
     }
 
     #[test]
-    fn switch_palace_tileset_substitutes_extended_selector_17() {
+    fn normal_and_switch_palace_tilesets_substitute_extended_selector_17() {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
         assert_eq!(
@@ -5468,18 +5468,21 @@ mod tests {
                 .tiles,
             [0x025]
         );
-        install_lunar_magic_tileset_extended_objects(&mut definitions, 8).unwrap();
-        assert_eq!(
-            definitions
-                .extended
-                .get(0x17)
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .pattern
-                .tiles,
-            [0x12d]
-        );
+        for tileset in [0, 8] {
+            install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+            install_lunar_magic_tileset_extended_objects(&mut definitions, tileset).unwrap();
+            assert_eq!(
+                definitions
+                    .extended
+                    .get(0x17)
+                    .unwrap()
+                    .as_ref()
+                    .unwrap()
+                    .pattern
+                    .tiles,
+                [0x12d]
+            );
+        }
     }
 
     #[test]
