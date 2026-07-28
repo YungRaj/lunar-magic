@@ -315,6 +315,7 @@ enum NativeRenderer {
     SharedSlot010,
     SharedSlot011,
     SharedSlot014,
+    SharedSlot015,
     SharedSlot017,
     SharedSlot018,
     SharedSlot019,
@@ -857,6 +858,9 @@ fn dispatch_native_renderer(
         }
         NativeRenderer::SharedSlot014 => {
             render_shared_slot_014(cache, layout, placement, parameter)
+        }
+        NativeRenderer::SharedSlot015 => {
+            render_shared_slot_015(cache, layout, placement, parameter)
         }
         NativeRenderer::SharedSlot017 => {
             render_shared_slot_017(cache, layout, placement, parameter)
@@ -3192,6 +3196,44 @@ fn render_shared_slot_071(
     Ok(())
 }
 
+fn render_shared_slot_015(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    let length = usize::from(parameter >> 4) + 1;
+    let minor_page_extent = if layout.vertical { 32 } else { 27 };
+    for offset in 0..length {
+        let absolute_minor = usize::from(placement.minor)
+            .checked_add(offset)
+            .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+        let page_advance = absolute_minor / minor_page_extent;
+        let wrapped_minor = absolute_minor % minor_page_extent;
+        let wrapped_major = usize::from(placement.major)
+            .checked_add(
+                page_advance
+                    .checked_mul(16)
+                    .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+            )
+            .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+        let tile = if offset == 0 {
+            0x153
+        } else if offset + 1 == length {
+            0x155
+        } else {
+            0x154
+        };
+        let (x, y) = if layout.vertical {
+            (wrapped_minor, wrapped_major)
+        } else {
+            (wrapped_major, wrapped_minor)
+        };
+        set_rendered_cell(cache, layout, x, y, tile)?;
+    }
+    Ok(())
+}
+
 fn render_shared_slot_072(
     cache: &mut NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
@@ -4451,6 +4493,7 @@ fn install_shared_handler_aliases(
     for (handler, renderer) in [
         (4, NativeRenderer::SharedSlot004),
         (5, NativeRenderer::SharedSlot005),
+        (15, NativeRenderer::SharedSlot015),
         (17, NativeRenderer::SharedSlot017),
         (18, NativeRenderer::SharedSlot018),
         (19, NativeRenderer::SharedSlot019),
@@ -4529,7 +4572,6 @@ fn install_shared_handler_aliases(
         (28, 12),
         (29, 13),
         (30, 14),
-        (31, 15),
         (32, 16),
         (33, 6),
     ] {
@@ -5828,6 +5870,33 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn mapped_handler_15_wraps_a_capped_column_into_the_next_native_screen() {
+        let layout = NativeLevelMap16Layout {
+            width: 224,
+            height: 27,
+            ..layout()
+        };
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 8,
+            major: 143,
+            minor: 18,
+            major_span: 15,
+            minor_span: 15,
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        render_shared_slot_015(&mut cache, layout, placement, 0xff).unwrap();
+        assert_eq!(cache.get(layout, 143, 18).unwrap(), 0x153);
+        for minor in 19..27 {
+            assert_eq!(cache.get(layout, 143, minor).unwrap(), 0x154);
+        }
+        for minor in 0..6 {
+            assert_eq!(cache.get(layout, 159, minor).unwrap(), 0x154);
+        }
+        assert_eq!(cache.get(layout, 159, 6).unwrap(), 0x155);
     }
 
     #[test]

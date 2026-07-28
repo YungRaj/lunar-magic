@@ -8352,6 +8352,18 @@ mod tests {
             .unwrap();
         let vertical = lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode()).vertical;
         if std::env::var_os("LM_DUMP_OBJECTS").is_some() {
+            eprintln!(
+                "raw object records: {}",
+                level
+                    .layer1
+                    .objects
+                    .records
+                    .iter()
+                    .enumerate()
+                    .map(|(index, record)| format!("{index}:{:02X?}", record.encoded()))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
             for placement in level
                 .layer1
                 .objects
