@@ -2509,19 +2509,36 @@ fn render_slot_004_four_column(
     for row in 0..rows {
         let minor = row + 1;
         let fill = row * 4;
+        let fill_start = -signed_offset(row.saturating_sub(1) * 4)?;
         for major in 0..fill {
-            set_placement_cell(cache, layout, placement, major, minor, 0x03f)?;
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                fill_start + signed_offset(major)?,
+                signed_offset(minor)?,
+                0x03f,
+            )?;
         }
+        let edge_start = -signed_offset(row * 4)?;
         for (offset, &tile) in edges.iter().enumerate() {
-            set_placement_cell(cache, layout, placement, fill + offset, minor, tile)?;
+            set_placement_cell_signed(
+                cache,
+                layout,
+                placement,
+                edge_start + signed_offset(offset)?,
+                signed_offset(minor)?,
+                tile,
+            )?;
         }
         if row + 1 < rows {
+            let next_start = -signed_offset((row + 1) * 4)?;
             for (offset, &tile) in adaptive.iter().enumerate() {
                 render_adaptive_signed(
                     cache,
                     layout,
                     placement,
-                    signed_offset(fill + 4 + offset)?,
+                    next_start + signed_offset(offset)?,
                     signed_offset(minor)?,
                     tile,
                 )?;
@@ -5066,6 +5083,34 @@ mod tests {
         }
         assert_eq!(cache.get(layout(), 4, 9).unwrap(), 0x25);
         assert_eq!(cache.get(layout(), 4, 10).unwrap(), 0x25);
+    }
+
+    #[test]
+    fn mapped_handler_4_variant_2_widens_four_columns_to_the_left() {
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 8,
+            minor: 8,
+            major_span: 2,
+            minor_span: 2,
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        render_shared_slot_004(&mut cache, layout(), placement, 0x12).unwrap();
+        for (major, minor, tile) in [
+            (8, 8, 0x16e),
+            (11, 8, 0x17d),
+            (4, 9, 0x16e),
+            (7, 9, 0x17d),
+            (8, 9, 0x1d8),
+            (11, 9, 0x1e6),
+            (4, 10, 0x1d8),
+            (7, 10, 0x1e6),
+            (8, 10, 0x03f),
+            (11, 10, 0x03f),
+        ] {
+            assert_eq!(cache.get(layout(), major, minor).unwrap(), tile);
+        }
     }
 
     #[test]
