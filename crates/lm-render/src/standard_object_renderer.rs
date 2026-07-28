@@ -3226,19 +3226,19 @@ fn render_shared_slot_074(
     } else {
         encoded_height
     };
-    for major_offset in 0..=height {
-        let row = if major_offset == 0 {
+    for minor_offset in 0..=height {
+        let row = if minor_offset == 0 {
             [0x161, 0x10d, 0x162]
-        } else if major_offset == height {
+        } else if minor_offset == height {
             [0x16b, 0x16c, 0x16d]
         } else {
-            SHARED_SLOT_074_MIDDLE_TILES[major_offset & 1]
+            SHARED_SLOT_074_MIDDLE_TILES[(minor_offset + 1) & 1]
         };
-        set_placement_cell(cache, layout, placement, major_offset, 0, row[0])?;
-        for minor_offset in 1..width {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, row[0])?;
+        for major_offset in 1..width {
             set_placement_cell(cache, layout, placement, major_offset, minor_offset, row[1])?;
         }
-        set_placement_cell(cache, layout, placement, major_offset, width, row[2])?;
+        set_placement_cell(cache, layout, placement, width, minor_offset, row[2])?;
     }
     Ok(())
 }
@@ -4747,7 +4747,7 @@ fn expandable_axis_index(
         AxisExpansion::PreserveEdges => match pattern_len {
             1 => 0,
             2 => position.min(1),
-            _ if target_len <= pattern_len => position.min(pattern_len - 1),
+            _ if target_len == 1 => 0,
             _ if position == 0 => 0,
             _ if position + 1 == target_len => pattern_len - 1,
             _ => 1 + (position - 1) % (pattern_len - 2),
@@ -6539,10 +6539,9 @@ mod tests {
                 74,
                 0x32,
                 vec![
-                    vec![0x161, 0x10d, 0x162],
-                    vec![0x165, 0x0c8, 0x16a],
-                    vec![0x163, 0x0c7, 0x164],
-                    vec![0x16b, 0x16c, 0x16d],
+                    vec![0x161, 0x163, 0x165, 0x16b],
+                    vec![0x10d, 0x0c7, 0x0c8, 0x16c],
+                    vec![0x162, 0x164, 0x16a, 0x16d],
                 ],
             ),
             (
@@ -7194,6 +7193,10 @@ mod tests {
             (
                 ObjectRecord::new(vec![0x40, 0, 0xf3]).unwrap(),
                 vec![(0, 0x156), (1, 0x157), (2, 0x157), (3, 0x158)],
+            ),
+            (
+                ObjectRecord::new(vec![0x40, 0, 0x01]).unwrap(),
+                vec![(0, 0x156), (1, 0x158)],
             ),
         ];
         for (record, expected) in cases {
