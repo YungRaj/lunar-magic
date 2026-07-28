@@ -148,11 +148,11 @@ pub(crate) fn render(
     // those words into a wider internal descriptor while loading them, but the native renderer
     // consumes `Subtile`'s SNES layout directly. Feeding the widened-and-truncated representation
     // back into this path corrupts palette and flip attributes.
-    let mut animated_foreground_graphics = Vec::with_capacity(4);
-    let mut animated_images = Vec::with_capacity(16);
-    let mut animated_layer2_images = Vec::with_capacity(16);
-    let mut animated_background_images = Vec::with_capacity(4);
-    for phase in 0..4 {
+    let mut animated_foreground_graphics = Vec::with_capacity(8);
+    let mut animated_images = Vec::with_capacity(32);
+    let mut animated_layer2_images = Vec::with_capacity(32);
+    let mut animated_background_images = Vec::with_capacity(8);
+    for phase in 0..8 {
         let mut foreground_graphics = base_foreground_graphics.clone();
         apply_vanilla_common_animation_frame(&project, &mut foreground_graphics, phase, tileset)?;
         let mut background_graphics = base_background_graphics.clone();
@@ -394,12 +394,48 @@ fn apply_vanilla_common_animation_frame(
     phase: usize,
     tileset: u8,
 ) -> Result<(), String> {
-    if phase >= 4 {
+    if phase >= 8 {
         return Err(format!(
-            "vanilla common animation phase {phase} is outside 0..4"
+            "vanilla common animation phase {phase} is outside 0..8"
         ));
     }
-    apply_vanilla_common_animation_phases(project, graphics, &[phase as u8; 19], tileset)
+    apply_vanilla_common_animation_phases(
+        project,
+        graphics,
+        &vanilla_common_animation_phases(phase),
+        tileset,
+    )
+}
+
+fn vanilla_common_animation_phases(timer_phase: usize) -> [u8; 19] {
+    // Lunar Magic's AdvanceExAnimationFrames (0045aac0) processes four consecutive
+    // vanilla groups at the normal rate, while AdvanceVanillaAnimatedTileGroup
+    // (00459c60) advances three counters per group. The cursor wraps across eight
+    // groups. Its saved seed at 005e81e8 uses zero for counters 0, 4, 5, and 13 and
+    // 0xff for the rest; after the first advance, the latter become frame zero and
+    // remain one frame behind. Model a steady-state eight-timer-tick cycle.
+    const ZERO_SEEDED_COUNTERS: [usize; 4] = [0, 4, 5, 13];
+    let substeps = timer_phase * 4;
+    let mut phases = [0_u8; 19];
+    let mut counter = 0;
+    while counter < phases.len() {
+        let group = counter / 3;
+        let additional_advances = if substeps <= group {
+            0
+        } else {
+            (substeps - 1 - group) / 8 + 1
+        };
+        let steady_advances = 4 + additional_advances;
+        let zero_seeded = ZERO_SEEDED_COUNTERS.contains(&counter);
+        let phase = if zero_seeded {
+            steady_advances % 4
+        } else {
+            (steady_advances - 1) % 4
+        };
+        phases[counter] = u8::try_from(phase).expect("animation phase is two bits");
+        counter += 1;
+    }
+    phases
 }
 
 fn apply_vanilla_common_animation_phases(
@@ -1046,6 +1082,22 @@ mod tests {
     }
 
     #[test]
+    fn vanilla_animation_groups_follow_lunar_magics_rolling_counter_schedule() {
+        assert_eq!(
+            vanilla_common_animation_phases(0),
+            [0, 3, 3, 3, 0, 0, 3, 3, 3, 3, 3, 3, 3, 0, 3, 3, 3, 3, 3]
+        );
+        assert_eq!(
+            vanilla_common_animation_phases(1),
+            [1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 3, 0, 3, 3, 3, 3, 3]
+        );
+        assert_eq!(
+            vanilla_common_animation_phases(2),
+            [1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
     fn renders_real_pristine_tileset_when_reference_rom_is_available() {
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
@@ -1089,7 +1141,7 @@ mod tests {
         assert_eq!(preview.foreground_tiles[0x6b], animated[203]);
         assert_eq!(
             preview.foreground_tiles[0x6c], animated[204],
-            "the common coin frame must populate Map16 $2B's first subtile"
+            "the common coin group must honor Lunar Magic's seeded phase offset"
         );
         assert_eq!(preview.foreground_tiles[0x6f], animated[207]);
         assert_eq!(preview.foreground_tiles[0x80], player_animation[0x26c]);
@@ -1097,8 +1149,8 @@ mod tests {
         assert_eq!(preview.foreground_tiles[0x90], player_animation[0x26e]);
         assert_eq!(preview.foreground_tiles[0x91], player_animation[0x26f]);
         assert_eq!(preview.foreground_tiles[0x50], animated[0xa4]);
-        assert_eq!(preview.foreground_tiles[0x54], animated[0xcc]);
-        assert_eq!(preview.foreground_tiles[0x78], animated[0xc0]);
+        assert_eq!(preview.foreground_tiles[0x54], animated[0xfc]);
+        assert_eq!(preview.foreground_tiles[0x78], animated[0xf0]);
         let mut last_phase = preview.foreground_tiles.clone();
         apply_vanilla_common_animation_frame(
             &project,
@@ -1107,13 +1159,9 @@ mod tests {
             level.layer1.header.object_tileset(),
         )
         .unwrap();
-        assert_eq!(last_phase[0x60], animated[240]);
-        assert_eq!(last_phase[0x64], animated[244]);
-        assert_eq!(last_phase[0x68], animated[200]);
-        assert_eq!(last_phase[0x6c], animated[252]);
-        assert_eq!(last_phase[0x6f], animated[255]);
-        assert_eq!(preview.animated_images.len(), 16);
-        assert_eq!(preview.animated_background_images.len(), 4);
+        assert_ne!(last_phase[0x60], preview.foreground_tiles[0x60]);
+        assert_eq!(preview.animated_images.len(), 32);
+        assert_eq!(preview.animated_background_images.len(), 8);
         assert_ne!(preview.animated_images[0], preview.animated_images[3]);
         assert_eq!(preview.sprite_tiles.len(), LAYER1_SPRITE_GLOBAL_TILES);
         assert_eq!(unavailable_subtiles, 0);

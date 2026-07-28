@@ -1489,9 +1489,11 @@ impl VanillaLevelEditor {
         let level_mode = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.header.level_mode()
         });
-        let animation_phase = sprite_animation_phase(ui.input(|input| input.time));
+        let animation_seconds = ui.input(|input| input.time);
+        let map16_animation_phase = map16_animation_phase(animation_seconds);
+        let animation_phase = sprite_animation_phase(animation_seconds);
         ui.ctx()
-            .request_repaint_after(std::time::Duration::from_millis(125));
+            .request_repaint_after(std::time::Duration::from_millis(60));
         ensure_remapped_placement_textures(
             ui.ctx(),
             &mut self.external_sprite_textures,
@@ -1615,6 +1617,7 @@ impl VanillaLevelEditor {
                 minor_tiles,
                 vertical,
                 level_mode,
+                map16_animation_phase,
                 animation_phase,
                 &layer2_records,
                 &layer2_placements,
@@ -1792,6 +1795,7 @@ impl VanillaLevelEditor {
         minor_tiles: u16,
         vertical: bool,
         level_mode: u8,
+        map16_animation_phase: u8,
         animation_phase: u8,
         layer2_records: &[ObjectRecord],
         layer2_placements: &[lm_level::NativeObjectPlacement],
@@ -1804,7 +1808,7 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
-        let animation_phase_index = usize::from(animation_phase);
+        let animation_phase_index = usize::from(map16_animation_phase);
         let map16_variant_start = animation_phase_index * 4;
         let map16_texture_variants = self
             .animated_map16_textures
@@ -5068,7 +5072,14 @@ fn draw_map16_atlas_tile(
         egui::pos2(column / 32.0, row / 16.0),
         egui::pos2((column + 1.0) / 32.0, (row + 1.0) / 16.0),
     );
-    painter.image(texture.id(), target, uv, egui::Color32::WHITE);
+    // RenderMap16TileToPixelBuffer @ 0044eaf0 averages the translucent
+    // underground tiles with the pixels already in the editor DIB.
+    let tint = if (0x027..=0x02a).contains(&tile) {
+        egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
+    } else {
+        egui::Color32::WHITE
+    };
+    painter.image(texture.id(), target, uv, tint);
 }
 
 fn canvas_background_color(backdrop: Option<lm_graphics::Bgr555>) -> egui::Color32 {
@@ -6266,9 +6277,9 @@ fn standard_sprite_preview_mode(
 fn sprite_animation_phase(seconds: f64) -> u8 {
     if let Ok(phase) = std::env::var("LM_NATIVE_ANIMATION_PHASE")
         && let Ok(phase) = phase.parse::<u8>()
-        && phase < 4
+        && phase < 8
     {
-        return phase;
+        return phase / 2;
     }
     if !seconds.is_finite() || seconds <= 0.0 {
         return 0;
@@ -6276,6 +6287,21 @@ fn sprite_animation_phase(seconds: f64) -> u8 {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let ticks = (seconds * 8.0).floor() as u64;
     u8::try_from(ticks & 3).expect("two-bit animation phase")
+}
+
+fn map16_animation_phase(seconds: f64) -> u8 {
+    if let Ok(phase) = std::env::var("LM_NATIVE_ANIMATION_PHASE")
+        && let Ok(phase) = phase.parse::<u8>()
+        && phase < 8
+    {
+        return phase;
+    }
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return 0;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let ticks = (seconds * (1000.0 / 60.0)).floor() as u64;
+    u8::try_from(ticks & 7).expect("three-bit animation phase")
 }
 
 fn external_sprite_definition(
@@ -9962,6 +9988,17 @@ mod tests {
         assert_eq!(sprite_animation_phase(0.125), 1);
         assert_eq!(sprite_animation_phase(0.375), 3);
         assert_eq!(sprite_animation_phase(0.5), 0);
+    }
+
+    #[test]
+    fn map16_animation_clock_tracks_lunar_magics_sixty_millisecond_timer() {
+        assert_eq!(map16_animation_phase(f64::NAN), 0);
+        assert_eq!(map16_animation_phase(-1.0), 0);
+        assert_eq!(map16_animation_phase(0.0), 0);
+        assert_eq!(map16_animation_phase(0.059), 0);
+        assert_eq!(map16_animation_phase(0.061), 1);
+        assert_eq!(map16_animation_phase(0.421), 7);
+        assert_eq!(map16_animation_phase(0.481), 0);
     }
 
     #[test]

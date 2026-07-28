@@ -12,8 +12,13 @@ if (process.argv.length !== 6) {
 const [, , outputDir, liveDir, phaseDirsArg, diffsArg] = process.argv;
 const phaseDirs = phaseDirsArg.split(",");
 const diffPaths = diffsArg.split(",");
-if (phaseDirs.length !== 4 || diffPaths.length !== 4) {
-  throw new Error("exactly four phase directories and comparisons are required");
+if (
+  phaseDirs.length === 0 ||
+  phaseDirs.length !== diffPaths.length ||
+  phaseDirs.some((directory) => directory.length === 0) ||
+  diffPaths.some((file) => file.length === 0)
+) {
+  throw new Error("matching non-empty phase directory and comparison lists are required");
 }
 
 const parseTsv = (file) => {
@@ -86,6 +91,6 @@ fs.writeFileSync(
   path.join(outputDir, "index.html"),
   `<!doctype html><meta charset="utf-8"><title>Phase-aware Lunar Magic render audit</title>
 <style>
-body{font:14px system-ui,sans-serif;margin:16px;background:#181818;color:#eee}article{margin:0 0 28px;padding:12px;background:#252525;border-radius:8px}h2{font-size:16px;margin:0 0 10px}.images{display:grid;grid-template-columns:repeat(5,minmax(260px,1fr));gap:10px;overflow-x:auto}figure{margin:0;padding:6px;background:#111;border:2px solid transparent}figure.selected{border-color:#53d769}figcaption{margin-bottom:5px}img{width:100%;height:auto;image-rendering:pixelated}
+body{font:14px system-ui,sans-serif;margin:16px;background:#181818;color:#eee}article{margin:0 0 28px;padding:12px;background:#252525;border-radius:8px}h2{font-size:16px;margin:0 0 10px}.images{display:grid;grid-template-columns:repeat(${phaseDirs.length + 1},minmax(260px,1fr));gap:10px;overflow-x:auto}figure{margin:0;padding:6px;background:#111;border:2px solid transparent}figure.selected{border-color:#53d769}figcaption{margin-bottom:5px}img{width:100%;height:auto;image-rendering:pixelated}
 </style><h1>Phase-aware Lunar Magic render audit</h1>${cards}\n`,
 );

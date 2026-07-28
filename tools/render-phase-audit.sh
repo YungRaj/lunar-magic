@@ -17,7 +17,7 @@ workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 mkdir -p "$output_dir"
 phase_dirs=
 diffs=
-for phase in 0 1 2 3; do
+for phase in 0 1 2 3 4 5 6 7; do
     phase_dir="$output_dir/phase-$phase"
     diff="$output_dir/phase-$phase.tsv"
     LM_NATIVE_ANIMATION_PHASE=$phase \
