@@ -26,6 +26,8 @@ const VANILLA_ENTRANCE_Y_HIGH: [u8; 16] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
 ];
 const VANILLA_ENTRANCE_X_LOW: [u8; 8] = [0x10, 0x80, 0x00, 0xe0, 0x10, 0x70, 0x00, 0xe0];
+const VANILLA_VERTICAL_ENTRANCE_X_HIGH: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01];
+const VANILLA_ALTERNATE_VERTICAL_ENTRANCE_X_HIGH: [u8; 8] = [0; 8];
 const VANILLA_LAYER2_VERTICAL_SCROLL: [u8; 16] = [3, 1, 1, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0];
 const VANILLA_LAYER2_HORIZONTAL_SCROLL: [u8; 16] = [2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const VANILLA_INITIAL_LAYER1_Y: [u8; 4] = [0x00, 0x60, 0xc0, 0x00];
@@ -1889,10 +1891,27 @@ impl VanillaLevelEditor {
         // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
         if !game_preview {
             draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+            let alternate_vertical_layout =
+                lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout;
             let level = self.controller.as_ref().map_or(0, |controller| {
                 u16::try_from(controller.level().number).unwrap_or(0)
             });
-            draw_primary_entrance_label(painter, rect, cell, level, self.entrance_form, vertical);
+            draw_primary_entrance_label(
+                painter,
+                rect,
+                cell,
+                level,
+                self.entrance_form,
+                vertical,
+                alternate_vertical_layout,
+            );
+            draw_primary_entrance_position_warning(
+                painter,
+                rect,
+                cell,
+                self.entrance_form,
+                vertical,
+            );
             if let Some(texture) = self.entrance_texture.as_ref() {
                 draw_primary_entrance_marker(
                     painter,
@@ -1901,6 +1920,7 @@ impl VanillaLevelEditor {
                     texture,
                     self.entrance_form,
                     vertical,
+                    alternate_vertical_layout,
                 );
             }
             self.handle_canvas_interaction(
@@ -4636,6 +4656,34 @@ fn horizontal_primary_entrance_marker_pixels(entrance: VanillaMainEntrance) -> (
     )
 }
 
+fn vertical_primary_entrance_marker_pixels(
+    entrance: VanillaMainEntrance,
+    alternate_layout: bool,
+) -> (u16, u16) {
+    let x_setting = usize::from(entrance.vertical_settings & 7);
+    let y_setting = usize::from(entrance.position & 0x0f);
+    let x_high = if alternate_layout {
+        VANILLA_ALTERNATE_VERTICAL_ENTRANCE_X_HIGH[x_setting]
+    } else {
+        VANILLA_VERTICAL_ENTRANCE_X_HIGH[x_setting]
+    };
+    (
+        u16::from(x_high) * 0x100 + u16::from(VANILLA_ENTRANCE_X_LOW[x_setting]),
+        u16::from(VANILLA_ENTRANCE_Y_HIGH[y_setting]) * 0x100
+            + u16::from(VANILLA_ENTRANCE_Y_LOW[y_setting]),
+    )
+}
+
+fn vertical_primary_entrance_label_pixels(
+    entrance: VanillaMainEntrance,
+    alternate_layout: bool,
+) -> (u16, u16) {
+    let (x, y) = vertical_primary_entrance_marker_pixels(entrance, alternate_layout);
+    let pose = entrance.vertical_settings >> 3 & 7;
+    let label_clearance = if pose < 3 || pose == 5 { 18 } else { 24 };
+    (x.saturating_add(label_clearance), y)
+}
+
 fn draw_primary_entrance_marker(
     painter: &egui::Painter,
     canvas: egui::Rect,
@@ -4643,11 +4691,13 @@ fn draw_primary_entrance_marker(
     texture: &egui::TextureHandle,
     entrance: VanillaMainEntrance,
     vertical: bool,
+    alternate_vertical_layout: bool,
 ) {
-    if vertical {
-        return;
-    }
-    let (x, y) = horizontal_primary_entrance_marker_pixels(entrance);
+    let (x, y) = if vertical {
+        vertical_primary_entrance_marker_pixels(entrance, alternate_vertical_layout)
+    } else {
+        horizontal_primary_entrance_marker_pixels(entrance)
+    };
     let scale = cell_size / 16.0;
     let target = egui::Rect::from_min_size(
         canvas.min + egui::vec2(f32::from(x) * scale, f32::from(y.saturating_add(2)) * scale),
@@ -4668,11 +4718,13 @@ fn draw_primary_entrance_label(
     level: u16,
     entrance: VanillaMainEntrance,
     vertical: bool,
+    alternate_vertical_layout: bool,
 ) {
-    if vertical {
-        return;
-    }
-    let (x, y) = horizontal_primary_entrance_label_pixels(entrance);
+    let (x, y) = if vertical {
+        vertical_primary_entrance_label_pixels(entrance, alternate_vertical_layout)
+    } else {
+        horizontal_primary_entrance_label_pixels(entrance)
+    };
     let scale = cell_size / 16.0;
     let position = canvas.min + egui::vec2(f32::from(x) * scale, f32::from(y) * scale);
     let font_size = (cell_size * 0.625).max(7.0);
@@ -4689,6 +4741,46 @@ fn draw_primary_entrance_label(
         egui::Color32::from_rgba_unmultiplied(0, 116, 44, 220),
     );
     painter.galley(position, galley, egui::Color32::WHITE);
+}
+
+fn draw_primary_entrance_position_warning(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell_size: f32,
+    entrance: VanillaMainEntrance,
+    vertical: bool,
+) {
+    // RenderConfiguredLevelEntrance at 004cc660 emits this warning when a vertical level still
+    // has the entrance-positioning bit disabled. Its first label starts one tile right and
+    // twenty pixels below the entrance's world anchor.
+    if !vertical || entrance.screen_and_method & 1 != 0 {
+        return;
+    }
+    let y_setting = usize::from(entrance.position & 0x0f);
+    let marker_y = u16::from(VANILLA_ENTRANCE_Y_HIGH[y_setting]) * 0x100
+        + u16::from(VANILLA_ENTRANCE_Y_LOW[y_setting]);
+    let scale = cell_size / 16.0;
+    let position =
+        canvas.min + egui::vec2(32.0 * scale, f32::from(marker_y.saturating_add(20)) * scale);
+    let font_size = (cell_size * 0.625).max(7.0);
+    let line_height = font_size + 1.0;
+    for (line, offset) in [
+        ("Warning:Turn on vertical", 0.0),
+        ("entrance positioning!!", line_height),
+    ] {
+        let line_position = position + egui::vec2(0.0, offset);
+        let galley = painter.layout_no_wrap(
+            line.to_owned(),
+            egui::FontId::monospace(font_size),
+            egui::Color32::WHITE,
+        );
+        painter.rect_filled(
+            egui::Rect::from_min_size(line_position, galley.size()),
+            0.0,
+            egui::Color32::from_rgb(0, 0, 128),
+        );
+        painter.galley(line_position, galley, egui::Color32::WHITE);
+    }
 }
 
 const fn presented_sprite_minor(placement: lm_level::NativeSpritePlacement) -> u16 {
@@ -8442,6 +8534,33 @@ mod tests {
             horizontal_primary_entrance_label_pixels(entrance),
             (0x22, 0x160)
         );
+    }
+
+    #[test]
+    fn level_108_vertical_primary_entrance_matches_lunar_magic_world_anchor() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let project = lm_project::Project::new(image);
+        let entrance = project
+            .load_vanilla_main_entrance(0x108, lm_profile::smw_us_v1_vanilla_entrance_layout())
+            .unwrap();
+        assert_eq!(
+            entrance,
+            VanillaMainEntrance {
+                position: 0x0b,
+                vertical_settings: 0,
+                screen_and_method: 0x0a,
+                level_mode_and_screen: 0,
+            }
+        );
+        assert_eq!(
+            vertical_primary_entrance_marker_pixels(entrance, false),
+            (0x10, 0x160)
+        );
+        assert_eq!(
+            vertical_primary_entrance_label_pixels(entrance, false),
+            (0x22, 0x160)
+        );
+        assert_eq!(entrance.screen_and_method & 1, 0);
     }
 
     #[test]
