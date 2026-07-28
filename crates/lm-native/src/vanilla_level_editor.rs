@@ -8602,6 +8602,27 @@ mod tests {
                 let lm_level::NativeLayer2Data::Objects(layer2) = layer2 else {
                     return None;
                 };
+                if std::env::var_os("LM_DUMP_OBJECTS").is_some() {
+                    eprintln!(
+                        "raw Layer 2 object records: {}",
+                        layer2
+                            .objects
+                            .records
+                            .iter()
+                            .enumerate()
+                            .map(|(index, record)| { format!("{index}:{:02X?}", record.encoded()) })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    );
+                    for placement in layer2.objects.native_placements() {
+                        eprintln!(
+                            "Layer 2 object {} horizontal={:?} swapped={:?}",
+                            placement.record_index,
+                            placement.tile_coordinates(false),
+                            placement.tile_coordinates(true),
+                        );
+                    }
+                }
                 let layer2_layout = lm_render::NativeLevelMap16Layout {
                     base_cell: 16 * 0x1b0,
                     ..layout
@@ -8619,6 +8640,29 @@ mod tests {
                     layer2.objects,
                 ))
             });
+        if let Some((layer2, _)) = layer2_rendered.as_ref() {
+            let layer2_layout = lm_render::NativeLevelMap16Layout {
+                base_cell: 16 * 0x1b0,
+                ..layout
+            };
+            let layer2_mismatches = (0..layout.width)
+                .flat_map(|x| (0..layout.height).map(move |y| (x, y)))
+                .filter_map(|(x, y)| {
+                    let actual = layer2.get(layer2_layout, x, y).unwrap();
+                    let expected = live.get(layer2_layout, x, y).unwrap();
+                    (actual != expected).then_some((x, y, actual, expected))
+                })
+                .collect::<Vec<_>>();
+            eprintln!(
+                "level {slot:03X} Layer 2 cache mismatches {} / {}",
+                layer2_mismatches.len(),
+                layout.width * layout.height,
+            );
+            for (x, y, actual, expected) in layer2_mismatches.iter().take(100) {
+                eprintln!("L2 x={x:03} y={y:03} rust={actual:03X} wine={expected:03X}");
+            }
+            assert!(layer2_mismatches.is_empty());
+        }
         let mut mismatches = Vec::new();
         for x in 0..layout.width {
             for y in 0..layout.height {

@@ -1736,7 +1736,7 @@ fn render_shared_slot_039(
     let pairs = usize::from(parameter & 0x0f) + 1;
     for group in 0..=usize::from(parameter >> 4) {
         for subrow in 0..2 {
-            let major = group * 2 + subrow;
+            let minor = group * 2 + subrow;
             let pair = if subrow == 0 {
                 [0x094, 0x095]
             } else {
@@ -1748,8 +1748,8 @@ fn render_shared_slot_039(
                         cache,
                         layout,
                         placement,
-                        major,
                         repetition * 2 + offset,
+                        minor,
                         tile,
                     )?;
                 }
@@ -5857,7 +5857,7 @@ mod tests {
 
         let mut cache = NativeLevelMap16Cache::filled(0x25);
         render_shared_slot_039(&mut cache, layout(), placement, 0x11).unwrap();
-        for (major, row) in [
+        for (minor, row) in [
             [0x094, 0x095, 0x094, 0x095],
             [0x096, 0x097, 0x096, 0x097],
             [0x094, 0x095, 0x094, 0x095],
@@ -5866,7 +5866,7 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            for (minor, tile) in row.into_iter().enumerate() {
+            for (major, tile) in row.into_iter().enumerate() {
                 assert_eq!(
                     cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
