@@ -1492,8 +1492,8 @@ fn render_shared_slot_034(
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
     let tile = u16::from(SHARED_SLOT_034_TILES[usize::from(parameter >> 4)]) + 0x100;
-    for minor_offset in 0..=usize::from(parameter & 0x0f) {
-        set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
+    for major_offset in 0..=usize::from(parameter & 0x0f) {
+        set_placement_cell(cache, layout, placement, major_offset, 0, tile)?;
     }
     Ok(())
 }
@@ -1546,8 +1546,8 @@ fn render_shared_slot_035(
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
     let tile = u16::from(SHARED_SLOT_035_TILES[usize::from(parameter & 0x0f)]) + 0x100;
-    for major_offset in 0..=usize::from(parameter >> 4) {
-        set_placement_cell(cache, layout, placement, major_offset, 0, tile)?;
+    for minor_offset in 0..=usize::from(parameter >> 4) {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
     }
     Ok(())
 }
@@ -1611,8 +1611,8 @@ fn render_shared_slot_038(
 ) -> Result<(), StandardObjectRenderError> {
     let has_top_cap = parameter & 0x0f != 0;
     if has_top_cap {
-        set_placement_cell(cache, layout, placement, 0, 1, 0x087)?;
-        set_placement_cell(cache, layout, placement, 0, 2, 0x088)?;
+        set_slot_038_cell(cache, layout, placement, 1, 0, 0x087)?;
+        set_slot_038_cell(cache, layout, placement, 2, 0, 0x088)?;
     }
     let body_start = usize::from(has_top_cap);
     for row in 0..=usize::from(parameter >> 4) {
@@ -1621,14 +1621,53 @@ fn render_shared_slot_038(
         } else {
             [0x08b, 0x168, 0x169, 0x08c]
         };
-        for (minor, tile) in tiles.into_iter().enumerate() {
-            set_placement_cell(cache, layout, placement, body_start + row, minor, tile)?;
+        for (major, tile) in tiles.into_iter().enumerate() {
+            set_slot_038_cell(cache, layout, placement, major, body_start + row, tile)?;
         }
     }
     if !has_top_cap {
         let end_row = usize::from(parameter >> 4) + 1;
-        set_placement_cell(cache, layout, placement, end_row, 1, 0x08d)?;
-        set_placement_cell(cache, layout, placement, end_row, 2, 0x08e)?;
+        set_slot_038_cell(cache, layout, placement, 1, end_row, 0x08d)?;
+        set_slot_038_cell(cache, layout, placement, 2, end_row, 0x08e)?;
+    }
+    Ok(())
+}
+
+fn set_slot_038_cell(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    major_offset: usize,
+    minor_offset: usize,
+    tile: u16,
+) -> Result<(), StandardObjectRenderError> {
+    if layout.vertical {
+        return set_placement_cell(cache, layout, placement, major_offset, minor_offset, tile);
+    }
+    // Slot 38 advances rows with a raw +$10 cache stride. At row 27 this
+    // deliberately enters the next screen's first row instead of clipping.
+    let start_x = usize::from(placement.major);
+    let start_y = usize::from(placement.minor);
+    let start = NativeLevelMap16Cache::cell_index(layout, start_x, start_y);
+    let within_page = start_x & 15;
+    let total_column = within_page
+        .checked_add(major_offset)
+        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    let horizontal_delta = (total_column / 16)
+        .checked_mul(layout.page_stride)
+        .and_then(|pages| pages.checked_add(total_column & 15))
+        .and_then(|offset| offset.checked_sub(within_page))
+        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    let index = start
+        .checked_add(
+            minor_offset
+                .checked_mul(16)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+        )
+        .and_then(|index| index.checked_add(horizontal_delta))
+        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+    if index < LEVEL_MAP16_CACHE_CELLS {
+        cache.raw_set(index, tile)?;
     }
     Ok(())
 }
@@ -2444,16 +2483,16 @@ fn render_slot_004_tapered_four_part(
     let height = usize::from(parameter >> 4);
     for row in 0..height {
         let start = row * 2;
-        let mut minor = start;
+        let mut major = start;
         if row > 0 {
-            set_placement_cell(cache, layout, placement, row, minor, 0x1c6)?;
-            set_placement_cell(cache, layout, placement, row, minor + 1, 0x1c7)?;
-            minor += 2;
+            set_placement_cell(cache, layout, placement, major, row, 0x1c6)?;
+            set_placement_cell(cache, layout, placement, major + 1, row, 0x1c7)?;
+            major += 2;
         }
-        set_placement_cell(cache, layout, placement, row, minor, 0x1ee)?;
-        set_placement_cell(cache, layout, placement, row, minor + 1, 0x1f0)?;
+        set_placement_cell(cache, layout, placement, major, row, 0x1ee)?;
+        set_placement_cell(cache, layout, placement, major + 1, row, 0x1f0)?;
         for fill in 0..(height - row - 1) * 2 {
-            set_placement_cell(cache, layout, placement, row, minor + 2 + fill, 0x165)?;
+            set_placement_cell(cache, layout, placement, major + 2 + fill, row, 0x165)?;
         }
     }
     let final_tiles = if height == 0 {
@@ -2461,7 +2500,15 @@ fn render_slot_004_tapered_four_part(
     } else {
         [0x1c6, 0x1c7]
     };
-    set_placement_pair(cache, layout, placement, height, final_tiles)
+    set_placement_cell(cache, layout, placement, height * 2, height, final_tiles[0])?;
+    set_placement_cell(
+        cache,
+        layout,
+        placement,
+        height * 2 + 1,
+        height,
+        final_tiles[1],
+    )
 }
 
 fn render_slot_004_tapered_capped(
@@ -2495,22 +2542,24 @@ fn render_slot_004_tapered_left(
 ) -> Result<(), StandardObjectRenderError> {
     let height = usize::from(parameter >> 4);
     for row in 0..height {
-        let start = row;
-        let mut minor = start;
+        // The first two rows share the starting column. Lunar Magic advances the
+        // row base one cell to the right only after rendering the second row.
+        let start = row.saturating_sub(1);
+        let mut major = start;
         if row > 0 {
-            set_placement_cell(cache, layout, placement, row, minor, 0x1c4)?;
-            minor += 1;
+            set_placement_cell(cache, layout, placement, major, row, 0x1c4)?;
+            major += 1;
         }
-        set_placement_cell(cache, layout, placement, row, minor, 0x1ec)?;
+        set_placement_cell(cache, layout, placement, major, row, 0x1ec)?;
         for fill in 0..height - row - 1 {
-            set_placement_cell(cache, layout, placement, row, minor + 1 + fill, 0x165)?;
+            set_placement_cell(cache, layout, placement, major + 1 + fill, row, 0x165)?;
         }
     }
     set_placement_cell(
         cache,
         layout,
         placement,
-        height,
+        height.saturating_sub(1),
         height,
         if height == 0 { 0x1ec } else { 0x1c4 },
     )
@@ -2525,15 +2574,15 @@ fn render_slot_004_tapered_right(
     let height = usize::from(parameter >> 4);
     for row in 0..height {
         let fill = height - row - 1;
-        for minor in 0..fill {
-            set_placement_cell(cache, layout, placement, row, minor, 0x165)?;
+        for major in 0..fill {
+            set_placement_cell(cache, layout, placement, major, row, 0x165)?;
         }
-        set_placement_cell(cache, layout, placement, row, fill, 0x1ed)?;
+        set_placement_cell(cache, layout, placement, fill, row, 0x1ed)?;
         if row > 0 {
-            set_placement_cell(cache, layout, placement, row, fill + 1, 0x1c5)?;
+            set_placement_cell(cache, layout, placement, fill + 1, row, 0x1c5)?;
         }
     }
-    set_placement_cell(cache, layout, placement, height, 0, 0x1c5)
+    set_placement_cell(cache, layout, placement, 0, height, 0x1c5)
 }
 
 fn render_shared_slot_053(
@@ -3717,7 +3766,7 @@ fn render_pattern(
 /// The generic 0x10–0x4C selector range uses page 0 below 0x23 and page 1 thereafter. Rope-family
 /// line guides `$4D`–`$56` and Ghost House/Switch Palace details `$57`–`$5E` replace the tail of
 /// that lookup with their native shapes. This also installs SMW's fixed 2×2 selector `$86` pattern
-/// and the switch-off forms of selectors `$87`/`$8E`.
+/// and Lunar Magic's default active-switch forms of selectors `$87`/`$8E`.
 ///
 /// # Errors
 ///
@@ -3938,7 +3987,7 @@ pub fn install_lunar_magic_shared_extended_objects(
         StandardObjectPattern {
             width: 1,
             height: 1,
-            tiles: vec![0x06a],
+            tiles: vec![0x16a],
         },
     )?;
     definitions.set_extended(
@@ -3946,7 +3995,7 @@ pub fn install_lunar_magic_shared_extended_objects(
         StandardObjectPattern {
             width: 1,
             height: 1,
-            tiles: vec![0x06b],
+            tiles: vec![0x16b],
         },
     )?;
     // Vertical-level slope caps at $0DA80D-$0DA8A2. Paired selectors choose
@@ -5330,8 +5379,8 @@ mod tests {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         for (handler, parameter, expected) in [
-            (34, 0x12, vec![(0, 0, 0x159), (0, 1, 0x159), (0, 2, 0x159)]),
-            (35, 0x21, vec![(0, 0, 0x15c), (1, 0, 0x15c), (2, 0, 0x15c)]),
+            (34, 0x12, vec![(0, 0, 0x159), (1, 0, 0x159), (2, 0, 0x159)]),
+            (35, 0x21, vec![(0, 0, 0x15c), (0, 1, 0x15c), (0, 2, 0x15c)]),
             (
                 37,
                 0x02,
@@ -5491,7 +5540,7 @@ mod tests {
         };
         let mut cache = NativeLevelMap16Cache::filled(0x25);
         render_shared_slot_038(&mut cache, layout(), placement, 0x11).unwrap();
-        for (major, row) in [
+        for (minor, row) in [
             [0x025, 0x087, 0x088, 0x025],
             [0x089, 0x166, 0x167, 0x08a],
             [0x08b, 0x168, 0x169, 0x08c],
@@ -5499,12 +5548,32 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            for (minor, tile) in row.into_iter().enumerate() {
+            for (major, tile) in row.into_iter().enumerate() {
                 assert_eq!(
                     cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, minor)],
                     tile
                 );
             }
+        }
+
+        let wrapping_placement = lm_level::NativeObjectPlacement {
+            major: 223,
+            minor: 12,
+            ..placement
+        };
+        let wrapping_layout = NativeLevelMap16Layout {
+            width: 512,
+            height: 27,
+            ..layout()
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        render_shared_slot_038(&mut cache, wrapping_layout, wrapping_placement, 0xe1).unwrap();
+        for (major, tile) in [0x089, 0x166, 0x167, 0x08a].into_iter().enumerate() {
+            assert_eq!(
+                cache.get(wrapping_layout, 239 + major, 0).unwrap(),
+                tile,
+                "raw row stride must continue into the next native screen"
+            );
         }
 
         let mut cache = NativeLevelMap16Cache::filled(0x25);
@@ -6341,8 +6410,8 @@ mod tests {
                 tiles: vec![0x066, 0x067, 0x068, 0x069],
             }
         );
-        assert_eq!(definitions.get_extended(0x87).unwrap().tiles, [0x06a]);
-        assert_eq!(definitions.get_extended(0x8e).unwrap().tiles, [0x06b]);
+        assert_eq!(definitions.get_extended(0x87).unwrap().tiles, [0x16a]);
+        assert_eq!(definitions.get_extended(0x8e).unwrap().tiles, [0x16b]);
         assert_eq!(
             lunar_magic_conditional_extended_object_tile(0x87, false),
             Some(0x06a)

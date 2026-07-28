@@ -8224,6 +8224,159 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_pristine_level_matches_lunar_magic_map16_cache_when_requested() {
+        let (Ok(slot), Ok(cache_path)) = (
+            std::env::var("LM_LEVEL_SLOT"),
+            std::env::var("LM_LEVEL_MAP16_CACHE"),
+        ) else {
+            return;
+        };
+        let slot = usize::from_str_radix(&slot, 16).unwrap();
+        let live =
+            lm_render::NativeLevelMap16Cache::decode(&std::fs::read(cache_path).unwrap()).unwrap();
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level = project
+            .load_level_slot(
+                slot,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let vertical = lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode()).vertical;
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: if vertical { 32 } else { 512 },
+            height: if vertical { 448 } else { 27 },
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical,
+        };
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let handler_map = definition_map
+            .family(usize::from(level.layer1.header.object_tileset()))
+            .unwrap();
+        let rendered = lm_render::render_mapped_standard_object_stream(
+            &level.layer1.objects,
+            &definitions,
+            handler_map,
+            layout,
+            VANILLA_EMPTY_MAP16_TILE,
+        )
+        .unwrap()
+        .cache;
+        let layer2_rendered = project
+            .load_level_layer2(
+                slot,
+                level.layer1.header.level_mode(),
+                lm_profile::smw_us_v1_layer2_layout(&project.rom).unwrap(),
+            )
+            .ok()
+            .and_then(|layer2| {
+                if vertical {
+                    // The secondary vertical-plane base has not yet been authenticated.
+                    return None;
+                }
+                let lm_level::NativeLayer2Data::Objects(layer2) = layer2 else {
+                    return None;
+                };
+                let layer2_layout = lm_render::NativeLevelMap16Layout {
+                    base_cell: 16 * 0x1b0,
+                    ..layout
+                };
+                Some(
+                    lm_render::render_mapped_standard_object_stream(
+                        &layer2.objects,
+                        &definitions,
+                        handler_map,
+                        layer2_layout,
+                        VANILLA_EMPTY_MAP16_TILE,
+                    )
+                    .unwrap()
+                    .cache,
+                )
+            });
+        let mut mismatches = Vec::new();
+        for x in 0..layout.width {
+            for y in 0..layout.height {
+                let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+                let actual = if rendered.was_written(index) {
+                    rendered.get(layout, x, y).unwrap()
+                } else {
+                    layer2_rendered
+                        .as_ref()
+                        .map_or(VANILLA_EMPTY_MAP16_TILE, |layer2| {
+                            layer2.get(layout, x, y).unwrap()
+                        })
+                };
+                let expected = live.get(layout, x, y).unwrap();
+                if actual != expected {
+                    mismatches.push((x, y, actual, expected));
+                }
+            }
+        }
+        eprintln!(
+            "level {slot:03X}, vertical={vertical}, tileset={}, mismatches {} / {}",
+            level.layer1.header.object_tileset(),
+            mismatches.len(),
+            layout.width * layout.height,
+        );
+        if !mismatches.is_empty() {
+            let mut owners = vec![None; layout.width * layout.height];
+            let mut previous = lm_render::NativeLevelMap16Cache::filled(VANILLA_EMPTY_MAP16_TILE);
+            for end in 1..=level.layer1.objects.records.len() {
+                let prefix = lm_level::ObjectStream {
+                    records: level.layer1.objects.records[..end].to_vec(),
+                };
+                let next = lm_render::render_mapped_standard_object_stream(
+                    &prefix,
+                    &definitions,
+                    handler_map,
+                    layout,
+                    VANILLA_EMPTY_MAP16_TILE,
+                )
+                .unwrap()
+                .cache;
+                for x in 0..layout.width {
+                    for y in 0..layout.height {
+                        if next.get(layout, x, y).unwrap() != previous.get(layout, x, y).unwrap() {
+                            owners[y * layout.width + x] = Some(end - 1);
+                        }
+                    }
+                }
+                previous = next;
+            }
+            for &(x, y, actual, expected) in mismatches.iter().take(100) {
+                let owner = owners[y * layout.width + x].map_or_else(
+                    || "unwritten".to_owned(),
+                    |owner| {
+                        let record = &level.layer1.objects.records[owner];
+                        let placement = level
+                            .layer1
+                            .objects
+                            .native_placements()
+                            .into_iter()
+                            .find(|placement| placement.record_index == owner)
+                            .unwrap();
+                        let (placement_x, placement_y) = placement.tile_coordinates(vertical);
+                        format!(
+                            "{owner}@({placement_x},{placement_y}): command={:02X} handler={} parameter={:02X}",
+                            record.command_id(),
+                            handler_map[usize::from(record.command_id())],
+                            record.parameter(),
+                        )
+                    },
+                );
+                eprintln!("x={x:03} y={y:03} rust={actual:03X} wine={expected:03X} owner={owner}");
+            }
+        }
+        assert!(mismatches.is_empty());
+    }
+
+    #[test]
     fn pristine_level_102_matches_live_snes_map16_rows_around_high_tide() {
         let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
