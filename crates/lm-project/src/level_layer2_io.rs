@@ -217,10 +217,7 @@ impl Project {
                         };
                         let high_byte =
                             raw_descriptor.map_or(high_byte, MwlLayer2Descriptor::active_bank);
-                        let mut tilemap = expand_legacy_layer2_tilemap(&decoded, high_byte)?;
-                        if substituted_pointer.is_some() {
-                            initialize_shared_background_gaps(&mut tilemap, high_byte);
-                        }
+                        let tilemap = expand_legacy_layer2_tilemap(&decoded, high_byte)?;
                         (
                             tilemap,
                             raw_descriptor.map(|descriptor| {
@@ -320,19 +317,6 @@ impl Project {
             checksum_field,
         )?;
         Ok(saved.remove(0))
-    }
-}
-
-fn initialize_shared_background_gaps(tilemap: &mut [u8], high_byte: u8) {
-    for y in 27..32 {
-        for x in 0..32 {
-            let Some(tile) = lm_level::native_layer2_tilemap_index(x, y) else {
-                continue;
-            };
-            for word in tilemap[tile * 2..tile * 2 + 2].chunks_exact_mut(2) {
-                word.copy_from_slice(&[0x25, high_byte]);
-            }
-        }
     }
 }
 
@@ -452,13 +436,13 @@ mod tests {
     }
 
     #[test]
-    fn shared_background_gaps_match_the_vanilla_tile_25_prefill() {
-        let mut tilemap = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
-        initialize_shared_background_gaps(&mut tilemap, 1);
+    fn legacy_background_expansion_leaves_unused_rows_zeroed() {
+        let tilemap =
+            expand_legacy_layer2_tilemap(&vec![0x25; LEGACY_LAYER2_TILEMAP_LEN], 1).unwrap();
         for y in 0..32 {
             for x in 0..32 {
                 let tile = lm_level::native_layer2_tilemap_index(x, y).unwrap();
-                let expected = if y >= 27 { [0x25, 1] } else { [0, 0] };
+                let expected = if y < 27 { [0x25, 1] } else { [0, 0] };
                 assert_eq!(&tilemap[tile * 2..tile * 2 + 2], &expected);
             }
         }
