@@ -312,6 +312,23 @@ the entrance view and the next two screens. Use `game,editor` to review both pix
 presentation modes. Existing PNGs are retained on rerun while the ordered manifest and contact
 sheet are regenerated.
 
+Wine's window-capture APIs can return an all-black image on macOS. For Lunar Magic 3.63 raster
+comparisons, build the address-authenticated helper and read its live primary level-editor DIB
+instead:
+
+```sh
+i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+  tools/wine-level-dib-capture.c -o /tmp/wine-level-dib-capture.exe
+
+wine /tmp/wine-level-dib-capture.exe \
+  "Lunar Magic.exe" 'Z:\tmp\lunar-magic-level.bmp'
+```
+
+The helper writes the exact top-down 32-bit BGRA surface created by
+`CreatePrimaryEditorRenderSurface` at Lunar Magic address `$0044DA20`; it validates dimensions and
+the live pointer before reading any pixels. The globals are specific to the authenticated 3.63
+binary and must be re-established in Ghidra before using the helper with another version.
+
 Some integration tests use the legally supplied `Super Mario World (USA).sfc` fixture at the
 repository root. The expected pristine SHA-1 is:
 
