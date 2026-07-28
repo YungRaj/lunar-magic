@@ -23,9 +23,9 @@ impl Bgr555 {
         let green = (self.0 >> 5) & 31;
         let blue = (self.0 >> 10) & 31;
         Rgb8 {
-            red: ((red * 255 + 15) / 31).to_le_bytes()[0],
-            green: ((green * 255 + 15) / 31).to_le_bytes()[0],
-            blue: ((blue * 255 + 15) / 31).to_le_bytes()[0],
+            red: ((red << 3) | (red >> 2)).to_le_bytes()[0],
+            green: ((green << 3) | (green >> 2)).to_le_bytes()[0],
+            blue: ((blue << 3) | (blue >> 2)).to_le_bytes()[0],
         }
     }
 }
@@ -201,6 +201,24 @@ mod tests {
                 red: 255,
                 green: 255,
                 blue: 255
+            }
+        );
+    }
+
+    #[test]
+    fn every_snes_channel_uses_lunar_magics_replicated_bit_expansion() {
+        for channel in 0_u16..32 {
+            let expected = ((channel << 3) | (channel >> 2)).to_le_bytes()[0];
+            assert_eq!(Bgr555(channel).to_rgb8().red, expected);
+            assert_eq!(Bgr555(channel << 5).to_rgb8().green, expected);
+            assert_eq!(Bgr555(channel << 10).to_rgb8().blue, expected);
+        }
+        assert_eq!(
+            Bgr555(0x7393).to_rgb8(),
+            Rgb8 {
+                red: 156,
+                green: 231,
+                blue: 231,
             }
         );
     }
