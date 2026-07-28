@@ -21,6 +21,7 @@ for phase in 0 1 2 3 4 5 6 7; do
     phase_dir="$output_dir/phase-$phase"
     diff="$output_dir/phase-$phase.tsv"
     LM_NATIVE_ANIMATION_PHASE=$phase \
+        LM_RENDER_AUDIT_REFRESH=${LM_RENDER_AUDIT_REFRESH:-1} \
         LM_NATIVE_EDITOR_CELL=${LM_NATIVE_EDITOR_CELL:-16} \
         LM_NATIVE_SCREENSHOT_HEIGHT=${LM_NATIVE_SCREENSHOT_HEIGHT:-821} \
         LM_NATIVE_EDITOR_OVERLAYS=${LM_NATIVE_EDITOR_OVERLAYS:-0} \

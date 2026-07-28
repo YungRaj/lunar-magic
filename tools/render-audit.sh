@@ -8,6 +8,7 @@ usage() {
     echo "  STYLES: comma-separated 'game' and/or 'editor' (default: game)" >&2
     echo "  LM_RENDER_AUDIT_JOBS: concurrent native captures (default: 1)" >&2
     echo "  LM_RENDER_AUDIT_RECOMPRESS: losslessly recompress with sips when available (default: 1)" >&2
+    echo "  LM_RENDER_AUDIT_REFRESH: replace existing captures instead of reusing them (default: 0)" >&2
     echo "  LM_NATIVE_EDITOR_SCROLL_ROW: editor world row at the viewport top (default: entrance)" >&2
     echo "  LM_NATIVE_EDITOR_SCROLL_COLUMN: editor world column at the viewport left (default: 0)" >&2
     echo "  LM_NATIVE_EDITOR_OVERLAYS: draw editor grid, markers, and labels (default: 1)" >&2
@@ -28,6 +29,7 @@ screen_spec=${4:-0}
 style_spec=${5:-game}
 jobs=${LM_RENDER_AUDIT_JOBS:-1}
 recompress=${LM_RENDER_AUDIT_RECOMPRESS:-1}
+refresh=${LM_RENDER_AUDIT_REFRESH:-0}
 reference_manifest=${LM_LUNAR_MAGIC_REFERENCE_MANIFEST:-}
 workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 binary="$workspace/target/debug/lm-native"
@@ -50,6 +52,10 @@ esac
 case "$recompress" in
     0|1) ;;
     *) echo "LM_RENDER_AUDIT_RECOMPRESS must be 0 or 1" >&2; exit 2 ;;
+esac
+case "$refresh" in
+    0|1) ;;
+    *) echo "LM_RENDER_AUDIT_REFRESH must be 0 or 1" >&2; exit 2 ;;
 esac
 
 mkdir -p "$output_dir/images"
@@ -83,7 +89,7 @@ capture_one() {
     image=$5
     scroll_column=$6
     scroll_row=$7
-    if [ ! -f "$image" ]; then
+    if [ "$refresh" -eq 1 ] || [ ! -f "$image" ]; then
         echo "capture level $level · $style · entrance screen offset $screen"
         LM_NATIVE_SCREENSHOT_TO="$image" \
         LM_NATIVE_PREVIEW_STYLE="$style" \
