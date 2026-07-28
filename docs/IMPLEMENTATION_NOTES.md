@@ -2511,6 +2511,11 @@ the level canvas owns more than 57% of every supported 720-point-or-wider viewpo
 remaining editor height and its own two-axis scrolling. A real 1100×720-point macOS framebuffer
 shows the canvas beside—not below—the Map16 and settings controls. A pure width-allocation test
 guards the minimum, default, large, and high-resolution window cases.
+The automatically detected workspace now also authenticates every pristine main and special
+graphics payload before constructing an editor controller. A modified pointer or incompatible
+compressed payload is rejected with an explicit audited-profile requirement instead of partially
+rendering through vanilla addresses. An exhaustive eight-worker gate decodes the level model,
+Layer 2 layout, and complete built-in render assets for all 512 pristine level slots.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The

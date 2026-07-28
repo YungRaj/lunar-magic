@@ -355,8 +355,6 @@ impl VanillaLevelEditor {
         }
 
         ui.heading(format!("Level {level:03X} — built-in SMW editor"));
-        ui.label("Pristine SMW-US layout detected automatically.");
-        ui.separator();
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
                 egui::Color32::RED,
@@ -364,6 +362,8 @@ impl VanillaLevelEditor {
             );
             return None;
         };
+        ui.label("Pristine SMW-US layout detected automatically.");
+        ui.separator();
         let object_count = controller.level().layer1.objects.records.len();
         let sprite_count = controller.level().sprites.tokens.len();
         let object_tileset = controller.level().layer1.header.object_tileset();
@@ -1019,6 +1019,13 @@ impl VanillaLevelEditor {
         key: EditorKey,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
     ) {
+        if let Err(error) = validate_builtin_graphics_layout(snapshot) {
+            self.controller = None;
+            self.entrance_controller = None;
+            self.error = Some(error);
+            self.key = Some(key);
+            return;
+        }
         let sprite_lengths = match sprite_lengths_from_ssc(custom_sprites) {
             Ok(lengths) => lengths,
             Err(error) => {
@@ -7516,6 +7523,39 @@ fn is_supported(snapshot: &lm_app::ControllerSnapshot) -> bool {
         && snapshot.identity.mapper == Mapper::LoRom
 }
 
+fn validate_builtin_graphics_layout(snapshot: &lm_app::ControllerSnapshot) -> Result<(), String> {
+    let image =
+        RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
+    let project = lm_project::Project::new(image);
+    for file in 0..0x32 {
+        project
+            .load_decompressed_graphics_file(file, lm_profile::smw_us_v1_vanilla_graphics_layout())
+            .map_err(|error| {
+                format!(
+                    "the built-in editor requires the pristine SMW-US graphics pointer layout, \
+                     but GFX{file:02X} could not be decoded: {error}. Install a matching audited \
+                     revision profile for this modified ROM"
+                )
+            })?;
+    }
+    for file in 0..2 {
+        project
+            .load_decompressed_graphics_file(
+                file,
+                lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+            )
+            .map_err(|error| {
+                format!(
+                    "the built-in editor requires the pristine SMW-US special-graphics pointer \
+                     layout, but GFX{:02X} could not be decoded: {error}. Install a matching \
+                     audited revision profile for this modified ROM",
+                    0x33_usize.saturating_sub(file)
+                )
+            })?;
+    }
+    Ok(())
+}
+
 fn prepare_commit(
     controller: &LevelController,
     snapshot: &lm_app::ControllerSnapshot,
@@ -8011,6 +8051,58 @@ mod tests {
         );
         assert_eq!(NATIVE_LEVEL_MINOR_TILES, 27);
         assert!(editor.error.is_none());
+    }
+
+    #[test]
+    fn builtin_editor_rejects_a_modified_graphics_pointer_layout() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        validate_builtin_graphics_layout(&snapshot).unwrap();
+
+        let mut modified = snapshot.clone();
+        let image = RomImage::from_bytes(modified.rom_bytes.clone()).unwrap();
+        let prefix_len = modified.rom_bytes.len() - image.logical_len();
+        modified.rom_bytes[prefix_len + 0x3992] ^= 0xff;
+        let error = validate_builtin_graphics_layout(&modified).unwrap_err();
+        assert!(error.contains("pristine SMW-US graphics pointer layout"));
+        assert!(error.contains("audited revision profile"));
+    }
+
+    #[test]
+    fn every_pristine_level_materializes_its_builtin_render_assets() {
+        let bytes = std::sync::Arc::new(crate::test_support::pristine_smw_us_rom_bytes());
+        std::thread::scope(|scope| {
+            for worker in 0_u16..8 {
+                let bytes = bytes.clone();
+                scope.spawn(move || {
+                    let mut app = AppState::default();
+                    app.load_rom(bytes.as_ref().clone()).unwrap();
+                    for level in (worker..0x200).step_by(8) {
+                        app.dispatch(Command::SelectLevel(level)).unwrap();
+                        let snapshot = app.controller_snapshot().unwrap();
+                        let layer2_layout = editor_layer2_layout(&snapshot, level).unwrap();
+                        let controller = LevelController::decode_with_layer2(
+                            &snapshot,
+                            lm_profile::smw_us_v1_vanilla_level_layout(),
+                            layer2_layout,
+                            &lm_level::SpriteLengthTable::standard(),
+                        )
+                        .unwrap_or_else(|error| panic!("level ${level:03X} model failed: {error}"));
+                        crate::vanilla_map16_preview::render(
+                            snapshot.rom_bytes,
+                            level,
+                            controller.level().layer1.header,
+                        )
+                        .unwrap_or_else(|error| {
+                            panic!("level ${level:03X} assets failed: {error}")
+                        });
+                    }
+                });
+            }
+        });
     }
 
     #[test]
