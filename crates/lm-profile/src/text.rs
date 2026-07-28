@@ -443,6 +443,7 @@ fn parse_layer2(
             stride: number(values, "level.layer2.stride")?,
         },
         background_bank_substitution: None,
+        legacy_pointer_redirect: None,
         descriptor_table,
         maximum_compressed_len: number(values, "level.layer2.maximum_compressed_len")?,
         tilemap_encoding,

@@ -443,6 +443,7 @@ mod tests {
             mapper: profile.mapper,
             pointers,
             background_bank_substitution: None,
+            legacy_pointer_redirect: None,
             descriptor_table: Some(descriptor),
             maximum_compressed_len: 0x8000,
             tilemap_encoding: lm_project::LevelLayer2TilemapEncoding::SplitPlanes,

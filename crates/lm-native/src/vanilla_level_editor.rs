@@ -1813,9 +1813,7 @@ impl VanillaLevelEditor {
                 cell,
                 layer2_tilemap,
                 map16_texture,
-                self.shared_vanilla_background
-                    .then_some(())
-                    .and(background_map16_texture),
+                background_map16_texture,
                 self.shared_vanilla_background
                     .then_some(())
                     .and(background_plane_texture),
@@ -8619,6 +8617,94 @@ mod tests {
                 eprintln!("x={x:03} y={y:03} rust={actual:03X} wine={expected:03X} owner={owner}");
             }
         }
+        assert!(mismatches.is_empty());
+    }
+
+    #[test]
+    fn diagnostic_pristine_level_matches_lunar_magic_layer2_cache_when_requested() {
+        let (Ok(slot), Ok(cache_path)) = (
+            std::env::var("LM_LEVEL_SLOT"),
+            std::env::var("LM_LEVEL_LAYER2_CACHE"),
+        ) else {
+            return;
+        };
+        let slot = u16::from_str_radix(&slot, 16).unwrap();
+        let live = std::fs::read(cache_path).unwrap();
+        assert_eq!(live.len(), lm_level::NATIVE_LAYER2_TILEMAP_LEN);
+
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(slot)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut layout = editor_layer2_layout(&snapshot, slot).unwrap();
+        if let (Some(layout), Ok(offset)) = (
+            layout.as_mut(),
+            std::env::var("LM_LEVEL_LAYER2_POINTER_OFFSET"),
+        ) {
+            layout.pointers.offset =
+                usize::from_str_radix(offset.trim_start_matches("0x"), 16).unwrap();
+        }
+        let controller = LevelController::decode_with_layer2(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            layout,
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let lm_level::NativeLayer2Data::Tilemap(rust) =
+            controller.layer2().expect("level must have Layer 2 data")
+        else {
+            panic!("level uses object-backed Layer 2");
+        };
+        eprintln!(
+            "header={:02X?} mode={:02X}",
+            controller.level().layer1.header.encoded(),
+            controller.level().layer1.header.level_mode()
+        );
+        if let Ok(path) = std::env::var("LM_DUMP_RUST_LAYER2") {
+            std::fs::write(path, rust).unwrap();
+        }
+        let mismatches = rust
+            .chunks_exact(2)
+            .zip(live.chunks_exact(2))
+            .enumerate()
+            .filter(|(_, (rust, live))| rust != live)
+            .map(|(index, (rust, live))| {
+                (
+                    index,
+                    u16::from_le_bytes([rust[0], rust[1]]),
+                    u16::from_le_bytes([live[0], live[1]]),
+                )
+            })
+            .collect::<Vec<_>>();
+        let rust_words = rust
+            .chunks_exact(2)
+            .map(|word| u16::from_le_bytes([word[0], word[1]]))
+            .collect::<Vec<_>>();
+        let live_words = live
+            .chunks_exact(2)
+            .map(|word| u16::from_le_bytes([word[0], word[1]]))
+            .collect::<Vec<_>>();
+        let best_rotation = (0..live_words.len())
+            .map(|rotation| {
+                let differences = rust_words
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, word)| {
+                        **word != live_words[(index + rotation) % live_words.len()]
+                    })
+                    .count();
+                (differences, rotation)
+            })
+            .min()
+            .unwrap();
+        eprintln!(
+            "level {slot:03X}: {} Layer 2 mismatches / {} cells; best rotation={best_rotation:?}; first={:?}",
+            mismatches.len(),
+            live.len() / 2,
+            mismatches.iter().take(16).collect::<Vec<_>>()
+        );
         assert!(mismatches.is_empty());
     }
 

@@ -53,6 +53,39 @@ read_u32() {
         tr -d ' '
 }
 
+wait_for_level() {
+    expected=$((0x$1))
+    attempts=0
+    while [ "$attempts" -lt 250 ]; do
+        current=$(read_u32 0x005e7738)
+        [ "$current" -eq "$expected" ] && return 0
+        attempts=$((attempts + 1))
+        sleep 0.02
+    done
+    echo "Lunar Magic did not select level $1 within 5 seconds" >&2
+    return 1
+}
+
+capture_stable_dib() {
+    output=$1
+    candidate="$output.next"
+    wine "$capture_helper" "$target_executable" "$(winepath -w "$output")" >/dev/null 2>&1
+    attempts=0
+    while [ "$attempts" -lt 12 ]; do
+        sleep 0.06
+        wine "$capture_helper" "$target_executable" "$(winepath -w "$candidate")" >/dev/null 2>&1
+        if cmp -s "$output" "$candidate"; then
+            rm -f "$candidate"
+            return 0
+        fi
+        mv "$candidate" "$output"
+        attempts=$((attempts + 1))
+    done
+    rm -f "$candidate"
+    echo "accept Lunar Magic level $normalized after animation settle" >&2
+    return 0
+}
+
 printf 'level\tsha256\tlunar_magic_image\trust_editor_image\tscroll_column\tscroll_row\tcanvas_width\tcanvas_height\n' >"$manifest"
 old_ifs=$IFS
 IFS=,
@@ -67,18 +100,12 @@ for level in $level_spec; do
     bmp="$images_dir/lunar-magic-level-$normalized.bmp"
     png="$images_dir/lunar-magic-level-$normalized.png"
     echo "open Lunar Magic level $normalized"
-    wine "$window_helper" "$target_executable" 0x238e >/dev/null 2>&1 &
-    dialog_pid=$!
-    sleep 0.18
-    wine "$window_helper" "$target_executable" level "$normalized" >/dev/null
-    wait "$dialog_pid"
-    sleep 0.18
-    if [ ! -f "$png" ]; then
-        echo "capture Lunar Magic level $normalized"
-        wine "$capture_helper" "$target_executable" "$(winepath -w "$bmp")"
-        sips -s format png "$bmp" --out "$png" >/dev/null
-        rm -f "$bmp"
-    fi
+    wine "$window_helper" "$target_executable" open-level "$normalized" >/dev/null
+    wait_for_level "$normalized"
+    echo "capture stable Lunar Magic level $normalized"
+    capture_stable_dib "$bmp"
+    sips -s format png "$bmp" --out "$png" >/dev/null
+    rm -f "$bmp"
     digest=$(shasum -a 256 "$png" | awk '{print $1}')
     scroll_column=$(read_u32 0x006204a4)
     scroll_row=$(read_u32 0x009207dc)

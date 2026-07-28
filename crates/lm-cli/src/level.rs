@@ -124,6 +124,7 @@ pub fn export_layer2(
                 stride: 3,
             },
             background_bank_substitution: None,
+            legacy_pointer_redirect: None,
             descriptor_table: None,
             maximum_compressed_len: 0x8000,
             tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },

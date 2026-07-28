@@ -282,6 +282,65 @@ static DWORD find_process(const char *executable) {
     return found;
 }
 
+static HWND find_process_window(DWORD process_id, const char *window_class) {
+    struct search search = {
+        .process_id = process_id,
+        .window = NULL,
+        .list = FALSE,
+        .window_class = window_class
+    };
+    EnumWindows(find_top_level_window, (LPARAM)&search);
+    return search.window;
+}
+
+static int open_level(DWORD process_id, const char *level_number) {
+    HWND main_window = find_process_window(process_id, NULL);
+    if (main_window == NULL) {
+        fprintf(stderr, "main window not found for process %lu\n", process_id);
+        return 1;
+    }
+    if (!PostMessage(main_window, WM_COMMAND, MAKEWPARAM(0x238e, 0), 0)) {
+        fprintf(stderr, "cannot open level-number dialog\n");
+        return 1;
+    }
+
+    HWND dialog = NULL;
+    HWND edit = NULL;
+    for (unsigned int attempt = 0; attempt < 200 && edit == NULL; attempt++) {
+        Sleep(25);
+        dialog = find_process_window(process_id, "#32770");
+        if (dialog != NULL) {
+            edit = GetDlgItem(dialog, 0x7f);
+        }
+    }
+    if (edit == NULL) {
+        fprintf(
+            stderr,
+            "level-number dialog was not ready within 5 seconds\n"
+        );
+        return 1;
+    }
+    SendMessage(edit, WM_SETTEXT, 0, (LPARAM)level_number);
+    if (!PostMessage(
+        dialog,
+        WM_COMMAND,
+        MAKEWPARAM(IDOK, BN_CLICKED),
+        (LPARAM)GetDlgItem(dialog, IDOK)
+    )) {
+        fprintf(stderr, "cannot submit level-number dialog\n");
+        return 1;
+    }
+
+    for (unsigned int attempt = 0; attempt < 400; attempt++) {
+        Sleep(25);
+        if (!IsWindow(dialog)) {
+            return 0;
+        }
+    }
+    fprintf(stderr, "level-number dialog did not close within 10 seconds\n");
+    return 1;
+}
+
 int main(int argc, char **argv) {
     if (argc < 3 || argc > 4) {
         fprintf(
@@ -293,6 +352,7 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
             "       wine-window-command.exe EXECUTABLE save WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE level HEX_LEVEL\n"
+            "       wine-window-command.exe EXECUTABLE open-level HEX_LEVEL\n"
         );
         return 2;
     }
@@ -303,9 +363,27 @@ int main(int argc, char **argv) {
     }
     BOOL save = _stricmp(argv[2], "save") == 0;
     BOOL level = _stricmp(argv[2], "level") == 0;
+    BOOL open_level_command = _stricmp(argv[2], "open-level") == 0;
     BOOL dialog_values = _stricmp(argv[2], "dialog-values") == 0;
     BOOL click = _stricmp(argv[2], "click") == 0;
     BOOL read = _stricmp(argv[2], "read") == 0;
+    if (open_level_command) {
+        if (argc != 4) {
+            fprintf(stderr, "open-level requires a hexadecimal level number\n");
+            return 2;
+        }
+        char *end = NULL;
+        unsigned long level_value = strtoul(argv[3], &end, 16);
+        if (
+            end == argv[3] ||
+            *end != '\0' ||
+            level_value > 0x1ff
+        ) {
+            fprintf(stderr, "invalid hexadecimal level number: %s\n", argv[3]);
+            return 2;
+        }
+        return open_level(process_id, argv[3]);
+    }
     struct search search = {
         .process_id = process_id,
         .window = NULL,

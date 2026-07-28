@@ -357,6 +357,7 @@ mod tests {
                 mapper: Mapper::LoRom,
                 pointers: table(0x60),
                 background_bank_substitution: None,
+                legacy_pointer_redirect: None,
                 descriptor_table: None,
                 maximum_compressed_len: 0x8000,
                 tilemap_encoding: crate::LevelLayer2TilemapEncoding::SplitPlanes,

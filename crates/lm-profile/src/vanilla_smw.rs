@@ -2,8 +2,9 @@
 
 use lm_project::{
     GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout, LevelLayer2DescriptorTable,
-    LevelLayer2RomLayout, LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout,
-    SeparateMidwayPatchLocator, SpritePointerTable, VanillaEntranceRomLayout,
+    LevelLayer2PointerRedirect, LevelLayer2RomLayout, LevelLayer2TilemapEncoding,
+    LevelPointerTable, LevelRomLayout, SeparateMidwayPatchLocator, SpritePointerTable,
+    VanillaEntranceRomLayout,
 };
 use lm_rom::Mapper;
 use lm_rom::{RomError, RomImage};
@@ -95,6 +96,16 @@ pub const fn smw_us_v1_vanilla_layer2_layout() -> LevelLayer2RomLayout {
             stride: 3,
         },
         background_bank_substitution: Some(0x0c),
+        legacy_pointer_redirect: Some(LevelLayer2PointerRedirect {
+            selector_pointers: LevelPointerTable {
+                offset: SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET,
+                entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+                stride: 3,
+            },
+            selector_value: [0x00, 0x80, 0x06],
+            source_value: [0x00, 0xd9, 0xff],
+            target_value: [0x54, 0xde, 0xff],
+        }),
         descriptor_table: None,
         maximum_compressed_len: 0x8000,
         tilemap_encoding: LevelLayer2TilemapEncoding::Legacy { high_byte: 0 },

@@ -97,8 +97,8 @@ pub use level_io::{
     LevelLoadError, LevelPointerTable, LevelRomLayout, LoadedLevelSlot, SpritePointerTable,
 };
 pub use level_layer2_io::{
-    LevelLayer2DescriptorTable, LevelLayer2IoError, LevelLayer2RomLayout, LevelLayer2SaveOptions,
-    LevelLayer2TilemapEncoding, LoadedLevelLayer2,
+    LevelLayer2DescriptorTable, LevelLayer2IoError, LevelLayer2PointerRedirect,
+    LevelLayer2RomLayout, LevelLayer2SaveOptions, LevelLayer2TilemapEncoding, LoadedLevelLayer2,
 };
 pub use level_save::{LevelSaveError, LevelSaveOptions, SavedLevelSlot};
 pub use lunar_magic_metadata_io::{LunarMagicRomMetadataIoError, LunarMagicRomMetadataLayout};

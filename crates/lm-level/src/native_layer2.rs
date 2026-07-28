@@ -8,8 +8,8 @@ pub const NATIVE_LAYER2_TILEMAP_WIDTH: usize = 32;
 pub const NATIVE_LAYER2_TILEMAP_HEIGHT: usize = 32;
 const NATIVE_LAYER2_TILEMAP_WORDS: usize =
     NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT;
-const LEGACY_LAYER2_PAGE_WORDS: usize = 0x1b0;
-const LEGACY_LAYER2_PAGE_WIDTH: usize = 16;
+const LEGACY_LAYER2_FIRST_PAGE_WORDS: usize = 0x1b0;
+const LEGACY_LAYER2_SECOND_PAGE_GAP: usize = 0x50;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeLayer2Rectangle {
@@ -25,7 +25,7 @@ pub const fn native_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
     if x >= NATIVE_LAYER2_TILEMAP_WIDTH || y >= NATIVE_LAYER2_TILEMAP_HEIGHT {
         return None;
     }
-    Some(((y >> 4) * 31 + x) * 16 + y)
+    Some(((x >> 4) * 31 + y) * 16 + x)
 }
 
 /// Returns the four-connected canvas region whose complete 16-bit words match the start cell.
@@ -313,7 +313,8 @@ fn native_layer2_flood_mask(
         if visited[visual] {
             continue;
         }
-        let index = ((y >> 4) * 31 + x) * 16 + y;
+        let index = native_layer2_tilemap_index(x, y)
+            .expect("queued Layer 2 flood coordinate is in bounds");
         if tilemap_word(bytes, index) != target {
             continue;
         }
@@ -337,7 +338,7 @@ fn native_layer2_flood_mask(
 const fn native_layer2_storage_index_from_visual(visual: usize) -> usize {
     let x = visual % NATIVE_LAYER2_TILEMAP_WIDTH;
     let y = visual / NATIVE_LAYER2_TILEMAP_WIDTH;
-    ((y >> 4) * 31 + x) * 16 + y
+    ((x >> 4) * 31 + y) * 16 + x
 }
 
 fn tilemap_word(bytes: &[u8], index: usize) -> u16 {
@@ -354,9 +355,9 @@ pub enum NativeLayer2Data {
 
 /// Expands vanilla SMW's 864-byte background stream into the native 32×32 canvas.
 ///
-/// The first 0x200 bytes cover the upper 32×16 page. Lunar Magic places the remaining bytes
-/// after an 0x50-cell gap in the lower page; this is observable in its MWL exports and is not a
-/// contiguous 32×27 row-major image.
+/// Lunar Magic copies the first 0x1B0 bytes directly into native storage and places the remaining
+/// 0x1B0 bytes after an 0x50-cell gap. This is the exact transform performed by
+/// `ExpandLegacyLayer2TilemapLayout` in Lunar Magic 3.63.
 ///
 /// # Errors
 ///
@@ -370,11 +371,11 @@ pub fn expand_legacy_layer2_tilemap(
     }
     let mut output = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
     for (source, value) in bytes.iter().copied().enumerate() {
-        let page = source / LEGACY_LAYER2_PAGE_WORDS;
-        let within_page = source % LEGACY_LAYER2_PAGE_WORDS;
-        let x = page * LEGACY_LAYER2_PAGE_WIDTH + within_page % LEGACY_LAYER2_PAGE_WIDTH;
-        let y = within_page / LEGACY_LAYER2_PAGE_WIDTH;
-        let tile = native_layer2_tilemap_index(x, y).expect("legacy Layer 2 page coordinate");
+        let tile = if source < LEGACY_LAYER2_FIRST_PAGE_WORDS {
+            source
+        } else {
+            source + LEGACY_LAYER2_SECOND_PAGE_GAP
+        };
         output[tile * 2] = value;
         output[tile * 2 + 1] = high_byte;
     }
@@ -396,11 +397,11 @@ pub fn compact_legacy_layer2_tilemap(
     let mut output = Vec::with_capacity(LEGACY_LAYER2_TILEMAP_LEN);
     let mut represented = [false; 1024];
     for source in 0..LEGACY_LAYER2_TILEMAP_LEN {
-        let page = source / LEGACY_LAYER2_PAGE_WORDS;
-        let within_page = source % LEGACY_LAYER2_PAGE_WORDS;
-        let x = page * LEGACY_LAYER2_PAGE_WIDTH + within_page % LEGACY_LAYER2_PAGE_WIDTH;
-        let y = within_page / LEGACY_LAYER2_PAGE_WIDTH;
-        let tile = native_layer2_tilemap_index(x, y).expect("legacy Layer 2 page coordinate");
+        let tile = if source < LEGACY_LAYER2_FIRST_PAGE_WORDS {
+            source
+        } else {
+            source + LEGACY_LAYER2_SECOND_PAGE_GAP
+        };
         represented[tile] = true;
         let word = &bytes[tile * 2..tile * 2 + 2];
         if word[1] != high_byte {
@@ -596,9 +597,9 @@ mod tests {
     #[test]
     fn tilemap_canvas_index_is_a_complete_bijection() {
         assert_eq!(native_layer2_tilemap_index(0, 0), Some(0));
-        assert_eq!(native_layer2_tilemap_index(1, 0), Some(16));
-        assert_eq!(native_layer2_tilemap_index(31, 15), Some(511));
-        assert_eq!(native_layer2_tilemap_index(0, 16), Some(512));
+        assert_eq!(native_layer2_tilemap_index(1, 0), Some(1));
+        assert_eq!(native_layer2_tilemap_index(31, 15), Some(767));
+        assert_eq!(native_layer2_tilemap_index(0, 16), Some(256));
         assert_eq!(native_layer2_tilemap_index(31, 31), Some(1023));
         assert_eq!(native_layer2_tilemap_index(32, 0), None);
         assert_eq!(native_layer2_tilemap_index(0, 32), None);
@@ -919,13 +920,9 @@ mod tests {
 
         let legacy = vec![0xf1; LEGACY_LAYER2_TILEMAP_LEN];
         let expanded = expand_legacy_layer2_tilemap(&legacy, 0).unwrap();
-        for (x, y) in [(0, 0), (31, 15), (16, 18), (15, 26)] {
-            let tile = native_layer2_tilemap_index(x, y).unwrap();
-            assert_eq!(&expanded[tile * 2..tile * 2 + 2], &[0xf1, 0]);
-        }
-        for (x, y) in [(0, 27), (31, 27), (16, 29), (31, 31)] {
-            let tile = native_layer2_tilemap_index(x, y).unwrap();
-            assert_eq!(&expanded[tile * 2..tile * 2 + 2], &[0, 0]);
+        for (storage, word) in expanded.chunks_exact(2).enumerate() {
+            let represented = storage < 0x1b0 || (0x200..0x3b0).contains(&storage);
+            assert_eq!(word, if represented { &[0xf1, 0] } else { &[0, 0] });
         }
         assert_eq!(compact_legacy_layer2_tilemap(&expanded, 0).unwrap(), legacy);
 
@@ -933,14 +930,14 @@ mod tests {
             .map(|index| index.to_le_bytes()[0])
             .collect::<Vec<_>>();
         let expanded = expand_legacy_layer2_tilemap(&legacy, 1).unwrap();
-        for (x, y) in [(0, 0), (0, 1), (1, 0), (31, 15), (16, 18), (15, 26)] {
-            let tile = native_layer2_tilemap_index(x, y).unwrap();
-            let page = x / LEGACY_LAYER2_PAGE_WIDTH;
-            let source = page * LEGACY_LAYER2_PAGE_WORDS
-                + y * LEGACY_LAYER2_PAGE_WIDTH
-                + x % LEGACY_LAYER2_PAGE_WIDTH;
+        for source in 0..LEGACY_LAYER2_TILEMAP_LEN {
+            let storage = if source < LEGACY_LAYER2_FIRST_PAGE_WORDS {
+                source
+            } else {
+                source + LEGACY_LAYER2_SECOND_PAGE_GAP
+            };
             assert_eq!(
-                &expanded[tile * 2..tile * 2 + 2],
+                &expanded[storage * 2..storage * 2 + 2],
                 &[source.to_le_bytes()[0], 1]
             );
         }

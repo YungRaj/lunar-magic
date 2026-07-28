@@ -19,10 +19,20 @@ pub struct LevelLayer2RomLayout {
     pub pointers: LevelPointerTable,
     /// Optional bank substituted when a pointer entry uses `$FF` to identify a shared background.
     pub background_bank_substitution: Option<u8>,
+    /// Optional pristine-ROM redirect selected by a parallel per-level pointer sentinel.
+    pub legacy_pointer_redirect: Option<LevelLayer2PointerRedirect>,
     /// Format-$103 one-byte descriptor table. `None` selects pristine/legacy synthesized state.
     pub descriptor_table: Option<LevelLayer2DescriptorTable>,
     pub maximum_compressed_len: usize,
     pub tilemap_encoding: LevelLayer2TilemapEncoding,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LevelLayer2PointerRedirect {
+    pub selector_pointers: LevelPointerTable,
+    pub selector_value: [u8; 3],
+    pub source_value: [u8; 3],
+    pub target_value: [u8; 3],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -148,7 +158,19 @@ impl Project {
         layout: LevelLayer2RomLayout,
     ) -> Result<LoadedLevelLayer2, LevelLayer2IoError> {
         let pointer = layout.pointers.pointer_offset(level)?;
-        let pointer_bytes = self.rom.read(pointer, 3)?;
+        let mut pointer_bytes: [u8; 3] = self
+            .rom
+            .read(pointer, 3)?
+            .try_into()
+            .expect("three-byte pointer read");
+        if let Some(redirect) = layout.legacy_pointer_redirect {
+            let selector_offset = redirect.selector_pointers.pointer_offset(level)?;
+            if self.rom.read(selector_offset, 3)? == redirect.selector_value
+                && pointer_bytes == redirect.source_value
+            {
+                pointer_bytes = redirect.target_value;
+            }
+        }
         let substituted_pointer = layout
             .background_bank_substitution
             .filter(|_| pointer_bytes[2] == 0xff)
@@ -429,6 +451,7 @@ mod tests {
                 stride: 3,
             },
             background_bank_substitution: None,
+            legacy_pointer_redirect: None,
             descriptor_table: None,
             maximum_compressed_len: 0x8000,
             tilemap_encoding: LevelLayer2TilemapEncoding::SplitPlanes,
@@ -436,13 +459,17 @@ mod tests {
     }
 
     #[test]
-    fn legacy_background_expansion_places_two_sixteen_by_twenty_seven_pages_side_by_side() {
+    fn legacy_background_expansion_leaves_native_page_gap_zeroed() {
         let tilemap =
             expand_legacy_layer2_tilemap(&vec![0x25; LEGACY_LAYER2_TILEMAP_LEN], 1).unwrap();
         for y in 0..32 {
             for x in 0..32 {
                 let tile = lm_level::native_layer2_tilemap_index(x, y).unwrap();
-                let expected = if y < 27 { [0x25, 1] } else { [0, 0] };
+                let expected = if tile < 0x1b0 || (0x200..0x3b0).contains(&tile) {
+                    [0x25, 1]
+                } else {
+                    [0, 0]
+                };
                 assert_eq!(&tilemap[tile * 2..tile * 2 + 2], &expected);
             }
         }

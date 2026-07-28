@@ -107,6 +107,9 @@ function rgbAt(image, x, y) {
 }
 
 function rustComparisonRgb(rust, live, cropX, cropY, x, y) {
+  // Lunar Magic's horizontal DIB keeps a 32-pixel black tail after the 27-tile
+  // (432-pixel) level surface.
+  if (live.width === 656 && y >= 432) return [0, 0, 0];
   // Lunar Magic's vertical DIB keeps a 112-pixel black tail after the 32-tile (512-pixel)
   // level surface. The Rust canvas ends at 512 pixels and the surrounding application UI must
   // not be mistaken for level pixels.
