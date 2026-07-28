@@ -753,6 +753,9 @@ fn render_definition(
     parameter: u8,
     definition: &StandardObjectDefinition,
 ) -> Result<(), StandardObjectRenderError> {
+    if layout.vertical && command == 0 && (0x91..=0x96).contains(&parameter) {
+        return render_serialized_axis_pattern(cache, layout, placement, definition);
+    }
     if let Some(result) = dispatch_native_renderer(
         cache,
         layout,
@@ -781,6 +784,39 @@ fn render_definition(
         ObjectExtent::FixedPattern => (definition.pattern.width, definition.pattern.height),
     };
     render_pattern(cache, layout, placement, major_span, minor_span, definition)
+}
+
+fn render_serialized_axis_pattern(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    definition: &StandardObjectDefinition,
+) -> Result<(), StandardObjectRenderError> {
+    for major_offset in 0..definition.pattern.width {
+        for minor_offset in 0..definition.pattern.height {
+            let x = usize::from(placement.minor)
+                .checked_add(minor_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+            let y = usize::from(placement.major)
+                .checked_add(major_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+            set_rendered_cell(
+                cache,
+                layout,
+                x,
+                y,
+                definition.pattern.tile_for(
+                    major_offset,
+                    minor_offset,
+                    definition.pattern.width,
+                    definition.pattern.height,
+                    AxisExpansion::Clamp,
+                    AxisExpansion::Clamp,
+                ),
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn dispatch_native_renderer(
@@ -1485,13 +1521,7 @@ fn render_shared_slot_031(
     // pairs, then advances to the following row by adding 0x10.
     set_placement_horizontal_pair(cache, layout, placement, 0, [0x161, 0x162])?;
     for minor_offset in 1..=usize::from(parameter >> 4) {
-        set_placement_horizontal_pair(
-            cache,
-            layout,
-            placement,
-            minor_offset,
-            [0x163, 0x164],
-        )?;
+        set_placement_horizontal_pair(cache, layout, placement, minor_offset, [0x163, 0x164])?;
     }
     Ok(())
 }
@@ -2520,7 +2550,14 @@ fn render_slot_004_tapered_four_part(
         [0x1c6, 0x1c7]
     };
     let final_start = height.saturating_sub(1) * 2;
-    set_placement_cell(cache, layout, placement, final_start, height, final_tiles[0])?;
+    set_placement_cell(
+        cache,
+        layout,
+        placement,
+        final_start,
+        height,
+        final_tiles[0],
+    )?;
     set_placement_cell(
         cache,
         layout,
@@ -3577,16 +3614,24 @@ fn set_placement_cell(
     minor_offset: usize,
     tile: u16,
 ) -> Result<(), StandardObjectRenderError> {
-    let major = usize::from(placement.major)
-        .checked_add(major_offset)
-        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
-    let minor = usize::from(placement.minor)
-        .checked_add(minor_offset)
-        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
     let (x, y) = if layout.vertical {
-        (minor, major)
+        (
+            usize::from(placement.minor)
+                .checked_add(major_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+            usize::from(placement.major)
+                .checked_add(minor_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+        )
     } else {
-        (major, minor)
+        (
+            usize::from(placement.major)
+                .checked_add(major_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+            usize::from(placement.minor)
+                .checked_add(minor_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+        )
     };
     set_rendered_cell(cache, layout, x, y, tile)
 }
@@ -3633,16 +3678,22 @@ fn set_placement_cell_signed(
     minor_offset: isize,
     tile: u16,
 ) -> Result<(), StandardObjectRenderError> {
-    let Some(major) = usize::from(placement.major).checked_add_signed(major_offset) else {
-        return Ok(());
-    };
-    let Some(minor) = usize::from(placement.minor).checked_add_signed(minor_offset) else {
-        return Ok(());
-    };
     let (x, y) = if layout.vertical {
-        (minor, major)
+        let Some(x) = usize::from(placement.minor).checked_add_signed(major_offset) else {
+            return Ok(());
+        };
+        let Some(y) = usize::from(placement.major).checked_add_signed(minor_offset) else {
+            return Ok(());
+        };
+        (x, y)
     } else {
-        (major, minor)
+        let Some(x) = usize::from(placement.major).checked_add_signed(major_offset) else {
+            return Ok(());
+        };
+        let Some(y) = usize::from(placement.minor).checked_add_signed(minor_offset) else {
+            return Ok(());
+        };
+        (x, y)
     };
     if x >= layout.width || y >= layout.height {
         return Ok(());
@@ -3657,16 +3708,22 @@ fn get_placement_cell_signed(
     major_offset: isize,
     minor_offset: isize,
 ) -> Result<u16, StandardObjectRenderError> {
-    let Some(major) = usize::from(placement.major).checked_add_signed(major_offset) else {
-        return Ok(u16::MAX);
-    };
-    let Some(minor) = usize::from(placement.minor).checked_add_signed(minor_offset) else {
-        return Ok(u16::MAX);
-    };
     let (x, y) = if layout.vertical {
-        (minor, major)
+        let Some(x) = usize::from(placement.minor).checked_add_signed(major_offset) else {
+            return Ok(u16::MAX);
+        };
+        let Some(y) = usize::from(placement.major).checked_add_signed(minor_offset) else {
+            return Ok(u16::MAX);
+        };
+        (x, y)
     } else {
-        (major, minor)
+        let Some(x) = usize::from(placement.major).checked_add_signed(major_offset) else {
+            return Ok(u16::MAX);
+        };
+        let Some(y) = usize::from(placement.minor).checked_add_signed(minor_offset) else {
+            return Ok(u16::MAX);
+        };
+        (x, y)
     };
     get_rendered_cell(cache, layout, x, y)
 }
@@ -3678,16 +3735,24 @@ fn get_placement_cell(
     major_offset: usize,
     minor_offset: usize,
 ) -> Result<u16, StandardObjectRenderError> {
-    let major = usize::from(placement.major)
-        .checked_add(major_offset)
-        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
-    let minor = usize::from(placement.minor)
-        .checked_add(minor_offset)
-        .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
     let (x, y) = if layout.vertical {
-        (minor, major)
+        (
+            usize::from(placement.minor)
+                .checked_add(major_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+            usize::from(placement.major)
+                .checked_add(minor_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+        )
     } else {
-        (major, minor)
+        (
+            usize::from(placement.major)
+                .checked_add(major_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+            usize::from(placement.minor)
+                .checked_add(minor_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?,
+        )
     };
     get_rendered_cell(cache, layout, x, y)
 }
@@ -3755,22 +3820,12 @@ fn render_pattern(
 ) -> Result<(), StandardObjectRenderError> {
     for major_offset in 0..major_span {
         for minor_offset in 0..minor_span {
-            let major = usize::from(placement.major)
-                .checked_add(major_offset)
-                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
-            let minor = usize::from(placement.minor)
-                .checked_add(minor_offset)
-                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
-            let (x, y) = if layout.vertical {
-                (minor, major)
-            } else {
-                (major, minor)
-            };
-            set_rendered_cell(
+            set_placement_cell(
                 cache,
                 layout,
-                x,
-                y,
+                placement,
+                major_offset,
+                minor_offset,
                 definition.pattern.tile_for(
                     major_offset,
                     minor_offset,
@@ -5529,11 +5584,7 @@ mod tests {
                     .unwrap();
                 assert_eq!(
                     report.cache.cells()
-                        [NativeLevelMap16Cache::cell_index(
-                            layout(),
-                            end_major,
-                            start_minor + row
-                        )],
+                        [NativeLevelMap16Cache::cell_index(layout(), end_major, start_minor + row)],
                     end
                 );
                 if row < 3 {
@@ -5541,12 +5592,11 @@ mod tests {
                         .checked_add_signed(direction * isize::try_from(row).unwrap())
                         .unwrap();
                     assert_eq!(
-                        report.cache.cells()
-                            [NativeLevelMap16Cache::cell_index(
-                                layout(),
-                                start_major,
-                                start_minor + row
-                            )],
+                        report.cache.cells()[NativeLevelMap16Cache::cell_index(
+                            layout(),
+                            start_major,
+                            start_minor + row
+                        )],
                         start
                     );
                 }
@@ -6072,7 +6122,11 @@ mod tests {
             (0x150, 0x161),
             (0x15b, 0x161),
         ] {
-            assert_eq!(cache.raw_get(index).unwrap(), tile, "source index {index:#x}");
+            assert_eq!(
+                cache.raw_get(index).unwrap(),
+                tile,
+                "source index {index:#x}"
+            );
             assert_eq!(
                 cache.raw_get(0x1b0 + index).unwrap(),
                 tile,
@@ -6227,11 +6281,7 @@ mod tests {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         for (handler, parameter, expected) in [
-            (
-                62,
-                0x12,
-                vec![vec![0x089], vec![0x08a], vec![0x08b]],
-            ),
+            (62, 0x12, vec![vec![0x089], vec![0x08a], vec![0x08b]]),
             (63, 0x02, vec![vec![0x10a], vec![0x10b], vec![0x10c]]),
             (64, 0x21, vec![vec![0x078, 0x079, 0x079]]),
             (65, 0x21, vec![vec![0x160, 0x160, 0x160]]),
@@ -6271,29 +6321,17 @@ mod tests {
             (
                 67,
                 0x12,
-                vec![
-                    vec![0x153, 0x154],
-                    vec![0x153, 0x154],
-                    vec![0x153, 0x154],
-                ],
+                vec![vec![0x153, 0x154], vec![0x153, 0x154], vec![0x153, 0x154]],
             ),
             (
                 68,
                 0x12,
-                vec![
-                    vec![0x15d, 0x153],
-                    vec![0x15d, 0x153],
-                    vec![0x15d, 0x153],
-                ],
+                vec![vec![0x15d, 0x153], vec![0x15d, 0x153], vec![0x15d, 0x153]],
             ),
             (
                 69,
                 0x12,
-                vec![
-                    vec![0x153, 0x153],
-                    vec![0x153, 0x153],
-                    vec![0x155, 0x155],
-                ],
+                vec![vec![0x153, 0x153], vec![0x153, 0x153], vec![0x155, 0x155]],
             ),
             (
                 70,
@@ -6831,6 +6869,54 @@ mod tests {
             }
             assert_eq!(report.cache.get(vertical, 4, y).unwrap(), 0x25);
         }
+    }
+
+    #[test]
+    fn vertical_extended_objects_distinguish_physical_and_serialized_axes() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        let handler_map = [0xff; 64];
+        let vertical = NativeLevelMap16Layout {
+            width: 32,
+            height: 160,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: true,
+        };
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 1,
+            major: 16,
+            minor: 5,
+            major_span: 1,
+            minor_span: 1,
+        };
+        let ordinary = render_mapped_standard_object_placement(
+            &ObjectRecord::new(vec![0, 0, 0x41]).unwrap(),
+            placement,
+            &definitions,
+            &handler_map,
+            vertical,
+            0x25,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(ordinary.get(vertical, 5, 16).unwrap(), 0x02d);
+        assert_eq!(ordinary.get(vertical, 5, 17).unwrap(), 0x02e);
+
+        let slope = render_mapped_standard_object_placement(
+            &ObjectRecord::new(vec![0, 0, 0x96]).unwrap(),
+            placement,
+            &definitions,
+            &handler_map,
+            vertical,
+            0x25,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(slope.get(vertical, 5, 16).unwrap(), 0x1cc);
+        assert_eq!(slope.get(vertical, 5, 17).unwrap(), 0x1cd);
+        assert_eq!(slope.get(vertical, 5, 18).unwrap(), 0x1f2);
     }
 
     #[test]

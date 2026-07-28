@@ -8272,7 +8272,11 @@ mod tests {
             .unwrap();
         let vertical = lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode()).vertical;
         if std::env::var_os("LM_DUMP_OBJECTS").is_some() {
-            for placement in level.layer1.objects.native_placements_for_orientation(vertical) {
+            for placement in level
+                .layer1
+                .objects
+                .native_placements_for_orientation(vertical)
+            {
                 let record = &level.layer1.objects.records[placement.record_index];
                 let (x, y) = placement.tile_coordinates(vertical);
                 eprintln!(
@@ -8295,9 +8299,8 @@ mod tests {
         let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
         lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
         lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
-        let family = match lm_profile::smw_us_v1_object_family(
-            level.layer1.header.object_tileset(),
-        ) {
+        let family = match lm_profile::smw_us_v1_object_family(level.layer1.header.object_tileset())
+        {
             lm_profile::VanillaObjectFamily::Normal => 0,
             lm_profile::VanillaObjectFamily::Castle => 1,
             lm_profile::VanillaObjectFamily::Rope => 2,
