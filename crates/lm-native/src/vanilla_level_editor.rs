@@ -25,6 +25,7 @@ const VANILLA_ENTRANCE_Y_LOW: [u8; 16] = [
 const VANILLA_ENTRANCE_Y_HIGH: [u8; 16] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
 ];
+const VANILLA_ENTRANCE_X_LOW: [u8; 8] = [0x10, 0x80, 0x00, 0xe0, 0x10, 0x70, 0x00, 0xe0];
 const VANILLA_LAYER2_VERTICAL_SCROLL: [u8; 16] = [3, 1, 1, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0];
 const VANILLA_LAYER2_HORIZONTAL_SCROLL: [u8; 16] = [2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const VANILLA_INITIAL_LAYER1_Y: [u8; 4] = [0x00, 0x60, 0xc0, 0x00];
@@ -273,6 +274,7 @@ pub(crate) struct VanillaLevelEditor {
     animated_background_plane_textures: Vec<egui::TextureHandle>,
     shared_vanilla_background: bool,
     sprite_texture: Option<egui::TextureHandle>,
+    entrance_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
     foreground_tiles: Vec<lm_graphics::IndexedTile>,
     layer3_tiles: Vec<lm_graphics::IndexedTile>,
@@ -1151,6 +1153,7 @@ impl VanillaLevelEditor {
         self.animated_background_plane_textures.clear();
         self.shared_vanilla_background = false;
         self.sprite_texture = None;
+        self.entrance_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
         self.layer3_tiles.clear();
@@ -1247,6 +1250,7 @@ impl VanillaLevelEditor {
         self.animated_background_map16_textures.clear();
         self.animated_background_plane_textures.clear();
         self.sprite_texture = None;
+        self.entrance_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
         self.layer3_tiles.clear();
@@ -1345,6 +1349,11 @@ impl VanillaLevelEditor {
                         snapshot.revision
                     ),
                     preview.sprite_image,
+                    egui::TextureOptions::NEAREST,
+                ));
+                self.entrance_texture = Some(context.load_texture(
+                    format!("vanilla-entrance-{}", snapshot.revision),
+                    preview.entrance_image,
                     egui::TextureOptions::NEAREST,
                 ));
                 self.foreground_texture = Some(context.load_texture(
@@ -1880,6 +1889,20 @@ impl VanillaLevelEditor {
         // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
         if !game_preview {
             draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+            let level = self.controller.as_ref().map_or(0, |controller| {
+                u16::try_from(controller.level().number).unwrap_or(0)
+            });
+            draw_primary_entrance_label(painter, rect, cell, level, self.entrance_form, vertical);
+            if let Some(texture) = self.entrance_texture.as_ref() {
+                draw_primary_entrance_marker(
+                    painter,
+                    rect,
+                    cell,
+                    texture,
+                    self.entrance_form,
+                    vertical,
+                );
+            }
             self.handle_canvas_interaction(
                 response,
                 hit.body,
@@ -4583,6 +4606,89 @@ fn vanilla_horizontal_entrance_scroll_row(entrance: VanillaMainEntrance) -> u16 
         row += 3;
     }
     row
+}
+
+/// Returns Lunar Magic's label anchor in level pixels for the ordinary main entrance.
+///
+/// The two coordinate tables are the live arrays used by
+/// `DrawPrimaryOrMidwayEntranceLabel` at `00452920`. The entrance pose changes the horizontal
+/// label clearance from 18 to 24 pixels; the marker itself is rendered immediately to its left.
+fn horizontal_primary_entrance_label_pixels(entrance: VanillaMainEntrance) -> (u16, u16) {
+    let screen = u16::from(entrance.level_mode_and_screen & 0x1f) * 0x100;
+    let x_setting = usize::from(entrance.vertical_settings & 7);
+    let y_setting = usize::from(entrance.position & 0x0f);
+    let x = screen + u16::from(VANILLA_ENTRANCE_X_LOW[x_setting]);
+    let y = u16::from(VANILLA_ENTRANCE_Y_HIGH[y_setting]) * 0x100
+        + u16::from(VANILLA_ENTRANCE_Y_LOW[y_setting]);
+    let pose = entrance.vertical_settings >> 3 & 7;
+    let label_clearance = if pose < 3 || pose == 5 { 18 } else { 24 };
+    (x.saturating_add(label_clearance), y)
+}
+
+fn horizontal_primary_entrance_marker_pixels(entrance: VanillaMainEntrance) -> (u16, u16) {
+    let screen = u16::from(entrance.level_mode_and_screen & 0x1f) * 0x100;
+    let x_setting = usize::from(entrance.vertical_settings & 7);
+    let y_setting = usize::from(entrance.position & 0x0f);
+    (
+        screen + u16::from(VANILLA_ENTRANCE_X_LOW[x_setting]),
+        u16::from(VANILLA_ENTRANCE_Y_HIGH[y_setting]) * 0x100
+            + u16::from(VANILLA_ENTRANCE_Y_LOW[y_setting]),
+    )
+}
+
+fn draw_primary_entrance_marker(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell_size: f32,
+    texture: &egui::TextureHandle,
+    entrance: VanillaMainEntrance,
+    vertical: bool,
+) {
+    if vertical {
+        return;
+    }
+    let (x, y) = horizontal_primary_entrance_marker_pixels(entrance);
+    let scale = cell_size / 16.0;
+    let target = egui::Rect::from_min_size(
+        canvas.min + egui::vec2(f32::from(x) * scale, f32::from(y.saturating_add(2)) * scale),
+        egui::vec2(16.0 * scale, 32.0 * scale),
+    );
+    painter.image(
+        texture.id(),
+        target,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        egui::Color32::WHITE,
+    );
+}
+
+fn draw_primary_entrance_label(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell_size: f32,
+    level: u16,
+    entrance: VanillaMainEntrance,
+    vertical: bool,
+) {
+    if vertical {
+        return;
+    }
+    let (x, y) = horizontal_primary_entrance_label_pixels(entrance);
+    let scale = cell_size / 16.0;
+    let position = canvas.min + egui::vec2(f32::from(x) * scale, f32::from(y) * scale);
+    let font_size = (cell_size * 0.625).max(7.0);
+    let galley = painter.layout_no_wrap(
+        format!("Entrance to level {level:X}"),
+        egui::FontId::monospace(font_size),
+        egui::Color32::WHITE,
+    );
+    let background =
+        egui::Rect::from_min_size(position, galley.size()).expand2(egui::vec2(1.0, 0.0));
+    painter.rect_filled(
+        background,
+        0.0,
+        egui::Color32::from_rgba_unmultiplied(0, 116, 44, 220),
+    );
+    painter.galley(position, galley, egui::Color32::WHITE);
 }
 
 const fn presented_sprite_minor(placement: lm_level::NativeSpritePlacement) -> u16 {
@@ -8243,6 +8349,20 @@ mod tests {
         assert_eq!(
             vanilla_shared_background_coordinates(20, 16, entrance),
             (20, 16)
+        );
+    }
+
+    #[test]
+    fn level_106_primary_entrance_label_matches_lunar_magic_pixel_anchor() {
+        let entrance = VanillaMainEntrance {
+            position: 0x5b,
+            vertical_settings: 0,
+            screen_and_method: 0x9a,
+            level_mode_and_screen: 0,
+        };
+        assert_eq!(
+            horizontal_primary_entrance_label_pixels(entrance),
+            (0x22, 0x160)
         );
     }
 

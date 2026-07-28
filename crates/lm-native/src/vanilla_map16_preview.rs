@@ -12,6 +12,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) graphics_files: [usize; 4],
     pub(crate) background_graphics_files: [usize; 4],
     pub(crate) sprite_image: egui::ColorImage,
+    pub(crate) entrance_image: egui::ColorImage,
     pub(crate) sprite_tiles: Vec<IndexedTile>,
     pub(crate) palette: Palette,
     pub(crate) backdrop: lm_graphics::Bgr555,
@@ -165,7 +166,9 @@ pub(crate) fn render(
     let foreground_graphics = animated_foreground_graphics.remove(0);
     let image = animated_images[0].clone();
     let background_image = animated_background_images[0].clone();
+    let sprite_tiles = materialize_layer1_sprite_vram(&sprite_graphics);
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
+    let entrance_image = render_default_entrance_marker(&project, &palette)?;
     let foreground_image = render_foreground_graphics_atlas(&foreground_graphics, &palette);
     let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
     let entrance = project
@@ -198,13 +201,86 @@ pub(crate) fn render(
         graphics_files,
         background_graphics_files,
         sprite_image,
-        sprite_tiles: materialize_layer1_sprite_vram(&sprite_graphics),
+        entrance_image,
+        sprite_tiles,
         palette,
         backdrop,
         sprite_graphics_files,
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn render_default_entrance_marker(
+    project: &Project,
+    palette: &Palette,
+) -> Result<egui::ColorImage, String> {
+    const WIDTH: usize = 16;
+    const HEIGHT: usize = 32;
+    // Horizontal action-0 path in `RenderConfiguredLevelEntrance` @ 004CC660. Lunar Magic places
+    // editor-only Map16 $300 at Y+2 and $310 at Y+18. These are their live sidecar definitions.
+    const PARTS: [([u16; 4], usize); 2] = [
+        ([0x40e1, 0x40f1, 0x40e0, 0x40f0], 0),
+        ([0x4005, 0x4015, 0x4004, 0x4014], 16),
+    ];
+    let player_bytes = project
+        .load_decompressed_graphics_file(1, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    let player_tiles = lm_graphics::decode_planar_tiles(&player_bytes, 4)
+        .map_err(|error| format!("cannot decode pristine entrance GFX32: {error}"))?;
+    let mut rgba = vec![0; WIDTH * HEIGHT * 4];
+    for (definition, part_y) in PARTS {
+        for (quadrant, word) in definition.into_iter().enumerate() {
+            let tile_index = usize::from(word & 0x03ff);
+            let tile = player_tiles
+                .get(tile_index)
+                .ok_or_else(|| format!("entrance subtile ${tile_index:03X} is unavailable"))?;
+            let (x, y) = map16_quadrant_offset(quadrant);
+            draw_subtile_over(
+                &mut rgba,
+                WIDTH,
+                (x, part_y + y),
+                Some(tile),
+                palette,
+                8 + usize::from(word >> 10 & 7),
+                (word & 0x4000 != 0, word & 0x8000 != 0),
+            );
+        }
+    }
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        [WIDTH, HEIGHT],
+        &rgba,
+    ))
+}
+
+fn draw_subtile_over(
+    rgba: &mut [u8],
+    canvas_width: usize,
+    target: (usize, usize),
+    tile: Option<&IndexedTile>,
+    palette: &Palette,
+    palette_row: usize,
+    flips: (bool, bool),
+) {
+    let (target_x, target_y) = target;
+    let (x_flip, y_flip) = flips;
+    for y in 0..8 {
+        for x in 0..8 {
+            let source_x = if x_flip { 7 - x } else { x };
+            let source_y = if y_flip { 7 - y } else { y };
+            let Some(index) = tile.and_then(|tile| tile.pixel(source_x, source_y)) else {
+                continue;
+            };
+            if index == 0 {
+                continue;
+            }
+            let Some(color) = palette_color(palette, palette_row, index) else {
+                continue;
+            };
+            let output = ((target_y + y) * canvas_width + target_x + x) * 4;
+            rgba[output..output + 4].copy_from_slice(&color);
+        }
+    }
 }
 
 fn render_layer3_planes(
@@ -1013,6 +1089,52 @@ mod tests {
                 .flat_map(|tile| tile.pixels().iter().copied())
                 .collect::<Vec<_>>();
             assert_eq!(flattened, expected[cache_start..cache_end]);
+        }
+        if std::env::var_os("LM_TRACE_ENTRANCE_CACHE").is_some() {
+            let gfx32 = project
+                .load_decompressed_graphics_file(
+                    1,
+                    lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+                )
+                .unwrap();
+            let gfx32 = lm_graphics::decode_planar_tiles(&gfx32, 4).unwrap();
+            let ordinary = (0..lm_profile::SMW_US_V1_VANILLA_GRAPHICS_FILES)
+                .filter_map(|file| {
+                    let bytes = project
+                        .load_decompressed_graphics_file(
+                            file,
+                            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+                        )
+                        .ok()?;
+                    let bitplanes = vanilla_graphics_bitplanes(bytes.len())?;
+                    Some((
+                        file,
+                        lm_graphics::decode_planar_tiles(&bytes, bitplanes).ok()?,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            for cache_tile in [0x640, 0x641, 0x642, 0x643, 0x650, 0x651, 0x652, 0x653] {
+                let start = cache_tile * IndexedTile::PIXEL_COUNT;
+                let pixels = &expected[start..start + IndexedTile::PIXEL_COUNT];
+                let matches = gfx32
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(source, tile)| {
+                        (tile.pixels().as_slice() == pixels).then_some(source)
+                    })
+                    .collect::<Vec<_>>();
+                let ordinary_matches = ordinary
+                    .iter()
+                    .flat_map(|(file, tiles)| {
+                        tiles.iter().enumerate().filter_map(move |(source, tile)| {
+                            (tile.pixels().as_slice() == pixels).then_some((*file, source))
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                eprintln!(
+                    "entrance cache ${cache_tile:03X} matches GFX32 {matches:03X?}, ordinary {ordinary_matches:02X?}"
+                );
+            }
         }
         let differing = tiles
             .iter()
