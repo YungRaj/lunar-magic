@@ -1493,6 +1493,13 @@ impl VanillaLevelEditor {
                 extended_command27_canvas_extent(records, placements, &resize_models, vertical);
             major_tiles = major_tiles.max(extended_major);
             minor_tiles = minor_tiles.max(extended_minor);
+            if let Some(handler_map) = self.active_standard_object_handler_map()
+                && let Some((rendered_major, rendered_minor)) =
+                    rendered_standard_object_canvas_extent(records, handler_map, vertical)
+            {
+                major_tiles = major_tiles.max(rendered_major);
+                minor_tiles = minor_tiles.max(rendered_minor);
+            }
         }
         if !layer2_tilemap.is_empty() {
             // The SNES background plane is 32×32 and wraps while the camera traverses the level.
@@ -3918,6 +3925,56 @@ fn extended_command27_canvas_extent(
             (major.max(next_major), minor.max(next_minor))
         });
     (major.clamp(16, 512), minor.clamp(16, 32))
+}
+
+fn rendered_standard_object_canvas_extent(
+    records: &[ObjectRecord],
+    handler_map: &[u8; 64],
+    vertical: bool,
+) -> Option<(u16, u16)> {
+    let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+    lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).ok()?;
+    lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).ok()?;
+    let layout = lm_render::NativeLevelMap16Layout {
+        width: if vertical {
+            usize::from(NATIVE_LEVEL_MINOR_TILES)
+        } else {
+            512
+        },
+        height: if vertical {
+            512
+        } else {
+            usize::from(NATIVE_LEVEL_MINOR_TILES)
+        },
+        page_stride: 0x1b0,
+        base_cell: 0,
+        vertical,
+    };
+    let stream = lm_level::ObjectStream {
+        records: records.to_vec(),
+    };
+    let report = lm_render::render_mapped_standard_object_stream(
+        &stream,
+        &definitions,
+        handler_map,
+        layout,
+        VANILLA_EMPTY_MAP16_TILE,
+    )
+    .ok()?;
+    let mut major_end = 16_u16;
+    let mut minor_end = 16_u16;
+    for y in 0..layout.height {
+        for x in 0..layout.width {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+            if !report.cache.was_written(index) {
+                continue;
+            }
+            let (major, minor) = if vertical { (y, x) } else { (x, y) };
+            major_end = major_end.max(u16::try_from(major + 1).ok()?);
+            minor_end = minor_end.max(u16::try_from(minor + 1).ok()?);
+        }
+    }
+    Some((major_end.clamp(16, 512), minor_end.clamp(16, 32)))
 }
 
 fn clamp_canvas_zoom(zoom: u16) -> u16 {
@@ -8254,6 +8311,14 @@ mod tests {
         assert_eq!(report.rendered_objects, 11);
         assert!(report.missing_commands.is_empty());
         assert!(report.missing_extended_objects.is_empty());
+        assert_eq!(
+            rendered_standard_object_canvas_extent(
+                &level.layer1.objects.records,
+                definition_map.family(3).unwrap(),
+                true,
+            ),
+            Some((43, 16))
+        );
         let live_nonblank = [
             (10, 14, 0x1ca),
             (11, 14, 0x1cc),

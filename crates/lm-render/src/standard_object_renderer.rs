@@ -307,6 +307,7 @@ enum NativeRenderer {
     SharedSlot002,
     SharedSlot004,
     SharedSlot005,
+    SharedSlot007,
     SharedSlot008,
     SharedSlot010,
     SharedSlot011,
@@ -799,6 +800,9 @@ fn dispatch_native_renderer(
         }
         NativeRenderer::SharedSlot002 => {
             render_shared_slot_002(cache, layout, placement, parameter)
+        }
+        NativeRenderer::SharedSlot007 => {
+            render_shared_slot_007(cache, layout, placement, parameter)
         }
         NativeRenderer::SharedSlot008 => {
             render_shared_slot_008(cache, layout, placement, parameter)
@@ -3131,6 +3135,30 @@ fn render_shared_slot_019(
     Ok(())
 }
 
+fn render_shared_slot_007(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+) -> Result<(), StandardObjectRenderError> {
+    // RenderDistinctTopRowRectangleObject at 0x004298e0 delegates to
+    // FillRectangleWithDistinctTopRow at 0x00429750. Its low nibble expands physical columns,
+    // while its high nibble expands physical rows even when the level cache is vertical.
+    let (origin_x, origin_y) = placement.tile_coordinates(layout.vertical);
+    for y_offset in 0..=usize::from(parameter >> 4) {
+        for x_offset in 0..=usize::from(parameter & 0x0f) {
+            let x = usize::from(origin_x)
+                .checked_add(x_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+            let y = usize::from(origin_y)
+                .checked_add(y_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+            cache.set(layout, x, y, if y_offset == 0 { 0x100 } else { 0x03f })?;
+        }
+    }
+    Ok(())
+}
+
 fn render_shared_slot_020(
     cache: &mut NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
@@ -3938,7 +3966,7 @@ pub fn install_lunar_magic_shared_standard_objects(
             extent: ObjectExtent::SwappedParameterNibbles,
             major_expansion: AxisExpansion::Clamp,
             minor_expansion: AxisExpansion::Clamp,
-            renderer: NativeRenderer::Pattern,
+            renderer: NativeRenderer::SharedSlot007,
         },
     )?;
     // Dispatch slot 008 (command 21): three columns with selected top/middle/bottom caps.
@@ -6469,6 +6497,41 @@ mod tests {
                 );
             }
             assert_eq!(report.cache.get(layout(), 4, y).unwrap(), 0x25);
+        }
+    }
+
+    #[test]
+    fn vertical_ground_ledge_keeps_physical_width_and_depth_axes() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut handler_map = [0xff; 64];
+        handler_map[0x14] = 7;
+        let stream = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x20, 0x40, 0x83]).unwrap()],
+        };
+        let vertical = NativeLevelMap16Layout {
+            width: 27,
+            height: 512,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: true,
+        };
+        let report = render_mapped_standard_object_stream(
+            &stream,
+            &definitions,
+            &handler_map,
+            vertical,
+            0x25,
+        )
+        .unwrap();
+        for y in 0..9 {
+            for x in 0..4 {
+                assert_eq!(
+                    report.cache.get(vertical, x, y).unwrap(),
+                    if y == 0 { 0x100 } else { 0x03f }
+                );
+            }
+            assert_eq!(report.cache.get(vertical, 4, y).unwrap(), 0x25);
         }
     }
 
