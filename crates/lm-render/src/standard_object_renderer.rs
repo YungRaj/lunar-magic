@@ -2482,7 +2482,9 @@ fn render_slot_004_tapered_four_part(
 ) -> Result<(), StandardObjectRenderError> {
     let height = usize::from(parameter >> 4);
     for row in 0..height {
-        let start = row * 2;
+        // RenderTaperedFourPartTileObject at 00428750 keeps the first two rows on the
+        // same starting column, then advances the row base by two columns.
+        let start = row.saturating_sub(1) * 2;
         let mut major = start;
         if row > 0 {
             set_placement_cell(cache, layout, placement, major, row, 0x1c6)?;
@@ -2500,12 +2502,13 @@ fn render_slot_004_tapered_four_part(
     } else {
         [0x1c6, 0x1c7]
     };
-    set_placement_cell(cache, layout, placement, height * 2, height, final_tiles[0])?;
+    let final_start = height.saturating_sub(1) * 2;
+    set_placement_cell(cache, layout, placement, final_start, height, final_tiles[0])?;
     set_placement_cell(
         cache,
         layout,
         placement,
-        height * 2 + 1,
+        final_start + 1,
         height,
         final_tiles[1],
     )
@@ -4922,6 +4925,36 @@ mod tests {
                 "variant {variant}"
             );
         }
+    }
+
+    #[test]
+    fn mapped_handler_4_variant_6_preserves_native_tapered_row_cursor() {
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 0,
+            minor: 8,
+            major_span: 2,
+            minor_span: 2,
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        render_shared_slot_004(&mut cache, layout(), placement, 0x26).unwrap();
+        for (major, minor, tile) in [
+            (0, 8, 0x1ee),
+            (1, 8, 0x1f0),
+            (2, 8, 0x165),
+            (3, 8, 0x165),
+            (0, 9, 0x1c6),
+            (1, 9, 0x1c7),
+            (2, 9, 0x1ee),
+            (3, 9, 0x1f0),
+            (2, 10, 0x1c6),
+            (3, 10, 0x1c7),
+        ] {
+            assert_eq!(cache.get(layout(), major, minor).unwrap(), tile);
+        }
+        assert_eq!(cache.get(layout(), 4, 9).unwrap(), 0x25);
+        assert_eq!(cache.get(layout(), 4, 10).unwrap(), 0x25);
     }
 
     #[test]
