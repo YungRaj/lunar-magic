@@ -1,15 +1,59 @@
-use lm_level::{ObjectCoordinateNibbles, SpriteLengthTable};
+use lm_level::{MwlFile, NativeLayer2Data, ObjectCoordinateNibbles, SpriteLengthTable};
 use lm_profile::{
     SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET, SMW_US_V1_VANILLA_GRAPHICS_FILES,
     SMW_US_V1_VANILLA_LEVEL_SLOTS, load_smw_us_v1_level_map16_base,
     smw_us_v1_object_tileset_graphics_files, smw_us_v1_sprite_tileset_graphics_files,
-    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_level_layout,
-    smw_us_v1_vanilla_special_graphics_layout,
+    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_layer2_layout,
+    smw_us_v1_vanilla_level_layout, smw_us_v1_vanilla_special_graphics_layout,
 };
 use lm_project::{GraphicsSaveOptions, LevelSaveOptions, Project};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage, SnesChecksum, compute_snes_checksum};
 use std::{collections::BTreeMap, fs, path::PathBuf};
+
+#[test]
+fn pristine_level_001_layer2_upper_plane_matches_lunar_magic_export() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let Ok(bytes) = fs::read(root.join("Super Mario World (USA).sfc")) else {
+        return;
+    };
+    let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+    let level = project
+        .load_level_slot(
+            1,
+            smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+    let NativeLayer2Data::Tilemap(actual) = project
+        .load_level_layer2(
+            1,
+            level.layer1.header.level_mode(),
+            smw_us_v1_vanilla_layer2_layout(),
+        )
+        .unwrap()
+    else {
+        panic!("level 001 must use a shared background");
+    };
+    let expected_planes = MwlFile::decode(
+        &fs::read(root.join("oracle-work/lm363/pristine-us/levels/Level 001.mwl")).unwrap(),
+    )
+    .unwrap()
+    .layer2_section()
+    .unwrap()
+    .payload;
+    for y in 0..16 {
+        for x in 0..32 {
+            let actual_index = lm_level::native_layer2_tilemap_index(x, y).unwrap() * 2;
+            let expected_index = (y * 32 + x) * 2;
+            assert_eq!(
+                &actual[actual_index..actual_index + 2],
+                &expected_planes[expected_index..expected_index + 2],
+                "Layer 2 tile ({x}, {y}) differs from Lunar Magic's export"
+            );
+        }
+    }
+}
 
 #[test]
 fn every_ordinary_graphics_file_in_the_local_reference_rom_decodes() {
