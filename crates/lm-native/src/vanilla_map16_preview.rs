@@ -107,6 +107,7 @@ pub(crate) fn render(
     rom_bytes: Vec<u8>,
     level: u16,
     header: LegacyLevelHeader,
+    game_runtime: bool,
 ) -> Result<VanillaMap16Preview, String> {
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
@@ -124,13 +125,14 @@ pub(crate) fn render(
         .map_err(|error| error.to_string())?;
     let background_map16 = lm_profile::load_smw_us_v1_background_map16(&project.rom)
         .map_err(|error| error.to_string())?;
-    let composed_palette = lm_profile::compose_smw_us_v1_level_palette(
-        &project,
-        level,
-        game_palette_header(level, header),
-        0,
-    )
-    .map_err(|error| error.to_string())?;
+    let palette_header = if game_runtime {
+        game_palette_header(level, header)
+    } else {
+        header
+    };
+    let composed_palette =
+        lm_profile::compose_smw_us_v1_level_palette(&project, level, palette_header, 0)
+            .map_err(|error| error.to_string())?;
     let backdrop = composed_palette.backdrop;
     let palette = composed_palette.palette;
     let sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
@@ -907,7 +909,7 @@ mod tests {
                 &lm_level::SpriteLengthTable::standard(),
             )
             .unwrap();
-        let preview = render(bytes, 0, level.layer1.header).unwrap();
+        let preview = render(bytes, 0, level.layer1.header, true).unwrap();
         let map16 = lm_profile::load_smw_us_v1_level_map16_base(
             &project.rom,
             usize::from(level.layer1.header.object_tileset()),
@@ -1179,13 +1181,23 @@ mod tests {
             edited,
             "authored palette changes must not be replaced"
         );
+
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let editor = render(bytes.clone(), 1, raw, false).unwrap();
+        let runtime = render(bytes, 1, raw, true).unwrap();
+        assert_eq!(
+            editor.backdrop.0, 0x7393,
+            "Lunar Magic 3.63 live editor DIB uses the authored cyan backdrop"
+        );
+        assert_eq!(runtime.backdrop.0, 0x5d80);
+        assert_ne!(editor.palette, runtime.palette);
     }
 
     #[test]
     fn cookie_mountain_keeps_foreground_and_background_graphics_slots_distinct() {
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let header = LegacyLevelHeader::decode(&[0x13, 0xc0, 0x00, 0x86, 0x20]).unwrap();
-        let preview = render(bytes, 1, header).unwrap();
+        let preview = render(bytes, 1, header, true).unwrap();
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x19, 0x15]);
         assert_eq!(preview.background_graphics_files, [0x14, 0x17, 0x19, 0x16]);
     }

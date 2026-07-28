@@ -269,7 +269,7 @@ pub(crate) struct VanillaLevelEditor {
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
-    map16_key: Option<(u64, u16, u8, u8)>,
+    map16_key: Option<(u64, u16, u8, u8, bool)>,
     map16_texture: Option<egui::TextureHandle>,
     background_map16_texture: Option<egui::TextureHandle>,
     animated_map16_textures: Vec<egui::TextureHandle>,
@@ -1243,7 +1243,14 @@ impl VanillaLevelEditor {
         let level = self.controller.as_ref().map_or(0, |controller| {
             u16::try_from(controller.level().number).unwrap_or(0)
         });
-        let key = (snapshot.revision, level, object_tileset, sprite_tileset);
+        let game_runtime = self.game_preview();
+        let key = (
+            snapshot.revision,
+            level,
+            object_tileset,
+            sprite_tileset,
+            game_runtime,
+        );
         if self.map16_key == Some(key) {
             return;
         }
@@ -1272,6 +1279,7 @@ impl VanillaLevelEditor {
             self.controller
                 .as_ref()
                 .map_or_default(|controller| controller.level().layer1.header),
+            game_runtime,
         ) {
             Ok(preview) => {
                 let background_planes = self
