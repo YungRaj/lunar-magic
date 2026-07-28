@@ -308,6 +308,12 @@ fn render_layer3_planes(
     let mut low = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
     let mut high = egui::ColorImage::new([EXTENT, EXTENT], egui::Color32::TRANSPARENT);
     for (position, &word) in tilemap.iter().take(TILES * TILES).enumerate() {
+        // The stripe decoder fills untouched BG3 cells with SMW's canonical
+        // blank word.  Its tile number is not universally blank in the
+        // level-specific graphics set, so treat the sentinel itself as empty.
+        if word == 0x38fc {
+            continue;
+        }
         let tile_x = position % TILES;
         let tile_y = position / TILES;
         let Some(tile) = graphics.get(usize::from(word & 0x03ff)) else {
@@ -1003,11 +1009,15 @@ mod tests {
         let Ok(cache_path) = std::env::var("LM_DECODED_GRAPHICS_CACHE") else {
             return;
         };
+        let slot = std::env::var("LM_LEVEL_SLOT")
+            .ok()
+            .map(|slot| u16::from_str_radix(&slot, 16).unwrap())
+            .unwrap_or(0x106);
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let project = Project::new(RomImage::from_bytes(bytes).unwrap());
         let level = project
             .load_level_slot(
-                0x106,
+                usize::from(slot),
                 lm_profile::smw_us_v1_vanilla_level_layout(),
                 &lm_level::SpriteLengthTable::standard(),
             )
@@ -1062,6 +1072,22 @@ mod tests {
         .unwrap();
         let slots = load_layer1_sprite_graphics_slots(&project, files).unwrap();
         let mut tiles = materialize_layer1_sprite_vram(&slots);
+        if let Ok(tile) = std::env::var("LM_TRACE_MAP16_TILE") {
+            let tile = usize::from_str_radix(&tile, 16).unwrap();
+            let map16 = lm_profile::load_smw_us_v1_level_map16_base(
+                &project.rom,
+                usize::from(level.layer1.header.object_tileset()),
+            )
+            .unwrap();
+            let start = tile * 8;
+            eprintln!(
+                "level {slot:03X} Map16 ${tile:03X} words={:04X?}",
+                map16.bytes[start..start + 8]
+                    .chunks_exact(2)
+                    .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                    .collect::<Vec<_>>()
+            );
+        }
         let live_counters = std::env::var("LM_ANIMATION_COUNTERS")
             .ok()
             .map(std::fs::read)

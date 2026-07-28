@@ -202,6 +202,7 @@ fn normalize_screen_blocks(screen_blocks: &[u16]) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_level::SpriteLengthTable;
     use lm_rom::RomImage;
 
     #[test]
@@ -242,5 +243,51 @@ mod tests {
             load_smw_us_v1_level_layer3(&project, VanillaMainEntrance::default(), 0).unwrap(),
             None
         );
+    }
+
+    #[test]
+    fn diagnostic_pristine_layer3_matches_lunar_magic_cache_when_requested() {
+        let (Ok(slot), Ok(cache_path)) = (
+            std::env::var("LM_LEVEL_SLOT"),
+            std::env::var("LM_LEVEL_LAYER3_CACHE"),
+        ) else {
+            return;
+        };
+        let slot = usize::from_str_radix(&slot, 16).unwrap();
+        let project = Project::new(
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
+        );
+        let level = project
+            .load_level_slot(
+                slot,
+                crate::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let entrance = project
+            .load_vanilla_main_entrance(slot, crate::smw_us_v1_vanilla_entrance_layout())
+            .unwrap();
+        let layer3 =
+            load_smw_us_v1_level_layer3(&project, entrance, level.layer1.header.object_tileset())
+                .unwrap()
+                .unwrap();
+        let live = std::fs::read(cache_path).unwrap();
+        let live = live
+            .chunks_exact(2)
+            .map(|word| u16::from_le_bytes([word[0], word[1]]))
+            .collect::<Vec<_>>();
+        assert_eq!(live.len(), SMW_US_V1_LAYER3_TILEMAP_WORDS);
+        let live = normalize_screen_blocks(&live);
+        let differences = layer3
+            .tilemap
+            .iter()
+            .zip(&live)
+            .filter(|(rust, live)| rust != live)
+            .count();
+        eprintln!(
+            "level {slot:03X} Layer 3 setting={} image={} behavior={:?} position=({}, {}) differences={differences}",
+            layer3.setting, layer3.image_index, layer3.behavior, layer3.initial_x, layer3.initial_y,
+        );
+        assert_eq!(differences, 0);
     }
 }

@@ -102,6 +102,10 @@ for level in $level_spec; do
     echo "open Lunar Magic level $normalized"
     wine "$window_helper" "$target_executable" open-level "$normalized" >/dev/null
     wait_for_level "$normalized"
+    # The selected-level global changes before Lunar Magic finishes rebuilding and
+    # compositing every layer.  An unchanged early DIB can therefore be a stable
+    # intermediate frame (notably the Layer 2-only frame of level 118).
+    sleep 0.50
     echo "capture stable Lunar Magic level $normalized"
     capture_stable_dib "$bmp"
     sips -s format png "$bmp" --out "$png" >/dev/null

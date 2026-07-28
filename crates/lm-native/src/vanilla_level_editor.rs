@@ -1792,6 +1792,33 @@ impl VanillaLevelEditor {
             .get(animation_phase_index);
         let game_camera = (self.game_preview() && self.snes_viewport())
             .then(|| self.game_preview_camera_origin(major_tiles, minor_tiles, vertical));
+        let editor_tide = self
+            .layer3_position
+            .is_some_and(|(_, y)| matches!(y, 64 | 112));
+        let layer3_position = self.layer3_position.map(|(x, y)| {
+            if game_camera.is_some() {
+                (x, y)
+            } else {
+                // The normalized tide stripe begins at texture row 256.
+                // Ghidra's live editor offsets (-2 for low tide, -8 for
+                // high tide) place it at world Map16 rows 18 and 24.
+                match y {
+                    112 => (x, -32),
+                    64 => (x, -128),
+                    _ => (x, y),
+                }
+            }
+        });
+        let layer3_camera = game_camera.or_else(|| {
+            (!self.game_preview() && editor_tide).then(|| {
+                (
+                    visual_smoke_editor_scroll_column().unwrap_or_default(),
+                    visual_smoke_editor_scroll_row()
+                        .or(self.initial_vertical_scroll_tiles)
+                        .unwrap_or_default(),
+                )
+            })
+        });
         let layer2_target = game_camera.map_or(rect, |camera| {
             let layer1_x = i32::from(camera.0) * 16;
             let layer1_y = i32::from(camera.1) * 16;
@@ -1843,14 +1870,23 @@ impl VanillaLevelEditor {
         );
         let game_preview = self.game_preview();
         let editor_overlays = !game_preview && visual_smoke_editor_overlays();
-        if game_preview
-            && let (Some(texture), Some(position), Some(camera)) = (
-                self.layer3_low_texture.as_ref(),
-                self.layer3_position,
-                game_camera,
-            )
-        {
-            draw_wrapped_layer3_viewport(painter, rect, cell, texture, position, camera);
+        if let (Some(texture), Some(position), Some(camera)) = (
+            self.layer3_low_texture.as_ref(),
+            layer3_position,
+            layer3_camera,
+        ) {
+            draw_layer3_editor_or_viewport(
+                painter,
+                rect,
+                cell,
+                texture,
+                position,
+                camera,
+                major_tiles,
+                minor_tiles,
+                vertical,
+                game_camera.is_some(),
+            );
         }
         let layer1_artwork_bounds = self.draw_object_artwork(
             painter,
@@ -1918,14 +1954,23 @@ impl VanillaLevelEditor {
             external_textures: &self.external_sprite_textures,
             editor_overlays,
         });
-        if game_preview
-            && let (Some(texture), Some(position), Some(camera)) = (
-                self.layer3_high_texture.as_ref(),
-                self.layer3_position,
-                game_camera,
-            )
-        {
-            draw_wrapped_layer3_viewport(painter, rect, cell, texture, position, camera);
+        if let (Some(texture), Some(position), Some(camera)) = (
+            self.layer3_high_texture.as_ref(),
+            layer3_position,
+            layer3_camera,
+        ) {
+            draw_layer3_editor_or_viewport(
+                painter,
+                rect,
+                cell,
+                texture,
+                position,
+                camera,
+                major_tiles,
+                minor_tiles,
+                vertical,
+                game_camera.is_some(),
+            );
         }
         // Paint the editor grid after the level artwork. Drawing opaque grid lines underneath
         // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
@@ -5152,36 +5197,96 @@ fn draw_wrapped_background_viewport(
     }
 }
 
-fn draw_wrapped_layer3_viewport(
+#[allow(clippy::too_many_arguments)]
+fn draw_layer3_editor_or_viewport(
     painter: &egui::Painter,
     world: egui::Rect,
     cell_size: f32,
     texture: &egui::TextureHandle,
     position: (i16, i16),
     camera: (u16, u16),
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+    single_viewport: bool,
+) {
+    if single_viewport {
+        draw_wrapped_layer3_region(
+            painter,
+            world,
+            cell_size,
+            texture,
+            position,
+            camera,
+            (256, 224),
+        );
+        return;
+    }
+    let (width, height) = if vertical {
+        (minor_tiles, major_tiles)
+    } else {
+        (major_tiles, minor_tiles)
+    };
+    let pixel_scale = cell_size / 16.0;
+    let world_width = i32::from(width) * 16;
+    let world_height = i32::from(height) * 16;
+    let target_y = -i32::from(position.1);
+    let mut target_x = -i32::from(position.0);
+    while target_x < world_width {
+        let target = egui::Rect::from_min_size(
+            world.min
+                + egui::vec2(
+                    screen_pixels_f32(target_x) * pixel_scale,
+                    screen_pixels_f32(target_y) * pixel_scale,
+                ),
+            egui::vec2(512.0 * pixel_scale, 512.0 * pixel_scale),
+        );
+        if target.max.y >= world.min.y
+            && target.min.y <= world.min.y + screen_pixels_f32(world_height) * pixel_scale
+        {
+            painter.image(
+                texture.id(),
+                target,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        target_x += 512;
+    }
+}
+
+fn draw_wrapped_layer3_region(
+    painter: &egui::Painter,
+    world: egui::Rect,
+    cell_size: f32,
+    texture: &egui::TextureHandle,
+    position: (i16, i16),
+    camera: (u16, u16),
+    view_pixels: (i32, i32),
 ) {
     const PLANE_PIXELS: i32 = 512;
-    const VIEW_WIDTH: i32 = 256;
-    const VIEW_HEIGHT: i32 = 224;
     let viewport = egui::Rect::from_min_size(
         world.min
             + egui::vec2(
                 f32::from(camera.0) * cell_size,
                 f32::from(camera.1) * cell_size,
             ),
-        egui::vec2(16.0 * cell_size, 14.0 * cell_size),
+        egui::vec2(
+            screen_pixels_f32(view_pixels.0) * cell_size / 16.0,
+            screen_pixels_f32(view_pixels.1) * cell_size / 16.0,
+        ),
     );
     let pixel_scale = cell_size / 16.0;
     let source_x = i32::from(position.0).rem_euclid(PLANE_PIXELS);
     let source_y = i32::from(position.1).rem_euclid(PLANE_PIXELS);
     let mut output_y = 0;
-    while output_y < VIEW_HEIGHT {
+    while output_y < view_pixels.1 {
         let plane_y = (source_y + output_y).rem_euclid(PLANE_PIXELS);
-        let rows = (PLANE_PIXELS - plane_y).min(VIEW_HEIGHT - output_y);
+        let rows = (PLANE_PIXELS - plane_y).min(view_pixels.1 - output_y);
         let mut output_x = 0;
-        while output_x < VIEW_WIDTH {
+        while output_x < view_pixels.0 {
             let plane_x = (source_x + output_x).rem_euclid(PLANE_PIXELS);
-            let columns = (PLANE_PIXELS - plane_x).min(VIEW_WIDTH - output_x);
+            let columns = (PLANE_PIXELS - plane_x).min(view_pixels.0 - output_x);
             let pixels = |value| f32::from(u16::try_from(value).unwrap_or_default());
             let plane_extent = pixels(PLANE_PIXELS);
             let target = egui::Rect::from_min_size(
