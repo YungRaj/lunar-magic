@@ -329,6 +329,25 @@ The helper writes the exact top-down 32-bit BGRA surface created by
 the live pointer before reading any pixels. The globals are specific to the authenticated 3.63
 binary and must be re-established in Ghidra before using the helper with another version.
 
+To switch through a list of levels automatically and publish the live DIB captures as a hashed
+gallery, keep Lunar Magic 3.63 open under Wine and run:
+
+```sh
+tools/lunar-magic-reference-audit.sh \
+  /tmp/lm-live-reference \
+  001,002,003,100,101,102 \
+  /tmp/lm-render-audit
+
+open /tmp/lm-live-reference/index.html
+```
+
+The optional third argument is an existing Rust render-audit directory. When supplied, each gallery
+card places Lunar Magic's live editor DIB beside the matching Rust editor framebuffer. The script
+builds the 32-bit Wine helpers from the authenticated sources, drives Lunar Magic's Open Level
+command, retains resumable PNG captures, and writes an ordered manifest. Use
+`LM_WINE_EXECUTABLE` to select a differently named target process and `LM_MINGW_CC` to select the
+32-bit MinGW compiler.
+
 Some integration tests use the legally supplied `Super Mario World (USA).sfc` fixture at the
 repository root. The expected pristine SHA-1 is:
 
