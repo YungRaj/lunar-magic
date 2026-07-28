@@ -2,18 +2,20 @@
 set -eu
 
 usage() {
-    echo "usage: tools/render-audit.sh OUTPUT_DIR ROM [LEVELS] [SCREENS]" >&2
+    echo "usage: tools/render-audit.sh OUTPUT_DIR ROM [LEVELS] [SCREENS] [STYLES]" >&2
     echo "  LEVELS: comma-separated hexadecimal slots or 'all' (default: all)" >&2
     echo "  SCREENS: comma-separated hexadecimal major-axis screens (default: 0)" >&2
+    echo "  STYLES: comma-separated 'game' and/or 'editor' (default: game)" >&2
     exit 2
 }
 
-[ "$#" -ge 2 ] && [ "$#" -le 4 ] || usage
+[ "$#" -ge 2 ] && [ "$#" -le 5 ] || usage
 
 output_dir=$1
 rom=$2
 level_spec=${3:-all}
 screen_spec=${4:-0}
+style_spec=${5:-game}
 workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 binary="$workspace/target/debug/lm-native"
 
@@ -43,27 +45,34 @@ fi
 
 manifest="$output_dir/manifest.tsv"
 html="$output_dir/index.html"
-printf 'level\tscreen\tmajor_tiles\tsha256\timage\n' >"$manifest"
+printf 'level\tstyle\tscreen\tmajor_tiles\tsha256\timage\n' >"$manifest"
 
 old_ifs=$IFS
 IFS=,
 for level in $levels; do
-    for screen in $screen_spec; do
-        major_tiles=$((0x$screen * 16))
-        image_name="level-${level}-screen-${screen}.png"
-        image="$output_dir/images/$image_name"
-        if [ ! -f "$image" ]; then
-            LM_NATIVE_SCREENSHOT_TO="$image" \
-            LM_NATIVE_PREVIEW_CAMERA_MAJOR="$major_tiles" \
-                "$binary" --level "$level" "$rom"
-        fi
-        if command -v shasum >/dev/null 2>&1; then
-            digest=$(shasum -a 256 "$image" | awk '{print $1}')
-        else
-            digest=$(sha256sum "$image" | awk '{print $1}')
-        fi
-        printf '%s\t%s\t%s\t%s\timages/%s\n' \
-            "$level" "$screen" "$major_tiles" "$digest" "$image_name" >>"$manifest"
+    for style in $style_spec; do
+        case "$style" in
+            game|editor) ;;
+            *) echo "unknown render style: $style" >&2; exit 2 ;;
+        esac
+        for screen in $screen_spec; do
+            major_tiles=$((0x$screen * 16))
+            image_name="level-${level}-${style}-screen-${screen}.png"
+            image="$output_dir/images/$image_name"
+            if [ ! -f "$image" ]; then
+                LM_NATIVE_SCREENSHOT_TO="$image" \
+                LM_NATIVE_PREVIEW_STYLE="$style" \
+                LM_NATIVE_PREVIEW_CAMERA_MAJOR="$major_tiles" \
+                    "$binary" --level "$level" "$rom"
+            fi
+            if command -v shasum >/dev/null 2>&1; then
+                digest=$(shasum -a 256 "$image" | awk '{print $1}')
+            else
+                digest=$(sha256sum "$image" | awk '{print $1}')
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\timages/%s\n' \
+                "$level" "$style" "$screen" "$major_tiles" "$digest" "$image_name" >>"$manifest"
+        done
     done
 done
 IFS=$old_ifs
@@ -76,7 +85,7 @@ IFS=$old_ifs
         "$rom_sha1" "$(git -C "$workspace" rev-parse --short HEAD)"
     printf '%s\n' '<div class="grid">'
     awk -F '\t' 'NR > 1 {
-        printf "<article class=\"card\"><div class=\"id\">Level $%s · screen $%s · major tile %s</div><a href=\"%s\"><img loading=\"lazy\" src=\"%s\"></a><div class=\"hash\">%s</div></article>\n", $1, $2, $3, $5, $5, $4
+        printf "<article class=\"card\"><div class=\"id\">Level $%s · %s · screen $%s · major tile %s</div><a href=\"%s\"><img loading=\"lazy\" src=\"%s\"></a><div class=\"hash\">%s</div></article>\n", $1, $2, $3, $4, $6, $6, $5
     }' "$manifest"
     printf '%s\n' '</div>'
 } >"$html"
