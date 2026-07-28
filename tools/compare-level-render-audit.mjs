@@ -216,8 +216,18 @@ function compareLevel(level, rustPath, livePath) {
   let maxX = -1;
   let maxY = -1;
   let comparedPixels = 0;
+  const differenceImage = process.env.LM_COMPARE_DIFF_DIR
+    ? Buffer.alloc(live.width * live.height * 3)
+    : undefined;
+  const alignedRustImage = differenceImage
+    ? Buffer.alloc(live.width * live.height * 3)
+    : undefined;
+  const alignedLiveImage = differenceImage
+    ? Buffer.alloc(live.width * live.height * 3)
+    : undefined;
   const differencePairs = new Map();
   const differencePairBounds = new Map();
+  const differencePairSamples = new Map();
   const ignoredLiveRgb = process.env.LM_COMPARE_IGNORE_LIVE_RGB
     ?.split(",")
     .map(Number);
@@ -232,11 +242,39 @@ function compareLevel(level, rustPath, livePath) {
       }
       comparedPixels += 1;
       const actual = rustComparisonRgb(rust, live, cropX, cropY, x, y);
+      if (alignedRustImage && alignedLiveImage) {
+        const output = (y * live.width + x) * 3;
+        alignedRustImage.set(actual, output);
+        alignedLiveImage.set(expected, output);
+      }
       const deltas = expected.map((value, channel) => Math.abs(value - actual[channel]));
       const pixelMax = Math.max(...deltas);
       channelError += deltas[0] + deltas[1] + deltas[2];
       maxChannelDelta = Math.max(maxChannelDelta, pixelMax);
       if (pixelMax !== 0) exactDifferences += 1;
+      if (differenceImage) {
+        const output = (y * live.width + x) * 3;
+        if (pixelMax > 8) {
+          differenceImage[output] = 255;
+          differenceImage[output + 1] = 0;
+          differenceImage[output + 2] = 0;
+        } else if (pixelMax > 1) {
+          differenceImage[output] = 255;
+          differenceImage[output + 1] = 192;
+          differenceImage[output + 2] = 0;
+        } else if (pixelMax !== 0) {
+          differenceImage[output] = 255;
+          differenceImage[output + 1] = 255;
+          differenceImage[output + 2] = 0;
+        } else {
+          const luminance = Math.round(
+            (expected[0] * 3 + expected[1] * 6 + expected[2]) / 20,
+          );
+          differenceImage[output] = luminance;
+          differenceImage[output + 1] = luminance;
+          differenceImage[output + 2] = luminance;
+        }
+      }
       if (pixelMax !== 0) {
         const key = `${expected.join(",")}/${actual.join(",")}`;
         differencePairs.set(key, (differencePairs.get(key) ?? 0) + 1);
@@ -246,6 +284,9 @@ function compareLevel(level, rustPath, livePath) {
         pairBounds[2] = Math.max(pairBounds[2], x);
         pairBounds[3] = Math.max(pairBounds[3], y);
         differencePairBounds.set(key, pairBounds);
+        const pairSamples = differencePairSamples.get(key) ?? [];
+        if (pairSamples.length < 12) pairSamples.push(`${x},${y}`);
+        differencePairSamples.set(key, pairSamples);
       }
       if (pixelMax > 1) overOne += 1;
       if (pixelMax > 8) {
@@ -260,6 +301,28 @@ function compareLevel(level, rustPath, livePath) {
   const pixels = comparedPixels;
   const meanAbsoluteChannelError = channelError / (pixels * 3);
   const bounds = overEight === 0 ? "" : `${minX},${minY}-${maxX},${maxY}`;
+  if (differenceImage) {
+    fs.mkdirSync(process.env.LM_COMPARE_DIFF_DIR, { recursive: true });
+    fs.writeFileSync(
+      path.join(process.env.LM_COMPARE_DIFF_DIR, `level-${level}-diff.ppm`),
+      Buffer.concat([
+        Buffer.from(`P6\n${live.width} ${live.height}\n255\n`),
+        differenceImage,
+      ]),
+    );
+    for (const [suffix, pixels] of [
+      ["live", alignedLiveImage],
+      ["rust", alignedRustImage],
+    ]) {
+      fs.writeFileSync(
+        path.join(process.env.LM_COMPARE_DIFF_DIR, `level-${level}-${suffix}.ppm`),
+        Buffer.concat([
+          Buffer.from(`P6\n${live.width} ${live.height}\n255\n`),
+          pixels,
+        ]),
+      );
+    }
+  }
   const dominantDifference =
     [...differencePairs.entries()].sort((left, right) => right[1] - left[1])[0] ?? ["", 0];
   if (process.env.LM_COMPARE_TRACE_DOMINANT && dominantDifference[0]) {
@@ -267,6 +330,18 @@ function compareLevel(level, rustPath, livePath) {
       `level ${level} dominant ${dominantDifference[0]} count=${dominantDifference[1]} ` +
         `bounds=${differencePairBounds.get(dominantDifference[0]).join(",")}`,
     );
+  }
+  const tracedPairCount = Number.parseInt(process.env.LM_COMPARE_TRACE_PAIRS ?? "0", 10);
+  if (Number.isInteger(tracedPairCount) && tracedPairCount > 0) {
+    for (const [pair, count] of [...differencePairs.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, tracedPairCount)) {
+      console.error(
+        `level ${level} pair ${pair} count=${count} ` +
+          `bounds=${differencePairBounds.get(pair).join(",")} ` +
+          `samples=${differencePairSamples.get(pair).join(";")}`,
+      );
+    }
   }
   return [
     level,
