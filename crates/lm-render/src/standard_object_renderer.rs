@@ -2023,13 +2023,15 @@ fn render_shared_slot_061(
     command: u8,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
+    // Lunar Magic's FillRectangleWithVariantLookupTile at 004325d0 advances the low parameter
+    // nibble across columns and the high nibble across rows.
     let variant = command
         .checked_sub(53)
         .filter(|variant| *variant < 2)
         .ok_or(StandardObjectRenderError::InvalidCommand(command))?;
     let tile = if variant == 0 { 0x092 } else { 0x15e };
-    for major_offset in 0..=usize::from(parameter >> 4) {
-        for minor_offset in 0..=usize::from(parameter & 0x0f) {
+    for minor_offset in 0..=usize::from(parameter >> 4) {
+        for major_offset in 0..=usize::from(parameter & 0x0f) {
             set_placement_cell(cache, layout, placement, major_offset, minor_offset, tile)?;
         }
     }
@@ -2843,14 +2845,19 @@ fn render_shared_slot_063(
     placement: lm_level::NativeObjectPlacement,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
-    render_capped_minor_run(
-        cache,
-        layout,
-        placement,
-        0,
-        parameter,
-        [0x10a, 0x10b, 0x10c],
-    )
+    // RenderStandardObjectDefinitionSlot063 at 00433110 advances through columns, wrapping at
+    // horizontal screen boundaries; it never forms a vertical run.
+    let encoded_middle = usize::from(parameter & 0x0f);
+    let run = if encoded_middle == 0 {
+        0x100
+    } else {
+        encoded_middle
+    };
+    set_placement_cell(cache, layout, placement, 0, 0, 0x10a)?;
+    for major_offset in 1..run {
+        set_placement_cell(cache, layout, placement, major_offset, 0, 0x10b)?;
+    }
+    set_placement_cell(cache, layout, placement, run, 0, 0x10c)
 }
 
 fn render_shared_slot_064(
@@ -2923,13 +2930,15 @@ fn render_shared_slot_071(
     placement: lm_level::NativeObjectPlacement,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
+    // RenderStandardObjectDefinitionSlot071 at 00432d00 emits the header across columns, then
+    // places supports below every fourth header tile.
     let groups = usize::from(parameter & 0x0f) + 1;
     let horizontal_body = usize::from(parameter & 0x0f) * 4 + 1;
     set_placement_cell(cache, layout, placement, 0, 0, 0x10a)?;
-    for minor_offset in 1..=horizontal_body {
-        set_placement_cell(cache, layout, placement, 0, minor_offset, 0x10b)?;
+    for major_offset in 1..=horizontal_body {
+        set_placement_cell(cache, layout, placement, major_offset, 0, 0x10b)?;
     }
-    set_placement_cell(cache, layout, placement, 0, horizontal_body + 1, 0x10c)?;
+    set_placement_cell(cache, layout, placement, horizontal_body + 1, 0, 0x10c)?;
 
     let encoded_height = usize::from(parameter >> 4);
     let height = if encoded_height == 0 {
@@ -2938,15 +2947,15 @@ fn render_shared_slot_071(
         encoded_height
     };
     for group in 0..groups {
-        let minor_offset = group * 4 + 1;
-        for major_offset in 1..=height {
+        let major_offset = group * 4 + 1;
+        for minor_offset in 1..=height {
             set_placement_cell(
                 cache,
                 layout,
                 placement,
                 major_offset,
                 minor_offset,
-                if major_offset == 1 { 0x078 } else { 0x079 },
+                if minor_offset == 1 { 0x078 } else { 0x079 },
             )?;
         }
     }
@@ -5899,7 +5908,7 @@ mod tests {
             let first = (command & 0x30) << 1;
             let second = (command & 0x0f) << 4;
             let stream = ObjectStream {
-                records: vec![ObjectRecord::new(vec![first, second, 0x11]).unwrap()],
+                records: vec![ObjectRecord::new(vec![first, second, 0x02]).unwrap()],
             };
             let report = render_mapped_standard_object_stream(
                 &stream,
@@ -5909,15 +5918,13 @@ mod tests {
                 0x25,
             )
             .unwrap();
-            for major in 0..2 {
-                for minor in 0..2 {
-                    assert_eq!(
-                        report.cache.cells()
-                            [NativeLevelMap16Cache::cell_index(layout(), major, minor)],
-                        tile
-                    );
-                }
+            for major in 0..3 {
+                assert_eq!(
+                    report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, 0)],
+                    tile
+                );
             }
+            assert_eq!(report.cache.get(layout(), 0, 1).unwrap(), 0x25);
         }
     }
 
@@ -5927,7 +5934,7 @@ mod tests {
         install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         for (handler, parameter, expected) in [
             (62, 0x12, vec![vec![0x089, 0x08a, 0x08b]]),
-            (63, 0x02, vec![vec![0x10a, 0x10b, 0x10c]]),
+            (63, 0x02, vec![vec![0x10a], vec![0x10b], vec![0x10c]]),
             (64, 0x21, vec![vec![0x078], vec![0x079], vec![0x079]]),
             (65, 0x21, vec![vec![0x160], vec![0x160], vec![0x160]]),
             (66, 0x02, vec![vec![0x107, 0x108, 0x109]]),
@@ -6031,26 +6038,26 @@ mod tests {
         )
         .unwrap();
         let header = report.cache.cells();
-        for minor in 0..=10 {
-            let expected = if minor == 0 {
+        for major in 0..=10 {
+            let expected = if major == 0 {
                 0x10a
-            } else if minor == 10 {
+            } else if major == 10 {
                 0x10c
             } else {
                 0x10b
             };
             assert_eq!(
-                header[NativeLevelMap16Cache::cell_index(layout(), 0, minor)],
+                header[NativeLevelMap16Cache::cell_index(layout(), major, 0)],
                 expected
             );
         }
-        for minor in [1, 5, 9] {
+        for major in [1, 5, 9] {
             assert_eq!(
-                header[NativeLevelMap16Cache::cell_index(layout(), 1, minor)],
+                header[NativeLevelMap16Cache::cell_index(layout(), major, 1)],
                 0x078
             );
             assert_eq!(
-                header[NativeLevelMap16Cache::cell_index(layout(), 2, minor)],
+                header[NativeLevelMap16Cache::cell_index(layout(), major, 2)],
                 0x079
             );
         }

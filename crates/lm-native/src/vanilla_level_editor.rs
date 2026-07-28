@@ -7983,6 +7983,84 @@ mod tests {
     }
 
     #[test]
+    fn pristine_level_107_uses_lunar_magic_object_axes_without_cache_overflow() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let level = project
+            .load_level_slot(
+                0x107,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let handler_map = definition_map.family(4).unwrap();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 512,
+            height: 27,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let placements = level.layer1.objects.native_placements();
+        for placement in placements.iter().copied() {
+            let record = &level.layer1.objects.records[placement.record_index];
+            lm_render::render_mapped_standard_object_placement(
+                record,
+                placement,
+                &definitions,
+                handler_map,
+                layout,
+                VANILLA_EMPTY_MAP16_TILE,
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "record {} command {:02X} handler {} failed: {error}",
+                    placement.record_index,
+                    record.command_id(),
+                    handler_map[usize::from(record.command_id())]
+                )
+            });
+        }
+
+        let render = |index: usize| {
+            let placement = placements[index];
+            lm_render::render_mapped_standard_object_placement(
+                &level.layer1.objects.records[placement.record_index],
+                placement,
+                &definitions,
+                handler_map,
+                layout,
+                VANILLA_EMPTY_MAP16_TILE,
+            )
+            .unwrap()
+            .unwrap()
+        };
+        let ground = render(0);
+        assert_eq!(ground.get(layout, 0, 24).unwrap(), 0x10a);
+        assert_eq!(ground.get(layout, 42, 24).unwrap(), 0x10c);
+        assert_eq!(ground.get(layout, 1, 25).unwrap(), 0x078);
+        assert_eq!(ground.get(layout, 1, 26).unwrap(), 0x079);
+
+        let wide_rectangle = render(2);
+        assert_eq!(wide_rectangle.get(layout, 26, 20).unwrap(), 0x15e);
+        assert_eq!(wide_rectangle.get(layout, 38, 20).unwrap(), 0x15e);
+        assert_eq!(
+            wide_rectangle.get(layout, 26, 21).unwrap(),
+            VANILLA_EMPTY_MAP16_TILE
+        );
+
+        let capped_run = render(6);
+        assert_eq!(capped_run.get(layout, 42, 21).unwrap(), 0x10a);
+        assert_eq!(capped_run.get(layout, 47, 21).unwrap(), 0x10b);
+        assert_eq!(capped_run.get(layout, 48, 21).unwrap(), 0x10c);
+    }
+
+    #[test]
     fn pristine_level_102_matches_live_snes_map16_rows_around_high_tide() {
         let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
