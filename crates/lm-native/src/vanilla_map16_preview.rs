@@ -203,7 +203,7 @@ pub(crate) fn render(
     let layer3_editor_row_offset = layer3
         .as_ref()
         .and_then(|layer3| {
-            vanilla_layer3_editor_row_offset(layer3.behavior, header.encoded()[4] & 0x0f)
+            vanilla_layer3_editor_row_offset(layer3.behavior, header.object_tileset())
         });
     let (layer3_low_image, layer3_high_image) = layer3.as_ref().map_or((None, None), |layer3| {
         let (low, high) = render_layer3_planes(
@@ -243,13 +243,17 @@ pub(crate) fn render(
 
 const fn vanilla_layer3_editor_row_offset(
     behavior: lm_profile::SmwUsV1Layer3Behavior,
-    mode_category: u8,
+    object_tileset: u8,
 ) -> Option<i16> {
     match behavior {
         lm_profile::SmwUsV1Layer3Behavior::LowTide => Some(-2),
         lm_profile::SmwUsV1Layer3Behavior::HighTide => Some(-8),
         lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x80 } => Some(1),
-        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x81 } if mode_category == 1 => Some(0),
+        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x81 }
+            if matches!(object_tileset, 1 | 0x0d) =>
+        {
+            Some(0)
+        }
         lm_profile::SmwUsV1Layer3Behavior::Static { .. } => None,
     }
 }
@@ -1107,6 +1111,10 @@ mod tests {
         assert_eq!(
             vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 3),
             None
+        );
+        assert_eq!(
+            vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 0x0d),
+            Some(0)
         );
         assert_eq!(
             vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 9),
