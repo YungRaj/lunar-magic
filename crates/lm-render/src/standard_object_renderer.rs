@@ -1565,10 +1565,10 @@ fn render_shared_slot_036(
         encoded_middle.saturating_sub(1)
     };
     let row_count = usize::from(parameter >> 4) + 1;
-    for major_offset in 0..row_count {
-        let row_kind = if major_offset == 0 {
+    for minor_offset in 0..row_count {
+        let row_kind = if minor_offset == 0 {
             0
-        } else if major_offset + 1 == row_count {
+        } else if minor_offset + 1 == row_count {
             2
         } else {
             1
@@ -1577,17 +1577,17 @@ fn render_shared_slot_036(
             cache,
             layout,
             placement,
-            major_offset,
             0,
+            minor_offset,
             u16::from(SHARED_SLOT_036_TILES[row_kind][0]) + 0x100,
         )?;
-        for minor_offset in 0..middle_count {
+        for major_offset in 0..middle_count {
             set_placement_cell(
                 cache,
                 layout,
                 placement,
-                major_offset,
-                minor_offset + 1,
+                major_offset + 1,
+                minor_offset,
                 u16::from(SHARED_SLOT_036_TILES[row_kind][1]) + 0x100,
             )?;
         }
@@ -1595,8 +1595,8 @@ fn render_shared_slot_036(
             cache,
             layout,
             placement,
-            major_offset,
             middle_count + 1,
+            minor_offset,
             u16::from(SHARED_SLOT_036_TILES[row_kind][2]) + 0x100,
         )?;
     }
@@ -3345,10 +3345,10 @@ fn render_shared_slot_011(
         .get(variant)
         .zip(SHARED_SLOT_011_REMAINDER_TILES.get(variant))
         .ok_or(StandardObjectRenderError::InvalidCommand(command))?;
-    let major_span = usize::from(parameter >> 4) + 1;
-    let minor_span = usize::from(parameter & 0x0f) + 1;
-    for major_offset in 0..major_span {
-        for minor_offset in 0..minor_span {
+    let major_span = usize::from(parameter & 0x0f) + 1;
+    let minor_span = usize::from(parameter >> 4) + 1;
+    for minor_offset in 0..minor_span {
+        for major_offset in 0..major_span {
             set_placement_cell(
                 cache,
                 layout,
@@ -4832,7 +4832,7 @@ mod tests {
         let mut handler_map = [0xff; 64];
         handler_map[51] = 11;
         let stream = ObjectStream {
-            records: vec![ObjectRecord::new(vec![0x60, 0x30, 0x11]).unwrap()],
+            records: vec![ObjectRecord::new(vec![0x60, 0x30, 0x12]).unwrap()],
         };
         let report = render_mapped_standard_object_stream(
             &stream,
@@ -4842,7 +4842,7 @@ mod tests {
             0x25,
         )
         .unwrap();
-        for major in 0..2 {
+        for major in 0..3 {
             assert_eq!(
                 report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), major, 0)],
                 0x38
@@ -5461,8 +5461,13 @@ mod tests {
                 0x25,
             )
             .unwrap();
-            for (major, row) in expected.into_iter().enumerate() {
-                for (minor, tile) in row.into_iter().enumerate() {
+            for (row, tiles) in expected.into_iter().enumerate() {
+                for (column, tile) in tiles.into_iter().enumerate() {
+                    let (major, minor) = if handler == 36 {
+                        (column, row)
+                    } else {
+                        (row, column)
+                    };
                     assert_eq!(
                         report.cache.cells()
                             [NativeLevelMap16Cache::cell_index(layout(), major, minor)],
