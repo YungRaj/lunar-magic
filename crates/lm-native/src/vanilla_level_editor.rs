@@ -8256,9 +8256,16 @@ mod tests {
         let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
         lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
         lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
-        let handler_map = definition_map
-            .family(usize::from(level.layer1.header.object_tileset()))
-            .unwrap();
+        let family = match lm_profile::smw_us_v1_object_family(
+            level.layer1.header.object_tileset(),
+        ) {
+            lm_profile::VanillaObjectFamily::Normal => 0,
+            lm_profile::VanillaObjectFamily::Castle => 1,
+            lm_profile::VanillaObjectFamily::Rope => 2,
+            lm_profile::VanillaObjectFamily::Underground => 3,
+            lm_profile::VanillaObjectFamily::GhostHouse => 4,
+        };
+        let handler_map = definition_map.family(family).unwrap();
         let rendered = lm_render::render_mapped_standard_object_stream(
             &level.layer1.objects,
             &definitions,
