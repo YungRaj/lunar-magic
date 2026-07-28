@@ -289,17 +289,17 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         ]),
         0x58 => parts(&[
             (0x5c, 0, 1),
-            (0x5c, 0, 17),
-            (0x6c, 0, 33),
-            (0x5c, 0, -15),
-            (0x5c, 0, -31),
-        ]),
-        0x59 => parts(&[
-            (0x5c, 0, 1),
             (0x5c, 16, 1),
             (0x6c, 32, 1),
             (0x5c, -16, 1),
             (0x5c, -32, 1),
+        ]),
+        0x59 => parts(&[
+            (0x5c, 0, 1),
+            (0x5c, 0, 17),
+            (0x6c, 0, 33),
+            (0x5c, 0, -15),
+            (0x5c, 0, -31),
         ]),
         0x5a => parts(&[(0x142, 0, 0), (0x143, 16, 0), (0x144, 32, 0)]),
         0x5b => parts(&[
@@ -699,7 +699,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
                 (definition, 32, 0),
             ])
         }
-        0xdd => parts(&[(if mode.alternate_display { 0x115 } else { 0x30 }, 0, 1)]),
+        0xdd => parts(&[(if mode.alternate_display { 0x115 } else { 0x33 }, 0, 1)]),
         0xde => render_handler_de(mode.placement_first),
         0xdf => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
         0xe0 => parts(&[
@@ -2382,20 +2382,20 @@ mod tests {
             geometry(0x58),
             [
                 (0x5c, 0, 1),
-                (0x5c, 0, 17),
-                (0x6c, 0, 33),
-                (0x5c, 0, -15),
-                (0x5c, 0, -31)
+                (0x5c, 16, 1),
+                (0x6c, 32, 1),
+                (0x5c, -16, 1),
+                (0x5c, -32, 1)
             ]
         );
         assert_eq!(
             geometry(0x59),
             [
                 (0x5c, 0, 1),
-                (0x5c, 16, 1),
-                (0x6c, 32, 1),
-                (0x5c, -16, 1),
-                (0x5c, -32, 1)
+                (0x5c, 0, 17),
+                (0x6c, 0, 33),
+                (0x5c, 0, -15),
+                (0x5c, 0, -31)
             ]
         );
         assert_eq!(
@@ -3657,7 +3657,7 @@ mod tests {
                 (0x115, 32, 0)
             ]
         );
-        assert_eq!(geometry(0xdd, false), [(0x30, 0, 1)]);
+        assert_eq!(geometry(0xdd, false), [(0x33, 0, 1)]);
         assert_eq!(geometry(0xdd, true), [(0x115, 0, 1)]);
     }
 

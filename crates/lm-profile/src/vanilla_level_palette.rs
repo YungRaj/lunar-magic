@@ -330,4 +330,45 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(actual.palette.colors, expected_colors);
     }
+
+    #[test]
+    fn diagnostic_level_palette_matches_live_cache_when_requested() {
+        let (Some(slot), Some(cache_path)) = (
+            std::env::var_os("LM_LEVEL_PALETTE_SLOT"),
+            std::env::var_os("LM_LEVEL_PALETTE_CACHE"),
+        ) else {
+            return;
+        };
+        let slot = usize::from_str_radix(&slot.to_string_lossy(), 16).unwrap();
+        let project = Project::new(
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
+        );
+        let level = project
+            .load_level_slot(
+                slot,
+                smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let actual =
+            compose_smw_us_v1_level_palette(&project, slot as u16, level.layer1.header, 0).unwrap();
+        let live = fs::read(cache_path).unwrap();
+        let mut expected = Palette::decode_snes(&live[2..]).unwrap();
+        expected.colors.rotate_right(1);
+        for row in 1..16 {
+            expected.colors[row * Palette::COLORS_PER_ROW] = Bgr555(0);
+        }
+        let differences = actual
+            .palette
+            .colors
+            .iter()
+            .zip(&expected.colors)
+            .enumerate()
+            .filter_map(|(index, (actual, expected))| {
+                (actual != expected).then_some((index, *actual, *expected))
+            })
+            .collect::<Vec<_>>();
+        eprintln!("level {slot:03X} palette differences: {differences:?}");
+        assert!(differences.is_empty());
+    }
 }
