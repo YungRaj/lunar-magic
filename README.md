@@ -295,6 +295,23 @@ editor composition; it does not simulate pointer or keyboard interaction. Level 
 Magic's hexadecimal notation, so `--level 102` opens level `$102`. Treat the output as a local
 diagnostic and never commit screenshots containing ROM-derived graphics.
 
+For a resumable visual audit, render a level/style/screen-offset matrix into a hashed HTML contact
+sheet. Independent framebuffer captures can run concurrently, and macOS hosts losslessly
+recompress the otherwise intentionally uncompressed diagnostic PNGs:
+
+```sh
+LM_RENDER_AUDIT_JOBS=8 \
+  tools/render-audit.sh /tmp/lm-render-audit "Super Mario World (USA).sfc" all 0 game
+
+open /tmp/lm-render-audit/index.html
+```
+
+The optional `LEVELS`, `SCREENS`, and `STYLES` arguments are comma-separated. `SCREENS` are
+hexadecimal major-axis screen offsets from each level's authenticated entrance, so `0,1,2` captures
+the entrance view and the next two screens. Use `game,editor` to review both pixel and editor
+presentation modes. Existing PNGs are retained on rerun while the ordered manifest and contact
+sheet are regenerated.
+
 Some integration tests use the legally supplied `Super Mario World (USA).sfc` fixture at the
 repository root. The expected pristine SHA-1 is:
 
