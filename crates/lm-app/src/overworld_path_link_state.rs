@@ -84,12 +84,12 @@ mod tests {
     use super::*;
     use crate::Command;
     use lm_overworld::{OverworldEndpoint, OverworldPathLink, OverworldPathTarget};
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn native_path_replacement_is_revisioned_and_undoable() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(bytes).unwrap();
         let before = app.project().unwrap().save_snapshot();
@@ -111,8 +111,8 @@ mod tests {
 
     #[test]
     fn expanded_path_install_is_one_application_revision_and_undo_step() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(bytes.clone()).unwrap();
         let table = OverworldPathLinkTable {

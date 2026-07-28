@@ -42,11 +42,11 @@ mod tests {
     use super::*;
     use crate::Command;
     use lm_rom::COPIER_HEADER_LEN;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     fn original() -> Vec<u8> {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        fs::read(root.join("Super Mario World (USA).sfc")).unwrap()
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        crate::test_support::pristine_smw_us_rom_bytes()
     }
 
     #[test]

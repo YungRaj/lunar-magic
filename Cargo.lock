@@ -1521,6 +1521,7 @@ dependencies = [
  "lm-codec",
  "lm-graphics",
  "lm-level",
+ "lm-oracle",
  "lm-overworld",
  "lm-profile",
  "lm-project",

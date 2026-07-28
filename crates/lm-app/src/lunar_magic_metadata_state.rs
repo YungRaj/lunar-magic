@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn real_metadata_install_is_revision_checked_and_exactly_undoable() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let fixture =
             fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc")).unwrap();
         let fixture = Project::open_supported(RomImage::from_bytes(fixture).unwrap()).unwrap();

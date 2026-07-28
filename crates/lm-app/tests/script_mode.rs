@@ -31,6 +31,28 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_SCRIPT: AtomicU64 = AtomicU64::new(0);
+const PRISTINE_SMW_US_SHA256: &str =
+    "0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b";
+
+fn pristine_smw_us_rom_bytes() -> Vec<u8> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for relative in [
+        "Super Mario World (USA).sfc",
+        "SMW-working.sfc",
+        "sysLMRestore/smwOrig.smc",
+    ] {
+        let Ok(bytes) = fs::read(root.join(relative)) else {
+            continue;
+        };
+        let Ok(image) = RomImage::from_bytes(bytes.clone()) else {
+            continue;
+        };
+        if lm_oracle::sha256_hex(image.logical_bytes()) == PRISTINE_SMW_US_SHA256 {
+            return bytes;
+        }
+    }
+    panic!("verified pristine SMW-US fixture not found");
+}
 
 fn script_path() -> PathBuf {
     std::env::temp_dir().join(format!(
@@ -195,7 +217,6 @@ fn command_script_installs_expanded_settings_and_saves_a_new_rom() {
 
 #[test]
 fn command_script_installs_complete_layer3_runtime_and_reopens_checksum_valid() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!(
         "lm-app-layer3-runtime-日本語-{}-{}",
         std::process::id(),
@@ -205,7 +226,7 @@ fn command_script_installs_complete_layer3_runtime_and_reopens_checksum_valid() 
     let input = directory.join("pristine source.smc");
     let output = directory.join("installed output.smc");
     let commands = directory.join("commands.txt");
-    let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+    let original = pristine_smw_us_rom_bytes();
     fs::write(&input, &original).unwrap();
     fs::write(
         &commands,
@@ -252,7 +273,6 @@ fn command_script_installs_complete_layer3_runtime_and_reopens_checksum_valid() 
 
 #[test]
 fn command_script_installs_exports_and_saves_native_overworld_messages() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!(
         "lm-app-overworld-messages-日本語-{}-{}",
         std::process::id(),
@@ -264,7 +284,7 @@ fn command_script_installs_exports_and_saves_native_overworld_messages() {
     let exported = directory.join("messages exported.lmowmsg");
     let output = directory.join("installed output.sfc");
     let commands = directory.join("commands.txt");
-    let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+    let original = pristine_smw_us_rom_bytes();
     fs::write(&input, &original).unwrap();
     let messages: Vec<_> = (0_usize..200)
         .map(|index| {
@@ -319,7 +339,6 @@ fn command_script_installs_exports_and_saves_native_overworld_messages() {
 
 #[test]
 fn command_script_installs_exports_and_saves_native_overworld_event_reveals() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!(
         "lm-app-overworld-events-日本語-{}-{}",
         std::process::id(),
@@ -331,7 +350,7 @@ fn command_script_installs_exports_and_saves_native_overworld_event_reveals() {
     let exported = directory.join("events exported.lmowevt");
     let output = directory.join("installed output.sfc");
     let commands = directory.join("commands.txt");
-    let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+    let original = pristine_smw_us_rom_bytes();
     fs::write(&input, &original).unwrap();
     let table = EventRevealTable {
         entries: (0_u16..200)
@@ -384,7 +403,6 @@ fn command_script_installs_exports_and_saves_native_overworld_event_reveals() {
 
 #[test]
 fn command_script_installs_exports_and_saves_native_overworld_event_map() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!(
         "lm-app-overworld-event-map-日本語-{}-{}",
         std::process::id(),
@@ -396,7 +414,7 @@ fn command_script_installs_exports_and_saves_native_overworld_event_map() {
     let exported = directory.join("event map exported.lmowmap");
     let output = directory.join("installed output.sfc");
     let commands = directory.join("commands.txt");
-    let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+    let original = pristine_smw_us_rom_bytes();
     fs::write(&input, &original).unwrap();
     let mut map = EventNumberMap::decode_legacy_pairs(&[
         0x28, 3, 0x4d, 1, 0x52, 1, 0x53, 1, 0x5b, 8, 0x5c, 2, 0x57, 4, 0x30, 1,
@@ -448,7 +466,6 @@ fn command_script_installs_exports_and_saves_native_overworld_event_map() {
 
 #[test]
 fn command_script_installs_exports_and_saves_native_special_events() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!(
         "lm-app-special-events-日本語-{}-{}",
         std::process::id(),
@@ -460,7 +477,7 @@ fn command_script_installs_exports_and_saves_native_special_events() {
     let exported = directory.join("special events exported.lmowspc");
     let output = directory.join("installed output.sfc");
     let commands = directory.join("commands.txt");
-    let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+    let original = pristine_smw_us_rom_bytes();
     fs::write(&input, &original).unwrap();
     let mut table = SpecialEventRevealTable::default();
     for index in 0_u16..24 {
@@ -513,7 +530,6 @@ fn command_script_installs_exports_and_saves_native_special_events() {
 
 #[test]
 fn command_script_installs_exports_and_saves_native_event_tilemaps() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!(
         "lm-app-event-tilemaps-日本語-{}-{}",
         std::process::id(),
@@ -525,7 +541,7 @@ fn command_script_installs_exports_and_saves_native_event_tilemaps() {
     let exported = directory.join("event tilemaps exported.lmowtil");
     let output = directory.join("installed output.sfc");
     let commands = directory.join("commands.txt");
-    let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+    let original = pristine_smw_us_rom_bytes();
     fs::write(&input, &original).unwrap();
     let mut buffers = EventTilemapBuffers::default();
     buffers.primary_bytes_mut()[7] = 0x12;

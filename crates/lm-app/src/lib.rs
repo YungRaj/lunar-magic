@@ -86,6 +86,8 @@ mod snapshot;
 mod ssc_sidecar_controller;
 pub mod startup_args;
 mod state;
+#[cfg(test)]
+mod test_support;
 mod title_recording_state;
 mod title_tilemap_state;
 mod tool_config;
