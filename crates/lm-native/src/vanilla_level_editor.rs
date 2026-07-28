@@ -271,8 +271,10 @@ pub(crate) struct VanillaLevelEditor {
     error: Option<String>,
     map16_key: Option<(u64, u16, u8, u8, bool)>,
     map16_texture: Option<egui::TextureHandle>,
+    layer2_map16_texture: Option<egui::TextureHandle>,
     background_map16_texture: Option<egui::TextureHandle>,
     animated_map16_textures: Vec<egui::TextureHandle>,
+    animated_layer2_map16_textures: Vec<egui::TextureHandle>,
     animated_background_map16_textures: Vec<egui::TextureHandle>,
     animated_background_plane_textures: Vec<egui::TextureHandle>,
     shared_vanilla_background: bool,
@@ -1153,8 +1155,10 @@ impl VanillaLevelEditor {
         self.error = None;
         self.map16_key = None;
         self.map16_texture = None;
+        self.layer2_map16_texture = None;
         self.background_map16_texture = None;
         self.animated_map16_textures.clear();
+        self.animated_layer2_map16_textures.clear();
         self.animated_background_map16_textures.clear();
         self.animated_background_plane_textures.clear();
         self.shared_vanilla_background = false;
@@ -1258,8 +1262,10 @@ impl VanillaLevelEditor {
             return;
         }
         self.map16_texture = None;
+        self.layer2_map16_texture = None;
         self.background_map16_texture = None;
         self.animated_map16_textures.clear();
+        self.animated_layer2_map16_textures.clear();
         self.animated_background_map16_textures.clear();
         self.animated_background_plane_textures.clear();
         self.sprite_texture = None;
@@ -1322,6 +1328,14 @@ impl VanillaLevelEditor {
                     preview.image,
                     egui::TextureOptions::NEAREST,
                 ));
+                self.layer2_map16_texture = Some(context.load_texture(
+                    format!(
+                        "vanilla-layer2-map16-{object_tileset:X}-{}",
+                        snapshot.revision
+                    ),
+                    preview.layer2_image,
+                    egui::TextureOptions::NEAREST,
+                ));
                 self.background_map16_texture = Some(context.load_texture(
                     format!(
                         "vanilla-background-map16-{object_tileset:X}-{}",
@@ -1334,6 +1348,14 @@ impl VanillaLevelEditor {
                     context,
                     &format!("vanilla-map16-{object_tileset:X}-{}", snapshot.revision),
                     preview.animated_images,
+                );
+                self.animated_layer2_map16_textures = load_animation_textures(
+                    context,
+                    &format!(
+                        "vanilla-layer2-map16-{object_tileset:X}-{}",
+                        snapshot.revision
+                    ),
+                    preview.animated_layer2_images,
                 );
                 self.animated_background_map16_textures = load_animation_textures(
                     context,
@@ -1783,6 +1805,11 @@ impl VanillaLevelEditor {
             .animated_map16_textures
             .get(animation_phase_index)
             .or(self.map16_texture.as_ref());
+        let layer2_map16_texture = self
+            .animated_layer2_map16_textures
+            .get(animation_phase_index)
+            .or(self.layer2_map16_texture.as_ref())
+            .or(map16_texture);
         let background_map16_texture = self
             .animated_background_map16_textures
             .get(animation_phase_index)
@@ -1868,6 +1895,7 @@ impl VanillaLevelEditor {
             layer2_placements,
             custom_objects,
             custom_map16,
+            layer2_map16_texture,
         );
         let game_preview = self.game_preview();
         let editor_overlays = !game_preview && visual_smoke_editor_overlays();
@@ -1900,6 +1928,7 @@ impl VanillaLevelEditor {
             placements,
             custom_objects,
             custom_map16,
+            map16_texture,
         );
         let (hit_layer2, hit) = if !editor_overlays {
             (
@@ -2741,8 +2770,9 @@ impl VanillaLevelEditor {
         placements: &[lm_level::NativeObjectPlacement],
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        texture: Option<&egui::TextureHandle>,
     ) -> HashMap<usize, egui::Rect> {
-        let Some(texture) = self.map16_texture.as_ref() else {
+        let Some(texture) = texture else {
             return HashMap::new();
         };
         draw_ordered_object_tiles(

@@ -6,8 +6,10 @@ use lm_rom::RomImage;
 
 pub(crate) struct VanillaMap16Preview {
     pub(crate) image: egui::ColorImage,
+    pub(crate) layer2_image: egui::ColorImage,
     pub(crate) background_image: egui::ColorImage,
     pub(crate) animated_images: Vec<egui::ColorImage>,
+    pub(crate) animated_layer2_images: Vec<egui::ColorImage>,
     pub(crate) animated_background_images: Vec<egui::ColorImage>,
     pub(crate) graphics_files: [usize; 4],
     pub(crate) background_graphics_files: [usize; 4],
@@ -147,6 +149,7 @@ pub(crate) fn render(
     // back into this path corrupts palette and flip attributes.
     let mut animated_foreground_graphics = Vec::with_capacity(4);
     let mut animated_images = Vec::with_capacity(4);
+    let mut animated_layer2_images = Vec::with_capacity(4);
     let mut animated_background_images = Vec::with_capacity(4);
     for phase in 0..4 {
         let mut foreground_graphics = base_foreground_graphics.clone();
@@ -158,6 +161,12 @@ pub(crate) fn render(
             &foreground_graphics,
             &palette,
         ));
+        animated_layer2_images.push(render_layer2_map16_definition_atlas(
+            &map16.bytes,
+            &foreground_graphics,
+            &palette,
+            tileset,
+        ));
         let mut background_image =
             render_map16_definition_atlas(&background_map16, &background_graphics, &palette);
         if lm_profile::smw_us_v1_level_mode(header.level_mode()).background_half_color {
@@ -168,6 +177,7 @@ pub(crate) fn render(
     }
     let foreground_graphics = animated_foreground_graphics.remove(0);
     let image = animated_images[0].clone();
+    let layer2_image = animated_layer2_images[0].clone();
     let background_image = animated_background_images[0].clone();
     let sprite_tiles = materialize_layer1_sprite_vram(&sprite_graphics);
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
@@ -197,8 +207,10 @@ pub(crate) fn render(
     });
     Ok(VanillaMap16Preview {
         image,
+        layer2_image,
         background_image,
         animated_images,
+        animated_layer2_images,
         animated_background_images,
         foreground_image,
         foreground_tiles: foreground_graphics,
@@ -512,6 +524,27 @@ fn render_map16_definition_atlas(
     graphics: &[IndexedTile],
     palette: &Palette,
 ) -> egui::ColorImage {
+    render_map16_definition_atlas_with_layer2_palette(definitions, graphics, palette, false)
+}
+
+fn render_layer2_map16_definition_atlas(
+    definitions: &[u8],
+    graphics: &[IndexedTile],
+    palette: &Palette,
+    tileset: u8,
+) -> egui::ColorImage {
+    // Ghidra RenderLevelEditorViewportRegion @ 00453c0f sets DAT_00600256 for
+    // object-backed Layer 2 when the active object tileset is 3. The Map16
+    // renderer then adds four palette rows to subtiles using rows 0..3.
+    render_map16_definition_atlas_with_layer2_palette(definitions, graphics, palette, tileset == 3)
+}
+
+fn render_map16_definition_atlas_with_layer2_palette(
+    definitions: &[u8],
+    graphics: &[IndexedTile],
+    palette: &Palette,
+    shift_low_palette_rows: bool,
+) -> egui::ColorImage {
     let width = 32 * 16;
     let height = 16 * 16;
     let mut rgba = vec![0; width * height * 4];
@@ -523,13 +556,17 @@ fn render_map16_definition_atlas(
             let word = u16::from_le_bytes([definitions[word_offset], definitions[word_offset + 1]]);
             let tile_number = usize::from(word & 0x03ff);
             let (quadrant_x, quadrant_y) = map16_quadrant_offset(quadrant);
+            let mut palette_number = usize::from((word >> 10) & 7);
+            if shift_low_palette_rows && palette_number < 4 {
+                palette_number += 4;
+            }
             draw_subtile(
                 &mut rgba,
                 width,
                 (definition_x + quadrant_x, definition_y + quadrant_y),
                 graphics.get(tile_number),
                 palette,
-                usize::from((word >> 10) & 7),
+                palette_number,
                 (word & 0x4000 != 0, word & 0x8000 != 0),
             );
         }
@@ -844,6 +881,32 @@ mod tests {
             (0..4).map(map16_quadrant_offset).collect::<Vec<_>>(),
             [(0, 0), (0, 8), (8, 0), (8, 8)]
         );
+    }
+
+    #[test]
+    fn tileset_three_layer2_objects_shift_low_map16_palette_rows() {
+        let mut definitions = vec![0; lm_profile::SMW_US_V1_MAP16_BASE_BYTES];
+        for word in definitions[..8].chunks_exact_mut(2) {
+            word.copy_from_slice(&(2_u16 << 10).to_le_bytes());
+        }
+        let graphics = vec![IndexedTile::new([1; IndexedTile::PIXEL_COUNT])];
+        let mut colors = vec![Bgr555(0); 256];
+        colors[2 * 16 + 1] = Bgr555::from_rgb8(Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        });
+        colors[6 * 16 + 1] = Bgr555::from_rgb8(Rgb8 {
+            red: 0,
+            green: 255,
+            blue: 0,
+        });
+        let palette = Palette { colors };
+
+        let ordinary = render_layer2_map16_definition_atlas(&definitions, &graphics, &palette, 2);
+        let shifted = render_layer2_map16_definition_atlas(&definitions, &graphics, &palette, 3);
+        assert_eq!(ordinary.pixels[0], egui::Color32::RED);
+        assert_eq!(shifted.pixels[0], egui::Color32::GREEN);
     }
 
     #[test]

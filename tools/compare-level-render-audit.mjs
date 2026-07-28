@@ -217,6 +217,7 @@ function compareLevel(level, rustPath, livePath) {
   let maxY = -1;
   let comparedPixels = 0;
   const differencePairs = new Map();
+  const differencePairBounds = new Map();
   const ignoredLiveRgb = process.env.LM_COMPARE_IGNORE_LIVE_RGB
     ?.split(",")
     .map(Number);
@@ -239,6 +240,12 @@ function compareLevel(level, rustPath, livePath) {
       if (pixelMax !== 0) {
         const key = `${expected.join(",")}/${actual.join(",")}`;
         differencePairs.set(key, (differencePairs.get(key) ?? 0) + 1);
+        const pairBounds = differencePairBounds.get(key) ?? [x, y, x, y];
+        pairBounds[0] = Math.min(pairBounds[0], x);
+        pairBounds[1] = Math.min(pairBounds[1], y);
+        pairBounds[2] = Math.max(pairBounds[2], x);
+        pairBounds[3] = Math.max(pairBounds[3], y);
+        differencePairBounds.set(key, pairBounds);
       }
       if (pixelMax > 1) overOne += 1;
       if (pixelMax > 8) {
@@ -255,6 +262,12 @@ function compareLevel(level, rustPath, livePath) {
   const bounds = overEight === 0 ? "" : `${minX},${minY}-${maxX},${maxY}`;
   const dominantDifference =
     [...differencePairs.entries()].sort((left, right) => right[1] - left[1])[0] ?? ["", 0];
+  if (process.env.LM_COMPARE_TRACE_DOMINANT && dominantDifference[0]) {
+    console.error(
+      `level ${level} dominant ${dominantDifference[0]} count=${dominantDifference[1]} ` +
+        `bounds=${differencePairBounds.get(dominantDifference[0]).join(",")}`,
+    );
+  }
   return [
     level,
     live.width,
