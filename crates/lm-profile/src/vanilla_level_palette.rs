@@ -1,9 +1,12 @@
 //! Pure composition of Lunar Magic's pristine 256-color level palette cache.
 
-use crate::smw_us_v1_shared_palette_layout;
+use crate::{
+    SmwUsV1Layer3Behavior, SmwUsV1Layer3Error, load_smw_us_v1_level_layer3,
+    smw_us_v1_shared_palette_layout, smw_us_v1_vanilla_entrance_layout,
+};
 use lm_graphics::{Bgr555, Palette, SmwPaletteFileError};
 use lm_level::LegacyLevelHeader;
-use lm_project::{Project, SharedPaletteIoError};
+use lm_project::{Project, SharedPaletteIoError, VanillaEntranceIoError};
 use std::fmt;
 
 const CACHE_COLORS: usize = 257;
@@ -19,6 +22,8 @@ pub struct SmwUsV1LevelPalette {
 pub enum SmwUsV1LevelPaletteError {
     Shared(SharedPaletteIoError),
     SharedFile(SmwPaletteFileError),
+    Entrance(VanillaEntranceIoError),
+    Layer3(SmwUsV1Layer3Error),
     SourceRange { offset: usize, len: usize },
     PlayerPaletteOutOfRange(u8),
 }
@@ -43,6 +48,18 @@ impl From<SharedPaletteIoError> for SmwUsV1LevelPaletteError {
 impl From<SmwPaletteFileError> for SmwUsV1LevelPaletteError {
     fn from(value: SmwPaletteFileError) -> Self {
         Self::SharedFile(value)
+    }
+}
+
+impl From<VanillaEntranceIoError> for SmwUsV1LevelPaletteError {
+    fn from(value: VanillaEntranceIoError) -> Self {
+        Self::Entrance(value)
+    }
+}
+
+impl From<SmwUsV1Layer3Error> for SmwUsV1LevelPaletteError {
+    fn from(value: SmwUsV1Layer3Error) -> Self {
+        Self::Layer3(value)
     }
 }
 
@@ -156,6 +173,19 @@ pub fn compose_smw_us_v1_level_palette(
         (0x17e, 0x5fc),
     ] {
         copy(&mut cache, target, source, source_offset, 4)?;
+    }
+
+    let entrance = project
+        .load_vanilla_main_entrance(usize::from(level), smw_us_v1_vanilla_entrance_layout())?;
+    let layer3 = load_smw_us_v1_level_layer3(project, entrance, header.object_tileset())?;
+    if layer3
+        .as_ref()
+        .is_some_and(|layer3| layer3.behavior == SmwUsV1Layer3Behavior::Static { code: 0x80 })
+    {
+        // Ghidra InitializeLayer3ModeRenderingState @ 00464efd sets DAT_00600a8e
+        // for behavior $80. BuildLevelPaletteEditorCaches then replaces CGRAM
+        // colors $0C-$0F from the dedicated Layer 3 smash palette.
+        copy(&mut cache, 0x18, source, 0x5cc, 8)?;
     }
 
     copy(

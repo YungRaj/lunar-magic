@@ -24,6 +24,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) layer3_low_image: Option<egui::ColorImage>,
     pub(crate) layer3_high_image: Option<egui::ColorImage>,
     pub(crate) layer3_position: Option<(i16, i16)>,
+    pub(crate) layer3_editor_row_offset: Option<i16>,
     pub(crate) sprite_graphics_files: [usize; 4],
     pub(crate) common_tiles: usize,
     pub(crate) tileset_tiles: usize,
@@ -196,6 +197,15 @@ pub(crate) fn render(
     let layer3_position = layer3
         .as_ref()
         .map(|layer3| (layer3.initial_x, layer3.initial_y));
+    let layer3_editor_row_offset = layer3.as_ref().and_then(|layer3| match layer3.behavior {
+        lm_profile::SmwUsV1Layer3Behavior::LowTide => Some(-2),
+        lm_profile::SmwUsV1Layer3Behavior::HighTide => Some(-8),
+        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x80 } => Some(1),
+        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x81 } if header.level_mode() == 0x0e => {
+            Some(0)
+        }
+        lm_profile::SmwUsV1Layer3Behavior::Static { .. } => None,
+    });
     let (layer3_low_image, layer3_high_image) = layer3.as_ref().map_or((None, None), |layer3| {
         let (low, high) = render_layer3_planes(
             &layer3.tilemap,
@@ -218,6 +228,7 @@ pub(crate) fn render(
         layer3_low_image,
         layer3_high_image,
         layer3_position,
+        layer3_editor_row_offset,
         graphics_files,
         background_graphics_files,
         sprite_image,
@@ -1329,6 +1340,46 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_lunar_magic_rgb_palette_matches_when_requested() {
+        let (Ok(slot), Ok(cache_path)) = (
+            std::env::var("LM_LEVEL_SLOT"),
+            std::env::var("LM_LEVEL_RGB_PALETTE_CACHE"),
+        ) else {
+            return;
+        };
+        let slot = u16::from_str_radix(&slot, 16).unwrap();
+        let project = Project::new(
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
+        );
+        let level = project
+            .load_level_slot(
+                usize::from(slot),
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let actual =
+            lm_profile::compose_smw_us_v1_level_palette(&project, slot, level.layer1.header, 0)
+                .unwrap();
+        let live = std::fs::read(cache_path).unwrap();
+        assert_eq!(live.len(), 256 * 4);
+        let differences = actual
+            .palette
+            .colors
+            .iter()
+            .zip(live.chunks_exact(4))
+            .enumerate()
+            .filter_map(|(index, (actual, live))| {
+                let rgb = actual.to_rgb8();
+                let live = [live[0], live[1], live[2]];
+                ([rgb.red, rgb.green, rgb.blue] != live).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        eprintln!("level {slot:03X} RGB palette mismatch entries: {differences:02X?}");
+        assert!(differences.is_empty());
+    }
+
+    #[test]
     fn diagnostic_lunar_magic_map16_graphics_cache_matches_when_requested() {
         let (Ok(slot), Ok(cache_path)) = (
             std::env::var("LM_LEVEL_SLOT"),
@@ -1379,6 +1430,35 @@ mod tests {
             );
         }
         assert_eq!(differences, 0);
+    }
+
+    #[test]
+    fn diagnostic_lunar_magic_layer3_graphics_cache_matches_when_requested() {
+        let (Ok(slot), Ok(cache_path)) = (
+            std::env::var("LM_LEVEL_SLOT"),
+            std::env::var("LM_LEVEL_LAYER3_GRAPHICS_CACHE"),
+        ) else {
+            return;
+        };
+        let slot = usize::from_str_radix(&slot, 16).unwrap();
+        let project = Project::new(
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
+        );
+        let actual = load_layer3_tiles(&project, slot).unwrap();
+        let actual = actual
+            .iter()
+            .flat_map(|tile| tile.pixels().iter().copied())
+            .collect::<Vec<_>>();
+        let expected = std::fs::read(cache_path).unwrap();
+        assert_eq!(expected.len(), actual.len());
+        let differing = actual
+            .chunks_exact(IndexedTile::PIXEL_COUNT)
+            .zip(expected.chunks_exact(IndexedTile::PIXEL_COUNT))
+            .enumerate()
+            .filter_map(|(tile, (actual, expected))| (actual != expected).then_some(tile))
+            .collect::<Vec<_>>();
+        eprintln!("level {slot:03X} Layer 3 graphics mismatch tiles: {differing:03X?}");
+        assert!(differing.is_empty());
     }
 
     #[test]

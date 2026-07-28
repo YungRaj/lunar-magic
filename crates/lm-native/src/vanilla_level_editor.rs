@@ -286,6 +286,7 @@ pub(crate) struct VanillaLevelEditor {
     layer3_low_texture: Option<egui::TextureHandle>,
     layer3_high_texture: Option<egui::TextureHandle>,
     layer3_position: Option<(i16, i16)>,
+    layer3_editor_row_offset: Option<i16>,
     sprite_palette: Option<lm_graphics::Palette>,
     canvas_backdrop: Option<lm_graphics::Bgr555>,
     foreground_texture: Option<egui::TextureHandle>,
@@ -1170,6 +1171,7 @@ impl VanillaLevelEditor {
         self.layer3_low_texture = None;
         self.layer3_high_texture = None;
         self.layer3_position = None;
+        self.layer3_editor_row_offset = None;
         self.sprite_palette = None;
         self.canvas_backdrop = None;
         self.foreground_texture = None;
@@ -1276,6 +1278,7 @@ impl VanillaLevelEditor {
         self.layer3_low_texture = None;
         self.layer3_high_texture = None;
         self.layer3_position = None;
+        self.layer3_editor_row_offset = None;
         self.sprite_palette = None;
         self.canvas_backdrop = None;
         self.external_sprite_textures.clear();
@@ -1418,6 +1421,7 @@ impl VanillaLevelEditor {
                     )
                 });
                 self.layer3_position = preview.layer3_position;
+                self.layer3_editor_row_offset = preview.layer3_editor_row_offset;
                 self.canvas_backdrop = Some(preview.backdrop);
                 self.sprite_palette = Some(preview.palette);
             }
@@ -1819,26 +1823,16 @@ impl VanillaLevelEditor {
             .get(animation_phase_index);
         let game_camera = (self.game_preview() && self.snes_viewport())
             .then(|| self.game_preview_camera_origin(major_tiles, minor_tiles, vertical));
-        let editor_tide = self
-            .layer3_position
-            .is_some_and(|(_, y)| matches!(y, 64 | 112));
         let layer3_position = self.layer3_position.map(|(x, y)| {
             if game_camera.is_some() {
                 (x, y)
             } else {
-                // The normalized tide stripe begins at texture row 256.
-                // Ghidra's live editor offsets (-2 for low tide, -8 for
-                // high tide) place it at world Map16 rows 18 and 24.
-                match y {
-                    112 => (x, -32),
-                    64 => (x, -128),
-                    -48 if level_mode == 0x0e => (x, 0),
-                    _ => (x, y),
-                }
+                self.layer3_editor_row_offset
+                    .map_or((x, y), |row| (x, row * 16))
             }
         });
         let layer3_camera = game_camera.or_else(|| {
-            (!self.game_preview() && (editor_tide || level_mode == 0x0e)).then(|| {
+            (!self.game_preview() && self.layer3_editor_row_offset.is_some()).then(|| {
                 (
                     visual_smoke_editor_scroll_column().unwrap_or_default(),
                     visual_smoke_editor_scroll_row()
