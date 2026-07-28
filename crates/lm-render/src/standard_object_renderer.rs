@@ -867,7 +867,13 @@ fn render_shared_slot_000(
     command: u8,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
-    let variant = usize::from(command.saturating_sub(5));
+    // SMW dispatches standard commands through a zero-based pointer table, so the
+    // argument received by `StdObj05_Coins` is the original command minus one.
+    // The function name describes command $05, but the shared implementation and
+    // lookup table cover the complete $01-$0F family.
+    let Some(variant) = command.checked_sub(1).map(usize::from) else {
+        return Ok(());
+    };
     let Some(&low_tile) = SHARED_SLOT_000_TILES.get(variant) else {
         return Ok(());
     };
@@ -4655,13 +4661,13 @@ mod tests {
         let mut definitions = StandardObjectDefinitionSet::empty();
         install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         let mut handler_map = [0xff; 64];
-        for handler in handler_map.iter_mut().take(0x0f).skip(5) {
+        for handler in handler_map.iter_mut().take(0x0f).skip(1) {
             *handler = 0;
         }
         let stream = ObjectStream {
             records: vec![
-                ObjectRecord::new(vec![0, 0x50, 0x12]).unwrap(),
-                ObjectRecord::new(vec![0, 0x88, 0x01]).unwrap(),
+                ObjectRecord::new(vec![0, 0x10, 0x12]).unwrap(),
+                ObjectRecord::new(vec![0, 0x58, 0x01]).unwrap(),
                 ObjectRecord::new(vec![0, 0xc4, 0x10]).unwrap(),
             ],
         };
@@ -4680,10 +4686,10 @@ mod tests {
                 assert_eq!(report.cache.get(layout(), x, y).unwrap(), 0x02);
             }
         }
-        assert_eq!(report.cache.get(layout(), 8, 0).unwrap(), 0x2a);
-        assert_eq!(report.cache.get(layout(), 9, 0).unwrap(), 0x2a);
-        assert_eq!(report.cache.get(layout(), 4, 0).unwrap(), 0x113);
-        assert_eq!(report.cache.get(layout(), 4, 1).unwrap(), 0x113);
+        assert_eq!(report.cache.get(layout(), 8, 0).unwrap(), 0x2b);
+        assert_eq!(report.cache.get(layout(), 9, 0).unwrap(), 0x2b);
+        assert_eq!(report.cache.get(layout(), 4, 0).unwrap(), 0x12f);
+        assert_eq!(report.cache.get(layout(), 4, 1).unwrap(), 0x12f);
     }
 
     #[test]

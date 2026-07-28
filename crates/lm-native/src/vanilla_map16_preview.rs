@@ -111,7 +111,7 @@ pub(crate) fn render(
     let mut animated_background_images = Vec::with_capacity(4);
     for phase in 0..4 {
         let mut graphics = base_graphics.clone();
-        apply_vanilla_common_animation_frame(&project, &mut graphics, phase)?;
+        apply_vanilla_common_animation_frame(&project, &mut graphics, phase, tileset)?;
         animated_images.push(render_map16_definition_atlas(
             &map16.bytes,
             &graphics,
@@ -221,13 +221,19 @@ fn apply_vanilla_common_animation_frame(
     project: &Project,
     graphics: &mut [IndexedTile],
     phase: usize,
+    tileset: u8,
 ) -> Result<(), String> {
-    const FRAME_ZERO_SOURCES: [(usize, usize); 3] = [
-        (0x60, (0x9500 - 0x7d00) / 32),
-        (0x64, (0x9580 - 0x7d00) / 32),
-        (0x68, (0x9600 - 0x7d00) / 32),
+    const VRAM_DESTINATIONS: [usize; 24] = [
+        0x600, 0x640, 0x680, 0x740, 0xea0, 0x800, 0x500, 0x540, 0x580, 0x5c0, 0x780, 0x7c0, 0xda0,
+        0x6c0, 0x700, 0x4c0, 0x440, 0x480, 0x400, 0, 0, 0, 0, 0,
     ];
-    const ANIMATED_SOURCE_STRIDE_TILES: usize = 0x200 / 32;
+    const MODE: [u8; 24] = [
+        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0,
+    ];
+    const TILESET_OFFSETS: [usize; 14] = [0, 5, 10, 15, 20, 20, 25, 20, 10, 20, 0, 5, 0, 20];
+    const FRAME_TABLE_OFFSET: usize = 0x2_b999;
+    const CONVERTED_GFX33_BASE: usize = 0x7d00;
+    const CONVERTED_TILE_BYTES: usize = 32;
     const TILES_PER_COPY: usize = 4;
 
     if phase >= 4 {
@@ -241,15 +247,43 @@ fn apply_vanilla_common_animation_frame(
     let animation_tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
         .map_err(|error| format!("cannot decode pristine animated GFX33: {error}"))?;
     let graphics_len = graphics.len();
-    for (copy_index, (destination, frame_zero_source)) in FRAME_ZERO_SOURCES.into_iter().enumerate()
-    {
-        // The third group is the ordinary turn block and does not advance unless gameplay puts
-        // it into its separate spinning state.
-        let source = if copy_index < 2 {
-            frame_zero_source + phase * ANIMATED_SOURCE_STRIDE_TILES
+    for (animation_index, destination_word) in VRAM_DESTINATIONS.into_iter().enumerate() {
+        if destination_word == 0 {
+            continue;
+        }
+        let source_index = if MODE[animation_index] == 2 {
+            animation_index
+                + TILESET_OFFSETS
+                    .get(usize::from(tileset))
+                    .copied()
+                    .unwrap_or_default()
         } else {
-            frame_zero_source
+            // Switch-controlled animations use their ordinary state in an editor preview.
+            animation_index
         };
+        let table_word = source_index * 4 + phase;
+        let table_offset = FRAME_TABLE_OFFSET + table_word * 2;
+        let source_bytes = project
+            .rom
+            .logical_bytes()
+            .get(table_offset..table_offset + 2)
+            .ok_or_else(|| {
+                format!("vanilla animation frame table word {table_word} is outside the ROM")
+            })?;
+        let source_address = usize::from(u16::from_le_bytes([source_bytes[0], source_bytes[1]]));
+        // Sources below $7D00 live in SMW's separately converted GFX32 work buffer.
+        // Preserve their active-slot tiles until that second source domain is materialized;
+        // common object animations such as coins come from converted GFX33.
+        let Some(source_delta) = source_address.checked_sub(CONVERTED_GFX33_BASE) else {
+            continue;
+        };
+        if source_delta % CONVERTED_TILE_BYTES != 0 {
+            return Err(format!(
+                "vanilla animation source ${source_address:04X} is not tile aligned"
+            ));
+        }
+        let source = source_delta / CONVERTED_TILE_BYTES;
+        let destination = destination_word / 0x10;
         let source_end = source + TILES_PER_COPY;
         let destination_end = destination + TILES_PER_COPY;
         let source_tiles = animation_tiles.get(source..source_end).ok_or_else(|| {
@@ -683,11 +717,24 @@ mod tests {
         let animated = lm_graphics::decode_planar_tiles(&animated, 3).unwrap();
         assert_eq!(preview.foreground_tiles[0x60], animated[192]);
         assert_eq!(preview.foreground_tiles[0x6b], animated[203]);
+        assert_eq!(
+            preview.foreground_tiles[0x6c], animated[204],
+            "the common coin frame must populate Map16 $2B's first subtile"
+        );
+        assert_eq!(preview.foreground_tiles[0x6f], animated[207]);
         let mut last_phase = preview.foreground_tiles.clone();
-        apply_vanilla_common_animation_frame(&project, &mut last_phase, 3).unwrap();
+        apply_vanilla_common_animation_frame(
+            &project,
+            &mut last_phase,
+            3,
+            level.layer1.header.object_tileset(),
+        )
+        .unwrap();
         assert_eq!(last_phase[0x60], animated[240]);
         assert_eq!(last_phase[0x64], animated[244]);
         assert_eq!(last_phase[0x68], animated[200]);
+        assert_eq!(last_phase[0x6c], animated[252]);
+        assert_eq!(last_phase[0x6f], animated[255]);
         assert_eq!(preview.animated_images.len(), 4);
         assert_eq!(preview.animated_background_images.len(), 4);
         assert_ne!(preview.animated_images[0], preview.animated_images[3]);

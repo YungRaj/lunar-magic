@@ -8273,6 +8273,34 @@ mod tests {
     }
 
     #[test]
+    fn cookie_mountain_background_uses_half_speed_horizontal_parallax() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let project = lm_project::Project::new(
+            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+                .unwrap(),
+        );
+        let entrance = project
+            .load_vanilla_main_entrance(1, lm_profile::smw_us_v1_vanilla_entrance_layout())
+            .unwrap();
+        assert_eq!(
+            entrance,
+            VanillaMainEntrance {
+                position: 0x5b,
+                screen_and_method: 0x9a,
+                ..VanillaMainEntrance::default()
+            }
+        );
+        assert_eq!(
+            vanilla_layer2_camera_pixels(entrance, (15 * 16, 12 * 16)),
+            (120, 192)
+        );
+        assert_eq!(
+            vanilla_layer2_camera_pixels(entrance, (30 * 16, 12 * 16)),
+            (240, 192)
+        );
+    }
+
+    #[test]
     fn preview_camera_offsets_follow_orientation_and_clamp_to_level_bounds() {
         assert_eq!(
             offset_game_preview_origin((0, 12), 15, -20, 512, 27, false),
