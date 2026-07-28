@@ -2709,6 +2709,9 @@ impl VanillaLevelEditor {
                 handler_map: self.active_standard_object_handler_map(),
                 metadata: custom_objects,
                 variant: self.active_object_family_index(),
+                object_tileset: self.controller.as_ref().map_or(0, |controller| {
+                    controller.level().layer1.header.object_tileset()
+                }),
                 custom_map16,
                 foreground_texture: self.foreground_texture.as_ref(),
             },
@@ -5320,6 +5323,7 @@ struct OrderedObjectDraw<'a> {
     handler_map: Option<&'a [u8; 64]>,
     metadata: Option<&'a lm_level::OscResolvedTable>,
     variant: u8,
+    object_tileset: u8,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
     foreground_texture: Option<&'a egui::TextureHandle>,
 }
@@ -5339,6 +5343,11 @@ fn draw_ordered_object_tiles(
     let mut artwork_bounds = HashMap::new();
     let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
     if lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).is_err()
+        || lm_render::install_lunar_magic_tileset_extended_objects(
+            &mut definitions,
+            request.object_tileset,
+        )
+        .is_err()
         || lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).is_err()
     {
         return artwork_bounds;
@@ -8369,6 +8378,11 @@ mod tests {
         };
         let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
         lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_tileset_extended_objects(
+            &mut definitions,
+            level.layer1.header.object_tileset(),
+        )
+        .unwrap();
         lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
         let family = match lm_profile::smw_us_v1_object_family(level.layer1.header.object_tileset())
         {

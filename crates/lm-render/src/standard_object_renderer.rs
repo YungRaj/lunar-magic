@@ -4111,6 +4111,28 @@ pub fn install_lunar_magic_shared_extended_objects(
     Ok(())
 }
 
+/// Applies extended-object substitutions selected by SMW's object tileset.
+///
+/// # Errors
+///
+/// Returns a definition error if a recovered substitution cannot be installed.
+pub fn install_lunar_magic_tileset_extended_objects(
+    definitions: &mut StandardObjectDefinitionSet,
+    object_tileset: u8,
+) -> Result<(), StandardObjectRenderError> {
+    if object_tileset == 8 {
+        definitions.set_extended(
+            0x17,
+            StandardObjectPattern {
+                width: 1,
+                height: 1,
+                tiles: vec![0x12d],
+            },
+        )?;
+    }
+    Ok(())
+}
+
 fn extended_canvas_pattern(source: [u16; 19]) -> StandardObjectPattern {
     let mut tiles = vec![0x025; 24];
     for (destination, tile) in tiles[..4].iter_mut().zip(source[..4].iter().copied()) {
@@ -5336,6 +5358,35 @@ mod tests {
         assert_eq!(
             report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 6, 11)],
             0x1eb
+        );
+    }
+
+    #[test]
+    fn switch_palace_tileset_substitutes_extended_selector_17() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        assert_eq!(
+            definitions
+                .extended
+                .get(0x17)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .pattern
+                .tiles,
+            [0x025]
+        );
+        install_lunar_magic_tileset_extended_objects(&mut definitions, 8).unwrap();
+        assert_eq!(
+            definitions
+                .extended
+                .get(0x17)
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .pattern
+                .tiles,
+            [0x12d]
         );
     }
 
