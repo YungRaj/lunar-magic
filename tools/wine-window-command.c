@@ -1,5 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <commctrl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +13,202 @@ struct search {
     BOOL list;
     const char *window_class;
 };
+
+struct toolbar_button32 {
+    int32_t bitmap;
+    int32_t command;
+    uint8_t state;
+    uint8_t style;
+    uint8_t reserved[2];
+    uint32_t data;
+    uint32_t string;
+};
+
+struct dialog_values {
+    HANDLE process;
+    void *remote;
+};
+
+static BOOL CALLBACK list_dialog_value(HWND window, LPARAM opaque) {
+    struct dialog_values *values = (struct dialog_values *)opaque;
+    char class_name[128] = {0};
+    GetClassName(window, class_name, sizeof(class_name));
+    if (_stricmp(class_name, "ComboBox") == 0) {
+        LRESULT selected = SendMessage(window, CB_GETCURSEL, 0, 0);
+        char text[256] = {0};
+        SIZE_T read = 0;
+        if (
+            selected != CB_ERR &&
+            SendMessage(window, CB_GETLBTEXT, selected, (LPARAM)values->remote) != CB_ERR
+        ) {
+            ReadProcessMemory(
+                values->process,
+                values->remote,
+                text,
+                sizeof(text) - 1,
+                &read
+            );
+        }
+        printf(
+            "combo=0x%04lx selected=%ld text=%s\n",
+            (unsigned long)GetDlgCtrlID(window),
+            (long)selected,
+            text
+        );
+    } else if (_stricmp(class_name, "Edit") == 0) {
+        char text[256] = {0};
+        SIZE_T read = 0;
+        LRESULT length = SendMessage(
+            window,
+            WM_GETTEXT,
+            sizeof(text),
+            (LPARAM)values->remote
+        );
+        if (length > 0) {
+            ReadProcessMemory(
+                values->process,
+                values->remote,
+                text,
+                sizeof(text) - 1,
+                &read
+            );
+        }
+        printf(
+            "edit-parent=0x%04lx text=%s\n",
+            (unsigned long)GetDlgCtrlID(GetParent(window)),
+            text
+        );
+    } else if (
+        _stricmp(class_name, "Button") == 0 &&
+        GetDlgCtrlID(window) != IDOK &&
+        GetDlgCtrlID(window) != IDCANCEL
+    ) {
+        char title[256] = {0};
+        GetWindowText(window, title, sizeof(title));
+        printf(
+            "button=0x%04lx check=%ld title=%s\n",
+            (unsigned long)GetDlgCtrlID(window),
+            (long)SendMessage(window, BM_GETCHECK, 0, 0),
+            title
+        );
+    }
+    return TRUE;
+}
+
+static int list_dialog_values(HWND dialog, DWORD process_id) {
+    HANDLE process = OpenProcess(
+        PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE,
+        FALSE,
+        process_id
+    );
+    if (process == NULL) {
+        fprintf(stderr, "cannot open dialog process\n");
+        return 1;
+    }
+    void *remote = VirtualAllocEx(
+        process,
+        NULL,
+        512,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE
+    );
+    if (remote == NULL) {
+        CloseHandle(process);
+        fprintf(stderr, "cannot allocate dialog exchange buffer\n");
+        return 1;
+    }
+    struct dialog_values values = {.process = process, .remote = remote};
+    EnumChildWindows(dialog, list_dialog_value, (LPARAM)&values);
+    VirtualFreeEx(process, remote, 0, MEM_RELEASE);
+    CloseHandle(process);
+    return 0;
+}
+
+static BOOL CALLBACK find_toolbar(HWND window, LPARAM opaque) {
+    HWND *found = (HWND *)opaque;
+    char class_name[128] = {0};
+    GetClassName(window, class_name, sizeof(class_name));
+    if (_stricmp(class_name, TOOLBARCLASSNAME) == 0) {
+        *found = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static int list_toolbar_buttons(HWND parent, DWORD process_id) {
+    HWND toolbar = NULL;
+    EnumChildWindows(parent, find_toolbar, (LPARAM)&toolbar);
+    if (toolbar == NULL) {
+        fprintf(stderr, "toolbar not found\n");
+        return 1;
+    }
+    HANDLE process = OpenProcess(
+        PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE,
+        FALSE,
+        process_id
+    );
+    if (process == NULL) {
+        fprintf(stderr, "cannot open toolbar process\n");
+        return 1;
+    }
+    void *remote = VirtualAllocEx(
+        process,
+        NULL,
+        512,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE
+    );
+    if (remote == NULL) {
+        CloseHandle(process);
+        fprintf(stderr, "cannot allocate toolbar exchange buffer\n");
+        return 1;
+    }
+    LRESULT count = SendMessage(toolbar, TB_BUTTONCOUNT, 0, 0);
+    for (LRESULT index = 0; index < count; index++) {
+        struct toolbar_button32 button = {0};
+        SIZE_T read = 0;
+        if (
+            SendMessage(toolbar, TB_GETBUTTON, index, (LPARAM)remote) &&
+            ReadProcessMemory(
+                process,
+                remote,
+                &button,
+                sizeof(button),
+                &read
+            ) &&
+            read == sizeof(button)
+        ) {
+            char text[256] = {0};
+            LRESULT text_length = SendMessage(
+                toolbar,
+                TB_GETBUTTONTEXTA,
+                (WPARAM)(uint32_t)button.command,
+                (LPARAM)remote
+            );
+            if (text_length > 0) {
+                ReadProcessMemory(
+                    process,
+                    remote,
+                    text,
+                    sizeof(text) - 1,
+                    &read
+                );
+            }
+            printf(
+                "button=%ld command=0x%04lx bitmap=%ld state=0x%02x style=0x%02x text=%s\n",
+                (long)index,
+                (unsigned long)(uint32_t)button.command,
+                (long)button.bitmap,
+                button.state,
+                button.style,
+                text
+            );
+        }
+    }
+    VirtualFreeEx(process, remote, 0, MEM_RELEASE);
+    CloseHandle(process);
+    return 0;
+}
 
 static BOOL CALLBACK list_child_window(HWND window, LPARAM opaque) {
     (void)opaque;
@@ -89,6 +287,10 @@ int main(int argc, char **argv) {
         fprintf(
             stderr,
             "usage: wine-window-command.exe EXECUTABLE COMMAND_ID [WINDOW_CLASS]\n"
+            "       wine-window-command.exe EXECUTABLE toolbar\n"
+            "       wine-window-command.exe EXECUTABLE dialog-values\n"
+            "       wine-window-command.exe EXECUTABLE click CONTROL_ID\n"
+            "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
             "       wine-window-command.exe EXECUTABLE save WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE level HEX_LEVEL\n"
         );
@@ -101,19 +303,101 @@ int main(int argc, char **argv) {
     }
     BOOL save = _stricmp(argv[2], "save") == 0;
     BOOL level = _stricmp(argv[2], "level") == 0;
+    BOOL dialog_values = _stricmp(argv[2], "dialog-values") == 0;
+    BOOL click = _stricmp(argv[2], "click") == 0;
+    BOOL read = _stricmp(argv[2], "read") == 0;
     struct search search = {
         .process_id = process_id,
         .window = NULL,
         .list = _stricmp(argv[2], "list") == 0,
-        .window_class = save || level ? "#32770" : (argc == 4 ? argv[3] : NULL)
+        .window_class = save || level || dialog_values || click
+            ? "#32770"
+            : (argc == 4 ? argv[3] : NULL)
     };
     EnumWindows(find_top_level_window, (LPARAM)&search);
+    if (read) {
+        if (argc != 4) {
+            fprintf(stderr, "read requires ADDRESS,LENGTH\n");
+            return 2;
+        }
+        char *separator = strchr(argv[3], ',');
+        if (separator == NULL) {
+            fprintf(stderr, "read requires ADDRESS,LENGTH\n");
+            return 2;
+        }
+        *separator = '\0';
+        char *address_end = NULL;
+        char *length_end = NULL;
+        unsigned long address = strtoul(argv[3], &address_end, 0);
+        unsigned long length = strtoul(separator + 1, &length_end, 0);
+        if (
+            *address_end != '\0' ||
+            *length_end != '\0' ||
+            length == 0 ||
+            length > 0x10000
+        ) {
+            fprintf(stderr, "invalid read range\n");
+            return 2;
+        }
+        HANDLE process = OpenProcess(PROCESS_VM_READ, FALSE, process_id);
+        if (process == NULL) {
+            fprintf(stderr, "cannot open target process\n");
+            return 1;
+        }
+        unsigned char *bytes = malloc(length);
+        SIZE_T bytes_read = 0;
+        BOOL ok = bytes != NULL && ReadProcessMemory(
+            process,
+            (void *)(uintptr_t)address,
+            bytes,
+            length,
+            &bytes_read
+        );
+        if (ok) {
+            for (SIZE_T index = 0; index < bytes_read; index++) {
+                printf("%02x", bytes[index]);
+            }
+            putchar('\n');
+        }
+        free(bytes);
+        CloseHandle(process);
+        if (!ok || bytes_read != length) {
+            fprintf(stderr, "cannot read requested range\n");
+            return 1;
+        }
+        return 0;
+    }
     if (search.list) {
         return 0;
     }
     if (search.window == NULL) {
         fprintf(stderr, "top-level window not found for process %lu\n", process_id);
         return 1;
+    }
+    if (_stricmp(argv[2], "toolbar") == 0) {
+        return list_toolbar_buttons(search.window, process_id);
+    }
+    if (dialog_values) {
+        return list_dialog_values(search.window, process_id);
+    }
+    if (click) {
+        if (argc != 4) {
+            fprintf(stderr, "click requires a control id\n");
+            return 2;
+        }
+        char *end = NULL;
+        unsigned long control_id = strtoul(argv[3], &end, 0);
+        if (end == argv[3] || *end != '\0' || control_id > 0xffff) {
+            fprintf(stderr, "invalid control id: %s\n", argv[3]);
+            return 2;
+        }
+        HWND control = GetDlgItem(search.window, (int)control_id);
+        if (control == NULL) {
+            fprintf(stderr, "dialog control not found: 0x%04lx\n", control_id);
+            return 1;
+        }
+        SendMessage(control, BM_CLICK, 0, 0);
+        return 0;
     }
     if (save) {
         if (argc != 4) {
