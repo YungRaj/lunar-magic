@@ -5156,8 +5156,8 @@ fn draw_layer2_tilemap(
                 continue;
             };
             let tile = word & 0x3fff;
-            let x_offset = f32::from(u8::try_from(x).unwrap_or_default()) * cell_size;
-            let y_offset = f32::from(u8::try_from(y).unwrap_or_default()) * cell_size;
+            let x_offset = native_canvas_tile_offset(x, cell_size);
+            let y_offset = native_canvas_tile_offset(y, cell_size);
             let cell = egui::Rect::from_min_size(
                 target.min + egui::vec2(x_offset, y_offset),
                 egui::vec2(cell_size, cell_size),
@@ -5184,6 +5184,10 @@ fn draw_layer2_tilemap(
             }
         }
     }
+}
+
+fn native_canvas_tile_offset(tile: usize, cell_size: f32) -> f32 {
+    f32::from(u16::try_from(tile).expect("native level canvas coordinate fits u16")) * cell_size
 }
 
 fn draw_wrapped_background_viewport(
@@ -9419,6 +9423,14 @@ mod tests {
             vanilla_shared_background_coordinates(20, 16, entrance),
             (20, 16)
         );
+    }
+
+    #[test]
+    fn background_draw_offsets_preserve_columns_beyond_u8_range() {
+        assert_eq!(native_canvas_tile_offset(0, 16.0), 0.0);
+        assert_eq!(native_canvas_tile_offset(255, 16.0), 4_080.0);
+        assert_eq!(native_canvas_tile_offset(256, 16.0), 4_096.0);
+        assert_eq!(native_canvas_tile_offset(511, 16.0), 8_176.0);
     }
 
     #[test]
