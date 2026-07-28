@@ -12,6 +12,27 @@ use std::process::Command as ProcessCommand;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+const PRISTINE_SMW_US_SHA256: &str =
+    "0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b";
+
+fn pristine_smw_us_rom_path(root: &Path) -> PathBuf {
+    for path in [
+        root.join("Super Mario World (USA).sfc"),
+        root.join("SMW-working.sfc"),
+        root.join("sysLMRestore/smwOrig.smc"),
+    ] {
+        let Ok(bytes) = fs::read(&path) else {
+            continue;
+        };
+        let Ok(image) = RomImage::from_bytes(bytes) else {
+            continue;
+        };
+        if lm_oracle::sha256_hex(image.logical_bytes()) == PRISTINE_SMW_US_SHA256 {
+            return path;
+        }
+    }
+    panic!("verified pristine SMW-US fixture not found");
+}
 
 fn wine_path(path: &Path) -> String {
     let rendered = path.display().to_string().replace('/', r"\");
@@ -24,7 +45,7 @@ fn wine_path(path: &Path) -> String {
 fn lunar_magic_imports_and_reexports_rust_packed_entrance_edits() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     let directory = std::env::temp_dir().join(format!(
         "lm-mwl-entrance-wine-oracle-{}-{}",
         std::process::id(),
@@ -89,7 +110,7 @@ fn lunar_magic_imports_and_reexports_rust_packed_entrance_edits() {
 fn rust_direct_rom_main_entrance_edit_is_exported_by_lunar_magic() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     let directory = std::env::temp_dir().join(format!(
         "lm-rom-entrance-wine-oracle-{}-{}",
         std::process::id(),
@@ -144,7 +165,7 @@ fn rust_direct_rom_main_entrance_edit_is_exported_by_lunar_magic() {
 fn rust_updates_installed_separate_midway_table_and_lunar_magic_reexports_it() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     let directory = std::env::temp_dir().join(format!(
         "lm-rom-midway-wine-oracle-{}-{}",
         std::process::id(),
@@ -249,7 +270,7 @@ fn rust_updates_installed_separate_midway_table_and_lunar_magic_reexports_it() {
 fn rust_installs_separate_midway_runtime_that_lunar_magic_reexports() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     let directory = std::env::temp_dir().join(format!(
         "lm-midway-install-wine-oracle-{}-{}",
         std::process::id(),
@@ -379,7 +400,7 @@ fn insert_and_move_first_sprite(controller: &mut LevelController, lengths: &Spri
 fn rust_sprite_growth_reopens_with_the_inserted_sprite_in_lunar_magic() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     assert!(lunar_magic.is_file(), "missing {}", lunar_magic.display());
     assert!(original_rom.is_file(), "missing {}", original_rom.display());
 
@@ -478,7 +499,7 @@ fn rust_sprite_growth_reopens_with_the_inserted_sprite_in_lunar_magic() {
 fn lunar_magic_imports_and_reexports_a_rust_mwl_sprite_edit() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     assert!(lunar_magic.is_file(), "missing {}", lunar_magic.display());
     assert!(original_rom.is_file(), "missing {}", original_rom.display());
 
@@ -576,7 +597,7 @@ fn lunar_magic_imports_and_reexports_a_rust_mwl_sprite_edit() {
 fn lunar_magic_imports_and_reexports_a_rust_mwl_object_edit() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     assert!(lunar_magic.is_file(), "missing {}", lunar_magic.display());
     assert!(original_rom.is_file(), "missing {}", original_rom.display());
 
@@ -680,7 +701,7 @@ fn lunar_magic_imports_and_reexports_a_rust_mwl_object_edit() {
 fn lunar_magic_imports_and_reexports_a_rust_screen_exit_edit() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     let rom_bytes = fs::read(&original_rom).unwrap();
     let lengths = SpriteLengthTable::standard();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
