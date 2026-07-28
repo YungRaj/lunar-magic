@@ -4761,7 +4761,7 @@ fn draw_wrapped_background_viewport(
     const VIEW_WIDTH: i32 = 256;
     const VIEW_HEIGHT: i32 = 224;
     let layer1_camera = (i32::from(camera.0) * 16, i32::from(camera.1) * 16);
-    let (source_x, source_y) = vanilla_layer2_camera_pixels(entrance, layer1_camera);
+    let (source_x, source_y) = normalized_layer2_camera_pixels(entrance, layer1_camera);
     let viewport = egui::Rect::from_min_size(
         world.min
             + egui::vec2(
@@ -4922,6 +4922,20 @@ fn vanilla_layer2_camera_pixels(
         _ => initial_layer2 - initial_layer1 / 8 + layer1_camera.1 / 32,
     };
     (layer2_x, layer2_y)
+}
+
+/// Converts the game's absolute BG2 scroll position into the coordinate space of the
+/// materialized 32×32 background plane. The native decoder normalizes the initial BG2 row to
+/// plane row zero, so sampling it with the absolute `$00/$60/$90/$C0` startup offset rotates the
+/// background vertically a second time.
+fn normalized_layer2_camera_pixels(
+    entrance: VanillaMainEntrance,
+    layer1_camera: (i32, i32),
+) -> (i32, i32) {
+    let (x, y) = vanilla_layer2_camera_pixels(entrance, layer1_camera);
+    let initial_y =
+        i32::from(VANILLA_INITIAL_LAYER2_Y[usize::from(entrance.screen_and_method & 3)]);
+    (x, y - initial_y)
 }
 
 fn screen_pixels_f32(value: i32) -> f32 {
@@ -8286,6 +8300,14 @@ mod tests {
         assert_eq!(
             vanilla_layer2_camera_pixels(entrance, (30 * 16, 12 * 16)),
             (240, 192)
+        );
+        assert_eq!(
+            normalized_layer2_camera_pixels(entrance, (15 * 16, 12 * 16)),
+            (120, 0)
+        );
+        assert_eq!(
+            normalized_layer2_camera_pixels(entrance, (30 * 16, 12 * 16)),
+            (240, 0)
         );
     }
 
