@@ -149,26 +149,28 @@ pub(crate) fn render(
     // consumes `Subtile`'s SNES layout directly. Feeding the widened-and-truncated representation
     // back into this path corrupts palette and flip attributes.
     let mut animated_foreground_graphics = Vec::with_capacity(4);
-    let mut animated_images = Vec::with_capacity(4);
-    let mut animated_layer2_images = Vec::with_capacity(4);
+    let mut animated_images = Vec::with_capacity(16);
+    let mut animated_layer2_images = Vec::with_capacity(16);
     let mut animated_background_images = Vec::with_capacity(4);
     for phase in 0..4 {
-        let phase_map16 = map16_definitions_for_phase(&map16.bytes, phase);
         let mut foreground_graphics = base_foreground_graphics.clone();
         apply_vanilla_common_animation_frame(&project, &mut foreground_graphics, phase, tileset)?;
         let mut background_graphics = base_background_graphics.clone();
         apply_vanilla_common_animation_frame(&project, &mut background_graphics, phase, tileset)?;
-        animated_images.push(render_map16_definition_atlas(
-            &phase_map16,
-            &foreground_graphics,
-            &palette,
-        ));
-        animated_layer2_images.push(render_layer2_map16_definition_atlas(
-            &phase_map16,
-            &foreground_graphics,
-            &palette,
-            tileset,
-        ));
+        for screen_variant in 0..4 {
+            let screen_map16 = map16_definitions_for_phase(&map16.bytes, screen_variant);
+            animated_images.push(render_map16_definition_atlas(
+                &screen_map16,
+                &foreground_graphics,
+                &palette,
+            ));
+            animated_layer2_images.push(render_layer2_map16_definition_atlas(
+                &screen_map16,
+                &foreground_graphics,
+                &palette,
+                tileset,
+            ));
+        }
         let mut background_image =
             render_map16_definition_atlas(&background_map16, &background_graphics, &palette);
         if lm_profile::smw_us_v1_level_mode(header.level_mode()).background_half_color {
@@ -540,8 +542,8 @@ fn map16_definitions_for_phase(base: &[u8], phase: usize) -> Vec<u8> {
     let palette = PALETTE_ROWS[phase & 3] << 10;
     for definition in 0x133..=0x13a {
         let start = definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES;
-        for word in definitions[start..start + lm_profile::SMW_US_V1_MAP16_TILE_BYTES]
-            .chunks_exact_mut(2)
+        for word in
+            definitions[start..start + lm_profile::SMW_US_V1_MAP16_TILE_BYTES].chunks_exact_mut(2)
         {
             let value = u16::from_le_bytes([word[0], word[1]]);
             word.copy_from_slice(&((value & !0x1c00) | palette).to_le_bytes());
@@ -890,10 +892,7 @@ mod tests {
             let definitions = map16_definitions_for_phase(&base, phase);
             for definition in 0x133..=0x13a {
                 let start = definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES;
-                for (quadrant, word) in definitions[start..start + 8]
-                    .chunks_exact(2)
-                    .enumerate()
-                {
+                for (quadrant, word) in definitions[start..start + 8].chunks_exact(2).enumerate() {
                     assert_eq!(
                         u16::from_le_bytes([word[0], word[1]]),
                         0xc000 | (palette << 10) | quadrant as u16
@@ -1113,7 +1112,7 @@ mod tests {
         assert_eq!(last_phase[0x68], animated[200]);
         assert_eq!(last_phase[0x6c], animated[252]);
         assert_eq!(last_phase[0x6f], animated[255]);
-        assert_eq!(preview.animated_images.len(), 4);
+        assert_eq!(preview.animated_images.len(), 16);
         assert_eq!(preview.animated_background_images.len(), 4);
         assert_ne!(preview.animated_images[0], preview.animated_images[3]);
         assert_eq!(preview.sprite_tiles.len(), LAYER1_SPRITE_GLOBAL_TILES);

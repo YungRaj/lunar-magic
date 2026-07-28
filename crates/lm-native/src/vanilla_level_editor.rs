@@ -1805,13 +1805,18 @@ impl VanillaLevelEditor {
     ) {
         painter.rect_filled(rect, 0.0, canvas_background_color(self.canvas_backdrop));
         let animation_phase_index = usize::from(animation_phase);
-        let map16_texture = self
+        let map16_variant_start = animation_phase_index * 4;
+        let map16_texture_variants = self
             .animated_map16_textures
-            .get(animation_phase_index)
+            .get(map16_variant_start..map16_variant_start + 4);
+        let map16_texture = map16_texture_variants
+            .and_then(|textures| textures.first())
             .or(self.map16_texture.as_ref());
-        let layer2_map16_texture = self
+        let layer2_map16_texture_variants = self
             .animated_layer2_map16_textures
-            .get(animation_phase_index)
+            .get(map16_variant_start..map16_variant_start + 4);
+        let layer2_map16_texture = layer2_map16_texture_variants
+            .and_then(|textures| textures.first())
             .or(self.layer2_map16_texture.as_ref())
             .or(map16_texture);
         let background_map16_texture = self
@@ -1862,6 +1867,7 @@ impl VanillaLevelEditor {
                 cell,
                 layer2_tilemap,
                 map16_texture,
+                map16_texture_variants,
                 background_map16_texture,
                 self.shared_vanilla_background
                     .then_some(())
@@ -1890,6 +1896,7 @@ impl VanillaLevelEditor {
             custom_objects,
             custom_map16,
             layer2_map16_texture,
+            layer2_map16_texture_variants,
         );
         let game_preview = self.game_preview();
         let editor_overlays = !game_preview && visual_smoke_editor_overlays();
@@ -1923,6 +1930,7 @@ impl VanillaLevelEditor {
             custom_objects,
             custom_map16,
             map16_texture,
+            map16_texture_variants,
         );
         let (hit_layer2, hit) = if !editor_overlays {
             (
@@ -2765,6 +2773,7 @@ impl VanillaLevelEditor {
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         texture: Option<&egui::TextureHandle>,
+        texture_variants: Option<&[egui::TextureHandle]>,
     ) -> HashMap<usize, egui::Rect> {
         let Some(texture) = texture else {
             return HashMap::new();
@@ -2788,6 +2797,7 @@ impl VanillaLevelEditor {
                 }),
                 custom_map16,
                 foreground_texture: self.foreground_texture.as_ref(),
+                texture_variants,
             },
         )
     }
@@ -5097,6 +5107,7 @@ fn draw_layer2_tilemap(
     cell_size: f32,
     tilemap: &[u16],
     map16_texture: Option<&egui::TextureHandle>,
+    map16_texture_variants: Option<&[egui::TextureHandle]>,
     background_map16_texture: Option<&egui::TextureHandle>,
     background_plane_texture: Option<&egui::TextureHandle>,
     foreground_texture: Option<&egui::TextureHandle>,
@@ -5154,7 +5165,9 @@ fn draw_layer2_tilemap(
             {
                 draw_map16_atlas_tile(painter, texture, cell, tile);
             } else if tile < 0x200
-                && let Some(texture) = map16_texture
+                && let Some(texture) = map16_texture_variants
+                    .and_then(|textures| textures.get(map16_screen_variant(x, y, vertical)))
+                    .or(map16_texture)
             {
                 draw_map16_atlas_tile(painter, texture, cell, tile);
             }
@@ -5447,6 +5460,7 @@ const fn level_minor_tile_limit(vertical: bool) -> u16 {
 #[derive(Clone, Copy)]
 struct OrderedObjectDraw<'a> {
     texture: &'a egui::TextureHandle,
+    texture_variants: Option<&'a [egui::TextureHandle]>,
     target: egui::Rect,
     cell_size: f32,
     major_tiles: u16,
@@ -5622,9 +5636,30 @@ fn draw_standard_object_cache(
                     ),
                 egui::vec2(request.cell_size, request.cell_size),
             );
-            draw_map16_atlas_tile(painter, request.texture, tile_rect, tile);
+            draw_map16_atlas_tile(
+                painter,
+                map16_texture_for_cell(request, x, y),
+                tile_rect,
+                tile,
+            );
         }
     }
+}
+
+fn map16_texture_for_cell<'a>(
+    request: OrderedObjectDraw<'a>,
+    x: usize,
+    y: usize,
+) -> &'a egui::TextureHandle {
+    request
+        .texture_variants
+        .and_then(|textures| textures.get(map16_screen_variant(x, y, request.vertical)))
+        .unwrap_or(request.texture)
+}
+
+const fn map16_screen_variant(x: usize, y: usize, vertical: bool) -> usize {
+    let major = if vertical { y } else { x };
+    (major >> 4) & 3
 }
 
 fn resolved_custom_object_parts(
@@ -5659,7 +5694,19 @@ fn draw_custom_object_parts(
         );
         match custom_object_part_source(part.tile, request.custom_map16) {
             CustomObjectPartSource::Base(tile) => {
-                draw_map16_atlas_tile(painter, request.texture, target, tile);
+                let x = usize::try_from(
+                    i32::from(tile_x)
+                        .saturating_add(i32::from(part.x) / 16)
+                        .max(0),
+                )
+                .unwrap_or_default();
+                let y = usize::try_from(
+                    i32::from(tile_y)
+                        .saturating_add(i32::from(part.y) / 16)
+                        .max(0),
+                )
+                .unwrap_or_default();
+                draw_map16_atlas_tile(painter, map16_texture_for_cell(request, x, y), target, tile);
             }
             CustomObjectPartSource::Custom(definition) => {
                 if let Some(texture) = request.foreground_texture {
@@ -7214,6 +7261,21 @@ mod tests {
             major_span: 2,
             minor_span: 2,
         }
+    }
+
+    #[test]
+    fn map16_screen_variants_follow_the_level_major_axis() {
+        assert_eq!(map16_screen_variant(0, 63, false), 0);
+        assert_eq!(map16_screen_variant(15, 63, false), 0);
+        assert_eq!(map16_screen_variant(16, 63, false), 1);
+        assert_eq!(map16_screen_variant(63, 0, false), 3);
+        assert_eq!(map16_screen_variant(64, 0, false), 0);
+
+        assert_eq!(map16_screen_variant(63, 0, true), 0);
+        assert_eq!(map16_screen_variant(63, 15, true), 0);
+        assert_eq!(map16_screen_variant(63, 16, true), 1);
+        assert_eq!(map16_screen_variant(0, 63, true), 3);
+        assert_eq!(map16_screen_variant(0, 64, true), 0);
     }
 
     #[test]
