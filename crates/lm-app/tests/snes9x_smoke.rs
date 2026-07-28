@@ -42,7 +42,24 @@ fn snes9x_binary() -> PathBuf {
 }
 
 fn source_rom(root: &Path) -> PathBuf {
-    root.join("Super Mario World (USA).sfc")
+    const PRISTINE_SMW_US_SHA256: &str =
+        "0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b";
+    for path in [
+        root.join("Super Mario World (USA).sfc"),
+        root.join("SMW-working.sfc"),
+        root.join("sysLMRestore/smwOrig.smc"),
+    ] {
+        let Ok(bytes) = fs::read(&path) else {
+            continue;
+        };
+        let Ok(image) = RomImage::from_bytes(bytes) else {
+            continue;
+        };
+        if lm_oracle::sha256_hex(image.logical_bytes()) == PRISTINE_SMW_US_SHA256 {
+            return path;
+        }
+    }
+    panic!("verified pristine SMW-US fixture not found");
 }
 
 fn smoke_directory() -> PathBuf {
