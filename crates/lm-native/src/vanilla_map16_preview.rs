@@ -75,6 +75,21 @@ const LAYER1_SPRITE_SLOT_TILES: usize = 0x80;
 const LAYER1_SPRITE_SLOT_STRIDE: usize = LAYER1_SPRITE_SLOT_TILES;
 const LAYER1_SPRITE_GLOBAL_TILES: usize = 4 * LAYER1_SPRITE_SLOT_STRIDE;
 
+fn game_palette_header(level: u16, mut header: LegacyLevelHeader) -> LegacyLevelHeader {
+    // Pristine level $001 (Cookie Mountain) stores selectors 6/6, although the stage's runtime
+    // presentation uses the brown foreground and dark-blue backdrop at selectors 0/2. Keep the
+    // exception exact so an edited level $001 retains its authored palette choices.
+    if level == 1 && header.encoded() == [0x13, 0xc0, 0x00, 0x86, 0x20] {
+        header
+            .set_background_color(2)
+            .expect("selector 2 is representable");
+        header
+            .set_foreground_palette(0)
+            .expect("selector 0 is representable");
+    }
+    header
+}
+
 pub(crate) fn render(
     rom_bytes: Vec<u8>,
     level: u16,
@@ -92,8 +107,13 @@ pub(crate) fn render(
         .map_err(|error| error.to_string())?;
     let background_map16 = lm_profile::load_smw_us_v1_background_map16(&project.rom)
         .map_err(|error| error.to_string())?;
-    let composed_palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
-        .map_err(|error| error.to_string())?;
+    let composed_palette = lm_profile::compose_smw_us_v1_level_palette(
+        &project,
+        level,
+        game_palette_header(level, header),
+        0,
+    )
+    .map_err(|error| error.to_string())?;
     let backdrop = composed_palette.backdrop;
     let palette = composed_palette.palette;
     let sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
@@ -358,9 +378,14 @@ pub(crate) fn render_rom_map16_page(
     .map_err(|error| error.to_string())?;
     let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
     let graphics = materialize_layer1_sprite_vram(&graphics_slots);
-    let palette = lm_profile::compose_smw_us_v1_level_palette(&project, level, header, 0)
-        .map_err(|error| error.to_string())?
-        .palette;
+    let palette = lm_profile::compose_smw_us_v1_level_palette(
+        &project,
+        level,
+        game_palette_header(level, header),
+        0,
+    )
+    .map_err(|error| error.to_string())?
+    .palette;
     let mut rgba = vec![0; WIDTH * HEIGHT * 4];
     for (definition, tile) in page.tiles.iter().enumerate() {
         let definition_x = definition % 16 * 16;
@@ -754,6 +779,26 @@ mod tests {
             .unwrap()
         );
         assert_eq!(preview.common_tiles + preview.tileset_tiles, 512);
+    }
+
+    #[test]
+    fn pristine_cookie_mountain_uses_its_runtime_game_palette() {
+        let raw = LegacyLevelHeader::decode(&[0x13, 0xc0, 0x00, 0x86, 0x20]).unwrap();
+        let game = game_palette_header(1, raw);
+        assert_eq!(game.background_color(), 2);
+        assert_eq!(game.foreground_palette(), 0);
+        assert_eq!(
+            game_palette_header(2, raw),
+            raw,
+            "the compatibility rule is level-specific"
+        );
+        let mut edited = raw;
+        edited.set_foreground_palette(5).unwrap();
+        assert_eq!(
+            game_palette_header(1, edited),
+            edited,
+            "authored palette changes must not be replaced"
+        );
     }
 
     #[test]
