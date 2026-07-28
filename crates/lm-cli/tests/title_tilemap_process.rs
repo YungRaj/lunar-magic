@@ -1,3 +1,5 @@
+mod common;
+
 use lm_oracle::observe_expanded_layer_tilemap;
 use lm_overworld::ExpandedLayerTilemap;
 use lm_profile::smw_us_v1_title_tilemap_locator;
@@ -5,7 +7,6 @@ use lm_project::{Project, TitleTilemapStorage};
 use lm_rom::{RomImage, compute_snes_checksum};
 use std::{
     fs,
-    path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -32,14 +33,13 @@ fn tilemap(value: u8, secondary: bool) -> ExpandedLayerTilemap {
 
 #[test]
 fn built_cli_installs_updates_exports_and_reopens_title_tilemap() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let directory = std::env::temp_dir().join(format!("lm-title-process-{nonce}"));
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let original = fs::read(&input).unwrap();
     let first_file = directory.join("title first.lmowlyr");
     let second_file = directory.join("title second.lmowlyr");

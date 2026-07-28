@@ -1,3 +1,5 @@
+mod common;
+
 use lm_overworld::{NativeOverworldLevelNameTable, OverworldLevelName, OverworldMetadata};
 use lm_profile::{smw_us_v1_overworld_level_name_locator, smw_us_v1_overworld_level_name_runtime};
 use lm_project::{OverworldLevelNameStorage, Project};
@@ -26,11 +28,10 @@ fn run(operation: &str, arguments: &[&std::path::Path]) -> std::process::Output 
 
 #[test]
 fn built_cli_exports_installs_and_grows_native_level_name_table() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!("lm names process {}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let vanilla_file = directory.join("vanilla.lmowmeta");
     let names100 = directory.join("names100.lmowmeta");
     let expanded100 = directory.join("expanded100.sfc");

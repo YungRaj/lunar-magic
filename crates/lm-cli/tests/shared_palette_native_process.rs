@@ -1,3 +1,5 @@
+mod common;
+
 use lm_graphics::SmwPaletteFile;
 use lm_profile::{SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET, smw_us_v1_shared_palette_layout};
 use lm_project::Project;
@@ -18,7 +20,7 @@ fn built_cli_exports_edits_reopens_and_checksums_shared_palette() {
     let directory = std::env::temp_dir().join(format!("lm-shared-palette-{}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let exported = directory.join("exported.smwpal");
     let changed = directory.join("changed.smwpal");
     let output = directory.join("output.sfc");
@@ -66,7 +68,7 @@ fn built_cli_installs_expanded_backend_into_pristine_rom() {
         std::env::temp_dir().join(format!("lm-expanded-shared-palette-{}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let oracle_rom = root.join("oracle-work/lm363/pristine-us/palette-install-positive/after.smc");
     let oracle_project =
         Project::new(RomImage::from_bytes(fs::read(&oracle_rom).unwrap()).unwrap());

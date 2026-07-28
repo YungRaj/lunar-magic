@@ -1,10 +1,11 @@
+mod common;
+
 use lm_overworld::{EventReveal, EventRevealTable};
 use lm_profile::smw_us_v1_overworld_event_reveal_locator;
 use lm_project::Project;
 use lm_rom::{RomImage, compute_snes_checksum};
 use std::{
     fs,
-    path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -32,14 +33,13 @@ fn run(arguments: &[&str]) {
 
 #[test]
 fn built_cli_exports_pristine_and_imports_then_grows_native_events() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let directory = std::env::temp_dir().join(format!("lm-event-process-{nonce}"));
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let original = fs::read(&input).unwrap();
     let first_file = directory.join("events 200.lmowevt");
     let first_rom = directory.join("events 200.sfc");

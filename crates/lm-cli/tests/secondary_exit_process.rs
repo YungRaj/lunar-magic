@@ -1,3 +1,5 @@
+mod common;
+
 use lm_level::SecondaryExitTable;
 use lm_oracle::observe_secondary_exit_table;
 use lm_profile::smw_us_v1_secondary_exit_locator;
@@ -87,8 +89,7 @@ fn built_cli_exports_updates_and_reopens_real_lm363_secondary_exits() {
 
 #[test]
 fn built_cli_installs_expanded_secondary_exits_into_pristine_smw() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let original = fs::read(&input).unwrap();
     let source = Project::open_supported(RomImage::from_bytes(original.clone()).unwrap()).unwrap();
     let mut table = source

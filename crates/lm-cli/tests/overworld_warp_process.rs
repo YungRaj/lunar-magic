@@ -1,3 +1,5 @@
+mod common;
+
 use lm_overworld::{OverworldWarpEndpoint, OverworldWarpLink, OverworldWarpLinkTable};
 use lm_profile::{
     SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_OVERWORLD_WARP_ENTRY_HOOK_OFFSET,
@@ -86,14 +88,13 @@ fn legacy_rom(original: Vec<u8>, links: &OverworldWarpLinkTable) -> Vec<u8> {
 
 #[test]
 fn built_cli_installs_exports_grows_and_reopens_lunar_magic_warp_patch() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!(
         "lm overworld warps 日本語 {} {}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let links30 = directory.join("thirty.lmow");
     let expanded30 = directory.join("expanded thirty.sfc");
     let exported = directory.join("exported.lmow");
@@ -160,14 +161,13 @@ fn built_cli_installs_exports_grows_and_reopens_lunar_magic_warp_patch() {
 
 #[test]
 fn built_cli_migrates_legacy_lunar_magic_warp_patch_to_current() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!(
         "lm legacy warps {} {}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir(&directory).unwrap();
-    let original_path = root.join("Super Mario World (USA).sfc");
+    let original_path = common::pristine_smw_us_rom_path();
     let legacy_path = directory.join("legacy.sfc");
     let links_path = directory.join("thirty five.lmow");
     let migrated_path = directory.join("migrated.sfc");

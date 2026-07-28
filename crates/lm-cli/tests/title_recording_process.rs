@@ -1,3 +1,5 @@
+mod common;
+
 use lm_oracle::observe_title_recording;
 use lm_profile::smw_us_v1_title_recording_locator;
 use lm_project::{Project, TitleRecordingStorage};
@@ -5,7 +7,6 @@ use lm_rom::{RomImage, compute_snes_checksum};
 use lm_title::{TitleScreenRecording, decode_zsnes_title_recording, encode_zsnes_title_recording};
 use std::{
     fs,
-    path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -28,14 +29,13 @@ fn recording(value: u8, length: usize) -> TitleScreenRecording {
 
 #[test]
 fn built_cli_imports_zst_updates_exports_and_reopens_recording() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let directory = std::env::temp_dir().join(format!("lm-title-recording-{nonce}"));
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let original = fs::read(&input).unwrap();
     let first = recording(0x12, 7);
     let second = recording(0x56, 0x101);

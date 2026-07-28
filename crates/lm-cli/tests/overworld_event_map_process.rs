@@ -1,10 +1,11 @@
+mod common;
+
 use lm_overworld::EventNumberMap;
 use lm_profile::smw_us_v1_overworld_event_number_map_locator;
 use lm_project::{OverworldEventNumberMapStorage, Project};
 use lm_rom::{RomImage, compute_snes_checksum};
 use std::{
     fs,
-    path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -21,14 +22,13 @@ fn run(arguments: &[&str]) {
 
 #[test]
 fn built_cli_exports_legacy_map_installs_extended_and_reopens() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let directory = std::env::temp_dir().join(format!("lm-event-map-process-{nonce}"));
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let original = fs::read(&input).unwrap();
     let pristine_file = directory.join("pristine map.lmowmap");
     let changed_file = directory.join("changed map.lmowmap");

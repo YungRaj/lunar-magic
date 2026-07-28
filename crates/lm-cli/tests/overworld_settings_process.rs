@@ -1,3 +1,5 @@
+mod common;
+
 use lm_level::ExpandedOverworldSettings;
 use lm_oracle::Observation;
 use lm_profile::{SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT, smw_us_v1_expanded_settings_layout};
@@ -15,12 +17,11 @@ fn run(operation: &str, arguments: &[&std::path::Path]) -> std::process::Output 
 
 #[test]
 fn built_cli_exports_installs_and_reopens_native_overworld_settings() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory =
         std::env::temp_dir().join(format!("lm settings process {}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let defaults_file = directory.join("defaults.lmowset");
     let changed_file = directory.join("changed.lmowset");
     let expanded_rom = directory.join("expanded.sfc");

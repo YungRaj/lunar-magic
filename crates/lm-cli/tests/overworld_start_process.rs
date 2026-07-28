@@ -1,3 +1,5 @@
+mod common;
+
 use lm_overworld::{NativeOverworldPlayerStarts, Submap};
 use lm_profile::{
     SMW_US_V1_OVERWORLD_CUSTOM_START_ENABLED, SMW_US_V1_OVERWORLD_CUSTOM_START_PATCH_OFFSET,
@@ -17,11 +19,10 @@ fn run(operation: &str, arguments: &[&std::path::Path]) -> std::process::Output 
 
 #[test]
 fn built_cli_exports_changes_and_reopens_native_player_starts() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let directory = std::env::temp_dir().join(format!("lm starts process {}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let vanilla_file = directory.join("vanilla.lmowst");
     let changed_file = directory.join("changed.lmowst");
     let changed_rom = directory.join("changed.sfc");

@@ -1,3 +1,5 @@
+mod common;
+
 use lm_overworld::{
     OverworldMessage, decode_native_overworld_message_file, encode_native_overworld_message_file,
 };
@@ -6,7 +8,6 @@ use lm_project::Project;
 use lm_rom::{RomImage, compute_snes_checksum};
 use std::{
     fs,
-    path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -34,14 +35,13 @@ fn make_messages(count: usize, second: u8) -> Vec<OverworldMessage> {
 
 #[test]
 fn built_cli_installs_reopens_and_exports_expanded_messages() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let nonce = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let directory = std::env::temp_dir().join(format!("lm-message-process-{nonce}"));
     fs::create_dir(&directory).unwrap();
-    let input = root.join("Super Mario World (USA).sfc");
+    let input = common::pristine_smw_us_rom_path();
     let original = fs::read(&input).unwrap();
     let artifact = directory.join("messages.lmowmsg");
     let output = directory.join("installed.sfc");
