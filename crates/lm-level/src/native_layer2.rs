@@ -6,6 +6,9 @@ pub const NATIVE_LAYER2_TILEMAP_LEN: usize = 0x800;
 pub const LEGACY_LAYER2_TILEMAP_LEN: usize = 0x360;
 pub const NATIVE_LAYER2_TILEMAP_WIDTH: usize = 32;
 pub const NATIVE_LAYER2_TILEMAP_HEIGHT: usize = 32;
+const NATIVE_LAYER2_TILEMAP_WORDS: usize =
+    NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT;
+const LEGACY_LAYER2_SECOND_PAGE_GAP: usize = 0x50;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeLayer2Rectangle {
@@ -348,7 +351,11 @@ pub enum NativeLayer2Data {
     Tilemap(Vec<u8>),
 }
 
-/// Expands the normalized vanilla SMW 32×27 background plane into the native 32×32 canvas.
+/// Expands vanilla SMW's 864-byte background stream into the native 32×32 canvas.
+///
+/// The first 0x200 bytes cover the upper 32×16 page. Lunar Magic places the remaining bytes
+/// after an 0x50-cell gap in the lower page; this is observable in its MWL exports and is not a
+/// contiguous 32×27 row-major image.
 ///
 /// # Errors
 ///
@@ -362,16 +369,19 @@ pub fn expand_legacy_layer2_tilemap(
     }
     let mut output = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
     for (source, value) in bytes.iter().copied().enumerate() {
-        let x = source % 32;
-        let y = source / 32;
-        let tile = ((y >> 4) * 31 + x) * 16 + y;
+        let visual = if source < 0x200 {
+            source
+        } else {
+            source + LEGACY_LAYER2_SECOND_PAGE_GAP
+        };
+        let tile = native_layer2_storage_index_from_visual(visual);
         output[tile * 2] = value;
         output[tile * 2 + 1] = high_byte;
     }
     Ok(output)
 }
 
-/// Compacts the native canvas into the normalized vanilla SMW 32×27 background plane.
+/// Compacts the native canvas into vanilla SMW's gapped 864-byte background stream.
 ///
 /// # Errors
 ///
@@ -385,20 +395,23 @@ pub fn compact_legacy_layer2_tilemap(
     }
     let mut output = Vec::with_capacity(LEGACY_LAYER2_TILEMAP_LEN);
     let mut represented = [false; 1024];
-    for y in 0..27 {
-        for x in 0..32 {
-            let tile = ((y >> 4) * 31 + x) * 16 + y;
-            represented[tile] = true;
-            let word = &bytes[tile * 2..tile * 2 + 2];
-            if word[1] != high_byte {
-                return Err(NativeLayer2Error::LegacyHighByte {
-                    tile,
-                    actual: word[1],
-                    expected: high_byte,
-                });
-            }
-            output.push(word[0]);
+    for source in 0..LEGACY_LAYER2_TILEMAP_LEN {
+        let visual = if source < 0x200 {
+            source
+        } else {
+            source + LEGACY_LAYER2_SECOND_PAGE_GAP
+        };
+        let tile = native_layer2_storage_index_from_visual(visual);
+        represented[tile] = true;
+        let word = &bytes[tile * 2..tile * 2 + 2];
+        if word[1] != high_byte {
+            return Err(NativeLayer2Error::LegacyHighByte {
+                tile,
+                actual: word[1],
+                expected: high_byte,
+            });
         }
+        output.push(word[0]);
     }
     for (tile, represented) in represented.into_iter().enumerate() {
         if !represented {
@@ -455,7 +468,13 @@ impl NativeLayer2Data {
         if level_mode_layer2_storage(level_mode) == Layer2Storage::Objects {
             Ok(Self::Objects(LevelObjectData::parse(bytes)?))
         } else if bytes.len() == NATIVE_LAYER2_TILEMAP_LEN {
-            Ok(Self::Tilemap(bytes.to_vec()))
+            let mut tilemap = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
+            for visual in 0..NATIVE_LAYER2_TILEMAP_WORDS {
+                let storage = native_layer2_storage_index_from_visual(visual);
+                tilemap[storage * 2..storage * 2 + 2]
+                    .copy_from_slice(&bytes[visual * 2..visual * 2 + 2]);
+            }
+            Ok(Self::Tilemap(tilemap))
         } else {
             Err(NativeLayer2Error::TilemapLength(bytes.len()))
         }
@@ -469,7 +488,15 @@ impl NativeLayer2Data {
     pub fn encode_mwl(&self) -> Result<Vec<u8>, NativeLayer2Error> {
         match self {
             Self::Objects(objects) => Ok(objects.encode_banked()?),
-            Self::Tilemap(bytes) if bytes.len() == NATIVE_LAYER2_TILEMAP_LEN => Ok(bytes.clone()),
+            Self::Tilemap(bytes) if bytes.len() == NATIVE_LAYER2_TILEMAP_LEN => {
+                let mut encoded = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
+                for visual in 0..NATIVE_LAYER2_TILEMAP_WORDS {
+                    let storage = native_layer2_storage_index_from_visual(visual);
+                    encoded[visual * 2..visual * 2 + 2]
+                        .copy_from_slice(&bytes[storage * 2..storage * 2 + 2]);
+                }
+                Ok(encoded)
+            }
             Self::Tilemap(bytes) => Err(NativeLayer2Error::TilemapLength(bytes.len())),
         }
     }
@@ -868,6 +895,18 @@ mod tests {
                 .unwrap(),
             tilemap
         );
+        let mut visual = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
+        visual[2..4].copy_from_slice(&0x1234_u16.to_le_bytes());
+        let decoded = NativeLayer2Data::decode_mwl(0, &visual).unwrap();
+        let NativeLayer2Data::Tilemap(storage) = decoded else {
+            unreachable!();
+        };
+        let native = native_layer2_tilemap_index(1, 0).unwrap() * 2;
+        assert_eq!(&storage[native..native + 2], &0x1234_u16.to_le_bytes());
+        assert_eq!(
+            NativeLayer2Data::Tilemap(storage).encode_mwl().unwrap(),
+            visual
+        );
     }
 
     #[test]
@@ -881,12 +920,12 @@ mod tests {
 
         let legacy = vec![0xf1; LEGACY_LAYER2_TILEMAP_LEN];
         let expanded = expand_legacy_layer2_tilemap(&legacy, 0).unwrap();
-        for (x, y) in [(0, 0), (15, 26), (16, 0), (31, 26)] {
+        for (x, y) in [(0, 0), (31, 15), (16, 18), (15, 29)] {
             let tile = native_layer2_tilemap_index(x, y).unwrap();
             assert_eq!(&expanded[tile * 2..tile * 2 + 2], &[0xf1, 0]);
         }
-        for x in 0..32 {
-            let tile = native_layer2_tilemap_index(x, 27).unwrap();
+        for (x, y) in [(0, 16), (31, 17), (16, 29), (31, 31)] {
+            let tile = native_layer2_tilemap_index(x, y).unwrap();
             assert_eq!(&expanded[tile * 2..tile * 2 + 2], &[0, 0]);
         }
         assert_eq!(compact_legacy_layer2_tilemap(&expanded, 0).unwrap(), legacy);
@@ -895,11 +934,17 @@ mod tests {
             .map(|index| index.to_le_bytes()[0])
             .collect::<Vec<_>>();
         let expanded = expand_legacy_layer2_tilemap(&legacy, 1).unwrap();
-        for (x, y) in [(0, 0), (0, 1), (1, 0), (15, 26), (16, 0), (31, 26)] {
+        for (x, y) in [(0, 0), (0, 1), (1, 0), (31, 15), (16, 18), (15, 29)] {
             let tile = native_layer2_tilemap_index(x, y).unwrap();
+            let visual = y * 32 + x;
+            let source = if visual < 0x200 {
+                visual
+            } else {
+                visual - LEGACY_LAYER2_SECOND_PAGE_GAP
+            };
             assert_eq!(
                 &expanded[tile * 2..tile * 2 + 2],
-                &[(y * 32 + x).to_le_bytes()[0], 1]
+                &[source.to_le_bytes()[0], 1]
             );
         }
         assert_eq!(compact_legacy_layer2_tilemap(&expanded, 1).unwrap(), legacy);

@@ -436,13 +436,18 @@ mod tests {
     }
 
     #[test]
-    fn legacy_background_expansion_leaves_unused_rows_zeroed() {
+    fn legacy_background_expansion_leaves_native_page_gap_zeroed() {
         let tilemap =
             expand_legacy_layer2_tilemap(&vec![0x25; LEGACY_LAYER2_TILEMAP_LEN], 1).unwrap();
         for y in 0..32 {
             for x in 0..32 {
                 let tile = lm_level::native_layer2_tilemap_index(x, y).unwrap();
-                let expected = if y < 27 { [0x25, 1] } else { [0, 0] };
+                let visual = y * 32 + x;
+                let expected = if visual < 0x200 || (0x250..0x3b0).contains(&visual) {
+                    [0x25, 1]
+                } else {
+                    [0, 0]
+                };
                 assert_eq!(&tilemap[tile * 2..tile * 2 + 2], &expected);
             }
         }

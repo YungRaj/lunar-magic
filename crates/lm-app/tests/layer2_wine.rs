@@ -106,12 +106,10 @@ fn lunar_magic_reexports_rust_checksum_atomic_layer2_tilemap_edit() {
         String::from_utf8_lossy(&output.stderr)
     );
     let exported = MwlFile::decode(&fs::read(&exported_mwl).unwrap()).unwrap();
-    assert_eq!(
-        exported
-            .payload_section(MwlSectionKind::Layer2)
-            .unwrap()
-            .payload,
-        expected.encode_mwl().unwrap()
-    );
+    let exported_payload = exported
+        .payload_section(MwlSectionKind::Layer2)
+        .unwrap()
+        .payload;
+    assert_eq!(exported_payload, expected.encode_mwl().unwrap());
     fs::remove_dir_all(directory).unwrap();
 }
