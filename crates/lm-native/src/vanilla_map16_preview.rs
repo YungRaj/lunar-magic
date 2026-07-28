@@ -10,6 +10,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) animated_images: Vec<egui::ColorImage>,
     pub(crate) animated_background_images: Vec<egui::ColorImage>,
     pub(crate) graphics_files: [usize; 4],
+    pub(crate) background_graphics_files: [usize; 4],
     pub(crate) sprite_image: egui::ColorImage,
     pub(crate) sprite_tiles: Vec<IndexedTile>,
     pub(crate) palette: Palette,
@@ -112,9 +113,12 @@ pub(crate) fn render(
     let graphics_files =
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
-    let graphics_files = game_graphics_files(level, header, graphics_files);
     let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
-    let base_graphics = materialize_layer1_sprite_vram(&graphics_slots);
+    let base_foreground_graphics = materialize_layer1_sprite_vram(&graphics_slots);
+    let background_graphics_files = game_graphics_files(level, header, graphics_files);
+    let background_graphics_slots =
+        load_layer1_sprite_graphics_slots(&project, background_graphics_files)?;
+    let base_background_graphics = materialize_layer1_sprite_vram(&background_graphics_slots);
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
         .map_err(|error| error.to_string())?;
     let background_map16 = lm_profile::load_smw_us_v1_background_map16(&project.rom)
@@ -138,29 +142,31 @@ pub(crate) fn render(
     // those words into a wider internal descriptor while loading them, but the native renderer
     // consumes `Subtile`'s SNES layout directly. Feeding the widened-and-truncated representation
     // back into this path corrupts palette and flip attributes.
-    let mut animated_graphics = Vec::with_capacity(4);
+    let mut animated_foreground_graphics = Vec::with_capacity(4);
     let mut animated_images = Vec::with_capacity(4);
     let mut animated_background_images = Vec::with_capacity(4);
     for phase in 0..4 {
-        let mut graphics = base_graphics.clone();
-        apply_vanilla_common_animation_frame(&project, &mut graphics, phase, tileset)?;
+        let mut foreground_graphics = base_foreground_graphics.clone();
+        apply_vanilla_common_animation_frame(&project, &mut foreground_graphics, phase, tileset)?;
+        let mut background_graphics = base_background_graphics.clone();
+        apply_vanilla_common_animation_frame(&project, &mut background_graphics, phase, tileset)?;
         animated_images.push(render_map16_definition_atlas(
             &map16.bytes,
-            &graphics,
+            &foreground_graphics,
             &palette,
         ));
         animated_background_images.push(render_map16_definition_atlas(
             &background_map16,
-            &graphics,
+            &background_graphics,
             &palette,
         ));
-        animated_graphics.push(graphics);
+        animated_foreground_graphics.push(foreground_graphics);
     }
-    let graphics = animated_graphics.remove(0);
+    let foreground_graphics = animated_foreground_graphics.remove(0);
     let image = animated_images[0].clone();
     let background_image = animated_background_images[0].clone();
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
-    let foreground_image = render_foreground_graphics_atlas(&graphics, &palette);
+    let foreground_image = render_foreground_graphics_atlas(&foreground_graphics, &palette);
     let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
     let entrance = project
         .load_vanilla_main_entrance(
@@ -184,12 +190,13 @@ pub(crate) fn render(
         animated_images,
         animated_background_images,
         foreground_image,
-        foreground_tiles: graphics,
+        foreground_tiles: foreground_graphics,
         layer3_tiles,
         layer3_low_image,
         layer3_high_image,
         layer3_position,
         graphics_files,
+        background_graphics_files,
         sprite_image,
         sprite_tiles: materialize_layer1_sprite_vram(&sprite_graphics),
         palette,
@@ -388,7 +395,6 @@ pub(crate) fn render_rom_map16_page(
         usize::from(header.object_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    let graphics_files = game_graphics_files(level, header, graphics_files);
     let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
     let graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let palette = lm_profile::compose_smw_us_v1_level_palette(
@@ -848,6 +854,15 @@ mod tests {
             edited,
             "authored palette changes must not be replaced"
         );
+    }
+
+    #[test]
+    fn cookie_mountain_keeps_foreground_and_background_graphics_slots_distinct() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let header = LegacyLevelHeader::decode(&[0x13, 0xc0, 0x00, 0x86, 0x20]).unwrap();
+        let preview = render(bytes, 1, header).unwrap();
+        assert_eq!(preview.graphics_files, [0x14, 0x17, 0x19, 0x15]);
+        assert_eq!(preview.background_graphics_files, [0x14, 0x17, 0x19, 0x16]);
     }
 
     #[test]

@@ -282,7 +282,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_palette: Option<lm_graphics::Palette>,
     canvas_backdrop: Option<lm_graphics::Bgr555>,
     foreground_texture: Option<egui::TextureHandle>,
-    map16_summary: Option<([usize; 4], [usize; 4], usize, usize)>,
+    map16_summary: Option<Map16Summary>,
     map16_error: Option<String>,
     standard_object_map: Option<lm_profile::SmwUsV1StandardObjectDefinitionMap>,
     selected_layer2_tile: usize,
@@ -1178,11 +1178,25 @@ impl VanillaLevelEditor {
         .default_open(true)
         .show(ui, |ui| {
             let sprite_tileset = self.form.sprite_tileset;
-            if let Some((files, sprite_files, common, specific)) = self.map16_summary {
+            if let Some(summary) = self.map16_summary {
+                let files = summary.foreground_files;
+                let background_files = summary.background_files;
+                let sprite_files = summary.sprite_files;
+                let common = summary.common_tiles;
+                let specific = summary.tileset_tiles;
                 ui.label(format!(
                     "GFX{:02X}/GFX{:02X}/GFX{:02X}/GFX{:02X}; {common} common and {specific} tileset-specific definitions",
                     files[0], files[1], files[2], files[3]
                 ));
+                if background_files != files {
+                    ui.label(format!(
+                        "Background runtime: GFX{:02X}/GFX{:02X}/GFX{:02X}/GFX{:02X}",
+                        background_files[0],
+                        background_files[1],
+                        background_files[2],
+                        background_files[3]
+                    ));
+                }
                 ui.label(format!(
                     "Sprite set {sprite_tileset:X}: SP1 GFX{:02X}, SP2 GFX{:02X}, SP3 GFX{:02X}, SP4 GFX{:02X}",
                     sprite_files[0], sprite_files[1], sprite_files[2], sprite_files[3]
@@ -1275,12 +1289,13 @@ impl VanillaLevelEditor {
                             .collect::<Result<Vec<_>, _>>()
                     })
                     .transpose();
-                self.map16_summary = Some((
-                    preview.graphics_files,
-                    preview.sprite_graphics_files,
-                    preview.common_tiles,
-                    preview.tileset_tiles,
-                ));
+                self.map16_summary = Some(Map16Summary {
+                    foreground_files: preview.graphics_files,
+                    background_files: preview.background_graphics_files,
+                    sprite_files: preview.sprite_graphics_files,
+                    common_tiles: preview.common_tiles,
+                    tileset_tiles: preview.tileset_tiles,
+                });
                 self.map16_texture = Some(context.load_texture(
                     format!("vanilla-map16-{object_tileset:X}-{}", snapshot.revision),
                     preview.image,
@@ -4675,6 +4690,15 @@ struct CanvasModel {
     layer2_placements: Vec<lm_level::NativeObjectPlacement>,
     layer2_tilemap: Vec<u16>,
     sprite_placements: Vec<lm_level::NativeSpritePlacement>,
+}
+
+#[derive(Clone, Copy)]
+struct Map16Summary {
+    foreground_files: [usize; 4],
+    background_files: [usize; 4],
+    sprite_files: [usize; 4],
+    common_tiles: usize,
+    tileset_tiles: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
