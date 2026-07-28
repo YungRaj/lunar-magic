@@ -4469,6 +4469,33 @@ mod tests {
     use lm_rom::RomImage;
     use std::{fs, path::PathBuf};
 
+    fn pristine_smw_us_rom_bytes() -> Vec<u8> {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for path in [
+            root.join("Super Mario World (USA).sfc"),
+            root.join("SMW-working.sfc"),
+            root.join("sysLMRestore/smwOrig.smc"),
+        ] {
+            let Ok(bytes) = fs::read(path) else {
+                continue;
+            };
+            let Ok(image) = RomImage::from_bytes(bytes.clone()) else {
+                continue;
+            };
+            if image.logical_len() == 0x8_0000
+                && lm_rom::detect_identity(&image).is_ok_and(|identity| {
+                    identity.game == lm_rom::SupportedGame::SuperMarioWorld
+                        && identity.region == lm_rom::Region::NorthAmerica
+                        && identity.revision == 0
+                        && identity.checksum_matches()
+                })
+            {
+                return bytes;
+            }
+        }
+        panic!("verified pristine SMW-US fixture not found");
+    }
+
     fn layout() -> NativeLevelMap16Layout {
         NativeLevelMap16Layout {
             width: 32,
@@ -4635,12 +4662,7 @@ mod tests {
 
     #[test]
     fn every_vanilla_family_handler_has_a_renderer() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("Super Mario World (USA).sfc");
-        let Ok(bytes) = fs::read(path) else {
-            return;
-        };
+        let bytes = pristine_smw_us_rom_bytes();
         let map =
             load_smw_us_v1_standard_object_definition_map(&RomImage::from_bytes(bytes).unwrap())
                 .unwrap();
