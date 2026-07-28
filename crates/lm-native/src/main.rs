@@ -112,10 +112,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let app = NativeApplication::from_startup(startup::initialize(startup_options));
+    let window_size = visual_smoke_window_size().unwrap_or([1100.0, 720.0]);
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Lunar Magic Rust")
-            .with_inner_size([1100.0, 720.0])
+            .with_inner_size(window_size)
             .with_min_inner_size([720.0, 480.0]),
         ..Default::default()
     };
@@ -128,4 +129,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     )?;
     Ok(())
+}
+
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_window_size() -> Option<[f32; 2]> {
+    let width = std::env::var("LM_NATIVE_SCREENSHOT_WIDTH")
+        .ok()?
+        .parse::<f32>()
+        .ok()?;
+    let height = std::env::var("LM_NATIVE_SCREENSHOT_HEIGHT")
+        .ok()?
+        .parse::<f32>()
+        .ok()?;
+    (width >= 720.0 && height >= 480.0 && width.is_finite() && height.is_finite())
+        .then_some([width, height])
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_window_size() -> Option<[f32; 2]> {
+    None
 }

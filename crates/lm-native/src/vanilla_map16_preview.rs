@@ -158,11 +158,12 @@ pub(crate) fn render(
             &foreground_graphics,
             &palette,
         ));
-        animated_background_images.push(render_map16_definition_atlas(
-            &background_map16,
-            &background_graphics,
-            &palette,
-        ));
+        let mut background_image =
+            render_map16_definition_atlas(&background_map16, &background_graphics, &palette);
+        if lm_profile::smw_us_v1_level_mode(header.level_mode()).background_half_color {
+            apply_black_half_color(&mut background_image);
+        }
+        animated_background_images.push(background_image);
         animated_foreground_graphics.push(foreground_graphics);
     }
     let foreground_graphics = animated_foreground_graphics.remove(0);
@@ -211,6 +212,17 @@ pub(crate) fn render(
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn apply_black_half_color(image: &mut egui::ColorImage) {
+    for pixel in &mut image.pixels {
+        *pixel = egui::Color32::from_rgba_unmultiplied(
+            pixel.r() >> 1,
+            pixel.g() >> 1,
+            pixel.b() >> 1,
+            pixel.a(),
+        );
+    }
 }
 
 fn render_default_entrance_marker(
@@ -1161,6 +1173,69 @@ mod tests {
                 tiles.len()
             );
         }
+    }
+
+    #[test]
+    fn diagnostic_lunar_magic_level_palette_cache_matches_when_requested() {
+        let (Ok(slot), Ok(cache_path)) = (
+            std::env::var("LM_LEVEL_SLOT"),
+            std::env::var("LM_LEVEL_PALETTE_CACHE"),
+        ) else {
+            return;
+        };
+        let slot = u16::from_str_radix(&slot, 16).unwrap();
+        let live = std::fs::read(cache_path).unwrap();
+        assert_eq!(live.len(), 0x202);
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let level = project
+            .load_level_slot(
+                usize::from(slot),
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let actual =
+            lm_profile::compose_smw_us_v1_level_palette(&project, slot, level.layer1.header, 0)
+                .unwrap();
+        let live_words = live
+            .chunks_exact(2)
+            .map(|word| u16::from_le_bytes([word[0], word[1]]))
+            .collect::<Vec<_>>();
+        let differences = (1..256)
+            .filter_map(|index| {
+                let expected = if index % 16 == 0 {
+                    0
+                } else {
+                    live_words[index]
+                };
+                (actual.palette.colors[index].0 != expected).then_some((
+                    index,
+                    actual.palette.colors[index].0,
+                    expected,
+                ))
+            })
+            .collect::<Vec<_>>();
+        eprintln!(
+            "level {slot:03X} palette differences={} backdrop actual={:04X} live={:04X}",
+            differences.len(),
+            actual.backdrop.0,
+            live_words[256],
+        );
+        for (index, actual, expected) in differences.iter().take(32) {
+            eprintln!("{index:02X}: rust={actual:04X} wine={expected:04X}");
+        }
+        assert_eq!(actual.backdrop.0, live_words[256]);
+        assert!(differences.is_empty());
+    }
+
+    #[test]
+    fn background_half_color_matches_lunar_magics_packed_rgb_shift() {
+        let mut image = egui::ColorImage::new([2, 1], egui::Color32::from_rgb(17, 83, 231));
+        image.pixels[1] = egui::Color32::TRANSPARENT;
+        apply_black_half_color(&mut image);
+        assert_eq!(image.pixels[0], egui::Color32::from_rgb(8, 41, 115));
+        assert_eq!(image.pixels[1], egui::Color32::TRANSPARENT);
     }
 
     #[test]

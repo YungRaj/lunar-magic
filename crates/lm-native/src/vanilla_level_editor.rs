@@ -8353,6 +8353,16 @@ mod tests {
         let vertical = lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode()).vertical;
         if std::env::var_os("LM_DUMP_OBJECTS").is_some() {
             eprintln!(
+                "header={:02X?} mode={:02X} background-palette={} foreground-palette={} sprite-palette={} background-color={} object-tileset={}",
+                level.layer1.header.encoded(),
+                level.layer1.header.level_mode(),
+                level.layer1.header.background_palette(),
+                level.layer1.header.foreground_palette(),
+                level.layer1.header.sprite_palette(),
+                level.layer1.header.background_color(),
+                level.layer1.header.object_tileset(),
+            );
+            eprintln!(
                 "raw object records: {}",
                 level
                     .layer1

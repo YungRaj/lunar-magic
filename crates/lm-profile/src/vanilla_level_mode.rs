@@ -4,12 +4,22 @@ const LEVEL_MODE_FLAGS: [u8; 32] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80,
 ];
 
+/// Complete per-mode Layer 2 render-property table loaded into `DAT_00816658`.
+///
+/// `RenderTransparentLevelBackgroundMap16Tile` at Lunar Magic 3.63 address `$0051D1B0` halves
+/// nontransparent background pixels when bit 6 is set.
+const LEVEL_MODE_LAYER2_RENDER: [u8; 32] = [
+    0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x20, 0x24, 0x24, 0x20, 0x24, 0x20, 0x70, 0x70, 0x24, 0x24,
+    0x20, 0xff, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x21, 0x22,
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VanillaLevelMode {
     pub index: u8,
     pub vertical: bool,
     pub alternate_layer_layout: bool,
     pub high_flag: bool,
+    pub background_half_color: bool,
 }
 
 /// Decodes the recovered level-mode property flags used by Lunar Magic 3.63.
@@ -22,6 +32,7 @@ pub const fn smw_us_v1_level_mode(index: u8) -> VanillaLevelMode {
         vertical: flags & 1 != 0,
         alternate_layer_layout: flags & 2 != 0,
         high_flag: flags & 0x80 != 0,
+        background_half_color: LEVEL_MODE_LAYER2_RENDER[bounded] & 0x40 != 0,
     }
 }
 
@@ -37,6 +48,9 @@ mod tests {
         assert_eq!(vertical, [3, 4, 7, 8, 10, 13]);
         assert!(smw_us_v1_level_mode(5).alternate_layer_layout);
         assert!(smw_us_v1_level_mode(2).high_flag);
+        assert!(smw_us_v1_level_mode(0x0c).background_half_color);
+        assert!(smw_us_v1_level_mode(0x0d).background_half_color);
+        assert!(!smw_us_v1_level_mode(0x0b).background_half_color);
         assert_eq!(smw_us_v1_level_mode(0x23), smw_us_v1_level_mode(3));
     }
 }

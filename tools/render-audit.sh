@@ -12,6 +12,7 @@ usage() {
     echo "  LM_NATIVE_EDITOR_SCROLL_COLUMN: editor world column at the viewport left (default: 0)" >&2
     echo "  LM_NATIVE_EDITOR_OVERLAYS: draw editor grid, markers, and labels (default: 1)" >&2
     echo "  LM_NATIVE_EDITOR_CELL: editor tile size in logical pixels (default: 12)" >&2
+    echo "  LM_NATIVE_SCREENSHOT_WIDTH/HEIGHT: capture window size (default: 1100x720)" >&2
     exit 2
 }
 
