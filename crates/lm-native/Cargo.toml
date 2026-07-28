@@ -23,6 +23,7 @@ lm-title = { path = "../lm-title" }
 rfd = "0.15"
 
 [dev-dependencies]
+lm-oracle = { path = "../lm-oracle" }
 lm-profile = { path = "../lm-profile", features = ["test-support"] }
 
 [lints]

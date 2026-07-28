@@ -364,11 +364,11 @@ impl RomSharedPaletteEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     fn pristine_app() -> (AppState, Vec<u8>) {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(original.clone()).unwrap();
         (app, original)

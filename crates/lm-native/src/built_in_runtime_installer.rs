@@ -124,8 +124,8 @@ mod tests {
 
     #[test]
     fn pristine_rom_settings_install_reopens_and_undoes_exactly() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(original.clone()).unwrap();
         let mut installer = BuiltInRuntimeInstaller::default();
@@ -175,8 +175,8 @@ mod tests {
 
     #[test]
     fn expanded_palette_selection_installs_and_enables_custom_palette_storage() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(original.clone()).unwrap();
         let mut installer = BuiltInRuntimeInstaller::default();

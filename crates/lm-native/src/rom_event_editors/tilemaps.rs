@@ -301,12 +301,12 @@ fn set_byte(buffers: &mut EventTilemapBuffers, (tile, plane): (usize, Plane), va
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn pristine_planes_install_and_semantically_reopen_exact_bytes() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(original).unwrap();
         let mut editor = RomOverworldEventTilemapEditor::default();

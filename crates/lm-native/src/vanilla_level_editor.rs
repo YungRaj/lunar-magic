@@ -6992,8 +6992,8 @@ mod tests {
 
     #[test]
     fn pristine_level_105_opens_its_shared_vanilla_background() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(bytes).unwrap();
         app.dispatch(Command::SelectLevel(0x105)).unwrap();
@@ -7083,8 +7083,8 @@ mod tests {
         reason = "one real-ROM workflow proves placement, drag, typed paste, ordering, and rejection"
     )]
     fn primary_canvas_places_and_drags_object_backed_layer2() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let image = RomImage::from_bytes(bytes.clone()).unwrap();
         let project = lm_project::Project::new(image);
         let level_layout = lm_profile::smw_us_v1_vanilla_level_layout();
@@ -7431,8 +7431,8 @@ mod tests {
         reason = "keeps the raw form, semantic resize, canvas resize, ROM reopen, and undo assertions in one end-to-end fixture"
     )]
     fn extended_command27_form_and_canvas_commit_reopen_and_undo_in_pristine_rom() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let source = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(source).unwrap();
         app.dispatch(Command::ExpandRom(lm_app::RomExpansionCommand {
@@ -7616,10 +7616,8 @@ mod tests {
 
     #[test]
     fn pristine_standard_object_artwork_expands_interactive_footprints() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let image =
-            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         let definition_map =
             lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
         let project = lm_project::Project::new(image);
@@ -7694,10 +7692,8 @@ mod tests {
 
     #[test]
     fn every_pristine_level_object_has_authenticated_builtin_artwork() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let image =
-            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         let definition_map =
             lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
         let project = lm_project::Project::new(image);
@@ -7774,10 +7770,8 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn pristine_level_105_has_authenticated_artwork_for_every_renderable_object() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let image =
-            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         let definition_map =
             lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
         let project = lm_project::Project::new(image);
@@ -7882,10 +7876,8 @@ mod tests {
 
     #[test]
     fn pristine_level_102_matches_live_snes_map16_rows_around_high_tide() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let image =
-            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         let definition_map =
             lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
         let project = lm_project::Project::new(image);
@@ -7951,10 +7943,8 @@ mod tests {
 
     #[test]
     fn pristine_level_108_matches_live_snes_vertical_slope_rows() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let image =
-            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         let definition_map =
             lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
         let project = lm_project::Project::new(image);
@@ -8032,8 +8022,8 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn pristine_standard_object_resize_commits_reopens_and_undoes() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let source = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = crate::test_support::pristine_smw_us_rom_bytes();
         let image = RomImage::from_bytes(source.clone()).unwrap();
         let definition_map =
             lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
@@ -8274,10 +8264,9 @@ mod tests {
 
     #[test]
     fn cookie_mountain_background_uses_half_speed_horizontal_parallax() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let project = lm_project::Project::new(
-            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap(),
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
         );
         let entrance = project
             .load_vanilla_main_entrance(1, lm_profile::smw_us_v1_vanilla_entrance_layout())
@@ -8377,10 +8366,8 @@ mod tests {
 
     #[test]
     fn standard_object_catalog_uses_the_pristine_tileset_handler_map() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let rom =
-            RomImage::from_bytes(std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         let map = lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).unwrap();
         let definitions = standard_object_definitions().unwrap();
         let family = map.family(0).unwrap();
@@ -8472,8 +8459,8 @@ mod tests {
 
     #[test]
     fn osc_custom_object_inserts_commits_reopens_and_retains_display() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let sidecar = lm_level::OscSidecar::decode(b"10\t2\t2\t0,0,10;16,0,11\n").unwrap();
         let resolved = lm_level::OscResolvedTable::from_sidecar(&sidecar);
         let object = resolved.objects().first().unwrap();
@@ -9201,8 +9188,8 @@ mod tests {
 
     #[test]
     fn pristine_sprite_growth_relocates_in_the_shared_bank_and_reopens() {
-        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(bytes).unwrap();
         app.dispatch(Command::SelectLevel(0x105)).unwrap();

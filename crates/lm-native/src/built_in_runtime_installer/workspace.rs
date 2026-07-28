@@ -83,12 +83,12 @@ impl BuiltInRuntimeWorkspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     fn pristine_app() -> AppState {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut app = AppState::default();
-        app.load_rom(fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
             .unwrap();
         app
     }

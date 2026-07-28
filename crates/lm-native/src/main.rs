@@ -97,6 +97,8 @@ mod rom_title_recording_editor;
 mod ssc_sidecar_editor;
 mod ssc_sidecar_editor_form;
 mod startup;
+#[cfg(test)]
+mod test_support;
 mod vanilla_graphics_editor;
 mod vanilla_level_editor;
 mod vanilla_map16_preview;

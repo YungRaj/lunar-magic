@@ -758,12 +758,7 @@ mod tests {
 
     #[test]
     fn renders_real_pristine_tileset_when_reference_rom_is_available() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("Super Mario World (USA).sfc");
-        let Ok(bytes) = fs::read(path) else {
-            return;
-        };
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
         let level = project
             .load_level_slot(
@@ -858,9 +853,7 @@ mod tests {
     #[test]
     fn level_105_palette_matches_lunar_magic_mwl_export() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let Ok(bytes) = fs::read(root.join("Super Mario World (USA).sfc")) else {
-            return;
-        };
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let Ok(mwl_bytes) =
             fs::read(root.join("oracle-work/lm363/pristine-us/levels/Level 105.mwl"))
         else {

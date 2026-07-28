@@ -56,11 +56,11 @@ mod tests {
     use super::*;
     use lm_project::RatsOwnershipManifest;
     use lm_rats::{AllocationPolicy, FreeSpaceAllocator};
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     fn fixture() -> (AppState, RatsOwnershipManifest) {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let mut bytes = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
         bytes.resize(0x10_0000, 0xff);
         let mut allocator =
             FreeSpaceAllocator::new(&mut bytes, AllocationPolicy::lorom(0x8_0000..0x10_0000));

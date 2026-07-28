@@ -54,12 +54,12 @@ impl IpsPatchWorkspace {
 mod tests {
     use super::*;
     use lm_rom::{compute_snes_checksum, create_ips};
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn real_rom_preview_routes_exact_patch_and_rejects_stale_revision() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let source = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = crate::test_support::pristine_smw_us_rom_bytes();
         let mut target = source.clone();
         target[0x23456] ^= 0x80;
         let checksum = compute_snes_checksum(&target, 0x7fdc).unwrap();
@@ -80,8 +80,8 @@ mod tests {
 
     #[test]
     fn malformed_and_no_op_patches_never_create_a_commit() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let source = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(source.clone()).unwrap();
         assert!(IpsPatchWorkspace::load(&app, b"bad".to_vec()).is_err());

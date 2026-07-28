@@ -270,12 +270,12 @@ fn secondary_fields(ui: &mut egui::Ui, form: &mut SecondaryExitForm) {
 mod tests {
     use super::*;
     use lm_rom::RomImage;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn pristine_table_stages_a_global_entry_and_emits_one_profile_command() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(original).unwrap();
         let mut editor = RomSecondaryExitEditor::default();
@@ -298,10 +298,8 @@ mod tests {
 
     #[test]
     fn selection_must_be_loaded_and_close_guards_staged_changes() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let image =
-            RomImage::from_bytes(fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         let mut app = AppState::default();
         app.load_rom(image.as_file_bytes().to_vec()).unwrap();
         let mut editor = RomSecondaryExitEditor::default();

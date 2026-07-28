@@ -238,12 +238,12 @@ impl RomOverworldMessageEditor {
 mod tests {
     use super::*;
     use lm_profile::load_smw_us_v1_overworld_messages;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn pristine_table_grows_commits_and_semantically_reopens() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(original).unwrap();
         let mut editor = RomOverworldMessageEditor::default();
