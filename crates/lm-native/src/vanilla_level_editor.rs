@@ -6217,6 +6217,12 @@ fn standard_sprite_preview_mode(
 }
 
 fn sprite_animation_phase(seconds: f64) -> u8 {
+    if let Ok(phase) = std::env::var("LM_NATIVE_ANIMATION_PHASE")
+        && let Ok(phase) = phase.parse::<u8>()
+        && phase < 4
+    {
+        return phase;
+    }
     if !seconds.is_finite() || seconds <= 0.0 {
         return 0;
     }
