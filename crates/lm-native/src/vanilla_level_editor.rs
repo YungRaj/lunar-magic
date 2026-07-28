@@ -3903,6 +3903,26 @@ fn canvas_major_tiles(
     object_end.max(sprite_end).clamp(16, 512)
 }
 
+fn object_stream_major_tiles(records: &[ObjectRecord]) -> u16 {
+    let stream = lm_level::ObjectStream {
+        records: records.to_vec(),
+    };
+    let furthest_screen = stream
+        .native_placements()
+        .into_iter()
+        .map(|placement| placement.screen)
+        .chain(
+            records
+                .iter()
+                .filter_map(ObjectRecord::screen_jump)
+                .map(|jump| jump.packed_target),
+        )
+        .max()
+        .unwrap_or(0)
+        .min(31);
+    furthest_screen.saturating_add(1).saturating_mul(16)
+}
+
 fn extended_command27_canvas_extent(
     records: &[ObjectRecord],
     placements: &[lm_level::NativeObjectPlacement],
@@ -3979,7 +3999,12 @@ fn rendered_standard_object_canvas_extent(
             minor_end = minor_end.max(u16::try_from(minor + 1).ok()?);
         }
     }
-    Some((major_end.clamp(16, 512), minor_end.clamp(16, 32)))
+    Some((
+        major_end
+            .min(object_stream_major_tiles(records))
+            .clamp(16, 512),
+        minor_end.clamp(16, 32),
+    ))
 }
 
 fn clamp_canvas_zoom(zoom: u16) -> u16 {
@@ -8246,9 +8271,23 @@ mod tests {
             )
             .unwrap();
         let vertical = lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode()).vertical;
+        if std::env::var_os("LM_DUMP_OBJECTS").is_some() {
+            for placement in level.layer1.objects.native_placements_for_orientation(vertical) {
+                let record = &level.layer1.objects.records[placement.record_index];
+                let (x, y) = placement.tile_coordinates(vertical);
+                eprintln!(
+                    "object {} @({x},{y}) command={:02X} parameter={:02X} bytes={:02X?}",
+                    placement.record_index,
+                    record.command_id(),
+                    record.parameter(),
+                    record.encoded()
+                );
+            }
+        }
+        let major_tiles = usize::from(object_stream_major_tiles(&level.layer1.objects.records));
         let layout = lm_render::NativeLevelMap16Layout {
-            width: if vertical { 32 } else { 512 },
-            height: if vertical { 448 } else { 27 },
+            width: if vertical { 32 } else { major_tiles },
+            height: if vertical { major_tiles } else { 27 },
             page_stride: 0x1b0,
             base_cell: 0,
             vertical,
@@ -8266,6 +8305,17 @@ mod tests {
             lm_profile::VanillaObjectFamily::GhostHouse => 4,
         };
         let handler_map = definition_map.family(family).unwrap();
+        if std::env::var_os("LM_DUMP_OBJECTS").is_some() {
+            eprintln!(
+                "handler map: {}",
+                handler_map
+                    .iter()
+                    .enumerate()
+                    .map(|(command, handler)| format!("{command:02X}:{handler}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
         let rendered = lm_render::render_mapped_standard_object_stream(
             &level.layer1.objects,
             &definitions,
@@ -8995,6 +9045,19 @@ mod tests {
             ..sprites[0]
         }];
         assert_eq!(canvas_major_tiles(&[], &out_of_model), 512);
+    }
+
+    #[test]
+    fn object_stream_extent_ends_at_its_furthest_encoded_screen() {
+        let first_screen = [ObjectRecord::new(vec![0x01, 0x12, 0]).unwrap()];
+        assert_eq!(object_stream_major_tiles(&first_screen), 16);
+
+        let jumped = [
+            first_screen[0].clone(),
+            ObjectRecord::new(vec![0x03, 0x00, 1]).unwrap(),
+            ObjectRecord::new(vec![0x04, 0x15, 0]).unwrap(),
+        ];
+        assert_eq!(object_stream_major_tiles(&jumped), 64);
     }
 
     #[test]

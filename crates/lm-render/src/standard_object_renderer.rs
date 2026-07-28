@@ -2883,9 +2883,13 @@ fn clear_slot_059_region(
         .checked_add(0x50)
         .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
     for major in 0..5 {
-        for minor in 0..4 {
+        // The native loop has four iterations, but each iteration is an
+        // unrolled four-cell write: every strip is a full 16 columns.
+        for minor in 0..16 {
             let index = base
-                .checked_add(major * 0x10)
+                // RenderLargeCompositeAndReplicateTileStrips at 0042fe20
+                // advances each four-tile clearing strip by raw 0x40.
+                .checked_add(major * 0x40)
                 .and_then(|value| value.checked_add(minor))
                 .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
             set_raw_cell_if_mapped(cache, index, 0x161)?;
@@ -2915,7 +2919,9 @@ fn render_slot_059_motifs(
             set_raw_cell_if_mapped(cache, base + 0x40 + minor, tile)?;
         }
         for minor in 0..3 {
-            set_raw_cell_if_mapped(cache, base + 0x20 + minor, 0x076)?;
+            // The three 0x076 cells form a separate row below the five-row
+            // motif; they do not replace the second body row.
+            set_raw_cell_if_mapped(cache, base + 0x50 + minor, 0x076)?;
         }
     }
     Ok(())
@@ -3045,14 +3051,19 @@ fn render_shared_slot_066(
     placement: lm_level::NativeObjectPlacement,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
-    render_capped_minor_run(
-        cache,
-        layout,
-        placement,
-        0,
-        parameter,
-        [0x107, 0x108, 0x109],
-    )
+    // RenderStandardObjectDefinitionSlot066 at 00433420 advances across raw
+    // columns, wrapping through the next Map16 page at column F.
+    let encoded_middle = usize::from(parameter & 0x0f);
+    let run = if encoded_middle == 0 {
+        0x100
+    } else {
+        encoded_middle
+    };
+    set_placement_cell(cache, layout, placement, 0, 0, 0x107)?;
+    for major_offset in 1..run {
+        set_placement_cell(cache, layout, placement, major_offset, 0, 0x108)?;
+    }
+    set_placement_cell(cache, layout, placement, run, 0, 0x109)
 }
 
 fn render_shared_slot_070(
@@ -3275,8 +3286,10 @@ fn render_shared_slot_019(
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
     let tile = u16::from(SHARED_SLOT_019_TILES[usize::from(parameter >> 4)]);
-    for minor_offset in 0..=usize::from(parameter & 0x0f) {
-        set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
+    // RenderStandardObjectDefinitionSlot019 at 0042cce0 advances through
+    // adjacent columns and wraps at the native screen edge.
+    for major_offset in 0..=usize::from(parameter & 0x0f) {
+        set_placement_cell(cache, layout, placement, major_offset, 0, tile)?;
     }
     Ok(())
 }
@@ -3388,16 +3401,18 @@ fn render_shared_slot_014(
         encoded_height
     };
     let base = SHARED_SLOT_014_BASE_TILES[variant];
-    for major_offset in 1..height {
-        set_placement_cell(cache, layout, placement, major_offset, 0, u16::from(base))?;
+    for minor_offset in 1..height {
+        set_placement_cell(cache, layout, placement, 0, minor_offset, u16::from(base))?;
     }
-    let existing_bottom = get_placement_cell(cache, layout, placement, height, 0)?;
+    let existing_bottom = get_placement_cell(cache, layout, placement, 0, height)?;
     let bottom = match existing_bottom.to_le_bytes()[0] {
         0x0e => SHARED_SLOT_014_BOTTOM_ON_0E[variant],
         0x08 => SHARED_SLOT_014_BOTTOM_ON_08[variant],
         _ => base,
     };
-    set_placement_cell(cache, layout, placement, height, 0, u16::from(bottom))
+    // RenderStandardObjectDefinitionSlot014 at 0042a160 advances every body
+    // and terminal cell by raw +0x10, forming a vertical column.
+    set_placement_cell(cache, layout, placement, 0, height, u16::from(bottom))
 }
 
 fn render_shared_slot_011(
@@ -5029,7 +5044,7 @@ mod tests {
             (
                 19,
                 0x13,
-                vec![(0, 0, 0x9c), (0, 1, 0x9c), (0, 2, 0x9c), (0, 3, 0x9c)],
+                vec![(0, 0, 0x9c), (1, 0, 0x9c), (2, 0, 0x9c), (3, 0, 0x9c)],
             ),
             (20, 0x23, vec![(0, 0, 0x98), (1, 0, 0x98), (2, 0, 0x98)]),
         ];
@@ -6020,7 +6035,7 @@ mod tests {
         let placement = lm_level::NativeObjectPlacement {
             record_index: 0,
             screen: 0,
-            major: 4,
+            major: 0,
             minor: 0,
             major_span: 1,
             minor_span: 2,
@@ -6031,19 +6046,30 @@ mod tests {
             (0x051, 0x15d),
             (0x052, 0x15e),
             (0x053, 0x160),
+            (0x054, 0x161),
+            (0x057, 0x161),
             (0x060, 0x073),
             (0x061, 0x074),
             (0x062, 0x075),
-            (0x070, 0x076),
-            (0x071, 0x076),
-            (0x072, 0x076),
+            (0x070, 0x073),
+            (0x071, 0x074),
+            (0x072, 0x075),
             (0x090, 0x162),
             (0x091, 0x163),
             (0x092, 0x164),
             (0x093, 0x15f),
+            (0x0a0, 0x076),
+            (0x0a1, 0x076),
+            (0x0a2, 0x076),
+            (0x150, 0x161),
+            (0x15b, 0x161),
         ] {
-            assert_eq!(cache.raw_get(index).unwrap(), tile);
-            assert_eq!(cache.raw_get(0x1b0 + index).unwrap(), tile);
+            assert_eq!(cache.raw_get(index).unwrap(), tile, "source index {index:#x}");
+            assert_eq!(
+                cache.raw_get(0x1b0 + index).unwrap(),
+                tile,
+                "replicated index {index:#x}"
+            );
         }
     }
 
@@ -6201,7 +6227,7 @@ mod tests {
             (63, 0x02, vec![vec![0x10a], vec![0x10b], vec![0x10c]]),
             (64, 0x21, vec![vec![0x078, 0x079, 0x079]]),
             (65, 0x21, vec![vec![0x160, 0x160, 0x160]]),
-            (66, 0x02, vec![vec![0x107, 0x108, 0x109]]),
+            (66, 0x02, vec![vec![0x107], vec![0x108], vec![0x109]]),
         ] {
             let mut handler_map = [0xff; 64];
             handler_map[1] = handler;
@@ -6905,18 +6931,18 @@ mod tests {
         let stream = ObjectStream {
             records: vec![
                 ObjectRecord::new(vec![0, 0x10, 0]).unwrap(),
-                ObjectRecord::new(vec![0, 0x22, 0]).unwrap(),
+                ObjectRecord::new(vec![2, 0x20, 0]).unwrap(),
                 ObjectRecord::new(vec![0x20, 0xe0, 0x20]).unwrap(),
             ],
         };
         let report = render_standard_object_stream(&stream, &definitions, layout(), 0x25).unwrap();
         assert_eq!(report.cache.cells()[0], 0x07);
         assert_eq!(
-            report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 1, 0)],
+            report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 0, 1)],
             0x0a
         );
         assert_eq!(
-            report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 2, 0)],
+            report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 0, 2)],
             0x0d
         );
     }
