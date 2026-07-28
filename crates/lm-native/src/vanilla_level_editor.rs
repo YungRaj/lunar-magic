@@ -1057,11 +1057,14 @@ impl VanillaLevelEditor {
                     VanillaMainEntrance::default,
                     VanillaEntranceController::entrance,
                 );
-                self.initial_vertical_scroll_tiles = (!lm_profile::smw_us_v1_level_mode(
-                    controller.level().layer1.header.level_mode(),
-                )
-                .vertical)
-                    .then(|| vanilla_horizontal_entrance_scroll_row(self.entrance_form));
+                self.initial_vertical_scroll_tiles =
+                    visual_smoke_editor_scroll_row().or_else(|| {
+                        (!lm_profile::smw_us_v1_level_mode(
+                            controller.level().layer1.header.level_mode(),
+                        )
+                        .vertical)
+                            .then(|| vanilla_horizontal_entrance_scroll_row(self.entrance_form))
+                    });
                 self.preview_camera_major_offset = visual_smoke_camera_offset("MAJOR");
                 self.preview_camera_minor_offset = visual_smoke_camera_offset("MINOR");
                 self.midway_form = self
@@ -1537,13 +1540,25 @@ impl VanillaLevelEditor {
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
         }
+        let audit_scroll = visual_smoke_editor_scroll_column().is_some()
+            || visual_smoke_editor_scroll_row().is_some();
+        let scroll_id = if audit_scroll {
+            "vanilla-rom-level-canvas-audit"
+        } else {
+            "vanilla-rom-level-canvas"
+        };
         let mut scroll_area = egui::ScrollArea::both()
-            .id_salt("vanilla-rom-level-canvas")
+            .id_salt(scroll_id)
             .max_height(ui.available_height().max(160.0))
             .auto_shrink([false, false]);
-        let requested_vertical_scroll = self
-            .initial_vertical_scroll_tiles
+        let requested_horizontal_scroll =
+            visual_smoke_editor_scroll_column().map(|column| f32::from(column) * cell);
+        let requested_vertical_scroll = visual_smoke_editor_scroll_row()
+            .or(self.initial_vertical_scroll_tiles)
             .map(|row| f32::from(row) * cell);
+        if !snes_viewport && let Some(offset) = requested_horizontal_scroll {
+            scroll_area = scroll_area.horizontal_scroll_offset(offset);
+        }
         if !snes_viewport && let Some(offset) = requested_vertical_scroll {
             scroll_area = scroll_area.vertical_scroll_offset(offset);
         }
@@ -1731,7 +1746,7 @@ impl VanillaLevelEditor {
         let base = if self.game_preview() {
             16.0
         } else {
-            ROM_LEVEL_CANVAS_CELL
+            visual_smoke_editor_cell().unwrap_or(ROM_LEVEL_CANVAS_CELL)
         };
         base * f32::from(self.canvas_zoom_percent()) / 100.0
     }
@@ -1823,6 +1838,7 @@ impl VanillaLevelEditor {
             custom_map16,
         );
         let game_preview = self.game_preview();
+        let editor_overlays = !game_preview && visual_smoke_editor_overlays();
         if game_preview
             && let (Some(texture), Some(position), Some(camera)) = (
                 self.layer3_low_texture.as_ref(),
@@ -1844,7 +1860,7 @@ impl VanillaLevelEditor {
             custom_objects,
             custom_map16,
         );
-        let (hit_layer2, hit) = if game_preview {
+        let (hit_layer2, hit) = if !editor_overlays {
             (
                 ObjectPlacementHits::default(),
                 ObjectPlacementHits::default(),
@@ -1896,7 +1912,7 @@ impl VanillaLevelEditor {
             custom_sprites,
             custom_map16,
             external_textures: &self.external_sprite_textures,
-            editor_overlays: !game_preview,
+            editor_overlays,
         });
         if game_preview
             && let (Some(texture), Some(position), Some(camera)) = (
@@ -1909,7 +1925,7 @@ impl VanillaLevelEditor {
         }
         // Paint the editor grid after the level artwork. Drawing opaque grid lines underneath
         // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
-        if !game_preview {
+        if editor_overlays {
             draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
             let alternate_vertical_layout =
                 lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout;
@@ -6811,6 +6827,53 @@ fn visual_smoke_camera_offset(axis: &str) -> i16 {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(0)
+}
+
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_scroll_row() -> Option<u16> {
+    std::env::var("LM_NATIVE_EDITOR_SCROLL_ROW")
+        .ok()
+        .and_then(|value| value.parse().ok())
+}
+
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_scroll_column() -> Option<u16> {
+    std::env::var("LM_NATIVE_EDITOR_SCROLL_COLUMN")
+        .ok()
+        .and_then(|value| value.parse().ok())
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_scroll_column() -> Option<u16> {
+    None
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_scroll_row() -> Option<u16> {
+    None
+}
+
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_overlays() -> bool {
+    std::env::var("LM_NATIVE_EDITOR_OVERLAYS").map_or(true, |value| value != "0")
+}
+
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_cell() -> Option<f32> {
+    std::env::var("LM_NATIVE_EDITOR_CELL")
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .filter(|value| *value > 0.0 && value.is_finite())
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_cell() -> Option<f32> {
+    None
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_overlays() -> bool {
+    true
 }
 
 #[cfg(not(feature = "visual-smoke"))]

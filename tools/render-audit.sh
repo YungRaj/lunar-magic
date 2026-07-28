@@ -8,6 +8,10 @@ usage() {
     echo "  STYLES: comma-separated 'game' and/or 'editor' (default: game)" >&2
     echo "  LM_RENDER_AUDIT_JOBS: concurrent native captures (default: 1)" >&2
     echo "  LM_RENDER_AUDIT_RECOMPRESS: losslessly recompress with sips when available (default: 1)" >&2
+    echo "  LM_NATIVE_EDITOR_SCROLL_ROW: editor world row at the viewport top (default: entrance)" >&2
+    echo "  LM_NATIVE_EDITOR_SCROLL_COLUMN: editor world column at the viewport left (default: 0)" >&2
+    echo "  LM_NATIVE_EDITOR_OVERLAYS: draw editor grid, markers, and labels (default: 1)" >&2
+    echo "  LM_NATIVE_EDITOR_CELL: editor tile size in logical pixels (default: 12)" >&2
     exit 2
 }
 
