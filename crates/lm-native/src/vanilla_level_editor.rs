@@ -8533,6 +8533,27 @@ mod tests {
                     record.encoded()
                 );
             }
+            eprintln!(
+                "raw sprite tokens: {}",
+                level
+                    .sprites
+                    .tokens
+                    .iter()
+                    .enumerate()
+                    .map(|(index, token)| format!("{index}:{token:?}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+            for placement in level.sprites.native_placements() {
+                eprintln!(
+                    "sprite {} @{:?} number={:02X} first={:02X} extra-bits={}",
+                    placement.token_index,
+                    placement.tile_coordinates(vertical),
+                    placement.sprite_number,
+                    placement.first_byte,
+                    placement.extra_bits,
+                );
+            }
         }
         let major_tiles = usize::from(
             object_stream_major_tiles(&level.layer1.objects.records).max(

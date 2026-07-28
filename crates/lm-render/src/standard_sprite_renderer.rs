@@ -637,7 +637,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x15c, 8, -8),
         ]),
         0xc1 => parts(&[(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]),
-        0xc2 => render_handler_c2(),
+        // Dispatch-table entry $C2 points at $004C9BE0.  Its ordinary path emits only
+        // definition $166; the former 20-part composite belongs to another native entry.
+        0xc2 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xc2 => parts(&[(0x166, 0, 0)]),
         0xc3 => parts(&[(0x179, 0, 0)]),
         0xc4 => parts(&[(0x8101, 0, 0)]),
         0xc5 => parts(&[(0x167, 0, 1)]),
@@ -648,7 +651,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (if mode.alternate_display { 0x115 } else { 0x38 }, 0, 1),
             (0x114, 0, -8),
         ]),
-        0xca => render_handler_ca_cb(false, mode.alternate_display),
+        // $004C9F10 advances one row and emits the recovered three-part dolphin preview.
+        0xca => parts(&[(0x158, 0, 26), (0x159, 16, 26), (0x168, 8, 16)]),
         0xcb => render_handler_ca_cb(true, mode.alternate_display),
         0xcc if mode.alternate_display => parts(&[(0x115, 0, 1), (0x115, 16, 1), (0x114, 5, -16)]),
         0xcc => parts(&[
@@ -971,26 +975,6 @@ fn render_handler_b9(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         1 | 3 => parts(&[(0x189, 0, 1), (0x188, -8, -7), (0x14d, -24, -1)]),
         _ => unreachable!(),
     }
-}
-
-fn render_handler_c2() -> Option<Vec<StandardSpritePreviewTile>> {
-    let mut values = Vec::with_capacity(20);
-    for row in 0_u16..4 {
-        for column in 0_u16..4 {
-            values.push((
-                0xc0 + row * 0x10 + column,
-                i16::try_from(column).expect("four-column preview") * 16 - 4,
-                i16::try_from(row).expect("four-row preview") * 16,
-            ));
-        }
-    }
-    values.extend([
-        (0xe4, -7, 24),
-        (0xf4, 29, 24),
-        (0x15a, 4, 18),
-        (0x16a, 4, 34),
-    ]);
-    parts(&values)
 }
 
 fn render_handler_ca_cb(
@@ -3518,21 +3502,7 @@ mod tests {
             geometry(0xc1, 0, false),
             [(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]
         );
-        let c2 = geometry(0xc2, 0, false);
-        assert_eq!(c2.len(), 20);
-        assert_eq!(
-            &c2[..4],
-            &[(0xc0, -4, 0), (0xc1, 12, 0), (0xc2, 28, 0), (0xc3, 44, 0)]
-        );
-        assert_eq!(
-            &c2[16..],
-            &[
-                (0xe4, -7, 24),
-                (0xf4, 29, 24),
-                (0x15a, 4, 18),
-                (0x16a, 4, 34)
-            ]
-        );
+        assert_eq!(geometry(0xc2, 0, false), [(0x166, 0, 0)]);
         assert_eq!(geometry(0xc3, 0, false), [(0x179, 0, 0)]);
         assert_eq!(geometry(0xc4, 0, false), [(0x8101, 0, 0)]);
         for sprite in [0xbc, 0xbf, 0xc0] {
@@ -3566,15 +3536,20 @@ mod tests {
         assert_eq!(geometry(0xc9, true), [(0x115, 0, 1), (0x114, 0, -8)]);
         assert_eq!(
             geometry(0xca, false),
-            [(0x56, -6, -14), (0x66, -6, 2), (0x114, -8, -16)]
+            [(0x158, 0, 26), (0x159, 16, 26), (0x168, 8, 16)]
         );
         assert_eq!(
             geometry(0xcb, false),
             [(0x56, -6, -14), (0x67, -6, 2), (0x114, -8, -16)]
         );
-        for sprite in [0xca, 0xcb] {
-            assert_eq!(geometry(sprite, true), [(0x115, 0, 1), (0x114, -8, -16)]);
-        }
+        assert_eq!(
+            geometry(0xca, true),
+            [(0x158, 0, 26), (0x159, 16, 26), (0x168, 8, 16)]
+        );
+        assert_eq!(
+            geometry(0xcb, true),
+            [(0x115, 0, 1), (0x114, -8, -16)]
+        );
         assert_eq!(
             geometry(0xcc, false),
             [
