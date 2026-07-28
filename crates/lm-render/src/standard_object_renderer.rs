@@ -2017,9 +2017,14 @@ fn render_shared_slot_051(
     placement: lm_level::NativeObjectPlacement,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
-    for minor_offset in 0..=usize::from(parameter & 0x0f) {
-        set_placement_cell(cache, layout, placement, 0, minor_offset, 0x0a3)?;
-        set_placement_cell(cache, layout, placement, 1, minor_offset, 0x10e)?;
+    for column in 0..=usize::from(parameter & 0x0f) {
+        if layout.vertical {
+            set_placement_cell(cache, layout, placement, 0, column, 0x0a3)?;
+            set_placement_cell(cache, layout, placement, 1, column, 0x10e)?;
+        } else {
+            set_placement_cell(cache, layout, placement, column, 0, 0x0a3)?;
+            set_placement_cell(cache, layout, placement, column, 1, 0x10e)?;
+        }
     }
     Ok(())
 }
@@ -6012,7 +6017,7 @@ mod tests {
             (
                 51,
                 0x02,
-                vec![vec![0x0a3, 0x0a3, 0x0a3], vec![0x10e, 0x10e, 0x10e]],
+                vec![vec![0x0a3, 0x10e], vec![0x0a3, 0x10e], vec![0x0a3, 0x10e]],
             ),
             (52, 0x20, vec![vec![0x15a, 0x15b, 0x15b]]),
         ] {
