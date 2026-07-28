@@ -274,4 +274,32 @@ mod tests {
             "the retained oracle intentionally edits this one shared color during installation"
         );
     }
+
+    #[test]
+    fn cookie_mountain_matches_lunar_magic_mwl_palette_oracle() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let project = Project::new(
+            RomImage::from_bytes(fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
+                .unwrap(),
+        );
+        let level = project
+            .load_level_slot(
+                1,
+                smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let actual = compose_smw_us_v1_level_palette(&project, 1, level.layer1.header, 0).unwrap();
+        let mwl = lm_level::MwlFile::decode(
+            &fs::read(root.join("oracle-work/lm363/pristine-us/levels/Level 001.mwl")).unwrap(),
+        )
+        .unwrap();
+        let expected = mwl.palette_section().unwrap();
+        let expected_colors = expected
+            .tpl_order_colors()
+            .into_iter()
+            .map(Bgr555)
+            .collect::<Vec<_>>();
+        assert_eq!(actual.palette.colors, expected_colors);
+    }
 }

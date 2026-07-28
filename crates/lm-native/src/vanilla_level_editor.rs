@@ -259,6 +259,8 @@ pub(crate) struct VanillaLevelEditor {
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
+    preview_camera_major_offset: i16,
+    preview_camera_minor_offset: i16,
     initial_vertical_scroll_tiles: Option<u16>,
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
@@ -1052,6 +1054,8 @@ impl VanillaLevelEditor {
                 )
                 .vertical)
                     .then(|| vanilla_horizontal_entrance_scroll_row(self.entrance_form));
+                self.preview_camera_major_offset = visual_smoke_camera_offset("MAJOR");
+                self.preview_camera_minor_offset = visual_smoke_camera_offset("MINOR");
                 self.midway_form = self
                     .entrance_controller
                     .as_ref()
@@ -1133,6 +1137,8 @@ impl VanillaLevelEditor {
         self.entrance_controller = None;
         self.midway_form = None;
         self.midway_install_form = SeparateMidwayEntrance::default();
+        self.preview_camera_major_offset = 0;
+        self.preview_camera_minor_offset = 0;
         self.error = None;
         self.map16_key = None;
         self.map16_texture = None;
@@ -1467,7 +1473,7 @@ impl VanillaLevelEditor {
         }
         let game_preview = self.game_preview();
         let snes_viewport = game_preview && self.snes_viewport();
-        self.show_canvas_tools(ui);
+        self.show_canvas_tools(ui, major_tiles, minor_tiles, vertical);
         let cell = if snes_viewport {
             fitted_snes_viewport_cell(ui.available_size(), self.canvas_zoom_percent())
         } else {
@@ -1498,7 +1504,7 @@ impl VanillaLevelEditor {
             let painter = ui.painter_at(rect);
             let paint_rect = if snes_viewport {
                 let (origin_x, origin_y) =
-                    game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical);
+                    self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
                 egui::Rect::from_min_size(
                     rect.min - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell),
                     world_size,
@@ -1540,7 +1546,13 @@ impl VanillaLevelEditor {
         draw_canvas_caption(ui, vertical);
     }
 
-    fn show_canvas_tools(&mut self, ui: &mut egui::Ui) {
+    fn show_canvas_tools(
+        &mut self,
+        ui: &mut egui::Ui,
+        major_tiles: u16,
+        minor_tiles: u16,
+        vertical: bool,
+    ) {
         ui.horizontal_wrapped(|ui| {
             let mut game_preview = self.game_preview();
             if ui.toggle_value(&mut game_preview, "Game pixels").changed() {
@@ -1553,6 +1565,9 @@ impl VanillaLevelEditor {
                     .changed()
                 {
                     self.snes_viewport = Some(snes_viewport);
+                }
+                if snes_viewport {
+                    self.show_preview_camera_tools(ui, major_tiles, minor_tiles, vertical);
                 }
             }
             ui.separator();
@@ -1611,8 +1626,56 @@ impl VanillaLevelEditor {
         });
     }
 
+    fn show_preview_camera_tools(
+        &mut self,
+        ui: &mut egui::Ui,
+        major_tiles: u16,
+        minor_tiles: u16,
+        vertical: bool,
+    ) {
+        ui.separator();
+        ui.label("Camera:");
+        for (label, major_delta, minor_delta) in [
+            ("Screen −", -16, 0),
+            ("←", -1, 0),
+            ("→", 1, 0),
+            ("Screen +", 16, 0),
+            ("↑", 0, -1),
+            ("↓", 0, 1),
+        ] {
+            if ui.small_button(label).clicked() {
+                self.preview_camera_major_offset =
+                    self.preview_camera_major_offset.saturating_add(major_delta);
+                self.preview_camera_minor_offset =
+                    self.preview_camera_minor_offset.saturating_add(minor_delta);
+            }
+        }
+        if ui.small_button("Entrance").clicked() {
+            self.preview_camera_major_offset = 0;
+            self.preview_camera_minor_offset = 0;
+        }
+        let (x, y) = self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
+        ui.monospace(format!("({x},{y})"));
+    }
+
     fn canvas_zoom_percent(&self) -> u16 {
         clamp_canvas_zoom(self.canvas_zoom_percent.unwrap_or(100))
+    }
+
+    fn game_preview_camera_origin(
+        &self,
+        major_tiles: u16,
+        minor_tiles: u16,
+        vertical: bool,
+    ) -> (u16, u16) {
+        offset_game_preview_origin(
+            game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical),
+            self.preview_camera_major_offset,
+            self.preview_camera_minor_offset,
+            major_tiles,
+            minor_tiles,
+            vertical,
+        )
     }
 
     fn canvas_cell(&self) -> f32 {
@@ -1660,7 +1723,7 @@ impl VanillaLevelEditor {
             .animated_background_plane_textures
             .get(animation_phase_index);
         let game_camera = (self.game_preview() && self.snes_viewport())
-            .then(|| game_preview_origin(self.entrance_form, major_tiles, minor_tiles, vertical));
+            .then(|| self.game_preview_camera_origin(major_tiles, minor_tiles, vertical));
         let layer2_target = game_camera.map_or(rect, |camera| {
             let layer1_x = i32::from(camera.0) * 16;
             let layer1_y = i32::from(camera.1) * 16;
@@ -6402,6 +6465,55 @@ fn game_preview_origin(
     }
 }
 
+fn offset_game_preview_origin(
+    entrance_origin: (u16, u16),
+    major_offset: i16,
+    minor_offset: i16,
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+) -> (u16, u16) {
+    let (x_offset, y_offset) = if vertical {
+        (minor_offset, major_offset)
+    } else {
+        (major_offset, minor_offset)
+    };
+    let max_x = if vertical {
+        minor_tiles.saturating_sub(16)
+    } else {
+        major_tiles.saturating_sub(16)
+    };
+    let max_y = if vertical {
+        major_tiles.saturating_sub(14)
+    } else {
+        minor_tiles.saturating_sub(14)
+    };
+    (
+        offset_camera_coordinate(entrance_origin.0, x_offset, max_x),
+        offset_camera_coordinate(entrance_origin.1, y_offset, max_y),
+    )
+}
+
+fn offset_camera_coordinate(origin: u16, offset: i16, maximum: u16) -> u16 {
+    let clamped = i32::from(origin)
+        .saturating_add(i32::from(offset))
+        .clamp(0, i32::from(maximum));
+    u16::try_from(clamped).expect("camera coordinate was clamped to a u16 bound")
+}
+
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_camera_offset(axis: &str) -> i16 {
+    std::env::var(format!("LM_NATIVE_PREVIEW_CAMERA_{axis}"))
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0)
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_camera_offset(_axis: &str) -> i16 {
+    0
+}
+
 fn object_field_edits(
     form: &ObjectForm,
     index: usize,
@@ -8161,6 +8273,26 @@ mod tests {
     }
 
     #[test]
+    fn preview_camera_offsets_follow_orientation_and_clamp_to_level_bounds() {
+        assert_eq!(
+            offset_game_preview_origin((0, 12), 15, -20, 512, 27, false),
+            (15, 0)
+        );
+        assert_eq!(
+            offset_game_preview_origin((496, 13), 99, 99, 512, 27, false),
+            (496, 13)
+        );
+        assert_eq!(
+            offset_game_preview_origin((0, 12), 16, 4, 512, 27, true),
+            (4, 28)
+        );
+        assert_eq!(
+            offset_game_preview_origin((0, 498), 16, -4, 512, 27, true),
+            (0, 498)
+        );
+    }
+
+    #[test]
     fn vertical_game_preview_uses_the_recovered_initial_camera_row() {
         let entrance = VanillaMainEntrance {
             screen_and_method: 0x0a,
@@ -8228,7 +8360,7 @@ mod tests {
             .filter(|&command| object_catalog_tiles(command, family, &definitions).is_some())
             .count();
         assert_eq!(
-            rendered, 45,
+            rendered, 59,
             "normal-family authenticated artwork coverage changed"
         );
     }

@@ -278,6 +278,17 @@ LM_NATIVE_SCREENSHOT_TO=/tmp/lm-native.png \
   --level 105 "Super Mario World (USA).sfc"
 ```
 
+To capture a later part of a level, offset the preview camera in level-major and perpendicular
+tiles. For a horizontal level, `MAJOR` moves right and `MINOR` moves down; vertical levels swap
+those screen axes:
+
+```sh
+LM_NATIVE_SCREENSHOT_TO=/tmp/lm-cookie-mountain.png \
+LM_NATIVE_PREVIEW_CAMERA_MAJOR=15 \
+  cargo run -p lm-native --features visual-smoke -- \
+  --level 001 "Super Mario World (USA).sfc"
+```
+
 The process waits for the populated workspace to settle, captures its own main viewport, writes a
 PNG, and exits. This exercises real window creation, GPU painting, startup ROM loading, and native
 editor composition; it does not simulate pointer or keyboard interaction. Level numbers use Lunar
