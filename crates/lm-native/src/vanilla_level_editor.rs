@@ -447,7 +447,10 @@ impl VanillaLevelEditor {
     }
 
     fn game_preview(&self) -> bool {
-        self.game_preview.unwrap_or(true)
+        self.game_preview.unwrap_or_else(|| {
+            std::env::var("LM_NATIVE_PREVIEW_STYLE")
+                .map_or(true, |style| !style.eq_ignore_ascii_case("editor"))
+        })
     }
 
     fn snes_viewport(&self) -> bool {
@@ -4785,7 +4788,7 @@ fn draw_wrapped_background_viewport(
     const VIEW_WIDTH: i32 = 256;
     const VIEW_HEIGHT: i32 = 224;
     let layer1_camera = (i32::from(camera.0) * 16, i32::from(camera.1) * 16);
-    let (source_x, source_y) = normalized_layer2_camera_pixels(entrance, layer1_camera);
+    let (source_x, source_y) = vanilla_layer2_camera_pixels(entrance, layer1_camera);
     let viewport = egui::Rect::from_min_size(
         world.min
             + egui::vec2(
@@ -4948,20 +4951,6 @@ fn vanilla_layer2_camera_pixels(
     (layer2_x, layer2_y)
 }
 
-/// Converts the game's absolute BG2 scroll position into the coordinate space of the
-/// materialized 32×32 background plane. The native decoder normalizes the initial BG2 row to
-/// plane row zero, so sampling it with the absolute `$00/$60/$90/$C0` startup offset rotates the
-/// background vertically a second time.
-fn normalized_layer2_camera_pixels(
-    entrance: VanillaMainEntrance,
-    layer1_camera: (i32, i32),
-) -> (i32, i32) {
-    let (x, y) = vanilla_layer2_camera_pixels(entrance, layer1_camera);
-    let initial_y =
-        i32::from(VANILLA_INITIAL_LAYER2_Y[usize::from(entrance.screen_and_method & 3)]);
-    (x, y - initial_y)
-}
-
 fn screen_pixels_f32(value: i32) -> f32 {
     f32::from(
         i16::try_from(value)
@@ -4985,36 +4974,11 @@ fn presented_layer2_tilemap_index(x: usize, y: usize, _shared_background: bool) 
 fn vanilla_shared_background_coordinates(
     layer1_x: usize,
     layer1_y: usize,
-    entrance: VanillaMainEntrance,
+    _entrance: VanillaMainEntrance,
 ) -> (usize, usize) {
-    // Lunar Magic presents the materialized Layer 2 Map16 plane at native tile scale. The
-    // horizontal scroll rate changes the camera relationship during play; applying it as a
-    // sampling divisor here duplicates every source column and visibly stretches the background.
-    // Vertical placement still incorporates the entrance-derived editor origin and initial BG
-    // position recovered from the native viewport setup.
-    let setting = usize::from(entrance.position >> 4);
-    let initial_layer2_y =
-        usize::from(VANILLA_INITIAL_LAYER2_Y[usize::from(entrance.screen_and_method & 3)]) / 16;
-    let editor_origin_y = usize::from(vanilla_horizontal_entrance_scroll_row(entrance));
-    let vertical_setting = VANILLA_LAYER2_VERTICAL_SCROLL[setting];
-    let scaled_y = match vertical_setting {
-        0 => 0,
-        1 => layer1_y,
-        2 => layer1_y / 2,
-        _ => layer1_y / 16,
-    };
-    let scaled_editor_origin_y = match vertical_setting {
-        0 => 0,
-        1 => editor_origin_y,
-        2 => editor_origin_y / 2,
-        _ => editor_origin_y / 16,
-    };
-    (
-        layer1_x,
-        scaled_y
-            .saturating_add(initial_layer2_y)
-            .saturating_sub(scaled_editor_origin_y),
-    )
+    // Lunar Magic's active editor compositor indexes the materialized 32×32 background plane
+    // directly. Entrance-relative scroll rates belong only to the separate game-camera preview.
+    (layer1_x, layer1_y)
 }
 
 const fn native_object_cache_minor_tiles(canvas_minor_tiles: u16) -> u16 {
@@ -8266,7 +8230,7 @@ mod tests {
     }
 
     #[test]
-    fn level_105_shared_background_keeps_native_x_scale_and_vertical_alignment() {
+    fn level_105_editor_background_uses_native_canvas_coordinates() {
         let entrance = VanillaMainEntrance {
             position: 0x5b,
             screen_and_method: 0x9a,
@@ -8274,11 +8238,11 @@ mod tests {
         };
         assert_eq!(
             vanilla_shared_background_coordinates(0, 16, entrance),
-            (0, 12)
+            (0, 16)
         );
         assert_eq!(
             vanilla_shared_background_coordinates(20, 16, entrance),
-            (20, 12)
+            (20, 16)
         );
     }
 
@@ -8324,14 +8288,6 @@ mod tests {
         assert_eq!(
             vanilla_layer2_camera_pixels(entrance, (30 * 16, 12 * 16)),
             (240, 192)
-        );
-        assert_eq!(
-            normalized_layer2_camera_pixels(entrance, (15 * 16, 12 * 16)),
-            (120, 0)
-        );
-        assert_eq!(
-            normalized_layer2_camera_pixels(entrance, (30 * 16, 12 * 16)),
-            (240, 0)
         );
     }
 

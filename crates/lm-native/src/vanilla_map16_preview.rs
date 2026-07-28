@@ -922,6 +922,49 @@ mod tests {
                 &lm_level::SpriteLengthTable::standard(),
             )
             .unwrap();
+        if let Ok(tilemap_path) = std::env::var("LM_BACKGROUND_TILEMAP") {
+            let live = std::fs::read(tilemap_path).unwrap();
+            let layer2 = project
+                .load_level_layer2(
+                    0x106,
+                    level.layer1.header.level_mode(),
+                    lm_profile::smw_us_v1_vanilla_layer2_layout(),
+                )
+                .unwrap();
+            let lm_level::NativeLayer2Data::Tilemap(native) = &layer2 else {
+                panic!("level $106 Layer 2 is not a tilemap");
+            };
+            let native_words = native
+                .chunks_exact(2)
+                .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                .collect::<Vec<_>>();
+            let live_words = live
+                .chunks_exact(2)
+                .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                .collect::<Vec<_>>();
+            let best = (0..32)
+                .map(|shift| {
+                    let equal = (0..32)
+                        .flat_map(|y| (0..32).map(move |x| (x, y)))
+                        .filter(|&(x, y)| {
+                            let live_index = ((x >> 4) * 31 + y) * 16 + x;
+                            let native_index =
+                                lm_level::native_layer2_tilemap_index(x, (y + shift) % 32).unwrap();
+                            live_words[live_index] == native_words[native_index]
+                        })
+                        .count();
+                    (equal, shift)
+                })
+                .max()
+                .unwrap();
+            assert_eq!(
+                best,
+                (1024, 0),
+                "Lunar Magic background tilemap best native row shift is {} with {} / 1024 matching words",
+                best.1,
+                best.0
+            );
+        }
         let files = lm_profile::smw_us_v1_object_tileset_graphics_files(
             &project.rom,
             usize::from(level.layer1.header.object_tileset()),

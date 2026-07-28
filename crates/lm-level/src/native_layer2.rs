@@ -8,7 +8,8 @@ pub const NATIVE_LAYER2_TILEMAP_WIDTH: usize = 32;
 pub const NATIVE_LAYER2_TILEMAP_HEIGHT: usize = 32;
 const NATIVE_LAYER2_TILEMAP_WORDS: usize =
     NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT;
-const LEGACY_LAYER2_SECOND_PAGE_GAP: usize = 0x50;
+const LEGACY_LAYER2_PAGE_WORDS: usize = 0x1b0;
+const LEGACY_LAYER2_PAGE_WIDTH: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeLayer2Rectangle {
@@ -369,12 +370,11 @@ pub fn expand_legacy_layer2_tilemap(
     }
     let mut output = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
     for (source, value) in bytes.iter().copied().enumerate() {
-        let visual = if source < 0x200 {
-            source
-        } else {
-            source + LEGACY_LAYER2_SECOND_PAGE_GAP
-        };
-        let tile = native_layer2_storage_index_from_visual(visual);
+        let page = source / LEGACY_LAYER2_PAGE_WORDS;
+        let within_page = source % LEGACY_LAYER2_PAGE_WORDS;
+        let x = page * LEGACY_LAYER2_PAGE_WIDTH + within_page % LEGACY_LAYER2_PAGE_WIDTH;
+        let y = within_page / LEGACY_LAYER2_PAGE_WIDTH;
+        let tile = native_layer2_tilemap_index(x, y).expect("legacy Layer 2 page coordinate");
         output[tile * 2] = value;
         output[tile * 2 + 1] = high_byte;
     }
@@ -396,12 +396,11 @@ pub fn compact_legacy_layer2_tilemap(
     let mut output = Vec::with_capacity(LEGACY_LAYER2_TILEMAP_LEN);
     let mut represented = [false; 1024];
     for source in 0..LEGACY_LAYER2_TILEMAP_LEN {
-        let visual = if source < 0x200 {
-            source
-        } else {
-            source + LEGACY_LAYER2_SECOND_PAGE_GAP
-        };
-        let tile = native_layer2_storage_index_from_visual(visual);
+        let page = source / LEGACY_LAYER2_PAGE_WORDS;
+        let within_page = source % LEGACY_LAYER2_PAGE_WORDS;
+        let x = page * LEGACY_LAYER2_PAGE_WIDTH + within_page % LEGACY_LAYER2_PAGE_WIDTH;
+        let y = within_page / LEGACY_LAYER2_PAGE_WIDTH;
+        let tile = native_layer2_tilemap_index(x, y).expect("legacy Layer 2 page coordinate");
         represented[tile] = true;
         let word = &bytes[tile * 2..tile * 2 + 2];
         if word[1] != high_byte {
@@ -920,11 +919,11 @@ mod tests {
 
         let legacy = vec![0xf1; LEGACY_LAYER2_TILEMAP_LEN];
         let expanded = expand_legacy_layer2_tilemap(&legacy, 0).unwrap();
-        for (x, y) in [(0, 0), (31, 15), (16, 18), (15, 29)] {
+        for (x, y) in [(0, 0), (31, 15), (16, 18), (15, 26)] {
             let tile = native_layer2_tilemap_index(x, y).unwrap();
             assert_eq!(&expanded[tile * 2..tile * 2 + 2], &[0xf1, 0]);
         }
-        for (x, y) in [(0, 16), (31, 17), (16, 29), (31, 31)] {
+        for (x, y) in [(0, 27), (31, 27), (16, 29), (31, 31)] {
             let tile = native_layer2_tilemap_index(x, y).unwrap();
             assert_eq!(&expanded[tile * 2..tile * 2 + 2], &[0, 0]);
         }
@@ -934,14 +933,12 @@ mod tests {
             .map(|index| index.to_le_bytes()[0])
             .collect::<Vec<_>>();
         let expanded = expand_legacy_layer2_tilemap(&legacy, 1).unwrap();
-        for (x, y) in [(0, 0), (0, 1), (1, 0), (31, 15), (16, 18), (15, 29)] {
+        for (x, y) in [(0, 0), (0, 1), (1, 0), (31, 15), (16, 18), (15, 26)] {
             let tile = native_layer2_tilemap_index(x, y).unwrap();
-            let visual = y * 32 + x;
-            let source = if visual < 0x200 {
-                visual
-            } else {
-                visual - LEGACY_LAYER2_SECOND_PAGE_GAP
-            };
+            let page = x / LEGACY_LAYER2_PAGE_WIDTH;
+            let source = page * LEGACY_LAYER2_PAGE_WORDS
+                + y * LEGACY_LAYER2_PAGE_WIDTH
+                + x % LEGACY_LAYER2_PAGE_WIDTH;
             assert_eq!(
                 &expanded[tile * 2..tile * 2 + 2],
                 &[source.to_le_bytes()[0], 1]
