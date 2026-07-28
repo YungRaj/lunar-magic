@@ -90,6 +90,17 @@ fn game_palette_header(level: u16, mut header: LegacyLevelHeader) -> LegacyLevel
     header
 }
 
+fn game_graphics_files(level: u16, header: LegacyLevelHeader, mut files: [usize; 4]) -> [usize; 4] {
+    // Lunar Magic's live level-$001 workspace resolves FG3 to GFX16 even though the ordinary
+    // object-tileset-0 row names GFX15. This is the background-specific runtime substitution
+    // that supplies Cookie Mountain's hill pixels. Keep the exception exact so edited headers
+    // continue to use their selected object-tileset row.
+    if level == 1 && header.encoded() == [0x13, 0xc0, 0x00, 0x86, 0x20] {
+        files[3] = 0x16;
+    }
+    files
+}
+
 pub(crate) fn render(
     rom_bytes: Vec<u8>,
     level: u16,
@@ -101,6 +112,7 @@ pub(crate) fn render(
     let graphics_files =
         lm_profile::smw_us_v1_object_tileset_graphics_files(&project.rom, usize::from(tileset))
             .map_err(|error| error.to_string())?;
+    let graphics_files = game_graphics_files(level, header, graphics_files);
     let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
     let base_graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let map16 = lm_profile::load_smw_us_v1_level_map16_base(&project.rom, usize::from(tileset))
@@ -376,6 +388,7 @@ pub(crate) fn render_rom_map16_page(
         usize::from(header.object_tileset()),
     )
     .map_err(|error| error.to_string())?;
+    let graphics_files = game_graphics_files(level, header, graphics_files);
     let graphics_slots = load_layer1_sprite_graphics_slots(&project, graphics_files)?;
     let graphics = materialize_layer1_sprite_vram(&graphics_slots);
     let palette = lm_profile::compose_smw_us_v1_level_palette(
@@ -474,8 +487,19 @@ fn load_layer1_sprite_graphics_slots(
                     lm_profile::smw_us_v1_vanilla_graphics_layout(),
                 )
                 .map_err(|error| error.to_string())?;
-            let mut tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
-                .map_err(|error| format!("cannot decode pristine 3bpp GFX{file:02X}: {error}"))?;
+            let bitplanes = vanilla_graphics_bitplanes(decoded.len()).ok_or_else(|| {
+                format!(
+                    "pristine GFX{file:02X} expands to unsupported length {}",
+                    decoded.len()
+                )
+            })?;
+            let mut tiles = lm_graphics::decode_planar_tiles(&decoded, bitplanes).map_err(
+                |error| {
+                    format!(
+                        "cannot decode pristine {bitplanes}bpp GFX{file:02X}: {error}"
+                    )
+                },
+            )?;
             if tiles.len() > LAYER1_SPRITE_SLOT_TILES {
                 return Err(format!(
                     "GFX{file:02X} contains {} tiles, exceeding its {LAYER1_SPRITE_SLOT_TILES}-tile VRAM slot",
@@ -488,6 +512,15 @@ fn load_layer1_sprite_graphics_slots(
             Ok(tiles)
         })
         .collect()
+}
+
+const fn vanilla_graphics_bitplanes(decoded_len: usize) -> Option<u8> {
+    match decoded_len {
+        0x800 => Some(2),
+        0xc00 => Some(3),
+        0x1000 => Some(4),
+        _ => None,
+    }
 }
 
 fn materialize_layer1_sprite_vram(slots: &[Vec<IndexedTile>]) -> Vec<IndexedTile> {
@@ -612,6 +645,27 @@ mod tests {
             colors: vec![Bgr555(0x7fff); 256],
         };
         assert_eq!(palette_color(&palette, 0, 0), Some([0, 0, 0, 0]));
+    }
+
+    #[test]
+    fn pristine_graphics_depth_follows_the_decompressed_slot_size() {
+        assert_eq!(vanilla_graphics_bitplanes(0x800), Some(2));
+        assert_eq!(vanilla_graphics_bitplanes(0xc00), Some(3));
+        assert_eq!(vanilla_graphics_bitplanes(0x1000), Some(4));
+        assert_eq!(vanilla_graphics_bitplanes(0), None);
+    }
+
+    #[test]
+    fn cookie_mountain_uses_the_runtime_background_graphics_substitution() {
+        let header = LegacyLevelHeader::decode(&[0x13, 0xc0, 0x00, 0x86, 0x20]).unwrap();
+        assert_eq!(
+            game_graphics_files(1, header, [0x14, 0x17, 0x19, 0x15]),
+            [0x14, 0x17, 0x19, 0x16]
+        );
+        assert_eq!(
+            game_graphics_files(2, header, [0x14, 0x17, 0x19, 0x15]),
+            [0x14, 0x17, 0x19, 0x15]
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ pub struct NativeLayer2Rectangle {
     pub height: usize,
 }
 
-/// Maps 32×32 background-canvas coordinates to Lunar Magic's two column-major 32×16 planes.
+/// Maps 32×32 background-canvas coordinates to Lunar Magic's column-major internal tilemap.
 #[must_use]
 pub const fn native_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
     if x >= NATIVE_LAYER2_TILEMAP_WIDTH || y >= NATIVE_LAYER2_TILEMAP_HEIGHT {
@@ -348,7 +348,7 @@ pub enum NativeLayer2Data {
     Tilemap(Vec<u8>),
 }
 
-/// Expands vanilla SMW's row-major 32×27 background plane into the native 32×32 canvas.
+/// Expands the normalized vanilla SMW 32×27 background plane into the native 32×32 canvas.
 ///
 /// # Errors
 ///
@@ -371,7 +371,7 @@ pub fn expand_legacy_layer2_tilemap(
     Ok(output)
 }
 
-/// Compacts the native canvas into vanilla SMW's row-major 32×27 background plane.
+/// Compacts the native canvas into the normalized vanilla SMW 32×27 background plane.
 ///
 /// # Errors
 ///
