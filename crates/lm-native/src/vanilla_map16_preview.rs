@@ -153,17 +153,18 @@ pub(crate) fn render(
     let mut animated_layer2_images = Vec::with_capacity(4);
     let mut animated_background_images = Vec::with_capacity(4);
     for phase in 0..4 {
+        let phase_map16 = map16_definitions_for_phase(&map16.bytes, phase);
         let mut foreground_graphics = base_foreground_graphics.clone();
         apply_vanilla_common_animation_frame(&project, &mut foreground_graphics, phase, tileset)?;
         let mut background_graphics = base_background_graphics.clone();
         apply_vanilla_common_animation_frame(&project, &mut background_graphics, phase, tileset)?;
         animated_images.push(render_map16_definition_atlas(
-            &map16.bytes,
+            &phase_map16,
             &foreground_graphics,
             &palette,
         ));
         animated_layer2_images.push(render_layer2_map16_definition_atlas(
-            &map16.bytes,
+            &phase_map16,
             &foreground_graphics,
             &palette,
             tileset,
@@ -530,6 +531,25 @@ fn apply_vanilla_common_animation_phases(
     Ok(())
 }
 
+fn map16_definitions_for_phase(base: &[u8], phase: usize) -> Vec<u8> {
+    // Ghidra RenderMap16TileToPixelBuffer @ 0044EAF0 selects a four-phase alternate
+    // definition bank for Map16 $133-$13A. The pristine variants retain tile numbers and
+    // flips while selecting palette rows 3, 5, 6, and 7 respectively.
+    const PALETTE_ROWS: [u16; 4] = [3, 5, 6, 7];
+    let mut definitions = base.to_vec();
+    let palette = PALETTE_ROWS[phase & 3] << 10;
+    for definition in 0x133..=0x13a {
+        let start = definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES;
+        for word in definitions[start..start + lm_profile::SMW_US_V1_MAP16_TILE_BYTES]
+            .chunks_exact_mut(2)
+        {
+            let value = u16::from_le_bytes([word[0], word[1]]);
+            word.copy_from_slice(&((value & !0x1c00) | palette).to_le_bytes());
+        }
+    }
+    definitions
+}
+
 fn render_map16_definition_atlas(
     definitions: &[u8],
     graphics: &[IndexedTile],
@@ -856,6 +876,32 @@ mod tests {
     use super::*;
     use lm_graphics::{Bgr555, Rgb8};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn animated_pipe_map16_definitions_select_native_palette_phases() {
+        let mut base = vec![0_u8; lm_profile::SMW_US_V1_MAP16_BASE_BYTES];
+        for definition in 0x133..=0x13a {
+            let start = definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES;
+            for (quadrant, word) in base[start..start + 8].chunks_exact_mut(2).enumerate() {
+                word.copy_from_slice(&(0xc000 | 0x1400 | quadrant as u16).to_le_bytes());
+            }
+        }
+        for (phase, palette) in [3_u16, 5, 6, 7].into_iter().enumerate() {
+            let definitions = map16_definitions_for_phase(&base, phase);
+            for definition in 0x133..=0x13a {
+                let start = definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES;
+                for (quadrant, word) in definitions[start..start + 8]
+                    .chunks_exact(2)
+                    .enumerate()
+                {
+                    assert_eq!(
+                        u16::from_le_bytes([word[0], word[1]]),
+                        0xc000 | (palette << 10) | quadrant as u16
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn snes_palette_color_zero_is_transparent_in_editor_atlases() {
