@@ -200,15 +200,11 @@ pub(crate) fn render(
     let layer3_position = layer3
         .as_ref()
         .map(|layer3| (layer3.initial_x, layer3.initial_y));
-    let layer3_editor_row_offset = layer3.as_ref().and_then(|layer3| match layer3.behavior {
-        lm_profile::SmwUsV1Layer3Behavior::LowTide => Some(-2),
-        lm_profile::SmwUsV1Layer3Behavior::HighTide => Some(-8),
-        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x80 } => Some(1),
-        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x81 } if header.level_mode() == 0x0e => {
-            Some(0)
-        }
-        lm_profile::SmwUsV1Layer3Behavior::Static { .. } => None,
-    });
+    let layer3_editor_row_offset = layer3
+        .as_ref()
+        .and_then(|layer3| {
+            vanilla_layer3_editor_row_offset(layer3.behavior, header.encoded()[4] & 0x0f)
+        });
     let (layer3_low_image, layer3_high_image) = layer3.as_ref().map_or((None, None), |layer3| {
         let (low, high) = render_layer3_planes(
             &layer3.tilemap,
@@ -243,6 +239,19 @@ pub(crate) fn render(
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+const fn vanilla_layer3_editor_row_offset(
+    behavior: lm_profile::SmwUsV1Layer3Behavior,
+    mode_category: u8,
+) -> Option<i16> {
+    match behavior {
+        lm_profile::SmwUsV1Layer3Behavior::LowTide => Some(-2),
+        lm_profile::SmwUsV1Layer3Behavior::HighTide => Some(-8),
+        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x80 } => Some(1),
+        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x81 } if mode_category == 1 => Some(0),
+        lm_profile::SmwUsV1Layer3Behavior::Static { .. } => None,
+    }
 }
 
 fn apply_black_half_color(image: &mut egui::ColorImage) {
@@ -1079,6 +1088,34 @@ mod tests {
         assert_eq!(low.pixels[8 + 7], egui::Color32::TRANSPARENT);
         assert_eq!(high.pixels[0], egui::Color32::TRANSPARENT);
         assert_eq!(low.pixels[1], egui::Color32::TRANSPARENT);
+    }
+
+    #[test]
+    fn static_layer3_editor_offsets_follow_lunar_magics_mode_state() {
+        use lm_profile::SmwUsV1Layer3Behavior::{HighTide, LowTide, Static};
+
+        assert_eq!(vanilla_layer3_editor_row_offset(LowTide, 0), Some(-2));
+        assert_eq!(vanilla_layer3_editor_row_offset(HighTide, 0), Some(-8));
+        assert_eq!(
+            vanilla_layer3_editor_row_offset(Static { code: 0x80 }, 0),
+            Some(1)
+        );
+        assert_eq!(
+            vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 1),
+            Some(0)
+        );
+        assert_eq!(
+            vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 3),
+            None
+        );
+        assert_eq!(
+            vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 9),
+            None
+        );
+        assert_eq!(
+            vanilla_layer3_editor_row_offset(Static { code: 0x82 }, 1),
+            None
+        );
     }
 
     #[test]
