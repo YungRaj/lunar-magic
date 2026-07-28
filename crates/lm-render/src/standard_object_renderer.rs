@@ -1522,27 +1522,27 @@ fn render_shared_slot_033(
     set_placement_cell(cache, layout, placement, 0, 0, start)?;
     let rows = usize::from(parameter >> 4) + 1;
     for row in 1..=rows {
-        let major = signed_offset(row)?;
+        let minor = signed_offset(row)?;
         let direction = if expands_right { 1 } else { -1 };
         for fill in 0..row.saturating_sub(1) {
             set_placement_cell_signed(
                 cache,
                 layout,
                 placement,
-                major,
                 direction * signed_offset(fill)?,
+                minor,
                 0x03f,
             )?;
         }
-        let end_minor = direction * signed_offset(row.saturating_sub(1))?;
-        set_placement_cell_signed(cache, layout, placement, major, end_minor, end)?;
+        let end_major = direction * signed_offset(row.saturating_sub(1))?;
+        set_placement_cell_signed(cache, layout, placement, end_major, minor, end)?;
         if row < rows {
             set_placement_cell_signed(
                 cache,
                 layout,
                 placement,
-                major,
                 direction * signed_offset(row)?,
+                minor,
                 start,
             )?;
         }
@@ -5497,7 +5497,7 @@ mod tests {
         ] {
             let stream = ObjectStream {
                 records: vec![
-                    ObjectRecord::new(vec![u8::try_from(start_minor).unwrap(), 0x10, parameter])
+                    ObjectRecord::new(vec![u8::try_from(start_minor).unwrap(), 0x18, parameter])
                         .unwrap(),
                 ],
             };
@@ -5510,35 +5510,43 @@ mod tests {
             )
             .unwrap();
             assert_eq!(
-                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 0, start_minor)],
+                report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 8, start_minor)],
                 start
             );
             for row in 1_usize..=3 {
                 for fill in 0..row.saturating_sub(1) {
-                    let minor = start_minor
+                    let major = 8_usize
                         .checked_add_signed(direction * isize::try_from(fill).unwrap())
                         .unwrap();
                     assert_eq!(
                         report.cache.cells()
-                            [NativeLevelMap16Cache::cell_index(layout(), row, minor)],
+                            [NativeLevelMap16Cache::cell_index(layout(), major, start_minor + row)],
                         0x03f
                     );
                 }
-                let end_minor = start_minor
+                let end_major = 8_usize
                     .checked_add_signed(direction * isize::try_from(row.saturating_sub(1)).unwrap())
                     .unwrap();
                 assert_eq!(
                     report.cache.cells()
-                        [NativeLevelMap16Cache::cell_index(layout(), row, end_minor)],
+                        [NativeLevelMap16Cache::cell_index(
+                            layout(),
+                            end_major,
+                            start_minor + row
+                        )],
                     end
                 );
                 if row < 3 {
-                    let start_minor = start_minor
+                    let start_major = 8_usize
                         .checked_add_signed(direction * isize::try_from(row).unwrap())
                         .unwrap();
                     assert_eq!(
                         report.cache.cells()
-                            [NativeLevelMap16Cache::cell_index(layout(), row, start_minor)],
+                            [NativeLevelMap16Cache::cell_index(
+                                layout(),
+                                start_major,
+                                start_minor + row
+                            )],
                         start
                     );
                 }
