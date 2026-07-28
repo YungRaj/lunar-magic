@@ -11,12 +11,37 @@ use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage, SnesChecksum, compute_snes_checksum};
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
+fn pristine_smw_us_rom_bytes() -> Vec<u8> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for path in [
+        root.join("Super Mario World (USA).sfc"),
+        root.join("SMW-working.sfc"),
+        root.join("sysLMRestore/smwOrig.smc"),
+    ] {
+        let Ok(bytes) = fs::read(path) else {
+            continue;
+        };
+        let Ok(image) = RomImage::from_bytes(bytes.clone()) else {
+            continue;
+        };
+        if image.logical_len() == 0x8_0000
+            && lm_rom::detect_identity(&image).is_ok_and(|identity| {
+                identity.game == lm_rom::SupportedGame::SuperMarioWorld
+                    && identity.region == lm_rom::Region::NorthAmerica
+                    && identity.revision == 0
+                    && identity.checksum_matches()
+            })
+        {
+            return bytes;
+        }
+    }
+    panic!("verified pristine SMW-US fixture not found");
+}
+
 #[test]
 fn pristine_level_001_layer2_upper_plane_matches_lunar_magic_export() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let Ok(bytes) = fs::read(root.join("Super Mario World (USA).sfc")) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let project = Project::new(RomImage::from_bytes(bytes).unwrap());
     let level = project
         .load_level_slot(
@@ -57,12 +82,7 @@ fn pristine_level_001_layer2_upper_plane_matches_lunar_magic_export() {
 
 #[test]
 fn every_ordinary_graphics_file_in_the_local_reference_rom_decodes() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let project = Project::new(RomImage::from_bytes(bytes).unwrap());
     for file_number in 0..SMW_US_V1_VANILLA_GRAPHICS_FILES {
         let graphics = project
@@ -77,12 +97,7 @@ fn every_ordinary_graphics_file_in_the_local_reference_rom_decodes() {
 
 #[test]
 fn special_graphics_pointers_match_gfx33_and_gfx32_in_the_reference_rom() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let project = Project::new(RomImage::from_bytes(bytes).unwrap());
     let layout = smw_us_v1_vanilla_special_graphics_layout();
     assert_eq!(layout.read_pointer(&project, 0).unwrap().get(), 0x08_bfc0);
@@ -99,12 +114,7 @@ fn special_graphics_pointers_match_gfx33_and_gfx32_in_the_reference_rom() {
 
 #[test]
 fn every_object_tileset_graphics_assignment_decodes_in_the_reference_rom() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let project = Project::new(RomImage::from_bytes(bytes).unwrap());
     for tileset in 0..16 {
         let files = smw_us_v1_object_tileset_graphics_files(&project.rom, tileset).unwrap();
@@ -120,12 +130,7 @@ fn every_object_tileset_graphics_assignment_decodes_in_the_reference_rom() {
 
 #[test]
 fn every_sprite_tileset_graphics_assignment_decodes_in_the_reference_rom() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let project = Project::new(RomImage::from_bytes(bytes).unwrap());
     assert_eq!(
         smw_us_v1_sprite_tileset_graphics_files(&project.rom, 0).unwrap(),
@@ -149,12 +154,7 @@ fn every_sprite_tileset_graphics_assignment_decodes_in_the_reference_rom() {
 
 #[test]
 fn every_native_level_slot_in_the_local_reference_rom_decodes() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let project = Project::new(RomImage::from_bytes(bytes).unwrap());
     for level in 0..SMW_US_V1_VANILLA_LEVEL_SLOTS {
         project
@@ -169,12 +169,7 @@ fn every_native_level_slot_in_the_local_reference_rom_decodes() {
 
 #[test]
 fn pristine_level_map16_sources_resolve_in_the_local_reference_rom() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let rom = RomImage::from_bytes(bytes).unwrap();
     let loaded = load_smw_us_v1_level_map16_base(&rom, 0).unwrap();
     assert_eq!(loaded.tileset_source_offset, 0x68b70);
@@ -186,12 +181,7 @@ fn pristine_level_map16_sources_resolve_in_the_local_reference_rom() {
 
 #[test]
 fn pristine_layer1_edit_expands_repoints_and_reopens_without_touching_sprites() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
     let layout = smw_us_v1_vanilla_level_layout();
     let mut level = project
@@ -270,12 +260,7 @@ fn pristine_layer1_edit_expands_repoints_and_reopens_without_touching_sprites() 
 
 #[test]
 fn pristine_unique_sprite_stream_edits_in_place_and_reopens() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
     let before = project.save_snapshot();
     let layout = smw_us_v1_vanilla_level_layout();
@@ -342,12 +327,7 @@ fn pristine_unique_sprite_stream_edits_in_place_and_reopens() {
 
 #[test]
 fn pristine_graphics_edit_expands_repoints_and_reopens() {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("Super Mario World (USA).sfc");
-    let Ok(bytes) = fs::read(path) else {
-        return;
-    };
+    let bytes = pristine_smw_us_rom_bytes();
     let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
     let layout = smw_us_v1_vanilla_graphics_layout();
     let mut graphics = project.load_graphics_file(0, layout).unwrap();

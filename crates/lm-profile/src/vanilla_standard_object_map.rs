@@ -97,7 +97,6 @@ pub fn load_smw_us_v1_standard_object_definition_map(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
 
     #[test]
     fn maps_packed_handlers_and_retains_foreign_entries() {
@@ -118,12 +117,7 @@ mod tests {
 
     #[test]
     fn every_pristine_family_entry_maps_to_the_recovered_handler_catalog() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("Super Mario World (USA).sfc");
-        let Ok(bytes) = fs::read(path) else {
-            return;
-        };
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let map =
             load_smw_us_v1_standard_object_definition_map(&RomImage::from_bytes(bytes).unwrap())
                 .unwrap();

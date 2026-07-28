@@ -50,8 +50,8 @@ mod tests {
 
     #[test]
     fn pristine_pairs_install_extended_shrink_and_undo_exactly() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             Project::open_supported(RomImage::from_bytes(original.clone()).unwrap()).unwrap();
         let locator = smw_us_v1_overworld_event_number_map_locator();

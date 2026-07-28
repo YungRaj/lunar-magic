@@ -36,12 +36,12 @@ mod tests {
     use crate::SMW_US_V1_CHECKSUM_FIELD;
     use lm_overworld::BossSequenceMessage;
     use lm_rom::RomImage;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn pristine_rows_save_as_one_combined_allocation_and_undo_exactly() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             lm_project::Project::open_supported(RomImage::from_bytes(original.clone()).unwrap())
                 .unwrap();

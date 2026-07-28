@@ -166,7 +166,7 @@ mod tests {
     use lm_overworld::{OverworldWarpEndpoint, OverworldWarpLink};
     use lm_project::{OverworldWarpLinkStorage, Project};
     use lm_rom::RomImage;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     fn expanded_table() -> OverworldWarpLinkTable {
         OverworldWarpLinkTable {
@@ -187,8 +187,8 @@ mod tests {
 
     #[test]
     fn pristine_install_reopens_through_current_lunar_magic_contract_and_undoes() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             Project::open_supported(RomImage::from_bytes(bytes.clone()).unwrap()).unwrap();
         project

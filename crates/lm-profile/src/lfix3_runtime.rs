@@ -125,7 +125,7 @@ mod tests {
         let payload = smw_us_v1_lfix3_runtime_payload(template).unwrap();
         assert_eq!(payload.fixups.len(), 107);
 
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project = Project::new(RomImage::from_bytes(original).unwrap());
         let plan = RelocatablePatchPlan {
             description: "test Lfix3 relocation".into(),

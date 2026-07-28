@@ -294,8 +294,8 @@ mod tests {
 
     #[test]
     fn exact_pristine_install_reopens_and_undo_restores_the_original() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             lm_project::Project::open_supported(RomImage::from_bytes(original.clone()).unwrap())
                 .unwrap();
@@ -329,8 +329,8 @@ mod tests {
 
     #[test]
     fn typed_loader_distinguishes_exact_pristine_and_installed_storage() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             lm_project::Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
         let pristine = load_smw_us_v1_event_tilemaps(&project).unwrap();

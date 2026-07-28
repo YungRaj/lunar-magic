@@ -53,7 +53,7 @@ mod tests {
     use lm_project::TitleRecordingStorage;
     use lm_rom::RomImage;
     use lm_title::TitleScreenRecording;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     fn recording(value: u8, length: usize) -> TitleScreenRecording {
         let mut bytes = vec![value; length];
@@ -63,8 +63,8 @@ mod tests {
 
     #[test]
     fn pristine_install_update_reopen_and_two_undos_restore_exact_rom() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             lm_project::Project::open_supported(RomImage::from_bytes(original.clone()).unwrap())
                 .unwrap();

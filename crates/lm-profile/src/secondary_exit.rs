@@ -75,8 +75,8 @@ mod tests {
 
     #[test]
     fn pristine_rom_loads_four_native_planes_without_claiming_installation() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let project = Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
         let loaded = project
             .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())

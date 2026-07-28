@@ -236,8 +236,7 @@ mod tests {
     fn level_zero_matches_lunar_magic_tpl_oracle() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let project = Project::new(
-            RomImage::from_bytes(fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap(),
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
         );
         let level = project
             .load_level_slot(
@@ -279,8 +278,7 @@ mod tests {
     fn cookie_mountain_matches_lunar_magic_mwl_palette_oracle() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let project = Project::new(
-            RomImage::from_bytes(fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap(),
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
         );
         let level = project
             .load_level_slot(

@@ -174,7 +174,7 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let executable = fs::read(root.join("lm363/Lunar Magic.exe")).unwrap();
         let template = pe_rva(&executable, 0x1b_7f78, 0x510);
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             Project::open_supported(RomImage::from_bytes(original.clone()).unwrap()).unwrap();
         let result = project

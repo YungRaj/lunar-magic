@@ -244,10 +244,9 @@ mod tests {
 
     #[test]
     fn pristine_detection_materializes_defaults_without_claiming_installation() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let project = Project::new(
-            RomImage::from_bytes(fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap(),
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
         );
         let loaded = load_smw_us_v1_overworld_settings(&project).unwrap();
         assert!(!loaded.installed);

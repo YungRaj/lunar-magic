@@ -278,7 +278,7 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let executable = fs::read(root.join("lm363/Lunar Magic.exe")).unwrap();
         let template = pe_rva(&executable, 0x1b_7f78, 0x510);
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             Project::open_supported(RomImage::from_bytes(original.clone()).unwrap()).unwrap();
         let table = project
@@ -312,7 +312,7 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let executable = fs::read(root.join("lm363/Lunar Magic.exe")).unwrap();
         let template = pe_rva(&executable, 0x1b_7f78, 0x510);
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project = Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
         let mut table = project
             .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
@@ -347,7 +347,7 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let executable = fs::read(root.join("lm363/Lunar Magic.exe")).unwrap();
         let template = pe_rva(&executable, 0x1b_7f78, 0x510);
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut image = RomImage::from_bytes(original).unwrap();
         image.write(0x0002_d9c3, &[0xff]).unwrap();
         let snapshot = image.as_file_bytes().to_vec();

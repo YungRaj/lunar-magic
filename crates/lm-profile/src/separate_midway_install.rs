@@ -129,12 +129,12 @@ mod tests {
     use lm_level::SeparateMidwayEntrance;
     use lm_project::Project;
     use lm_rom::RomImage;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn pristine_install_reopens_owned_table_and_undoes() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             Project::open_supported(RomImage::from_bytes(original.clone()).unwrap()).unwrap();
         let mut table = SeparateMidwayEntranceTable {

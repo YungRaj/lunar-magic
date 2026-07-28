@@ -26,12 +26,12 @@ mod tests {
     use super::*;
     use lm_project::Project;
     use lm_rom::RomImage;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn pristine_rom_round_trips_all_four_exact_native_planes() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let project = Project::open_supported(RomImage::from_bytes(bytes).unwrap()).unwrap();
         let table = project
             .load_overworld_warp_links(smw_us_v1_overworld_warp_link_layout())

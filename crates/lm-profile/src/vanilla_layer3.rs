@@ -203,16 +203,10 @@ fn normalize_screen_blocks(screen_blocks: &[u16]) -> Vec<u16> {
 mod tests {
     use super::*;
     use lm_rom::RomImage;
-    use std::{fs, path::PathBuf};
 
     #[test]
     fn pristine_level_102_materializes_high_tide_from_rom_tables() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("Super Mario World (USA).sfc");
-        let Ok(bytes) = fs::read(path) else {
-            return;
-        };
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let project = Project::new(RomImage::from_bytes(bytes).unwrap());
         let entrance = project
             .load_vanilla_main_entrance(0x102, crate::smw_us_v1_vanilla_entrance_layout())

@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn pristine_install_matches_recovered_wine_regions_and_undoes() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let installed = RomImage::from_bytes(
             fs::read(root.join("oracle-work/lm363/pristine-us/palette-install-positive/after.smc"))
                 .unwrap(),
@@ -210,8 +210,8 @@ mod tests {
 
     #[test]
     fn late_precondition_failure_is_atomic() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             Project::open_supported(RomImage::from_bytes(original.clone()).unwrap()).unwrap();
         let expected = project
@@ -233,8 +233,8 @@ mod tests {
 
     #[test]
     fn installation_enables_transactional_per_level_palette_storage() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project = Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
         assert_eq!(
             smw_us_v1_custom_palette_installation()

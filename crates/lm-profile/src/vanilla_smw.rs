@@ -470,12 +470,7 @@ mod tests {
 
     #[test]
     fn every_pristine_layer2_pointer_decodes_with_shared_background_substitution() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("Super Mario World (USA).sfc");
-        let Ok(bytes) = fs::read(path) else {
-            return;
-        };
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let project = Project::new(RomImage::from_bytes(bytes).unwrap());
         let layer2 = smw_us_v1_vanilla_layer2_layout();
         let level = smw_us_v1_vanilla_level_layout();
@@ -509,12 +504,7 @@ mod tests {
 
     #[test]
     fn pristine_layer2_resolver_retains_shared_background_slots() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("Super Mario World (USA).sfc");
-        let Ok(bytes) = fs::read(path) else {
-            return;
-        };
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let rom = RomImage::from_bytes(bytes).unwrap();
         assert_eq!(
             smw_us_v1_level_layer2_layout(&rom, 0x105)

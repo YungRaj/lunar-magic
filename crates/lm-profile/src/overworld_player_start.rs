@@ -25,12 +25,12 @@ mod tests {
     use crate::SMW_US_V1_CHECKSUM_FIELD;
     use lm_project::Project;
     use lm_rom::RomImage;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     #[test]
     fn pristine_starts_round_trip_and_custom_change_is_checksum_valid_and_undoable() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             Project::open_supported(RomImage::from_bytes(original.clone()).unwrap()).unwrap();
         let layout = smw_us_v1_overworld_player_start_layout();

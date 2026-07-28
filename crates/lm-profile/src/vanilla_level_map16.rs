@@ -303,9 +303,7 @@ mod tests {
     #[test]
     fn tileset_seven_matches_lunar_magic_complete_map16_export() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let Ok(rom_bytes) = fs::read(root.join("Super Mario World (USA).sfc")) else {
-            return;
-        };
+        let rom_bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let Ok(exported_bytes) =
             fs::read(root.join("oracle-work/lm363/pristine-us/map16/all.map16"))
         else {

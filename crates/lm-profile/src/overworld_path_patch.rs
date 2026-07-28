@@ -157,7 +157,7 @@ mod tests {
     use lm_overworld::{OverworldEndpoint, OverworldPathLink, OverworldPathTarget};
     use lm_project::{OverworldPathLinkStorage, Project};
     use lm_rom::RomImage;
-    use std::{fs, path::PathBuf};
+    use std::path::PathBuf;
 
     fn table(count: u16) -> OverworldPathLinkTable {
         OverworldPathLinkTable {
@@ -184,8 +184,8 @@ mod tests {
 
     #[test]
     fn pristine_install_reopens_as_current_runtime_and_undoes() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project =
             Project::open_supported(RomImage::from_bytes(original.clone()).unwrap()).unwrap();
         project
@@ -207,8 +207,8 @@ mod tests {
 
     #[test]
     fn installed_table_growth_republishes_all_eight_operands_and_undoes() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let original = fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut project = Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
         project
             .install_relocatable_patch(

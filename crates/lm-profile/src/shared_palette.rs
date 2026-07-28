@@ -29,8 +29,7 @@ mod tests {
     fn pristine_rom_matches_the_wine_export_byte_for_byte() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let project = Project::new(
-            RomImage::from_bytes(fs::read(root.join("Super Mario World (USA).sfc")).unwrap())
-                .unwrap(),
+            RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
         );
         let palette = project
             .load_shared_palette(smw_us_v1_shared_palette_layout())
