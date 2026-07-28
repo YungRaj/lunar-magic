@@ -1380,7 +1380,7 @@ fn render_shared_slot_023(
     }
 
     let bottom_minor = signed_offset(widening_rows + 1)?;
-    let mut left_major = -signed_offset(widening_rows)?;
+    let mut left_major = -signed_offset(widening_rows + 1)?;
     render_handler_23_fill_row(
         cache,
         layout,
@@ -1391,7 +1391,7 @@ fn render_shared_slot_023(
         0x1f9,
     )?;
     for extra in 0..usize::from(parameter >> 4) {
-        left_major += 1;
+        left_major -= 1;
         render_handler_23_fill_row(
             cache,
             layout,
@@ -5495,8 +5495,8 @@ mod tests {
             (8, 4, vec![0x0af, 0x1af]),
             (9, 3, vec![0x0a9, 0x03f, 0x1e4, 0x1af]),
             (10, 2, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x1e4, 0x1af]),
-            (11, 2, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x1f9]),
-            (12, 3, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x0ac]),
+            (11, 1, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x1f9]),
+            (12, 0, vec![0x0a9, 0x03f, 0x03f, 0x03f, 0x03f, 0x03f, 0x0ac]),
         ] {
             for (column, tile) in row.into_iter().enumerate() {
                 assert_eq!(
