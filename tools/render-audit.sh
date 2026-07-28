@@ -11,8 +11,10 @@ usage() {
     echo "  LM_NATIVE_EDITOR_SCROLL_ROW: editor world row at the viewport top (default: entrance)" >&2
     echo "  LM_NATIVE_EDITOR_SCROLL_COLUMN: editor world column at the viewport left (default: 0)" >&2
     echo "  LM_NATIVE_EDITOR_OVERLAYS: draw editor grid, markers, and labels (default: 1)" >&2
+    echo "  LM_NATIVE_EDITOR_LAYER2: draw Layer 2/background in editor captures (default: 1)" >&2
     echo "  LM_NATIVE_EDITOR_CELL: editor tile size in logical pixels (default: 12)" >&2
     echo "  LM_NATIVE_SCREENSHOT_WIDTH/HEIGHT: capture window size (default: 1100x720)" >&2
+    echo "  LM_LUNAR_MAGIC_REFERENCE_MANIFEST: use each live capture's authenticated scroll origin" >&2
     exit 2
 }
 
@@ -25,11 +27,16 @@ screen_spec=${4:-0}
 style_spec=${5:-game}
 jobs=${LM_RENDER_AUDIT_JOBS:-1}
 recompress=${LM_RENDER_AUDIT_RECOMPRESS:-1}
+reference_manifest=${LM_LUNAR_MAGIC_REFERENCE_MANIFEST:-}
 workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 binary="$workspace/target/debug/lm-native"
 
 [ -f "$rom" ] || {
     echo "ROM does not exist: $rom" >&2
+    exit 1
+}
+[ -z "$reference_manifest" ] || [ -f "$reference_manifest" ] || {
+    echo "Lunar Magic reference manifest does not exist: $reference_manifest" >&2
     exit 1
 }
 case "$jobs" in
@@ -73,11 +80,15 @@ capture_one() {
     screen=$3
     major_tiles=$4
     image=$5
+    scroll_column=$6
+    scroll_row=$7
     if [ ! -f "$image" ]; then
         echo "capture level $level · $style · entrance screen offset $screen"
         LM_NATIVE_SCREENSHOT_TO="$image" \
         LM_NATIVE_PREVIEW_STYLE="$style" \
         LM_NATIVE_PREVIEW_CAMERA_MAJOR="$major_tiles" \
+        LM_NATIVE_EDITOR_SCROLL_COLUMN="$scroll_column" \
+        LM_NATIVE_EDITOR_SCROLL_ROW="$scroll_row" \
             "$binary" --level "$level" "$rom"
         if [ "$recompress" -eq 1 ] && command -v sips >/dev/null 2>&1; then
             compressed="${image%.png}.recompressed.png"
@@ -101,9 +112,19 @@ for level in $levels; do
         esac
         for screen in $screen_spec; do
             major_tiles=$((0x$screen * 16))
+            scroll_column=${LM_NATIVE_EDITOR_SCROLL_COLUMN:-0}
+            scroll_row=${LM_NATIVE_EDITOR_SCROLL_ROW:-0}
+            if [ -n "$reference_manifest" ]; then
+                aligned=$(awk -F '\t' -v level="$level" '$1 == level { print $5 " " $6; exit }' "$reference_manifest")
+                if [ -n "$aligned" ]; then
+                    scroll_column=${aligned% *}
+                    scroll_row=${aligned#* }
+                fi
+            fi
             image_name="level-${level}-${style}-screen-${screen}.png"
             image="$output_dir/images/$image_name"
-            capture_one "$level" "$style" "$screen" "$major_tiles" "$image" &
+            capture_one "$level" "$style" "$screen" "$major_tiles" "$image" \
+                "$scroll_column" "$scroll_row" &
             pids="${pids:+$pids,}$!"
             running=$((running + 1))
             if [ "$running" -eq "$jobs" ]; then

@@ -46,7 +46,14 @@ mkdir -p "$output_dir/bin" "$images_dir"
 "$compiler" -std=c11 -O2 -Wall -Wextra -Werror \
     "$workspace/tools/wine-level-dib-capture.c" -o "$capture_helper"
 
-printf 'level\tsha256\tlunar_magic_image\trust_editor_image\n' >"$manifest"
+read_u32() {
+    wine "$window_helper" "$target_executable" read "$1,4" 2>/dev/null |
+        xxd -r -p |
+        od -An -tu4 |
+        tr -d ' '
+}
+
+printf 'level\tsha256\tlunar_magic_image\trust_editor_image\tscroll_column\tscroll_row\tcanvas_width\tcanvas_height\n' >"$manifest"
 old_ifs=$IFS
 IFS=,
 for level in $level_spec; do
@@ -59,19 +66,24 @@ for level in $level_spec; do
     normalized=$(printf '%03X' "$((0x$level))")
     bmp="$images_dir/lunar-magic-level-$normalized.bmp"
     png="$images_dir/lunar-magic-level-$normalized.png"
+    echo "open Lunar Magic level $normalized"
+    wine "$window_helper" "$target_executable" 0x238e >/dev/null 2>&1 &
+    dialog_pid=$!
+    sleep 0.18
+    wine "$window_helper" "$target_executable" level "$normalized" >/dev/null
+    wait "$dialog_pid"
+    sleep 0.18
     if [ ! -f "$png" ]; then
         echo "capture Lunar Magic level $normalized"
-        wine "$window_helper" "$target_executable" 0x238e >/dev/null 2>&1 &
-        dialog_pid=$!
-        sleep 0.18
-        wine "$window_helper" "$target_executable" level "$normalized" >/dev/null
-        wait "$dialog_pid"
-        sleep 0.18
         wine "$capture_helper" "$target_executable" "$(winepath -w "$bmp")"
         sips -s format png "$bmp" --out "$png" >/dev/null
         rm -f "$bmp"
     fi
     digest=$(shasum -a 256 "$png" | awk '{print $1}')
+    scroll_column=$(read_u32 0x006204a4)
+    scroll_row=$(read_u32 0x009207dc)
+    canvas_width=$(read_u32 0x008636dc)
+    canvas_height=$(read_u32 0x007308c4)
     rust_image=
     if [ -n "$rust_audit_dir" ]; then
         candidate="$rust_audit_dir/images/level-$normalized-editor-screen-0.png"
@@ -79,7 +91,9 @@ for level in $level_spec; do
             rust_image=$candidate
         fi
     fi
-    printf '%s\t%s\t%s\t%s\n' "$normalized" "$digest" "$png" "$rust_image" >>"$manifest"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$normalized" "$digest" "$png" "$rust_image" \
+        "$scroll_column" "$scroll_row" "$canvas_width" "$canvas_height" >>"$manifest"
 done
 IFS=$old_ifs
 

@@ -13,6 +13,13 @@ const LEVEL_MODE_LAYER2_RENDER: [u8; 32] = [
     0x20, 0xff, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x24, 0x21, 0x22,
 ];
 
+/// Editor screen counts returned by `ConfigureLevelLayoutDimensions` at Lunar Magic 3.63
+/// address `$00421D00` for the ordinary (non-reduced Layer 2) configuration.
+const LEVEL_MODE_EDITOR_MAJOR_SCREENS: [u8; 32] = [
+    32, 16, 16, 13, 13, 14, 14, 14, 14, 0, 28, 0, 32, 28, 32, 16, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 32, 16,
+];
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct VanillaLevelMode {
     pub index: u8,
@@ -20,6 +27,7 @@ pub struct VanillaLevelMode {
     pub alternate_layer_layout: bool,
     pub high_flag: bool,
     pub background_half_color: bool,
+    pub editor_major_screens: u8,
 }
 
 /// Decodes the recovered level-mode property flags used by Lunar Magic 3.63.
@@ -33,6 +41,7 @@ pub const fn smw_us_v1_level_mode(index: u8) -> VanillaLevelMode {
         alternate_layer_layout: flags & 2 != 0,
         high_flag: flags & 0x80 != 0,
         background_half_color: LEVEL_MODE_LAYER2_RENDER[bounded] & 0x40 != 0,
+        editor_major_screens: LEVEL_MODE_EDITOR_MAJOR_SCREENS[bounded],
     }
 }
 
@@ -51,6 +60,10 @@ mod tests {
         assert!(smw_us_v1_level_mode(0x0c).background_half_color);
         assert!(smw_us_v1_level_mode(0x0d).background_half_color);
         assert!(!smw_us_v1_level_mode(0x0b).background_half_color);
+        assert_eq!(smw_us_v1_level_mode(0x03).editor_major_screens, 13);
+        assert_eq!(smw_us_v1_level_mode(0x07).editor_major_screens, 14);
+        assert_eq!(smw_us_v1_level_mode(0x0a).editor_major_screens, 28);
+        assert_eq!(smw_us_v1_level_mode(0x0d).editor_major_screens, 28);
         assert_eq!(smw_us_v1_level_mode(0x23), smw_us_v1_level_mode(3));
     }
 }

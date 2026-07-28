@@ -106,12 +106,29 @@ function rgbAt(image, x, y) {
   ];
 }
 
+function rustComparisonRgb(rust, live, cropX, cropY, x, y) {
+  // Lunar Magic's vertical DIB keeps a 112-pixel black tail after the 32-tile (512-pixel)
+  // level surface. The Rust canvas ends at 512 pixels and the surrounding application UI must
+  // not be mistaken for level pixels.
+  if (live.width === 624 && x >= 512) return [0, 0, 0];
+  return rgbAt(rust, cropX + x * 2, cropY + y * 2);
+}
+
 function sampledError(rust, live, cropX, cropY, sampleStep = 8) {
   let error = 0;
+  const ignoredLiveRgb = process.env.LM_COMPARE_IGNORE_LIVE_RGB
+    ?.split(",")
+    .map(Number);
   for (let y = 0; y < live.height; y += sampleStep) {
     for (let x = 0; x < live.width; x += sampleStep) {
       const expected = rgbAt(live, x, y);
-      const actual = rgbAt(rust, cropX + x * 2, cropY + y * 2);
+      if (
+        ignoredLiveRgb?.length === 3 &&
+        expected.every((value, channel) => value === ignoredLiveRgb[channel])
+      ) {
+        continue;
+      }
+      const actual = rustComparisonRgb(rust, live, cropX, cropY, x, y);
       error +=
         Math.abs(expected[0] - actual[0]) +
         Math.abs(expected[1] - actual[1]) +
@@ -122,7 +139,12 @@ function sampledError(rust, live, cropX, cropY, sampleStep = 8) {
 }
 
 function selectCrop(rust, live) {
-  if (live.width === 656 && live.height === 464) return [870, 338];
+  if (
+    (live.width === 656 && live.height === 464) ||
+    (live.width === 624 && live.height === 480)
+  ) {
+    return [870, 338];
+  }
   const forcedCrop = process.env.LM_COMPARE_VERTICAL_CROP;
   if (forcedCrop) {
     const [x, y] = forcedCrop.split(",").map(Number);
@@ -167,6 +189,9 @@ function selectCrop(rust, live) {
 }
 
 function compareLevel(level, rustPath, livePath) {
+  if (process.env.LM_COMPARE_LIVE_IMAGE) {
+    livePath = process.env.LM_COMPARE_LIVE_IMAGE;
+  }
   const rust = decodePng(rustPath);
   const live = decodePng(livePath);
   const [cropX, cropY] = selectCrop(rust, live);
@@ -187,11 +212,22 @@ function compareLevel(level, rustPath, livePath) {
   let minY = live.height;
   let maxX = -1;
   let maxY = -1;
+  let comparedPixels = 0;
   const differencePairs = new Map();
+  const ignoredLiveRgb = process.env.LM_COMPARE_IGNORE_LIVE_RGB
+    ?.split(",")
+    .map(Number);
   for (let y = 0; y < live.height; y += 1) {
     for (let x = 0; x < live.width; x += 1) {
       const expected = rgbAt(live, x, y);
-      const actual = rgbAt(rust, cropX + x * 2, cropY + y * 2);
+      if (
+        ignoredLiveRgb?.length === 3 &&
+        expected.every((value, channel) => value === ignoredLiveRgb[channel])
+      ) {
+        continue;
+      }
+      comparedPixels += 1;
+      const actual = rustComparisonRgb(rust, live, cropX, cropY, x, y);
       const deltas = expected.map((value, channel) => Math.abs(value - actual[channel]));
       const pixelMax = Math.max(...deltas);
       channelError += deltas[0] + deltas[1] + deltas[2];
@@ -211,7 +247,7 @@ function compareLevel(level, rustPath, livePath) {
       }
     }
   }
-  const pixels = live.width * live.height;
+  const pixels = comparedPixels;
   const meanAbsoluteChannelError = channelError / (pixels * 3);
   const bounds = overEight === 0 ? "" : `${minX},${minY}-${maxX},${maxY}`;
   const dominantDifference =

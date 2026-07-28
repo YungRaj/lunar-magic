@@ -1493,6 +1493,10 @@ impl VanillaLevelEditor {
             .copied()
             .collect::<Vec<_>>();
         let mut major_tiles = canvas_major_tiles(&visible_objects, &sprite_placements);
+        let mode_major_tiles =
+            u16::from(lm_profile::smw_us_v1_level_mode(level_mode).editor_major_screens)
+                .saturating_mul(16);
+        major_tiles = major_tiles.max(mode_major_tiles);
         // A horizontal SMW screen is 16×27 tiles. Byte 0 bit $10 places objects in its lower
         // 11-tile region; parameter nibbles describe command geometry and are not canvas bounds.
         let mut minor_tiles = if vertical {
@@ -1798,30 +1802,32 @@ impl VanillaLevelEditor {
                 screen_pixels_f32(layer1_y - layer2_y) * cell / 16.0,
             ))
         });
-        draw_layer2_tilemap(
-            painter,
-            if self.shared_vanilla_background {
-                rect
-            } else {
-                layer2_target
-            },
-            cell,
-            layer2_tilemap,
-            map16_texture,
-            self.shared_vanilla_background
-                .then_some(())
-                .and(background_map16_texture),
-            self.shared_vanilla_background
-                .then_some(())
-                .and(background_plane_texture),
-            self.foreground_texture.as_ref(),
-            custom_map16,
-            self.entrance_form,
-            major_tiles,
-            minor_tiles,
-            vertical,
-            game_camera,
-        );
+        if visual_smoke_editor_layer2() {
+            draw_layer2_tilemap(
+                painter,
+                if self.shared_vanilla_background {
+                    rect
+                } else {
+                    layer2_target
+                },
+                cell,
+                layer2_tilemap,
+                map16_texture,
+                self.shared_vanilla_background
+                    .then_some(())
+                    .and(background_map16_texture),
+                self.shared_vanilla_background
+                    .then_some(())
+                    .and(background_plane_texture),
+                self.foreground_texture.as_ref(),
+                custom_map16,
+                self.entrance_form,
+                major_tiles,
+                minor_tiles,
+                vertical,
+                game_camera,
+            );
+        }
         // The object cache uses SMW's 0x1B0-byte 16×27 screen pages. The 32×32 Layer 2 plane may
         // enlarge the visible canvas, but its final five rows are not object-cache coordinates.
         let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles, vertical);
@@ -6868,6 +6874,16 @@ fn visual_smoke_editor_overlays() -> bool {
 }
 
 #[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_layer2() -> bool {
+    std::env::var("LM_NATIVE_EDITOR_LAYER2").map_or(true, |value| value != "0")
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_layer2() -> bool {
+    true
+}
+
+#[cfg(feature = "visual-smoke")]
 fn visual_smoke_editor_cell() -> Option<f32> {
     std::env::var("LM_NATIVE_EDITOR_CELL")
         .ok()
@@ -8390,7 +8406,15 @@ mod tests {
                 );
             }
         }
-        let major_tiles = usize::from(object_stream_major_tiles(&level.layer1.objects.records));
+        let major_tiles = usize::from(
+            object_stream_major_tiles(&level.layer1.objects.records).max(
+                u16::from(
+                    lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode())
+                        .editor_major_screens,
+                )
+                .saturating_mul(16),
+            ),
+        );
         let layout = lm_render::NativeLevelMap16Layout {
             width: if vertical { 32 } else { major_tiles },
             height: if vertical { major_tiles } else { 27 },
