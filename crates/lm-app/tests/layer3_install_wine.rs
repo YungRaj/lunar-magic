@@ -6,6 +6,27 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+const PRISTINE_SMW_US_SHA256: &str =
+    "0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b";
+
+fn pristine_smw_us_rom_path(root: &Path) -> PathBuf {
+    for path in [
+        root.join("Super Mario World (USA).sfc"),
+        root.join("SMW-working.sfc"),
+        root.join("sysLMRestore/smwOrig.smc"),
+    ] {
+        let Ok(bytes) = fs::read(&path) else {
+            continue;
+        };
+        let Ok(image) = RomImage::from_bytes(bytes) else {
+            continue;
+        };
+        if lm_oracle::sha256_hex(image.logical_bytes()) == PRISTINE_SMW_US_SHA256 {
+            return path;
+        }
+    }
+    panic!("verified pristine SMW-US fixture not found");
+}
 
 fn wine_path(path: &Path) -> String {
     let rendered = path.display().to_string().replace('/', r"\");
@@ -21,7 +42,7 @@ fn wine_path(path: &Path) -> String {
 fn rust_layer3_install_reopens_and_exports_canonical_mwl_in_lunar_magic() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
-    let original_rom = root.join("Super Mario World (USA).sfc");
+    let original_rom = pristine_smw_us_rom_path(&root);
     assert!(lunar_magic.is_file(), "missing {}", lunar_magic.display());
     assert!(original_rom.is_file(), "missing {}", original_rom.display());
 
