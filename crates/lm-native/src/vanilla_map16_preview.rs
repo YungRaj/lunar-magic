@@ -262,6 +262,20 @@ fn apply_vanilla_common_animation_frame(
     phase: usize,
     tileset: u8,
 ) -> Result<(), String> {
+    if phase >= 4 {
+        return Err(format!(
+            "vanilla common animation phase {phase} is outside 0..4"
+        ));
+    }
+    apply_vanilla_common_animation_phases(project, graphics, &[phase as u8; 19], tileset)
+}
+
+fn apply_vanilla_common_animation_phases(
+    project: &Project,
+    graphics: &mut [IndexedTile],
+    phases: &[u8; 19],
+    tileset: u8,
+) -> Result<(), String> {
     const VRAM_DESTINATIONS: [usize; 24] = [
         0x600, 0x640, 0x680, 0x740, 0xea0, 0x800, 0x500, 0x540, 0x580, 0x5c0, 0x780, 0x7c0, 0xda0,
         0x6c0, 0x700, 0x4c0, 0x440, 0x480, 0x400, 0, 0, 0, 0, 0,
@@ -271,24 +285,38 @@ fn apply_vanilla_common_animation_frame(
     ];
     const TILESET_OFFSETS: [usize; 14] = [0, 5, 10, 15, 20, 20, 25, 20, 10, 20, 0, 5, 0, 20];
     const FRAME_TABLE_OFFSET: usize = 0x2_b999;
-    const CONVERTED_GFX33_BASE: usize = 0x7d00;
-    const CONVERTED_TILE_BYTES: usize = 32;
+    const GFX32_SOURCE_BASE: usize = 0x2000;
+    const GFX33_SOURCE_BASE: usize = 0x7d00;
+    const SOURCE_LIMIT: usize = 0xc800;
+    const SNES_4BPP_TILE_BYTES: usize = 32;
     const TILES_PER_COPY: usize = 4;
 
-    if phase >= 4 {
-        return Err(format!(
-            "vanilla common animation phase {phase} is outside 0..4"
-        ));
-    }
-    let decoded = project
+    let decoded_gfx33 = project
         .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
         .map_err(|error| error.to_string())?;
-    let animation_tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
+    let gfx33_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx33, 3)
         .map_err(|error| format!("cannot decode pristine animated GFX33: {error}"))?;
+    let decoded_gfx32 = project
+        .load_decompressed_graphics_file(1, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    let gfx32_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx32, 4)
+        .map_err(|error| format!("cannot decode pristine player/animation GFX32: {error}"))?;
+    let blank_tiles = [
+        IndexedTile::new([0; IndexedTile::PIXEL_COUNT]),
+        IndexedTile::new([0; IndexedTile::PIXEL_COUNT]),
+        IndexedTile::new([0; IndexedTile::PIXEL_COUNT]),
+        IndexedTile::new([0; IndexedTile::PIXEL_COUNT]),
+    ];
     let graphics_len = graphics.len();
     for (animation_index, destination_word) in VRAM_DESTINATIONS.into_iter().enumerate() {
         if destination_word == 0 {
             continue;
+        }
+        let phase = usize::from(phases[animation_index]);
+        if phase >= 4 {
+            return Err(format!(
+                "vanilla animation group {animation_index} phase {phase} is outside 0..4"
+            ));
         }
         let source_index = if MODE[animation_index] == 2 {
             animation_index
@@ -296,8 +324,11 @@ fn apply_vanilla_common_animation_frame(
                     .get(usize::from(tileset))
                     .copied()
                     .unwrap_or_default()
+        } else if MODE[animation_index] == 1 && matches!(animation_index, 6 | 7 | 10) {
+            // Lunar Magic's ordinary editor state enables this control bank
+            // (`DAT_005e7b06 == 1`, source-bank selector $26).
+            0x26 + animation_index
         } else {
-            // Switch-controlled animations use their ordinary state in an editor preview.
             animation_index
         };
         let table_word = source_index * 4 + phase;
@@ -310,35 +341,62 @@ fn apply_vanilla_common_animation_frame(
                 format!("vanilla animation frame table word {table_word} is outside the ROM")
             })?;
         let source_address = usize::from(u16::from_le_bytes([source_bytes[0], source_bytes[1]]));
-        // Sources below $7D00 live in SMW's separately converted GFX32 work buffer.
-        // Preserve their active-slot tiles until that second source domain is materialized;
-        // common object animations such as coins come from converted GFX33.
-        let Some(source_delta) = source_address.checked_sub(CONVERTED_GFX33_BASE) else {
-            continue;
-        };
-        if source_delta % CONVERTED_TILE_BYTES != 0 {
-            return Err(format!(
-                "vanilla animation source ${source_address:04X} is not tile aligned"
-            ));
-        }
-        let source = source_delta / CONVERTED_TILE_BYTES;
         let destination = destination_word / 0x10;
-        let source_end = source + TILES_PER_COPY;
-        let destination_end = destination + TILES_PER_COPY;
-        let source_tiles = animation_tiles.get(source..source_end).ok_or_else(|| {
-            format!(
-                "animated GFX33 has {} tiles; frame zero requires tiles {source}..{source_end}",
-                animation_tiles.len()
-            )
-        })?;
-        let destination_tiles = graphics
-            .get_mut(destination..destination_end)
-            .ok_or_else(|| {
+        // Active pristine-ROM backend, Ghidra AdvanceVanillaAnimatedTileGroup @ 00459c60:
+        // $2000-$7CFF addresses GFX32; $7D00-$C7FF addresses GFX33; other values are blank.
+        let source_tiles = if (GFX32_SOURCE_BASE..GFX33_SOURCE_BASE).contains(&source_address) {
+            let source = (source_address - GFX32_SOURCE_BASE) / SNES_4BPP_TILE_BYTES;
+            let source_end = source + TILES_PER_COPY;
+            gfx32_tiles.get(source..source_end).ok_or_else(|| {
                 format!(
-                    "foreground VRAM has {graphics_len} tiles; animation requires slots {destination}..{destination_end}"
+                    "decoded GFX32 has {} tiles; frame requires tiles {source}..{source_end}",
+                    gfx32_tiles.len()
                 )
-            })?;
-        destination_tiles.clone_from_slice(source_tiles);
+            })?
+        } else if (GFX33_SOURCE_BASE..SOURCE_LIMIT).contains(&source_address) {
+            let source = (source_address - GFX33_SOURCE_BASE) / SNES_4BPP_TILE_BYTES;
+            let source_end = source + TILES_PER_COPY;
+            gfx33_tiles.get(source..source_end).ok_or_else(|| {
+                format!(
+                    "decoded GFX33 has {} tiles; frame requires tiles {source}..{source_end}",
+                    gfx33_tiles.len()
+                )
+            })?
+        } else {
+            &blank_tiles
+        };
+        if animation_index == 5 {
+            // Lunar Magic writes this group's latter pair to $90-$91, not $82-$83.
+            graphics
+                .get_mut(destination..destination + 2)
+                .ok_or_else(|| {
+                    format!(
+                        "foreground VRAM has {graphics_len} tiles; animation requires slots {destination}..{}",
+                        destination + 2
+                    )
+                })?
+                .clone_from_slice(&source_tiles[..2]);
+            let second_destination = destination + 0x10;
+            graphics
+                .get_mut(second_destination..second_destination + 2)
+                .ok_or_else(|| {
+                    format!(
+                        "foreground VRAM has {graphics_len} tiles; animation requires slots {second_destination}..{}",
+                        second_destination + 2
+                    )
+                })?
+                .clone_from_slice(&source_tiles[2..]);
+        } else {
+            let destination_end = destination + TILES_PER_COPY;
+            graphics
+                .get_mut(destination..destination_end)
+                .ok_or_else(|| {
+                    format!(
+                        "foreground VRAM has {graphics_len} tiles; animation requires slots {destination}..{destination_end}"
+                    )
+                })?
+                .clone_from_slice(source_tiles);
+        }
     }
     Ok(())
 }
@@ -795,6 +853,13 @@ mod tests {
             )
             .unwrap();
         let animated = lm_graphics::decode_planar_tiles(&animated, 3).unwrap();
+        let player_animation = project
+            .load_decompressed_graphics_file(
+                1,
+                lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+            )
+            .unwrap();
+        let player_animation = lm_graphics::decode_planar_tiles(&player_animation, 4).unwrap();
         assert_eq!(preview.foreground_tiles[0x60], animated[192]);
         assert_eq!(preview.foreground_tiles[0x6b], animated[203]);
         assert_eq!(
@@ -802,6 +867,13 @@ mod tests {
             "the common coin frame must populate Map16 $2B's first subtile"
         );
         assert_eq!(preview.foreground_tiles[0x6f], animated[207]);
+        assert_eq!(preview.foreground_tiles[0x80], player_animation[0x26c]);
+        assert_eq!(preview.foreground_tiles[0x81], player_animation[0x26d]);
+        assert_eq!(preview.foreground_tiles[0x90], player_animation[0x26e]);
+        assert_eq!(preview.foreground_tiles[0x91], player_animation[0x26f]);
+        assert_eq!(preview.foreground_tiles[0x50], animated[0xa4]);
+        assert_eq!(preview.foreground_tiles[0x54], animated[0xcc]);
+        assert_eq!(preview.foreground_tiles[0x78], animated[0xc0]);
         let mut last_phase = preview.foreground_tiles.clone();
         apply_vanilla_common_animation_frame(
             &project,
@@ -834,6 +906,94 @@ mod tests {
             .unwrap()
         );
         assert_eq!(preview.common_tiles + preview.tileset_tiles, 512);
+    }
+
+    #[test]
+    fn diagnostic_lunar_magic_decoded_cache_matches_level_graphics_when_requested() {
+        let Ok(cache_path) = std::env::var("LM_DECODED_GRAPHICS_CACHE") else {
+            return;
+        };
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let level = project
+            .load_level_slot(
+                0x106,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let files = lm_profile::smw_us_v1_object_tileset_graphics_files(
+            &project.rom,
+            usize::from(level.layer1.header.object_tileset()),
+        )
+        .unwrap();
+        let slots = load_layer1_sprite_graphics_slots(&project, files).unwrap();
+        let mut tiles = materialize_layer1_sprite_vram(&slots);
+        let live_counters = std::env::var("LM_ANIMATION_COUNTERS")
+            .ok()
+            .map(std::fs::read)
+            .transpose()
+            .unwrap();
+        if let Some(counters) = live_counters.as_ref() {
+            let phases: [u8; 19] = counters[..19].try_into().unwrap();
+            apply_vanilla_common_animation_phases(
+                &project,
+                &mut tiles,
+                &phases,
+                level.layer1.header.object_tileset(),
+            )
+            .unwrap();
+        } else {
+            apply_vanilla_common_animation_frame(
+                &project,
+                &mut tiles,
+                0,
+                level.layer1.header.object_tileset(),
+            )
+            .unwrap();
+        }
+        let expected = std::fs::read(cache_path).unwrap();
+        assert!(expected.len() >= tiles.len() * IndexedTile::PIXEL_COUNT);
+        if expected.len() >= (0x900 + 0x2e8) * IndexedTile::PIXEL_COUNT {
+            let gfx32 = project
+                .load_decompressed_graphics_file(
+                    1,
+                    lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+                )
+                .unwrap();
+            let gfx32 = lm_graphics::decode_planar_tiles(&gfx32, 4).unwrap();
+            let cache_start = 0x900 * IndexedTile::PIXEL_COUNT;
+            let gfx32 = &gfx32[..0x2e8];
+            let cache_end = cache_start + gfx32.len() * IndexedTile::PIXEL_COUNT;
+            let flattened = gfx32
+                .iter()
+                .flat_map(|tile| tile.pixels().iter().copied())
+                .collect::<Vec<_>>();
+            assert_eq!(flattened, expected[cache_start..cache_end]);
+        }
+        let differing = tiles
+            .iter()
+            .enumerate()
+            .filter_map(|(tile, actual)| {
+                let start = tile * IndexedTile::PIXEL_COUNT;
+                (actual.pixels().as_slice() != &expected[start..start + IndexedTile::PIXEL_COUNT])
+                    .then_some(tile)
+            })
+            .collect::<Vec<_>>();
+        eprintln!("Lunar Magic cache mismatch tiles: {differing:02X?}");
+        if live_counters.is_some() {
+            assert!(
+                differing.is_empty(),
+                "live decoded cache differs at {differing:02X?}"
+            );
+        } else {
+            assert!(
+                differing.len() <= 96,
+                "{} of {} tiles differ",
+                differing.len(),
+                tiles.len()
+            );
+        }
     }
 
     #[test]
