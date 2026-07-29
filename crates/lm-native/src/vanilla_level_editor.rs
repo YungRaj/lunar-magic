@@ -1880,7 +1880,7 @@ impl VanillaLevelEditor {
                 layer3_camera,
             )
         {
-            // Low-priority BG3 pixels sit behind BG2 in SMW's level compositor.
+            // Low-priority BG3 pixels sit behind BG2 in ordinary level compositing.
             draw_layer3_editor_or_viewport(
                 painter,
                 rect,
@@ -5368,10 +5368,12 @@ fn draw_layer3_editor_or_viewport(
     let pixel_scale = cell_size / 16.0;
     let world_width = i32::from(width) * 16;
     let world_height = i32::from(height) * 16;
-    // RenderLayer3TilemapCellAtCoordinates @ $004502C0 masks the editor coordinates into
-    // Lunar Magic's active 32×32 or 64×64 BG3 plane. Repeat the materialized 512-pixel plane
-    // along both axes so a scrolled vertical level does not lose BG3 after its first screen pair.
-    for target_y in repeating_layer3_plane_origins(position.1, world_height) {
+    // RenderLayer3TilemapCellAtCoordinates @ $004502C0 masks coordinates into Lunar Magic's
+    // active BG3 plane while traversing vertical editor worlds. Horizontal editors retain the
+    // native single Y origin; normalizing a negative position backward by 512 pixels leaks the
+    // plane's tail into the top of levels such as $127.
+    let target_y_origins = layer3_plane_y_origins(position.1, world_height, vertical);
+    for target_y in target_y_origins {
         for target_x in repeating_layer3_plane_origins(position.0, world_width) {
             let target = egui::Rect::from_min_size(
                 world.min
@@ -5406,6 +5408,14 @@ fn repeating_layer3_plane_origins(position: i16, world_extent: i32) -> Vec<i32> 
         origin += PLANE_PIXELS;
     }
     origins
+}
+
+fn layer3_plane_y_origins(position: i16, world_extent: i32, vertical: bool) -> Vec<i32> {
+    if vertical {
+        repeating_layer3_plane_origins(position, world_extent)
+    } else {
+        vec![-i32::from(position)]
+    }
 }
 
 fn draw_wrapped_layer3_region(
@@ -7816,6 +7826,11 @@ mod tests {
         assert_eq!(
             repeating_layer3_plane_origins(112, 1_024),
             vec![-112, 400, 912]
+        );
+        assert_eq!(layer3_plane_y_origins(-48, 432, false), vec![48]);
+        assert_eq!(
+            layer3_plane_y_origins(-48, 1_024, true),
+            vec![-464, 48, 560]
         );
     }
 
