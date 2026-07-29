@@ -207,12 +207,12 @@ pub(crate) fn render(
         vanilla_layer3_editor_row_offset(layer3.behavior, header.object_tileset())
     });
     let (layer3_low_image, layer3_high_image) = layer3.as_ref().map_or((None, None), |layer3| {
-        let (low, high) = render_layer3_planes(
-            &layer3.tilemap,
-            &layer3_tiles,
-            &palette,
-            header.level_mode() == 0x0e,
+        let additive = vanilla_layer3_additive(
+            header.level_mode(),
+            layer3.behavior,
+            header.object_tileset(),
         );
+        let (low, high) = render_layer3_planes(&layer3.tilemap, &layer3_tiles, &palette, additive);
         (Some(low), Some(high))
     });
     Ok(VanillaMap16Preview {
@@ -260,12 +260,25 @@ const fn vanilla_layer3_editor_row_offset(
         lm_profile::SmwUsV1Layer3Behavior::HighTide => Some(-8),
         lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x80 } => Some(1),
         lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x81 }
-            if matches!(object_tileset, 1 | 3 | 0x0d) =>
+            if matches!(object_tileset, 1 | 3 | 9 | 0x0d) =>
         {
             Some(0)
         }
         lm_profile::SmwUsV1Layer3Behavior::Static { .. } => None,
     }
+}
+
+const fn vanilla_layer3_additive(
+    level_mode: u8,
+    behavior: lm_profile::SmwUsV1Layer3Behavior,
+    object_tileset: u8,
+) -> bool {
+    level_mode == 0x0e
+        || (object_tileset == 9
+            && matches!(
+                behavior,
+                lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x81 }
+            ))
 }
 
 fn apply_black_half_color(image: &mut egui::ColorImage) {
@@ -1145,12 +1158,15 @@ mod tests {
         );
         assert_eq!(
             vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 9),
-            None
+            Some(0)
         );
         assert_eq!(
             vanilla_layer3_editor_row_offset(Static { code: 0x82 }, 1),
             None
         );
+        assert!(vanilla_layer3_additive(0, Static { code: 0x81 }, 9));
+        assert!(vanilla_layer3_additive(0x0e, Static { code: 0x82 }, 1));
+        assert!(!vanilla_layer3_additive(0, Static { code: 0x81 }, 3));
     }
 
     #[test]
