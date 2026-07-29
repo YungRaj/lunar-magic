@@ -1489,18 +1489,20 @@ mod tests {
             let sprite_slots = load_layer1_sprite_graphics_slots(&project, files).unwrap();
             let sprite_tiles = materialize_layer1_sprite_vram(&sprite_slots);
             for cache_tile_offset in [0, 0x200, 0x400] {
-                let matching = sprite_tiles
+                let differing = sprite_tiles
                     .iter()
                     .enumerate()
-                    .filter(|(tile, actual)| {
+                    .filter_map(|(tile, actual)| {
                         let start = (cache_tile_offset + tile) * IndexedTile::PIXEL_COUNT;
-                        actual.pixels().as_slice()
-                            == &expected[start..start + IndexedTile::PIXEL_COUNT]
+                        (actual.pixels().as_slice()
+                            != &expected[start..start + IndexedTile::PIXEL_COUNT])
+                            .then_some(tile)
                     })
-                    .count();
+                    .collect::<Vec<_>>();
                 eprintln!(
-                    "sprite graphics at cache tile ${cache_tile_offset:03X}: {matching} / {}",
-                    sprite_tiles.len()
+                    "sprite graphics at cache tile ${cache_tile_offset:03X}: {} / {} matching; differing {differing:02X?}",
+                    sprite_tiles.len() - differing.len(),
+                    sprite_tiles.len(),
                 );
             }
         }

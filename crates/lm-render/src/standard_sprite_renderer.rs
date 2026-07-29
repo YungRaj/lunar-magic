@@ -590,8 +590,27 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         )]),
         0xa3 => render_handler_a3(mode.placement_first),
         0xa4 => parts(&[(0xfb, 0, 0)]),
-        0xa5 => parts(&[(0xfc, 0, -8)]),
-        0xa6 => render_handler_a6(mode.animation_phase),
+        // Dispatch $A5 @ $004C8D30 selects $A9/$AA only in sprite graphics
+        // mode 2; every other mode uses $F9/$FA. Placement bit 0 selects the pair.
+        0xa5 => parts(&[(
+            if mode.sprite_graphics_mode & 0x0f == 2 {
+                0xa9
+            } else {
+                0xf9
+            } + u16::from(mode.placement_first & 1),
+            0,
+            1,
+        )]),
+        // Dispatch $A6 @ $004C8DB0 draws the four 32x32 corner definitions and
+        // a placement-bit-selected center overlay.
+        0xa6 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xa6 => parts(&[
+            (0x1d7, -8, 8),
+            (0x1d8, 8, 8),
+            (0x1c7, -8, -8),
+            (0x1c8, 8, -8),
+            (0x1c6, i16::from(mode.placement_first & 1) * 8, 0),
+        ]),
         0xa7 => parts(&[(0x1c9, 0, 1), (0x1ca, 16, 1)]),
         // Dispatch $A8 @ $004C8F10 emits definition $FC eight pixels above
         // the placement in the ordinary display mode. The alternate-display
@@ -679,7 +698,14 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x10a, 3, 1),
         ]),
         0xba => parts(&[(0x02, 0, 1)]),
-        0xbb => parts(&[(0x17b, 0, 1)]),
+        // Dispatch $BB @ $004C97F0 is a 2x2 composite; it is not the unrelated
+        // single definition $17B.
+        0xbb => parts(&[
+            (0x18b, 0, 1),
+            (0x18c, 16, 1),
+            (0x19b, 0, 17),
+            (0x19c, 16, 17),
+        ]),
         0xbc => parts(&[
             (0x174, 0, 1),
             (0x175, 16, 1),
@@ -836,7 +862,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // $005C467C begin with "Auto-Scroll", followed by the Special 1..4 labels.
         0xe8 => render_handler_e5(mode),
         0xe9 => render_handler_e9(mode),
-        0xea | 0xf2 => render_text_lines(&[("   Layer 2   ", 0), ("On/Off Switch", 8)]),
+        // Dispatch $EA @ $004CAE50 is the Layer 2 scroll-range label.
+        0xea => render_handler_e7(mode),
+        0xf2 => render_text_lines(&[("   Layer 2   ", 0), ("On/Off Switch", 8)]),
         0xeb | 0xf3 => render_handler_eb(mode),
         0xec | 0xf4 => render_text_lines(&[("Fast BG Scroll", 0)]),
         0xed | 0xf5 => render_handler_ed(mode),
@@ -1055,22 +1083,6 @@ fn render_handler_a3(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         (0xed, final_x, 48),
         (0xec, final_x - 16, 48),
         (0xee, final_x + 16, 48),
-    ])
-}
-
-fn render_handler_a6(animation_phase: u8) -> Option<Vec<StandardSpritePreviewTile>> {
-    let (x, y) = match animation_phase & 3 {
-        0 | 2 => (8, -7),
-        1 | 3 => (0, 1),
-        _ => unreachable!(),
-    };
-    parts(&[
-        (0x17e, x, y),
-        (0x17f, x + 16, y),
-        (0x18e, x + 16, y),
-        (0x18f, x + 32, y),
-        (0x19e, x + 32, y),
-        (0x19f, x + 48, y),
     ])
 }
 
@@ -3267,7 +3279,18 @@ mod tests {
         );
         assert_eq!(
             geometry(0xa5, StandardSpritePreviewMode::default()),
-            [(0xfc, 0, -8)]
+            [(0xf9, 0, 1)]
+        );
+        assert_eq!(
+            geometry(
+                0xa5,
+                StandardSpritePreviewMode {
+                    sprite_graphics_mode: 2,
+                    placement_first: 1,
+                    ..StandardSpritePreviewMode::default()
+                }
+            ),
+            [(0xaa, 0, 1)]
         );
         for sprite in [0xa2, 0xa3, 0xa5] {
             assert_eq!(
@@ -3322,7 +3345,7 @@ mod tests {
     }
 
     #[test]
-    fn handlers_a6_and_ab_preserve_animation_and_rex_composite() {
+    fn handlers_a6_and_ab_preserve_recovered_composites() {
         let geometry = |sprite, mode| {
             render_lunar_magic_standard_sprite_with_mode(sprite, mode)
                 .unwrap()
@@ -3333,30 +3356,38 @@ mod tests {
         assert_eq!(
             geometry(0xa6, StandardSpritePreviewMode::default()),
             [
-                (0x17e, 8, -7),
-                (0x17f, 24, -7),
-                (0x18e, 24, -7),
-                (0x18f, 40, -7),
-                (0x19e, 40, -7),
-                (0x19f, 56, -7)
+                (0x1d7, -8, 8),
+                (0x1d8, 8, 8),
+                (0x1c7, -8, -8),
+                (0x1c8, 8, -8),
+                (0x1c6, 0, 0)
             ]
         );
         assert_eq!(
             geometry(
                 0xa6,
                 StandardSpritePreviewMode {
-                    animation_phase: 1,
+                    placement_first: 1,
                     ..StandardSpritePreviewMode::default()
                 }
             ),
             [
-                (0x17e, 0, 1),
-                (0x17f, 16, 1),
-                (0x18e, 16, 1),
-                (0x18f, 32, 1),
-                (0x19e, 32, 1),
-                (0x19f, 48, 1)
+                (0x1d7, -8, 8),
+                (0x1d8, 8, 8),
+                (0x1c7, -8, -8),
+                (0x1c8, 8, -8),
+                (0x1c6, 8, 0)
             ]
+        );
+        assert_eq!(
+            geometry(
+                0xa6,
+                StandardSpritePreviewMode {
+                    alternate_display: true,
+                    ..StandardSpritePreviewMode::default()
+                }
+            ),
+            [(0x115, 0, 1)]
         );
         assert_eq!(
             geometry(0xab, StandardSpritePreviewMode::default()),
@@ -3477,7 +3508,15 @@ mod tests {
             ]
         );
         assert_eq!(geometry(0xba, 0), [(0x02, 0, 1)]);
-        assert_eq!(geometry(0xbb, 0), [(0x17b, 0, 1)]);
+        assert_eq!(
+            geometry(0xbb, 0),
+            [
+                (0x18b, 0, 1),
+                (0x18c, 16, 1),
+                (0x19b, 0, 17),
+                (0x19c, 16, 17)
+            ]
+        );
         for sprite in [0xba, 0xbb] {
             assert_eq!(
                 render_lunar_magic_standard_sprite(sprite, true)
@@ -3810,7 +3849,9 @@ mod tests {
         assert_eq!(e8[1], (0x3c41, 0, 0));
         assert_eq!(e8["Auto-Scroll".len() * 2 + 1], (0x3c20, 0, 8));
         let ea = geometry(0xea);
-        assert_eq!(ea["   Layer 2   ".len() * 2 + 1], (0x3c4f, 0, 8));
+        assert_eq!(ea["Layer 2 Scroll".len() * 2 + 1], (0x3c20, 0, 8));
+        let f2 = geometry(0xf2);
+        assert_eq!(f2["   Layer 2   ".len() * 2 + 1], (0x3c4f, 0, 8));
         let ec = geometry(0xec);
         assert_eq!(ec.len(), "Fast BG Scroll".len() * 2);
         assert_eq!(ec[1], (0x3c46, 0, 0));
@@ -4222,13 +4263,9 @@ mod tests {
         ];
 
         for mode in modes {
-            for (compatibility_id, ordinary_id) in [
-                (0xef, 0xe7),
-                (0xf2, 0xea),
-                (0xf3, 0xeb),
-                (0xf4, 0xec),
-                (0xf5, 0xed),
-            ] {
+            for (compatibility_id, ordinary_id) in
+                [(0xef, 0xe7), (0xf3, 0xeb), (0xf4, 0xec), (0xf5, 0xed)]
+            {
                 assert_eq!(
                     render_lunar_magic_standard_sprite_with_mode(compatibility_id, mode),
                     render_lunar_magic_standard_sprite_with_mode(ordinary_id, mode),
