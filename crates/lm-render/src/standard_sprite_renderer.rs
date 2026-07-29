@@ -242,7 +242,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x34 => parts(&[(0x2e, -16, 3), (0x2f, 0, 3)]),
         0x35 => parts(&[(0x90, -10, 1), (0xa0, 0, 17)]),
         0x36 => parts(&[(0x1f, 0, 1)]),
-        0x37 => parts(&[(0x38, 0, 1)]),
+        // Dispatch $37 @ $004C5230 emits definition $1F; $38 is a separate
+        // handler despite the two adjacent sprite numbers.
+        0x37 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0x37 => parts(&[(0x1f, 0, 1)]),
         // Dispatch entry $38 points at $004C5260 and emits definition $38.
         0x38 => parts(&[(0x38, 0, 1)]),
         // Dispatch $39 @ $004C5290 emits the same single Boo definition as $DE's
@@ -257,9 +260,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // definition $54 one row above at x+8, then definition $64 at the placement.
         0x3d if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0x3d => parts(&[(0x54, 8, -15), (0x64, 0, 1)]),
-        // Dispatch entry $3E points at $004C5630. The low bit of the native
-        // first record byte selects definition $55 or $65.
-        0x3e => parts(&[(0x55 + u16::from(mode.placement_first & 1) * 0x10, 0, 1)]),
+        // Dispatch entry $3E points at $004C5630. The low bit of the packed
+        // major coordinate passed to the native handler selects $55 or $65.
+        0x3e => parts(&[(0x55 + u16::from(mode.placement_major & 1) * 0x10, 0, 1)]),
         0x3f => parts(&[(0x56, -6, -14), (0x67, -6, 2)]),
         0x40 => parts(&[(0x74, 0, 1), (0x75, 8, 1), (0x76, 24, 1)]),
         0x41 => parts(&[(0x154, 0, 1), (0x155, 8, 1), (0x156, 24, 1)]),
@@ -2332,7 +2335,7 @@ mod tests {
         };
         assert_eq!(geometry(0x35, 0), [(0x90, -10, 1), (0xa0, 0, 17)]);
         assert_eq!(geometry(0x36, 0), [(0x1f, 0, 1)]);
-        assert_eq!(geometry(0x37, 0), [(0x38, 0, 1)]);
+        assert_eq!(geometry(0x37, 0), [(0x1f, 0, 1)]);
         assert_eq!(geometry(0x38, 0), [(0x38, 0, 1)]);
         assert_eq!(geometry(0x39, 0), [(0x48, 0, 1)]);
         assert_eq!(geometry(0x39, 1), [(0x48, 0, 1)]);
@@ -2342,7 +2345,22 @@ mod tests {
         assert_eq!(geometry(0x3d, 0), [(0x54, 8, -15), (0x64, 0, 1)]);
         assert_eq!(geometry(0x3d, 1), [(0x54, 8, -15), (0x64, 0, 1)]);
         assert_eq!(geometry(0x3e, 0), [(0x55, 0, 1)]);
-        assert_eq!(geometry(0x3e, 1), [(0x65, 0, 1)]);
+        assert_eq!(geometry(0x3e, 1), [(0x55, 0, 1)]);
+        assert_eq!(
+            render_lunar_magic_standard_sprite_with_mode(
+                0x3e,
+                StandardSpritePreviewMode {
+                    placement_first: 0,
+                    placement_major: 1,
+                    ..StandardSpritePreviewMode::default()
+                }
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>(),
+            [(0x65, 0, 1)]
+        );
         for sprite in [0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3e] {
             assert_eq!(
                 render_lunar_magic_standard_sprite(sprite, true)
