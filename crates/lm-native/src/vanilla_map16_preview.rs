@@ -14,6 +14,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) graphics_files: [usize; 4],
     pub(crate) background_graphics_files: [usize; 4],
     pub(crate) sprite_image: egui::ColorImage,
+    pub(crate) animated_sprite_images: Vec<egui::ColorImage>,
     pub(crate) entrance_image: egui::ColorImage,
     pub(crate) sprite_tiles: Vec<IndexedTile>,
     pub(crate) palette: Palette,
@@ -80,6 +81,8 @@ const LAYER3_SLOT_TILES: usize = 0x80;
 const LAYER1_SPRITE_SLOT_TILES: usize = 0x80;
 const LAYER1_SPRITE_SLOT_STRIDE: usize = LAYER1_SPRITE_SLOT_TILES;
 const LAYER1_SPRITE_GLOBAL_TILES: usize = 4 * LAYER1_SPRITE_SLOT_STRIDE;
+const GFX33_DECODED_TILE_BIAS: usize = 0x18;
+const GFX33_DECODED_TILE_PADDING: usize = 0x30;
 
 fn game_palette_header(level: u16, mut header: LegacyLevelHeader) -> LegacyLevelHeader {
     // Pristine level $001 (Cookie Mountain) stores selectors 6/6, although the stage's runtime
@@ -191,7 +194,27 @@ pub(crate) fn render(
     let layer2_image = animated_layer2_images[0].clone();
     let background_image = animated_background_images[0].clone();
     let sprite_tiles = materialize_layer1_sprite_vram(&sprite_graphics);
-    let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
+    let mut animated_sprite_images = Vec::with_capacity(4);
+    for sprite_phase in 0..4 {
+        let mut animated_sprite_tiles = sprite_tiles.clone();
+        apply_vanilla_common_sprite_animation_frame(
+            &project,
+            &mut animated_sprite_tiles,
+            sprite_phase * 2,
+            tileset,
+        )?;
+        let mut animated_sprite_slots = sprite_graphics.clone();
+        for (slot, destination) in animated_sprite_slots.iter_mut().enumerate().take(4) {
+            let start = slot * LAYER1_SPRITE_SLOT_STRIDE;
+            destination
+                .clone_from_slice(&animated_sprite_tiles[start..start + LAYER1_SPRITE_SLOT_TILES]);
+        }
+        animated_sprite_images.push(render_sprite_graphics_atlas(
+            &animated_sprite_slots,
+            &palette,
+        ));
+    }
+    let sprite_image = animated_sprite_images[0].clone();
     let entrance_image = render_default_entrance_marker(&project, &palette)?;
     let foreground_image = render_foreground_graphics_atlas(&foreground_graphics, &palette);
     let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
@@ -242,6 +265,7 @@ pub(crate) fn render(
         graphics_files,
         background_graphics_files,
         sprite_image,
+        animated_sprite_images,
         entrance_image,
         sprite_tiles,
         palette,
@@ -479,6 +503,29 @@ fn apply_vanilla_common_animation_frame(
         graphics,
         &vanilla_common_animation_phases(phase),
         tileset,
+        0,
+        false,
+    )
+}
+
+fn apply_vanilla_common_sprite_animation_frame(
+    project: &Project,
+    graphics: &mut [IndexedTile],
+    phase: usize,
+    tileset: u8,
+) -> Result<(), String> {
+    if phase >= 8 {
+        return Err(format!(
+            "vanilla common sprite-animation phase {phase} is outside 0..8"
+        ));
+    }
+    apply_vanilla_common_animation_phases(
+        project,
+        graphics,
+        &vanilla_common_animation_phases(phase),
+        tileset,
+        GFX33_DECODED_TILE_BIAS,
+        true,
     )
 }
 
@@ -518,6 +565,8 @@ fn apply_vanilla_common_animation_phases(
     graphics: &mut [IndexedTile],
     phases: &[u8; 19],
     tileset: u8,
+    gfx33_decoded_tile_bias: usize,
+    column_major_destinations: bool,
 ) -> Result<(), String> {
     const VRAM_DESTINATIONS: [usize; 24] = [
         0x600, 0x640, 0x680, 0x740, 0xea0, 0x800, 0x500, 0x540, 0x580, 0x5c0, 0x780, 0x7c0, 0xda0,
@@ -530,6 +579,9 @@ fn apply_vanilla_common_animation_phases(
     const FRAME_TABLE_OFFSET: usize = 0x2_b999;
     const GFX32_SOURCE_BASE: usize = 0x2000;
     const GFX33_SOURCE_BASE: usize = 0x7d00;
+    // RenderVanillaAnimationGroupFrame @ $0049DA10 indexes the decoded cache
+    // through a $600-tile base. Relative to the raw $7D00 GFX33 source range,
+    // the cache's GFX33 pixels begin after a $18-tile lead-in.
     const SOURCE_LIMIT: usize = 0xc800;
     const SNES_4BPP_TILE_BYTES: usize = 32;
     const TILES_PER_COPY: usize = 4;
@@ -537,8 +589,11 @@ fn apply_vanilla_common_animation_phases(
     let decoded_gfx33 = project
         .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
         .map_err(|error| error.to_string())?;
-    let gfx33_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx33, 3)
+    let mut gfx33_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx33, 3)
         .map_err(|error| format!("cannot decode pristine animated GFX33: {error}"))?;
+    gfx33_tiles.resize_with(gfx33_tiles.len() + GFX33_DECODED_TILE_PADDING, || {
+        IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
+    });
     let decoded_gfx32 = project
         .load_decompressed_graphics_file(1, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
         .map_err(|error| error.to_string())?;
@@ -598,7 +653,8 @@ fn apply_vanilla_common_animation_phases(
                 )
             })?
         } else if (GFX33_SOURCE_BASE..SOURCE_LIMIT).contains(&source_address) {
-            let source = (source_address - GFX33_SOURCE_BASE) / SNES_4BPP_TILE_BYTES;
+            let source = (source_address - GFX33_SOURCE_BASE) / SNES_4BPP_TILE_BYTES
+                + gfx33_decoded_tile_bias;
             let source_end = source + TILES_PER_COPY;
             gfx33_tiles.get(source..source_end).ok_or_else(|| {
                 format!(
@@ -630,6 +686,41 @@ fn apply_vanilla_common_animation_phases(
                     )
                 })?
                 .clone_from_slice(&source_tiles[2..]);
+        } else if column_major_destinations {
+            let destinations = [
+                destination,
+                destination + 0x10,
+                destination + 1,
+                destination + 0x11,
+            ];
+            let source_offsets = [0, 0x10, 1, 0x11];
+            for (index, (target, source_offset)) in
+                destinations.into_iter().zip(source_offsets).enumerate()
+            {
+                let source = if (GFX32_SOURCE_BASE..GFX33_SOURCE_BASE).contains(&source_address) {
+                    let start = (source_address - GFX32_SOURCE_BASE) / SNES_4BPP_TILE_BYTES;
+                    gfx32_tiles.get(start + source_offset)
+                } else if (GFX33_SOURCE_BASE..SOURCE_LIMIT).contains(&source_address) {
+                    let start = (source_address - GFX33_SOURCE_BASE) / SNES_4BPP_TILE_BYTES
+                        + gfx33_decoded_tile_bias;
+                    gfx33_tiles.get(start + source_offset)
+                } else {
+                    blank_tiles.get(index)
+                }
+                .ok_or_else(|| {
+                    format!(
+                        "column-major animation source offset {source_offset:X} is outside its decoded cache"
+                    )
+                })?;
+                graphics
+                    .get_mut(target)
+                    .ok_or_else(|| {
+                        format!(
+                            "sprite animation destination tile {target:X} is outside {graphics_len} tiles"
+                        )
+                    })?
+                    .clone_from(source);
+            }
         } else {
             let destination_end = destination + TILES_PER_COPY;
             graphics
@@ -1359,6 +1450,11 @@ mod tests {
         assert_eq!(preview.foreground_image.size, [256, 1024]);
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x1b, 0x08]);
         assert_eq!(preview.sprite_image.size, [256, 1024]);
+        assert_eq!(preview.animated_sprite_images.len(), 4);
+        assert_ne!(
+            preview.animated_sprite_images[0],
+            preview.animated_sprite_images[1]
+        );
         assert_eq!(preview.layer3_tiles.len(), 0x400);
         assert_eq!(
             preview.sprite_graphics_files,
@@ -1467,6 +1563,8 @@ mod tests {
                 &mut tiles,
                 &phases,
                 level.layer1.header.object_tileset(),
+                0,
+                false,
             )
             .unwrap();
         } else {

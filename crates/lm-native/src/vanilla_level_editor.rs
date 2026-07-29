@@ -279,6 +279,7 @@ pub(crate) struct VanillaLevelEditor {
     animated_background_plane_textures: Vec<egui::TextureHandle>,
     shared_vanilla_background: bool,
     sprite_texture: Option<egui::TextureHandle>,
+    animated_sprite_textures: Vec<egui::TextureHandle>,
     entrance_texture: Option<egui::TextureHandle>,
     sprite_tiles: Vec<lm_graphics::IndexedTile>,
     foreground_tiles: Vec<lm_graphics::IndexedTile>,
@@ -1165,6 +1166,7 @@ impl VanillaLevelEditor {
         self.animated_background_plane_textures.clear();
         self.shared_vanilla_background = false;
         self.sprite_texture = None;
+        self.animated_sprite_textures.clear();
         self.entrance_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
@@ -1273,6 +1275,7 @@ impl VanillaLevelEditor {
         self.animated_background_map16_textures.clear();
         self.animated_background_plane_textures.clear();
         self.sprite_texture = None;
+        self.animated_sprite_textures.clear();
         self.entrance_texture = None;
         self.sprite_tiles.clear();
         self.foreground_tiles.clear();
@@ -1393,6 +1396,14 @@ impl VanillaLevelEditor {
                     preview.sprite_image,
                     egui::TextureOptions::NEAREST,
                 ));
+                self.animated_sprite_textures = load_animation_textures(
+                    context,
+                    &format!(
+                        "vanilla-sprite-gfx-{sprite_tileset:X}-{}",
+                        snapshot.revision
+                    ),
+                    preview.animated_sprite_images,
+                );
                 self.entrance_texture = Some(context.load_texture(
                     format!("vanilla-entrance-{}", snapshot.revision),
                     preview.entrance_image,
@@ -2028,7 +2039,10 @@ impl VanillaLevelEditor {
                     painter,
                     target: rect,
                     cell_size: cell,
-                    texture: self.sprite_texture.as_ref(),
+                    texture: self
+                        .animated_sprite_textures
+                        .get(usize::from(animation_phase))
+                        .or(self.sprite_texture.as_ref()),
                     placements: &sprite_placements[..sprite_limit],
                     cursor: response.interact_pointer_pos(),
                     selected: self.selected_sprite,
