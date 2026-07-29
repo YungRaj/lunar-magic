@@ -243,7 +243,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x35 => parts(&[(0x90, -10, 1), (0xa0, 0, 17)]),
         0x36 => parts(&[(0x1f, 0, 1)]),
         0x37 => parts(&[(0x38, 0, 1)]),
-        0x38 => parts(&[(0x48, 0, 1)]),
+        // Dispatch entry $38 points at $004C5260 and emits definition $38.
+        0x38 => parts(&[(0x38, 0, 1)]),
         0x39..=0x3b => render_square_handler(
             0x39 + u16::from(sprite_number - 0x39) * 2,
             mode.placement_first,
@@ -253,7 +254,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // definition $54 one row above at x+8, then definition $64 at the placement.
         0x3d if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0x3d => parts(&[(0x54, 8, -15), (0x64, 0, 1)]),
-        0x3e => parts(&[(0x56, -6, -14), (0x66, -6, 2)]),
+        // Dispatch entry $3E points at $004C5630. The low bit of the native
+        // first record byte selects definition $55 or $65.
+        0x3e => parts(&[(0x55 + u16::from(mode.placement_first & 1) * 0x10, 0, 1)]),
         0x3f => parts(&[(0x56, -6, -14), (0x67, -6, 2)]),
         0x40 => parts(&[(0x74, 0, 1), (0x75, 8, 1), (0x76, 24, 1)]),
         0x41 => parts(&[(0x154, 0, 1), (0x155, 8, 1), (0x156, 24, 1)]),
@@ -723,7 +726,20 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xe0 => render_handler_de(0),
         0xe1 => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
         0xe2 => parts(&[(0x14c, 0, 0), (0x114, 0, 0)]),
-        0xe3 => parts(&[(0x1aa, 0, 0), (0x114, 0, 0)]),
+        // RenderTenTileSegmentedMarker emits its ten-element definition and
+        // signed-offset tables from index 9 down to index 0.
+        0xe3 => parts(&[
+            (0x1a6, -62, -49),
+            (0x1ab, -30, -72),
+            (0x1a8, 7, -79),
+            (0x1a6, 43, -66),
+            (0x1a6, 70, -37),
+            (0x1ab, 81, 0),
+            (0x1a8, 71, 38),
+            (0x1a6, 45, 67),
+            (0x1a6, 9, 80),
+            (0x1ab, -29, 75),
+        ]),
         0xe4 => parts(&[(0x14b, 0, 0), (0x114, 0, 0)]),
         0xe5 => render_handler_e5(mode),
         0xe6 => render_handler_e6(mode),
@@ -2183,7 +2199,7 @@ mod tests {
         assert_eq!(geometry(0x35, 0), [(0x90, -10, 1), (0xa0, 0, 17)]);
         assert_eq!(geometry(0x36, 0), [(0x1f, 0, 1)]);
         assert_eq!(geometry(0x37, 0), [(0x38, 0, 1)]);
-        assert_eq!(geometry(0x38, 0), [(0x48, 0, 1)]);
+        assert_eq!(geometry(0x38, 0), [(0x38, 0, 1)]);
         assert_eq!(
             geometry(0x39, 0),
             [
@@ -2200,7 +2216,8 @@ mod tests {
         assert_eq!(geometry(0x3c, 0), [(0x54, 8, -15), (0x64, 0, 1)]);
         assert_eq!(geometry(0x3d, 0), [(0x54, 8, -15), (0x64, 0, 1)]);
         assert_eq!(geometry(0x3d, 1), [(0x54, 8, -15), (0x64, 0, 1)]);
-        assert_eq!(geometry(0x3e, 0), [(0x56, -6, -14), (0x66, -6, 2)]);
+        assert_eq!(geometry(0x3e, 0), [(0x55, 0, 1)]);
+        assert_eq!(geometry(0x3e, 1), [(0x65, 0, 1)]);
         for sprite in [0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3e] {
             assert_eq!(
                 render_lunar_magic_standard_sprite(sprite, true)
@@ -3634,7 +3651,21 @@ mod tests {
         assert_eq!(geometry(0xe0), geometry(0xde));
         assert_eq!(geometry(0xe1), [(0x1b8, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe2), [(0x14c, 0, 0), (0x114, 0, 0)]);
-        assert_eq!(geometry(0xe3), [(0x1aa, 0, 0), (0x114, 0, 0)]);
+        assert_eq!(
+            geometry(0xe3),
+            [
+                (0x1a6, -62, -49),
+                (0x1ab, -30, -72),
+                (0x1a8, 7, -79),
+                (0x1a6, 43, -66),
+                (0x1a6, 70, -37),
+                (0x1ab, 81, 0),
+                (0x1a8, 71, 38),
+                (0x1a6, 45, 67),
+                (0x1a6, 9, 80),
+                (0x1ab, -29, 75)
+            ]
+        );
         assert_eq!(geometry(0xe4), [(0x14b, 0, 0), (0x114, 0, 0)]);
     }
 
