@@ -1489,6 +1489,9 @@ impl VanillaLevelEditor {
         let level_mode = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.header.level_mode()
         });
+        let object_tileset = self.controller.as_ref().map_or(0, |controller| {
+            controller.level().layer1.header.object_tileset()
+        });
         let animation_seconds = ui.input(|input| input.time);
         let map16_animation_phase = map16_animation_phase(animation_seconds);
         let animation_phase = sprite_animation_phase(animation_seconds);
@@ -1617,6 +1620,7 @@ impl VanillaLevelEditor {
                 minor_tiles,
                 vertical,
                 level_mode,
+                object_tileset,
                 map16_animation_phase,
                 animation_phase,
                 &layer2_records,
@@ -1795,6 +1799,7 @@ impl VanillaLevelEditor {
         minor_tiles: u16,
         vertical: bool,
         level_mode: u8,
+        object_tileset: u8,
         map16_animation_phase: u8,
         animation_phase: u8,
         layer2_records: &[ObjectRecord],
@@ -1900,6 +1905,7 @@ impl VanillaLevelEditor {
                     .and(background_plane_texture),
                 self.foreground_texture.as_ref(),
                 custom_map16,
+                object_tileset,
                 self.entrance_form,
                 major_tiles,
                 minor_tiles,
@@ -5070,19 +5076,49 @@ fn draw_map16_atlas_tile(
     target: egui::Rect,
     tile: u16,
 ) {
+    draw_map16_atlas_tile_tinted(painter, texture, target, tile, egui::Color32::WHITE);
+}
+
+fn draw_map16_atlas_tile_for_tileset(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    tile: u16,
+    object_tileset: u8,
+) {
+    // RenderMap16TileToPixelBuffer @ $0044EAF0 applies the half-alpha path only
+    // to tiles $027-$02A in the underground object family. The same Map16 IDs
+    // are ordinary opaque artwork in other families.
+    draw_map16_atlas_tile_tinted(
+        painter,
+        texture,
+        target,
+        tile,
+        vanilla_map16_atlas_tint(object_tileset, tile),
+    );
+}
+
+const fn vanilla_map16_atlas_tint(object_tileset: u8, tile: u16) -> egui::Color32 {
+    if object_tileset == 4 && tile >= 0x027 && tile <= 0x02a {
+        egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
+    } else {
+        egui::Color32::WHITE
+    }
+}
+
+fn draw_map16_atlas_tile_tinted(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    tile: u16,
+    tint: egui::Color32,
+) {
     let column = f32::from(tile % 32);
     let row = f32::from(tile / 32);
     let uv = egui::Rect::from_min_max(
         egui::pos2(column / 32.0, row / 16.0),
         egui::pos2((column + 1.0) / 32.0, (row + 1.0) / 16.0),
     );
-    // RenderMap16TileToPixelBuffer @ 0044eaf0 averages the translucent
-    // underground tiles with the pixels already in the editor DIB.
-    let tint = if (0x027..=0x02a).contains(&tile) {
-        egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
-    } else {
-        egui::Color32::WHITE
-    };
     painter.image(texture.id(), target, uv, tint);
 }
 
@@ -5127,6 +5163,7 @@ fn draw_layer2_tilemap(
     background_plane_texture: Option<&egui::TextureHandle>,
     foreground_texture: Option<&egui::TextureHandle>,
     custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    object_tileset: u8,
     entrance: VanillaMainEntrance,
     major_tiles: u16,
     minor_tiles: u16,
@@ -5184,7 +5221,7 @@ fn draw_layer2_tilemap(
                     .and_then(|textures| textures.get(map16_screen_variant(x, y, vertical)))
                     .or(map16_texture)
             {
-                draw_map16_atlas_tile(painter, texture, cell, tile);
+                draw_map16_atlas_tile_for_tileset(painter, texture, cell, tile, object_tileset);
             }
         }
     }
@@ -5655,11 +5692,12 @@ fn draw_standard_object_cache(
                     ),
                 egui::vec2(request.cell_size, request.cell_size),
             );
-            draw_map16_atlas_tile(
+            draw_map16_atlas_tile_for_tileset(
                 painter,
                 map16_texture_for_cell(request, x, y),
                 tile_rect,
                 tile,
+                request.object_tileset,
             );
         }
     }
@@ -5725,7 +5763,13 @@ fn draw_custom_object_parts(
                         .max(0),
                 )
                 .unwrap_or_default();
-                draw_map16_atlas_tile(painter, map16_texture_for_cell(request, x, y), target, tile);
+                draw_map16_atlas_tile_for_tileset(
+                    painter,
+                    map16_texture_for_cell(request, x, y),
+                    target,
+                    tile,
+                    request.object_tileset,
+                );
             }
             CustomObjectPartSource::Custom(definition) => {
                 if let Some(texture) = request.foreground_texture {
@@ -7335,6 +7379,17 @@ mod tests {
         assert_eq!(map16_screen_variant(63, 16, true), 1);
         assert_eq!(map16_screen_variant(0, 63, true), 3);
         assert_eq!(map16_screen_variant(0, 64, true), 0);
+    }
+
+    #[test]
+    fn translucent_map16_tint_is_underground_family_specific() {
+        let translucent = egui::Color32::from_rgba_premultiplied(127, 127, 127, 128);
+        assert_eq!(vanilla_map16_atlas_tint(4, 0x027), translucent);
+        assert_eq!(vanilla_map16_atlas_tint(4, 0x02a), translucent);
+
+        assert_eq!(vanilla_map16_atlas_tint(0, 0x028), egui::Color32::WHITE);
+        assert_eq!(vanilla_map16_atlas_tint(4, 0x026), egui::Color32::WHITE);
+        assert_eq!(vanilla_map16_atlas_tint(4, 0x02b), egui::Color32::WHITE);
     }
 
     #[test]
