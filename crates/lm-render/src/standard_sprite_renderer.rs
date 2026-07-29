@@ -340,7 +340,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x5f => parts(&[(0x8c, 0, 1), (0x8d, 16, 1)]),
         0x60 => parts(&[(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]),
         0x61 => render_left_chain(false),
-        0x62 => render_left_chain(true),
+        // $004C67D0 emits only definitions $7C/$7D/$7E.
+        0x62 => render_left_chain(false),
         0x63 => render_left_chain(mode.placement_first & 1 == 0),
         0x64 => render_handler_64(mode),
         0x65 => render_handler_65_66(mode, false),
@@ -717,18 +718,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xdd => parts(&[(if mode.alternate_display { 0x115 } else { 0x33 }, 0, 1)]),
         0xde => render_handler_de(mode.placement_first),
         0xdf => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
-        0xe0 => parts(&[
-            (0x1a6, -77, -19),
-            (0x1ab, -58, -53),
-            (0x1a8, -26, -75),
-            (0x1a6, 13, -78),
-            (0x1a6, 48, -62),
-            (0x1ab, 73, -32),
-            (0x1a8, 80, 6),
-            (0x1a6, 68, 43),
-            (0x1a6, 40, 70),
-            (0x1ab, 3, 81),
-        ]),
+        // Dispatch entry $E0 points at $004CA790. Its direction bit comes from the
+        // dispatch identity ($E0 is even), not the placement byte; the two recovered
+        // loops plus the $004C8BC0 stem form the three-arm platform composite.
+        0xe0 => render_handler_de(0),
         0xe1 => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
         0xe2 => parts(&[(0x14c, 0, 0), (0x114, 0, 0)]),
         0xe3 => parts(&[(0x1aa, 0, 0), (0x114, 0, 0)]),
@@ -2472,7 +2465,7 @@ mod tests {
             (0x7a, 24, -7),
         ];
         assert_eq!(geometry(0x61, 0), short);
-        assert_eq!(geometry(0x62, 0), long);
+        assert_eq!(geometry(0x62, 0), short);
         assert_eq!(geometry(0x63, 0), long);
         assert_eq!(geometry(0x63, 1), short);
     }
@@ -3604,7 +3597,7 @@ mod tests {
     }
 
     #[test]
-    fn handlers_df_through_e1_preserve_overlay_and_orbit_geometry() {
+    fn handlers_df_through_e1_preserve_recovered_geometry() {
         let geometry = |sprite| {
             render_lunar_magic_standard_sprite(sprite, false)
                 .unwrap()
@@ -3613,21 +3606,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(geometry(0xdf), [(0x1b8, 0, 0), (0x114, 0, 0)]);
-        assert_eq!(
-            geometry(0xe0),
-            [
-                (0x1a6, -77, -19),
-                (0x1ab, -58, -53),
-                (0x1a8, -26, -75),
-                (0x1a6, 13, -78),
-                (0x1a6, 48, -62),
-                (0x1ab, 73, -32),
-                (0x1a8, 80, 6),
-                (0x1a6, 68, 43),
-                (0x1a6, 40, 70),
-                (0x1ab, 3, 81)
-            ]
-        );
+        assert_eq!(geometry(0xe0), geometry(0xde));
         assert_eq!(geometry(0xe1), [(0x1b8, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe2), [(0x14c, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe3), [(0x1aa, 0, 0), (0x114, 0, 0)]);
