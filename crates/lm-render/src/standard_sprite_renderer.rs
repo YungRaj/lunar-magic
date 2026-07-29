@@ -156,7 +156,6 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x6d..=0x72
         | 0x84
         | 0x8e
-        | 0x96
         | 0x9b
         | 0x9c
         | 0x9d
@@ -459,12 +458,13 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // used by $8E, with base $100 producing definitions $1C0..$1F3.
         0x90 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0x90 => render_handler_8e(),
-        0x91 => parts(&[
-            (0x1fa, -4, -1),
-            (0x1fb, 12, -1),
-            (0x1ea, -21, -1),
-            (0x1eb, -3, -1),
-            (0x1ee, -15, 3),
+        // Dispatch $91 @ $004C7FE0 is the four-part Chargin' Chuck preview.
+        // It is also reused verbatim by dispatch $96.
+        0x91 | 0x96 => parts(&[
+            (0x1ee, -6, -11),
+            (0x1fe, -6, 1),
+            (0x1ff, 10, 1),
+            (0x1ef, 4, -15),
         ]),
         0x92 => {
             let mut values = vec![
@@ -506,15 +506,6 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1f9, 8, -1),
             (0x1e8, -8, -17),
             (0x1e9, 8, -17),
-        ]),
-        0x96 => parts(&[
-            (0x200, 0, 0),
-            (0x1f4, -8, 0),
-            (0x1f5, 8, 0),
-            (0x1e4, 0, -9),
-            (0x1e4, 2, -10),
-            (0x1e4, 8, -9),
-            (0x1e4, 6, -10),
         ]),
         0x97 => parts(&[
             (0x1de, -12, 1),
@@ -669,7 +660,15 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // from a different handler.
         0xbe if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0xbe => parts(&[(0x17b, 0, 1)]),
-        0xbf => parts(&[(0x166, 0, 0)]),
+        // Dispatch $BF @ $004C9A00 draws Mega Mole as four adjacent quadrant
+        // definitions. The former single $166 definition belongs to a different
+        // native handler and reduced the preview to a small fragment.
+        0xbf => parts(&[
+            (0x174, 0, 1),
+            (0x175, 16, 1),
+            (0x164, 0, -15),
+            (0x165, 16, -15),
+        ]),
         // Dispatch $C0 @ $004C9AD0 advances one packed cell after each call
         // and emits the three adjacent floating-platform definitions.
         0xc0 => parts(&[(0x176, 0, 3), (0x177, 16, 3), (0x178, 32, 3)]),
@@ -2811,7 +2810,7 @@ mod tests {
     }
 
     #[test]
-    fn handlers_96_and_97_preserve_recovered_adjacent_cell_composites() {
+    fn handlers_96_and_97_preserve_recovered_dispatch_aliases() {
         let geometry = |sprite, alternate_display| {
             render_lunar_magic_standard_sprite(sprite, alternate_display)
                 .unwrap()
@@ -2822,16 +2821,13 @@ mod tests {
         assert_eq!(
             geometry(0x96, false),
             [
-                (0x200, 0, 0),
-                (0x1f4, -8, 0),
-                (0x1f5, 8, 0),
-                (0x1e4, 0, -9),
-                (0x1e4, 2, -10),
-                (0x1e4, 8, -9),
-                (0x1e4, 6, -10)
+                (0x1ee, -6, -11),
+                (0x1fe, -6, 1),
+                (0x1ff, 10, 1),
+                (0x1ef, 4, -15)
             ]
         );
-        assert_eq!(geometry(0x96, true), [(0x115, 0, 1)]);
+        assert_eq!(geometry(0x96, true), geometry(0x96, false));
         assert_eq!(
             geometry(0x97, false),
             [
@@ -2861,13 +2857,13 @@ mod tests {
         assert_eq!(
             geometry(0x91, 0),
             [
-                (0x1fa, -4, -1),
-                (0x1fb, 12, -1),
-                (0x1ea, -21, -1),
-                (0x1eb, -3, -1),
-                (0x1ee, -15, 3)
+                (0x1ee, -6, -11),
+                (0x1fe, -6, 1),
+                (0x1ff, 10, 1),
+                (0x1ef, 4, -15)
             ]
         );
+        assert_eq!(geometry(0x96, 0), geometry(0x91, 0));
         assert_eq!(
             geometry(0x92, 0),
             [
@@ -3534,7 +3530,15 @@ mod tests {
         assert_eq!(geometry(0xbe, 0, false), [(0x17b, 0, 1)]);
         assert_eq!(geometry(0xbe, 1, false), [(0x17b, 0, 1)]);
         assert_eq!(geometry(0xbe, 0, true), [(0x115, 0, 1)]);
-        assert_eq!(geometry(0xbf, 0, false), [(0x166, 0, 0)]);
+        assert_eq!(
+            geometry(0xbf, 0, false),
+            [
+                (0x174, 0, 1),
+                (0x175, 16, 1),
+                (0x164, 0, -15),
+                (0x165, 16, -15)
+            ]
+        );
         assert_eq!(
             geometry(0xc0, 0, false),
             [(0x176, 0, 3), (0x177, 16, 3), (0x178, 32, 3)]
