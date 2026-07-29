@@ -292,26 +292,33 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // geometry as $51, including its packed-coordinate edge transition.
         0x52 => parts(&[(0x59, -4, 0), (0x69, 4, 0), (0x69, 20, 0), (0x79, 28, 0)]),
         0x53 => render_handler_53(),
-        0x54 | 0x56 => parts(&[
+        // Dispatch $54 @ $004C5EE0 walks a three-by-three packed-cell grid,
+        // advancing the definition index across $128-$12A, $138-$13A, and
+        // $148-$14A. $56 is a distinct neighboring handler.
+        0x54 => parts(&[
+            (0x128, 8, 8),
+            (0x129, 24, 8),
+            (0x12a, 40, 8),
+            (0x138, 8, 24),
+            (0x139, 24, 24),
+            (0x13a, 40, 24),
+            (0x148, 8, 40),
+            (0x149, 24, 40),
+            (0x14a, 40, 40),
+        ]),
+        0x55 | 0x57 => parts(&[
             (0x6a, 0, 1),
             (0x5b, 16, 1),
             (0x5b, 32, 1),
             (0x5b, 48, 1),
             (0x5a, 64, 1),
         ]),
-        0x55 | 0x57 => parts(&[
+        0x56 | 0x58 => parts(&[
             (0x5d, 0, 1),
             (0x5e, 16, 1),
             (0x5f, 32, 1),
             (0x6e, 8, 17),
             (0x6f, 24, 17),
-        ]),
-        0x58 => parts(&[
-            (0x5c, 0, 1),
-            (0x5c, 16, 1),
-            (0x6c, 32, 1),
-            (0x5c, -16, 1),
-            (0x5c, -32, 1),
         ]),
         0x59 => parts(&[
             (0x5c, 0, 1),
@@ -666,11 +673,18 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         )]),
         0xb4 => parts(&[(0x185, 16, 1), (0x194, 16, 1), (0x195, 32, 1)]),
         0xb5 => parts(&[(0x186, 0, 0), (0x196, 16, 0), (0x197, 32, 0)]),
-        0xb6 => parts(&[
-            (0x10b, 0, 1),
-            (0x10c + u16::from(mode.placement_first & 1), 0, 1),
-            (0x10a, 3, 1),
-        ]),
+        // Dispatch $B6 @ $004C9570 uses the generic alternate marker first,
+        // then selects the castle-specific definition only for graphics mode $D.
+        0xb6 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xb6 => parts(&[(
+            if mode.special_display_mode && mode.sprite_graphics_mode & 0x0f == 0x0d {
+                0x116
+            } else {
+                0x12d
+            },
+            0,
+            0,
+        )]),
         0xb7 => parts(&[
             (0x198, 0, 1),
             (0x199, 16, 1),
@@ -2463,6 +2477,20 @@ mod tests {
         assert_eq!(
             geometry(0x54),
             [
+                (0x128, 8, 8),
+                (0x129, 24, 8),
+                (0x12a, 40, 8),
+                (0x138, 8, 24),
+                (0x139, 24, 24),
+                (0x13a, 40, 24),
+                (0x148, 8, 40),
+                (0x149, 24, 40),
+                (0x14a, 40, 40)
+            ]
+        );
+        assert_eq!(
+            geometry(0x55),
+            [
                 (0x6a, 0, 1),
                 (0x5b, 16, 1),
                 (0x5b, 32, 1),
@@ -2470,9 +2498,9 @@ mod tests {
                 (0x5a, 64, 1)
             ]
         );
-        assert_eq!(geometry(0x54), geometry(0x56));
+        assert_eq!(geometry(0x55), geometry(0x57));
         assert_eq!(
-            geometry(0x55),
+            geometry(0x56),
             [
                 (0x5d, 0, 1),
                 (0x5e, 16, 1),
@@ -2481,17 +2509,7 @@ mod tests {
                 (0x6f, 24, 17)
             ]
         );
-        assert_eq!(geometry(0x55), geometry(0x57));
-        assert_eq!(
-            geometry(0x58),
-            [
-                (0x5c, 0, 1),
-                (0x5c, 16, 1),
-                (0x6c, 32, 1),
-                (0x5c, -16, 1),
-                (0x5c, -32, 1)
-            ]
-        );
+        assert_eq!(geometry(0x56), geometry(0x58));
         assert_eq!(
             geometry(0x59),
             [
@@ -3488,11 +3506,30 @@ mod tests {
             geometry(0xb5, 0),
             [(0x186, 0, 0), (0x196, 16, 0), (0x197, 32, 0)]
         );
+        assert_eq!(geometry(0xb6, 0), [(0x12d, 0, 0)]);
         assert_eq!(
-            geometry(0xb6, 0),
-            [(0x10b, 0, 1), (0x10c, 0, 1), (0x10a, 3, 1)]
+            render_lunar_magic_standard_sprite_with_mode(
+                0xb6,
+                StandardSpritePreviewMode {
+                    special_display_mode: true,
+                    sprite_graphics_mode: 0x0d,
+                    ..StandardSpritePreviewMode::default()
+                }
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>(),
+            [(0x116, 0, 0)]
         );
-        assert_eq!(geometry(0xb6, 1)[1], (0x10d, 0, 1));
+        assert_eq!(
+            render_lunar_magic_standard_sprite(0xb6, true)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>(),
+            [(0x115, 0, 1)]
+        );
         assert_eq!(
             geometry(0xb7, 0),
             [(0x198, 0, 1), (0x199, 16, 1), (0x184, 12, 5)]
