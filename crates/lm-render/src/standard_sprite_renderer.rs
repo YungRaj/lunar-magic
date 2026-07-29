@@ -62,6 +62,10 @@ pub struct StandardSpritePreviewMode {
     pub animation_phase: u8,
     /// Enables Lunar Magic's context-specific definition overrides.
     pub special_display_mode: bool,
+    /// Mirrors Lunar Magic's temporary sprite-list preview pass
+    /// (`DAT_00E279D0`). Some handlers use their serialized placement only in
+    /// that pass and otherwise draw at a fixed editor-canvas location.
+    pub placement_preview_mode: bool,
     /// Packed within-screen coordinate passed to Lunar Magic's handlers:
     /// minor-axis position in the high nibble and major-axis position in the low.
     pub placement_first: u8,
@@ -100,6 +104,7 @@ pub fn render_lunar_magic_standard_sprite(
             sprite_graphics_mode: 0,
             animation_phase: 0,
             special_display_mode: false,
+            placement_preview_mode: false,
             placement_first: 0,
             placement_major: 0,
             placement_minor: 0,
@@ -286,7 +291,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // the placement, or the shared $115 marker in alternate display mode.
         0x48 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0x48 => parts(&[(0x89, 0, -3)]),
-        0x49 => parts(&[(0xa6, 0, 1)]),
+        // RenderSprite49 @ $004C5AE0 emits the two adjacent plant definitions.
+        0x49 => parts(&[(0xa4, 0, 0), (0xa5, 16, 0)]),
         0x4a => parts(&[(0x58, 8, -16), (0x68, 8, 0)]),
         0x4b => render_handler_4b(mode.placement_first),
         0x4c => parts(&[(0xa7, 0, 1), (0xa8, 0, 1)]),
@@ -484,10 +490,13 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             }
             parts(&values)
         }
-        // $8F dispatches to $004C7F20. Like $8D, it draws two E9/EA platform
-        // pairs; bit 0 of the first placement byte selects a four- or eight-cell
-        // gap between the pairs.
-        0x8d | 0x8f => {
+        // RenderSprite8D @ $004C7CE0 draws its eight-part fixed editor marker
+        // at cell $120 during a normal level render. The temporary sprite-list
+        // preview pass instead anchors the same geometry to the placement.
+        0x8d => render_handler_8d(mode),
+        // $8F dispatches to $004C7F20 and draws two E9/EA platform pairs; bit
+        // 0 selects a four- or eight-cell gap between them.
+        0x8f => {
             let spacing = if mode.placement_first & 1 == 0 {
                 128
             } else {
@@ -959,6 +968,39 @@ fn render_handler_30(special_display_mode: bool) -> Option<Vec<StandardSpritePre
     } else {
         parts(&[(0x206, 0, -11), (0x036, 8, -15), (0x207, 0, 1)])
     }
+}
+
+fn render_handler_8d(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let (base_x, base_y) = if mode.placement_preview_mode {
+        (0_i32, 0_i32)
+    } else {
+        let presented_major = if mode.level_orientation == StandardLevelOrientation::Vertical {
+            mode.placement_minor
+        } else {
+            mode.placement_major
+        };
+        let presented_minor = if mode.level_orientation == StandardLevelOrientation::Vertical {
+            mode.placement_major
+        } else {
+            mode.placement_minor
+        };
+        (
+            -i32::from(presented_major) * 16,
+            (18_i32 - i32::from(presented_minor)) * 16,
+        )
+    };
+    let x = |offset: i32| i16::try_from(base_x + offset).ok();
+    let y = |offset: i32| i16::try_from(base_y + offset).ok();
+    parts(&[
+        (0x10e, x(8)?, y(0)?),
+        (0x10f, x(24)?, y(0)?),
+        (0x11e, x(0)?, y(48)?),
+        (0x12e, x(0)?, y(64)?),
+        (0x13e, x(0)?, y(80)?),
+        (0x11f, x(40)?, y(48)?),
+        (0x12f, x(40)?, y(64)?),
+        (0x13f, x(40)?, y(80)?),
+    ])
 }
 
 fn render_handler_c3(special_display_mode: bool) -> Option<Vec<StandardSpritePreviewTile>> {
@@ -1834,10 +1876,14 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x10b => [0x4cc1, 0x4cd1, 0x4cc0, 0x4cd0],
         0x10c => [0x0056, 0x0019, 0x0019, 0x0019],
         0x10d => [0x0029, 0x0019, 0x0019, 0x0019],
+        0x10e => [0x059c, 0x05ac, 0x059d, 0x05ad],
+        0x10f => [0x059e, 0x05ae, 0x059f, 0x05af],
         0x110 => [0x4819, 0x49d2, 0x4819, 0x4819],
         0x111 => [0x5019, 0x51d2, 0x5019, 0x5019],
         0x112 => [0x1419, 0x55d2, 0x1419, 0x1419],
         0x113 => [0x4c19, 0x4dd2, 0x4c19, 0x4c19],
+        0x11e => [0x19a1, 0x19b1, 0x1819, 0x1819],
+        0x11f => [0x59a1, 0x59b1, 0x59a0, 0x59b0],
         0x120 => [0x01aa, 0x01ba, 0x01ab, 0x01bb],
         0x121 => [0x41ab, 0x41bb, 0x41aa, 0x41ba],
         0x122 => [0x01ac, 0x01bc, 0x01ad, 0x01bd],
@@ -1845,11 +1891,15 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x11c => [0x85be, 0x85ae, 0x85bf, 0x85af],
         0x12c => [0x859e, 0x858e, 0x859f, 0x858f],
         0x12d => [0x49ad, 0x49bd, 0x49ac, 0x49bc],
+        0x12e => [0x19c1, 0x19c1, 0x1819, 0x1819],
+        0x12f => [0x59c1, 0xd9c1, 0x59c0, 0xd9c0],
         0x130 => [0x81ba, 0x81aa, 0x81bb, 0x81ab],
         0x131 => [0xc1bb, 0xc1ab, 0xc1ba, 0xc1aa],
         0x132 => [0x81bc, 0x81ac, 0x81bd, 0x81ad],
         0x133 => [0xc1bd, 0xc1ad, 0xc1bc, 0xc1ac],
         0x13d => [0x9486, 0x1486, 0xd44e, 0x5486],
+        0x13e => [0x99b1, 0x99a1, 0x1819, 0x1819],
+        0x13f => [0xd9b1, 0xd9a1, 0xd9b0, 0xd9a0],
         0x141 => [0x0860, 0x0870, 0x0861, 0x0871],
         0x14b => [0x11e2, 0x11f2, 0x11e3, 0x11f3],
         0x14c => [0x0dae, 0x0dbe, 0x0daf, 0x0dbf],
@@ -2565,7 +2615,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(0x115, 0, 1)]
         );
-        assert_eq!(geometry(0x49), [(0xa6, 0, 1)]);
+        assert_eq!(geometry(0x49), [(0xa4, 0, 0), (0xa5, 16, 0)]);
         assert_eq!(geometry(0x4a), [(0x58, 8, -16), (0x68, 8, 0)]);
         for sprite in [0x42, 0x43, 0x46, 0x47] {
             assert_eq!(
@@ -3063,11 +3113,40 @@ mod tests {
         );
         assert_eq!(
             geometry(0x8d, 0),
-            [(0xe9, -8, 0), (0xea, 8, 0), (0xe9, 120, 0), (0xea, 136, 0)]
+            [
+                (0x10e, 8, 288),
+                (0x10f, 24, 288),
+                (0x11e, 0, 336),
+                (0x12e, 0, 352),
+                (0x13e, 0, 368),
+                (0x11f, 40, 336),
+                (0x12f, 40, 352),
+                (0x13f, 40, 368)
+            ]
         );
+        let preview_pass = render_lunar_magic_standard_sprite_with_mode(
+            0x8d,
+            StandardSpritePreviewMode {
+                placement_preview_mode: true,
+                ..StandardSpritePreviewMode::default()
+            },
+        )
+        .unwrap()
+        .iter()
+        .map(|part| (part.definition_index, part.x, part.y))
+        .collect::<Vec<_>>();
         assert_eq!(
-            geometry(0x8d, 1),
-            [(0xe9, -8, 0), (0xea, 8, 0), (0xe9, 56, 0), (0xea, 72, 0)]
+            preview_pass,
+            [
+                (0x10e, 8, 0),
+                (0x10f, 24, 0),
+                (0x11e, 0, 48),
+                (0x12e, 0, 64),
+                (0x13e, 0, 80),
+                (0x11f, 40, 48),
+                (0x12f, 40, 64),
+                (0x13f, 40, 80)
+            ]
         );
         assert_eq!(
             render_lunar_magic_standard_sprite(0x84, true)

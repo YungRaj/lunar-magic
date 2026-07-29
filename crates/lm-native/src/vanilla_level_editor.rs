@@ -2082,6 +2082,7 @@ impl VanillaLevelEditor {
                     selected: self.selected_sprite,
                     vertical,
                     level_mode,
+                    sprite_tileset: self.form.sprite_tileset,
                     animation_phase,
                     custom_sprites,
                     custom_map16,
@@ -3548,7 +3549,12 @@ impl VanillaLevelEditor {
                             header.level_mode(),
                         )
                     });
-                let mode = sprite_catalog_preview_mode(&self.sprite_form, vertical, level_mode);
+                let mode = sprite_catalog_preview_mode(
+                    &self.sprite_form,
+                    vertical,
+                    level_mode,
+                    self.form.sprite_tileset,
+                );
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt("vanilla-standard-sprite-catalog-scroll")
@@ -4681,6 +4687,7 @@ fn sprite_catalog_preview_mode(
     form: &SpriteForm,
     vertical: bool,
     level_mode: u8,
+    sprite_tileset: u8,
 ) -> lm_render::StandardSpritePreviewMode {
     let placement_first = packed_sprite_first(NativeSpriteRecordFields {
         y_low: form.y_low,
@@ -4692,6 +4699,8 @@ fn sprite_catalog_preview_mode(
     lm_render::StandardSpritePreviewMode {
         placement_first,
         level_mode,
+        sprite_graphics_mode: sprite_tileset,
+        placement_preview_mode: true,
         level_orientation: if vertical {
             lm_render::StandardLevelOrientation::Vertical
         } else {
@@ -6313,6 +6322,7 @@ struct SpritePlacementDraw<'a> {
     selected: usize,
     vertical: bool,
     level_mode: u8,
+    sprite_tileset: u8,
     animation_phase: u8,
     custom_sprites: Option<&'a lm_level::SscResolvedTable>,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
@@ -6333,6 +6343,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         selected,
         vertical,
         level_mode,
+        sprite_tileset,
         animation_phase,
         custom_sprites,
         custom_map16,
@@ -6375,6 +6386,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     placement,
                     vertical,
                     level_mode,
+                    sprite_tileset,
                     animation_phase,
                     standard_8a_count,
                 ),
@@ -6479,6 +6491,7 @@ fn standard_sprite_preview_mode(
     placement: &lm_level::NativeSpritePlacement,
     vertical: bool,
     level_mode: u8,
+    sprite_tileset: u8,
     animation_phase: u8,
     sprite_8a_sequence_index: u8,
 ) -> lm_render::StandardSpritePreviewMode {
@@ -6487,6 +6500,7 @@ fn standard_sprite_preview_mode(
         placement_major: placement.major,
         placement_minor: placement.minor,
         level_mode,
+        sprite_graphics_mode: sprite_tileset,
         animation_phase,
         sprite_8a_sequence_index,
         level_orientation: if vertical {
@@ -10361,9 +10375,10 @@ mod tests {
             screen: 0x1f,
             ..SpriteForm::default()
         };
-        let mode = sprite_catalog_preview_mode(&form, true, 7);
+        let mode = sprite_catalog_preview_mode(&form, true, 7, 5);
         assert_eq!(mode.placement_first, 0x1f);
         assert_eq!(mode.level_mode, 7);
+        assert_eq!(mode.sprite_graphics_mode, 5);
         assert_eq!(
             mode.level_orientation,
             lm_render::StandardLevelOrientation::Vertical
@@ -10424,19 +10439,21 @@ mod tests {
             sprite_number: 0xe5,
             extra_bits: 1,
         };
-        let horizontal = standard_sprite_preview_mode(&placement, false, 3, 2, 4);
+        let horizontal = standard_sprite_preview_mode(&placement, false, 3, 5, 2, 4);
         assert_eq!(horizontal.placement_first, 0x94);
         assert_eq!(horizontal.placement_major, 0x24);
         assert_eq!(horizontal.placement_minor, 9);
         assert_eq!(horizontal.level_mode, 3);
+        assert_eq!(horizontal.sprite_graphics_mode, 5);
         assert_eq!(horizontal.animation_phase, 2);
         assert_eq!(horizontal.sprite_8a_sequence_index, 4);
         assert_eq!(
             horizontal.level_orientation,
             lm_render::StandardLevelOrientation::Horizontal
         );
-        let vertical = standard_sprite_preview_mode(&placement, true, 7, 1, 2);
+        let vertical = standard_sprite_preview_mode(&placement, true, 7, 6, 1, 2);
         assert_eq!(vertical.level_mode, 7);
+        assert_eq!(vertical.sprite_graphics_mode, 6);
         assert_eq!(vertical.animation_phase, 1);
         assert_eq!(vertical.sprite_8a_sequence_index, 2);
         assert_eq!(
@@ -10947,6 +10964,7 @@ mod tests {
                         &placement,
                         vertical,
                         reopened.layer1.header.level_mode(),
+                        reopened.layer1.header.sprite_tileset(),
                         0,
                         0,
                     ),

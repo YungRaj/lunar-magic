@@ -20,6 +20,7 @@ impl NativeLevelDocumentEditor {
             .native_placements_for_orientation(vertical);
         let sprites = value.sprites.native_placements();
         let level_mode = value.layer1.header.level_mode();
+        let sprite_tileset = value.layer1.header.sprite_tileset();
         let sprite_lengths = self.current_sprite_lengths();
         let major_tiles = canvas_major_tiles(&objects, &sprites);
         let minor_tiles = canvas_minor_tiles(&objects, &sprites);
@@ -58,6 +59,7 @@ impl NativeLevelDocumentEditor {
                     CANVAS_CELL,
                     vertical,
                     level_mode,
+                    sprite_tileset,
                     &sprites,
                     self.sprite_index,
                     cursor,
@@ -386,6 +388,7 @@ fn draw_sprites(
     cell: f32,
     vertical: bool,
     level_mode: u8,
+    sprite_tileset: u8,
     placements: &[NativeSpritePlacement],
     selected: usize,
     cursor: Option<egui::Pos2>,
@@ -404,6 +407,7 @@ fn draw_sprites(
                 placement_major: placement.major,
                 placement_minor: placement.minor,
                 level_mode,
+                sprite_graphics_mode: sprite_tileset,
                 sprite_8a_sequence_index: standard_8a_count,
                 level_orientation: if vertical {
                     lm_render::StandardLevelOrientation::Vertical
