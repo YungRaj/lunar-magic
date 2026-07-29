@@ -327,16 +327,14 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x9a, 8, 16),
             (0x13b, 24, 16),
         ]),
+        // Dispatch $5D @ $004C6450 emits the same five-definition short
+        // floating platform as $5C. It is not the neighboring wide platform.
         0x5d => parts(&[
-            (0x8a, 0, 1),
-            (0x8b, 16, 1),
-            (0x8b, 32, 1),
-            (0x8b, 48, 1),
-            (0xff, 64, 1),
-            (0x9a, 8, 17),
-            (0x9b, 24, 17),
-            (0x9b, 40, 17),
-            (0x13b, 56, 17),
+            (0x8a, 0, 0),
+            (0x8b, 16, 0),
+            (0xff, 32, 0),
+            (0x9a, 8, 16),
+            (0x13b, 24, 16),
         ]),
         0x5e => {
             let mut values = Vec::with_capacity(9);
@@ -346,7 +344,17 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             values.extend([(0x7c, 8, 9), (0x7d, 24, 9), (0x7d, 40, 9), (0x7e, 56, 9)]);
             parts(&values)
         }
-        0x5f => parts(&[(0x8c, 0, 1), (0x8d, 16, 1)]),
+        // Dispatch $5F @ $004C6600 advances through Lunar Magic's packed
+        // coordinates to emit five vertical chain links and a four-part
+        // platform. This is the same geometry used by $5E.
+        0x5f => {
+            let mut values = Vec::with_capacity(9);
+            for row in 1_i16..=5 {
+                values.push((0x6d, 32, row * 16));
+            }
+            values.extend([(0x7c, 8, 9), (0x7d, 24, 9), (0x7d, 40, 9), (0x7e, 56, 9)]);
+            parts(&values)
+        }
         0x60 => parts(&[(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]),
         0x61 => render_left_chain(false),
         // $004C67D0 emits only definitions $7C/$7D/$7E.
@@ -2467,15 +2475,11 @@ mod tests {
         assert_eq!(
             geometry(0x5d),
             [
-                (0x8a, 0, 1),
-                (0x8b, 16, 1),
-                (0x8b, 32, 1),
-                (0x8b, 48, 1),
-                (0xff, 64, 1),
-                (0x9a, 8, 17),
-                (0x9b, 24, 17),
-                (0x9b, 40, 17),
-                (0x13b, 56, 17)
+                (0x8a, 0, 0),
+                (0x8b, 16, 0),
+                (0xff, 32, 0),
+                (0x9a, 8, 16),
+                (0x13b, 24, 16)
             ]
         );
         assert_eq!(
@@ -2492,7 +2496,7 @@ mod tests {
                 (0x7e, 56, 9)
             ]
         );
-        assert_eq!(geometry(0x5f), [(0x8c, 0, 1), (0x8d, 16, 1)]);
+        assert_eq!(geometry(0x5f), geometry(0x5e));
         assert_eq!(
             geometry(0x60),
             [(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]
