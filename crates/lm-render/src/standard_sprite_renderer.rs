@@ -616,7 +616,13 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x19b, 16, 1),
             (0x19c, 32, 1),
         ]),
-        0xb9 => render_handler_b9(mode.placement_first),
+        // Dispatch entry $B9 points at $004C9710. It emits the three recovered
+        // line-guided-sprite tiles; bit 0 of the placement byte selects $10C/$10D.
+        0xb9 => parts(&[
+            (0x10b, 0, 1),
+            (0x10c + u16::from(mode.placement_first & 1), 0, 1),
+            (0x10a, 3, 1),
+        ]),
         0xba => parts(&[(0x02, 0, 1)]),
         0xbb => parts(&[(0x17b, 0, 1)]),
         0xbc => parts(&[
@@ -723,18 +729,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1a6, 40, 70),
             (0x1ab, 3, 81),
         ]),
-        0xe1 => parts(&[
-            (0x1a6, -62, -49),
-            (0x1ab, -30, -72),
-            (0x1a8, 7, -79),
-            (0x1a6, 43, -66),
-            (0x1a6, 70, -37),
-            (0x1ab, 81, 0),
-            (0x1a8, 71, 38),
-            (0x1a6, 45, 67),
-            (0x1a6, 9, 80),
-            (0x1ab, -29, 75),
-        ]),
+        0xe1 => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
         0xe2 => parts(&[(0x14c, 0, 0), (0x114, 0, 0)]),
         0xe3 => parts(&[(0x1aa, 0, 0), (0x114, 0, 0)]),
         0xe4 => parts(&[(0x14b, 0, 0), (0x114, 0, 0)]),
@@ -957,15 +952,6 @@ fn render_handler_a6(animation_phase: u8) -> Option<Vec<StandardSpritePreviewTil
         (0x19e, x + 32, y),
         (0x19f, x + 48, y),
     ])
-}
-
-fn render_handler_b9(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
-    match placement_first & 3 {
-        2 => parts(&[(0x19a, 0, 0), (0x18a, -16, 0), (0x17a, -24, 0)]),
-        0 => parts(&[(0x189, 0, 1), (0x188, -8, -7)]),
-        1 | 3 => parts(&[(0x189, 0, 1), (0x188, -8, -7), (0x14d, -24, -1)]),
-        _ => unreachable!(),
-    }
 }
 
 fn render_handler_ca_cb(
@@ -3379,7 +3365,7 @@ mod tests {
     }
 
     #[test]
-    fn handler_b9_preserves_all_native_placement_branches() {
+    fn handler_b9_uses_authenticated_004c9710_geometry() {
         let geometry = |first, alternate_display| {
             render_lunar_magic_standard_sprite_with_mode(
                 0xb9,
@@ -3394,15 +3380,15 @@ mod tests {
             .map(|part| (part.definition_index, part.x, part.y))
             .collect::<Vec<_>>()
         };
-        assert_eq!(geometry(0, false), [(0x189, 0, 1), (0x188, -8, -7)]);
+        assert_eq!(
+            geometry(0, false),
+            [(0x10b, 0, 1), (0x10c, 0, 1), (0x10a, 3, 1)]
+        );
         assert_eq!(
             geometry(1, false),
-            [(0x189, 0, 1), (0x188, -8, -7), (0x14d, -24, -1)]
+            [(0x10b, 0, 1), (0x10d, 0, 1), (0x10a, 3, 1)]
         );
-        assert_eq!(
-            geometry(2, false),
-            [(0x19a, 0, 0), (0x18a, -16, 0), (0x17a, -24, 0)]
-        );
+        assert_eq!(geometry(2, false), geometry(0, false));
         assert_eq!(geometry(3, false), geometry(1, false));
         assert_eq!(geometry(0, true), [(0x115, 0, 1)]);
     }
@@ -3618,7 +3604,7 @@ mod tests {
     }
 
     #[test]
-    fn handlers_df_and_e0_preserve_overlay_and_orbit_geometry() {
+    fn handlers_df_through_e1_preserve_overlay_and_orbit_geometry() {
         let geometry = |sprite| {
             render_lunar_magic_standard_sprite(sprite, false)
                 .unwrap()
@@ -3642,21 +3628,7 @@ mod tests {
                 (0x1ab, 3, 81)
             ]
         );
-        assert_eq!(
-            geometry(0xe1),
-            [
-                (0x1a6, -62, -49),
-                (0x1ab, -30, -72),
-                (0x1a8, 7, -79),
-                (0x1a6, 43, -66),
-                (0x1a6, 70, -37),
-                (0x1ab, 81, 0),
-                (0x1a8, 71, 38),
-                (0x1a6, 45, 67),
-                (0x1a6, 9, 80),
-                (0x1ab, -29, 75)
-            ]
-        );
+        assert_eq!(geometry(0xe1), [(0x1b8, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe2), [(0x14c, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe3), [(0x1aa, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe4), [(0x14b, 0, 0), (0x114, 0, 0)]);

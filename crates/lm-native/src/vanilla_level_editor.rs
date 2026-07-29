@@ -6177,11 +6177,18 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             interactive_rect =
                 sprite_preview_bounds(marker, parts.iter().map(|part| (part.x, part.y)), cell_size);
             for part in parts {
-                draw_sprite_preview_definition(
+                draw_sprite_preview_definition_tinted(
                     painter,
                     texture,
                     sprite_preview_part_rect(marker, part.x, part.y, cell_size),
                     part.subtiles,
+                    // Lunar Magic draws $E1's ghost definition at 50% opacity while keeping
+                    // its separate $114 star overlay opaque. egui tint colors are premultiplied;
+                    // white-with-alpha would gamma-adjust this to roughly 75% opacity.
+                    standard_sprite_preview_tint(
+                        placement.sprite_number,
+                        part.definition_index,
+                    ),
                 );
             }
         } else if let Some(parts) = external_preview.as_deref()
@@ -6479,6 +6486,22 @@ pub(crate) fn draw_sprite_preview_definition(
     target: egui::Rect,
     subtiles: [u16; 4],
 ) {
+    draw_sprite_preview_definition_tinted(
+        painter,
+        texture,
+        target,
+        subtiles,
+        egui::Color32::WHITE,
+    );
+}
+
+fn draw_sprite_preview_definition_tinted(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    subtiles: [u16; 4],
+    tint: egui::Color32,
+) {
     for (quadrant, word) in subtiles.into_iter().enumerate() {
         let half = target.size() / 2.0;
         let (x, y) = sprite_definition_quadrant_position(quadrant);
@@ -6488,7 +6511,19 @@ pub(crate) fn draw_sprite_preview_definition(
             texture,
             egui::Rect::from_min_size(minimum, half),
             word,
+            tint,
         );
+    }
+}
+
+const fn standard_sprite_preview_tint(
+    sprite_number: u8,
+    definition_index: u16,
+) -> egui::Color32 {
+    if sprite_number == 0xe1 && definition_index == 0x1b8 {
+        egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
+    } else {
+        egui::Color32::WHITE
     }
 }
 
@@ -6504,6 +6539,7 @@ fn draw_sprite_atlas_subtile(
     texture: &egui::TextureHandle,
     target: egui::Rect,
     word: u16,
+    tint: egui::Color32,
 ) {
     let tile = usize::from(word & 0x03ff);
     let palette = usize::from((word >> 10) & 7);
@@ -6522,7 +6558,7 @@ fn draw_sprite_atlas_subtile(
         std::mem::swap(&mut minimum.y, &mut maximum.y);
     }
     let uv = egui::Rect::from_min_max(minimum, maximum);
-    painter.image(texture.id(), target, uv, egui::Color32::WHITE);
+    painter.image(texture.id(), target, uv, tint);
 }
 
 fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
@@ -7864,6 +7900,22 @@ mod tests {
         assert!(should_draw_unresolved_sprite_marker(true, 0x00));
         assert!(should_draw_unresolved_sprite_marker(true, 0xf6));
         assert!(should_draw_unresolved_sprite_marker(false, 0xee));
+    }
+
+    #[test]
+    fn sprite_e1_dims_only_its_ghost_definition() {
+        assert_eq!(
+            standard_sprite_preview_tint(0xe1, 0x1b8),
+            egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
+        );
+        assert_eq!(
+            standard_sprite_preview_tint(0xe1, 0x114),
+            egui::Color32::WHITE
+        );
+        assert_eq!(
+            standard_sprite_preview_tint(0xe0, 0x1b8),
+            egui::Color32::WHITE
+        );
     }
 
     #[test]
