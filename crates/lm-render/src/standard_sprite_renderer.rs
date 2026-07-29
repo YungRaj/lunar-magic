@@ -680,8 +680,19 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             0,
             0,
         )]),
-        0xb4 => parts(&[(0x185, 16, 1), (0x194, 16, 1), (0x195, 32, 1)]),
-        0xb5 => parts(&[(0x186, 0, 0), (0x196, 16, 0), (0x197, 32, 0)]),
+        // Dispatch $B4 @ $004C94A0 emits a four-definition 2x2 composite,
+        // unless Lunar Magic's alternate-number display is active.
+        0xb4 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xb4 => parts(&[
+            (0x0ab, 0, 1),
+            (0x0ac, 16, 1),
+            (0x0bb, 0, 17),
+            (0x0bc, 16, 17),
+        ]),
+        // Dispatch $B5 @ $004C9530 is a single definition with the same
+        // alternate-number override.
+        0xb5 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xb5 => parts(&[(0x13d, 0, 0)]),
         // Dispatch $B6 @ $004C9570 uses the generic alternate marker first,
         // then selects the castle-specific definition only for graphics mode $D.
         0xb6 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
@@ -694,19 +705,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             0,
             0,
         )]),
-        0xb7 => parts(&[
-            (0x198, 0, 1),
-            (0x199, 16, 1),
-            (
-                if mode.placement_first & 1 == 0 {
-                    0x184
-                } else {
-                    0x187
-                },
-                12,
-                5,
-            ),
-        ]),
+        // Dispatch $B7 @ $004C95E0 is the three-definition platform
+        // composite; it has no placement-coordinate branch.
+        0xb7 => parts(&[(0x185, 16, 1), (0x194, 16, 1), (0x195, 32, 1)]),
         0xb8 => parts(&[
             (0x18b, 0, 1),
             (0x18c, 16, 1),
@@ -720,7 +721,22 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x10c + u16::from(mode.placement_first & 1), 0, 1),
             (0x10a, 3, 1),
         ]),
-        0xba => parts(&[(0x02, 0, 1)]),
+        // Dispatch $BA @ $004C9770 emits the horizontal flying-platform
+        // composite. Lunar Magic branches on the low bit of the packed major
+        // coordinate passed to the handler, rather than the first stream byte.
+        0xba => parts(&[
+            (0x198, 0, 1),
+            (0x199, 16, 1),
+            (
+                if mode.placement_major & 1 == 0 {
+                    0x184
+                } else {
+                    0x187
+                },
+                12,
+                5,
+            ),
+        ]),
         // Dispatch $BB @ $004C97F0 is a 2x2 composite; it is not the unrelated
         // single definition $17B.
         0xbb => parts(&[
@@ -3519,12 +3535,14 @@ mod tests {
         };
         assert_eq!(
             geometry(0xb4, 0),
-            [(0x185, 16, 1), (0x194, 16, 1), (0x195, 32, 1)]
+            [
+                (0x0ab, 0, 1),
+                (0x0ac, 16, 1),
+                (0x0bb, 0, 17),
+                (0x0bc, 16, 17)
+            ]
         );
-        assert_eq!(
-            geometry(0xb5, 0),
-            [(0x186, 0, 0), (0x196, 16, 0), (0x197, 32, 0)]
-        );
+        assert_eq!(geometry(0xb5, 0), [(0x13d, 0, 0)]);
         assert_eq!(geometry(0xb6, 0), [(0x12d, 0, 0)]);
         assert_eq!(
             render_lunar_magic_standard_sprite_with_mode(
@@ -3551,9 +3569,8 @@ mod tests {
         );
         assert_eq!(
             geometry(0xb7, 0),
-            [(0x198, 0, 1), (0x199, 16, 1), (0x184, 12, 5)]
+            [(0x185, 16, 1), (0x194, 16, 1), (0x195, 32, 1)]
         );
-        assert_eq!(geometry(0xb7, 1)[2], (0x187, 12, 5));
         assert_eq!(
             geometry(0xb8, 0),
             [
@@ -3563,7 +3580,25 @@ mod tests {
                 (0x19c, 32, 1)
             ]
         );
-        assert_eq!(geometry(0xba, 0), [(0x02, 0, 1)]);
+        assert_eq!(
+            geometry(0xba, 0),
+            [(0x198, 0, 1), (0x199, 16, 1), (0x184, 12, 5)]
+        );
+        assert_eq!(
+            render_lunar_magic_standard_sprite_with_mode(
+                0xba,
+                StandardSpritePreviewMode {
+                    placement_first: 0,
+                    placement_major: 1,
+                    ..StandardSpritePreviewMode::default()
+                }
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>(),
+            [(0x198, 0, 1), (0x199, 16, 1), (0x187, 12, 5)]
+        );
         assert_eq!(
             geometry(0xbb, 0),
             [
