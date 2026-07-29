@@ -81,7 +81,6 @@ const LAYER3_SLOT_TILES: usize = 0x80;
 const LAYER1_SPRITE_SLOT_TILES: usize = 0x80;
 const LAYER1_SPRITE_SLOT_STRIDE: usize = LAYER1_SPRITE_SLOT_TILES;
 const LAYER1_SPRITE_GLOBAL_TILES: usize = 4 * LAYER1_SPRITE_SLOT_STRIDE;
-const GFX33_DECODED_TILE_BIAS: usize = 0x18;
 const GFX33_DECODED_TILE_PADDING: usize = 0x30;
 
 fn game_palette_header(level: u16, mut header: LegacyLevelHeader) -> LegacyLevelHeader {
@@ -194,26 +193,13 @@ pub(crate) fn render(
     let layer2_image = animated_layer2_images[0].clone();
     let background_image = animated_background_images[0].clone();
     let sprite_tiles = materialize_layer1_sprite_vram(&sprite_graphics);
-    let mut animated_sprite_images = Vec::with_capacity(4);
-    for sprite_phase in 0..4 {
-        let mut animated_sprite_tiles = sprite_tiles.clone();
-        apply_vanilla_common_sprite_animation_frame(
-            &project,
-            &mut animated_sprite_tiles,
-            sprite_phase * 2,
-            tileset,
-        )?;
-        let mut animated_sprite_slots = sprite_graphics.clone();
-        for (slot, destination) in animated_sprite_slots.iter_mut().enumerate().take(4) {
-            let start = slot * LAYER1_SPRITE_SLOT_STRIDE;
-            destination
-                .clone_from_slice(&animated_sprite_tiles[start..start + LAYER1_SPRITE_SLOT_TILES]);
-        }
-        animated_sprite_images.push(render_sprite_graphics_atlas(
-            &animated_sprite_slots,
-            &palette,
-        ));
-    }
+    // A sprite tile word with bit $200 set does not address an animated copy of SP1-SP4.
+    // Lunar Magic adds the sprite display's $400-tile cache base, so page 2 resolves to decoded
+    // cache $600-$7FF. LoadAnimationAndPlayerGraphicsCaches @ 0045B360 materializes GFX33 at
+    // cache $600, independently of the ordinary level sprite slots at cache $400-$5FF.
+    let animated_sprite_slots = load_vanilla_sprite_display_page(&project)?;
+    let animated_sprite_image = render_sprite_graphics_atlas(&animated_sprite_slots, &palette);
+    let animated_sprite_images = vec![animated_sprite_image; 4];
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let entrance_image = render_default_entrance_marker(&project, &palette)?;
     let foreground_image = render_foreground_graphics_atlas(&foreground_graphics, &palette);
@@ -505,27 +491,6 @@ fn apply_vanilla_common_animation_frame(
         tileset,
         0,
         false,
-    )
-}
-
-fn apply_vanilla_common_sprite_animation_frame(
-    project: &Project,
-    graphics: &mut [IndexedTile],
-    phase: usize,
-    tileset: u8,
-) -> Result<(), String> {
-    if phase >= 8 {
-        return Err(format!(
-            "vanilla common sprite-animation phase {phase} is outside 0..8"
-        ));
-    }
-    apply_vanilla_common_animation_phases(
-        project,
-        graphics,
-        &vanilla_common_animation_phases(phase),
-        tileset,
-        GFX33_DECODED_TILE_BIAS,
-        true,
     )
 }
 
@@ -1002,6 +967,24 @@ fn materialize_layer1_sprite_vram(slots: &[Vec<IndexedTile>]) -> Vec<IndexedTile
     tiles
 }
 
+fn load_vanilla_sprite_display_page(project: &Project) -> Result<Vec<Vec<IndexedTile>>, String> {
+    let decoded = project
+        .load_decompressed_graphics_file(
+            0,
+            lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+        )
+        .map_err(|error| error.to_string())?;
+    let mut tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
+        .map_err(|error| format!("cannot decode pristine sprite-display GFX33: {error}"))?;
+    let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+    tiles.resize_with(4 * LAYER1_SPRITE_SLOT_TILES, || blank.clone());
+    Ok(tiles
+        .chunks_exact(LAYER1_SPRITE_SLOT_TILES)
+        .take(4)
+        .map(<[IndexedTile]>::to_vec)
+        .collect())
+}
+
 fn render_foreground_graphics_atlas(
     graphics: &[IndexedTile],
     palette: &Palette,
@@ -1451,9 +1434,19 @@ mod tests {
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x1b, 0x08]);
         assert_eq!(preview.sprite_image.size, [256, 1024]);
         assert_eq!(preview.animated_sprite_images.len(), 4);
-        assert_ne!(
+        assert_eq!(
             preview.animated_sprite_images[0],
             preview.animated_sprite_images[1]
+        );
+        let sprite_display_page = load_vanilla_sprite_display_page(&project).unwrap();
+        assert_eq!(sprite_display_page.len(), 4);
+        assert_eq!(sprite_display_page[0][0x48], animated[0x48]);
+        assert_eq!(sprite_display_page[2][0], animated[0x100]);
+        assert!(
+            sprite_display_page[3]
+                .iter()
+                .all(|tile| tile.pixels().iter().all(|pixel| *pixel == 0)),
+            "GFX33's unused fourth 128-tile display slot must be transparent"
         );
         assert_eq!(preview.layer3_tiles.len(), 0x400);
         assert_eq!(

@@ -509,11 +509,13 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
                 (0xea, spacing + 8, 0),
             ])
         }
+        // The unnamed dispatch target at $004C7EB0 draws four stacked $109/$10A
+        // pairs. It is distinct from the 4×4 definition-grid helper used by $90.
         0x8e => render_handler_8e(),
         // Dispatch $90 @ $004C7FA0 calls the same 4×4 definition-grid helper
         // used by $8E, with base $100 producing definitions $1C0..$1F3.
         0x90 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
-        0x90 => render_handler_8e(),
+        0x90 => render_definition_grid(0x1c0, -4, 0),
         // Dispatch $91 @ $004C7FE0 is the four-part Chargin' Chuck preview.
         // It is also reused verbatim by dispatch $96.
         0x91 | 0x96 => parts(&[
@@ -712,10 +714,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // unless Lunar Magic's alternate-number display is active.
         0xb4 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0xb4 => parts(&[
-            (0x0ab, 0, 1),
-            (0x0ac, 16, 1),
-            (0x0bb, 0, 17),
-            (0x0bc, 16, 17),
+            (0x0ab, -8, 0),
+            (0x0ac, 8, 0),
+            (0x0bb, -8, 16),
+            (0x0bc, 8, 16),
         ]),
         // Dispatch $B5 @ $004C9530 is a single definition with the same
         // alternate-number override.
@@ -1450,7 +1452,11 @@ fn render_handler_de(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
 }
 
 fn render_handler_8e() -> Option<Vec<StandardSpritePreviewTile>> {
-    render_definition_grid(0x1c0, -4, 0)
+    let mut values = Vec::with_capacity(8);
+    for row in 0_i16..4 {
+        values.extend([(0x109, 4, row * 16 + 4), (0x10a, 2, row * 16 + 4)]);
+    }
+    parts(&values)
 }
 
 fn render_definition_grid(
@@ -2050,7 +2056,7 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x115 => [0x04e8, 0x04f8, 0x04e9, 0x04f9],
         0x11d => [0x05a6, 0x05b6, 0x05a7, 0x05b7],
         0x119 => [0x0019, 0x0019, 0x09d6, 0x0019],
-        0x13c => [0x0648, 0x0658, 0x4648, 0x4658],
+        0x13c => [0x0a48, 0x0a58, 0x4a48, 0x4a58],
         0x140 => [0x14a0, 0x14b0, 0x14a1, 0x14b1],
         0x145 => [0x0019, 0x09c7, 0x0019, 0x0019],
         0x148 => [0x9110, 0x9100, 0x9111, 0x9101],
@@ -2485,7 +2491,7 @@ mod tests {
         );
         assert_eq!(
             preview_definition(0x13c).unwrap(),
-            [0x0648, 0x0658, 0x4648, 0x4658]
+            [0x0a48, 0x0a58, 0x4a48, 0x4a58]
         );
         assert_eq!(geometry(0x34), [(0x2e, -16, 3), (0x2f, 0, 3)]);
         for sprite in 0x31..=0x34 {
@@ -3167,7 +3173,20 @@ mod tests {
                 .map(|part| (part.definition_index, part.x, part.y))
                 .collect::<Vec<_>>()
         };
-        let grid = geometry(0x8e, false);
+        assert_eq!(
+            geometry(0x8e, false),
+            [
+                (0x109, 4, 4),
+                (0x10a, 2, 4),
+                (0x109, 4, 20),
+                (0x10a, 2, 20),
+                (0x109, 4, 36),
+                (0x10a, 2, 36),
+                (0x109, 4, 52),
+                (0x10a, 2, 52),
+            ]
+        );
+        let grid = geometry(0x90, false);
         assert_eq!(grid.len(), 16);
         assert_eq!(
             &grid[..4],
@@ -3825,10 +3844,10 @@ mod tests {
         assert_eq!(
             geometry(0xb4, 0),
             [
-                (0x0ab, 0, 1),
-                (0x0ac, 16, 1),
-                (0x0bb, 0, 17),
-                (0x0bc, 16, 17)
+                (0x0ab, -8, 0),
+                (0x0ac, 8, 0),
+                (0x0bb, -8, 16),
+                (0x0bc, 8, 16)
             ]
         );
         assert_eq!(geometry(0xb5, 0), [(0x13d, 0, 0)]);

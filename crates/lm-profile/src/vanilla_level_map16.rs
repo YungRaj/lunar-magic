@@ -11,6 +11,11 @@ pub const SMW_US_V1_MAP16_SOURCE_BANK_OFFSET: usize = 0x28a3d;
 pub const SMW_US_V1_MAP16_COMMON_WORD_OFFSET: usize = 0x28222;
 /// Fixed 512-bit source-selection mask copied by Lunar Magic when a ROM is opened.
 pub const SMW_US_V1_MAP16_OCCUPANCY_MASK_OFFSET: usize = 0x281bb;
+/// Alternate grass-slope definitions loaded for the normal and switch-palace object tilesets.
+///
+/// Lunar Magic's `LoadMap16BaseDataFromRom` (`004567D0`) reads this contiguous 64-byte bank,
+/// then replaces definitions `$1C4-$1C7` and `$1EC-$1EF` when tileset 0 or 7 is active.
+pub const SMW_US_V1_MAP16_SPECIAL_SLOPE_OFFSET: usize = 0x68a70;
 /// Size of the per-definition source-selection mask.
 pub const SMW_US_V1_MAP16_OCCUPANCY_MASK_BYTES: usize = 64;
 /// Number of eight-byte Map16 definitions composed by the recovered loader.
@@ -170,6 +175,19 @@ pub fn load_smw_us_v1_level_map16_base(
             .copy_from_slice(&source[*source_cursor..*source_cursor + SMW_US_V1_MAP16_TILE_BYTES]);
         *source_cursor += SMW_US_V1_MAP16_TILE_BYTES;
     }
+    if matches!(tileset, 0 | 7) {
+        const REPLACEMENT_BYTES: usize = 4 * SMW_US_V1_MAP16_TILE_BYTES;
+        let special = source(
+            bytes,
+            SMW_US_V1_MAP16_SPECIAL_SLOPE_OFFSET,
+            REPLACEMENT_BYTES * 2,
+        )?;
+        for (source_start, target_tile) in [(0, 0x1c4), (REPLACEMENT_BYTES, 0x1ec)] {
+            let target_start = target_tile * SMW_US_V1_MAP16_TILE_BYTES;
+            composed[target_start..target_start + REPLACEMENT_BYTES]
+                .copy_from_slice(&special[source_start..source_start + REPLACEMENT_BYTES]);
+        }
+    }
     Ok(LoadedSmwUsV1LevelMap16Base {
         bytes: composed,
         tileset_source_offset,
@@ -261,6 +279,9 @@ mod tests {
         assert_eq!(loaded.tileset_tiles, 256);
         assert_eq!(loaded.common_tiles, 256);
         for tile in 0..512 {
+            if matches!(tile, 0x1c4..=0x1c7 | 0x1ec..=0x1ef) {
+                continue;
+            }
             let expected = u8::try_from(tile / 2).unwrap();
             assert_eq!(
                 &loaded.bytes[tile * 8..tile * 8 + 8],
@@ -301,7 +322,18 @@ mod tests {
     }
 
     #[test]
-    fn tileset_seven_matches_lunar_magic_complete_map16_export() {
+    fn substitutes_normal_tileset_special_slope_definitions() {
+        let rom = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let loaded = load_smw_us_v1_level_map16_base(&rom, 0).unwrap();
+        let special = rom
+            .read(SMW_US_V1_MAP16_SPECIAL_SLOPE_OFFSET, 0x40)
+            .unwrap();
+        assert_eq!(&loaded.bytes[0x1c4 * 8..0x1c8 * 8], &special[..0x20]);
+        assert_eq!(&loaded.bytes[0x1ec * 8..0x1f0 * 8], &special[0x20..]);
+    }
+
+    #[test]
+    fn tileset_seven_matches_lunar_magic_complete_map16_export_and_editor_substitutions() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let rom_bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let Ok(exported_bytes) =
@@ -320,13 +352,21 @@ mod tests {
             .zip(expected)
             .enumerate()
             .filter_map(|(index, (actual, expected))| {
-                (actual != expected).then_some((index, *actual, *expected))
+                let tile = index / SMW_US_V1_MAP16_TILE_BYTES;
+                (!matches!(tile, 0x1c4..=0x1c7 | 0x1ec..=0x1ef) && actual != expected)
+                    .then_some((index, *actual, *expected))
             })
             .collect::<Vec<_>>();
         assert!(
             differences.is_empty(),
             "Map16 byte differences: {:02X?}",
             &differences[..differences.len().min(32)]
+        );
+        let editor_state = exported.section(lm_level::Lm16Map16SectionKind::EditorState);
+        assert_eq!(&actual.bytes[0x1c4 * 8..0x1c8 * 8], &editor_state[..0x20]);
+        assert_eq!(
+            &actual.bytes[0x1ec * 8..0x1f0 * 8],
+            &editor_state[0x20..0x40]
         );
     }
 }

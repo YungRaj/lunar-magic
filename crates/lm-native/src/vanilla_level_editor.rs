@@ -6789,7 +6789,10 @@ fn draw_sprite_atlas_subtile(
     word: u16,
     tint: egui::Color32,
 ) {
-    let tile = usize::from(word & 0x03ff);
+    // Bit $200 selects Lunar Magic's separately materialized animated sprite page. The caller
+    // has already selected that page's texture, so its UV address is the remaining nine-bit
+    // tile index. Keeping the page bit here incorrectly advances into the next palette band.
+    let tile = usize::from(word & 0x01ff);
     let palette = usize::from((word >> 10) & 7);
     let slot = tile / 128;
     let within_slot = tile % 128;
