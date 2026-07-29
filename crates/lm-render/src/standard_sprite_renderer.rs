@@ -282,11 +282,16 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // Dispatch slot $42 points at $004C57E0 and emits Lunar Magic's horizontal
         // three-definition dolphin preview.
         0x42 => parts(&[(0x154, 0, 1), (0x155, 8, 1), (0x156, 24, 1)]),
-        0x43 => parts(&[(0x94, 0, 1), (0x57, -12, 1), (0x95, 16, 1)]),
-        0x44 => parts(&[(0x96, 4, 1)]),
-        0x45 => parts(&[(0x97, -16, 1), (0x98, -4, 1), (0x99, 12, 1), (0x88, -2, -7)]),
-        0x46 => parts(&[(0x14, -2, 1)]),
-        0x47 => parts(&[(0x89, 0, -3)]),
+        // The dispatch table initialized at $004CB4E0 keeps these adjacent
+        // handlers distinct: $43 -> $004C5890, $44 -> $004C5910,
+        // $45 -> $004C59B0, $46 -> $004C59D0, and $47 -> $004C5A60.
+        // Treating $004C5AA0 as $47 shifts the entire block and renders the
+        // jumping fish in level $102 as definition $89's gray rock.
+        0x43 => parts(&[(0x77, 0, 1), (0x87, 0, 17)]),
+        0x44 => parts(&[(0x94, 0, 1), (0x57, -12, 1), (0x95, 16, 1)]),
+        0x45 => parts(&[(0x96, 4, 1)]),
+        0x46 => parts(&[(0x97, -16, 1), (0x98, -4, 1), (0x99, 12, 1), (0x88, -2, -7)]),
+        0x47 => parts(&[(0x14, -2, 1)]),
         // Dispatch $48 @ $004C5AA0 emits definition $89 three pixels above
         // the placement, or the shared $115 marker in alternate display mode.
         0x48 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
@@ -2625,17 +2630,17 @@ mod tests {
             geometry(0x42),
             [(0x154, 0, 1), (0x155, 8, 1), (0x156, 24, 1)]
         );
+        assert_eq!(geometry(0x43), [(0x77, 0, 1), (0x87, 0, 17)]);
         assert_eq!(
-            geometry(0x43),
+            geometry(0x44),
             [(0x94, 0, 1), (0x57, -12, 1), (0x95, 16, 1)]
         );
-        assert_eq!(geometry(0x44), [(0x96, 4, 1)]);
+        assert_eq!(geometry(0x45), [(0x96, 4, 1)]);
         assert_eq!(
-            geometry(0x45),
+            geometry(0x46),
             [(0x97, -16, 1), (0x98, -4, 1), (0x99, 12, 1), (0x88, -2, -7)]
         );
-        assert_eq!(geometry(0x46), [(0x14, -2, 1)]);
-        assert_eq!(geometry(0x47), [(0x89, 0, -3)]);
+        assert_eq!(geometry(0x47), [(0x14, -2, 1)]);
         assert_eq!(geometry(0x48), [(0x89, 0, -3)]);
         assert_eq!(
             render_lunar_magic_standard_sprite(0x48, true)
