@@ -280,7 +280,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x4f => parts(&[(0x16, 8, -8), (0xb4, 8, 8)]),
         0x50 => parts(&[(0x78, 0, 1)]),
         0x51 => parts(&[(0x59, -4, 0), (0x69, 4, 0), (0x69, 20, 0), (0x79, 28, 0)]),
-        0x52 => parts(&[(0x21b, 0, 1)]),
+        // Dispatch $52 @ $004C5E50 is the same four-definition platform
+        // geometry as $51, including its packed-coordinate edge transition.
+        0x52 => parts(&[(0x59, -4, 0), (0x69, 4, 0), (0x69, 20, 0), (0x79, 28, 0)]),
         0x53 => render_handler_53(),
         0x54 | 0x56 => parts(&[
             (0x6a, 0, 1),
@@ -545,16 +547,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             0,
             1,
         )]),
-        0xa3 => {
-            let final_x = if mode.placement_first & 1 == 0 { 0 } else { 8 };
-            parts(&[
-                (0x1d7, -8, 8),
-                (0x1d8, 8, 8),
-                (0x1c7, -24, 8),
-                (0x1c8, -8, 8),
-                (0x1c6, final_x, 0),
-            ])
-        }
+        0xa3 => render_handler_a3(mode.placement_first),
         0xa4 => parts(&[(0xfb, 0, 0)]),
         0xa5 => parts(&[(0xfc, 0, -8)]),
         0xa6 => render_handler_a6(mode.animation_phase),
@@ -596,7 +589,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xae => parts(&[(0xb8, 0, 0)]),
         0xaf => parts(&[(0x15d, 0, 0)]),
         0xb0 => parts(&[(0x14d, 0, 1)]),
-        0xb1 => parts(&[(0xab, -8, 0), (0xac, 8, 0), (0xbb, 8, 0), (0xbc, 24, 0)]),
+        // Dispatch $B1 @ $004C9400 emits only definition $B8 at the placement.
+        0xb1 => parts(&[(0xb8, 0, 0)]),
         0xb2 => parts(&[(0x13d, 0, 0)]),
         0xb3 => parts(&[(
             if mode.special_display_mode && mode.sprite_graphics_mode & 0x0f == 0x0d {
@@ -672,7 +666,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xc4 => parts(&[(0x8101, 0, 0)]),
         0xc5 => parts(&[(0x167, 0, 1)]),
         0xc6 => parts(&[(0x25, 0, 0), (0x114, 0, -8)]),
-        0xc7 => parts(&[(0x158, 0, 26), (0x159, 16, 26), (0x168, 8, 16)]),
+        // Dispatch $C7 @ $004C9E90 emits the external-definition sentinel
+        // $8101 at the placement; the dolphin composite belongs to $CA.
+        0xc7 => parts(&[(0x8101, 0, 0)]),
         0xc8 => parts(&[(0x11b, 0, 0), (0x12b, 0, 16)]),
         0xc9 => parts(&[
             (if mode.alternate_display { 0x115 } else { 0x38 }, 0, 1),
@@ -970,6 +966,25 @@ fn render_handler_a0(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         (0xed, 48 + direction * 6, 0),
         (0xec, 32 + direction * 6, 0),
         (0xee, 64 + direction * 6, 0),
+    ])
+}
+
+fn render_handler_a3(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+    // RenderThreeEbAndEdEcEeTiles @ $004C8BC0 derives a two-pixel lean from
+    // the low placement bit. It advances one packed row for each of three
+    // $EB links, then builds the three-cell $EC/$ED/$EE platform around the
+    // final coordinate.
+    let direction = if placement_first & 1 == 0 { -1 } else { 1 };
+    let first_x = direction * 2;
+    let second_x = direction * 4;
+    let final_x = direction * 6;
+    parts(&[
+        (0xeb, first_x, 0),
+        (0xeb, second_x, 16),
+        (0xeb, final_x, 32),
+        (0xed, final_x, 48),
+        (0xec, final_x - 16, 48),
+        (0xee, final_x + 16, 48),
     ])
 }
 
@@ -2337,7 +2352,10 @@ mod tests {
             geometry(0x51, 0),
             [(0x59, -4, 0), (0x69, 4, 0), (0x69, 20, 0), (0x79, 28, 0)]
         );
-        assert_eq!(geometry(0x52, 0), [(0x21b, 0, 1)]);
+        assert_eq!(
+            geometry(0x52, 0),
+            [(0x59, -4, 0), (0x69, 4, 0), (0x69, 20, 0), (0x79, 28, 0)]
+        );
         let matrix = geometry(0x53, 0);
         assert_eq!(matrix.len(), 9);
         assert_eq!(
@@ -3189,11 +3207,12 @@ mod tests {
         assert_eq!(
             geometry(0xa3, StandardSpritePreviewMode::default()),
             [
-                (0x1d7, -8, 8),
-                (0x1d8, 8, 8),
-                (0x1c7, -24, 8),
-                (0x1c8, -8, 8),
-                (0x1c6, 0, 0)
+                (0xeb, -2, 0),
+                (0xeb, -4, 16),
+                (0xeb, -6, 32),
+                (0xed, -6, 48),
+                (0xec, -22, 48),
+                (0xee, 10, 48)
             ]
         );
         assert_eq!(
@@ -3203,8 +3222,15 @@ mod tests {
                     placement_first: 1,
                     ..StandardSpritePreviewMode::default()
                 }
-            )[4],
-            (0x1c6, 8, 0)
+            ),
+            [
+                (0xeb, 2, 0),
+                (0xeb, 4, 16),
+                (0xeb, 6, 32),
+                (0xed, 6, 48),
+                (0xec, -10, 48),
+                (0xee, 22, 48)
+            ]
         );
         assert_eq!(
             geometry(0xa4, StandardSpritePreviewMode::default()),
@@ -3341,10 +3367,7 @@ mod tests {
         assert_eq!(geometry(0xae, false), [(0xb8, 0, 0)]);
         assert_eq!(geometry(0xaf, false), [(0x15d, 0, 0)]);
         assert_eq!(geometry(0xb0, false), [(0x14d, 0, 1)]);
-        assert_eq!(
-            geometry(0xb1, false),
-            [(0xab, -8, 0), (0xac, 8, 0), (0xbb, 8, 0), (0xbc, 24, 0)]
-        );
+        assert_eq!(geometry(0xb1, false), [(0xb8, 0, 0)]);
         assert_eq!(geometry(0xb2, false), [(0x13d, 0, 0)]);
         for sprite in [0xad, 0xaf, 0xb0, 0xb1, 0xb2] {
             assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
@@ -3536,10 +3559,7 @@ mod tests {
         };
         assert_eq!(geometry(0xc5, false), [(0x167, 0, 1)]);
         assert_eq!(geometry(0xc6, false), [(0x25, 0, 0), (0x114, 0, -8)]);
-        assert_eq!(
-            geometry(0xc7, false),
-            [(0x158, 0, 26), (0x159, 16, 26), (0x168, 8, 16)]
-        );
+        assert_eq!(geometry(0xc7, false), [(0x8101, 0, 0)]);
         assert_eq!(geometry(0xc8, false), [(0x11b, 0, 0), (0x12b, 0, 16)]);
         assert_eq!(geometry(0xc9, false), [(0x38, 0, 1), (0x114, 0, -8)]);
         assert_eq!(geometry(0xc9, true), [(0x115, 0, 1), (0x114, 0, -8)]);
