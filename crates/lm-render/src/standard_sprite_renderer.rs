@@ -386,7 +386,11 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x61 => parts(&[(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]),
         // $004C67D0 emits only definitions $7C/$7D/$7E.
         0x62 => render_left_chain(false),
-        0x63 => render_left_chain(mode.placement_first & 1 == 0),
+        // Dispatch $63 @ $004C6980 tests the low bit of Lunar Magic's packed
+        // major coordinate argument. Level $12C proves this is not byte 0 of
+        // the serialized sprite record: its record byte is odd at even major
+        // coordinate $12 and must take the five-part platform path.
+        0x63 => render_left_chain(mode.placement_major & 1 == 0),
         0x64 => render_handler_64(mode),
         0x65 => render_handler_65_66(mode, false),
         0x66 => render_handler_65_66(mode, true),
@@ -2692,8 +2696,22 @@ mod tests {
             [(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]
         );
         assert_eq!(geometry(0x62, 0), short);
-        assert_eq!(geometry(0x63, 0), long);
-        assert_eq!(geometry(0x63, 1), short);
+        let geometry_63 = |first, major| {
+            render_lunar_magic_standard_sprite_with_mode(
+                0x63,
+                StandardSpritePreviewMode {
+                    placement_first: first,
+                    placement_major: major,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(geometry_63(1, 0x12), long);
+        assert_eq!(geometry_63(0, 0x13), short);
     }
 
     #[test]
