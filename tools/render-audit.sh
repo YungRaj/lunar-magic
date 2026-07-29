@@ -130,7 +130,9 @@ for level in $levels; do
             scroll_column=${LM_NATIVE_EDITOR_SCROLL_COLUMN:-0}
             scroll_row=${LM_NATIVE_EDITOR_SCROLL_ROW:-0}
             if [ -n "$reference_manifest" ]; then
-                aligned=$(awk -F '\t' -v level="$level" '$1 == level { print $5 " " $6; exit }' "$reference_manifest")
+                # Prefix both values so hexadecimal slots containing `E` (for
+                # example 0E3) cannot be coerced to AWK scientific notation.
+                aligned=$(awk -F '\t' -v level="$level" '"x" $1 == "x" level { print $5 " " $6; exit }' "$reference_manifest")
                 if [ -n "$aligned" ]; then
                     scroll_column=${aligned% *}
                     scroll_row=${aligned#* }

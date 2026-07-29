@@ -822,7 +822,31 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // platform. Treating it as external-definition sentinel $8101 made
         // every platform in level $136 appear as a mushroom.
         0xc4 => parts(&[(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]),
-        0xc5 => parts(&[(0x167, 0, 1)]),
+        // RenderSpriteC5 @ $004C9D50 draws the Big Boo boss as Lunar Magic's
+        // consecutive 4×4 definition block $C0-$F3, then overlays four face
+        // details.  The old single $167 cell was the unrelated $C8 handler.
+        0xc5 => parts(&[
+            (0x0c0, 0, 0),
+            (0x0c1, 16, 0),
+            (0x0c2, 32, 0),
+            (0x0c3, 48, 0),
+            (0x0d0, 0, 16),
+            (0x0d1, 16, 16),
+            (0x0d2, 32, 16),
+            (0x0d3, 48, 16),
+            (0x0e0, 0, 32),
+            (0x0e1, 16, 32),
+            (0x0e2, 32, 32),
+            (0x0e3, 48, 32),
+            (0x0f0, 0, 48),
+            (0x0f1, 16, 48),
+            (0x0f2, 32, 48),
+            (0x0f3, 48, 48),
+            (0x0e4, -7, 24),
+            (0x0f4, 29, 24),
+            (0x15a, 4, 18),
+            (0x16a, 4, 34),
+        ]),
         // Dispatch $C6 @ $004C9E70 emits only definition $179.
         0xc6 => parts(&[(0x179, 0, 0)]),
         // Dispatch $C7 @ $004C9E90 emits the external-definition sentinel
@@ -4068,7 +4092,31 @@ mod tests {
             .map(|part| (part.definition_index, part.x, part.y))
             .collect::<Vec<_>>()
         };
-        assert_eq!(geometry(0xc5, false), [(0x167, 0, 1)]);
+        assert_eq!(
+            geometry(0xc5, false),
+            [
+                (0x0c0, 0, 0),
+                (0x0c1, 16, 0),
+                (0x0c2, 32, 0),
+                (0x0c3, 48, 0),
+                (0x0d0, 0, 16),
+                (0x0d1, 16, 16),
+                (0x0d2, 32, 16),
+                (0x0d3, 48, 16),
+                (0x0e0, 0, 32),
+                (0x0e1, 16, 32),
+                (0x0e2, 32, 32),
+                (0x0e3, 48, 32),
+                (0x0f0, 0, 48),
+                (0x0f1, 16, 48),
+                (0x0f2, 32, 48),
+                (0x0f3, 48, 48),
+                (0x0e4, -7, 24),
+                (0x0f4, 29, 24),
+                (0x15a, 4, 18),
+                (0x16a, 4, 34),
+            ]
+        );
         assert_eq!(geometry(0xc6, false), [(0x179, 0, 0)]);
         assert_eq!(geometry(0xc7, false), [(0x8101, 0, 0)]);
         assert_eq!(geometry(0xc8, false), [(0x167, 0, 1)]);
