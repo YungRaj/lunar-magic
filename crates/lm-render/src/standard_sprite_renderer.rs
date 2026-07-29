@@ -27,7 +27,7 @@ pub const fn lunar_magic_standard_sprite_preview_source(
     sprite_number: u8,
 ) -> StandardSpritePreviewSource {
     match sprite_number {
-        0x29 | 0x30 | 0xee | 0xf0 | 0xf1 => StandardSpritePreviewSource::NativeEmpty,
+        0x29 | 0xee | 0xf0 | 0xf1 => StandardSpritePreviewSource::NativeEmpty,
         0xf6..=0xff => StandardSpritePreviewSource::CustomDisplay,
         _ => StandardSpritePreviewSource::BuiltIn,
     }
@@ -241,6 +241,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x2d => parts(&[(0x80, 0, 1)]),
         0x2e => parts(&[(0x2d, 0, 1)]),
         0x2f => parts(&[(0x1e, 0, 1)]),
+        // RenderSprite30 @ $004C4FB0 composes the ordinary Dry Bones preview
+        // across the preceding editor row; its alternate display is a star.
+        0x30 => render_handler_30(mode.special_display_mode),
         0x31 => parts(&[(0x37, 0, 1)]),
         0x32 => parts(&[(0x36, -8, -14), (0x46, 0, 1)]),
         0x33 => parts(&[(0x13c, 0, 0), (0x119, -1, 20), (0x145, 2, 28)]),
@@ -947,6 +950,14 @@ fn render_handler_83(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         (center, -3, -9),
         (0x108, -3, -1),
     ])
+}
+
+fn render_handler_30(special_display_mode: bool) -> Option<Vec<StandardSpritePreviewTile>> {
+    if special_display_mode {
+        parts(&[(0x115, 0, 1)])
+    } else {
+        parts(&[(0x206, 0, -11), (0x036, 8, -15), (0x207, 0, 1)])
+    }
 }
 
 fn render_handler_82(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
@@ -1943,6 +1954,8 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x203 => [0x0066, 0x1019, 0x1019, 0x1019],
         0x204 => [0x1019, 0x1019, 0x0064, 0x1019],
         0x205 => [0x1019, 0x1019, 0x0066, 0x1019],
+        0x206 => [0x2582, 0x2592, 0x2583, 0x2593],
+        0x207 => [0x25e6, 0x25f6, 0x25e7, 0x25f7],
         0x208 => [0x817a, 0x816a, 0x817b, 0x816b],
         0x209 => [0x11e4, 0x11f4, 0x11e5, 0x11f5],
         0x20a => [0x15e4, 0x15f4, 0x15e5, 0x15f5],
@@ -2361,6 +2374,24 @@ mod tests {
         assert_eq!(geometry(0x2d, 0), [(0x80, 0, 1)]);
         assert_eq!(geometry(0x2e, 0), [(0x2d, 0, 1)]);
         assert_eq!(geometry(0x2f, 0), [(0x1e, 0, 1)]);
+        assert_eq!(
+            geometry(0x30, 0),
+            [(0x206, 0, -11), (0x036, 8, -15), (0x207, 0, 1)]
+        );
+        assert_eq!(
+            render_lunar_magic_standard_sprite_with_mode(
+                0x30,
+                StandardSpritePreviewMode {
+                    special_display_mode: true,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>(),
+            [(0x115, 0, 1)]
+        );
         for sprite in [0x2a, 0x2b, 0x2e] {
             assert_eq!(
                 render_lunar_magic_standard_sprite(sprite, true)
@@ -4567,7 +4598,7 @@ mod tests {
 
     #[test]
     fn late_default_and_custom_fallback_entries_have_no_builtin_artwork() {
-        for sprite_number in [0x29, 0x30, 0xee, 0xf0, 0xf1] {
+        for sprite_number in [0x29, 0xee, 0xf0, 0xf1] {
             assert_eq!(
                 render_lunar_magic_standard_sprite_with_mode(
                     sprite_number,

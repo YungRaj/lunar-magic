@@ -8281,10 +8281,11 @@ mod tests {
 
     #[test]
     fn unresolved_sprite_markers_preserve_lunar_magics_native_empty_handlers() {
-        for sprite_number in [0x29, 0x30, 0xee, 0xf0, 0xf1] {
+        for sprite_number in [0x29, 0xee, 0xf0, 0xf1] {
             assert!(!should_draw_unresolved_sprite_marker(true, sprite_number));
         }
         assert!(should_draw_unresolved_sprite_marker(true, 0x00));
+        assert!(should_draw_unresolved_sprite_marker(true, 0x30));
         assert!(should_draw_unresolved_sprite_marker(true, 0xf6));
         assert!(should_draw_unresolved_sprite_marker(false, 0xee));
     }
