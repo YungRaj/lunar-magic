@@ -137,7 +137,10 @@ pub(crate) fn render(
         lm_profile::compose_smw_us_v1_level_palette(&project, level, palette_header, 0)
             .map_err(|error| error.to_string())?;
     let backdrop = composed_palette.backdrop;
-    let palette = composed_palette.palette;
+    let mut palette = composed_palette.palette;
+    if !game_runtime {
+        apply_vanilla_editor_palette_animation(&mut palette);
+    }
     let sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
         &project.rom,
         usize::from(header.sprite_tileset()),
@@ -239,6 +242,15 @@ pub(crate) fn render(
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn apply_vanilla_editor_palette_animation(palette: &mut Palette) {
+    // AdvanceExAnimationFrames @ 0045AAC0 applies the built-in palette record before Lunar
+    // Magic builds its editor cache. Vanilla color $64 is therefore the Dragon Coin yellow
+    // ($27FF), not the magenta placeholder stored by the base level palette.
+    if let Some(color) = palette.colors.get_mut(0x64) {
+        *color = lm_graphics::Bgr555(0x27ff);
+    }
 }
 
 const fn vanilla_layer3_editor_row_offset(
@@ -927,6 +939,23 @@ mod tests {
     use super::*;
     use lm_graphics::{Bgr555, Rgb8};
     use std::{fs, path::PathBuf};
+
+    #[test]
+    fn editor_palette_materializes_vanilla_dragon_coin_color() {
+        let mut palette = Palette {
+            colors: vec![Bgr555(0); 256],
+        };
+        apply_vanilla_editor_palette_animation(&mut palette);
+        assert_eq!(palette.colors[0x64], Bgr555(0x27ff));
+        assert_eq!(
+            palette.colors[0x64].to_rgb8(),
+            Rgb8 {
+                red: 255,
+                green: 255,
+                blue: 74,
+            }
+        );
+    }
 
     #[test]
     fn animated_pipe_map16_definitions_select_native_palette_phases() {

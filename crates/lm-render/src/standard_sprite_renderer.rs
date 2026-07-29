@@ -270,7 +270,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             parts(&values)
         }
         0x4e => parts(&[(0x16, 8, -8), (0xb4, 8, 8)]),
-        0x4f => parts(&[(0x16, 8, -8), (0xb4, 8, 8), (0xb5, 6, -16), (0xb6, 18, -16)]),
+        // RenderConditionalTiles16AndB4 @ $004C5D10 emits only this pair.
+        0x4f => parts(&[(0x16, 8, -8), (0xb4, 8, 8)]),
         0x50 => parts(&[(0x78, 0, 1)]),
         0x51 => parts(&[(0x59, -4, 0), (0x69, 4, 0), (0x69, 20, 0), (0x79, 28, 0)]),
         0x52 => parts(&[(0x21b, 0, 1)]),
@@ -2288,10 +2289,7 @@ mod tests {
         assert_eq!(geometry(0x4c, 0), [(0xa7, 0, 1), (0xa8, 0, 1)]);
         assert_eq!(geometry(0x4d, 0).len(), 5);
         assert_eq!(geometry(0x4e, 0), [(0x16, 8, -8), (0xb4, 8, 8)]);
-        assert_eq!(
-            geometry(0x4f, 0),
-            [(0x16, 8, -8), (0xb4, 8, 8), (0xb5, 6, -16), (0xb6, 18, -16)]
-        );
+        assert_eq!(geometry(0x4f, 0), [(0x16, 8, -8), (0xb4, 8, 8)]);
         assert_eq!(geometry(0x50, 0), [(0x78, 0, 1)]);
         assert_eq!(
             geometry(0x51, 0),
