@@ -19,7 +19,7 @@ pub struct NativeLayer2Rectangle {
     pub height: usize,
 }
 
-/// Maps 32×32 background-canvas coordinates to Lunar Magic's column-major internal tilemap.
+/// Maps 32×32 background-canvas coordinates to Lunar Magic's two row-major 16×32 planes.
 #[must_use]
 pub const fn native_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
     if x >= NATIVE_LAYER2_TILEMAP_WIDTH || y >= NATIVE_LAYER2_TILEMAP_HEIGHT {
@@ -31,7 +31,7 @@ pub const fn native_layer2_tilemap_index(x: usize, y: usize) -> Option<usize> {
 /// Returns the four-connected canvas region whose complete 16-bit words match the start cell.
 ///
 /// The returned storage indexes are deterministic visual row-major order even though native
-/// storage consists of two column-major 32×16 planes.
+/// storage consists of two row-major 16×32 planes.
 ///
 /// # Errors
 ///

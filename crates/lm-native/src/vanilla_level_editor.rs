@@ -7682,7 +7682,7 @@ mod tests {
         );
         assert_eq!(
             layer2_tile_at_canvas_position(egui::pos2(24.0, 8.0), canvas, 16.0),
-            Some(16)
+            Some(1)
         );
         assert_eq!(
             layer2_tile_at_canvas_position(egui::pos2(504.0, 504.0), canvas, 16.0),
@@ -10461,11 +10461,11 @@ mod tests {
     }
 
     #[test]
-    fn compressed_layer2_index_matches_lunar_magic_column_halves() {
+    fn compressed_layer2_index_matches_lunar_magic_row_major_halves() {
         assert_eq!(lm_level::native_layer2_tilemap_index(0, 0), Some(0));
-        assert_eq!(lm_level::native_layer2_tilemap_index(1, 0), Some(16));
-        assert_eq!(lm_level::native_layer2_tilemap_index(31, 15), Some(511));
-        assert_eq!(lm_level::native_layer2_tilemap_index(0, 16), Some(512));
+        assert_eq!(lm_level::native_layer2_tilemap_index(1, 0), Some(1));
+        assert_eq!(lm_level::native_layer2_tilemap_index(31, 15), Some(767));
+        assert_eq!(lm_level::native_layer2_tilemap_index(0, 16), Some(256));
         assert_eq!(lm_level::native_layer2_tilemap_index(31, 31), Some(1023));
         assert_eq!(lm_level::native_layer2_tilemap_index(32, 0), None);
         assert_eq!(lm_level::native_layer2_tilemap_index(0, 32), None);

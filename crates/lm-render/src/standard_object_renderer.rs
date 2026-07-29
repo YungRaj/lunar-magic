@@ -2269,7 +2269,7 @@ fn render_shared_slot_004(
     match variant {
         0 => render_slot_004_two_edge(cache, layout, placement, parameter),
         1 => render_slot_004_single_left(cache, layout, placement, parameter, 0x1aa, 0x1e2),
-        2 => render_slot_004_four_column(
+        2 => render_slot_004_four_column_left(
             cache,
             layout,
             placement,
@@ -2279,7 +2279,7 @@ fn render_shared_slot_004(
         ),
         3 => render_slot_004_two_column(cache, layout, placement, parameter),
         4 => render_slot_004_single_right(cache, layout, placement, parameter, 0x1af, 0x1e4),
-        5 => render_slot_004_four_column(
+        5 => render_slot_004_four_column_right(
             cache,
             layout,
             placement,
@@ -2503,7 +2503,7 @@ fn render_slot_004_two_column(
     Ok(())
 }
 
-fn render_slot_004_four_column(
+fn render_slot_004_four_column_left(
     cache: &mut NativeLevelMap16Cache,
     layout: NativeLevelMap16Layout,
     placement: lm_level::NativeObjectPlacement,
@@ -2548,6 +2548,43 @@ fn render_slot_004_four_column(
                     layout,
                     placement,
                     next_start + signed_offset(offset)?,
+                    signed_offset(minor)?,
+                    tile,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn render_slot_004_four_column_right(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    parameter: u8,
+    adaptive: [u16; 4],
+    edges: [u16; 4],
+) -> Result<(), StandardObjectRenderError> {
+    for (major, &tile) in adaptive.iter().enumerate() {
+        render_adaptive_signed(cache, layout, placement, signed_offset(major)?, 0, tile)?;
+    }
+    let rows = usize::from(parameter >> 4) + 1;
+    for row in 0..rows {
+        let minor = row + 1;
+        let fill = row * 4;
+        for major in 0..fill {
+            set_placement_cell(cache, layout, placement, major, minor, 0x03f)?;
+        }
+        for (offset, &tile) in edges.iter().enumerate() {
+            set_placement_cell(cache, layout, placement, fill + offset, minor, tile)?;
+        }
+        if row + 1 < rows {
+            for (offset, &tile) in adaptive.iter().enumerate() {
+                render_adaptive_signed(
+                    cache,
+                    layout,
+                    placement,
+                    signed_offset(fill + 4 + offset)?,
                     signed_offset(minor)?,
                     tile,
                 )?;
@@ -5155,6 +5192,34 @@ mod tests {
             (7, 10, 0x1e6),
             (8, 10, 0x03f),
             (11, 10, 0x03f),
+        ] {
+            assert_eq!(cache.get(layout(), major, minor).unwrap(), tile);
+        }
+    }
+
+    #[test]
+    fn mapped_handler_4_variant_5_widens_four_columns_to_the_right() {
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 8,
+            minor: 8,
+            major_span: 2,
+            minor_span: 2,
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        render_shared_slot_004(&mut cache, layout(), placement, 0xe5).unwrap();
+        for (major, minor, tile) in [
+            (8, 8, 0x182),
+            (11, 8, 0x191),
+            (8, 9, 0x1e6),
+            (11, 9, 0x1dc),
+            (12, 9, 0x182),
+            (15, 9, 0x191),
+            (8, 10, 0x03f),
+            (11, 10, 0x03f),
+            (12, 10, 0x1e6),
+            (15, 10, 0x1dc),
         ] {
             assert_eq!(cache.get(layout(), major, minor).unwrap(), tile);
         }
