@@ -701,7 +701,19 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // Dispatch $C0 @ $004C9AD0 advances one packed cell after each call
         // and emits the three adjacent floating-platform definitions.
         0xc0 => parts(&[(0x176, 0, 3), (0x177, 16, 3), (0x178, 32, 3)]),
-        0xc1 => parts(&[(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]),
+        0xc1 => {
+            // Native handler at 004C9B20. Placement bit 0 shifts the platform two
+            // pixels down instead of two pixels up; the wing definitions sit ten
+            // pixels above that three-block platform.
+            let platform_y = if mode.placement_first & 1 == 0 { -2 } else { 2 };
+            parts(&[
+                (0x1cb, 0, platform_y),
+                (0x1cb, 16, platform_y),
+                (0x1cb, 32, platform_y),
+                (0x1da, 46, platform_y - 10),
+                (0x1d9, -14, platform_y - 10),
+            ])
+        }
         // Dispatch-table entry $C2 points at $004C9BE0.  Its ordinary path emits only
         // definition $166; the former 20-part composite belongs to another native entry.
         0xc2 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
@@ -3538,7 +3550,23 @@ mod tests {
         );
         assert_eq!(
             geometry(0xc1, 0, false),
-            [(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]
+            [
+                (0x1cb, 0, -2),
+                (0x1cb, 16, -2),
+                (0x1cb, 32, -2),
+                (0x1da, 46, -12),
+                (0x1d9, -14, -12)
+            ]
+        );
+        assert_eq!(
+            geometry(0xc1, 1, false),
+            [
+                (0x1cb, 0, 2),
+                (0x1cb, 16, 2),
+                (0x1cb, 32, 2),
+                (0x1da, 46, -8),
+                (0x1d9, -14, -8)
+            ]
         );
         assert_eq!(geometry(0xc2, 0, false), [(0x166, 0, 0)]);
         assert_eq!(geometry(0xc3, 0, false), [(0x179, 0, 0)]);
