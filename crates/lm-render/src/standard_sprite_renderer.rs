@@ -455,7 +455,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             ])
         }
         0x8e => render_handler_8e(),
-        0x90 => parts(&[(0x1fc, -4, 1), (0x1fd, 12, 1), (0x1ee, 0, -3)]),
+        // Dispatch $90 @ $004C7FA0 calls the same 4×4 definition-grid helper
+        // used by $8E, with base $100 producing definitions $1C0..$1F3.
+        0x90 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0x90 => render_handler_8e(),
         0x91 => parts(&[
             (0x1fa, -4, -1),
             (0x1fb, 12, -1),
@@ -2803,10 +2806,8 @@ mod tests {
             geometry(0x8f, false),
             [(0xe9, -8, 0), (0xea, 8, 0), (0xe9, 120, 0), (0xea, 136, 0)]
         );
-        assert_eq!(
-            geometry(0x90, false),
-            [(0x1fc, -4, 1), (0x1fd, 12, 1), (0x1ee, 0, -3)]
-        );
+        assert_eq!(geometry(0x90, false), grid);
+        assert_eq!(geometry(0x90, true), [(0x115, 0, 1)]);
     }
 
     #[test]

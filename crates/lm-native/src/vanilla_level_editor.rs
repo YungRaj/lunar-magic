@@ -6557,7 +6557,9 @@ fn draw_sprite_preview_definition_tinted(
 }
 
 const fn standard_sprite_preview_tint(sprite_number: u8, definition_index: u16) -> egui::Color32 {
-    if sprite_number == 0xe1 && definition_index == 0x1b8 {
+    if (sprite_number == 0xe1 && definition_index == 0x1b8)
+        || (sprite_number == 0x90 && definition_index >= 0x1c0 && definition_index <= 0x1f3)
+    {
         egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
     } else {
         egui::Color32::WHITE
@@ -7951,7 +7953,7 @@ mod tests {
     }
 
     #[test]
-    fn sprite_e1_dims_only_its_ghost_definition() {
+    fn translucent_standard_sprite_definitions_are_scoped_to_native_handlers() {
         assert_eq!(
             standard_sprite_preview_tint(0xe1, 0x1b8),
             egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
@@ -7962,6 +7964,18 @@ mod tests {
         );
         assert_eq!(
             standard_sprite_preview_tint(0xe0, 0x1b8),
+            egui::Color32::WHITE
+        );
+        assert_eq!(
+            standard_sprite_preview_tint(0x90, 0x1c0),
+            egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
+        );
+        assert_eq!(
+            standard_sprite_preview_tint(0x90, 0x1f3),
+            egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
+        );
+        assert_eq!(
+            standard_sprite_preview_tint(0x90, 0x1bf),
             egui::Color32::WHITE
         );
     }
