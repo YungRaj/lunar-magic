@@ -566,7 +566,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x9a => render_handler_9a(mode.level_orientation),
         // Dispatch $9D @ $004C8750 receives Lunar Magic's packed major
         // coordinate byte. Its low two bits choose the bubble payload.
-        0x9d => render_handler_9a_legacy(mode.placement_major as u8),
+        0x9d => render_handler_9a_legacy(mode.placement_major as u8, mode.level_orientation),
         // Dispatch $9B @ $004C85D0 shifts the packed placement upward for
         // two rows of the compact five-part preview.
         0x9b => parts(&[
@@ -1063,7 +1063,10 @@ fn render_handler_9a(
     ])
 }
 
-fn render_handler_9a_legacy(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+fn render_handler_9a_legacy(
+    placement_first: u8,
+    orientation: StandardLevelOrientation,
+) -> Option<Vec<StandardSpritePreviewTile>> {
     let head = match placement_first & 3 {
         0 => 0x1bd,
         1 => 0x1ad,
@@ -1071,14 +1074,32 @@ fn render_handler_9a_legacy(placement_first: u8) -> Option<Vec<StandardSpritePre
         3 => 0x211,
         _ => unreachable!(),
     };
-    parts(&[
-        (head, -8, 0),
-        (0x1bf, -1, 3),
-        (0x1be, -15, 3),
-        (0x1af, -17, 5),
-        (0x1ae, -31, 5),
-        (0x20c, -32, 4),
-    ])
+    // RenderFixedFiveTileObjectMarker @ $004C3B30 moves one packed-coordinate
+    // axis between the lower and upper pairs. In a horizontal level that is a
+    // vertical cell, not another horizontal cell; treating both packed nibbles
+    // as X spread the bubble into the "popping" shape seen in level $123.
+    let marker = match orientation {
+        StandardLevelOrientation::Horizontal => [
+            (0x1bf, -1, 3),
+            (0x1be, -15, 3),
+            (0x1af, -1, -11),
+            (0x1ae, -15, -11),
+            (0x20c, -16, -12),
+        ],
+        // Preserve the previously recovered vertical presentation until a
+        // vertical vanilla instance supplies framebuffer evidence for the
+        // packed-axis swap.
+        StandardLevelOrientation::Vertical => [
+            (0x1bf, -1, 3),
+            (0x1be, -15, 3),
+            (0x1af, -17, 5),
+            (0x1ae, -31, 5),
+            (0x20c, -32, 4),
+        ],
+    };
+    let mut values = vec![(head, -8, 0)];
+    values.extend(marker);
+    parts(&values)
 }
 
 fn render_handler_9e(placement_major: u16) -> Option<Vec<StandardSpritePreviewTile>> {
@@ -4354,8 +4375,15 @@ mod tests {
                     placement_major: 28,
                     ..StandardSpritePreviewMode::default()
                 }
-            )[0],
-            (0x1bd, -8, 0)
+            ),
+            [
+                (0x1bd, -8, 0),
+                (0x1bf, -1, 3),
+                (0x1be, -15, 3),
+                (0x1af, -1, -11),
+                (0x1ae, -15, -11),
+                (0x20c, -16, -12)
+            ]
         );
         assert_eq!(
             geometry(
