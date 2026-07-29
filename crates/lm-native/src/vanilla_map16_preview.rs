@@ -575,6 +575,7 @@ fn apply_vanilla_common_animation_phases(
             animation_index
         };
         let table_word = source_index * 4 + phase;
+        let table_word = legacy_animation_table_word(&project.rom, table_word)?;
         let table_offset = FRAME_TABLE_OFFSET + table_word * 2;
         let source_bytes = project
             .rom
@@ -642,6 +643,31 @@ fn apply_vanilla_common_animation_phases(
         }
     }
     Ok(())
+}
+
+fn legacy_animation_table_word(rom: &lm_rom::RomImage, table_word: usize) -> Result<usize, String> {
+    const FRAME_TABLE_OFFSET: usize = 0x2_b999;
+    const PLACEHOLDER_START: usize = 136;
+    const REPLACEMENT_START: usize = 56;
+    const REPLACEMENT_WORDS: usize = 4;
+    const PLACEHOLDER_MARKER: u16 = 0x9500;
+
+    // Lunar Magic's legacy-format loader patches the four switch-block animation pointers at
+    // runtime. LoadExAnimationFormatState @ 00459B80 checks the first $9500 placeholder at
+    // DAT_00852B50, then copies the quartet at DAT_00852AB0 over it. Preserve that conditional:
+    // modified ROMs with a real destination table must retain their own words.
+    let marker_offset = FRAME_TABLE_OFFSET + PLACEHOLDER_START * size_of::<u16>();
+    let marker = rom
+        .logical_bytes()
+        .get(marker_offset..marker_offset + size_of::<u16>())
+        .ok_or_else(|| "legacy animation placeholder marker is outside the ROM".to_owned())?;
+    if u16::from_le_bytes([marker[0], marker[1]]) == PLACEHOLDER_MARKER
+        && (PLACEHOLDER_START..PLACEHOLDER_START + REPLACEMENT_WORDS).contains(&table_word)
+    {
+        Ok(REPLACEMENT_START + table_word - PLACEHOLDER_START)
+    } else {
+        Ok(table_word)
+    }
 }
 
 fn map16_definitions_for_phase(base: &[u8], phase: usize) -> Vec<u8> {
@@ -1245,6 +1271,23 @@ mod tests {
     }
 
     #[test]
+    fn legacy_switch_animation_placeholder_uses_lunar_magics_runtime_quartet() {
+        const FRAME_TABLE_OFFSET: usize = 0x2_b999;
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        assert_eq!(legacy_animation_table_word(&image, 135).unwrap(), 135);
+        assert_eq!(legacy_animation_table_word(&image, 136).unwrap(), 56);
+        assert_eq!(legacy_animation_table_word(&image, 139).unwrap(), 59);
+        assert_eq!(legacy_animation_table_word(&image, 140).unwrap(), 140);
+
+        let mut modified = image.logical_bytes().to_vec();
+        modified[FRAME_TABLE_OFFSET + 136 * 2..FRAME_TABLE_OFFSET + 136 * 2 + 2]
+            .copy_from_slice(&0xA500_u16.to_le_bytes());
+        let modified = RomImage::from_bytes(modified).unwrap();
+        assert_eq!(legacy_animation_table_word(&modified, 136).unwrap(), 136);
+        assert_eq!(legacy_animation_table_word(&modified, 139).unwrap(), 139);
+    }
+
+    #[test]
     fn renders_real_pristine_tileset_when_reference_rom_is_available() {
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
@@ -1350,7 +1393,7 @@ mod tests {
             let live = std::fs::read(tilemap_path).unwrap();
             let layer2 = project
                 .load_level_layer2(
-                    0x106,
+                    usize::from(slot),
                     level.layer1.header.level_mode(),
                     lm_profile::smw_us_v1_vanilla_layer2_layout(),
                 )

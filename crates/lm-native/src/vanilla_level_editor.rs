@@ -1963,20 +1963,24 @@ impl VanillaLevelEditor {
         );
         let game_preview = self.game_preview();
         let editor_overlays = !game_preview && visual_smoke_editor_overlays();
-        let layer1_artwork_bounds = self.draw_object_artwork(
-            painter,
-            rect,
-            cell,
-            major_tiles,
-            object_minor_tiles,
-            vertical,
-            records,
-            placements,
-            custom_objects,
-            custom_map16,
-            map16_texture,
-            map16_texture_variants,
-        );
+        let layer1_artwork_bounds = if visual_smoke_editor_layer1() {
+            self.draw_object_artwork(
+                painter,
+                rect,
+                cell,
+                major_tiles,
+                object_minor_tiles,
+                vertical,
+                records,
+                placements,
+                custom_objects,
+                custom_map16,
+                map16_texture,
+                map16_texture_variants,
+            )
+        } else {
+            HashMap::new()
+        };
         let (hit_layer2, hit) = if !editor_overlays {
             (
                 ObjectPlacementHits::default(),
@@ -5592,6 +5596,9 @@ fn draw_ordered_object_tiles(
     painter: &egui::Painter,
     request: OrderedObjectDraw<'_>,
 ) -> HashMap<usize, egui::Rect> {
+    let record_limit = visual_smoke_editor_object_limit()
+        .unwrap_or(request.records.len())
+        .min(request.records.len());
     let mut artwork_bounds = HashMap::new();
     let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
     if lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).is_err()
@@ -5634,7 +5641,7 @@ fn draw_ordered_object_tiles(
     } else {
         request.handler_map.is_some_and(|handler_map| {
             let stream = lm_level::ObjectStream {
-                records: request.records.to_vec(),
+                records: request.records[..record_limit].to_vec(),
             };
             lm_render::render_mapped_standard_object_stream(
                 &stream,
@@ -5650,6 +5657,9 @@ fn draw_ordered_object_tiles(
         })
     };
     for placement in request.placements {
+        if placement.record_index >= record_limit {
+            continue;
+        }
         let Some(record) = request.records.get(placement.record_index) else {
             continue;
         };
@@ -7212,6 +7222,28 @@ fn visual_smoke_editor_layer2() -> bool {
     std::env::var("LM_NATIVE_EDITOR_LAYER2").map_or(true, |value| value != "0")
 }
 
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_layer1() -> bool {
+    std::env::var("LM_NATIVE_EDITOR_LAYER1").map_or(true, |value| value != "0")
+}
+
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_object_limit() -> Option<usize> {
+    std::env::var("LM_NATIVE_EDITOR_OBJECT_LIMIT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_object_limit() -> Option<usize> {
+    None
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_layer1() -> bool {
+    true
+}
+
 #[cfg(not(feature = "visual-smoke"))]
 const fn visual_smoke_editor_layer2() -> bool {
     true
@@ -8004,6 +8036,27 @@ mod tests {
             app.project().unwrap().rom.logical_bytes(),
             expanded_baseline
         );
+    }
+
+    #[test]
+    fn pristine_switch_palace_level_opens_its_shared_vanilla_background() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x1bc)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x1bc,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        assert!(editor.controller.is_some(), "{:?}", editor.error);
+        assert!(editor.shared_vanilla_background);
     }
 
     #[test]

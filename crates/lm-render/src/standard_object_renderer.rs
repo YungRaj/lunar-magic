@@ -3182,14 +3182,13 @@ fn render_shared_slot_070(
     placement: lm_level::NativeObjectPlacement,
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
-    // RenderStandardObjectDefinitionSlot070 at 004338c0 advances 0x10 between rows and
-    // walks columns for the low-nibble body.
+    // RenderStandardObjectDefinitionSlot070 at 004338c0 advances 0x10 between rows. The live
+    // materialized cache uses the serialized low nibble as the body count; treating the
+    // decompiler's internal preincrement as another emitted cell leaks $153 into the next page.
     for minor_offset in 0..=usize::from(parameter >> 4) {
         set_placement_cell(cache, layout, placement, 0, minor_offset, 0x15c)?;
-        if parameter & 0x0f != 0 {
-            for major_offset in 1..=usize::from(parameter & 0x0f) + 1 {
-                set_placement_cell(cache, layout, placement, major_offset, minor_offset, 0x153)?;
-            }
+        for major_offset in 1..=usize::from(parameter & 0x0f) {
+            set_placement_cell(cache, layout, placement, major_offset, minor_offset, 0x153)?;
         }
     }
     Ok(())
@@ -6584,12 +6583,7 @@ mod tests {
             (
                 70,
                 0x12,
-                vec![
-                    vec![0x15c, 0x15c],
-                    vec![0x153, 0x153],
-                    vec![0x153, 0x153],
-                    vec![0x153, 0x153],
-                ],
+                vec![vec![0x15c, 0x15c], vec![0x153, 0x153], vec![0x153, 0x153]],
             ),
         ] {
             let mut handler_map = [0xff; 64];
