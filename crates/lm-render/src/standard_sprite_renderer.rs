@@ -905,18 +905,14 @@ fn render_handler_9b(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
 
 fn render_handler_9e() -> Option<Vec<StandardSpritePreviewTile>> {
     parts(&[
-        (0x171, 0, 0),
-        (0x170, -16, 0),
-        (0x172, 16, 0),
-        (0x161, -16, 0),
-        (0x160, -32, 0),
-        (0x162, 0, 0),
-        (0x151, -32, 0),
-        (0x150, -48, 0),
-        (0x152, -16, 0),
-        (0x153, -40, 8),
-        (0x163, 4, 0),
-        (0x173, 0, 4),
+        // $004C87D0 advances the packed vertical coordinate between the two chain
+        // definitions and the 2×2 grinder. Its direction comes from the even $9E ID.
+        (0x1d6, -1, 16),
+        (0x1d6, -3, 32),
+        (0x1c4, -16, 48),
+        (0x1c5, 0, 48),
+        (0x1d4, -16, 64),
+        (0x1d5, 0, 64),
     ])
 }
 
@@ -2987,18 +2983,12 @@ mod tests {
         assert_eq!(
             geometry(0x9e, 0, false),
             [
-                (0x171, 0, 0),
-                (0x170, -16, 0),
-                (0x172, 16, 0),
-                (0x161, -16, 0),
-                (0x160, -32, 0),
-                (0x162, 0, 0),
-                (0x151, -32, 0),
-                (0x150, -48, 0),
-                (0x152, -16, 0),
-                (0x153, -40, 8),
-                (0x163, 4, 0),
-                (0x173, 0, 4)
+                (0x1d6, -1, 16),
+                (0x1d6, -3, 32),
+                (0x1c4, -16, 48),
+                (0x1c5, 0, 48),
+                (0x1d4, -16, 64),
+                (0x1d5, 0, 64)
             ]
         );
         assert_eq!(
