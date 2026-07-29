@@ -108,12 +108,26 @@ function rgbAt(image, x, y) {
 
 function rustComparisonRgb(rust, live, cropX, cropY, x, y) {
   // Lunar Magic's horizontal DIB keeps a 32-pixel black tail after the 27-tile
-  // (432-pixel) level surface.
-  if (live.width === 656 && y >= 432) return [0, 0, 0];
+  // (432-pixel) ordinary level surface. Boss diagnostics deliberately paint
+  // through that region, so suppress surrounding Rust UI only where the
+  // reference pixel is actually part of the black tail.
+  if (
+    live.width === 656 &&
+    y >= 432 &&
+    rgbAt(live, x, y).every((channel) => channel === 0)
+  ) {
+    return [0, 0, 0];
+  }
   // Lunar Magic's vertical DIB keeps a 112-pixel black tail after the 32-tile (512-pixel)
   // level surface. The Rust canvas ends at 512 pixels and the surrounding application UI must
   // not be mistaken for level pixels.
-  if (live.width === 624 && x >= 512) return [0, 0, 0];
+  if (
+    live.width === 624 &&
+    x >= 512 &&
+    rgbAt(live, x, y).every((channel) => channel === 0)
+  ) {
+    return [0, 0, 0];
+  }
   return rgbAt(rust, cropX + x * 2, cropY + y * 2);
 }
 

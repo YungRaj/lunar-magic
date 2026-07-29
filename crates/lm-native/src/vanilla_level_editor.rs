@@ -1583,7 +1583,11 @@ impl VanillaLevelEditor {
             self.canvas_cell()
         };
         let world_size = rom_canvas_size(major_tiles, minor_tiles, vertical, cell);
-        let canvas_size = if snes_viewport {
+        let canvas_size = if is_boss_battle_level_mode(level_mode) {
+            // Lunar Magic keeps its 512-row diagnostic plane but exposes a
+            // 656-pixel-wide editor DIB, repeating the plane horizontally.
+            egui::vec2(656.0, 512.0)
+        } else if snes_viewport {
             egui::vec2(16.0 * cell, 14.0 * cell)
         } else {
             world_size
@@ -1627,28 +1631,32 @@ impl VanillaLevelEditor {
             } else {
                 rect
             };
-            self.paint_object_canvas(
-                &painter,
-                &response,
-                paint_rect,
-                cell,
-                major_tiles,
-                minor_tiles,
-                vertical,
-                level_mode,
-                object_tileset,
-                map16_animation_phase,
-                animation_phase,
-                &layer2_records,
-                &layer2_placements,
-                &layer2_tilemap,
-                &records,
-                &placements,
-                &sprite_placements,
-                custom_sprites,
-                custom_objects,
-                custom_map16,
-            );
+            if is_boss_battle_level_mode(level_mode) {
+                paint_boss_battle_diagnostic(&painter, rect);
+            } else {
+                self.paint_object_canvas(
+                    &painter,
+                    &response,
+                    paint_rect,
+                    cell,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                    level_mode,
+                    object_tileset,
+                    map16_animation_phase,
+                    animation_phase,
+                    &layer2_records,
+                    &layer2_placements,
+                    &layer2_tilemap,
+                    &records,
+                    &placements,
+                    &sprite_placements,
+                    custom_sprites,
+                    custom_objects,
+                    custom_map16,
+                );
+            }
         });
         if !snes_viewport && let Some(requested) = requested_vertical_scroll {
             let target = clamped_scroll_offset(
@@ -6228,6 +6236,45 @@ fn marker_fallback_tile(record: &ObjectRecord, artwork_rendered: bool) -> Option
         .flatten()
 }
 
+const fn is_boss_battle_level_mode(level_mode: u8) -> bool {
+    matches!(level_mode & 0x1f, 0x09 | 0x0b | 0x10)
+}
+
+fn paint_boss_battle_diagnostic(painter: &egui::Painter, target: egui::Rect) {
+    const PLANE_PIXELS: usize = 512;
+    const MESSAGE: &str = "CANNOT RENDER : This is a boss battle level!";
+    let rows = target.height().ceil().max(1.0) as usize;
+    for row in 0..rows {
+        let red = boss_battle_diagnostic_red(row);
+        let minimum = target.min + egui::vec2(0.0, row as f32);
+        painter.rect_filled(
+            egui::Rect::from_min_size(minimum, egui::vec2(target.width(), 1.0)),
+            0.0,
+            egui::Color32::from_rgb(red, 0, 0),
+        );
+    }
+    let mut x = target.min.x + 106.0;
+    while x < target.max.x {
+        painter.text(
+            egui::pos2(x, target.min.y + 256.0),
+            egui::Align2::LEFT_CENTER,
+            MESSAGE,
+            egui::FontId::monospace(12.0),
+            egui::Color32::WHITE,
+        );
+        x += PLANE_PIXELS as f32;
+    }
+}
+
+const fn boss_battle_diagnostic_red(row: usize) -> u8 {
+    let plane_y = row % 512;
+    if plane_y < 256 {
+        plane_y as u8
+    } else {
+        (511 - plane_y) as u8
+    }
+}
+
 #[derive(Clone, Copy)]
 struct SpritePlacementDraw<'a> {
     painter: &'a egui::Painter,
@@ -8180,6 +8227,22 @@ mod tests {
         {
             eprintln!("{placement:?}");
         }
+    }
+
+    #[test]
+    fn boss_battle_modes_use_lunar_magics_symmetric_red_diagnostic() {
+        for mode in [0x09, 0x0b, 0x10, 0x29, 0x2b, 0x30] {
+            assert!(is_boss_battle_level_mode(mode));
+        }
+        for mode in [0x00, 0x0a, 0x0c, 0x0d, 0x11, 0x1e] {
+            assert!(!is_boss_battle_level_mode(mode));
+        }
+        assert_eq!(boss_battle_diagnostic_red(0), 0);
+        assert_eq!(boss_battle_diagnostic_red(1), 1);
+        assert_eq!(boss_battle_diagnostic_red(255), 255);
+        assert_eq!(boss_battle_diagnostic_red(256), 255);
+        assert_eq!(boss_battle_diagnostic_red(511), 0);
+        assert_eq!(boss_battle_diagnostic_red(512), 0);
     }
 
     #[test]
