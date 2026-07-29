@@ -68,6 +68,9 @@ pub struct StandardSpritePreviewMode {
     /// Native major-axis tile coordinate. Some handlers receive its within-screen
     /// coordinate as their first argument and derive direction from its parity.
     pub placement_major: u16,
+    /// Native minor-axis tile coordinate. Lunar Magic's special absolute-layout
+    /// handlers use both full coordinates when translating fixed canvas cells.
+    pub placement_minor: u16,
     /// Lunar Magic's active level-mode selector used by text-based generator previews.
     pub level_mode: u8,
     /// Determines which native position nibble text-based generator previews inspect.
@@ -99,6 +102,7 @@ pub fn render_lunar_magic_standard_sprite(
             special_display_mode: false,
             placement_first: 0,
             placement_major: 0,
+            placement_minor: 0,
             level_mode: 0,
             level_orientation: StandardLevelOrientation::Horizontal,
             wide_context: StandardSpriteWideContext::ValidShort,
@@ -441,7 +445,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x7f => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0x103, -5, -1)]),
         0x80 => parts(&[(0x0b, 0, 1)]),
         0x81 => parts(&[(0x101, 0, 0)]),
-        0x82 => render_flagged_variant_handler(mode.placement_first, true),
+        // RenderSprite82 @ $004C76A0 places the bonus-game prize grid at
+        // absolute editor cells rather than relative to the serialized sprite.
+        0x82 => render_handler_82(mode),
         0x83 => render_handler_83(mode.placement_first),
         // Dispatch $84 @ $004C7900 draws the winged question block. Its low
         // two placement bits select the central block definition; the high
@@ -940,6 +946,43 @@ fn render_handler_83(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         (0x07, -8, -9),
         (center, -3, -9),
         (0x108, -3, -1),
+    ])
+}
+
+fn render_handler_82(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
+    let major = i16::try_from(mode.placement_major).ok()?;
+    let minor = i16::try_from(mode.placement_minor).ok()?;
+    let x = |target_major: i16, pixel_offset: i16| {
+        target_major
+            .saturating_sub(major)
+            .saturating_mul(16)
+            .saturating_add(pixel_offset)
+    };
+    let y = |target_minor: i16, pixel_offset: i16| {
+        target_minor
+            .saturating_sub(minor)
+            .saturating_mul(16)
+            .saturating_add(pixel_offset)
+    };
+    parts(&[
+        (0x209, x(5, 0), y(15, 1)),
+        (0x211, x(5, 0), y(15, 1)),
+        (0x209, x(7, 8), y(15, 1)),
+        (0x211, x(7, 8), y(15, 1)),
+        (0x209, x(10, 0), y(15, 1)),
+        (0x211, x(10, 0), y(15, 1)),
+        (0x20a, x(5, 0), y(17, 9)),
+        (0x212, x(5, 0), y(17, 9)),
+        (0x20a, x(7, 8), y(17, 9)),
+        (0x212, x(7, 8), y(17, 9)),
+        (0x20a, x(10, 0), y(17, 9)),
+        (0x212, x(10, 0), y(17, 9)),
+        (0x20b, x(5, 0), y(20, 1)),
+        (0x213, x(5, 0), y(20, 1)),
+        (0x20b, x(7, 8), y(20, 1)),
+        (0x213, x(7, 8), y(20, 1)),
+        (0x20b, x(10, 0), y(20, 1)),
+        (0x213, x(10, 0), y(20, 1)),
     ])
 }
 
@@ -1901,12 +1944,17 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x204 => [0x1019, 0x1019, 0x0064, 0x1019],
         0x205 => [0x1019, 0x1019, 0x0066, 0x1019],
         0x208 => [0x817a, 0x816a, 0x817b, 0x816b],
+        0x209 => [0x11e4, 0x11f4, 0x11e5, 0x11f5],
+        0x20a => [0x15e4, 0x15f4, 0x15e5, 0x15f5],
+        0x20b => [0x09e4, 0x09f4, 0x09e5, 0x09f5],
         0x20c => [0x2c19, 0x2c19, 0x2c19, 0x0599],
         0x20d => [0x1419, 0x1419, 0x1419, 0x350d],
         0x20e => [0x354e, 0x355e, 0x354f, 0x355f],
         0x20f => [0x1419, 0x355d, 0x1419, 0x1419],
         0x210 => [0x1424, 0x1434, 0x1425, 0x1435],
         0x211 => [0x1024, 0x1034, 0x1025, 0x1035],
+        0x212 => [0x1426, 0x1436, 0x1427, 0x1437],
+        0x213 => [0x0848, 0x0858, 0x0849, 0x0859],
         0x21f => [0x35ae, 0x35be, 0x35af, 0x35bf],
         0x124 => [0x5508, 0x5518, 0x5507, 0x5517],
         0x125 => [0x5108, 0x5118, 0x5107, 0x5117],
@@ -1948,8 +1996,6 @@ pub(crate) fn preview_definition(index: u16) -> Option<[u16; 4]> {
         0x1a0 => [0x05c0, 0x05d0, 0x05c1, 0x05d1],
         0x1a1 => [0x05c2, 0x05d2, 0x05c3, 0x05d3],
         0x1b2 => [0x8594, 0x8584, 0x8595, 0x8585],
-        0x20a => [0x0c86, 0x0c96, 0x0c87, 0x0c97],
-        0x20b => [0x0daa, 0x0dba, 0x0dab, 0x0dbb],
         0x1b3 => [0x8596, 0x8586, 0x8597, 0x8587],
         0x1b4 => [0x59ad, 0x59bd, 0x59ac, 0x59bc],
         0x1b6 => [0x1d88, 0x1d98, 0x1d89, 0x1d99],
@@ -2847,7 +2893,7 @@ mod tests {
     }
 
     #[test]
-    fn handlers_one_twenty_nine_and_one_thirty_preserve_flagged_variants() {
+    fn handlers_81_and_82_preserve_single_and_absolute_bonus_grid_layouts() {
         let geometry = |sprite, first| {
             render_lunar_magic_standard_sprite_with_mode(
                 sprite,
@@ -2865,20 +2911,47 @@ mod tests {
             assert_eq!(geometry(0x81, first), [(0x101, 0, 0)]);
         }
         assert_eq!(
-            geometry(0x82, 0),
+            render_lunar_magic_standard_sprite_with_mode(
+                0x82,
+                StandardSpritePreviewMode {
+                    placement_major: 5,
+                    placement_minor: 7,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>(),
             [
-                (0x06, -8, -9),
-                (0x07, 14, -9),
-                (0x801a, 5, -9),
-                (0x108, 3, -1)
+                (0x209, 0, 129),
+                (0x211, 0, 129),
+                (0x209, 40, 129),
+                (0x211, 40, 129),
+                (0x209, 80, 129),
+                (0x211, 80, 129),
+                (0x20a, 0, 169),
+                (0x212, 0, 169),
+                (0x20a, 40, 169),
+                (0x212, 40, 169),
+                (0x20a, 80, 169),
+                (0x212, 80, 169),
+                (0x20b, 0, 209),
+                (0x213, 0, 209),
+                (0x20b, 40, 209),
+                (0x213, 40, 209),
+                (0x20b, 80, 209),
+                (0x213, 80, 209)
             ]
         );
-        let flagged = render_lunar_magic_standard_sprite_with_mode(
-            0x82,
-            StandardSpritePreviewMode::default(),
-        )
-        .unwrap();
-        assert_eq!(flagged[2].subtiles, preview_definition(0x1a).unwrap());
+        assert_eq!(
+            preview_definition(0x209),
+            Some([0x11e4, 0x11f4, 0x11e5, 0x11f5])
+        );
+        assert_eq!(
+            preview_definition(0x213),
+            Some([0x0848, 0x0858, 0x0849, 0x0859])
+        );
     }
 
     #[test]

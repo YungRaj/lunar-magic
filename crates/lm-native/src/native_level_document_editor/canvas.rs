@@ -402,6 +402,7 @@ fn draw_sprites(
             lm_render::StandardSpritePreviewMode {
                 placement_first: placement.packed_display_position(),
                 placement_major: placement.major,
+                placement_minor: placement.minor,
                 level_mode,
                 sprite_8a_sequence_index: standard_8a_count,
                 level_orientation: if vertical {

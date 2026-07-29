@@ -2000,6 +2000,31 @@ impl VanillaLevelEditor {
         } else {
             HashMap::new()
         };
+        if game_camera.is_none()
+            && !self.layer3_between_background_and_foreground
+            && let (Some(texture), Some(position), Some(camera)) = (
+                self.layer3_high_texture.as_ref(),
+                layer3_position,
+                layer3_camera,
+            )
+        {
+            // Lunar Magic's editor composites every level-art layer before its sprite-preview
+            // nodes. Runtime priority remains relevant to the game viewport, but applying BG3
+            // high priority here hides previews that cross foreground effects (for example the
+            // dolphins at level $002's water line).
+            draw_layer3_editor_or_viewport(
+                painter,
+                rect,
+                cell,
+                texture,
+                position,
+                camera,
+                major_tiles,
+                minor_tiles,
+                vertical,
+                false,
+            );
+        }
         let (hit_layer2, hit) = if !editor_overlays {
             (
                 ObjectPlacementHits::default(),
@@ -2065,7 +2090,8 @@ impl VanillaLevelEditor {
                 })
             })
             .flatten();
-        if !self.layer3_between_background_and_foreground
+        if game_camera.is_some()
+            && !self.layer3_between_background_and_foreground
             && let (Some(texture), Some(position), Some(camera)) = (
                 self.layer3_high_texture.as_ref(),
                 layer3_position,
@@ -6459,6 +6485,7 @@ fn standard_sprite_preview_mode(
     lm_render::StandardSpritePreviewMode {
         placement_first: placement.packed_display_position(),
         placement_major: placement.major,
+        placement_minor: placement.minor,
         level_mode,
         animation_phase,
         sprite_8a_sequence_index,
@@ -10397,7 +10424,9 @@ mod tests {
             extra_bits: 1,
         };
         let horizontal = standard_sprite_preview_mode(&placement, false, 3, 2, 4);
-        assert_eq!(horizontal.placement_first, 0x91);
+        assert_eq!(horizontal.placement_first, 0x94);
+        assert_eq!(horizontal.placement_major, 0x24);
+        assert_eq!(horizontal.placement_minor, 9);
         assert_eq!(horizontal.level_mode, 3);
         assert_eq!(horizontal.animation_phase, 2);
         assert_eq!(horizontal.sprite_8a_sequence_index, 4);
