@@ -64,6 +64,9 @@ pub struct StandardSpritePreviewMode {
     pub special_display_mode: bool,
     /// First native sprite-record byte used by placement-dependent handlers.
     pub placement_first: u8,
+    /// Native major-axis tile coordinate. Some handlers receive its within-screen
+    /// coordinate as their first argument and derive direction from its parity.
+    pub placement_major: u16,
     /// Lunar Magic's active level-mode selector used by text-based generator previews.
     pub level_mode: u8,
     /// Determines which native position nibble text-based generator previews inspect.
@@ -94,6 +97,7 @@ pub fn render_lunar_magic_standard_sprite(
             animation_phase: 0,
             special_display_mode: false,
             placement_first: 0,
+            placement_major: 0,
             level_mode: 0,
             level_orientation: StandardLevelOrientation::Horizontal,
             wide_context: StandardSpriteWideContext::ValidShort,
@@ -515,7 +519,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x9a | 0x9d => render_handler_9a(mode.placement_first),
         0x9b => render_handler_9b(mode.placement_first),
         0x9c => render_definition_grid(0x180, 4, 1),
-        0x9e => render_handler_9e(),
+        0x9e => render_handler_9e(mode.placement_major),
         // Sprite $9F is Banzai Bill. The game draws it as a 4×4 grid of 16×16 OAM
         // tiles; using the unrelated five-part preview made the level-$105 obstacle
         // appear at roughly one quarter of its native 64×64 size.
@@ -561,13 +565,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             }
             parts(&values)
         }
-        0xaa => {
-            let mut values = vec![(0x17d, 0, 1)];
-            for column in 1_i16..=4 {
-                values.push((0x16e, column * 16, 1));
-            }
-            parts(&values)
-        }
+        // Dispatch entry $AA points at $004C9040. It emits definitions $1C9 and
+        // $1CA in two horizontally adjacent cells.
+        0xaa if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xaa => parts(&[(0x1c9, 0, 1), (0x1ca, 16, 1)]),
         // Sprite $AB is Rex. Its ordinary standing frame uses the recovered two-part Rex
         // definitions; the former long Blargg-like composite belonged to a different dispatch
         // entry and visibly stretched each Rex across five tiles in pristine level $105.
@@ -903,16 +904,19 @@ fn render_handler_9b(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
     ])
 }
 
-fn render_handler_9e() -> Option<Vec<StandardSpritePreviewTile>> {
+fn render_handler_9e(placement_major: u16) -> Option<Vec<StandardSpritePreviewTile>> {
+    let direction = if placement_major & 1 == 0 { -1 } else { 1 };
+    let grinder_x = if direction < 0 { -16 } else { 0 };
     parts(&[
-        // $004C87D0 advances the packed vertical coordinate between the two chain
-        // definitions and the 2×2 grinder. Its direction comes from the even $9E ID.
-        (0x1d6, -1, 16),
-        (0x1d6, -3, 32),
-        (0x1c4, -16, 48),
-        (0x1c5, 0, 48),
-        (0x1d4, -16, 64),
-        (0x1d5, 0, 64),
+        // $004C87D0 derives direction from bit 0 of its coordinate argument,
+        // advances the packed vertical coordinate for the chain, and offsets the
+        // 2×2 grinder one cell left only for the negative direction.
+        (0x1d6, direction, 16),
+        (0x1d6, direction * 3, 32),
+        (0x1c4, grinder_x, 48),
+        (0x1c5, grinder_x + 16, 48),
+        (0x1d4, grinder_x, 64),
+        (0x1d5, grinder_x + 16, 64),
     ])
 }
 
@@ -2991,6 +2995,28 @@ mod tests {
                 (0x1d5, 0, 64)
             ]
         );
+        let odd_9e = render_lunar_magic_standard_sprite_with_mode(
+            0x9e,
+            StandardSpritePreviewMode {
+                placement_major: 1,
+                ..StandardSpritePreviewMode::default()
+            },
+        )
+        .unwrap()
+        .iter()
+        .map(|part| (part.definition_index, part.x, part.y))
+        .collect::<Vec<_>>();
+        assert_eq!(
+            odd_9e,
+            [
+                (0x1d6, 1, 16),
+                (0x1d6, 3, 32),
+                (0x1c4, 0, 48),
+                (0x1c5, 16, 48),
+                (0x1d4, 0, 64),
+                (0x1d5, 16, 64)
+            ]
+        );
         assert_eq!(
             geometry(0xa0, 0, false),
             [
@@ -3156,16 +3182,8 @@ mod tests {
                 (0x208, -64, 1)
             ]
         );
-        assert_eq!(
-            geometry(0xaa, false),
-            [
-                (0x17d, 0, 1),
-                (0x16e, 16, 1),
-                (0x16e, 32, 1),
-                (0x16e, 48, 1),
-                (0x16e, 64, 1)
-            ]
-        );
+        assert_eq!(geometry(0xaa, false), [(0x1c9, 0, 1), (0x1ca, 16, 1)]);
+        assert_eq!(geometry(0xaa, true), [(0x115, 0, 1)]);
         assert_eq!(geometry(0xac, false), [(0x1ac, 0, 0)]);
         for sprite in [0xa7, 0xa8, 0xac] {
             assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
