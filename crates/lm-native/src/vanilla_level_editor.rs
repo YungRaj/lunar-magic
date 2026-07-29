@@ -1841,7 +1841,10 @@ impl VanillaLevelEditor {
             }
         });
         let layer3_camera = game_camera.or_else(|| {
-            (!self.game_preview() && self.layer3_editor_row_offset.is_some()).then(|| {
+            // Lunar Magic also composites ordinary static Layer 3 backgrounds in its full
+            // editor canvas. Some effects need a recovered editor-row override, but the
+            // absence of that override does not mean the decoded plane is inactive.
+            (!self.game_preview() && layer3_position.is_some()).then(|| {
                 (
                     visual_smoke_editor_scroll_column().unwrap_or_default(),
                     visual_smoke_editor_scroll_row()
@@ -1860,6 +1863,25 @@ impl VanillaLevelEditor {
                 screen_pixels_f32(layer1_y - layer2_y) * cell / 16.0,
             ))
         });
+        if let (Some(texture), Some(position), Some(camera)) = (
+            self.layer3_low_texture.as_ref(),
+            layer3_position,
+            layer3_camera,
+        ) {
+            // Low-priority BG3 pixels sit behind BG2 in SMW's level compositor.
+            draw_layer3_editor_or_viewport(
+                painter,
+                rect,
+                cell,
+                texture,
+                position,
+                camera,
+                major_tiles,
+                minor_tiles,
+                vertical,
+                game_camera.is_some(),
+            );
+        }
         if visual_smoke_editor_layer2() {
             draw_layer2_tilemap(
                 painter,
@@ -1904,24 +1926,6 @@ impl VanillaLevelEditor {
         );
         let game_preview = self.game_preview();
         let editor_overlays = !game_preview && visual_smoke_editor_overlays();
-        if let (Some(texture), Some(position), Some(camera)) = (
-            self.layer3_low_texture.as_ref(),
-            layer3_position,
-            layer3_camera,
-        ) {
-            draw_layer3_editor_or_viewport(
-                painter,
-                rect,
-                cell,
-                texture,
-                position,
-                camera,
-                major_tiles,
-                minor_tiles,
-                vertical,
-                game_camera.is_some(),
-            );
-        }
         let layer1_artwork_bounds = self.draw_object_artwork(
             painter,
             rect,
@@ -6185,10 +6189,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     // Lunar Magic draws $E1's ghost definition at 50% opacity while keeping
                     // its separate $114 star overlay opaque. egui tint colors are premultiplied;
                     // white-with-alpha would gamma-adjust this to roughly 75% opacity.
-                    standard_sprite_preview_tint(
-                        placement.sprite_number,
-                        part.definition_index,
-                    ),
+                    standard_sprite_preview_tint(placement.sprite_number, part.definition_index),
                 );
             }
         } else if let Some(parts) = external_preview.as_deref()
@@ -6486,13 +6487,7 @@ pub(crate) fn draw_sprite_preview_definition(
     target: egui::Rect,
     subtiles: [u16; 4],
 ) {
-    draw_sprite_preview_definition_tinted(
-        painter,
-        texture,
-        target,
-        subtiles,
-        egui::Color32::WHITE,
-    );
+    draw_sprite_preview_definition_tinted(painter, texture, target, subtiles, egui::Color32::WHITE);
 }
 
 fn draw_sprite_preview_definition_tinted(
@@ -6516,10 +6511,7 @@ fn draw_sprite_preview_definition_tinted(
     }
 }
 
-const fn standard_sprite_preview_tint(
-    sprite_number: u8,
-    definition_index: u16,
-) -> egui::Color32 {
+const fn standard_sprite_preview_tint(sprite_number: u8, definition_index: u16) -> egui::Color32 {
     if sprite_number == 0xe1 && definition_index == 0x1b8 {
         egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
     } else {

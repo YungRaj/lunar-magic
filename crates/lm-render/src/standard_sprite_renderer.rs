@@ -636,16 +636,11 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // Sprite $BD is the sliding shell-less Koopa. Its initial runtime state selects
         // common-page OAM tile $86; tile $E0 is only used by its later smushed state.
         0xbd => parts(&[(0x20a, 0, 1)]),
-        0xbe => {
-            let direction_y = if mode.placement_first & 1 == 0 { -2 } else { 2 };
-            parts(&[
-                (0x1cb, 0, direction_y),
-                (0x1cb, 16, direction_y),
-                (0x1cb, 32, direction_y),
-                (0x1da, 46, direction_y - 10),
-                (0x1d9, -14, direction_y - 10),
-            ])
-        }
+        // Dispatch entry $BE points at $004C99C0. The ordinary native path emits
+        // only definition $17B; the former five-part winged-block composite came
+        // from a different handler.
+        0xbe if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xbe => parts(&[(0x17b, 0, 1)]),
         0xbf => parts(&[(0x166, 0, 0)]),
         0xc0 => parts(&[
             (0x16b, -8, 8),
@@ -730,7 +725,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xe5 => render_handler_e5(mode),
         0xe6 => render_handler_e6(mode),
         0xe7 | 0xef => render_handler_e7(mode),
-        0xe8 => render_text_lines(&[("Layer 2", 0), (" Falls ", 8)]),
+        // $E8 aliases $E7's native dispatch target at $004CAC50. Its strings at
+        // $005C467C begin with "Auto-Scroll", followed by the Special 1..4 labels.
+        0xe8 => render_handler_e5(mode),
         0xe9 => render_handler_e9(mode),
         0xea | 0xf2 => render_text_lines(&[("   Layer 2   ", 0), ("On/Off Switch", 8)]),
         0xeb | 0xf3 => render_handler_eb(mode),
@@ -3400,26 +3397,9 @@ mod tests {
             ]
         );
         assert_eq!(geometry(0xbd, 0, false), [(0x20a, 0, 1)]);
-        assert_eq!(
-            geometry(0xbe, 0, false),
-            [
-                (0x1cb, 0, -2),
-                (0x1cb, 16, -2),
-                (0x1cb, 32, -2),
-                (0x1da, 46, -12),
-                (0x1d9, -14, -12)
-            ]
-        );
-        assert_eq!(
-            geometry(0xbe, 1, false),
-            [
-                (0x1cb, 0, 2),
-                (0x1cb, 16, 2),
-                (0x1cb, 32, 2),
-                (0x1da, 46, -8),
-                (0x1d9, -14, -8)
-            ]
-        );
+        assert_eq!(geometry(0xbe, 0, false), [(0x17b, 0, 1)]);
+        assert_eq!(geometry(0xbe, 1, false), [(0x17b, 0, 1)]);
+        assert_eq!(geometry(0xbe, 0, true), [(0x115, 0, 1)]);
         assert_eq!(geometry(0xbf, 0, false), [(0x166, 0, 0)]);
         assert_eq!(
             geometry(0xc0, 0, false),
@@ -3478,10 +3458,7 @@ mod tests {
             geometry(0xca, true),
             [(0x158, 0, 26), (0x159, 16, 26), (0x168, 8, 16)]
         );
-        assert_eq!(
-            geometry(0xcb, true),
-            [(0x115, 0, 1), (0x114, -8, -16)]
-        );
+        assert_eq!(geometry(0xcb, true), [(0x115, 0, 1), (0x114, -8, -16)]);
         assert_eq!(
             geometry(0xcc, false),
             [
@@ -3543,10 +3520,7 @@ mod tests {
             geometry(0xd3, false),
             [(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11), (0x114, 0, 0)]
         );
-        assert_eq!(
-            geometry(0xd3, true),
-            [(0x115, 0, 1), (0x114, 0, 0)]
-        );
+        assert_eq!(geometry(0xd3, true), [(0x115, 0, 1), (0x114, 0, 0)]);
         assert_eq!(geometry(0xd4, false), d2);
         assert_eq!(
             geometry(0xd5, false),
@@ -3626,8 +3600,8 @@ mod tests {
         let d9 = geometry(0xd9);
         assert_eq!(d9[d9.len() - 1], (0x3c73, 72, 8));
         let e8 = geometry(0xe8);
-        assert_eq!(e8[1], (0x3c4c, 0, 0));
-        assert_eq!(e8["Layer 2".len() * 2 + 1], (0x3c20, 0, 8));
+        assert_eq!(e8[1], (0x3c41, 0, 0));
+        assert_eq!(e8["Auto-Scroll".len() * 2 + 1], (0x3c20, 0, 8));
         let ea = geometry(0xea);
         assert_eq!(ea["   Layer 2   ".len() * 2 + 1], (0x3c4f, 0, 8));
         let ec = geometry(0xec);

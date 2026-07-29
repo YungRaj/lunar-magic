@@ -203,11 +203,9 @@ pub(crate) fn render(
     let layer3_position = layer3
         .as_ref()
         .map(|layer3| (layer3.initial_x, layer3.initial_y));
-    let layer3_editor_row_offset = layer3
-        .as_ref()
-        .and_then(|layer3| {
-            vanilla_layer3_editor_row_offset(layer3.behavior, header.object_tileset())
-        });
+    let layer3_editor_row_offset = layer3.as_ref().and_then(|layer3| {
+        vanilla_layer3_editor_row_offset(layer3.behavior, header.object_tileset())
+    });
     let (layer3_low_image, layer3_high_image) = layer3.as_ref().map_or((None, None), |layer3| {
         let (low, high) = render_layer3_planes(
             &layer3.tilemap,
@@ -262,7 +260,7 @@ const fn vanilla_layer3_editor_row_offset(
         lm_profile::SmwUsV1Layer3Behavior::HighTide => Some(-8),
         lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x80 } => Some(1),
         lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x81 }
-            if matches!(object_tileset, 1 | 0x0d) =>
+            if matches!(object_tileset, 1 | 3 | 0x0d) =>
         {
             Some(0)
         }
@@ -1139,7 +1137,7 @@ mod tests {
         );
         assert_eq!(
             vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 3),
-            None
+            Some(0)
         );
         assert_eq!(
             vanilla_layer3_editor_row_offset(Static { code: 0x81 }, 0x0d),
