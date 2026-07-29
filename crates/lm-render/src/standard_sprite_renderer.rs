@@ -762,7 +762,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         ]),
         0xe4 => parts(&[(0x14b, 0, 0), (0x114, 0, 0)]),
         0xe5 => render_handler_e5(mode),
-        0xe6 => render_handler_e6(mode),
+        // Dispatch $E6 @ $004CAC20 emits definitions $14B and $114 at the
+        // placement. The Layer 2 / Smash text belongs to another handler.
+        0xe6 => parts(&[(0x14b, 0, 0), (0x114, 0, 0)]),
         0xe7 | 0xef => render_handler_e7(mode),
         // $E8 aliases $E7's native dispatch target at $004CAC50. Its strings at
         // $005C467C begin with "Auto-Scroll", followed by the Special 1..4 labels.
@@ -1088,17 +1090,6 @@ fn render_handler_e5(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpri
         _ => "MAY GLITCH!",
     };
     render_text_lines(&[("Auto-Scroll", 0), (label, 8)])
-}
-
-fn render_handler_e6(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
-    let position = preview_position_nibble(mode);
-    let label = match (mode.level_mode & 3, position) {
-        (0, 0) => "  Smash-1  ",
-        (1, 0) => "  Smash-2  ",
-        (2, 0) => "  Smash-3  ",
-        _ => "MAY GLITCH!",
-    };
-    render_text_lines(&[("  Layer 2  ", 0), (label, 8)])
 }
 
 fn render_handler_e7(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
@@ -3800,15 +3791,18 @@ mod tests {
             " Special 4 "
         );
         assert_eq!(
-            line(
+            render_lunar_magic_standard_sprite_with_mode(
                 0xe6,
                 StandardSpritePreviewMode {
                     level_mode: 2,
                     ..StandardSpritePreviewMode::default()
-                },
-                8
-            ),
-            "  Smash-3  "
+                }
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>(),
+            [(0x14b, 0, 0), (0x114, 0, 0)]
         );
         assert_eq!(
             line(
