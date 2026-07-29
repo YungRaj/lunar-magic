@@ -356,7 +356,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             parts(&values)
         }
         0x60 => parts(&[(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]),
-        0x61 => render_left_chain(false),
+        // Dispatch $61 @ $004C6780 advances one packed cell after each call
+        // and emits four adjacent skull-raft definitions at y+4.
+        0x61 => parts(&[(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]),
         // $004C67D0 emits only definitions $7C/$7D/$7E.
         0x62 => render_left_chain(false),
         0x63 => render_left_chain(mode.placement_first & 1 == 0),
@@ -560,7 +562,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xa5 => parts(&[(0xfc, 0, -8)]),
         0xa6 => render_handler_a6(mode.animation_phase),
         0xa7 => parts(&[(0x1c9, 0, 1), (0x1ca, 16, 1)]),
-        0xa8 => parts(&[(0x19d, 0, 1), (0x18d, -20, 1)]),
+        // Dispatch $A8 @ $004C8F10 emits definition $FC eight pixels above
+        // the placement in the ordinary display mode. The alternate-display
+        // $115 branch is handled by the shared guard above.
+        0xa8 => parts(&[(0xfc, 0, -8)]),
         0xa9 => {
             let mut values = vec![(0x16d, 0, 1)];
             for column in 1_i16..=4 {
@@ -2526,7 +2531,10 @@ mod tests {
             (0x6b, 8, -7),
             (0x7a, 24, -7),
         ];
-        assert_eq!(geometry(0x61, 0), short);
+        assert_eq!(
+            geometry(0x61, 0),
+            [(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]
+        );
         assert_eq!(geometry(0x62, 0), short);
         assert_eq!(geometry(0x63, 0), long);
         assert_eq!(geometry(0x63, 1), short);
@@ -3268,7 +3276,7 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(geometry(0xa7, false), [(0x1c9, 0, 1), (0x1ca, 16, 1)]);
-        assert_eq!(geometry(0xa8, false), [(0x19d, 0, 1), (0x18d, -20, 1)]);
+        assert_eq!(geometry(0xa8, false), [(0xfc, 0, -8)]);
         assert_eq!(
             geometry(0xa9, false),
             [
