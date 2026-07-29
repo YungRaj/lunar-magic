@@ -14,7 +14,8 @@ usage() {
     echo "  LM_NATIVE_EDITOR_OVERLAYS: draw editor grid, markers, and labels (default: 1)" >&2
     echo "  LM_NATIVE_EDITOR_LAYER2: draw Layer 2/background in editor captures (default: 1)" >&2
     echo "  LM_NATIVE_EDITOR_CELL: editor tile size in logical pixels (default: 12)" >&2
-    echo "  LM_NATIVE_ANIMATION_PHASE: freeze animated editor graphics at phase 0..3" >&2
+    echo "  LM_NATIVE_ANIMATION_PHASE: freeze animated editor graphics at phase 0..7" >&2
+    echo "  LM_NATIVE_PALETTE_PHASE: freeze the eight-frame Dragon Coin palette cycle at phase 0..7" >&2
     echo "  LM_NATIVE_SCREENSHOT_WIDTH/HEIGHT: capture window size (default: 1100x720)" >&2
     echo "  LM_LUNAR_MAGIC_REFERENCE_MANIFEST: use each live capture's authenticated scroll origin" >&2
     exit 2

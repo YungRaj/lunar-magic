@@ -139,7 +139,10 @@ pub(crate) fn render(
     let backdrop = composed_palette.backdrop;
     let mut palette = composed_palette.palette;
     if !game_runtime {
-        apply_vanilla_editor_palette_animation(&mut palette);
+        apply_vanilla_editor_palette_animation(
+            &mut palette,
+            requested_vanilla_editor_palette_phase(),
+        );
     }
     let sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
         &project.rom,
@@ -242,12 +245,32 @@ pub(crate) fn render(
     })
 }
 
-fn apply_vanilla_editor_palette_animation(palette: &mut Palette) {
+fn requested_vanilla_editor_palette_phase() -> usize {
+    std::env::var("LM_NATIVE_PALETTE_PHASE")
+        .ok()
+        .and_then(|phase| phase.parse::<usize>().ok())
+        .filter(|&phase| phase < 8)
+        // Preserve Lunar Magic's previously authenticated yellow frame when
+        // no deterministic audit phase was requested.
+        .unwrap_or(2)
+}
+
+fn apply_vanilla_editor_palette_animation(palette: &mut Palette, phase: usize) {
     // AdvanceExAnimationFrames @ 0045AAC0 applies the built-in palette record before Lunar
-    // Magic builds its editor cache. Vanilla color $64 is therefore the Dragon Coin yellow
-    // ($27FF), not the magenta placeholder stored by the base level palette.
+    // Magic builds its editor cache. The pristine-ROM sequence begins at logical PC $00360C
+    // and oscillates through eight Dragon Coin colors before repeating.
+    const DRAGON_COIN_COLORS: [lm_graphics::Bgr555; 8] = [
+        lm_graphics::Bgr555(0x02df),
+        lm_graphics::Bgr555(0x035f),
+        lm_graphics::Bgr555(0x27ff),
+        lm_graphics::Bgr555(0x5fff),
+        lm_graphics::Bgr555(0x73ff),
+        lm_graphics::Bgr555(0x5fff),
+        lm_graphics::Bgr555(0x27ff),
+        lm_graphics::Bgr555(0x035f),
+    ];
     if let Some(color) = palette.colors.get_mut(0x64) {
-        *color = lm_graphics::Bgr555(0x27ff);
+        *color = DRAGON_COIN_COLORS[phase & 7];
     }
 }
 
@@ -952,11 +975,25 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     #[test]
-    fn editor_palette_materializes_vanilla_dragon_coin_color() {
+    fn editor_palette_materializes_all_vanilla_dragon_coin_colors() {
         let mut palette = Palette {
             colors: vec![Bgr555(0); 256],
         };
-        apply_vanilla_editor_palette_animation(&mut palette);
+        let expected = [
+            Bgr555(0x02df),
+            Bgr555(0x035f),
+            Bgr555(0x27ff),
+            Bgr555(0x5fff),
+            Bgr555(0x73ff),
+            Bgr555(0x5fff),
+            Bgr555(0x27ff),
+            Bgr555(0x035f),
+        ];
+        for (phase, expected) in expected.into_iter().enumerate() {
+            apply_vanilla_editor_palette_animation(&mut palette, phase);
+            assert_eq!(palette.colors[0x64], expected);
+        }
+        apply_vanilla_editor_palette_animation(&mut palette, 10);
         assert_eq!(palette.colors[0x64], Bgr555(0x27ff));
         assert_eq!(
             palette.colors[0x64].to_rgb8(),
