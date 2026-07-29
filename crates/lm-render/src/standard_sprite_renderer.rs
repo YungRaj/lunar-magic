@@ -157,7 +157,6 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x84
         | 0x8e
         | 0x96
-        | 0x9a
         | 0x9b
         | 0x9c
         | 0x9d
@@ -271,11 +270,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x4a => parts(&[(0x58, 8, -16), (0x68, 8, 0)]),
         0x4b => render_handler_4b(mode.placement_first),
         0x4c => parts(&[(0xa7, 0, 1), (0xa8, 0, 1)]),
-        0x4d => {
-            let mut values = vec![(0xa7, 0, 1)];
-            values.extend(shared_marker_parts());
-            parts(&values)
-        }
+        // $004C5C60 emits both overlapping parts of the small platform sprite.
+        0x4d => parts(&[(0xa7, 0, 1), (0xa8, 0, 1)]),
         0x4e => parts(&[(0x16, 8, -8), (0xb4, 8, 8)]),
         // RenderConditionalTiles16AndB4 @ $004C5D10 emits only this pair.
         0x4f => parts(&[(0x16, 8, -8), (0xb4, 8, 8)]),
@@ -518,7 +514,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1d9, -14, -10),
             (0x1da, 30, -10),
         ]),
-        0x9a | 0x9d => render_handler_9a(mode.placement_first),
+        0x9a => render_handler_9a(mode.level_orientation),
+        0x9d => render_handler_9a_legacy(mode.placement_first),
         0x9b => render_handler_9b(mode.placement_first),
         0x9c => render_definition_grid(0x180, 4, 1),
         0x9e => render_handler_9e(mode.placement_major),
@@ -639,9 +636,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x164, -16, 1),
             (0x165, 0, 1),
         ]),
-        // Sprite $BD is the sliding shell-less Koopa. Its initial runtime state selects
-        // common-page OAM tile $86; tile $E0 is only used by its later smushed state.
-        0xbd => parts(&[(0x20a, 0, 1)]),
+        // Dispatch entry $BD points at $004C9990 and emits definition $02.
+        0xbd if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0xbd => parts(&[(0x02, 0, 1)]),
         // Dispatch entry $BE points at $004C99C0. The ordinary native path emits
         // only definition $17B; the former five-part winged-block composite came
         // from a different handler.
@@ -875,7 +872,24 @@ fn render_handler_1e(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
     parts(&values)
 }
 
-fn render_handler_9a(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+fn render_handler_9a(
+    orientation: StandardLevelOrientation,
+) -> Option<Vec<StandardSpritePreviewTile>> {
+    // $004C8520 addresses one cell along each packed coordinate axis. Which
+    // physical axis that represents swaps in vertical levels.
+    let (major_x, major_y, minor_x, minor_y) = match orientation {
+        StandardLevelOrientation::Horizontal => (-16, 0, 0, -16),
+        StandardLevelOrientation::Vertical => (0, -16, -16, 0),
+    };
+    parts(&[
+        (0x1de, major_x + 4, major_y + 1),
+        (0x1df, 4, 1),
+        (0x1cf, minor_x + 2, minor_y + 1),
+        (0x1ce, -minor_x + 4, -minor_y),
+    ])
+}
+
+fn render_handler_9a_legacy(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
     let head = match placement_first & 3 {
         0 => 0x1bd,
         1 => 0x1ad,
@@ -2289,7 +2303,7 @@ mod tests {
             &[(0xb0, -4, -4), (0xb1, 12, -4), (0xb2, -4, 8), (0xb3, 12, 8)]
         );
         assert_eq!(geometry(0x4c, 0), [(0xa7, 0, 1), (0xa8, 0, 1)]);
-        assert_eq!(geometry(0x4d, 0).len(), 5);
+        assert_eq!(geometry(0x4d, 0), [(0xa7, 0, 1), (0xa8, 0, 1)]);
         assert_eq!(geometry(0x4e, 0), [(0x16, 8, -8), (0xb4, 8, 8)]);
         assert_eq!(geometry(0x4f, 0), [(0x16, 8, -8), (0xb4, 8, 8)]);
         assert_eq!(geometry(0x50, 0), [(0x78, 0, 1)]);
@@ -2915,12 +2929,12 @@ mod tests {
     }
 
     #[test]
-    fn handler_9a_preserves_variant_head_and_shared_tail() {
-        let geometry = |first, alternate_display| {
+    fn handler_9a_preserves_native_packed_coordinate_axes() {
+        let geometry = |orientation, alternate_display| {
             render_lunar_magic_standard_sprite_with_mode(
                 0x9a,
                 StandardSpritePreviewMode {
-                    placement_first: first,
+                    level_orientation: orientation,
                     alternate_display,
                     ..StandardSpritePreviewMode::default()
                 },
@@ -2930,19 +2944,28 @@ mod tests {
             .map(|part| (part.definition_index, part.x, part.y))
             .collect::<Vec<_>>()
         };
-        let tail = [
-            (0x1bf, -1, 3),
-            (0x1be, -15, 3),
-            (0x1af, -17, 5),
-            (0x1ae, -31, 5),
-            (0x20c, -32, 4),
-        ];
-        for (variant, head) in [(0, 0x1bd), (1, 0x1ad), (2, 0x14), (3, 0x211)] {
-            let parts = geometry(variant, false);
-            assert_eq!(parts[0], (head, -8, 0));
-            assert_eq!(&parts[1..], tail);
-        }
-        assert_eq!(geometry(0, true), [(0x115, 0, 1)]);
+        assert_eq!(
+            geometry(StandardLevelOrientation::Horizontal, false),
+            [
+                (0x1de, -12, 1),
+                (0x1df, 4, 1),
+                (0x1cf, 2, -15),
+                (0x1ce, 4, 16)
+            ]
+        );
+        assert_eq!(
+            geometry(StandardLevelOrientation::Vertical, false),
+            [
+                (0x1de, 4, -15),
+                (0x1df, 4, 1),
+                (0x1cf, -14, 1),
+                (0x1ce, 20, 0)
+            ]
+        );
+        assert_eq!(
+            geometry(StandardLevelOrientation::Horizontal, true),
+            geometry(StandardLevelOrientation::Horizontal, false)
+        );
     }
 
     #[test]
@@ -3435,7 +3458,8 @@ mod tests {
                 (0x165, 0, 1)
             ]
         );
-        assert_eq!(geometry(0xbd, 0, false), [(0x20a, 0, 1)]);
+        assert_eq!(geometry(0xbd, 0, false), [(0x02, 0, 1)]);
+        assert_eq!(geometry(0xbd, 0, true), [(0x115, 0, 1)]);
         assert_eq!(geometry(0xbe, 0, false), [(0x17b, 0, 1)]);
         assert_eq!(geometry(0xbe, 1, false), [(0x17b, 0, 1)]);
         assert_eq!(geometry(0xbe, 0, true), [(0x115, 0, 1)]);
@@ -4020,13 +4044,10 @@ mod tests {
             );
         }
 
-        for placement_first in 0..4 {
-            let mode = StandardSpritePreviewMode {
-                placement_first,
-                ..StandardSpritePreviewMode::default()
-            };
-            assert_eq!(geometry(0x9d, mode), geometry(0x9a, mode));
-        }
+        assert_ne!(
+            geometry(0x9d, StandardSpritePreviewMode::default()),
+            geometry(0x9a, StandardSpritePreviewMode::default())
+        );
         assert_eq!(
             geometry(
                 0x9d,
