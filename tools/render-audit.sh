@@ -90,6 +90,9 @@ capture_one() {
     scroll_column=$6
     scroll_row=$7
     if [ "$refresh" -eq 1 ] || [ ! -f "$image" ]; then
+        if [ "$refresh" -eq 1 ] && [ -f "$image" ]; then
+            rm -- "$image"
+        fi
         echo "capture level $level · $style · entrance screen offset $screen"
         LM_NATIVE_SCREENSHOT_TO="$image" \
         LM_NATIVE_PREVIEW_STYLE="$style" \
