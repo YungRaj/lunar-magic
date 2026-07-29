@@ -5324,20 +5324,19 @@ fn draw_layer3_editor_or_viewport(
     let pixel_scale = cell_size / 16.0;
     let world_width = i32::from(width) * 16;
     let world_height = i32::from(height) * 16;
-    let target_y = -i32::from(position.1);
-    let mut target_x = -i32::from(position.0);
-    while target_x < world_width {
-        let target = egui::Rect::from_min_size(
-            world.min
-                + egui::vec2(
-                    screen_pixels_f32(target_x) * pixel_scale,
-                    screen_pixels_f32(target_y) * pixel_scale,
-                ),
-            egui::vec2(512.0 * pixel_scale, 512.0 * pixel_scale),
-        );
-        if target.max.y >= world.min.y
-            && target.min.y <= world.min.y + screen_pixels_f32(world_height) * pixel_scale
-        {
+    // RenderLayer3TilemapCellAtCoordinates @ $004502C0 masks the editor coordinates into
+    // Lunar Magic's active 32×32 or 64×64 BG3 plane. Repeat the materialized 512-pixel plane
+    // along both axes so a scrolled vertical level does not lose BG3 after its first screen pair.
+    for target_y in repeating_layer3_plane_origins(position.1, world_height) {
+        for target_x in repeating_layer3_plane_origins(position.0, world_width) {
+            let target = egui::Rect::from_min_size(
+                world.min
+                    + egui::vec2(
+                        screen_pixels_f32(target_x) * pixel_scale,
+                        screen_pixels_f32(target_y) * pixel_scale,
+                    ),
+                egui::vec2(512.0 * pixel_scale, 512.0 * pixel_scale),
+            );
             painter.image(
                 texture.id(),
                 target,
@@ -5345,8 +5344,24 @@ fn draw_layer3_editor_or_viewport(
                 egui::Color32::WHITE,
             );
         }
-        target_x += 512;
     }
+}
+
+fn repeating_layer3_plane_origins(position: i16, world_extent: i32) -> Vec<i32> {
+    const PLANE_PIXELS: i32 = 512;
+    let mut origin = -i32::from(position);
+    while origin > 0 {
+        origin -= PLANE_PIXELS;
+    }
+    while origin + PLANE_PIXELS <= 0 {
+        origin += PLANE_PIXELS;
+    }
+    let mut origins = Vec::new();
+    while origin < world_extent {
+        origins.push(origin);
+        origin += PLANE_PIXELS;
+    }
+    origins
 }
 
 fn draw_wrapped_layer3_region(
@@ -7691,6 +7706,22 @@ mod tests {
         assert_eq!(
             layer2_tile_at_canvas_position(egui::pos2(513.0, 8.0), canvas, 16.0),
             None
+        );
+    }
+
+    #[test]
+    fn layer3_editor_plane_repeats_across_complete_scrolled_world() {
+        assert_eq!(
+            repeating_layer3_plane_origins(0, 1_280),
+            vec![0, 512, 1_024]
+        );
+        assert_eq!(
+            repeating_layer3_plane_origins(-64, 1_024),
+            vec![-448, 64, 576]
+        );
+        assert_eq!(
+            repeating_layer3_plane_origins(112, 1_024),
+            vec![-112, 400, 912]
         );
     }
 
