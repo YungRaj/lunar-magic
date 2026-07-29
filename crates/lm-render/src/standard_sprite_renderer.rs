@@ -602,15 +602,16 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
                 (base + 0x11, 8, 8),
             ])
         }
-        0xa2 => parts(&[(
-            if mode.sprite_graphics_mode & 0x0f == 2 {
-                0xa9
-            } else {
-                0xf9
-            } + u16::from(mode.placement_first & 1),
-            0,
-            1,
-        )]),
+        // RenderSpriteA2 @ $004C8B20 emits the complete five-part fire
+        // composition. The neighboring $A5 handler owns the graphics-mode
+        // selected single definition that was previously assigned here.
+        0xa2 => parts(&[
+            (0x14e, -8, -7),
+            (0x14f, 8, -7),
+            (0x15e, -8, 9),
+            (0x15f, 8, 9),
+            (0x16f, 7, 1),
+        ]),
         0xa3 => render_handler_a3(mode.placement_first),
         0xa4 => parts(&[(0xfb, 0, 0)]),
         // Dispatch $A5 @ $004C8D30 selects $A9/$AA only in sprite graphics
@@ -3367,7 +3368,13 @@ mod tests {
         };
         assert_eq!(
             geometry(0xa2, StandardSpritePreviewMode::default()),
-            [(0xf9, 0, 1)]
+            [
+                (0x14e, -8, -7),
+                (0x14f, 8, -7),
+                (0x15e, -8, 9),
+                (0x15f, 8, 9),
+                (0x16f, 7, 1)
+            ]
         );
         assert_eq!(
             geometry(
@@ -3378,7 +3385,7 @@ mod tests {
                     ..StandardSpritePreviewMode::default()
                 }
             ),
-            [(0xaa, 0, 1)]
+            geometry(0xa2, StandardSpritePreviewMode::default())
         );
         assert_eq!(
             geometry(0xa3, StandardSpritePreviewMode::default()),
