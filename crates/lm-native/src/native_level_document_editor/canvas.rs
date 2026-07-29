@@ -400,7 +400,8 @@ fn draw_sprites(
         let parts = lm_render::render_lunar_magic_standard_sprite_with_mode(
             placement.sprite_number,
             lm_render::StandardSpritePreviewMode {
-                placement_first: placement.first_byte,
+                placement_first: placement.packed_display_position(),
+                placement_major: placement.major,
                 level_mode,
                 sprite_8a_sequence_index: standard_8a_count,
                 level_orientation: if vertical {

@@ -62,7 +62,8 @@ pub struct StandardSpritePreviewMode {
     pub animation_phase: u8,
     /// Enables Lunar Magic's context-specific definition overrides.
     pub special_display_mode: bool,
-    /// First native sprite-record byte used by placement-dependent handlers.
+    /// Packed within-screen coordinate passed to Lunar Magic's handlers:
+    /// minor-axis position in the high nibble and major-axis position in the low.
     pub placement_first: u8,
     /// Native major-axis tile coordinate. Some handlers receive its within-screen
     /// coordinate as their first argument and derive direction from its parity.
@@ -442,14 +443,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x81 => parts(&[(0x101, 0, 0)]),
         0x82 => render_flagged_variant_handler(mode.placement_first, true),
         0x83 => render_handler_83(mode.placement_first),
-        0x84 => parts(&[
-            (0xdd, 0, -15),
-            (0xdc, 24, -1),
-            (0xdb, 16, 0),
-            (0xda, 8, 1),
-            (0xdb, 32, 0),
-            (0xd9, 0, 1),
-        ]),
+        // Dispatch $84 @ $004C7900 draws the winged question block. Its low
+        // two placement bits select the central block definition; the high
+        // definition bit is Lunar Magic's preview-definition selector.
+        0x84 => render_flagged_variant_handler(mode.placement_first, true),
         // Dispatch $86 @ $004C7A00 draws Wiggler as a six-part composite.
         0x86 => parts(&[
             (0xdd, 0, -15),
@@ -528,11 +525,14 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             ));
             parts(&values)
         }
+        // RenderSprite93 @ $004C8090 draws the upright Puntin' Chuck as two
+        // lower definitions, two definitions one cell above, and its head.
         0x93 => parts(&[
-            (0x1f8, -8, -1),
-            (0x1f9, 8, -1),
-            (0x1e8, -24, -1),
-            (0x1e9, -8, -1),
+            (0x1fa, -4, -1),
+            (0x1fb, 12, -1),
+            (0x1ea, -5, -17),
+            (0x1eb, 13, -17),
+            (0x1ee, 1, -13),
         ]),
         0x94 => parts(&[
             (0x1ee, -5, -9),
@@ -752,12 +752,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x19b, 0, 17),
             (0x19c, 16, 17),
         ]),
-        0xbc => parts(&[
-            (0x174, 0, 1),
-            (0x175, 16, 1),
-            (0x164, -16, 1),
-            (0x165, 0, 1),
-        ]),
+        // RenderSpriteBC @ $004C98B0 selects one of three Dry Bones
+        // compositions from the packed major coordinate's low two bits.
+        0xbc => render_handler_bc(mode.placement_first),
         // Dispatch entry $BD points at $004C9990 and emits definition $02.
         0xbd if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0xbd => parts(&[(0x02, 0, 1)]),
@@ -941,6 +938,15 @@ fn render_handler_83(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         (center, -3, -9),
         (0x108, -3, -1),
     ])
+}
+
+fn render_handler_bc(placement_position: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+    match placement_position & 3 {
+        2 => parts(&[(0x19a, 0, 0), (0x18a, 0, -16), (0x17a, -8, -16)]),
+        0 => parts(&[(0x189, 0, 1), (0x188, -8, -7)]),
+        1 | 3 => parts(&[(0x189, 0, 1), (0x188, -8, -7), (0x14d, -24, -1)]),
+        _ => unreachable!(),
+    }
 }
 
 fn render_handler_64(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpritePreviewTile>> {
@@ -2890,14 +2896,15 @@ mod tests {
         assert_eq!(
             geometry(0x84, 0),
             [
-                (0xdd, 0, -15),
-                (0xdc, 24, -1),
-                (0xdb, 16, 0),
-                (0xda, 8, 1),
-                (0xdb, 32, 0),
-                (0xd9, 0, 1)
+                (0x06, -8, -9),
+                (0x07, 14, -9),
+                (0x801a, 5, -9),
+                (0x108, 3, -1)
             ]
         );
+        assert_eq!(geometry(0x84, 1)[2], (0x8104, 5, -9));
+        assert_eq!(geometry(0x84, 2)[2], (0x8106, 5, -9));
+        assert_eq!(geometry(0x84, 3)[2], (0x8100, 5, -9));
         assert_eq!(
             geometry(0x85, 0),
             [
@@ -2908,7 +2915,17 @@ mod tests {
                 (0x9c, 4, 8)
             ]
         );
-        assert_eq!(geometry(0x86, 0), geometry(0x84, 0));
+        assert_eq!(
+            geometry(0x86, 0),
+            [
+                (0xdd, 0, -15),
+                (0xdc, 24, -1),
+                (0xdb, 16, 0),
+                (0xda, 8, 1),
+                (0xdb, 32, 0),
+                (0xd9, 0, 1)
+            ]
+        );
         assert_eq!(geometry(0x89, 0), [(0xde, 0, 0), (0xdf, 16, 0)]);
         assert_eq!(
             geometry(0x8c, 0),
@@ -3058,10 +3075,11 @@ mod tests {
         assert_eq!(
             geometry(0x93, 0),
             [
-                (0x1f8, -8, -1),
-                (0x1f9, 8, -1),
-                (0x1e8, -24, -1),
-                (0x1e9, -8, -1)
+                (0x1fa, -4, -1),
+                (0x1fb, 12, -1),
+                (0x1ea, -5, -17),
+                (0x1eb, 13, -17),
+                (0x1ee, 1, -13)
             ]
         );
         assert_eq!(
@@ -3729,15 +3747,17 @@ mod tests {
             .map(|part| (part.definition_index, part.x, part.y))
             .collect::<Vec<_>>()
         };
+        assert_eq!(geometry(0xbc, 0, false), [(0x189, 0, 1), (0x188, -8, -7)]);
         assert_eq!(
-            geometry(0xbc, 0, false),
-            [
-                (0x174, 0, 1),
-                (0x175, 16, 1),
-                (0x164, -16, 1),
-                (0x165, 0, 1)
-            ]
+            geometry(0xbc, 1, false),
+            [(0x189, 0, 1), (0x188, -8, -7), (0x14d, -24, -1)]
         );
+        assert_eq!(
+            geometry(0xbc, 2, false),
+            [(0x19a, 0, 0), (0x18a, 0, -16), (0x17a, -8, -16)]
+        );
+        assert_eq!(geometry(0xbc, 3, false), geometry(0xbc, 1, false));
+        assert_eq!(geometry(0xbc, 0, true), [(0x115, 0, 1)]);
         assert_eq!(geometry(0xbd, 0, false), [(0x02, 0, 1)]);
         assert_eq!(geometry(0xbd, 0, true), [(0x115, 0, 1)]);
         assert_eq!(geometry(0xbe, 0, false), [(0x17b, 0, 1)]);

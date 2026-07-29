@@ -49,6 +49,17 @@ impl NativeSpriteStream {
 }
 
 impl NativeSpritePlacement {
+    /// Returns the packed within-screen coordinate Lunar Magic passes as the
+    /// first argument to every built-in standard-sprite preview handler.
+    ///
+    /// The high nibble is the minor-axis coordinate and the low nibble is the
+    /// major-axis coordinate. Screen and extra-bit fields are deliberately
+    /// excluded.
+    #[must_use]
+    pub const fn packed_display_position(self) -> u8 {
+        ((self.minor as u8 & 0x0f) << 4) | (self.major as u8 & 0x0f)
+    }
+
     /// Converts the native major/minor axes to tile X/Y.
     #[must_use]
     pub const fn tile_coordinates(self, vertical: bool) -> (u16, u16) {
@@ -119,5 +130,19 @@ mod tests {
         assert_eq!(stream.native_placements()[0].major, 32);
         assert_eq!(stream.native_placements()[0].minor, 176);
         assert_eq!(stream.native_placements()[0].screen, 2);
+    }
+
+    #[test]
+    fn packed_display_position_matches_lunar_magic_handler_argument() {
+        let placement = NativeSpritePlacement {
+            token_index: 0,
+            first_byte: 0x0b,
+            screen: 23,
+            major: 0x173,
+            minor: 0x21a,
+            sprite_number: 0x84,
+            extra_bits: 2,
+        };
+        assert_eq!(placement.packed_display_position(), 0xa3);
     }
 }

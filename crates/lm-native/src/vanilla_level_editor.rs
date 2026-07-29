@@ -6457,7 +6457,7 @@ fn standard_sprite_preview_mode(
     sprite_8a_sequence_index: u8,
 ) -> lm_render::StandardSpritePreviewMode {
     lm_render::StandardSpritePreviewMode {
-        placement_first: placement.first_byte,
+        placement_first: placement.packed_display_position(),
         placement_major: placement.major,
         level_mode,
         animation_phase,
