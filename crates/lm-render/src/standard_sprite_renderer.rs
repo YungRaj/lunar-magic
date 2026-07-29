@@ -561,7 +561,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1da, 30, -10),
         ]),
         0x9a => render_handler_9a(mode.level_orientation),
-        0x9d => render_handler_9a_legacy(mode.placement_first),
+        // Dispatch $9D @ $004C8750 receives Lunar Magic's packed major
+        // coordinate byte. Its low two bits choose the bubble payload.
+        0x9d => render_handler_9a_legacy(mode.placement_major as u8),
         // Dispatch $9B @ $004C85D0 shifts the packed placement upward for
         // two rows of the compact five-part preview.
         0x9b => parts(&[
@@ -4286,6 +4288,28 @@ mod tests {
         assert_ne!(
             geometry(0x9d, StandardSpritePreviewMode::default()),
             geometry(0x9a, StandardSpritePreviewMode::default())
+        );
+        assert_eq!(
+            geometry(
+                0x9d,
+                StandardSpritePreviewMode {
+                    placement_first: 1,
+                    placement_major: 28,
+                    ..StandardSpritePreviewMode::default()
+                }
+            )[0],
+            (0x1bd, -8, 0)
+        );
+        assert_eq!(
+            geometry(
+                0x9d,
+                StandardSpritePreviewMode {
+                    placement_first: 0,
+                    placement_major: 17,
+                    ..StandardSpritePreviewMode::default()
+                }
+            )[0],
+            (0x1ad, -8, 0)
         );
         assert_eq!(
             geometry(
