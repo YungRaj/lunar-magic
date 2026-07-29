@@ -157,8 +157,6 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x84
         | 0x86
         | 0x8e
-        | 0x9b
-        | 0x9c
         | 0x9d
         | 0x9f
         | 0xa1
@@ -545,8 +543,22 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         ]),
         0x9a => render_handler_9a(mode.level_orientation),
         0x9d => render_handler_9a_legacy(mode.placement_first),
-        0x9b => render_handler_9b(mode.placement_first),
-        0x9c => render_definition_grid(0x180, 4, 1),
+        // Dispatch $9B @ $004C85D0 shifts the packed placement upward for
+        // two rows of the compact five-part preview.
+        0x9b => parts(&[
+            (0x1dc, 0, -15),
+            (0x1dd, 16, -15),
+            (0x1db, -16, -15),
+            (0x1cc, 0, -31),
+            (0x1cd, 16, -31),
+        ]),
+        // Dispatch $9C @ $004C86C0 emits two body cells and two overlays.
+        0x9c => parts(&[
+            (0x1cb, 0, 0),
+            (0x1cb, 16, 0),
+            (0x1d9, -14, -10),
+            (0x1da, 30, -10),
+        ]),
         0x9e => render_handler_9e(mode.placement_major),
         // Sprite $9F is Banzai Bill. The game draws it as a 4×4 grid of 16×16 OAM
         // tiles; using the unrelated five-part preview made the level-$105 obstacle
@@ -964,19 +976,6 @@ fn render_handler_9a_legacy(placement_first: u8) -> Option<Vec<StandardSpritePre
         (0x1af, -17, 5),
         (0x1ae, -31, 5),
         (0x20c, -32, 4),
-    ])
-}
-
-fn render_handler_9b(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
-    let direction = if placement_first & 1 == 0 { -1 } else { 1 };
-    let middle = if direction < 0 { 32 } else { 48 };
-    parts(&[
-        (0x1d6, 16 + direction, 0),
-        (0x1d6, 32 + direction * 3, 0),
-        (0x1c4, middle, 0),
-        (0x1c5, middle + 16, 0),
-        (0x1d4, middle + 16, 0),
-        (0x1d5, middle + 32, 0),
     ])
 }
 
@@ -2949,27 +2948,16 @@ mod tests {
                 (0x1da, 30, -10)
             ]
         );
-        let grid = geometry(0x9c, false);
-        assert_eq!(grid.len(), 16);
         assert_eq!(
-            &grid[..4],
+            geometry(0x9c, false),
             [
-                (0x180, 4, 1),
-                (0x181, 20, 1),
-                (0x182, 36, 1),
-                (0x183, 52, 1)
+                (0x1cb, 0, 0),
+                (0x1cb, 16, 0),
+                (0x1d9, -14, -10),
+                (0x1da, 30, -10)
             ]
         );
-        assert_eq!(
-            &grid[12..],
-            [
-                (0x1b0, 4, 49),
-                (0x1b1, 20, 49),
-                (0x1b2, 36, 49),
-                (0x1b3, 52, 49)
-            ]
-        );
-        assert_eq!(geometry(0x9c, true), [(0x115, 0, 1)]);
+        assert_eq!(geometry(0x9c, true), geometry(0x9c, false));
     }
 
     #[test]
@@ -3039,7 +3027,7 @@ mod tests {
     }
 
     #[test]
-    fn handler_9b_preserves_both_directional_screen_spans() {
+    fn handler_9b_preserves_authenticated_two_row_geometry() {
         let geometry = |first, alternate_display| {
             render_lunar_magic_standard_sprite_with_mode(
                 0x9b,
@@ -3057,26 +3045,15 @@ mod tests {
         assert_eq!(
             geometry(0, false),
             [
-                (0x1d6, 15, 0),
-                (0x1d6, 29, 0),
-                (0x1c4, 32, 0),
-                (0x1c5, 48, 0),
-                (0x1d4, 48, 0),
-                (0x1d5, 64, 0)
+                (0x1dc, 0, -15),
+                (0x1dd, 16, -15),
+                (0x1db, -16, -15),
+                (0x1cc, 0, -31),
+                (0x1cd, 16, -31)
             ]
         );
-        assert_eq!(
-            geometry(1, false),
-            [
-                (0x1d6, 17, 0),
-                (0x1d6, 35, 0),
-                (0x1c4, 48, 0),
-                (0x1c5, 64, 0),
-                (0x1d4, 64, 0),
-                (0x1d5, 80, 0)
-            ]
-        );
-        assert_eq!(geometry(0, true), [(0x115, 0, 1)]);
+        assert_eq!(geometry(1, false), geometry(0, false));
+        assert_eq!(geometry(0, true), geometry(0, false));
     }
 
     #[test]
