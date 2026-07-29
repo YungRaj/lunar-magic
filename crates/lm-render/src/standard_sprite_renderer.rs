@@ -251,7 +251,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x3f => parts(&[(0x56, -6, -14), (0x67, -6, 2)]),
         0x40 => parts(&[(0x74, 0, 1), (0x75, 8, 1), (0x76, 24, 1)]),
         0x41 => parts(&[(0x154, 0, 1), (0x155, 8, 1), (0x156, 24, 1)]),
-        0x42 => parts(&[(0x77, 0, 1), (0x87, 0, 17)]),
+        // Dispatch slot $42 points at $004C57E0 and emits Lunar Magic's horizontal
+        // three-definition dolphin preview.
+        0x42 => parts(&[(0x154, 0, 1), (0x155, 8, 1), (0x156, 24, 1)]),
         0x43 => parts(&[(0x94, 0, 1), (0x57, -12, 1), (0x95, 16, 1)]),
         0x44 => parts(&[(0x96, 4, 1)]),
         0x45 => parts(&[(0x97, -16, 1), (0x98, -4, 1), (0x99, 12, 1), (0x88, -2, -7)]),
@@ -679,21 +681,21 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xd1 if mode.alternate_display => parts(&[(0x115, 0, 1), (0x114, 0, 0)]),
         0xd1 => parts(&[(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11), (0x114, 0, 0)]),
         0xd2 => render_handler_d2(),
-        0xd3 => parts(&[
+        0xd3 if mode.alternate_display => parts(&[(0x115, 0, 1), (0x114, 0, 0)]),
+        0xd3 => parts(&[(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11), (0x114, 0, 0)]),
+        0xd4 => render_handler_d2(),
+        0xd5 => parts(&[
             (if mode.alternate_display { 0x115 } else { 0x25 }, 0, 1),
             (0x25, 8, 1),
             (0x114, 0, -8),
         ]),
-        0xd4 => parts(&[(0x157, 0, 0), (0x114, 0, -8)]),
-        0xd5 => parts(&[(0x11d, 0, 0), (0x114, 0, -8)]),
-        0xd6 => parts(&[
+        0xd6 => parts(&[(0x157, 0, 0), (0x114, 0, -8)]),
+        0xd7 => parts(&[(0x11d, 0, 0), (0x114, 0, -8)]),
+        0xd8 => parts(&[
             (if mode.alternate_display { 0x115 } else { 0x14d }, 0, 1),
             (0x114, 0, -8),
         ]),
-        0xd7 => render_text_lines(&[(" Turn Off ", 0), ("Generators", 8)]),
-        0xd8 | 0xd9 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
-        0xd8 => parts(&[(if mode.alternate_graphics { 0x33 } else { 0x30 }, 0, 1)]),
-        0xd9 => parts(&[(if mode.alternate_graphics { 0x32 } else { 0x31 }, 0, 1)]),
+        0xd9 => render_text_lines(&[(" Turn Off ", 0), ("Generators", 8)]),
         0xda => parts(&[(if mode.alternate_display { 0x115 } else { 0x32 }, 0, 1)]),
         0xdb => parts(&[(if mode.alternate_display { 0x115 } else { 0x33 }, 0, 1)]),
         0xdc => {
@@ -2251,7 +2253,10 @@ mod tests {
                 .map(|part| (part.definition_index, part.x, part.y))
                 .collect::<Vec<_>>()
         };
-        assert_eq!(geometry(0x42), [(0x77, 0, 1), (0x87, 0, 17)]);
+        assert_eq!(
+            geometry(0x42),
+            [(0x154, 0, 1), (0x155, 8, 1), (0x156, 24, 1)]
+        );
         assert_eq!(
             geometry(0x43),
             [(0x94, 0, 1), (0x57, -12, 1), (0x95, 16, 1)]
@@ -3537,7 +3542,7 @@ mod tests {
     }
 
     #[test]
-    fn handlers_d2_through_d6_preserve_recovered_composites() {
+    fn handlers_d2_through_d9_preserve_recovered_composites() {
         let geometry = |sprite, alternate_display| {
             render_lunar_magic_standard_sprite_with_mode(
                 sprite,
@@ -3569,34 +3574,25 @@ mod tests {
         assert_eq!(d2[13], (0x14, 24, 0));
         assert_eq!(
             geometry(0xd3, false),
-            [(0x25, 0, 1), (0x25, 8, 1), (0x114, 0, -8)]
+            [(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11), (0x114, 0, 0)]
         );
         assert_eq!(
             geometry(0xd3, true),
+            [(0x115, 0, 1), (0x114, 0, 0)]
+        );
+        assert_eq!(geometry(0xd4, false), d2);
+        assert_eq!(
+            geometry(0xd5, false),
+            [(0x25, 0, 1), (0x25, 8, 1), (0x114, 0, -8)]
+        );
+        assert_eq!(
+            geometry(0xd5, true),
             [(0x115, 0, 1), (0x25, 8, 1), (0x114, 0, -8)]
         );
-        assert_eq!(geometry(0xd4, false), [(0x157, 0, 0), (0x114, 0, -8)]);
-        assert_eq!(geometry(0xd5, false), [(0x11d, 0, 0), (0x114, 0, -8)]);
-        assert_eq!(geometry(0xd6, false), [(0x14d, 0, 1), (0x114, 0, -8)]);
-        assert_eq!(geometry(0xd6, true), [(0x115, 0, 1), (0x114, 0, -8)]);
-        assert_eq!(geometry(0xd8, false), [(0x30, 0, 1)]);
-        assert_eq!(geometry(0xd9, false), [(0x31, 0, 1)]);
-        for sprite in [0xd8, 0xd9, 0xda, 0xdb] {
-            assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
-        }
-        let alternate_graphics = |sprite| {
-            render_lunar_magic_standard_sprite_with_mode(
-                sprite,
-                StandardSpritePreviewMode {
-                    alternate_graphics: true,
-                    ..StandardSpritePreviewMode::default()
-                },
-            )
-            .unwrap()[0]
-                .definition_index
-        };
-        assert_eq!(alternate_graphics(0xd8), 0x33);
-        assert_eq!(alternate_graphics(0xd9), 0x32);
+        assert_eq!(geometry(0xd6, false), [(0x157, 0, 0), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xd7, false), [(0x11d, 0, 0), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xd8, false), [(0x14d, 0, 1), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xd8, true), [(0x115, 0, 1), (0x114, 0, -8)]);
         assert_eq!(
             geometry(0xdc, false),
             [
@@ -3688,8 +3684,8 @@ mod tests {
         );
         assert_eq!(&d0[d0.len() - 2..], &[(0x3c7c, 72, 8), (0x3c32, 72, 8)]);
 
-        let d7 = geometry(0xd7);
-        assert_eq!(d7[d7.len() - 1], (0x3c73, 72, 8));
+        let d9 = geometry(0xd9);
+        assert_eq!(d9[d9.len() - 1], (0x3c73, 72, 8));
         let e8 = geometry(0xe8);
         assert_eq!(e8[1], (0x3c4c, 0, 0));
         assert_eq!(e8["Layer 2".len() * 2 + 1], (0x3c20, 0, 8));
