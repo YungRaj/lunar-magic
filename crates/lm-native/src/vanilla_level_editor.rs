@@ -2039,7 +2039,8 @@ impl VanillaLevelEditor {
                     painter,
                     target: rect,
                     cell_size: cell,
-                    texture: self
+                    texture: self.sprite_texture.as_ref(),
+                    animated_texture: self
                         .animated_sprite_textures
                         .get(usize::from(animation_phase))
                         .or(self.sprite_texture.as_ref()),
@@ -6233,6 +6234,7 @@ struct SpritePlacementDraw<'a> {
     target: egui::Rect,
     cell_size: f32,
     texture: Option<&'a egui::TextureHandle>,
+    animated_texture: Option<&'a egui::TextureHandle>,
     placements: &'a [lm_level::NativeSpritePlacement],
     cursor: Option<egui::Pos2>,
     selected: usize,
@@ -6252,6 +6254,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         target,
         cell_size,
         texture,
+        animated_texture,
         placements,
         cursor,
         selected,
@@ -6317,6 +6320,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 draw_sprite_preview_definition_tinted(
                     painter,
                     texture,
+                    animated_texture,
                     sprite_preview_part_rect(marker, part.x, part.y, cell_size),
                     part.subtiles,
                     // Lunar Magic draws $E1's ghost definition at 50% opacity while keeping
@@ -6621,12 +6625,20 @@ pub(crate) fn draw_sprite_preview_definition(
     target: egui::Rect,
     subtiles: [u16; 4],
 ) {
-    draw_sprite_preview_definition_tinted(painter, texture, target, subtiles, egui::Color32::WHITE);
+    draw_sprite_preview_definition_tinted(
+        painter,
+        texture,
+        None,
+        target,
+        subtiles,
+        egui::Color32::WHITE,
+    );
 }
 
 fn draw_sprite_preview_definition_tinted(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
+    animated_texture: Option<&egui::TextureHandle>,
     target: egui::Rect,
     subtiles: [u16; 4],
     tint: egui::Color32,
@@ -6637,12 +6649,32 @@ fn draw_sprite_preview_definition_tinted(
         let minimum = target.min + egui::vec2(f32::from(x) * half.x, f32::from(y) * half.y);
         draw_sprite_atlas_subtile(
             painter,
-            texture,
+            sprite_preview_texture(texture, animated_texture, word),
             egui::Rect::from_min_size(minimum, half),
             word,
             tint,
         );
     }
+}
+
+fn sprite_preview_texture<'a>(
+    texture: &'a egui::TextureHandle,
+    animated_texture: Option<&'a egui::TextureHandle>,
+    word: u16,
+) -> &'a egui::TextureHandle {
+    // Lunar Magic's decoded animation cache supplies sprite tile page 2. Page 0
+    // remains backed by the four ordinary SP slots even when its low tile number
+    // overlaps an animation destination. Applying the animated atlas globally
+    // turns definition $1CB's page-0 gray blocks into animation-group-$12 lines.
+    if sprite_preview_uses_animated_page(word) {
+        animated_texture.unwrap_or(texture)
+    } else {
+        texture
+    }
+}
+
+const fn sprite_preview_uses_animated_page(word: u16) -> bool {
+    word & 0x0200 != 0
 }
 
 const fn standard_sprite_preview_tint(sprite_number: u8, definition_index: u16) -> egui::Color32 {
@@ -8148,6 +8180,13 @@ mod tests {
         {
             eprintln!("{placement:?}");
         }
+    }
+
+    #[test]
+    fn animated_sprite_cache_is_scoped_to_tile_page_two() {
+        assert!(!sprite_preview_uses_animated_page(0x0440));
+        assert!(sprite_preview_uses_animated_page(0x0648));
+        assert!(sprite_preview_uses_animated_page(0x8248));
     }
 
     #[test]

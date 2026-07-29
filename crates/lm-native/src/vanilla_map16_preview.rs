@@ -214,7 +214,7 @@ pub(crate) fn render(
             &palette,
         ));
     }
-    let sprite_image = animated_sprite_images[0].clone();
+    let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let entrance_image = render_default_entrance_marker(&project, &palette)?;
     let foreground_image = render_foreground_graphics_atlas(&foreground_graphics, &palette);
     let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
