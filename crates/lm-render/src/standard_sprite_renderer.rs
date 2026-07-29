@@ -359,22 +359,27 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x69 => parts(&[(0x27, 3, 0), (0x9c, 7, 4)]),
         0x6a => parts(&[(0xb7, 0, 1), (0xb7, 16, 1), (0xb7, 24, 1)]),
         0x6b | 0x6c => parts(&[(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]),
-        0x6d => parts(&[(0xd5, -8, 1), (0xd6, 8, 1), (0xc5, -8, -15), (0xc6, 8, -15)]),
-        0x6e => parts(&[(0xb9, -2, 1)]),
-        0x6f => parts(&[
+        // The installed dispatch targets from $6D through $73 are consecutive,
+        // but the previous table was shifted backward by one slot.
+        0x6d => parts(&[(0x80b8, 0, 0)]),
+        0x6e => parts(&[(0xd5, -8, 1), (0xd6, 8, 1), (0xc5, -8, -15), (0xc6, 8, -15)]),
+        0x6f => parts(&[(0xb9, -2, 1)]),
+        0x70 => parts(&[
             (0xc7, 1, 1),
             (0xd7, 0, 17),
             (0xc7, 1, 33),
             (0xd7, 0, 49),
             (0xc7, 1, 65),
         ]),
-        0x70 => parts(&[(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11)]),
-        0x71 => parts(&[(0xf5, -3, 8), (0xf6, 13, 8), (0xf7, 5, 11)]),
-        0x72 => parts(&[
+        0x71 => parts(&[(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11)]),
+        0x72 => parts(&[(0xf5, -3, 8), (0xf6, 13, 8), (0xf7, 5, 11)]),
+        // $004C7330 draws the shared Koopa body ($42) followed by its
+        // coordinate-direction head ($E8/$F8) eight pixels to the right.
+        0x73 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0x73 => parts(&[
             (0x42, 0, 1),
-            (0xe8 + u16::from(mode.placement_first & 1) * 0x10, 8, 1),
+            (0xe8 + u16::from(mode.placement_major & 1) * 0x10, 8, 1),
         ]),
-        0x73 => parts(&[(0x101, 0, 0)]),
         0x74 => parts(&[(0x104, 0, 0)]),
         0x75 => parts(&[(0x105, 0, 0)]),
         0x76 => parts(&[(0x106, 0, 0)]),
@@ -2489,13 +2494,14 @@ mod tests {
             geometry(0x6b, 0),
             [(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]
         );
+        assert_eq!(geometry(0x6d, 0), [(0x80b8, 0, 0)]);
         assert_eq!(
-            geometry(0x6d, 0),
+            geometry(0x6e, 0),
             [(0xd5, -8, 1), (0xd6, 8, 1), (0xc5, -8, -15), (0xc6, 8, -15)]
         );
-        assert_eq!(geometry(0x6e, 0), [(0xb9, -2, 1)]);
+        assert_eq!(geometry(0x6f, 0), [(0xb9, -2, 1)]);
         assert_eq!(
-            geometry(0x6f, 0),
+            geometry(0x70, 0),
             [
                 (0xc7, 1, 1),
                 (0xd7, 0, 17),
@@ -2505,16 +2511,36 @@ mod tests {
             ]
         );
         assert_eq!(
-            geometry(0x70, 0),
+            geometry(0x71, 0),
             [(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11)]
         );
         assert_eq!(
-            geometry(0x71, 0),
+            geometry(0x72, 0),
             [(0xf5, -3, 8), (0xf6, 13, 8), (0xf7, 5, 11)]
         );
-        assert_eq!(geometry(0x72, 0), [(0x42, 0, 1), (0xe8, 8, 1)]);
-        assert_eq!(geometry(0x72, 1), [(0x42, 0, 1), (0xf8, 8, 1)]);
-        assert_eq!(geometry(0x73, 0), [(0x101, 0, 0)]);
+        assert_eq!(geometry(0x73, 0), [(0x42, 0, 1), (0xe8, 8, 1)]);
+        assert_eq!(
+            render_lunar_magic_standard_sprite_with_mode(
+                0x73,
+                StandardSpritePreviewMode {
+                    placement_major: 1,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>(),
+            [(0x42, 0, 1), (0xf8, 8, 1)]
+        );
+        assert_eq!(
+            render_lunar_magic_standard_sprite(0x73, true)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>(),
+            [(0x115, 0, 1)]
+        );
         assert_eq!(geometry(0x74, 0), [(0x104, 0, 0)]);
         assert_eq!(geometry(0x75, 0), [(0x105, 0, 0)]);
         for sprite in 0x6d..=0x72 {
