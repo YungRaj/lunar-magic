@@ -575,14 +575,23 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // definitions; the former long Blargg-like composite belonged to a different dispatch
         // entry and visibly stretched each Rex across five tiles in pristine level $105.
         0xab => parts(&[(0x18d, -4, -15), (0x20b, 0, 0)]),
-        0xac => parts(&[(0x1ac, 0, 0)]),
+        // Dispatch $AC @ $004C9120 emits definition $16D at the placement,
+        // then four $208 definitions one cell upward each iteration.
+        0xac => parts(&[
+            (0x16d, 0, 1),
+            (0x208, 0, -15),
+            (0x208, 0, -31),
+            (0x208, 0, -47),
+            (0x208, 0, -63),
+        ]),
+        // Dispatch $AD @ $004C9180 is the downward counterpart: $17D at
+        // the placement followed by four $16E definitions one cell apart.
         0xad => parts(&[
-            (0x1b6, 4, 4),
-            (0x1b7, 12, 12),
-            (0x1b8, 36, 4),
-            (0x1b9, 44, 12),
-            (0x1ba, 68, 4),
-            (0x1bb, 76, 12),
+            (0x17d, 0, 1),
+            (0x16e, 0, 17),
+            (0x16e, 0, 33),
+            (0x16e, 0, 49),
+            (0x16e, 0, 65),
         ]),
         0xae => parts(&[(0xb8, 0, 0)]),
         0xaf => parts(&[(0x15d, 0, 0)]),
@@ -3242,7 +3251,16 @@ mod tests {
         );
         assert_eq!(geometry(0xaa, false), [(0x1c9, 0, 1), (0x1ca, 16, 1)]);
         assert_eq!(geometry(0xaa, true), [(0x115, 0, 1)]);
-        assert_eq!(geometry(0xac, false), [(0x1ac, 0, 0)]);
+        assert_eq!(
+            geometry(0xac, false),
+            [
+                (0x16d, 0, 1),
+                (0x208, 0, -15),
+                (0x208, 0, -31),
+                (0x208, 0, -47),
+                (0x208, 0, -63)
+            ]
+        );
         for sprite in [0xa7, 0xa8, 0xac] {
             assert_eq!(geometry(sprite, true), [(0x115, 0, 1)]);
         }
@@ -3313,12 +3331,11 @@ mod tests {
         assert_eq!(
             geometry(0xad, false),
             [
-                (0x1b6, 4, 4),
-                (0x1b7, 12, 12),
-                (0x1b8, 36, 4),
-                (0x1b9, 44, 12),
-                (0x1ba, 68, 4),
-                (0x1bb, 76, 12)
+                (0x17d, 0, 1),
+                (0x16e, 0, 17),
+                (0x16e, 0, 33),
+                (0x16e, 0, 49),
+                (0x16e, 0, 65)
             ]
         );
         assert_eq!(geometry(0xae, false), [(0xb8, 0, 0)]);
