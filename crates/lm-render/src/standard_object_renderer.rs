@@ -3328,8 +3328,11 @@ fn render_shared_slot_077(
     parameter: u8,
 ) -> Result<(), StandardObjectRenderError> {
     let tile = u16::from(SHARED_SLOT_077_TILES[usize::from(parameter >> 4)]) + 0x100;
-    for minor_offset in 0..=usize::from(parameter & 0x0f) {
-        set_placement_cell(cache, layout, placement, 0, minor_offset, tile)?;
+    // RenderStandardObjectDefinitionSlot077 @ $004324F0 advances the packed
+    // level-cache column after every write. The low nibble is therefore a
+    // horizontal/major-axis run length, not a vertical/minor-axis height.
+    for major_offset in 0..=usize::from(parameter & 0x0f) {
+        set_placement_cell(cache, layout, placement, major_offset, 0, tile)?;
     }
     Ok(())
 }
@@ -6685,7 +6688,11 @@ mod tests {
                 0x12,
                 vec![vec![0x082, 0x082, 0x082], vec![0x082, 0x082, 0x082]],
             ),
-            (77, 0x22, vec![vec![0x157, 0x157, 0x157]]),
+            (
+                77,
+                0x22,
+                vec![vec![0x157], vec![0x157], vec![0x157]],
+            ),
         ] {
             let mut handler_map = [0xff; 64];
             handler_map[1] = handler;
