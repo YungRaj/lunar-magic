@@ -268,7 +268,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x45 => parts(&[(0x97, -16, 1), (0x98, -4, 1), (0x99, 12, 1), (0x88, -2, -7)]),
         0x46 => parts(&[(0x14, -2, 1)]),
         0x47 => parts(&[(0x89, 0, -3)]),
-        0x48 => parts(&[(0xa4, 0, 0), (0xa5, 16, 0)]),
+        // Dispatch $48 @ $004C5AA0 emits definition $89 three pixels above
+        // the placement, or the shared $115 marker in alternate display mode.
+        0x48 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
+        0x48 => parts(&[(0x89, 0, -3)]),
         0x49 => parts(&[(0xa6, 0, 1)]),
         0x4a => parts(&[(0x58, 8, -16), (0x68, 8, 0)]),
         0x4b => render_handler_4b(mode.placement_first),
@@ -664,12 +667,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xbe if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0xbe => parts(&[(0x17b, 0, 1)]),
         0xbf => parts(&[(0x166, 0, 0)]),
-        0xc0 => parts(&[
-            (0x16b, -8, 8),
-            (0x16c, 8, 8),
-            (0x15b, -8, -8),
-            (0x15c, 8, -8),
-        ]),
+        // Dispatch $C0 @ $004C9AD0 advances one packed cell after each call
+        // and emits the three adjacent floating-platform definitions.
+        0xc0 => parts(&[(0x176, 0, 3), (0x177, 16, 3), (0x178, 32, 3)]),
         0xc1 => parts(&[(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]),
         // Dispatch-table entry $C2 points at $004C9BE0.  Its ordinary path emits only
         // definition $166; the former 20-part composite belongs to another native entry.
@@ -678,11 +678,13 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xc3 => parts(&[(0x179, 0, 0)]),
         0xc4 => parts(&[(0x8101, 0, 0)]),
         0xc5 => parts(&[(0x167, 0, 1)]),
-        0xc6 => parts(&[(0x25, 0, 0), (0x114, 0, -8)]),
+        // Dispatch $C6 @ $004C9E70 emits only definition $179.
+        0xc6 => parts(&[(0x179, 0, 0)]),
         // Dispatch $C7 @ $004C9E90 emits the external-definition sentinel
         // $8101 at the placement; the dolphin composite belongs to $CA.
         0xc7 => parts(&[(0x8101, 0, 0)]),
-        0xc8 => parts(&[(0x11b, 0, 0), (0x12b, 0, 16)]),
+        // Dispatch $C8 @ $004C9EB0 emits only definition $167 at y+1.
+        0xc8 => parts(&[(0x167, 0, 1)]),
         0xc9 => parts(&[
             (if mode.alternate_display { 0x115 } else { 0x38 }, 0, 1),
             (0x114, 0, -8),
@@ -2318,7 +2320,15 @@ mod tests {
         );
         assert_eq!(geometry(0x46), [(0x14, -2, 1)]);
         assert_eq!(geometry(0x47), [(0x89, 0, -3)]);
-        assert_eq!(geometry(0x48), [(0xa4, 0, 0), (0xa5, 16, 0)]);
+        assert_eq!(geometry(0x48), [(0x89, 0, -3)]);
+        assert_eq!(
+            render_lunar_magic_standard_sprite(0x48, true)
+                .unwrap()
+                .iter()
+                .map(|part| (part.definition_index, part.x, part.y))
+                .collect::<Vec<_>>(),
+            [(0x115, 0, 1)]
+        );
         assert_eq!(geometry(0x49), [(0xa6, 0, 1)]);
         assert_eq!(geometry(0x4a), [(0x58, 8, -16), (0x68, 8, 0)]);
         for sprite in [0x42, 0x43, 0x46, 0x47] {
@@ -3535,12 +3545,7 @@ mod tests {
         assert_eq!(geometry(0xbf, 0, false), [(0x166, 0, 0)]);
         assert_eq!(
             geometry(0xc0, 0, false),
-            [
-                (0x16b, -8, 8),
-                (0x16c, 8, 8),
-                (0x15b, -8, -8),
-                (0x15c, 8, -8)
-            ]
+            [(0x176, 0, 3), (0x177, 16, 3), (0x178, 32, 3)]
         );
         assert_eq!(
             geometry(0xc1, 0, false),
@@ -3570,9 +3575,9 @@ mod tests {
             .collect::<Vec<_>>()
         };
         assert_eq!(geometry(0xc5, false), [(0x167, 0, 1)]);
-        assert_eq!(geometry(0xc6, false), [(0x25, 0, 0), (0x114, 0, -8)]);
+        assert_eq!(geometry(0xc6, false), [(0x179, 0, 0)]);
         assert_eq!(geometry(0xc7, false), [(0x8101, 0, 0)]);
-        assert_eq!(geometry(0xc8, false), [(0x11b, 0, 0), (0x12b, 0, 16)]);
+        assert_eq!(geometry(0xc8, false), [(0x167, 0, 1)]);
         assert_eq!(geometry(0xc9, false), [(0x38, 0, 1), (0x114, 0, -8)]);
         assert_eq!(geometry(0xc9, true), [(0x115, 0, 1), (0x114, 0, -8)]);
         assert_eq!(
