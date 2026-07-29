@@ -419,7 +419,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             }
             parts(&values)
         }
-        0x8d => {
+        // $8F dispatches to $004C7F20. Like $8D, it draws two E9/EA platform
+        // pairs; bit 0 of the first placement byte selects a four- or eight-cell
+        // gap between the pairs.
+        0x8d | 0x8f => {
             let spacing = if mode.placement_first & 1 == 0 {
                 128
             } else {
@@ -433,12 +436,6 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             ])
         }
         0x8e => render_handler_8e(),
-        0x8f => parts(&[
-            (0x1ee, -6, -11),
-            (0x1fe, -6, 1),
-            (0x1ff, 10, 1),
-            (0x1ef, 4, -15),
-        ]),
         0x90 => parts(&[(0x1fc, -4, 1), (0x1fd, 12, 1), (0x1ee, 0, -3)]),
         0x91 => parts(&[
             (0x1fa, -4, -1),
@@ -2707,12 +2704,7 @@ mod tests {
         assert_eq!(geometry(0x8e, true), [(0x115, 0, 1)]);
         assert_eq!(
             geometry(0x8f, false),
-            [
-                (0x1ee, -6, -11),
-                (0x1fe, -6, 1),
-                (0x1ff, 10, 1),
-                (0x1ef, 4, -15)
-            ]
+            [(0xe9, -8, 0), (0xea, 8, 0), (0xe9, 120, 0), (0xea, 136, 0)]
         );
         assert_eq!(
             geometry(0x90, false),
