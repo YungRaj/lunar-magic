@@ -548,11 +548,13 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x1e8, -8, -17),
             (0x1e9, 8, -17),
         ]),
+        // RenderSprite97 @ $004C8260 is the same upright four-part
+        // Chuck/boulder composition as $94.
         0x97 => parts(&[
-            (0x1de, -12, 1),
-            (0x1df, 4, 1),
-            (0x1cf, -14, 1),
-            (0x1ce, 20, 0),
+            (0x1ee, -5, -9),
+            (0x1f6, -16, 4),
+            (0x1f7, 0, 1),
+            (0x1ec, -24, -8),
         ]),
         0x98 => parts(&[
             (0x1dc, -16, 1),
@@ -3019,12 +3021,13 @@ mod tests {
         assert_eq!(
             geometry(0x97, false),
             [
-                (0x1de, -12, 1),
-                (0x1df, 4, 1),
-                (0x1cf, -14, 1),
-                (0x1ce, 20, 0)
+                (0x1ee, -5, -9),
+                (0x1f6, -16, 4),
+                (0x1f7, 0, 1),
+                (0x1ec, -24, -8)
             ]
         );
+        assert_eq!(geometry(0x97, true), geometry(0x97, false));
     }
 
     #[test]
