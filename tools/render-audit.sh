@@ -14,6 +14,8 @@ usage() {
     echo "  LM_NATIVE_EDITOR_OVERLAYS: draw editor grid, markers, and labels (default: 1)" >&2
     echo "  LM_NATIVE_EDITOR_LAYER1: draw Layer 1 objects in editor captures (default: 1)" >&2
     echo "  LM_NATIVE_EDITOR_LAYER2: draw Layer 2/background in editor captures (default: 1)" >&2
+    echo "  LM_NATIVE_EDITOR_SPRITES: draw sprite previews in editor captures (default: 1)" >&2
+    echo "  LM_NATIVE_EDITOR_SPRITE_LIMIT: draw only the first N sprite previews (default: all)" >&2
     echo "  LM_NATIVE_EDITOR_OBJECT_LIMIT: draw only the first N Layer 1 objects (default: all)" >&2
     echo "  LM_NATIVE_EDITOR_CELL: editor tile size in logical pixels (default: 12)" >&2
     echo "  LM_NATIVE_ANIMATION_PHASE: freeze animated editor graphics at phase 0..7" >&2

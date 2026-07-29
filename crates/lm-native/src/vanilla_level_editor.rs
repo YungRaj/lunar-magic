@@ -2019,22 +2019,29 @@ impl VanillaLevelEditor {
                 ),
             )
         };
-        let hit_sprite = draw_sprite_placements(SpritePlacementDraw {
-            painter,
-            target: rect,
-            cell_size: cell,
-            texture: self.sprite_texture.as_ref(),
-            placements: sprite_placements,
-            cursor: response.interact_pointer_pos(),
-            selected: self.selected_sprite,
-            vertical,
-            level_mode,
-            animation_phase,
-            custom_sprites,
-            custom_map16,
-            external_textures: &self.external_sprite_textures,
-            editor_overlays,
-        });
+        let sprite_limit = visual_smoke_editor_sprite_limit()
+            .unwrap_or(sprite_placements.len())
+            .min(sprite_placements.len());
+        let hit_sprite = visual_smoke_editor_sprites()
+            .then(|| {
+                draw_sprite_placements(SpritePlacementDraw {
+                    painter,
+                    target: rect,
+                    cell_size: cell,
+                    texture: self.sprite_texture.as_ref(),
+                    placements: &sprite_placements[..sprite_limit],
+                    cursor: response.interact_pointer_pos(),
+                    selected: self.selected_sprite,
+                    vertical,
+                    level_mode,
+                    animation_phase,
+                    custom_sprites,
+                    custom_map16,
+                    external_textures: &self.external_sprite_textures,
+                    editor_overlays,
+                })
+            })
+            .flatten();
         if !self.layer3_between_background_and_foreground
             && let (Some(texture), Some(position), Some(camera)) = (
                 self.layer3_high_texture.as_ref(),
@@ -7228,6 +7235,18 @@ fn visual_smoke_editor_layer1() -> bool {
 }
 
 #[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_sprites() -> bool {
+    std::env::var("LM_NATIVE_EDITOR_SPRITES").map_or(true, |value| value != "0")
+}
+
+#[cfg(feature = "visual-smoke")]
+fn visual_smoke_editor_sprite_limit() -> Option<usize> {
+    std::env::var("LM_NATIVE_EDITOR_SPRITE_LIMIT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+}
+
+#[cfg(feature = "visual-smoke")]
 fn visual_smoke_editor_object_limit() -> Option<usize> {
     std::env::var("LM_NATIVE_EDITOR_OBJECT_LIMIT")
         .ok()
@@ -7242,6 +7261,16 @@ const fn visual_smoke_editor_object_limit() -> Option<usize> {
 #[cfg(not(feature = "visual-smoke"))]
 const fn visual_smoke_editor_layer1() -> bool {
     true
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_sprites() -> bool {
+    true
+}
+
+#[cfg(not(feature = "visual-smoke"))]
+const fn visual_smoke_editor_sprite_limit() -> Option<usize> {
+    None
 }
 
 #[cfg(not(feature = "visual-smoke"))]
@@ -8057,6 +8086,39 @@ mod tests {
         );
         assert!(editor.controller.is_some(), "{:?}", editor.error);
         assert!(editor.shared_vanilla_background);
+    }
+
+    #[test]
+    fn diagnostic_print_pristine_level_sprite_placements_when_requested() {
+        let Ok(level) = std::env::var("LM_DIAGNOSTIC_LEVEL_SPRITES") else {
+            return;
+        };
+        let level = u16::from_str_radix(level.trim_start_matches("0x"), 16).unwrap();
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(level)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        for placement in editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements()
+        {
+            eprintln!("{placement:?}");
+        }
     }
 
     #[test]

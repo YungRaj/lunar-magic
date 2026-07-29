@@ -1480,6 +1480,30 @@ mod tests {
         }
         let expected = std::fs::read(cache_path).unwrap();
         assert!(expected.len() >= tiles.len() * IndexedTile::PIXEL_COUNT);
+        if std::env::var_os("LM_TRACE_SPRITE_CACHE").is_some() {
+            let files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+                &project.rom,
+                usize::from(level.layer1.header.sprite_tileset()),
+            )
+            .unwrap();
+            let sprite_slots = load_layer1_sprite_graphics_slots(&project, files).unwrap();
+            let sprite_tiles = materialize_layer1_sprite_vram(&sprite_slots);
+            for cache_tile_offset in [0, 0x200, 0x400] {
+                let matching = sprite_tiles
+                    .iter()
+                    .enumerate()
+                    .filter(|(tile, actual)| {
+                        let start = (cache_tile_offset + tile) * IndexedTile::PIXEL_COUNT;
+                        actual.pixels().as_slice()
+                            == &expected[start..start + IndexedTile::PIXEL_COUNT]
+                    })
+                    .count();
+                eprintln!(
+                    "sprite graphics at cache tile ${cache_tile_offset:03X}: {matching} / {}",
+                    sprite_tiles.len()
+                );
+            }
+        }
         if expected.len() >= (0x900 + 0x2e8) * IndexedTile::PIXEL_COUNT {
             let gfx32 = project
                 .load_decompressed_graphics_file(

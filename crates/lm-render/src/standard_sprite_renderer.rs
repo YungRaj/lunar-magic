@@ -245,7 +245,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x37 => parts(&[(0x38, 0, 1)]),
         // Dispatch entry $38 points at $004C5260 and emits definition $38.
         0x38 => parts(&[(0x38, 0, 1)]),
-        0x39..=0x3b => render_square_handler(
+        // Dispatch $39 @ $004C5290 emits the same single Boo definition as $DE's
+        // repeated pattern, with Lunar Magic's ordinary one-pixel baseline offset.
+        0x39 => parts(&[(if mode.alternate_display { 0x115 } else { 0x48 }, 0, 1)]),
+        0x3a..=0x3b => render_square_handler(
             0x39 + u16::from(sprite_number - 0x39) * 2,
             mode.placement_first,
         ),
@@ -786,7 +789,22 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         )]),
         0xdc => parts(&[(if mode.alternate_display { 0x115 } else { 0x32 }, 0, 1)]),
         0xdd => parts(&[(if mode.alternate_display { 0x115 } else { 0x33 }, 0, 1)]),
-        0xde => render_handler_de(mode.placement_first),
+        // Dispatch $DE @ $004CA640 emits definition $48 at the placement and at
+        // four packed-cell neighbors. The signed offsets below are the materialized
+        // horizontal/vertical editor-grid coordinates. The old three-arm composite
+        // belongs to the distinct $E0 dispatch at $004CA790.
+        0xde => {
+            let definition = if mode.alternate_display { 0x115 } else { 0x48 };
+            let offsets = match mode.level_orientation {
+                StandardLevelOrientation::Horizontal => {
+                    [(0, 16), (-32, 16), (-16, -16), (32, 16), (16, -16)]
+                }
+                StandardLevelOrientation::Vertical => {
+                    [(16, 0), (16, -32), (-16, -16), (16, 32), (-16, 16)]
+                }
+            };
+            parts(&offsets.map(|(x, y)| (definition, x, y)))
+        }
         0xdf => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
         // Dispatch entry $E0 points at $004CA790. Its direction bit comes from the
         // dispatch identity ($E0 is even), not the placement byte; the two recovered
@@ -2265,17 +2283,8 @@ mod tests {
         assert_eq!(geometry(0x36, 0), [(0x1f, 0, 1)]);
         assert_eq!(geometry(0x37, 0), [(0x38, 0, 1)]);
         assert_eq!(geometry(0x38, 0), [(0x38, 0, 1)]);
-        assert_eq!(
-            geometry(0x39, 0),
-            [
-                (0x39, 0, 0),
-                (0x3a, 16, 0),
-                (0x49, 0, 16),
-                (0x4a, 16, 16),
-                (0x3f, 8, 9)
-            ]
-        );
-        assert_eq!(geometry(0x39, 1)[4], (0x4f, 8, 9));
+        assert_eq!(geometry(0x39, 0), [(0x48, 0, 1)]);
+        assert_eq!(geometry(0x39, 1), [(0x48, 0, 1)]);
         assert_eq!(geometry(0x3a, 0)[0], (0x3b, 0, 0));
         assert_eq!(geometry(0x3b, 0)[0], (0x3d, 0, 0));
         assert_eq!(geometry(0x3c, 0), [(0x54, 8, -15), (0x64, 0, 1)]);
@@ -3721,7 +3730,38 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(geometry(0xdf), [(0x1b8, 0, 0), (0x114, 0, 0)]);
-        assert_eq!(geometry(0xe0), geometry(0xde));
+        assert_eq!(
+            geometry(0xde),
+            [
+                (0x48, 0, 16),
+                (0x48, -32, 16),
+                (0x48, -16, -16),
+                (0x48, 32, 16),
+                (0x48, 16, -16)
+            ]
+        );
+        let vertical_de = render_lunar_magic_standard_sprite_with_mode(
+            0xde,
+            StandardSpritePreviewMode {
+                level_orientation: StandardLevelOrientation::Vertical,
+                ..StandardSpritePreviewMode::default()
+            },
+        )
+        .unwrap()
+        .into_iter()
+        .map(|part| (part.definition_index, part.x, part.y))
+        .collect::<Vec<_>>();
+        assert_eq!(
+            vertical_de,
+            [
+                (0x48, 16, 0),
+                (0x48, 16, -32),
+                (0x48, -16, -16),
+                (0x48, 16, 32),
+                (0x48, -16, 16)
+            ]
+        );
+        assert_eq!(geometry(0xe0).len(), 18);
         assert_eq!(geometry(0xe1), [(0x1b8, 0, 0), (0x114, 0, 0)]);
         assert_eq!(geometry(0xe2), [(0x14c, 0, 0), (0x114, 0, 0)]);
         assert_eq!(
@@ -3913,10 +3953,10 @@ mod tests {
     }
 
     #[test]
-    fn handler_de_preserves_both_directional_three_arm_composites() {
+    fn handler_e0_preserves_its_three_arm_composite() {
         let geometry = |first| {
             render_lunar_magic_standard_sprite_with_mode(
-                0xde,
+                0xe0,
                 StandardSpritePreviewMode {
                     placement_first: first,
                     ..StandardSpritePreviewMode::default()
@@ -3951,12 +3991,9 @@ mod tests {
                 (0xee, -20, -30)
             ]
         );
-        let right = geometry(1);
-        assert_eq!(right.len(), 18);
-        assert_eq!(right[0], (0xeb, 2, 16));
-        assert_eq!(right[6], (0xeb, -15, -6));
-        assert_eq!(right[12], (0xeb, 12, -10));
-        assert_eq!(right[17], (0xee, 52, -30));
+        // $E0's direction comes from its even dispatch identity, not the packed
+        // placement byte.
+        assert_eq!(geometry(1), left);
     }
 
     #[test]
