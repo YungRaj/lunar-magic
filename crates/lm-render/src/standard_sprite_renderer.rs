@@ -155,6 +155,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         | 0x4b..=0x50
         | 0x6d..=0x72
         | 0x84
+        | 0x86
         | 0x8e
         | 0x9b
         | 0x9c
@@ -205,7 +206,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x1b => parts(&[(0x24, 0, 1)]),
         0x1c => parts(&[(0x25, 0, 1)]),
         0x1d => parts(&[(0x17, 0, 1)]),
-        0x1e => render_handler_1e(mode.placement_first),
+        // Dispatch $1E @ $004C45B0 branches on the low bit of its packed
+        // placement coordinate, not the first encoded sprite-record byte.
+        0x1e => render_handler_1e(mode.placement_major),
         0x1f => parts(&[(0x18, 0, -15), (0x28, 0, 1)]),
         0x20 => parts(&[(0x03, 4, 0), (0x04, -4, 8), (0x05, 12, 8)]),
         0x21 => parts(&[(0x1a, 0, 1)]),
@@ -371,7 +374,11 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0x68 => render_handler_68(mode),
         0x69 => parts(&[(0x27, 3, 0), (0x9c, 7, 4)]),
         0x6a => parts(&[(0xb7, 0, 1), (0xb7, 16, 1), (0xb7, 24, 1)]),
-        0x6b | 0x6c => parts(&[(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]),
+        // Dispatch $6B @ $004C6FC0 advances one packed cell before its second
+        // call, then offsets the third tile eight pixels farther right.
+        0x6b => parts(&[(0xb7, 0, 1), (0xb7, 16, 1), (0xb7, 24, 1)]),
+        // Dispatch $6C @ $004C7030 is the left-extending counterpart.
+        0x6c => parts(&[(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]),
         // The installed dispatch targets from $6D through $73 are consecutive,
         // but the previous table was shifted backward by one slot.
         0x6d => parts(&[(0x80b8, 0, 0)]),
@@ -393,21 +400,22 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x42, 0, 1),
             (0xe8 + u16::from(mode.placement_major & 1) * 0x10, 8, 1),
         ]),
-        0x74 => parts(&[(0x104, 0, 0)]),
-        0x75 => parts(&[(0x105, 0, 0)]),
-        0x76 => parts(&[(0x106, 0, 0)]),
-        0x77 => parts(&[(0x100, 0, 0)]),
-        0x78 => parts(&[(0xc8, 0, 1)]),
-        0x79 => parts(&[(0xd8, 4, 4)]),
-        0x7a => parts(&[(0xca, 0, 0), (0xc9, -16, 0)]),
-        0x7b => parts(&[(0xcc, 0, 1), (0xcd, 16, 1), (0xce, 0, 17), (0xcf, 16, 17)]),
-        0x7c => parts(&[(0xba, 4, -1)]),
-        0x7d => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0xcb, -5, -1)]),
-        0x7e => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0x103, -5, -1)]),
-        // Native handlers $7F and $80 are byte-distinct dispatch entries with the
-        // same recovered one-tile preview.
-        0x7f | 0x80 => parts(&[(0x0b, 0, 1)]),
-        0x81 => render_flagged_variant_handler(mode.placement_first, false),
+        // Dispatches $74–$78 @ $004C73A0–$004C7420 are five consecutive
+        // single-definition handlers. $81 aliases the first one.
+        0x74 => parts(&[(0x101, 0, 0)]),
+        0x75 => parts(&[(0x104, 0, 0)]),
+        0x76 => parts(&[(0x105, 0, 0)]),
+        0x77 => parts(&[(0x106, 0, 0)]),
+        0x78 => parts(&[(0x100, 0, 0)]),
+        0x79 => parts(&[(0xc8, 0, 1)]),
+        0x7a => parts(&[(0xd8, 4, 4)]),
+        0x7b => parts(&[(0xca, 0, 0), (0xc9, -16, 0)]),
+        0x7c => parts(&[(0xcc, 0, 1), (0xcd, 16, 1), (0xce, 0, 17), (0xcf, 16, 17)]),
+        0x7d => parts(&[(0xba, 4, -1)]),
+        0x7e => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0xcb, -5, -1)]),
+        0x7f => parts(&[(0x06, -8, -9), (0x07, 16, -9), (0x103, -5, -1)]),
+        0x80 => parts(&[(0x0b, 0, 1)]),
+        0x81 => parts(&[(0x101, 0, 0)]),
         0x82 => render_flagged_variant_handler(mode.placement_first, true),
         0x83 => render_handler_83(mode.placement_first),
         0x84 => parts(&[
@@ -418,7 +426,16 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0xdb, 32, 0),
             (0xd9, 0, 1),
         ]),
-        // The native $87/$88 entries reuse the complete $85/$86 geometry.
+        // Dispatch $86 @ $004C7A00 draws Wiggler as a six-part composite.
+        0x86 => parts(&[
+            (0xdd, 0, -15),
+            (0xdc, 24, -1),
+            (0xdb, 16, 0),
+            (0xda, 8, 1),
+            (0xdb, 32, 0),
+            (0xd9, 0, 1),
+        ]),
+        // The native $87 entry reuses the complete $85 geometry.
         0x85 | 0x87 => parts(&[
             (0x27, -5, 0),
             (0x27, 5, 1),
@@ -426,7 +443,7 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x27, 3, 4),
             (0x9c, 4, 8),
         ]),
-        0x86 | 0x88 => parts(&[(0x06, 0, 1)]),
+        0x88 => parts(&[(0x06, 0, 1)]),
         // Handler $8B is the native two-tile DE/DF renderer.  $89 has an
         // independently installed handler but reaches the same tile geometry.
         0x89 | 0x8b => parts(&[(0xde, 0, 0), (0xdf, 16, 0)]),
@@ -728,17 +745,20 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         ]),
         0xd9 => render_text_lines(&[(" Turn Off ", 0), ("Generators", 8)]),
         0xda => parts(&[(if mode.alternate_display { 0x115 } else { 0x32 }, 0, 1)]),
-        0xdb => parts(&[(if mode.alternate_display { 0x115 } else { 0x33 }, 0, 1)]),
-        0xdc => {
-            let definition = if mode.alternate_display { 0x115 } else { 0x48 };
-            parts(&[
-                (definition, 0, 16),
-                (definition, -16, -16),
-                (definition, -32, 0),
-                (definition, 16, -16),
-                (definition, 32, 0),
-            ])
-        }
+        // Dispatch $DB @ $004CA590 selects the normal or alternate-graphics
+        // shell definition; $DC @ $004CA5E0 always uses the latter.
+        0xdb => parts(&[(
+            if mode.alternate_display {
+                0x115
+            } else if mode.alternate_graphics {
+                0x32
+            } else {
+                0x31
+            },
+            0,
+            1,
+        )]),
+        0xdc => parts(&[(if mode.alternate_display { 0x115 } else { 0x32 }, 0, 1)]),
         0xdd => parts(&[(if mode.alternate_display { 0x115 } else { 0x33 }, 0, 1)]),
         0xde => render_handler_de(mode.placement_first),
         0xdf => parts(&[(0x1b8, 0, 0), (0x114, 0, 0)]),
@@ -888,9 +908,9 @@ fn render_handler_68(mode: StandardSpritePreviewMode) -> Option<Vec<StandardSpri
     )])
 }
 
-fn render_handler_1e(placement_first: u8) -> Option<Vec<StandardSpritePreviewTile>> {
+fn render_handler_1e(placement_major: u16) -> Option<Vec<StandardSpritePreviewTile>> {
     let mut values = vec![(0x27, -5, 0), (0x27, 5, 1)];
-    if placement_first & 1 != 0 {
+    if placement_major & 1 != 0 {
         values.push((0xfd, -12, -14));
     }
     values.extend([
@@ -900,7 +920,7 @@ fn render_handler_1e(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         (0x27, 3, 4),
         (0x9c, 4, 8),
     ]);
-    if placement_first & 1 != 0 {
+    if placement_major & 1 != 0 {
         values.extend([
             (0xfe, -28, -14),
             (0xfe, -28, 2),
@@ -2027,7 +2047,7 @@ mod tests {
         let extended = render_lunar_magic_standard_sprite_with_mode(
             0x1e,
             StandardSpritePreviewMode {
-                placement_first: 1,
+                placement_major: 1,
                 ..StandardSpritePreviewMode::default()
             },
         )
@@ -2565,6 +2585,10 @@ mod tests {
         );
         assert_eq!(
             geometry(0x6b, 0),
+            [(0xb7, 0, 1), (0xb7, 16, 1), (0xb7, 24, 1)]
+        );
+        assert_eq!(
+            geometry(0x6c, 0),
             [(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]
         );
         assert_eq!(geometry(0x6d, 0), [(0x80b8, 0, 0)]);
@@ -2614,8 +2638,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(0x115, 0, 1)]
         );
-        assert_eq!(geometry(0x74, 0), [(0x104, 0, 0)]);
-        assert_eq!(geometry(0x75, 0), [(0x105, 0, 0)]);
+        assert_eq!(geometry(0x74, 0), [(0x101, 0, 0)]);
+        assert_eq!(geometry(0x75, 0), [(0x104, 0, 0)]);
         for sprite in 0x6d..=0x72 {
             assert_eq!(
                 render_lunar_magic_standard_sprite(sprite, true)
@@ -2637,25 +2661,26 @@ mod tests {
                 .map(|part| (part.definition_index, part.x, part.y))
                 .collect::<Vec<_>>()
         };
-        assert_eq!(geometry(0x76), [(0x106, 0, 0)]);
-        assert_eq!(geometry(0x77), [(0x100, 0, 0)]);
-        assert_eq!(geometry(0x78), [(0xc8, 0, 1)]);
-        assert_eq!(geometry(0x79), [(0xd8, 4, 4)]);
-        assert_eq!(geometry(0x7a), [(0xca, 0, 0), (0xc9, -16, 0)]);
+        assert_eq!(geometry(0x76), [(0x105, 0, 0)]);
+        assert_eq!(geometry(0x77), [(0x106, 0, 0)]);
+        assert_eq!(geometry(0x78), [(0x100, 0, 0)]);
+        assert_eq!(geometry(0x79), [(0xc8, 0, 1)]);
+        assert_eq!(geometry(0x7a), [(0xd8, 4, 4)]);
+        assert_eq!(geometry(0x7b), [(0xca, 0, 0), (0xc9, -16, 0)]);
         assert_eq!(
-            geometry(0x7b),
+            geometry(0x7c),
             [(0xcc, 0, 1), (0xcd, 16, 1), (0xce, 0, 17), (0xcf, 16, 17)]
         );
-        assert_eq!(geometry(0x7c), [(0xba, 4, -1)]);
+        assert_eq!(geometry(0x7d), [(0xba, 4, -1)]);
         assert_eq!(
-            geometry(0x7d),
+            geometry(0x7e),
             [(0x06, -8, -9), (0x07, 16, -9), (0xcb, -5, -1)]
         );
         assert_eq!(
-            geometry(0x7e),
+            geometry(0x7f),
             [(0x06, -8, -9), (0x07, 16, -9), (0x103, -5, -1)]
         );
-        assert_eq!(geometry(0x7f), [(0x0b, 0, 1)]);
+        assert_eq!(geometry(0x80), [(0x0b, 0, 1)]);
     }
 
     #[test]
@@ -2673,18 +2698,9 @@ mod tests {
             .map(|part| (part.definition_index, part.x, part.y))
             .collect::<Vec<_>>()
         };
-        assert_eq!(
-            geometry(0x81, 0),
-            [
-                (0x06, -12, -9),
-                (0x07, 8, -9),
-                (0x801a, -1, -9),
-                (0x108, -3, -1)
-            ]
-        );
-        assert_eq!(geometry(0x81, 1)[2].0, 0x8104);
-        assert_eq!(geometry(0x81, 2)[2].0, 0x8106);
-        assert_eq!(geometry(0x81, 3)[2].0, 0x8100);
+        for first in 0..=3 {
+            assert_eq!(geometry(0x81, first), [(0x101, 0, 0)]);
+        }
         assert_eq!(
             geometry(0x82, 0),
             [
@@ -2695,7 +2711,7 @@ mod tests {
             ]
         );
         let flagged = render_lunar_magic_standard_sprite_with_mode(
-            0x81,
+            0x82,
             StandardSpritePreviewMode::default(),
         )
         .unwrap();
@@ -2738,7 +2754,7 @@ mod tests {
                 (0x9c, 4, 8)
             ]
         );
-        assert_eq!(geometry(0x86, 0), [(0x06, 0, 1)]);
+        assert_eq!(geometry(0x86, 0), geometry(0x84, 0));
         assert_eq!(geometry(0x89, 0), [(0xde, 0, 0), (0xdf, 16, 0)]);
         assert_eq!(
             geometry(0x8c, 0),
@@ -3664,26 +3680,23 @@ mod tests {
         assert_eq!(geometry(0xd7, false), [(0x11d, 0, 0), (0x114, 0, -8)]);
         assert_eq!(geometry(0xd8, false), [(0x14d, 0, 1), (0x114, 0, -8)]);
         assert_eq!(geometry(0xd8, true), [(0x115, 0, 1), (0x114, 0, -8)]);
-        assert_eq!(
-            geometry(0xdc, false),
-            [
-                (0x48, 0, 16),
-                (0x48, -16, -16),
-                (0x48, -32, 0),
-                (0x48, 16, -16),
-                (0x48, 32, 0)
-            ]
-        );
-        assert_eq!(
-            geometry(0xdc, true),
-            [
-                (0x115, 0, 16),
-                (0x115, -16, -16),
-                (0x115, -32, 0),
-                (0x115, 16, -16),
-                (0x115, 32, 0)
-            ]
-        );
+        assert_eq!(geometry(0xdc, false), [(0x32, 0, 1)]);
+        assert_eq!(geometry(0xdc, true), [(0x115, 0, 1)]);
+        let db_geometry = |alternate_graphics| {
+            render_lunar_magic_standard_sprite_with_mode(
+                0xdb,
+                StandardSpritePreviewMode {
+                    alternate_graphics,
+                    ..StandardSpritePreviewMode::default()
+                },
+            )
+            .unwrap()
+            .iter()
+            .map(|part| (part.definition_index, part.x, part.y))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(db_geometry(false), [(0x31, 0, 1)]);
+        assert_eq!(db_geometry(true), [(0x32, 0, 1)]);
         assert_eq!(geometry(0xdd, false), [(0x33, 0, 1)]);
         assert_eq!(geometry(0xdd, true), [(0x115, 0, 1)]);
     }
@@ -3966,7 +3979,7 @@ mod tests {
         assert_eq!(geometry(0x83, 2)[2], (0x8106, -1, -9));
         assert_eq!(geometry(0x83, 3)[2], (0x8100, -1, -9));
         assert_eq!(geometry(0x87, 0), geometry(0x85, 0));
-        assert_eq!(geometry(0x88, 0), geometry(0x86, 0));
+        assert_eq!(geometry(0x88, 0), [(0x06, 0, 1)]);
         assert_eq!(geometry(0x8b, 0), geometry(0x89, 0));
     }
 
@@ -4101,7 +4114,7 @@ mod tests {
 
         assert_eq!(
             geometry(0x6c, StandardSpritePreviewMode::default()),
-            geometry(0x6b, StandardSpritePreviewMode::default())
+            [(0xb7, -16, 1), (0xb7, -32, 1), (0xb7, -40, 1)]
         );
         for (sequence_index, definition) in [(0, 0x110), (1, 0x111), (2, 0x112), (3, 0x113)] {
             assert_eq!(
