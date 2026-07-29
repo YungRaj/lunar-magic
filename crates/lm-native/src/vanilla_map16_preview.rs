@@ -25,6 +25,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) layer3_high_image: Option<egui::ColorImage>,
     pub(crate) layer3_position: Option<(i16, i16)>,
     pub(crate) layer3_editor_row_offset: Option<i16>,
+    pub(crate) layer3_between_background_and_foreground: bool,
     pub(crate) sprite_graphics_files: [usize; 4],
     pub(crate) common_tiles: usize,
     pub(crate) tileset_tiles: usize,
@@ -209,6 +210,11 @@ pub(crate) fn render(
     let layer3_editor_row_offset = layer3.as_ref().and_then(|layer3| {
         vanilla_layer3_editor_row_offset(layer3.behavior, header.object_tileset())
     });
+    // The live source-order array for Layer 3 smash levels is background (0), Layer 3 (2),
+    // foreground (1). Both Layer 3 priority classes are composited before foreground.
+    let layer3_between_background_and_foreground = layer3
+        .as_ref()
+        .is_some_and(|layer3| vanilla_layer3_between_background_and_foreground(layer3.behavior));
     let (layer3_low_image, layer3_high_image) = layer3.as_ref().map_or((None, None), |layer3| {
         let additive = vanilla_layer3_additive(
             header.level_mode(),
@@ -232,6 +238,7 @@ pub(crate) fn render(
         layer3_high_image,
         layer3_position,
         layer3_editor_row_offset,
+        layer3_between_background_and_foreground,
         graphics_files,
         background_graphics_files,
         sprite_image,
@@ -289,6 +296,15 @@ const fn vanilla_layer3_editor_row_offset(
         }
         lm_profile::SmwUsV1Layer3Behavior::Static { .. } => None,
     }
+}
+
+const fn vanilla_layer3_between_background_and_foreground(
+    behavior: lm_profile::SmwUsV1Layer3Behavior,
+) -> bool {
+    matches!(
+        behavior,
+        lm_profile::SmwUsV1Layer3Behavior::Static { code: 0x80 }
+    )
 }
 
 const fn vanilla_layer3_additive(
@@ -1201,6 +1217,12 @@ mod tests {
             vanilla_layer3_editor_row_offset(Static { code: 0x82 }, 1),
             None
         );
+        assert!(vanilla_layer3_between_background_and_foreground(Static {
+            code: 0x80
+        }));
+        assert!(!vanilla_layer3_between_background_and_foreground(Static {
+            code: 0x81
+        }));
         assert!(vanilla_layer3_additive(0, Static { code: 0x81 }, 9));
         assert!(vanilla_layer3_additive(0x0e, Static { code: 0x82 }, 1));
         assert!(!vanilla_layer3_additive(0, Static { code: 0x81 }, 3));

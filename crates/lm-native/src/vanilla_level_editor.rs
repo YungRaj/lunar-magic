@@ -287,6 +287,7 @@ pub(crate) struct VanillaLevelEditor {
     layer3_high_texture: Option<egui::TextureHandle>,
     layer3_position: Option<(i16, i16)>,
     layer3_editor_row_offset: Option<i16>,
+    layer3_between_background_and_foreground: bool,
     sprite_palette: Option<lm_graphics::Palette>,
     canvas_backdrop: Option<lm_graphics::Bgr555>,
     foreground_texture: Option<egui::TextureHandle>,
@@ -1172,6 +1173,7 @@ impl VanillaLevelEditor {
         self.layer3_high_texture = None;
         self.layer3_position = None;
         self.layer3_editor_row_offset = None;
+        self.layer3_between_background_and_foreground = false;
         self.sprite_palette = None;
         self.canvas_backdrop = None;
         self.foreground_texture = None;
@@ -1279,6 +1281,7 @@ impl VanillaLevelEditor {
         self.layer3_high_texture = None;
         self.layer3_position = None;
         self.layer3_editor_row_offset = None;
+        self.layer3_between_background_and_foreground = false;
         self.sprite_palette = None;
         self.canvas_backdrop = None;
         self.external_sprite_textures.clear();
@@ -1422,6 +1425,8 @@ impl VanillaLevelEditor {
                 });
                 self.layer3_position = preview.layer3_position;
                 self.layer3_editor_row_offset = preview.layer3_editor_row_offset;
+                self.layer3_between_background_and_foreground =
+                    preview.layer3_between_background_and_foreground;
                 self.canvas_backdrop = Some(preview.backdrop);
                 self.sprite_palette = Some(preview.palette);
             }
@@ -1868,11 +1873,13 @@ impl VanillaLevelEditor {
                 screen_pixels_f32(layer1_y - layer2_y) * cell / 16.0,
             ))
         });
-        if let (Some(texture), Some(position), Some(camera)) = (
-            self.layer3_low_texture.as_ref(),
-            layer3_position,
-            layer3_camera,
-        ) {
+        if !self.layer3_between_background_and_foreground
+            && let (Some(texture), Some(position), Some(camera)) = (
+                self.layer3_low_texture.as_ref(),
+                layer3_position,
+                layer3_camera,
+            )
+        {
             // Low-priority BG3 pixels sit behind BG2 in SMW's level compositor.
             draw_layer3_editor_or_viewport(
                 painter,
@@ -1912,6 +1919,30 @@ impl VanillaLevelEditor {
                 vertical,
                 game_camera,
             );
+        }
+        if self.layer3_between_background_and_foreground
+            && let (Some(position), Some(camera)) = (layer3_position, layer3_camera)
+        {
+            for texture in [
+                self.layer3_low_texture.as_ref(),
+                self.layer3_high_texture.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                draw_layer3_editor_or_viewport(
+                    painter,
+                    rect,
+                    cell,
+                    texture,
+                    position,
+                    camera,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                    game_camera.is_some(),
+                );
+            }
         }
         // The object cache uses SMW's 0x1B0-byte 16×27 screen pages. The 32×32 Layer 2 plane may
         // enlarge the visible canvas, but its final five rows are not object-cache coordinates.
@@ -2000,11 +2031,13 @@ impl VanillaLevelEditor {
             external_textures: &self.external_sprite_textures,
             editor_overlays,
         });
-        if let (Some(texture), Some(position), Some(camera)) = (
-            self.layer3_high_texture.as_ref(),
-            layer3_position,
-            layer3_camera,
-        ) {
+        if !self.layer3_between_background_and_foreground
+            && let (Some(texture), Some(position), Some(camera)) = (
+                self.layer3_high_texture.as_ref(),
+                layer3_position,
+                layer3_camera,
+            )
+        {
             draw_layer3_editor_or_viewport(
                 painter,
                 rect,
