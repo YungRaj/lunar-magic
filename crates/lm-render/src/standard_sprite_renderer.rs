@@ -796,7 +796,10 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         0xc2 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0xc2 => parts(&[(0x166, 0, 0)]),
         0xc3 => parts(&[(0x179, 0, 0)]),
-        0xc4 => parts(&[(0x8101, 0, 0)]),
+        // Dispatch $C4 @ $004C9CC0 emits the four-cell $EC/$ED/$ED/$EE
+        // platform. Treating it as external-definition sentinel $8101 made
+        // every platform in level $136 appear as a mushroom.
+        0xc4 => parts(&[(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]),
         0xc5 => parts(&[(0x167, 0, 1)]),
         // Dispatch $C6 @ $004C9E70 emits only definition $179.
         0xc6 => parts(&[(0x179, 0, 0)]),
@@ -3775,7 +3778,10 @@ mod tests {
         );
         assert_eq!(geometry(0xc2, 0, false), [(0x166, 0, 0)]);
         assert_eq!(geometry(0xc3, 0, false), [(0x179, 0, 0)]);
-        assert_eq!(geometry(0xc4, 0, false), [(0x8101, 0, 0)]);
+        assert_eq!(
+            geometry(0xc4, 0, false),
+            [(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]
+        );
         for sprite in [0xbc, 0xbf, 0xc0] {
             assert_eq!(geometry(sprite, 0, true), [(0x115, 0, 1)]);
         }
