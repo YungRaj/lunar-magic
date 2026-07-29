@@ -327,23 +327,25 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x5c, 0, -15),
             (0x5c, 0, -31),
         ]),
-        0x5a => parts(&[(0x142, 0, 0), (0x143, 16, 0), (0x144, 32, 0)]),
-        0x5b => parts(&[
+        // Dispatch $5A @ $004C6230 is the horizontal five-cell $5C/$6C cross.
+        0x5a => parts(&[
+            (0x5c, 0, 1),
+            (0x5c, 16, 1),
+            (0x6c, 32, 1),
+            (0x5c, -16, 1),
+            (0x5c, -32, 1),
+        ]),
+        // Dispatch $5B @ $004C6300 emits the adjacent $142-$144 trio.
+        0x5b => parts(&[(0x142, 0, 0), (0x143, 16, 0), (0x144, 32, 0)]),
+        // Dispatch $5C @ $004C6380 is the five-cell floating platform.
+        0x5c => parts(&[
             (0x7b, 0, 1),
             (0x6b, 16, 1),
             (0x6b, 32, 1),
             (0x6b, 48, 1),
             (0x7a, 64, 1),
         ]),
-        0x5c => parts(&[
-            (0x8a, 0, 0),
-            (0x8b, 16, 0),
-            (0xff, 32, 0),
-            (0x9a, 8, 16),
-            (0x13b, 24, 16),
-        ]),
-        // Dispatch $5D @ $004C6450 emits the same five-definition short
-        // floating platform as $5C. It is not the neighboring wide platform.
+        // Dispatch $5D @ $004C6450 emits the short two-row platform.
         0x5d => parts(&[
             (0x8a, 0, 0),
             (0x8b, 16, 0),
@@ -351,17 +353,21 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             (0x9a, 8, 16),
             (0x13b, 24, 16),
         ]),
-        0x5e => {
-            let mut values = Vec::with_capacity(9);
-            for row in 1_i16..=5 {
-                values.push((0x6d, 32, row * 16));
-            }
-            values.extend([(0x7c, 8, 9), (0x7d, 24, 9), (0x7d, 40, 9), (0x7e, 56, 9)]);
-            parts(&values)
-        }
+        // Dispatch $5E @ $004C64C0 widens that platform to five upper and
+        // four lower definitions.
+        0x5e => parts(&[
+            (0x8a, 0, 1),
+            (0x8b, 16, 1),
+            (0x8b, 32, 1),
+            (0x8b, 48, 1),
+            (0xff, 64, 1),
+            (0x9a, 8, 17),
+            (0x9b, 24, 17),
+            (0x9b, 40, 17),
+            (0x13b, 56, 17),
+        ]),
         // Dispatch $5F @ $004C6600 advances through Lunar Magic's packed
-        // coordinates to emit five vertical chain links and a four-part
-        // platform. This is the same geometry used by $5E.
+        // coordinates to emit five vertical chain links and a four-part platform.
         0x5f => {
             let mut values = Vec::with_capacity(9);
             for row in 1_i16..=5 {
@@ -370,7 +376,8 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
             values.extend([(0x7c, 8, 9), (0x7d, 24, 9), (0x7d, 40, 9), (0x7e, 56, 9)]);
             parts(&values)
         }
-        0x60 => parts(&[(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]),
+        // Dispatch $60 @ $004C6720 is the adjacent $8C/$8D pair.
+        0x60 => parts(&[(0x8c, 0, 1), (0x8d, 16, 1)]),
         // Dispatch $61 @ $004C6780 advances one packed cell after each call
         // and emits four adjacent skull-raft definitions at y+4.
         0x61 => parts(&[(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]),
@@ -901,9 +908,9 @@ fn render_handler_83(placement_first: u8) -> Option<Vec<StandardSpritePreviewTil
         _ => unreachable!(),
     };
     parts(&[
-        (0x06, -12, -9),
-        (0x07, -6, -9),
-        (center, -1, -9),
+        (0x06, -14, -9),
+        (0x07, -8, -9),
+        (center, -3, -9),
         (0x108, -3, -1),
     ])
 }
@@ -2522,26 +2529,26 @@ mod tests {
         );
         assert_eq!(
             geometry(0x5a),
-            [(0x142, 0, 0), (0x143, 16, 0), (0x144, 32, 0)]
+            [
+                (0x5c, 0, 1),
+                (0x5c, 16, 1),
+                (0x6c, 32, 1),
+                (0x5c, -16, 1),
+                (0x5c, -32, 1)
+            ]
         );
         assert_eq!(
             geometry(0x5b),
+            [(0x142, 0, 0), (0x143, 16, 0), (0x144, 32, 0)]
+        );
+        assert_eq!(
+            geometry(0x5c),
             [
                 (0x7b, 0, 1),
                 (0x6b, 16, 1),
                 (0x6b, 32, 1),
                 (0x6b, 48, 1),
                 (0x7a, 64, 1)
-            ]
-        );
-        assert_eq!(
-            geometry(0x5c),
-            [
-                (0x8a, 0, 0),
-                (0x8b, 16, 0),
-                (0xff, 32, 0),
-                (0x9a, 8, 16),
-                (0x13b, 24, 16)
             ]
         );
     }
@@ -2568,6 +2575,20 @@ mod tests {
         assert_eq!(
             geometry(0x5e),
             [
+                (0x8a, 0, 1),
+                (0x8b, 16, 1),
+                (0x8b, 32, 1),
+                (0x8b, 48, 1),
+                (0xff, 64, 1),
+                (0x9a, 8, 17),
+                (0x9b, 24, 17),
+                (0x9b, 40, 17),
+                (0x13b, 56, 17)
+            ]
+        );
+        assert_eq!(
+            geometry(0x5f),
+            [
                 (0x6d, 32, 16),
                 (0x6d, 32, 32),
                 (0x6d, 32, 48),
@@ -2579,11 +2600,7 @@ mod tests {
                 (0x7e, 56, 9)
             ]
         );
-        assert_eq!(geometry(0x5f), geometry(0x5e));
-        assert_eq!(
-            geometry(0x60),
-            [(0x7f, 0, 4), (0x7f, 16, 4), (0x7f, 32, 4), (0x7f, 48, 4)]
-        );
+        assert_eq!(geometry(0x60), [(0x8c, 0, 1), (0x8d, 16, 1)]);
     }
 
     #[test]
@@ -4094,15 +4111,15 @@ mod tests {
         assert_eq!(
             geometry(0x83, 0),
             [
-                (0x06, -12, -9),
-                (0x07, -6, -9),
-                (0x801a, -1, -9),
+                (0x06, -14, -9),
+                (0x07, -8, -9),
+                (0x801a, -3, -9),
                 (0x108, -3, -1)
             ]
         );
-        assert_eq!(geometry(0x83, 1)[2], (0x8104, -1, -9));
-        assert_eq!(geometry(0x83, 2)[2], (0x8106, -1, -9));
-        assert_eq!(geometry(0x83, 3)[2], (0x8100, -1, -9));
+        assert_eq!(geometry(0x83, 1)[2], (0x8104, -3, -9));
+        assert_eq!(geometry(0x83, 2)[2], (0x8106, -3, -9));
+        assert_eq!(geometry(0x83, 3)[2], (0x8100, -3, -9));
         assert_eq!(geometry(0x87, 0), geometry(0x85, 0));
         assert_eq!(geometry(0x88, 0), [(0x06, 0, 1)]);
         assert_eq!(geometry(0x8b, 0), geometry(0x89, 0));
