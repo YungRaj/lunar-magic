@@ -804,7 +804,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         // definition $166; the former 20-part composite belongs to another native entry.
         0xc2 if mode.alternate_display => parts(&[(0x115, 0, 1)]),
         0xc2 => parts(&[(0x166, 0, 0)]),
-        0xc3 => parts(&[(0x179, 0, 0)]),
+        // RenderSpriteC3 @ $004C9C20 builds the 32×32 Porcu-Puffer from four
+        // adjacent definitions centered on its serialized placement.
+        0xc3 => render_handler_c3(mode.special_display_mode),
         // Dispatch $C4 @ $004C9CC0 emits the four-cell $EC/$ED/$ED/$EE
         // platform. Treating it as external-definition sentinel $8101 made
         // every platform in level $136 appear as a mushroom.
@@ -834,10 +836,9 @@ pub fn render_lunar_magic_standard_sprite_with_mode(
         ]),
         0xcd => parts(&[(0x154, 0, 0), (0x114, 0, -8), (0x155, 8, 0), (0x156, 24, 0)]),
         0xce => parts(&[(0x84, 0, 0), (0x114, 0, -8), (0x85, 16, 0), (0x86, 24, 0)]),
-        0xcf => parts(&[
-            (if mode.alternate_display { 0x115 } else { 0x14 }, 0, 1),
-            (0x114, 0, -8),
-        ]),
+        // RenderSpriteCF @ $004CA150 uses the same four-part winged preview
+        // geometry as $CD. It has no alternate-display substitution.
+        0xcf => parts(&[(0x154, 0, 0), (0x114, 0, -8), (0x155, 8, 0), (0x156, 24, 0)]),
         0xd0 => render_text_lines(&[(" Turn Off ", 0), ("Generator2", 8)]),
         0xd1 if mode.alternate_display => parts(&[(0x115, 0, 1), (0x114, 0, 0)]),
         0xd1 => parts(&[(0xe5, -3, 8), (0xe6, 13, 8), (0xe7, 5, 11), (0x114, 0, 0)]),
@@ -957,6 +958,19 @@ fn render_handler_30(special_display_mode: bool) -> Option<Vec<StandardSpritePre
         parts(&[(0x115, 0, 1)])
     } else {
         parts(&[(0x206, 0, -11), (0x036, 8, -15), (0x207, 0, 1)])
+    }
+}
+
+fn render_handler_c3(special_display_mode: bool) -> Option<Vec<StandardSpritePreviewTile>> {
+    if special_display_mode {
+        parts(&[(0x115, 0, 1)])
+    } else {
+        parts(&[
+            (0x16b, -8, 8),
+            (0x16c, 8, 8),
+            (0x15b, -8, -8),
+            (0x15c, 8, -8),
+        ])
     }
 }
 
@@ -3911,7 +3925,27 @@ mod tests {
             ]
         );
         assert_eq!(geometry(0xc2, 0, false), [(0x166, 0, 0)]);
-        assert_eq!(geometry(0xc3, 0, false), [(0x179, 0, 0)]);
+        assert_eq!(
+            geometry(0xc3, 0, false),
+            [
+                (0x16b, -8, 8),
+                (0x16c, 8, 8),
+                (0x15b, -8, -8),
+                (0x15c, 8, -8)
+            ]
+        );
+        let c3_special = render_lunar_magic_standard_sprite_with_mode(
+            0xc3,
+            StandardSpritePreviewMode {
+                special_display_mode: true,
+                ..StandardSpritePreviewMode::default()
+            },
+        )
+        .unwrap()
+        .iter()
+        .map(|part| (part.definition_index, part.x, part.y))
+        .collect::<Vec<_>>();
+        assert_eq!(c3_special, [(0x115, 0, 1)]);
         assert_eq!(
             geometry(0xc4, 0, false),
             [(0xec, 0, 1), (0xed, 16, 1), (0xed, 32, 1), (0xee, 48, 1)]
@@ -3977,8 +4011,11 @@ mod tests {
             geometry(0xce, false),
             [(0x84, 0, 0), (0x114, 0, -8), (0x85, 16, 0), (0x86, 24, 0)]
         );
-        assert_eq!(geometry(0xcf, false), [(0x14, 0, 1), (0x114, 0, -8)]);
-        assert_eq!(geometry(0xcf, true), [(0x115, 0, 1), (0x114, 0, -8)]);
+        assert_eq!(
+            geometry(0xcf, false),
+            [(0x154, 0, 0), (0x114, 0, -8), (0x155, 8, 0), (0x156, 24, 0)]
+        );
+        assert_eq!(geometry(0xcf, true), geometry(0xcf, false));
     }
 
     #[test]
