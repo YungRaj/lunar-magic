@@ -60,7 +60,7 @@ interactive level import workflow, and a CLI transaction does not prove its nati
 | Level | Insert multiple levels from a directory | P | P | P | P | ~ | Partial | Shell and native progress dialog auto-target visible MWLs, skip hidden files, continue after failures, commit independently, and support Escape cancellation; broader variants remain |
 | Level | Export all levels to a directory | P | P | P | P | ~ | Partial | Shell and non-blocking native actions implement all/modified modes, exact `%03X` naming, grouped publication, Ghidra predicate, and Wine-backed selection fixture; Escape cancellation and variants remain |
 | Level | Export one/all level images as PNG/BMP | P | P | ~ | P | ~ | Partial | Renderer/CLI pass; reproduce original naming, bounds, prompts, and batch dialog |
-| Level | Level usage analysis | - | - | - | - | - | Missing | Ghidra `HandleLevelUsageAnalysisCommand` |
+| Level | Level usage analysis | P | N/A | P | P | ~ | Partial | Native background scan/progress/cancel and exact `LevelAnalysis.txt` framing pass; all four usage domains match Lunar Magic's authenticated 512-level working-ROM report, including zero Map16 count deltas; broaden modified-ROM variants (read-only workflow, so Tx is N/A) |
 | Level | Restrict level access | - | - | - | - | - | Missing | Ghidra `HandleRestrictLevelAccessCommand` |
 | Level | LMSW/emulator level testing integration | ~ | - | - | - | - | Missing | Ghidra `LoadCurrentLevelIntoLmsw`, `LoadRomImageIntoLmsw`; release-safe replacement required |
 | Map16 | Browse/edit subtiles, attributes, Acts Like, undo | P | P | P | ~ | ~ | Partial | Native editor works across eight pages; broaden Wine interaction and modified-set fixtures |
