@@ -1,10 +1,10 @@
 use crate::args::RgbaMap16ImportCommand;
 use crate::atomic_output::write_new_batch;
-use crate::indexed_map16_import::build_page;
 use crate::oracle_input::{read_bounded, read_exact};
+use lm_app::{Map16BitmapImportPlan, Map16BitmapImportRequest};
 use lm_graphics::{
-    GraphicsInterchangeFile, GraphicsOwnership, IndexedBitmapImport, PaletteEntryOwner,
-    PaletteInterchangeFile, PaletteOwnership, Rgba8, TransparentPaletteRowImport,
+    GraphicsInterchangeFile, GraphicsOwnership, PaletteEntryOwner, PaletteInterchangeFile,
+    PaletteOwnership, Rgba8,
 };
 use lm_level::Map16PageFile;
 #[cfg(test)]
@@ -41,33 +41,26 @@ pub(crate) fn execute_pixels(
         PaletteInterchangeFile::MAX_FILE_LEN,
     )?)?;
     let ownership = read_palette_ownership(command, palette_file.palette.colors.len())?;
-    let palette_import = TransparentPaletteRowImport::quantize(
-        pixels,
-        usize::from(command.palette_row),
-        &palette_file.palette,
-        &ownership,
-    )?;
     let graphics_file = GraphicsInterchangeFile::decode(&read_bounded(
         &command.graphics,
         GraphicsInterchangeFile::MAX_FILE_LEN,
     )?)?;
     let occupied = read_occupancy(command, graphics_file.graphics.tiles.len())?;
-    let imported = IndexedBitmapImport::materialize(
-        WIDTH,
-        HEIGHT,
-        &palette_import.indices,
-        &graphics_file.graphics,
-        &GraphicsOwnership::editable(graphics_file.graphics.tiles.len()),
-        &occupied,
-    )?;
-    let page = build_page(&imported, command.palette_row, command.acts_like)?;
+    let plan = Map16BitmapImportPlan::prepare(Map16BitmapImportRequest {
+        pixels,
+        palette_row: command.palette_row,
+        acts_like: command.acts_like,
+        palette: &palette_file.palette,
+        palette_ownership: &ownership,
+        graphics: &graphics_file.graphics,
+        graphics_ownership: &GraphicsOwnership::editable(graphics_file.graphics.tiles.len()),
+        occupied: &occupied,
+    })?;
     publish(
         command,
         palette_file.source_palette,
         graphics_file.source_slot,
-        palette_import,
-        imported,
-        page,
+        plan,
     )
 }
 
@@ -146,28 +139,22 @@ fn publish(
     command: &RgbaMap16ImportCommand,
     source_palette: u16,
     source_slot: u16,
-    palette_import: TransparentPaletteRowImport,
-    imported: IndexedBitmapImport,
-    page: lm_level::Map16Page,
+    plan: Map16BitmapImportPlan,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let palette = PaletteInterchangeFile {
         source_palette,
-        palette: palette_import.palette,
+        palette: plan.palette,
     }
     .encode()?;
     let graphics = GraphicsInterchangeFile {
         source_slot,
-        graphics: imported.graphics,
+        graphics: plan.graphics,
     }
     .encode()?;
-    let occupancy = imported
-        .occupied
-        .into_iter()
-        .map(u8::from)
-        .collect::<Vec<_>>();
+    let occupancy = plan.occupied.into_iter().map(u8::from).collect::<Vec<_>>();
     let page = Map16PageFile {
         source_page: command.source_page,
-        page,
+        page: plan.page,
     }
     .encode()?;
     write_new_batch(&[

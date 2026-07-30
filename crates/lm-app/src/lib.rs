@@ -36,6 +36,7 @@ mod level_usage;
 mod level_usage_scan;
 mod localization;
 mod lunar_magic_metadata_state;
+mod map16_bitmap_import;
 mod map16_controller;
 mod map16_document_controller;
 mod map16_page_document_controller;
@@ -181,6 +182,10 @@ pub use level_usage_scan::{
 };
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};
+pub use map16_bitmap_import::{
+    MAP16_BITMAP_HEIGHT, MAP16_BITMAP_PIXELS, MAP16_BITMAP_WIDTH, Map16BitmapImportError,
+    Map16BitmapImportPlan, Map16BitmapImportRequest,
+};
 pub use map16_controller::{Map16Controller, Map16ControllerEdit, Map16ControllerError};
 pub use map16_document_controller::{
     Map16DocumentController, Map16DocumentControllerError, Map16DocumentEdit,
