@@ -233,9 +233,9 @@ pub use relocatable_patch::{
 };
 pub use restore_archive::{
     LUNAR_RESTORE_ASSOCIATED_EXTENSIONS, LUNAR_RESTORE_ASSOCIATED_FILE_COUNT, LunarRestoreArchive,
-    LunarRestoreArchiveError, LunarRestoreArchiveHeader, LunarRestoreAssociatedFileEntry,
-    LunarRestoreCommand, LunarRestorePointRecord, LunarRestoredAssociatedFile, PackedRestoreDate,
-    PackedRestoreTime,
+    LunarRestoreArchiveCreateRequest, LunarRestoreArchiveError, LunarRestoreArchiveHeader,
+    LunarRestoreAssociatedFileEntry, LunarRestoreCommand, LunarRestorePointRecord,
+    LunarRestoredAssociatedFile, PackedRestoreDate, PackedRestoreTime,
 };
 pub use secondary_exit_patch::{
     LoadedSecondaryExitTable, SecondaryExitPatchError, SecondaryExitPatchLocator,

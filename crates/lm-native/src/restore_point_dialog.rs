@@ -380,6 +380,7 @@ mod tests {
         put_u32(&mut bytes, 8, 2);
         put_u64(&mut bytes, 0x10, 0x130);
         put_u64(&mut bytes, 0x18, 0x130);
+        put_u32(&mut bytes, 0x130 + 0x18, 0x120);
         put_u32(&mut bytes, 0x130 + 0x28, 1);
         put_u32(&mut bytes, 0x130 + 0x30, 0x108);
         put_u32(&mut bytes, 0x130 + 0x38, 5);
@@ -394,6 +395,13 @@ mod tests {
         bytes[0x230..0x235].copy_from_slice(b"Test\0");
         bytes[0x238] = 0xff;
         bytes[0x239..0x23c].copy_from_slice(b"msc");
+        let stored_checksum = bytes[0x130 + 0x30..0x230]
+            .iter()
+            .chain(&bytes[0x230..0x235])
+            .chain(&bytes[0x238..0x23c])
+            .fold(0_u32, |sum, byte| sum.wrapping_add(u32::from(*byte)))
+            ^ 0xc001_c0de;
+        put_u32(&mut bytes, 0x130 + 0x20, stored_checksum);
         LunarRestoreArchive::decode(&bytes).unwrap()
     }
 

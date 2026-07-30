@@ -1,5 +1,10 @@
-use flate2::read::DeflateDecoder;
-use std::{collections::BTreeSet, error::Error, fmt, io::Read};
+use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
+use std::{
+    collections::BTreeSet,
+    error::Error,
+    fmt,
+    io::{Read, Write},
+};
 
 const ARCHIVE_PREFIX_LEN: usize = 0x130;
 const ARCHIVE_HEADER_LEN: usize = 0x100;
@@ -56,7 +61,8 @@ impl PackedRestoreTime {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LunarRestoreArchiveHeader {
     pub format_version: [u8; 2],
-    pub next_record_id: u32,
+    pub latest_record_id: u32,
+    pub latest_record_sequence: u32,
     pub last_modified: PackedRestoreDate,
     pub first_record_offset: u64,
     pub last_record_offset: u64,
@@ -72,7 +78,7 @@ pub struct LunarRestorePointRecord {
     pub archive_offset: u64,
     pub next_record_offset: u64,
     pub previous_record_offset: u64,
-    pub decoded_payload_size: u32,
+    pub record_size: u32,
     pub payload_checksum: u32,
     pub decoded_payload_checksum: u32,
     pub stored_payload_size: u32,
@@ -101,6 +107,45 @@ pub struct LunarRestoreAssociatedFileEntry {
 pub struct LunarRestoredAssociatedFile {
     pub extension: &'static str,
     pub bytes: Vec<u8>,
+}
+
+pub struct LunarRestoreArchiveCreateRequest<'a> {
+    pub original_rom: &'a [u8],
+    pub current_rom: &'a [u8],
+    pub description: &'a str,
+    pub created: PackedRestoreDate,
+    pub created_time: PackedRestoreTime,
+    pub rom_variant: u32,
+    pub last_rom_timestamp: u64,
+    pub compress: bool,
+    pub associated_files: [Option<&'a [u8]>; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+    pub producer: [u8; 0x30],
+}
+
+impl<'a> LunarRestoreArchiveCreateRequest<'a> {
+    #[must_use]
+    pub fn new(
+        original_rom: &'a [u8],
+        current_rom: &'a [u8],
+        description: &'a str,
+        created: PackedRestoreDate,
+        created_time: PackedRestoreTime,
+    ) -> Self {
+        let mut producer = [b' '; 0x30];
+        producer[..24].copy_from_slice(b"Lunar Magic Rust restore");
+        Self {
+            original_rom,
+            current_rom,
+            description,
+            created,
+            created_time,
+            rom_variant: 0,
+            last_rom_timestamp: 0,
+            compress: true,
+            associated_files: [None; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+            producer,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -187,6 +232,157 @@ pub struct LunarRestoreArchive {
 }
 
 impl LunarRestoreArchive {
+    /// Creates a one-record full Lunar Restore archive.
+    ///
+    /// The record uses Lunar Magic's native command, checksum, compression, directory, and
+    /// associated-file layout and can be appended with later delta records by a future writer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for oversized ROMs, embedded-NUL descriptions, arithmetic overflow, or
+    /// compression failure.
+    #[allow(clippy::too_many_lines)] // The linear assignments mirror one fixed binary record.
+    pub fn create_full(
+        request: &LunarRestoreArchiveCreateRequest<'_>,
+    ) -> Result<Vec<u8>, LunarRestoreArchiveError> {
+        if request.original_rom.len() > MAX_RESTORED_ROM_LEN {
+            return Err(LunarRestoreArchiveError::RestoredRomTooLarge(
+                request.original_rom.len(),
+            ));
+        }
+        if request.current_rom.len() > MAX_RESTORED_ROM_LEN {
+            return Err(LunarRestoreArchiveError::RestoredRomTooLarge(
+                request.current_rom.len(),
+            ));
+        }
+        if request.description.as_bytes().contains(&0) {
+            return Err(LunarRestoreArchiveError::DescriptionContainsNul);
+        }
+        let description = if request.description.is_empty() {
+            b"(unspecified)".as_slice()
+        } else {
+            request.description.as_bytes()
+        };
+        let mut description_bytes = description.to_vec();
+        description_bytes.push(0);
+
+        let commands = encode_rom_delta(request.original_rom, request.current_rom)?;
+        let stored_payload = maybe_deflate(&commands, request.compress)?;
+        let mut stored_sidecars: [Option<Vec<u8>>; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT] =
+            std::array::from_fn(|_| None);
+        for (slot, source) in request.associated_files.iter().enumerate() {
+            if let Some(bytes) = source {
+                stored_sidecars[slot] = Some(if request.compress && !bytes.is_empty() {
+                    deflate(bytes)?
+                } else {
+                    bytes.to_vec()
+                });
+            }
+        }
+
+        let record_offset = ARCHIVE_PREFIX_LEN;
+        let payload_offset = RECORD_HEADER_LEN
+            .checked_add(description_bytes.len())
+            .ok_or(LunarRestoreArchiveError::AddressOverflow(
+                record_offset as u64,
+            ))?;
+        let mut record = vec![0; payload_offset];
+        record[RECORD_HEADER_LEN..].copy_from_slice(&description_bytes);
+        record.extend_from_slice(&stored_payload);
+        for (slot, sidecar) in stored_sidecars.iter().enumerate() {
+            let Some(sidecar) = sidecar else {
+                continue;
+            };
+            let relative_offset = u32::try_from(record.len())
+                .map_err(|_| LunarRestoreArchiveError::AddressOverflow(record.len() as u64))?;
+            put_u32_at(&mut record, 0x80 + slot * 8, relative_offset);
+            put_u32_at(
+                &mut record,
+                0x84 + slot * 8,
+                u32::try_from(sidecar.len()).map_err(|_| {
+                    LunarRestoreArchiveError::AssociatedFileTooLarge {
+                        extension: LUNAR_RESTORE_ASSOCIATED_EXTENSIONS[slot],
+                        length: sidecar.len(),
+                    }
+                })?,
+            );
+            record.extend_from_slice(sidecar);
+        }
+
+        let record_size = u32::try_from(record.len())
+            .map_err(|_| LunarRestoreArchiveError::AddressOverflow(record.len() as u64))?;
+        put_u32_at(&mut record, 0x18, record_size);
+        put_u32_at(
+            &mut record,
+            0x24,
+            byte_sum(&commands) ^ DECODED_CHECKSUM_XOR,
+        );
+        put_u32_at(
+            &mut record,
+            0x28,
+            u32::try_from(stored_payload.len()).map_err(|_| {
+                LunarRestoreArchiveError::CommandStreamTooLarge(stored_payload.len())
+            })?,
+        );
+        put_u32_at(
+            &mut record,
+            0x30,
+            u32::try_from(payload_offset)
+                .map_err(|_| LunarRestoreArchiveError::AddressOverflow(payload_offset as u64))?,
+        );
+        put_u32_at(&mut record, 0x34, 0x100);
+        let description_length = u32::try_from(description_bytes.len()).map_err(|_| {
+            LunarRestoreArchiveError::AddressOverflow(description_bytes.len() as u64)
+        })?;
+        put_u32_at(&mut record, 0x38, description_length);
+        record[0x3c..0x40].copy_from_slice(b"DIRL");
+        put_u32_at(
+            &mut record,
+            0x40,
+            0x0363_8001 | if request.compress { 0x4000 } else { 0 },
+        );
+        put_u32_at(&mut record, 0x48, 1);
+        put_u32_at(&mut record, 0x4c, encode_date(request.created));
+        put_u32_at(
+            &mut record,
+            0x50,
+            u32::try_from(request.current_rom.len()).map_err(|_| {
+                LunarRestoreArchiveError::RestoredRomTooLarge(request.current_rom.len())
+            })?,
+        );
+        put_u32_at(&mut record, 0x58, encode_time(request.created_time));
+        put_u32_at(&mut record, 0x5c, request.rom_variant);
+        put_u32_at(
+            &mut record,
+            0x60,
+            logical_restore_crc32(request.current_rom),
+        );
+        let stored_checksum = byte_sum(&record[0x30..])
+            ^ if request.compress {
+                DECODED_CHECKSUM_XOR
+            } else {
+                0xc001_c0de
+            };
+        put_u32_at(&mut record, 0x20, stored_checksum);
+
+        let mut archive = vec![0; ARCHIVE_PREFIX_LEN];
+        archive[0..4].copy_from_slice(b"LR\0\x02");
+        put_u32_at(&mut archive, 8, 1);
+        put_u32_at(&mut archive, 0x0c, encode_date(request.created));
+        put_u64_at(&mut archive, 0x10, record_offset as u64);
+        put_u64_at(&mut archive, 0x18, record_offset as u64);
+        put_u32_at(&mut archive, 0x20, 0);
+        put_u64_at(&mut archive, 0x28, request.last_rom_timestamp);
+        put_u32_at(
+            &mut archive,
+            0x30,
+            logical_restore_crc32(request.current_rom),
+        );
+        archive[ARCHIVE_HEADER_LEN..ARCHIVE_PREFIX_LEN].copy_from_slice(&request.producer);
+        archive.extend_from_slice(&record);
+        Ok(archive)
+    }
+
     /// Decodes and validates the linked directory of a Lunar Magic `.lrp` archive.
     ///
     /// # Errors
@@ -208,15 +404,14 @@ impl LunarRestoreArchive {
 
         let header = LunarRestoreArchiveHeader {
             format_version: [bytes[2], bytes[3]],
-            next_record_id: read_u32(bytes, 8, "next record id")?,
+            latest_record_id: read_u32(bytes, 8, "latest record id")?,
+            latest_record_sequence: read_u32(bytes, 0x20, "latest record sequence")?,
             last_modified: PackedRestoreDate::decode(read_u32(bytes, 0x0c, "archive date")?),
             first_record_offset: read_u64(bytes, 0x10, "first record offset")?,
             last_record_offset: read_u64(bytes, 0x18, "last record offset")?,
             last_rom_timestamp: read_u64(bytes, 0x28, "last ROM timestamp")?,
             latest_rom_hash: read_u32(bytes, 0x30, "latest ROM hash")?,
-            associated_file_timestamps: std::array::from_fn(|slot| {
-                u64::from_le_bytes(bytes[0x40 + slot * 8..0x48 + slot * 8].try_into().unwrap())
-            }),
+            associated_file_timestamps: read_associated_timestamps(bytes)?,
             reserved: bytes[0x34..ARCHIVE_HEADER_LEN].to_vec(),
             producer: bytes[ARCHIVE_HEADER_LEN..ARCHIVE_PREFIX_LEN].to_vec(),
         };
@@ -233,6 +428,7 @@ impl LunarRestoreArchive {
                 return Err(LunarRestoreArchiveError::RecordCycle(offset));
             }
             let record = decode_record(bytes, offset)?;
+            validate_record_checksum(bytes, &record)?;
             if record.previous_record_offset != expected_previous {
                 return Err(LunarRestoreArchiveError::BrokenPreviousLink {
                     record: offset,
@@ -251,6 +447,27 @@ impl LunarRestoreArchive {
                 header: header.last_record_offset,
                 observed: observed_last,
             });
+        }
+        for record in &records {
+            let observed_end = record
+                .archive_offset
+                .checked_add(u64::from(record.record_size))
+                .ok_or(LunarRestoreArchiveError::AddressOverflow(
+                    record.archive_offset,
+                ))?;
+            let expected_end = if record.next_record_offset == 0 {
+                bytes.len() as u64
+            } else {
+                record.next_record_offset
+            };
+            let expected_size = expected_end.saturating_sub(record.archive_offset);
+            if expected_end < record.archive_offset || observed_end != expected_end {
+                return Err(LunarRestoreArchiveError::RecordSizeMismatch {
+                    record: record.archive_offset,
+                    expected: expected_size,
+                    actual: record.record_size,
+                });
+            }
         }
 
         Ok(Self {
@@ -388,6 +605,107 @@ impl LunarRestoreArchive {
     }
 }
 
+fn encode_rom_delta(original: &[u8], current: &[u8]) -> Result<Vec<u8>, LunarRestoreArchiveError> {
+    let mut encoded = Vec::new();
+    let mut cursor = 0;
+    while cursor < current.len() {
+        if original.get(cursor) == current.get(cursor) {
+            cursor += 1;
+            continue;
+        }
+        let start = cursor;
+        cursor += 1;
+        while cursor < current.len() && original.get(cursor) != current.get(cursor) {
+            cursor += 1;
+        }
+        let bytes = &current[start..cursor];
+        let length = u32::try_from(bytes.len())
+            .map_err(|_| LunarRestoreArchiveError::CommandStreamTooLarge(bytes.len()))?;
+        let length_width = variable_width(length);
+        let length_control = u8::try_from(length_width - 1)
+            .map_err(|_| LunarRestoreArchiveError::CommandStreamTooLarge(bytes.len()))?;
+        encoded.push(0x10 | length_control);
+        let encoded_start = u32::try_from(start)
+            .map_err(|_| LunarRestoreArchiveError::CommandAddressOverflow { offset: 0, length })?;
+        encoded.extend_from_slice(&encoded_start.to_le_bytes()[..3]);
+        encoded.extend_from_slice(&length.to_le_bytes()[..length_width]);
+        encoded.extend_from_slice(bytes);
+    }
+    encoded.push(0xff);
+    Ok(encoded)
+}
+
+const fn variable_width(value: u32) -> usize {
+    if value <= 0xff {
+        1
+    } else if value <= 0xffff {
+        2
+    } else if value <= 0xff_ffff {
+        3
+    } else {
+        4
+    }
+}
+
+fn maybe_deflate(bytes: &[u8], compress: bool) -> Result<Vec<u8>, LunarRestoreArchiveError> {
+    if compress {
+        deflate(bytes)
+    } else {
+        Ok(bytes.to_vec())
+    }
+}
+
+fn deflate(bytes: &[u8]) -> Result<Vec<u8>, LunarRestoreArchiveError> {
+    let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(bytes)
+        .and_then(|()| encoder.finish())
+        .map_err(|error| LunarRestoreArchiveError::Deflate(error.to_string()))
+}
+
+fn byte_sum(bytes: &[u8]) -> u32 {
+    bytes
+        .iter()
+        .fold(0_u32, |sum, byte| sum.wrapping_add(u32::from(*byte)))
+}
+
+fn logical_restore_crc32(bytes: &[u8]) -> u32 {
+    let header_len = match lm_rom::detect_copier_header(bytes.len()) {
+        lm_rom::CopierHeader::Present => lm_rom::COPIER_HEADER_LEN,
+        lm_rom::CopierHeader::Absent => 0,
+    };
+    restore_crc32(&bytes[header_len..])
+}
+
+const fn encode_date(date: PackedRestoreDate) -> u32 {
+    (date.year as u32) << 16 | (date.month as u32) << 8 | date.day as u32
+}
+
+const fn encode_time(time: PackedRestoreTime) -> u32 {
+    (time.day_of_week as u32) << 24
+        | (time.hour as u32) << 16
+        | (time.minute as u32) << 8
+        | time.second as u32
+}
+
+fn put_u32_at(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn put_u64_at(bytes: &mut [u8], offset: usize, value: u64) {
+    bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+fn read_associated_timestamps(
+    bytes: &[u8],
+) -> Result<[u64; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT], LunarRestoreArchiveError> {
+    let mut timestamps = [0; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT];
+    for (slot, timestamp) in timestamps.iter_mut().enumerate() {
+        *timestamp = read_u64(bytes, 0x40 + slot * 8, "associated file timestamp")?;
+    }
+    Ok(timestamps)
+}
+
 fn associated_file_address(
     record: &LunarRestorePointRecord,
     entry: LunarRestoreAssociatedFileEntry,
@@ -409,6 +727,58 @@ fn associated_file_address(
         )?;
     }
     Ok(address)
+}
+
+fn validate_record_checksum(
+    archive: &[u8],
+    record: &LunarRestorePointRecord,
+) -> Result<(), LunarRestoreArchiveError> {
+    let start = usize::try_from(record.archive_offset)
+        .map_err(|_| LunarRestoreArchiveError::AddressOverflow(record.archive_offset))?;
+    let description_length = read_u32(&record.raw_header, 0x38, "description length")? as usize;
+    let mut sum = record.raw_header[0x30..]
+        .iter()
+        .fold(0_u32, |sum, byte| sum.wrapping_add(u32::from(*byte)));
+    for byte in checked_slice(
+        archive,
+        start + RECORD_HEADER_LEN,
+        description_length,
+        "restore-point description",
+    )? {
+        sum = sum.wrapping_add(u32::from(*byte));
+    }
+    for byte in record.stored_payload(archive)? {
+        sum = sum.wrapping_add(u32::from(*byte));
+    }
+    for entry in record.associated_files {
+        if entry.relative_offset == 0 {
+            continue;
+        }
+        let offset = associated_file_address(record, entry)?;
+        for byte in checked_slice(
+            archive,
+            usize::try_from(offset)
+                .map_err(|_| LunarRestoreArchiveError::AddressOverflow(offset))?,
+            entry.stored_size as usize,
+            "associated restore file",
+        )? {
+            sum = sum.wrapping_add(u32::from(*byte));
+        }
+    }
+    let checksum_xor = if record.compressed() {
+        DECODED_CHECKSUM_XOR
+    } else {
+        0xc001_c0de
+    };
+    let actual = sum ^ checksum_xor;
+    if actual != record.payload_checksum {
+        return Err(LunarRestoreArchiveError::StoredChecksumMismatch {
+            record: record.archive_offset,
+            expected: record.payload_checksum,
+            actual,
+        });
+    }
+    Ok(())
 }
 
 fn restore_crc32(bytes: &[u8]) -> u32 {
@@ -574,7 +944,7 @@ fn decode_record(
         archive_offset,
         next_record_offset: read_u64(header, 0, "next record offset")?,
         previous_record_offset: read_u64(header, 8, "previous record offset")?,
-        decoded_payload_size: read_u32(header, 0x18, "decoded payload size")?,
+        record_size: read_u32(header, 0x18, "record size")?,
         payload_checksum: read_u32(header, 0x20, "payload checksum")?,
         decoded_payload_checksum: read_u32(header, 0x24, "decoded payload checksum")?,
         stored_payload_size,
@@ -650,6 +1020,7 @@ pub enum LunarRestoreArchiveError {
         minimum: usize,
     },
     BadArchiveMagic([u8; 2]),
+    DescriptionContainsNul,
     FieldOutOfBounds {
         field: &'static str,
         offset: usize,
@@ -676,10 +1047,21 @@ pub enum LunarRestoreArchiveError {
         header: u64,
         observed: u64,
     },
+    RecordSizeMismatch {
+        record: u64,
+        expected: u64,
+        actual: u32,
+    },
     TooManyRecords(usize),
     Inflate(String),
+    Deflate(String),
     CommandStreamTooLarge(usize),
     DecodedChecksumMismatch {
+        record: u64,
+        expected: u32,
+        actual: u32,
+    },
+    StoredChecksumMismatch {
         record: u64,
         expected: u32,
         actual: u32,
@@ -732,6 +1114,12 @@ impl fmt::Display for LunarRestoreArchiveError {
             Self::BadArchiveMagic(actual) => {
                 write!(formatter, "invalid restore archive magic {actual:02X?}")
             }
+            Self::DescriptionContainsNul => {
+                write!(
+                    formatter,
+                    "restore-point description contains an embedded NUL"
+                )
+            }
             Self::FieldOutOfBounds {
                 field,
                 offset,
@@ -779,6 +1167,14 @@ impl fmt::Display for LunarRestoreArchiveError {
                 formatter,
                 "archive names {header:#x} as its last restore point, but traversal ended at {observed:#x}"
             ),
+            Self::RecordSizeMismatch {
+                record,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "restore point at {record:#x} declares size {actual:#x}, expected {expected:#x}"
+            ),
             Self::TooManyRecords(limit) => {
                 write!(
                     formatter,
@@ -797,6 +1193,7 @@ fn fmt_command_error(
     use LunarRestoreArchiveError as E;
     match error {
         E::Inflate(error) => write!(formatter, "cannot inflate restore payload: {error}"),
+        E::Deflate(error) => write!(formatter, "cannot deflate restore payload: {error}"),
         E::CommandStreamTooLarge(length) => write!(
             formatter,
             "decoded restore command stream is {length} bytes, above the supported limit"
@@ -808,6 +1205,14 @@ fn fmt_command_error(
         } => write!(
             formatter,
             "restore point at {record:#x} has decoded checksum {actual:#010x}, expected {expected:#010x}"
+        ),
+        E::StoredChecksumMismatch {
+            record,
+            expected,
+            actual,
+        } => write!(
+            formatter,
+            "restore point at {record:#x} has stored checksum {actual:#010x}, expected {expected:#010x}"
         ),
         E::MissingCommandTerminator(record) => {
             write!(
@@ -884,6 +1289,37 @@ mod tests {
         bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
 
+    fn seal_record_checksum(bytes: &mut [u8], offset: usize) {
+        let description_length = read_u32(bytes, offset + 0x38, "description").unwrap() as usize;
+        let payload_size = read_u32(bytes, offset + 0x28, "payload size").unwrap() as usize;
+        let payload_offset = read_u32(bytes, offset + 0x30, "payload offset").unwrap() as usize;
+        let mut sum = bytes[offset + 0x30..offset + 0x100]
+            .iter()
+            .chain(&bytes[offset + 0x100..offset + 0x100 + description_length])
+            .chain(&bytes[offset + payload_offset..offset + payload_offset + payload_size])
+            .fold(0_u32, |sum, byte| sum.wrapping_add(u32::from(*byte)));
+        for slot in 0..LUNAR_RESTORE_ASSOCIATED_FILE_COUNT {
+            let entry_offset = offset + 0x80 + slot * 8;
+            let relative = read_u32(bytes, entry_offset, "sidecar offset").unwrap() as usize;
+            let size = read_u32(bytes, entry_offset + 4, "sidecar size").unwrap() as usize;
+            if relative != 0 {
+                sum = bytes[offset + relative..offset + relative + size]
+                    .iter()
+                    .fold(sum, |sum, byte| sum.wrapping_add(u32::from(*byte)));
+            }
+        }
+        let version = read_u32(bytes, offset + 0x40, "version").unwrap();
+        put_u32(
+            bytes,
+            offset + 0x20,
+            sum ^ if version & 0x4000 != 0 {
+                DECODED_CHECKSUM_XOR
+            } else {
+                0xc001_c0de
+            },
+        );
+    }
+
     fn archive() -> Vec<u8> {
         let mut bytes = vec![0; 0x380];
         bytes[0..2].copy_from_slice(b"LR");
@@ -900,7 +1336,11 @@ mod tests {
         ] {
             put_u64(&mut bytes, offset, next);
             put_u64(&mut bytes, offset + 8, previous);
-            put_u32(&mut bytes, offset + 0x18, 4);
+            put_u32(
+                &mut bytes,
+                offset + 0x18,
+                if offset == 0x130 { 0x120 } else { 0x130 },
+            );
             put_u32(&mut bytes, offset + 0x28, 4);
             put_u32(&mut bytes, offset + 0x30, 0x110);
             put_u32(
@@ -916,6 +1356,7 @@ mod tests {
             put_u32(&mut bytes, offset + 0x58, 0x0113_2804);
             bytes[offset + 0x100..offset + 0x100 + description.len()].copy_from_slice(description);
             bytes[offset + 0x110..offset + 0x114].copy_from_slice(&[u8::try_from(id).unwrap(); 4]);
+            seal_record_checksum(&mut bytes, offset);
         }
         bytes
     }
@@ -925,7 +1366,7 @@ mod tests {
         let bytes = archive();
         let decoded = LunarRestoreArchive::decode(&bytes).unwrap();
         assert_eq!(decoded.header.format_version, [0, 2]);
-        assert_eq!(decoded.header.next_record_id, 3);
+        assert_eq!(decoded.header.latest_record_id, 3);
         assert_eq!(
             decoded.header.last_modified,
             PackedRestoreDate {
@@ -995,6 +1436,8 @@ mod tests {
         put_u32(&mut bytes, 0x250 + 0x88, 0x114);
         put_u32(&mut bytes, 0x250 + 0x8c, 3);
         bytes[0x364..0x367].copy_from_slice(b"two");
+        seal_record_checksum(&mut bytes, 0x130);
+        seal_record_checksum(&mut bytes, 0x250);
 
         let archive = LunarRestoreArchive::decode(&bytes).unwrap();
         assert_eq!(
@@ -1033,6 +1476,7 @@ mod tests {
             u32::try_from(compressed.len()).unwrap(),
         );
         bytes[0x364..0x364 + compressed.len()].copy_from_slice(&compressed);
+        seal_record_checksum(&mut bytes, 0x250);
 
         let archive = LunarRestoreArchive::decode(&bytes).unwrap();
         assert_eq!(
@@ -1050,7 +1494,7 @@ mod tests {
             archive_offset: 0x20_000,
             next_record_offset: 0,
             previous_record_offset: 0,
-            decoded_payload_size: 0,
+            record_size: 0,
             payload_checksum: 0,
             decoded_payload_checksum: 0,
             stored_payload_size: 0,
@@ -1081,6 +1525,66 @@ mod tests {
     }
 
     #[test]
+    fn creates_native_full_archives_that_round_trip_rom_and_sidecars() {
+        let original = [1, 2, 3, 4];
+        let current = [1, 9, 9, 4, 5];
+        for compress in [false, true] {
+            let mut request = LunarRestoreArchiveCreateRequest::new(
+                &original,
+                &current,
+                "Created in Rust",
+                PackedRestoreDate {
+                    year: 2026,
+                    month: 7,
+                    day: 30,
+                },
+                PackedRestoreTime {
+                    day_of_week: 4,
+                    hour: 21,
+                    minute: 5,
+                    second: 7,
+                },
+            );
+            request.compress = compress;
+            request.last_rom_timestamp = 0x1234_5678_9abc_def0;
+            request.associated_files[0] = Some(b"sprite metadata");
+            request.associated_files[4] = Some(b"");
+
+            let bytes = LunarRestoreArchive::create_full(&request).unwrap();
+            let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+            assert_eq!(archive.header.first_record_offset, 0x130);
+            assert_eq!(archive.header.last_record_offset, 0x130);
+            assert_eq!(archive.header.last_rom_timestamp, 0x1234_5678_9abc_def0);
+            assert_eq!(archive.records[0].compressed(), compress);
+            assert_eq!(archive.records[0].description_text(), "Created in Rust");
+            assert_eq!(archive.restore_through(1, &original).unwrap(), current);
+            assert_eq!(
+                archive.restore_associated_files_through(1).unwrap(),
+                [
+                    LunarRestoredAssociatedFile {
+                        extension: "msc",
+                        bytes: b"sprite metadata".to_vec(),
+                    },
+                    LunarRestoredAssociatedFile {
+                        extension: "s16",
+                        bytes: Vec::new(),
+                    },
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_stored_checksum_mismatches() {
+        let mut bytes = archive();
+        bytes[0x130 + 0x20] ^= 1;
+        assert!(matches!(
+            LunarRestoreArchive::decode(&bytes),
+            Err(LunarRestoreArchiveError::StoredChecksumMismatch { .. })
+        ));
+    }
+
+    #[test]
     fn inflates_commands_and_reconstructs_the_selected_rom() {
         let commands = [
             0x00, 4, 0, 0, 2, 9, // Fill two bytes at $000004.
@@ -1093,6 +1597,7 @@ mod tests {
         let mut bytes = archive();
         put_u64(&mut bytes, 0x130, 0);
         put_u64(&mut bytes, 0x18, 0x130);
+        put_u32(&mut bytes, 0x130 + 0x18, 0x250);
         put_u32(
             &mut bytes,
             0x130 + 0x28,
@@ -1106,6 +1611,7 @@ mod tests {
             ^ DECODED_CHECKSUM_XOR;
         put_u32(&mut bytes, 0x130 + 0x24, checksum);
         bytes[0x240..0x240 + compressed.len()].copy_from_slice(&compressed);
+        seal_record_checksum(&mut bytes, 0x130);
 
         let archive = LunarRestoreArchive::decode(&bytes).unwrap();
         assert_eq!(
@@ -1124,6 +1630,7 @@ mod tests {
         );
         let expected = [1, 7, 8, 4, 9, 9, 0, 0];
         put_u32(&mut bytes, 0x130 + 0x60, restore_crc32(&expected));
+        seal_record_checksum(&mut bytes, 0x130);
         let archive = LunarRestoreArchive::decode(&bytes).unwrap();
         assert_eq!(archive.restore_through(1, &[1, 2, 3, 4]).unwrap(), expected);
         assert!(matches!(
