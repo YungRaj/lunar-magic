@@ -9,6 +9,12 @@ domains, performs transactional ROM changes with undo/redo, and includes command
 format conversion and compatibility testing. It is active work and does **not** yet provide complete
 Lunar Magic 3.63 feature parity.
 
+![Native Rust level editor showing level 001, Map16 graphics, object tools, and the rendered canvas](docs/images/native-level-editor.png)
+
+The native workspace keeps ROM-backed tools on the left and the scrollable level canvas on the
+right. The screenshot shows the built-in SMW-US profile rendering level `$001`; see the
+[illustrated usage guide](docs/USAGE.md) for the controls and safe editing workflow.
+
 > This repository contains no Nintendo ROM data and no Lunar Magic source code. You must supply a
 > legally obtained ROM. Keep an untouched backup and save edits to a separate file while the project
 > remains under development.
@@ -121,13 +127,15 @@ The project currently has tested support for substantial parts of the SMW editin
 - A differential oracle framework with retained Lunar Magic 3.63 fixtures and semantic comparison
   that ignores irrelevant allocation placement.
 
-The detailed inventory and recovery evidence live in:
+The detailed inventory, usage guides, and recovery evidence live in `docs/`:
 
-- [Detailed implementation notes](IMPLEMENTATION_NOTES.md)
-- [Reverse-engineering notes](REVERSE_ENGINEERING.md)
-- [Architecture](REIMPLEMENTATION_ARCHITECTURE.md)
-- [Compatibility and test matrix](REIMPLEMENTATION_TEST_MATRIX.md)
-- [Product feature-parity ledger](FEATURE_PARITY_MATRIX.md)
+- [Documentation index](docs/README.md)
+- [Illustrated usage guide](docs/USAGE.md)
+- [Detailed implementation notes](docs/IMPLEMENTATION_NOTES.md)
+- [Reverse-engineering notes](docs/REVERSE_ENGINEERING.md)
+- [Architecture](docs/REIMPLEMENTATION_ARCHITECTURE.md)
+- [Compatibility and test matrix](docs/REIMPLEMENTATION_TEST_MATRIX.md)
+- [Product feature-parity ledger](docs/FEATURE_PARITY_MATRIX.md)
 
 ## What is not finished
 
@@ -208,7 +216,7 @@ native GUI and CLI
 
 For a new contributor:
 
-1. Read [REIMPLEMENTATION_ARCHITECTURE.md](REIMPLEMENTATION_ARCHITECTURE.md).
+1. Read [the architecture guide](docs/REIMPLEMENTATION_ARCHITECTURE.md).
 2. Read `crates/lm-app/src/lib.rs` to understand the command boundary.
 3. Follow one feature vertically:
    - its data model in `lm-level`, `lm-graphics`, or `lm-overworld`;
@@ -216,9 +224,9 @@ For a new contributor:
    - its controller/command in `lm-app`;
    - its GUI in `lm-native` or command in `lm-cli`;
    - its fixture and tests.
-4. Use [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) for recovered addresses, layouts, and
+4. Use [the reverse-engineering ledger](docs/REVERSE_ENGINEERING.md) for recovered addresses, layouts, and
    confidence notes.
-5. Use [REIMPLEMENTATION_TEST_MATRIX.md](REIMPLEMENTATION_TEST_MATRIX.md) to find gaps that still
+5. Use [the compatibility test matrix](docs/REIMPLEMENTATION_TEST_MATRIX.md) to find gaps that still
    need compatibility evidence.
 
 ## Design rules
@@ -373,9 +381,9 @@ Lunar Magic 3.63 is treated as a behavioral oracle, not as a source dependency:
 7. reopen the result and compare semantic observations and preserved regions.
 8. document confidence and remaining unknowns.
 
-Keep recovered facts and addresses in [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md). Keep
+Keep recovered facts and addresses in [the reverse-engineering ledger](docs/REVERSE_ENGINEERING.md). Keep
 implementation prose that would overwhelm this overview in
-[IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md).
+[the detailed implementation notes](docs/IMPLEMENTATION_NOTES.md).
 
 ## Contributing
 
