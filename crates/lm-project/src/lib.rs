@@ -11,6 +11,7 @@ mod graphics_migration;
 mod history;
 mod installed_layout;
 mod legacy_mwl;
+mod level_access_restriction;
 mod level_io;
 mod level_layer2_io;
 mod level_save;
@@ -99,6 +100,9 @@ pub use installed_layout::{
     GatedLayout, InstallationMarker, InstalledAsset, InstalledLayout, InstalledLayoutError,
 };
 pub use legacy_mwl::{LegacyMwlBundle, LegacyMwlBundleError};
+pub use level_access_restriction::{
+    LevelAccessRestrictionError, LevelAccessRestrictionKeys, LevelAccessRestrictionLayout,
+};
 pub use level_io::{
     LevelLoadError, LevelPointerTable, LevelRomLayout, LoadedLevelSlot, SpritePointerTable,
 };

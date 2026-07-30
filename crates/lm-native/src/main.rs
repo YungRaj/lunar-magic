@@ -30,6 +30,7 @@ mod ips_create_dialog;
 mod ips_patch_dialog;
 mod layer3_editor;
 mod layer3_editor_form;
+mod level_access_restriction_dialog;
 mod level_editor;
 mod level_editor_advanced;
 mod level_editor_auxiliary;

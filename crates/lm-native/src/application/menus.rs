@@ -70,6 +70,13 @@ impl NativeApplication {
                 }
             }
             if ui
+                .add_enabled(enabled, egui::Button::new("Restrict Level Access…"))
+                .clicked()
+            {
+                ui.close_menu();
+                self.level_access_restriction_dialog.open();
+            }
+            if ui
                 .add_enabled(
                     enabled && self.app.revision_profile().is_some(),
                     egui::Button::new("Migrate Graphics Compression…"),

@@ -67,6 +67,7 @@ impl NativeApplication {
             }
         }
         show_project_operation!(self, context, rom_expansion_dialog);
+        show_project_operation!(self, context, level_access_restriction_dialog);
         show_project_operation!(self, context, graphics_migration_dialog);
         show_project_operation!(self, context, rats_reclamation_dialog);
         show_project_operation!(self, context, ips_patch_dialog);

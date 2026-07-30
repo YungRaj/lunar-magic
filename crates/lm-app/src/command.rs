@@ -10,8 +10,8 @@ use lm_overworld::{
     OverworldPathLinkTable, OverworldWarpLinkTable, SpecialEventRevealTable,
 };
 use lm_project::{
-    GraphicsCompression, GraphicsMigrationOptions, GraphicsRomLayout, RatsOwnershipManifest,
-    RomMutation, RomWrite,
+    GraphicsCompression, GraphicsMigrationOptions, GraphicsRomLayout, LevelAccessRestrictionKeys,
+    RatsOwnershipManifest, RomMutation, RomWrite,
 };
 use lm_rom::{CopierHeader, LunarMagicRomMetadata, Mapper};
 use lm_title::TitleScreenRecording;
@@ -190,6 +190,12 @@ pub enum Command {
     },
     /// Expands the logical ROM and repairs its checksum as one project history operation.
     ExpandRom(RomExpansionCommand),
+    /// Permanently applies Lunar Magic's level-access restriction migration.
+    RestrictLevelAccess {
+        rev: u64,
+        title: String,
+        keys: LevelAccessRestrictionKeys,
+    },
     RunExternalTool(String),
 }
 

@@ -20,6 +20,7 @@ mod layer3_main_runtime;
 mod layer3_runtime;
 mod layer3_scroll;
 mod layer3_scroll_code;
+mod level_access_restriction;
 mod lfix3_install;
 mod lfix3_runtime;
 mod lunar_magic_metadata;
@@ -189,6 +190,7 @@ pub use layer3_scroll::{
 pub use layer3_scroll_code::{
     Layer3ScrollHelperLibrary, Layer3ScrollHelperTarget, smw_us_v1_layer3_scroll_helper_library,
 };
+pub use level_access_restriction::smw_us_v1_level_access_restriction_layout;
 pub use lfix3_install::{
     SMW_US_V1_LFIX3_SEARCH_END, SMW_US_V1_LFIX3_SEARCH_START, smw_us_v1_lfix3_installation_plan,
 };

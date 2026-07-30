@@ -29,6 +29,7 @@ mod graphics_ownership_file;
 mod ips_patch_state;
 mod layer3_document_controller;
 mod legacy_mwl_transfer;
+mod level_access_restriction_state;
 mod level_controller;
 mod level_navigation;
 mod level_usage;

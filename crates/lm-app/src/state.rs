@@ -87,6 +87,7 @@ pub enum AppError {
     RevisionProfileAudit(RevisionProfileAuditError),
     Transaction(TransactionError),
     GraphicsMigration(GraphicsIoError),
+    LevelAccessRestriction(lm_project::LevelAccessRestrictionError),
     GraphicsMigrationProfileMismatch,
     RevisionPatchPlan(lm_profile::RevisionPatchPlanError),
     ExpandedSettingsPlan(lm_profile::ExpandedSettingsInstallPlanError),
@@ -254,6 +255,12 @@ impl From<TransactionError> for AppError {
 impl From<GraphicsIoError> for AppError {
     fn from(value: GraphicsIoError) -> Self {
         Self::GraphicsMigration(value)
+    }
+}
+
+impl From<lm_project::LevelAccessRestrictionError> for AppError {
+    fn from(value: lm_project::LevelAccessRestrictionError) -> Self {
+        Self::LevelAccessRestriction(value)
     }
 }
 
@@ -729,6 +736,9 @@ impl AppState {
                 self.replace_native_overworld_player_starts(rev, &starts)?
             }
             Command::ExpandRom(request) => self.expand_rom(&request)?,
+            Command::RestrictLevelAccess { rev, title, keys } => {
+                self.restrict_level_access(rev, &title, keys)?
+            }
             Command::RunExternalTool(id) => self.run_external_tool(&id)?,
         })
     }

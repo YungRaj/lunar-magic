@@ -349,6 +349,7 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE toolbar\n"
             "       wine-window-command.exe EXECUTABLE dialog-values\n"
             "       wine-window-command.exe EXECUTABLE click CONTROL_ID\n"
+            "       wine-window-command.exe EXECUTABLE set-text CONTROL_ID,TEXT\n"
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
             "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
             "       wine-window-command.exe EXECUTABLE save WINDOWS_PATH\n"
@@ -367,6 +368,7 @@ int main(int argc, char **argv) {
     BOOL open_level_command = _stricmp(argv[2], "open-level") == 0;
     BOOL dialog_values = _stricmp(argv[2], "dialog-values") == 0;
     BOOL click = _stricmp(argv[2], "click") == 0;
+    BOOL set_text = _stricmp(argv[2], "set-text") == 0;
     BOOL read = _stricmp(argv[2], "read") == 0;
     BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
     if (open_level_command) {
@@ -390,7 +392,7 @@ int main(int argc, char **argv) {
         .process_id = process_id,
         .window = NULL,
         .list = _stricmp(argv[2], "list") == 0,
-        .window_class = save || level || dialog_values || click
+        .window_class = save || level || dialog_values || click || set_text
             ? "#32770"
             : (argc == 4 ? argv[3] : NULL)
     };
@@ -526,6 +528,31 @@ int main(int argc, char **argv) {
             return 1;
         }
         SendMessage(control, BM_CLICK, 0, 0);
+        return 0;
+    }
+    if (set_text) {
+        if (argc != 4) {
+            fprintf(stderr, "set-text requires CONTROL_ID,TEXT\n");
+            return 2;
+        }
+        char *separator = strchr(argv[3], ',');
+        if (separator == NULL) {
+            fprintf(stderr, "set-text requires CONTROL_ID,TEXT\n");
+            return 2;
+        }
+        *separator = '\0';
+        char *end = NULL;
+        unsigned long control_id = strtoul(argv[3], &end, 0);
+        if (end == argv[3] || *end != '\0' || control_id > 0xffff) {
+            fprintf(stderr, "invalid control id: %s\n", argv[3]);
+            return 2;
+        }
+        HWND control = GetDlgItem(search.window, (int)control_id);
+        if (control == NULL) {
+            fprintf(stderr, "dialog control not found: 0x%04lx\n", control_id);
+            return 1;
+        }
+        SendMessage(control, WM_SETTEXT, 0, (LPARAM)(separator + 1));
         return 0;
     }
     if (save) {
