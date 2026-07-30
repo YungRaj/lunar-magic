@@ -2534,6 +2534,27 @@ and proving byte-level save compatibility. The core
 keeps those unknowns behind explicit layout descriptors and lossless byte-preserving models so they
 can be added without coupling the portable application shell to one ROM revision.
 
+Complete binary MWL level import now has a ROM-backed semantic coordinator rather than a collection
+of independent section copies. `MwlNativeLevel` decodes and canonically encodes all eight sections;
+the installed SMW-US import stages Layer 1, Layer 2, sprites, the 257-color palette, ExAnimation,
+the expanded header, all recovered main and separate-midway entrance fields, the expanded
+level-mode byte, and every secondary exit targeting the selected level before producing one
+revision-bound ROM mutation. A failure in any late global table therefore publishes no partial
+edit. The shell exposes the operation as
+`level-mwl-import FILE SEARCH_START SEARCH_END`, automatically retargeting the MWL to the selected
+level and deriving every allocation policy from the active revision profile.
+
+Ghidra's `ExportBinaryMwlLevelFile`, `ImportBinaryMwlLevelFile`,
+`LoadLfix3LevelRuntimeFields`, `WriteLfix3LevelRuntimeFields`, and expanded-level-mode helpers are
+the ground truth for the 64-byte MWL header boundary. The four vanilla entrance planes and four
+Lfix3 planes agree with all 512 retained MWLs. Controlled Wine imports located the separately
+allocated 512-byte level-mode table through two agreeing JSL hooks: lower seven bits persist, while
+bit 7 is recomputed by Lunar Magic and an MWL edit containing only that bit causes no ROM change.
+A reciprocal Wine test confirms Lunar Magic exports a Rust-written persistent mode value. Header
+bytes 7 and 8 produce no persistent difference even at boundary values under 3.63, and byte 13 is
+reserved zero padding; they remain losslessly preserved in the MWL container rather than being
+invented as ROM state.
+
 The current SMW US revision-0 profile also contains the recovered multi-bank overworld-message
 installation boundary used once more than 96 level-name slots are enabled. It installs the fixed
 version-1.10 renderer, allocates a three-byte pointer for each of the even 194–512 messages, packs
