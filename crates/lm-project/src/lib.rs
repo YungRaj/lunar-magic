@@ -66,6 +66,7 @@ mod project;
 mod rats_manifest_file;
 mod rats_reclamation;
 mod relocatable_patch;
+mod restore_archive;
 mod rom_expansion;
 mod secondary_exit_patch;
 mod separate_midway_patch;
@@ -229,6 +230,10 @@ pub use rats_reclamation::{RatsOwnershipManifest, RatsReclamationError, RatsRecl
 pub use relocatable_patch::{
     PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchError,
     RelocatablePatchGroupError, RelocatablePatchPlan, RelocatablePatchResult,
+};
+pub use restore_archive::{
+    LunarRestoreArchive, LunarRestoreArchiveError, LunarRestoreArchiveHeader, LunarRestoreCommand,
+    LunarRestorePointRecord, PackedRestoreDate, PackedRestoreTime,
 };
 pub use secondary_exit_patch::{
     LoadedSecondaryExitTable, SecondaryExitPatchError, SecondaryExitPatchLocator,

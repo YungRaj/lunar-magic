@@ -1661,6 +1661,7 @@ dependencies = [
 name = "lm-project"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "lm-codec",
  "lm-graphics",
  "lm-level",

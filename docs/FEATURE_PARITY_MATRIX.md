@@ -32,7 +32,7 @@ interactive level import workflow, and a CLI transaction does not prove its nati
 | --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- |
 | Lifecycle | Open ROM, recent ROM, close, quit, dirty confirmation | P | P | P | ~ | ~ | Partial | `lm-app` lifecycle and native menus pass; automate Wine warning/cancel equivalence and modified-ROM cases |
 | Lifecycle | Save and Save As with atomic replacement | P | P | P | ~ | ~ | Partial | Exact application snapshot acknowledgement passes; expand Wine failure/collision matrix |
-| Lifecycle | Full-ROM restore points and associated-file restore | ~ | ~ | - | - | - | Missing | Ghidra `CreateFullRomRestorePoint`, `HandleRestorePointDialog`, `RestoreAssociatedFilesFromArchive` |
+| Lifecycle | Full-ROM restore points and associated-file restore | P | ~ | - | ~ | - | Partial | Exact `.lrp` header, linked `DIRL` records, raw-DEFLATE payloads, checksums, compact fill/raw commands, and bounded reconstruction pass; an LM 3.63 two-record archive restores the 2,097,664-byte target ROM byte-exactly from `smwOrig.smc`. Add archive creation, sidecar restore, application transaction, and native dialog |
 | Lifecycle | Undo/redo with configured history limit | P | P | P | ~ | ~ | Partial | Shared project history passes; compare per-editor grouping and configured limit with Wine |
 | ROM | Detect identity, mapper, copier header, checksum | P | P | P | P | ~ | Partial | Headered pristine fixture is now deterministic; broaden SA-1 and modified-ROM corpus |
 | ROM | Expand ROM and mapper conversion rules | P | P | P | ~ | ~ | Partial | Native expansion dialog passes; recover all original size/ExLoROM/ZSNES compatibility choices |
