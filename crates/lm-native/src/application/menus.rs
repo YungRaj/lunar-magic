@@ -76,7 +76,7 @@ impl NativeApplication {
                 ui.close_menu();
                 self.level_access_restriction_dialog.open();
             }
-            self.restore_point_menu_item(ui, status);
+            self.restore_point_menu_items(ui, status);
             if ui
                 .add_enabled(
                     enabled && self.app.revision_profile().is_some(),
@@ -128,6 +128,24 @@ impl NativeApplication {
         {
             ui.close_menu();
             if let Err(error) = self.restore_point_dialog.choose_and_open() {
+                self.effects.error = Some(error);
+            }
+        }
+    }
+
+    fn restore_point_menu_items(&mut self, ui: &mut egui::Ui, status: ProjectStatus) {
+        self.restore_point_menu_item(ui, status);
+        self.create_restore_point_menu_item(ui, !matches!(status, ProjectStatus::Closed));
+    }
+
+    fn create_restore_point_menu_item(&mut self, ui: &mut egui::Ui, enabled: bool) {
+        if ui
+            .add_enabled(enabled, egui::Button::new("Create Full Restore Point…"))
+            .clicked()
+        {
+            ui.close_menu();
+            if let Err(error) = crate::restore_point_dialog::create_full_for_open_project(&self.app)
+            {
                 self.effects.error = Some(error);
             }
         }

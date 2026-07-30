@@ -1,5 +1,9 @@
+use chrono::{Datelike as _, Timelike as _};
 use eframe::egui;
-use lm_project::LunarRestoreArchive;
+use lm_project::{
+    LUNAR_RESTORE_ASSOCIATED_EXTENSIONS, LUNAR_RESTORE_ASSOCIATED_FILE_COUNT, LunarRestoreArchive,
+    LunarRestoreArchiveCreateRequest, PackedRestoreDate, PackedRestoreTime,
+};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -7,6 +11,111 @@ use std::{
 };
 
 const MAX_ARCHIVE_LEN: u64 = 256 * 1024 * 1024;
+
+struct CapturedAssociatedFiles {
+    files: [Option<Vec<u8>>; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+    timestamps: [u64; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+}
+
+fn windows_file_timestamp(path: &Path) -> Option<u64> {
+    let duration = fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    duration
+        .as_secs()
+        .checked_add(11_644_473_600)?
+        .checked_mul(10_000_000)?
+        .checked_add(u64::from(duration.subsec_nanos() / 100))
+}
+
+fn capture_associated_files(rom_path: Option<&Path>) -> Result<CapturedAssociatedFiles, String> {
+    let mut files = std::array::from_fn(|_| None);
+    let mut timestamps = [0; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT];
+    let Some(rom_path) = rom_path else {
+        return Ok(CapturedAssociatedFiles { files, timestamps });
+    };
+    for (slot, extension) in LUNAR_RESTORE_ASSOCIATED_EXTENSIONS.iter().enumerate() {
+        let path = rom_path.with_extension(extension);
+        match crate::dialogs::read_regular_bounded(
+            &path,
+            MAX_ARCHIVE_LEN,
+            "associated restore file",
+        ) {
+            Ok(bytes) => {
+                timestamps[slot] = windows_file_timestamp(&path).unwrap_or(0);
+                files[slot] = Some(bytes);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("cannot capture {}: {error}", path.display())),
+        }
+    }
+    Ok(CapturedAssociatedFiles { files, timestamps })
+}
+
+fn build_full_archive(
+    original: &[u8],
+    current: &[u8],
+    document_path: Option<&Path>,
+    created: PackedRestoreDate,
+    created_time: PackedRestoreTime,
+) -> Result<Vec<u8>, String> {
+    let associated = capture_associated_files(document_path)?;
+    let mut request = LunarRestoreArchiveCreateRequest::new(
+        original,
+        current,
+        "Manual Full Restore Point.",
+        created,
+        created_time,
+    );
+    request.last_rom_timestamp = document_path.and_then(windows_file_timestamp).unwrap_or(0);
+    request.associated_files = std::array::from_fn(|slot| associated.files[slot].as_deref());
+    request.associated_file_timestamps = associated.timestamps;
+    let bytes = LunarRestoreArchive::create_full(&request).map_err(|error| error.to_string())?;
+    LunarRestoreArchive::decode(&bytes).map_err(|error| error.to_string())?;
+    Ok(bytes)
+}
+
+pub(crate) fn create_full_for_open_project(app: &lm_app::AppState) -> Result<bool, String> {
+    let project = app
+        .project()
+        .ok_or_else(|| "open a ROM before creating a restore point".to_owned())?;
+    let Some(original_path) = crate::dialogs::choose_restore_original_rom() else {
+        return Ok(false);
+    };
+    let Some(archive_path) = crate::dialogs::choose_new_restore_archive() else {
+        return Ok(false);
+    };
+    let original = crate::dialogs::read_regular_bounded(
+        &original_path,
+        crate::dialogs::MAX_ROM_FILE_LEN,
+        "original restore ROM",
+    )
+    .map_err(|error| error.to_string())?;
+    let current = project.save_snapshot();
+    let now = chrono::Local::now();
+    let bytes = build_full_archive(
+        &original,
+        &current,
+        app.document_path.as_deref(),
+        PackedRestoreDate {
+            year: u16::try_from(now.year()).map_err(|_| "local year is out of range")?,
+            month: u8::try_from(now.month()).unwrap(),
+            day: u8::try_from(now.day()).unwrap(),
+        },
+        PackedRestoreTime {
+            day_of_week: u8::try_from(now.weekday().num_days_from_sunday()).unwrap(),
+            hour: u8::try_from(now.hour()).unwrap(),
+            minute: u8::try_from(now.minute()).unwrap(),
+            second: u8::try_from(now.second()).unwrap(),
+        },
+    )?;
+    lm_app::file_persistence::write_new(&archive_path, &bytes)
+        .map_err(|error| error.to_string())?;
+    Ok(true)
+}
 
 #[derive(Debug)]
 struct LoadedRestore {
@@ -354,6 +463,9 @@ fn restore_and_publish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
     fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
@@ -385,7 +497,7 @@ mod tests {
         put_u32(&mut bytes, 0x130 + 0x30, 0x108);
         put_u32(&mut bytes, 0x130 + 0x38, 5);
         bytes[0x130 + 0x3c..0x130 + 0x40].copy_from_slice(b"DIRL");
-        put_u32(&mut bytes, 0x130 + 0x40, 0x0363_8000);
+        put_u32(&mut bytes, 0x130 + 0x40, 0x0363_8001);
         put_u32(&mut bytes, 0x130 + 0x48, 1);
         put_u32(&mut bytes, 0x130 + 0x50, 0x8000);
         put_u32(&mut bytes, 0x130 + 0x60, crc32(original));
@@ -420,7 +532,11 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("lm-restore-dialog-{}-{nonce}", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "lm-restore-dialog-{}-{nonce}-{}",
+            std::process::id(),
+            NEXT_TEST_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ))
     }
 
     #[test]
@@ -443,6 +559,64 @@ mod tests {
         let restored = fs::read(&target).unwrap();
         assert!(restore_and_publish(&archive, 99, &original, &target, true).is_err());
         assert_eq!(fs::read(&target).unwrap(), restored);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn full_creation_capture_uses_exact_associated_slot_order() {
+        let directory = test_directory();
+        fs::create_dir(&directory).unwrap();
+        let rom = directory.join("game.smc");
+        fs::write(&rom, b"rom").unwrap();
+        fs::write(rom.with_extension("msc"), b"msc").unwrap();
+        fs::write(rom.with_extension("s16ov"), b"s16ov").unwrap();
+
+        let associated = capture_associated_files(Some(&rom)).unwrap();
+        assert_eq!(associated.files[0].as_deref(), Some(b"msc".as_slice()));
+        assert_eq!(associated.files[8].as_deref(), Some(b"s16ov".as_slice()));
+        assert!(associated.files[1].is_none());
+        assert_ne!(associated.timestamps[0], 0);
+        assert_ne!(associated.timestamps[8], 0);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn full_creation_round_trips_current_rom_and_nonempty_sidecars() {
+        let directory = test_directory();
+        fs::create_dir(&directory).unwrap();
+        let rom_path = directory.join("game.smc");
+        let original = rom();
+        let mut current = original.clone();
+        current[0x1234] = 0x5a;
+        fs::write(&rom_path, &current).unwrap();
+        fs::write(rom_path.with_extension("msc"), b"level names").unwrap();
+        fs::write(rom_path.with_extension("s16ov"), b"sprite override").unwrap();
+
+        let bytes = build_full_archive(
+            &original,
+            &current,
+            Some(&rom_path),
+            PackedRestoreDate {
+                year: 2026,
+                month: 7,
+                day: 30,
+            },
+            PackedRestoreTime {
+                day_of_week: 4,
+                hour: 12,
+                minute: 34,
+                second: 56,
+            },
+        )
+        .unwrap();
+        let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+        assert_eq!(archive.restore_through(1, &original).unwrap(), current);
+        let restored = archive.restore_associated_files_through(1).unwrap();
+        assert_eq!(restored.len(), 2);
+        assert_eq!(restored[0].extension, "msc");
+        assert_eq!(restored[0].bytes, b"level names");
+        assert_eq!(restored[1].extension, "s16ov");
+        assert_eq!(restored[1].bytes, b"sprite override");
         fs::remove_dir_all(directory).unwrap();
     }
 }

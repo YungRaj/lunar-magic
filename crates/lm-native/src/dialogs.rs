@@ -50,6 +50,14 @@ pub(crate) fn choose_restore_archive() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_new_restore_archive() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Create Lunar Restore Points")
+        .add_filter("Lunar Restore Points", &["lrp"])
+        .set_file_name("restore-points.lrp")
+        .save_file()
+}
+
 pub(crate) fn choose_restore_original_rom() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Select Original Unmodified ROM with Header")
