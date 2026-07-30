@@ -291,7 +291,7 @@ impl Project {
     }
 }
 
-fn graphics_save_request(
+pub(crate) fn graphics_save_request(
     file_number: usize,
     graphics: &GraphicsFile4bpp,
     layout: GraphicsRomLayout,

@@ -167,36 +167,7 @@ impl Project {
         checksum_field: Option<usize>,
         reclamation_manifest: Option<&RatsOwnershipManifest>,
     ) -> Result<SavedMap16Page, Map16IoError> {
-        if page.tiles.len() != Map16Page::TILE_COUNT {
-            return Err(Map16IoError::WrongPageSize(page.tiles.len()));
-        }
-        let (graphics, acts_like) = page
-            .encode()
-            .map_err(|error| Map16IoError::WrongPageSize(error.tiles))?;
-        let requests = [
-            PayloadSaveRequest {
-                description: format!("save Map16 page {page_number:02x} graphics"),
-                payload: graphics,
-                pointer: layout.graphics.pointer_offset(page_number)?.into(),
-                mapper: layout.mapper,
-                allocation_policy: options.graphics_allocation.clone(),
-                previous_block: options.previous_graphics.clone(),
-                reuse_identical: options.reuse_identical,
-                maximum_payload_len: 0x800,
-                erase_fill: options.erase_fill,
-            },
-            PayloadSaveRequest {
-                description: format!("save Map16 page {page_number:02x} acts-like"),
-                payload: acts_like,
-                pointer: layout.acts_like.pointer_offset(page_number)?.into(),
-                mapper: layout.mapper,
-                allocation_policy: options.acts_like_allocation.clone(),
-                previous_block: options.previous_acts_like.clone(),
-                reuse_identical: options.reuse_identical,
-                maximum_payload_len: 0x200,
-                erase_fill: options.erase_fill,
-            },
-        ];
+        let requests = map16_page_save_requests(page_number, page, layout, options)?;
         let description = format!("save complete Map16 page {page_number:02x}");
         let mut results = match (checksum_field, reclamation_manifest) {
             (Some(field), Some(manifest)) => self
@@ -217,6 +188,44 @@ impl Project {
             acts_like: results.remove(0),
         })
     }
+}
+
+pub(crate) fn map16_page_save_requests(
+    page_number: usize,
+    page: &Map16Page,
+    layout: Map16RomLayout,
+    options: &Map16SaveOptions,
+) -> Result<[PayloadSaveRequest; 2], Map16IoError> {
+    if page.tiles.len() != Map16Page::TILE_COUNT {
+        return Err(Map16IoError::WrongPageSize(page.tiles.len()));
+    }
+    let (graphics, acts_like) = page
+        .encode()
+        .map_err(|error| Map16IoError::WrongPageSize(error.tiles))?;
+    Ok([
+        PayloadSaveRequest {
+            description: format!("save Map16 page {page_number:02x} graphics"),
+            payload: graphics,
+            pointer: layout.graphics.pointer_offset(page_number)?.into(),
+            mapper: layout.mapper,
+            allocation_policy: options.graphics_allocation.clone(),
+            previous_block: options.previous_graphics.clone(),
+            reuse_identical: options.reuse_identical,
+            maximum_payload_len: 0x800,
+            erase_fill: options.erase_fill,
+        },
+        PayloadSaveRequest {
+            description: format!("save Map16 page {page_number:02x} acts-like"),
+            payload: acts_like,
+            pointer: layout.acts_like.pointer_offset(page_number)?.into(),
+            mapper: layout.mapper,
+            allocation_policy: options.acts_like_allocation.clone(),
+            previous_block: options.previous_acts_like.clone(),
+            reuse_identical: options.reuse_identical,
+            maximum_payload_len: 0x200,
+            erase_fill: options.erase_fill,
+        },
+    ])
 }
 
 #[cfg(test)]

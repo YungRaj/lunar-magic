@@ -17,6 +17,7 @@ mod level_layer2_io;
 mod level_save;
 mod lfix3_level_fields_io;
 mod lunar_magic_metadata_io;
+mod map16_bitmap_import_io;
 mod map16_io;
 mod map16_set_io;
 mod mwl_exanimation;
@@ -115,6 +116,10 @@ pub use lfix3_level_fields_io::{
     Lfix3LevelFields, Lfix3LevelFieldsIoError, Lfix3LevelFieldsRomLayout,
 };
 pub use lunar_magic_metadata_io::{LunarMagicRomMetadataIoError, LunarMagicRomMetadataLayout};
+pub use map16_bitmap_import_io::{
+    Map16BitmapGraphicsSave, Map16BitmapPageSave, Map16BitmapPaletteSave, Map16BitmapRomSave,
+    Map16BitmapRomSaveError, SavedMap16BitmapImport,
+};
 pub use map16_io::{Map16IoError, Map16RomLayout, Map16SaveOptions, SavedMap16Page};
 pub use map16_set_io::{Map16SetIoError, Map16SetSaveOptions, SavedMap16Set};
 pub use mwl_exanimation::{MwlExAnimationSection, MwlExAnimationSectionError};

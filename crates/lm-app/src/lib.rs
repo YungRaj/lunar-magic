@@ -38,6 +38,7 @@ mod localization;
 mod lunar_magic_metadata_state;
 mod map16_bitmap_import;
 mod map16_bitmap_import_preview;
+mod map16_bitmap_rom_commit;
 mod map16_controller;
 mod map16_document_controller;
 mod map16_page_document_controller;
@@ -190,6 +191,7 @@ pub use map16_bitmap_import::{
     Map16BitmapImportRequest, Map16PngDecodeError, decode_map16_bitmap_png,
 };
 pub use map16_bitmap_import_preview::{Map16BitmapImportInputs, Map16BitmapImportPreviewState};
+pub use map16_bitmap_rom_commit::{Map16BitmapCommitError, prepare_map16_bitmap_rom_commit};
 pub use map16_controller::{Map16Controller, Map16ControllerEdit, Map16ControllerError};
 pub use map16_document_controller::{
     Map16DocumentController, Map16DocumentControllerError, Map16DocumentEdit,
