@@ -29,6 +29,13 @@ impl RomMap16Editor {
                 self.preview_palette = 0;
                 self.page_texture = None;
                 self.page_texture_key = None;
+                self.bitmap_session = None;
+                self.bitmap_extra_slot_4.clear();
+                self.bitmap_extra_slot_5.clear();
+                self.bitmap_palette_row = 4;
+                self.bitmap_acts_like = "0130".into();
+                self.bitmap_original_texture = None;
+                self.bitmap_converted_texture = None;
                 self.invalidate();
             }
             Err(error) => self.error = Some(error),
@@ -40,10 +47,14 @@ impl RomMap16Editor {
             self.error = Some("wait for RATS ownership loading to finish before closing".into());
             return false;
         }
+        if self.bitmap_loader.is_running() {
+            self.error = Some("wait for bitmap loading to finish before closing".into());
+            return false;
+        }
         let Some(workspace) = &self.workspace else {
             return true;
         };
-        if !workspace.controller.is_modified() {
+        if !workspace.controller.is_modified() && self.bitmap_session.is_none() {
             self.clear();
             return true;
         }
@@ -64,7 +75,9 @@ impl RomMap16Editor {
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("These changes have not been committed to the ROM.");
+                ui.label(
+                    "These Map16 changes or bitmap import have not been committed to the ROM.",
+                );
                 ui.horizontal(|ui| {
                     if ui.button("Cancel").clicked() {
                         self.pending_close = None;
@@ -91,6 +104,9 @@ impl RomMap16Editor {
 
     fn clear(&mut self) {
         self.workspace = None;
+        self.bitmap_session = None;
+        self.bitmap_original_texture = None;
+        self.bitmap_converted_texture = None;
         self.pending_close = None;
         self.invalidate();
     }
@@ -125,10 +141,12 @@ fn decode(app: &AppState) -> Result<Workspace, String> {
     };
     let image =
         RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
+    let internal_header = snapshot.identity.internal_header_offset;
     Ok(Workspace {
         controller,
         profile,
+        snapshot,
         image,
-        internal_header: snapshot.identity.internal_header_offset,
+        internal_header,
     })
 }

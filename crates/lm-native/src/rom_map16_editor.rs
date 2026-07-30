@@ -1,10 +1,13 @@
-use crate::{level_editor_forms, map16_subtile_form, native_clipboard};
+use crate::{
+    document_loader::DocumentLoader, level_editor_forms, map16_subtile_form, native_clipboard,
+};
 use eframe::egui;
 use lm_app::{
     AppState, Command, Map16Controller, Map16ControllerEdit, RevisionProfile, SmwMap16Controller,
 };
 use lm_level::{Map16Address, Map16Page};
 
+mod bitmap_import;
 mod commit;
 mod lifecycle;
 #[cfg(test)]
@@ -19,6 +22,7 @@ enum PendingClose {
 struct Workspace {
     controller: Controller,
     profile: Option<RevisionProfile>,
+    snapshot: lm_app::ControllerSnapshot,
     image: lm_rom::RomImage,
     internal_header: usize,
 }
@@ -81,6 +85,14 @@ pub(crate) struct RomMap16Editor {
     preview_level: String,
     preview_tileset: u8,
     preview_palette: u8,
+    bitmap_loader: DocumentLoader,
+    bitmap_session: Option<lm_app::NativeMap16BitmapImportSession>,
+    bitmap_extra_slot_4: String,
+    bitmap_extra_slot_5: String,
+    bitmap_palette_row: u8,
+    bitmap_acts_like: String,
+    bitmap_original_texture: Option<egui::TextureHandle>,
+    bitmap_converted_texture: Option<egui::TextureHandle>,
 }
 
 impl RomMap16Editor {
@@ -89,7 +101,8 @@ impl RomMap16Editor {
         context: &egui::Context,
         project_revision: u64,
     ) -> (bool, Option<Command>) {
-        let mut command = match self.manifest_loader.show(context, project_revision) {
+        let mut command = self.poll_bitmap_loader(context);
+        let manifest_command = match self.manifest_loader.show(context, project_revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
                 Ok(command) => Some(command),
                 Err(error) => {
@@ -103,6 +116,9 @@ impl RomMap16Editor {
             }
             None => None,
         };
+        if manifest_command.is_some() {
+            command = manifest_command;
+        }
         if self.workspace.is_some() {
             self.clamp();
             self.load();
@@ -113,6 +129,9 @@ impl RomMap16Editor {
                         command = Some(ui_command);
                     }
                 });
+        }
+        if let Some(import_command) = self.bitmap_import_window(context, project_revision) {
+            command = Some(import_command);
         }
         let approved = self.close_confirmation(context);
         self.show_error(context);
@@ -141,6 +160,7 @@ impl RomMap16Editor {
         self.selection_and_clipboard(ui, stale, pages, pasted.as_deref());
         self.visual_page(ui);
         self.tile_fields(ui, stale, pages);
+        self.bitmap_import_controls(ui, stale);
         self.commit_controls(ui, stale, project_revision)
     }
     fn visual_page(&mut self, ui: &mut egui::Ui) {
