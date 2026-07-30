@@ -119,6 +119,7 @@ pub struct LunarRestoreArchiveCreateRequest<'a> {
     pub last_rom_timestamp: u64,
     pub compress: bool,
     pub associated_files: [Option<&'a [u8]>; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+    pub associated_file_timestamps: [u64; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
     pub producer: [u8; 0x30],
 }
 
@@ -143,6 +144,7 @@ impl<'a> LunarRestoreArchiveCreateRequest<'a> {
             last_rom_timestamp: 0,
             compress: true,
             associated_files: [None; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+            associated_file_timestamps: [0; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
             producer,
         }
     }
@@ -378,8 +380,115 @@ impl LunarRestoreArchive {
             0x30,
             logical_restore_crc32(request.current_rom),
         );
+        for (slot, timestamp) in request.associated_file_timestamps.iter().enumerate() {
+            put_u64_at(&mut archive, 0x40 + slot * 8, *timestamp);
+        }
         archive[ARCHIVE_HEADER_LEN..ARCHIVE_PREFIX_LEN].copy_from_slice(&request.producer);
         archive.extend_from_slice(&record);
+        Ok(archive)
+    }
+
+    /// Appends a native delta record to this archive.
+    ///
+    /// `request.original_rom` must be the exact ROM state represented by the current last record;
+    /// `request.current_rom` is the new state. Associated-file slots should contain only files
+    /// changed for this record, while the timestamp array represents the complete latest snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the base ROM does not match the archive tip, metadata counters
+    /// overflow, or record construction/validation fails.
+    pub fn append_delta(
+        &self,
+        request: &LunarRestoreArchiveCreateRequest<'_>,
+    ) -> Result<Vec<u8>, LunarRestoreArchiveError> {
+        let last = self
+            .records
+            .last()
+            .ok_or(LunarRestoreArchiveError::CannotAppendToEmptyArchive)?;
+        let base_hash = logical_restore_crc32(request.original_rom);
+        if request.original_rom.len() != last.rom_size as usize || base_hash != last.rom_hash {
+            return Err(LunarRestoreArchiveError::AppendBaseMismatch {
+                expected_size: last.rom_size,
+                actual_size: request.original_rom.len(),
+                expected_hash: last.rom_hash,
+                actual_hash: base_hash,
+            });
+        }
+        self.append_record(request, false)
+    }
+
+    /// Appends a full checkpoint encoded against the original ROM supplied in `request`.
+    ///
+    /// Full checkpoints restart later reconstruction from the original image and must include the
+    /// complete desired associated-file snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when metadata counters overflow or record construction/validation fails.
+    pub fn append_full(
+        &self,
+        request: &LunarRestoreArchiveCreateRequest<'_>,
+    ) -> Result<Vec<u8>, LunarRestoreArchiveError> {
+        if self.records.is_empty() {
+            return Err(LunarRestoreArchiveError::CannotAppendToEmptyArchive);
+        }
+        self.append_record(request, true)
+    }
+
+    fn append_record(
+        &self,
+        request: &LunarRestoreArchiveCreateRequest<'_>,
+        full: bool,
+    ) -> Result<Vec<u8>, LunarRestoreArchiveError> {
+        let last = self
+            .records
+            .last()
+            .ok_or(LunarRestoreArchiveError::CannotAppendToEmptyArchive)?;
+        let new_id = self
+            .header
+            .latest_record_id
+            .checked_add(1)
+            .ok_or(LunarRestoreArchiveError::RestoreMetadataOverflow)?;
+        let new_sequence = self
+            .header
+            .latest_record_sequence
+            .checked_add(1)
+            .ok_or(LunarRestoreArchiveError::RestoreMetadataOverflow)?;
+        let new_offset = u64::try_from(self.bytes.len())
+            .map_err(|_| LunarRestoreArchiveError::AddressOverflow(self.bytes.len() as u64))?;
+
+        let single = Self::create_full(request)?;
+        let mut record = single[ARCHIVE_PREFIX_LEN..].to_vec();
+        put_u64_at(&mut record, 8, last.archive_offset);
+        let mut directory_version = read_u32(&record, 0x40, "directory version")?;
+        if !full {
+            directory_version &= !3;
+        }
+        put_u32_at(&mut record, 0x40, directory_version);
+        put_u32_at(&mut record, 0x44, new_sequence);
+        put_u32_at(&mut record, 0x48, new_id);
+        reseal_stored_record_checksum(&mut record)?;
+
+        let mut archive = self.bytes.clone();
+        let last_offset = usize::try_from(last.archive_offset)
+            .map_err(|_| LunarRestoreArchiveError::AddressOverflow(last.archive_offset))?;
+        put_u64_at(&mut archive, last_offset, new_offset);
+        put_u32_at(&mut archive, 8, new_id);
+        put_u32_at(&mut archive, 0x0c, encode_date(request.created));
+        put_u64_at(&mut archive, 0x18, new_offset);
+        put_u32_at(&mut archive, 0x20, new_sequence);
+        put_u64_at(&mut archive, 0x28, request.last_rom_timestamp);
+        put_u32_at(
+            &mut archive,
+            0x30,
+            logical_restore_crc32(request.current_rom),
+        );
+        for (slot, timestamp) in request.associated_file_timestamps.iter().enumerate() {
+            put_u64_at(&mut archive, 0x40 + slot * 8, *timestamp);
+        }
+        archive.extend_from_slice(&record);
+        Self::decode(&archive)?;
         Ok(archive)
     }
 
@@ -498,9 +607,9 @@ impl LunarRestoreArchive {
                 original_rom.len(),
             ));
         }
+        let (start, target) = self.restore_record_range(record_id)?;
         let mut restored = original_rom.to_vec();
-        let mut found = false;
-        for record in &self.records {
+        for record in &self.records[start..=target] {
             apply_commands(&mut restored, &record.commands(&self.bytes)?)?;
             let target_len = record.rom_size as usize;
             if target_len > MAX_RESTORED_ROM_LEN {
@@ -519,13 +628,6 @@ impl LunarRestoreArchive {
                     actual: actual_hash,
                 });
             }
-            if record.record_id == record_id {
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            return Err(LunarRestoreArchiveError::UnknownRecordId(record_id));
         }
         Ok(restored)
     }
@@ -545,8 +647,8 @@ impl LunarRestoreArchive {
     ) -> Result<Vec<LunarRestoredAssociatedFile>, LunarRestoreArchiveError> {
         let mut resolved: [Option<(u64, u32, bool)>; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT] =
             [None; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT];
-        let mut found = false;
-        for record in &self.records {
+        let (start, target) = self.restore_record_range(record_id)?;
+        for record in &self.records[start..=target] {
             for (slot, entry) in record.associated_files.iter().enumerate() {
                 if entry.relative_offset != 0 {
                     resolved[slot] = Some((
@@ -556,13 +658,6 @@ impl LunarRestoreArchive {
                     ));
                 }
             }
-            if record.record_id == record_id {
-                found = true;
-                break;
-            }
-        }
-        if !found {
-            return Err(LunarRestoreArchiveError::UnknownRecordId(record_id));
         }
 
         resolved
@@ -602,6 +697,22 @@ impl LunarRestoreArchive {
                 })
             })
             .collect()
+    }
+
+    fn restore_record_range(
+        &self,
+        record_id: u32,
+    ) -> Result<(usize, usize), LunarRestoreArchiveError> {
+        let target = self
+            .records
+            .iter()
+            .position(|record| record.record_id == record_id)
+            .ok_or(LunarRestoreArchiveError::UnknownRecordId(record_id))?;
+        let start = self.records[..=target]
+            .iter()
+            .rposition(|record| record.directory_version & 3 != 0)
+            .ok_or(LunarRestoreArchiveError::MissingFullRestorePoint(record_id))?;
+        Ok((start, target))
     }
 }
 
@@ -667,6 +778,22 @@ fn byte_sum(bytes: &[u8]) -> u32 {
     bytes
         .iter()
         .fold(0_u32, |sum, byte| sum.wrapping_add(u32::from(*byte)))
+}
+
+fn reseal_stored_record_checksum(record: &mut [u8]) -> Result<(), LunarRestoreArchiveError> {
+    let compressed = read_u32(record, 0x40, "directory version")? & 0x4000 != 0;
+    let checksum = byte_sum(checked_slice(
+        record,
+        0x30,
+        record.len().saturating_sub(0x30),
+        "stored record checksum range",
+    )?) ^ if compressed {
+        DECODED_CHECKSUM_XOR
+    } else {
+        0xc001_c0de
+    };
+    put_u32_at(record, 0x20, checksum);
+    Ok(())
 }
 
 fn logical_restore_crc32(bytes: &[u8]) -> u32 {
@@ -1021,6 +1148,15 @@ pub enum LunarRestoreArchiveError {
     },
     BadArchiveMagic([u8; 2]),
     DescriptionContainsNul,
+    CannotAppendToEmptyArchive,
+    MissingFullRestorePoint(u32),
+    RestoreMetadataOverflow,
+    AppendBaseMismatch {
+        expected_size: u32,
+        actual_size: usize,
+        expected_hash: u32,
+        actual_hash: u32,
+    },
     FieldOutOfBounds {
         field: &'static str,
         offset: usize,
@@ -1194,6 +1330,10 @@ fn fmt_command_error(
     match error {
         E::Inflate(error) => write!(formatter, "cannot inflate restore payload: {error}"),
         E::Deflate(error) => write!(formatter, "cannot deflate restore payload: {error}"),
+        append_error @ (E::CannotAppendToEmptyArchive
+        | E::MissingFullRestorePoint(_)
+        | E::RestoreMetadataOverflow
+        | E::AppendBaseMismatch { .. }) => fmt_append_error(append_error, formatter),
         E::CommandStreamTooLarge(length) => write!(
             formatter,
             "decoded restore command stream is {length} bytes, above the supported limit"
@@ -1270,6 +1410,38 @@ fn fmt_command_error(
             "inflated associated .{extension} file is {length} bytes, above the supported limit"
         ),
         _ => unreachable!("non-command errors are formatted by the outer match"),
+    }
+}
+
+fn fmt_append_error(
+    error: &LunarRestoreArchiveError,
+    formatter: &mut fmt::Formatter<'_>,
+) -> fmt::Result {
+    use LunarRestoreArchiveError as E;
+    match error {
+        E::CannotAppendToEmptyArchive => {
+            write!(formatter, "cannot append to an empty restore archive")
+        }
+        E::MissingFullRestorePoint(record_id) => write!(
+            formatter,
+            "restore point {record_id} has no preceding full checkpoint"
+        ),
+        E::RestoreMetadataOverflow => {
+            write!(
+                formatter,
+                "restore archive ID or sequence counter overflowed"
+            )
+        }
+        E::AppendBaseMismatch {
+            expected_size,
+            actual_size,
+            expected_hash,
+            actual_hash,
+        } => write!(
+            formatter,
+            "append base is {actual_size:#x} bytes with hash {actual_hash:#010x}; archive tip expects {expected_size:#x} bytes and {expected_hash:#010x}"
+        ),
+        _ => unreachable!("non-append error passed to append formatter"),
     }
 }
 
@@ -1429,7 +1601,7 @@ mod tests {
     fn restores_changed_associated_files_and_inherits_unchanged_slots() {
         let mut bytes = archive();
         put_u32(&mut bytes, 0x130 + 0x40, 0x0363_8001);
-        put_u32(&mut bytes, 0x250 + 0x40, 0x0363_8001);
+        put_u32(&mut bytes, 0x250 + 0x40, 0x0363_8000);
         put_u32(&mut bytes, 0x130 + 0x80, 0x114);
         put_u32(&mut bytes, 0x130 + 0x84, 3);
         bytes[0x244..0x247].copy_from_slice(b"one");
@@ -1572,6 +1744,88 @@ mod tests {
                 ]
             );
         }
+    }
+
+    #[test]
+    fn appends_linked_delta_records_and_inherits_sidecars() {
+        let original = [1, 2, 3, 4];
+        let first = [1, 8, 3, 4];
+        let second = [1, 8, 3, 9, 5];
+        let date = PackedRestoreDate {
+            year: 2026,
+            month: 7,
+            day: 30,
+        };
+        let time = PackedRestoreTime {
+            day_of_week: 4,
+            hour: 22,
+            minute: 10,
+            second: 0,
+        };
+        let mut initial =
+            LunarRestoreArchiveCreateRequest::new(&original, &first, "First", date, time);
+        initial.associated_files[0] = Some(b"first msc");
+        initial.associated_file_timestamps[0] = 10;
+        let bytes = LunarRestoreArchive::create_full(&initial).unwrap();
+        let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+
+        let mut delta =
+            LunarRestoreArchiveCreateRequest::new(&first, &second, "Second", date, time);
+        delta.associated_files[1] = Some(b"second dsc");
+        delta.associated_file_timestamps[0] = 10;
+        delta.associated_file_timestamps[1] = 20;
+        delta.last_rom_timestamp = 30;
+        let bytes = archive.append_delta(&delta).unwrap();
+        let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+
+        assert_eq!(archive.header.latest_record_id, 2);
+        assert_eq!(archive.header.latest_record_sequence, 1);
+        assert_eq!(archive.header.associated_file_timestamps[0..2], [10, 20]);
+        assert_eq!(archive.records.len(), 2);
+        assert_eq!(
+            archive.records[0].next_record_offset,
+            archive.records[1].archive_offset
+        );
+        assert_eq!(
+            archive.records[1].previous_record_offset,
+            archive.records[0].archive_offset
+        );
+        assert_eq!(archive.records[1].directory_version & 3, 0);
+        assert_eq!(archive.records[1].record_id, 2);
+        assert_eq!(archive.restore_through(1, &original).unwrap(), first);
+        assert_eq!(archive.restore_through(2, &original).unwrap(), second);
+        assert_eq!(
+            archive.restore_associated_files_through(2).unwrap(),
+            [
+                LunarRestoredAssociatedFile {
+                    extension: "msc",
+                    bytes: b"first msc".to_vec(),
+                },
+                LunarRestoredAssociatedFile {
+                    extension: "dsc",
+                    bytes: b"second dsc".to_vec(),
+                },
+            ]
+        );
+        assert!(matches!(
+            archive.append_delta(&initial),
+            Err(LunarRestoreArchiveError::AppendBaseMismatch { .. })
+        ));
+
+        let third = [7, 7, 7, 7];
+        let mut full = LunarRestoreArchiveCreateRequest::new(&original, &third, "Full", date, time);
+        full.associated_files[0] = Some(b"full msc");
+        let bytes = archive.append_full(&full).unwrap();
+        let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+        assert_eq!(archive.records[2].directory_version & 3, 1);
+        assert_eq!(archive.restore_through(3, &original).unwrap(), third);
+        assert_eq!(
+            archive.restore_associated_files_through(3).unwrap(),
+            [LunarRestoredAssociatedFile {
+                extension: "msc",
+                bytes: b"full msc".to_vec(),
+            }]
+        );
     }
 
     #[test]
