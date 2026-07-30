@@ -36,6 +36,7 @@ mod level_editor_auxiliary;
 mod level_editor_forms;
 mod level_editor_panels;
 mod level_editor_render;
+mod level_usage_dialog;
 mod map16_editor;
 mod map16_editor_render;
 mod map16_set_editor;

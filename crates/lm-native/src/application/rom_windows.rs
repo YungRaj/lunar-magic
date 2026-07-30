@@ -56,6 +56,7 @@ impl NativeApplication {
     }
 
     pub(super) fn show_project_operations(&mut self, context: &egui::Context) {
+        self.level_usage_dialog.show(context);
         self.ips_create_dialog.show(context);
         if let Some(command) = self.rom_mwl_batch_import_dialog.show(context, &self.app) {
             if self.try_dispatch(context, command) {

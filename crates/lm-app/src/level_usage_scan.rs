@@ -6,13 +6,13 @@ use lm_profile::{
     smw_us_v1_default_music_tracks, smw_us_v1_level_mode, smw_us_v1_object_family,
     smw_us_v1_object_tileset_graphics_files, smw_us_v1_sprite_tileset_graphics_files,
 };
-use lm_project::Project;
+use lm_project::{LevelLayer2RomLayout, LevelRomLayout, Project};
 use lm_render::{
     NativeLevelMap16Layout, StandardObjectDefinitionSet,
     install_lunar_magic_shared_extended_objects, install_lunar_magic_shared_standard_objects,
     install_lunar_magic_tileset_extended_objects, render_mapped_standard_object_stream,
 };
-use lm_rom::RomImage;
+use lm_rom::{Mapper, Region, RomImage, SupportedGame};
 
 use crate::{
     LevelUsageAccumulator, LevelUsageAnalysisError, LevelUsageReport, ProfiledControllerSnapshot,
@@ -132,7 +132,7 @@ impl From<LevelUsageAnalysisError> for LevelUsageScanError {
 pub fn scan_smw_us_v1_level_usage(
     source: &ProfiledControllerSnapshot,
     options: LevelUsageScanOptions,
-    mut progress: impl FnMut(LevelUsageScanProgress) -> ControlFlow<()>,
+    progress: impl FnMut(LevelUsageScanProgress) -> ControlFlow<()>,
 ) -> Result<LevelUsageScanResult, LevelUsageScanError> {
     source
         .profile
@@ -144,6 +144,62 @@ pub fn scan_smw_us_v1_level_usage(
         .profile
         .level_layout_for_rom(&image)
         .map_err(|error| LevelUsageScanError::Rom(error.to_string()))?;
+    scan_smw_us_v1_level_usage_with_layout(
+        image,
+        layout,
+        source.profile.layer2,
+        &source.profile.sprite_lengths,
+        options,
+        progress,
+    )
+}
+
+/// Scans the built-in SMW-US revision-0 layout without requiring an external revision profile.
+///
+/// # Errors
+///
+/// Rejects other games, regions, revisions, or mappers and forwards scanner initialization,
+/// cancellation, and counter failures.
+pub fn scan_builtin_smw_us_v1_level_usage(
+    snapshot: &crate::ControllerSnapshot,
+    options: LevelUsageScanOptions,
+    progress: impl FnMut(LevelUsageScanProgress) -> ControlFlow<()>,
+) -> Result<LevelUsageScanResult, LevelUsageScanError> {
+    if snapshot.identity.game != SupportedGame::SuperMarioWorld
+        || snapshot.identity.region != Region::NorthAmerica
+        || snapshot.identity.revision != 0
+        || snapshot.identity.mapper != Mapper::LoRom
+    {
+        return Err(LevelUsageScanError::Profile(
+            "the built-in usage scanner requires SMW-US revision 0 LoROM".into(),
+        ));
+    }
+    let image = RomImage::from_bytes(snapshot.rom_bytes.clone())
+        .map_err(|error| LevelUsageScanError::Rom(error.to_string()))?;
+    let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image)
+        .map_err(|error| LevelUsageScanError::Rom(error.to_string()))?;
+    let layer2 = lm_profile::smw_us_v1_layer2_layout(&image)
+        .map_err(|error| LevelUsageScanError::Rom(error.to_string()))?;
+    scan_smw_us_v1_level_usage_with_layout(
+        image,
+        layout,
+        Some(layer2),
+        &lm_level::SpriteLengthTable::standard(),
+        options,
+        progress,
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn scan_smw_us_v1_level_usage_with_layout(
+    image: RomImage,
+    layout: LevelRomLayout,
+    layer2_layout: Option<LevelLayer2RomLayout>,
+    sprite_lengths: &lm_level::SpriteLengthTable,
+    options: LevelUsageScanOptions,
+    mut progress: impl FnMut(LevelUsageScanProgress) -> ControlFlow<()>,
+) -> Result<LevelUsageScanResult, LevelUsageScanError> {
     let object_map = load_smw_us_v1_standard_object_definition_map(&image)
         .map_err(|error| LevelUsageScanError::ObjectDefinitions(error.to_string()))?;
     let mut shared_definitions = StandardObjectDefinitionSet::empty();
@@ -178,7 +234,7 @@ pub fn scan_smw_us_v1_level_usage(
             });
         }
 
-        let slot = match project.load_level_slot(level, layout, &source.profile.sprite_lengths) {
+        let slot = match project.load_level_slot(level, layout, sprite_lengths) {
             Ok(slot) => slot,
             Err(error) => {
                 diagnostics.push(diagnostic(level, LevelUsageScanStage::Load, error));
@@ -243,7 +299,7 @@ pub fn scan_smw_us_v1_level_usage(
                     }
                 };
 
-            let layer2 = source.profile.layer2.and_then(|layer2_layout| {
+            let layer2 = layer2_layout.and_then(|layer2_layout| {
                 match project.load_level_layer2_with_descriptor(
                     level,
                     slot.layer1.header.level_mode(),
@@ -456,6 +512,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires the locally supplied Lunar Magic working ROM"]
+    #[allow(clippy::too_many_lines)]
     fn working_rom_scan_matches_authenticated_usage_domains() {
         let rom_bytes = std::fs::read(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../SMW-working.sfc"),
@@ -482,6 +539,14 @@ mod tests {
                 ControlFlow::Continue(())
             })
             .unwrap();
+        let builtin_result = scan_builtin_smw_us_v1_level_usage(
+            &snapshot.snapshot,
+            LevelUsageScanOptions::default(),
+            |_| ControlFlow::Continue(()),
+        )
+        .unwrap();
+        assert_eq!(builtin_result.report, result.report);
+        assert_eq!(builtin_result.diagnostics, result.diagnostics);
         assert_eq!(result.loaded_count(), 0x200);
         for graphics in [0x28, 0x29, 0x2a, 0x2b, 0x32, 0x33] {
             let entry = result

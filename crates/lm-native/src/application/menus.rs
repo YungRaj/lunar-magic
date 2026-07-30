@@ -59,6 +59,18 @@ impl NativeApplication {
             }
             if ui
                 .add_enabled(
+                    enabled && !self.level_usage_dialog.is_busy(),
+                    egui::Button::new("Analyze Level Usage…"),
+                )
+                .clicked()
+            {
+                ui.close_menu();
+                if let Err(error) = self.level_usage_dialog.open(&self.app) {
+                    self.effects.error = Some(error);
+                }
+            }
+            if ui
+                .add_enabled(
                     enabled && self.app.revision_profile().is_some(),
                     egui::Button::new("Migrate Graphics Compression…"),
                 )

@@ -21,6 +21,7 @@ lm-render = { path = "../lm-render" }
 lm-rom = { path = "../lm-rom" }
 lm-title = { path = "../lm-title" }
 rfd = "0.15"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 lm-oracle = { path = "../lm-oracle" }

@@ -175,7 +175,8 @@ pub use level_usage::{
 };
 pub use level_usage_scan::{
     LevelUsageScanDiagnostic, LevelUsageScanError, LevelUsageScanOptions, LevelUsageScanProgress,
-    LevelUsageScanResult, LevelUsageScanStage, scan_smw_us_v1_level_usage,
+    LevelUsageScanResult, LevelUsageScanStage, scan_builtin_smw_us_v1_level_usage,
+    scan_smw_us_v1_level_usage,
 };
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};
