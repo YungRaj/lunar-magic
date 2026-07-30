@@ -26,21 +26,20 @@ impl RomMap16Editor {
         if level > 0x01ff {
             return Err("bitmap import level must be between 000 and 1FF".into());
         }
-        let acts_like = u16::from_str_radix(self.bitmap_acts_like.trim(), 16)
-            .map_err(|_| "bitmap import Acts Like must be hexadecimal")?;
+        let start_map16_tile = usize::from_str_radix(self.bitmap_map16_start.trim(), 16)
+            .map_err(|_| "first Map16 tile must be hexadecimal")?;
         let extra_graphics = [
             parse_optional_graphics(&self.bitmap_extra_slot_4, "GFX slot 4")?,
             parse_optional_graphics(&self.bitmap_extra_slot_5, "GFX slot 5")?,
         ];
         let request = NativeMap16BitmapImportSessionRequest {
             level: usize::from(level),
-            page: self.page,
+            start_map16_tile,
             extra_graphics,
             pixels: bitmap.pixels,
             width: bitmap.width,
             height: bitmap.height,
             palette_row: self.bitmap_palette_row,
-            acts_like,
         };
         self.bitmap_session = Some(
             if let Some(profile) = workspace.profile.clone() {
@@ -99,6 +98,11 @@ impl RomMap16Editor {
                                 "Reuse flipped matches",
                             )
                             .changed()
+                            | ui.checkbox(
+                                &mut options.deduplicate_map16,
+                                "Optimize 16×16 tiles",
+                            )
+                            .changed()
                             | ui.checkbox(&mut options.layer_priority, "Layer priority")
                                 .changed()
                     })
@@ -116,6 +120,24 @@ impl RomMap16Editor {
                     "{} generated colors; {} newly occupied 8×8 tiles",
                     plan.generated_colors, plan.newly_occupied_tiles
                 ));
+                match session.map16_allocation() {
+                    Ok(allocation) => {
+                        ui.label(format!(
+                            "{} source blocks placed using {} new 16×16 tiles",
+                            allocation.assignments.len(),
+                            allocation.allocated_definitions
+                        ));
+                        if allocation.exhausted {
+                            ui.colored_label(
+                                egui::Color32::YELLOW,
+                                "Not enough blank 16×16 tiles; only the reported prefix will be imported.",
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        ui.colored_label(egui::Color32::RED, error.to_string());
+                    }
+                }
                 ui.horizontal(|ui| {
                     if ui
                         .add_enabled(!stale, egui::Button::new("Import into ROM"))
@@ -195,7 +217,7 @@ impl RomMap16Editor {
     pub(super) fn bitmap_import_controls(&mut self, ui: &mut egui::Ui, stale: bool) {
         ui.separator();
         ui.heading("Bitmap to Map16");
-        ui.label("The selected page, preview level, and its real object tileset are used.");
+        ui.label("The preview level and its real object tileset are used.");
         ui.horizontal(|ui| {
             ui.label("Editable GFX slot 4");
             ui.text_edit_singleline(&mut self.bitmap_extra_slot_4);
@@ -205,8 +227,8 @@ impl RomMap16Editor {
         ui.small("Enter hexadecimal GFX/ExGFX file numbers. Blank slots cannot store new tiles.");
         ui.horizontal(|ui| {
             ui.add(egui::Slider::new(&mut self.bitmap_palette_row, 0..=7).text("Palette row"));
-            ui.label("Acts Like");
-            ui.text_edit_singleline(&mut self.bitmap_acts_like);
+            ui.label("First Map16 tile");
+            ui.text_edit_singleline(&mut self.bitmap_map16_start);
         });
         let supported = self.workspace.is_some();
         if ui

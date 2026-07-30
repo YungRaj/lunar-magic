@@ -33,7 +33,8 @@ impl RomMap16Editor {
                 self.bitmap_extra_slot_4.clear();
                 self.bitmap_extra_slot_5.clear();
                 self.bitmap_palette_row = 4;
-                self.bitmap_acts_like = "0130".into();
+                self.bitmap_map16_start =
+                    format!("{:04X}", self.page * lm_level::Map16Page::TILE_COUNT);
                 self.bitmap_original_texture = None;
                 self.bitmap_converted_texture = None;
                 self.invalidate();

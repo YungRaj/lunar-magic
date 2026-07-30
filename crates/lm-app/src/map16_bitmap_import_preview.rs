@@ -171,6 +171,7 @@ mod tests {
                 optimize_new_tiles: true,
                 allow_flipped_matches: true,
             },
+            deduplicate_map16: true,
             layer_priority: false,
         }
     }

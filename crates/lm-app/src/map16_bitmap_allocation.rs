@@ -263,4 +263,26 @@ mod tests {
         );
         assert_eq!(definitions, before);
     }
+
+    #[test]
+    fn sequential_assignments_cross_a_map16_page_boundary() {
+        let mut definitions = vec![blank(0); 512];
+        let source = [imported(0x100, 0), imported(0x200, 0)];
+        let end = definitions.len();
+        let result = allocate_bitmap_map16_tiles(
+            &mut definitions,
+            &source,
+            Map16BitmapAllocationOptions {
+                start: 255,
+                end,
+                reserved: usize::MAX,
+                mode: Map16BitmapAllocationMode::Sequential,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(result.assignments, [255, 256]);
+        assert_eq!(definitions[255].top_left, source[0].top_left);
+        assert_eq!(definitions[256].top_left, source[1].top_left);
+    }
 }

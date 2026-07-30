@@ -1,10 +1,12 @@
 //! Toolkit-independent native bitmap-to-Map16 import session.
 
 use crate::{
-    ControllerSnapshot, Map16BitmapImportError, Map16BitmapImportInputs, Map16BitmapImportOptions,
-    Map16BitmapImportPreviewState, NativeMap16BitmapGraphicsWorkspace,
+    ControllerSnapshot, Map16BitmapAllocation, Map16BitmapAllocationMode,
+    Map16BitmapAllocationOptions, Map16BitmapImportError, Map16BitmapImportInputs,
+    Map16BitmapImportOptions, Map16BitmapImportPreviewState, NativeMap16BitmapGraphicsWorkspace,
     NativeMap16BitmapWorkspaceError, NativeMap16BitmapWorkspaceLoadError, PreparedRomCommit,
-    RevisionProfile, native_map16_bitmap_import_options, prepare_map16_bitmap_rom_commit,
+    RevisionProfile, allocate_bitmap_map16_tiles, native_map16_bitmap_import_options,
+    prepare_map16_bitmap_rom_commit,
 };
 use lm_graphics::{PaletteOwnership, Rgba8};
 use lm_project::{
@@ -22,22 +24,21 @@ pub struct NativeMap16BitmapImportSession {
     profile: Option<RevisionProfile>,
     workspace: NativeMap16BitmapGraphicsWorkspace,
     preview: Map16BitmapImportPreviewState,
-    baseline_page: lm_level::Map16Page,
+    baseline_pages: Vec<lm_level::Map16Page>,
     level: usize,
-    page: usize,
+    start_map16_tile: usize,
     smw_map16: Option<lm_profile::LoadedSmwUsV1TransferredMap16>,
 }
 
 /// User-selected inputs needed to open a native bitmap import session.
 pub struct NativeMap16BitmapImportSessionRequest {
     pub level: usize,
-    pub page: usize,
+    pub start_map16_tile: usize,
     pub extra_graphics: [Option<usize>; 2],
     pub pixels: Vec<Rgba8>,
     pub width: usize,
     pub height: usize,
     pub palette_row: u8,
-    pub acts_like: u16,
 }
 
 impl NativeMap16BitmapImportSession {
@@ -86,16 +87,21 @@ impl NativeMap16BitmapImportSession {
         let palette = bitmap_working_palette(palette);
         let palette_ownership = PaletteOwnership::editable(palette.colors.len());
         let bitmap = padded_bitmap(request.width, request.height, request.pixels, &palette)?;
-        let baseline_page = project
-            .load_map16_page(request.page, profile.map16)
-            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+        let baseline_pages = load_profile_map16_pages(&project, profile.map16)?;
+        if request.start_map16_tile >= baseline_pages.len() * lm_level::Map16Page::TILE_COUNT {
+            return Err(NativeMap16BitmapImportSessionError::Map16(format!(
+                "start tile {:X} is outside the {}-page Map16 workspace",
+                request.start_map16_tile,
+                baseline_pages.len()
+            )));
+        }
         let preview = Map16BitmapImportPreviewState::new(
             Map16BitmapImportInputs {
                 pixels: bitmap.pixels,
                 width: bitmap.width,
                 height: bitmap.height,
                 palette_row: request.palette_row,
-                acts_like: request.acts_like,
+                acts_like: 0,
                 palette,
                 palette_ownership,
                 graphics: workspace.graphics.clone(),
@@ -110,9 +116,9 @@ impl NativeMap16BitmapImportSession {
             profile: Some(profile),
             workspace,
             preview,
-            baseline_page,
+            baseline_pages,
             level: request.level,
-            page: request.page,
+            start_map16_tile: request.start_map16_tile,
             smw_map16: None,
         })
     }
@@ -166,14 +172,21 @@ impl NativeMap16BitmapImportSession {
         let bitmap = padded_bitmap(request.width, request.height, request.pixels, &palette)?;
         let smw_map16 = lm_profile::load_smw_us_v1_transferred_map16(&project)
             .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
-        let baseline_page = transferred_page(&smw_map16, request.page)?;
+        let baseline_pages = transferred_pages(&smw_map16)?;
+        if request.start_map16_tile >= baseline_pages.len() * lm_level::Map16Page::TILE_COUNT {
+            return Err(NativeMap16BitmapImportSessionError::Map16(format!(
+                "start tile {:X} is outside the {}-page transferred Map16 workspace",
+                request.start_map16_tile,
+                baseline_pages.len()
+            )));
+        }
         let preview = Map16BitmapImportPreviewState::new(
             Map16BitmapImportInputs {
                 pixels: bitmap.pixels,
                 width: bitmap.width,
                 height: bitmap.height,
                 palette_row: request.palette_row,
-                acts_like: request.acts_like,
+                acts_like: 0,
                 palette: palette.clone(),
                 palette_ownership: PaletteOwnership::editable(palette.colors.len()),
                 graphics: workspace.graphics.clone(),
@@ -188,9 +201,9 @@ impl NativeMap16BitmapImportSession {
             profile: None,
             workspace,
             preview,
-            baseline_page,
+            baseline_pages,
             level: request.level,
-            page: request.page,
+            start_map16_tile: request.start_map16_tile,
             smw_map16: Some(smw_map16),
         })
     }
@@ -198,6 +211,17 @@ impl NativeMap16BitmapImportSession {
     #[must_use]
     pub const fn preview(&self) -> &Map16BitmapImportPreviewState {
         &self.preview
+    }
+
+    /// Computes the current global Map16 placement without mutating the session.
+    ///
+    /// # Errors
+    ///
+    /// Returns a workspace/allocation error if the retained Map16 baseline is malformed.
+    pub fn map16_allocation(
+        &self,
+    ) -> Result<Map16BitmapAllocation, NativeMap16BitmapImportSessionError> {
+        Ok(self.allocated_pages()?.allocation)
     }
 
     /// Recomputes every preview domain from the immutable source bitmap.
@@ -279,7 +303,17 @@ impl NativeMap16BitmapImportSession {
             })
             .collect::<Vec<_>>();
         let native_palette = native_installed_palette(self.preview.plan().palette.clone());
-        let merged_page = self.merged_page();
+        let allocated = self.allocated_pages()?;
+        let map16_saves = allocated
+            .touched_pages
+            .iter()
+            .map(|page_number| Map16BitmapPageSave {
+                page_number: *page_number,
+                page: &allocated.pages[*page_number],
+                layout: profile.map16,
+                options: &map16_options,
+            })
+            .collect::<Vec<_>>();
         let save = Map16BitmapRomSave {
             description: "Import bitmap as Map16",
             graphics: &graphics_saves,
@@ -289,12 +323,7 @@ impl NativeMap16BitmapImportSession {
                 layout: palette_layout,
                 options: &palette_options,
             },
-            map16: Map16BitmapPageSave {
-                page_number: self.page,
-                page: &merged_page,
-                layout: profile.map16,
-                options: &map16_options,
-            },
+            map16: &map16_saves,
             checksum_field: lm_profile::SMW_US_V1_CHECKSUM_FIELD,
         };
         prepare_map16_bitmap_rom_commit(&self.snapshot, &save)
@@ -392,8 +421,10 @@ impl NativeMap16BitmapImportSession {
             .smw_map16
             .clone()
             .ok_or_else(|| NativeMap16BitmapImportSessionError::Map16("missing baseline".into()))?;
-        let merged_page = self.merged_page();
-        replace_transferred_page(&mut map16, self.page, &merged_page)?;
+        let allocated = self.allocated_pages()?;
+        for page_number in &allocated.touched_pages {
+            replace_transferred_page(&mut map16, *page_number, &allocated.pages[*page_number])?;
+        }
         let map16_options = lm_profile::SmwUsV1TransferredMap16SaveOptions {
             allocation,
             reuse_identical: true,
@@ -446,17 +477,60 @@ impl NativeMap16BitmapImportSession {
         })
     }
 
-    fn merged_page(&self) -> lm_level::Map16Page {
-        let mut page = self.baseline_page.clone();
-        let plan = self.preview.plan();
-        for row in 0..plan.height_in_map16_tiles {
-            for column in 0..plan.width_in_map16_tiles {
-                let index = row * 16 + column;
-                page.tiles[index] = plan.page.tiles[index];
-            }
-        }
-        page
+    fn allocated_pages(&self) -> Result<AllocatedMap16Pages, NativeMap16BitmapImportSessionError> {
+        let mut definitions = self
+            .baseline_pages
+            .iter()
+            .flat_map(|page| page.tiles.iter().copied())
+            .collect::<Vec<_>>();
+        let start = self.start_map16_tile;
+        let mode = if self.preview.options().deduplicate_map16 {
+            Map16BitmapAllocationMode::Deduplicated
+        } else {
+            Map16BitmapAllocationMode::Sequential
+        };
+        let end = definitions.len();
+        let allocation = allocate_bitmap_map16_tiles(
+            &mut definitions,
+            &self.preview.plan().map16_tiles,
+            Map16BitmapAllocationOptions {
+                start,
+                end,
+                reserved: 0x8000,
+                mode,
+            },
+        )
+        .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+        let mut touched_pages = allocation
+            .assignments
+            .iter()
+            .map(|tile| tile / lm_level::Map16Page::TILE_COUNT)
+            .collect::<Vec<_>>();
+        touched_pages.sort_unstable();
+        touched_pages.dedup();
+        let pages = definitions
+            .chunks_exact(lm_level::Map16Page::TILE_COUNT)
+            .map(|tiles| {
+                lm_level::Map16Page::new(tiles.to_vec()).map_err(|tiles| {
+                    NativeMap16BitmapImportSessionError::Map16(format!(
+                        "allocated page contains {} tiles",
+                        tiles.len()
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(AllocatedMap16Pages {
+            pages,
+            touched_pages,
+            allocation,
+        })
     }
+}
+
+struct AllocatedMap16Pages {
+    pages: Vec<lm_level::Map16Page>,
+    touched_pages: Vec<usize>,
+    allocation: Map16BitmapAllocation,
 }
 
 #[derive(Debug)]
@@ -514,41 +588,64 @@ fn padded_bitmap(
     .map_err(|error| NativeMap16BitmapImportSessionError::ImportGeometry(error.to_string()))
 }
 
-fn transferred_page(
-    map16: &lm_profile::LoadedSmwUsV1TransferredMap16,
-    page_number: usize,
-) -> Result<lm_level::Map16Page, NativeMap16BitmapImportSessionError> {
-    let first_tile = page_number
-        .checked_mul(lm_level::Map16Page::TILE_COUNT)
-        .ok_or_else(|| NativeMap16BitmapImportSessionError::Map16("page index overflow".into()))?;
-    let first_word = first_tile
-        .checked_mul(4)
-        .ok_or_else(|| NativeMap16BitmapImportSessionError::Map16("word index overflow".into()))?;
-    if first_word + lm_level::Map16Page::TILE_COUNT * 4 > map16.definitions.len()
-        || first_tile + lm_level::Map16Page::TILE_COUNT > map16.acts_like.len()
-    {
+fn load_profile_map16_pages(
+    project: &Project,
+    layout: lm_project::Map16RomLayout,
+) -> Result<Vec<lm_level::Map16Page>, NativeMap16BitmapImportSessionError> {
+    if layout.graphics.entries != layout.acts_like.entries || layout.graphics.entries == 0 {
         return Err(NativeMap16BitmapImportSessionError::Map16(format!(
-            "page {page_number:X} is outside native transferred Map16 storage"
+            "Map16 pointer-table mismatch: {} graphics pages and {} Acts-Like pages",
+            layout.graphics.entries, layout.acts_like.entries
         )));
     }
-    let tiles = (0..lm_level::Map16Page::TILE_COUNT)
-        .map(|index| {
-            let word = first_word + index * 4;
-            lm_level::Map16Tile {
-                top_left: lm_level::Subtile(map16.definitions[word]),
-                top_right: lm_level::Subtile(map16.definitions[word + 1]),
-                bottom_left: lm_level::Subtile(map16.definitions[word + 2]),
-                bottom_right: lm_level::Subtile(map16.definitions[word + 3]),
-                acts_like: map16.acts_like[first_tile + index],
-            }
+    (0..layout.graphics.entries)
+        .map(|page| {
+            project
+                .load_map16_page(page, layout)
+                .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))
         })
-        .collect();
-    lm_level::Map16Page::new(tiles).map_err(|tiles| {
-        NativeMap16BitmapImportSessionError::Map16(format!(
-            "decoded page contains {} tiles",
-            tiles.len()
-        ))
-    })
+        .collect()
+}
+
+fn transferred_pages(
+    map16: &lm_profile::LoadedSmwUsV1TransferredMap16,
+) -> Result<Vec<lm_level::Map16Page>, NativeMap16BitmapImportSessionError> {
+    let words_per_page = lm_level::Map16Page::TILE_COUNT * 4;
+    if map16.definitions.is_empty() || map16.definitions.len() % words_per_page != 0 {
+        return Err(NativeMap16BitmapImportSessionError::Map16(format!(
+            "transferred definitions contain {} words, not whole Map16 pages",
+            map16.definitions.len()
+        )));
+    }
+    map16
+        .definitions
+        .chunks_exact(words_per_page)
+        .enumerate()
+        .map(|(page_number, words)| {
+            let first_tile = page_number * lm_level::Map16Page::TILE_COUNT;
+            let tiles = words
+                .chunks_exact(4)
+                .enumerate()
+                .map(|(index, words)| lm_level::Map16Tile {
+                    top_left: lm_level::Subtile(words[0]),
+                    top_right: lm_level::Subtile(words[1]),
+                    bottom_left: lm_level::Subtile(words[2]),
+                    bottom_right: lm_level::Subtile(words[3]),
+                    acts_like: map16
+                        .acts_like
+                        .get(first_tile + index)
+                        .copied()
+                        .unwrap_or(lm_profile::SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE),
+                })
+                .collect();
+            lm_level::Map16Page::new(tiles).map_err(|tiles| {
+                NativeMap16BitmapImportSessionError::Map16(format!(
+                    "decoded page {page_number:X} contains {} tiles",
+                    tiles.len()
+                ))
+            })
+        })
+        .collect()
 }
 
 fn replace_transferred_page(
@@ -571,13 +668,15 @@ fn replace_transferred_page(
     let final_word = first_word
         .checked_add(lm_level::Map16Page::TILE_COUNT * 4)
         .ok_or_else(|| NativeMap16BitmapImportSessionError::Map16("word range overflow".into()))?;
-    if final_word > map16.definitions.len()
-        || first_tile + lm_level::Map16Page::TILE_COUNT > map16.acts_like.len()
-    {
+    if final_word > map16.definitions.len() {
         return Err(NativeMap16BitmapImportSessionError::Map16(format!(
             "page {page_number:X} is outside native transferred Map16 storage"
         )));
     }
+    let final_tile = first_tile + lm_level::Map16Page::TILE_COUNT;
+    map16
+        .acts_like
+        .resize(final_tile, lm_profile::SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE);
     for (index, tile) in page.tiles.iter().enumerate() {
         let word = first_word + index * 4;
         map16.definitions[word..word + 4].copy_from_slice(&[
@@ -677,6 +776,35 @@ mod tests {
     }
 
     #[test]
+    fn transferred_pages_materialize_and_preserve_trimmed_default_acts_like_values() {
+        let mut transferred = lm_profile::LoadedSmwUsV1TransferredMap16 {
+            definitions: vec![
+                crate::LUNAR_MAGIC_BLANK_MAP16_WORD;
+                lm_level::Map16Page::TILE_COUNT * 4
+            ],
+            acts_like: Vec::new(),
+            definition_block: None,
+            acts_low_block: None,
+            acts_high_block: None,
+            definition_odd_stream_offset: 0,
+        };
+        let mut pages = transferred_pages(&transferred).unwrap();
+        assert!(
+            pages[0]
+                .tiles
+                .iter()
+                .all(|tile| tile.acts_like == lm_profile::SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE)
+        );
+        pages[0].tiles[0].top_left = lm_level::Subtile(0x222);
+        replace_transferred_page(&mut transferred, 0, &pages[0]).unwrap();
+        assert_eq!(
+            transferred.acts_like,
+            vec![lm_profile::SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE; lm_level::Map16Page::TILE_COUNT]
+        );
+        assert_eq!(transferred.definitions[0], 0x222);
+    }
+
+    #[test]
     fn pristine_smw_import_installs_reopens_and_undoes_every_domain() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
@@ -708,13 +836,12 @@ mod tests {
             snapshot,
             NativeMap16BitmapImportSessionRequest {
                 level: 0x105,
-                page: 0,
+                start_map16_tile: 0,
                 extra_graphics: [Some(0x20), Some(0x21)],
                 pixels,
                 width,
                 height,
                 palette_row: 4,
-                acts_like: 0x130,
             },
         )
         .unwrap();
@@ -725,7 +852,7 @@ mod tests {
             ),
             (32, 16)
         );
-        let expected_page = session.merged_page();
+        let expected_page = session.allocated_pages().unwrap().pages[0].clone();
         let expected_palette = native_installed_palette(session.preview().plan().palette.clone());
         let prepared = session.prepare_commit(0x80_000..0x10_0000).unwrap();
         app.dispatch(prepared.into_command()).unwrap();

@@ -35,7 +35,7 @@ pub struct Map16BitmapRomSave<'a> {
     pub description: &'a str,
     pub graphics: &'a [Map16BitmapGraphicsSave<'a>],
     pub palette: Map16BitmapPaletteSave<'a>,
-    pub map16: Map16BitmapPageSave<'a>,
+    pub map16: &'a [Map16BitmapPageSave<'a>],
     pub checksum_field: usize,
 }
 
@@ -43,8 +43,8 @@ pub struct Map16BitmapRomSave<'a> {
 pub struct SavedMap16BitmapImport {
     pub graphics: Vec<PayloadSaveResult>,
     pub palette: PayloadSaveResult,
-    pub map16_graphics: PayloadSaveResult,
-    pub map16_acts_like: PayloadSaveResult,
+    pub map16_graphics: Vec<PayloadSaveResult>,
+    pub map16_acts_like: Vec<PayloadSaveResult>,
 }
 
 #[derive(Debug)]
@@ -105,7 +105,7 @@ impl Project {
         if save.description.trim().is_empty() {
             return Err(Map16BitmapRomSaveError::EmptyDescription);
         }
-        let mut requests = Vec::with_capacity(save.graphics.len() + 3);
+        let mut requests = Vec::with_capacity(save.graphics.len() + 1 + save.map16.len() * 2);
         for graphics in save.graphics {
             requests.push(graphics_save_request(
                 graphics.file_number,
@@ -120,12 +120,14 @@ impl Project {
             save.palette.layout,
             save.palette.options,
         )?);
-        requests.extend(map16_page_save_requests(
-            save.map16.page_number,
-            save.map16.page,
-            save.map16.layout,
-            save.map16.options,
-        )?);
+        for page in save.map16 {
+            requests.extend(map16_page_save_requests(
+                page.page_number,
+                page.page,
+                page.layout,
+                page.options,
+            )?);
+        }
 
         let graphics_count = save.graphics.len();
         let mut results = self.save_tagged_payloads_with_checksum(
@@ -133,16 +135,19 @@ impl Project {
             &requests,
             save.checksum_field,
         )?;
-        if results.len() != graphics_count + 3 {
+        if results.len() != graphics_count + 1 + save.map16.len() * 2 {
             return Err(Map16BitmapRomSaveError::UnexpectedResultCount(
                 results.len(),
             ));
         }
-        let domain_results = results.split_off(graphics_count);
-        let [palette, map16_graphics, map16_acts_like] =
-            domain_results.try_into().map_err(|results: Vec<_>| {
-                Map16BitmapRomSaveError::UnexpectedResultCount(results.len())
-            })?;
+        let mut domain_results = results.split_off(graphics_count);
+        let palette = domain_results.remove(0);
+        let mut map16_graphics = Vec::with_capacity(save.map16.len());
+        let mut map16_acts_like = Vec::with_capacity(save.map16.len());
+        for pair in domain_results.chunks_exact(2) {
+            map16_graphics.push(pair[0].clone());
+            map16_acts_like.push(pair[1].clone());
+        }
         Ok(SavedMap16BitmapImport {
             graphics: results,
             palette,
@@ -171,8 +176,8 @@ mod tests {
             protected: vec![
                 ProtectedRange(0x20..0x23),
                 ProtectedRange(0x30..0x33),
-                ProtectedRange(0x40..0x43),
-                ProtectedRange(0x50..0x53),
+                ProtectedRange(0x40..0x46),
+                ProtectedRange(0x50..0x56),
                 ProtectedRange(0x7fc0..0x8000),
             ],
         }
@@ -210,12 +215,12 @@ mod tests {
             mapper: Mapper::LoRom,
             graphics: LevelPointerTable {
                 offset: 0x40,
-                entries: 1,
+                entries: 2,
                 stride: 3,
             },
             acts_like: LevelPointerTable {
                 offset: 0x50,
-                entries: 1,
+                entries: 2,
                 stride: 3,
             },
         }
@@ -271,6 +276,12 @@ mod tests {
             layout: graphics_layout(),
             options: &graphics_options,
         }];
+        let map16_saves = [Map16BitmapPageSave {
+            page_number: 0,
+            page: &map16,
+            layout: map16_layout(),
+            options: &map16_options,
+        }];
         let result = project
             .save_map16_bitmap_import(&Map16BitmapRomSave {
                 description: "import bitmap as Map16",
@@ -281,12 +292,7 @@ mod tests {
                     layout: palette_layout(),
                     options: &palette_options,
                 },
-                map16: Map16BitmapPageSave {
-                    page_number: 0,
-                    page: &map16,
-                    layout: map16_layout(),
-                    options: &map16_options,
-                },
+                map16: &map16_saves,
                 checksum_field: CHECKSUM,
             })
             .unwrap();
@@ -304,6 +310,71 @@ mod tests {
             u16::from_le_bytes([stored[2], stored[3]]),
             computed.checksum
         );
+        assert_eq!(project.history.undo_len(), 1);
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
+    }
+
+    #[test]
+    fn multiple_touched_map16_pages_commit_and_undo_atomically() {
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        let original = project.save_snapshot();
+        let allocation = policy(0x100..0x7000);
+        let palette_options = PaletteSaveOptions {
+            allocation: allocation.clone(),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let map16_options = Map16SaveOptions {
+            graphics_allocation: allocation.clone(),
+            acts_like_allocation: allocation,
+            previous_graphics: None,
+            previous_acts_like: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let palette = Palette {
+            colors: vec![Bgr555(0x1234); 16],
+        };
+        let first = page();
+        let mut second = page();
+        second.tiles[0].top_left = Subtile(0x345);
+        second.tiles[0].acts_like = 0x131;
+        let map16_saves = [
+            Map16BitmapPageSave {
+                page_number: 0,
+                page: &first,
+                layout: map16_layout(),
+                options: &map16_options,
+            },
+            Map16BitmapPageSave {
+                page_number: 1,
+                page: &second,
+                layout: map16_layout(),
+                options: &map16_options,
+            },
+        ];
+
+        let result = project
+            .save_map16_bitmap_import(&Map16BitmapRomSave {
+                description: "import bitmap across Map16 pages",
+                graphics: &[],
+                palette: Map16BitmapPaletteSave {
+                    palette_number: 0,
+                    palette: &palette,
+                    layout: palette_layout(),
+                    options: &palette_options,
+                },
+                map16: &map16_saves,
+                checksum_field: CHECKSUM,
+            })
+            .unwrap();
+
+        assert_eq!(result.map16_graphics.len(), 2);
+        assert_eq!(result.map16_acts_like.len(), 2);
+        assert_eq!(project.load_map16_page(0, map16_layout()).unwrap(), first);
+        assert_eq!(project.load_map16_page(1, map16_layout()).unwrap(), second);
         assert_eq!(project.history.undo_len(), 1);
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);
@@ -332,6 +403,12 @@ mod tests {
             colors: vec![Bgr555(0x1234); 16],
         };
         let map16 = page();
+        let map16_saves = [Map16BitmapPageSave {
+            page_number: 0,
+            page: &map16,
+            layout: map16_layout(),
+            options: &map16_options,
+        }];
 
         let result = project
             .save_map16_bitmap_import(&Map16BitmapRomSave {
@@ -343,12 +420,7 @@ mod tests {
                     layout: palette_layout(),
                     options: &palette_options,
                 },
-                map16: Map16BitmapPageSave {
-                    page_number: 0,
-                    page: &map16,
-                    layout: map16_layout(),
-                    options: &map16_options,
-                },
+                map16: &map16_saves,
                 checksum_field: CHECKSUM,
             })
             .unwrap();
@@ -399,6 +471,12 @@ mod tests {
             layout: graphics_layout(),
             options: &graphics_options,
         }];
+        let map16_saves = [Map16BitmapPageSave {
+            page_number: 0,
+            page: &map16,
+            layout: map16_layout(),
+            options: &map16_options,
+        }];
         assert!(
             project
                 .save_map16_bitmap_import(&Map16BitmapRomSave {
@@ -410,12 +488,7 @@ mod tests {
                         layout: palette_layout(),
                         options: &palette_options,
                     },
-                    map16: Map16BitmapPageSave {
-                        page_number: 0,
-                        page: &map16,
-                        layout: map16_layout(),
-                        options: &map16_options,
-                    },
+                    map16: &map16_saves,
                     checksum_field: CHECKSUM,
                 })
                 .is_err()

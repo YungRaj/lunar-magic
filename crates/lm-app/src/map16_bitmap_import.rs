@@ -33,6 +33,8 @@ pub struct Map16BitmapImportRequest<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
 pub struct Map16BitmapImportOptions {
     pub graphics: IndexedBitmapImportOptions,
+    /// Reuse an earlier identical imported 16×16 definition instead of allocating another slot.
+    pub deduplicate_map16: bool,
     pub layer_priority: bool,
 }
 
@@ -725,6 +727,7 @@ mod tests {
                     allocation_end: 0x300,
                     ..IndexedBitmapImportOptions::default()
                 },
+                deduplicate_map16: true,
                 layer_priority: true,
             },
         )
