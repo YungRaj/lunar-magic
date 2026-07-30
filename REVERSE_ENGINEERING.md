@@ -835,6 +835,12 @@ constants—the retained Wine oracle has also demonstrated imports beginning at 
 reimplementation must therefore keep the start cursor and reserved definition distinct from the
 currently displayed Map16 page and from the separate `0x00f8` blank **8×8 graphics** tile option.
 
+The special branch in `ImportBitmapAsDeduplicatedMap16Tiles` is also confirmed against
+`BuildOccupiedGraphicsTileMap`: when option byte `005e55f8` is enabled and all four referenced 8×8
+tiles have no nonzero decoded pixel planes, the output index grid receives `DAT_005e55f0`
+directly. No blank Map16 definition is consumed or written for that source block. Sequential mode
+does not take this shortcut and materializes the four tile words in an allocated definition.
+
 The native graphics workspace shape is now confirmed both statically and dynamically. Lunar Magic loads eight `$1000`-byte FG/BG slots of `$80` decoded 4bpp tiles each, while `BuildOccupiedGraphicsTileMap` and the bitmap allocator inspect exactly the first six, producing tile numbers `$000..$2ff`. The default allocation globals at `005e55e0` select first tile `$200`, exclusive workspace end `$300`, and blank fallback tile `$0f8`. Thus the four vanilla object-tileset GFX slots occupy `$000..$1ff`; import allocation begins at FG/BG slot 4 and continues through slot 5. The remaining default slot assignments are the `$7f` blank sentinel, so imported pixels in those slots require a concrete GFX/ExGFX assignment before they can be persisted semantically.
 
 A live Wine oracle used the modeless Map16 editor command `$2276` after publishing both `CF_BITMAP` and a normalized positive-height `CF_DIB`. Lunar Magic's clipboard dispatcher tests `CF_BITMAP`, but `ImportClipboardBitmapAsMap16` subsequently obtains `CF_DIB`; a top-down negative DIB height is not rejected and corrupts its unsigned dimension state, explaining earlier automation failures. With a valid 256×256 solid fixture, the preview reported `$400` source 8×8 cells, two converted tiles, one optimized tile, and `$100` available tiles. Accepting it changed exactly occupancy byte `$200` and the planar cache beginning at `0086b7e8 + $4000`, proving that the first new tile is encoded into slot 4. The default Other Options dialog has 8×8 optimization, reuse of existing 8×8 tiles, and 16×16 deduplication/background paste enabled; the Color Options dialog defaults to high-color reduction method 1, priority for exact existing-palette matches and unique colors, and allows modification of colors not marked fixed.

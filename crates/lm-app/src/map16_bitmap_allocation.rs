@@ -42,6 +42,7 @@ pub struct Map16BitmapAllocation {
 pub enum Map16BitmapAllocationError {
     InvertedRange { start: usize, end: usize },
     EndOutOfRange { end: usize, definitions: usize },
+    ReservedSourceCount { sources: usize, imported: usize },
 }
 
 impl fmt::Display for Map16BitmapAllocationError {
@@ -70,6 +71,24 @@ pub fn allocate_bitmap_map16_tiles(
     imported: &[Map16Tile],
     options: Map16BitmapAllocationOptions,
 ) -> Result<Map16BitmapAllocation, Map16BitmapAllocationError> {
+    allocate_bitmap_map16_tiles_with_reserved_sources(definitions, imported, &[], options)
+}
+
+/// Applies the same allocation while mapping selected source blocks directly to `reserved`.
+///
+/// Lunar Magic's deduplicated caller uses this for 16×16 source blocks whose four referenced 8×8
+/// graphics tiles are all empty. Reserved-source mapping is ignored in sequential mode.
+///
+/// # Errors
+///
+/// Returns the same bound errors as [`allocate_bitmap_map16_tiles`] and rejects a nonempty
+/// `reserved_sources` slice whose length differs from `imported`.
+pub fn allocate_bitmap_map16_tiles_with_reserved_sources(
+    definitions: &mut [Map16Tile],
+    imported: &[Map16Tile],
+    reserved_sources: &[bool],
+    options: Map16BitmapAllocationOptions,
+) -> Result<Map16BitmapAllocation, Map16BitmapAllocationError> {
     if options.start > options.end {
         return Err(Map16BitmapAllocationError::InvertedRange {
             start: options.start,
@@ -82,11 +101,23 @@ pub fn allocate_bitmap_map16_tiles(
             definitions: definitions.len(),
         });
     }
+    if !reserved_sources.is_empty() && reserved_sources.len() != imported.len() {
+        return Err(Map16BitmapAllocationError::ReservedSourceCount {
+            sources: reserved_sources.len(),
+            imported: imported.len(),
+        });
+    }
 
     let mut cursor = options.start;
     let mut assignments = Vec::with_capacity(imported.len());
     let mut allocated_definitions = 0;
     for (source_index, source) in imported.iter().enumerate() {
+        if options.mode == Map16BitmapAllocationMode::Deduplicated
+            && reserved_sources.get(source_index) == Some(&true)
+        {
+            assignments.push(options.reserved);
+            continue;
+        }
         if options.mode == Map16BitmapAllocationMode::Deduplicated
             && let Some(previous) = imported[..source_index]
                 .iter()
@@ -284,5 +315,41 @@ mod tests {
         assert_eq!(result.assignments, [255, 256]);
         assert_eq!(definitions[255].top_left, source[0].top_left);
         assert_eq!(definitions[256].top_left, source[1].top_left);
+    }
+
+    #[test]
+    fn deduplicated_empty_blocks_map_to_reserved_without_consuming_space() {
+        let mut definitions = vec![blank(0); 8];
+        let before = definitions.clone();
+        let source = [imported(0x100, 0), imported(0x200, 0)];
+        let result = allocate_bitmap_map16_tiles_with_reserved_sources(
+            &mut definitions,
+            &source,
+            &[true, true],
+            options(Map16BitmapAllocationMode::Deduplicated),
+        )
+        .unwrap();
+
+        assert_eq!(result.assignments, [4, 4]);
+        assert_eq!(result.next_cursor, 2);
+        assert_eq!(result.allocated_definitions, 0);
+        assert_eq!(definitions, before);
+    }
+
+    #[test]
+    fn sequential_mode_materializes_empty_blocks_instead_of_using_reserved() {
+        let mut definitions = vec![blank(0); 8];
+        let source = [imported(0x100, 0)];
+        let result = allocate_bitmap_map16_tiles_with_reserved_sources(
+            &mut definitions,
+            &source,
+            &[true],
+            options(Map16BitmapAllocationMode::Sequential),
+        )
+        .unwrap();
+
+        assert_eq!(result.assignments, [2]);
+        assert_eq!(result.allocated_definitions, 1);
+        assert_eq!(definitions[2].top_left, source[0].top_left);
     }
 }

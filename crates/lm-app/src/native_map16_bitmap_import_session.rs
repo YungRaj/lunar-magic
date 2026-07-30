@@ -5,8 +5,8 @@ use crate::{
     Map16BitmapAllocationOptions, Map16BitmapImportError, Map16BitmapImportInputs,
     Map16BitmapImportOptions, Map16BitmapImportPreviewState, NativeMap16BitmapGraphicsWorkspace,
     NativeMap16BitmapWorkspaceError, NativeMap16BitmapWorkspaceLoadError, PreparedRomCommit,
-    RevisionProfile, allocate_bitmap_map16_tiles, native_map16_bitmap_import_options,
-    prepare_map16_bitmap_rom_commit,
+    RevisionProfile, allocate_bitmap_map16_tiles_with_reserved_sources,
+    native_map16_bitmap_import_options, prepare_map16_bitmap_rom_commit,
 };
 use lm_graphics::{PaletteOwnership, Rgba8};
 use lm_project::{
@@ -490,9 +490,34 @@ impl NativeMap16BitmapImportSession {
             Map16BitmapAllocationMode::Sequential
         };
         let end = definitions.len();
-        let allocation = allocate_bitmap_map16_tiles(
+        let reserved_sources = self
+            .preview
+            .plan()
+            .map16_tiles
+            .iter()
+            .map(|tile| {
+                [
+                    tile.top_left,
+                    tile.top_right,
+                    tile.bottom_left,
+                    tile.bottom_right,
+                ]
+                .iter()
+                .all(|subtile| {
+                    !self
+                        .preview
+                        .plan()
+                        .occupied
+                        .get(usize::from(subtile.tile_number()))
+                        .copied()
+                        .unwrap_or(false)
+                })
+            })
+            .collect::<Vec<_>>();
+        let allocation = allocate_bitmap_map16_tiles_with_reserved_sources(
             &mut definitions,
             &self.preview.plan().map16_tiles,
+            &reserved_sources,
             Map16BitmapAllocationOptions {
                 start,
                 end,
@@ -504,6 +529,7 @@ impl NativeMap16BitmapImportSession {
         let mut touched_pages = allocation
             .assignments
             .iter()
+            .filter(|tile| **tile < end)
             .map(|tile| tile / lm_level::Map16Page::TILE_COUNT)
             .collect::<Vec<_>>();
         touched_pages.sort_unstable();

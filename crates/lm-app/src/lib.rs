@@ -190,7 +190,7 @@ pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};
 pub use map16_bitmap_allocation::{
     LUNAR_MAGIC_BLANK_MAP16_WORD, Map16BitmapAllocation, Map16BitmapAllocationError,
     Map16BitmapAllocationMode, Map16BitmapAllocationOptions, allocate_bitmap_map16_tiles,
-    is_lunar_magic_blank_map16_tile,
+    allocate_bitmap_map16_tiles_with_reserved_sources, is_lunar_magic_blank_map16_tile,
 };
 pub use map16_bitmap_import::{
     DecodedMap16Bitmap, MAP16_BITMAP_HEIGHT, MAP16_BITMAP_MAX_PNG_BYTES, MAP16_BITMAP_PIXELS,
