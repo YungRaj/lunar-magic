@@ -312,6 +312,16 @@ pub(super) fn parse_native_assets_edit_script(
     })
 }
 
+pub(super) fn parse_mwl_level_import(argument: &str) -> Result<ShellCommand, ShellCommandError> {
+    let (path, search_start, search_end) =
+        parse_script_path_and_range(argument, "level-mwl-import")?;
+    Ok(ShellCommand::ImportMwlLevel {
+        path,
+        search_start,
+        search_end,
+    })
+}
+
 pub(super) fn parse_level_header_edit(argument: &str) -> Result<ShellCommand, ShellCommandError> {
     let values: Vec<_> = argument.split_whitespace().collect();
     let [field, value, search_start, search_end] = values.as_slice() else {

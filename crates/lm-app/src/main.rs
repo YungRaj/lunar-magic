@@ -96,7 +96,7 @@ use editor_shell::{
 };
 use editor_shell::{
     edit_expanded_settings, edit_expanded_settings_word, edit_level_header, execute_editor_script,
-    migrate_graphics_compression,
+    import_mwl_level, migrate_graphics_compression,
 };
 use entity_appearance_document_shell::execute_entity_appearance_document_command;
 use exanimation_document_shell::execute_exanimation_document_command;
@@ -850,6 +850,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &ownership_manifest,
                 search_start..search_end,
             )?,
+            ShellCommand::ImportMwlLevel {
+                path,
+                search_start,
+                search_end,
+            } => import_mwl_level(&mut app, &path, search_start..search_end)?,
             ShellCommand::MigrateGraphicsCompression {
                 target,
                 search_start,

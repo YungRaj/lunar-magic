@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+fn parses_complete_mwl_import_with_unicode_path_and_allocation_range() {
+    assert_eq!(
+        parse("level-mwl-import levels/My Level 日本語.mwl 300000 400000").unwrap(),
+        ShellCommand::ImportMwlLevel {
+            path: "levels/My Level 日本語.mwl".into(),
+            search_start: 0x300000,
+            search_end: 0x400000,
+        }
+    );
+    assert!(matches!(
+        parse("level-mwl-import level.mwl 300000"),
+        Err(ShellCommandError::MissingArgument("level-mwl-import"))
+    ));
+}
+
+#[test]
 fn parses_mwl_document_lifecycle_commands() {
     assert_eq!(
         parse("mwl-open levels/My Level.mwl").unwrap(),

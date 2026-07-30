@@ -3,10 +3,10 @@ use crate::{
     overworld_edit_script, palette_edit_script, shell_command,
 };
 use lm_app::{AppState, Map16ControllerEdit, NativeLevelEdit, RevisionProfileControllers};
-use lm_level::LegacyHeaderEdit;
+use lm_level::{LegacyHeaderEdit, MwlFile};
 use lm_project::{
     CompleteOverworldSaveOptions, ExAnimationSaveOptions, GraphicsSaveOptions, LevelSaveOptions,
-    Map16SetSaveOptions, PaletteSaveOptions,
+    Map16SetSaveOptions, MwlNativeLevel, PaletteSaveOptions,
 };
 use lm_rom::RomImage;
 use std::ops::Range;
@@ -75,6 +75,46 @@ pub(crate) fn execute_native_assets_script(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let loaded = crate::native_assets_edit_loader::load(path)?;
     commit_native_assets_edits(app, &loaded.edits, loaded.palette_ownership, search)?;
+    println!("{}", app.status);
+    Ok(())
+}
+
+pub(crate) fn import_mwl_level(
+    app: &mut AppState,
+    path: &Path,
+    search: Range<usize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let bytes = crate::read_bounded_bytes(path, MwlFile::MAX_FILE_BYTES, "binary MWL level")?;
+    let file = MwlFile::decode(&bytes)?;
+    let profiled = app.profiled_controller_snapshot()?;
+    let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())?;
+    let (layout, options) = profiled.profile.native_level_assets_save_plan_for_rom(
+        search.clone(),
+        &image,
+        profiled.snapshot.identity.internal_header_offset,
+    )?;
+    let Some((_, layer2_options)) = profiled.profile.level_layer2_save_plan(
+        search,
+        image.logical_len(),
+        profiled.snapshot.identity.internal_header_offset,
+    )?
+    else {
+        return Err("active revision profile has no native Layer 2 layout".into());
+    };
+    let ownership = lm_graphics::PaletteOwnership::editable(layout.palette.colors_per_palette);
+    let controller = profiled
+        .profile
+        .decode_native_level_assets(&profiled.snapshot, ownership)?;
+    let mut source = MwlNativeLevel::decode(
+        &file,
+        &profiled.profile.sprite_lengths,
+        layout.exanimation.maximum_records,
+        &profiled.profile.exanimation_double_size_modes,
+    )?;
+    source.retarget(u16::try_from(controller.assets().level.number)?)?;
+    let prepared =
+        controller.prepare_smw_us_v1_installed_mwl_import(&source, &options, &layer2_options)?;
+    app.dispatch(prepared.into_command())?;
     println!("{}", app.status);
     Ok(())
 }

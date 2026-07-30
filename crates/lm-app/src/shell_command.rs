@@ -196,6 +196,12 @@ pub enum ShellCommand {
         search_start: usize,
         search_end: usize,
     },
+    /// Imports a complete binary MWL into the currently selected native level.
+    ImportMwlLevel {
+        path: PathBuf,
+        search_start: usize,
+        search_end: usize,
+    },
     MigrateGraphicsCompression {
         target: GraphicsCompression,
         search_start: usize,
@@ -320,6 +326,7 @@ pub fn parse(line: &str) -> Result<ShellCommand, ShellCommandError> {
         )?)),
         "level-edit" => parse_level_edit_script(argument),
         "native-assets-edit" => parse_native_assets_edit_script(argument),
+        "level-mwl-import" => parse_mwl_level_import(argument),
         "overworld" => no_argument(argument, "overworld", ShellCommand::ShowOverworld),
         "overworld-edit" => parse_overworld_edit_script(argument),
         "map16" => no_argument(argument, "map16", ShellCommand::ShowMap16),
@@ -524,8 +531,9 @@ mod editor;
 use editor::{
     parse_exanimation_edit_script, parse_expanded_settings_word, parse_graphics_edit_script,
     parse_graphics_recompression, parse_level_edit_script, parse_level_header_edit,
-    parse_map16_edit_script, parse_native_assets_edit_script, parse_overworld_edit_script,
-    parse_owned_editor_command, parse_palette_edit_script, parse_rom_expansion,
+    parse_map16_edit_script, parse_mwl_level_import, parse_native_assets_edit_script,
+    parse_overworld_edit_script, parse_owned_editor_command, parse_palette_edit_script,
+    parse_rom_expansion,
 };
 
 fn parse_level_view(argument: &str) -> Result<ShellCommand, ShellCommandError> {
