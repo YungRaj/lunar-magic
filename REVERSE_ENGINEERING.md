@@ -922,11 +922,18 @@ little-endian word: the preceding byte in the installed 65C816 immediate operand
 zero. `ReadPackedRomWordForTableEntry`, `RewritePrimaryMap16PointerPair`, and the Wine ROM deltas
 agree; the `$0800` case changes only logical `$37557` from `$00` to `$10`.
 
-Complete foreground behavior is a separate `$10000`-byte concern. The unchanged container shows
-blank extended tiles using Acts-Like `$0130`, while the older transferred-table helper's missing
-entry sentinel is `$fc7a`; these values are not interchangeable. Complete foreground persistence
-must therefore recover `CommitExpandedMap16ActsLikeTable` rather than extending the existing
-transferred helper by blank padding.
+Complete foreground behavior is a separate `$10000`-byte concern. `LoadPrimaryMap16DataBlocks`
+initializes entries `$0000-$01ff` to their own tile numbers and every remaining entry to `$0130`.
+The installed runtime stores entries `$0000-$3fff` in its first raw `$8000`-byte auxiliary block
+(direct pointer operand at logical `$37624`) and entries `$4000-$7fff` in its optional second raw
+block (displaced pointer operand at `$3763a`). A Wine import changing only tile `$1000` Acts-Like
+to `$0123` changed exactly the corresponding word in the first auxiliary payload plus checksum; a
+tile `$4000` definition/Acts-Like import placed `$0123` at word zero of the second payload.
+
+This is distinct from `CommitExpandedMap16ActsLikeTable`, whose compressed split streams have a
+`$4000`-entry maximum and use `$fc7a` as their trim sentinel. The complete `ImportAllMap16`
+oracles did not alter those compressed streams. Consequently complete foreground `.map16`
+persistence owns the two raw auxiliary halves and must not pad or rewrite the transferred helper.
 
 Map16 interaction code through `004fd510` is now named and annotated. This covers tracking tooltips (including disabled controls and internal sprite/background tile descriptions), independent 100-5000 percent zoom with forward and inverse coordinate transforms, DPI-aware selector sizing, hover and auto-scroll behavior, selection creation and movement, temporary-buffer restoration, property-panel mixed-value analysis, priority and palette edits, horizontal and vertical flips, and Acts Like cycle detection.
 

@@ -14,7 +14,9 @@ pub const SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT: usize = 8;
 pub const SMW_US_V1_PRIMARY_MAP16_BLOCK_BYTES: usize = 0x8000;
 pub const SMW_US_V1_PRIMARY_MAP16_DEFINITION_WORDS: usize =
     SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT * SMW_US_V1_PRIMARY_MAP16_BLOCK_BYTES / 2;
+pub const SMW_US_V1_PRIMARY_MAP16_ACTS_LIKE_WORDS: usize = 0x8000;
 pub const SMW_US_V1_PRIMARY_MAP16_LEGACY_PREFIX_BYTES: usize = 0x1000;
+pub const SMW_US_V1_PRIMARY_MAP16_FIRST_AUXILIARY_POINTER_OFFSET: usize = 0x37_624;
 pub const SMW_US_V1_PRIMARY_MAP16_SECOND_AUXILIARY_POINTER_OFFSET: usize = 0x37_63a;
 pub const SMW_US_V1_PRIMARY_MAP16_AUXILIARY_BYTES: usize = 0x8000;
 
@@ -34,9 +36,13 @@ const DISPLACEMENTS: [u16; SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT] = [
 pub struct LoadedSmwUsV1PrimaryMap16 {
     /// Four words per foreground definition for tiles `$0000-$7fff`.
     pub definitions: Vec<u16>,
+    /// One gameplay-behavior word per foreground definition.
+    pub acts_like: Vec<u16>,
     pub installed: bool,
     pub blocks: [Option<RatsBlock>; SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT],
-    /// The second `$8000`-byte Acts-Like table needed by blocks four through seven.
+    /// The first `$8000`-byte Acts-Like table for tiles `$0000-$3fff`.
+    pub first_auxiliary_block: Option<RatsBlock>,
+    /// The second `$8000`-byte Acts-Like table for tiles `$4000-$7fff`.
     pub second_auxiliary_block: Option<RatsBlock>,
 }
 
@@ -50,6 +56,7 @@ pub struct SmwUsV1PrimaryMap16SaveOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SavedSmwUsV1PrimaryMap16 {
     pub blocks: [Option<PayloadSaveResult>; SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT],
+    pub first_auxiliary: Option<PayloadSaveResult>,
     pub second_auxiliary: Option<PayloadSaveResult>,
 }
 
@@ -84,6 +91,7 @@ pub enum SmwUsV1PrimaryMap16Error {
     AuxiliaryLength(usize),
     RuntimeNotInstalled,
     DefinitionWordCount(usize),
+    ActsLikeWordCount(usize),
     Save(PayloadSaveError),
 }
 
@@ -144,6 +152,8 @@ pub fn load_smw_us_v1_primary_map16(
         .copied()
         == Some(0x22);
     let mut blocks = std::array::from_fn(|_| None);
+    let mut acts_like = default_acts_like();
+    let mut first_auxiliary_block = None;
     let mut second_auxiliary_block = None;
     if installed {
         for (block_index, owned_block) in blocks.iter_mut().enumerate() {
@@ -197,7 +207,20 @@ pub fn load_smw_us_v1_primary_map16(
                 .copy_from_slice(&bytes[block.payload.clone()]);
             *owned_block = Some(block);
         }
+        first_auxiliary_block = Some(load_auxiliary_block(
+            bytes,
+            direct_pointer(
+                bytes,
+                SMW_US_V1_PRIMARY_MAP16_FIRST_AUXILIARY_POINTER_OFFSET,
+            )?,
+        )?);
+        if let Some(block) = &first_auxiliary_block {
+            copy_auxiliary_words(bytes, block, &mut acts_like[..0x4000]);
+        }
         second_auxiliary_block = load_second_auxiliary_block(bytes)?;
+        if let Some(block) = &second_auxiliary_block {
+            copy_auxiliary_words(bytes, block, &mut acts_like[0x4000..]);
+        }
     }
 
     Ok(LoadedSmwUsV1PrimaryMap16 {
@@ -205,8 +228,10 @@ pub fn load_smw_us_v1_primary_map16(
             .chunks_exact(2)
             .map(|word| u16::from_le_bytes([word[0], word[1]]))
             .collect(),
+        acts_like,
         installed,
         blocks,
+        first_auxiliary_block,
         second_auxiliary_block,
     })
 }
@@ -226,6 +251,7 @@ pub fn load_smw_us_v1_primary_map16(
 pub fn save_smw_us_v1_primary_map16(
     project: &mut Project,
     definitions: &[u16],
+    acts_like: &[u16],
     checksum_field: usize,
     options: &SmwUsV1PrimaryMap16SaveOptions,
 ) -> Result<SavedSmwUsV1PrimaryMap16, SmwUsV1PrimaryMap16Error> {
@@ -243,6 +269,9 @@ pub fn save_smw_us_v1_primary_map16(
             definitions.len(),
         ));
     }
+    if acts_like.len() != SMW_US_V1_PRIMARY_MAP16_ACTS_LIKE_WORDS {
+        return Err(SmwUsV1PrimaryMap16Error::ActsLikeWordCount(acts_like.len()));
+    }
     let loaded = load_smw_us_v1_primary_map16(project)?;
     let mut allocation = options.allocation.clone();
     protect_runtime_fields(&mut allocation, checksum_field, project.rom.logical_len())?;
@@ -250,19 +279,39 @@ pub fn save_smw_us_v1_primary_map16(
     let mut requests = Vec::new();
     let mut request_kinds = Vec::new();
     let mut writes = Vec::new();
-    let high_blocks_changed = (4..SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT)
-        .any(|block| block_changed(definitions, &loaded.definitions, block));
-    if high_blocks_changed && loaded.second_auxiliary_block.is_none() {
+    if acts_like[..0x4000] != loaded.acts_like[..0x4000] {
+        let mut auxiliary_allocation = allocation.clone();
+        auxiliary_allocation.bank_size = None;
+        requests.push(PayloadSaveRequest {
+            description: "save primary Map16 first auxiliary table".into(),
+            payload: words_to_bytes(&acts_like[..0x4000]),
+            pointer: PayloadPointer::ContiguousLowBank {
+                offset: SMW_US_V1_PRIMARY_MAP16_FIRST_AUXILIARY_POINTER_OFFSET,
+            },
+            mapper: Mapper::LoRom,
+            allocation_policy: auxiliary_allocation,
+            previous_block: loaded.first_auxiliary_block.clone(),
+            reuse_identical: options.reuse_identical,
+            maximum_payload_len: SMW_US_V1_PRIMARY_MAP16_AUXILIARY_BYTES,
+            erase_fill: options.erase_fill,
+        });
+        request_kinds.push(RequestKind::FirstAuxiliary);
+    }
+
+    let high_blocks_present = definitions[4 * SMW_US_V1_PRIMARY_MAP16_BLOCK_BYTES / 2..]
+        .iter()
+        .any(|word| *word != BLANK_MAP16_WORD);
+    if high_blocks_present
+        && (acts_like[0x4000..] != loaded.acts_like[0x4000..]
+            || loaded.second_auxiliary_block.is_none())
+    {
         let mut auxiliary_allocation = allocation.clone();
         // A complete `$8000` payload plus its header necessarily crosses a LoROM allocation-bank
         // boundary. The runtime uses long indexed reads, so the payload remains relocatable.
         auxiliary_allocation.bank_size = None;
         requests.push(PayloadSaveRequest {
             description: "save primary Map16 second auxiliary table".into(),
-            payload: vec![BLANK_ACTS_LIKE_WORD; SMW_US_V1_PRIMARY_MAP16_AUXILIARY_BYTES / 2]
-                .into_iter()
-                .flat_map(u16::to_le_bytes)
-                .collect(),
+            payload: words_to_bytes(&acts_like[0x4000..]),
             pointer: PayloadPointer::DisplacedContiguous {
                 offset: SMW_US_V1_PRIMARY_MAP16_SECOND_AUXILIARY_POINTER_OFFSET,
                 displacement: SECOND_AUXILIARY_DISPLACEMENT,
@@ -276,6 +325,11 @@ pub fn save_smw_us_v1_primary_map16(
             erase_fill: options.erase_fill,
         });
         request_kinds.push(RequestKind::SecondAuxiliary);
+    } else if !high_blocks_present && loaded.second_auxiliary_block.is_some() {
+        writes.push(RomWrite {
+            offset: SMW_US_V1_PRIMARY_MAP16_SECOND_AUXILIARY_POINTER_OFFSET,
+            bytes: SECOND_AUXILIARY_SENTINEL.to_le_bytes()[..3].to_vec(),
+        });
     }
 
     for block_index in 0..SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT {
@@ -333,15 +387,18 @@ pub fn save_smw_us_v1_primary_map16(
         checksum_field,
     )?;
     let mut blocks = std::array::from_fn(|_| None);
+    let mut first_auxiliary = None;
     let mut second_auxiliary = None;
     for (kind, result) in request_kinds.into_iter().zip(results) {
         match kind {
             RequestKind::Block(block) => blocks[block] = Some(result),
+            RequestKind::FirstAuxiliary => first_auxiliary = Some(result),
             RequestKind::SecondAuxiliary => second_auxiliary = Some(result),
         }
     }
     Ok(SavedSmwUsV1PrimaryMap16 {
         blocks,
+        first_auxiliary,
         second_auxiliary,
     })
 }
@@ -349,11 +406,24 @@ pub fn save_smw_us_v1_primary_map16(
 #[derive(Clone, Copy)]
 enum RequestKind {
     Block(usize),
+    FirstAuxiliary,
     SecondAuxiliary,
 }
 
 fn blank_words(len: usize) -> Vec<u16> {
     vec![BLANK_MAP16_WORD; len]
+}
+
+fn default_acts_like() -> Vec<u16> {
+    let mut acts_like = vec![BLANK_ACTS_LIKE_WORD; SMW_US_V1_PRIMARY_MAP16_ACTS_LIKE_WORDS];
+    for (tile, word) in acts_like[..0x200].iter_mut().enumerate() {
+        *word = u16::try_from(tile).expect("0x200-entry identity table");
+    }
+    acts_like
+}
+
+fn words_to_bytes(words: &[u16]) -> Vec<u8> {
+    words.iter().flat_map(|word| word.to_le_bytes()).collect()
 }
 
 fn block_changed(definitions: &[u16], loaded: &[u16], block: usize) -> bool {
@@ -412,7 +482,22 @@ fn load_second_auxiliary_block(
     let pointer_low = u16::from_le_bytes([encoded[0], encoded[1]]);
     let resolved =
         (pointer & 0xff_0000) | u32::from(pointer_low.wrapping_add(SECOND_AUXILIARY_DISPLACEMENT));
-    let payload_offset = snes_to_pc(Mapper::LoRom, resolved)?;
+    Ok(Some(load_auxiliary_block(bytes, resolved)?))
+}
+
+fn direct_pointer(bytes: &[u8], offset: usize) -> Result<u32, SmwUsV1PrimaryMap16Error> {
+    let encoded = bytes
+        .get(offset..offset + 3)
+        .ok_or(RomError::RangeOutOfBounds {
+            offset,
+            len: 3,
+            image_len: bytes.len(),
+        })?;
+    Ok(u32::from_le_bytes([encoded[0], encoded[1], encoded[2], 0]))
+}
+
+fn load_auxiliary_block(bytes: &[u8], pointer: u32) -> Result<RatsBlock, SmwUsV1PrimaryMap16Error> {
+    let payload_offset = snes_to_pc(Mapper::LoRom, pointer)?;
     let header_offset = payload_offset.checked_sub(HEADER_LEN).ok_or(
         SmwUsV1PrimaryMap16Error::AuxiliaryPointerBeforeRatsHeader(payload_offset),
     )?;
@@ -428,7 +513,16 @@ fn load_second_auxiliary_block(
             block.payload.len(),
         ));
     }
-    Ok(Some(block))
+    Ok(block)
+}
+
+fn copy_auxiliary_words(bytes: &[u8], block: &RatsBlock, destination: &mut [u16]) {
+    for (word, source) in destination
+        .iter_mut()
+        .zip(bytes[block.payload.clone()].chunks_exact(2))
+    {
+        *word = u16::from_le_bytes([source[0], source[1]]);
+    }
 }
 
 fn sentinel_writes(block: usize) -> [RomWrite; 2] {
@@ -459,7 +553,7 @@ fn protect_runtime_fields(
             len: 4,
             image_len,
         })?;
-    let mut ranges = Vec::with_capacity(SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT * 2 + 2);
+    let mut ranges = Vec::with_capacity(SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT * 2 + 3);
     for block in 0..SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT {
         ranges.push(
             SMW_US_V1_PRIMARY_MAP16_RUNTIME_BASE + LOW_WORD_OFFSETS[block]
@@ -470,6 +564,10 @@ fn protect_runtime_fields(
                 ..SMW_US_V1_PRIMARY_MAP16_RUNTIME_BASE + BANK_BYTE_OFFSETS[block] + 1,
         );
     }
+    ranges.push(
+        SMW_US_V1_PRIMARY_MAP16_FIRST_AUXILIARY_POINTER_OFFSET
+            ..SMW_US_V1_PRIMARY_MAP16_FIRST_AUXILIARY_POINTER_OFFSET + 3,
+    );
     ranges.push(
         SMW_US_V1_PRIMARY_MAP16_SECOND_AUXILIARY_POINTER_OFFSET
             ..SMW_US_V1_PRIMARY_MAP16_SECOND_AUXILIARY_POINTER_OFFSET + 3,
@@ -524,17 +622,27 @@ mod tests {
             loaded.definitions.len(),
             SMW_US_V1_PRIMARY_MAP16_DEFINITION_WORDS
         );
+        assert_eq!(loaded.acts_like, default_acts_like());
         assert!(loaded.blocks.iter().all(Option::is_none));
+        assert!(loaded.first_auxiliary_block.is_some());
         assert!(loaded.second_auxiliary_block.is_none());
     }
 
     #[test]
     fn tile_0800_uses_the_authenticated_3008_byte_overlay() {
         let mut project = installed_project();
-        let mut definitions = load_smw_us_v1_primary_map16(&project).unwrap().definitions;
+        let loaded = load_smw_us_v1_primary_map16(&project).unwrap();
+        let mut definitions = loaded.definitions;
+        let acts_like = loaded.acts_like;
         definitions[0x800 * 4..0x800 * 4 + 4].copy_from_slice(&[1, 2, 3, 4]);
-        let saved =
-            save_smw_us_v1_primary_map16(&mut project, &definitions, 0x7fdc, &options()).unwrap();
+        let saved = save_smw_us_v1_primary_map16(
+            &mut project,
+            &definitions,
+            &acts_like,
+            0x7fdc,
+            &options(),
+        )
+        .unwrap();
         assert_eq!(
             saved.blocks[0].as_ref().unwrap().block.payload.len(),
             0x3008
@@ -553,10 +661,18 @@ mod tests {
     #[test]
     fn high_block_materializes_second_auxiliary_and_reopens() {
         let mut project = installed_project();
-        let mut definitions = load_smw_us_v1_primary_map16(&project).unwrap().definitions;
+        let loaded = load_smw_us_v1_primary_map16(&project).unwrap();
+        let mut definitions = loaded.definitions;
+        let acts_like = loaded.acts_like;
         definitions[0x4000 * 4..0x4000 * 4 + 4].copy_from_slice(&[1, 2, 3, 4]);
-        let saved =
-            save_smw_us_v1_primary_map16(&mut project, &definitions, 0x7fdc, &options()).unwrap();
+        let saved = save_smw_us_v1_primary_map16(
+            &mut project,
+            &definitions,
+            &acts_like,
+            0x7fdc,
+            &options(),
+        )
+        .unwrap();
         assert_eq!(saved.blocks[4].as_ref().unwrap().block.payload.len(), 8);
         assert_eq!(
             saved.second_auxiliary.as_ref().unwrap().block.payload.len(),
@@ -576,12 +692,19 @@ mod tests {
             (0x7fff, 7, 0x8000),
         ] {
             let mut project = installed_project();
-            let mut definitions = load_smw_us_v1_primary_map16(&project).unwrap().definitions;
+            let loaded = load_smw_us_v1_primary_map16(&project).unwrap();
+            let mut definitions = loaded.definitions;
+            let acts_like = loaded.acts_like;
             definitions[tile * 4..tile * 4 + 4].copy_from_slice(&[1, 2, 3, 4]);
 
-            let saved =
-                save_smw_us_v1_primary_map16(&mut project, &definitions, 0x7fdc, &options())
-                    .unwrap();
+            let saved = save_smw_us_v1_primary_map16(
+                &mut project,
+                &definitions,
+                &acts_like,
+                0x7fdc,
+                &options(),
+            )
+            .unwrap();
 
             assert_eq!(
                 saved.blocks[block].as_ref().unwrap().block.payload.len(),
@@ -594,5 +717,32 @@ mod tests {
                 "tile {tile:04x}"
             );
         }
+    }
+
+    #[test]
+    fn acts_like_changes_relocate_the_exact_raw_auxiliary_half() {
+        let mut project = installed_project();
+        let loaded = load_smw_us_v1_primary_map16(&project).unwrap();
+        let definitions = loaded.definitions;
+        let mut acts_like = loaded.acts_like;
+        acts_like[0x1000] = 0x0123;
+
+        let saved = save_smw_us_v1_primary_map16(
+            &mut project,
+            &definitions,
+            &acts_like,
+            0x7fdc,
+            &options(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            saved.first_auxiliary.as_ref().unwrap().block.payload.len(),
+            0x8000
+        );
+        assert!(saved.second_auxiliary.is_none());
+        let reopened = load_smw_us_v1_primary_map16(&project).unwrap();
+        assert_eq!(reopened.acts_like, acts_like);
+        assert_eq!(reopened.definitions, definitions);
     }
 }
