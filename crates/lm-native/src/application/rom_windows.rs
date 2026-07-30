@@ -56,6 +56,14 @@ impl NativeApplication {
     }
 
     pub(super) fn show_project_operations(&mut self, context: &egui::Context) {
+        if let Some(command) = self.rom_mwl_batch_import_dialog.show(context, &self.app) {
+            if self.try_dispatch(context, command) {
+                self.rom_mwl_batch_import_dialog.commit_succeeded();
+                self.renderer.invalidate();
+            } else {
+                self.rom_mwl_batch_import_dialog.commit_failed();
+            }
+        }
         show_project_operation!(self, context, rom_expansion_dialog);
         show_project_operation!(self, context, graphics_migration_dialog);
         show_project_operation!(self, context, rats_reclamation_dialog);

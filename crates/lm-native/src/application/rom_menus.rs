@@ -50,6 +50,16 @@ impl NativeApplication {
             "Edit Native Level Assets…",
             "Close Native Level Assets"
         );
+        if ui
+            .add_enabled(
+                enabled && profile && !self.rom_mwl_batch_import_dialog.is_open(),
+                egui::Button::new("Insert Multiple MWL Levels…"),
+            )
+            .clicked()
+        {
+            ui.close_menu();
+            self.rom_mwl_batch_import_dialog.open(&self.app);
+        }
         ui.separator();
         rom_editor_pair!(
             ui,

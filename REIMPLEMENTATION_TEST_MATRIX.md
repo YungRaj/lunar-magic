@@ -553,8 +553,9 @@ stripping, Unicode paths, hidden-file skipping, case-insensitive MWL selection, 
 rejection, create-new collisions, staged multi-file rollback, canonical path aliases, and the
 modified-only pointer predicate against both sides of a retained live Wine fixture. Directory
 import auto-targets the validated MWL header and continues through per-file decode/save failures;
-the native frontend shares batch generation/publication through a non-blocking worker. Native
-directory-import progress and cancellation coverage remains open.
+the native frontend shares batch generation/publication through a non-blocking worker and advances
+directory imports only after one exact dispatch acknowledgement. Coordinator tests cover successful
+and rejected commit accounting plus close-state cleanup; broader dynamic directory fixtures remain.
 The application-shell form binds its source and exact animation interpretation through a bounded
 `LMMWLOPT1` specification, commits both sections as one revision, and exercises undo, redo, save,
 Unicode/space-containing paths, unrelated-section preservation, and failure rollback through the

@@ -177,6 +177,10 @@ pub(crate) fn choose_mwl_batch_template() -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_mwl_directory() -> Option<PathBuf> {
+    rfd::FileDialog::new().pick_folder()
+}
+
 pub(crate) fn choose_expanded_settings_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Lunar Magic expanded settings record", &["bin", "lmexset"])

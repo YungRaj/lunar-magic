@@ -4,7 +4,8 @@ use crate::{
 };
 use lm_app::{
     AppState, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit, RevisionProfileControllers,
-    export_smw_us_v1_installed_mwl_batch, publish_mwl_batch_new,
+    discover_mwl_directory, export_smw_us_v1_installed_mwl_batch, prepare_declared_mwl_import,
+    publish_mwl_batch_new,
 };
 use lm_level::{LegacyHeaderEdit, MwlFile};
 use lm_project::{
@@ -12,9 +13,8 @@ use lm_project::{
     Map16SetSaveOptions, MwlNativeLevel, PaletteSaveOptions,
 };
 use lm_rom::RomImage;
-use std::fs;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 mod expanded_settings;
 mod graphics_migration;
@@ -128,13 +128,13 @@ pub(crate) fn import_mwl_level_directory(
     directory: &Path,
     search: Range<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !fs::metadata(directory)?.is_dir() {
+    if !directory.is_dir() {
         return Err("MWL batch import path must be a directory".into());
     }
-    let (candidates, skipped) = mwl_directory_candidates(directory)?;
+    let listing = discover_mwl_directory(directory)?;
     let mut inserted = 0usize;
     let mut failed = 0usize;
-    for path in candidates {
+    for path in listing.paths {
         match import_mwl_declared_target(app, &path, search.clone()) {
             Ok(level) => {
                 inserted += 1;
@@ -150,51 +150,13 @@ pub(crate) fn import_mwl_level_directory(
     if failed != 0 {
         println!("{failed} levels failed to insert into the ROM.");
     }
-    if skipped != 0 {
-        println!("{skipped} levels were skipped (Hidden Attribute).");
+    if listing.hidden_skipped != 0 {
+        println!(
+            "{} levels were skipped (Hidden Attribute).",
+            listing.hidden_skipped
+        );
     }
     Ok(())
-}
-
-fn mwl_directory_candidates(directory: &Path) -> std::io::Result<(Vec<PathBuf>, usize)> {
-    let mut candidates = Vec::new();
-    let mut skipped = 0;
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("mwl"))
-        {
-            continue;
-        }
-        if !entry.file_type()?.is_file() {
-            continue;
-        }
-        if path
-            .file_name()
-            .is_some_and(|name| name.as_encoded_bytes().starts_with(b"."))
-        {
-            skipped += 1;
-            continue;
-        }
-        candidates.push(path);
-    }
-    candidates.sort_by(|left, right| {
-        left.file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_ascii_lowercase()
-            .cmp(
-                &right
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_ascii_lowercase(),
-            )
-            .then_with(|| left.cmp(right))
-    });
-    Ok((candidates, skipped))
 }
 
 fn import_mwl_declared_target(
@@ -203,40 +165,8 @@ fn import_mwl_declared_target(
     search: Range<usize>,
 ) -> Result<u16, Box<dyn std::error::Error>> {
     let bytes = crate::read_bounded_bytes(path, MwlFile::MAX_FILE_BYTES, "binary MWL level")?;
-    let file = MwlFile::decode(&bytes)?;
     let profiled = app.profiled_controller_snapshot()?;
-    let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())?;
-    let (layout, options) = profiled.profile.native_level_assets_save_plan_for_rom(
-        search.clone(),
-        &image,
-        profiled.snapshot.identity.internal_header_offset,
-    )?;
-    let Some((_, layer2_options)) = profiled.profile.level_layer2_save_plan(
-        search,
-        image.logical_len(),
-        profiled.snapshot.identity.internal_header_offset,
-    )?
-    else {
-        return Err("active revision profile has no native Layer 2 layout".into());
-    };
-    let source = MwlNativeLevel::decode(
-        &file,
-        &profiled.profile.sprite_lengths,
-        layout.exanimation.maximum_records,
-        &profiled.profile.exanimation_double_size_modes,
-    )?;
-    let level = source.header.level_number();
-    if usize::from(level) >= profiled.profile.level.layer1.entries {
-        return Err(format!("MWL target level {level:03X} is outside the active profile").into());
-    }
-    let ownership = lm_graphics::PaletteOwnership::editable(layout.palette.colors_per_palette);
-    let mut snapshot = profiled.snapshot;
-    snapshot.mode = lm_app::EditorMode::Level(level);
-    let controller = profiled
-        .profile
-        .decode_native_level_assets(&snapshot, ownership)?;
-    let prepared =
-        controller.prepare_smw_us_v1_installed_mwl_import(&source, &options, &layer2_options)?;
+    let (level, prepared) = prepare_declared_mwl_import(&profiled, &bytes, search)?;
     app.dispatch(prepared.into_command())?;
     Ok(level)
 }
@@ -584,40 +514,4 @@ pub(crate) fn commit_overworld_edits(
     )?;
     app.dispatch(prepared.into_command())?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::mwl_directory_candidates;
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[test]
-    fn batch_mwl_directory_selection_matches_visible_file_contract() {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let directory = std::env::temp_dir().join(format!(
-            "lm-batch-mwl-directory-{}-{nonce}",
-            std::process::id()
-        ));
-        fs::create_dir(&directory).unwrap();
-        fs::write(directory.join("Level 001.mwl"), b"one").unwrap();
-        fs::write(directory.join("Level 000.MWL"), b"zero").unwrap();
-        fs::write(directory.join(".Level 002.mwl"), b"hidden").unwrap();
-        fs::write(directory.join("notes.txt"), b"ignored").unwrap();
-        fs::create_dir(directory.join("Level 003.mwl")).unwrap();
-
-        let (paths, skipped) = mwl_directory_candidates(&directory).unwrap();
-        assert_eq!(
-            paths
-                .iter()
-                .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
-                .collect::<Vec<_>>(),
-            ["Level 000.MWL", "Level 001.mwl"]
-        );
-        assert_eq!(skipped, 1);
-        fs::remove_dir_all(directory).unwrap();
-    }
 }

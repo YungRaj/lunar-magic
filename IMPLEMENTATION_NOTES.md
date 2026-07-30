@@ -2587,7 +2587,10 @@ continues after malformed or unsavable files. Batch export generation now lives 
 toolkit-independent application layer, so the shell and native frontend consume the same immutable
 profiled snapshot and publication code. The native level-assets window runs both all-level and
 modified-only generation on a background worker and reports completion without freezing the event
-loop. The remaining batch parity work is native directory-import progress and Escape cancellation.
+loop. The native multi-level insert dialog enumerates through the same shared filesystem contract,
+prepares one revision-bound transaction at a time from the current ROM snapshot, advances only
+after dispatch acknowledgement, continues after read/decode/save rejection, reports progress, and
+supports button or Escape cancellation. Broader installed-runtime and ROM-revision fixtures remain.
 
 The current SMW US revision-0 profile also contains the recovered multi-bank overworld-message
 installation boundary used once more than 96 level-name slots are enabled. It installs the fixed
