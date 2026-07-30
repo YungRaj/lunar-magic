@@ -28,6 +28,7 @@ mod graphics_migration_state;
 mod graphics_ownership_file;
 mod ips_patch_state;
 mod layer3_document_controller;
+mod legacy_mwl_transfer;
 mod level_controller;
 mod level_navigation;
 mod localization;
@@ -161,6 +162,7 @@ pub use graphics_ownership_file::{GraphicsOwnershipFile, GraphicsOwnershipFileEr
 pub use layer3_document_controller::{
     Layer3DocumentController, Layer3DocumentControllerError, Layer3DocumentSaveSnapshot,
 };
+pub use legacy_mwl_transfer::{legacy_mwl_sidecar_paths, publish_legacy_mwl_bundle_new};
 pub use level_controller::{LevelController, LevelControllerError, NativeLevelEdit};
 pub use level_navigation::{
     LevelNavigationDirection, LevelViewState, LevelViewport, LevelViewportError,

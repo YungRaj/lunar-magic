@@ -10,6 +10,7 @@ mod graphics_io;
 mod graphics_migration;
 mod history;
 mod installed_layout;
+mod legacy_mwl;
 mod level_io;
 mod level_layer2_io;
 mod level_save;
@@ -97,6 +98,7 @@ pub use history::{CopierHeaderEdit, Edit, EditBatch, EditKind, History};
 pub use installed_layout::{
     GatedLayout, InstallationMarker, InstalledAsset, InstalledLayout, InstalledLayoutError,
 };
+pub use legacy_mwl::{LegacyMwlBundle, LegacyMwlBundleError};
 pub use level_io::{
     LevelLoadError, LevelPointerTable, LevelRomLayout, LoadedLevelSlot, SpritePointerTable,
 };

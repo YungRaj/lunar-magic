@@ -41,6 +41,8 @@ pub(crate) struct RomLevelAssetsEditor {
     pending_close: Option<PendingClose>,
     loader: DocumentLoader,
     mwl_loader: DocumentLoader,
+    legacy_mwl_loader: DocumentLoader,
+    pending_legacy_mwl_load: Option<mwl::PendingLegacyMwlLoad>,
     mwl_batch_worker: mwl_batch::MwlBatchExportWorker,
     mwl_batch_status: Option<String>,
     pending_load: Option<PendingLoad>,
@@ -74,6 +76,13 @@ impl RomLevelAssetsEditor {
                 }
             }
         });
+        if let Some(result) = self.legacy_mwl_loader.show(context) {
+            match self.finish_legacy_mwl_load(result, project_revision) {
+                Ok(Some(legacy_command)) => command = Some(legacy_command),
+                Ok(None) => {}
+                Err(error) => self.error = Some(error),
+            }
+        }
         let reclamation_command = match self.manifest_loader.show(context, project_revision) {
             Some(Ok(manifest)) => match self.prepare_commit_with_reclamation(&manifest) {
                 Ok(command) => Some(command),

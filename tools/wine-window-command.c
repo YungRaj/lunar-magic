@@ -350,6 +350,7 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE dialog-values\n"
             "       wine-window-command.exe EXECUTABLE click CONTROL_ID\n"
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
+            "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
             "       wine-window-command.exe EXECUTABLE save WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE level HEX_LEVEL\n"
             "       wine-window-command.exe EXECUTABLE open-level HEX_LEVEL\n"
@@ -367,6 +368,7 @@ int main(int argc, char **argv) {
     BOOL dialog_values = _stricmp(argv[2], "dialog-values") == 0;
     BOOL click = _stricmp(argv[2], "click") == 0;
     BOOL read = _stricmp(argv[2], "read") == 0;
+    BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
     if (open_level_command) {
         if (argc != 4) {
             fprintf(stderr, "open-level requires a hexadecimal level number\n");
@@ -441,6 +443,55 @@ int main(int argc, char **argv) {
         CloseHandle(process);
         if (!ok || bytes_read != length) {
             fprintf(stderr, "cannot read requested range\n");
+            return 1;
+        }
+        return 0;
+    }
+    if (write_byte) {
+        if (argc != 4) {
+            fprintf(stderr, "write-byte requires ADDRESS,VALUE\n");
+            return 2;
+        }
+        char *separator = strchr(argv[3], ',');
+        if (separator == NULL) {
+            fprintf(stderr, "write-byte requires ADDRESS,VALUE\n");
+            return 2;
+        }
+        *separator = '\0';
+        char *address_end = NULL;
+        char *value_end = NULL;
+        unsigned long address = strtoul(argv[3], &address_end, 0);
+        unsigned long value = strtoul(separator + 1, &value_end, 0);
+        if (
+            *address_end != '\0' ||
+            *value_end != '\0' ||
+            address == 0 ||
+            value > 0xff
+        ) {
+            fprintf(stderr, "invalid byte write\n");
+            return 2;
+        }
+        HANDLE process = OpenProcess(
+            PROCESS_VM_OPERATION | PROCESS_VM_WRITE,
+            FALSE,
+            process_id
+        );
+        if (process == NULL) {
+            fprintf(stderr, "cannot open target process for writing\n");
+            return 1;
+        }
+        unsigned char byte = (unsigned char)value;
+        SIZE_T bytes_written = 0;
+        BOOL ok = WriteProcessMemory(
+            process,
+            (void *)(uintptr_t)address,
+            &byte,
+            sizeof(byte),
+            &bytes_written
+        );
+        CloseHandle(process);
+        if (!ok || bytes_written != sizeof(byte)) {
+            fprintf(stderr, "cannot write requested byte\n");
             return 1;
         }
         return 0;

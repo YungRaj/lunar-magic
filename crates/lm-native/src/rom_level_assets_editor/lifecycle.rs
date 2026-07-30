@@ -41,6 +41,7 @@ impl RomLevelAssetsEditor {
         if self.manifest_loader.is_running()
             || self.loader.is_running()
             || self.mwl_loader.is_running()
+            || self.legacy_mwl_loader.is_running()
             || self.mwl_batch_worker.is_running()
         {
             self.error =
@@ -117,6 +118,7 @@ impl RomLevelAssetsEditor {
     fn clear(&mut self) {
         self.workspace = None;
         self.pending_load = None;
+        self.pending_legacy_mwl_load = None;
         self.pending_close = None;
         self.mwl_batch_status = None;
         self.panels.invalidate();
