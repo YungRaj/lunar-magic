@@ -61,8 +61,8 @@ impl Map16BitmapImportPreviewState {
         inputs: Map16BitmapImportInputs,
         options: Map16BitmapImportOptions,
     ) -> Result<Self, Map16BitmapImportError> {
-        let plan = Map16BitmapImportPlan::prepare_with_options(inputs.request(), options)?;
-        let converted_pixels = plan.converted_pixels(inputs.palette_row);
+        let plan = Map16BitmapImportPlan::prepare_with_options(inputs.request(), options.clone())?;
+        let converted_pixels = plan.converted_pixels();
         Ok(Self {
             inputs,
             options,
@@ -77,8 +77,8 @@ impl Map16BitmapImportPreviewState {
     }
 
     #[must_use]
-    pub const fn options(&self) -> Map16BitmapImportOptions {
-        self.options
+    pub fn options(&self) -> Map16BitmapImportOptions {
+        self.options.clone()
     }
 
     #[must_use]
@@ -108,8 +108,9 @@ impl Map16BitmapImportPreviewState {
         if options == self.options {
             return Ok(());
         }
-        let plan = Map16BitmapImportPlan::prepare_with_options(self.inputs.request(), options)?;
-        let converted_pixels = plan.converted_pixels(self.inputs.palette_row);
+        let plan =
+            Map16BitmapImportPlan::prepare_with_options(self.inputs.request(), options.clone())?;
+        let converted_pixels = plan.converted_pixels();
         self.options = options;
         self.plan = plan;
         self.converted_pixels = converted_pixels;
@@ -133,8 +134,9 @@ impl Map16BitmapImportPreviewState {
         }
         let mut inputs = self.inputs.clone();
         inputs.palette_ownership = ownership;
-        let plan = Map16BitmapImportPlan::prepare_with_options(inputs.request(), self.options)?;
-        let converted_pixels = plan.converted_pixels(inputs.palette_row);
+        let plan =
+            Map16BitmapImportPlan::prepare_with_options(inputs.request(), self.options.clone())?;
+        let converted_pixels = plan.converted_pixels();
         self.inputs = inputs;
         self.plan = plan;
         self.converted_pixels = converted_pixels;
@@ -196,6 +198,7 @@ mod tests {
                 optimize_new_tiles: true,
                 allow_flipped_matches: true,
             },
+            color: None,
             deduplicate_map16: true,
             layer_priority: false,
         }
@@ -207,7 +210,7 @@ mod tests {
         assert_eq!(preview.plan().newly_occupied_tiles, 2);
         let mut changed = options();
         changed.graphics.optimize_new_tiles = false;
-        preview.set_options(changed).unwrap();
+        preview.set_options(changed.clone()).unwrap();
         assert_eq!(preview.plan().newly_occupied_tiles, 0x400);
         changed.layer_priority = true;
         preview.set_options(changed).unwrap();
@@ -221,7 +224,7 @@ mod tests {
         );
         let converted = preview.converted_pixels().to_vec();
         let accepted = preview.accept();
-        assert_eq!(accepted.converted_pixels(2), converted);
+        assert_eq!(accepted.converted_pixels(), converted);
     }
 
     #[test]

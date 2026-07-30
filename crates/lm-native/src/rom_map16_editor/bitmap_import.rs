@@ -5,6 +5,9 @@ use lm_app::{
     MAP16_BITMAP_MAX_PNG_BYTES, NativeMap16BitmapImportSession,
     NativeMap16BitmapImportSessionRequest, decode_map16_bitmap_png_image,
 };
+use lm_graphics::{
+    BitmapPaletteColorOptions, BitmapPaletteEntryState, BitmapPaletteReduction, Palette,
+};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 #[derive(Default)]
@@ -164,7 +167,7 @@ impl RomMap16Editor {
                     return;
                 };
                 let mut options = session.preview().options();
-                let changed = ui
+                let mut changed = ui
                     .horizontal_wrapped(|ui| {
                         ui.checkbox(
                             &mut options.graphics.optimize_new_tiles,
@@ -190,15 +193,21 @@ impl RomMap16Editor {
                                 .changed()
                     })
                     .inner;
+                changed |= bitmap_multi_row_color_options(
+                    ui,
+                    &mut options.color,
+                    &session.preview().inputs().palette,
+                );
                 if changed {
-                    match session.set_options(options) {
+                    match session.set_options(options.clone()) {
                         Ok(()) => {
                             self.bitmap_converted_texture = None;
                         }
                         Err(error) => self.error = Some(error.to_string()),
                     }
                 }
-                ui.collapsing("Color options", |ui| {
+                if options.color.is_none() {
+                    ui.collapsing("Single-row fixed colors", |ui| {
                     ui.label(
                         "Checked colors remain byte-exact and participate in nearest-color matching.",
                     );
@@ -240,7 +249,8 @@ impl RomMap16Editor {
                             Err(error) => self.error = Some(error.to_string()),
                         }
                     }
-                });
+                    });
+                }
                 let plan = session.preview().plan();
                 ui.label(format!(
                     "{} generated colors; {} newly occupied 8×8 tiles",
@@ -438,6 +448,99 @@ impl RomMap16Editor {
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
         self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
     }
+}
+
+fn bitmap_multi_row_color_options(
+    ui: &mut egui::Ui,
+    color_options: &mut Option<BitmapPaletteColorOptions>,
+    palette: &Palette,
+) -> bool {
+    let mut enabled = color_options.is_some();
+    let mut changed = ui
+        .checkbox(&mut enabled, "Use Lunar Magic multi-row palette allocation")
+        .changed();
+    if enabled && color_options.is_none() {
+        *color_options = Some(BitmapPaletteColorOptions::lunar_magic_initial());
+    } else if !enabled && color_options.is_some() {
+        *color_options = None;
+    }
+    let Some(options) = color_options else {
+        return changed;
+    };
+    ui.indent("map16-bitmap-multi-row-color-options", |ui| {
+        ui.horizontal(|ui| {
+            changed |= ui
+                .add(egui::Slider::new(&mut options.maximum_colors, 1..=128).text("Maximum colors"))
+                .changed();
+            changed |= ui
+                .add(egui::Slider::new(&mut options.priority_level, 1..=4).text("Priority"))
+                .changed();
+            egui::ComboBox::from_id_salt("map16-bitmap-reduction")
+                .selected_text(match options.reduction {
+                    BitmapPaletteReduction::MedianCut => "Median Cut",
+                    BitmapPaletteReduction::Popularity => "Popularity",
+                })
+                .show_ui(ui, |ui| {
+                    changed |= ui
+                        .selectable_value(
+                            &mut options.reduction,
+                            BitmapPaletteReduction::MedianCut,
+                            "Median Cut",
+                        )
+                        .changed();
+                    changed |= ui
+                        .selectable_value(
+                            &mut options.reduction,
+                            BitmapPaletteReduction::Popularity,
+                            "Popularity",
+                        )
+                        .changed();
+                });
+        });
+        ui.label("Palette entries: F = free, U = reusable, X = reserved");
+        egui::Grid::new("map16-bitmap-palette-entry-states")
+            .spacing([3.0, 3.0])
+            .show(ui, |ui| {
+                for row in 0..8 {
+                    ui.label(format!("{row}:"));
+                    for entry in 0..Palette::COLORS_PER_ROW {
+                        let index = row * Palette::COLORS_PER_ROW + entry;
+                        let color = palette.colors.get(index).copied().unwrap_or_default();
+                        let rgb = color.to_rgb8();
+                        let state = &mut options.entries[index];
+                        let marker = match state {
+                            BitmapPaletteEntryState::Free => "F",
+                            BitmapPaletteEntryState::Reusable => "U",
+                            BitmapPaletteEntryState::Reserved => "X",
+                        };
+                        let response = ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new(marker)
+                                        .background_color(egui::Color32::from_rgb(
+                                            rgb.red, rgb.green, rgb.blue,
+                                        ))
+                                        .color(contrasting_text(rgb)),
+                                )
+                                .min_size(egui::vec2(20.0, 20.0)),
+                            )
+                            .on_hover_text(format!("Row {row}, color {entry:X}: {:04X}", color.0));
+                        if response.clicked() {
+                            *state = match state {
+                                BitmapPaletteEntryState::Free => BitmapPaletteEntryState::Reusable,
+                                BitmapPaletteEntryState::Reusable => {
+                                    BitmapPaletteEntryState::Reserved
+                                }
+                                BitmapPaletteEntryState::Reserved => BitmapPaletteEntryState::Free,
+                            };
+                            changed = true;
+                        }
+                    }
+                    ui.end_row();
+                }
+            });
+    });
+    changed
 }
 
 fn parse_optional_graphics(text: &str, name: &str) -> Result<Option<usize>, String> {

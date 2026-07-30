@@ -872,6 +872,21 @@ highest-weight compatible color sets before `AssignImportedGraphicsToPaletteRows
 per 8×8 tile. The Rust multi-row model must retain these stages; merely quantizing an entire image
 to one 15-color row is not equivalent.
 
+The Rust application path now carries that per-8×8 row plane through graphics materialization,
+Map16 construction, and the converted preview. Each of a Map16 definition's four subtile words
+receives the row selected for its own source 8×8 tile; no bitmap-wide or 16×16-wide row is inferred.
+The final assignment follows the additionally confirmed `AssignImportedGraphicsToPaletteRows`
+stage: it computes a nearest entry and weighted RGB555 error for every source color against every
+usable row, sums those errors across each 8×8 occurrence, and chooses the least-error row before
+rewriting its local indexes. This permits an uninstalled color to use its nearest available entry
+instead of incorrectly rejecting every non-exact color set.
+The native dialog exposes the recovered reduction method, 1–128 limit, 1–4 priority, and all 128
+free/reusable/reserved entry states. Fixed palette ownership is forced reusable and ExAnimation
+ownership forced reserved before allocation, so presentation choices cannot overwrite another
+domain. Focused tests force the left and right quadrants into disjoint rows and verify both their
+packed `$1c00` palette bits and row-aware RGBA preview. Exact priority-level influence during
+high-color selection and Wine output equivalence remain oracle gates rather than assumed parity.
+
 The following controller and selection tooling through `004f5990` is now named. This includes the import-preview zoom menu and keyboard hook, the top-level bitmap import workflow, a textual remapping language that can transform graphics indexes, palette rows, Map16 indexes, and secondary-map values, and the custom registered `Lunar Magic 16x16 Tiles` clipboard serializer. Added the exact 0xA0-byte `LunarMagicTileClipboardHeader` with section offsets, selected count, rectangular dimensions, source Map16 index, flags, and explicitly represented reserved regions.
 
 Map16 import/export, history, and visible rendering through `004f9e40` are now named and annotated. Added exact 64-byte `Lm16Map16FileHeader` and `Lm16Map16SectionDirectory` structures for the structured `.map16` format. Added the exact 811,788-byte `Map16UndoSnapshot` and typed its live linked-list globals. Rendering names now distinguish decoded tile composition, Acts Like overlays, selected-tile highlighting, page frames and labels, page boundaries, and bounded versus drag-selection marching ants.

@@ -1,9 +1,10 @@
 //! Staged cross-domain Map16 bitmap import planning.
 
 use lm_graphics::{
-    BitmapImportError, GraphicsFile4bpp, GraphicsOwnership, IndexedBitmapImport,
+    BitmapImportError, BitmapPaletteColorOptions, BitmapPaletteEntryState,
+    BitmapPaletteReductionError, GraphicsFile4bpp, GraphicsOwnership, IndexedBitmapImport,
     IndexedBitmapImportOptions, PaletteEntryOwner, PaletteImportError, PaletteOwnership, Rgba8,
-    TransparentPaletteRowImport,
+    TransparentPaletteRowImport, allocate_bitmap_palette_rows, reduce_bitmap_palette,
 };
 use lm_level::{Map16Page, Map16Tile, Subtile};
 use std::{fmt, io::Cursor};
@@ -31,9 +32,11 @@ pub struct Map16BitmapImportRequest<'a> {
 }
 
 /// Conversion choices that affect the staged graphics and Map16 result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct Map16BitmapImportOptions {
     pub graphics: IndexedBitmapImportOptions,
+    /// Use Lunar Magic's eight-row bitmap color allocation instead of one selected palette row.
+    pub color: Option<BitmapPaletteColorOptions>,
     /// Reuse an earlier identical imported 16×16 definition instead of allocating another slot.
     pub deduplicate_map16: bool,
     pub layer_priority: bool,
@@ -62,6 +65,8 @@ pub struct Map16BitmapImportPlan {
     pub width_in_map16_tiles: usize,
     pub height_in_map16_tiles: usize,
     pub indexed_pixels: Vec<u8>,
+    /// One palette row per imported 8×8 source tile, in row-major order.
+    pub tile_palette_rows: Vec<u8>,
     pub generated_colors: usize,
     pub newly_occupied_tiles: usize,
 }
@@ -117,32 +122,11 @@ impl Map16BitmapImportPlan {
         if request.palette_row > 7 {
             return Err(Map16BitmapImportError::PaletteRow(request.palette_row));
         }
-        let palette_row = usize::from(request.palette_row);
-        let row_start = palette_row * lm_graphics::Palette::COLORS_PER_ROW;
-        let preserves_owned = (row_start + 1..row_start + lm_graphics::Palette::COLORS_PER_ROW)
-            .any(|index| {
-                request.palette_ownership.owner(index) != Some(PaletteEntryOwner::Editable)
-            });
-        let palette = if preserves_owned {
-            TransparentPaletteRowImport::quantize_preserving_owned(
-                request.pixels,
-                palette_row,
-                request.palette,
-                request.palette_ownership,
-            )
-        } else {
-            TransparentPaletteRowImport::quantize(
-                request.pixels,
-                palette_row,
-                request.palette,
-                request.palette_ownership,
-            )
-        }
-        .map_err(Map16BitmapImportError::Palette)?;
+        let staged_palette = prepare_bitmap_palette(request, options.color)?;
         let materialized = IndexedBitmapImport::materialize_with_options(
             request.width,
             request.height,
-            &palette.indices,
+            &staged_palette.indices,
             request.graphics,
             request.graphics_ownership,
             request.occupied,
@@ -151,7 +135,7 @@ impl Map16BitmapImportPlan {
         .map_err(Map16BitmapImportError::Graphics)?;
         let (map16_tiles, page, width_in_map16_tiles, height_in_map16_tiles) = build_map16_tiles(
             &materialized,
-            request.palette_row,
+            &staged_palette.tile_rows,
             request.acts_like,
             options.layer_priority,
         )?;
@@ -163,27 +147,30 @@ impl Map16BitmapImportPlan {
             .count();
         Ok(Self {
             source_pixels: request.pixels.to_vec(),
-            palette: palette.palette,
+            palette: staged_palette.palette,
             graphics: materialized.graphics,
             occupied: materialized.occupied,
             map16_tiles,
             page,
             width_in_map16_tiles,
             height_in_map16_tiles,
-            indexed_pixels: palette.indices,
-            generated_colors: palette.generated_colors,
+            indexed_pixels: staged_palette.indices,
+            tile_palette_rows: staged_palette.tile_rows,
+            generated_colors: staged_palette.generated_colors,
             newly_occupied_tiles,
         })
     }
 
-    /// Materializes the exact converted preview through the staged SNES palette.
+    /// Materializes the exact converted preview through each staged 8×8 tile's palette row.
     #[must_use]
-    pub fn converted_pixels(&self, palette_row: u8) -> Vec<Rgba8> {
-        let row_start = usize::from(palette_row) * lm_graphics::Palette::COLORS_PER_ROW;
+    pub fn converted_pixels(&self) -> Vec<Rgba8> {
+        let width = self.width_in_map16_tiles * 16;
+        let tiles_wide = width / 8;
         self.indexed_pixels
             .iter()
             .zip(&self.source_pixels)
-            .map(|(index, source)| {
+            .enumerate()
+            .map(|(pixel_offset, (index, source))| {
                 if source.alpha == 0 {
                     Rgba8 {
                         red: 0,
@@ -192,10 +179,20 @@ impl Map16BitmapImportPlan {
                         alpha: 0,
                     }
                 } else {
+                    let x = pixel_offset % width;
+                    let y = pixel_offset / width;
+                    let tile = (y / 8) * tiles_wide + x / 8;
+                    let row = self
+                        .tile_palette_rows
+                        .get(tile)
+                        .copied()
+                        .unwrap_or_default();
+                    let palette_index = usize::from(row) * lm_graphics::Palette::COLORS_PER_ROW
+                        + usize::from(*index);
                     let rgb = self
                         .palette
                         .colors
-                        .get(row_start + usize::from(*index))
+                        .get(palette_index)
                         .copied()
                         .unwrap_or_default()
                         .to_rgb8();
@@ -209,6 +206,92 @@ impl Map16BitmapImportPlan {
             })
             .collect()
     }
+}
+
+struct StagedBitmapPalette {
+    palette: lm_graphics::Palette,
+    indices: Vec<u8>,
+    tile_rows: Vec<u8>,
+    generated_colors: usize,
+}
+
+fn prepare_bitmap_palette(
+    request: Map16BitmapImportRequest<'_>,
+    color_options: Option<BitmapPaletteColorOptions>,
+) -> Result<StagedBitmapPalette, Map16BitmapImportError> {
+    if let Some(mut options) = color_options {
+        protect_owned_palette_entries(&mut options, request.palette_ownership)?;
+        let reduced = reduce_bitmap_palette(request.pixels, &options)
+            .map_err(Map16BitmapImportError::BitmapPalette)?;
+        let allocated = allocate_bitmap_palette_rows(
+            &reduced,
+            request.width,
+            request.height,
+            request.palette,
+            &options,
+        )
+        .map_err(Map16BitmapImportError::BitmapPalette)?;
+        return Ok(StagedBitmapPalette {
+            palette: allocated.palette,
+            indices: allocated.indices,
+            tile_rows: allocated.tile_rows,
+            generated_colors: allocated.generated_colors,
+        });
+    }
+    let palette_row = usize::from(request.palette_row);
+    let row_start = palette_row * lm_graphics::Palette::COLORS_PER_ROW;
+    let preserves_owned = (row_start + 1..row_start + lm_graphics::Palette::COLORS_PER_ROW)
+        .any(|index| request.palette_ownership.owner(index) != Some(PaletteEntryOwner::Editable));
+    let palette = if preserves_owned {
+        TransparentPaletteRowImport::quantize_preserving_owned(
+            request.pixels,
+            palette_row,
+            request.palette,
+            request.palette_ownership,
+        )
+    } else {
+        TransparentPaletteRowImport::quantize(
+            request.pixels,
+            palette_row,
+            request.palette,
+            request.palette_ownership,
+        )
+    }
+    .map_err(Map16BitmapImportError::Palette)?;
+    let tile_count = (request.width / 8)
+        .checked_mul(request.height / 8)
+        .unwrap_or(0);
+    Ok(StagedBitmapPalette {
+        palette: palette.palette,
+        indices: palette.indices,
+        tile_rows: vec![request.palette_row; tile_count],
+        generated_colors: palette.generated_colors,
+    })
+}
+
+fn protect_owned_palette_entries(
+    options: &mut BitmapPaletteColorOptions,
+    ownership: &PaletteOwnership,
+) -> Result<(), Map16BitmapImportError> {
+    options
+        .validate()
+        .map_err(Map16BitmapImportError::BitmapPalette)?;
+    for (index, state) in options.entries.iter_mut().enumerate() {
+        match ownership.owner(index) {
+            Some(PaletteEntryOwner::Editable) => {}
+            Some(PaletteEntryOwner::Fixed) => *state = BitmapPaletteEntryState::Reusable,
+            Some(PaletteEntryOwner::ExAnimation { .. }) => {
+                *state = BitmapPaletteEntryState::Reserved;
+            }
+            None => {
+                return Err(Map16BitmapImportError::PaletteOwnershipShape {
+                    expected: options.entries.len(),
+                    actual: ownership.len(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Decodes a bounded complete-page PNG into the importer's canonical RGBA model.
@@ -382,7 +465,7 @@ impl std::error::Error for Map16PngDecodeError {}
 
 fn build_map16_tiles(
     imported: &IndexedBitmapImport,
-    palette_row: u8,
+    palette_rows: &[u8],
     acts_like: u16,
     layer_priority: bool,
 ) -> Result<(Vec<Map16Tile>, Map16Page, usize, usize), Map16BitmapImportError> {
@@ -394,6 +477,13 @@ fn build_map16_tiles(
         return Err(Map16BitmapImportError::WrongMaterializedShape {
             width: imported.width_in_tiles,
             height: imported.height_in_tiles,
+        });
+    }
+    let expected_palette_rows = imported.width_in_tiles * imported.height_in_tiles;
+    if palette_rows.len() != expected_palette_rows {
+        return Err(Map16BitmapImportError::PaletteRowCount {
+            expected: expected_palette_rows,
+            actual: palette_rows.len(),
         });
     }
     let width_in_map16_tiles = imported.width_in_tiles / 2;
@@ -409,20 +499,24 @@ fn build_map16_tiles(
         for tile_x in 0..width_in_map16_tiles {
             let top_left = tile_y * 2 * imported.width_in_tiles + tile_x * 2;
             map16_tiles.push(Map16Tile {
-                top_left: descriptor(imported.placements[top_left], palette_row, layer_priority),
+                top_left: descriptor(
+                    imported.placements[top_left],
+                    palette_rows[top_left],
+                    layer_priority,
+                ),
                 top_right: descriptor(
                     imported.placements[top_left + 1],
-                    palette_row,
+                    palette_rows[top_left + 1],
                     layer_priority,
                 ),
                 bottom_left: descriptor(
                     imported.placements[top_left + imported.width_in_tiles],
-                    palette_row,
+                    palette_rows[top_left + imported.width_in_tiles],
                     layer_priority,
                 ),
                 bottom_right: descriptor(
                     imported.placements[top_left + imported.width_in_tiles + 1],
-                    palette_row,
+                    palette_rows[top_left + imported.width_in_tiles + 1],
                     layer_priority,
                 ),
                 acts_like,
@@ -470,8 +564,11 @@ pub enum Map16BitmapImportError {
     WrongPixelCount { expected: usize, actual: usize },
     PaletteRow(u8),
     Palette(PaletteImportError),
+    BitmapPalette(BitmapPaletteReductionError),
+    PaletteOwnershipShape { expected: usize, actual: usize },
     Graphics(BitmapImportError),
     WrongMaterializedShape { width: usize, height: usize },
+    PaletteRowCount { expected: usize, actual: usize },
     Map16TileCount(usize),
 }
 
@@ -486,7 +583,19 @@ impl std::error::Error for Map16BitmapImportError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_graphics::{Bgr555, GraphicsFile4bpp, IndexedTile, Palette};
+    use lm_graphics::{
+        Bgr555, BitmapPaletteColorOptions, BitmapPaletteEntryState, GraphicsFile4bpp, IndexedTile,
+        Palette,
+    };
+
+    fn opaque(red: u8, green: u8, blue: u8) -> Rgba8 {
+        Rgba8 {
+            red,
+            green,
+            blue,
+            alpha: 255,
+        }
+    }
 
     #[test]
     fn lunar_magic_padding_keeps_source_at_top_left_and_fills_right_and_bottom() {
@@ -616,7 +725,7 @@ mod tests {
         assert!(plan.page.tiles.iter().all(|tile| tile.acts_like == 0x130));
         assert!(plan.indexed_pixels.iter().all(|pixel| *pixel == 1));
         assert_eq!(plan.page.tiles[0].top_left.0 & 0x1c00, 2 << 10);
-        assert_eq!(plan.converted_pixels(2)[0].alpha, 255);
+        assert_eq!(plan.converted_pixels()[0].alpha, 255);
     }
 
     #[test]
@@ -747,6 +856,7 @@ mod tests {
                     allocation_end: 0x300,
                     ..IndexedBitmapImportOptions::default()
                 },
+                color: None,
                 deduplicate_map16: true,
                 layer_priority: true,
             },
@@ -755,5 +865,71 @@ mod tests {
         assert_eq!(plan.page.tiles[0].top_left.0 & 0x23ff, 0x2200);
         assert!(plan.occupied[0x200]);
         assert!(!plan.occupied[..0x200].iter().any(|occupied| *occupied));
+    }
+
+    #[test]
+    fn multi_row_import_writes_each_map16_subtile_palette_bits_and_preview() {
+        let mut pixels = vec![opaque(0, 0, 0); 16 * 16];
+        for y in 0..16 {
+            for x in 0..16 {
+                pixels[y * 16 + x] = if x < 8 {
+                    if (x + y) % 2 == 0 {
+                        opaque(255, 0, 0)
+                    } else {
+                        opaque(0, 255, 0)
+                    }
+                } else if (x + y) % 2 == 0 {
+                    opaque(0, 0, 255)
+                } else {
+                    opaque(255, 255, 0)
+                };
+            }
+        }
+        let palette = Palette {
+            colors: vec![Bgr555(0); 128],
+        };
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([0; 64]); 0x100],
+        };
+        let mut color = BitmapPaletteColorOptions::lunar_magic_initial();
+        color.entries.fill(BitmapPaletteEntryState::Reserved);
+        for row in 0..2 {
+            color.entries[row * 16] = BitmapPaletteEntryState::Reusable;
+            color.entries[row * 16 + 1] = BitmapPaletteEntryState::Free;
+            color.entries[row * 16 + 2] = BitmapPaletteEntryState::Free;
+        }
+        let plan = Map16BitmapImportPlan::prepare_with_options(
+            Map16BitmapImportRequest {
+                pixels: &pixels,
+                width: 16,
+                height: 16,
+                palette_row: 7,
+                acts_like: 0x130,
+                palette: &palette,
+                palette_ownership: &PaletteOwnership::editable(128),
+                graphics: &graphics,
+                graphics_ownership: &GraphicsOwnership::editable(0x100),
+                occupied: &vec![false; 0x100],
+            },
+            Map16BitmapImportOptions {
+                graphics: IndexedBitmapImportOptions {
+                    allocation_end: 0x100,
+                    ..IndexedBitmapImportOptions::default()
+                },
+                color: Some(color),
+                deduplicate_map16: true,
+                layer_priority: false,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(plan.tile_palette_rows, vec![0, 1, 0, 1]);
+        assert_eq!(plan.map16_tiles[0].top_left.0 & 0x1c00, 0);
+        assert_eq!(plan.map16_tiles[0].top_right.0 & 0x1c00, 1 << 10);
+        assert_eq!(plan.map16_tiles[0].bottom_left.0 & 0x1c00, 0);
+        assert_eq!(plan.map16_tiles[0].bottom_right.0 & 0x1c00, 1 << 10);
+        let converted = plan.converted_pixels();
+        assert_eq!(converted[0], pixels[0]);
+        assert_eq!(converted[8], pixels[8]);
     }
 }

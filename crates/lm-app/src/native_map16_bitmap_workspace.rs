@@ -34,6 +34,7 @@ pub fn native_map16_bitmap_import_options() -> Map16BitmapImportOptions {
             optimize_new_tiles: true,
             allow_flipped_matches: true,
         },
+        color: None,
         deduplicate_map16: true,
         layer_priority: false,
     }

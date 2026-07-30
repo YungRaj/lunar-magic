@@ -887,13 +887,18 @@ publishes palette, assigned GFX/ExGFX slots, complete Map16
 pages, required runtime installation, pointers, and checksum as one revision-checked ROM command;
 cancel and dirty-close retain no partial ROM mutation.
 
-The recovered multi-row successor is now represented by toolkit-independent color-option
-primitives rather than being inferred from the preceding one-row workflow. Tests bind all 128
-entry states to Lunar Magic's exact free/reusable/reserved bits and initialized row layout, enforce
-the recovered 1–128 color and 1–4 priority bounds, preserve transparency at index zero, and cover
-deterministic popularity reduction with frequency-first/RGB555 tie ordering. Median-cut reduction
-uses the bounded deterministic variance splitter while the remaining compatibility gate is the
-Ghidra-recovered weighted 8×8 color-set/subset allocator across all eight rows.
+The recovered multi-row successor is represented by toolkit-independent color-option and
+allocation primitives rather than being inferred from the preceding one-row workflow. Tests bind
+all 128 entry states to Lunar Magic's exact free/reusable/reserved bits and initialized row layout,
+enforce the recovered 1–128 color and 1–4 priority bounds, preserve transparency at index zero, and
+cover deterministic popularity reduction with frequency-first/RGB555 tie ordering. Weighted
+unique 8×8 color sets, subset utility, reusable-color overlap, capacity selection, stable
+installation, and disjoint-row allocation are covered independently. Application tests carry the
+selected row for every 8×8 tile into all four packed Map16 subtile descriptors and reconstruct the
+preview through those same rows; the original one-row path and complete ROM commit/reopen tests
+remain green. The native dialog exposes both reduction choices and the complete 8×16 state grid.
+Median-cut currently uses the bounded deterministic variance splitter; exact priority-level
+influence and Wine-produced output equivalence remain compatibility gates.
 
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination
