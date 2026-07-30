@@ -31,6 +31,7 @@ mod layer3_document_controller;
 mod legacy_mwl_transfer;
 mod level_controller;
 mod level_navigation;
+mod level_usage;
 mod localization;
 mod lunar_magic_metadata_state;
 mod map16_controller;
@@ -166,6 +167,9 @@ pub use legacy_mwl_transfer::{legacy_mwl_sidecar_paths, publish_legacy_mwl_bundl
 pub use level_controller::{LevelController, LevelControllerError, NativeLevelEdit};
 pub use level_navigation::{
     LevelNavigationDirection, LevelViewState, LevelViewport, LevelViewportError,
+};
+pub use level_usage::{
+    LevelUsageEntry, LevelUsageReport, LevelUsageReportError, LevelUsageTimestamp,
 };
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};
