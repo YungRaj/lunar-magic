@@ -359,6 +359,28 @@ fn mwl_staging_preflight_failures_preserve_every_controller_domain() {
 }
 
 #[test]
+fn complete_mwl_import_rejects_missing_lfix3_before_producing_a_mutation() {
+    let snapshot = snapshot();
+    let controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let source = mwl_source(&controller);
+
+    assert!(matches!(
+        controller.prepare_smw_us_v1_installed_mwl_import(&source, &options(), &layer2_options()),
+        Err(NativeLevelAssetsControllerError::MwlLfix3Unavailable)
+    ));
+    assert!(!controller.is_modified());
+    assert_eq!(controller.revision(), snapshot.revision);
+}
+
+#[test]
 fn mixed_edits_prepare_one_checksum_valid_semantically_reopenable_commit() {
     let snapshot = snapshot();
     let mut controller = NativeLevelAssetsController::decode(
