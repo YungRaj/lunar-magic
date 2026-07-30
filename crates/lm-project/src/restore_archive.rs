@@ -7,7 +7,15 @@ const RECORD_HEADER_LEN: usize = 0x100;
 const MAX_RECORDS: usize = 1_000_000;
 const MAX_COMMAND_STREAM_LEN: u64 = 0x200_0000;
 const MAX_RESTORED_ROM_LEN: usize = 0x100_0000;
+const MAX_ASSOCIATED_FILE_LEN: u64 = 0x1000_0000;
 const DECODED_CHECKSUM_XOR: u32 = 0xfade_c0de;
+pub const LUNAR_RESTORE_ASSOCIATED_FILE_COUNT: usize = 13;
+
+/// The thirteen ROM-adjacent files tracked by Lunar Magic restore points, in on-disk slot order.
+pub const LUNAR_RESTORE_ASSOCIATED_EXTENSIONS: [&str; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT] = [
+    "msc", "dsc", "ssc", "m16", "s16", "mwt", "mw2", "sscov", "s16ov", "lmtbl", "mw0t", "mw0",
+    "osc",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PackedRestoreDate {
@@ -54,6 +62,7 @@ pub struct LunarRestoreArchiveHeader {
     pub last_record_offset: u64,
     pub last_rom_timestamp: u64,
     pub latest_rom_hash: u32,
+    pub associated_file_timestamps: [u64; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
     pub reserved: Vec<u8>,
     pub producer: Vec<u8>,
 }
@@ -76,7 +85,22 @@ pub struct LunarRestorePointRecord {
     pub created_time: PackedRestoreTime,
     pub rom_variant: u32,
     pub rom_hash: u32,
+    pub associated_files: [LunarRestoreAssociatedFileEntry; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
     pub raw_header: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LunarRestoreAssociatedFileEntry {
+    /// Record-relative archive offset. Zero means that this record inherits the previous value.
+    pub relative_offset: u32,
+    /// Stored byte count. The record compression flag also applies to this sidecar.
+    pub stored_size: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LunarRestoredAssociatedFile {
+    pub extension: &'static str,
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -190,6 +214,9 @@ impl LunarRestoreArchive {
             last_record_offset: read_u64(bytes, 0x18, "last record offset")?,
             last_rom_timestamp: read_u64(bytes, 0x28, "last ROM timestamp")?,
             latest_rom_hash: read_u32(bytes, 0x30, "latest ROM hash")?,
+            associated_file_timestamps: std::array::from_fn(|slot| {
+                u64::from_le_bytes(bytes[0x40 + slot * 8..0x48 + slot * 8].try_into().unwrap())
+            }),
             reserved: bytes[0x34..ARCHIVE_HEADER_LEN].to_vec(),
             producer: bytes[ARCHIVE_HEADER_LEN..ARCHIVE_PREFIX_LEN].to_vec(),
         };
@@ -285,6 +312,103 @@ impl LunarRestoreArchive {
         }
         Ok(restored)
     }
+
+    /// Reconstructs the latest value of every associated file captured through `record_id`.
+    ///
+    /// Lunar Magic stores only changed slots in each directory record. A nonzero slot therefore
+    /// replaces the value inherited from earlier records; a zero slot leaves it unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the record does not exist, an inherited range is outside the archive,
+    /// or a compressed associated file is invalid or exceeds the bounded output limit.
+    pub fn restore_associated_files_through(
+        &self,
+        record_id: u32,
+    ) -> Result<Vec<LunarRestoredAssociatedFile>, LunarRestoreArchiveError> {
+        let mut resolved: [Option<(u64, u32, bool)>; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT] =
+            [None; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT];
+        let mut found = false;
+        for record in &self.records {
+            for (slot, entry) in record.associated_files.iter().enumerate() {
+                if entry.relative_offset != 0 {
+                    resolved[slot] = Some((
+                        associated_file_address(record, *entry)?,
+                        entry.stored_size,
+                        record.compressed(),
+                    ));
+                }
+            }
+            if record.record_id == record_id {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return Err(LunarRestoreArchiveError::UnknownRecordId(record_id));
+        }
+
+        resolved
+            .into_iter()
+            .enumerate()
+            .filter_map(|(slot, entry)| entry.map(|entry| (slot, entry)))
+            .map(|(slot, (offset, stored_size, compressed))| {
+                let stored = checked_slice(
+                    &self.bytes,
+                    usize::try_from(offset)
+                        .map_err(|_| LunarRestoreArchiveError::AddressOverflow(offset))?,
+                    stored_size as usize,
+                    "associated restore file",
+                )?;
+                let bytes = if compressed && !stored.is_empty() {
+                    let mut output = Vec::new();
+                    DeflateDecoder::new(stored)
+                        .take(MAX_ASSOCIATED_FILE_LEN + 1)
+                        .read_to_end(&mut output)
+                        .map_err(|error| LunarRestoreArchiveError::AssociatedFileInflate {
+                            extension: LUNAR_RESTORE_ASSOCIATED_EXTENSIONS[slot],
+                            error: error.to_string(),
+                        })?;
+                    if u64::try_from(output.len()).unwrap_or(u64::MAX) > MAX_ASSOCIATED_FILE_LEN {
+                        return Err(LunarRestoreArchiveError::AssociatedFileTooLarge {
+                            extension: LUNAR_RESTORE_ASSOCIATED_EXTENSIONS[slot],
+                            length: output.len(),
+                        });
+                    }
+                    output
+                } else {
+                    stored.to_vec()
+                };
+                Ok(LunarRestoredAssociatedFile {
+                    extension: LUNAR_RESTORE_ASSOCIATED_EXTENSIONS[slot],
+                    bytes,
+                })
+            })
+            .collect()
+    }
+}
+
+fn associated_file_address(
+    record: &LunarRestorePointRecord,
+    entry: LunarRestoreAssociatedFileEntry,
+) -> Result<u64, LunarRestoreArchiveError> {
+    let mut address = record
+        .archive_offset
+        .checked_add(u64::from(entry.relative_offset))
+        .ok_or(LunarRestoreArchiveError::AddressOverflow(
+            record.archive_offset,
+        ))?;
+    // LM versions before 3.21 recorded the end rather than the start for large sidecars.
+    if entry.stored_size > 0x1_0000 && (record.directory_version & 0xffff_0000) < 0x0321_0000 {
+        address = address.checked_sub(u64::from(entry.stored_size)).ok_or(
+            LunarRestoreArchiveError::AssociatedFileAddressUnderflow {
+                record: record.archive_offset,
+                relative_offset: entry.relative_offset,
+                stored_size: entry.stored_size,
+            },
+        )?;
+    }
+    Ok(address)
 }
 
 fn restore_crc32(bytes: &[u8]) -> u32 {
@@ -438,6 +562,13 @@ fn decode_record(
         stored_payload_size as usize,
         "record payload",
     )?;
+    let associated_files = std::array::from_fn(|slot| {
+        let offset = 0x80 + slot * 8;
+        LunarRestoreAssociatedFileEntry {
+            relative_offset: u32::from_le_bytes(header[offset..offset + 4].try_into().unwrap()),
+            stored_size: u32::from_le_bytes(header[offset + 4..offset + 8].try_into().unwrap()),
+        }
+    });
 
     Ok(LunarRestorePointRecord {
         archive_offset,
@@ -456,6 +587,7 @@ fn decode_record(
         created_time: PackedRestoreTime::decode(read_u32(header, 0x58, "record time")?),
         rom_variant: read_u32(header, 0x5c, "ROM variant")?,
         rom_hash: read_u32(header, 0x60, "ROM hash")?,
+        associated_files,
         raw_header: header.to_vec(),
     })
 }
@@ -572,6 +704,19 @@ pub enum LunarRestoreArchiveError {
         record: u64,
         expected: u32,
         actual: u32,
+    },
+    AssociatedFileAddressUnderflow {
+        record: u64,
+        relative_offset: u32,
+        stored_size: u32,
+    },
+    AssociatedFileInflate {
+        extension: &'static str,
+        error: String,
+    },
+    AssociatedFileTooLarge {
+        extension: &'static str,
+        length: usize,
     },
 }
 
@@ -701,6 +846,24 @@ fn fmt_command_error(
             formatter,
             "restore point at {record:#x} produced ROM hash {actual:#010x}, expected {expected:#010x}"
         ),
+        E::AssociatedFileAddressUnderflow {
+            record,
+            relative_offset,
+            stored_size,
+        } => write!(
+            formatter,
+            "restore point at {record:#x} has legacy associated-file range {relative_offset:#x}-{stored_size:#x} below the archive start"
+        ),
+        E::AssociatedFileInflate { extension, error } => {
+            write!(
+                formatter,
+                "cannot inflate associated .{extension} file: {error}"
+            )
+        }
+        E::AssociatedFileTooLarge { extension, length } => write!(
+            formatter,
+            "inflated associated .{extension} file is {length} bytes, above the supported limit"
+        ),
         _ => unreachable!("non-command errors are formatted by the outer match"),
     }
 }
@@ -819,6 +982,102 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn restores_changed_associated_files_and_inherits_unchanged_slots() {
+        let mut bytes = archive();
+        put_u32(&mut bytes, 0x130 + 0x40, 0x0363_8001);
+        put_u32(&mut bytes, 0x250 + 0x40, 0x0363_8001);
+        put_u32(&mut bytes, 0x130 + 0x80, 0x114);
+        put_u32(&mut bytes, 0x130 + 0x84, 3);
+        bytes[0x244..0x247].copy_from_slice(b"one");
+        put_u32(&mut bytes, 0x250 + 0x88, 0x114);
+        put_u32(&mut bytes, 0x250 + 0x8c, 3);
+        bytes[0x364..0x367].copy_from_slice(b"two");
+
+        let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+        assert_eq!(
+            archive.restore_associated_files_through(1).unwrap(),
+            [LunarRestoredAssociatedFile {
+                extension: "msc",
+                bytes: b"one".to_vec(),
+            }]
+        );
+        assert_eq!(
+            archive.restore_associated_files_through(2).unwrap(),
+            [
+                LunarRestoredAssociatedFile {
+                    extension: "msc",
+                    bytes: b"one".to_vec(),
+                },
+                LunarRestoredAssociatedFile {
+                    extension: "dsc",
+                    bytes: b"two".to_vec(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn inflates_associated_files_with_the_owning_record_flags() {
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"sidecar contents").unwrap();
+        let compressed = encoder.finish().unwrap();
+        let mut bytes = archive();
+        put_u32(&mut bytes, 0x250 + 0x40, 0x0363_c001 | 0x4000);
+        put_u32(&mut bytes, 0x250 + 0x90, 0x114);
+        put_u32(
+            &mut bytes,
+            0x250 + 0x94,
+            u32::try_from(compressed.len()).unwrap(),
+        );
+        bytes[0x364..0x364 + compressed.len()].copy_from_slice(&compressed);
+
+        let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+        assert_eq!(
+            archive.restore_associated_files_through(2).unwrap(),
+            [LunarRestoredAssociatedFile {
+                extension: "ssc",
+                bytes: b"sidecar contents".to_vec(),
+            }]
+        );
+    }
+
+    #[test]
+    fn applies_the_pre_321_large_sidecar_end_offset_compatibility_rule() {
+        let record = LunarRestorePointRecord {
+            archive_offset: 0x20_000,
+            next_record_offset: 0,
+            previous_record_offset: 0,
+            decoded_payload_size: 0,
+            payload_checksum: 0,
+            decoded_payload_checksum: 0,
+            stored_payload_size: 0,
+            payload_offset: 0x100,
+            description: Vec::new(),
+            directory_version: 0x0320_0000,
+            record_id: 1,
+            created: PackedRestoreDate::decode(0),
+            rom_size: 0,
+            created_time: PackedRestoreTime::decode(0),
+            rom_variant: 0,
+            rom_hash: 0,
+            associated_files: [LunarRestoreAssociatedFileEntry::default();
+                LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+            raw_header: Vec::new(),
+        };
+        assert_eq!(
+            associated_file_address(
+                &record,
+                LunarRestoreAssociatedFileEntry {
+                    relative_offset: 0x2_0000,
+                    stored_size: 0x1_0001,
+                },
+            )
+            .unwrap(),
+            0x2_ffff
+        );
     }
 
     #[test]

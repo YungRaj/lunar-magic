@@ -16,11 +16,18 @@ struct LoadedRestore {
     archive: LunarRestoreArchive,
     original: Vec<u8>,
     selected: usize,
+    restore_associated_files: bool,
 }
 
 #[derive(Debug)]
 struct RestoreCompletion {
-    result: Result<usize, String>,
+    result: Result<PublishedRestore, String>,
+}
+
+#[derive(Debug)]
+struct PublishedRestore {
+    rom_len: usize,
+    associated_file_count: usize,
 }
 
 #[derive(Debug)]
@@ -79,6 +86,7 @@ impl RestorePointDialog {
             archive,
             original,
             selected,
+            restore_associated_files: true,
         });
         self.completed = None;
         self.error = None;
@@ -154,6 +162,10 @@ impl RestorePointDialog {
                             });
                     });
                 ui.separator();
+                ui.checkbox(
+                    &mut loaded.restore_associated_files,
+                    "Restore associated files (.msc, .dsc, .ssc, Map16, and related files)",
+                );
                 ui.colored_label(
                     egui::Color32::YELLOW,
                     "The selected existing ROM will be replaced atomically. Close it in the editor first.",
@@ -181,6 +193,7 @@ impl RestorePointDialog {
             .get(loaded.selected)
             .ok_or_else(|| "selected restore point no longer exists".to_owned())?;
         let record_id = record.record_id;
+        let restore_associated_files = loaded.restore_associated_files;
         let target_path = loaded.target_path.clone();
         let worker_target = target_path.clone();
         let (sender, completion) = mpsc::channel();
@@ -192,6 +205,7 @@ impl RestorePointDialog {
                     record_id,
                     &loaded.original,
                     &worker_target,
+                    restore_associated_files,
                 );
                 let _send_result = sender.send(RestoreCompletion { result });
             })
@@ -262,10 +276,16 @@ impl RestorePointDialog {
         let record_id = running.record_id;
         self.running = None;
         match result {
-            Ok(length) => {
+            Ok(publication) => {
+                let associated = match publication.associated_file_count {
+                    0 => String::new(),
+                    1 => " and 1 associated file".to_owned(),
+                    count => format!(" and {count} associated files"),
+                };
                 self.completed = Some(format!(
-                    "Restored point {record_id} to {} ({length} bytes).",
-                    target.display()
+                    "Restored point {record_id} to {} ({} bytes{associated}).",
+                    target.display(),
+                    publication.rom_len,
                 ));
             }
             Err(error) => self.error = Some(error),
@@ -291,16 +311,44 @@ fn restore_and_publish(
     record_id: u32,
     original: &[u8],
     target: &Path,
-) -> Result<usize, String> {
+    restore_associated_files: bool,
+) -> Result<PublishedRestore, String> {
     let restored = archive
         .restore_through(record_id, original)
         .map_err(|error| error.to_string())?;
     let image =
         lm_rom::RomImage::from_bytes(restored.clone()).map_err(|error| error.to_string())?;
     lm_project::Project::open_supported(image).map_err(|error| error.to_string())?;
-    lm_app::file_persistence::replace_existing(target, &restored)
-        .map_err(|error| error.to_string())?;
-    Ok(restored.len())
+    let associated = if restore_associated_files {
+        archive
+            .restore_associated_files_through(record_id)
+            .map_err(|error| error.to_string())?
+    } else {
+        Vec::new()
+    };
+    if associated.is_empty() {
+        lm_app::file_persistence::replace_existing(target, &restored)
+            .map_err(|error| error.to_string())?;
+    } else {
+        let sidecar_paths: Vec<PathBuf> = associated
+            .iter()
+            .map(|file| target.with_extension(file.extension))
+            .collect();
+        let mut documents: Vec<(&Path, &[u8])> = Vec::with_capacity(associated.len() + 1);
+        documents.push((target, &restored));
+        documents.extend(
+            sidecar_paths
+                .iter()
+                .zip(&associated)
+                .map(|(path, file)| (path.as_path(), file.bytes.as_slice())),
+        );
+        lm_app::file_persistence::replace_or_create_group(&documents)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(PublishedRestore {
+        rom_len: restored.len(),
+        associated_file_count: associated.len(),
+    })
 }
 
 #[cfg(test)]
@@ -327,7 +375,7 @@ mod tests {
     }
 
     fn archive(original: &[u8]) -> LunarRestoreArchive {
-        let mut bytes = vec![0; 0x240];
+        let mut bytes = vec![0; 0x250];
         bytes[0..4].copy_from_slice(b"LR\0\x02");
         put_u32(&mut bytes, 8, 2);
         put_u64(&mut bytes, 0x10, 0x130);
@@ -340,9 +388,12 @@ mod tests {
         put_u32(&mut bytes, 0x130 + 0x48, 1);
         put_u32(&mut bytes, 0x130 + 0x50, 0x8000);
         put_u32(&mut bytes, 0x130 + 0x60, crc32(original));
+        put_u32(&mut bytes, 0x130 + 0x80, 0x109);
+        put_u32(&mut bytes, 0x130 + 0x84, 3);
         put_u32(&mut bytes, 0x130 + 0x24, 0xff ^ 0xfade_c0de);
         bytes[0x230..0x235].copy_from_slice(b"Test\0");
         bytes[0x238] = 0xff;
+        bytes[0x239..0x23c].copy_from_slice(b"msc");
         LunarRestoreArchive::decode(&bytes).unwrap()
     }
 
@@ -374,12 +425,15 @@ mod tests {
 
         let archive = archive(&original);
         assert_eq!(
-            restore_and_publish(&archive, 1, &original, &target).unwrap(),
-            0x8000
+            restore_and_publish(&archive, 1, &original, &target, true)
+                .unwrap()
+                .rom_len,
+            0x8000,
         );
         assert_eq!(fs::read(&target).unwrap(), original);
+        assert_eq!(fs::read(target.with_extension("msc")).unwrap(), b"msc");
         let restored = fs::read(&target).unwrap();
-        assert!(restore_and_publish(&archive, 99, &original, &target).is_err());
+        assert!(restore_and_publish(&archive, 99, &original, &target, true).is_err());
         assert_eq!(fs::read(&target).unwrap(), restored);
         fs::remove_dir_all(directory).unwrap();
     }

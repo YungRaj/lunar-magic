@@ -137,6 +137,248 @@ pub fn replace_existing(destination: &Path, bytes: &[u8]) -> io::Result<()> {
     }
 }
 
+/// Replaces existing regular files and creates absent files as one recoverable publication group.
+///
+/// Every payload is staged before any destination changes. Existing destinations are retained as
+/// sibling backups until all staged files publish. If publication fails, newly created files are
+/// removed and existing originals are restored whenever the filesystem permits it.
+///
+/// # Errors
+///
+/// Returns an I/O error for an empty or aliased group, a symbolic-link/non-file destination,
+/// staging failure, or publication/restoration failure.
+pub fn replace_or_create_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
+    if documents.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "grouped replacement requires at least one document",
+        ));
+    }
+
+    struct Entry<'a> {
+        destination: &'a Path,
+        original: Option<fs::Metadata>,
+        staged: PathBuf,
+        staged_metadata: fs::Metadata,
+        backup: Option<PathBuf>,
+    }
+
+    let mut entries: Vec<Entry<'_>> = Vec::with_capacity(documents.len());
+    let mut resolved = Vec::with_capacity(documents.len());
+    for (destination, bytes) in documents.iter().copied() {
+        let Some(name) = destination.file_name() else {
+            cleanup_paths(
+                &entries
+                    .iter()
+                    .map(|entry| entry.staged.as_path())
+                    .collect::<Vec<_>>(),
+            );
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "destination has no file name",
+            ));
+        };
+        let parent = match fs::canonicalize(destination.parent().unwrap_or_else(|| Path::new(".")))
+        {
+            Ok(parent) => parent,
+            Err(error) => {
+                cleanup_paths(
+                    &entries
+                        .iter()
+                        .map(|entry| entry.staged.as_path())
+                        .collect::<Vec<_>>(),
+                );
+                return Err(error);
+            }
+        };
+        let resolved_destination = parent.join(name);
+        if resolved.contains(&resolved_destination) {
+            cleanup_paths(
+                &entries
+                    .iter()
+                    .map(|entry| entry.staged.as_path())
+                    .collect::<Vec<_>>(),
+            );
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "grouped replacement destinations must differ",
+            ));
+        }
+        resolved.push(resolved_destination);
+
+        let original = match fs::symlink_metadata(destination) {
+            Ok(metadata) if metadata.file_type().is_file() => Some(metadata),
+            Ok(_) => {
+                cleanup_paths(
+                    &entries
+                        .iter()
+                        .map(|entry| entry.staged.as_path())
+                        .collect::<Vec<_>>(),
+                );
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "save destination must be absent or an existing regular file",
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => {
+                cleanup_paths(
+                    &entries
+                        .iter()
+                        .map(|entry| entry.staged.as_path())
+                        .collect::<Vec<_>>(),
+                );
+                return Err(error);
+            }
+        };
+        if let Some(metadata) = &original {
+            for entry in &entries {
+                let aliased = if let Some(other) = &entry.original {
+                    match same_existing_file(destination, metadata, entry.destination, other) {
+                        Ok(aliased) => aliased,
+                        Err(error) => {
+                            cleanup_paths(
+                                &entries
+                                    .iter()
+                                    .map(|entry| entry.staged.as_path())
+                                    .collect::<Vec<_>>(),
+                            );
+                            return Err(error);
+                        }
+                    }
+                } else {
+                    false
+                };
+                if aliased {
+                    cleanup_paths(
+                        &entries
+                            .iter()
+                            .map(|entry| entry.staged.as_path())
+                            .collect::<Vec<_>>(),
+                    );
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "grouped replacement destinations must not alias the same file",
+                    ));
+                }
+            }
+        }
+        let staged = match stage(
+            destination,
+            bytes,
+            original.as_ref().map(fs::Metadata::permissions),
+        ) {
+            Ok(staged) => staged,
+            Err(error) => {
+                cleanup_paths(
+                    &entries
+                        .iter()
+                        .map(|entry| entry.staged.as_path())
+                        .collect::<Vec<_>>(),
+                );
+                return Err(error);
+            }
+        };
+        let staged_metadata = fs::metadata(&staged).inspect_err(|_| {
+            let _ = fs::remove_file(&staged);
+            cleanup_paths(
+                &entries
+                    .iter()
+                    .map(|entry| entry.staged.as_path())
+                    .collect::<Vec<_>>(),
+            );
+        })?;
+        let backup = if original.is_some() {
+            match unused_backup_path(destination) {
+                Ok(path) => Some(path),
+                Err(error) => {
+                    let _ = fs::remove_file(staged);
+                    cleanup_paths(
+                        &entries
+                            .iter()
+                            .map(|entry| entry.staged.as_path())
+                            .collect::<Vec<_>>(),
+                    );
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+        entries.push(Entry {
+            destination,
+            original,
+            staged,
+            staged_metadata,
+            backup,
+        });
+    }
+
+    let mut backed_up: Vec<usize> = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        let Some(backup) = &entry.backup else {
+            continue;
+        };
+        if let Err(error) = fs::rename(entry.destination, backup) {
+            for previous_index in backed_up.iter().rev() {
+                let previous = &entries[*previous_index];
+                if let Some(previous_backup) = &previous.backup {
+                    let _ = fs::rename(previous_backup, previous.destination);
+                }
+            }
+            cleanup_paths(
+                &entries
+                    .iter()
+                    .map(|entry| entry.staged.as_path())
+                    .collect::<Vec<_>>(),
+            );
+            return Err(error);
+        }
+        backed_up.push(index);
+    }
+
+    for (index, entry) in entries.iter().enumerate() {
+        if let Err(error) = fs::rename(&entry.staged, entry.destination) {
+            for published in entries[..index].iter().rev() {
+                let _ = remove_if_same_file(published.destination, &published.staged_metadata);
+            }
+            for original in entries.iter().rev() {
+                if let Some(backup) = &original.backup
+                    && let Err(restore_error) = fs::rename(backup, original.destination)
+                {
+                    cleanup_paths(
+                        &entries[index..]
+                            .iter()
+                            .map(|entry| entry.staged.as_path())
+                            .collect::<Vec<_>>(),
+                    );
+                    return Err(io::Error::new(
+                        restore_error.kind(),
+                        format!(
+                            "grouped publication failed ({error}) and an original could not be restored ({restore_error}); backup remains at {}",
+                            backup.display()
+                        ),
+                    ));
+                }
+            }
+            cleanup_paths(
+                &entries[index..]
+                    .iter()
+                    .map(|entry| entry.staged.as_path())
+                    .collect::<Vec<_>>(),
+            );
+            return Err(error);
+        }
+    }
+
+    for entry in &entries {
+        if let (Some(backup), Some(original)) = (&entry.backup, &entry.original) {
+            let _ = remove_if_same_file(backup, original);
+        }
+    }
+    Ok(())
+}
+
 /// Replaces two existing regular documents as one recoverable publication group.
 ///
 /// Both payloads are staged and synchronized before either destination moves. The two originals

@@ -112,6 +112,45 @@ fn existing_regular_document_is_replaced_without_staging_debris() {
     assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 1);
 }
 
+#[test]
+fn mixed_group_replaces_existing_and_creates_absent_documents() {
+    let directory = TestDirectory::new();
+    let rom = directory.0.join("game.smc");
+    let sidecar = directory.0.join("game.msc");
+    let second_sidecar = directory.0.join("game.dsc");
+    fs::write(&rom, b"old-rom").unwrap();
+    fs::write(&sidecar, b"old-sidecar").unwrap();
+
+    replace_or_create_group(&[
+        (&rom, b"new-rom"),
+        (&sidecar, b"new-sidecar"),
+        (&second_sidecar, b"new-second"),
+    ])
+    .unwrap();
+    assert_eq!(fs::read(rom).unwrap(), b"new-rom");
+    assert_eq!(fs::read(sidecar).unwrap(), b"new-sidecar");
+    assert_eq!(fs::read(second_sidecar).unwrap(), b"new-second");
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 3);
+}
+
+#[test]
+fn mixed_group_rejects_bad_destination_before_mutation() {
+    let directory = TestDirectory::new();
+    let rom = directory.0.join("game.smc");
+    let bad = directory.0.join("game.msc");
+    fs::write(&rom, b"old-rom").unwrap();
+    fs::create_dir(&bad).unwrap();
+
+    assert_eq!(
+        replace_or_create_group(&[(&rom, b"new-rom"), (&bad, b"sidecar")])
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidInput
+    );
+    assert_eq!(fs::read(rom).unwrap(), b"old-rom");
+    assert!(bad.is_dir());
+}
+
 #[cfg(any(unix, windows))]
 #[test]
 fn identity_guard_removes_only_the_file_captured_for_cleanup() {
