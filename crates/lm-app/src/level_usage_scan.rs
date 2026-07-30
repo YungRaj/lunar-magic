@@ -55,6 +55,7 @@ pub struct LevelUsageScanDiagnostic {
 pub enum LevelUsageScanStage {
     Load,
     RenderLayer1,
+    RenderLayer2,
     LoadLayer2,
     Graphics,
     Sprites,
@@ -256,21 +257,23 @@ fn scan_smw_us_v1_level_usage_with_layout(
         *loaded_level = true;
         loaded += 1;
 
-        if options.map16 {
+        if options.map16 && has_editor_canvas {
             let tileset = slot.layer1.header.object_tileset();
             let family = object_family_index(smw_us_v1_object_family(tileset));
             let mut definitions = shared_definitions.clone();
-            let layer1_cache =
+            let handler_map = object_map.family(family);
+            let layout = maximum_level_layout(slot.layer1.header.level_mode());
+            let mut layer1_cache =
                 match install_lunar_magic_tileset_extended_objects(&mut definitions, tileset)
                     .and_then(|()| {
-                        let handler_map = object_map.family(family).ok_or(
+                        let handler_map = handler_map.ok_or(
                             lm_render::StandardObjectRenderError::InvalidCommand(tileset),
                         )?;
                         render_mapped_standard_object_stream(
                             &slot.layer1.objects,
                             &definitions,
                             handler_map,
-                            maximum_level_layout(slot.layer1.header.level_mode()),
+                            layout,
                             0x25,
                         )
                     }) {
@@ -299,35 +302,84 @@ fn scan_smw_us_v1_level_usage_with_layout(
                     }
                 };
 
-            let layer2 = layer2_layout.and_then(|layer2_layout| {
+            let mut layer2_tilemap = None;
+            if let Some(layer2_layout) = layer2_layout {
                 match project.load_level_layer2_with_descriptor(
                     level,
                     slot.layer1.header.level_mode(),
                     layer2_layout,
                 ) {
                     Ok(loaded) => match loaded.data {
-                        NativeLayer2Data::Tilemap(bytes) => Some((
-                            bytes
-                                .chunks_exact(2)
-                                .map(|word| u16::from_le_bytes([word[0], word[1]]))
-                                .collect::<Vec<_>>(),
-                            loaded
-                                .descriptor
-                                .map_or(0, lm_level::MwlLayer2Descriptor::active_bank),
-                        )),
-                        NativeLayer2Data::Objects(_) => None,
+                        NativeLayer2Data::Tilemap(bytes) => {
+                            layer2_tilemap = Some((
+                                bytes
+                                    .chunks_exact(2)
+                                    .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                                    .collect::<Vec<_>>(),
+                                loaded
+                                    .descriptor
+                                    .map_or(0, lm_level::MwlLayer2Descriptor::active_bank),
+                            ));
+                        }
+                        NativeLayer2Data::Objects(objects) => {
+                            if let (Some(cache), Some(handler_map)) =
+                                (layer1_cache.as_mut(), handler_map)
+                            {
+                                let layer2_layout = NativeLevelMap16Layout {
+                                    base_cell: if layout.vertical {
+                                        usize::from(mode.editor_major_screens) * 0x200
+                                    } else {
+                                        16 * 0x1b0
+                                    },
+                                    ..layout
+                                };
+                                match render_mapped_standard_object_stream(
+                                    &objects.objects,
+                                    &definitions,
+                                    handler_map,
+                                    layer2_layout,
+                                    0x25,
+                                ) {
+                                    Ok(rendered) => {
+                                        if !rendered.missing_commands.is_empty()
+                                            || !rendered.missing_extended_objects.is_empty()
+                                        {
+                                            diagnostics.push(LevelUsageScanDiagnostic {
+                                                level,
+                                                stage: LevelUsageScanStage::RenderLayer2,
+                                                detail: format!(
+                                                    "unresolved commands {:?}, extended objects {:?}",
+                                                    rendered.missing_commands,
+                                                    rendered.missing_extended_objects
+                                                ),
+                                            });
+                                        }
+                                        cache.overlay_written_cells(&rendered.cache);
+                                    }
+                                    Err(error) => diagnostics.push(diagnostic(
+                                        level,
+                                        LevelUsageScanStage::RenderLayer2,
+                                        error,
+                                    )),
+                                }
+                            }
+                        }
                     },
                     Err(error) => {
                         diagnostics.push(diagnostic(level, LevelUsageScanStage::LoadLayer2, error));
-                        None
                     }
                 }
-            });
-            if let Some(cache) = layer1_cache {
+            }
+            if let Some(mut cache) = layer1_cache {
+                if uses_split_horizontal_layer_cache(&project, level, slot.layer1.header) {
+                    cache.fill_horizontal_screen_rows(16..32, 16..27, 0);
+                }
+                #[cfg(test)]
+                write_level_usage_audit_cache(level, &cache);
                 accumulator.observe_map16(
                     level,
                     cache.cells(),
-                    layer2
+                    layer2_tilemap
                         .as_ref()
                         .map(|(words, bank)| (words.as_slice(), *bank)),
                 )?;
@@ -425,6 +477,15 @@ fn scan_smw_us_v1_level_usage_with_layout(
     })
 }
 
+#[cfg(test)]
+fn write_level_usage_audit_cache(level: usize, cache: &lm_render::NativeLevelMap16Cache) {
+    let Some(directory) = std::env::var_os("LM_USAGE_AUDIT_CACHE_DIR") else {
+        return;
+    };
+    let path = std::path::Path::new(&directory).join(format!("{level:03X}.bin"));
+    std::fs::write(path, cache.encode()).expect("write level-usage audit cache");
+}
+
 fn maximum_level_layout(level_mode: u8) -> NativeLevelMap16Layout {
     let vertical = smw_us_v1_level_mode(level_mode).vertical;
     NativeLevelMap16Layout {
@@ -434,6 +495,25 @@ fn maximum_level_layout(level_mode: u8) -> NativeLevelMap16Layout {
         base_cell: 0,
         vertical,
     }
+}
+
+fn uses_split_horizontal_layer_cache(
+    project: &Project,
+    level: usize,
+    header: lm_level::LegacyLevelHeader,
+) -> bool {
+    let Ok(entrance) =
+        project.load_vanilla_main_entrance(level, lm_profile::smw_us_v1_vanilla_entrance_layout())
+    else {
+        return false;
+    };
+    !smw_us_v1_level_mode(header.level_mode()).vertical
+        && split_horizontal_layer_cache(entrance.vertical_settings, header.encoded()[4] & 0x0f)
+}
+
+const fn split_horizontal_layer_cache(vertical_settings: u8, layer_variant: u8) -> bool {
+    let packed_layout = vertical_settings >> 6;
+    packed_layout == 1 || (packed_layout == 2 && layer_variant != 1)
 }
 
 const fn object_family_index(family: VanillaObjectFamily) -> usize {
@@ -508,6 +588,15 @@ mod tests {
         assert_eq!(object_family_index(VanillaObjectFamily::Rope), 2);
         assert_eq!(object_family_index(VanillaObjectFamily::Underground), 3);
         assert_eq!(object_family_index(VanillaObjectFamily::GhostHouse), 4);
+    }
+
+    #[test]
+    fn split_horizontal_cache_rule_matches_recovered_layout_gate() {
+        assert!(split_horizontal_layer_cache(0x40, 1));
+        assert!(split_horizontal_layer_cache(0x80, 0));
+        assert!(!split_horizontal_layer_cache(0x80, 1));
+        assert!(!split_horizontal_layer_cache(0x00, 0));
+        assert!(!split_horizontal_layer_cache(0xc0, 0));
     }
 
     #[test]
@@ -642,8 +731,28 @@ mod tests {
             .filter(|(actual, expected)| actual.1 != expected.1)
             .count();
         eprintln!("Map16 resource counts still differing: {mismatched_counts}");
-        // The audit deliberately keeps the remaining Layer 1 renderer gap visible while proving
-        // that the scanner, Layer 2 namespace, graphics, and sprite domains use the oracle corpus.
-        assert!(mismatched_counts < 200);
+        if std::env::var_os("LM_USAGE_AUDIT_DELTAS").is_some() {
+            for diagnostic in &result.diagnostics {
+                if diagnostic.detail.contains("has no editor canvas") {
+                    eprintln!(
+                        "Level {:03X} diagnostic: {}",
+                        diagnostic.level, diagnostic.detail
+                    );
+                }
+            }
+            let mut deltas = actual_map16
+                .iter()
+                .zip(&expected_map16)
+                .filter_map(|(actual, expected)| {
+                    let delta = i128::from(actual.1) - i128::from(expected.1);
+                    (delta != 0).then_some((delta.unsigned_abs(), actual.0, delta))
+                })
+                .collect::<Vec<_>>();
+            deltas.sort_unstable_by(|left, right| right.cmp(left));
+            for (_, resource, delta) in deltas {
+                eprintln!("Map16 {resource:04X}: {delta:+}");
+            }
+        }
+        assert_eq!(mismatched_counts, 0);
     }
 }

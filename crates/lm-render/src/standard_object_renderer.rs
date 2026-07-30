@@ -302,6 +302,7 @@ enum AxisExpansion {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NativeRenderer {
     Pattern,
+    VisibleMinorPattern,
     ExtendedBush,
     ExtendedCanvas,
     ExtendedMidwayBar,
@@ -784,7 +785,29 @@ fn render_definition(
         ObjectExtent::FixedOne => (1, 1),
         ObjectExtent::FixedPattern => (definition.pattern.width, definition.pattern.height),
     };
-    render_pattern(cache, layout, placement, major_span, minor_span, definition)
+    let pattern_layout = if definition.renderer == NativeRenderer::VisibleMinorPattern {
+        if layout.vertical {
+            NativeLevelMap16Layout {
+                width: layout.width.min(27),
+                ..layout
+            }
+        } else {
+            NativeLevelMap16Layout {
+                height: layout.height.min(27),
+                ..layout
+            }
+        }
+    } else {
+        layout
+    };
+    render_pattern(
+        cache,
+        pattern_layout,
+        placement,
+        major_span,
+        minor_span,
+        definition,
+    )
 }
 
 fn render_serialized_axis_pattern(
@@ -829,7 +852,7 @@ fn dispatch_native_renderer(
     renderer: NativeRenderer,
 ) -> Option<Result<(), StandardObjectRenderError>> {
     let result = match renderer {
-        NativeRenderer::Pattern => return None,
+        NativeRenderer::Pattern | NativeRenderer::VisibleMinorPattern => return None,
         NativeRenderer::SharedSlot000 => {
             render_shared_slot_000(cache, layout, placement, command, parameter)
         }
@@ -4707,7 +4730,7 @@ fn install_simple_mapped_handlers(
 fn install_edge_mapped_handlers(
     definitions: &mut StandardObjectDefinitionSet,
 ) -> Result<(), StandardObjectRenderError> {
-    for (handler, pattern, major_expansion, minor_expansion) in [
+    for (handler, pattern, major_expansion, minor_expansion, renderer) in [
         (
             67,
             StandardObjectPattern {
@@ -4717,6 +4740,7 @@ fn install_edge_mapped_handlers(
             },
             AxisExpansion::Clamp,
             AxisExpansion::FinalEdge,
+            NativeRenderer::Pattern,
         ),
         (
             68,
@@ -4727,6 +4751,7 @@ fn install_edge_mapped_handlers(
             },
             AxisExpansion::Clamp,
             AxisExpansion::Clamp,
+            NativeRenderer::VisibleMinorPattern,
         ),
         (
             69,
@@ -4737,6 +4762,7 @@ fn install_edge_mapped_handlers(
             },
             AxisExpansion::FinalEdge,
             AxisExpansion::Clamp,
+            NativeRenderer::Pattern,
         ),
     ] {
         definitions.set_handler(
@@ -4746,7 +4772,7 @@ fn install_edge_mapped_handlers(
                 extent: ObjectExtent::SwappedParameterNibbles,
                 major_expansion,
                 minor_expansion,
-                renderer: NativeRenderer::Pattern,
+                renderer,
             },
         )?;
     }
@@ -6613,6 +6639,35 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn mapped_handler_68_clips_at_the_visible_minor_boundary() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let definition = definitions.handler_definition(68).unwrap();
+        let full_layout = NativeLevelMap16Layout {
+            width: 512,
+            height: 32,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let placement = lm_level::NativeObjectPlacement {
+            record_index: 0,
+            screen: 0,
+            major: 0,
+            minor: 25,
+            major_span: 15,
+            minor_span: 2,
+        };
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+
+        render_definition(&mut cache, full_layout, placement, 1, 0x2f, definition).unwrap();
+
+        assert_ne!(cache.get(full_layout, 0, 25).unwrap(), 0x25);
+        assert_ne!(cache.get(full_layout, 0, 26).unwrap(), 0x25);
+        assert_eq!(cache.get(full_layout, 0, 27).unwrap(), 0x25);
     }
 
     #[test]

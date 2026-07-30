@@ -82,6 +82,44 @@ impl NativeLevelMap16Cache {
         &self.cells
     }
 
+    /// Overlays only cells explicitly written while constructing `source`.
+    ///
+    /// Lunar Magic shares one physical cache between Layer 1 and object-based Layer 2. Rendering
+    /// each stream independently and merging only written cells reproduces that partition without
+    /// allowing either renderer's blank initialization to erase the other layer.
+    pub fn overlay_written_cells(&mut self, source: &Self) {
+        for index in 0..LEVEL_MAP16_CACHE_CELLS {
+            if source.written[index] {
+                self.cells[index] = source.cells[index];
+                self.written[index] = true;
+            }
+        }
+    }
+
+    /// Fills rows in a consecutive set of horizontal `$1B0`-word screen pages.
+    ///
+    /// Lunar Magic uses this to clear the eleven non-layer rows in the second half of the shared
+    /// cache when a horizontal level is split into sixteen Layer 1 and sixteen Layer 2 screens.
+    pub fn fill_horizontal_screen_rows(
+        &mut self,
+        screens: std::ops::Range<usize>,
+        rows: std::ops::Range<usize>,
+        tile: u16,
+    ) {
+        for screen in screens {
+            for row in rows.clone() {
+                let start = screen
+                    .saturating_mul(0x1b0)
+                    .saturating_add(row.saturating_mul(16));
+                let end = start.saturating_add(16).min(LEVEL_MAP16_CACHE_CELLS);
+                if let Some(cells) = self.cells.get_mut(start..end) {
+                    cells.fill(tile);
+                    self.written[start..end].fill(true);
+                }
+            }
+        }
+    }
+
     /// Reports whether a renderer explicitly wrote the indexed cell after cache construction.
     #[must_use]
     pub fn was_written(&self, index: usize) -> bool {
@@ -222,5 +260,31 @@ mod tests {
                 LEVEL_MAP16_CACHE_SENTINEL
             ))
         );
+    }
+
+    #[test]
+    fn written_overlay_preserves_other_cells() {
+        let mut destination = NativeLevelMap16Cache::filled(0x25);
+        destination.set(horizontal(), 1, 1, 0x123).unwrap();
+        let mut source = NativeLevelMap16Cache::filled(0);
+        source.set(horizontal(), 2, 2, 0x456).unwrap();
+
+        destination.overlay_written_cells(&source);
+
+        assert_eq!(destination.get(horizontal(), 1, 1).unwrap(), 0x123);
+        assert_eq!(destination.get(horizontal(), 2, 2).unwrap(), 0x456);
+        assert_eq!(destination.get(horizontal(), 3, 3).unwrap(), 0x25);
+    }
+
+    #[test]
+    fn fills_only_selected_horizontal_screen_rows() {
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        cache.fill_horizontal_screen_rows(16..32, 16..27, 0);
+
+        assert_eq!(cache.cells()[0x1b00 + 0xff], 0x25);
+        assert_eq!(cache.cells()[0x1b00 + 0x100], 0);
+        assert_eq!(cache.cells()[0x1b00 + 0x1af], 0);
+        assert_eq!(cache.cells()[0x3600], 0x25);
+        assert!(cache.was_written(0x1c00));
     }
 }
