@@ -142,6 +142,19 @@ pub(crate) fn choose_map16_set_document() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_complete_map16_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Lunar Magic complete Map16", &["map16"])
+        .pick_file()
+}
+
+pub(crate) fn choose_complete_map16_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Lunar Magic complete Map16", &["map16"])
+        .set_file_name("AllMap16.map16")
+        .save_file()
+}
+
 pub(crate) fn choose_complete_overworld_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Portable Lunar Magic complete overworld", &["lmow"])

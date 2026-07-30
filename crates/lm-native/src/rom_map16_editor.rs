@@ -9,6 +9,7 @@ use lm_level::{Map16Address, Map16Page};
 
 mod bitmap_import;
 mod commit;
+mod complete_file;
 mod lifecycle;
 #[cfg(test)]
 mod tests;
@@ -65,6 +66,10 @@ impl Controller {
         matches!(self, Self::Profile(_))
     }
 
+    const fn supports_complete_lm_file(&self) -> bool {
+        matches!(self, Self::Smw(_))
+    }
+
     fn supports_acts_like(&self, page: usize) -> bool {
         match self {
             Self::Profile(_) => true,
@@ -93,6 +98,9 @@ pub(crate) struct RomMap16Editor {
     preview_tileset: u8,
     preview_palette: u8,
     bitmap_loader: DocumentLoader,
+    complete_loader: DocumentLoader,
+    complete_persistence: crate::persistence_worker::PersistenceWorker,
+    complete_template: Option<lm_level::Lm16Map16File>,
     bitmap_session: Option<lm_app::NativeMap16BitmapImportSession>,
     bitmap_extra_slot_4: String,
     bitmap_extra_slot_5: String,
@@ -109,6 +117,7 @@ impl RomMap16Editor {
         project_revision: u64,
     ) -> (bool, Option<Command>) {
         let mut command = self.poll_bitmap_loader(context);
+        self.poll_complete_file_io(context);
         let manifest_command = match self.manifest_loader.show(context, project_revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
                 Ok(command) => Some(command),
@@ -167,6 +176,7 @@ impl RomMap16Editor {
         self.selection_and_clipboard(ui, stale, pages, pasted.as_deref());
         self.visual_page(ui);
         self.tile_fields(ui, stale, pages);
+        self.complete_file_controls(ui, stale, project_revision);
         self.bitmap_import_controls(ui, stale);
         self.commit_controls(ui, stale, project_revision)
     }

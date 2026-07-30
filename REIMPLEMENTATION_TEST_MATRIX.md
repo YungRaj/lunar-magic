@@ -860,6 +860,16 @@ blocks in one staged transaction. Ghidra `SaveMap16BaseDataToRom` proves ownersh
 buffer `+0x1000`. Tests change both sides of that boundary and a background tile, then prove exact
 semantic reopen, checksum repair, single-step undo, and pristine runtime installation.
 
+The graphical ROM Map16 workspace exposes the corresponding complete Lunar Magic `.map16`
+transfer through bounded background input and recoverable create-new output. Import stages all
+65,536 tiles as one controller edit, retains the live protected `$0000`–`$01ff` definitions while
+accepting their Acts-Like values, and normalizes background Acts-Like values to zero. Export writes
+all 256 pages, emits Lunar Magic's zero definition prefix for those protected tiles, and preserves
+auxiliary, selection, and editor-state bytes from an imported template. Focused tests reject
+malformed live page shapes before indexing, block close during file I/O, byte-exactly round-trip
+the retained Lunar Magic 3.63 `all.map16`, and commit/reopen representative protected, foreground,
+Acts-Like, and background changes through the native ROM transaction.
+
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination
 planes, source normalization bounds, and the 255-entry editor maximum. Detection rejects mixed

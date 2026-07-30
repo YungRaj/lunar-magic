@@ -29,6 +29,7 @@ impl RomMap16Editor {
                 self.preview_palette = 0;
                 self.page_texture = None;
                 self.page_texture_key = None;
+                self.complete_template = None;
                 self.bitmap_session = None;
                 self.bitmap_extra_slot_4.clear();
                 self.bitmap_extra_slot_5.clear();
@@ -50,6 +51,14 @@ impl RomMap16Editor {
         }
         if self.bitmap_loader.is_running() {
             self.error = Some("wait for bitmap loading to finish before closing".into());
+            return false;
+        }
+        if self.complete_loader.is_running() {
+            self.error = Some("wait for complete Map16 loading to finish before closing".into());
+            return false;
+        }
+        if self.complete_persistence.is_running() {
+            self.error = Some("wait for complete Map16 saving to finish before closing".into());
             return false;
         }
         let Some(workspace) = &self.workspace else {
@@ -108,6 +117,7 @@ impl RomMap16Editor {
         self.bitmap_session = None;
         self.bitmap_original_texture = None;
         self.bitmap_converted_texture = None;
+        self.complete_template = None;
         self.pending_close = None;
         self.invalidate();
     }
