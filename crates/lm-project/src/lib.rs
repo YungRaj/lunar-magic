@@ -235,7 +235,8 @@ pub use restore_archive::{
     LUNAR_RESTORE_ASSOCIATED_EXTENSIONS, LUNAR_RESTORE_ASSOCIATED_FILE_COUNT, LunarRestoreArchive,
     LunarRestoreArchiveCreateRequest, LunarRestoreArchiveError, LunarRestoreArchiveHeader,
     LunarRestoreAssociatedFileEntry, LunarRestoreCommand, LunarRestorePointRecord,
-    LunarRestoredAssociatedFile, PackedRestoreDate, PackedRestoreTime,
+    LunarRestoreReversionRequest, LunarRestoredAssociatedFile, PackedRestoreDate,
+    PackedRestoreTime,
 };
 pub use secondary_exit_patch::{
     LoadedSecondaryExitTable, SecondaryExitPatchError, SecondaryExitPatchLocator,
