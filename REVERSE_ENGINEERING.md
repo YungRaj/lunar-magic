@@ -851,6 +851,23 @@ The following controller and selection tooling through `004f5990` is now named. 
 
 Map16 import/export, history, and visible rendering through `004f9e40` are now named and annotated. Added exact 64-byte `Lm16Map16FileHeader` and `Lm16Map16SectionDirectory` structures for the structured `.map16` format. Added the exact 811,788-byte `Map16UndoSnapshot` and typed its live linked-list globals. Rendering names now distinguish decoded tile composition, Acts Like overlays, selected-tile highlighting, page frames and labels, page boundaries, and bounded versus drag-selection marching ants.
 
+`WriteAllMap16ContainerSections` at `004f78f0` and `ReadAllMap16ContainerSections` at `004f7c80`
+confirm the semantic shape of a complete `.map16` container. The combined definition section is
+exactly `0x80000` bytes: 65,536 definitions of four little-endian 16-bit subtile words. Its
+foreground directory entry aliases the first `0x40000` bytes (tiles `$0000-$7fff`) and its
+background entry aliases the second `0x40000` bytes (tiles `$8000-$ffff`). The separate
+`0x10000`-byte behavior section is `0x8000` little-endian 16-bit Acts-Like values and therefore
+belongs only to the foreground namespace. Background definitions have no Acts-Like value.
+
+The live editor buffers use the same contiguous split: primary definitions begin at `00777e58` and
+secondary/background definitions begin at `007b7e58`, exactly `0x40000` bytes later.
+`SaveSecondaryMap16DataBlocks` divides the background half into eight `0x8000`-byte blocks. It
+trims trailing `0x1004` words, rounds each retained length to eight bytes, keeps block zero at the
+legacy fixed location when it fits within `0x1000` bytes, and otherwise allocates a relocatable
+payload and writes one packed three-byte pointer into the descriptor's eight-entry secondary
+pointer table. This directly explains why bitmap import's default cursor `$8200` addresses the
+background half rather than an extension of the foreground Acts-Like table.
+
 Map16 interaction code through `004fd510` is now named and annotated. This covers tracking tooltips (including disabled controls and internal sprite/background tile descriptions), independent 100-5000 percent zoom with forward and inverse coordinate transforms, DPI-aware selector sizing, hover and auto-scroll behavior, selection creation and movement, temporary-buffer restoration, property-panel mixed-value analysis, priority and palette edits, horizontal and vertical flips, and Acts Like cycle detection.
 
 Map16 Acts Like editing and the full 8x8-subtile interaction path through `004ff170` are now named. The recovered behavior includes cycle-rejecting Acts Like assignment, per-corner graphics-index edits, additive/subtractive 324,608-byte selection masks, clamped selection translation, live/temporary buffer swapping, 8x8-selector paste integration, hover and auto-scroll logic, and serialization/deserialization. Added the exact 0xA0-byte `LunarMagicSubtileClipboardHeader` with tile and auxiliary section offsets, selection dimensions, count, source index, flags, and reserved regions.

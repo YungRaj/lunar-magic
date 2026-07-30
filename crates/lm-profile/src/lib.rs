@@ -26,6 +26,7 @@ mod lfix3_runtime;
 mod lunar_magic_metadata;
 mod native_assets;
 mod native_map16_remap;
+mod native_map16_secondary;
 mod native_map16_transfer;
 mod overworld_boss_sequence;
 mod overworld_event;
@@ -210,6 +211,15 @@ pub use native_map16_remap::{
     SMW_US_V1_GROUPED_MAP16_SOURCE_POINTER_IN_RUNTIME, SMW_US_V1_MAP16_REMAP_GROUPS,
     SMW_US_V1_MAP16_REMAP_RANGE_OFFSETS, SMW_US_V1_MAP16_REMAP_RANGE_RECORDS_POINTER,
     SmwUsV1Map16RemapError, load_smw_us_v1_installed_map16_remaps,
+};
+pub use native_map16_secondary::{
+    LoadedSmwUsV1SecondaryMap16, SMW_US_V1_SECONDARY_MAP16_BLOCK_BYTES,
+    SMW_US_V1_SECONDARY_MAP16_BLOCK_COUNT, SMW_US_V1_SECONDARY_MAP16_DEFINITION_WORDS,
+    SMW_US_V1_SECONDARY_MAP16_FIXED_BLOCK_BYTES, SMW_US_V1_SECONDARY_MAP16_FIXED_BLOCK_OFFSET,
+    SMW_US_V1_SECONDARY_MAP16_POINTER_TABLE_OFFSET,
+    SMW_US_V1_SECONDARY_MAP16_RUNTIME_MARKER_OFFSET, SavedSmwUsV1SecondaryMap16,
+    SmwUsV1SecondaryMap16Error, SmwUsV1SecondaryMap16SaveOptions, load_smw_us_v1_secondary_map16,
+    save_smw_us_v1_secondary_map16,
 };
 pub use native_map16_transfer::{
     LoadedSmwUsV1TransferredMap16, SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET,
