@@ -157,20 +157,9 @@ fn build_appended_archive(
     };
     let mut associated = capture_associated_files(Some(document_path))?;
     if matches!(selected_mode, RestoreAppendMode::Delta) {
-        let previous = archive
-            .restore_associated_files_through(record_id)
-            .map_err(|error| error.to_string())?;
-        for (slot, extension) in LUNAR_RESTORE_ASSOCIATED_EXTENSIONS.iter().enumerate() {
-            let previous = previous
-                .iter()
-                .find(|file| file.extension == *extension)
-                .map(|file| file.bytes.as_slice());
-            match (associated.files[slot].as_deref(), previous) {
-                (Some(current), Some(previous)) if current == previous => {
-                    associated.files[slot] = None;
-                }
-                (None, Some(_)) => associated.files[slot] = Some(Vec::new()),
-                _ => {}
+        for (slot, timestamp) in associated.timestamps.iter().enumerate() {
+            if *timestamp == 0 || *timestamp == archive.header.associated_file_timestamps[slot] {
+                associated.files[slot] = None;
             }
         }
     }
