@@ -49,6 +49,7 @@ mod native_level_assets_controller;
 mod native_level_assets_document_controller;
 mod native_level_document_controller;
 mod native_level_edit_batch;
+mod native_map16_bitmap_import_session;
 mod native_map16_bitmap_workspace;
 mod native_map16_sidecar_controller;
 mod navigation_state;
@@ -221,6 +222,10 @@ pub use native_level_assets_document_controller::{
 pub use native_level_document_controller::{
     NativeLevelDocumentController, NativeLevelDocumentControllerError,
     NativeLevelDocumentSaveSnapshot,
+};
+pub use native_map16_bitmap_import_session::{
+    NativeMap16BitmapImportSession, NativeMap16BitmapImportSessionError,
+    NativeMap16BitmapImportSessionRequest,
 };
 pub use native_map16_bitmap_workspace::{
     NATIVE_MAP16_BITMAP_ALLOCATION_END, NATIVE_MAP16_BITMAP_ALLOCATION_START,
