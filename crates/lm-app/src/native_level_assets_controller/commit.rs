@@ -311,6 +311,14 @@ fn save_mwl_entrances(
             checksum_field,
         )
         .map_err(NativeLevelAssetsControllerError::MwlLfix3Fields)?;
+    project
+        .save_expanded_level_mode(
+            level,
+            source.header.0[16],
+            lm_profile::smw_us_v1_expanded_level_mode_locator(),
+            checksum_field,
+        )
+        .map_err(NativeLevelAssetsControllerError::MwlExpandedLevelMode)?;
 
     if main.flags & 0x20 != 0 {
         save_mwl_separate_midway(project, source, level, checksum_field)?;

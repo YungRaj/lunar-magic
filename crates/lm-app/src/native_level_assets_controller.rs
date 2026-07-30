@@ -127,6 +127,7 @@ pub enum NativeLevelAssetsControllerError {
     MwlSecondaryExitDuplicate(usize),
     MwlVanillaEntrance(lm_project::VanillaEntranceIoError),
     MwlLfix3Fields(lm_project::Lfix3LevelFieldsIoError),
+    MwlExpandedLevelMode(lm_project::ExpandedLevelModeIoError),
     MwlSeparateMidway(lm_project::SeparateMidwayPatchError),
     MwlSecondaryExits(lm_project::SecondaryExitPatchError),
     Save(NativeLevelAssetsSaveError),

@@ -4,6 +4,7 @@ mod credits_tilemap_io;
 mod credits_tilemap_patch;
 mod exanimation_io;
 mod exanimation_slot_options_io;
+mod expanded_level_mode_io;
 mod expanded_settings_io;
 mod graphics_io;
 mod graphics_migration;
@@ -83,6 +84,7 @@ pub use exanimation_slot_options_io::{
     ExAnimationSlotOptionIoError, ExAnimationSlotOptionRomLayout, ExAnimationSlotOptionSaveOptions,
     LoadedExAnimationSlotOptions,
 };
+pub use expanded_level_mode_io::{ExpandedLevelModeIoError, ExpandedLevelModeLocator};
 pub use expanded_settings_io::{ExpandedLevelSettingsIoError, ExpandedLevelSettingsLayout};
 pub use graphics_io::{
     GraphicsCompression, GraphicsIoError, GraphicsPointerPlanes, GraphicsRomLayout,

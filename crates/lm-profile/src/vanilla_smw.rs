@@ -1,10 +1,10 @@
 //! Recovered native layouts used by an unmodified North American SMW revision 0 ROM.
 
 use lm_project::{
-    GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout, LevelLayer2DescriptorTable,
-    LevelLayer2PointerRedirect, LevelLayer2RomLayout, LevelLayer2TilemapEncoding,
-    LevelPointerTable, LevelRomLayout, Lfix3LevelFieldsRomLayout, SeparateMidwayPatchLocator,
-    SpritePointerTable, VanillaEntranceRomLayout,
+    ExpandedLevelModeLocator, GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout,
+    LevelLayer2DescriptorTable, LevelLayer2PointerRedirect, LevelLayer2RomLayout,
+    LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout, Lfix3LevelFieldsRomLayout,
+    SeparateMidwayPatchLocator, SpritePointerTable, VanillaEntranceRomLayout,
 };
 use lm_rom::Mapper;
 use lm_rom::{RomError, RomImage};
@@ -50,6 +50,10 @@ pub const SMW_US_V1_LFIX3_FLAGS_OFFSET: usize = 0x2de00;
 pub const SMW_US_V1_LFIX3_RUNTIME_FLAGS_OFFSET: usize = 0x37a00;
 pub const SMW_US_V1_LFIX3_HIGH_POSITION_OFFSET: usize = 0x37c00;
 pub const SMW_US_V1_LFIX3_ADDITIONAL_FLAGS_OFFSET: usize = 0x37e00;
+/// Paired game-runtime JSL hooks which publish the expanded level-mode runtime entry point.
+pub const SMW_US_V1_EXPANDED_LEVEL_MODE_HOOK_OFFSETS: [usize; 2] = [0x2da8a, 0x2db5f];
+/// Lunar Magic subtracts `$240` from the shared runtime entry to address its 512-byte table.
+pub const SMW_US_V1_EXPANDED_LEVEL_MODE_RUNTIME_BIAS: usize = 0x240;
 /// JSL hook installed by Lunar Magic's separate-midway runtime.
 pub const SMW_US_V1_SEPARATE_MIDWAY_HOOK_OFFSET: usize = 0x2d9e3;
 /// Four-byte graphics-file assignment rows for the 16 native object tilesets.
@@ -379,6 +383,17 @@ pub const fn smw_us_v1_lfix3_level_fields_layout() -> Lfix3LevelFieldsRomLayout 
     }
 }
 
+/// Returns the cross-checked locator for Lunar Magic's expanded per-level mode/settings table.
+#[must_use]
+pub const fn smw_us_v1_expanded_level_mode_locator() -> ExpandedLevelModeLocator {
+    ExpandedLevelModeLocator {
+        mapper: Mapper::LoRom,
+        hook_offsets: SMW_US_V1_EXPANDED_LEVEL_MODE_HOOK_OFFSETS,
+        runtime_to_table_bias: SMW_US_V1_EXPANDED_LEVEL_MODE_RUNTIME_BIAS,
+        entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+    }
+}
+
 #[must_use]
 pub const fn smw_us_v1_separate_midway_locator() -> SeparateMidwayPatchLocator {
     SeparateMidwayPatchLocator {
@@ -456,6 +471,36 @@ mod tests {
                 "slot {slot:03X}"
             );
             assert_eq!(actual.runtime_flags, header.0[17], "slot {slot:03X}");
+        }
+    }
+
+    #[test]
+    fn expanded_level_mode_locator_matches_installed_rom_and_complete_mwl_corpus() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let project = Project::new(
+            RomImage::from_bytes(
+                fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
+        let locator = smw_us_v1_expanded_level_mode_locator();
+        assert_eq!(locator.resolve(&project).unwrap(), 0x83cfa);
+        for slot in 0..SMW_US_V1_VANILLA_LEVEL_SLOTS {
+            let file = MwlFile::decode(
+                &fs::read(root.join(format!(
+                    "oracle-work/lm363/pristine-us/levels/Level {slot:03X}.mwl"
+                )))
+                .unwrap(),
+            )
+            .unwrap();
+            let header =
+                MwlLevelHeaderSection::decode(file.section(MwlSectionKind::LevelHeader)).unwrap();
+            assert_eq!(
+                project.load_expanded_level_mode(slot, locator).unwrap(),
+                header.0[16] & 0x7f,
+                "slot {slot:03X}"
+            );
         }
     }
 
