@@ -135,22 +135,12 @@ pub fn load_smw_us_v1_primary_map16(
     project: &Project,
 ) -> Result<LoadedSmwUsV1PrimaryMap16, SmwUsV1PrimaryMap16Error> {
     let transferred = load_smw_us_v1_transferred_map16(project)?;
-    let mut definition_bytes = blank_words(SMW_US_V1_PRIMARY_MAP16_DEFINITION_WORDS)
-        .into_iter()
-        .flat_map(u16::to_le_bytes)
-        .collect::<Vec<_>>();
-    let transferred_bytes = transferred
-        .definitions
-        .iter()
-        .flat_map(|word| word.to_le_bytes())
-        .collect::<Vec<_>>();
-    definition_bytes[..transferred_bytes.len()].copy_from_slice(&transferred_bytes);
-
     let bytes = project.rom.logical_bytes();
     let installed = bytes
         .get(SMW_US_V1_PRIMARY_MAP16_RUNTIME_MARKER_OFFSET)
         .copied()
         == Some(0x22);
+    let mut definition_bytes = initial_definition_bytes(&transferred.definitions, installed);
     let mut blocks = std::array::from_fn(|_| None);
     let mut acts_like = default_acts_like();
     let mut first_auxiliary_block = None;
@@ -414,6 +404,24 @@ fn blank_words(len: usize) -> Vec<u16> {
     vec![BLANK_MAP16_WORD; len]
 }
 
+fn initial_definition_bytes(transferred: &[u16], installed: bool) -> Vec<u8> {
+    let mut definitions = blank_words(SMW_US_V1_PRIMARY_MAP16_DEFINITION_WORDS)
+        .into_iter()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let transferred = transferred
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect::<Vec<_>>();
+    let retained = if installed {
+        SMW_US_V1_PRIMARY_MAP16_LEGACY_PREFIX_BYTES
+    } else {
+        transferred.len()
+    };
+    definitions[..retained].copy_from_slice(&transferred[..retained]);
+    definitions
+}
+
 fn default_acts_like() -> Vec<u16> {
     let mut acts_like = vec![BLANK_ACTS_LIKE_WORD; SMW_US_V1_PRIMARY_MAP16_ACTS_LIKE_WORDS];
     for (tile, word) in acts_like[..0x200].iter_mut().enumerate() {
@@ -616,12 +624,20 @@ mod tests {
 
     #[test]
     fn installed_control_has_full_baseline_and_no_primary_overlays() {
-        let loaded = load_smw_us_v1_primary_map16(&installed_project()).unwrap();
+        let project = installed_project();
+        let transferred = load_smw_us_v1_transferred_map16(&project).unwrap();
+        let loaded = load_smw_us_v1_primary_map16(&project).unwrap();
         assert!(loaded.installed);
         assert_eq!(
             loaded.definitions.len(),
             SMW_US_V1_PRIMARY_MAP16_DEFINITION_WORDS
         );
+        let first_overlay_word = SMW_US_V1_PRIMARY_MAP16_LEGACY_PREFIX_BYTES / 2;
+        assert_ne!(
+            transferred.definitions[first_overlay_word],
+            BLANK_MAP16_WORD
+        );
+        assert_eq!(loaded.definitions[first_overlay_word], BLANK_MAP16_WORD);
         assert_eq!(loaded.acts_like, default_acts_like());
         assert!(loaded.blocks.iter().all(Option::is_none));
         assert!(loaded.first_auxiliary_block.is_some());

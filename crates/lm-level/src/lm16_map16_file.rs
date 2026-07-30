@@ -49,6 +49,59 @@ impl Lm16Map16File {
     pub const BACKGROUND_TILES_LEN: usize = Self::BACKGROUND_TILE_COUNT * Self::TILE_BYTES;
     pub const ACTS_LIKE_LEN: usize = Self::FOREGROUND_TILE_COUNT * 2;
 
+    /// Constructs a canonical complete container from all 65,536 definitions and 32,768
+    /// foreground Acts-Like words.
+    ///
+    /// Foreground and background directory entries alias their respective halves of the combined
+    /// section. Optional editor-only sections are absent.
+    ///
+    /// # Errors
+    ///
+    /// Rejects any core section that is not exactly the complete Lunar Magic shape.
+    pub fn from_complete_core(
+        combined_tiles: &[u8],
+        acts_like: &[u8],
+    ) -> Result<Self, Lm16Map16FileError> {
+        validate_complete_core(combined_tiles, acts_like)?;
+        let acts_offset = Self::DATA_OFFSET + Self::COMBINED_TILES_LEN;
+        let mut bytes = vec![0; acts_offset + Self::ACTS_LIKE_LEN];
+        bytes[..4].copy_from_slice(&Self::MAGIC);
+        bytes[4..8].copy_from_slice(&0x0001_0100_u32.to_le_bytes());
+        bytes[8..12].copy_from_slice(&0x0001_0363_u32.to_le_bytes());
+        write_u32(&mut bytes, 0x10, Self::DIRECTORY_OFFSET)?;
+        write_u32(&mut bytes, 0x14, Self::DIRECTORY_LEN)?;
+        bytes[0x28..0x2c].copy_from_slice(&Self::REQUIRED_CAPABILITY.to_le_bytes());
+        let attribution = b"Lunar Magic Rust clean-room implementation      ";
+        bytes[Self::HEADER_LEN..Self::DIRECTORY_OFFSET].copy_from_slice(attribution);
+        write_section(
+            &mut bytes,
+            Lm16Map16SectionKind::CombinedTiles,
+            Self::DATA_OFFSET,
+            Self::COMBINED_TILES_LEN,
+        )?;
+        write_section(
+            &mut bytes,
+            Lm16Map16SectionKind::ActsLike,
+            acts_offset,
+            Self::ACTS_LIKE_LEN,
+        )?;
+        write_section(
+            &mut bytes,
+            Lm16Map16SectionKind::ForegroundTiles,
+            Self::DATA_OFFSET,
+            Self::FOREGROUND_TILES_LEN,
+        )?;
+        write_section(
+            &mut bytes,
+            Lm16Map16SectionKind::BackgroundTiles,
+            Self::DATA_OFFSET + Self::FOREGROUND_TILES_LEN,
+            Self::BACKGROUND_TILES_LEN,
+        )?;
+        bytes[Self::DATA_OFFSET..acts_offset].copy_from_slice(combined_tiles);
+        bytes[acts_offset..].copy_from_slice(acts_like);
+        Self::decode(&bytes)
+    }
+
     /// Decodes Lunar Magic's structured complete `.map16` container losslessly.
     ///
     /// Directory entries may intentionally alias: the foreground and background sections point
@@ -253,6 +306,31 @@ impl Lm16Map16File {
         Ok(())
     }
 
+    /// Replaces the complete definition and Acts-Like semantic core while preserving every
+    /// unrelated container section and header byte.
+    ///
+    /// # Errors
+    ///
+    /// Rejects non-complete inputs or a partial destination container.
+    pub fn replace_complete_core(
+        &mut self,
+        combined_tiles: &[u8],
+        acts_like: &[u8],
+    ) -> Result<(), Lm16Map16FileError> {
+        validate_complete_core(combined_tiles, acts_like)?;
+        let combined = self.sections[Lm16Map16SectionKind::CombinedTiles as usize];
+        let acts = self.sections[Lm16Map16SectionKind::ActsLike as usize];
+        if combined.len != Self::COMBINED_TILES_LEN || acts.len != Self::ACTS_LIKE_LEN {
+            return Err(Lm16Map16FileError::IncompleteCore {
+                combined: combined.len,
+                acts_like: acts.len,
+            });
+        }
+        self.bytes[combined.offset..combined.offset + combined.len].copy_from_slice(combined_tiles);
+        self.bytes[acts.offset..acts.offset + acts.len].copy_from_slice(acts_like);
+        Ok(())
+    }
+
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         self.bytes.clone()
@@ -291,6 +369,14 @@ pub enum Lm16Map16FileError {
     TileOutOfRange(usize),
     TileNotPresent(usize),
     ActsLikeNotPresent(usize),
+    CompleteCoreShape {
+        combined: usize,
+        acts_like: usize,
+    },
+    IncompleteCore {
+        combined: usize,
+        acts_like: usize,
+    },
 }
 
 impl fmt::Display for Lm16Map16FileError {
@@ -309,6 +395,38 @@ fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, Lm16Map16FileError> {
             .try_into()
             .map_err(|_| Lm16Map16FileError::Truncated)?,
     ))
+}
+
+fn validate_complete_core(
+    combined_tiles: &[u8],
+    acts_like: &[u8],
+) -> Result<(), Lm16Map16FileError> {
+    if combined_tiles.len() != Lm16Map16File::COMBINED_TILES_LEN
+        || acts_like.len() != Lm16Map16File::ACTS_LIKE_LEN
+    {
+        return Err(Lm16Map16FileError::CompleteCoreShape {
+            combined: combined_tiles.len(),
+            acts_like: acts_like.len(),
+        });
+    }
+    Ok(())
+}
+
+fn write_u32(bytes: &mut [u8], offset: usize, value: usize) -> Result<(), Lm16Map16FileError> {
+    let value = u32::try_from(value).map_err(|_| Lm16Map16FileError::Overflow)?;
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    Ok(())
+}
+
+fn write_section(
+    bytes: &mut [u8],
+    kind: Lm16Map16SectionKind,
+    offset: usize,
+    len: usize,
+) -> Result<(), Lm16Map16FileError> {
+    let entry = Lm16Map16File::DIRECTORY_OFFSET + kind as usize * 8;
+    write_u32(bytes, entry, offset)?;
+    write_u32(bytes, entry + 4, len)
 }
 
 #[cfg(test)]
@@ -403,6 +521,23 @@ mod tests {
             &file.section(Lm16Map16SectionKind::CombinedTiles)[..0x10]
         );
         assert_eq!(file.encode(), bytes);
+    }
+
+    #[test]
+    fn canonical_complete_core_uses_aliasing_directory_entries() {
+        let combined = vec![0x12; Lm16Map16File::COMBINED_TILES_LEN];
+        let acts_like = vec![0x34; Lm16Map16File::ACTS_LIKE_LEN];
+        let file = Lm16Map16File::from_complete_core(&combined, &acts_like).unwrap();
+        assert_eq!(file.section(Lm16Map16SectionKind::CombinedTiles), combined);
+        assert_eq!(file.section(Lm16Map16SectionKind::ActsLike), acts_like);
+        assert_eq!(
+            file.section(Lm16Map16SectionKind::ForegroundTiles),
+            &combined[..Lm16Map16File::FOREGROUND_TILES_LEN]
+        );
+        assert_eq!(
+            file.section(Lm16Map16SectionKind::BackgroundTiles),
+            &combined[Lm16Map16File::FOREGROUND_TILES_LEN..]
+        );
     }
 
     #[test]

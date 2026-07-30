@@ -70,6 +70,16 @@ pub enum Command {
         input_rom: PathBuf,
         output_rom: PathBuf,
     },
+    SmwMap16CompleteExport {
+        rom: PathBuf,
+        template: Option<PathBuf>,
+        output: PathBuf,
+    },
+    SmwMap16CompleteImport {
+        input_rom: PathBuf,
+        map16: PathBuf,
+        output_rom: PathBuf,
+    },
     Layer3Install {
         input_rom: PathBuf,
         output_rom: PathBuf,

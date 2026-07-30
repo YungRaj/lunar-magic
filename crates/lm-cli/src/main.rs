@@ -85,6 +85,7 @@ mod mwl_palette;
 mod native_assets_file;
 mod native_custom_overworld_sprites;
 mod native_level_file;
+mod native_map16_complete;
 mod native_map16_sidecar;
 mod oracle;
 mod oracle_capture;

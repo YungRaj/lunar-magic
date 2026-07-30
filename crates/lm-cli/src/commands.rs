@@ -291,6 +291,16 @@ fn execute_profile(command: &Command) -> Result<bool, Box<dyn std::error::Error>
             input_rom,
             output_rom,
         } => crate::map16_runtime_install::execute(input_rom, output_rom)?,
+        Command::SmwMap16CompleteExport {
+            rom,
+            template,
+            output,
+        } => crate::native_map16_complete::export(rom, template.as_deref(), output)?,
+        Command::SmwMap16CompleteImport {
+            input_rom,
+            map16,
+            output_rom,
+        } => crate::native_map16_complete::import(input_rom, map16, output_rom)?,
         Command::Layer3Install {
             input_rom,
             output_rom,

@@ -56,7 +56,9 @@ The same pristine headered copy produced three additional exact compatibility co
   a `0x80000` combined tile bank, `0x10000` Acts Like bank, aliased `0x40000` foreground and
   background halves, an absent optional extended bank, and `0xF000`, `0x100`, and `0x40`
   auxiliary sections. The lossless `Lm16Map16File` Rust decoder preserves those intentional
-  aliases and re-encodes the real file byte-for-byte.
+  aliases and re-encodes the real file byte-for-byte. Complete exports deliberately zero the
+  first `0x1000` foreground-definition bytes (tiles `$0000-$01ff`), while imports leave the
+  corresponding built-in ROM definitions unchanged.
 - `-ExportSharedPalette` emitted the recovered 2,018-byte legacy palette backend containing 1,009
   colors. `SmwPaletteFile` re-encoded it byte-for-byte.
 - `-ExportGFX` emitted 52 separate 4-bpp planar files. Every file survived planar decode and encode
@@ -858,9 +860,15 @@ foreground directory entry aliases the first `0x40000` bytes (tiles `$0000-$7fff
 background entry aliases the second `0x40000` bytes (tiles `$8000-$ffff`). The separate
 `0x10000`-byte behavior section is `0x8000` little-endian 16-bit Acts-Like values and therefore
 belongs only to the foreground namespace. Background definitions have no Acts-Like value.
+Wine cross-oracles accept the Rust canonical container with the three editor-only sections absent,
+and re-export its semantic core byte-for-byte. In the reverse direction, replacing the core of a
+real 651,760-byte template preserves every auxiliary and editor-state byte exactly.
 
 The live editor buffers use the same contiguous split: primary definitions begin at `00777e58` and
 secondary/background definitions begin at `007b7e58`, exactly `0x40000` bytes later.
+Once the expanded foreground runtime is installed, only the first `0x1000` bytes of the legacy
+transferred definition table remain authoritative. A zero block-zero pointer blank-fills the rest
+of that block; it must not expose the legacy table's tile `$0200+` tail.
 `SaveSecondaryMap16DataBlocks` divides the background half into eight `0x8000`-byte blocks. It
 trims trailing `0x1004` words, rounds each retained length to eight bytes, keeps block zero at the
 legacy fixed location when it fits within `0x1000` bytes, and otherwise allocates a relocatable

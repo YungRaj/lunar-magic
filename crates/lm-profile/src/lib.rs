@@ -26,6 +26,7 @@ mod lfix3_runtime;
 mod lunar_magic_metadata;
 mod map16_runtime_install;
 mod native_assets;
+mod native_map16_complete;
 mod native_map16_primary;
 mod native_map16_remap;
 mod native_map16_secondary;
@@ -207,6 +208,10 @@ pub use lunar_magic_metadata::{
 };
 pub use map16_runtime_install::{
     SmwUsV1Map16RuntimeInstallBuildError, smw_us_v1_map16_runtime_installation_plan,
+};
+pub use native_map16_complete::{
+    LoadedSmwUsV1CompleteMap16, SavedSmwUsV1CompleteMap16, SmwUsV1CompleteMap16Error,
+    SmwUsV1CompleteMap16SaveOptions, load_smw_us_v1_complete_map16, save_smw_us_v1_complete_map16,
 };
 pub use native_map16_primary::{
     LoadedSmwUsV1PrimaryMap16, SMW_US_V1_PRIMARY_MAP16_ACTS_LIKE_WORDS,
