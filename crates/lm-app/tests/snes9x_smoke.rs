@@ -5,13 +5,7 @@ use lm_level::{
     Map16Address, Map16Quadrant, NativeLayer2Data, ObjectEdit, SpriteLengthTable, SpriteToken,
     Subtile,
 };
-use lm_profile::{
-    SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET, SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET,
-    SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET, SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET,
-    SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET, SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET,
-    SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET, SmwUsV1TransferredMap16SaveOptions,
-    load_smw_us_v1_transferred_map16,
-};
+use lm_profile::{SmwUsV1CompleteMap16SaveOptions, load_smw_us_v1_transferred_map16};
 use lm_project::Project;
 use lm_project::{LevelLayer2SaveOptions, LevelSaveOptions};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -142,27 +136,15 @@ fn rust_map16_edit_survives_snes9x_initialization() {
             resolution_limit: 2048,
         }])
         .expect("stage native Map16 edit");
-    let mut protected = vec![ProtectedRange(0x7fc0..0x8000)];
-    for (offset, len) in [
-        (SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET, 2),
-        (SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET, 1),
-        (SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET, 2),
-        (SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET, 2),
-        (SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET, 1),
-        (SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET, 2),
-        (SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET, 1),
-    ] {
-        protected.push(ProtectedRange(offset..offset + len));
-    }
     let prepared = controller
         .prepare_commit(
             "Snes9x native Map16 smoke edit",
-            &SmwUsV1TransferredMap16SaveOptions {
+            &SmwUsV1CompleteMap16SaveOptions {
                 allocation: AllocationPolicy {
                     search: 0x80_000..0x10_0000,
                     bank_size: Some(0x8000),
-                    fill_bytes: vec![0xff],
-                    protected,
+                    fill_bytes: vec![0, 0xff],
+                    protected: vec![ProtectedRange(0x7fc0..0x8000)],
                 },
                 reuse_identical: true,
                 erase_fill: 0xff,

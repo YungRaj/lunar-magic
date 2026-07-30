@@ -1,23 +1,23 @@
 use crate::{ControllerSnapshot, EditorMode, Map16ControllerEdit, PreparedRomCommit};
 use lm_level::{Map16EditError, Map16Page, Map16Set, Map16Tile};
 use lm_profile::{
-    SmwUsV1TransferredMap16Error, SmwUsV1TransferredMap16SaveOptions,
-    load_smw_us_v1_transferred_map16, save_smw_us_v1_transferred_map16,
+    SmwUsV1CompleteMap16Error, SmwUsV1CompleteMap16SaveOptions, load_smw_us_v1_complete_map16,
+    save_smw_us_v1_complete_map16,
 };
 use lm_project::{Project, RomMutation, TransactionError};
 use lm_rom::{Mapper, RomError, RomImage};
 use std::{collections::BTreeSet, fmt};
+
+pub const SMW_COMPLETE_MAP16_FOREGROUND_PAGES: usize = 0x80;
+pub const SMW_COMPLETE_MAP16_PAGES: usize = 0x100;
 
 #[derive(Debug)]
 pub enum SmwMap16ControllerError {
     WrongMode(EditorMode),
     Mapper(Mapper),
     Rom(RomError),
-    Native(SmwUsV1TransferredMap16Error),
-    InsufficientActsLike {
-        actual: usize,
-        needed: usize,
-    },
+    Native(SmwUsV1CompleteMap16Error),
+    PageCount(usize),
     Edit {
         command: usize,
         error: Map16EditError,
@@ -42,11 +42,10 @@ pub struct SmwMap16Controller {
     source_file_bytes: Vec<u8>,
     baseline: Map16Set,
     set: Map16Set,
-    acts_like_tail: Vec<u16>,
 }
 
 impl SmwMap16Controller {
-    /// Decodes pristine or Lunar Magic-transferred SMW-US Map16 tables.
+    /// Decodes all foreground and background Map16 definitions plus foreground Acts-Like words.
     ///
     /// # Errors
     ///
@@ -60,32 +59,13 @@ impl SmwMap16Controller {
         }
         let image = RomImage::from_bytes(snapshot.rom_bytes.clone())
             .map_err(SmwMap16ControllerError::Rom)?;
-        let loaded = load_smw_us_v1_transferred_map16(&Project::new(image))
+        let loaded = load_smw_us_v1_complete_map16(&Project::new(image))
             .map_err(SmwMap16ControllerError::Native)?;
-        let tile_count = loaded.definitions.len() / 4;
-        if loaded.acts_like.len() < tile_count {
-            return Err(SmwMap16ControllerError::InsufficientActsLike {
-                actual: loaded.acts_like.len(),
-                needed: tile_count,
-            });
-        }
-        let pages = loaded
-            .definitions
-            .chunks_exact(4)
-            .zip(&loaded.acts_like[..tile_count])
-            .map(|(words, &acts_like)| Map16Tile {
-                top_left: lm_level::Subtile(words[0]),
-                top_right: lm_level::Subtile(words[1]),
-                bottom_left: lm_level::Subtile(words[2]),
-                bottom_right: lm_level::Subtile(words[3]),
-                acts_like,
-            })
-            .collect::<Vec<_>>()
-            .chunks(Map16Page::TILE_COUNT)
-            .map(|tiles| Map16Page {
-                tiles: tiles.to_vec(),
-            })
-            .collect();
+        let mut pages = map16_pages(
+            &loaded.foreground.definitions,
+            Some(&loaded.foreground.acts_like),
+        );
+        pages.extend(map16_pages(&loaded.background.definitions, None));
         let set = Map16Set { pages };
         Ok(Self {
             revision: snapshot.revision,
@@ -93,7 +73,6 @@ impl SmwMap16Controller {
             source_file_bytes: snapshot.rom_bytes.clone(),
             baseline: set.clone(),
             set,
-            acts_like_tail: loaded.acts_like[tile_count..].to_vec(),
         })
     }
 
@@ -135,7 +114,11 @@ impl SmwMap16Controller {
                             }
                         }
                         for (address, tile) in replacements {
-                            staged.pages[address.page].tiles[address.tile] = *tile;
+                            let mut tile = *tile;
+                            if address.page >= SMW_COMPLETE_MAP16_FOREGROUND_PAGES {
+                                tile.acts_like = 0;
+                            }
+                            staged.pages[address.page].tiles[address.tile] = tile;
                         }
                     }
                     Map16ControllerEdit::SetSubtile {
@@ -157,6 +140,9 @@ impl SmwMap16Controller {
                         address, acts_like, ..
                     } => {
                         validate_address(&staged, *address)?;
+                        if address.page >= SMW_COMPLETE_MAP16_FOREGROUND_PAGES {
+                            return Err(Map16EditError::BackgroundActsLike(*address));
+                        }
                         staged.pages[address.page].tiles[address.tile].acts_like = *acts_like;
                     }
                 }
@@ -168,7 +154,7 @@ impl SmwMap16Controller {
         Ok(())
     }
 
-    /// Saves through the recovered native split-table format on a private project.
+    /// Saves the coordinated base, foreground, Acts-Like, and background formats privately.
     ///
     /// # Errors
     ///
@@ -176,7 +162,7 @@ impl SmwMap16Controller {
     pub fn prepare_commit(
         &self,
         description: impl Into<String>,
-        options: &SmwUsV1TransferredMap16SaveOptions,
+        options: &SmwUsV1CompleteMap16SaveOptions,
     ) -> Result<PreparedRomCommit, SmwMap16ControllerError> {
         let image = RomImage::from_bytes(self.source_file_bytes.clone())
             .map_err(SmwMap16ControllerError::Rom)?;
@@ -189,44 +175,44 @@ impl SmwMap16Controller {
                 mutation: RomMutation::unchanged(Mapper::LoRom, before.len()),
             });
         }
-        let mut definitions = Vec::with_capacity(self.set.pages.len() * 1024);
-        let mut acts_like = Vec::with_capacity(
-            self.set.pages.len() * Map16Page::TILE_COUNT + self.acts_like_tail.len(),
-        );
-        for page in &self.set.pages {
+        if self.set.pages.len() != SMW_COMPLETE_MAP16_PAGES {
+            return Err(SmwMap16ControllerError::PageCount(self.set.pages.len()));
+        }
+        let mut foreground = Vec::with_capacity(0x20_000);
+        let mut background = Vec::with_capacity(0x20_000);
+        let mut acts_like = Vec::with_capacity(0x8000);
+        for (page_index, page) in self.set.pages.iter().enumerate() {
             for tile in &page.tiles {
+                let definitions = if page_index < SMW_COMPLETE_MAP16_FOREGROUND_PAGES {
+                    acts_like.push(tile.acts_like);
+                    &mut foreground
+                } else {
+                    &mut background
+                };
                 definitions.extend([
                     tile.top_left.0,
                     tile.top_right.0,
                     tile.bottom_left.0,
                     tile.bottom_right.0,
                 ]);
-                acts_like.push(tile.acts_like);
             }
         }
-        acts_like.extend_from_slice(&self.acts_like_tail);
         let mut project = Project::new(image);
-        if options.allocation.search.end > project.rom.logical_len() {
-            project
-                .expand_rom(
-                    Mapper::LoRom,
-                    options.allocation.search.end,
-                    options.erase_fill,
-                    self.checksum_field_offset,
-                )
-                .map_err(SmwMap16ControllerError::Mutation)?;
-        }
-        save_smw_us_v1_transferred_map16(
+        save_smw_us_v1_complete_map16(
             &mut project,
-            &definitions,
+            &foreground,
+            &background,
             &acts_like,
             self.checksum_field_offset,
             options,
         )
         .map_err(SmwMap16ControllerError::Native)?;
         let reopened =
-            load_smw_us_v1_transferred_map16(&project).map_err(SmwMap16ControllerError::Native)?;
-        if reopened.definitions != definitions || reopened.acts_like != acts_like {
+            load_smw_us_v1_complete_map16(&project).map_err(SmwMap16ControllerError::Native)?;
+        if reopened.foreground.definitions != foreground
+            || reopened.background.definitions != background
+            || reopened.foreground.acts_like != acts_like
+        {
             return Err(SmwMap16ControllerError::SemanticReopen);
         }
         let mutation = RomMutation::between(Mapper::LoRom, &before, project.rom.logical_bytes())
@@ -237,6 +223,25 @@ impl SmwMap16Controller {
             mutation,
         })
     }
+}
+
+fn map16_pages(definitions: &[u16], acts_like: Option<&[u16]>) -> Vec<Map16Page> {
+    definitions
+        .chunks_exact(4)
+        .enumerate()
+        .map(|(tile, words)| Map16Tile {
+            top_left: lm_level::Subtile(words[0]),
+            top_right: lm_level::Subtile(words[1]),
+            bottom_left: lm_level::Subtile(words[2]),
+            bottom_right: lm_level::Subtile(words[3]),
+            acts_like: acts_like.map_or(0, |values| values[tile]),
+        })
+        .collect::<Vec<_>>()
+        .chunks(Map16Page::TILE_COUNT)
+        .map(|tiles| Map16Page {
+            tiles: tiles.to_vec(),
+        })
+        .collect()
 }
 
 fn validate_shape(set: &Map16Set) -> Result<(), Map16EditError> {
@@ -272,12 +277,6 @@ mod tests {
     use super::*;
     use crate::{AppState, Command};
     use lm_level::{Map16Address, Map16Quadrant, Subtile};
-    use lm_profile::{
-        SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET, SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET,
-        SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET, SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET,
-        SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET, SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET,
-        SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET,
-    };
     use lm_rats::{AllocationPolicy, ProtectedRange};
     use std::{fs, path::Path};
 
@@ -288,25 +287,13 @@ mod tests {
         fs::read(path).unwrap()
     }
 
-    fn options() -> SmwUsV1TransferredMap16SaveOptions {
-        let mut protected = vec![ProtectedRange(0x7fc0..0x8000)];
-        for (offset, len) in [
-            (SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET, 2),
-            (SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET, 1),
-            (SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET, 2),
-            (SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET, 2),
-            (SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET, 1),
-            (SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET, 2),
-            (SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET, 1),
-        ] {
-            protected.push(ProtectedRange(offset..offset + len));
-        }
-        SmwUsV1TransferredMap16SaveOptions {
+    fn options() -> SmwUsV1CompleteMap16SaveOptions {
+        SmwUsV1CompleteMap16SaveOptions {
             allocation: AllocationPolicy {
                 search: 0x80_000..0x10_0000,
                 bank_size: Some(0x8000),
-                fill_bytes: vec![0xff],
-                protected,
+                fill_bytes: vec![0, 0xff],
+                protected: vec![ProtectedRange(0x7fc0..0x8000)],
             },
             reuse_identical: true,
             erase_fill: 0xff,
@@ -314,26 +301,50 @@ mod tests {
     }
 
     #[test]
-    fn vanilla_snapshot_edits_reopens_and_preserves_acts_tail() {
+    fn vanilla_snapshot_edits_all_complete_domains_and_reopens() {
         let mut app = AppState::default();
         app.load_rom(fixture()).unwrap();
         app.dispatch(Command::ShowMap16).unwrap();
         let snapshot = app.controller_snapshot().unwrap();
-        let before = load_smw_us_v1_transferred_map16(app.project().unwrap()).unwrap();
+        let before = load_smw_us_v1_complete_map16(app.project().unwrap()).unwrap();
         let mut controller = SmwMap16Controller::decode(&snapshot).unwrap();
-        assert_eq!(controller.set().pages.len(), 8);
+        assert_eq!(controller.set().pages.len(), SMW_COMPLETE_MAP16_PAGES);
+        assert!(matches!(
+            controller.apply_edits(&[Map16ControllerEdit::SetActsLike {
+                address: Map16Address {
+                    page: SMW_COMPLETE_MAP16_FOREGROUND_PAGES,
+                    tile: 0,
+                },
+                acts_like: 1,
+                resolution_limit: 0x1_0000,
+            }]),
+            Err(SmwMap16ControllerError::Edit {
+                error: Map16EditError::BackgroundActsLike(_),
+                ..
+            })
+        ));
+        assert!(!controller.is_modified());
         controller
             .apply_edits(&[
                 Map16ControllerEdit::SetSubtile {
                     address: Map16Address { page: 0, tile: 0 },
                     quadrant: Map16Quadrant::TopLeft,
                     subtile: Subtile(0x4321),
-                    resolution_limit: 2048,
+                    resolution_limit: 0x1_0000,
                 },
                 Map16ControllerEdit::SetActsLike {
                     address: Map16Address { page: 0, tile: 0 },
                     acts_like: 0x1234,
-                    resolution_limit: 2048,
+                    resolution_limit: 0x1_0000,
+                },
+                Map16ControllerEdit::SetSubtile {
+                    address: Map16Address {
+                        page: SMW_COMPLETE_MAP16_FOREGROUND_PAGES,
+                        tile: 0,
+                    },
+                    quadrant: Map16Quadrant::BottomRight,
+                    subtile: Subtile(0x5678),
+                    resolution_limit: 0x1_0000,
                 },
             ])
             .unwrap();
@@ -342,18 +353,15 @@ mod tests {
             .unwrap();
         app.dispatch(prepared.into_command()).unwrap();
         assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
-        let reopened = load_smw_us_v1_transferred_map16(app.project().unwrap()).unwrap();
-        assert_eq!(reopened.definitions[0], 0x4321);
-        assert_eq!(reopened.acts_like[0], 0x1234);
-        assert_eq!(reopened.acts_like[2048..], before.acts_like[2048..]);
-        assert_eq!(reopened.acts_like.len(), 2884);
+        let reopened = load_smw_us_v1_complete_map16(app.project().unwrap()).unwrap();
+        assert_eq!(reopened.foreground.definitions[0], 0x4321);
+        assert_eq!(reopened.foreground.acts_like[0], 0x1234);
+        assert_eq!(reopened.background.definitions[3], 0x5678);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().rom.logical_len(), 0x80_000);
         assert_eq!(
-            load_smw_us_v1_transferred_map16(app.project().unwrap())
-                .unwrap()
-                .definitions,
-            before.definitions
+            load_smw_us_v1_complete_map16(app.project().unwrap()).unwrap(),
+            before
         );
     }
 }

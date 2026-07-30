@@ -26,6 +26,7 @@ pub enum Map16EditError {
     EmptySet,
     SubtileNumberOutOfRange(u16),
     PaletteOutOfRange(u8),
+    BackgroundActsLike(Map16Address),
     ActsLike(Map16SetError),
 }
 

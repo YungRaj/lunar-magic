@@ -282,7 +282,10 @@ pub use selection::{EditorSelection, SelectionError};
 pub use shortcut::{
     ShortcutBinding, ShortcutConfig, ShortcutError, ShortcutGesture, ShortcutKey, ShortcutModifiers,
 };
-pub use smw_map16_controller::{SmwMap16Controller, SmwMap16ControllerError};
+pub use smw_map16_controller::{
+    SMW_COMPLETE_MAP16_FOREGROUND_PAGES, SMW_COMPLETE_MAP16_PAGES, SmwMap16Controller,
+    SmwMap16ControllerError,
+};
 pub use snapshot::{ControllerSnapshot, ProfiledControllerSnapshot};
 pub use ssc_sidecar_controller::{
     SscSidecarController, SscSidecarControllerError, SscSidecarSaveSnapshot,

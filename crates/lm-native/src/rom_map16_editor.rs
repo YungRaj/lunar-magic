@@ -64,6 +64,13 @@ impl Controller {
     const fn supports_reclamation(&self) -> bool {
         matches!(self, Self::Profile(_))
     }
+
+    fn supports_acts_like(&self, page: usize) -> bool {
+        match self {
+            Self::Profile(_) => true,
+            Self::Smw(_) => page < lm_app::SMW_COMPLETE_MAP16_FOREGROUND_PAGES,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -320,6 +327,10 @@ impl RomMap16Editor {
     }
 
     fn tile_fields(&mut self, ui: &mut egui::Ui, stale: bool, pages: usize) {
+        let supports_acts_like = self
+            .workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.controller.supports_acts_like(self.page));
         ui.horizontal(|ui| {
             ui.label("8×8 tile");
             ui.text_edit_singleline(&mut self.subtile.tile);
@@ -344,12 +355,17 @@ impl RomMap16Editor {
                     }),
             );
         }
-        ui.horizontal(|ui| {
-            ui.label("Acts Like");
-            ui.text_edit_singleline(&mut self.acts_like);
+        ui.add_enabled_ui(supports_acts_like, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Acts Like");
+                ui.text_edit_singleline(&mut self.acts_like);
+            });
         });
         if ui
-            .add_enabled(!stale, egui::Button::new("Apply Acts Like"))
+            .add_enabled(
+                !stale && supports_acts_like,
+                egui::Button::new("Apply Acts Like"),
+            )
             .clicked()
         {
             edit = Some(
@@ -367,6 +383,9 @@ impl RomMap16Editor {
                 Ok(edit) => self.apply(edit),
                 Err(error) => self.error = Some(error),
             }
+        }
+        if !supports_acts_like {
+            ui.small("Background Map16 definitions do not have Acts-Like values.");
         }
     }
 

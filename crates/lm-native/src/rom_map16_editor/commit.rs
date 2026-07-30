@@ -1,11 +1,6 @@
 use super::{Command, Controller, RomMap16Editor, Workspace};
 use crate::rom_allocation::parse_search_range;
-use lm_profile::{
-    SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET, SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET,
-    SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET, SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET,
-    SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET, SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET,
-    SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET, SmwUsV1TransferredMap16SaveOptions,
-};
+use lm_profile::SmwUsV1CompleteMap16SaveOptions;
 use lm_project::Map16SetSaveOptions;
 use lm_rats::{AllocationPolicy, ProtectedRange};
 
@@ -71,7 +66,7 @@ impl RomMap16Editor {
     fn smw_save_options(
         &self,
         workspace: &Workspace,
-    ) -> Result<SmwUsV1TransferredMap16SaveOptions, String> {
+    ) -> Result<SmwUsV1CompleteMap16SaveOptions, String> {
         let search = parse_search_range(&self.search_start, &self.search_end)?;
         let image_len = workspace.image.logical_len();
         if search.start >= search.end {
@@ -79,21 +74,10 @@ impl RomMap16Editor {
                 "allocation range must be nonempty (current ROM length is {image_len:X})"
             ));
         }
-        let mut protected = vec![ProtectedRange(
+        let protected = vec![ProtectedRange(
             workspace.internal_header..workspace.internal_header + 0x40,
         )];
-        for (offset, len) in [
-            (SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET, 2),
-            (SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET, 1),
-            (SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET, 2),
-            (SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET, 2),
-            (SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET, 1),
-            (SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET, 2),
-            (SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET, 1),
-        ] {
-            protected.push(ProtectedRange(offset..offset + len));
-        }
-        Ok(SmwUsV1TransferredMap16SaveOptions {
+        Ok(SmwUsV1CompleteMap16SaveOptions {
             allocation: AllocationPolicy {
                 search,
                 bank_size: Some(0x8000),

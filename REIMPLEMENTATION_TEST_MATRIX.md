@@ -691,19 +691,21 @@ set, exercise exact undo/redo length restoration, and prove that late invalid ad
 revisions, mapper/mode disagreement, and unequal table counts cannot partially change state.
 
 The ordinary SMW-US Map16 workspace no longer requires an external revision profile. Its separate
-snapshot-bound controller presents all eight graphical-definition pages through the native GUI,
-retains the additional 836 Acts-Like entries outside that graphical domain, accepts raw native
-Acts-Like semantics without applying the parallel-page graph invariant, and commits through the
-recovered split-table writer. Real pristine-ROM application and frontend-routing tests edit a
-quadrant and Acts-Like value, install the tables into an expanded ROM, dispatch one
-revision-checked mutation, semantically reopen all 2884 Acts-Like entries, and undo to the original
-definitions. The same GUI renders each complete 16×16-tile page from native 4bpp graphics under a
+snapshot-bound controller presents all 256 graphical-definition pages through the native GUI:
+128 foreground pages with Acts-Like values and 128 background pages without them. Commit stages the
+base transferred tables, eight foreground blocks, both raw Acts-Like halves, and eight background
+blocks on one private project before publishing one revision-checked mutation. Real pristine-ROM
+application and frontend-routing tests edit a built-in foreground definition, an Acts-Like value,
+an expanded foreground definition, and a background definition, install the runtime into an
+expanded ROM, reopen every 65,536 definition and all 32,768 Acts-Like words, and undo to the exact
+original definitions. Background Acts-Like edits are rejected before controller mutation. The same
+GUI renders each complete 16×16-tile page from native 4bpp graphics under a
 user-selected level, object-tileset, and foreground-palette context; click hit-testing selects the
 exact tile, staged subtile changes invalidate the texture, and fixture coverage proves the
 256×256 render changes before commit. A pristine 512-KiB GUI workspace supplies explicit
 `80000..100000` allocation defaults; commit preparation expands on its private project, installs
-and semantically reopens the tables, dispatches expansion plus edits as one application revision,
-and one undo restores the exact original ROM length and definitions.
+and semantically reopens every coordinated table, dispatches expansion plus edits as one
+application revision, and one undo restores the exact original ROM length and definitions.
 
 The graphics controller loads and decompresses the file selected by `EditorMode::Graphics` through
 an explicit pointer-table and size layout. Decode immediately validates an exact per-tile ownership
@@ -851,6 +853,12 @@ sized-RLE definitions plus independent low-byte and terminated-RLE high-byte tab
 bank-confined RATS allocations. The save gate verifies pointer republication, the shared
 definition-bank invariant, default Acts-Like normalization, checksum repair, exact semantic reopen,
 and failure-atomic rejection of invalid table shapes.
+
+The complete native persistence layer composes that base writer with all foreground and background
+blocks in one staged transaction. Ghidra `SaveMap16BaseDataToRom` proves ownership of the first
+`0x1000` definition bytes, while `SavePrimaryMap16DataBlocks` begins block-zero allocation at live
+buffer `+0x1000`. Tests change both sides of that boundary and a background tile, then prove exact
+semantic reopen, checksum repair, single-step undo, and pristine runtime installation.
 
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination

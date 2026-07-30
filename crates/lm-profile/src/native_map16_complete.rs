@@ -1,16 +1,22 @@
 //! Atomic complete Lunar Magic Map16 load/save for SMW US revision 0.
 
 use crate::{
-    LoadedSmwUsV1PrimaryMap16, LoadedSmwUsV1SecondaryMap16,
-    SMW_US_V1_PRIMARY_MAP16_ACTS_LIKE_WORDS, SMW_US_V1_PRIMARY_MAP16_DEFINITION_WORDS,
-    SMW_US_V1_PRIMARY_MAP16_RUNTIME_MARKER_OFFSET, SMW_US_V1_SECONDARY_MAP16_DEFINITION_WORDS,
-    SmwUsV1Map16RuntimeInstallBuildError, SmwUsV1PrimaryMap16Error, SmwUsV1PrimaryMap16SaveOptions,
-    SmwUsV1SecondaryMap16Error, SmwUsV1SecondaryMap16SaveOptions, load_smw_us_v1_primary_map16,
-    load_smw_us_v1_secondary_map16, save_smw_us_v1_primary_map16, save_smw_us_v1_secondary_map16,
+    LoadedSmwUsV1PrimaryMap16, LoadedSmwUsV1SecondaryMap16, SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET,
+    SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET, SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET,
+    SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET, SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET,
+    SMW_US_V1_MAP16_DEFINITION_BYTES, SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET,
+    SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET, SMW_US_V1_PRIMARY_MAP16_ACTS_LIKE_WORDS,
+    SMW_US_V1_PRIMARY_MAP16_DEFINITION_WORDS, SMW_US_V1_PRIMARY_MAP16_RUNTIME_MARKER_OFFSET,
+    SMW_US_V1_SECONDARY_MAP16_DEFINITION_WORDS, SmwUsV1Map16RuntimeInstallBuildError,
+    SmwUsV1PrimaryMap16Error, SmwUsV1PrimaryMap16SaveOptions, SmwUsV1SecondaryMap16Error,
+    SmwUsV1SecondaryMap16SaveOptions, SmwUsV1TransferredMap16Error,
+    SmwUsV1TransferredMap16SaveOptions, load_smw_us_v1_primary_map16,
+    load_smw_us_v1_secondary_map16, load_smw_us_v1_transferred_map16, save_smw_us_v1_primary_map16,
+    save_smw_us_v1_secondary_map16, save_smw_us_v1_transferred_map16,
     smw_us_v1_map16_runtime_installation_plan,
 };
 use lm_project::{Project, RelocatablePatchError, TransactionError};
-use lm_rats::AllocationPolicy;
+use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::Mapper;
 use std::fmt;
 
@@ -37,6 +43,7 @@ pub struct SavedSmwUsV1CompleteMap16 {
 pub enum SmwUsV1CompleteMap16Error {
     Foreground(SmwUsV1PrimaryMap16Error),
     Background(SmwUsV1SecondaryMap16Error),
+    Base(SmwUsV1TransferredMap16Error),
     RuntimeBuild(SmwUsV1Map16RuntimeInstallBuildError),
     RuntimeInstall(RelocatablePatchError),
     ForegroundWordCount(usize),
@@ -65,6 +72,12 @@ impl From<SmwUsV1PrimaryMap16Error> for SmwUsV1CompleteMap16Error {
 impl From<SmwUsV1SecondaryMap16Error> for SmwUsV1CompleteMap16Error {
     fn from(value: SmwUsV1SecondaryMap16Error) -> Self {
         Self::Background(value)
+    }
+}
+
+impl From<SmwUsV1TransferredMap16Error> for SmwUsV1CompleteMap16Error {
+    fn from(value: SmwUsV1TransferredMap16Error) -> Self {
+        Self::Base(value)
     }
 }
 
@@ -149,6 +162,34 @@ pub fn save_smw_us_v1_complete_map16(
         )?;
         staged.install_relocatable_patch(&plan)?;
     }
+    let transferred = load_smw_us_v1_transferred_map16(&staged)?;
+    let base_definition_words = SMW_US_V1_MAP16_DEFINITION_BYTES / 2;
+    let mut base_allocation = options.allocation.clone();
+    for (offset, len) in [
+        (SMW_US_V1_MAP16_DEFINITION_WORD_OFFSET, 2),
+        (SMW_US_V1_MAP16_DEFINITION_BANK_OFFSET, 1),
+        (SMW_US_V1_MAP16_DEFINITION_ODD_WORD_OFFSET, 2),
+        (SMW_US_V1_MAP16_ACTS_LOW_WORD_OFFSET, 2),
+        (SMW_US_V1_MAP16_ACTS_LOW_BANK_OFFSET, 1),
+        (SMW_US_V1_MAP16_ACTS_HIGH_WORD_OFFSET, 2),
+        (SMW_US_V1_MAP16_ACTS_HIGH_BANK_OFFSET, 1),
+    ] {
+        base_allocation
+            .protected
+            .push(ProtectedRange(offset..offset + len));
+    }
+    let base_options = SmwUsV1TransferredMap16SaveOptions {
+        allocation: base_allocation,
+        reuse_identical: options.reuse_identical,
+        erase_fill: options.erase_fill,
+    };
+    save_smw_us_v1_transferred_map16(
+        &mut staged,
+        &foreground[..base_definition_words],
+        &acts_like[..transferred.acts_like.len()],
+        checksum_field,
+        &base_options,
+    )?;
     let primary_options = SmwUsV1PrimaryMap16SaveOptions {
         allocation: options.allocation.clone(),
         reuse_identical: options.reuse_identical,
@@ -205,6 +246,7 @@ mod tests {
         let mut foreground = loaded.foreground.definitions;
         let mut background = loaded.background.definitions;
         let acts_like = loaded.foreground.acts_like;
+        foreground[..4].copy_from_slice(&[9, 10, 11, 12]);
         foreground[0x800 * 4..0x800 * 4 + 4].copy_from_slice(&[1, 2, 3, 4]);
         background[0x200 * 4..0x200 * 4 + 4].copy_from_slice(&[5, 6, 7, 8]);
 
