@@ -3,8 +3,8 @@ use eframe::egui;
 use lm_project::{
     LUNAR_RESTORE_ASSOCIATED_EXTENSIONS, LUNAR_RESTORE_ASSOCIATED_FILE_COUNT, LunarRestoreArchive,
     LunarRestoreArchiveCreateRequest, LunarRestoreAutomaticDecision,
-    LunarRestoreAutomaticFullReason, LunarRestoreAutomaticPolicy, PackedRestoreDate,
-    PackedRestoreTime,
+    LunarRestoreAutomaticFullReason, LunarRestoreAutomaticPolicy, LunarRestoreReversionRequest,
+    PackedRestoreDate, PackedRestoreTime,
 };
 use std::{
     fs,
@@ -538,11 +538,23 @@ impl RestorePointDialog {
             .spawn(move || {
                 let result = restore_and_publish(
                     &loaded.archive,
+                    &loaded.archive_path,
                     record_id,
                     &loaded.original,
                     &worker_target,
                     restore_associated_files,
                 );
+                let result = result.map_err(|error| {
+                    match append_failed_reversion(&loaded.archive, &loaded.archive_path, record_id)
+                    {
+                        Ok(()) => format!("{error} A failed reversion marker was recorded."),
+                        Err(marker_error) => {
+                            format!(
+                                "{error} The failed reversion marker also failed: {marker_error}"
+                            )
+                        }
+                    }
+                });
                 let _send_result = sender.send(RestoreCompletion { result });
             })
             .map_err(|error| format!("could not create restore worker: {error}"))?;
@@ -644,6 +656,7 @@ fn validate_paths(archive: &Path, original: &Path, target: &Path) -> Result<(), 
 
 fn restore_and_publish(
     archive: &LunarRestoreArchive,
+    archive_path: &Path,
     record_id: u32,
     original: &[u8],
     target: &Path,
@@ -662,29 +675,74 @@ fn restore_and_publish(
     } else {
         Vec::new()
     };
-    if associated.is_empty() {
-        lm_app::file_persistence::replace_existing(target, &restored)
-            .map_err(|error| error.to_string())?;
-    } else {
-        let sidecar_paths: Vec<PathBuf> = associated
+    let (created, created_time) = local_restore_date_time()?;
+    let reversion = LunarRestoreReversionRequest {
+        target_record_id: record_id,
+        restored_rom: &restored,
+        created,
+        created_time,
+        last_rom_timestamp: windows_system_timestamp(),
+        associated_file_timestamps: archive.header.associated_file_timestamps,
+        failed: false,
+    };
+    let updated_archive = archive
+        .append_reversion(&reversion)
+        .map_err(|error| error.to_string())?;
+    let sidecar_paths: Vec<PathBuf> = associated
+        .iter()
+        .map(|file| target.with_extension(file.extension))
+        .collect();
+    let mut documents: Vec<(&Path, &[u8])> = Vec::with_capacity(associated.len() + 2);
+    documents.push((archive_path, &updated_archive));
+    documents.push((target, &restored));
+    documents.extend(
+        sidecar_paths
             .iter()
-            .map(|file| target.with_extension(file.extension))
-            .collect();
-        let mut documents: Vec<(&Path, &[u8])> = Vec::with_capacity(associated.len() + 1);
-        documents.push((target, &restored));
-        documents.extend(
-            sidecar_paths
-                .iter()
-                .zip(&associated)
-                .map(|(path, file)| (path.as_path(), file.bytes.as_slice())),
-        );
-        lm_app::file_persistence::replace_or_create_group(&documents)
-            .map_err(|error| error.to_string())?;
-    }
+            .zip(&associated)
+            .map(|(path, file)| (path.as_path(), file.bytes.as_slice())),
+    );
+    lm_app::file_persistence::replace_or_create_group(&documents)
+        .map_err(|error| error.to_string())?;
     Ok(PublishedRestore {
         rom_len: restored.len(),
         associated_file_count: associated.len(),
     })
+}
+
+fn windows_system_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| {
+            duration
+                .as_secs()
+                .checked_add(11_644_473_600)?
+                .checked_mul(10_000_000)?
+                .checked_add(u64::from(duration.subsec_nanos() / 100))
+        })
+        .unwrap_or(0)
+}
+
+fn append_failed_reversion(
+    archive: &LunarRestoreArchive,
+    archive_path: &Path,
+    record_id: u32,
+) -> Result<(), String> {
+    let (created, created_time) = local_restore_date_time()?;
+    let request = LunarRestoreReversionRequest {
+        target_record_id: record_id,
+        restored_rom: &[],
+        created,
+        created_time,
+        last_rom_timestamp: 0,
+        associated_file_timestamps: archive.header.associated_file_timestamps,
+        failed: true,
+    };
+    let bytes = archive
+        .append_reversion(&request)
+        .map_err(|error| error.to_string())?;
+    lm_app::file_persistence::replace_existing(archive_path, &bytes)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -771,21 +829,50 @@ mod tests {
         let directory = test_directory();
         fs::create_dir(&directory).unwrap();
         let target = directory.join("target.smc");
+        let archive_path = directory.join("points.lrp");
         let original = rom();
         fs::write(&target, vec![0xa5; 0x8000]).unwrap();
 
         let archive = archive(&original);
+        fs::write(&archive_path, archive.bytes()).unwrap();
         assert_eq!(
-            restore_and_publish(&archive, 1, &original, &target, true)
+            restore_and_publish(&archive, &archive_path, 1, &original, &target, true)
                 .unwrap()
                 .rom_len,
             0x8000,
         );
         assert_eq!(fs::read(&target).unwrap(), original);
         assert_eq!(fs::read(target.with_extension("msc")).unwrap(), b"msc");
+        let revised_archive =
+            LunarRestoreArchive::decode(&fs::read(&archive_path).unwrap()).unwrap();
+        assert_eq!(revised_archive.records.len(), 2);
+        assert_eq!(revised_archive.records[1].reversion_target_offset, 0x130);
         let restored = fs::read(&target).unwrap();
-        assert!(restore_and_publish(&archive, 99, &original, &target, true).is_err());
+        assert!(
+            restore_and_publish(&archive, &archive_path, 99, &original, &target, true).is_err()
+        );
         assert_eq!(fs::read(&target).unwrap(), restored);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn failed_restore_marker_matches_native_failed_reversion_form() {
+        let directory = test_directory();
+        fs::create_dir(&directory).unwrap();
+        let archive_path = directory.join("points.lrp");
+        let original = rom();
+        let archive = archive(&original);
+        fs::write(&archive_path, archive.bytes()).unwrap();
+
+        append_failed_reversion(&archive, &archive_path, 1).unwrap();
+        let marked = LunarRestoreArchive::decode(&fs::read(&archive_path).unwrap()).unwrap();
+        assert_eq!(marked.records.len(), 2);
+        assert_eq!(
+            marked.records[1].description_text(),
+            "Reverted to save point #1. (failed?)"
+        );
+        assert_eq!(marked.records[1].rom_hash, 0);
+        assert_eq!(marked.header.last_rom_timestamp, 0);
         fs::remove_dir_all(directory).unwrap();
     }
 
