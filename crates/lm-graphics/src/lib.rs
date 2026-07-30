@@ -29,6 +29,7 @@ pub use bitmap_palette::{
     BITMAP_PALETTE_COLORS, BITMAP_PALETTE_ROWS, BitmapPaletteColorOptions, BitmapPaletteEntryState,
     BitmapPaletteReduction, BitmapPaletteReductionError, MultiRowBitmapPalette,
     ReducedBitmapPalette, allocate_bitmap_palette_rows, reduce_bitmap_palette,
+    reduce_bitmap_palette_with_palette,
 };
 pub use container::{GraphicsFile4bpp, GraphicsFileError, JoinedGraphics};
 pub use editing::ExAnimationEditError;

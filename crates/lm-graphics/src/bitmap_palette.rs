@@ -113,8 +113,9 @@ pub struct MultiRowBitmapPalette {
 ///
 /// Transparent pixels receive index zero in `indices` and do not consume a reduced color. Opaque
 /// indexes are stored one-based so zero remains unambiguous. When the source already fits the
-/// bound, colors are ordered by RGB555 value. Popularity orders by descending frequency then
-/// RGB555 value; median-cut delegates to the deterministic variance-splitting quantizer.
+/// bound, colors are ordered by RGB555 value. Popularity uses the recovered frequency admission
+/// gate and optional destination-aware distance-priority score; median-cut delegates to the
+/// deterministic variance-splitting quantizer.
 ///
 /// # Errors
 ///
@@ -122,6 +123,34 @@ pub struct MultiRowBitmapPalette {
 /// quantizer input, or an unrepresentable one-based color index.
 pub fn reduce_bitmap_palette(
     pixels: &[Rgba8],
+    options: &BitmapPaletteColorOptions,
+) -> Result<ReducedBitmapPalette, BitmapPaletteReductionError> {
+    reduce_bitmap_palette_internal(pixels, None, options)
+}
+
+/// Applies bitmap reduction with the destination palette available to the Popularity priority
+/// scorer recovered from Lunar Magic.
+///
+/// Reusable entries influence high-color selection: colors farther from both those preserved
+/// entries and already selected colors receive the recovered distance-exponent bonus. Median Cut
+/// does not consume destination-palette context.
+///
+/// # Errors
+///
+/// Returns the same validation, alpha, quantizer, and index errors as
+/// [`reduce_bitmap_palette`], plus a palette-shape error when Popularity receives fewer than 128
+/// destination colors.
+pub fn reduce_bitmap_palette_with_palette(
+    pixels: &[Rgba8],
+    original: &Palette,
+    options: &BitmapPaletteColorOptions,
+) -> Result<ReducedBitmapPalette, BitmapPaletteReductionError> {
+    reduce_bitmap_palette_internal(pixels, Some(original), options)
+}
+
+fn reduce_bitmap_palette_internal(
+    pixels: &[Rgba8],
+    original: Option<&Palette>,
     options: &BitmapPaletteColorOptions,
 ) -> Result<ReducedBitmapPalette, BitmapPaletteReductionError> {
     options.validate()?;
@@ -160,17 +189,7 @@ pub fn reduce_bitmap_palette(
                     .colors
             }
             BitmapPaletteReduction::Popularity => {
-                let mut weighted = histogram.into_iter().collect::<Vec<_>>();
-                weighted.sort_by(|(left_color, left_count), (right_color, right_count)| {
-                    right_count
-                        .cmp(left_count)
-                        .then_with(|| left_color.cmp(right_color))
-                });
-                weighted
-                    .into_iter()
-                    .take(options.maximum_colors)
-                    .map(|(color, _)| Bgr555(color))
-                    .collect()
+                select_popularity_colors(&histogram, original, options)?
             }
         }
     };
@@ -200,6 +219,65 @@ pub fn reduce_bitmap_palette(
         return Err(BitmapPaletteReductionError::IndexPlaneMismatch);
     }
     Ok(ReducedBitmapPalette { colors, indices })
+}
+
+fn select_popularity_colors(
+    histogram: &BTreeMap<u16, usize>,
+    original: Option<&Palette>,
+    options: &BitmapPaletteColorOptions,
+) -> Result<Vec<Bgr555>, BitmapPaletteReductionError> {
+    let reusable = if let Some(palette) = original {
+        if palette.colors.len() < BITMAP_PALETTE_COLORS {
+            return Err(BitmapPaletteReductionError::PaletteColors(
+                palette.colors.len(),
+            ));
+        }
+        options
+            .entries
+            .iter()
+            .zip(&palette.colors)
+            .filter_map(|(state, color)| {
+                (*state == BitmapPaletteEntryState::Reusable).then_some(color.0)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let mut selected = Vec::<(u16, u32)>::with_capacity(options.maximum_colors);
+    for (&color, &frequency) in histogram {
+        let frequency = u32::try_from(frequency).unwrap_or(u32::MAX);
+        if selected.len() == options.maximum_colors
+            && selected
+                .last()
+                .is_some_and(|(_, minimum_score)| *minimum_score >= frequency)
+        {
+            continue;
+        }
+        let mut score = frequency;
+        let nearest = reusable
+            .iter()
+            .chain(selected.iter().map(|(selected, _)| selected))
+            .map(|candidate| lunar_magic_color_distance(color, *candidate))
+            .min();
+        if let Some(mut distance) = nearest {
+            for _ in 1..options.priority_level {
+                distance = distance.wrapping_mul(distance);
+            }
+            score = score.wrapping_add(distance.wrapping_mul(frequency).wrapping_div(0x8e_e09));
+        }
+        let insertion = selected.partition_point(|(selected_color, selected_score)| {
+            (*selected_score, std::cmp::Reverse(*selected_color))
+                >= (score, std::cmp::Reverse(color))
+        });
+        if insertion < options.maximum_colors {
+            selected.insert(insertion, (color, score));
+            selected.truncate(options.maximum_colors);
+        }
+    }
+    Ok(selected
+        .into_iter()
+        .map(|(color, _)| Bgr555(color))
+        .collect())
 }
 
 /// Assigns globally reduced source colors to Lunar Magic's eight 16-color rows.
@@ -683,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn popularity_uses_frequency_then_rgb555_for_stable_ties() {
+    fn popularity_keeps_the_high_frequency_gate_before_distance_priority() {
         let mut options = BitmapPaletteColorOptions::lunar_magic_initial();
         options.maximum_colors = 2;
         options.reduction = BitmapPaletteReduction::Popularity;
@@ -706,9 +784,29 @@ mod tests {
             alpha: 255,
         };
         let reduced = reduce_bitmap_palette(&[red, red, green, blue], &options).unwrap();
-        assert_eq!(reduced.colors[0], Bgr555::from_rgb8(rgb(red)));
-        assert_eq!(reduced.colors[1], Bgr555::from_rgb8(rgb(green)));
+        assert!(reduced.colors.contains(&Bgr555::from_rgb8(rgb(red))));
+        assert!(reduced.colors.contains(&Bgr555::from_rgb8(rgb(green))));
+        assert!(!reduced.colors.contains(&Bgr555::from_rgb8(rgb(blue))));
         assert!(reduced.indices.iter().all(|index| (1..=2).contains(index)));
+    }
+
+    #[test]
+    fn popularity_priority_uses_reusable_destination_colors() {
+        let histogram = BTreeMap::from([(1, 100), (0x03e0, 95), (0x7fff, 96)]);
+        let palette = Palette {
+            colors: vec![Bgr555(0); BITMAP_PALETTE_COLORS],
+        };
+        let mut options = BitmapPaletteColorOptions::lunar_magic_initial();
+        options.entries.fill(BitmapPaletteEntryState::Reserved);
+        options.entries[0] = BitmapPaletteEntryState::Reusable;
+        options.maximum_colors = 2;
+        options.priority_level = 1;
+        let low = select_popularity_colors(&histogram, Some(&palette), &options).unwrap();
+        options.priority_level = 4;
+        let high = select_popularity_colors(&histogram, Some(&palette), &options).unwrap();
+
+        assert_eq!(low, vec![Bgr555(1), Bgr555(0x7fff)]);
+        assert_eq!(high, vec![Bgr555(0x03e0), Bgr555(1)]);
     }
 
     #[test]

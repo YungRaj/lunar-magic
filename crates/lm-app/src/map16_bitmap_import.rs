@@ -4,7 +4,7 @@ use lm_graphics::{
     BitmapImportError, BitmapPaletteColorOptions, BitmapPaletteEntryState,
     BitmapPaletteReductionError, GraphicsFile4bpp, GraphicsOwnership, IndexedBitmapImport,
     IndexedBitmapImportOptions, PaletteEntryOwner, PaletteImportError, PaletteOwnership, Rgba8,
-    TransparentPaletteRowImport, allocate_bitmap_palette_rows, reduce_bitmap_palette,
+    TransparentPaletteRowImport, allocate_bitmap_palette_rows, reduce_bitmap_palette_with_palette,
 };
 use lm_level::{Map16Page, Map16Tile, Subtile};
 use std::{fmt, io::Cursor};
@@ -221,7 +221,7 @@ fn prepare_bitmap_palette(
 ) -> Result<StagedBitmapPalette, Map16BitmapImportError> {
     if let Some(mut options) = color_options {
         protect_owned_palette_entries(&mut options, request.palette_ownership)?;
-        let reduced = reduce_bitmap_palette(request.pixels, &options)
+        let reduced = reduce_bitmap_palette_with_palette(request.pixels, request.palette, &options)
             .map_err(Map16BitmapImportError::BitmapPalette)?;
         let allocated = allocate_bitmap_palette_rows(
             &reduced,

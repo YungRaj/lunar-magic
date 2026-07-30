@@ -884,6 +884,17 @@ The record weight is pixel-semantic: identical sets accumulate each member color
 and a superset adds the matching per-color frequencies of every strict subset before summing its
 selection weight. The Rust records now retain direct and aggregate vectors separately; treating
 all tile occurrences as unit weight would select the wrong colors for mixed-frequency artwork.
+
+`ProcessBitmapGraphicsImport` at `004ef770` also fixes the reduction-method dispatch: method zero
+calls `QuantizeRgbPixelsToSnesPalette`, while method one calls
+`SelectOptimalColorsFromRgb555Histogram`. Priority therefore belongs to the Popularity path, not
+Median Cut. The selector first requires a candidate's raw frequency to exceed the current weakest
+slot. It then finds the nearest already selected or reusable destination color using the same
+weighted RGB555 distance, raises that distance by repeated squaring for priority levels 2–4, and
+adds `(distance × frequency) / $8EE09` with 32-bit wrapping arithmetic. The Rust palette-aware
+Popularity entry point now reproduces that admission and priority core and the application passes
+its actual destination palette. Lunar Magic's two adjacent neighborhood replacement heuristics
+remain separately identifiable gates and are not claimed by this increment.
 The native dialog exposes the recovered reduction method, 1–128 limit, 1–4 priority, and all 128
 free/reusable/reserved entry states. Fixed palette ownership is forced reusable and ExAnimation
 ownership forced reserved before allocation, so presentation choices cannot overwrite another
