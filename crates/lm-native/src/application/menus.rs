@@ -156,6 +156,10 @@ impl NativeApplication {
         for (label, mode) in actions {
             if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
                 ui.close_menu();
+                if matches!(mode, Some(RestoreAppendMode::Automatic)) {
+                    self.restore_point_dialog.open_automatic_policy();
+                    continue;
+                }
                 let result = mode.map_or_else(
                     || crate::restore_point_dialog::create_full_for_open_project(&self.app),
                     |mode| crate::restore_point_dialog::append_for_open_project(&self.app, mode),

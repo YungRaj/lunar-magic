@@ -19,6 +19,23 @@ struct CapturedAssociatedFiles {
     timestamps: [u64; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
 }
 
+#[derive(Debug)]
+struct AutomaticPolicyDraft {
+    interval_enabled: bool,
+    full_interval: u32,
+    daily_full: bool,
+}
+
+impl Default for AutomaticPolicyDraft {
+    fn default() -> Self {
+        Self {
+            interval_enabled: false,
+            full_interval: 10,
+            daily_full: false,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum RestoreAppendMode {
     Delta,
@@ -122,6 +139,7 @@ fn build_appended_archive(
     observed: &[u8],
     document_path: &Path,
     mode: RestoreAppendMode,
+    automatic_policy: LunarRestoreAutomaticPolicy,
     created: PackedRestoreDate,
     created_time: PackedRestoreTime,
 ) -> Result<Vec<u8>, String> {
@@ -130,12 +148,8 @@ fn build_appended_archive(
         .restore_through(record_id, original)
         .map_err(|error| error.to_string())?;
     let observed_timestamp = windows_file_timestamp(document_path).unwrap_or(0);
-    let automatic = archive.automatic_decision(
-        LunarRestoreAutomaticPolicy::default(),
-        observed_timestamp,
-        observed,
-        created,
-    );
+    let automatic =
+        archive.automatic_decision(automatic_policy, observed_timestamp, observed, created);
     let selected_mode = match mode {
         RestoreAppendMode::Automatic => match automatic {
             LunarRestoreAutomaticDecision::Delta => RestoreAppendMode::Delta,
@@ -222,6 +236,14 @@ pub(crate) fn append_for_open_project(
     app: &lm_app::AppState,
     mode: RestoreAppendMode,
 ) -> Result<bool, String> {
+    append_for_open_project_with_policy(app, mode, LunarRestoreAutomaticPolicy::default())
+}
+
+fn append_for_open_project_with_policy(
+    app: &lm_app::AppState,
+    mode: RestoreAppendMode,
+    automatic_policy: LunarRestoreAutomaticPolicy,
+) -> Result<bool, String> {
     let project = app
         .project()
         .ok_or_else(|| "open a ROM before appending a restore point".to_owned())?;
@@ -260,6 +282,7 @@ pub(crate) fn append_for_open_project(
         &observed,
         document_path,
         mode,
+        automatic_policy,
         created,
         created_time,
     )?;
@@ -303,11 +326,18 @@ pub(crate) struct RestorePointDialog {
     running: Option<RunningRestore>,
     completed: Option<String>,
     error: Option<String>,
+    automatic_policy: Option<AutomaticPolicyDraft>,
 }
 
 impl RestorePointDialog {
     pub(crate) const fn is_busy(&self) -> bool {
-        self.loaded.is_some() || self.running.is_some()
+        self.loaded.is_some() || self.running.is_some() || self.automatic_policy.is_some()
+    }
+
+    pub(crate) fn open_automatic_policy(&mut self) {
+        self.automatic_policy = Some(AutomaticPolicyDraft::default());
+        self.completed = None;
+        self.error = None;
     }
 
     pub(crate) fn choose_and_open(&mut self) -> Result<bool, String> {
@@ -353,11 +383,57 @@ impl RestorePointDialog {
         Ok(true)
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, app: &lm_app::AppState) {
         self.poll();
+        self.show_automatic_policy(context, app);
         self.show_loaded(context);
         self.show_running(context);
         self.show_result(context);
+    }
+
+    fn show_automatic_policy(&mut self, context: &egui::Context, app: &lm_app::AppState) {
+        let Some(policy) = self.automatic_policy.as_mut() else {
+            return;
+        };
+        let mut create = false;
+        let mut cancel = false;
+        egui::Window::new("Automatic Restore Point")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.checkbox(
+                    &mut policy.interval_enabled,
+                    "Create a full point after this many deltas",
+                );
+                ui.add_enabled(
+                    policy.interval_enabled,
+                    egui::DragValue::new(&mut policy.full_interval).range(1..=u32::MAX),
+                );
+                ui.checkbox(&mut policy.daily_full, "Create one full point per day");
+                ui.label(
+                    "A ROM timestamp or checksum continuity break always forces a full point.",
+                );
+                ui.horizontal(|ui| {
+                    create = ui.button("Append").clicked();
+                    cancel = ui.button("Cancel").clicked();
+                });
+            });
+        if cancel {
+            self.automatic_policy = None;
+        } else if create {
+            let policy = LunarRestoreAutomaticPolicy {
+                full_interval: policy.interval_enabled.then_some(policy.full_interval),
+                daily_full: policy.daily_full,
+            };
+            match append_for_open_project_with_policy(app, RestoreAppendMode::Automatic, policy) {
+                Ok(true) => {
+                    self.automatic_policy = None;
+                    self.completed = Some("Automatic restore point appended.".to_owned());
+                }
+                Ok(false) => {}
+                Err(error) => self.error = Some(error),
+            }
+        }
     }
 
     fn show_loaded(&mut self, context: &egui::Context) {
@@ -809,6 +885,7 @@ mod tests {
             &first,
             &rom_path,
             RestoreAppendMode::Delta,
+            LunarRestoreAutomaticPolicy::default(),
             date,
             time,
         )
@@ -821,6 +898,61 @@ mod tests {
         let restored = appended.restore_associated_files_through(2).unwrap();
         assert_eq!(restored[0].bytes, b"unchanged");
         assert_eq!(restored[1].bytes, b"second override");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn automatic_daily_policy_appends_a_full_checkpoint() {
+        let directory = test_directory();
+        fs::create_dir(&directory).unwrap();
+        let rom_path = directory.join("game.smc");
+        let original = rom();
+        let mut first = original.clone();
+        first[0x1111] = 0x11;
+        fs::write(&rom_path, &first).unwrap();
+        let first_date = PackedRestoreDate {
+            year: 2026,
+            month: 7,
+            day: 30,
+        };
+        let time = PackedRestoreTime {
+            day_of_week: 4,
+            hour: 12,
+            minute: 34,
+            second: 56,
+        };
+        let initial = LunarRestoreArchive::decode(
+            &build_full_archive(&original, &first, Some(&rom_path), first_date, time).unwrap(),
+        )
+        .unwrap();
+        let mut second = first.clone();
+        second[0x2222] = 0x22;
+        let bytes = build_appended_archive(
+            &initial,
+            &original,
+            &second,
+            &first,
+            &rom_path,
+            RestoreAppendMode::Automatic,
+            LunarRestoreAutomaticPolicy {
+                full_interval: None,
+                daily_full: true,
+            },
+            PackedRestoreDate {
+                year: 2026,
+                month: 7,
+                day: 31,
+            },
+            time,
+        )
+        .unwrap();
+        let appended = LunarRestoreArchive::decode(&bytes).unwrap();
+        assert_ne!(appended.records[1].directory_version & 3, 0);
+        assert_eq!(
+            appended.records[1].description_text(),
+            "Automatic Full Restore Point (daily)."
+        );
+        assert_eq!(appended.restore_through(2, &original).unwrap(), second);
         fs::remove_dir_all(directory).unwrap();
     }
 }
