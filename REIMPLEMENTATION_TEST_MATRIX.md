@@ -870,6 +870,15 @@ malformed live page shapes before indexing, block close during file I/O, byte-ex
 the retained Lunar Magic 3.63 `all.map16`, and commit/reopen representative protected, foreground,
 Acts-Like, and background changes through the native ROM transaction.
 
+The same graphical workspace also drives the native bitmap-import session rather than stopping at
+the headless planner. A bounded PNG load uses the selected level's actual object-tileset graphics
+and palette context, displays original and converted images without changing their aspect ratio,
+and gives both panes one synchronized pan state with integer 1×–8× zoom. Reuse, flip matching,
+8×8 optimization, 16×16 deduplication, and layer-priority changes recompute the converted preview
+from immutable input. Acceptance publishes palette, assigned GFX/ExGFX slots, complete Map16
+pages, required runtime installation, pointers, and checksum as one revision-checked ROM command;
+cancel and dirty-close retain no partial ROM mutation.
+
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination
 planes, source normalization bounds, and the 255-entry editor maximum. Detection rejects mixed

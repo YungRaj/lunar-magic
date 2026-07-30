@@ -51,6 +51,8 @@ impl RomMap16Editor {
         );
         self.bitmap_original_texture = None;
         self.bitmap_converted_texture = None;
+        self.bitmap_preview_zoom = 1;
+        self.bitmap_preview_scroll = egui::Vec2::ZERO;
         Ok(())
     }
 
@@ -199,19 +201,65 @@ impl RomMap16Editor {
             ));
         }
         ui.horizontal(|ui| {
+            ui.label("Preview zoom");
+            ui.add(
+                egui::Slider::new(&mut self.bitmap_preview_zoom, 1..=8)
+                    .integer()
+                    .suffix("×"),
+            );
+            if ui.button("Reset pan").clicked() {
+                self.bitmap_preview_scroll = egui::Vec2::ZERO;
+            }
+        });
+        let image_size = preview_size(width, height, self.bitmap_preview_zoom);
+        let mut next_scroll = self.bitmap_preview_scroll;
+        ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.label("Original");
                 if let Some(texture) = &self.bitmap_original_texture {
-                    ui.add(egui::Image::new(texture).fit_to_exact_size(egui::Vec2::splat(256.0)));
+                    let output = egui::ScrollArea::both()
+                        .id_salt("map16-bitmap-original-preview")
+                        .max_width(272.0)
+                        .max_height(272.0)
+                        .horizontal_scroll_offset(self.bitmap_preview_scroll.x)
+                        .vertical_scroll_offset(self.bitmap_preview_scroll.y)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.add(egui::Image::new(texture).fit_to_exact_size(image_size));
+                        });
+                    if output.inner_rect.contains(
+                        ui.ctx()
+                            .pointer_hover_pos()
+                            .unwrap_or(egui::Pos2::new(f32::MIN, f32::MIN)),
+                    ) {
+                        next_scroll = output.state.offset;
+                    }
                 }
             });
             ui.vertical(|ui| {
                 ui.label("Converted");
                 if let Some(texture) = &self.bitmap_converted_texture {
-                    ui.add(egui::Image::new(texture).fit_to_exact_size(egui::Vec2::splat(256.0)));
+                    let output = egui::ScrollArea::both()
+                        .id_salt("map16-bitmap-converted-preview")
+                        .max_width(272.0)
+                        .max_height(272.0)
+                        .horizontal_scroll_offset(self.bitmap_preview_scroll.x)
+                        .vertical_scroll_offset(self.bitmap_preview_scroll.y)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            ui.add(egui::Image::new(texture).fit_to_exact_size(image_size));
+                        });
+                    if output.inner_rect.contains(
+                        ui.ctx()
+                            .pointer_hover_pos()
+                            .unwrap_or(egui::Pos2::new(f32::MIN, f32::MIN)),
+                    ) {
+                        next_scroll = output.state.offset;
+                    }
                 }
             });
         });
+        self.bitmap_preview_scroll = next_scroll;
     }
 
     pub(super) fn bitmap_import_controls(&mut self, ui: &mut egui::Ui, stale: bool) {
@@ -252,6 +300,7 @@ impl RomMap16Editor {
         self.bitmap_session = None;
         self.bitmap_original_texture = None;
         self.bitmap_converted_texture = None;
+        self.bitmap_preview_scroll = egui::Vec2::ZERO;
     }
 }
 
@@ -271,6 +320,13 @@ fn rgba_image(pixels: &[lm_graphics::Rgba8], width: usize, height: usize) -> egu
         .flat_map(|pixel| [pixel.red, pixel.green, pixel.blue, pixel.alpha])
         .collect();
     egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
+}
+
+fn preview_size(width: usize, height: usize, zoom: u8) -> egui::Vec2 {
+    let zoom = f32::from(zoom.max(1));
+    let width = f32::from(u16::try_from(width).unwrap_or(u16::MAX));
+    let height = f32::from(u16::try_from(height).unwrap_or(u16::MAX));
+    egui::vec2(width * zoom, height * zoom)
 }
 
 #[cfg(test)]
@@ -310,5 +366,12 @@ mod tests {
             image.pixels[0],
             egui::Color32::from_rgba_unmultiplied(1, 2, 3, 4)
         );
+    }
+
+    #[test]
+    fn preview_size_preserves_source_aspect_ratio_and_integer_zoom() {
+        assert_eq!(preview_size(32, 16, 1), egui::vec2(32.0, 16.0));
+        assert_eq!(preview_size(32, 16, 4), egui::vec2(128.0, 64.0));
+        assert_eq!(preview_size(32, 16, 0), egui::vec2(32.0, 16.0));
     }
 }

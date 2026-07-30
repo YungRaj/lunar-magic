@@ -108,6 +108,8 @@ pub(crate) struct RomMap16Editor {
     bitmap_map16_start: String,
     bitmap_original_texture: Option<egui::TextureHandle>,
     bitmap_converted_texture: Option<egui::TextureHandle>,
+    bitmap_preview_zoom: u8,
+    bitmap_preview_scroll: egui::Vec2,
 }
 
 impl RomMap16Editor {

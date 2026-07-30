@@ -38,6 +38,8 @@ impl RomMap16Editor {
                     format!("{:04X}", self.page * lm_level::Map16Page::TILE_COUNT);
                 self.bitmap_original_texture = None;
                 self.bitmap_converted_texture = None;
+                self.bitmap_preview_zoom = 1;
+                self.bitmap_preview_scroll = egui::Vec2::ZERO;
                 self.invalidate();
             }
             Err(error) => self.error = Some(error),
@@ -117,6 +119,8 @@ impl RomMap16Editor {
         self.bitmap_session = None;
         self.bitmap_original_texture = None;
         self.bitmap_converted_texture = None;
+        self.bitmap_preview_zoom = 1;
+        self.bitmap_preview_scroll = egui::Vec2::ZERO;
         self.complete_template = None;
         self.pending_close = None;
         self.invalidate();
