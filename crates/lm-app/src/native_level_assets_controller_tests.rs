@@ -3,8 +3,8 @@ use crate::PaletteControllerEdit;
 use lm_codec::encode_terminated_rle;
 use lm_graphics::{Bgr555, PaletteChange};
 use lm_level::{
-    LegacyHeaderEdit, NATIVE_LAYER2_TILEMAP_LEN, SpriteRecord, SpriteToken,
-    split_layer2_tilemap_planes,
+    LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection,
+    NATIVE_LAYER2_TILEMAP_LEN, SpriteRecord, SpriteToken, split_layer2_tilemap_planes,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -245,6 +245,117 @@ fn tagged_layer2_snapshot() -> (ControllerSnapshot, RatsOwnershipManifest) {
             retained: Vec::new(),
         },
     )
+}
+
+fn mwl_source(controller: &NativeLevelAssetsController) -> MwlNativeLevel {
+    let mut header = MwlLevelHeaderSection([0; MwlLevelHeaderSection::ENCODED_LEN]);
+    header.set_level_number(u16::try_from(controller.assets().level.number).unwrap());
+    MwlNativeLevel {
+        version: MwlFile::CURRENT_VERSION,
+        flags: 0,
+        attribution: [0; MwlFile::ATTRIBUTION_LEN],
+        header,
+        layer1_metadata: [0; 2],
+        layer1: controller.assets().level.layer1.clone(),
+        layer2_descriptor: controller
+            .layer2_descriptor()
+            .unwrap_or_else(|| MwlLayer2Descriptor::from_raw(0)),
+        layer2_source_address: 0,
+        layer2: controller.layer2().unwrap().clone(),
+        sprite_metadata: [0; 2],
+        sprites: controller.assets().level.sprites.clone(),
+        palette_metadata: [0; 2],
+        palette: controller.assets().palette.clone(),
+        secondary_exit_metadata: [0; 2],
+        secondary_exits: Vec::new(),
+        exanimation_metadata: [0; 2],
+        exanimation: Some(controller.assets().exanimation.clone()),
+        expanded_settings: controller.assets().expanded_settings.clone(),
+    }
+}
+
+#[test]
+fn complete_mwl_modeled_assets_stage_commit_and_reopen_together() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let mut source = mwl_source(&controller);
+    source.layer1.header.set_level_mode(3).unwrap();
+    source.palette.colors[1] = Bgr555(0x1234);
+    source.exanimation.as_mut().unwrap().setting = 7;
+    source
+        .expanded_settings
+        .as_mut()
+        .unwrap()
+        .set_word(4, 0xabcd)
+        .unwrap();
+    let NativeLayer2Data::Objects(layer2) = &mut source.layer2 else {
+        panic!("fixture requires object Layer 2");
+    };
+    layer2
+        .objects
+        .records
+        .push(layer2.objects.records[0].clone());
+
+    controller.replace_modeled_assets_from_mwl(&source).unwrap();
+    let expected_core = controller.assets().clone();
+    let expected_layer2 = controller.layer2().unwrap().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2("import modeled MWL assets", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("import modeled MWL assets", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets_with_layer2(
+            0,
+            NativeLevelAssetsLayer2Layout {
+                core: layout(),
+                layer2: layer2_layout(),
+            },
+            &SpriteLengthTable::standard(),
+            &[false; 256],
+        )
+        .unwrap();
+    assert_eq!(reopened.core, expected_core);
+    assert_eq!(reopened.layer2, expected_layer2);
+}
+
+#[test]
+fn mwl_staging_preflight_failures_preserve_every_controller_domain() {
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot(),
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let before_core = controller.assets().clone();
+    let before_layer2 = controller.layer2().cloned();
+    let before_descriptor = controller.layer2_descriptor();
+    let mut source = mwl_source(&controller);
+    source.palette.colors.push(Bgr555(0x7777));
+    assert!(matches!(
+        controller.replace_modeled_assets_from_mwl(&source),
+        Err(NativeLevelAssetsControllerError::MwlPaletteShape {
+            expected: 2,
+            actual: 3
+        })
+    ));
+    assert_eq!(controller.assets(), &before_core);
+    assert_eq!(controller.layer2(), before_layer2.as_ref());
+    assert_eq!(controller.layer2_descriptor(), before_descriptor);
+    assert!(!controller.is_modified());
 }
 
 #[test]

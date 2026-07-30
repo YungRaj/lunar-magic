@@ -7,12 +7,12 @@ use crate::{
 use lm_graphics::{PaletteBatchEditError, PaletteOwnership};
 use lm_level::{
     ExpandedLevelSettingsError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
-    NativeLayer2RemapError, NativeLayer2RemapProgram, ObjectEdit, ObjectEditError,
-    SpriteLengthTable,
+    NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit,
+    ObjectEditError, SpriteLengthTable, SpriteStreamError,
 };
 use lm_project::{
     LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelPointerTable,
-    LoadedNativeLevelAssets, NativeLevelAssetsLayout, NativeLevelAssetsLoadError,
+    LoadedNativeLevelAssets, MwlNativeLevel, NativeLevelAssetsLayout, NativeLevelAssetsLoadError,
     NativeLevelAssetsSaveError, PayloadLoadError, PayloadReadPolicy, Project, SpritePointerTable,
     TransactionError,
 };
@@ -101,6 +101,27 @@ pub enum NativeLevelAssetsControllerError {
         command: usize,
         error: ExpandedLevelSettingsError,
     },
+    MwlTargetMismatch {
+        expected: usize,
+        actual: u16,
+    },
+    MwlLayer2Unavailable,
+    MwlExpandedSettingsPairMismatch {
+        destination_installed: bool,
+        source_present: bool,
+    },
+    MwlPaletteShape {
+        expected: usize,
+        actual: usize,
+    },
+    MwlExAnimation(lm_graphics::ExAnimationError),
+    MwlExAnimationTrailingBytes {
+        consumed: usize,
+        actual: usize,
+    },
+    MwlSpriteEncoding(NativeSpriteEncodingError),
+    MwlSpriteParse(SpriteStreamError),
+    MwlNonCanonicalSprites,
     Save(NativeLevelAssetsSaveError),
     Layer2Load(LevelLayer2IoError),
     Layer2Save(lm_project::NativeLevelAssetsLayer2SaveError),
@@ -308,6 +329,112 @@ impl NativeLevelAssetsController {
         self.layer2 = staged_layer2;
         self.layer2_descriptor = staged_layer2_descriptor;
         Ok(())
+    }
+
+    /// Replaces every modeled per-level ROM asset from one fully preflighted MWL aggregate.
+    ///
+    /// This stages Layer 1, Layer 2, sprites, palette, `ExAnimation`, and expanded settings
+    /// together. Main/midway entrances and the global secondary-exit table intentionally remain
+    /// outside this method so the eventual import coordinator can include them in the same
+    /// prepared ROM mutation instead of silently dropping either domain.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a different target slot, unavailable Layer 2 or expanded-settings storage, and
+    /// sprite streams that cannot be represented by the destination ROM's native format.
+    pub fn replace_modeled_assets_from_mwl(
+        &mut self,
+        source: &MwlNativeLevel,
+    ) -> Result<(), NativeLevelAssetsControllerError> {
+        let expected = self.assets.level.number;
+        let actual = source.header.level_number();
+        if usize::from(actual) != expected {
+            return Err(NativeLevelAssetsControllerError::MwlTargetMismatch { expected, actual });
+        }
+        if self.layer2.is_none() {
+            return Err(NativeLevelAssetsControllerError::MwlLayer2Unavailable);
+        }
+        let destination_installed = self.assets.expanded_settings.is_some();
+        let source_present = source.expanded_settings.is_some();
+        if destination_installed != source_present {
+            return Err(
+                NativeLevelAssetsControllerError::MwlExpandedSettingsPairMismatch {
+                    destination_installed,
+                    source_present,
+                },
+            );
+        }
+        if source.palette.colors.len() != self.assets.palette.colors.len() {
+            return Err(NativeLevelAssetsControllerError::MwlPaletteShape {
+                expected: self.assets.palette.colors.len(),
+                actual: source.palette.colors.len(),
+            });
+        }
+
+        let mut sprites = source.sprites.clone();
+        sprites.expanded = self.layout.level.expanded_sprites;
+        let encoded = sprites
+            .encode_for_table(&self.sprite_lengths)
+            .map_err(NativeLevelAssetsControllerError::MwlSpriteEncoding)?;
+        let sprites = lm_level::NativeSpriteStream::parse(
+            &encoded,
+            self.layout.level.expanded_sprites,
+            &self.sprite_lengths,
+        )
+        .map_err(NativeLevelAssetsControllerError::MwlSpriteParse)?;
+        if sprites
+            .encode_for_table(&self.sprite_lengths)
+            .map_err(NativeLevelAssetsControllerError::MwlSpriteEncoding)?
+            != encoded
+        {
+            return Err(NativeLevelAssetsControllerError::MwlNonCanonicalSprites);
+        }
+
+        let exanimation = source
+            .exanimation
+            .clone()
+            .unwrap_or_else(empty_compact_exanimation);
+        let encoded_animation = exanimation
+            .encode(&self.double_size_modes)
+            .map_err(NativeLevelAssetsControllerError::MwlExAnimation)?;
+        let (exanimation, consumed) = lm_graphics::CompactExAnimation::decode(
+            &encoded_animation,
+            self.layout.exanimation.maximum_records,
+            &self.double_size_modes,
+        )
+        .map_err(NativeLevelAssetsControllerError::MwlExAnimation)?;
+        if consumed != encoded_animation.len() {
+            return Err(
+                NativeLevelAssetsControllerError::MwlExAnimationTrailingBytes {
+                    consumed,
+                    actual: encoded_animation.len(),
+                },
+            );
+        }
+
+        let mut staged = self.assets.clone();
+        staged.level.layer1 = source.layer1.clone();
+        staged.level.sprites = sprites;
+        staged.palette.clone_from(&source.palette);
+        staged.exanimation = exanimation;
+        staged
+            .expanded_settings
+            .clone_from(&source.expanded_settings);
+
+        self.assets = staged;
+        self.layer2 = Some(source.layer2.clone());
+        self.layer2_descriptor = self.layer2_descriptor.map(|_| source.layer2_descriptor);
+        Ok(())
+    }
+}
+
+fn empty_compact_exanimation() -> lm_graphics::CompactExAnimation {
+    lm_graphics::CompactExAnimation {
+        setting: 0,
+        header_value: 0,
+        trigger_mask: 0,
+        trigger_values: [0; 16],
+        records: Vec::new(),
     }
 }
 
