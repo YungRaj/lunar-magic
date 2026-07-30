@@ -39,6 +39,23 @@ impl LevelPointerTable {
             .ok_or(LevelLoadError::AddressOverflow)
     }
 
+    /// Reads one contiguous 24-bit SNES pointer from this table.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an invalid table shape, an out-of-range slot, or an out-of-bounds ROM read.
+    pub fn read_snes_pointer(
+        self,
+        rom: &lm_rom::RomImage,
+        level: usize,
+    ) -> Result<SnesPointer24, LevelLoadError> {
+        let offset = self.pointer_offset(level)?;
+        let bytes = rom
+            .read(offset, SnesPointer24::ENCODED_LEN)
+            .map_err(PayloadLoadError::Rom)?;
+        SnesPointer24::decode(bytes).map_err(|_| LevelLoadError::AddressOverflow)
+    }
+
     pub(crate) fn pointer_offset_16(self, level: usize) -> Result<usize, LevelLoadError> {
         component_offset(self, level, 2)
     }

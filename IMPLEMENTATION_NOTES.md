@@ -2555,6 +2555,26 @@ bytes 7 and 8 produce no persistent difference even at boundary values under 3.6
 reserved zero padding; they remain losslessly preserved in the MWL container rather than being
 invented as ROM state.
 
+Complete native ROM-to-MWL export now closes the reciprocal boundary. The controller materializes
+all eight semantic sections from one immutable installed-ROM snapshot, retains allocator-dependent
+Layer 1/2/sprite/palette/ExAnimation source addresses, exports every secondary exit targeting the
+selected level, and derives the transient high level-mode bit with the recovered Lunar Magic rule.
+`ExportBinaryMwlLevelFile` (`004797D0`) proves that tilemap Layer 2 writes the in-memory
+`0x800`-byte two-plane workspace directly; MWL does not flatten it into a separate 32-column
+raster. `LoadSpriteDataPcOffsetTable` (`004810E0`) additionally proves that opcode `$22` at logical
+`$02D8F5` selects the installed 512-byte per-level sprite bank table at `$077100`, while pristine
+storage uses the shared bank operand at `$02D8F6`. The SMW-US profile now resolves that generation
+at runtime instead of reading relocated sprites through the obsolete shared bank.
+
+The installed 257-word palette payload and Lunar Magic's MWL working buffer differ by one exact
+word rotation; export rotates left and import rotates right, making the transformation reciprocal.
+A live ignored Wine oracle now performs Rust installed-ROM export, Lunar Magic import, and Lunar
+Magic re-export, then compares header, Layer 1, Layer 2 descriptor/data, sprites, palette,
+secondary exits, ExAnimation, expanded settings, and final ROM checksum. The terminal shell exposes
+`level-mwl-export FILE` beside `level-mwl-import`, and the profile-qualified native level-assets
+window exposes complete MWL import/export actions with bounded asynchronous reads and the existing
+atomic import coordinator.
+
 The current SMW US revision-0 profile also contains the recovered multi-bank overworld-message
 installation boundary used once more than 96 level-name slots are enabled. It installs the fixed
 version-1.10 renderer, allocates a three-byte pointer for each of the even 194–512 messages, packs

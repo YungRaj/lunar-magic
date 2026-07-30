@@ -541,6 +541,13 @@ Magic 3.63 differential fixture imports a Rust-generated combined MWL, verifies 
 hooks and all 19 newly allocated tagged blocks, then re-exports with zero semantic MWL differences.
 The two positive ExAnimation fixtures also require distinct dynamically resolved pointer-table
 addresses, preventing tests from accidentally accepting a hard-coded allocator result.
+The complete installed-ROM exporter compares every semantic domain for retained Level 000,
+including allocator provenance, and a reciprocal ignored Wine test imports that Rust-generated
+MWL into Lunar Magic 3.63 and re-exports it before comparing the header, Layer 1, native two-plane
+Layer 2 plus descriptor, sprites, rotated 257-word palette, secondary exits, ExAnimation, expanded
+settings, and final ROM checksum. The native level-assets window uses a bounded background reader
+for complete MWL import and exposes collision-safe complete export; the shell exposes the same
+profile-qualified boundary as `level-mwl-import` and `level-mwl-export`.
 The application-shell form binds its source and exact animation interpretation through a bounded
 `LMMWLOPT1` specification, commits both sections as one revision, and exercises undo, redo, save,
 Unicode/space-containing paths, unrelated-section preservation, and failure rollback through the

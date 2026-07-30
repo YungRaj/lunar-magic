@@ -29,6 +29,7 @@ pub enum RevisionAllocationError {
     },
     Installation(lm_project::InstalledLayoutError),
     PointerLocator(lm_project::PointerLocatorError),
+    Rom(lm_rom::RomError),
     OptionalSubsystemUnavailable(&'static str),
 }
 
@@ -55,6 +56,12 @@ impl From<lm_project::InstalledLayoutError> for RevisionAllocationError {
 impl From<lm_project::PointerLocatorError> for RevisionAllocationError {
     fn from(value: lm_project::PointerLocatorError) -> Self {
         Self::PointerLocator(value)
+    }
+}
+
+impl From<lm_rom::RomError> for RevisionAllocationError {
+    fn from(value: lm_rom::RomError) -> Self {
+        Self::Rom(value)
     }
 }
 

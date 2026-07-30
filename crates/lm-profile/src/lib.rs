@@ -384,6 +384,7 @@ pub use vanilla_smw::{
     SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
     SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET, SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET,
     SMW_US_V1_LEVEL_LAYER2_POINTER_TABLE_OFFSET, SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET,
+    SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_TABLE_OFFSET, SMW_US_V1_LEVEL_SPRITE_POINTER_HOOK_OFFSET,
     SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET, SMW_US_V1_LFIX3_ADDITIONAL_FLAGS_OFFSET,
     SMW_US_V1_LFIX3_FLAGS_OFFSET, SMW_US_V1_LFIX3_HIGH_POSITION_OFFSET,
     SMW_US_V1_LFIX3_RUNTIME_FLAGS_OFFSET, SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET,
@@ -396,9 +397,10 @@ pub use vanilla_smw::{
     smw_us_v1_expanded_level_mode_locator, smw_us_v1_layer2_layout, smw_us_v1_level_layer2_layout,
     smw_us_v1_level_uses_shared_background, smw_us_v1_lfix3_level_fields_layout,
     smw_us_v1_object_tileset_graphics_files, smw_us_v1_separate_midway_locator,
-    smw_us_v1_sprite_tileset_graphics_files, smw_us_v1_vanilla_entrance_layout,
-    smw_us_v1_vanilla_graphics_layout, smw_us_v1_vanilla_layer2_layout,
-    smw_us_v1_vanilla_level_layout, smw_us_v1_vanilla_special_graphics_layout,
+    smw_us_v1_sprite_pointer_table, smw_us_v1_sprite_tileset_graphics_files,
+    smw_us_v1_vanilla_entrance_layout, smw_us_v1_vanilla_graphics_layout,
+    smw_us_v1_vanilla_layer2_layout, smw_us_v1_vanilla_level_layout,
+    smw_us_v1_vanilla_special_graphics_layout,
 };
 pub use vanilla_standard_object_map::{
     SMW_US_V1_STANDARD_OBJECT_FAMILIES, SMW_US_V1_STANDARD_OBJECTS_PER_FAMILY,

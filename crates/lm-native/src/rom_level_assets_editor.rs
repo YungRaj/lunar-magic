@@ -8,6 +8,7 @@ use lm_project::NativeLevelAssetsFile;
 
 mod commit;
 mod lifecycle;
+mod mwl;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -37,6 +38,7 @@ pub(crate) struct RomLevelAssetsEditor {
     error: Option<String>,
     pending_close: Option<PendingClose>,
     loader: DocumentLoader,
+    mwl_loader: DocumentLoader,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
 }
@@ -50,7 +52,16 @@ impl RomLevelAssetsEditor {
         if let Some(result) = self.loader.show(context) {
             self.finish_ownership_load(result, project_revision);
         }
-        let mut command = match self.manifest_loader.show(context, project_revision) {
+        let mut command = self.mwl_loader.show(context).and_then(|result| {
+            match self.finish_mwl_import(result, project_revision) {
+                Ok(command) => Some(command),
+                Err(error) => {
+                    self.error = Some(error);
+                    None
+                }
+            }
+        });
+        let reclamation_command = match self.manifest_loader.show(context, project_revision) {
             Some(Ok(manifest)) => match self.prepare_commit_with_reclamation(&manifest) {
                 Ok(command) => Some(command),
                 Err(error) => {
@@ -64,6 +75,9 @@ impl RomLevelAssetsEditor {
             }
             None => None,
         };
+        if reclamation_command.is_some() {
+            command = reclamation_command;
+        }
         if self.workspace.is_some() {
             egui::Window::new("ROM Native Level Assets")
                 .default_size([900.0, 720.0])
@@ -131,6 +145,7 @@ impl RomLevelAssetsEditor {
             .workspace
             .as_ref()
             .is_some_and(|w| w.controller.is_modified());
+        self.show_mwl_actions(ui, stale, modified);
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running(),

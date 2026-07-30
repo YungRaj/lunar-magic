@@ -119,6 +119,37 @@ pub(crate) fn import_mwl_level(
     Ok(())
 }
 
+pub(crate) fn export_mwl_level(
+    app: &AppState,
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let profiled = app.profiled_controller_snapshot()?;
+    let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())?;
+    let palette = profiled
+        .profile
+        .palette_installation
+        .resolve(&image)?
+        .ok_or("active revision profile has no installed per-level palette")?;
+    let ownership = lm_graphics::PaletteOwnership::editable(palette.colors_per_palette);
+    let controller = profiled
+        .profile
+        .decode_native_level_assets(&profiled.snapshot, ownership)?;
+    let semantic = controller.export_smw_us_v1_installed_mwl()?;
+    let bytes = semantic
+        .encode(
+            &profiled.profile.sprite_lengths,
+            &profiled.profile.exanimation_double_size_modes,
+        )?
+        .encode()?;
+    crate::file_persistence::write_new(path, &bytes)?;
+    println!(
+        "Exported level {:03X} to {}",
+        controller.assets().level.number,
+        path.display()
+    );
+    Ok(())
+}
+
 pub(crate) fn commit_native_assets_edits(
     app: &mut AppState,
     edits: &[lm_app::NativeLevelAssetsControllerEdit],

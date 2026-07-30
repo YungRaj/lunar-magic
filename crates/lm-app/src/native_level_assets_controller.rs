@@ -21,6 +21,7 @@ use lm_rom::{Mapper, RomError, RomImage};
 use std::fmt;
 
 mod commit;
+mod mwl_export;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NativeLevelAssetsControllerEdit {
@@ -420,10 +421,15 @@ impl NativeLevelAssetsController {
             );
         }
 
+        let mut native_palette = source.palette.clone();
+        // Lunar Magic's installed 257-word ROM payload is the MWL working-buffer order rotated
+        // right by one word. Restore that exact native order before allocation.
+        native_palette.colors.rotate_right(1);
+
         let mut staged = self.assets.clone();
         staged.level.layer1 = source.layer1.clone();
         staged.level.sprites = sprites;
-        staged.palette.clone_from(&source.palette);
+        staged.palette = native_palette;
         staged.exanimation = exanimation;
         staged
             .expanded_settings

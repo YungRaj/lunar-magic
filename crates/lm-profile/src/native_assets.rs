@@ -8,6 +8,29 @@ use lm_project::{
 use std::ops::Range;
 
 impl RevisionProfile {
+    /// Resolves ROM-generation-dependent pointer representations for the profile's level tables.
+    ///
+    /// The canonical SMW-US table family changes sprite bank storage after Lunar Magic installs
+    /// its per-level bank hook. Explicit noncanonical profile layouts remain untouched.
+    ///
+    /// # Errors
+    ///
+    /// Rejects truncated canonical sprite pointer metadata.
+    pub fn level_layout_for_rom(
+        &self,
+        rom: &lm_rom::RomImage,
+    ) -> Result<lm_project::LevelRomLayout, lm_rom::RomError> {
+        let mut layout = self.level;
+        if layout.mapper == lm_rom::Mapper::LoRom
+            && layout.layer1.offset == crate::SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET
+            && layout.sprites.low_or_contiguous_table().offset
+                == crate::SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET
+        {
+            layout.sprites = crate::smw_us_v1_sprite_pointer_table(rom)?;
+        }
+        Ok(layout)
+    }
+
     /// Builds the native aggregate plan after resolving marker-gated subsystems against `rom`.
     ///
     /// # Errors
@@ -22,6 +45,7 @@ impl RevisionProfile {
     {
         let (mut layout, mut options) =
             self.native_level_assets_save_plan(search, rom.logical_len(), internal_header_offset)?;
+        layout.level = self.level_layout_for_rom(rom)?;
         layout.palette = self.palette_installation.resolve(rom)?.ok_or(
             RevisionAllocationError::OptionalSubsystemUnavailable("per-level palette"),
         )?;

@@ -6,8 +6,6 @@ pub const NATIVE_LAYER2_TILEMAP_LEN: usize = 0x800;
 pub const LEGACY_LAYER2_TILEMAP_LEN: usize = 0x360;
 pub const NATIVE_LAYER2_TILEMAP_WIDTH: usize = 32;
 pub const NATIVE_LAYER2_TILEMAP_HEIGHT: usize = 32;
-const NATIVE_LAYER2_TILEMAP_WORDS: usize =
-    NATIVE_LAYER2_TILEMAP_WIDTH * NATIVE_LAYER2_TILEMAP_HEIGHT;
 const LEGACY_LAYER2_FIRST_PAGE_WORDS: usize = 0x1b0;
 const LEGACY_LAYER2_SECOND_PAGE_GAP: usize = 0x50;
 
@@ -468,13 +466,10 @@ impl NativeLayer2Data {
         if level_mode_layer2_storage(level_mode) == Layer2Storage::Objects {
             Ok(Self::Objects(LevelObjectData::parse(bytes)?))
         } else if bytes.len() == NATIVE_LAYER2_TILEMAP_LEN {
-            let mut tilemap = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
-            for visual in 0..NATIVE_LAYER2_TILEMAP_WORDS {
-                let storage = native_layer2_storage_index_from_visual(visual);
-                tilemap[storage * 2..storage * 2 + 2]
-                    .copy_from_slice(&bytes[visual * 2..visual * 2 + 2]);
-            }
-            Ok(Self::Tilemap(tilemap))
+            // Lunar Magic writes its in-memory 0x800-byte background workspace directly. That
+            // workspace is already stored as two row-major 16×32 planes; MWL does not flatten it
+            // into a separate 32-column visual raster.
+            Ok(Self::Tilemap(bytes.to_vec()))
         } else {
             Err(NativeLayer2Error::TilemapLength(bytes.len()))
         }
@@ -488,15 +483,7 @@ impl NativeLayer2Data {
     pub fn encode_mwl(&self) -> Result<Vec<u8>, NativeLayer2Error> {
         match self {
             Self::Objects(objects) => Ok(objects.encode_banked()?),
-            Self::Tilemap(bytes) if bytes.len() == NATIVE_LAYER2_TILEMAP_LEN => {
-                let mut encoded = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
-                for visual in 0..NATIVE_LAYER2_TILEMAP_WORDS {
-                    let storage = native_layer2_storage_index_from_visual(visual);
-                    encoded[visual * 2..visual * 2 + 2]
-                        .copy_from_slice(&bytes[storage * 2..storage * 2 + 2]);
-                }
-                Ok(encoded)
-            }
+            Self::Tilemap(bytes) if bytes.len() == NATIVE_LAYER2_TILEMAP_LEN => Ok(bytes.clone()),
             Self::Tilemap(bytes) => Err(NativeLayer2Error::TilemapLength(bytes.len())),
         }
     }
@@ -895,17 +882,17 @@ mod tests {
                 .unwrap(),
             tilemap
         );
-        let mut visual = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
-        visual[2..4].copy_from_slice(&0x1234_u16.to_le_bytes());
-        let decoded = NativeLayer2Data::decode_mwl(0, &visual).unwrap();
+        let mut native = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
+        let storage = native_layer2_tilemap_index(16, 0).unwrap() * 2;
+        native[storage..storage + 2].copy_from_slice(&0x1234_u16.to_le_bytes());
+        let decoded = NativeLayer2Data::decode_mwl(0, &native).unwrap();
         let NativeLayer2Data::Tilemap(storage) = decoded else {
             unreachable!();
         };
-        let native = native_layer2_tilemap_index(1, 0).unwrap() * 2;
-        assert_eq!(&storage[native..native + 2], &0x1234_u16.to_le_bytes());
+        assert_eq!(storage, native);
         assert_eq!(
             NativeLayer2Data::Tilemap(storage).encode_mwl().unwrap(),
-            visual
+            native
         );
     }
 

@@ -55,7 +55,7 @@ interactive level import workflow, and a CLI transaction does not prove its nati
 | Level | Change bypassed GFX/ExGFX and animation options | ~ | ~ | ~ | - | - | Missing | Original graphics-set dialogs are richer than current level controls |
 | Level | Custom object library (`.mw0`/`.mw0t`/`.osc`) | P | P | P | ~ | ~ | Partial | Paired document/editor passes; automate Lunar Magic reload and placement equivalence |
 | Level | Custom sprite library (`.mw2`/`.mwt`/`.ssc`) | P | P | P | ~ | ~ | Partial | Size-table-bound editor passes; automate all SSC display/palette/source modes |
-| Level | Import/export one binary MWL level | P | P | ~ | P | ~ | Partial | Models/CLI/Wine observations exist; native ROM workflow is not yet equivalent to original dialog |
+| Level | Import/export one binary MWL level | P | P | P | P | ~ | Partial | Complete controller, shell, native level-assets actions, and live Rust export → LM import/re-export oracle pass; broaden ROM/runtime variants |
 | Level | Import/export legacy multi-file levels | P | ~ | - | ~ | - | Missing | Ghidra `ExportLegacyMultiFileLevel`; no complete native workflow |
 | Level | Insert multiple levels from a directory | ~ | ~ | - | - | - | Missing | Ghidra `InsertMultipleLevelsFromDirectory`, `HandleInsertMultipleLevelsCommand` |
 | Level | Export all levels to a directory | ~ | ~ | - | ~ | - | Missing | Ghidra `ExportAllLevelsToDirectory`; CLI primitives do not prove batch workflow |

@@ -48,7 +48,7 @@ impl RomLevelAssetsEditor {
             .map_err(|error| error.to_string())
     }
 
-    fn save_options(
+    pub(super) fn save_options(
         &self,
         workspace: &Workspace,
     ) -> Result<(NativeLevelAssetsSaveOptions, Option<LevelLayer2SaveOptions>), String> {

@@ -38,7 +38,10 @@ impl RomLevelAssetsEditor {
     }
 
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
-        if self.manifest_loader.is_running() || self.loader.is_running() {
+        if self.manifest_loader.is_running()
+            || self.loader.is_running()
+            || self.mwl_loader.is_running()
+        {
             self.error =
                 Some("wait for native-assets ownership loading to finish before closing".into());
             return false;

@@ -163,6 +163,13 @@ pub(crate) fn choose_mwl_document() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_mwl_save_path(level: u16) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Lunar Magic level", &["mwl"])
+        .set_file_name(format!("Level {level:03X}.mwl"))
+        .save_file()
+}
+
 pub(crate) fn choose_expanded_settings_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Lunar Magic expanded settings record", &["bin", "lmexset"])

@@ -322,6 +322,20 @@ pub(super) fn parse_mwl_level_import(argument: &str) -> Result<ShellCommand, She
     })
 }
 
+pub(super) fn parse_mwl_level_command(
+    command: &str,
+    argument: &str,
+) -> Result<ShellCommand, ShellCommandError> {
+    match command {
+        "level-mwl-import" => parse_mwl_level_import(argument),
+        "level-mwl-export" => Ok(ShellCommand::ExportMwlLevel(super::path_argument(
+            argument,
+            "level-mwl-export",
+        )?)),
+        _ => unreachable!("caller restricts the MWL level command set"),
+    }
+}
+
 pub(super) fn parse_level_header_edit(argument: &str) -> Result<ShellCommand, ShellCommandError> {
     let values: Vec<_> = argument.split_whitespace().collect();
     let [field, value, search_start, search_end] = values.as_slice() else {

@@ -634,6 +634,18 @@ The Rust MWL boundary now exposes a typed descriptor while retaining every unkno
 the opaque second source-address word. All 525 retained MWL files were surveyed: 499 carry
 descriptor `$0000000C`, 26 carry `$00000000`, and none supplies cross-bank fixture coverage.
 
+`ExportBinaryMwlLevelFile` (`004797D0`) selects `0x800` bytes from the live tilemap workspace
+`DAT_007592F0` and passes that buffer directly to `fwrite`. Consequently the MWL payload retains
+Lunar Magic's two row-major 16×32 planes exactly; no export-time conversion to a flat 32-column
+visual raster occurs. A retained Level 000 comparison exposed and removed the Rust model's former
+double transform, after which the installed RLE expansion and MWL payload agree word-for-word.
+
+`LoadSpriteDataPcOffsetTable` (`004810E0`) resolves the other provenance dependency used by MWL
+export. Descriptor entry 23 supplies 512 low words. Opcode `$22` at descriptor entry 50 selects
+descriptor entry 51's 512 per-level bank bytes; otherwise entry 24 supplies one shared bank. For
+the installed SMW-US fixture these are logical offsets `$02EC00`, `$02D8F5`, and `$077100`, and
+level 000 resolves to `$109ED5`, matching the second sprite metadata word emitted by Lunar Magic.
+
 `DetectLayer2DataTableFormat` (`004664E0`) resolves the active descriptor's entry `$3F` hook base;
 an `LM` marker at hook offset `$3C` identifies format `$103`. In the retained installed SMW-US ROM,
 the headerless hook is `$077510`, the marker is `$07754C`, and descriptor entry `$3E` points to the

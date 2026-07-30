@@ -39,6 +39,10 @@ pub const SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET: usize =
 pub const SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET: usize = 0x2ec00;
 /// Shared bank operand for native sprite-stream pointers.
 pub const SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET: usize = 0x2d8f6;
+/// Opcode byte selecting Lunar Magic's installed per-level sprite bank table.
+pub const SMW_US_V1_LEVEL_SPRITE_POINTER_HOOK_OFFSET: usize = 0x2d8f5;
+/// Parallel 512-byte sprite bank table selected when the hook opcode is `JSL` (`$22`).
+pub const SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_TABLE_OFFSET: usize = 0x77100;
 /// Four 512-byte main-entrance planes, proven against Lunar Magic's complete MWL export corpus.
 pub const SMW_US_V1_ENTRANCE_POSITION_OFFSET: usize = 0x2f000;
 pub const SMW_US_V1_ENTRANCE_VERTICAL_SETTINGS_OFFSET: usize = 0x2f200;
@@ -354,6 +358,51 @@ pub const fn smw_us_v1_vanilla_level_layout() -> LevelRomLayout {
             bank_offset: SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET,
         },
         expanded_sprites: false,
+    }
+}
+
+/// Resolves Lunar Magic's pristine shared-bank or installed per-level-bank sprite pointer table.
+///
+/// `LoadSpriteDataPcOffsetTable` in Lunar Magic 3.63 reads descriptor index 23 for the low words,
+/// tests descriptor index 50's opcode for `$22`, and then selects either descriptor index 51's
+/// 512 bank bytes or descriptor index 24's shared bank operand.
+///
+/// # Errors
+///
+/// Rejects a truncated hook, shared-bank operand, low-word table, or installed bank table.
+pub fn smw_us_v1_sprite_pointer_table(rom: &RomImage) -> Result<SpritePointerTable, RomError> {
+    rom.read(
+        SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET,
+        SMW_US_V1_VANILLA_LEVEL_SLOTS * 2,
+    )?;
+    let installed = rom.read(SMW_US_V1_LEVEL_SPRITE_POINTER_HOOK_OFFSET, 1)?[0] == 0x22;
+    if installed {
+        rom.read(
+            SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_TABLE_OFFSET,
+            SMW_US_V1_VANILLA_LEVEL_SLOTS,
+        )?;
+        Ok(SpritePointerTable::SplitBankTable {
+            low_words: LevelPointerTable {
+                offset: SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET,
+                entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+                stride: 2,
+            },
+            banks: LevelPointerTable {
+                offset: SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_TABLE_OFFSET,
+                entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+                stride: 1,
+            },
+        })
+    } else {
+        rom.read(SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET, 1)?;
+        Ok(SpritePointerTable::SplitSharedBank {
+            low_words: LevelPointerTable {
+                offset: SMW_US_V1_LEVEL_SPRITE_POINTER_LOW_WORD_OFFSET,
+                entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+                stride: 2,
+            },
+            bank_offset: SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET,
+        })
     }
 }
 

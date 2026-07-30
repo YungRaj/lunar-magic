@@ -17,6 +17,18 @@ fn parses_complete_mwl_import_with_unicode_path_and_allocation_range() {
 }
 
 #[test]
+fn parses_complete_mwl_export_with_unicode_path() {
+    assert_eq!(
+        parse("level-mwl-export levels/My Level 日本語.mwl").unwrap(),
+        ShellCommand::ExportMwlLevel("levels/My Level 日本語.mwl".into())
+    );
+    assert!(matches!(
+        parse("level-mwl-export"),
+        Err(ShellCommandError::MissingArgument("level-mwl-export"))
+    ));
+}
+
+#[test]
 fn parses_mwl_document_lifecycle_commands() {
     assert_eq!(
         parse("mwl-open levels/My Level.mwl").unwrap(),

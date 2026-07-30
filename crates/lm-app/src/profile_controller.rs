@@ -162,8 +162,13 @@ impl RevisionProfileControllers for RevisionProfile {
         snapshot: &ControllerSnapshot,
     ) -> Result<LevelController, ProfileControllerError> {
         validate_snapshot(self, snapshot)?;
-        LevelController::decode(snapshot, self.level, &self.sprite_lengths)
-            .map_err(ProfileControllerError::Level)
+        let image = RomImage::from_bytes(snapshot.rom_bytes.clone())?;
+        LevelController::decode(
+            snapshot,
+            self.level_layout_for_rom(&image)?,
+            &self.sprite_lengths,
+        )
+        .map_err(ProfileControllerError::Level)
     }
 
     fn decode_native_level_assets(
@@ -183,10 +188,11 @@ impl RevisionProfileControllers for RevisionProfile {
             .ok_or(ProfileControllerError::ExAnimationUnavailable)?
             .resolve(&image)?
             .payload;
+        let level = self.level_layout_for_rom(&image)?;
         NativeLevelAssetsController::decode_with_layer2(
             snapshot,
             lm_project::NativeLevelAssetsLayout {
-                level: self.level,
+                level,
                 palette,
                 exanimation,
                 expanded_settings: self.expanded_settings,
