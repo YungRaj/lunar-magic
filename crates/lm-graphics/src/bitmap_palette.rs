@@ -182,7 +182,9 @@ fn reduce_bitmap_palette_internal(
     }
     let mut histogram = BTreeMap::<u16, usize>::new();
     for pixel in &opaque {
-        *histogram.entry(Bgr555::from_rgb8(*pixel).0).or_default() += 1;
+        *histogram
+            .entry(lunar_magic_bitmap_color(*pixel).0)
+            .or_default() += 1;
     }
     let colors = if histogram.len() <= options.maximum_colors {
         histogram.keys().copied().map(Bgr555).collect()
@@ -225,6 +227,24 @@ fn reduce_bitmap_palette_internal(
         return Err(BitmapPaletteReductionError::IndexPlaneMismatch);
     }
     Ok(ReducedBitmapPalette { colors, indices })
+}
+
+const fn lunar_magic_bitmap_channel(channel: u8) -> u16 {
+    let truncated = channel & 0xf8;
+    let rounded = if channel & 4 != 0 && truncated < 0xf8 {
+        truncated + 8
+    } else {
+        truncated
+    };
+    (rounded >> 3) as u16
+}
+
+const fn lunar_magic_bitmap_color(color: Rgb8) -> Bgr555 {
+    Bgr555(
+        lunar_magic_bitmap_channel(color.red)
+            | (lunar_magic_bitmap_channel(color.green) << 5)
+            | (lunar_magic_bitmap_channel(color.blue) << 10),
+    )
 }
 
 fn select_popularity_colors(
@@ -1120,6 +1140,49 @@ mod tests {
             ),
             Err(BitmapPaletteReductionError::FractionalAlpha { .. })
         ));
+    }
+
+    #[test]
+    fn low_color_bitmap_uses_lunar_magic_bit_two_rounding() {
+        let source = [
+            Rgba8 {
+                red: 0x9c,
+                green: 0xe7,
+                blue: 0xe7,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 0xad,
+                green: 0xe7,
+                blue: 0xff,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 0xc6,
+                green: 0xff,
+                blue: 0xff,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 0xef,
+                green: 0xf7,
+                blue: 0xff,
+                alpha: 255,
+            },
+        ];
+        let reduced =
+            reduce_bitmap_palette(&source, &BitmapPaletteColorOptions::lunar_magic_initial())
+                .unwrap();
+        assert_eq!(
+            reduced.colors,
+            [
+                Bgr555(0x77b4),
+                Bgr555(0x7fb6),
+                Bgr555(0x7ff9),
+                Bgr555(0x7ffe)
+            ]
+        );
+        assert_eq!(reduced.indices, [1, 2, 3, 4]);
     }
 
     fn palette() -> Palette {

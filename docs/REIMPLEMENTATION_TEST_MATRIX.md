@@ -902,8 +902,12 @@ remain green. The native dialog exposes both reduction choices and the complete 
 Popularity also exposes both recovered high-color neighborhood methods, with method 1 enabled and
 method 2 disabled by default. Focused tests cover method 1's first-neighbor replacement and method
 2's sub-128 score aggregation and stronger-neighbor rejection. Median-cut currently uses the
-bounded deterministic variance splitter, and complete Wine-produced output equivalence remains a
-compatibility gate.
+bounded deterministic variance splitter. A disposable-process Wine audit now drives the original
+clipboard-bitmap dialog, captures its pre/post palette and planar graphics buffers, and verifies
+the conversion guard is restored. Its low-color fixture proves that the fast path and Popularity
+histogram use Lunar Magic's source-bit-2 five-bit rounding; an exact Rust regression covers the
+four resulting SNES words. Automated original-versus-Rust comparison across broader bitmap
+variants remains a compatibility gate.
 
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination

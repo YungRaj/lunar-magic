@@ -15,6 +15,12 @@ struct search {
     const char *window_class;
 };
 
+struct title_search {
+    DWORD process_id;
+    HWND window;
+    const char *title;
+};
+
 struct toolbar_button32 {
     int32_t bitmap;
     int32_t command;
@@ -107,9 +113,11 @@ static BOOL CALLBACK list_dialog_value(HWND window, LPARAM opaque) {
         char title[256] = {0};
         GetWindowText(window, title, sizeof(title));
         printf(
-            "button=0x%04lx check=%ld title=%s\n",
+            "button=0x%04lx check=%ld enabled=%d visible=%d title=%s\n",
             (unsigned long)GetDlgCtrlID(window),
             (long)SendMessage(window, BM_GETCHECK, 0, 0),
+            IsWindowEnabled(window),
+            IsWindowVisible(window),
             title
         );
     }
@@ -282,6 +290,32 @@ static BOOL CALLBACK find_top_level_window(HWND window, LPARAM opaque) {
         }
     }
     return TRUE;
+}
+
+static BOOL CALLBACK find_top_level_window_by_title(HWND window, LPARAM opaque) {
+    struct title_search *search = (struct title_search *)opaque;
+    DWORD process_id = 0;
+    char title[512] = {0};
+    GetWindowThreadProcessId(window, &process_id);
+    if (process_id != search->process_id) {
+        return TRUE;
+    }
+    GetWindowText(window, title, sizeof(title));
+    if (strcmp(title, search->title) == 0) {
+        search->window = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static HWND find_process_window_by_title(DWORD process_id, const char *title) {
+    struct title_search search = {
+        .process_id = process_id,
+        .window = NULL,
+        .title = title
+    };
+    EnumWindows(find_top_level_window_by_title, (LPARAM)&search);
+    return search.window;
 }
 
 static DWORD find_process(const char *executable) {
@@ -850,12 +884,25 @@ int main(int argc, char **argv) {
                 fprintf(stderr, "published bitmap clipboard formats are unavailable\n");
                 return 1;
             }
-            SendMessage(
-                paste_target,
-                WM_COMMAND,
-                MAKEWPARAM(0x2276, 0),
-                0
-            );
+            if (!PostMessage(paste_target, WM_COMMAND, MAKEWPARAM(0x2276, 0), 0)) {
+                fprintf(stderr, "cannot post bitmap paste command\n");
+                return 1;
+            }
+            HWND import_dialog = NULL;
+            for (unsigned int attempt = 0; attempt < 200 && import_dialog == NULL; attempt++) {
+                Sleep(25);
+                import_dialog = find_process_window_by_title(
+                    process_id,
+                    "Convert and Paste Bitmap (in hex)"
+                );
+            }
+            if (import_dialog == NULL) {
+                fprintf(stderr, "bitmap conversion dialog was not ready within 5 seconds\n");
+                return 1;
+            }
+            while (IsWindow(import_dialog)) {
+                Sleep(25);
+            }
         }
         return 0;
     }

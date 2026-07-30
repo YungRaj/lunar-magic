@@ -8095,6 +8095,7 @@ mod tests {
                             snapshot.rom_bytes,
                             level,
                             controller.level().layer1.header,
+                            false,
                         )
                         .unwrap_or_else(|error| {
                             panic!("level ${level:03X} assets failed: {error}")
