@@ -28,6 +28,7 @@ pub struct NativeMap16BitmapImportSession {
     level: usize,
     start_map16_tile: usize,
     smw_map16: Option<lm_profile::LoadedSmwUsV1TransferredMap16>,
+    smw_secondary_map16: Option<lm_profile::LoadedSmwUsV1SecondaryMap16>,
 }
 
 /// User-selected inputs needed to open a native bitmap import session.
@@ -120,6 +121,7 @@ impl NativeMap16BitmapImportSession {
             level: request.level,
             start_map16_tile: request.start_map16_tile,
             smw_map16: None,
+            smw_secondary_map16: None,
         })
     }
 
@@ -172,7 +174,9 @@ impl NativeMap16BitmapImportSession {
         let bitmap = padded_bitmap(request.width, request.height, request.pixels, &palette)?;
         let smw_map16 = lm_profile::load_smw_us_v1_transferred_map16(&project)
             .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
-        let baseline_pages = transferred_pages(&smw_map16)?;
+        let smw_secondary_map16 = lm_profile::load_smw_us_v1_secondary_map16(&project)
+            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+        let baseline_pages = complete_smw_map16_pages(&smw_map16, &smw_secondary_map16)?;
         if request.start_map16_tile >= baseline_pages.len() * lm_level::Map16Page::TILE_COUNT {
             return Err(NativeMap16BitmapImportSessionError::Map16(format!(
                 "start tile {:X} is outside the {}-page transferred Map16 workspace",
@@ -205,6 +209,7 @@ impl NativeMap16BitmapImportSession {
             level: request.level,
             start_map16_tile: request.start_map16_tile,
             smw_map16: Some(smw_map16),
+            smw_secondary_map16: Some(smw_secondary_map16),
         })
     }
 
@@ -421,23 +426,56 @@ impl NativeMap16BitmapImportSession {
             .smw_map16
             .clone()
             .ok_or_else(|| NativeMap16BitmapImportSessionError::Map16("missing baseline".into()))?;
+        let mut secondary_map16 = self.smw_secondary_map16.clone().ok_or_else(|| {
+            NativeMap16BitmapImportSessionError::Map16("missing secondary baseline".into())
+        })?;
         let allocated = self.allocated_pages()?;
+        let mut primary_changed = false;
+        let mut secondary_changed = false;
         for page_number in &allocated.touched_pages {
-            replace_transferred_page(&mut map16, *page_number, &allocated.pages[*page_number])?;
+            if *page_number < 0x80 {
+                replace_transferred_page(&mut map16, *page_number, &allocated.pages[*page_number])?;
+                primary_changed = true;
+            } else {
+                replace_secondary_page(
+                    &mut secondary_map16,
+                    *page_number,
+                    &allocated.pages[*page_number],
+                )?;
+                secondary_changed = true;
+            }
         }
         let map16_options = lm_profile::SmwUsV1TransferredMap16SaveOptions {
-            allocation,
+            allocation: allocation.clone(),
             reuse_identical: true,
             erase_fill: 0xff,
         };
-        lm_profile::save_smw_us_v1_transferred_map16(
-            &mut project,
-            &map16.definitions,
-            &map16.acts_like,
-            checksum_field,
-            &map16_options,
-        )
-        .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+        if primary_changed {
+            lm_profile::save_smw_us_v1_transferred_map16(
+                &mut project,
+                &map16.definitions,
+                &map16.acts_like,
+                checksum_field,
+                &map16_options,
+            )
+            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+        }
+        if secondary_changed {
+            lm_profile::save_smw_us_v1_secondary_map16(
+                &mut project,
+                &secondary_map16.definitions,
+                checksum_field,
+                &lm_profile::SmwUsV1SecondaryMap16SaveOptions {
+                    allocation,
+                    reuse_identical: true,
+                    erase_fill: 0xff,
+                },
+            )
+            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+        }
+        project
+            .refresh_checksum(checksum_field)
+            .map_err(NativeMap16BitmapImportSessionError::Mutation)?;
 
         for (_, file_number, graphics) in changed {
             if project
@@ -459,14 +497,25 @@ impl NativeMap16BitmapImportSession {
                 "saved palette did not reopen".into(),
             ));
         }
-        let reopened_map16 = lm_profile::load_smw_us_v1_transferred_map16(&project)
-            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
-        if reopened_map16.definitions != map16.definitions
-            || reopened_map16.acts_like != map16.acts_like
-        {
-            return Err(NativeMap16BitmapImportSessionError::Map16(
-                "saved Map16 did not reopen".into(),
-            ));
+        if primary_changed {
+            let reopened_map16 = lm_profile::load_smw_us_v1_transferred_map16(&project)
+                .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+            if reopened_map16.definitions != map16.definitions
+                || reopened_map16.acts_like != map16.acts_like
+            {
+                return Err(NativeMap16BitmapImportSessionError::Map16(
+                    "saved foreground Map16 did not reopen".into(),
+                ));
+            }
+        }
+        if secondary_changed {
+            let reopened = lm_profile::load_smw_us_v1_secondary_map16(&project)
+                .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+            if reopened.definitions != secondary_map16.definitions {
+                return Err(NativeMap16BitmapImportSessionError::Map16(
+                    "saved background Map16 did not reopen".into(),
+                ));
+            }
         }
         let mutation = RomMutation::between(Mapper::LoRom, &before, project.rom.logical_bytes())
             .map_err(NativeMap16BitmapImportSessionError::Mutation)?;
@@ -489,7 +538,16 @@ impl NativeMap16BitmapImportSession {
         } else {
             Map16BitmapAllocationMode::Sequential
         };
-        let end = definitions.len();
+        let end = if start < 0x8000
+            && self
+                .smw_secondary_map16
+                .as_ref()
+                .is_some_and(|secondary| !secondary.installed)
+        {
+            0x8000
+        } else {
+            definitions.len()
+        };
         let reserved_sources = self
             .preview
             .plan()
@@ -526,14 +584,14 @@ impl NativeMap16BitmapImportSession {
             },
         )
         .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
-        let mut touched_pages = allocation
-            .assignments
-            .iter()
-            .filter(|tile| **tile < end)
-            .map(|tile| tile / lm_level::Map16Page::TILE_COUNT)
-            .collect::<Vec<_>>();
-        touched_pages.sort_unstable();
-        touched_pages.dedup();
+        let touched_pages = definitions
+            .chunks_exact(lm_level::Map16Page::TILE_COUNT)
+            .zip(&self.baseline_pages)
+            .enumerate()
+            .filter_map(|(page_number, (tiles, baseline))| {
+                (tiles != baseline.tiles).then_some(page_number)
+            })
+            .collect();
         let pages = definitions
             .chunks_exact(lm_level::Map16Page::TILE_COUNT)
             .map(|tiles| {
@@ -674,6 +732,80 @@ fn transferred_pages(
         .collect()
 }
 
+fn complete_smw_map16_pages(
+    primary: &lm_profile::LoadedSmwUsV1TransferredMap16,
+    secondary: &lm_profile::LoadedSmwUsV1SecondaryMap16,
+) -> Result<Vec<lm_level::Map16Page>, NativeMap16BitmapImportSessionError> {
+    let unavailable = lm_level::Map16Tile {
+        top_left: lm_level::Subtile(0xffff),
+        top_right: lm_level::Subtile(0xffff),
+        bottom_left: lm_level::Subtile(0xffff),
+        bottom_right: lm_level::Subtile(0xffff),
+        acts_like: lm_profile::SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE,
+    };
+    let unavailable_page =
+        lm_level::Map16Page::new(vec![unavailable; lm_level::Map16Page::TILE_COUNT]).map_err(
+            |tiles| {
+                NativeMap16BitmapImportSessionError::Map16(format!(
+                    "unavailable page contains {} tiles",
+                    tiles.len()
+                ))
+            },
+        )?;
+    let mut pages = vec![unavailable_page; 0x100];
+    let foreground = transferred_pages(primary)?;
+    pages[..foreground.len()].clone_from_slice(&foreground);
+    let background_blank = lm_level::Map16Tile {
+        top_left: lm_level::Subtile(crate::LUNAR_MAGIC_BLANK_MAP16_WORD),
+        top_right: lm_level::Subtile(crate::LUNAR_MAGIC_BLANK_MAP16_WORD),
+        bottom_left: lm_level::Subtile(crate::LUNAR_MAGIC_BLANK_MAP16_WORD),
+        bottom_right: lm_level::Subtile(crate::LUNAR_MAGIC_BLANK_MAP16_WORD),
+        acts_like: lm_profile::SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE,
+    };
+    let background_blank_page =
+        lm_level::Map16Page::new(vec![background_blank; lm_level::Map16Page::TILE_COUNT]).map_err(
+            |tiles| {
+                NativeMap16BitmapImportSessionError::Map16(format!(
+                    "background page contains {} tiles",
+                    tiles.len()
+                ))
+            },
+        )?;
+    pages[0x80..].fill(background_blank_page);
+    let words_per_page = lm_level::Map16Page::TILE_COUNT * 4;
+    if secondary.definitions.len() != 0x80 * words_per_page {
+        return Err(NativeMap16BitmapImportSessionError::Map16(format!(
+            "secondary definitions contain {} words, expected {}",
+            secondary.definitions.len(),
+            0x80 * words_per_page
+        )));
+    }
+    for (relative_page, words) in secondary
+        .definitions
+        .chunks_exact(words_per_page)
+        .enumerate()
+    {
+        let tiles = words
+            .chunks_exact(4)
+            .map(|words| lm_level::Map16Tile {
+                top_left: lm_level::Subtile(words[0]),
+                top_right: lm_level::Subtile(words[1]),
+                bottom_left: lm_level::Subtile(words[2]),
+                bottom_right: lm_level::Subtile(words[3]),
+                acts_like: lm_profile::SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE,
+            })
+            .collect();
+        pages[0x80 + relative_page] = lm_level::Map16Page::new(tiles).map_err(|tiles| {
+            NativeMap16BitmapImportSessionError::Map16(format!(
+                "decoded background page {:X} contains {} tiles",
+                0x80 + relative_page,
+                tiles.len()
+            ))
+        })?;
+    }
+    Ok(pages)
+}
+
 fn replace_transferred_page(
     map16: &mut lm_profile::LoadedSmwUsV1TransferredMap16,
     page_number: usize,
@@ -712,6 +844,35 @@ fn replace_transferred_page(
             tile.bottom_right.0,
         ]);
         map16.acts_like[first_tile + index] = tile.acts_like;
+    }
+    Ok(())
+}
+
+fn replace_secondary_page(
+    map16: &mut lm_profile::LoadedSmwUsV1SecondaryMap16,
+    page_number: usize,
+    page: &lm_level::Map16Page,
+) -> Result<(), NativeMap16BitmapImportSessionError> {
+    if !(0x80..0x100).contains(&page_number) {
+        return Err(NativeMap16BitmapImportSessionError::Map16(format!(
+            "page {page_number:X} is outside background Map16 storage"
+        )));
+    }
+    if page.tiles.len() != lm_level::Map16Page::TILE_COUNT {
+        return Err(NativeMap16BitmapImportSessionError::Map16(format!(
+            "imported page contains {} tiles",
+            page.tiles.len()
+        )));
+    }
+    let first_word = (page_number - 0x80) * lm_level::Map16Page::TILE_COUNT * 4;
+    for (index, tile) in page.tiles.iter().enumerate() {
+        let word = first_word + index * 4;
+        map16.definitions[word..word + 4].copy_from_slice(&[
+            tile.top_left.0,
+            tile.top_right.0,
+            tile.bottom_left.0,
+            tile.bottom_right.0,
+        ]);
     }
     Ok(())
 }
@@ -828,6 +989,44 @@ mod tests {
             vec![lm_profile::SMW_US_V1_MAP16_DEFAULT_ACTS_LIKE; lm_level::Map16Page::TILE_COUNT]
         );
         assert_eq!(transferred.definitions[0], 0x222);
+    }
+
+    #[test]
+    fn complete_workspace_maps_secondary_tiles_to_pages_80_through_ff() {
+        let primary = lm_profile::LoadedSmwUsV1TransferredMap16 {
+            definitions: vec![
+                crate::LUNAR_MAGIC_BLANK_MAP16_WORD;
+                lm_level::Map16Page::TILE_COUNT * 4
+            ],
+            acts_like: Vec::new(),
+            definition_block: None,
+            acts_low_block: None,
+            acts_high_block: None,
+            definition_odd_stream_offset: 0,
+        };
+        let mut secondary = lm_profile::LoadedSmwUsV1SecondaryMap16 {
+            definitions: vec![
+                crate::LUNAR_MAGIC_BLANK_MAP16_WORD;
+                lm_profile::SMW_US_V1_SECONDARY_MAP16_DEFINITION_WORDS
+            ],
+            installed: true,
+            blocks: std::array::from_fn(|_| None),
+        };
+        secondary.definitions[0x200 * 4..0x200 * 4 + 4]
+            .copy_from_slice(&[0x1111, 0x2222, 0x3333, 0x4444]);
+        let mut pages = complete_smw_map16_pages(&primary, &secondary).unwrap();
+        assert_eq!(pages.len(), 0x100);
+        assert_eq!(pages[0x82].tiles[0].top_left, lm_level::Subtile(0x1111));
+        pages[0x82].tiles[0].top_right = lm_level::Subtile(0x5555);
+        replace_secondary_page(&mut secondary, 0x82, &pages[0x82]).unwrap();
+        assert_eq!(
+            &secondary.definitions[0x200 * 4..0x200 * 4 + 4],
+            &[0x1111, 0x5555, 0x3333, 0x4444]
+        );
+        assert!(
+            pages[1].tiles.iter().all(|tile| tile.top_left.0 == 0xffff),
+            "unsupported foreground extension pages must not be treated as free storage"
+        );
     }
 
     #[test]
