@@ -35,6 +35,31 @@ impl RomLevelAssetsEditor {
                 self.error = Some(error);
             }
         });
+        ui.horizontal(|ui| {
+            let batch_enabled = !modified
+                && !stale
+                && !self.mwl_loader.is_running()
+                && !self.manifest_loader.is_running()
+                && !self.mwl_batch_worker.is_running();
+            if ui
+                .add_enabled(batch_enabled, eframe::egui::Button::new("Export all MWLs…"))
+                .clicked()
+                && let Err(error) = self.choose_mwl_batch_export(lm_app::MwlBatchExportMode::All)
+            {
+                self.error = Some(error);
+            }
+            if ui
+                .add_enabled(
+                    batch_enabled,
+                    eframe::egui::Button::new("Export modified MWLs…"),
+                )
+                .clicked()
+                && let Err(error) =
+                    self.choose_mwl_batch_export(lm_app::MwlBatchExportMode::Modified)
+            {
+                self.error = Some(error);
+            }
+        });
     }
 
     pub(super) fn export_mwl(&mut self) -> Result<(), String> {
@@ -65,6 +90,22 @@ impl RomLevelAssetsEditor {
             u64::try_from(MwlFile::MAX_FILE_BYTES).unwrap_or(u64::MAX),
             "complete MWL level",
         )])
+    }
+
+    fn choose_mwl_batch_export(&mut self, mode: lm_app::MwlBatchExportMode) -> Result<(), String> {
+        let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
+        let Some(template) = crate::dialogs::choose_mwl_batch_template() else {
+            return Ok(());
+        };
+        self.mwl_batch_status = None;
+        self.mwl_batch_worker.start(
+            lm_app::ProfiledControllerSnapshot {
+                snapshot: workspace.snapshot.clone(),
+                profile: workspace.profile.clone(),
+            },
+            template,
+            mode,
+        )
     }
 
     pub(super) fn finish_mwl_import(

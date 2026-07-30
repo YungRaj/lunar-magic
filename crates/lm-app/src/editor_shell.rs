@@ -2,13 +2,16 @@ use crate::{
     exanimation_edit_script, graphics_edit_script, level_edit_script, map16_edit_script,
     overworld_edit_script, palette_edit_script, shell_command,
 };
-use lm_app::{AppState, Map16ControllerEdit, NativeLevelEdit, RevisionProfileControllers};
+use lm_app::{
+    AppState, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit, RevisionProfileControllers,
+    export_smw_us_v1_installed_mwl_batch, publish_mwl_batch_new,
+};
 use lm_level::{LegacyHeaderEdit, MwlFile};
 use lm_project::{
-    CompleteOverworldSaveOptions, ExAnimationSaveOptions, GraphicsSaveOptions, LevelPointerTable,
-    LevelSaveOptions, Map16SetSaveOptions, MwlNativeLevel, PaletteSaveOptions,
+    CompleteOverworldSaveOptions, ExAnimationSaveOptions, GraphicsSaveOptions, LevelSaveOptions,
+    Map16SetSaveOptions, MwlNativeLevel, PaletteSaveOptions,
 };
-use lm_rom::{Mapper, RomImage, snes_to_pc};
+use lm_rom::RomImage;
 use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -283,88 +286,20 @@ pub(crate) fn export_modified_mwl_levels(
     export_mwl_levels(app, template, MwlBatchExportMode::Modified)
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum MwlBatchExportMode {
-    All,
-    Modified,
-}
-
 fn export_mwl_levels(
     app: &AppState,
     template: &Path,
     mode: MwlBatchExportMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profiled = app.profiled_controller_snapshot()?;
-    let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())?;
-    let palette = profiled
-        .profile
-        .palette_installation
-        .resolve(&image)?
-        .ok_or("active revision profile has no installed per-level palette")?;
-    let ownership = lm_graphics::PaletteOwnership::editable(palette.colors_per_palette);
-    let level_count = profiled.profile.level.layer1.entries;
-    let mut documents = Vec::with_capacity(level_count);
-    for slot in 0..level_count {
-        if mode == MwlBatchExportMode::Modified
-            && !mwl_level_is_modified(
-                &image,
-                profiled.profile.mapper,
-                profiled.profile.level.layer1,
-                slot,
-            )?
-        {
-            continue;
-        }
-        let level = u16::try_from(slot)?;
-        let mut snapshot = profiled.snapshot.clone();
-        snapshot.mode = lm_app::EditorMode::Level(level);
-        let controller = profiled
-            .profile
-            .decode_native_level_assets(&snapshot, ownership.clone())?;
-        let bytes = controller
-            .export_smw_us_v1_installed_mwl()?
-            .encode(
-                &profiled.profile.sprite_lengths,
-                &profiled.profile.exanimation_double_size_modes,
-            )?
-            .encode()?;
-        documents.push((mwl_batch_output_path(template, level)?, bytes));
-    }
-    if !documents.is_empty() {
-        let references = documents
-            .iter()
-            .map(|(path, bytes)| (path.as_path(), bytes.as_slice()))
-            .collect::<Vec<_>>();
-        crate::file_persistence::write_new_group(&references)?;
-    }
+    let documents = export_smw_us_v1_installed_mwl_batch(&profiled, mode)?;
+    publish_mwl_batch_new(template, &documents)?;
     println!(
         "{} levels have been exported from the ROM using {}",
         documents.len(),
         template.display()
     );
     Ok(())
-}
-
-fn mwl_level_is_modified(
-    image: &RomImage,
-    mapper: Mapper,
-    layer1: LevelPointerTable,
-    level: usize,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let pointer = layer1.read_snes_pointer(image, level)?;
-    Ok(snes_to_pc(mapper, pointer.get())? >= lm_profile::SMW_US_V1_ORIGINAL_LOGICAL_LEN)
-}
-
-fn mwl_batch_output_path(
-    template: &Path,
-    level: u16,
-) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    let stem = template
-        .file_stem()
-        .ok_or("MWL batch export template requires a file name")?;
-    let mut name = stem.to_os_string();
-    name.push(format!(" {level:03X}.mwl"));
-    Ok(template.with_file_name(name))
 }
 
 pub(crate) fn commit_native_assets_edits(
@@ -653,28 +588,9 @@ pub(crate) fn commit_overworld_edits(
 
 #[cfg(test)]
 mod tests {
-    use super::{mwl_batch_output_path, mwl_directory_candidates, mwl_level_is_modified};
-    use lm_rom::RomImage;
+    use super::mwl_directory_candidates;
     use std::fs;
-    use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[test]
-    fn batch_mwl_path_matches_lunar_magic_numbering() {
-        assert_eq!(
-            mwl_batch_output_path(Path::new("/tmp/My Export.mwl"), 0x105).unwrap(),
-            Path::new("/tmp/My Export 105.mwl")
-        );
-        assert_eq!(
-            mwl_batch_output_path(Path::new("/tmp/My Export"), 0x00a).unwrap(),
-            Path::new("/tmp/My Export 00A.mwl")
-        );
-    }
-
-    #[test]
-    fn batch_mwl_path_rejects_a_directory_template() {
-        assert!(mwl_batch_output_path(Path::new("/"), 0).is_err());
-    }
 
     #[test]
     fn batch_mwl_directory_selection_matches_visible_file_contract() {
@@ -703,37 +619,5 @@ mod tests {
         );
         assert_eq!(skipped, 1);
         fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn modified_level_predicate_matches_live_lunar_magic_fixture() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let before = RomImage::from_bytes(
-            fs::read(
-                root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/before.smc"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        let after = RomImage::from_bytes(
-            fs::read(
-                root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
-        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
-        let pristine = (0..layout.layer1.entries)
-            .filter(|level| {
-                mwl_level_is_modified(&before, layout.mapper, layout.layer1, *level).unwrap()
-            })
-            .collect::<Vec<_>>();
-        let installed = (0..layout.layer1.entries)
-            .filter(|level| {
-                mwl_level_is_modified(&after, layout.mapper, layout.layer1, *level).unwrap()
-            })
-            .collect::<Vec<_>>();
-        assert!(pristine.is_empty());
-        assert_eq!(installed, [0]);
     }
 }

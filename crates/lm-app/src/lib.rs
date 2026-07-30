@@ -35,6 +35,7 @@ mod lunar_magic_metadata_state;
 mod map16_controller;
 mod map16_document_controller;
 mod map16_page_document_controller;
+mod mwl_batch_export;
 mod mwl_document_controller;
 mod native_level_assets_controller;
 mod native_level_assets_document_controller;
@@ -173,6 +174,10 @@ pub use map16_document_controller::{
 pub use map16_page_document_controller::{
     Map16PageDocumentController, Map16PageDocumentControllerError, Map16PageDocumentEdit,
     Map16PageDocumentSaveSnapshot,
+};
+pub use mwl_batch_export::{
+    MwlBatchExportDocument, MwlBatchExportMode, export_smw_us_v1_installed_mwl_batch,
+    mwl_batch_output_path, publish_mwl_batch_new,
 };
 pub use mwl_document_controller::{
     MwlDocumentController, MwlDocumentControllerError, MwlDocumentEdit, MwlDocumentSaveSnapshot,

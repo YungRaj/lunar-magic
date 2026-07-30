@@ -41,6 +41,7 @@ impl RomLevelAssetsEditor {
         if self.manifest_loader.is_running()
             || self.loader.is_running()
             || self.mwl_loader.is_running()
+            || self.mwl_batch_worker.is_running()
         {
             self.error =
                 Some("wait for native-assets ownership loading to finish before closing".into());
@@ -71,6 +72,7 @@ impl RomLevelAssetsEditor {
             Ok(workspace) => {
                 self.search_start.clear();
                 self.search_end.clear();
+                self.mwl_batch_status = None;
                 self.workspace = Some(workspace);
                 self.panels.invalidate();
             }
@@ -116,6 +118,7 @@ impl RomLevelAssetsEditor {
         self.workspace = None;
         self.pending_load = None;
         self.pending_close = None;
+        self.mwl_batch_status = None;
         self.panels.invalidate();
     }
 
@@ -150,12 +153,14 @@ fn decode_loaded(
         .map_err(|error| error.to_string())?;
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
+    let internal_header = profiled.snapshot.identity.internal_header_offset;
     Ok(Workspace {
         controller,
+        snapshot: profiled.snapshot,
         profile: profiled.profile,
         source_slot,
         image,
-        internal_header: profiled.snapshot.identity.internal_header_offset,
+        internal_header,
         ownership,
     })
 }

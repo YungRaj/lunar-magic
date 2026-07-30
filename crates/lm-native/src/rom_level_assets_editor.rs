@@ -9,6 +9,7 @@ use lm_project::NativeLevelAssetsFile;
 mod commit;
 mod lifecycle;
 mod mwl;
+mod mwl_batch;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -18,6 +19,7 @@ enum PendingClose {
 
 struct Workspace {
     controller: NativeLevelAssetsController,
+    snapshot: lm_app::ControllerSnapshot,
     profile: RevisionProfile,
     source_slot: u16,
     image: lm_rom::RomImage,
@@ -39,6 +41,8 @@ pub(crate) struct RomLevelAssetsEditor {
     pending_close: Option<PendingClose>,
     loader: DocumentLoader,
     mwl_loader: DocumentLoader,
+    mwl_batch_worker: mwl_batch::MwlBatchExportWorker,
+    mwl_batch_status: Option<String>,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
 }
@@ -49,6 +53,15 @@ impl RomLevelAssetsEditor {
         context: &egui::Context,
         project_revision: u64,
     ) -> (bool, Option<Command>) {
+        if let Some(result) = self.mwl_batch_worker.show(context) {
+            match result {
+                Ok(count) => {
+                    self.mwl_batch_status =
+                        Some(format!("{count} levels were exported successfully."));
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
         if let Some(result) = self.loader.show(context) {
             self.finish_ownership_load(result, project_revision);
         }
@@ -146,6 +159,9 @@ impl RomLevelAssetsEditor {
             .as_ref()
             .is_some_and(|w| w.controller.is_modified());
         self.show_mwl_actions(ui, stale, modified);
+        if let Some(status) = &self.mwl_batch_status {
+            ui.label(status);
+        }
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running(),

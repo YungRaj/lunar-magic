@@ -2583,8 +2583,11 @@ pointer predicate and accepts a zero-document result. Its retained installed fix
 exactly level `000`, matching live Lunar Magic mode `1`. `level-mwl-import-dir DIRECTORY
 SEARCH_START SEARCH_END` enumerates visible regular MWLs deterministically, takes each destination
 from its validated header, commits each successful import as its own complete ROM transaction, and
-continues after malformed or unsavable files. The remaining batch parity work is native progress
-UI and Escape cancellation.
+continues after malformed or unsavable files. Batch export generation now lives in the shared
+toolkit-independent application layer, so the shell and native frontend consume the same immutable
+profiled snapshot and publication code. The native level-assets window runs both all-level and
+modified-only generation on a background worker and reports completion without freezing the event
+loop. The remaining batch parity work is native directory-import progress and Escape cancellation.
 
 The current SMW US revision-0 profile also contains the recovered multi-bank overworld-message
 installation boundary used once more than 96 level-name slots are enabled. It installs the fixed

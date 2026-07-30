@@ -170,6 +170,13 @@ pub(crate) fn choose_mwl_save_path(level: u16) -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_mwl_batch_template() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Lunar Magic level", &["mwl"])
+        .set_file_name("Levels.mwl")
+        .save_file()
+}
+
 pub(crate) fn choose_expanded_settings_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Lunar Magic expanded settings record", &["bin", "lmexset"])
