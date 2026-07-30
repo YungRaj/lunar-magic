@@ -76,6 +76,7 @@ impl NativeApplication {
                 ui.close_menu();
                 self.level_access_restriction_dialog.open();
             }
+            self.restore_point_menu_item(ui, status);
             if ui
                 .add_enabled(
                     enabled && self.app.revision_profile().is_some(),
@@ -115,6 +116,21 @@ impl NativeApplication {
                 self.request_quit(context);
             }
         });
+    }
+
+    fn restore_point_menu_item(&mut self, ui: &mut egui::Ui, status: ProjectStatus) {
+        if ui
+            .add_enabled(
+                matches!(status, ProjectStatus::Closed) && !self.restore_point_dialog.is_busy(),
+                egui::Button::new("Restore ROM from Restore Point…"),
+            )
+            .clicked()
+        {
+            ui.close_menu();
+            if let Err(error) = self.restore_point_dialog.choose_and_open() {
+                self.effects.error = Some(error);
+            }
+        }
     }
 
     fn ips_menu_items(&mut self, ui: &mut egui::Ui, project_open: bool) {

@@ -43,6 +43,27 @@ pub(crate) fn choose_ips_patch() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_restore_archive() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Select Lunar Restore Points")
+        .add_filter("Lunar Restore Points", &["lrp"])
+        .pick_file()
+}
+
+pub(crate) fn choose_restore_original_rom() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Select Original Unmodified ROM with Header")
+        .add_filter("SNES ROM", &["smc", "sfc"])
+        .pick_file()
+}
+
+pub(crate) fn choose_restore_target_rom() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Select ROM to Restore")
+        .add_filter("SNES ROM", &["smc", "sfc"])
+        .pick_file()
+}
+
 pub(crate) fn choose_ips_source_rom(title: &str) -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title(title)

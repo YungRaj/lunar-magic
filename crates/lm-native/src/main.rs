@@ -70,6 +70,7 @@ mod path_editor_forms;
 mod persistence_worker;
 mod profile_loader;
 mod rats_reclamation_dialog;
+mod restore_point_dialog;
 mod revision_patch_installer;
 mod rom_allocation;
 mod rom_boss_sequence_editor;

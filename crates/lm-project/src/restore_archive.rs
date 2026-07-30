@@ -263,6 +263,18 @@ impl LunarRestoreArchive {
                 return Err(LunarRestoreArchiveError::RestoredRomTooLarge(target_len));
             }
             restored.resize(target_len, 0);
+            let header_len = match lm_rom::detect_copier_header(restored.len()) {
+                lm_rom::CopierHeader::Present => lm_rom::COPIER_HEADER_LEN,
+                lm_rom::CopierHeader::Absent => 0,
+            };
+            let actual_hash = restore_crc32(&restored[header_len..]);
+            if actual_hash != record.rom_hash {
+                return Err(LunarRestoreArchiveError::RomHashMismatch {
+                    record: record.archive_offset,
+                    expected: record.rom_hash,
+                    actual: actual_hash,
+                });
+            }
             if record.record_id == record_id {
                 found = true;
                 break;
@@ -273,6 +285,17 @@ impl LunarRestoreArchive {
         }
         Ok(restored)
     }
+}
+
+fn restore_crc32(bytes: &[u8]) -> u32 {
+    let mut crc = u32::MAX;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (0xedb8_8320 & 0_u32.wrapping_sub(crc & 1));
+        }
+    }
+    !crc
 }
 
 fn decode_commands(
@@ -545,6 +568,11 @@ pub enum LunarRestoreArchiveError {
         length: u32,
     },
     RestoredRomTooLarge(usize),
+    RomHashMismatch {
+        record: u64,
+        expected: u32,
+        actual: u32,
+    },
 }
 
 impl fmt::Display for LunarRestoreArchiveError {
@@ -664,6 +692,14 @@ fn fmt_command_error(
         E::RestoredRomTooLarge(length) => write!(
             formatter,
             "restored ROM length {length:#x} exceeds the supported limit"
+        ),
+        E::RomHashMismatch {
+            record,
+            expected,
+            actual,
+        } => write!(
+            formatter,
+            "restore point at {record:#x} produced ROM hash {actual:#010x}, expected {expected:#010x}"
         ),
         _ => unreachable!("non-command errors are formatted by the outer match"),
     }
@@ -827,9 +863,13 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(
-            archive.restore_through(1, &[1, 2, 3, 4]).unwrap(),
-            [1, 7, 8, 4, 9, 9, 0, 0]
-        );
+        let expected = [1, 7, 8, 4, 9, 9, 0, 0];
+        put_u32(&mut bytes, 0x130 + 0x60, restore_crc32(&expected));
+        let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+        assert_eq!(archive.restore_through(1, &[1, 2, 3, 4]).unwrap(), expected);
+        assert!(matches!(
+            archive.restore_through(1, &[0, 2, 3, 4]),
+            Err(LunarRestoreArchiveError::RomHashMismatch { .. })
+        ));
     }
 }
