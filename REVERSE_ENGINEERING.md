@@ -903,6 +903,27 @@ installer before committing a pristine background tile such as `$8200`; the resu
 block reopens at the Wine-authenticated trimmed length `$1008`, while the complete multi-domain
 operation remains one application undo.
 
+The same runtime exposes eight foreground definition blocks, not one monolithic allocation.
+`SavePrimaryMap16DataBlocks` scans eight consecutive `$8000`-byte slices of the live primary
+buffer. Block zero retains its first `$1000` bytes in legacy fixed storage and allocates only the
+trimmed suffix; blocks one through seven allocate their complete trimmed prefix. Every retained
+length is rounded to eight bytes. A Wine matrix changing only tiles `$0800`, `$1000`, `$2000`,
+`$4000`, and `$7fff` produced primary payload lengths `$3008`, `$0008`, `$0008`, `$0008`, and
+`$8000`, exactly matching those slice rules. Touching block four or later also publishes the
+second `$8000`-byte auxiliary table described by the same save routine.
+
+The installed low-word/bank-word operands begin at logical runtime base `$37540`. Their eight
+offset pairs are `{13,17}`, `{1c,20}`, `{27,2b}`, `{30,34}`, `{54,58}`, `{5d,61}`, `{68,6c}`,
+and `{71,75}`; the corresponding pointer displacements are `$1000,$8000,$0001,$8001,$0000,
+$8000,$0001,$8001`. The first changed `$0800` oracle, for example, stores pre-displacement
+pointer `$107008`, which resolves to allocated payload `$108008` after adding `$1000`.
+
+Complete foreground behavior is a separate `$10000`-byte concern. The unchanged container shows
+blank extended tiles using Acts-Like `$0130`, while the older transferred-table helper's missing
+entry sentinel is `$fc7a`; these values are not interchangeable. Complete foreground persistence
+must therefore recover `CommitExpandedMap16ActsLikeTable` rather than extending the existing
+transferred helper by blank padding.
+
 Map16 interaction code through `004fd510` is now named and annotated. This covers tracking tooltips (including disabled controls and internal sprite/background tile descriptions), independent 100-5000 percent zoom with forward and inverse coordinate transforms, DPI-aware selector sizing, hover and auto-scroll behavior, selection creation and movement, temporary-buffer restoration, property-panel mixed-value analysis, priority and palette edits, horizontal and vertical flips, and Acts Like cycle detection.
 
 Map16 Acts Like editing and the full 8x8-subtile interaction path through `004ff170` are now named. The recovered behavior includes cycle-rejecting Acts Like assignment, per-corner graphics-index edits, additive/subtractive 324,608-byte selection masks, clamped selection translation, live/temporary buffer swapping, 8x8-selector paste integration, hover and auto-scroll logic, and serialization/deserialization. Added the exact 0xA0-byte `LunarMagicSubtileClipboardHeader` with tile and auxiliary section offsets, selection dimensions, count, source index, flags, and reserved regions.
