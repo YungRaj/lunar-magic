@@ -71,11 +71,13 @@ fn built_cli_exports_installs_updates_and_reopens_special_events() {
         table(0x180)
     );
     let bytes = fs::read(&second_rom).unwrap();
+    let image = RomImage::from_bytes(bytes).unwrap();
+    let logical = image.logical_bytes();
     assert_eq!(
-        &bytes[0x7fdc..0x7fe0],
-        compute_snes_checksum(&bytes, 0x7fdc).unwrap().encoded()
+        &logical[0x7fdc..0x7fe0],
+        compute_snes_checksum(logical, 0x7fdc).unwrap().encoded()
     );
-    let project = Project::open_supported(RomImage::from_bytes(bytes).unwrap()).unwrap();
+    let project = Project::open_supported(image).unwrap();
     let loaded = project
         .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())
         .unwrap();

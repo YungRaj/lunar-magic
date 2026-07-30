@@ -350,8 +350,13 @@ mod tests {
                 &SpriteLengthTable::standard(),
             )
             .unwrap();
-        let actual =
-            compose_smw_us_v1_level_palette(&project, slot as u16, level.layer1.header, 0).unwrap();
+        let actual = compose_smw_us_v1_level_palette(
+            &project,
+            u16::try_from(slot).unwrap(),
+            level.layer1.header,
+            0,
+        )
+        .unwrap();
         let live = fs::read(cache_path).unwrap();
         let mut expected = Palette::decode_snes(&live[2..]).unwrap();
         expected.colors.rotate_right(1);

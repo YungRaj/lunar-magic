@@ -21,6 +21,7 @@ const LEVEL_MODE_EDITOR_MAJOR_SCREENS: [u8; 32] = [
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct VanillaLevelMode {
     pub index: u8,
     pub vertical: bool,

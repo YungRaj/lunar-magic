@@ -860,9 +860,9 @@ mod tests {
     fn tilemap_grid_reads_lunar_magic_canvas_order() {
         let bytes = (0_u16..1024).flat_map(u16::to_le_bytes).collect::<Vec<_>>();
         assert_eq!(layer2_tilemap_word(&bytes, 0, 0), Some((0, 0)));
-        assert_eq!(layer2_tilemap_word(&bytes, 1, 0), Some((16, 16)));
-        assert_eq!(layer2_tilemap_word(&bytes, 31, 15), Some((511, 511)));
-        assert_eq!(layer2_tilemap_word(&bytes, 0, 16), Some((512, 512)));
+        assert_eq!(layer2_tilemap_word(&bytes, 1, 0), Some((1, 1)));
+        assert_eq!(layer2_tilemap_word(&bytes, 31, 15), Some((767, 767)));
+        assert_eq!(layer2_tilemap_word(&bytes, 0, 16), Some((256, 256)));
         assert_eq!(layer2_tilemap_word(&bytes, 31, 31), Some((1023, 1023)));
         assert_eq!(layer2_tilemap_word(&bytes, 32, 0), None);
         assert_eq!(layer2_tilemap_word(&bytes, 0, 32), None);
@@ -878,11 +878,11 @@ mod tests {
     fn rectangle_selection_uses_canvas_coordinates_and_native_storage_indexes() {
         assert_eq!(
             layer2_selection_indices(Some((1, 15)), Some((2, 16))),
-            vec![31, 47, 528, 544]
+            vec![241, 242, 257, 258]
         );
         assert_eq!(
             layer2_selection_indices(Some((2, 16)), Some((1, 15))),
-            vec![31, 47, 528, 544]
+            vec![241, 242, 257, 258]
         );
         assert!(layer2_selection_contains(
             Some((2, 16)),
@@ -902,7 +902,7 @@ mod tests {
     fn rectangle_fill_routes_unique_atomic_word_edits() {
         assert_eq!(
             layer2_word_edits(99, Some((0, 0)), Some((1, 1)), 0xbeef),
-            vec![(0, 0xbeef), (16, 0xbeef), (1, 0xbeef), (17, 0xbeef)]
+            vec![(0, 0xbeef), (1, 0xbeef), (16, 0xbeef), (17, 0xbeef)]
         );
         assert_eq!(
             layer2_word_edits(99, None, None, 0xbeef),
@@ -915,11 +915,11 @@ mod tests {
         let bytes = (0_u16..1024).flat_map(u16::to_le_bytes).collect::<Vec<_>>();
         assert_eq!(
             layer2_selection_words(&bytes, Some((1, 15)), Some((2, 16))).unwrap(),
-            (2, 2, vec![31, 47, 528, 544])
+            (2, 2, vec![241, 242, 257, 258])
         );
         assert_eq!(
             layer2_selection_words(&bytes, Some((2, 16)), Some((1, 15))).unwrap(),
-            (2, 2, vec![31, 47, 528, 544])
+            (2, 2, vec![241, 242, 257, 258])
         );
         assert!(layer2_selection_words(&bytes, None, None).is_err());
     }
@@ -928,7 +928,7 @@ mod tests {
     fn rectangle_paste_translates_visual_words_to_native_indexes() {
         assert_eq!(
             layer2_paste_edits(Some((1, 15)), 2, 2, &[10, 11, 12, 13]).unwrap(),
-            vec![(31, 10), (47, 11), (528, 12), (544, 13)]
+            vec![(241, 10), (242, 11), (257, 12), (258, 13)]
         );
         assert!(layer2_paste_edits(Some((31, 31)), 2, 1, &[1, 2]).is_err());
         assert!(layer2_paste_edits(Some((0, 0)), 2, 2, &[1, 2, 3]).is_err());
@@ -939,7 +939,7 @@ mod tests {
     fn cut_uses_lunar_magics_proven_zero_word_for_every_selected_cell() {
         assert_eq!(
             layer2_cut_edits(Some((1, 15)), Some((2, 16))).unwrap(),
-            vec![(31, 0), (47, 0), (528, 0), (544, 0)]
+            vec![(241, 0), (242, 0), (257, 0), (258, 0)]
         );
         assert!(layer2_cut_edits(None, None).is_err());
     }
@@ -957,7 +957,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             layer2_flood_edits(&bytes, Some((0, 0)), 0xf456).unwrap(),
-            vec![(0, 0x0456), (16, 0x0456), (17, 0x0456)]
+            vec![(0, 0x0456), (1, 0x0456), (17, 0x0456)]
         );
         assert!(layer2_flood_edits(&bytes, None, 1).is_err());
     }

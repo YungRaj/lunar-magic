@@ -969,10 +969,7 @@ fn materialize_layer1_sprite_vram(slots: &[Vec<IndexedTile>]) -> Vec<IndexedTile
 
 fn load_vanilla_sprite_display_page(project: &Project) -> Result<Vec<Vec<IndexedTile>>, String> {
     let decoded = project
-        .load_decompressed_graphics_file(
-            0,
-            lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
-        )
+        .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
         .map_err(|error| error.to_string())?;
     let mut tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
         .map_err(|error| format!("cannot decode pristine sprite-display GFX33: {error}"))?;

@@ -75,6 +75,12 @@ fn built_cli_exports_changes_and_reopens_native_player_starts() {
         fs::read(&reopened_file).unwrap(),
         changed.encode_file().unwrap()
     );
-    assert_eq!(fs::read(&input).unwrap().len(), 0x80_000);
+    assert_eq!(
+        RomImage::from_bytes(fs::read(&input).unwrap())
+            .unwrap()
+            .logical_bytes()
+            .len(),
+        0x80_000
+    );
     fs::remove_dir_all(directory).unwrap();
 }

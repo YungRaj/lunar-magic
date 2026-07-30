@@ -104,6 +104,12 @@ fn built_cli_installs_exports_grows_and_reopens_expanded_special_paths() {
             .table,
         table(30)
     );
-    assert_eq!(fs::read(&input).unwrap().len(), 0x80_000);
+    assert_eq!(
+        RomImage::from_bytes(fs::read(&input).unwrap())
+            .unwrap()
+            .logical_bytes()
+            .len(),
+        0x80_000
+    );
     fs::remove_dir_all(directory).unwrap();
 }

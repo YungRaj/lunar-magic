@@ -86,6 +86,12 @@ fn built_cli_exports_installs_and_reopens_native_overworld_settings() {
         observation.get("overworld/layer3/settings/6/address-layout/7"),
         Some("4567")
     );
-    assert_eq!(fs::read(&input).unwrap().len(), 0x80_000);
+    assert_eq!(
+        RomImage::from_bytes(fs::read(&input).unwrap())
+            .unwrap()
+            .logical_bytes()
+            .len(),
+        0x80_000
+    );
     fs::remove_dir_all(directory).unwrap();
 }

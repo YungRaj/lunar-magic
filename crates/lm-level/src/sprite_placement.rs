@@ -57,7 +57,7 @@ impl NativeSpritePlacement {
     /// excluded.
     #[must_use]
     pub const fn packed_display_position(self) -> u8 {
-        ((self.minor as u8 & 0x0f) << 4) | (self.major as u8 & 0x0f)
+        ((self.minor & 0x0f).to_le_bytes()[0] << 4) | (self.major & 0x0f).to_le_bytes()[0]
     }
 
     /// Converts the native major/minor axes to tile X/Y.

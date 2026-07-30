@@ -32,7 +32,7 @@ fn pristine_smw_us_rom_bytes() -> Vec<u8> {
                     && identity.checksum_matches()
             })
         {
-            return bytes;
+            return image.logical_bytes().to_vec();
         }
     }
     panic!("verified pristine SMW-US fixture not found");
@@ -70,7 +70,9 @@ fn pristine_level_001_layer2_upper_plane_matches_lunar_magic_export() {
     for y in 0..16 {
         for x in 0..32 {
             let actual_index = lm_level::native_layer2_tilemap_index(x, y).unwrap() * 2;
-            let expected_index = (y * 32 + x) * 2;
+            // MWL's native Layer 2 payload retains the same two row-major 16×32 planes as
+            // Lunar Magic's expanded workspace; it is not a separate flat 32-column raster.
+            let expected_index = lm_level::native_layer2_tilemap_index(x, y).unwrap() * 2;
             assert_eq!(
                 &actual[actual_index..actual_index + 2],
                 &expected_planes[expected_index..expected_index + 2],

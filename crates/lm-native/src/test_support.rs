@@ -24,7 +24,12 @@ pub(crate) fn pristine_smw_us_rom_bytes() -> Vec<u8> {
         };
         let digest = lm_oracle::sha256_hex(image.logical_bytes());
         if digest == PRISTINE_SMW_US_SHA256 {
-            return bytes;
+            // Tests need one stable logical-ROM representation regardless of whether the
+            // legally supplied fixture happens to have a 512-byte copier prefix. Returning the
+            // container bytes made header-sensitive tests depend on which candidate existed
+            // first and made a later `resize` preserve the prefix at offset zero as if it were
+            // ROM data.
+            return image.logical_bytes().to_vec();
         }
         observed.push(format!("{} ({digest})", path.display()));
     }

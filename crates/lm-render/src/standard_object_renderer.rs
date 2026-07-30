@@ -4867,7 +4867,7 @@ mod tests {
                         && identity.checksum_matches()
                 })
             {
-                return bytes;
+                return image.logical_bytes().to_vec();
             }
         }
         panic!("verified pristine SMW-US fixture not found");
@@ -6688,11 +6688,7 @@ mod tests {
                 0x12,
                 vec![vec![0x082, 0x082, 0x082], vec![0x082, 0x082, 0x082]],
             ),
-            (
-                77,
-                0x22,
-                vec![vec![0x157], vec![0x157], vec![0x157]],
-            ),
+            (77, 0x22, vec![vec![0x157], vec![0x157], vec![0x157]]),
         ] {
             let mut handler_map = [0xff; 64];
             handler_map[1] = handler;

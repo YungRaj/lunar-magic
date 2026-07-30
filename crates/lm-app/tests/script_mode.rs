@@ -48,7 +48,7 @@ fn pristine_smw_us_rom_bytes() -> Vec<u8> {
             continue;
         };
         if lm_oracle::sha256_hex(image.logical_bytes()) == PRISTINE_SMW_US_SHA256 {
-            return bytes;
+            return image.logical_bytes().to_vec();
         }
     }
     panic!("verified pristine SMW-US fixture not found");

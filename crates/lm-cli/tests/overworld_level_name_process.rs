@@ -95,6 +95,12 @@ fn built_cli_exports_installs_and_grows_native_level_name_table() {
         loaded.storage,
         OverworldLevelNameStorage::Expanded { .. }
     ));
-    assert_eq!(fs::read(&input).unwrap().len(), 0x80_000);
+    assert_eq!(
+        RomImage::from_bytes(fs::read(&input).unwrap())
+            .unwrap()
+            .logical_bytes()
+            .len(),
+        0x80_000
+    );
     fs::remove_dir_all(directory).unwrap();
 }

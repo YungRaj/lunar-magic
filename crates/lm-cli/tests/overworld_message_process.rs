@@ -66,11 +66,15 @@ fn built_cli_installs_reopens_and_exports_expanded_messages() {
         ],
     );
     let installed = fs::read(&output).unwrap();
+    let installed_image = RomImage::from_bytes(installed).unwrap();
+    let installed_logical = installed_image.logical_bytes();
     assert_eq!(
-        &installed[0x7fdc..0x7fe0],
-        compute_snes_checksum(&installed, 0x7fdc).unwrap().encoded()
+        &installed_logical[0x7fdc..0x7fe0],
+        compute_snes_checksum(installed_logical, 0x7fdc)
+            .unwrap()
+            .encoded()
     );
-    let project = Project::open_supported(RomImage::from_bytes(installed).unwrap()).unwrap();
+    let project = Project::open_supported(installed_image).unwrap();
     assert_eq!(
         project
             .load_expanded_overworld_messages_detected(smw_us_v1_overworld_message_patch_locator())
@@ -95,14 +99,15 @@ fn built_cli_installs_reopens_and_exports_expanded_messages() {
         ],
     );
     let grown_installed = fs::read(&grown_output).unwrap();
+    let grown_image = RomImage::from_bytes(grown_installed).unwrap();
+    let grown_logical = grown_image.logical_bytes();
     assert_eq!(
-        &grown_installed[0x7fdc..0x7fe0],
-        compute_snes_checksum(&grown_installed, 0x7fdc)
+        &grown_logical[0x7fdc..0x7fe0],
+        compute_snes_checksum(grown_logical, 0x7fdc)
             .unwrap()
             .encoded()
     );
-    let grown_project =
-        Project::open_supported(RomImage::from_bytes(grown_installed).unwrap()).unwrap();
+    let grown_project = Project::open_supported(grown_image).unwrap();
     assert_eq!(
         grown_project
             .load_expanded_overworld_messages_detected(smw_us_v1_overworld_message_patch_locator())

@@ -24,7 +24,11 @@ pub(crate) fn pristine_smw_us_rom_bytes() -> Vec<u8> {
         };
         let digest = lm_oracle::sha256_hex(image.logical_bytes());
         if digest == PRISTINE_SMW_US_SHA256 {
-            return bytes;
+            // Keep application tests independent of whether the supplied fixture uses a
+            // 512-byte copier container. Callers that exercise header conversion add the
+            // container explicitly; every other ROM mutation should start from identical
+            // authenticated logical bytes.
+            return image.logical_bytes().to_vec();
         }
         observed.push(format!("{} ({digest})", path.display()));
     }

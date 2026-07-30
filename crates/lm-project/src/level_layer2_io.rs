@@ -162,7 +162,7 @@ impl Project {
             .rom
             .read(pointer, 3)?
             .try_into()
-            .expect("three-byte pointer read");
+            .map_err(|_| LevelLayer2IoError::DescriptorLayout)?;
         if let Some(redirect) = layout.legacy_pointer_redirect {
             let selector_offset = redirect.selector_pointers.pointer_offset(level)?;
             if self.rom.read(selector_offset, 3)? == redirect.selector_value

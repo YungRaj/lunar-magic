@@ -39,7 +39,7 @@ pub(crate) fn pristine_smw_us_rom_bytes() -> Vec<u8> {
             && identity.revision == 0
             && identity.checksum_matches()
         {
-            return bytes;
+            return image.logical_bytes().to_vec();
         }
     }
     panic!("verified pristine SMW-US fixture not found");
