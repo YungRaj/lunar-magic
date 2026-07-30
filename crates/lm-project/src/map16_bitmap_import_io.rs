@@ -50,7 +50,6 @@ pub struct SavedMap16BitmapImport {
 #[derive(Debug)]
 pub enum Map16BitmapRomSaveError {
     EmptyDescription,
-    NoGraphicsFiles,
     Graphics(GraphicsIoError),
     Palette(PaletteIoError),
     Map16(Map16IoError),
@@ -105,9 +104,6 @@ impl Project {
     ) -> Result<SavedMap16BitmapImport, Map16BitmapRomSaveError> {
         if save.description.trim().is_empty() {
             return Err(Map16BitmapRomSaveError::EmptyDescription);
-        }
-        if save.graphics.is_empty() {
-            return Err(Map16BitmapRomSaveError::NoGraphicsFiles);
         }
         let mut requests = Vec::with_capacity(save.graphics.len() + 3);
         for graphics in save.graphics {
@@ -308,6 +304,58 @@ mod tests {
             u16::from_le_bytes([stored[2], stored[3]]),
             computed.checksum
         );
+        assert_eq!(project.history.undo_len(), 1);
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
+    }
+
+    #[test]
+    fn tile_reusing_import_can_commit_without_changing_graphics_files() {
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        let original = project.save_snapshot();
+        let allocation = policy(0x100..0x7000);
+        let palette_options = PaletteSaveOptions {
+            allocation: allocation.clone(),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let map16_options = Map16SaveOptions {
+            graphics_allocation: allocation.clone(),
+            acts_like_allocation: allocation,
+            previous_graphics: None,
+            previous_acts_like: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let palette = Palette {
+            colors: vec![Bgr555(0x1234); 16],
+        };
+        let map16 = page();
+
+        let result = project
+            .save_map16_bitmap_import(&Map16BitmapRomSave {
+                description: "import bitmap using existing graphics",
+                graphics: &[],
+                palette: Map16BitmapPaletteSave {
+                    palette_number: 0,
+                    palette: &palette,
+                    layout: palette_layout(),
+                    options: &palette_options,
+                },
+                map16: Map16BitmapPageSave {
+                    page_number: 0,
+                    page: &map16,
+                    layout: map16_layout(),
+                    options: &map16_options,
+                },
+                checksum_field: CHECKSUM,
+            })
+            .unwrap();
+
+        assert!(result.graphics.is_empty());
+        assert_eq!(project.load_palette(0, palette_layout()).unwrap(), palette);
+        assert_eq!(project.load_map16_page(0, map16_layout()).unwrap(), map16);
         assert_eq!(project.history.undo_len(), 1);
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);
