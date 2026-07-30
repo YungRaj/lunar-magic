@@ -1,5 +1,6 @@
 //! SNES graphics, palette, and animation models.
 
+mod bitmap_palette;
 mod container;
 mod editing;
 mod exanimation;
@@ -24,6 +25,11 @@ mod tile;
 mod tile_import;
 mod tpl_palette_file;
 
+pub use bitmap_palette::{
+    BITMAP_PALETTE_COLORS, BITMAP_PALETTE_ROWS, BitmapPaletteColorOptions, BitmapPaletteEntryState,
+    BitmapPaletteReduction, BitmapPaletteReductionError, ReducedBitmapPalette,
+    reduce_bitmap_palette,
+};
 pub use container::{GraphicsFile4bpp, GraphicsFileError, JoinedGraphics};
 pub use editing::ExAnimationEditError;
 pub use exanimation::{CompactExAnimation, ExAnimationError, ExAnimationRecord, ExAnimationSet};

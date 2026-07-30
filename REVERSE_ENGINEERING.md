@@ -849,6 +849,29 @@ A live Wine oracle used the modeless Map16 editor command `$2276` after publishi
 
 The bitmap-import palette editor and dual-preview UI through `004f3370` is now named and annotated. The options dialog manages quantizer selection, palette-row reservations, fixed colors, color-count limits, priority, and snapshot restoration. Two custom child windows render the original and converted bitmaps with shared DPI-aware sizing and synchronized scroll positions; creation, painting, scrollbar configuration, resizing, and teardown are labeled separately.
 
+A fresh MCP audit of the live Ghidra project fixes the color-option state more precisely.
+`InitializePaletteEntryUsageMap` at `004ebb50` uses exact state bits `$01` for an importer-assigned
+color, `$02` for a reserved/excluded entry, and `$04` for a preserved reusable entry. It marks
+index zero of all eight active 16-color rows reusable, exposes entries 1–8 of rows 0 and 1 as free,
+and initially reserves the remaining entries. `HandleBitmapImportOptionsDialog` at `004f15e0`
+offers “Median Cut” and “Popularity”, a 1–128 color limit, four priority levels, three whole-row
+state buttons, independent reserve/reuse toggles, and transactional restoration of all 128 state
+bytes plus the palette snapshot on cancel. Initialized data at `$005e55cc` confirms the related
+priority toggles enabled, priority level 3 at `$005e55d0`, maximum 128 colors at `$005e55fc`, and
+the recovered default optimization flag block.
+
+The allocation pipeline is row-semantic rather than a single global 4bpp palette.
+`BuildTileUniqueColorHistogram` and `FindOrCreatePaletteColorSetRecord` construct weighted unique
+color sets for each 8×8 source tile; `BuildPaletteColorSetSubsetLinks` and
+`AggregatePaletteColorSetWeights` propagate subset utility. `CountPaletteRowFreeAndReusableEntries`
+at `004ed390` distinguishes free from preserved slots, and `AssignColorsToBestPaletteRow` at
+`004ed4c0` chooses the row with greatest reusable-color overlap, then least required capacity,
+inserts only missing colors into state-zero entries, and returns that row for the tile words.
+`SelectPaletteColorSetsForCapacity` and `ExtendPaletteWithWeightedColorSets` greedily cover the
+highest-weight compatible color sets before `AssignImportedGraphicsToPaletteRows` records one row
+per 8×8 tile. The Rust multi-row model must retain these stages; merely quantizing an entire image
+to one 15-color row is not equivalent.
+
 The following controller and selection tooling through `004f5990` is now named. This includes the import-preview zoom menu and keyboard hook, the top-level bitmap import workflow, a textual remapping language that can transform graphics indexes, palette rows, Map16 indexes, and secondary-map values, and the custom registered `Lunar Magic 16x16 Tiles` clipboard serializer. Added the exact 0xA0-byte `LunarMagicTileClipboardHeader` with section offsets, selected count, rectangular dimensions, source Map16 index, flags, and explicitly represented reserved regions.
 
 Map16 import/export, history, and visible rendering through `004f9e40` are now named and annotated. Added exact 64-byte `Lm16Map16FileHeader` and `Lm16Map16SectionDirectory` structures for the structured `.map16` format. Added the exact 811,788-byte `Map16UndoSnapshot` and typed its live linked-list globals. Rendering names now distinguish decoded tile composition, Acts Like overlays, selected-tile highlighting, page frames and labels, page boundaries, and bounded versus drag-selection marching ants.
