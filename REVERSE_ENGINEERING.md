@@ -912,6 +912,14 @@ domain. Focused tests force the left and right quadrants into disjoint rows and 
 packed `$1c00` palette bits and row-aware RGBA preview. Exact priority-level influence during
 high-color selection and Wine output equivalence remain oracle gates rather than assumed parity.
 
+The final generated-color ordering is also semantic. `ProcessBitmapGraphicsImport` converts each
+newly assigned SNES color through `ConvertRgbToHsl240` at `004ebc00`, begins each run with the
+lowest-saturation remaining color, and then greedily chooses the nearest remaining color using its
+integer circular-hue/saturation/lightness metric. A hue discontinuity above 45 starts a new run
+unless both colors are near black. The Rust allocator now reproduces the 0–240 integer conversion,
+strict first-entry tie behavior, run restart, and entry swaps before mapping source pixels to row
+indexes; leaving colors in insertion order changes both palette words and encoded graphics.
+
 The following controller and selection tooling through `004f5990` is now named. This includes the import-preview zoom menu and keyboard hook, the top-level bitmap import workflow, a textual remapping language that can transform graphics indexes, palette rows, Map16 indexes, and secondary-map values, and the custom registered `Lunar Magic 16x16 Tiles` clipboard serializer. Added the exact 0xA0-byte `LunarMagicTileClipboardHeader` with section offsets, selected count, rectangular dimensions, source Map16 index, flags, and explicitly represented reserved regions.
 
 Map16 import/export, history, and visible rendering through `004f9e40` are now named and annotated. Added exact 64-byte `Lm16Map16FileHeader` and `Lm16Map16SectionDirectory` structures for the structured `.map16` format. Added the exact 811,788-byte `Map16UndoSnapshot` and typed its live linked-list globals. Rendering names now distinguish decoded tile composition, Acts Like overlays, selected-tile highlighting, page frames and labels, page boundaries, and bounded versus drag-selection marching ants.

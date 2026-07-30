@@ -444,6 +444,9 @@ pub fn allocate_bitmap_palette_rows(
     let mut rows: [PaletteRowAllocation; BITMAP_PALETTE_ROWS] =
         std::array::from_fn(|row| PaletteRowAllocation::new(row, original, options));
     assign_color_set_records(&mut records, &mut rows)?;
+    for row in &mut rows {
+        row.order_assigned_colors();
+    }
 
     let mut palette = original.clone();
     let mut generated_colors = 0;
@@ -774,6 +777,59 @@ impl PaletteRowAllocation {
         Ok(())
     }
 
+    fn order_assigned_colors(&mut self) {
+        let mut previous = None;
+        let mut entry = 0;
+        while entry < self.entries.len() {
+            if !matches!(self.entries[entry], RowEntry::Assigned(_)) {
+                entry += 1;
+                continue;
+            }
+            let candidates = entry..self.entries.len();
+            let selected = if let Some(previous_color) = previous {
+                candidates
+                    .clone()
+                    .filter_map(|candidate| {
+                        assigned_color(self.entries[candidate]).map(|color| {
+                            (
+                                hsl_ordering_distance(previous_color, color),
+                                candidate,
+                                color,
+                            )
+                        })
+                    })
+                    .min_by_key(|(distance, candidate, _)| (*distance, *candidate))
+            } else {
+                candidates
+                    .clone()
+                    .filter_map(|candidate| {
+                        assigned_color(self.entries[candidate]).map(|color| {
+                            let hsl = lunar_magic_hsl240(color);
+                            (u32::from(hsl.saturation), candidate, color)
+                        })
+                    })
+                    .min_by_key(|(saturation, candidate, _)| (*saturation, *candidate))
+            };
+            let Some((_, selected, color)) = selected else {
+                entry += 1;
+                continue;
+            };
+            if let Some(previous_color) = previous {
+                let previous_hsl = lunar_magic_hsl240(previous_color);
+                let selected_hsl = lunar_magic_hsl240(color);
+                if (previous_hsl.lightness > 15 || selected_hsl.lightness > 15)
+                    && circular_hue_distance(previous_hsl.hue, selected_hsl.hue) > 45
+                {
+                    previous = None;
+                    continue;
+                }
+            }
+            self.entries.swap(entry, selected);
+            previous = Some(color);
+            entry += 1;
+        }
+    }
+
     fn index_of(&self, color: u16) -> Option<u8> {
         self.entries
             .iter()
@@ -810,6 +866,82 @@ impl PaletteRowAllocation {
         colors.dedup();
         colors
     }
+}
+
+const fn assigned_color(entry: RowEntry) -> Option<u16> {
+    match entry {
+        RowEntry::Assigned(color) => Some(color),
+        RowEntry::Reserved | RowEntry::Free | RowEntry::Reusable(_) => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Hsl240 {
+    hue: u16,
+    saturation: u16,
+    lightness: u16,
+}
+
+fn lunar_magic_hsl240(color: u16) -> Hsl240 {
+    let rgb = Bgr555(color).to_rgb8();
+    let red = u16::from(rgb.red);
+    let green = u16::from(rgb.green);
+    let blue = u16::from(rgb.blue);
+    let maximum = red.max(green).max(blue);
+    let minimum = red.min(green).min(blue);
+    let sum = maximum + minimum;
+    let lightness = (u32::from(sum) * 240 + 255) / 510;
+    if maximum == minimum {
+        return Hsl240 {
+            hue: 160,
+            saturation: 0,
+            lightness: u16::try_from(lightness).expect("HSL lightness is at most 240"),
+        };
+    }
+
+    let range = maximum - minimum;
+    let denominator = if lightness > 120 { 510 - sum } else { sum };
+    let saturation = (range / 2 + range * 240) / denominator;
+    let half_range = range / 2;
+    let red_distance = (half_range + (maximum - red) * 40) / range;
+    let green_distance = (half_range + (maximum - green) * 40) / range;
+    let blue_distance = (half_range + (maximum - blue) * 40) / range;
+    let mut hue = if maximum == red {
+        i32::from(blue_distance) - i32::from(green_distance)
+    } else if maximum == green {
+        i32::from(red_distance) - i32::from(blue_distance) + 80
+    } else {
+        i32::from(green_distance) - i32::from(red_distance) + 160
+    };
+    if hue < 0 {
+        hue += 240;
+    }
+    if hue > 240 {
+        hue -= 240;
+    }
+    Hsl240 {
+        hue: u16::try_from(hue).expect("HSL hue remains in 0..=240"),
+        saturation,
+        lightness: u16::try_from(lightness).expect("HSL lightness is at most 240"),
+    }
+}
+
+fn hsl_ordering_distance(previous: u16, candidate: u16) -> u32 {
+    let previous = lunar_magic_hsl240(previous);
+    let candidate = lunar_magic_hsl240(candidate);
+    let hue = u32::from(circular_hue_distance(previous.hue, candidate.hue));
+    let saturation = u32::from(previous.saturation.abs_diff(candidate.saturation));
+    let lightness = u32::from(previous.lightness.abs_diff(candidate.lightness));
+    if previous.lightness < 16 && candidate.lightness < 16 {
+        lightness * lightness + saturation * saturation * 3
+    } else {
+        saturation * saturation * 3 + (lightness * lightness + hue * hue * 4) * 2
+    }
+}
+
+const fn circular_hue_distance(left: u16, right: u16) -> u16 {
+    let direct = left.abs_diff(right);
+    if direct > 120 { 240 - direct } else { direct }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1005,6 +1137,71 @@ mod tests {
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
         }
+    }
+
+    #[test]
+    fn recovered_hsl240_uses_windows_integer_scale() {
+        assert_eq!(
+            lunar_magic_hsl240(0x001f),
+            Hsl240 {
+                hue: 0,
+                saturation: 240,
+                lightness: 120,
+            }
+        );
+        assert_eq!(
+            lunar_magic_hsl240(0x03e0),
+            Hsl240 {
+                hue: 80,
+                saturation: 240,
+                lightness: 120,
+            }
+        );
+        assert_eq!(
+            lunar_magic_hsl240(0x7c00),
+            Hsl240 {
+                hue: 160,
+                saturation: 240,
+                lightness: 120,
+            }
+        );
+        assert_eq!(
+            lunar_magic_hsl240(0x4210),
+            Hsl240 {
+                hue: 160,
+                saturation: 0,
+                lightness: 124,
+            }
+        );
+    }
+
+    #[test]
+    fn generated_row_colors_begin_with_lowest_saturation() {
+        let mut row = PaletteRowAllocation {
+            row: 0,
+            entries: [
+                RowEntry::Reserved,
+                RowEntry::Assigned(0x001f),
+                RowEntry::Assigned(0x4210),
+                RowEntry::Assigned(0x7c00),
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+                RowEntry::Reserved,
+            ],
+        };
+        row.order_assigned_colors();
+        assert!(matches!(row.entries[1], RowEntry::Assigned(0x4210)));
+        assert!(matches!(row.entries[2], RowEntry::Assigned(0x7c00)));
+        assert!(matches!(row.entries[3], RowEntry::Assigned(0x001f)));
     }
 
     #[test]
