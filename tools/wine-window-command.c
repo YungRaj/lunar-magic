@@ -1,6 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commctrl.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -350,6 +351,8 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE dialog-values\n"
             "       wine-window-command.exe EXECUTABLE click CONTROL_ID\n"
             "       wine-window-command.exe EXECUTABLE set-text CONTROL_ID,TEXT\n"
+            "       wine-window-command.exe EXECUTABLE clipboard-bmp WINDOWS_PATH\n"
+            "       wine-window-command.exe EXECUTABLE command-at HWND_ADDRESS,COMMAND_ID\n"
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
             "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
             "       wine-window-command.exe EXECUTABLE save WINDOWS_PATH\n"
@@ -369,6 +372,8 @@ int main(int argc, char **argv) {
     BOOL dialog_values = _stricmp(argv[2], "dialog-values") == 0;
     BOOL click = _stricmp(argv[2], "click") == 0;
     BOOL set_text = _stricmp(argv[2], "set-text") == 0;
+    BOOL clipboard_bmp = _stricmp(argv[2], "clipboard-bmp") == 0;
+    BOOL command_at = _stricmp(argv[2], "command-at") == 0;
     BOOL read = _stricmp(argv[2], "read") == 0;
     BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
     if (open_level_command) {
@@ -394,7 +399,7 @@ int main(int argc, char **argv) {
         .list = _stricmp(argv[2], "list") == 0,
         .window_class = save || level || dialog_values || click || set_text
             ? "#32770"
-            : (argc == 4 ? argv[3] : NULL)
+            : (clipboard_bmp ? "LMFrame" : (argc == 4 ? argv[3] : NULL))
     };
     EnumWindows(find_top_level_window, (LPARAM)&search);
     if (read) {
@@ -498,6 +503,53 @@ int main(int argc, char **argv) {
         }
         return 0;
     }
+    if (command_at) {
+        if (argc != 4) {
+            fprintf(stderr, "command-at requires HWND_ADDRESS,COMMAND_ID\n");
+            return 2;
+        }
+        char *separator = strchr(argv[3], ',');
+        if (separator == NULL) {
+            fprintf(stderr, "command-at requires HWND_ADDRESS,COMMAND_ID\n");
+            return 2;
+        }
+        *separator = '\0';
+        char *address_end = NULL;
+        char *command_end = NULL;
+        unsigned long address = strtoul(argv[3], &address_end, 0);
+        unsigned long command = strtoul(separator + 1, &command_end, 0);
+        if (
+            *address_end != '\0' ||
+            *command_end != '\0' ||
+            address == 0 ||
+            command > 0xffff
+        ) {
+            fprintf(stderr, "invalid command-at arguments\n");
+            return 2;
+        }
+        HANDLE process = OpenProcess(PROCESS_VM_READ, FALSE, process_id);
+        HWND target = NULL;
+        SIZE_T bytes_read = 0;
+        BOOL read_ok = process != NULL && ReadProcessMemory(
+            process,
+            (void *)(uintptr_t)address,
+            &target,
+            sizeof(target),
+            &bytes_read
+        );
+        if (process != NULL) {
+            CloseHandle(process);
+        }
+        if (!read_ok || bytes_read != sizeof(target) || !IsWindow(target)) {
+            fprintf(stderr, "cannot resolve target window at 0x%08lx\n", address);
+            return 1;
+        }
+        if (!PostMessage(target, WM_COMMAND, MAKEWPARAM(command, 0), 0)) {
+            fprintf(stderr, "cannot post command 0x%04lx\n", command);
+            return 1;
+        }
+        return 0;
+    }
     if (search.list) {
         return 0;
     }
@@ -527,7 +579,10 @@ int main(int argc, char **argv) {
             fprintf(stderr, "dialog control not found: 0x%04lx\n", control_id);
             return 1;
         }
-        SendMessage(control, BM_CLICK, 0, 0);
+        if (!PostMessage(control, BM_CLICK, 0, 0)) {
+            fprintf(stderr, "cannot click dialog control: 0x%04lx\n", control_id);
+            return 1;
+        }
         return 0;
     }
     if (set_text) {
@@ -553,6 +608,122 @@ int main(int argc, char **argv) {
             return 1;
         }
         SendMessage(control, WM_SETTEXT, 0, (LPARAM)(separator + 1));
+        return 0;
+    }
+    if (clipboard_bmp) {
+        if (argc != 4) {
+            fprintf(stderr, "clipboard-bmp requires a Windows BMP path\n");
+            return 2;
+        }
+        FILE *input = fopen(argv[3], "rb");
+        if (input == NULL) {
+            fprintf(stderr, "cannot open BMP: %s\n", argv[3]);
+            return 1;
+        }
+        BITMAPFILEHEADER header;
+        if (
+            fread(&header, sizeof(header), 1, input) != 1 ||
+            header.bfType != 0x4d42 ||
+            header.bfSize < sizeof(header) ||
+            header.bfOffBits < sizeof(header) ||
+            header.bfOffBits > header.bfSize
+        ) {
+            fclose(input);
+            fprintf(stderr, "invalid BMP file header\n");
+            return 1;
+        }
+        SIZE_T dib_size = (SIZE_T)header.bfSize - sizeof(header);
+        HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, dib_size);
+        void *dib = memory == NULL ? NULL : GlobalLock(memory);
+        BOOL loaded = dib != NULL && fread(dib, 1, dib_size, input) == dib_size;
+        if (loaded) {
+            DWORD info_size = 0;
+            if (dib_size < sizeof(info_size)) {
+                loaded = FALSE;
+            } else {
+                memcpy(&info_size, dib, sizeof(info_size));
+                loaded = info_size >= sizeof(info_size) && info_size <= dib_size;
+            }
+        }
+        if (loaded && dib_size >= sizeof(BITMAPINFOHEADER)) {
+            BITMAPINFOHEADER *info = (BITMAPINFOHEADER *)dib;
+            SIZE_T pixel_offset = (SIZE_T)header.bfOffBits - sizeof(header);
+            if (
+                info->biSize >= sizeof(*info) &&
+                info->biSize <= dib_size &&
+                info->biHeight != LONG_MIN &&
+                info->biHeight < 0 &&
+                info->biWidth > 0 &&
+                (SIZE_T)info->biWidth <= SIZE_MAX / 4 &&
+                info->biBitCount == 32 &&
+                pixel_offset >= info->biSize &&
+                pixel_offset <= dib_size
+            ) {
+                SIZE_T rows = (SIZE_T)(-info->biHeight);
+                SIZE_T row_size = (SIZE_T)info->biWidth * 4;
+                if (row_size != 0 && rows <= (dib_size - pixel_offset) / row_size) {
+                    unsigned char *pixels = (unsigned char *)dib + pixel_offset;
+                    unsigned char *row = malloc(row_size);
+                    if (row == NULL) {
+                        loaded = FALSE;
+                    } else {
+                        for (SIZE_T top = 0; top < rows / 2; top++) {
+                            unsigned char *upper = pixels + top * row_size;
+                            unsigned char *lower = pixels + (rows - 1 - top) * row_size;
+                            memcpy(row, upper, row_size);
+                            memcpy(upper, lower, row_size);
+                            memcpy(lower, row, row_size);
+                        }
+                        free(row);
+                        info->biHeight = -info->biHeight;
+                    }
+                }
+            }
+        }
+        if (dib != NULL) {
+            GlobalUnlock(memory);
+        }
+        fclose(input);
+        if (!loaded) {
+            if (memory != NULL) {
+                GlobalFree(memory);
+            }
+            fprintf(stderr, "cannot load BMP DIB payload\n");
+            return 1;
+        }
+        HBITMAP bitmap = (HBITMAP)LoadImageA(
+            NULL,
+            argv[3],
+            IMAGE_BITMAP,
+            0,
+            0,
+            LR_LOADFROMFILE | LR_CREATEDIBSECTION
+        );
+        if (bitmap == NULL) {
+            GlobalFree(memory);
+            fprintf(stderr, "cannot create Windows bitmap from BMP\n");
+            return 1;
+        }
+        if (!OpenClipboard(search.window)) {
+            GlobalFree(memory);
+            DeleteObject(bitmap);
+            fprintf(stderr, "cannot open Windows clipboard\n");
+            return 1;
+        }
+        BOOL emptied = EmptyClipboard();
+        BOOL dib_published = emptied && SetClipboardData(CF_DIB, memory) != NULL;
+        BOOL bitmap_published = emptied && SetClipboardData(CF_BITMAP, bitmap) != NULL;
+        CloseClipboard();
+        if (!dib_published) {
+            GlobalFree(memory);
+        }
+        if (!bitmap_published) {
+            DeleteObject(bitmap);
+        }
+        if (!dib_published || !bitmap_published) {
+            fprintf(stderr, "cannot publish BMP to Windows clipboard\n");
+            return 1;
+        }
         return 0;
     }
     if (save) {

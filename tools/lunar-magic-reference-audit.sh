@@ -42,7 +42,7 @@ command -v sips >/dev/null 2>&1 || {
 
 mkdir -p "$output_dir/bin" "$images_dir"
 "$compiler" -std=c11 -O2 -Wall -Wextra -Werror \
-    "$workspace/tools/wine-window-command.c" -lcomctl32 -o "$window_helper"
+    "$workspace/tools/wine-window-command.c" -lcomctl32 -lgdi32 -o "$window_helper"
 "$compiler" -std=c11 -O2 -Wall -Wextra -Werror \
     "$workspace/tools/wine-level-dib-capture.c" -o "$capture_helper"
 
