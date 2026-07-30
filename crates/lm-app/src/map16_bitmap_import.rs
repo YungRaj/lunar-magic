@@ -2,7 +2,8 @@
 
 use lm_graphics::{
     BitmapImportError, GraphicsFile4bpp, GraphicsOwnership, IndexedBitmapImport,
-    PaletteImportError, PaletteOwnership, Rgba8, TransparentPaletteRowImport,
+    IndexedBitmapImportOptions, PaletteImportError, PaletteOwnership, Rgba8,
+    TransparentPaletteRowImport,
 };
 use lm_level::{Map16Page, Map16Tile, Subtile};
 use std::{fmt, io::Cursor};
@@ -24,6 +25,13 @@ pub struct Map16BitmapImportRequest<'a> {
     pub graphics: &'a GraphicsFile4bpp,
     pub graphics_ownership: &'a GraphicsOwnership,
     pub occupied: &'a [bool],
+}
+
+/// Conversion choices that affect the staged graphics and Map16 result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
+pub struct Map16BitmapImportOptions {
+    pub graphics: IndexedBitmapImportOptions,
+    pub layer_priority: bool,
 }
 
 /// All four semantic products of a Map16 bitmap conversion.
@@ -50,6 +58,26 @@ impl Map16BitmapImportPlan {
     /// Rejects wrong pixel counts, unavailable palette rows, protected palette/graphics slots,
     /// invalid ownership maps, exhausted 10-bit graphics space, or malformed Map16 output.
     pub fn prepare(request: Map16BitmapImportRequest<'_>) -> Result<Self, Map16BitmapImportError> {
+        let options = Map16BitmapImportOptions {
+            graphics: IndexedBitmapImportOptions {
+                allocation_end: request.graphics.tiles.len().min(0x400),
+                ..IndexedBitmapImportOptions::default()
+            },
+            ..Map16BitmapImportOptions::default()
+        };
+        Self::prepare_with_options(request, options)
+    }
+
+    /// Quantizes and materializes one page using explicit optimization, allocation, and priority
+    /// choices shared by native and headless workflows.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same validation and staging errors as [`Self::prepare`].
+    pub fn prepare_with_options(
+        request: Map16BitmapImportRequest<'_>,
+        options: Map16BitmapImportOptions,
+    ) -> Result<Self, Map16BitmapImportError> {
         if request.pixels.len() != MAP16_BITMAP_PIXELS {
             return Err(Map16BitmapImportError::WrongPixelCount {
                 expected: MAP16_BITMAP_PIXELS,
@@ -66,16 +94,22 @@ impl Map16BitmapImportPlan {
             request.palette_ownership,
         )
         .map_err(Map16BitmapImportError::Palette)?;
-        let materialized = IndexedBitmapImport::materialize(
+        let materialized = IndexedBitmapImport::materialize_with_options(
             MAP16_BITMAP_WIDTH,
             MAP16_BITMAP_HEIGHT,
             &palette.indices,
             request.graphics,
             request.graphics_ownership,
             request.occupied,
+            options.graphics,
         )
         .map_err(Map16BitmapImportError::Graphics)?;
-        let page = build_page(&materialized, request.palette_row, request.acts_like)?;
+        let page = build_page(
+            &materialized,
+            request.palette_row,
+            request.acts_like,
+            options.layer_priority,
+        )?;
         let newly_occupied_tiles = materialized
             .occupied
             .iter()
@@ -223,6 +257,7 @@ fn build_page(
     imported: &IndexedBitmapImport,
     palette_row: u8,
     acts_like: u16,
+    layer_priority: bool,
 ) -> Result<Map16Page, Map16BitmapImportError> {
     if imported.width_in_tiles != 32 || imported.height_in_tiles != 32 {
         return Err(Map16BitmapImportError::WrongMaterializedShape {
@@ -235,15 +270,21 @@ fn build_page(
         for tile_x in 0..16 {
             let top_left = tile_y * 2 * SUBTILE_PLANE_WIDTH + tile_x * 2;
             tiles.push(Map16Tile {
-                top_left: descriptor(imported.placements[top_left], palette_row),
-                top_right: descriptor(imported.placements[top_left + 1], palette_row),
+                top_left: descriptor(imported.placements[top_left], palette_row, layer_priority),
+                top_right: descriptor(
+                    imported.placements[top_left + 1],
+                    palette_row,
+                    layer_priority,
+                ),
                 bottom_left: descriptor(
                     imported.placements[top_left + SUBTILE_PLANE_WIDTH],
                     palette_row,
+                    layer_priority,
                 ),
                 bottom_right: descriptor(
                     imported.placements[top_left + SUBTILE_PLANE_WIDTH + 1],
                     palette_row,
+                    layer_priority,
                 ),
                 acts_like,
             });
@@ -252,8 +293,15 @@ fn build_page(
     Map16Page::new(tiles).map_err(|tiles| Map16BitmapImportError::Map16TileCount(tiles.len()))
 }
 
-fn descriptor(placement: lm_graphics::ImportedTilePlacement, palette_row: u8) -> Subtile {
+fn descriptor(
+    placement: lm_graphics::ImportedTilePlacement,
+    palette_row: u8,
+    layer_priority: bool,
+) -> Subtile {
     let mut word = placement.tile | (u16::from(palette_row) << 10);
+    if layer_priority {
+        word |= 0x2000;
+    }
     if placement.x_flip {
         word |= 0x4000;
     }
@@ -363,5 +411,49 @@ mod tests {
         assert_eq!(palette, original_palette);
         assert_eq!(graphics, original_graphics);
         assert_eq!(occupied, original_occupied);
+    }
+
+    #[test]
+    fn explicit_priority_and_allocation_options_change_the_preview_plan() {
+        let pixels = vec![
+            Rgba8 {
+                red: 255,
+                green: 0,
+                blue: 0,
+                alpha: 255,
+            };
+            MAP16_BITMAP_PIXELS
+        ];
+        let palette = Palette {
+            colors: vec![Bgr555(0); 128],
+        };
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([0; 64]); 0x300],
+        };
+        let occupied = vec![false; 0x300];
+        let plan = Map16BitmapImportPlan::prepare_with_options(
+            Map16BitmapImportRequest {
+                pixels: &pixels,
+                palette_row: 2,
+                acts_like: 0,
+                palette: &palette,
+                palette_ownership: &PaletteOwnership::editable(128),
+                graphics: &graphics,
+                graphics_ownership: &GraphicsOwnership::editable(0x300),
+                occupied: &occupied,
+            },
+            Map16BitmapImportOptions {
+                graphics: IndexedBitmapImportOptions {
+                    allocation_start: 0x200,
+                    allocation_end: 0x300,
+                    ..IndexedBitmapImportOptions::default()
+                },
+                layer_priority: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(plan.page.tiles[0].top_left.0 & 0x23ff, 0x2200);
+        assert!(plan.occupied[0x200]);
+        assert!(!plan.occupied[..0x200].iter().any(|occupied| *occupied));
     }
 }

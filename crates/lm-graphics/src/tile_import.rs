@@ -4,6 +4,33 @@ use std::fmt;
 const MAX_DIMENSION: usize = 4096;
 const SNES_TILE_LIMIT: usize = 0x400;
 
+/// Tile-allocation and deduplication behavior for one indexed bitmap import.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndexedBitmapImportOptions {
+    /// First tile number eligible for new materialization.
+    pub allocation_start: usize,
+    /// Exclusive tile-number allocation bound.
+    pub allocation_end: usize,
+    /// Reuse matching tiles that were occupied before this import.
+    pub reuse_existing_tiles: bool,
+    /// Reuse a matching tile already created earlier in this import.
+    pub optimize_new_tiles: bool,
+    /// Permit horizontal/vertical flipped matches instead of exact matches only.
+    pub allow_flipped_matches: bool,
+}
+
+impl Default for IndexedBitmapImportOptions {
+    fn default() -> Self {
+        Self {
+            allocation_start: 0,
+            allocation_end: SNES_TILE_LIMIT,
+            reuse_existing_tiles: true,
+            optimize_new_tiles: true,
+            allow_flipped_matches: true,
+        }
+    }
+}
+
 /// One row-major 8×8 bitmap placement after exact/flip-aware tile materialization.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ImportedTilePlacement {
@@ -42,6 +69,30 @@ impl IndexedBitmapImport {
         ownership: &GraphicsOwnership,
         occupied: &[bool],
     ) -> Result<Self, BitmapImportError> {
+        let options = IndexedBitmapImportOptions {
+            allocation_end: graphics.tiles.len().min(SNES_TILE_LIMIT),
+            ..IndexedBitmapImportOptions::default()
+        };
+        Self::materialize_with_options(
+            width, height, pixels, graphics, ownership, occupied, options,
+        )
+    }
+
+    /// Extracts an indexed bitmap with explicit Lunar Magic-compatible optimization bounds.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same validation errors as [`Self::materialize`] and additionally rejects an
+    /// inverted or out-of-workspace allocation range.
+    pub fn materialize_with_options(
+        width: usize,
+        height: usize,
+        pixels: &[u8],
+        graphics: &GraphicsFile4bpp,
+        ownership: &GraphicsOwnership,
+        occupied: &[bool],
+        options: IndexedBitmapImportOptions,
+    ) -> Result<Self, BitmapImportError> {
         if width == 0
             || height == 0
             || width > MAX_DIMENSION
@@ -67,6 +118,16 @@ impl IndexedBitmapImport {
                 occupied: occupied.len(),
             });
         }
+        let allocation_limit = graphics.tiles.len().min(SNES_TILE_LIMIT);
+        if options.allocation_start > options.allocation_end
+            || options.allocation_end > allocation_limit
+        {
+            return Err(BitmapImportError::InvalidAllocationRange {
+                start: options.allocation_start,
+                end: options.allocation_end,
+                limit: allocation_limit,
+            });
+        }
         if let Some((index, value)) = pixels
             .iter()
             .copied()
@@ -87,13 +148,24 @@ impl IndexedBitmapImport {
         for tile_y in 0..height_in_tiles {
             for tile_x in 0..width_in_tiles {
                 let tile = extract_tile(width, pixels, tile_x, tile_y);
-                let equivalent =
-                    find_occupied_equivalent(&staged_graphics, &staged_occupied, &tile);
+                let equivalent = find_reusable_equivalent(
+                    &staged_graphics,
+                    occupied,
+                    &staged_occupied,
+                    &tile,
+                    options,
+                );
                 let equivalent = if let Some(equivalent) = equivalent {
                     equivalent
                 } else {
-                    let index =
-                        allocate_tile(&mut staged_graphics, ownership, &mut staged_occupied, tile)?;
+                    let index = allocate_tile(
+                        &mut staged_graphics,
+                        ownership,
+                        &mut staged_occupied,
+                        tile,
+                        options.allocation_start,
+                        options.allocation_end,
+                    )?;
                     EquivalentTile {
                         index,
                         x_flip: false,
@@ -129,10 +201,12 @@ fn extract_tile(width: usize, pixels: &[u8], tile_x: usize, tile_y: usize) -> In
     IndexedTile::new(tile)
 }
 
-fn find_occupied_equivalent(
+fn find_reusable_equivalent(
     graphics: &GraphicsFile4bpp,
-    occupied: &[bool],
+    initially_occupied: &[bool],
+    staged_occupied: &[bool],
     tile: &IndexedTile,
+    options: IndexedBitmapImportOptions,
 ) -> Option<EquivalentTile> {
     let variants = [
         (false, false, tile.clone()),
@@ -143,20 +217,26 @@ fn find_occupied_equivalent(
     graphics
         .tiles
         .iter()
-        .zip(occupied)
+        .zip(initially_occupied.iter().zip(staged_occupied))
         .take(SNES_TILE_LIMIT)
         .enumerate()
-        .find_map(|(index, (existing, occupied))| {
-            occupied.then(|| {
-                variants.iter().find_map(|(x_flip, y_flip, candidate)| {
-                    (existing == candidate).then_some(EquivalentTile {
-                        index,
-                        x_flip: *x_flip,
-                        y_flip: *y_flip,
+        .find_map(
+            |(index, (existing, (initially_occupied, staged_occupied)))| {
+                let reusable = (*initially_occupied && options.reuse_existing_tiles)
+                    || (!*initially_occupied && *staged_occupied && options.optimize_new_tiles);
+                reusable.then(|| {
+                    variants.iter().find_map(|(x_flip, y_flip, candidate)| {
+                        let orientation_allowed =
+                            (!*x_flip && !*y_flip) || options.allow_flipped_matches;
+                        (orientation_allowed && existing == candidate).then_some(EquivalentTile {
+                            index,
+                            x_flip: *x_flip,
+                            y_flip: *y_flip,
+                        })
                     })
-                })
-            })?
-        })
+                })?
+            },
+        )
 }
 
 fn allocate_tile(
@@ -164,10 +244,11 @@ fn allocate_tile(
     ownership: &GraphicsOwnership,
     occupied: &mut [bool],
     tile: IndexedTile,
+    start: usize,
+    end: usize,
 ) -> Result<usize, BitmapImportError> {
-    let limit = graphics.tiles.len().min(SNES_TILE_LIMIT);
     let mut saw_free_protected = false;
-    for (index, slot_occupied) in occupied.iter_mut().enumerate().take(limit) {
+    for (index, slot_occupied) in occupied.iter_mut().enumerate().take(end).skip(start) {
         if *slot_occupied {
             continue;
         }
@@ -204,6 +285,11 @@ pub enum BitmapImportError {
     PixelOutOfRange {
         index: usize,
         value: u8,
+    },
+    InvalidAllocationRange {
+        start: usize,
+        end: usize,
+        limit: usize,
     },
     TileNumberOutOfRange(usize),
     OnlyProtectedSlotsRemain,
@@ -339,5 +425,123 @@ mod tests {
             ),
             Err(BitmapImportError::PixelOutOfRange { index: 63, .. })
         ));
+    }
+
+    #[test]
+    fn allocation_bounds_and_independent_optimization_switches_are_exact() {
+        let repeated = IndexedTile::new([7; 64]);
+        let pixels = side_by_side(&repeated, &repeated);
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![
+                repeated.clone(),
+                IndexedTile::new([0; 64]),
+                IndexedTile::new([0; 64]),
+                IndexedTile::new([0; 64]),
+            ],
+        };
+        let ownership = GraphicsOwnership::editable(4);
+        let occupied = [true, false, false, false];
+
+        let no_reuse = IndexedBitmapImport::materialize_with_options(
+            16,
+            8,
+            &pixels,
+            &graphics,
+            &ownership,
+            &occupied,
+            IndexedBitmapImportOptions {
+                allocation_start: 2,
+                allocation_end: 4,
+                reuse_existing_tiles: false,
+                optimize_new_tiles: false,
+                allow_flipped_matches: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            no_reuse
+                .placements
+                .iter()
+                .map(|placement| placement.tile)
+                .collect::<Vec<_>>(),
+            [2, 3]
+        );
+
+        let new_only = IndexedBitmapImport::materialize_with_options(
+            16,
+            8,
+            &pixels,
+            &graphics,
+            &ownership,
+            &occupied,
+            IndexedBitmapImportOptions {
+                allocation_start: 2,
+                allocation_end: 4,
+                reuse_existing_tiles: false,
+                optimize_new_tiles: true,
+                allow_flipped_matches: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            new_only
+                .placements
+                .iter()
+                .map(|placement| placement.tile)
+                .collect::<Vec<_>>(),
+            [2, 2]
+        );
+
+        let existing = IndexedBitmapImport::materialize_with_options(
+            16,
+            8,
+            &pixels,
+            &graphics,
+            &ownership,
+            &occupied,
+            IndexedBitmapImportOptions {
+                allocation_start: 2,
+                allocation_end: 4,
+                reuse_existing_tiles: true,
+                optimize_new_tiles: false,
+                allow_flipped_matches: false,
+            },
+        )
+        .unwrap();
+        assert!(
+            existing
+                .placements
+                .iter()
+                .all(|placement| placement.tile == 0)
+        );
+    }
+
+    #[test]
+    fn invalid_allocation_ranges_are_rejected_before_materialization() {
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([0; 64]); 3],
+        };
+        let error = IndexedBitmapImport::materialize_with_options(
+            8,
+            8,
+            &[1; 64],
+            &graphics,
+            &GraphicsOwnership::editable(3),
+            &[false; 3],
+            IndexedBitmapImportOptions {
+                allocation_start: 2,
+                allocation_end: 4,
+                ..IndexedBitmapImportOptions::default()
+            },
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            BitmapImportError::InvalidAllocationRange {
+                start: 2,
+                end: 4,
+                limit: 3
+            }
+        );
     }
 }

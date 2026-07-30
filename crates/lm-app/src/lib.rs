@@ -37,6 +37,7 @@ mod level_usage_scan;
 mod localization;
 mod lunar_magic_metadata_state;
 mod map16_bitmap_import;
+mod map16_bitmap_import_preview;
 mod map16_controller;
 mod map16_document_controller;
 mod map16_page_document_controller;
@@ -185,9 +186,10 @@ pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};
 pub use map16_bitmap_import::{
     MAP16_BITMAP_HEIGHT, MAP16_BITMAP_MAX_PNG_BYTES, MAP16_BITMAP_PIXELS, MAP16_BITMAP_WIDTH,
-    Map16BitmapImportError, Map16BitmapImportPlan, Map16BitmapImportRequest, Map16PngDecodeError,
-    decode_map16_bitmap_png,
+    Map16BitmapImportError, Map16BitmapImportOptions, Map16BitmapImportPlan,
+    Map16BitmapImportRequest, Map16PngDecodeError, decode_map16_bitmap_png,
 };
+pub use map16_bitmap_import_preview::{Map16BitmapImportInputs, Map16BitmapImportPreviewState};
 pub use map16_controller::{Map16Controller, Map16ControllerEdit, Map16ControllerError};
 pub use map16_document_controller::{
     Map16DocumentController, Map16DocumentControllerError, Map16DocumentEdit,
@@ -222,7 +224,7 @@ pub use native_map16_bitmap_workspace::{
     NATIVE_MAP16_BITMAP_ALLOCATION_END, NATIVE_MAP16_BITMAP_ALLOCATION_START,
     NATIVE_MAP16_BITMAP_BLANK_TILE, NATIVE_MAP16_BITMAP_SLOT_COUNT, NATIVE_MAP16_BITMAP_TILE_COUNT,
     NATIVE_MAP16_BITMAP_TILES_PER_SLOT, NativeMap16BitmapGraphicsWorkspace,
-    NativeMap16BitmapWorkspaceError,
+    NativeMap16BitmapWorkspaceError, native_map16_bitmap_import_options,
 };
 pub use native_map16_sidecar_controller::{
     NativeMap16SidecarController, NativeMap16SidecarControllerError, NativeMap16SidecarDocument,

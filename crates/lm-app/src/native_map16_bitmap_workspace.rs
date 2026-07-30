@@ -3,6 +3,8 @@
 use lm_graphics::{GraphicsFile4bpp, GraphicsOwnership, GraphicsTileOwner, IndexedTile};
 use std::fmt;
 
+use crate::Map16BitmapImportOptions;
+
 /// Lunar Magic materializes six consecutive FG/BG slots for bitmap conversion.
 pub const NATIVE_MAP16_BITMAP_SLOT_COUNT: usize = 6;
 /// Each decoded 4bpp FG/BG slot contains `$1000` bytes, or `$80` 8×8 tiles.
@@ -16,6 +18,24 @@ pub const NATIVE_MAP16_BITMAP_ALLOCATION_START: usize = 0x200;
 pub const NATIVE_MAP16_BITMAP_ALLOCATION_END: usize = 0x300;
 /// Default tile used when an imported 8×8 region is blank.
 pub const NATIVE_MAP16_BITMAP_BLANK_TILE: usize = 0x0f8;
+
+/// Returns the recovered default native tile-conversion choices.
+///
+/// Lunar Magic starts at `$200`, scans through `$2ff`, reuses existing and newly generated tiles,
+/// accepts flip-equivalent matches, and leaves layer priority disabled by default.
+#[must_use]
+pub fn native_map16_bitmap_import_options() -> Map16BitmapImportOptions {
+    Map16BitmapImportOptions {
+        graphics: lm_graphics::IndexedBitmapImportOptions {
+            allocation_start: NATIVE_MAP16_BITMAP_ALLOCATION_START,
+            allocation_end: NATIVE_MAP16_BITMAP_ALLOCATION_END,
+            reuse_existing_tiles: true,
+            optimize_new_tiles: true,
+            allow_flipped_matches: true,
+        },
+        layer_priority: false,
+    }
+}
 
 /// One native FG/BG graphics workspace assembled in VRAM tile-number order.
 ///
@@ -247,13 +267,14 @@ mod tests {
             ],
         )
         .unwrap();
-        let imported = IndexedBitmapImport::materialize(
+        let imported = IndexedBitmapImport::materialize_with_options(
             8,
             8,
             &[7; IndexedTile::PIXEL_COUNT],
             &workspace.graphics,
             &workspace.ownership,
             &workspace.occupied,
+            native_map16_bitmap_import_options().graphics,
         )
         .unwrap();
         assert_eq!(usize::from(imported.placements[0].tile), 0x200);
