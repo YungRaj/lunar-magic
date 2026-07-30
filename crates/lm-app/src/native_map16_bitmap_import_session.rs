@@ -77,6 +77,7 @@ impl NativeMap16BitmapImportSession {
         let palette = project
             .load_palette(request.level, palette_layout)
             .map_err(|error| NativeMap16BitmapImportSessionError::Palette(error.to_string()))?;
+        let palette = bitmap_working_palette(palette);
         let palette_ownership = PaletteOwnership::editable(palette.colors.len());
         let preview = Map16BitmapImportPreviewState::new(
             Map16BitmapImportInputs {
@@ -179,12 +180,13 @@ impl NativeMap16BitmapImportSession {
                 options: &graphics_options,
             })
             .collect::<Vec<_>>();
+        let native_palette = native_installed_palette(self.preview.plan().palette.clone());
         let save = Map16BitmapRomSave {
             description: "Import bitmap as Map16",
             graphics: &graphics_saves,
             palette: Map16BitmapPaletteSave {
                 palette_number: self.level,
-                palette: &self.preview.plan().palette,
+                palette: &native_palette,
                 layout: palette_layout,
                 options: &palette_options,
             },
@@ -223,3 +225,46 @@ impl fmt::Display for NativeMap16BitmapImportSessionError {
 }
 
 impl std::error::Error for NativeMap16BitmapImportSessionError {}
+
+fn bitmap_working_palette(mut native: lm_graphics::Palette) -> lm_graphics::Palette {
+    if native.colors.len() == lm_profile::SMW_US_V1_CUSTOM_PALETTE_COLORS {
+        native.colors.rotate_left(1);
+    }
+    native
+}
+
+fn native_installed_palette(mut working: lm_graphics::Palette) -> lm_graphics::Palette {
+    if working.colors.len() == lm_profile::SMW_US_V1_CUSTOM_PALETTE_COLORS {
+        working.colors.rotate_right(1);
+    }
+    working
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_graphics::{Bgr555, Palette};
+
+    #[test]
+    fn installed_palette_rotation_matches_lunar_magic_working_buffer_order() {
+        let native = Palette {
+            colors: (0..lm_profile::SMW_US_V1_CUSTOM_PALETTE_COLORS)
+                .map(|value| Bgr555(u16::try_from(value).unwrap()))
+                .collect(),
+        };
+        let working = bitmap_working_palette(native.clone());
+        assert_eq!(working.colors[0], Bgr555(1));
+        assert_eq!(working.colors[255], Bgr555(256));
+        assert_eq!(working.colors[256], Bgr555(0));
+        assert_eq!(native_installed_palette(working), native);
+    }
+
+    #[test]
+    fn ordinary_256_color_working_palettes_are_not_rotated() {
+        let palette = Palette {
+            colors: (0_u16..256).map(Bgr555).collect(),
+        };
+        assert_eq!(bitmap_working_palette(palette.clone()), palette);
+        assert_eq!(native_installed_palette(palette.clone()), palette);
+    }
+}
