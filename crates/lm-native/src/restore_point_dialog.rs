@@ -2,7 +2,9 @@ use chrono::{Datelike as _, Timelike as _};
 use eframe::egui;
 use lm_project::{
     LUNAR_RESTORE_ASSOCIATED_EXTENSIONS, LUNAR_RESTORE_ASSOCIATED_FILE_COUNT, LunarRestoreArchive,
-    LunarRestoreArchiveCreateRequest, PackedRestoreDate, PackedRestoreTime,
+    LunarRestoreArchiveCreateRequest, LunarRestoreAutomaticDecision,
+    LunarRestoreAutomaticFullReason, LunarRestoreAutomaticPolicy, PackedRestoreDate,
+    PackedRestoreTime,
 };
 use std::{
     fs,
@@ -15,6 +17,23 @@ const MAX_ARCHIVE_LEN: u64 = 256 * 1024 * 1024;
 struct CapturedAssociatedFiles {
     files: [Option<Vec<u8>>; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
     timestamps: [u64; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum RestoreAppendMode {
+    Delta,
+    Full,
+    Automatic,
+}
+
+fn automatic_description(reason: LunarRestoreAutomaticFullReason) -> &'static str {
+    match reason {
+        LunarRestoreAutomaticFullReason::ContinuityBreak => {
+            "Automatic Full Restore Point (continuity break)."
+        }
+        LunarRestoreAutomaticFullReason::Interval => "Automatic Full Restore Point (interval).",
+        LunarRestoreAutomaticFullReason::Daily => "Automatic Full Restore Point (daily).",
+    }
 }
 
 fn windows_file_timestamp(path: &Path) -> Option<u64> {
@@ -78,6 +97,108 @@ fn build_full_archive(
     Ok(bytes)
 }
 
+fn local_restore_date_time() -> Result<(PackedRestoreDate, PackedRestoreTime), String> {
+    let now = chrono::Local::now();
+    Ok((
+        PackedRestoreDate {
+            year: u16::try_from(now.year()).map_err(|_| "local year is out of range")?,
+            month: u8::try_from(now.month()).unwrap(),
+            day: u8::try_from(now.day()).unwrap(),
+        },
+        PackedRestoreTime {
+            day_of_week: u8::try_from(now.weekday().num_days_from_sunday()).unwrap(),
+            hour: u8::try_from(now.hour()).unwrap(),
+            minute: u8::try_from(now.minute()).unwrap(),
+            second: u8::try_from(now.second()).unwrap(),
+        },
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_appended_archive(
+    archive: &LunarRestoreArchive,
+    original: &[u8],
+    current: &[u8],
+    observed: &[u8],
+    document_path: &Path,
+    mode: RestoreAppendMode,
+    created: PackedRestoreDate,
+    created_time: PackedRestoreTime,
+) -> Result<Vec<u8>, String> {
+    let record_id = archive.header.latest_record_id;
+    let base = archive
+        .restore_through(record_id, original)
+        .map_err(|error| error.to_string())?;
+    let observed_timestamp = windows_file_timestamp(document_path).unwrap_or(0);
+    let automatic = archive.automatic_decision(
+        LunarRestoreAutomaticPolicy::default(),
+        observed_timestamp,
+        observed,
+        created,
+    );
+    let selected_mode = match mode {
+        RestoreAppendMode::Automatic => match automatic {
+            LunarRestoreAutomaticDecision::Delta => RestoreAppendMode::Delta,
+            LunarRestoreAutomaticDecision::Full(_) => RestoreAppendMode::Full,
+        },
+        explicit => explicit,
+    };
+    let description = match (mode, automatic) {
+        (RestoreAppendMode::Automatic, LunarRestoreAutomaticDecision::Delta) => {
+            "Automatic Delta Restore Point."
+        }
+        (RestoreAppendMode::Automatic, LunarRestoreAutomaticDecision::Full(reason)) => {
+            automatic_description(reason)
+        }
+        (_, _) if matches!(selected_mode, RestoreAppendMode::Delta) => {
+            "Manual Delta Restore Point."
+        }
+        _ => "Manual Full Restore Point.",
+    };
+    let mut associated = capture_associated_files(Some(document_path))?;
+    if matches!(selected_mode, RestoreAppendMode::Delta) {
+        let previous = archive
+            .restore_associated_files_through(record_id)
+            .map_err(|error| error.to_string())?;
+        for (slot, extension) in LUNAR_RESTORE_ASSOCIATED_EXTENSIONS.iter().enumerate() {
+            let previous = previous
+                .iter()
+                .find(|file| file.extension == *extension)
+                .map(|file| file.bytes.as_slice());
+            match (associated.files[slot].as_deref(), previous) {
+                (Some(current), Some(previous)) if current == previous => {
+                    associated.files[slot] = None;
+                }
+                (None, Some(_)) => associated.files[slot] = Some(Vec::new()),
+                _ => {}
+            }
+        }
+    }
+    let request_base = if matches!(selected_mode, RestoreAppendMode::Full) {
+        original
+    } else {
+        &base
+    };
+    let mut request = LunarRestoreArchiveCreateRequest::new(
+        request_base,
+        current,
+        description,
+        created,
+        created_time,
+    );
+    request.last_rom_timestamp = observed_timestamp;
+    request.associated_files = std::array::from_fn(|slot| associated.files[slot].as_deref());
+    request.associated_file_timestamps = associated.timestamps;
+    let bytes = if matches!(selected_mode, RestoreAppendMode::Full) {
+        archive.append_full(&request)
+    } else {
+        archive.append_delta(&request)
+    }
+    .map_err(|error| error.to_string())?;
+    LunarRestoreArchive::decode(&bytes).map_err(|error| error.to_string())?;
+    Ok(bytes)
+}
+
 pub(crate) fn create_full_for_open_project(app: &lm_app::AppState) -> Result<bool, String> {
     let project = app
         .project()
@@ -95,24 +216,65 @@ pub(crate) fn create_full_for_open_project(app: &lm_app::AppState) -> Result<boo
     )
     .map_err(|error| error.to_string())?;
     let current = project.save_snapshot();
-    let now = chrono::Local::now();
+    let (created, created_time) = local_restore_date_time()?;
     let bytes = build_full_archive(
         &original,
         &current,
         app.document_path.as_deref(),
-        PackedRestoreDate {
-            year: u16::try_from(now.year()).map_err(|_| "local year is out of range")?,
-            month: u8::try_from(now.month()).unwrap(),
-            day: u8::try_from(now.day()).unwrap(),
-        },
-        PackedRestoreTime {
-            day_of_week: u8::try_from(now.weekday().num_days_from_sunday()).unwrap(),
-            hour: u8::try_from(now.hour()).unwrap(),
-            minute: u8::try_from(now.minute()).unwrap(),
-            second: u8::try_from(now.second()).unwrap(),
-        },
+        created,
+        created_time,
     )?;
     lm_app::file_persistence::write_new(&archive_path, &bytes)
+        .map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+pub(crate) fn append_for_open_project(
+    app: &lm_app::AppState,
+    mode: RestoreAppendMode,
+) -> Result<bool, String> {
+    let project = app
+        .project()
+        .ok_or_else(|| "open a ROM before appending a restore point".to_owned())?;
+    let document_path = app
+        .document_path
+        .as_deref()
+        .ok_or_else(|| "save the open ROM before appending a restore point".to_owned())?;
+    let Some(original_path) = crate::dialogs::choose_restore_original_rom() else {
+        return Ok(false);
+    };
+    let Some(archive_path) = crate::dialogs::choose_restore_archive() else {
+        return Ok(false);
+    };
+    let original = crate::dialogs::read_regular_bounded(
+        &original_path,
+        crate::dialogs::MAX_ROM_FILE_LEN,
+        "original restore ROM",
+    )
+    .map_err(|error| error.to_string())?;
+    let archive_bytes =
+        crate::dialogs::read_regular_bounded(&archive_path, MAX_ARCHIVE_LEN, "restore archive")
+            .map_err(|error| error.to_string())?;
+    let archive = LunarRestoreArchive::decode(&archive_bytes).map_err(|error| error.to_string())?;
+    let current = project.save_snapshot();
+    let observed = crate::dialogs::read_regular_bounded(
+        document_path,
+        crate::dialogs::MAX_ROM_FILE_LEN,
+        "open ROM",
+    )
+    .map_err(|error| error.to_string())?;
+    let (created, created_time) = local_restore_date_time()?;
+    let bytes = build_appended_archive(
+        &archive,
+        &original,
+        &current,
+        &observed,
+        document_path,
+        mode,
+        created,
+        created_time,
+    )?;
+    lm_app::file_persistence::replace_existing(&archive_path, &bytes)
         .map_err(|error| error.to_string())?;
     Ok(true)
 }
@@ -617,6 +779,59 @@ mod tests {
         assert_eq!(restored[0].bytes, b"level names");
         assert_eq!(restored[1].extension, "s16ov");
         assert_eq!(restored[1].bytes, b"sprite override");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn delta_append_stores_only_changed_sidecar_slots_and_round_trips() {
+        let directory = test_directory();
+        fs::create_dir(&directory).unwrap();
+        let rom_path = directory.join("game.smc");
+        let original = rom();
+        let mut first = original.clone();
+        first[0x1234] = 0x5a;
+        fs::write(&rom_path, &first).unwrap();
+        fs::write(rom_path.with_extension("msc"), b"unchanged").unwrap();
+        fs::write(rom_path.with_extension("s16ov"), b"first override").unwrap();
+        let date = PackedRestoreDate {
+            year: 2026,
+            month: 7,
+            day: 30,
+        };
+        let time = PackedRestoreTime {
+            day_of_week: 4,
+            hour: 12,
+            minute: 34,
+            second: 56,
+        };
+        let initial = LunarRestoreArchive::decode(
+            &build_full_archive(&original, &first, Some(&rom_path), date, time).unwrap(),
+        )
+        .unwrap();
+
+        let mut second = first.clone();
+        second[0x2345] = 0xa5;
+        fs::write(&rom_path, &second).unwrap();
+        fs::write(rom_path.with_extension("s16ov"), b"second override").unwrap();
+        let bytes = build_appended_archive(
+            &initial,
+            &original,
+            &second,
+            &first,
+            &rom_path,
+            RestoreAppendMode::Delta,
+            date,
+            time,
+        )
+        .unwrap();
+        let appended = LunarRestoreArchive::decode(&bytes).unwrap();
+        assert_eq!(appended.records.len(), 2);
+        assert_eq!(appended.records[1].associated_files[0].relative_offset, 0);
+        assert_ne!(appended.records[1].associated_files[8].relative_offset, 0);
+        assert_eq!(appended.restore_through(2, &original).unwrap(), second);
+        let restored = appended.restore_associated_files_through(2).unwrap();
+        assert_eq!(restored[0].bytes, b"unchanged");
+        assert_eq!(restored[1].bytes, b"second override");
         fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -139,14 +139,30 @@ impl NativeApplication {
     }
 
     fn create_restore_point_menu_item(&mut self, ui: &mut egui::Ui, enabled: bool) {
-        if ui
-            .add_enabled(enabled, egui::Button::new("Create Full Restore Point…"))
-            .clicked()
-        {
-            ui.close_menu();
-            if let Err(error) = crate::restore_point_dialog::create_full_for_open_project(&self.app)
-            {
-                self.effects.error = Some(error);
+        use crate::restore_point_dialog::RestoreAppendMode;
+
+        let actions = [
+            ("Create Full Restore Point…", None),
+            (
+                "Append Delta Restore Point…",
+                Some(RestoreAppendMode::Delta),
+            ),
+            ("Append Full Restore Point…", Some(RestoreAppendMode::Full)),
+            (
+                "Append Automatic Restore Point…",
+                Some(RestoreAppendMode::Automatic),
+            ),
+        ];
+        for (label, mode) in actions {
+            if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+                ui.close_menu();
+                let result = mode.map_or_else(
+                    || crate::restore_point_dialog::create_full_for_open_project(&self.app),
+                    |mode| crate::restore_point_dialog::append_for_open_project(&self.app, mode),
+                );
+                if let Err(error) = result {
+                    self.effects.error = Some(error);
+                }
             }
         }
     }
