@@ -5,11 +5,13 @@ use lm_graphics::{
     PaletteImportError, PaletteOwnership, Rgba8, TransparentPaletteRowImport,
 };
 use lm_level::{Map16Page, Map16Tile, Subtile};
-use std::fmt;
+use std::{fmt, io::Cursor};
 
 pub const MAP16_BITMAP_WIDTH: usize = 256;
 pub const MAP16_BITMAP_HEIGHT: usize = 256;
 pub const MAP16_BITMAP_PIXELS: usize = MAP16_BITMAP_WIDTH * MAP16_BITMAP_HEIGHT;
+pub const MAP16_BITMAP_MAX_PNG_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PNG_DECODE_BYTES: usize = 4 * 1024 * 1024;
 const SUBTILE_PLANE_WIDTH: usize = MAP16_BITMAP_WIDTH / 8;
 
 #[derive(Clone, Copy)]
@@ -30,6 +32,7 @@ pub struct Map16BitmapImportRequest<'a> {
 /// quantization, tile allocation, or Map16 construction is repeated after user approval.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Map16BitmapImportPlan {
+    pub source_pixels: Vec<Rgba8>,
     pub palette: lm_graphics::Palette,
     pub graphics: GraphicsFile4bpp,
     pub occupied: Vec<bool>,
@@ -80,6 +83,7 @@ impl Map16BitmapImportPlan {
             .filter(|(after, before)| **after && !**before)
             .count();
         Ok(Self {
+            source_pixels: request.pixels.to_vec(),
             palette: palette.palette,
             graphics: materialized.graphics,
             occupied: materialized.occupied,
@@ -89,7 +93,131 @@ impl Map16BitmapImportPlan {
             newly_occupied_tiles,
         })
     }
+
+    /// Materializes the exact converted preview through the staged SNES palette.
+    #[must_use]
+    pub fn converted_pixels(&self, palette_row: u8) -> Vec<Rgba8> {
+        let row_start = usize::from(palette_row) * lm_graphics::Palette::COLORS_PER_ROW;
+        self.indexed_pixels
+            .iter()
+            .zip(&self.source_pixels)
+            .map(|(index, source)| {
+                if source.alpha == 0 {
+                    Rgba8 {
+                        red: 0,
+                        green: 0,
+                        blue: 0,
+                        alpha: 0,
+                    }
+                } else {
+                    let rgb = self
+                        .palette
+                        .colors
+                        .get(row_start + usize::from(*index))
+                        .copied()
+                        .unwrap_or_default()
+                        .to_rgb8();
+                    Rgba8 {
+                        red: rgb.red,
+                        green: rgb.green,
+                        blue: rgb.blue,
+                        alpha: 255,
+                    }
+                }
+            })
+            .collect()
+    }
 }
+
+/// Decodes a bounded complete-page PNG into the importer's canonical RGBA model.
+///
+/// # Errors
+///
+/// Rejects oversized input, malformed PNG data, dimensions other than 256×256, unsupported
+/// post-transform color types, or a decoder output whose pixel count is not canonical.
+pub fn decode_map16_bitmap_png(bytes: &[u8]) -> Result<Vec<Rgba8>, Map16PngDecodeError> {
+    if bytes.len() > MAP16_BITMAP_MAX_PNG_BYTES {
+        return Err(Map16PngDecodeError::InputTooLarge(bytes.len()));
+    }
+    let mut decoder = png::Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    decoder.set_limits(png::Limits {
+        bytes: MAX_PNG_DECODE_BYTES,
+    });
+    let mut reader = decoder
+        .read_info()
+        .map_err(|error| Map16PngDecodeError::Decode(error.to_string()))?;
+    let width = usize::try_from(reader.info().width).unwrap_or(usize::MAX);
+    let height = usize::try_from(reader.info().height).unwrap_or(usize::MAX);
+    if width != MAP16_BITMAP_WIDTH || height != MAP16_BITMAP_HEIGHT {
+        return Err(Map16PngDecodeError::Dimensions { width, height });
+    }
+    let mut output = vec![0; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut output)
+        .map_err(|error| Map16PngDecodeError::Decode(error.to_string()))?;
+    let bytes = &output[..info.buffer_size()];
+    let pixels: Vec<Rgba8> = match info.color_type {
+        png::ColorType::Rgba => bytes
+            .chunks_exact(4)
+            .map(|pixel| Rgba8 {
+                red: pixel[0],
+                green: pixel[1],
+                blue: pixel[2],
+                alpha: pixel[3],
+            })
+            .collect(),
+        png::ColorType::Rgb => bytes
+            .chunks_exact(3)
+            .map(|pixel| Rgba8 {
+                red: pixel[0],
+                green: pixel[1],
+                blue: pixel[2],
+                alpha: 255,
+            })
+            .collect(),
+        png::ColorType::Grayscale => bytes
+            .iter()
+            .map(|value| Rgba8 {
+                red: *value,
+                green: *value,
+                blue: *value,
+                alpha: 255,
+            })
+            .collect(),
+        png::ColorType::GrayscaleAlpha => bytes
+            .chunks_exact(2)
+            .map(|pixel| Rgba8 {
+                red: pixel[0],
+                green: pixel[0],
+                blue: pixel[0],
+                alpha: pixel[1],
+            })
+            .collect(),
+        png::ColorType::Indexed => return Err(Map16PngDecodeError::UnexpandedIndexed),
+    };
+    if pixels.len() != MAP16_BITMAP_PIXELS {
+        return Err(Map16PngDecodeError::PixelCount(pixels.len()));
+    }
+    Ok(pixels)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Map16PngDecodeError {
+    InputTooLarge(usize),
+    Decode(String),
+    Dimensions { width: usize, height: usize },
+    UnexpandedIndexed,
+    PixelCount(usize),
+}
+
+impl fmt::Display for Map16PngDecodeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "Map16 bitmap PNG decoding failed: {self:?}")
+    }
+}
+
+impl std::error::Error for Map16PngDecodeError {}
 
 fn build_page(
     imported: &IndexedBitmapImport,
@@ -194,6 +322,7 @@ mod tests {
         assert!(plan.page.tiles.iter().all(|tile| tile.acts_like == 0x130));
         assert!(plan.indexed_pixels.iter().all(|pixel| *pixel == 1));
         assert_eq!(plan.page.tiles[0].top_left.0 & 0x1c00, 2 << 10);
+        assert_eq!(plan.converted_pixels(2)[0].alpha, 255);
     }
 
     #[test]

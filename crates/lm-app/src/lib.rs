@@ -183,8 +183,9 @@ pub use level_usage_scan::{
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};
 pub use map16_bitmap_import::{
-    MAP16_BITMAP_HEIGHT, MAP16_BITMAP_PIXELS, MAP16_BITMAP_WIDTH, Map16BitmapImportError,
-    Map16BitmapImportPlan, Map16BitmapImportRequest,
+    MAP16_BITMAP_HEIGHT, MAP16_BITMAP_MAX_PNG_BYTES, MAP16_BITMAP_PIXELS, MAP16_BITMAP_WIDTH,
+    Map16BitmapImportError, Map16BitmapImportPlan, Map16BitmapImportRequest, Map16PngDecodeError,
+    decode_map16_bitmap_png,
 };
 pub use map16_controller::{Map16Controller, Map16ControllerEdit, Map16ControllerError};
 pub use map16_document_controller::{
