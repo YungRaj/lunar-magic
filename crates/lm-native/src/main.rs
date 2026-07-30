@@ -26,6 +26,7 @@ mod frontend_ui;
 mod graphics_editor;
 mod graphics_migration_dialog;
 mod graphics_painter;
+mod ips_create_dialog;
 mod ips_patch_dialog;
 mod layer3_editor;
 mod layer3_editor_form;

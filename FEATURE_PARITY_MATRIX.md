@@ -37,7 +37,7 @@ interactive level import workflow, and a CLI transaction does not prove its nati
 | ROM | Detect identity, mapper, copier header, checksum | P | P | P | P | ~ | Partial | Headered pristine fixture is now deterministic; broaden SA-1 and modified-ROM corpus |
 | ROM | Expand ROM and mapper conversion rules | P | P | P | ~ | ~ | Partial | Native expansion dialog passes; recover all original size/ExLoROM/ZSNES compatibility choices |
 | ROM | Add/remove copier header | P | P | P | ~ | P | Partial | Headered/headerless unit and process suite passes; add Wine dialog transition fixture |
-| ROM | Create IPS patch | P | P | - | ~ | P | Partial | Original exposes `CreateIpsPatch`; Rust has codec/CLI but no complete native creation dialog |
+| ROM | Create IPS patch | P | P | P | ~ | P | Partial | Native non-blocking original/modified/output workflow follows Ghidra `CreateIpsPatch` at `0041F0B0`, normalizes copier headers, rejects aliases, and publishes atomically; automate Wine dialogs |
 | ROM | Apply IPS patch | P | P | P | ~ | P | Partial | Native preview/transaction passes; add Wine error and changed-range comparison |
 | ROM | Scan/reclaim owned RATS blocks | P | P | P | N/A | ~ | Partial | Rust safety workflow intentionally requires ownership proof; broaden mapper variants |
 | Level | Navigate all 512 slots and preserve viewport history | P | P | P | P | P | Pass | 512/512 rendering ledger plus application navigation tests |

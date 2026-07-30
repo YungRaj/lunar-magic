@@ -2592,6 +2592,12 @@ prepares one revision-bound transaction at a time from the current ROM snapshot,
 after dispatch acknowledgement, continues after read/decode/save rejection, reports progress, and
 supports button or Escape cancellation. Broader installed-runtime and ROM-revision fixtures remain.
 
+Native IPS creation now mirrors the recovered `CreateIpsPatch` (`0041F0B0`) selection order:
+original ROM, modified ROM, then output patch. A background worker performs bounded regular-file
+reads, compares logical ROM bytes after copier-header normalization, uses the shared deterministic
+normal/RLE IPS encoder, rejects canonical input/output aliases, and atomically creates or replaces
+the selected `.ips` file without freezing the frontend.
+
 The current SMW US revision-0 profile also contains the recovered multi-bank overworld-message
 installation boundary used once more than 96 level-name slots are enabled. It installs the fixed
 version-1.10 renderer, allocates a three-byte pointer for each of the even 194–512 messages, packs

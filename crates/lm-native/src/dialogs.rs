@@ -37,6 +37,21 @@ pub(crate) fn choose_ips_patch() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_ips_source_rom(title: &str) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title(title)
+        .add_filter("SNES ROM", &["smc", "sfc"])
+        .pick_file()
+}
+
+pub(crate) fn choose_ips_output(suggested_name: &str) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Select IPS File to Save As")
+        .add_filter("International Patching System patch", &["ips"])
+        .set_file_name(suggested_name)
+        .save_file()
+}
+
 pub(crate) fn choose_tool_config() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Lunar Magic external tools", &["lmtools"])

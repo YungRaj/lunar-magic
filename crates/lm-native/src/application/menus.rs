@@ -89,24 +89,40 @@ impl NativeApplication {
                     self.effects.error = Some(error);
                 }
             }
-            if ui
-                .add_enabled(
-                    enabled && !self.ips_patch_dialog.is_busy(),
-                    egui::Button::new("Apply IPS Patch…"),
-                )
-                .clicked()
-            {
-                ui.close_menu();
-                if let Err(error) = self.ips_patch_dialog.choose_and_start(&self.app) {
-                    self.effects.error = Some(error);
-                }
-            }
+            self.ips_menu_items(ui, enabled);
             ui.separator();
             if ui.button("Quit").clicked() {
                 ui.close_menu();
                 self.request_quit(context);
             }
         });
+    }
+
+    fn ips_menu_items(&mut self, ui: &mut egui::Ui, project_open: bool) {
+        if ui
+            .add_enabled(
+                project_open && !self.ips_patch_dialog.is_busy(),
+                egui::Button::new("Apply IPS Patch…"),
+            )
+            .clicked()
+        {
+            ui.close_menu();
+            if let Err(error) = self.ips_patch_dialog.choose_and_start(&self.app) {
+                self.effects.error = Some(error);
+            }
+        }
+        if ui
+            .add_enabled(
+                !self.ips_create_dialog.is_busy(),
+                egui::Button::new("Create IPS Patch…"),
+            )
+            .clicked()
+        {
+            ui.close_menu();
+            if let Err(error) = self.ips_create_dialog.choose_and_start() {
+                self.effects.error = Some(error);
+            }
+        }
     }
 
     fn edit_menu(
