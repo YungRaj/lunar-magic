@@ -16,6 +16,7 @@ mod lunar_magic_metadata_io;
 mod map16_io;
 mod map16_set_io;
 mod mwl_exanimation;
+mod mwl_native_level;
 mod mwl_optional_assets;
 mod mwl_optional_assets_edit;
 mod mwl_optional_assets_edit_script;
@@ -105,6 +106,7 @@ pub use lunar_magic_metadata_io::{LunarMagicRomMetadataIoError, LunarMagicRomMet
 pub use map16_io::{Map16IoError, Map16RomLayout, Map16SaveOptions, SavedMap16Page};
 pub use map16_set_io::{Map16SetIoError, Map16SetSaveOptions, SavedMap16Set};
 pub use mwl_exanimation::{MwlExAnimationSection, MwlExAnimationSectionError};
+pub use mwl_native_level::{MwlNativeLevel, MwlNativeLevelError};
 pub use mwl_optional_assets::{MwlOptionalLevelAssets, MwlOptionalLevelAssetsError};
 pub use mwl_optional_assets_edit::{
     MwlOptionalAssetsEdit, MwlOptionalAssetsEditError, apply_mwl_optional_assets_edit,

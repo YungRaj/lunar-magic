@@ -3,7 +3,7 @@ use lm_level::{
     LevelObjectData, MwlFile, MwlLevelHeaderSection, MwlSectionKind, NativeSpriteStream,
     ObjectCoordinateNibbles, ObjectEdit, SpriteLengthTable, SpriteToken,
 };
-use lm_project::{LevelSaveOptions, Project, SpritePointerTable};
+use lm_project::{LevelSaveOptions, MwlNativeLevel, Project, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage, SnesPointer24, detect_identity};
 use std::fs;
@@ -14,6 +14,78 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static NEXT: AtomicU64 = AtomicU64::new(0);
 const PRISTINE_SMW_US_SHA256: &str =
     "0838e531fe22c077528febe14cb3ff7c492f1f5fa8de354192bdff7137c27f5b";
+
+/// Proves the complete semantic MWL aggregate can round-trip through Lunar Magic itself.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn rust_semantic_mwl_round_trip_is_accepted_by_lunar_magic() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = pristine_smw_us_rom_path(&root);
+    let directory = std::env::temp_dir().join(format!(
+        "lm-semantic-mwl-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let imported_rom = directory.join("semantic import.sfc");
+    let source_mwl = directory.join("source.mwl");
+    let rust_mwl = directory.join("rust canonical.mwl");
+    let reexported_mwl = directory.join("reexported.mwl");
+    fs::copy(&original_rom, &imported_rom).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &imported_rom,
+        &source_mwl,
+        "105",
+    );
+    let lengths = SpriteLengthTable::standard();
+    let modes = [false; 256];
+    let source = MwlNativeLevel::decode(
+        &MwlFile::decode(&fs::read(&source_mwl).unwrap()).unwrap(),
+        &lengths,
+        32,
+        &modes,
+    )
+    .unwrap();
+    fs::write(
+        &rust_mwl,
+        source.encode(&lengths, &modes).unwrap().encode().unwrap(),
+    )
+    .unwrap();
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ImportLevel",
+        &imported_rom,
+        &rust_mwl,
+        "105",
+    );
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &imported_rom,
+        &reexported_mwl,
+        "105",
+    );
+    let actual = MwlNativeLevel::decode(
+        &MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap(),
+        &lengths,
+        32,
+        &modes,
+    )
+    .unwrap();
+    assert_eq!(actual.header, source.header);
+    assert_eq!(actual.layer1, source.layer1);
+    assert_eq!(actual.layer2, source.layer2);
+    assert_eq!(actual.sprites, source.sprites);
+    assert_eq!(actual.palette, source.palette);
+    assert_eq!(actual.secondary_exits, source.secondary_exits);
+    assert_eq!(actual.exanimation, source.exanimation);
+    assert_eq!(actual.expanded_settings, source.expanded_settings);
+    fs::remove_dir_all(directory).unwrap();
+}
 
 fn pristine_smw_us_rom_path(root: &Path) -> PathBuf {
     for path in [
