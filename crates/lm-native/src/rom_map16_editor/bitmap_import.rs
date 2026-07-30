@@ -1,8 +1,8 @@
 use super::{Command, RomMap16Editor, egui};
 use crate::{dialogs, document_loader::BoundedRead, rom_allocation::parse_search_range};
 use lm_app::{
-    MAP16_BITMAP_HEIGHT, MAP16_BITMAP_MAX_PNG_BYTES, MAP16_BITMAP_WIDTH,
-    NativeMap16BitmapImportSession, NativeMap16BitmapImportSessionRequest, decode_map16_bitmap_png,
+    MAP16_BITMAP_MAX_PNG_BYTES, NativeMap16BitmapImportSession,
+    NativeMap16BitmapImportSessionRequest, decode_map16_bitmap_png_image,
 };
 
 impl RomMap16Editor {
@@ -19,7 +19,7 @@ impl RomMap16Editor {
     }
 
     fn open_bitmap_session(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let pixels = decode_map16_bitmap_png(bytes).map_err(|error| error.to_string())?;
+        let bitmap = decode_map16_bitmap_png_image(bytes).map_err(|error| error.to_string())?;
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let level = u16::from_str_radix(self.preview_level.trim(), 16)
             .map_err(|_| "bitmap import level must be hexadecimal")?;
@@ -36,7 +36,9 @@ impl RomMap16Editor {
             level: usize::from(level),
             page: self.page,
             extra_graphics,
-            pixels,
+            pixels: bitmap.pixels,
+            width: bitmap.width,
+            height: bitmap.height,
             palette_row: self.bitmap_palette_row,
             acts_like,
         };
@@ -158,17 +160,19 @@ impl RomMap16Editor {
         let Some(session) = self.bitmap_session.as_ref() else {
             return;
         };
+        let width = session.preview().inputs().width;
+        let height = session.preview().inputs().height;
         if self.bitmap_original_texture.is_none() {
             self.bitmap_original_texture = Some(ui.ctx().load_texture(
                 "map16-bitmap-original",
-                rgba_image(session.preview().original_pixels()),
+                rgba_image(session.preview().original_pixels(), width, height),
                 egui::TextureOptions::NEAREST,
             ));
         }
         if self.bitmap_converted_texture.is_none() {
             self.bitmap_converted_texture = Some(ui.ctx().load_texture(
                 "map16-bitmap-converted",
-                rgba_image(session.preview().converted_pixels()),
+                rgba_image(session.preview().converted_pixels(), width, height),
                 egui::TextureOptions::NEAREST,
             ));
         }
@@ -208,7 +212,7 @@ impl RomMap16Editor {
         if ui
             .add_enabled(
                 supported && !stale && !self.bitmap_loader.is_running(),
-                egui::Button::new("Choose 256×256 PNG…"),
+                egui::Button::new("Choose PNG…"),
             )
             .clicked()
             && let Some(path) = dialogs::choose_map16_bitmap_png()
@@ -239,12 +243,12 @@ fn parse_optional_graphics(text: &str, name: &str) -> Result<Option<usize>, Stri
         .map_err(|_| format!("{name} must be hexadecimal or blank"))
 }
 
-fn rgba_image(pixels: &[lm_graphics::Rgba8]) -> egui::ColorImage {
+fn rgba_image(pixels: &[lm_graphics::Rgba8], width: usize, height: usize) -> egui::ColorImage {
     let rgba: Vec<u8> = pixels
         .iter()
         .flat_map(|pixel| [pixel.red, pixel.green, pixel.blue, pixel.alpha])
         .collect();
-    egui::ColorImage::from_rgba_unmultiplied([MAP16_BITMAP_WIDTH, MAP16_BITMAP_HEIGHT], &rgba)
+    egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
 }
 
 #[cfg(test)]
@@ -269,10 +273,17 @@ mod tests {
                 blue: 3,
                 alpha: 4,
             };
-            MAP16_BITMAP_WIDTH * MAP16_BITMAP_HEIGHT
+            lm_app::MAP16_BITMAP_WIDTH * lm_app::MAP16_BITMAP_HEIGHT
         ];
-        let image = rgba_image(&pixels);
-        assert_eq!(image.size, [MAP16_BITMAP_WIDTH, MAP16_BITMAP_HEIGHT]);
+        let image = rgba_image(
+            &pixels,
+            lm_app::MAP16_BITMAP_WIDTH,
+            lm_app::MAP16_BITMAP_HEIGHT,
+        );
+        assert_eq!(
+            image.size,
+            [lm_app::MAP16_BITMAP_WIDTH, lm_app::MAP16_BITMAP_HEIGHT]
+        );
         assert_eq!(
             image.pixels[0],
             egui::Color32::from_rgba_unmultiplied(1, 2, 3, 4)

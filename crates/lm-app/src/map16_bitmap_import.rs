@@ -14,11 +14,12 @@ pub const MAP16_BITMAP_PIXELS: usize = MAP16_BITMAP_WIDTH * MAP16_BITMAP_HEIGHT;
 pub const MAP16_BITMAP_MAX_PNG_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PNG_DECODE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_BITMAP_DIMENSION: usize = 4096;
-const SUBTILE_PLANE_WIDTH: usize = MAP16_BITMAP_WIDTH / 8;
 
 #[derive(Clone, Copy)]
 pub struct Map16BitmapImportRequest<'a> {
     pub pixels: &'a [Rgba8],
+    pub width: usize,
+    pub height: usize,
     pub palette_row: u8,
     pub acts_like: u16,
     pub palette: &'a lm_graphics::Palette,
@@ -46,6 +47,8 @@ pub struct Map16BitmapImportPlan {
     pub graphics: GraphicsFile4bpp,
     pub occupied: Vec<bool>,
     pub page: Map16Page,
+    pub width_in_map16_tiles: usize,
+    pub height_in_map16_tiles: usize,
     pub indexed_pixels: Vec<u8>,
     pub generated_colors: usize,
     pub newly_occupied_tiles: usize,
@@ -87,9 +90,15 @@ impl Map16BitmapImportPlan {
         request: Map16BitmapImportRequest<'_>,
         options: Map16BitmapImportOptions,
     ) -> Result<Self, Map16BitmapImportError> {
-        if request.pixels.len() != MAP16_BITMAP_PIXELS {
+        let expected_pixels = request.width.checked_mul(request.height).ok_or(
+            Map16BitmapImportError::WrongPixelCount {
+                expected: usize::MAX,
+                actual: request.pixels.len(),
+            },
+        )?;
+        if request.pixels.len() != expected_pixels {
             return Err(Map16BitmapImportError::WrongPixelCount {
-                expected: MAP16_BITMAP_PIXELS,
+                expected: expected_pixels,
                 actual: request.pixels.len(),
             });
         }
@@ -104,8 +113,8 @@ impl Map16BitmapImportPlan {
         )
         .map_err(Map16BitmapImportError::Palette)?;
         let materialized = IndexedBitmapImport::materialize_with_options(
-            MAP16_BITMAP_WIDTH,
-            MAP16_BITMAP_HEIGHT,
+            request.width,
+            request.height,
             &palette.indices,
             request.graphics,
             request.graphics_ownership,
@@ -113,7 +122,7 @@ impl Map16BitmapImportPlan {
             options.graphics,
         )
         .map_err(Map16BitmapImportError::Graphics)?;
-        let page = build_page(
+        let (page, width_in_map16_tiles, height_in_map16_tiles) = build_page(
             &materialized,
             request.palette_row,
             request.acts_like,
@@ -131,6 +140,8 @@ impl Map16BitmapImportPlan {
             graphics: materialized.graphics,
             occupied: materialized.occupied,
             page,
+            width_in_map16_tiles,
+            height_in_map16_tiles,
             indexed_pixels: palette.indices,
             generated_colors: palette.generated_colors,
             newly_occupied_tiles,
@@ -258,7 +269,7 @@ pub fn decode_map16_bitmap_png_image(
             .collect(),
         png::ColorType::Indexed => return Err(Map16PngDecodeError::UnexpandedIndexed),
     };
-    if pixels.len() != MAP16_BITMAP_PIXELS {
+    if pixels.len() != width * height {
         return Err(Map16PngDecodeError::PixelCount(pixels.len()));
     }
     Ok(DecodedMap16Bitmap {
@@ -342,18 +353,26 @@ fn build_page(
     palette_row: u8,
     acts_like: u16,
     layer_priority: bool,
-) -> Result<Map16Page, Map16BitmapImportError> {
-    if imported.width_in_tiles != 32 || imported.height_in_tiles != 32 {
+) -> Result<(Map16Page, usize, usize), Map16BitmapImportError> {
+    if imported.width_in_tiles == 0
+        || imported.height_in_tiles == 0
+        || imported.width_in_tiles % 2 != 0
+        || imported.height_in_tiles % 2 != 0
+        || imported.width_in_tiles > 32
+        || imported.height_in_tiles > 32
+    {
         return Err(Map16BitmapImportError::WrongMaterializedShape {
             width: imported.width_in_tiles,
             height: imported.height_in_tiles,
         });
     }
-    let mut tiles = Vec::with_capacity(Map16Page::TILE_COUNT);
-    for tile_y in 0..16 {
-        for tile_x in 0..16 {
-            let top_left = tile_y * 2 * SUBTILE_PLANE_WIDTH + tile_x * 2;
-            tiles.push(Map16Tile {
+    let width_in_map16_tiles = imported.width_in_tiles / 2;
+    let height_in_map16_tiles = imported.height_in_tiles / 2;
+    let mut tiles = vec![Map16Tile::default(); Map16Page::TILE_COUNT];
+    for tile_y in 0..height_in_map16_tiles {
+        for tile_x in 0..width_in_map16_tiles {
+            let top_left = tile_y * 2 * imported.width_in_tiles + tile_x * 2;
+            tiles[tile_y * 16 + tile_x] = Map16Tile {
                 top_left: descriptor(imported.placements[top_left], palette_row, layer_priority),
                 top_right: descriptor(
                     imported.placements[top_left + 1],
@@ -361,20 +380,22 @@ fn build_page(
                     layer_priority,
                 ),
                 bottom_left: descriptor(
-                    imported.placements[top_left + SUBTILE_PLANE_WIDTH],
+                    imported.placements[top_left + imported.width_in_tiles],
                     palette_row,
                     layer_priority,
                 ),
                 bottom_right: descriptor(
-                    imported.placements[top_left + SUBTILE_PLANE_WIDTH + 1],
+                    imported.placements[top_left + imported.width_in_tiles + 1],
                     palette_row,
                     layer_priority,
                 ),
                 acts_like,
-            });
+            };
         }
     }
-    Map16Page::new(tiles).map_err(|tiles| Map16BitmapImportError::Map16TileCount(tiles.len()))
+    Map16Page::new(tiles)
+        .map(|page| (page, width_in_map16_tiles, height_in_map16_tiles))
+        .map_err(|tiles| Map16BitmapImportError::Map16TileCount(tiles.len()))
 }
 
 fn descriptor(
@@ -487,6 +508,28 @@ mod tests {
     }
 
     #[test]
+    fn dimension_preserving_png_decoder_accepts_rectangular_sources() {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 17, 15);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&vec![0x7f; 17 * 15 * 4]).unwrap();
+        }
+        let decoded = decode_map16_bitmap_png_image(&bytes).unwrap();
+        assert_eq!((decoded.width, decoded.height), (17, 15));
+        assert_eq!(decoded.pixels.len(), 17 * 15);
+        assert!(matches!(
+            decode_map16_bitmap_png(&bytes),
+            Err(Map16PngDecodeError::Dimensions {
+                width: 17,
+                height: 15
+            })
+        ));
+    }
+
+    #[test]
     fn one_plan_carries_palette_graphics_occupancy_and_map16_results() {
         let pixels = vec![
             Rgba8 {
@@ -506,6 +549,8 @@ mod tests {
         let occupied = vec![false; graphics.tiles.len()];
         let plan = Map16BitmapImportPlan::prepare(Map16BitmapImportRequest {
             pixels: &pixels,
+            width: MAP16_BITMAP_WIDTH,
+            height: MAP16_BITMAP_HEIGHT,
             palette_row: 2,
             acts_like: 0x130,
             palette: &palette,
@@ -550,6 +595,8 @@ mod tests {
         assert!(matches!(
             Map16BitmapImportPlan::prepare(Map16BitmapImportRequest {
                 pixels: &pixels,
+                width: MAP16_BITMAP_WIDTH,
+                height: MAP16_BITMAP_HEIGHT,
                 palette_row: 2,
                 acts_like: 0,
                 palette: &palette,
@@ -586,6 +633,8 @@ mod tests {
         let plan = Map16BitmapImportPlan::prepare_with_options(
             Map16BitmapImportRequest {
                 pixels: &pixels,
+                width: MAP16_BITMAP_WIDTH,
+                height: MAP16_BITMAP_HEIGHT,
                 palette_row: 2,
                 acts_like: 0,
                 palette: &palette,

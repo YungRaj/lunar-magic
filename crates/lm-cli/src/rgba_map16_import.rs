@@ -48,6 +48,8 @@ pub(crate) fn execute_pixels(
     let occupied = read_occupancy(command, graphics_file.graphics.tiles.len())?;
     let plan = Map16BitmapImportPlan::prepare(Map16BitmapImportRequest {
         pixels,
+        width: WIDTH,
+        height: HEIGHT,
         palette_row: command.palette_row,
         acts_like: command.acts_like,
         palette: &palette_file.palette,

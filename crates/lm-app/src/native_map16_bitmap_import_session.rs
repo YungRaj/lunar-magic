@@ -22,6 +22,7 @@ pub struct NativeMap16BitmapImportSession {
     profile: Option<RevisionProfile>,
     workspace: NativeMap16BitmapGraphicsWorkspace,
     preview: Map16BitmapImportPreviewState,
+    baseline_page: lm_level::Map16Page,
     level: usize,
     page: usize,
     smw_map16: Option<lm_profile::LoadedSmwUsV1TransferredMap16>,
@@ -33,6 +34,8 @@ pub struct NativeMap16BitmapImportSessionRequest {
     pub page: usize,
     pub extra_graphics: [Option<usize>; 2],
     pub pixels: Vec<Rgba8>,
+    pub width: usize,
+    pub height: usize,
     pub palette_row: u8,
     pub acts_like: u16,
 }
@@ -82,9 +85,15 @@ impl NativeMap16BitmapImportSession {
             .map_err(|error| NativeMap16BitmapImportSessionError::Palette(error.to_string()))?;
         let palette = bitmap_working_palette(palette);
         let palette_ownership = PaletteOwnership::editable(palette.colors.len());
+        let bitmap = padded_bitmap(request.width, request.height, request.pixels, &palette)?;
+        let baseline_page = project
+            .load_map16_page(request.page, profile.map16)
+            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
         let preview = Map16BitmapImportPreviewState::new(
             Map16BitmapImportInputs {
-                pixels: request.pixels,
+                pixels: bitmap.pixels,
+                width: bitmap.width,
+                height: bitmap.height,
                 palette_row: request.palette_row,
                 acts_like: request.acts_like,
                 palette,
@@ -101,6 +110,7 @@ impl NativeMap16BitmapImportSession {
             profile: Some(profile),
             workspace,
             preview,
+            baseline_page,
             level: request.level,
             page: request.page,
             smw_map16: None,
@@ -153,9 +163,15 @@ impl NativeMap16BitmapImportSession {
         .map_err(|error| NativeMap16BitmapImportSessionError::Palette(error.to_string()))?;
         let mut palette = composed.palette;
         palette.colors.push(composed.backdrop);
+        let bitmap = padded_bitmap(request.width, request.height, request.pixels, &palette)?;
+        let smw_map16 = lm_profile::load_smw_us_v1_transferred_map16(&project)
+            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+        let baseline_page = transferred_page(&smw_map16, request.page)?;
         let preview = Map16BitmapImportPreviewState::new(
             Map16BitmapImportInputs {
-                pixels: request.pixels,
+                pixels: bitmap.pixels,
+                width: bitmap.width,
+                height: bitmap.height,
                 palette_row: request.palette_row,
                 acts_like: request.acts_like,
                 palette: palette.clone(),
@@ -167,13 +183,12 @@ impl NativeMap16BitmapImportSession {
             native_map16_bitmap_import_options(),
         )
         .map_err(NativeMap16BitmapImportSessionError::Import)?;
-        let smw_map16 = lm_profile::load_smw_us_v1_transferred_map16(&project)
-            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
         Ok(Self {
             snapshot,
             profile: None,
             workspace,
             preview,
+            baseline_page,
             level: request.level,
             page: request.page,
             smw_map16: Some(smw_map16),
@@ -264,6 +279,7 @@ impl NativeMap16BitmapImportSession {
             })
             .collect::<Vec<_>>();
         let native_palette = native_installed_palette(self.preview.plan().palette.clone());
+        let merged_page = self.merged_page();
         let save = Map16BitmapRomSave {
             description: "Import bitmap as Map16",
             graphics: &graphics_saves,
@@ -275,7 +291,7 @@ impl NativeMap16BitmapImportSession {
             },
             map16: Map16BitmapPageSave {
                 page_number: self.page,
-                page: &self.preview.plan().page,
+                page: &merged_page,
                 layout: profile.map16,
                 options: &map16_options,
             },
@@ -376,7 +392,8 @@ impl NativeMap16BitmapImportSession {
             .smw_map16
             .clone()
             .ok_or_else(|| NativeMap16BitmapImportSessionError::Map16("missing baseline".into()))?;
-        replace_transferred_page(&mut map16, self.page, &self.preview.plan().page)?;
+        let merged_page = self.merged_page();
+        replace_transferred_page(&mut map16, self.page, &merged_page)?;
         let map16_options = lm_profile::SmwUsV1TransferredMap16SaveOptions {
             allocation,
             reuse_identical: true,
@@ -428,6 +445,18 @@ impl NativeMap16BitmapImportSession {
             mutation,
         })
     }
+
+    fn merged_page(&self) -> lm_level::Map16Page {
+        let mut page = self.baseline_page.clone();
+        let plan = self.preview.plan();
+        for row in 0..plan.height_in_map16_tiles {
+            for column in 0..plan.width_in_map16_tiles {
+                let index = row * 16 + column;
+                page.tiles[index] = plan.page.tiles[index];
+            }
+        }
+        page
+    }
 }
 
 #[derive(Debug)]
@@ -442,6 +471,7 @@ pub enum NativeMap16BitmapImportSessionError {
     Palette(String),
     Graphics(String),
     Map16(String),
+    ImportGeometry(String),
     Import(Map16BitmapImportError),
     Allocation(String),
     Commit(String),
@@ -455,6 +485,71 @@ impl fmt::Display for NativeMap16BitmapImportSessionError {
 }
 
 impl std::error::Error for NativeMap16BitmapImportSessionError {}
+
+fn padded_bitmap(
+    width: usize,
+    height: usize,
+    pixels: Vec<Rgba8>,
+    palette: &lm_graphics::Palette,
+) -> Result<crate::DecodedMap16Bitmap, NativeMap16BitmapImportSessionError> {
+    let fill = palette
+        .colors
+        .first()
+        .copied()
+        .unwrap_or_default()
+        .to_rgb8();
+    crate::pad_map16_bitmap(
+        &crate::DecodedMap16Bitmap {
+            width,
+            height,
+            pixels,
+        },
+        Rgba8 {
+            red: fill.red,
+            green: fill.green,
+            blue: fill.blue,
+            alpha: 255,
+        },
+    )
+    .map_err(|error| NativeMap16BitmapImportSessionError::ImportGeometry(error.to_string()))
+}
+
+fn transferred_page(
+    map16: &lm_profile::LoadedSmwUsV1TransferredMap16,
+    page_number: usize,
+) -> Result<lm_level::Map16Page, NativeMap16BitmapImportSessionError> {
+    let first_tile = page_number
+        .checked_mul(lm_level::Map16Page::TILE_COUNT)
+        .ok_or_else(|| NativeMap16BitmapImportSessionError::Map16("page index overflow".into()))?;
+    let first_word = first_tile
+        .checked_mul(4)
+        .ok_or_else(|| NativeMap16BitmapImportSessionError::Map16("word index overflow".into()))?;
+    if first_word + lm_level::Map16Page::TILE_COUNT * 4 > map16.definitions.len()
+        || first_tile + lm_level::Map16Page::TILE_COUNT > map16.acts_like.len()
+    {
+        return Err(NativeMap16BitmapImportSessionError::Map16(format!(
+            "page {page_number:X} is outside native transferred Map16 storage"
+        )));
+    }
+    let tiles = (0..lm_level::Map16Page::TILE_COUNT)
+        .map(|index| {
+            let word = first_word + index * 4;
+            lm_level::Map16Tile {
+                top_left: lm_level::Subtile(map16.definitions[word]),
+                top_right: lm_level::Subtile(map16.definitions[word + 1]),
+                bottom_left: lm_level::Subtile(map16.definitions[word + 2]),
+                bottom_right: lm_level::Subtile(map16.definitions[word + 3]),
+                acts_like: map16.acts_like[first_tile + index],
+            }
+        })
+        .collect();
+    lm_level::Map16Page::new(tiles).map_err(|tiles| {
+        NativeMap16BitmapImportSessionError::Map16(format!(
+            "decoded page contains {} tiles",
+            tiles.len()
+        ))
+    })
+}
 
 fn replace_transferred_page(
     map16: &mut lm_profile::LoadedSmwUsV1TransferredMap16,
@@ -588,7 +683,9 @@ mod tests {
         app.load_rom(original.clone()).unwrap();
         app.dispatch(Command::ShowMap16).unwrap();
         let snapshot = app.controller_snapshot().unwrap();
-        let pixels = (0..crate::MAP16_BITMAP_PIXELS)
+        let width = 17;
+        let height = 15;
+        let pixels = (0..width * height)
             .map(|index| {
                 if (index / 8 + index % 8) & 1 == 0 {
                     Rgba8 {
@@ -614,12 +711,21 @@ mod tests {
                 page: 0,
                 extra_graphics: [Some(0x20), Some(0x21)],
                 pixels,
+                width,
+                height,
                 palette_row: 4,
                 acts_like: 0x130,
             },
         )
         .unwrap();
-        let expected_page = session.preview().plan().page.clone();
+        assert_eq!(
+            (
+                session.preview().inputs().width,
+                session.preview().inputs().height
+            ),
+            (32, 16)
+        );
+        let expected_page = session.merged_page();
         let expected_palette = native_installed_palette(session.preview().plan().palette.clone());
         let prepared = session.prepare_commit(0x80_000..0x10_0000).unwrap();
         app.dispatch(prepared.into_command()).unwrap();

@@ -10,6 +10,8 @@ use lm_graphics::{GraphicsFile4bpp, GraphicsOwnership, Palette, PaletteOwnership
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Map16BitmapImportInputs {
     pub pixels: Vec<Rgba8>,
+    pub width: usize,
+    pub height: usize,
     pub palette_row: u8,
     pub acts_like: u16,
     pub palette: Palette,
@@ -23,6 +25,8 @@ impl Map16BitmapImportInputs {
     fn request(&self) -> Map16BitmapImportRequest<'_> {
         Map16BitmapImportRequest {
             pixels: &self.pixels,
+            width: self.width,
+            height: self.height,
             palette_row: self.palette_row,
             acts_like: self.acts_like,
             palette: &self.palette,
@@ -139,6 +143,8 @@ mod tests {
         }
         Map16BitmapImportInputs {
             pixels,
+            width: crate::MAP16_BITMAP_WIDTH,
+            height: crate::MAP16_BITMAP_HEIGHT,
             palette_row: 2,
             acts_like: 0x130,
             palette: Palette {
