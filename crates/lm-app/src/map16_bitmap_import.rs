@@ -46,6 +46,15 @@ pub struct Map16BitmapImportPlan {
     pub palette: lm_graphics::Palette,
     pub graphics: GraphicsFile4bpp,
     pub occupied: Vec<bool>,
+    /// Every imported 16×16 definition in source row-major order.
+    ///
+    /// This is the authoritative import product. Lunar Magic allocates these definitions into
+    /// the global Map16 namespace, so an imported bitmap is not inherently limited to one page.
+    pub map16_tiles: Vec<Map16Tile>,
+    /// Compatibility view of the top-left 16×16 definitions.
+    ///
+    /// Existing page-oriented file and CLI workflows consume this view. Native ROM import uses
+    /// [`Self::map16_tiles`] so definitions beyond the first page are not discarded.
     pub page: Map16Page,
     pub width_in_map16_tiles: usize,
     pub height_in_map16_tiles: usize,
@@ -122,7 +131,7 @@ impl Map16BitmapImportPlan {
             options.graphics,
         )
         .map_err(Map16BitmapImportError::Graphics)?;
-        let (page, width_in_map16_tiles, height_in_map16_tiles) = build_page(
+        let (map16_tiles, page, width_in_map16_tiles, height_in_map16_tiles) = build_map16_tiles(
             &materialized,
             request.palette_row,
             request.acts_like,
@@ -139,6 +148,7 @@ impl Map16BitmapImportPlan {
             palette: palette.palette,
             graphics: materialized.graphics,
             occupied: materialized.occupied,
+            map16_tiles,
             page,
             width_in_map16_tiles,
             height_in_map16_tiles,
@@ -348,18 +358,16 @@ impl fmt::Display for Map16PngDecodeError {
 
 impl std::error::Error for Map16PngDecodeError {}
 
-fn build_page(
+fn build_map16_tiles(
     imported: &IndexedBitmapImport,
     palette_row: u8,
     acts_like: u16,
     layer_priority: bool,
-) -> Result<(Map16Page, usize, usize), Map16BitmapImportError> {
+) -> Result<(Vec<Map16Tile>, Map16Page, usize, usize), Map16BitmapImportError> {
     if imported.width_in_tiles == 0
         || imported.height_in_tiles == 0
         || imported.width_in_tiles % 2 != 0
         || imported.height_in_tiles % 2 != 0
-        || imported.width_in_tiles > 32
-        || imported.height_in_tiles > 32
     {
         return Err(Map16BitmapImportError::WrongMaterializedShape {
             width: imported.width_in_tiles,
@@ -368,11 +376,17 @@ fn build_page(
     }
     let width_in_map16_tiles = imported.width_in_tiles / 2;
     let height_in_map16_tiles = imported.height_in_tiles / 2;
-    let mut tiles = vec![Map16Tile::default(); Map16Page::TILE_COUNT];
+    let tile_count = width_in_map16_tiles
+        .checked_mul(height_in_map16_tiles)
+        .ok_or(Map16BitmapImportError::WrongMaterializedShape {
+            width: imported.width_in_tiles,
+            height: imported.height_in_tiles,
+        })?;
+    let mut map16_tiles = Vec::with_capacity(tile_count);
     for tile_y in 0..height_in_map16_tiles {
         for tile_x in 0..width_in_map16_tiles {
             let top_left = tile_y * 2 * imported.width_in_tiles + tile_x * 2;
-            tiles[tile_y * 16 + tile_x] = Map16Tile {
+            map16_tiles.push(Map16Tile {
                 top_left: descriptor(imported.placements[top_left], palette_row, layer_priority),
                 top_right: descriptor(
                     imported.placements[top_left + 1],
@@ -390,12 +404,25 @@ fn build_page(
                     layer_priority,
                 ),
                 acts_like,
-            };
+            });
         }
     }
-    Map16Page::new(tiles)
-        .map(|page| (page, width_in_map16_tiles, height_in_map16_tiles))
-        .map_err(|tiles| Map16BitmapImportError::Map16TileCount(tiles.len()))
+    let mut page_tiles = vec![Map16Tile::default(); Map16Page::TILE_COUNT];
+    for row in 0..height_in_map16_tiles.min(16) {
+        let source_start = row * width_in_map16_tiles;
+        let copy_len = width_in_map16_tiles.min(16);
+        let target_start = row * 16;
+        page_tiles[target_start..target_start + copy_len]
+            .copy_from_slice(&map16_tiles[source_start..source_start + copy_len]);
+    }
+    let page = Map16Page::new(page_tiles)
+        .map_err(|tiles| Map16BitmapImportError::Map16TileCount(tiles.len()))?;
+    Ok((
+        map16_tiles,
+        page,
+        width_in_map16_tiles,
+        height_in_map16_tiles,
+    ))
 }
 
 fn descriptor(
@@ -568,6 +595,55 @@ mod tests {
         assert!(plan.indexed_pixels.iter().all(|pixel| *pixel == 1));
         assert_eq!(plan.page.tiles[0].top_left.0 & 0x1c00, 2 << 10);
         assert_eq!(plan.converted_pixels(2)[0].alpha, 255);
+    }
+
+    #[test]
+    fn plan_retains_map16_definitions_beyond_one_page_width() {
+        let width = 17 * 16;
+        let height = 16;
+        let pixels = vec![
+            Rgba8 {
+                red: 255,
+                green: 0,
+                blue: 0,
+                alpha: 255,
+            };
+            width * height
+        ];
+        let palette = Palette {
+            colors: vec![Bgr555(0); 128],
+        };
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([0; IndexedTile::PIXEL_COUNT]); 0x300],
+        };
+        let occupied = vec![false; graphics.tiles.len()];
+        let plan = Map16BitmapImportPlan::prepare(Map16BitmapImportRequest {
+            pixels: &pixels,
+            width,
+            height,
+            palette_row: 2,
+            acts_like: 0x130,
+            palette: &palette,
+            palette_ownership: &PaletteOwnership::editable(palette.colors.len()),
+            graphics: &graphics,
+            graphics_ownership: &GraphicsOwnership::editable(graphics.tiles.len()),
+            occupied: &occupied,
+        })
+        .unwrap();
+
+        assert_eq!(plan.width_in_map16_tiles, 17);
+        assert_eq!(plan.height_in_map16_tiles, 1);
+        assert_eq!(plan.map16_tiles.len(), 17);
+        assert!(plan.map16_tiles.iter().all(|tile| tile.acts_like == 0x130));
+        assert_eq!(
+            plan.page.tiles[..16],
+            plan.map16_tiles[..16],
+            "the compatibility page must expose the top-left 16 definitions"
+        );
+        assert_eq!(
+            plan.map16_tiles[16], plan.map16_tiles[0],
+            "the seventeenth definition must remain available outside the page view"
+        );
     }
 
     #[test]

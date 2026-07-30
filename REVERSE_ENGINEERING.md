@@ -817,6 +817,17 @@ The following palette-allocation engine through `004ece10` is now named. It init
 
 The bitmap-import orchestration block through `004ef770` is now named and annotated. It extends weighted color sets into available palette rows, marks subset records assigned, maps imported pixels to palette indexes, detects blank and duplicate 8x8 graphics including horizontal and vertical flip equivalents, allocates free graphics slots, assembles or deduplicates 16x16 Map16 entries, commits editable palette changes, and drives the complete bitmap quantization/import pipeline. The occupancy scanner covers all `0x300` graphics slots; tile-map results preserve palette, priority, and flip attributes in the final 16-bit tile words.
 
+`FindNextBlankMap16Tile` at `004ef030` is confirmed directly from its assembly and both callers.
+`EDI` points to a caller-owned cursor initialized from `DAT_005e55e4`; the function scans upward to
+the exclusive bound in `DAT_009b9964`, skips the reserved index in `DAT_005e55f0`, and accepts an
+entry only when all four graphics words are exactly `0x1004`. It returns the accepted index (or the
+upper bound on exhaustion) in `EAX` and stores `EAX + 1` back through `EDI`. The sequential caller
+at `004ef090` allocates every source 2×2 block in source order, while the deduplicating caller at
+`004ef2d0` reuses an earlier imported four-word block and advances this global cursor only for a
+unique block. The import pipeline sets the upper bound to `0x8000` when the initial cursor is below
+`0x8000`; otherwise it rounds the initial cursor down to a `0x1000`-tile boundary and uses the next
+boundary as the exclusive limit.
+
 The native graphics workspace shape is now confirmed both statically and dynamically. Lunar Magic loads eight `$1000`-byte FG/BG slots of `$80` decoded 4bpp tiles each, while `BuildOccupiedGraphicsTileMap` and the bitmap allocator inspect exactly the first six, producing tile numbers `$000..$2ff`. The default allocation globals at `005e55e0` select first tile `$200`, exclusive workspace end `$300`, and blank fallback tile `$0f8`. Thus the four vanilla object-tileset GFX slots occupy `$000..$1ff`; import allocation begins at FG/BG slot 4 and continues through slot 5. The remaining default slot assignments are the `$7f` blank sentinel, so imported pixels in those slots require a concrete GFX/ExGFX assignment before they can be persisted semantically.
 
 A live Wine oracle used the modeless Map16 editor command `$2276` after publishing both `CF_BITMAP` and a normalized positive-height `CF_DIB`. Lunar Magic's clipboard dispatcher tests `CF_BITMAP`, but `ImportClipboardBitmapAsMap16` subsequently obtains `CF_DIB`; a top-down negative DIB height is not rejected and corrupts its unsigned dimension state, explaining earlier automation failures. With a valid 256×256 solid fixture, the preview reported `$400` source 8×8 cells, two converted tiles, one optimized tile, and `$100` available tiles. Accepting it changed exactly occupancy byte `$200` and the planar cache beginning at `0086b7e8 + $4000`, proving that the first new tile is encoded into slot 4. The default Other Options dialog has 8×8 optimization, reuse of existing 8×8 tiles, and 16×16 deduplication/background paste enabled; the Color Options dialog defaults to high-color reduction method 1, priority for exact existing-palette matches and unique colors, and allows modification of colors not marked fixed.
