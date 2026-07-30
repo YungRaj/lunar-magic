@@ -169,7 +169,8 @@ pub use level_navigation::{
     LevelNavigationDirection, LevelViewState, LevelViewport, LevelViewportError,
 };
 pub use level_usage::{
-    LevelUsageEntry, LevelUsageReport, LevelUsageReportError, LevelUsageTimestamp,
+    LevelUsageAccumulator, LevelUsageAnalysisError, LevelUsageEntry, LevelUsageReport,
+    LevelUsageReportError, LevelUsageTimestamp,
 };
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};

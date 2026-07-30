@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
+
+use lm_level::{NativeSpriteFieldError, NativeSpriteStream, SpriteToken};
 
 /// One counted resource and the levels in which Lunar Magic observed it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,6 +20,243 @@ pub struct LevelUsageReport {
     pub sprites: Vec<LevelUsageEntry>,
     pub music_tracks: Vec<LevelUsageEntry>,
 }
+
+/// Domain counters used while Lunar Magic-compatible level loading walks every slot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LevelUsageAccumulator {
+    level_count: usize,
+    map16_tiles: BTreeMap<u32, UsageCounter>,
+    graphics_files: BTreeMap<u32, UsageCounter>,
+    sprites: BTreeMap<u32, UsageCounter>,
+    music_tracks: BTreeMap<u32, UsageCounter>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct UsageCounter {
+    count: u64,
+    levels: Vec<bool>,
+    name: Option<String>,
+}
+
+impl LevelUsageAccumulator {
+    /// Creates the bounded counter planes used by an all-level scan.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a level namespace larger than Lunar Magic's recovered bitmap limit.
+    pub fn new(level_count: usize) -> Result<Self, LevelUsageAnalysisError> {
+        if level_count > LevelUsageReport::MAX_LEVELS {
+            return Err(LevelUsageAnalysisError::TooManyLevels(level_count));
+        }
+        Ok(Self {
+            level_count,
+            map16_tiles: BTreeMap::new(),
+            graphics_files: BTreeMap::new(),
+            sprites: BTreeMap::new(),
+            music_tracks: BTreeMap::new(),
+        })
+    }
+
+    /// Counts Lunar Magic's final Layer 1 cache and optional raw Layer 2 tilemap.
+    ///
+    /// Layer 1 words at or above `$8000` are ignored. Layer 2 words are first offset by the active
+    /// `$1000`-tile bank and then stored in Lunar Magic's separate `$8000..$FFFF` report namespace.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a level outside the configured scan namespace or counter overflow.
+    pub fn observe_map16(
+        &mut self,
+        level: usize,
+        layer1_cache: &[u16],
+        layer2: Option<(&[u16], u8)>,
+    ) -> Result<(), LevelUsageAnalysisError> {
+        self.validate_level(level)?;
+        for &tile in layer1_cache {
+            if tile < 0x8000 {
+                observe(
+                    &mut self.map16_tiles,
+                    u32::from(tile),
+                    level,
+                    self.level_count,
+                )?;
+            }
+        }
+        if let Some((words, bank)) = layer2 {
+            for &tile in words {
+                let banked = u32::from(tile) + u32::from(bank) * 0x1000;
+                if banked < 0x8000 {
+                    observe(
+                        &mut self.map16_tiles,
+                        banked + 0x8000,
+                        level,
+                        self.level_count,
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Counts every loaded graphics-file assignment, including duplicates between slots.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an out-of-range level or counter overflow.
+    pub fn observe_graphics(
+        &mut self,
+        level: usize,
+        files: impl IntoIterator<Item = u16>,
+    ) -> Result<(), LevelUsageAnalysisError> {
+        self.validate_level(level)?;
+        for file in files {
+            if file < 0x1000 {
+                observe(
+                    &mut self.graphics_files,
+                    u32::from(file),
+                    level,
+                    self.level_count,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Counts native sprite records using `extra_bits << 8 | sprite_number`.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an out-of-range level, malformed record, or counter overflow.
+    pub fn observe_sprites(
+        &mut self,
+        level: usize,
+        sprites: &NativeSpriteStream,
+    ) -> Result<(), LevelUsageAnalysisError> {
+        self.validate_level(level)?;
+        for token in &sprites.tokens {
+            let SpriteToken::Record(record) = token else {
+                continue;
+            };
+            let fields = record
+                .native_fields()
+                .map_err(LevelUsageAnalysisError::Sprite)?;
+            let resource = u32::from(fields.sprite_number) | u32::from(fields.extra_bits) << 8;
+            observe(&mut self.sprites, resource, level, self.level_count)?;
+        }
+        Ok(())
+    }
+
+    /// Counts the single resolved music track for a successfully loaded level.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an out-of-range level, invalid name text, or counter overflow.
+    pub fn observe_music(
+        &mut self,
+        level: usize,
+        track: u8,
+        name: impl Into<String>,
+    ) -> Result<(), LevelUsageAnalysisError> {
+        self.validate_level(level)?;
+        let name = name.into();
+        validate_name(&name).map_err(LevelUsageAnalysisError::Report)?;
+        let counter = counter(&mut self.music_tracks, u32::from(track), self.level_count);
+        counter.count = counter
+            .count
+            .checked_add(1)
+            .ok_or(LevelUsageAnalysisError::CountOverflow)?;
+        counter.levels[level] = true;
+        counter.name = Some(name);
+        Ok(())
+    }
+
+    /// Materializes ascending resource entries, optionally retaining defined-but-unused resources.
+    #[must_use]
+    pub fn finish(
+        mut self,
+        defined_map16: impl IntoIterator<Item = u32>,
+        inserted_graphics: impl IntoIterator<Item = u32>,
+    ) -> LevelUsageReport {
+        for resource in defined_map16 {
+            let _ = counter(&mut self.map16_tiles, resource, self.level_count);
+        }
+        for resource in inserted_graphics {
+            let _ = counter(&mut self.graphics_files, resource, self.level_count);
+        }
+        LevelUsageReport {
+            map16_tiles: entries(self.map16_tiles),
+            graphics_files: entries(self.graphics_files),
+            sprites: entries(self.sprites),
+            music_tracks: entries(self.music_tracks),
+        }
+    }
+
+    fn validate_level(&self, level: usize) -> Result<(), LevelUsageAnalysisError> {
+        if level >= self.level_count {
+            return Err(LevelUsageAnalysisError::LevelOutOfRange {
+                level,
+                count: self.level_count,
+            });
+        }
+        Ok(())
+    }
+}
+
+fn counter(
+    counters: &mut BTreeMap<u32, UsageCounter>,
+    resource: u32,
+    level_count: usize,
+) -> &mut UsageCounter {
+    counters.entry(resource).or_insert_with(|| UsageCounter {
+        count: 0,
+        levels: vec![false; level_count],
+        name: None,
+    })
+}
+
+fn observe(
+    counters: &mut BTreeMap<u32, UsageCounter>,
+    resource: u32,
+    level: usize,
+    level_count: usize,
+) -> Result<(), LevelUsageAnalysisError> {
+    let counter = counter(counters, resource, level_count);
+    counter.count = counter
+        .count
+        .checked_add(1)
+        .ok_or(LevelUsageAnalysisError::CountOverflow)?;
+    counter.levels[level] = true;
+    Ok(())
+}
+
+fn entries(counters: BTreeMap<u32, UsageCounter>) -> Vec<LevelUsageEntry> {
+    counters
+        .into_iter()
+        .map(|(resource, counter)| LevelUsageEntry {
+            resource,
+            count: counter.count,
+            levels: counter.levels,
+            name: counter.name,
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LevelUsageAnalysisError {
+    TooManyLevels(usize),
+    LevelOutOfRange { level: usize, count: usize },
+    Sprite(NativeSpriteFieldError),
+    Report(LevelUsageReportError),
+    CountOverflow,
+}
+
+impl std::fmt::Display for LevelUsageAnalysisError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "level-usage analysis failed: {self:?}")
+    }
+}
+
+impl std::error::Error for LevelUsageAnalysisError {}
 
 /// Local timestamp fields used by the original report header.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -324,5 +564,66 @@ mod tests {
                 actual: 2
             })
         ));
+    }
+
+    #[test]
+    fn accumulator_preserves_native_map16_namespaces_duplicates_and_membership() {
+        let mut analysis = LevelUsageAccumulator::new(2).unwrap();
+        analysis
+            .observe_map16(0, &[0x25, 0x25, 0x8000], Some((&[1, 1, 0x7000], 2)))
+            .unwrap();
+        analysis.observe_graphics(0, [0x14, 0x14, 0x1000]).unwrap();
+        analysis.observe_map16(1, &[0x25], None).unwrap();
+        let report = analysis.finish([6], [0x7f]);
+        assert_eq!(
+            report
+                .map16_tiles
+                .iter()
+                .map(|entry| (entry.resource, entry.count, entry.levels.clone()))
+                .collect::<Vec<_>>(),
+            [
+                (6, 0, vec![false, false]),
+                (0x25, 3, vec![true, true]),
+                (0xa001, 2, vec![true, false]),
+            ]
+        );
+        assert_eq!(
+            report
+                .graphics_files
+                .iter()
+                .map(|entry| (entry.resource, entry.count))
+                .collect::<Vec<_>>(),
+            [(0x14, 2), (0x7f, 0)]
+        );
+    }
+
+    #[test]
+    fn accumulator_counts_extra_bit_sprite_namespace_and_resolved_music() {
+        let sprites = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![
+                SpriteToken::Record(lm_level::SpriteRecord {
+                    encoded: vec![0x08, 0, 0x42],
+                }),
+                SpriteToken::Record(lm_level::SpriteRecord {
+                    encoded: vec![0x0c, 0, 0x42],
+                }),
+            ],
+        };
+        let mut analysis = LevelUsageAccumulator::new(1).unwrap();
+        analysis.observe_sprites(0, &sprites).unwrap();
+        analysis.observe_music(0, 3, "Here We Go!").unwrap();
+        let report = analysis.finish([], []);
+        assert_eq!(
+            report
+                .sprites
+                .iter()
+                .map(|entry| (entry.resource, entry.count))
+                .collect::<Vec<_>>(),
+            [(0x242, 1), (0x342, 1)]
+        );
+        assert_eq!(report.music_tracks[0].resource, 3);
+        assert_eq!(report.music_tracks[0].name.as_deref(), Some("Here We Go!"));
     }
 }
