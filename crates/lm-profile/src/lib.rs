@@ -24,6 +24,7 @@ mod level_access_restriction;
 mod lfix3_install;
 mod lfix3_runtime;
 mod lunar_magic_metadata;
+mod map16_runtime_install;
 mod native_assets;
 mod native_map16_remap;
 mod native_map16_secondary;
@@ -202,6 +203,9 @@ pub use lfix3_runtime::{
 pub use lunar_magic_metadata::{
     SMW_US_V1_LM_ATTRIBUTION_OFFSET, SMW_US_V1_LM_FEATURE_RECORD_OFFSET,
     SMW_US_V1_LM_VRAM_VERSION_OFFSET, smw_us_v1_lunar_magic_metadata_layout,
+};
+pub use map16_runtime_install::{
+    SmwUsV1Map16RuntimeInstallBuildError, smw_us_v1_map16_runtime_installation_plan,
 };
 pub use native_map16_remap::{
     GroupedMap16RemapRecord, LoadedSmwUsV1Map16Remaps, Map16RemapRange,

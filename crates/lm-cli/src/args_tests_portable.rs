@@ -372,6 +372,22 @@ fn parses_built_in_expanded_settings_install() {
 }
 
 #[test]
+fn parses_built_in_map16_runtime_install() {
+    assert_eq!(
+        parse_from(&[
+            "smw-map16-runtime-install".into(),
+            "input.smc".into(),
+            "output.smc".into(),
+        ])
+        .unwrap(),
+        Command::Map16RuntimeInstall {
+            input_rom: "input.smc".into(),
+            output_rom: "output.smc".into(),
+        }
+    );
+}
+
+#[test]
 fn parses_complete_layer3_install() {
     assert_eq!(
         parse_from(&[

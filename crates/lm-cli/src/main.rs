@@ -72,6 +72,7 @@ mod lm16_map16_file;
 mod lunar_magic_metadata_native;
 mod map16;
 mod map16_page_file;
+mod map16_runtime_install;
 mod map16_set_file;
 mod map16_transfer;
 mod mwl_corpus;

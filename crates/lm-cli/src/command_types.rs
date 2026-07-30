@@ -66,6 +66,10 @@ pub enum Command {
         input_rom: PathBuf,
         output_rom: PathBuf,
     },
+    Map16RuntimeInstall {
+        input_rom: PathBuf,
+        output_rom: PathBuf,
+    },
     Layer3Install {
         input_rom: PathBuf,
         output_rom: PathBuf,

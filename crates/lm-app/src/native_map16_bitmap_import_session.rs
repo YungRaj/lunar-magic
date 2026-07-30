@@ -345,6 +345,35 @@ impl NativeMap16BitmapImportSession {
         let before = image.logical_bytes().to_vec();
         let mut project = Project::new(image);
         let checksum_field = self.snapshot.identity.internal_header_offset + 0x1c;
+        let allocated = self.allocated_pages()?;
+        let secondary_changed = allocated
+            .touched_pages
+            .iter()
+            .any(|page_number| *page_number >= 0x80);
+        let secondary_installed = self
+            .smw_secondary_map16
+            .as_ref()
+            .is_some_and(|secondary| secondary.installed);
+        if secondary_changed && !secondary_installed {
+            let runtime_allocation = AllocationPolicy {
+                search: 0x80_000..0x10_0000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0x00, 0xff],
+                protected: vec![ProtectedRange(
+                    self.snapshot.identity.internal_header_offset
+                        ..self.snapshot.identity.internal_header_offset + 0x40,
+                )],
+            };
+            let plan = lm_profile::smw_us_v1_map16_runtime_installation_plan(
+                &before,
+                runtime_allocation,
+                checksum_field,
+            )
+            .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+            project
+                .install_relocatable_patch(&plan)
+                .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
+        }
         if search.end > project.rom.logical_len() {
             project
                 .expand_rom(Mapper::LoRom, search.end, 0xff, checksum_field)
@@ -429,9 +458,8 @@ impl NativeMap16BitmapImportSession {
         let mut secondary_map16 = self.smw_secondary_map16.clone().ok_or_else(|| {
             NativeMap16BitmapImportSessionError::Map16("missing secondary baseline".into())
         })?;
-        let allocated = self.allocated_pages()?;
         let mut primary_changed = false;
-        let mut secondary_changed = false;
+        let mut wrote_secondary_page = false;
         for page_number in &allocated.touched_pages {
             if *page_number < 0x80 {
                 replace_transferred_page(&mut map16, *page_number, &allocated.pages[*page_number])?;
@@ -442,7 +470,7 @@ impl NativeMap16BitmapImportSession {
                     *page_number,
                     &allocated.pages[*page_number],
                 )?;
-                secondary_changed = true;
+                wrote_secondary_page = true;
             }
         }
         let map16_options = lm_profile::SmwUsV1TransferredMap16SaveOptions {
@@ -460,7 +488,7 @@ impl NativeMap16BitmapImportSession {
             )
             .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
         }
-        if secondary_changed {
+        if wrote_secondary_page {
             lm_profile::save_smw_us_v1_secondary_map16(
                 &mut project,
                 &secondary_map16.definitions,
@@ -508,7 +536,7 @@ impl NativeMap16BitmapImportSession {
                 ));
             }
         }
-        if secondary_changed {
+        if wrote_secondary_page {
             let reopened = lm_profile::load_smw_us_v1_secondary_map16(&project)
                 .map_err(|error| NativeMap16BitmapImportSessionError::Map16(error.to_string()))?;
             if reopened.definitions != secondary_map16.definitions {
@@ -1114,6 +1142,56 @@ mod tests {
                 .map(|tile| tile.acts_like)
                 .collect::<Vec<_>>()
         );
+        assert!(project.identity.as_ref().unwrap().checksum_matches());
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn pristine_background_import_installs_runtime_and_reopens_tile_8200() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let session = NativeMap16BitmapImportSession::new_smw_us_v1(
+            app.controller_snapshot().unwrap(),
+            NativeMap16BitmapImportSessionRequest {
+                level: 0x105,
+                start_map16_tile: 0x8200,
+                extra_graphics: [Some(0x20), Some(0x21)],
+                pixels: vec![
+                    Rgba8 {
+                        red: 220,
+                        green: 30,
+                        blue: 40,
+                        alpha: 255,
+                    };
+                    16 * 16
+                ],
+                width: 16,
+                height: 16,
+                palette_row: 4,
+            },
+        )
+        .unwrap();
+        assert_eq!(session.map16_allocation().unwrap().assignments, [0x8200]);
+        let expected = session.allocated_pages().unwrap().pages[0x82].tiles[0];
+        let prepared = session.prepare_commit(0x80_000..0x10_0000).unwrap();
+        app.dispatch(prepared.into_command()).unwrap();
+
+        let project = app.project().unwrap();
+        let secondary = lm_profile::load_smw_us_v1_secondary_map16(project).unwrap();
+        assert!(secondary.installed);
+        let words = 0x200 * 4;
+        assert_eq!(
+            &secondary.definitions[words..words + 4],
+            &[
+                expected.top_left.0,
+                expected.top_right.0,
+                expected.bottom_left.0,
+                expected.bottom_right.0,
+            ]
+        );
+        assert_eq!(secondary.blocks[0].as_ref().unwrap().payload.len(), 0x1008);
         assert!(project.identity.as_ref().unwrap().checksum_matches());
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);

@@ -887,6 +887,22 @@ numerous fixed hooks, and patches three IRAM operands. Consequently the Rust sec
 publishes data when this runtime is already authenticated; treating marker `$22` alone as an
 installer would produce a ROM that reopens in the editor but cannot execute correctly in-game.
 
+A second Wine installation started from a 1 MiB ROM whose entire expansion area was deliberately
+occupied with `$A5`. Lunar Magic expanded it to 2 MiB, moving secondary payload `$80008` to
+`$100008` and the auxiliary payload `$88000` to `$108000`. Comparing the two installed ROMs
+changed only the expected allocation-bank operands (plus ROM size and checksum); the complete
+auxiliary payload was byte-identical. An unchanged complete-container import then isolated the
+runtime itself from secondary user data: its first secondary pointer is fixed storage `$0D9100`,
+the marker is already `$22`, and its sole RATS block is the auxiliary `$8000`-byte payload.
+
+The authenticated Rust installer models that result as 302 exact-precondition fixed writes, one
+typed low-bank relocation into an independently allocated auxiliary payload, and regenerated ROM
+size/checksum data. Its CLI output from the same copier-headered pristine ROM is byte-for-byte
+identical to Lunar Magic 3.63's 1,049,088-byte control output. Native bitmap import now invokes this
+installer before committing a pristine background tile such as `$8200`; the resulting secondary
+block reopens at the Wine-authenticated trimmed length `$1008`, while the complete multi-domain
+operation remains one application undo.
+
 Map16 interaction code through `004fd510` is now named and annotated. This covers tracking tooltips (including disabled controls and internal sprite/background tile descriptions), independent 100-5000 percent zoom with forward and inverse coordinate transforms, DPI-aware selector sizing, hover and auto-scroll behavior, selection creation and movement, temporary-buffer restoration, property-panel mixed-value analysis, priority and palette edits, horizontal and vertical flips, and Acts Like cycle detection.
 
 Map16 Acts Like editing and the full 8x8-subtile interaction path through `004ff170` are now named. The recovered behavior includes cycle-rejecting Acts Like assignment, per-corner graphics-index edits, additive/subtractive 324,608-byte selection masks, clamped selection translation, live/temporary buffer swapping, 8x8-selector paste integration, hover and auto-scroll logic, and serialization/deserialization. Added the exact 0xA0-byte `LunarMagicSubtileClipboardHeader` with tile and auxiliary section offsets, selection dimensions, count, source index, flags, and reserved regions.

@@ -287,6 +287,10 @@ fn execute_profile(command: &Command) -> Result<bool, Box<dyn std::error::Error>
             input_rom,
             output_rom,
         } => crate::expanded_settings_install::execute(input_rom, output_rom)?,
+        Command::Map16RuntimeInstall {
+            input_rom,
+            output_rom,
+        } => crate::map16_runtime_install::execute(input_rom, output_rom)?,
         Command::Layer3Install {
             input_rom,
             output_rom,
