@@ -548,6 +548,12 @@ Layer 2 plus descriptor, sprites, rotated 257-word palette, secondary exits, ExA
 settings, and final ROM checksum. The native level-assets window uses a bounded background reader
 for complete MWL import and exposes collision-safe complete export; the shell exposes the same
 profile-qualified boundary as `level-mwl-import` and `level-mwl-export`.
+Batch shell coverage additionally checks Lunar Magic's exact `base %03X.mwl` naming, extension
+stripping, Unicode paths, hidden-file skipping, case-insensitive MWL selection, directory
+rejection, create-new collisions, staged multi-file rollback, canonical path aliases, and the
+modified-only pointer predicate against both sides of a retained live Wine fixture. Directory
+import auto-targets the validated MWL header and continues through per-file decode/save failures;
+native progress and cancellation coverage remains open.
 The application-shell form binds its source and exact animation interpretation through a bounded
 `LMMWLOPT1` specification, commits both sections as one revision, and exercises undo, redo, save,
 Unicode/space-containing paths, unrelated-section preservation, and failure rollback through the

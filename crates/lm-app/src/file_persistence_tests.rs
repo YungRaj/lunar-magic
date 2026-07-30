@@ -58,6 +58,51 @@ fn published_save_is_success_even_if_private_link_cleanup_fails() {
 }
 
 #[test]
+fn grouped_new_save_publishes_every_document_without_debris() {
+    let directory = TestDirectory::new();
+    let first = directory.0.join("Level 000.mwl");
+    let second = directory.0.join("Level 001.mwl");
+    write_new_group(&[(&first, b"zero"), (&second, b"one")]).unwrap();
+    assert_eq!(fs::read(first).unwrap(), b"zero");
+    assert_eq!(fs::read(second).unwrap(), b"one");
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 2);
+}
+
+#[test]
+fn grouped_new_save_rolls_back_its_publications_on_collision() {
+    let directory = TestDirectory::new();
+    let first = directory.0.join("Level 000.mwl");
+    let occupied = directory.0.join("Level 001.mwl");
+    fs::write(&occupied, b"existing").unwrap();
+    assert_eq!(
+        write_new_group(&[(&first, b"zero"), (&occupied, b"one")])
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::AlreadyExists
+    );
+    assert!(!first.exists());
+    assert_eq!(fs::read(occupied).unwrap(), b"existing");
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 1);
+}
+
+#[test]
+fn grouped_new_save_rejects_canonical_aliases_before_publication() {
+    let directory = TestDirectory::new();
+    let child = directory.0.join("child");
+    fs::create_dir(&child).unwrap();
+    let destination = directory.0.join("Level 000.mwl");
+    let alias = child.join("..").join("Level 000.mwl");
+    assert_eq!(
+        write_new_group(&[(&destination, b"zero"), (&alias, b"alias")])
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidInput
+    );
+    assert!(!destination.exists());
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 1);
+}
+
+#[test]
 fn existing_regular_document_is_replaced_without_staging_debris() {
     let directory = TestDirectory::new();
     let destination = directory.0.join("existing.smc");

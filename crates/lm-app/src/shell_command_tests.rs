@@ -6,14 +6,22 @@ fn parses_complete_mwl_import_with_unicode_path_and_allocation_range() {
         parse("level-mwl-import levels/My Level 日本語.mwl 300000 400000").unwrap(),
         ShellCommand::ImportMwlLevel {
             path: "levels/My Level 日本語.mwl".into(),
-            search_start: 0x300000,
-            search_end: 0x400000,
+            search_start: 0x0030_0000,
+            search_end: 0x0040_0000,
         }
     );
     assert!(matches!(
         parse("level-mwl-import level.mwl 300000"),
         Err(ShellCommandError::MissingArgument("level-mwl-import"))
     ));
+    assert_eq!(
+        parse("level-mwl-import-dir levels/My Directory 日本語 300000 400000").unwrap(),
+        ShellCommand::ImportMwlLevelDirectory {
+            path: "levels/My Directory 日本語".into(),
+            search_start: 0x0030_0000,
+            search_end: 0x0040_0000,
+        }
+    );
 }
 
 #[test]
@@ -26,6 +34,14 @@ fn parses_complete_mwl_export_with_unicode_path() {
         parse("level-mwl-export"),
         Err(ShellCommandError::MissingArgument("level-mwl-export"))
     ));
+    assert_eq!(
+        parse("level-mwl-export-all levels/My Export 日本語.mwl").unwrap(),
+        ShellCommand::ExportAllMwlLevels("levels/My Export 日本語.mwl".into())
+    );
+    assert_eq!(
+        parse("level-mwl-export-modified levels/Modified 日本語.mwl").unwrap(),
+        ShellCommand::ExportModifiedMwlLevels("levels/Modified 日本語.mwl".into())
+    );
 }
 
 #[test]

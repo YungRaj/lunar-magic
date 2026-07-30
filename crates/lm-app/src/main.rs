@@ -96,7 +96,8 @@ use editor_shell::{
 };
 use editor_shell::{
     edit_expanded_settings, edit_expanded_settings_word, edit_level_header, execute_editor_script,
-    export_mwl_level, import_mwl_level, migrate_graphics_compression,
+    export_all_mwl_levels, export_modified_mwl_levels, export_mwl_level, import_mwl_level,
+    import_mwl_level_directory, migrate_graphics_compression,
 };
 use entity_appearance_document_shell::execute_entity_appearance_document_command;
 use exanimation_document_shell::execute_exanimation_document_command;
@@ -855,7 +856,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 search_start,
                 search_end,
             } => import_mwl_level(&mut app, &path, search_start..search_end)?,
+            ShellCommand::ImportMwlLevelDirectory {
+                path,
+                search_start,
+                search_end,
+            } => import_mwl_level_directory(&mut app, &path, search_start..search_end)?,
             ShellCommand::ExportMwlLevel(path) => export_mwl_level(&app, &path)?,
+            ShellCommand::ExportAllMwlLevels(path) => export_all_mwl_levels(&app, &path)?,
+            ShellCommand::ExportModifiedMwlLevels(path) => {
+                export_modified_mwl_levels(&app, &path)?;
+            }
             ShellCommand::MigrateGraphicsCompression {
                 target,
                 search_start,
@@ -916,7 +926,7 @@ fn print_help() {
     println!(
         "commands: open PATH, recent, open-recent INDEX, close, status, profile PATH, profile-clear, revision-patch-install-file SPEC, expanded-settings-install, layer3-install, overworld-native-path-export PATH, overworld-native-path-import PATH, overworld-native-warp-export PATH, overworld-native-warp-import PATH, overworld-native-name-export PATH, overworld-native-name-import PATH, overworld-native-settings-export PATH, overworld-native-settings-import PATH, overworld-native-start-export PATH, overworld-native-start-import PATH, level HEX, level-back, level-forward, level-view X Y ZOOM_NUM ZOOM_DEN, \
          level-header FIELD VALUE SEARCH_START SEARCH_END, level-edit SCRIPT SEARCH_START SEARCH_END, level-edit-owned SCRIPT SEARCH_START SEARCH_END OWNERSHIP_MANIFEST, \
-         native-assets-edit SPEC SEARCH_START SEARCH_END, native-assets-edit-owned SPEC SEARCH_START SEARCH_END OWNERSHIP_MANIFEST, level-mwl-import FILE SEARCH_START SEARCH_END, level-mwl-export FILE, \
+         native-assets-edit SPEC SEARCH_START SEARCH_END, native-assets-edit-owned SPEC SEARCH_START SEARCH_END OWNERSHIP_MANIFEST, level-mwl-import FILE SEARCH_START SEARCH_END, level-mwl-import-dir DIRECTORY SEARCH_START SEARCH_END, level-mwl-export FILE, level-mwl-export-all TEMPLATE, level-mwl-export-modified TEMPLATE, \
          expanded-settings-word INDEX VALUE, expanded-settings-edit SCRIPT, \
          map16-edit SCRIPT SEARCH_START SEARCH_END, map16-edit-owned SCRIPT SEARCH_START SEARCH_END OWNERSHIP_MANIFEST, palette-edit SCRIPT SEARCH_START SEARCH_END, palette-edit-owned SCRIPT SEARCH_START SEARCH_END OWNERSHIP_MANIFEST, \
          graphics-edit SCRIPT SEARCH_START SEARCH_END, graphics-edit-owned SCRIPT SEARCH_START SEARCH_END OWNERSHIP_MANIFEST, \

@@ -35,6 +35,21 @@ apparently read-only exports. A pre-headered input remained byte-identical durin
 export. This behavior and the observed mode meanings are also recorded on
 `ExportAllLevelsToDirectory` (`00485720`) in Ghidra.
 
+Live decompilation of `ExportAllLevelsToDirectory` confirms that ordinary SMW modified-only
+selection first loads the 512-entry Layer 1 PC-offset table and exports a slot when its payload is
+at or beyond active descriptor entry `0x31`. `CheckRomOffsetCanBeModified` (`004425B0`) proves the
+same lower-bound comparison; the SMW-US revision-0 descriptor boundary is the original headerless
+ROM length, `0x80000`. Against the retained installed Layer 3 fixture, Wine mode `1` exported only
+`Modified 000.mwl`, while the clean-room predicate selects exactly slot `000`; the corresponding
+pristine before-ROM selects no slots.
+
+`InsertMultipleLevelsFromDirectory` (`00485180`) enumerates `*.mwl`, ignores directory/system
+entries, counts hidden files as skipped, calls `ImportLevelFileAutoDetect`, and attempts
+`SaveLevelToRom(1)` for every successfully decoded file. Import or save failure increments a
+failure count and does not abort later files. The clean-room shell follows this per-file commit
+boundary and reads each target level from the MWL header rather than retargeting it to the current
+editor selection.
+
 The same pristine headered copy produced three additional exact compatibility corpora:
 
 - `-ExportAllMap16` emitted a 651,760-byte `LM16` container. Its eight directory entries describe

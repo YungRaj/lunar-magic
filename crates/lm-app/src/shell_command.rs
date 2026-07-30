@@ -202,8 +202,18 @@ pub enum ShellCommand {
         search_start: usize,
         search_end: usize,
     },
+    /// Imports every visible MWL in a directory into the level declared by that file.
+    ImportMwlLevelDirectory {
+        path: PathBuf,
+        search_start: usize,
+        search_end: usize,
+    },
     /// Exports the currently selected installed native level as a complete binary MWL.
     ExportMwlLevel(PathBuf),
+    /// Exports every profile-addressable native level using Lunar Magic's numbered naming rule.
+    ExportAllMwlLevels(PathBuf),
+    /// Exports only levels whose Layer 1 payload is outside pristine SMW ROM data.
+    ExportModifiedMwlLevels(PathBuf),
     MigrateGraphicsCompression {
         target: GraphicsCompression,
         search_start: usize,
@@ -256,6 +266,7 @@ impl fmt::Display for ShellCommandError {
 impl std::error::Error for ShellCommandError {}
 
 /// Parses one command line while preserving spaces and Unicode in path arguments.
+#[allow(clippy::too_many_lines)] // Exhaustive command router; domain parsers remain focused.
 pub fn parse(line: &str) -> Result<ShellCommand, ShellCommandError> {
     let line = line.trim();
     if line.is_empty() {
@@ -328,7 +339,11 @@ pub fn parse(line: &str) -> Result<ShellCommand, ShellCommandError> {
         )?)),
         "level-edit" => parse_level_edit_script(argument),
         "native-assets-edit" => parse_native_assets_edit_script(argument),
-        "level-mwl-import" | "level-mwl-export" => parse_mwl_level_command(command, argument),
+        "level-mwl-import"
+        | "level-mwl-import-dir"
+        | "level-mwl-export"
+        | "level-mwl-export-all"
+        | "level-mwl-export-modified" => parse_mwl_level_command(command, argument),
         "overworld" => no_argument(argument, "overworld", ShellCommand::ShowOverworld),
         "overworld-edit" => parse_overworld_edit_script(argument),
         "map16" => no_argument(argument, "map16", ShellCommand::ShowMap16),

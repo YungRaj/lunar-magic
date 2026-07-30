@@ -25,6 +25,11 @@ pub const SMW_US_V1_SPECIAL_GRAPHICS_FILES: usize = 2;
 
 /// Number of native level slots in SMW's primary and secondary level ranges.
 pub const SMW_US_V1_VANILLA_LEVEL_SLOTS: usize = 0x200;
+/// Original headerless ROM boundary used by Lunar Magic's modified-level export predicate.
+///
+/// `ExportAllLevelsToDirectory` compares each Layer 1 payload PC offset with descriptor entry
+/// `0x31`; the SMW-US revision-0 descriptor stores the original 512 KiB image length here.
+pub const SMW_US_V1_ORIGINAL_LOGICAL_LEN: usize = 0x80_000;
 /// Contiguous 24-bit Layer 1 object-stream pointer table.
 pub const SMW_US_V1_LEVEL_LAYER1_POINTER_TABLE_OFFSET: usize = 0x2e000;
 /// Contiguous 24-bit Layer 2 object/tilemap pointer table.

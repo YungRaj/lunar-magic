@@ -2575,6 +2575,17 @@ secondary exits, ExAnimation, expanded settings, and final ROM checksum. The ter
 window exposes complete MWL import/export actions with bounded asynchronous reads and the existing
 atomic import coordinator.
 
+Batch MWL transfer now has an explicit shell workflow. `level-mwl-export-all TEMPLATE` strips the
+template extension and publishes `base 000.mwl` through `base 1FF.mwl`; all payloads are staged and
+synchronized before collision-safe grouped publication, with inode-checked rollback limited to
+files created by that call. `level-mwl-export-modified TEMPLATE` uses Ghidra's recovered Layer 1
+pointer predicate and accepts a zero-document result. Its retained installed fixture selects
+exactly level `000`, matching live Lunar Magic mode `1`. `level-mwl-import-dir DIRECTORY
+SEARCH_START SEARCH_END` enumerates visible regular MWLs deterministically, takes each destination
+from its validated header, commits each successful import as its own complete ROM transaction, and
+continues after malformed or unsavable files. The remaining batch parity work is native progress
+UI and Escape cancellation.
+
 The current SMW US revision-0 profile also contains the recovered multi-bank overworld-message
 installation boundary used once more than 96 level-name slots are enabled. It installs the fixed
 version-1.10 renderer, allocates a three-byte pointer for each of the even 194–512 messages, packs

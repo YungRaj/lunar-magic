@@ -322,16 +322,34 @@ pub(super) fn parse_mwl_level_import(argument: &str) -> Result<ShellCommand, She
     })
 }
 
+fn parse_mwl_level_directory_import(argument: &str) -> Result<ShellCommand, ShellCommandError> {
+    let (path, search_start, search_end) =
+        parse_script_path_and_range(argument, "level-mwl-import-dir")?;
+    Ok(ShellCommand::ImportMwlLevelDirectory {
+        path,
+        search_start,
+        search_end,
+    })
+}
+
 pub(super) fn parse_mwl_level_command(
     command: &str,
     argument: &str,
 ) -> Result<ShellCommand, ShellCommandError> {
     match command {
         "level-mwl-import" => parse_mwl_level_import(argument),
+        "level-mwl-import-dir" => parse_mwl_level_directory_import(argument),
         "level-mwl-export" => Ok(ShellCommand::ExportMwlLevel(super::path_argument(
             argument,
             "level-mwl-export",
         )?)),
+        "level-mwl-export-all" => Ok(ShellCommand::ExportAllMwlLevels(super::path_argument(
+            argument,
+            "level-mwl-export-all",
+        )?)),
+        "level-mwl-export-modified" => Ok(ShellCommand::ExportModifiedMwlLevels(
+            super::path_argument(argument, "level-mwl-export-modified")?,
+        )),
         _ => unreachable!("caller restricts the MWL level command set"),
     }
 }

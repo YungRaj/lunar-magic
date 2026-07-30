@@ -1,6 +1,6 @@
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod staging;
 
@@ -18,6 +18,75 @@ pub fn write_new(destination: &Path, bytes: &[u8]) -> io::Result<()> {
     let publication = fs::hard_link(&staged, destination);
     let cleanup = fs::remove_file(&staged);
     finalize_new_publication(publication, cleanup)
+}
+
+/// Publishes a group of newly staged documents with rollback of this group's publications.
+///
+/// Every payload is staged and synchronized before the first destination is created. Destinations
+/// must be pairwise distinct and absent. If any hard-link publication fails, files already
+/// published by this call are removed only after verifying that they still identify the staged
+/// inode; unrelated replacements are never deleted.
+///
+/// # Errors
+///
+/// Returns an I/O error for an empty or aliased destination, an existing destination, staging or
+/// synchronization failure, or publication failure.
+pub fn write_new_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
+    if documents.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "grouped save requires at least one document",
+        ));
+    }
+    let mut staged = Vec::with_capacity(documents.len());
+    let mut resolved = Vec::with_capacity(documents.len());
+    for (index, (destination, bytes)) in documents.iter().copied().enumerate() {
+        let name = destination.file_name().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name")
+        })?;
+        let parent = fs::canonicalize(destination.parent().unwrap_or_else(|| Path::new(".")))?;
+        let resolved_destination = parent.join(name);
+        if resolved[..index].contains(&resolved_destination) {
+            cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "grouped save destinations must differ",
+            ));
+        }
+        resolved.push(resolved_destination);
+        match stage(destination, bytes, None) {
+            Ok(path) => staged.push(path),
+            Err(error) => {
+                cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+                return Err(error);
+            }
+        }
+    }
+
+    let mut published: Vec<(&Path, fs::Metadata)> = Vec::with_capacity(documents.len());
+    for ((destination, _), staged_path) in documents.iter().zip(&staged) {
+        let destination = *destination;
+        let metadata = match fs::metadata(staged_path) {
+            Ok(metadata) => metadata,
+            Err(error) => {
+                for (path, expected) in &published {
+                    let _ = remove_if_same_file(path, expected);
+                }
+                cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+                return Err(error);
+            }
+        };
+        if let Err(error) = fs::hard_link(staged_path, destination) {
+            for (path, expected) in &published {
+                let _ = remove_if_same_file(path, expected);
+            }
+            cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+            return Err(error);
+        }
+        published.push((destination, metadata));
+    }
+    cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+    Ok(())
 }
 
 fn finalize_new_publication(

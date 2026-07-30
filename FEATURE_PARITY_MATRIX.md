@@ -57,8 +57,8 @@ interactive level import workflow, and a CLI transaction does not prove its nati
 | Level | Custom sprite library (`.mw2`/`.mwt`/`.ssc`) | P | P | P | ~ | ~ | Partial | Size-table-bound editor passes; automate all SSC display/palette/source modes |
 | Level | Import/export one binary MWL level | P | P | P | P | ~ | Partial | Complete controller, shell, native level-assets actions, and live Rust export → LM import/re-export oracle pass; broaden ROM/runtime variants |
 | Level | Import/export legacy multi-file levels | P | ~ | - | ~ | - | Missing | Ghidra `ExportLegacyMultiFileLevel`; no complete native workflow |
-| Level | Insert multiple levels from a directory | ~ | ~ | - | - | - | Missing | Ghidra `InsertMultipleLevelsFromDirectory`, `HandleInsertMultipleLevelsCommand` |
-| Level | Export all levels to a directory | ~ | ~ | - | ~ | - | Missing | Ghidra `ExportAllLevelsToDirectory`; CLI primitives do not prove batch workflow |
+| Level | Insert multiple levels from a directory | P | P | - | P | ~ | Partial | Shell auto-targets visible MWLs, skips hidden files, continues after per-file failures, and commits successes independently; native long-operation dialog/cancellation remains |
+| Level | Export all levels to a directory | P | P | - | P | ~ | Partial | Shell implements all and modified-only modes, exact `%03X` naming, collision-safe grouped publication, Ghidra predicate, and Wine-backed selection fixture; native dialog/cancellation remains |
 | Level | Export one/all level images as PNG/BMP | P | P | ~ | P | ~ | Partial | Renderer/CLI pass; reproduce original naming, bounds, prompts, and batch dialog |
 | Level | Level usage analysis | - | - | - | - | - | Missing | Ghidra `HandleLevelUsageAnalysisCommand` |
 | Level | Restrict level access | - | - | - | - | - | Missing | Ghidra `HandleRestrictLevelAccessCommand` |
