@@ -880,6 +880,10 @@ stage: it computes a nearest entry and weighted RGB555 error for every source co
 usable row, sums those errors across each 8×8 occurrence, and chooses the least-error row before
 rewriting its local indexes. This permits an uninstalled color to use its nearest available entry
 instead of incorrectly rejecting every non-exact color set.
+The record weight is pixel-semantic: identical sets accumulate each member color's 8×8 frequency,
+and a superset adds the matching per-color frequencies of every strict subset before summing its
+selection weight. The Rust records now retain direct and aggregate vectors separately; treating
+all tile occurrences as unit weight would select the wrong colors for mixed-frequency artwork.
 The native dialog exposes the recovered reduction method, 1–128 limit, 1–4 priority, and all 128
 free/reusable/reserved entry states. Fixed palette ownership is forced reusable and ExAnimation
 ownership forced reserved before allocation, so presentation choices cannot overwrite another

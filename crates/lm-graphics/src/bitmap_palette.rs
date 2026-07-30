@@ -1,11 +1,7 @@
 //! Lunar Magic-compatible color-option primitives for bitmap graphics imports.
 
 use crate::{Bgr555, Palette, QuantizerError, Rgb8, Rgba8, WuQuantizer};
-use std::{
-    cmp::Ordering,
-    collections::{BTreeMap, BTreeSet},
-    fmt,
-};
+use std::{cmp::Ordering, collections::BTreeMap, fmt};
 
 pub const BITMAP_PALETTE_ROWS: usize = 8;
 pub const BITMAP_PALETTE_COLORS: usize = BITMAP_PALETTE_ROWS * Palette::COLORS_PER_ROW;
@@ -286,11 +282,11 @@ fn build_tile_color_sets(
     width: usize,
     tiles_wide: usize,
     tiles_high: usize,
-) -> Result<Vec<Vec<u16>>, BitmapPaletteReductionError> {
+) -> Result<Vec<TileColorHistogram>, BitmapPaletteReductionError> {
     let mut tile_sets = Vec::with_capacity(tiles_wide * tiles_high);
     for tile_y in 0..tiles_high {
         for tile_x in 0..tiles_wide {
-            let mut colors = BTreeSet::new();
+            let mut histogram = BTreeMap::<u16, usize>::new();
             for pixel_y in 0..8 {
                 let row = (tile_y * 8 + pixel_y) * width + tile_x * 8;
                 for index in &reduced.indices[row..row + 8] {
@@ -299,49 +295,64 @@ fn build_tile_color_sets(
                             .colors
                             .get(usize::from(*index) - 1)
                             .ok_or(BitmapPaletteReductionError::ReducedIndex(*index))?;
-                        colors.insert(color.0);
+                        *histogram.entry(color.0).or_default() += 1;
                     }
                 }
             }
-            if colors.len() > 15 {
+            if histogram.len() > 15 {
                 return Err(BitmapPaletteReductionError::TileColors {
                     tile: tile_sets.len(),
-                    colors: colors.len(),
+                    colors: histogram.len(),
                 });
             }
-            tile_sets.push(colors.into_iter().collect());
+            let (colors, weights) = histogram.into_iter().unzip();
+            tile_sets.push(TileColorHistogram { colors, weights });
         }
     }
     Ok(tile_sets)
 }
 
-fn build_color_set_records(tile_sets: &[Vec<u16>]) -> BTreeMap<Vec<u16>, ColorSetRecord> {
+fn build_color_set_records(tile_sets: &[TileColorHistogram]) -> BTreeMap<Vec<u16>, ColorSetRecord> {
     let mut records = BTreeMap::<Vec<u16>, ColorSetRecord>::new();
-    for (tile, colors) in tile_sets.iter().cloned().enumerate() {
-        records
-            .entry(colors.clone())
+    for (tile, histogram) in tile_sets.iter().enumerate() {
+        let record = records
+            .entry(histogram.colors.clone())
             .or_insert_with(|| ColorSetRecord {
-                colors,
+                colors: histogram.colors.clone(),
                 tiles: Vec::new(),
+                direct_weights: vec![0; histogram.colors.len()],
+                aggregate_weights: Vec::new(),
                 aggregate_weight: 0,
                 assigned_row: None,
-            })
-            .tiles
-            .push(tile);
+            });
+        record.tiles.push(tile);
+        for (weight, contribution) in record.direct_weights.iter_mut().zip(&histogram.weights) {
+            *weight += contribution;
+        }
     }
     let keys = records.keys().cloned().collect::<Vec<_>>();
     let weights = keys
         .iter()
         .map(|key| {
-            keys.iter()
-                .filter(|subset| is_subset(subset, key))
-                .map(|subset| records[subset].tiles.len())
-                .sum()
+            let mut aggregate = records[key].direct_weights.clone();
+            for subset in keys
+                .iter()
+                .filter(|subset| subset.len() < key.len() && is_subset(subset, key))
+            {
+                for (color, weight) in subset.iter().zip(&records[subset].direct_weights) {
+                    let destination = key
+                        .binary_search(color)
+                        .expect("a proven subset color is present");
+                    aggregate[destination] += weight;
+                }
+            }
+            aggregate
         })
         .collect::<Vec<_>>();
-    for (key, weight) in keys.iter().zip(weights) {
+    for (key, weights) in keys.iter().zip(weights) {
         if let Some(record) = records.get_mut(key) {
-            record.aggregate_weight = weight;
+            record.aggregate_weight = weights.iter().sum();
+            record.aggregate_weights = weights;
         }
     }
     records
@@ -478,9 +489,17 @@ fn best_palette_row(
 }
 
 #[derive(Clone, Debug)]
+struct TileColorHistogram {
+    colors: Vec<u16>,
+    weights: Vec<usize>,
+}
+
+#[derive(Clone, Debug)]
 struct ColorSetRecord {
     colors: Vec<u16>,
     tiles: Vec<usize>,
+    direct_weights: Vec<usize>,
+    aggregate_weights: Vec<usize>,
     aggregate_weight: usize,
     assigned_row: Option<usize>,
 }
@@ -488,6 +507,7 @@ struct ColorSetRecord {
 fn compare_color_set_priority(left: &ColorSetRecord, right: &ColorSetRecord) -> Ordering {
     left.aggregate_weight
         .cmp(&right.aggregate_weight)
+        .then_with(|| left.aggregate_weights.cmp(&right.aggregate_weights))
         .then_with(|| left.colors.len().cmp(&right.colors.len()))
         .then_with(|| right.colors.cmp(&left.colors))
 }
@@ -846,6 +866,28 @@ mod tests {
         assert_eq!(allocated.indices[1], 2);
         assert!(matches!(allocated.indices[2], 1 | 2));
         assert_eq!(allocated.palette, palette);
+    }
+
+    #[test]
+    fn color_set_aggregation_retains_pixel_frequency_from_strict_subsets() {
+        let records = build_color_set_records(&[
+            TileColorHistogram {
+                colors: vec![1, 2],
+                weights: vec![63, 1],
+            },
+            TileColorHistogram {
+                colors: vec![1],
+                weights: vec![64],
+            },
+            TileColorHistogram {
+                colors: vec![2],
+                weights: vec![64],
+            },
+        ]);
+        let superset = &records[&vec![1, 2]];
+        assert_eq!(superset.direct_weights, vec![63, 1]);
+        assert_eq!(superset.aggregate_weights, vec![127, 65]);
+        assert_eq!(superset.aggregate_weight, 192);
     }
 
     #[test]

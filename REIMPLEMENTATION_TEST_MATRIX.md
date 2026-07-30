@@ -893,7 +893,8 @@ all 128 entry states to Lunar Magic's exact free/reusable/reserved bits and init
 enforce the recovered 1–128 color and 1–4 priority bounds, preserve transparency at index zero, and
 cover deterministic popularity reduction with frequency-first/RGB555 tie ordering. Weighted
 unique 8×8 color sets, subset utility, reusable-color overlap, capacity selection, stable
-installation, and disjoint-row allocation are covered independently. Application tests carry the
+installation, per-member pixel-frequency aggregation, and disjoint-row allocation are covered
+independently. Application tests carry the
 selected row for every 8×8 tile into all four packed Map16 subtile descriptors and reconstruct the
 preview through those same rows; the original one-row path and complete ROM commit/reopen tests
 remain green. The native dialog exposes both reduction choices and the complete 8×16 state grid.
