@@ -32,6 +32,7 @@ mod legacy_mwl_transfer;
 mod level_controller;
 mod level_navigation;
 mod level_usage;
+mod level_usage_scan;
 mod localization;
 mod lunar_magic_metadata_state;
 mod map16_controller;
@@ -171,6 +172,10 @@ pub use level_navigation::{
 pub use level_usage::{
     LevelUsageAccumulator, LevelUsageAnalysisError, LevelUsageEntry, LevelUsageReport,
     LevelUsageReportError, LevelUsageTimestamp,
+};
+pub use level_usage_scan::{
+    LevelUsageScanDiagnostic, LevelUsageScanError, LevelUsageScanOptions, LevelUsageScanProgress,
+    LevelUsageScanResult, LevelUsageScanStage, scan_smw_us_v1_level_usage,
 };
 pub use lm_project::{MwlOptionalAssetsEdit, MwlOptionalAssetsEditError};
 pub use localization::{LocalizationCatalog, LocalizationError, UiTextKey};
