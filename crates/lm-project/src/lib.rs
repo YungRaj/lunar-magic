@@ -12,6 +12,7 @@ mod installed_layout;
 mod level_io;
 mod level_layer2_io;
 mod level_save;
+mod lfix3_level_fields_io;
 mod lunar_magic_metadata_io;
 mod map16_io;
 mod map16_set_io;
@@ -102,6 +103,9 @@ pub use level_layer2_io::{
     LevelLayer2RomLayout, LevelLayer2SaveOptions, LevelLayer2TilemapEncoding, LoadedLevelLayer2,
 };
 pub use level_save::{LevelSaveError, LevelSaveOptions, SavedLevelSlot};
+pub use lfix3_level_fields_io::{
+    Lfix3LevelFields, Lfix3LevelFieldsIoError, Lfix3LevelFieldsRomLayout,
+};
 pub use lunar_magic_metadata_io::{LunarMagicRomMetadataIoError, LunarMagicRomMetadataLayout};
 pub use map16_io::{Map16IoError, Map16RomLayout, Map16SaveOptions, SavedMap16Page};
 pub use map16_set_io::{Map16SetIoError, Map16SetSaveOptions, SavedMap16Set};

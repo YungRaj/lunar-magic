@@ -3,8 +3,8 @@
 use lm_project::{
     GraphicsCompression, GraphicsPointerPlanes, GraphicsRomLayout, LevelLayer2DescriptorTable,
     LevelLayer2PointerRedirect, LevelLayer2RomLayout, LevelLayer2TilemapEncoding,
-    LevelPointerTable, LevelRomLayout, SeparateMidwayPatchLocator, SpritePointerTable,
-    VanillaEntranceRomLayout,
+    LevelPointerTable, LevelRomLayout, Lfix3LevelFieldsRomLayout, SeparateMidwayPatchLocator,
+    SpritePointerTable, VanillaEntranceRomLayout,
 };
 use lm_rom::Mapper;
 use lm_rom::{RomError, RomImage};
@@ -44,6 +44,12 @@ pub const SMW_US_V1_ENTRANCE_POSITION_OFFSET: usize = 0x2f000;
 pub const SMW_US_V1_ENTRANCE_VERTICAL_SETTINGS_OFFSET: usize = 0x2f200;
 pub const SMW_US_V1_ENTRANCE_SCREEN_AND_METHOD_OFFSET: usize = 0x2f400;
 pub const SMW_US_V1_ENTRANCE_LEVEL_MODE_AND_SCREEN_OFFSET: usize = 0x2f600;
+/// Four additional 512-byte Lfix3 planes proven against Ghidra's generation-3 loader and every
+/// header in Lunar Magic's complete 512-level MWL export corpus.
+pub const SMW_US_V1_LFIX3_FLAGS_OFFSET: usize = 0x2de00;
+pub const SMW_US_V1_LFIX3_RUNTIME_FLAGS_OFFSET: usize = 0x37a00;
+pub const SMW_US_V1_LFIX3_HIGH_POSITION_OFFSET: usize = 0x37c00;
+pub const SMW_US_V1_LFIX3_ADDITIONAL_FLAGS_OFFSET: usize = 0x37e00;
 /// JSL hook installed by Lunar Magic's separate-midway runtime.
 pub const SMW_US_V1_SEPARATE_MIDWAY_HOOK_OFFSET: usize = 0x2d9e3;
 /// Four-byte graphics-file assignment rows for the 16 native object tilesets.
@@ -360,6 +366,19 @@ pub const fn smw_us_v1_vanilla_entrance_layout() -> VanillaEntranceRomLayout {
     }
 }
 
+/// Returns the four extra per-level fields used by Lunar Magic's current Lfix3 runtime.
+#[must_use]
+pub const fn smw_us_v1_lfix3_level_fields_layout() -> Lfix3LevelFieldsRomLayout {
+    Lfix3LevelFieldsRomLayout {
+        mapper: Mapper::LoRom,
+        flags_offset: SMW_US_V1_LFIX3_FLAGS_OFFSET,
+        high_position_offset: SMW_US_V1_LFIX3_HIGH_POSITION_OFFSET,
+        additional_flags_offset: SMW_US_V1_LFIX3_ADDITIONAL_FLAGS_OFFSET,
+        runtime_flags_offset: SMW_US_V1_LFIX3_RUNTIME_FLAGS_OFFSET,
+        entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+    }
+}
+
 #[must_use]
 pub const fn smw_us_v1_separate_midway_locator() -> SeparateMidwayPatchLocator {
     SeparateMidwayPatchLocator {
@@ -371,7 +390,7 @@ pub const fn smw_us_v1_separate_midway_locator() -> SeparateMidwayPatchLocator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_level::SpriteLengthTable;
+    use lm_level::{MwlFile, MwlLevelHeaderSection, MwlSectionKind, SpriteLengthTable};
     use lm_project::Project;
     use std::{fs, path::PathBuf};
 
@@ -401,6 +420,43 @@ mod tests {
             installed_layout.tilemap_encoding,
             LevelLayer2TilemapEncoding::SplitPlanes
         );
+    }
+
+    #[test]
+    fn all_lfix3_level_fields_match_complete_lunar_magic_mwl_corpus() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let project = Project::new(
+            RomImage::from_bytes(
+                fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                    .unwrap(),
+            )
+            .unwrap(),
+        );
+        for slot in 0..SMW_US_V1_VANILLA_LEVEL_SLOTS {
+            let file = MwlFile::decode(
+                &fs::read(root.join(format!(
+                    "oracle-work/lm363/pristine-us/levels/Level {slot:03X}.mwl"
+                )))
+                .unwrap(),
+            )
+            .unwrap();
+            let header =
+                MwlLevelHeaderSection::decode(file.section(MwlSectionKind::LevelHeader)).unwrap();
+            let expected = header.main_entrance();
+            let actual = project
+                .load_lfix3_level_fields(slot, smw_us_v1_lfix3_level_fields_layout())
+                .unwrap();
+            assert_eq!(actual.flags, expected.flags, "slot {slot:03X}");
+            assert_eq!(
+                actual.high_position, expected.high_position,
+                "slot {slot:03X}"
+            );
+            assert_eq!(
+                actual.additional_flags, expected.additional_flags,
+                "slot {slot:03X}"
+            );
+            assert_eq!(actual.runtime_flags, header.0[17], "slot {slot:03X}");
+        }
     }
 
     #[test]
