@@ -43,8 +43,14 @@ pub(super) fn checked_pointer_ranges(
             };
             match request.pointer {
                 PayloadPointer::Contiguous { offset }
-                | PayloadPointer::ContiguousLowBank { offset } => Ok(vec![range(offset, 3)?]),
+                | PayloadPointer::ContiguousLowBank { offset }
+                | PayloadPointer::DisplacedContiguous { offset, .. } => Ok(vec![range(offset, 3)?]),
                 PayloadPointer::Split {
+                    low_word_offset,
+                    bank_offset,
+                    ..
+                }
+                | PayloadPointer::DisplacedWordAndBank {
                     low_word_offset,
                     bank_offset,
                     ..
@@ -162,10 +168,17 @@ pub(super) fn validate_request(
         });
     }
     match request.pointer {
-        PayloadPointer::Contiguous { offset } | PayloadPointer::ContiguousLowBank { offset } => {
+        PayloadPointer::Contiguous { offset }
+        | PayloadPointer::ContiguousLowBank { offset }
+        | PayloadPointer::DisplacedContiguous { offset, .. } => {
             project.rom.read(offset, 3)?;
         }
         PayloadPointer::Split {
+            low_word_offset,
+            bank_offset,
+            ..
+        }
+        | PayloadPointer::DisplacedWordAndBank {
             low_word_offset,
             bank_offset,
             ..

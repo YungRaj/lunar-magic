@@ -63,6 +63,33 @@ fn split_pointer_components_commit_as_one_undo_step() {
 }
 
 #[test]
+fn displaced_word_and_bank_encodes_lunar_magic_operands_atomically() {
+    let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x10_0000]).unwrap());
+    let original = project.save_snapshot();
+    let mut save = request(vec![1, 2, 3]);
+    save.pointer = PayloadPointer::DisplacedWordAndBank {
+        low_word_offset: 0x20,
+        bank_offset: 0x40,
+        displacement: 0x1000,
+        low_bank: true,
+    };
+    save.allocation_policy.search = 0x80000..0x88000;
+    save.allocation_policy.protected = vec![ProtectedRange(0x20..0x22), ProtectedRange(0x40..0x41)];
+
+    let result = project.save_tagged_payload(&save).unwrap();
+    let pointer = result.snes_pointer.to_le_bytes();
+    let expected_low = u16::from_le_bytes([pointer[0], pointer[1]])
+        .wrapping_sub(0x1000)
+        .to_le_bytes();
+    assert_eq!(project.rom.read(0x20, 2).unwrap(), expected_low);
+    assert_eq!(project.rom.read(0x40, 1).unwrap(), &[pointer[2] & 0x7f]);
+    assert!(project.history.can_undo());
+
+    assert!(project.history.undo(&mut project.rom).unwrap());
+    assert_eq!(project.save_snapshot(), original);
+}
+
+#[test]
 fn shared_bank_mismatch_is_atomic() {
     let mut bytes = vec![0xff; 0x10000];
     bytes[0x40] = 0x81;

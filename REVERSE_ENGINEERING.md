@@ -912,11 +912,15 @@ length is rounded to eight bytes. A Wine matrix changing only tiles `$0800`, `$1
 `$8000`, exactly matching those slice rules. Touching block four or later also publishes the
 second `$8000`-byte auxiliary table described by the same save routine.
 
-The installed low-word/bank-word operands begin at logical runtime base `$37540`. Their eight
+The installed displaced-low-word/bank-byte operands begin at logical runtime base `$37540`. Their eight
 offset pairs are `{13,17}`, `{1c,20}`, `{27,2b}`, `{30,34}`, `{54,58}`, `{5d,61}`, `{68,6c}`,
 and `{71,75}`; the corresponding pointer displacements are `$1000,$8000,$0001,$8001,$0000,
 $8000,$0001,$8001`. The first changed `$0800` oracle, for example, stores pre-displacement
 pointer `$107008`, which resolves to allocated payload `$108008` after adding `$1000`.
+The second location in each pair is the bank byte itself, not the beginning of a writable
+little-endian word: the preceding byte in the installed 65C816 immediate operand remains fixed
+zero. `ReadPackedRomWordForTableEntry`, `RewritePrimaryMap16PointerPair`, and the Wine ROM deltas
+agree; the `$0800` case changes only logical `$37557` from `$00` to `$10`.
 
 Complete foreground behavior is a separate `$10000`-byte concern. The unchanged container shows
 blank extended tiles using Acts-Like `$0130`, while the older transferred-table helper's missing

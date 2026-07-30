@@ -26,6 +26,7 @@ mod lfix3_runtime;
 mod lunar_magic_metadata;
 mod map16_runtime_install;
 mod native_assets;
+mod native_map16_primary;
 mod native_map16_remap;
 mod native_map16_secondary;
 mod native_map16_transfer;
@@ -206,6 +207,15 @@ pub use lunar_magic_metadata::{
 };
 pub use map16_runtime_install::{
     SmwUsV1Map16RuntimeInstallBuildError, smw_us_v1_map16_runtime_installation_plan,
+};
+pub use native_map16_primary::{
+    LoadedSmwUsV1PrimaryMap16, SMW_US_V1_PRIMARY_MAP16_AUXILIARY_BYTES,
+    SMW_US_V1_PRIMARY_MAP16_BLOCK_BYTES, SMW_US_V1_PRIMARY_MAP16_BLOCK_COUNT,
+    SMW_US_V1_PRIMARY_MAP16_DEFINITION_WORDS, SMW_US_V1_PRIMARY_MAP16_LEGACY_PREFIX_BYTES,
+    SMW_US_V1_PRIMARY_MAP16_RUNTIME_BASE, SMW_US_V1_PRIMARY_MAP16_RUNTIME_MARKER_OFFSET,
+    SMW_US_V1_PRIMARY_MAP16_SECOND_AUXILIARY_POINTER_OFFSET, SavedSmwUsV1PrimaryMap16,
+    SmwUsV1PrimaryMap16Error, SmwUsV1PrimaryMap16SaveOptions, load_smw_us_v1_primary_map16,
+    save_smw_us_v1_primary_map16,
 };
 pub use native_map16_remap::{
     GroupedMap16RemapRecord, LoadedSmwUsV1Map16Remaps, Map16RemapRange,

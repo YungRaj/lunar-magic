@@ -141,7 +141,8 @@ impl GraphicsRomLayout {
     ) -> Result<SnesPointer24, GraphicsIoError> {
         match self.payload_pointer(file_number)? {
             PayloadPointer::Contiguous { offset }
-            | PayloadPointer::ContiguousLowBank { offset } => {
+            | PayloadPointer::ContiguousLowBank { offset }
+            | PayloadPointer::DisplacedContiguous { offset, .. } => {
                 let bytes = project.rom.read(offset, 3)?;
                 SnesPointer24::new(
                     u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16),
@@ -159,7 +160,7 @@ impl GraphicsRomLayout {
                 SnesPointer24::new(low | (high << 8) | (bank << 16))
                     .map_err(|_| GraphicsIoError::Layout(LevelLoadError::AddressOverflow))
             }
-            PayloadPointer::Split { .. } => {
+            PayloadPointer::Split { .. } | PayloadPointer::DisplacedWordAndBank { .. } => {
                 unreachable!("graphics layouts do not emit split words")
             }
         }

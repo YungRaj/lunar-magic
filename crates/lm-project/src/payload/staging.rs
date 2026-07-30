@@ -108,13 +108,43 @@ pub(super) fn stage_request(
     };
 
     let snes_pointer = pc_to_snes(request.mapper, block.payload.start)?;
+    write_pointer(staged, request, current_pointer_ranges, snes_pointer)?;
+
+    Ok(PayloadSaveResult {
+        block,
+        snes_pointer,
+        reused_existing,
+    })
+}
+
+fn write_pointer(
+    staged: &mut [u8],
+    request: &PayloadSaveRequest,
+    current_pointer_ranges: &[Range<usize>],
+    snes_pointer: u32,
+) -> Result<(), PayloadSaveError> {
     let mut pointer = snes_pointer.to_le_bytes();
-    if matches!(request.pointer, PayloadPointer::ContiguousLowBank { .. }) {
+    if matches!(
+        request.pointer,
+        PayloadPointer::ContiguousLowBank { .. }
+            | PayloadPointer::DisplacedContiguous { low_bank: true, .. }
+            | PayloadPointer::DisplacedWordAndBank { low_bank: true, .. }
+    ) {
         pointer[2] &= 0x7f;
     }
     match request.pointer {
         PayloadPointer::Contiguous { .. } | PayloadPointer::ContiguousLowBank { .. } => {
             staged[current_pointer_ranges[0].clone()].copy_from_slice(&pointer[..3]);
+        }
+        PayloadPointer::DisplacedContiguous { displacement, .. } => {
+            let encoded_low = u16::from_le_bytes([pointer[0], pointer[1]])
+                .wrapping_sub(displacement)
+                .to_le_bytes();
+            staged[current_pointer_ranges[0].clone()].copy_from_slice(&[
+                encoded_low[0],
+                encoded_low[1],
+                pointer[2],
+            ]);
         }
         PayloadPointer::Split {
             bank_offset,
@@ -150,13 +180,16 @@ pub(super) fn stage_request(
                 staged[range.clone()].copy_from_slice(std::slice::from_ref(&byte));
             }
         }
+        PayloadPointer::DisplacedWordAndBank { displacement, .. } => {
+            let encoded_low = u16::from_le_bytes([pointer[0], pointer[1]])
+                .wrapping_sub(displacement)
+                .to_le_bytes();
+            staged[current_pointer_ranges[0].clone()].copy_from_slice(&encoded_low);
+            staged[current_pointer_ranges[1].clone()].copy_from_slice(&pointer[2..3]);
+        }
     }
 
-    Ok(PayloadSaveResult {
-        block,
-        snes_pointer,
-        reused_existing,
-    })
+    Ok(())
 }
 
 fn changed_writes(before: &[u8], after: &[u8]) -> Vec<RomWrite> {

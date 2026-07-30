@@ -34,6 +34,12 @@ pub enum PayloadPointer {
     ContiguousLowBank {
         offset: usize,
     },
+    /// Contiguous 24-bit address with a wrapping displacement removed from its low word.
+    DisplacedContiguous {
+        offset: usize,
+        displacement: u16,
+        low_bank: bool,
+    },
     Split {
         low_word_offset: usize,
         bank_offset: usize,
@@ -44,6 +50,17 @@ pub enum PayloadPointer {
         low_offset: usize,
         high_offset: usize,
         bank_offset: usize,
+    },
+    /// A 24-bit address whose low word is stored with a wrapping displacement removed, while its
+    /// bank is stored at an independent byte.
+    ///
+    /// Lunar Magic's installed primary Map16 runtime uses this representation so that its 65C816
+    /// code can add a block-specific displacement directly to the embedded low-word operand.
+    DisplacedWordAndBank {
+        low_word_offset: usize,
+        bank_offset: usize,
+        displacement: u16,
+        low_bank: bool,
     },
 }
 
