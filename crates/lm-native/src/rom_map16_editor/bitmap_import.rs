@@ -1,25 +1,105 @@
 use super::{Command, RomMap16Editor, egui};
 use crate::{dialogs, document_loader::BoundedRead, rom_allocation::parse_search_range};
 use lm_app::{
+    DecodedMap16Bitmap, MAP16_BITMAP_MAX_DIMENSION, MAP16_BITMAP_MAX_PIXELS,
     MAP16_BITMAP_MAX_PNG_BYTES, NativeMap16BitmapImportSession,
     NativeMap16BitmapImportSessionRequest, decode_map16_bitmap_png_image,
 };
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+
+#[derive(Default)]
+pub(super) struct BitmapClipboardLoader {
+    running: Option<Receiver<Result<DecodedMap16Bitmap, String>>>,
+}
+
+impl BitmapClipboardLoader {
+    pub(super) fn is_running(&self) -> bool {
+        self.running.is_some()
+    }
+
+    fn start(&mut self) -> Result<(), String> {
+        if self.running.is_some() {
+            return Err("a clipboard bitmap load is already running".into());
+        }
+        let (sender, receiver) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("lm-clipboard-bitmap-load".into())
+            .spawn(move || {
+                let result = arboard::Clipboard::new()
+                    .map_err(|error| format!("could not open the system clipboard: {error}"))
+                    .and_then(|mut clipboard| {
+                        clipboard.get_image().map_err(|error| {
+                            format!("clipboard does not contain an image: {error}")
+                        })
+                    })
+                    .and_then(|image| {
+                        decode_clipboard_rgba(image.width, image.height, image.bytes.as_ref())
+                    });
+                let _send_result = sender.send(result);
+            })
+            .map_err(|error| format!("could not create clipboard-image worker: {error}"))?;
+        self.running = Some(receiver);
+        Ok(())
+    }
+
+    fn show(&mut self, context: &egui::Context) -> Option<Result<DecodedMap16Bitmap, String>> {
+        let completion = self.poll();
+        if self.running.is_some() {
+            egui::Window::new("Opening")
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    ui.label("Reading clipboard bitmap");
+                });
+            context.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        completion
+    }
+
+    fn poll(&mut self) -> Option<Result<DecodedMap16Bitmap, String>> {
+        let receiver = self.running.as_ref()?;
+        match receiver.try_recv() {
+            Ok(result) => {
+                self.running = None;
+                Some(result)
+            }
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => {
+                self.running = None;
+                Some(Err(
+                    "clipboard-image worker stopped without reporting a result".into(),
+                ))
+            }
+        }
+    }
+}
 
 impl RomMap16Editor {
     pub(super) fn poll_bitmap_loader(&mut self, context: &egui::Context) -> Option<Command> {
-        let completion = self.bitmap_loader.show(context)?;
-        match completion.and_then(|loaded| {
-            let [(_, bytes)] = loaded.into_exact::<1>("Map16 bitmap")?;
-            self.open_bitmap_session(&bytes)
-        }) {
-            Ok(()) => {}
-            Err(error) => self.error = Some(error),
+        if let Some(completion) = self.bitmap_loader.show(context) {
+            match completion.and_then(|loaded| {
+                let [(_, bytes)] = loaded.into_exact::<1>("Map16 bitmap")?;
+                self.open_bitmap_session(&bytes)
+            }) {
+                Ok(()) => {}
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if let Some(completion) = self.bitmap_clipboard_loader.show(context) {
+            match completion.and_then(|bitmap| self.open_decoded_bitmap_session(bitmap)) {
+                Ok(()) => {}
+                Err(error) => self.error = Some(error),
+            }
         }
         None
     }
 
     fn open_bitmap_session(&mut self, bytes: &[u8]) -> Result<(), String> {
         let bitmap = decode_map16_bitmap_png_image(bytes).map_err(|error| error.to_string())?;
+        self.open_decoded_bitmap_session(bitmap)
+    }
+
+    fn open_decoded_bitmap_session(&mut self, bitmap: DecodedMap16Bitmap) -> Result<(), String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let level = u16::from_str_radix(self.preview_level.trim(), 16)
             .map_err(|_| "bitmap import level must be hexadecimal")?;
@@ -53,6 +133,7 @@ impl RomMap16Editor {
         self.bitmap_converted_texture = None;
         self.bitmap_preview_zoom = 1;
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
+        self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
         Ok(())
     }
 
@@ -117,6 +198,49 @@ impl RomMap16Editor {
                         Err(error) => self.error = Some(error.to_string()),
                     }
                 }
+                ui.collapsing("Color options", |ui| {
+                    ui.label(
+                        "Checked colors remain byte-exact and participate in nearest-color matching.",
+                    );
+                    let palette_row = usize::from(session.preview().inputs().palette_row);
+                    let row = session
+                        .preview()
+                        .inputs()
+                        .palette
+                        .row(palette_row)
+                        .unwrap_or(&[]);
+                    let mut ownership_changed = false;
+                    egui::Grid::new("map16-bitmap-fixed-colors")
+                        .num_columns(5)
+                        .show(ui, |ui| {
+                            for entry in 1..lm_graphics::Palette::COLORS_PER_ROW {
+                                let color = row.get(entry).copied().unwrap_or_default();
+                                let rgb = color.to_rgb8();
+                                let label = egui::RichText::new(format!("{entry:X}: {:04X}", color.0))
+                                    .background_color(egui::Color32::from_rgb(
+                                        rgb.red, rgb.green, rgb.blue,
+                                    ))
+                                    .color(contrasting_text(rgb));
+                                ownership_changed |= ui
+                                    .checkbox(
+                                        &mut self.bitmap_fixed_palette_entries[entry - 1],
+                                        label,
+                                    )
+                                    .changed();
+                                if entry % 5 == 0 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                    if ownership_changed {
+                        match session
+                            .set_fixed_palette_entries(self.bitmap_fixed_palette_entries)
+                        {
+                            Ok(()) => self.bitmap_converted_texture = None,
+                            Err(error) => self.error = Some(error.to_string()),
+                        }
+                    }
+                });
                 let plan = session.preview().plan();
                 ui.label(format!(
                     "{} generated colors; {} newly occupied 8×8 tiles",
@@ -279,9 +403,10 @@ impl RomMap16Editor {
             ui.text_edit_singleline(&mut self.bitmap_map16_start);
         });
         let supported = self.workspace.is_some();
+        let busy = self.bitmap_loader.is_running() || self.bitmap_clipboard_loader.is_running();
         if ui
             .add_enabled(
-                supported && !stale && !self.bitmap_loader.is_running(),
+                supported && !stale && !busy,
                 egui::Button::new("Choose PNG…"),
             )
             .clicked()
@@ -294,6 +419,16 @@ impl RomMap16Editor {
         {
             self.error = Some(error);
         }
+        if ui
+            .add_enabled(
+                supported && !stale && !busy,
+                egui::Button::new("Paste bitmap from clipboard"),
+            )
+            .clicked()
+            && let Err(error) = self.bitmap_clipboard_loader.start()
+        {
+            self.error = Some(error);
+        }
     }
 
     fn clear_bitmap_session(&mut self) {
@@ -301,6 +436,7 @@ impl RomMap16Editor {
         self.bitmap_original_texture = None;
         self.bitmap_converted_texture = None;
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
+        self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
     }
 }
 
@@ -327,6 +463,58 @@ fn preview_size(width: usize, height: usize, zoom: u8) -> egui::Vec2 {
     let width = f32::from(u16::try_from(width).unwrap_or(u16::MAX));
     let height = f32::from(u16::try_from(height).unwrap_or(u16::MAX));
     egui::vec2(width * zoom, height * zoom)
+}
+
+fn contrasting_text(color: lm_graphics::Rgb8) -> egui::Color32 {
+    let luminance =
+        u32::from(color.red) * 299 + u32::from(color.green) * 587 + u32::from(color.blue) * 114;
+    if luminance >= 128_000 {
+        egui::Color32::BLACK
+    } else {
+        egui::Color32::WHITE
+    }
+}
+
+fn decode_clipboard_rgba(
+    width: usize,
+    height: usize,
+    bytes: &[u8],
+) -> Result<DecodedMap16Bitmap, String> {
+    if width == 0
+        || height == 0
+        || width > MAP16_BITMAP_MAX_DIMENSION
+        || height > MAP16_BITMAP_MAX_DIMENSION
+    {
+        return Err(format!(
+            "clipboard bitmap dimensions must be 1..={MAP16_BITMAP_MAX_DIMENSION}, got {width}×{height}"
+        ));
+    }
+    let pixels = width
+        .checked_mul(height)
+        .filter(|pixels| *pixels <= MAP16_BITMAP_MAX_PIXELS)
+        .ok_or_else(|| "clipboard bitmap pixel count exceeds the importer bound".to_owned())?;
+    let expected = pixels
+        .checked_mul(4)
+        .ok_or_else(|| "clipboard bitmap byte length overflow".to_owned())?;
+    if bytes.len() != expected {
+        return Err(format!(
+            "clipboard bitmap contains {} RGBA bytes, expected {expected}",
+            bytes.len()
+        ));
+    }
+    Ok(DecodedMap16Bitmap {
+        width,
+        height,
+        pixels: bytes
+            .chunks_exact(4)
+            .map(|pixel| lm_graphics::Rgba8 {
+                red: pixel[0],
+                green: pixel[1],
+                blue: pixel[2],
+                alpha: pixel[3],
+            })
+            .collect(),
+    })
 }
 
 #[cfg(test)]
@@ -373,5 +561,47 @@ mod tests {
         assert_eq!(preview_size(32, 16, 1), egui::vec2(32.0, 16.0));
         assert_eq!(preview_size(32, 16, 4), egui::vec2(128.0, 64.0));
         assert_eq!(preview_size(32, 16, 0), egui::vec2(32.0, 16.0));
+    }
+
+    #[test]
+    fn palette_swatch_text_contrasts_with_light_and_dark_colors() {
+        assert_eq!(
+            contrasting_text(lm_graphics::Rgb8 {
+                red: 255,
+                green: 255,
+                blue: 255,
+            }),
+            egui::Color32::BLACK
+        );
+        assert_eq!(
+            contrasting_text(lm_graphics::Rgb8::default()),
+            egui::Color32::WHITE
+        );
+    }
+
+    #[test]
+    fn clipboard_rgba_decode_is_bounded_and_preserves_channels() {
+        let decoded = decode_clipboard_rgba(2, 1, &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        assert_eq!((decoded.width, decoded.height), (2, 1));
+        assert_eq!(
+            decoded.pixels,
+            [
+                lm_graphics::Rgba8 {
+                    red: 1,
+                    green: 2,
+                    blue: 3,
+                    alpha: 4,
+                },
+                lm_graphics::Rgba8 {
+                    red: 5,
+                    green: 6,
+                    blue: 7,
+                    alpha: 8,
+                },
+            ]
+        );
+        assert!(decode_clipboard_rgba(0, 1, &[]).is_err());
+        assert!(decode_clipboard_rgba(1, 1, &[0; 3]).is_err());
+        assert!(decode_clipboard_rgba(MAP16_BITMAP_MAX_DIMENSION + 1, 1, &[]).is_err());
     }
 }

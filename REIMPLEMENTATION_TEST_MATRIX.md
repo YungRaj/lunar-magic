@@ -871,11 +871,19 @@ the retained Lunar Magic 3.63 `all.map16`, and commit/reopen representative prot
 Acts-Like, and background changes through the native ROM transaction.
 
 The same graphical workspace also drives the native bitmap-import session rather than stopping at
-the headless planner. A bounded PNG load uses the selected level's actual object-tileset graphics
-and palette context, displays original and converted images without changing their aspect ratio,
-and gives both panes one synchronized pan state with integer 1×–8× zoom. Reuse, flip matching,
+the headless planner. A bounded PNG load or non-blocking system-clipboard image load uses the
+selected level's actual object-tileset graphics and palette context. Clipboard RGBA dimensions,
+pixel count, byte shape, and channels are validated before entering the shared session; the window
+cannot close while that worker is outstanding. Both entry paths display original and converted
+images without changing their aspect ratio and give the panes one synchronized pan state with
+integer 1×–8× zoom. Reuse, flip matching,
 8×8 optimization, 16×16 deduplication, and layer-priority changes recompute the converted preview
-from immutable input. Acceptance publishes palette, assigned GFX/ExGFX slots, complete Map16
+from immutable input. The color panel can reserve any nontransparent entry in the active row:
+reserved colors remain byte-exact and participate in nearest-color matching, while the Wu
+quantizer fills only editable entries in stable ascending order. Fully reserved rows remain usable
+without palette mutation, ownership/shape failures retain the preceding valid preview, and the
+default all-editable path retains the previously verified conversion algorithm. Acceptance
+publishes palette, assigned GFX/ExGFX slots, complete Map16
 pages, required runtime installation, pointers, and checksum as one revision-checked ROM command;
 cancel and dirty-close retain no partial ROM mutation.
 

@@ -8,7 +8,7 @@ use crate::{
     RevisionProfile, allocate_bitmap_map16_tiles_with_reserved_sources,
     native_map16_bitmap_import_options, prepare_map16_bitmap_rom_commit,
 };
-use lm_graphics::{PaletteOwnership, Rgba8};
+use lm_graphics::{PaletteEntryOwner, PaletteImportError, PaletteOwnership, Rgba8};
 use lm_project::{
     GraphicsSaveOptions, InstalledLayoutError, Map16BitmapGraphicsSave, Map16BitmapPageSave,
     Map16BitmapPaletteSave, Map16BitmapRomSave, Map16SaveOptions, PaletteSaveOptions, Project,
@@ -239,6 +239,32 @@ impl NativeMap16BitmapImportSession {
         options: Map16BitmapImportOptions,
     ) -> Result<(), Map16BitmapImportError> {
         self.preview.set_options(options)
+    }
+
+    /// Reserves selected nontransparent entries in the active palette row and recomputes every
+    /// preview domain from the immutable source bitmap.
+    ///
+    /// # Errors
+    ///
+    /// Leaves the preceding preview unchanged if the ownership map or resulting allocation is
+    /// invalid.
+    pub fn set_fixed_palette_entries(
+        &mut self,
+        fixed: [bool; lm_graphics::Palette::COLORS_PER_ROW - 1],
+    ) -> Result<(), Map16BitmapImportError> {
+        let inputs = self.preview.inputs();
+        let mut ownership = PaletteOwnership::editable(inputs.palette.colors.len());
+        let start = usize::from(inputs.palette_row) * lm_graphics::Palette::COLORS_PER_ROW + 1;
+        for (offset, fixed) in fixed.into_iter().enumerate() {
+            if fixed {
+                ownership
+                    .set_owner(start + offset, PaletteEntryOwner::Fixed)
+                    .map_err(|error| {
+                        Map16BitmapImportError::Palette(PaletteImportError::Palette(error))
+                    })?;
+            }
+        }
+        self.preview.set_palette_ownership(ownership)
     }
 
     /// Serializes the exact previewed palette, graphics, and Map16 page into one revision-bound
@@ -1195,5 +1221,50 @@ mod tests {
         assert!(project.identity.as_ref().unwrap().checksum_matches());
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn session_color_options_preserve_selected_live_palette_words() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut session = NativeMap16BitmapImportSession::new_smw_us_v1(
+            app.controller_snapshot().unwrap(),
+            NativeMap16BitmapImportSessionRequest {
+                level: 0x105,
+                start_map16_tile: 0x200,
+                extra_graphics: [Some(0x20), Some(0x21)],
+                pixels: vec![
+                    Rgba8 {
+                        red: 240,
+                        green: 20,
+                        blue: 40,
+                        alpha: 255,
+                    };
+                    16 * 16
+                ],
+                width: 16,
+                height: 16,
+                palette_row: 4,
+            },
+        )
+        .unwrap();
+        let retained_index = 4 * lm_graphics::Palette::COLORS_PER_ROW + 1;
+        let retained = session.preview().inputs().palette.colors[retained_index];
+        let mut fixed = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
+        fixed[0] = true;
+        session.set_fixed_palette_entries(fixed).unwrap();
+        assert_eq!(
+            session.preview().plan().palette.colors[retained_index],
+            retained
+        );
+        assert_eq!(
+            session
+                .preview()
+                .inputs()
+                .palette_ownership
+                .owner(retained_index),
+            Some(PaletteEntryOwner::Fixed)
+        );
     }
 }

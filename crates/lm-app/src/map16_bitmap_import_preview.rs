@@ -116,6 +116,31 @@ impl Map16BitmapImportPreviewState {
         Ok(())
     }
 
+    /// Recomputes the preview with a replacement palette-ownership map.
+    ///
+    /// A rejected ownership shape or color allocation leaves the accepted preview and inputs
+    /// unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns the shared import planner's validation or resource error.
+    pub fn set_palette_ownership(
+        &mut self,
+        ownership: PaletteOwnership,
+    ) -> Result<(), Map16BitmapImportError> {
+        if ownership == self.inputs.palette_ownership {
+            return Ok(());
+        }
+        let mut inputs = self.inputs.clone();
+        inputs.palette_ownership = ownership;
+        let plan = Map16BitmapImportPlan::prepare_with_options(inputs.request(), self.options)?;
+        let converted_pixels = plan.converted_pixels(inputs.palette_row);
+        self.inputs = inputs;
+        self.plan = plan;
+        self.converted_pixels = converted_pixels;
+        Ok(())
+    }
+
     /// Consumes the dialog state and returns the exact plan that was previewed.
     #[must_use]
     pub fn accept(self) -> Map16BitmapImportPlan {
@@ -207,5 +232,21 @@ mod tests {
         invalid.graphics.allocation_end = 0x401;
         assert!(preview.set_options(invalid).is_err());
         assert_eq!(preview, before);
+    }
+
+    #[test]
+    fn fixed_palette_ownership_recomputes_without_overwriting_reserved_color() {
+        let mut preview = Map16BitmapImportPreviewState::new(inputs(), options()).unwrap();
+        let retained = preview.inputs().palette.colors[33];
+        let mut ownership = PaletteOwnership::editable(128);
+        ownership
+            .set_owner(33, lm_graphics::PaletteEntryOwner::Fixed)
+            .unwrap();
+        preview.set_palette_ownership(ownership).unwrap();
+        assert_eq!(preview.plan().palette.colors[33], retained);
+        assert_eq!(
+            preview.inputs().palette_ownership.owner(33),
+            Some(lm_graphics::PaletteEntryOwner::Fixed)
+        );
     }
 }

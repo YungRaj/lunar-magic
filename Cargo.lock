@@ -1602,6 +1602,7 @@ version = "0.1.0"
 name = "lm-native"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "chrono",
  "eframe",
  "lm-app",

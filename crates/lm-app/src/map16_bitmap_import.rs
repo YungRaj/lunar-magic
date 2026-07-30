@@ -2,7 +2,7 @@
 
 use lm_graphics::{
     BitmapImportError, GraphicsFile4bpp, GraphicsOwnership, IndexedBitmapImport,
-    IndexedBitmapImportOptions, PaletteImportError, PaletteOwnership, Rgba8,
+    IndexedBitmapImportOptions, PaletteEntryOwner, PaletteImportError, PaletteOwnership, Rgba8,
     TransparentPaletteRowImport,
 };
 use lm_level::{Map16Page, Map16Tile, Subtile};
@@ -12,8 +12,9 @@ pub const MAP16_BITMAP_WIDTH: usize = 256;
 pub const MAP16_BITMAP_HEIGHT: usize = 256;
 pub const MAP16_BITMAP_PIXELS: usize = MAP16_BITMAP_WIDTH * MAP16_BITMAP_HEIGHT;
 pub const MAP16_BITMAP_MAX_PNG_BYTES: usize = 16 * 1024 * 1024;
+pub const MAP16_BITMAP_MAX_DIMENSION: usize = 4096;
+pub const MAP16_BITMAP_MAX_PIXELS: usize = MAP16_BITMAP_MAX_DIMENSION * MAP16_BITMAP_MAX_DIMENSION;
 const MAX_PNG_DECODE_BYTES: usize = 4 * 1024 * 1024;
-const MAX_BITMAP_DIMENSION: usize = 4096;
 
 #[derive(Clone, Copy)]
 pub struct Map16BitmapImportRequest<'a> {
@@ -116,12 +117,27 @@ impl Map16BitmapImportPlan {
         if request.palette_row > 7 {
             return Err(Map16BitmapImportError::PaletteRow(request.palette_row));
         }
-        let palette = TransparentPaletteRowImport::quantize(
-            request.pixels,
-            usize::from(request.palette_row),
-            request.palette,
-            request.palette_ownership,
-        )
+        let palette_row = usize::from(request.palette_row);
+        let row_start = palette_row * lm_graphics::Palette::COLORS_PER_ROW;
+        let preserves_owned = (row_start + 1..row_start + lm_graphics::Palette::COLORS_PER_ROW)
+            .any(|index| {
+                request.palette_ownership.owner(index) != Some(PaletteEntryOwner::Editable)
+            });
+        let palette = if preserves_owned {
+            TransparentPaletteRowImport::quantize_preserving_owned(
+                request.pixels,
+                palette_row,
+                request.palette,
+                request.palette_ownership,
+            )
+        } else {
+            TransparentPaletteRowImport::quantize(
+                request.pixels,
+                palette_row,
+                request.palette,
+                request.palette_ownership,
+            )
+        }
         .map_err(Map16BitmapImportError::Palette)?;
         let materialized = IndexedBitmapImport::materialize_with_options(
             request.width,
@@ -234,7 +250,11 @@ pub fn decode_map16_bitmap_png_image(
         .map_err(|error| Map16PngDecodeError::Decode(error.to_string()))?;
     let width = usize::try_from(reader.info().width).unwrap_or(usize::MAX);
     let height = usize::try_from(reader.info().height).unwrap_or(usize::MAX);
-    if width == 0 || height == 0 || width > MAX_BITMAP_DIMENSION || height > MAX_BITMAP_DIMENSION {
+    if width == 0
+        || height == 0
+        || width > MAP16_BITMAP_MAX_DIMENSION
+        || height > MAP16_BITMAP_MAX_DIMENSION
+    {
         return Err(Map16PngDecodeError::Dimensions { width, height });
     }
     let mut output = vec![0; reader.output_buffer_size()];

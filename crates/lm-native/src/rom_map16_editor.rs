@@ -98,6 +98,7 @@ pub(crate) struct RomMap16Editor {
     preview_tileset: u8,
     preview_palette: u8,
     bitmap_loader: DocumentLoader,
+    bitmap_clipboard_loader: bitmap_import::BitmapClipboardLoader,
     complete_loader: DocumentLoader,
     complete_persistence: crate::persistence_worker::PersistenceWorker,
     complete_template: Option<lm_level::Lm16Map16File>,
@@ -110,6 +111,7 @@ pub(crate) struct RomMap16Editor {
     bitmap_converted_texture: Option<egui::TextureHandle>,
     bitmap_preview_zoom: u8,
     bitmap_preview_scroll: egui::Vec2,
+    bitmap_fixed_palette_entries: [bool; lm_graphics::Palette::COLORS_PER_ROW - 1],
 }
 
 impl RomMap16Editor {

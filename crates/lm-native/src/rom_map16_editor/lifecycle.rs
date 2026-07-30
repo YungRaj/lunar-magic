@@ -40,6 +40,8 @@ impl RomMap16Editor {
                 self.bitmap_converted_texture = None;
                 self.bitmap_preview_zoom = 1;
                 self.bitmap_preview_scroll = egui::Vec2::ZERO;
+                self.bitmap_fixed_palette_entries =
+                    [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
                 self.invalidate();
             }
             Err(error) => self.error = Some(error),
@@ -53,6 +55,10 @@ impl RomMap16Editor {
         }
         if self.bitmap_loader.is_running() {
             self.error = Some("wait for bitmap loading to finish before closing".into());
+            return false;
+        }
+        if self.bitmap_clipboard_loader.is_running() {
+            self.error = Some("wait for clipboard bitmap loading to finish before closing".into());
             return false;
         }
         if self.complete_loader.is_running() {
@@ -121,6 +127,7 @@ impl RomMap16Editor {
         self.bitmap_converted_texture = None;
         self.bitmap_preview_zoom = 1;
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
+        self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
         self.complete_template = None;
         self.pending_close = None;
         self.invalidate();

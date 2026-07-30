@@ -78,6 +78,60 @@ impl TransparentPaletteRowImport {
             generated_colors: imported.generated_colors,
         })
     }
+
+    /// Maps opaque pixels through preserved row colors and quantizes only into editable entries.
+    ///
+    /// This models bitmap-import color dialogs that let users reserve existing SNES colors. Entry
+    /// zero remains transparency-only. Fixed or animation-owned entries 1–15 remain byte-exact
+    /// and participate as color candidates; newly generated colors occupy editable entries in
+    /// ascending order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PaletteImportError`] for fractional alpha, an invalid row/ownership shape, no
+    /// usable opaque color entries, or quantization failure.
+    pub fn quantize_preserving_owned(
+        pixels: &[Rgba8],
+        row: usize,
+        palette: &Palette,
+        ownership: &PaletteOwnership,
+    ) -> Result<Self, PaletteImportError> {
+        let mut opaque = Vec::with_capacity(pixels.len());
+        for (index, pixel) in pixels.iter().enumerate() {
+            match pixel.alpha {
+                0 => {}
+                255 => opaque.push(Rgb8 {
+                    red: pixel.red,
+                    green: pixel.green,
+                    blue: pixel.blue,
+                }),
+                alpha => return Err(PaletteImportError::FractionalAlpha { index, alpha }),
+            }
+        }
+        let imported =
+            OpaquePaletteRowImport::quantize_preserving_owned(&opaque, row, palette, ownership)?;
+        let mut opaque_indices = imported.indices.into_iter();
+        let indices = pixels
+            .iter()
+            .map(|pixel| {
+                if pixel.alpha == 0 {
+                    Ok(0)
+                } else {
+                    opaque_indices
+                        .next()
+                        .ok_or(PaletteImportError::IndexPlaneMismatch)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if opaque_indices.next().is_some() {
+            return Err(PaletteImportError::IndexPlaneMismatch);
+        }
+        Ok(Self {
+            palette: imported.palette,
+            indices,
+            generated_colors: imported.generated_colors,
+        })
+    }
 }
 
 impl OpaquePaletteRowImport {
@@ -141,6 +195,105 @@ impl OpaquePaletteRowImport {
             generated_colors: quantized.palette.colors.len(),
         })
     }
+
+    /// Preserves non-editable row colors, generates at most one color per editable entry, and
+    /// maps every source pixel to the nearest combined preserved/generated candidate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PaletteImportError`] for invalid row or ownership shapes, a row with no usable
+    /// opaque entry, quantizer failure, or an impossible 4bpp index.
+    pub fn quantize_preserving_owned(
+        pixels: &[Rgb8],
+        row: usize,
+        palette: &Palette,
+        ownership: &PaletteOwnership,
+    ) -> Result<Self, PaletteImportError> {
+        let row_start = row
+            .checked_mul(Palette::COLORS_PER_ROW)
+            .ok_or(PaletteImportError::RowOutOfRange(row))?;
+        let row_end = row_start
+            .checked_add(Palette::COLORS_PER_ROW)
+            .ok_or(PaletteImportError::RowOutOfRange(row))?;
+        if row_end > palette.colors.len() {
+            return Err(PaletteImportError::RowOutOfRange(row));
+        }
+        let mut staged = palette.clone();
+        staged
+            .apply_changes(&[], ownership)
+            .map_err(PaletteImportError::Palette)?;
+        if pixels.is_empty() {
+            return Ok(Self {
+                palette: staged,
+                indices: Vec::new(),
+                generated_colors: 0,
+            });
+        }
+        let usable = (row_start + 1)..row_end;
+        let editable = usable
+            .clone()
+            .filter(|index| ownership.owner(*index) == Some(crate::PaletteEntryOwner::Editable))
+            .collect::<Vec<_>>();
+        let preserved = usable
+            .filter(|index| ownership.owner(*index) != Some(crate::PaletteEntryOwner::Editable))
+            .collect::<Vec<_>>();
+        let unmatched = pixels
+            .iter()
+            .copied()
+            .filter(|pixel| {
+                let color = crate::Bgr555::from_rgb8(*pixel);
+                preserved.iter().all(|index| staged.colors[*index] != color)
+            })
+            .collect::<Vec<_>>();
+        let generated = if editable.is_empty() || unmatched.is_empty() {
+            Vec::new()
+        } else {
+            WuQuantizer::quantize(&unmatched, editable.len())
+                .map_err(PaletteImportError::Quantizer)?
+                .palette
+                .colors
+        };
+        let changes = editable
+            .iter()
+            .copied()
+            .zip(generated.iter().copied())
+            .map(|(index, color)| crate::PaletteChange { index, color })
+            .collect::<Vec<_>>();
+        staged
+            .apply_changes(&changes, ownership)
+            .map_err(PaletteImportError::Palette)?;
+        let candidates = preserved
+            .into_iter()
+            .chain(editable.into_iter().take(generated.len()))
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Err(PaletteImportError::NoOpaqueColorEntries(row));
+        }
+        let indices = pixels
+            .iter()
+            .map(|pixel| {
+                candidates
+                    .iter()
+                    .copied()
+                    .min_by_key(|index| rgb_distance(staged.colors[*index].to_rgb8(), *pixel))
+                    .and_then(|index| u8::try_from(index - row_start).ok())
+                    .filter(|index| *index < 16)
+                    .ok_or(PaletteImportError::IndexOutOfRange(u8::MAX))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            palette: staged,
+            indices,
+            generated_colors: generated.len(),
+        })
+    }
+}
+
+fn rgb_distance(left: Rgb8, right: Rgb8) -> i32 {
+    let red = i32::from(left.red) - i32::from(right.red);
+    let green = i32::from(left.green) - i32::from(right.green);
+    let blue = i32::from(left.blue) - i32::from(right.blue);
+    red * red + green * green + blue * blue
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -151,6 +304,7 @@ pub enum PaletteImportError {
     IndexOutOfRange(u8),
     FractionalAlpha { index: usize, alpha: u8 },
     IndexPlaneMismatch,
+    NoOpaqueColorEntries(usize),
 }
 
 impl fmt::Display for PaletteImportError {
@@ -238,6 +392,59 @@ mod tests {
             ),
             Err(PaletteImportError::RowOutOfRange(2))
         );
+    }
+
+    #[test]
+    fn ownership_aware_quantization_preserves_fixed_colors_as_candidates() {
+        let mut original = palette();
+        original.colors[17] = Bgr555::from_rgb8(Rgb8 {
+            red: 255,
+            green: 0,
+            blue: 0,
+        });
+        let mut owners = PaletteOwnership::editable(32);
+        owners.set_owner(17, PaletteEntryOwner::Fixed).unwrap();
+        let pixels = [
+            Rgb8 {
+                red: 255,
+                green: 0,
+                blue: 0,
+            },
+            Rgb8 {
+                red: 0,
+                green: 0,
+                blue: 255,
+            },
+        ];
+        let imported =
+            OpaquePaletteRowImport::quantize_preserving_owned(&pixels, 1, &original, &owners)
+                .unwrap();
+        assert_eq!(imported.palette.colors[17], original.colors[17]);
+        assert_eq!(imported.indices[0], 1);
+        assert_eq!(imported.generated_colors, 1);
+    }
+
+    #[test]
+    fn fully_reserved_row_maps_without_mutating_palette() {
+        let original = palette();
+        let mut owners = PaletteOwnership::editable(32);
+        for index in 17..32 {
+            owners.set_owner(index, PaletteEntryOwner::Fixed).unwrap();
+        }
+        let imported = OpaquePaletteRowImport::quantize_preserving_owned(
+            &[Rgb8 {
+                red: 25,
+                green: 50,
+                blue: 75,
+            }],
+            1,
+            &original,
+            &owners,
+        )
+        .unwrap();
+        assert_eq!(imported.palette, original);
+        assert_eq!(imported.generated_colors, 0);
+        assert!((1..=15).contains(&imported.indices[0]));
     }
 
     #[test]
