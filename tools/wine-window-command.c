@@ -352,6 +352,7 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE click CONTROL_ID\n"
             "       wine-window-command.exe EXECUTABLE set-text CONTROL_ID,TEXT\n"
             "       wine-window-command.exe EXECUTABLE clipboard-bmp WINDOWS_PATH\n"
+            "       wine-window-command.exe EXECUTABLE clipboard-bmp-paste WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE command-at HWND_ADDRESS,COMMAND_ID\n"
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
             "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
@@ -373,6 +374,7 @@ int main(int argc, char **argv) {
     BOOL click = _stricmp(argv[2], "click") == 0;
     BOOL set_text = _stricmp(argv[2], "set-text") == 0;
     BOOL clipboard_bmp = _stricmp(argv[2], "clipboard-bmp") == 0;
+    BOOL clipboard_bmp_paste = _stricmp(argv[2], "clipboard-bmp-paste") == 0;
     BOOL command_at = _stricmp(argv[2], "command-at") == 0;
     BOOL read = _stricmp(argv[2], "read") == 0;
     BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
@@ -399,7 +401,9 @@ int main(int argc, char **argv) {
         .list = _stricmp(argv[2], "list") == 0,
         .window_class = save || level || dialog_values || click || set_text
             ? "#32770"
-            : (clipboard_bmp ? "LMFrame" : (argc == 4 ? argv[3] : NULL))
+            : (clipboard_bmp || clipboard_bmp_paste
+                ? "LMFrame"
+                : (argc == 4 ? argv[3] : NULL))
     };
     EnumWindows(find_top_level_window, (LPARAM)&search);
     if (read) {
@@ -610,9 +614,9 @@ int main(int argc, char **argv) {
         SendMessage(control, WM_SETTEXT, 0, (LPARAM)(separator + 1));
         return 0;
     }
-    if (clipboard_bmp) {
+    if (clipboard_bmp || clipboard_bmp_paste) {
         if (argc != 4) {
-            fprintf(stderr, "clipboard-bmp requires a Windows BMP path\n");
+            fprintf(stderr, "%s requires a Windows BMP path\n", argv[2]);
             return 2;
         }
         FILE *input = fopen(argv[3], "rb");
@@ -723,6 +727,32 @@ int main(int argc, char **argv) {
         if (!dib_published || !bitmap_published) {
             fprintf(stderr, "cannot publish BMP to Windows clipboard\n");
             return 1;
+        }
+        if (clipboard_bmp_paste) {
+            struct search paste_target = {
+                .process_id = process_id,
+                .window = NULL,
+                .list = FALSE,
+                .window_class = "Window16x16"
+            };
+            EnumWindows(find_top_level_window, (LPARAM)&paste_target);
+            if (paste_target.window == NULL) {
+                fprintf(stderr, "16x16 Tile Map Editor window not found\n");
+                return 1;
+            }
+            if (
+                !IsClipboardFormatAvailable(CF_DIB) ||
+                !IsClipboardFormatAvailable(CF_BITMAP)
+            ) {
+                fprintf(stderr, "published bitmap clipboard formats are unavailable\n");
+                return 1;
+            }
+            SendMessage(
+                paste_target.window,
+                WM_COMMAND,
+                MAKEWPARAM(0x2276, 0),
+                0
+            );
         }
         return 0;
     }
