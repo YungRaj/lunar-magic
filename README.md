@@ -127,6 +127,7 @@ The detailed inventory and recovery evidence live in:
 - [Reverse-engineering notes](REVERSE_ENGINEERING.md)
 - [Architecture](REIMPLEMENTATION_ARCHITECTURE.md)
 - [Compatibility and test matrix](REIMPLEMENTATION_TEST_MATRIX.md)
+- [Product feature-parity ledger](FEATURE_PARITY_MATRIX.md)
 
 ## What is not finished
 
