@@ -71,12 +71,12 @@ impl WuQuantizer {
         let mut colors = Vec::with_capacity(boxes.len());
         for color_box in boxes {
             let moment = volume(&moments, color_box);
-            if moment.weight > 0.0 {
-                colors.push(Bgr555::from_rgb8(Rgb8 {
-                    red: rounded_mean(moment.red, moment.weight),
-                    green: rounded_mean(moment.green, moment.weight),
-                    blue: rounded_mean(moment.blue, moment.weight),
-                }));
+            if moment.weight > 0 {
+                colors.push(lunar_magic_snes_color(
+                    truncated_mean(moment.red, moment.weight),
+                    truncated_mean(moment.green, moment.weight),
+                    truncated_mean(moment.blue, moment.weight),
+                ));
             }
         }
         let mut unique = Vec::with_capacity(colors.len());
@@ -97,11 +97,26 @@ impl WuQuantizer {
     }
 }
 
-fn rounded_mean(sum: f64, weight: f64) -> u8 {
-    let rounded = (sum / weight).round().clamp(0.0, 255.0);
-    (0..=u8::MAX)
-        .find(|value| f64::from(*value) >= rounded)
-        .unwrap_or(u8::MAX)
+fn truncated_mean(sum: i32, weight: i32) -> u8 {
+    u8::try_from(sum / weight).expect("an RGB channel mean remains in byte range")
+}
+
+const fn lunar_magic_snes_channel(channel: u8) -> u16 {
+    let truncated = channel & 0xf8;
+    let rounded = if channel & 4 != 0 && truncated < 0xf8 {
+        truncated + 8
+    } else {
+        truncated
+    };
+    (rounded >> 3) as u16
+}
+
+const fn lunar_magic_snes_color(red: u8, green: u8, blue: u8) -> Bgr555 {
+    Bgr555(
+        lunar_magic_snes_channel(red)
+            | (lunar_magic_snes_channel(green) << 5)
+            | (lunar_magic_snes_channel(blue) << 10),
+    )
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -175,7 +190,10 @@ mod tests {
             blue: 201,
         };
         let uniform = WuQuantizer::quantize(&[color; 64], 16).unwrap();
-        assert_eq!(uniform.palette.colors, [Bgr555::from_rgb8(color)]);
+        assert_eq!(
+            uniform.palette.colors,
+            [lunar_magic_snes_color(color.red, color.green, color.blue)]
+        );
         assert_eq!(uniform.indices, vec![0; 64]);
         assert_eq!(
             WuQuantizer::quantize(&[], 4).unwrap(),
@@ -184,6 +202,41 @@ mod tests {
                 indices: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn lunar_magic_rounds_snes_channels_from_bit_two() {
+        let result = WuQuantizer::quantize(
+            &[Rgb8 {
+                red: 4,
+                green: 3,
+                blue: 252,
+            }],
+            1,
+        )
+        .unwrap();
+        assert_eq!(result.palette.colors, [Bgr555(1 | (31 << 10))]);
+    }
+
+    #[test]
+    fn cluster_means_truncate_before_snes_rounding() {
+        let result = WuQuantizer::quantize(
+            &[
+                Rgb8 {
+                    red: 3,
+                    green: 0,
+                    blue: 0,
+                },
+                Rgb8 {
+                    red: 4,
+                    green: 0,
+                    blue: 0,
+                },
+            ],
+            1,
+        )
+        .unwrap();
+        assert_eq!(result.palette.colors, [Bgr555(0)]);
     }
 
     #[test]

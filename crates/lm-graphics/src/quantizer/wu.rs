@@ -5,30 +5,30 @@ const MOMENT_COUNT: usize = SIDE * SIDE * SIDE;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Moment {
-    pub(super) weight: f64,
-    pub(super) red: f64,
-    pub(super) green: f64,
-    pub(super) blue: f64,
-    squared: f64,
+    pub(super) weight: i32,
+    pub(super) red: i32,
+    pub(super) green: i32,
+    pub(super) blue: i32,
+    squared: f32,
 }
 
 impl Moment {
     fn add(self, other: Self) -> Self {
         Self {
-            weight: self.weight + other.weight,
-            red: self.red + other.red,
-            green: self.green + other.green,
-            blue: self.blue + other.blue,
+            weight: self.weight.wrapping_add(other.weight),
+            red: self.red.wrapping_add(other.red),
+            green: self.green.wrapping_add(other.green),
+            blue: self.blue.wrapping_add(other.blue),
             squared: self.squared + other.squared,
         }
     }
 
     fn sub(self, other: Self) -> Self {
         Self {
-            weight: self.weight - other.weight,
-            red: self.red - other.red,
-            green: self.green - other.green,
-            blue: self.blue - other.blue,
+            weight: self.weight.wrapping_sub(other.weight),
+            red: self.red.wrapping_sub(other.red),
+            green: self.green.wrapping_sub(other.green),
+            blue: self.blue.wrapping_sub(other.blue),
             squared: self.squared - other.squared,
         }
     }
@@ -70,27 +70,27 @@ pub(super) fn build_moments(pixels: &[Rgb8]) -> Vec<Moment> {
         let green = usize::from(pixel.green >> 3) + 1;
         let blue = usize::from(pixel.blue >> 3) + 1;
         let value = &mut moments[index(red, green, blue)];
-        value.weight += 1.0;
-        value.red += f64::from(pixel.red);
-        value.green += f64::from(pixel.green);
-        value.blue += f64::from(pixel.blue);
-        value.squared += f64::from(pixel.red) * f64::from(pixel.red)
-            + f64::from(pixel.green) * f64::from(pixel.green)
-            + f64::from(pixel.blue) * f64::from(pixel.blue);
+        value.weight = value.weight.wrapping_add(1);
+        value.red = value.red.wrapping_add(i32::from(pixel.red));
+        value.green = value.green.wrapping_add(i32::from(pixel.green));
+        value.blue = value.blue.wrapping_add(i32::from(pixel.blue));
+        value.squared += f32::from(pixel.red) * f32::from(pixel.red)
+            + f32::from(pixel.green) * f32::from(pixel.green)
+            + f32::from(pixel.blue) * f32::from(pixel.blue);
     }
 
+    // Lunar Magic builds each red plane from running blue lines and green-plane areas. Besides
+    // avoiding redundant inclusion/exclusion work, preserving this order is observable because
+    // the squared moment is accumulated in single precision.
     for red in 1..SIDE {
+        let mut area = [Moment::default(); SIDE];
         for green in 1..SIDE {
+            let mut line = Moment::default();
             for blue in 1..SIDE {
-                let cumulative = moments[index(red, green, blue)]
-                    .add(moments[index(red - 1, green, blue)])
-                    .add(moments[index(red, green - 1, blue)])
-                    .add(moments[index(red, green, blue - 1)])
-                    .sub(moments[index(red - 1, green - 1, blue)])
-                    .sub(moments[index(red - 1, green, blue - 1)])
-                    .sub(moments[index(red, green - 1, blue - 1)])
-                    .add(moments[index(red - 1, green - 1, blue - 1)]);
-                moments[index(red, green, blue)] = cumulative;
+                line = line.add(moments[index(red, green, blue)]);
+                area[blue] = area[blue].add(line);
+                moments[index(red, green, blue)] =
+                    moments[index(red - 1, green, blue)].add(area[blue]);
             }
         }
     }
@@ -141,19 +141,22 @@ pub(super) fn volume(moments: &[Moment], color_box: ColorBox) -> Moment {
     ))
 }
 
-pub(super) fn variance(moments: &[Moment], color_box: ColorBox) -> f64 {
+#[allow(clippy::cast_precision_loss)]
+pub(super) fn variance(moments: &[Moment], color_box: ColorBox) -> f32 {
     let moment = volume(moments, color_box);
-    if moment.weight == 0.0 {
+    if moment.weight == 0 {
         0.0
     } else {
         moment.squared
-            - (moment.red * moment.red + moment.green * moment.green + moment.blue * moment.blue)
-                / moment.weight
+            - ((moment.red as f32) * (moment.red as f32)
+                + (moment.green as f32) * (moment.green as f32)
+                + (moment.blue as f32) * (moment.blue as f32))
+                / (moment.weight as f32)
     }
 }
 
 pub(super) fn best_split(moments: &[Moment], color_box: ColorBox) -> Option<Split> {
-    let mut best: Option<(f64, Split)> = None;
+    let mut best: Option<(f32, Split)> = None;
     for axis in [Axis::Red, Axis::Green, Axis::Blue] {
         let (low, high) = match axis {
             Axis::Red => (color_box.red_low, color_box.red_high),
@@ -164,7 +167,7 @@ pub(super) fn best_split(moments: &[Moment], color_box: ColorBox) -> Option<Spli
             let split = split_box(color_box, axis, cut);
             let first = volume(moments, split.first);
             let second = volume(moments, split.second);
-            if first.weight == 0.0 || second.weight == 0.0 {
+            if first.weight == 0 || second.weight == 0 {
                 continue;
             }
             let score = mean_square(first) + mean_square(second);
@@ -183,9 +186,12 @@ fn index(red: usize, green: usize, blue: usize) -> usize {
     (red * SIDE + green) * SIDE + blue
 }
 
-fn mean_square(moment: Moment) -> f64 {
-    (moment.red * moment.red + moment.green * moment.green + moment.blue * moment.blue)
-        / moment.weight
+#[allow(clippy::cast_precision_loss)]
+fn mean_square(moment: Moment) -> f32 {
+    ((moment.red as f32) * (moment.red as f32)
+        + (moment.green as f32) * (moment.green as f32)
+        + (moment.blue as f32) * (moment.blue as f32))
+        / (moment.weight as f32)
 }
 
 #[derive(Clone, Copy)]
