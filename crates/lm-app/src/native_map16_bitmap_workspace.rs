@@ -1,6 +1,7 @@
 //! Lunar Magic-compatible native FG/BG graphics workspace for bitmap-to-Map16 imports.
 
 use lm_graphics::{GraphicsFile4bpp, GraphicsOwnership, GraphicsTileOwner, IndexedTile};
+use lm_project::{GraphicsIoError, GraphicsRomLayout, Project};
 use std::fmt;
 
 use crate::Map16BitmapImportOptions;
@@ -51,6 +52,53 @@ pub struct NativeMap16BitmapGraphicsWorkspace {
 }
 
 impl NativeMap16BitmapGraphicsWorkspace {
+    /// Loads the four object-tileset GFX slots and two explicit import slots from an SMW-US ROM.
+    ///
+    /// `extra_assignments` represents FG/BG slots 4 and 5. Passing `None` preserves Lunar Magic's
+    /// `$7f` blank sentinel; passing a file number loads a concrete GFX/ExGFX target that can later
+    /// participate in the grouped ROM commit.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an invalid object tileset, malformed assignment table, graphics pointer/codec
+    /// failure, or a decoded file that is not exactly one `$80`-tile native slot.
+    pub fn load_smw_us_v1(
+        project: &Project,
+        object_tileset: u8,
+        extra_assignments: [Option<usize>; 2],
+        graphics_layout: GraphicsRomLayout,
+    ) -> Result<Self, NativeMap16BitmapWorkspaceLoadError> {
+        let base = lm_profile::smw_us_v1_object_tileset_graphics_files(
+            &project.rom,
+            usize::from(object_tileset),
+        )
+        .map_err(NativeMap16BitmapWorkspaceLoadError::ObjectTileset)?;
+        let assignments = [
+            Some(base[0]),
+            Some(base[1]),
+            Some(base[2]),
+            Some(base[3]),
+            extra_assignments[0],
+            extra_assignments[1],
+        ];
+        let mut slots: [Option<GraphicsFile4bpp>; NATIVE_MAP16_BITMAP_SLOT_COUNT] =
+            std::array::from_fn(|_| None);
+        for (slot, assignment) in assignments.iter().copied().enumerate() {
+            if let Some(file_number) = assignment {
+                slots[slot] = Some(
+                    project
+                        .load_graphics_file(file_number, graphics_layout)
+                        .map_err(|error| NativeMap16BitmapWorkspaceLoadError::Graphics {
+                            slot,
+                            file_number,
+                            error,
+                        })?,
+                );
+            }
+        }
+        Self::assemble(assignments, slots).map_err(NativeMap16BitmapWorkspaceLoadError::Workspace)
+    }
+
     /// Assembles six exact `$80`-tile slots into Lunar Magic's `$000..$2ff` workspace.
     ///
     /// New bitmap tiles are editable only in slots 4 and 5, matching the recovered default
@@ -156,10 +204,35 @@ impl fmt::Display for NativeMap16BitmapWorkspaceError {
 
 impl std::error::Error for NativeMap16BitmapWorkspaceError {}
 
+#[derive(Debug)]
+pub enum NativeMap16BitmapWorkspaceLoadError {
+    ObjectTileset(lm_profile::SmwUsV1ObjectTilesetGraphicsError),
+    Graphics {
+        slot: usize,
+        file_number: usize,
+        error: GraphicsIoError,
+    },
+    Workspace(NativeMap16BitmapWorkspaceError),
+}
+
+impl fmt::Display for NativeMap16BitmapWorkspaceLoadError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "cannot load native Map16 bitmap graphics workspace: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for NativeMap16BitmapWorkspaceLoadError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_graphics::IndexedBitmapImport;
+    use lm_project::{GraphicsCompression, GraphicsSaveOptions, LevelPointerTable};
+    use lm_rats::{AllocationPolicy, ProtectedRange};
+    use lm_rom::{Mapper, RomImage};
 
     fn slot(pixel: u8) -> GraphicsFile4bpp {
         GraphicsFile4bpp {
@@ -279,5 +352,70 @@ mod tests {
         .unwrap();
         assert_eq!(usize::from(imported.placements[0].tile), 0x200);
         assert!(imported.occupied[0x200]);
+    }
+
+    #[test]
+    fn rom_loader_resolves_four_tileset_files_and_two_explicit_slots() {
+        let mut bytes = vec![0xff; 0x8000];
+        bytes[lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET
+            ..lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET + 4]
+            .copy_from_slice(&[0, 1, 2, 3]);
+        let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let layout = GraphicsRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x20,
+                entries: 6,
+                stride: 3,
+            },
+            split_pointer_planes: None,
+            compression: GraphicsCompression::Lz2,
+            maximum_compressed_len: 0x8000,
+            maximum_decompressed_len: 0x1000,
+        };
+        let options = GraphicsSaveOptions {
+            allocation: AllocationPolicy {
+                search: 0x100..0x7000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![
+                    ProtectedRange(0x20..0x32),
+                    ProtectedRange(
+                        lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET
+                            ..lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET + 4,
+                    ),
+                ],
+            },
+            previous_block: None,
+            reuse_identical: false,
+            erase_fill: 0xff,
+        };
+        for file_number in 0..6 {
+            project
+                .save_graphics_file(
+                    file_number,
+                    &slot(u8::try_from(file_number + 1).unwrap()),
+                    layout,
+                    &options,
+                )
+                .unwrap();
+        }
+        let workspace = NativeMap16BitmapGraphicsWorkspace::load_smw_us_v1(
+            &project,
+            0,
+            [Some(4), Some(5)],
+            layout,
+        )
+        .unwrap();
+        assert_eq!(
+            workspace.assignments,
+            [Some(0), Some(1), Some(2), Some(3), Some(4), Some(5)]
+        );
+        for slot in 0..6 {
+            assert_eq!(
+                workspace.graphics.tiles[slot * 0x80].pixels()[0],
+                u8::try_from(slot + 1).unwrap()
+            );
+        }
     }
 }

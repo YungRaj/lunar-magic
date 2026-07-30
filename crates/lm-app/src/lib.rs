@@ -226,7 +226,8 @@ pub use native_map16_bitmap_workspace::{
     NATIVE_MAP16_BITMAP_ALLOCATION_END, NATIVE_MAP16_BITMAP_ALLOCATION_START,
     NATIVE_MAP16_BITMAP_BLANK_TILE, NATIVE_MAP16_BITMAP_SLOT_COUNT, NATIVE_MAP16_BITMAP_TILE_COUNT,
     NATIVE_MAP16_BITMAP_TILES_PER_SLOT, NativeMap16BitmapGraphicsWorkspace,
-    NativeMap16BitmapWorkspaceError, native_map16_bitmap_import_options,
+    NativeMap16BitmapWorkspaceError, NativeMap16BitmapWorkspaceLoadError,
+    native_map16_bitmap_import_options,
 };
 pub use native_map16_sidecar_controller::{
     NativeMap16SidecarController, NativeMap16SidecarControllerError, NativeMap16SidecarDocument,
