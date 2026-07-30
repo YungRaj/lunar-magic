@@ -43,6 +43,10 @@ pub struct BitmapPaletteColorOptions {
     pub maximum_colors: usize,
     pub reduction: BitmapPaletteReduction,
     pub priority_level: u8,
+    /// Lunar Magic's first high-color neighborhood reduction pass.
+    pub popularity_reduction_method_1: bool,
+    /// Lunar Magic's second high-color neighborhood reduction pass.
+    pub popularity_reduction_method_2: bool,
 }
 
 impl BitmapPaletteColorOptions {
@@ -64,6 +68,8 @@ impl BitmapPaletteColorOptions {
             maximum_colors: BITMAP_PALETTE_COLORS,
             reduction: BitmapPaletteReduction::MedianCut,
             priority_level: 3,
+            popularity_reduction_method_1: true,
+            popularity_reduction_method_2: false,
         }
     }
 
@@ -265,10 +271,17 @@ fn select_popularity_colors(
             }
             score = score.wrapping_add(distance.wrapping_mul(frequency).wrapping_div(0x8e_e09));
         }
-        let insertion = selected.partition_point(|(selected_color, selected_score)| {
-            (*selected_score, std::cmp::Reverse(*selected_color))
-                >= (score, std::cmp::Reverse(color))
-        });
+        if options.popularity_reduction_method_1
+            && apply_popularity_reduction_method_1(&mut selected, color, score)
+        {
+            continue;
+        }
+        if options.popularity_reduction_method_2
+            && apply_popularity_reduction_method_2(&mut selected, color, score)
+        {
+            continue;
+        }
+        let insertion = selected.partition_point(|(_, selected_score)| *selected_score >= score);
         if insertion < options.maximum_colors {
             selected.insert(insertion, (color, score));
             selected.truncate(options.maximum_colors);
@@ -278,6 +291,103 @@ fn select_popularity_colors(
         .into_iter()
         .map(|(color, _)| Bgr555(color))
         .collect())
+}
+
+fn apply_popularity_reduction_method_1(
+    selected: &mut [(u16, u32)],
+    color: u16,
+    score: u32,
+) -> bool {
+    let red_start = component_range_start(color & 0x1f, 1);
+    let green_start = component_range_start((color >> 5) & 0x1f, 1);
+    let blue_start = component_range_start(color >> 10, 1);
+    let red_end = red_start.wrapping_add(3).min(32);
+    let green_end = green_start.wrapping_add(3).min(32);
+    let blue_end = blue_start.wrapping_add(3).min(32);
+
+    for red in red_start..red_end {
+        for green in green_start..green_end {
+            for blue in blue_start..blue_end {
+                let neighbor = (blue << 10) | (green << 5) | red;
+                let Some(index) = selected.iter().position(|(candidate, candidate_score)| {
+                    *candidate_score != 0 && *candidate == neighbor
+                }) else {
+                    continue;
+                };
+                if score > selected[index].1 {
+                    selected[index] = (color, score);
+                    bubble_popularity_color_up(selected, index, score);
+                }
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn apply_popularity_reduction_method_2(
+    selected: &mut [(u16, u32)],
+    color: u16,
+    score: u32,
+) -> bool {
+    let red_start = component_range_start(color & 0x1f, 2);
+    let green_start = component_range_start((color >> 5) & 0x1f, 1);
+    let blue_start = component_range_start(color >> 10, 1);
+    let red_end = red_start.wrapping_add(5).min(32);
+    let green_end = green_start.wrapping_add(4).min(32);
+    let blue_end = blue_start.wrapping_add(3).min(32);
+    let mut found = false;
+    let mut weakest = None::<(usize, u32)>;
+
+    for red in red_start..red_end {
+        for green in green_start..green_end {
+            for blue in blue_start..blue_end {
+                let neighbor = (blue << 10) | (green << 5) | red;
+                let Some((index, candidate_score)) = selected.iter().enumerate().find_map(
+                    |(index, (candidate, candidate_score))| {
+                        (*candidate_score != 0 && *candidate == neighbor)
+                            .then_some((index, *candidate_score))
+                    },
+                ) else {
+                    continue;
+                };
+                found = true;
+                if candidate_score >= score {
+                    return true;
+                }
+                if weakest.is_none_or(|(_, weakest_score)| candidate_score < weakest_score) {
+                    weakest = Some((index, candidate_score));
+                }
+            }
+        }
+    }
+
+    if let Some((index, weakest_score)) = weakest
+        && weakest_score < 0x80
+    {
+        selected[index] = (color, weakest_score.wrapping_add(score));
+        /*
+         * The original compares preceding entries against the incoming score,
+         * not the combined score. If this entry moves, its stored score also
+         * becomes the incoming score.
+         */
+        bubble_popularity_color_up(selected, index, score);
+    }
+    found
+}
+
+const fn component_range_start(component: u16, radius: u16) -> u16 {
+    let start = component.wrapping_sub(radius);
+    if start == 0 { 0 } else { start }
+}
+
+fn bubble_popularity_color_up(selected: &mut [(u16, u32)], mut index: usize, score: u32) {
+    let color = selected[index].0;
+    while index > 0 && score > selected[index - 1].1 {
+        selected[index] = selected[index - 1];
+        selected[index - 1] = (color, score);
+        index -= 1;
+    }
 }
 
 /// Assigns globally reduced source colors to Lunar Magic's eight 16-color rows.
@@ -750,6 +860,8 @@ mod tests {
         options.validate().unwrap();
         assert_eq!(options.maximum_colors, 128);
         assert_eq!(options.priority_level, 3);
+        assert!(options.popularity_reduction_method_1);
+        assert!(!options.popularity_reduction_method_2);
         for row in 0..8 {
             let start = row * 16;
             assert_eq!(options.entries[start].lunar_magic_bits(), 4);
@@ -810,6 +922,43 @@ mod tests {
     }
 
     #[test]
+    fn popularity_method_1_replaces_the_first_adjacent_weaker_color() {
+        let mut selected = vec![(0x0421, 30), (0x0842, 20), (0x0c63, 10)];
+        assert!(apply_popularity_reduction_method_1(
+            &mut selected,
+            0x0843,
+            40
+        ));
+        assert_eq!(selected, vec![(0x0843, 40), (0x0421, 30), (0x0c63, 10)]);
+
+        assert!(apply_popularity_reduction_method_1(
+            &mut selected,
+            0x0844,
+            20
+        ));
+        assert_eq!(selected, vec![(0x0843, 40), (0x0421, 30), (0x0c63, 10)]);
+    }
+
+    #[test]
+    fn popularity_method_2_combines_only_a_nearby_sub_128_score() {
+        let mut selected = vec![(0x7fff, 200), (0x7000, 60), (0x0421, 40)];
+        assert!(apply_popularity_reduction_method_2(
+            &mut selected,
+            0x0843,
+            50
+        ));
+        assert_eq!(selected, vec![(0x7fff, 200), (0x7000, 60), (0x0843, 90)]);
+
+        selected[1] = (0x0842, 110);
+        assert!(apply_popularity_reduction_method_2(
+            &mut selected,
+            0x0844,
+            100
+        ));
+        assert_eq!(selected, vec![(0x7fff, 200), (0x0842, 110), (0x0843, 90)]);
+    }
+
+    #[test]
     fn transparency_is_zero_and_fractional_alpha_is_rejected() {
         let options = BitmapPaletteColorOptions::lunar_magic_initial();
         let transparent = Rgba8 {
@@ -853,6 +1002,8 @@ mod tests {
             maximum_colors: BITMAP_PALETTE_COLORS,
             reduction: BitmapPaletteReduction::MedianCut,
             priority_level: 3,
+            popularity_reduction_method_1: true,
+            popularity_reduction_method_2: false,
         }
     }
 

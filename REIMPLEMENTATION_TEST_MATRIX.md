@@ -899,9 +899,11 @@ independently. Application tests carry the
 selected row for every 8×8 tile into all four packed Map16 subtile descriptors and reconstruct the
 preview through those same rows; the original one-row path and complete ROM commit/reopen tests
 remain green. The native dialog exposes both reduction choices and the complete 8×16 state grid.
-Median-cut currently uses the bounded deterministic variance splitter; the two recovered
-Popularity neighborhood-replacement passes and Wine-produced output equivalence remain
-compatibility gates.
+Popularity also exposes both recovered high-color neighborhood methods, with method 1 enabled and
+method 2 disabled by default. Focused tests cover method 1's first-neighbor replacement and method
+2's sub-128 score aggregation and stronger-neighbor rejection. Median-cut currently uses the
+bounded deterministic variance splitter, and complete Wine-produced output equivalence remains a
+compatibility gate.
 
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination

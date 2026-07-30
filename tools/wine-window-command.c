@@ -30,6 +30,26 @@ struct dialog_values {
     void *remote;
 };
 
+static HWND read_process_window_handle(DWORD process_id, uintptr_t address) {
+    HANDLE process = OpenProcess(PROCESS_VM_READ, FALSE, process_id);
+    HWND window = NULL;
+    SIZE_T bytes_read = 0;
+    BOOL ok = process != NULL && ReadProcessMemory(
+        process,
+        (void *)address,
+        &window,
+        sizeof(window),
+        &bytes_read
+    );
+    if (process != NULL) {
+        CloseHandle(process);
+    }
+    if (!ok || bytes_read != sizeof(window) || !IsWindow(window)) {
+        return NULL;
+    }
+    return window;
+}
+
 static BOOL CALLBACK list_dialog_value(HWND window, LPARAM opaque) {
     struct dialog_values *values = (struct dialog_values *)opaque;
     char class_name[128] = {0};
@@ -731,13 +751,22 @@ int main(int argc, char **argv) {
                 info->biHeight != LONG_MIN &&
                 info->biHeight < 0 &&
                 info->biWidth > 0 &&
-                (SIZE_T)info->biWidth <= SIZE_MAX / 4 &&
-                info->biBitCount == 32 &&
+                info->biPlanes == 1 &&
+                info->biCompression == BI_RGB &&
+                info->biBitCount > 0 &&
                 pixel_offset >= info->biSize &&
                 pixel_offset <= dib_size
             ) {
                 SIZE_T rows = (SIZE_T)(-info->biHeight);
-                SIZE_T row_size = (SIZE_T)info->biWidth * 4;
+                SIZE_T width = (SIZE_T)info->biWidth;
+                SIZE_T bits_per_pixel = (SIZE_T)info->biBitCount;
+                SIZE_T row_size = 0;
+                if (
+                    width <= (SIZE_MAX - 31) / bits_per_pixel &&
+                    width * bits_per_pixel + 31 <= SIZE_MAX
+                ) {
+                    row_size = ((width * bits_per_pixel + 31) / 32) * 4;
+                }
                 if (row_size != 0 && rows <= (dib_size - pixel_offset) / row_size) {
                     unsigned char *pixels = (unsigned char *)dib + pixel_offset;
                     unsigned char *row = malloc(row_size);
@@ -802,15 +831,16 @@ int main(int argc, char **argv) {
             return 1;
         }
         if (clipboard_bmp_paste) {
-            struct search paste_target = {
-                .process_id = process_id,
-                .window = NULL,
-                .list = FALSE,
-                .window_class = "Window16x16"
-            };
-            EnumWindows(find_top_level_window, (LPARAM)&paste_target);
-            if (paste_target.window == NULL) {
-                fprintf(stderr, "16x16 Tile Map Editor window not found\n");
+            /*
+             * Lunar Magic 3.63 has both a legacy Window16x16 window and the
+             * modeless Map16 editor dialog. Bitmap paste belongs to the
+             * latter. DAT_00a09270 is the modeless dialog HWND; targeting the
+             * legacy window silently routes the command through the wrong
+             * dispatcher.
+             */
+            HWND paste_target = read_process_window_handle(process_id, 0x00a09270);
+            if (paste_target == NULL) {
+                fprintf(stderr, "modeless 16x16 Tile Map Editor dialog not found\n");
                 return 1;
             }
             if (
@@ -821,7 +851,7 @@ int main(int argc, char **argv) {
                 return 1;
             }
             SendMessage(
-                paste_target.window,
+                paste_target,
                 WM_COMMAND,
                 MAKEWPARAM(0x2276, 0),
                 0

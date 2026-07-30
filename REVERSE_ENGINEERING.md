@@ -893,8 +893,18 @@ slot. It then finds the nearest already selected or reusable destination color u
 weighted RGB555 distance, raises that distance by repeated squaring for priority levels 2–4, and
 adds `(distance × frequency) / $8EE09` with 32-bit wrapping arithmetic. The Rust palette-aware
 Popularity entry point now reproduces that admission and priority core and the application passes
-its actual destination palette. Lunar Magic's two adjacent neighborhood replacement heuristics
-remain separately identifiable gates and are not claimed by this increment.
+its actual destination palette.
+
+The two optional adjacent-color passes are now recovered from `004ec2b1..004ec65c` and represented
+independently. Method 1 scans a 3×3×3 RGB555 neighborhood in red/green/blue loop order, consumes the
+candidate when it encounters the first active selected neighbor, and replaces that neighbor only
+when the candidate's scored weight is greater before bubbling it toward the front. Method 2 uses
+the executable's asymmetric 5×4×3 window, rejects aggregation when any encountered neighbor is at
+least as strong as the candidate, otherwise selects the weakest neighbor, and combines only scores
+below `$80`. Its reorder comparison and moved-entry score use the incoming score rather than the
+combined score, matching the assembly at `004ec5f0..004ec655`. The Color Options dialog confirms
+method 1 defaults enabled and method 2 defaults disabled; both switches are now exposed by the
+native frontend and covered independently.
 The native dialog exposes the recovered reduction method, 1–128 limit, 1–4 priority, and all 128
 free/reusable/reserved entry states. Fixed palette ownership is forced reusable and ExAnimation
 ownership forced reserved before allocation, so presentation choices cannot overwrite another

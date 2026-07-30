@@ -497,6 +497,7 @@ fn bitmap_multi_row_color_options(
                         .changed();
                 });
         });
+        changed |= bitmap_popularity_reduction_options(ui, options);
         ui.label("Palette entries: F = free, U = reusable, X = reserved");
         egui::Grid::new("map16-bitmap-palette-entry-states")
             .spacing([3.0, 3.0])
@@ -540,6 +541,31 @@ fn bitmap_multi_row_color_options(
                 }
             });
     });
+    changed
+}
+
+fn bitmap_popularity_reduction_options(
+    ui: &mut egui::Ui,
+    options: &mut BitmapPaletteColorOptions,
+) -> bool {
+    let mut changed = false;
+    ui.add_enabled_ui(
+        options.reduction == BitmapPaletteReduction::Popularity,
+        |ui| {
+            changed |= ui
+                .checkbox(
+                    &mut options.popularity_reduction_method_1,
+                    "Reduce colors, method 1 (for high-color images)",
+                )
+                .changed();
+            changed |= ui
+                .checkbox(
+                    &mut options.popularity_reduction_method_2,
+                    "Reduce colors, method 2 (for high-color images)",
+                )
+                .changed();
+        },
+    );
     changed
 }
 
