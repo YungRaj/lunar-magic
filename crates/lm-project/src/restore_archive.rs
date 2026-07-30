@@ -132,6 +132,26 @@ pub struct LunarRestoreReversionRequest<'a> {
     pub created_time: PackedRestoreTime,
     pub last_rom_timestamp: u64,
     pub associated_file_timestamps: [u64; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+    pub failed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LunarRestoreAutomaticFullReason {
+    ContinuityBreak,
+    Interval,
+    Daily,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LunarRestoreAutomaticDecision {
+    Delta,
+    Full(LunarRestoreAutomaticFullReason),
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LunarRestoreAutomaticPolicy {
+    pub full_interval: Option<u32>,
+    pub daily_full: bool,
 }
 
 impl<'a> LunarRestoreArchiveCreateRequest<'a> {
@@ -245,6 +265,41 @@ pub struct LunarRestoreArchive {
 }
 
 impl LunarRestoreArchive {
+    /// Selects Lunar Magic's automatic delta/full behavior for the next save.
+    #[must_use]
+    pub fn automatic_decision(
+        &self,
+        policy: LunarRestoreAutomaticPolicy,
+        observed_rom_timestamp: u64,
+        observed_rom: &[u8],
+        current_date: PackedRestoreDate,
+    ) -> LunarRestoreAutomaticDecision {
+        if observed_rom_timestamp != self.header.last_rom_timestamp
+            || logical_restore_crc32(observed_rom) != self.header.latest_rom_hash
+        {
+            return LunarRestoreAutomaticDecision::Full(
+                LunarRestoreAutomaticFullReason::ContinuityBreak,
+            );
+        }
+        if policy
+            .full_interval
+            .is_some_and(|interval| self.header.latest_record_sequence >= interval)
+        {
+            return LunarRestoreAutomaticDecision::Full(LunarRestoreAutomaticFullReason::Interval);
+        }
+        if policy.daily_full
+            && self
+                .records
+                .iter()
+                .rev()
+                .find(|record| record.directory_version & 3 != 0)
+                .is_none_or(|record| record.created != current_date)
+        {
+            return LunarRestoreAutomaticDecision::Full(LunarRestoreAutomaticFullReason::Daily);
+        }
+        LunarRestoreAutomaticDecision::Delta
+    }
+
     /// Creates a one-record full Lunar Restore archive.
     ///
     /// The record uses Lunar Magic's native command, checksum, compression, directory, and
@@ -525,17 +580,19 @@ impl LunarRestoreArchive {
         let target = &self.records[*target_chain.last().ok_or(
             LunarRestoreArchiveError::MissingFullRestorePoint(request.target_record_id),
         )?];
-        let restored_hash = logical_restore_crc32(request.restored_rom);
-        if request.restored_rom.len() != target.rom_size as usize
-            || restored_hash != target.rom_hash
+        let actual_hash = logical_restore_crc32(request.restored_rom);
+        if !request.failed
+            && (request.restored_rom.len() != target.rom_size as usize
+                || actual_hash != target.rom_hash)
         {
             return Err(LunarRestoreArchiveError::AppendBaseMismatch {
                 expected_size: target.rom_size,
                 actual_size: request.restored_rom.len(),
                 expected_hash: target.rom_hash,
-                actual_hash: restored_hash,
+                actual_hash,
             });
         }
+        let restored_hash = if request.failed { 0 } else { actual_hash };
         let old_last = self
             .records
             .last()
@@ -565,7 +622,11 @@ impl LunarRestoreArchive {
             )
         };
 
-        let description = format!("Reverted to save point #{}.", request.target_record_id);
+        let description = format!(
+            "Reverted to save point #{}.{}",
+            request.target_record_id,
+            if request.failed { " (failed?)" } else { "" }
+        );
         let mut record = build_reversion_record(
             previous_offset,
             target,
@@ -592,7 +653,15 @@ impl LunarRestoreArchive {
         put_u32_at(&mut archive, 8, new_id);
         put_u32_at(&mut archive, 0x0c, encode_date(request.created));
         put_u64_at(&mut archive, 0x18, new_offset);
-        put_u64_at(&mut archive, 0x28, request.last_rom_timestamp);
+        put_u64_at(
+            &mut archive,
+            0x28,
+            if request.failed {
+                0
+            } else {
+                request.last_rom_timestamp
+            },
+        );
         put_u32_at(&mut archive, 0x30, restored_hash);
         for (slot, timestamp) in request.associated_file_timestamps.iter().enumerate() {
             put_u64_at(&mut archive, 0x40 + slot * 8, *timestamp);
@@ -2042,6 +2111,7 @@ mod tests {
             created_time: time,
             last_rom_timestamp: 40,
             associated_file_timestamps: [0; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+            failed: false,
         };
         let bytes = archive.append_reversion(&reversion).unwrap();
         let archive = LunarRestoreArchive::decode(&bytes).unwrap();
@@ -2071,6 +2141,101 @@ mod tests {
         let bytes = archive.append_delta(&delta).unwrap();
         let archive = LunarRestoreArchive::decode(&bytes).unwrap();
         assert_eq!(archive.restore_through(5, &original).unwrap(), fourth);
+
+        let partial = [0];
+        let failed = LunarRestoreReversionRequest {
+            target_record_id: 1,
+            restored_rom: &partial,
+            created: date,
+            created_time: time,
+            last_rom_timestamp: u64::MAX,
+            associated_file_timestamps: [0; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
+            failed: true,
+        };
+        let bytes = archive.append_reversion(&failed).unwrap();
+        let archive = LunarRestoreArchive::decode(&bytes).unwrap();
+        let marker = archive.records.last().unwrap();
+        assert_eq!(marker.rom_hash, 0);
+        assert_eq!(archive.header.latest_rom_hash, 0);
+        assert_eq!(archive.header.last_rom_timestamp, 0);
+        assert_eq!(
+            marker.description_text(),
+            "Reverted to save point #1. (failed?)"
+        );
+        assert_eq!(
+            archive
+                .restore_through(marker.record_id, &original)
+                .unwrap(),
+            first
+        );
+    }
+
+    #[test]
+    fn selects_automatic_full_reasons_in_original_priority_order() {
+        let original = [1, 2, 3];
+        let date = PackedRestoreDate {
+            year: 2026,
+            month: 7,
+            day: 30,
+        };
+        let request = LunarRestoreArchiveCreateRequest::new(
+            &original,
+            &original,
+            "Initial",
+            date,
+            PackedRestoreTime::decode(0),
+        );
+        let archive =
+            LunarRestoreArchive::decode(&LunarRestoreArchive::create_full(&request).unwrap())
+                .unwrap();
+        assert_eq!(
+            archive.automatic_decision(LunarRestoreAutomaticPolicy::default(), 0, &original, date,),
+            LunarRestoreAutomaticDecision::Delta
+        );
+        assert_eq!(
+            archive.automatic_decision(
+                LunarRestoreAutomaticPolicy {
+                    full_interval: Some(0),
+                    daily_full: true,
+                },
+                0,
+                &original,
+                PackedRestoreDate {
+                    year: 2026,
+                    month: 7,
+                    day: 31,
+                },
+            ),
+            LunarRestoreAutomaticDecision::Full(LunarRestoreAutomaticFullReason::Interval)
+        );
+        assert_eq!(
+            archive.automatic_decision(
+                LunarRestoreAutomaticPolicy {
+                    full_interval: None,
+                    daily_full: true,
+                },
+                0,
+                &original,
+                PackedRestoreDate {
+                    year: 2026,
+                    month: 7,
+                    day: 31,
+                },
+            ),
+            LunarRestoreAutomaticDecision::Full(LunarRestoreAutomaticFullReason::Daily)
+        );
+        assert_eq!(
+            archive.automatic_decision(
+                LunarRestoreAutomaticPolicy {
+                    full_interval: Some(0),
+                    daily_full: true,
+                },
+                1,
+                &original,
+                date,
+            ),
+            LunarRestoreAutomaticDecision::Full(LunarRestoreAutomaticFullReason::ContinuityBreak)
+        );
     }
 
     #[test]
