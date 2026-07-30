@@ -48,6 +48,8 @@ pub const SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_OFFSET: usize = 0x2d8f6;
 pub const SMW_US_V1_LEVEL_SPRITE_POINTER_HOOK_OFFSET: usize = 0x2d8f5;
 /// Parallel 512-byte sprite bank table selected when the hook opcode is `JSL` (`$22`).
 pub const SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_TABLE_OFFSET: usize = 0x77100;
+/// Eight one-byte default music tracks loaded during Lunar Magic's ROM-open transaction.
+pub const SMW_US_V1_DEFAULT_MUSIC_TRACKS_OFFSET: usize = 0x284db;
 /// Four 512-byte main-entrance planes, proven against Lunar Magic's complete MWL export corpus.
 pub const SMW_US_V1_ENTRANCE_POSITION_OFFSET: usize = 0x2f000;
 pub const SMW_US_V1_ENTRANCE_VERTICAL_SETTINGS_OFFSET: usize = 0x2f200;
@@ -301,6 +303,21 @@ pub fn smw_us_v1_sprite_tileset_graphics_files(
             image_len: rom.logical_len(),
         })?;
     Ok(std::array::from_fn(|index| usize::from(bytes[index])))
+}
+
+/// Reads the eight default level-music identifiers used when no explicit music command exists.
+///
+/// # Errors
+///
+/// Rejects a ROM that does not contain the complete native table.
+pub fn smw_us_v1_default_music_tracks(rom: &RomImage) -> Result<[u8; 8], RomError> {
+    rom.read(SMW_US_V1_DEFAULT_MUSIC_TRACKS_OFFSET, 8)?
+        .try_into()
+        .map_err(|_| RomError::RangeOutOfBounds {
+            offset: SMW_US_V1_DEFAULT_MUSIC_TRACKS_OFFSET,
+            len: 8,
+            image_len: rom.logical_len(),
+        })
 }
 
 /// Returns the native graphics layout recovered from Lunar Magic's SMW-US descriptor and
@@ -610,6 +627,17 @@ mod tests {
         assert_eq!(
             smw_us_v1_object_tileset_graphics_files(&rom, 16),
             Err(SmwUsV1ObjectTilesetGraphicsError::TilesetOutOfRange(16))
+        );
+    }
+
+    #[test]
+    fn default_music_table_uses_the_rom_open_transaction_offset() {
+        let mut bytes = vec![0xff; 0x30_000];
+        bytes[SMW_US_V1_DEFAULT_MUSIC_TRACKS_OFFSET..SMW_US_V1_DEFAULT_MUSIC_TRACKS_OFFSET + 8]
+            .copy_from_slice(&[2, 6, 1, 8, 7, 3, 5, 0x12]);
+        assert_eq!(
+            smw_us_v1_default_music_tracks(&RomImage::from_bytes(bytes).unwrap()).unwrap(),
+            [2, 6, 1, 8, 7, 3, 5, 0x12]
         );
     }
 

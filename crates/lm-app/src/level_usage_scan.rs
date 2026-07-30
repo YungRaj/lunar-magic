@@ -2,9 +2,9 @@ use std::ops::ControlFlow;
 
 use lm_level::NativeLayer2Data;
 use lm_profile::{
-    VanillaObjectFamily, load_smw_us_v1_standard_object_definition_map, smw_us_v1_level_mode,
-    smw_us_v1_object_family, smw_us_v1_object_tileset_graphics_files,
-    smw_us_v1_sprite_tileset_graphics_files,
+    VanillaObjectFamily, load_smw_us_v1_standard_object_definition_map,
+    smw_us_v1_default_music_tracks, smw_us_v1_level_mode, smw_us_v1_object_family,
+    smw_us_v1_object_tileset_graphics_files, smw_us_v1_sprite_tileset_graphics_files,
 };
 use lm_project::Project;
 use lm_render::{
@@ -27,6 +27,7 @@ pub struct LevelUsageScanOptions {
     pub graphics: bool,
     pub only_unused_inserted_graphics: bool,
     pub sprites: bool,
+    pub music: bool,
 }
 
 impl Default for LevelUsageScanOptions {
@@ -37,6 +38,7 @@ impl Default for LevelUsageScanOptions {
             graphics: true,
             only_unused_inserted_graphics: false,
             sprites: true,
+            music: true,
         }
     }
 }
@@ -56,6 +58,7 @@ pub enum LevelUsageScanStage {
     LoadLayer2,
     Graphics,
     Sprites,
+    Music,
 }
 
 /// Progress delivered before each slot and once after the final slot.
@@ -149,6 +152,11 @@ pub fn scan_smw_us_v1_level_usage(
         .map_err(|error| LevelUsageScanError::Definitions(error.to_string()))?;
 
     let project = Project::new(image);
+    let default_music = options
+        .music
+        .then(|| smw_us_v1_default_music_tracks(&project.rom))
+        .transpose()
+        .map_err(|error| LevelUsageScanError::Rom(error.to_string()))?;
     let total = layout.layer1.entries;
     let mut accumulator = LevelUsageAccumulator::new(total)?;
     let mut loaded_levels = vec![false; total];
@@ -299,6 +307,25 @@ pub fn scan_smw_us_v1_level_usage(
                 diagnostics.push(diagnostic(level, LevelUsageScanStage::Sprites, error));
             }
         }
+        if let Some(default_music) = default_music {
+            let explicit = slot
+                .layer1
+                .objects
+                .records
+                .iter()
+                .rev()
+                .filter(|record| record.command_id() == 0x26)
+                .map(lm_level::ObjectRecord::parameter)
+                .next()
+                .filter(|track| *track != 0);
+            let track = explicit.map_or_else(
+                || default_music[usize::from(slot.layer1.header.default_music_selector())],
+                |track| track - 1,
+            );
+            if let Err(error) = accumulator.observe_music(level, track, music_track_name(track)) {
+                diagnostics.push(diagnostic(level, LevelUsageScanStage::Music, error));
+            }
+        }
     }
 
     let _ = progress(LevelUsageScanProgress {
@@ -372,6 +399,20 @@ fn diagnostic(
         level,
         stage,
         detail: error.to_string(),
+    }
+}
+
+fn music_track_name(track: u8) -> String {
+    match track {
+        1 => "Piano".into(),
+        2 => "Here we go!".into(),
+        3 => "Water Level".into(),
+        5 => "Boss Battle".into(),
+        6 => "Cave Drums".into(),
+        7 => "Ghost House".into(),
+        8 => "Castle".into(),
+        0x12 => "Switch Palace".into(),
+        _ => format!("Music Track {track:X}"),
     }
 }
 
@@ -476,7 +517,10 @@ mod tests {
             .map(|entry| (entry.resource, entry.count))
             .collect::<Vec<_>>();
         assert_eq!(actual, expected);
-        for (prefix, actual) in [("Sprite ", &result.report.sprites)] {
+        for (prefix, actual) in [
+            ("Sprite ", &result.report.sprites),
+            ("Music Track ", &result.report.music_tracks),
+        ] {
             let expected = oracle
                 .lines()
                 .filter_map(|line| {

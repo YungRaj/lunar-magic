@@ -45,6 +45,15 @@ impl LegacyLevelHeader {
         self.bytes[2] & 0x0f
     }
 
+    /// Returns the three-bit selector used by SMW's default level-music table.
+    ///
+    /// Lunar Magic uses the high nibble of header byte 2 and masks it to three bits whenever no
+    /// explicit music control command is present.
+    #[must_use]
+    pub const fn default_music_selector(self) -> u8 {
+        self.bytes[2] >> 4 & 7
+    }
+
     #[must_use]
     pub const fn sprite_palette(self) -> u8 {
         self.bytes[3] >> 3 & 7
@@ -224,6 +233,7 @@ mod tests {
         assert_eq!(encoded[1] >> 5, 7);
         assert_eq!(encoded[2] & 0xf0, original[2] & 0xf0);
         assert_eq!(header.sprite_tileset(), 6);
+        assert_eq!(header.default_music_selector(), 2);
         assert_eq!(encoded[3] & 0xc0, original[3] & 0xc0);
         assert_eq!(header.sprite_palette(), 1);
         assert_eq!(header.foreground_palette(), 5);
