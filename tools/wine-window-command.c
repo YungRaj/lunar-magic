@@ -355,6 +355,7 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE clipboard-bmp-paste WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE command-at HWND_ADDRESS,COMMAND_ID\n"
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
+            "       wine-window-command.exe EXECUTABLE find-u32 VALUE\n"
             "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
             "       wine-window-command.exe EXECUTABLE save WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE level HEX_LEVEL\n"
@@ -377,6 +378,7 @@ int main(int argc, char **argv) {
     BOOL clipboard_bmp_paste = _stricmp(argv[2], "clipboard-bmp-paste") == 0;
     BOOL command_at = _stricmp(argv[2], "command-at") == 0;
     BOOL read = _stricmp(argv[2], "read") == 0;
+    BOOL find_u32 = _stricmp(argv[2], "find-u32") == 0;
     BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
     if (open_level_command) {
         if (argc != 4) {
@@ -406,6 +408,77 @@ int main(int argc, char **argv) {
                 : (argc == 4 ? argv[3] : NULL))
     };
     EnumWindows(find_top_level_window, (LPARAM)&search);
+    if (find_u32) {
+        if (argc != 4) {
+            fprintf(stderr, "find-u32 requires VALUE\n");
+            return 2;
+        }
+        char *end = NULL;
+        unsigned long value = strtoul(argv[3], &end, 0);
+        if (end == argv[3] || *end != '\0' || value > UINT32_MAX) {
+            fprintf(stderr, "invalid 32-bit value: %s\n", argv[3]);
+            return 2;
+        }
+        HANDLE process = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, process_id);
+        if (process == NULL) {
+            fprintf(stderr, "cannot open target process\n");
+            return 1;
+        }
+        uintptr_t address = 0x00400000;
+        uintptr_t limit = 0x04000000;
+        unsigned matches = 0;
+        while (address < limit) {
+            MEMORY_BASIC_INFORMATION region;
+            SIZE_T queried = VirtualQueryEx(
+                process,
+                (void *)address,
+                &region,
+                sizeof(region)
+            );
+            if (queried != sizeof(region) || region.RegionSize == 0) {
+                break;
+            }
+            uintptr_t next = (uintptr_t)region.BaseAddress + region.RegionSize;
+            BOOL readable =
+                region.State == MEM_COMMIT &&
+                (region.Protect & (PAGE_GUARD | PAGE_NOACCESS)) == 0;
+            if (readable && region.RegionSize <= SIZE_MAX) {
+                unsigned char *bytes = malloc(region.RegionSize);
+                SIZE_T bytes_read = 0;
+                BOOL ok = bytes != NULL && ReadProcessMemory(
+                    process,
+                    region.BaseAddress,
+                    bytes,
+                    region.RegionSize,
+                    &bytes_read
+                );
+                if (ok) {
+                    for (SIZE_T offset = 0; offset + sizeof(uint32_t) <= bytes_read; offset++) {
+                        uint32_t candidate = 0;
+                        memcpy(&candidate, bytes + offset, sizeof(candidate));
+                        if (candidate == (uint32_t)value) {
+                            printf(
+                                "0x%08lx\n",
+                                (unsigned long)((uintptr_t)region.BaseAddress + offset)
+                            );
+                            matches++;
+                        }
+                    }
+                }
+                free(bytes);
+            }
+            if (next <= address) {
+                break;
+            }
+            address = next;
+        }
+        CloseHandle(process);
+        if (matches == 0) {
+            fprintf(stderr, "32-bit value not found\n");
+            return 1;
+        }
+        return 0;
+    }
     if (read) {
         if (argc != 4) {
             fprintf(stderr, "read requires ADDRESS,LENGTH\n");
