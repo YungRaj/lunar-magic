@@ -13,6 +13,7 @@ pub const MAP16_BITMAP_HEIGHT: usize = 256;
 pub const MAP16_BITMAP_PIXELS: usize = MAP16_BITMAP_WIDTH * MAP16_BITMAP_HEIGHT;
 pub const MAP16_BITMAP_MAX_PNG_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PNG_DECODE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_BITMAP_DIMENSION: usize = 4096;
 const SUBTILE_PLANE_WIDTH: usize = MAP16_BITMAP_WIDTH / 8;
 
 #[derive(Clone, Copy)]
@@ -48,6 +49,14 @@ pub struct Map16BitmapImportPlan {
     pub indexed_pixels: Vec<u8>,
     pub generated_colors: usize,
     pub newly_occupied_tiles: usize,
+}
+
+/// One decoded row-major RGBA bitmap before Lunar Magic's 16-pixel boundary padding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DecodedMap16Bitmap {
+    pub width: usize,
+    pub height: usize,
+    pub pixels: Vec<Rgba8>,
 }
 
 impl Map16BitmapImportPlan {
@@ -170,6 +179,25 @@ impl Map16BitmapImportPlan {
 /// Rejects oversized input, malformed PNG data, dimensions other than 256×256, unsupported
 /// post-transform color types, or a decoder output whose pixel count is not canonical.
 pub fn decode_map16_bitmap_png(bytes: &[u8]) -> Result<Vec<Rgba8>, Map16PngDecodeError> {
+    let bitmap = decode_map16_bitmap_png_image(bytes)?;
+    if bitmap.width != MAP16_BITMAP_WIDTH || bitmap.height != MAP16_BITMAP_HEIGHT {
+        return Err(Map16PngDecodeError::Dimensions {
+            width: bitmap.width,
+            height: bitmap.height,
+        });
+    }
+    Ok(bitmap.pixels)
+}
+
+/// Decodes a bounded PNG while retaining its source dimensions.
+///
+/// # Errors
+///
+/// Rejects oversized input, malformed/empty images, dimensions beyond the importer bound,
+/// unsupported post-transform color types, or inconsistent decoded pixel counts.
+pub fn decode_map16_bitmap_png_image(
+    bytes: &[u8],
+) -> Result<DecodedMap16Bitmap, Map16PngDecodeError> {
     if bytes.len() > MAP16_BITMAP_MAX_PNG_BYTES {
         return Err(Map16PngDecodeError::InputTooLarge(bytes.len()));
     }
@@ -183,7 +211,7 @@ pub fn decode_map16_bitmap_png(bytes: &[u8]) -> Result<Vec<Rgba8>, Map16PngDecod
         .map_err(|error| Map16PngDecodeError::Decode(error.to_string()))?;
     let width = usize::try_from(reader.info().width).unwrap_or(usize::MAX);
     let height = usize::try_from(reader.info().height).unwrap_or(usize::MAX);
-    if width != MAP16_BITMAP_WIDTH || height != MAP16_BITMAP_HEIGHT {
+    if width == 0 || height == 0 || width > MAX_BITMAP_DIMENSION || height > MAX_BITMAP_DIMENSION {
         return Err(Map16PngDecodeError::Dimensions { width, height });
     }
     let mut output = vec![0; reader.output_buffer_size()];
@@ -233,7 +261,63 @@ pub fn decode_map16_bitmap_png(bytes: &[u8]) -> Result<Vec<Rgba8>, Map16PngDecod
     if pixels.len() != MAP16_BITMAP_PIXELS {
         return Err(Map16PngDecodeError::PixelCount(pixels.len()));
     }
-    Ok(pixels)
+    Ok(DecodedMap16Bitmap {
+        width,
+        height,
+        pixels,
+    })
+}
+
+/// Pads a decoded bitmap on its right and bottom edges to whole 16×16 Map16 blocks.
+///
+/// This matches Lunar Magic's clipboard normalization: original pixels remain at the top-left and
+/// every added pixel uses the active background color.
+///
+/// # Errors
+///
+/// Rejects malformed source shape or arithmetic overflow.
+pub fn pad_map16_bitmap(
+    bitmap: &DecodedMap16Bitmap,
+    fill: Rgba8,
+) -> Result<DecodedMap16Bitmap, Map16PngDecodeError> {
+    let expected = bitmap
+        .width
+        .checked_mul(bitmap.height)
+        .ok_or(Map16PngDecodeError::PixelCount(bitmap.pixels.len()))?;
+    if expected != bitmap.pixels.len() {
+        return Err(Map16PngDecodeError::PixelCount(bitmap.pixels.len()));
+    }
+    let width = bitmap
+        .width
+        .checked_add(15)
+        .map(|value| value & !15)
+        .ok_or(Map16PngDecodeError::Dimensions {
+            width: bitmap.width,
+            height: bitmap.height,
+        })?;
+    let height = bitmap
+        .height
+        .checked_add(15)
+        .map(|value| value & !15)
+        .ok_or(Map16PngDecodeError::Dimensions {
+            width: bitmap.width,
+            height: bitmap.height,
+        })?;
+    let len = width
+        .checked_mul(height)
+        .ok_or(Map16PngDecodeError::Dimensions { width, height })?;
+    let mut pixels = vec![fill; len];
+    for row in 0..bitmap.height {
+        let source = row * bitmap.width;
+        let target = row * width;
+        pixels[target..target + bitmap.width]
+            .copy_from_slice(&bitmap.pixels[source..source + bitmap.width]);
+    }
+    Ok(DecodedMap16Bitmap {
+        width,
+        height,
+        pixels,
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -333,6 +417,74 @@ impl std::error::Error for Map16BitmapImportError {}
 mod tests {
     use super::*;
     use lm_graphics::{Bgr555, GraphicsFile4bpp, IndexedTile, Palette};
+
+    #[test]
+    fn lunar_magic_padding_keeps_source_at_top_left_and_fills_right_and_bottom() {
+        let source = DecodedMap16Bitmap {
+            width: 17,
+            height: 15,
+            pixels: (0..17 * 15)
+                .map(|value| Rgba8 {
+                    red: u8::try_from(value % 251).unwrap(),
+                    green: 0,
+                    blue: 0,
+                    alpha: 255,
+                })
+                .collect(),
+        };
+        let fill = Rgba8 {
+            red: 9,
+            green: 8,
+            blue: 7,
+            alpha: 255,
+        };
+        let padded = pad_map16_bitmap(&source, fill).unwrap();
+        assert_eq!((padded.width, padded.height), (32, 16));
+        for row in 0..source.height {
+            assert_eq!(
+                &padded.pixels[row * padded.width..row * padded.width + source.width],
+                &source.pixels[row * source.width..(row + 1) * source.width]
+            );
+            assert!(
+                padded.pixels[row * padded.width + source.width..(row + 1) * padded.width]
+                    .iter()
+                    .all(|pixel| *pixel == fill)
+            );
+        }
+        assert!(
+            padded.pixels[15 * padded.width..]
+                .iter()
+                .all(|pixel| *pixel == fill)
+        );
+    }
+
+    #[test]
+    fn malformed_bitmap_shape_is_rejected_before_padding() {
+        assert!(matches!(
+            pad_map16_bitmap(
+                &DecodedMap16Bitmap {
+                    width: 2,
+                    height: 2,
+                    pixels: vec![
+                        Rgba8 {
+                            red: 0,
+                            green: 0,
+                            blue: 0,
+                            alpha: 0,
+                        };
+                        3
+                    ],
+                },
+                Rgba8 {
+                    red: 0,
+                    green: 0,
+                    blue: 0,
+                    alpha: 0,
+                },
+            ),
+            Err(Map16PngDecodeError::PixelCount(3))
+        ));
+    }
 
     #[test]
     fn one_plan_carries_palette_graphics_occupancy_and_map16_results() {
