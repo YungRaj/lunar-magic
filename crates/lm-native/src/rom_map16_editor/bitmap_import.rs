@@ -21,10 +21,6 @@ impl RomMap16Editor {
     fn open_bitmap_session(&mut self, bytes: &[u8]) -> Result<(), String> {
         let pixels = decode_map16_bitmap_png(bytes).map_err(|error| error.to_string())?;
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
-        let profile = workspace
-            .profile
-            .clone()
-            .ok_or("bitmap import currently requires installed pointer-based Map16 storage")?;
         let level = u16::from_str_radix(self.preview_level.trim(), 16)
             .map_err(|_| "bitmap import level must be hexadecimal")?;
         if level > 0x01ff {
@@ -36,19 +32,20 @@ impl RomMap16Editor {
             parse_optional_graphics(&self.bitmap_extra_slot_4, "GFX slot 4")?,
             parse_optional_graphics(&self.bitmap_extra_slot_5, "GFX slot 5")?,
         ];
+        let request = NativeMap16BitmapImportSessionRequest {
+            level: usize::from(level),
+            page: self.page,
+            extra_graphics,
+            pixels,
+            palette_row: self.bitmap_palette_row,
+            acts_like,
+        };
         self.bitmap_session = Some(
-            NativeMap16BitmapImportSession::new(
-                workspace.snapshot.clone(),
-                profile,
-                NativeMap16BitmapImportSessionRequest {
-                    level: usize::from(level),
-                    page: self.page,
-                    extra_graphics,
-                    pixels,
-                    palette_row: self.bitmap_palette_row,
-                    acts_like,
-                },
-            )
+            if let Some(profile) = workspace.profile.clone() {
+                NativeMap16BitmapImportSession::new(workspace.snapshot.clone(), profile, request)
+            } else {
+                NativeMap16BitmapImportSession::new_smw_us_v1(workspace.snapshot.clone(), request)
+            }
             .map_err(|error| error.to_string())?,
         );
         self.bitmap_original_texture = None;
@@ -207,10 +204,7 @@ impl RomMap16Editor {
             ui.label("Acts Like");
             ui.text_edit_singleline(&mut self.bitmap_acts_like);
         });
-        let supported = self
-            .workspace
-            .as_ref()
-            .is_some_and(|workspace| workspace.profile.is_some());
+        let supported = self.workspace.is_some();
         if ui
             .add_enabled(
                 supported && !stale && !self.bitmap_loader.is_running(),
@@ -225,12 +219,6 @@ impl RomMap16Editor {
             )])
         {
             self.error = Some(error);
-        }
-        if !supported {
-            ui.small(
-                "Pristine direct-transfer Map16/palette persistence is not implemented yet; \
-                 import is disabled to prevent writing through an incompatible layout.",
-            );
         }
     }
 

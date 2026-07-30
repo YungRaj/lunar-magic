@@ -85,15 +85,27 @@ impl NativeMap16BitmapGraphicsWorkspace {
             std::array::from_fn(|_| None);
         for (slot, assignment) in assignments.iter().copied().enumerate() {
             if let Some(file_number) = assignment {
-                slots[slot] = Some(
-                    project
-                        .load_graphics_file(file_number, graphics_layout)
-                        .map_err(|error| NativeMap16BitmapWorkspaceLoadError::Graphics {
+                let mut graphics = project
+                    .load_graphics_file(file_number, graphics_layout)
+                    .map_err(|error| NativeMap16BitmapWorkspaceLoadError::Graphics {
+                        slot,
+                        file_number,
+                        error,
+                    })?;
+                if graphics.tiles.len() > NATIVE_MAP16_BITMAP_TILES_PER_SLOT {
+                    return Err(NativeMap16BitmapWorkspaceLoadError::Workspace(
+                        NativeMap16BitmapWorkspaceError::WrongSlotTileCount {
                             slot,
-                            file_number,
-                            error,
-                        })?,
-                );
+                            actual: graphics.tiles.len(),
+                        },
+                    ));
+                }
+                graphics
+                    .tiles
+                    .resize_with(NATIVE_MAP16_BITMAP_TILES_PER_SLOT, || {
+                        IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
+                    });
+                slots[slot] = Some(graphics);
             }
         }
         Self::assemble(assignments, slots).map_err(NativeMap16BitmapWorkspaceLoadError::Workspace)
@@ -391,13 +403,12 @@ mod tests {
             erase_fill: 0xff,
         };
         for file_number in 0..6 {
+            let mut graphics = slot(u8::try_from(file_number + 1).unwrap());
+            if file_number == 0 {
+                graphics.tiles.truncate(0x60);
+            }
             project
-                .save_graphics_file(
-                    file_number,
-                    &slot(u8::try_from(file_number + 1).unwrap()),
-                    layout,
-                    &options,
-                )
+                .save_graphics_file(file_number, &graphics, layout, &options)
                 .unwrap();
         }
         let workspace = NativeMap16BitmapGraphicsWorkspace::load_smw_us_v1(
@@ -417,5 +428,10 @@ mod tests {
                 u8::try_from(slot + 1).unwrap()
             );
         }
+        assert!(
+            workspace.graphics.tiles[0x60..0x80]
+                .iter()
+                .all(|tile| tile.pixels().iter().all(|pixel| *pixel == 0))
+        );
     }
 }
