@@ -2375,6 +2375,9 @@ separately, so lookup no longer consumes attribute or whole-cell flip bits.
 Object-backed writes use the same typed placement boundary but preserve their
 complete 15-bit foreground definition identity; their bit 14 is not a
 background-cell X flip.
+OSC custom-object display parts now preserve that same 15-bit identity when consulting the
+fixed 1,024-definition M16 sidecar. Out-of-range `$4001` remains unresolved rather than being
+masked into unrelated entry `$0001`, and its diagnostic marker retains all four hexadecimal digits.
 The native-assets Layer 2 panel now uses the same shared bijection to present a
 clickable 32×32 Map16 grid. Selecting a canvas cell resolves its non-linear
 storage index and loads the complete 16-bit word; applying it continues through

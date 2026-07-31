@@ -4397,18 +4397,18 @@ fn draw_fitted_custom_object_preview(
                 f32::from(part.y.saturating_sub(min_y)) * scale,
             );
         let tile_rect = egui::Rect::from_min_size(position, egui::vec2(16.0 * scale, 16.0 * scale));
-        let definition = match custom_map16 {
-            Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) => {
-                sidecar.tile(usize::from(part.tile & 0x3fff))
+        match custom_object_part_source(part.tile, custom_map16) {
+            CustomObjectPartSource::Base(tile) => {
+                if let Some(texture) = map16_texture {
+                    draw_map16_atlas_tile(painter, texture, tile_rect, tile);
+                }
             }
-            Some(lm_app::NativeMap16SidecarDocument::S16(_)) | None => None,
-        };
-        if let (Some(definition), Some(texture)) = (definition, foreground_texture) {
-            draw_custom_map16_tile(painter, texture, tile_rect, definition);
-        } else if part.tile < 0x200
-            && let Some(texture) = map16_texture
-        {
-            draw_map16_atlas_tile(painter, texture, tile_rect, part.tile);
+            CustomObjectPartSource::Custom(definition) => {
+                if let Some(texture) = foreground_texture {
+                    draw_custom_map16_tile(painter, texture, tile_rect, definition);
+                }
+            }
+            CustomObjectPartSource::Unresolved => {}
         }
     }
 }
@@ -5942,7 +5942,7 @@ fn custom_object_part_source(
     let Some(lm_app::NativeMap16SidecarDocument::M16(sidecar)) = custom_map16 else {
         return CustomObjectPartSource::Unresolved;
     };
-    sidecar.tile(usize::from(tile & 0x3fff)).map_or(
+    sidecar.tile(usize::from(tile)).map_or(
         CustomObjectPartSource::Unresolved,
         CustomObjectPartSource::Custom,
     )
@@ -5957,7 +5957,7 @@ fn draw_unresolved_custom_object_part(painter: &egui::Painter, target: egui::Rec
     painter.text(
         target.center(),
         egui::Align2::CENTER_CENTER,
-        format!("{:03X}", tile & 0x3fff),
+        format!("{tile:04X}"),
         egui::FontId::monospace(6.0),
         egui::Color32::WHITE,
     );
@@ -8760,6 +8760,10 @@ mod tests {
         );
         assert_eq!(
             custom_object_part_source(0x400, Some(&m16)),
+            CustomObjectPartSource::Unresolved
+        );
+        assert_eq!(
+            custom_object_part_source(0x4001, Some(&m16)),
             CustomObjectPartSource::Unresolved
         );
     }

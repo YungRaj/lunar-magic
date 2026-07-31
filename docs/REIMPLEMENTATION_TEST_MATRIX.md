@@ -128,7 +128,9 @@ OSC parts below `$200` use the base Map16 atlas, while higher parts resolve only
 against an available M16 custom-Map16 definition. Missing definitions, S16-only
 metadata, out-of-range indexes, and unavailable foreground assets now produce a
 bounded red marker labeled with the unresolved tile ID instead of silently
-disappearing; focused tests distinguish base, resolved-custom, and unresolved cases.
+disappearing. The M16 lookup retains the complete 15-bit OSC foreground identity, so
+out-of-range `$4001` cannot alias sidecar entry `$0001`; focused tests distinguish
+base, resolved-custom, and unresolved cases.
 Native-canvas selection and drag hit-testing unions the encoded placement footprint
 with every resolved OSC display tile, including negative and extended offsets, while
 an explicitly empty display retains the encoded target. Focused geometry coverage and
