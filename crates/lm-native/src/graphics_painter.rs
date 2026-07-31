@@ -11,13 +11,13 @@ const CELL_OFFSETS: [f32; 8] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
 const CELL_ENDS: [f32; 8] = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TileNavigation {
+pub(crate) enum TileNavigation {
     PreviousPage,
     NextPage,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PaletteStep {
+pub(crate) enum PaletteStep {
     Previous,
     Next,
 }
@@ -250,6 +250,44 @@ pub(crate) fn graphics_transform_controls(
         } else {
             None
         }
+    })
+    .inner
+}
+
+pub(crate) fn graphics_navigation_controls(
+    ui: &mut egui::Ui,
+    pages_enabled: bool,
+    palettes_enabled: bool,
+) -> (Option<TileNavigation>, Option<PaletteStep>) {
+    ui.horizontal(|ui| {
+        let page = if ui
+            .add_enabled(pages_enabled, egui::Button::new("Previous page"))
+            .clicked()
+        {
+            Some(TileNavigation::PreviousPage)
+        } else if ui
+            .add_enabled(pages_enabled, egui::Button::new("Next page"))
+            .clicked()
+        {
+            Some(TileNavigation::NextPage)
+        } else {
+            None
+        };
+        ui.separator();
+        let palette = if ui
+            .add_enabled(palettes_enabled, egui::Button::new("Previous palette"))
+            .clicked()
+        {
+            Some(PaletteStep::Previous)
+        } else if ui
+            .add_enabled(palettes_enabled, egui::Button::new("Next palette"))
+            .clicked()
+        {
+            Some(PaletteStep::Next)
+        } else {
+            None
+        };
+        (page, palette)
     })
     .inner
 }
@@ -727,6 +765,15 @@ pub(crate) fn apply_tile_keyboard_navigation(
     let Some(navigation) = navigation else {
         return None;
     };
+    apply_tile_navigation(selected, responses, tile_count, navigation)
+}
+
+pub(crate) fn apply_tile_navigation(
+    selected: &mut usize,
+    responses: &[egui::Response],
+    tile_count: usize,
+    navigation: TileNavigation,
+) -> Option<String> {
     let next = navigated_tile_index(*selected, tile_count, navigation);
     let page = *selected / GRAPHICS_PAGE_TILES;
     if next == *selected {
@@ -773,7 +820,14 @@ pub(crate) fn apply_tile_palette_keyboard(
             None
         }
     });
-    let step = step?;
+    apply_tile_palette_step(display_palette, row_count, step?)
+}
+
+pub(crate) fn apply_tile_palette_step(
+    display_palette: &mut GraphicsDisplayPalette,
+    row_count: usize,
+    step: PaletteStep,
+) -> Option<String> {
     let next = stepped_display_palette(*display_palette, row_count, step);
     if next == *display_palette {
         return None;
@@ -1020,6 +1074,47 @@ mod tests {
     }
 
     #[test]
+    fn visible_page_commands_share_native_keyboard_status_and_bounds() {
+        let context = egui::Context::default();
+        let mut selected = 9;
+        let mut statuses = Vec::new();
+        let _ = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..10)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                statuses.push(apply_tile_navigation(
+                    &mut selected,
+                    &responses,
+                    600,
+                    TileNavigation::NextPage,
+                ));
+                statuses.push(apply_tile_navigation(
+                    &mut selected,
+                    &responses,
+                    600,
+                    TileNavigation::PreviousPage,
+                ));
+                statuses.push(apply_tile_navigation(
+                    &mut selected,
+                    &responses,
+                    600,
+                    TileNavigation::PreviousPage,
+                ));
+            });
+        });
+        assert_eq!(selected, 9);
+        assert_eq!(
+            statuses,
+            [
+                Some("Viewing 8x8 page 0x1.".into()),
+                Some("Viewing 8x8 page 0x0.".into()),
+                Some("Already at Start (0x0).".into()),
+            ]
+        );
+    }
+
+    #[test]
     fn palette_shortcuts_include_the_native_default_palette_and_bound_rows() {
         use GraphicsDisplayPalette::{Default, Row};
 
@@ -1052,6 +1147,22 @@ mod tests {
         assert_eq!(
             stepped_display_palette(Row(usize::MAX), 8, PaletteStep::Previous),
             Row(6)
+        );
+
+        let mut selected = Default;
+        assert_eq!(
+            apply_tile_palette_step(&mut selected, 8, PaletteStep::Next),
+            Some("Rendered with palette 0x0.".into())
+        );
+        assert_eq!(selected, Row(0));
+        assert_eq!(
+            apply_tile_palette_step(&mut selected, 8, PaletteStep::Previous),
+            Some("Rendered with default palette.".into())
+        );
+        assert_eq!(selected, Default);
+        assert_eq!(
+            apply_tile_palette_step(&mut selected, 8, PaletteStep::Previous),
+            None
         );
     }
 

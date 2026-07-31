@@ -1264,6 +1264,11 @@ control command, alongside the two flip controls, rather than a keyboard-only op
 Rust graphics surfaces now expose the missing visible rotation control and route all three buttons
 and their R/X/Y shortcuts through one shared transform action while preserving their existing
 mutation gates.
+The same dispatcher maps four additional controls to synthesized `VK_UP`, `VK_DOWN`, `VK_PRIOR`,
+and `VK_NEXT` messages before restoring focus to the tile sheet. They are the visible previous/next
+page and previous/next palette routes for the already recovered keyboard branches. Rust now exposes
+all four controls on every graphics surface; control and keyboard actions share the same bounded
+selection/palette transitions and exact page, boundary, and rendered-palette status messages.
 The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
 tile-edit selection. `HandleGraphicsEditorWindowMessage` at `005068c0` proves that primary and

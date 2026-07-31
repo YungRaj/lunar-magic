@@ -4,7 +4,8 @@ use crate::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
         GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, TILE_EDITOR_SIDE,
         TILE_GRID_COLUMNS, TilePixelPointerAction, TilePointerAction,
-        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, color_selection_marker,
+        apply_tile_keyboard_navigation, apply_tile_navigation, apply_tile_palette_keyboard,
+        apply_tile_palette_step, color_selection_marker, graphics_navigation_controls,
         graphics_transform_controls, paint_tile, palette_color, shortcut_transform,
         take_graphics_character_shortcut, take_graphics_refresh_shortcut,
         take_graphics_save_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
@@ -516,6 +517,9 @@ impl RomGraphicsEditor {
         let mut selected_paste = None;
         let mut copied = false;
         let mut paste_status = None;
+        let row_count = palette.palette.colors.len() / 16;
+        let (page_control, palette_control) =
+            graphics_navigation_controls(ui, tile_count > 0, row_count > 0);
         egui::ScrollArea::vertical()
             .max_height(420.0)
             .show(ui, |ui| {
@@ -578,15 +582,22 @@ impl RomGraphicsEditor {
         {
             paste_status = Some(format!("Pasted selected tile over tile 0x{index:X}."));
         }
-        let navigation_status =
-            apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses, tile_count);
-        let palette_status = apply_tile_palette_keyboard(
-            ui,
-            self.selected_tile,
-            &responses,
-            &mut self.display_palette,
-            palette.palette.colors.len() / 16,
-        );
+        let navigation_status = if let Some(navigation) = page_control {
+            apply_tile_navigation(&mut self.selected_tile, &responses, tile_count, navigation)
+        } else {
+            apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses, tile_count)
+        };
+        let palette_status = if let Some(step) = palette_control {
+            apply_tile_palette_step(&mut self.display_palette, row_count, step)
+        } else {
+            apply_tile_palette_keyboard(
+                ui,
+                self.selected_tile,
+                &responses,
+                &mut self.display_palette,
+                row_count,
+            )
+        };
         let hovered_owner = responses
             .iter()
             .position(egui::Response::hovered)

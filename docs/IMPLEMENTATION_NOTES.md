@@ -1704,6 +1704,10 @@ repaint on every graphics surface, matching the native `$1B59` dependent-editor 
 without changing model state or status. F7 toggles the initially hidden tile grid. Ctrl+Alt+F7 changes
 its retained color between the recovered white and black DWORDs without changing visibility and
 publishes `Tile grid color 1.` or `Tile grid color 2.` exactly.
+Visible previous/next page and previous/next palette controls synthesize the same four native
+navigation actions as Up/Down and Page Up/Down. They share selection clamping, focus transfer,
+default-palette traversal, and exact page, boundary, and rendered-palette status with the keyboard
+routes on all three graphics surfaces.
 The installed editor additionally reserves unmodified F8 for the recovered current-level export.
 It resolves the globally active level independently of the selected graphics page, presents the
 native confirmation text, and exports only that level's ordered FG/BG and sprite assignments.
