@@ -2,8 +2,8 @@ use crate::{
     dialogs,
     document_loader::DocumentLoader,
     graphics_painter::{
-        TILE_GRID_COLUMNS, apply_tile_keyboard_navigation, paint_tile, palette_color,
-        show_tile_grid_status, tile_button, tile_coordinate,
+        TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, paint_tile,
+        palette_color, show_tile_grid_status, tile_button, tile_coordinate,
     },
     native_clipboard,
 };
@@ -34,6 +34,7 @@ pub(crate) struct GraphicsEditor {
     selected_tile: usize,
     selected_color: u8,
     palette_row: usize,
+    pixel_zoom: TileEditorZoom,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     save_worker: crate::persistence_worker::PersistenceWorker,
@@ -269,6 +270,7 @@ impl GraphicsEditor {
             return;
         };
         ui.label(format!("Tile {:03X}", self.selected_tile));
+        self.pixel_zoom.show(ui);
         let transform = ui
             .horizontal(|ui| {
                 if ui.button("Flip horizontal").clicked() {
@@ -298,8 +300,10 @@ impl GraphicsEditor {
                 tile = current.clone();
             }
         }
-        let (rect, response) =
-            ui.allocate_exact_size(egui::Vec2::splat(320.0), egui::Sense::click_and_drag());
+        let (rect, response) = ui.allocate_exact_size(
+            egui::Vec2::splat(self.pixel_zoom.side()),
+            egui::Sense::click_and_drag(),
+        );
         paint_tile(ui.painter(), rect, &tile, palette, self.palette_row);
         if (response.clicked() || response.dragged())
             && let Some(position) = response.interact_pointer_pos()

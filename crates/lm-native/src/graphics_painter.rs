@@ -3,6 +3,13 @@ use lm_graphics::{IndexedTile, PaletteInterchangeFile};
 
 pub(crate) const TILE_GRID_COLUMNS: usize = 8;
 const TILE_GRID_PAGE_ROWS: usize = 8;
+const TILE_EDITOR_ZOOMS: [(u16, f32); 5] = [
+    (800, 64.0),
+    (1_600, 128.0),
+    (2_400, 192.0),
+    (3_200, 256.0),
+    (4_000, 320.0),
+];
 const CELL_OFFSETS: [f32; 8] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
 const CELL_ENDS: [f32; 8] = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0];
 
@@ -16,6 +23,38 @@ enum TileNavigation {
     RowEnd,
     PageUp,
     PageDown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TileEditorZoom(usize);
+
+impl Default for TileEditorZoom {
+    fn default() -> Self {
+        Self(TILE_EDITOR_ZOOMS.len() - 1)
+    }
+}
+
+impl TileEditorZoom {
+    pub(crate) fn side(self) -> f32 {
+        TILE_EDITOR_ZOOMS
+            .get(self.0)
+            .unwrap_or_else(|| TILE_EDITOR_ZOOMS.last().expect("tile zooms are nonempty"))
+            .1
+    }
+
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui) {
+        if self.0 >= TILE_EDITOR_ZOOMS.len() {
+            *self = Self::default();
+        }
+        let percentage = TILE_EDITOR_ZOOMS[self.0].0;
+        egui::ComboBox::from_label("Zoom")
+            .selected_text(format!("{percentage}%"))
+            .show_ui(ui, |ui| {
+                for (index, (percentage, _)) in TILE_EDITOR_ZOOMS.into_iter().enumerate() {
+                    ui.selectable_value(&mut self.0, index, format!("{percentage}%"));
+                }
+            });
+    }
 }
 
 pub(crate) fn palette_color(
@@ -249,6 +288,29 @@ mod tests {
             tile_grid_status(3, 0x22, Some(0x22)).as_deref(),
             Some("Selected tile 003")
         );
+    }
+
+    #[test]
+    fn tile_editor_zoom_defaults_to_existing_size_and_recovers_invalid_state() {
+        let zoom = TileEditorZoom::default();
+        assert_eq!(zoom.side(), 320.0);
+        assert_eq!(TileEditorZoom(0).side(), 64.0);
+        assert_eq!(TileEditorZoom(3).side(), 256.0);
+        assert_eq!(TileEditorZoom(usize::MAX).side(), 320.0);
+        assert!(
+            TILE_EDITOR_ZOOMS
+                .windows(2)
+                .all(|pair| pair[0].0 < pair[1].0 && pair[0].1 < pair[1].1)
+        );
+        for (_, side) in TILE_EDITOR_ZOOMS {
+            let rect =
+                egui::Rect::from_min_size(egui::Pos2::new(5.0, 9.0), egui::Vec2::splat(side));
+            assert_eq!(tile_coordinate(rect, rect.min), Some((0, 0)));
+            assert_eq!(
+                tile_coordinate(rect, rect.max - egui::Vec2::splat(0.01)),
+                Some((7, 7))
+            );
+        }
     }
 
     #[test]

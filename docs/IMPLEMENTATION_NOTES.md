@@ -1686,6 +1686,9 @@ scrolls the destination into view; keys are not consumed unless the selected til
 The same tile-grid adapter draws a distinct outline around the current nonselected hover target and
 reports the selected and hovered tile indices in bounded uppercase hexadecimal. Hover status is
 derived from the current frame's widget responses, so leaving the grid cannot retain a stale tile.
+Each pixel editor exposes the same discrete 800%, 1600%, 2400%, 3200%, and 4000% selected-tile
+zoom choices, retaining the prior 320-pixel (4000%) default. The chosen square is passed to both
+the rasterizer and normalized pixel-coordinate adapter, so painting remains exact at every size.
 Level objects and sprites have corresponding typed adapters that retain their complete lossless
 record bytes. The complete portable level editor, interpretation-bound native-stream document, and
 shared aggregate level-assets panel can copy or replace one selected record without parsing it as

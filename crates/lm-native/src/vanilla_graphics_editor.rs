@@ -1,6 +1,6 @@
 use crate::graphics_painter::{
-    TILE_GRID_COLUMNS, apply_tile_keyboard_navigation, paint_tile, show_tile_grid_status,
-    tile_button, tile_coordinate,
+    TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, paint_tile,
+    show_tile_grid_status, tile_button, tile_coordinate,
 };
 use eframe::egui;
 use lm_app::{
@@ -23,6 +23,7 @@ pub(crate) struct VanillaGraphicsEditor {
     controller: Option<GraphicsController>,
     selected_tile: usize,
     selected_color: u8,
+    pixel_zoom: TileEditorZoom,
     error: Option<String>,
 }
 
@@ -185,6 +186,7 @@ impl VanillaGraphicsEditor {
             return;
         };
         ui.label(format!("Tile {:03X}", self.selected_tile));
+        self.pixel_zoom.show(ui);
         let transform = ui
             .horizontal(|ui| {
                 if ui.button("Flip horizontal").clicked() {
@@ -200,8 +202,10 @@ impl VanillaGraphicsEditor {
             tile = tile.flipped(horizontal, vertical);
             self.apply_tile(tile.clone());
         }
-        let (rect, response) =
-            ui.allocate_exact_size(egui::Vec2::splat(320.0), egui::Sense::click_and_drag());
+        let (rect, response) = ui.allocate_exact_size(
+            egui::Vec2::splat(self.pixel_zoom.side()),
+            egui::Sense::click_and_drag(),
+        );
         paint_tile(ui.painter(), rect, &tile, palette, 0);
         if (response.clicked() || response.dragged())
             && let Some(position) = response.interact_pointer_pos()

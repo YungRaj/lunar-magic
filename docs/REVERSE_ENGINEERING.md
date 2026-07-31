@@ -1224,8 +1224,9 @@ its fixed/ExAnimation ownership plus stale-worker gates before enabling either t
 tile sheets now share focus-scoped, bounded eight-column navigation for arrows, row Home/End, and
 eight-row Page Up/Down, including focus transfer and automatic scrolling. Their shared transient
 hover outline and status line distinguish bounded selected and hovered hexadecimal tile indices
-without persisting stale hover state. Exact original key/status variants, color-map filtering, and
-exact zoom interaction remain separate UI-parity work.
+without persisting stale hover state. Their selected-tile pixel grids also share 800–4000% discrete
+zoom with one geometry source for rendering and hit testing. Exact original key/status/zoom
+variants and color-map filtering remain separate UI-parity work.
 
 ## Compression formats
 

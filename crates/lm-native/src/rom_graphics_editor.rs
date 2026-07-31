@@ -1,8 +1,8 @@
 use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
-        TILE_GRID_COLUMNS, apply_tile_keyboard_navigation, paint_tile, palette_color,
-        show_tile_grid_status, tile_button, tile_coordinate,
+        TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, paint_tile,
+        palette_color, show_tile_grid_status, tile_button, tile_coordinate,
     },
     native_clipboard,
 };
@@ -53,6 +53,7 @@ pub(crate) struct RomGraphicsEditor {
     selected_tile: usize,
     selected_color: u8,
     palette_row: usize,
+    pixel_zoom: TileEditorZoom,
     search_start: String,
     search_end: String,
     error: Option<String>,
@@ -469,6 +470,7 @@ impl RomGraphicsEditor {
             return;
         }
         ui.label(format!("Tile {:03X}", self.selected_tile));
+        self.pixel_zoom.show(ui);
         let owner = self
             .workspace
             .as_ref()
@@ -535,8 +537,10 @@ impl RomGraphicsEditor {
                 tile = current.clone();
             }
         }
-        let (rect, response) =
-            ui.allocate_exact_size(egui::Vec2::splat(320.0), egui::Sense::click_and_drag());
+        let (rect, response) = ui.allocate_exact_size(
+            egui::Vec2::splat(self.pixel_zoom.side()),
+            egui::Sense::click_and_drag(),
+        );
         paint_tile(ui.painter(), rect, &tile, palette, self.palette_row);
         if !stale
             && editable
