@@ -274,6 +274,16 @@ impl NativeLevelAssetsController {
                 )
                 .map_err(NativeLevelAssetsControllerError::Save)?;
         }
+        if let Some(features) = self.features {
+            project
+                .save_installed_exanimation_features(
+                    self.assets.level.number,
+                    features.options,
+                    self.feature_installation,
+                    self.checksum_field,
+                )
+                .map_err(NativeLevelAssetsControllerError::ExAnimationFeatures)?;
+        }
         Ok(())
     }
 }

@@ -7,8 +7,8 @@ mod settings;
 use crate::exanimation_form;
 use eframe::egui;
 use lm_app::NativeLevelAssetsControllerEdit;
-use lm_graphics::PaletteOwnership;
-use lm_project::NativeLevelAssetsFile;
+use lm_graphics::{ExAnimationFeatureOptions, PaletteOwnership};
+use lm_project::{LoadedExAnimationFeatures, NativeLevelAssetsFile};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Layer2FillPattern {
@@ -58,6 +58,7 @@ pub(crate) struct AggregatePanels {
     bypass_enabled: bool,
     bypass_foreground_background: [u16; 6],
     bypass_sprites: [u16; 4],
+    exanimation_features: Option<ExAnimationFeatureOptions>,
     loaded_revision: Option<u64>,
     paste_target: Option<PasteTarget>,
 }
@@ -76,11 +77,12 @@ impl AggregatePanels {
             Option<&lm_level::NativeLayer2Data>,
             Option<lm_level::MwlLayer2Descriptor>,
         ),
+        features: Option<LoadedExAnimationFeatures>,
         modes: &[bool; 256],
         ownership: &PaletteOwnership,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let (layer2, layer2_descriptor) = layer2;
-        self.load(revision, file, modes);
+        self.load(revision, file, features, modes);
         ui.horizontal(|ui| {
             let tabs = if layer2.is_some() {
                 &["Level", "Layer 2", "Palette", "ExAnimation", "Settings"][..]
@@ -101,11 +103,18 @@ impl AggregatePanels {
         }
     }
 
-    fn load(&mut self, revision: u64, file: &NativeLevelAssetsFile, modes: &[bool; 256]) {
+    fn load(
+        &mut self,
+        revision: u64,
+        file: &NativeLevelAssetsFile,
+        features: Option<LoadedExAnimationFeatures>,
+        modes: &[bool; 256],
+    ) {
         if self.loaded_revision == Some(revision) {
             return;
         }
         let assets = &file.assets;
+        self.exanimation_features = features.map(|features| features.options);
         self.sprite_header = format!("{:02X}", assets.level.sprites.header);
         self.global = exanimation_form::GlobalForm::load(
             assets.exanimation.setting,

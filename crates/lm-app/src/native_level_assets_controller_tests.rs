@@ -1,7 +1,7 @@
 use super::*;
 use crate::PaletteControllerEdit;
 use lm_codec::encode_terminated_rle;
-use lm_graphics::{Bgr555, PaletteChange};
+use lm_graphics::{Bgr555, ExAnimationFeature, PaletteChange};
 use lm_level::{
     LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection,
     NATIVE_LAYER2_TILEMAP_LEN, SpriteRecord, SpriteToken, split_layer2_tilemap_planes,
@@ -147,6 +147,34 @@ fn options() -> NativeLevelAssetsSaveOptions {
             erase_fill: 0xff,
         },
     }
+}
+
+fn feature_installation() -> InstalledLayout<InstalledExAnimationFeatureRomLayout> {
+    InstalledLayout::Unconditional(InstalledExAnimationFeatureRomLayout {
+        table_locator: lm_project::ChainedSnesPointerLocator {
+            mapper: Mapper::LoRom,
+            first_operand_offset: 0xb1,
+            final_operand_displacement: 0x46,
+        },
+        feature_runtime_marker: lm_project::InstallationMarker {
+            offset: 0xb0,
+            expected: 0xea,
+        },
+    })
+}
+
+fn feature_snapshot() -> ControllerSnapshot {
+    let mut snapshot = snapshot();
+    snapshot.rom_bytes[0xb0] = 0xea;
+    pointer(&mut snapshot.rom_bytes, 0xb1, 0x300);
+    pointer(&mut snapshot.rom_bytes, 0x346, 0x501);
+    snapshot.rom_bytes[0x500] = 0;
+    snapshot.rom_bytes[0x501] = 0xa5;
+    let checksum = compute_snes_checksum(&snapshot.rom_bytes, 0x7fdc).unwrap();
+    snapshot.rom_bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    snapshot.identity =
+        detect_identity(&RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap()).unwrap();
+    snapshot
 }
 
 fn layer2_options() -> LevelLayer2SaveOptions {
@@ -834,4 +862,50 @@ fn late_cross_domain_failure_rolls_back_the_complete_aggregate() {
     );
     assert_eq!(controller.assets(), &before);
     assert!(!controller.is_modified());
+}
+
+#[test]
+fn installed_animation_features_load_edit_commit_and_reopen_with_the_aggregate() {
+    let snapshot = feature_snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2_and_features(
+        &snapshot,
+        layout(),
+        None,
+        feature_installation(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let loaded = controller.exanimation_features().unwrap();
+    assert_eq!(loaded.options.encode(), 0xa5);
+
+    let mut edited = loaded.options;
+    edited.set_enabled(ExAnimationFeature::PaletteAnimation, true);
+    edited.set_enabled(ExAnimationFeature::VanillaAnimation, false);
+    edited.set_enabled(ExAnimationFeature::GlobalExAnimation, true);
+    edited.set_enabled(ExAnimationFeature::LevelExAnimation, false);
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::ExAnimationFeatures(edited)])
+        .unwrap();
+    assert!(controller.is_modified());
+
+    let prepared = controller
+        .prepare_commit("animation feature aggregate", &options())
+        .unwrap();
+    let original = snapshot.rom_bytes;
+    let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+    project
+        .apply_mutation("animation feature aggregate", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_installed_exanimation_features(0, feature_installation())
+        .unwrap();
+    assert_eq!(reopened.options.encode(), 0x55);
+    assert_eq!(
+        SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
+        compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
+    );
+    assert!(project.undo().unwrap());
+    assert_eq!(project.rom.logical_bytes(), original);
 }

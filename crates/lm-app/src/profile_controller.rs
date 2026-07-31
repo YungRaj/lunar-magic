@@ -189,7 +189,7 @@ impl RevisionProfileControllers for RevisionProfile {
             .resolve(&image)?
             .payload;
         let level = self.level_layout_for_rom(&image)?;
-        NativeLevelAssetsController::decode_with_layer2(
+        NativeLevelAssetsController::decode_with_layer2_and_features(
             snapshot,
             lm_project::NativeLevelAssetsLayout {
                 level,
@@ -198,6 +198,7 @@ impl RevisionProfileControllers for RevisionProfile {
                 expanded_settings: self.expanded_settings,
             },
             self.layer2,
+            self.exanimation_feature_installation,
             &self.sprite_lengths,
             &self.exanimation_double_size_modes,
             palette_ownership,

@@ -2706,6 +2706,14 @@ while declaring only its feature-table displacement and independent runtime-mark
 rejects mismatched gate shapes or locator origins. ROM-aware profile audit and allocation planning
 resolve and protect the first operand, final operand, runtime marker, sentinel, and complete
 512-byte table; allocator searches therefore cannot overwrite any part of the feature contract.
+
+The profile-native level-assets controller loads that installed feature record beside its existing
+payload aggregate and treats it as revision-bound staged state. The Settings panel exposes the same
+four positive checkboxes as the MWL editor. Applying them preserves the low nibble; committing runs
+the checked installed-feature save after the grouped payload save on the private project image, and
+the live application receives their combined byte delta as one revision-checked mutation and one
+undo step. A focused integration test covers load, semantic edit, aggregate commit, canonical
+reopen, checksum validity, and exact undo.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to

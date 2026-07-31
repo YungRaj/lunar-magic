@@ -2,6 +2,7 @@ use super::AggregatePanels;
 use crate::level_editor_forms;
 use eframe::egui;
 use lm_app::NativeLevelAssetsControllerEdit;
+use lm_graphics::ExAnimationFeature;
 use lm_level::{ExpandedLevelHeader, ExpandedLevelSettingsRecord, SuperGraphicsBypass};
 use lm_project::NativeLevelAssetsFile;
 
@@ -13,7 +14,7 @@ impl AggregatePanels {
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         if file.assets.expanded_settings.is_none() {
             ui.label("This aggregate has no expanded-settings record.");
-            return None;
+            return self.exanimation_feature_panel(ui);
         }
         ui.heading("Super GFX Bypass");
         ui.checkbox(&mut self.bypass_enabled, "Use per-level GFX/ExGFX files");
@@ -63,6 +64,9 @@ impl AggregatePanels {
             .map(NativeLevelAssetsControllerEdit::ExpandedSettingsWords);
             return Some(result);
         }
+        if let Some(edit) = self.exanimation_feature_panel(ui) {
+            return Some(edit);
+        }
         ui.separator();
         ui.label("Raw expanded words (unproven fields remain editable and lossless):");
         egui::Grid::new("aggregate-settings").show(ui, |ui| {
@@ -84,6 +88,41 @@ impl AggregatePanels {
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(NativeLevelAssetsControllerEdit::ExpandedSettingsWords)
+        })
+    }
+
+    fn exanimation_feature_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+    ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
+        ui.separator();
+        ui.heading("Animation options");
+        let Some(features) = &mut self.exanimation_features else {
+            ui.label("This profile does not declare installed animation-feature storage.");
+            return None;
+        };
+        for (feature, label) in [
+            (ExAnimationFeature::PaletteAnimation, "Palette animation"),
+            (
+                ExAnimationFeature::VanillaAnimation,
+                "Vanilla animated tiles",
+            ),
+            (ExAnimationFeature::GlobalExAnimation, "Global ExAnimation"),
+            (ExAnimationFeature::LevelExAnimation, "Level ExAnimation"),
+        ] {
+            let mut enabled = features.enabled(feature);
+            if ui.checkbox(&mut enabled, label).changed() {
+                features.set_enabled(feature, enabled);
+            }
+        }
+        ui.small(format!(
+            "Preserved unrelated low nibble: {:X}",
+            features.preserved_low_nibble
+        ));
+        ui.button("Apply animation options").clicked().then(|| {
+            Ok(NativeLevelAssetsControllerEdit::ExAnimationFeatures(
+                *features,
+            ))
         })
     }
 }

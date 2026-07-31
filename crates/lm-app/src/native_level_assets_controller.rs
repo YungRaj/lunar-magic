@@ -4,14 +4,15 @@ use crate::{
     ControllerSnapshot, EditorMode, ExAnimationControllerEdit, ExAnimationControllerEditFailure,
     NativeLevelEdit, PaletteControllerEdit,
 };
-use lm_graphics::{PaletteBatchEditError, PaletteOwnership};
+use lm_graphics::{ExAnimationFeatureOptions, PaletteBatchEditError, PaletteOwnership};
 use lm_level::{
     ExpandedLevelSettingsError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
     NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit,
     ObjectEditError, SpriteLengthTable, SpriteStreamError,
 };
 use lm_project::{
-    LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelPointerTable,
+    InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
+    LevelLayer2RomLayout, LevelLoadError, LevelPointerTable, LoadedExAnimationFeatures,
     LoadedNativeLevelAssets, MwlNativeLevel, NativeLevelAssetsLayout, NativeLevelAssetsLoadError,
     NativeLevelAssetsSaveError, PayloadLoadError, PayloadReadPolicy, Project, SpritePointerTable,
     TransactionError,
@@ -35,6 +36,7 @@ pub enum NativeLevelAssetsControllerEdit {
     },
     Palette(Vec<PaletteControllerEdit>),
     ExAnimation(Vec<ExAnimationControllerEdit>),
+    ExAnimationFeatures(ExAnimationFeatureOptions),
     ExpandedSettingsWords(Vec<(usize, u16)>),
 }
 
@@ -91,6 +93,10 @@ pub enum NativeLevelAssetsControllerError {
         inner: usize,
         error: ExAnimationControllerEditFailure,
     },
+    ExAnimationFeaturesUnavailable {
+        command: usize,
+    },
+    ExAnimationFeatures(lm_project::ExAnimationFeatureIoError),
     ExpandedSettingsUnavailable {
         command: usize,
     },
@@ -152,6 +158,7 @@ pub struct NativeLevelAssetsController {
     revision: u64,
     layout: NativeLevelAssetsLayout,
     layer2_layout: Option<LevelLayer2RomLayout>,
+    feature_installation: InstalledLayout<InstalledExAnimationFeatureRomLayout>,
     checksum_field: usize,
     source_file_bytes: Vec<u8>,
     sprite_lengths: SpriteLengthTable,
@@ -159,6 +166,8 @@ pub struct NativeLevelAssetsController {
     palette_ownership: PaletteOwnership,
     baseline: LoadedNativeLevelAssets,
     assets: LoadedNativeLevelAssets,
+    baseline_features: Option<LoadedExAnimationFeatures>,
+    features: Option<LoadedExAnimationFeatures>,
     baseline_layer2: Option<NativeLayer2Data>,
     layer2: Option<NativeLayer2Data>,
     baseline_layer2_descriptor: Option<MwlLayer2Descriptor>,
@@ -204,6 +213,31 @@ impl NativeLevelAssetsController {
         double_size_modes: &[bool],
         palette_ownership: PaletteOwnership,
     ) -> Result<Self, NativeLevelAssetsControllerError> {
+        Self::decode_with_layer2_and_features(
+            snapshot,
+            layout,
+            layer2_layout,
+            InstalledLayout::Absent,
+            sprite_lengths,
+            double_size_modes,
+            palette_ownership,
+        )
+    }
+
+    /// Decodes the aggregate, optional Layer 2, and marker-gated animation feature byte.
+    ///
+    /// # Errors
+    ///
+    /// Returns all ordinary aggregate errors plus installed feature locator/storage failures.
+    pub fn decode_with_layer2_and_features(
+        snapshot: &ControllerSnapshot,
+        layout: NativeLevelAssetsLayout,
+        layer2_layout: Option<LevelLayer2RomLayout>,
+        feature_installation: InstalledLayout<InstalledExAnimationFeatureRomLayout>,
+        sprite_lengths: &SpriteLengthTable,
+        double_size_modes: &[bool],
+        palette_ownership: PaletteOwnership,
+    ) -> Result<Self, NativeLevelAssetsControllerError> {
         let EditorMode::Level(slot) = snapshot.mode else {
             return Err(NativeLevelAssetsControllerError::WrongMode(snapshot.mode));
         };
@@ -222,6 +256,15 @@ impl NativeLevelAssetsController {
         let assets = project
             .load_native_level_assets(usize::from(slot), layout, sprite_lengths, &modes)
             .map_err(NativeLevelAssetsControllerError::Load)?;
+        let features = if matches!(feature_installation, InstalledLayout::Absent) {
+            None
+        } else {
+            Some(
+                project
+                    .load_installed_exanimation_features(usize::from(slot), feature_installation)
+                    .map_err(NativeLevelAssetsControllerError::ExAnimationFeatures)?,
+            )
+        };
         let loaded_layer2 = layer2_layout
             .map(|layer2_layout| {
                 project.load_level_layer2_with_descriptor(
@@ -270,6 +313,7 @@ impl NativeLevelAssetsController {
             revision: snapshot.revision,
             layout,
             layer2_layout,
+            feature_installation,
             checksum_field: snapshot.identity.internal_header_offset + 0x1c,
             source_file_bytes: snapshot.rom_bytes.clone(),
             sprite_lengths: sprite_lengths.clone(),
@@ -277,6 +321,8 @@ impl NativeLevelAssetsController {
             palette_ownership,
             baseline: assets.clone(),
             assets,
+            baseline_features: features,
+            features,
             baseline_layer2: layer2.clone(),
             layer2,
             baseline_layer2_descriptor: layer2_descriptor,
@@ -306,8 +352,14 @@ impl NativeLevelAssetsController {
     }
 
     #[must_use]
+    pub const fn exanimation_features(&self) -> Option<LoadedExAnimationFeatures> {
+        self.features
+    }
+
+    #[must_use]
     pub fn is_modified(&self) -> bool {
         self.assets != self.baseline
+            || self.features != self.baseline_features
             || self.layer2 != self.baseline_layer2
             || self.layer2_descriptor != self.baseline_layer2_descriptor
     }
@@ -325,9 +377,13 @@ impl NativeLevelAssetsController {
         let mut staged = self.assets.clone();
         let mut staged_layer2 = self.layer2.clone();
         let mut staged_layer2_descriptor = self.layer2_descriptor;
+        let mut staged_features = self.features;
         apply_native_level_assets_edits(
             &mut staged,
-            (&mut staged_layer2, &mut staged_layer2_descriptor),
+            (
+                (&mut staged_layer2, &mut staged_layer2_descriptor),
+                &mut staged_features,
+            ),
             edits,
             &self.sprite_lengths,
             self.layout.exanimation.maximum_records,
@@ -337,6 +393,7 @@ impl NativeLevelAssetsController {
         self.assets = staged;
         self.layer2 = staged_layer2;
         self.layer2_descriptor = staged_layer2_descriptor;
+        self.features = staged_features;
         Ok(())
     }
 
@@ -486,9 +543,12 @@ fn snapshot_sprite_block(
 
 pub(crate) fn apply_native_level_assets_edits(
     staged: &mut LoadedNativeLevelAssets,
-    layer2: (
-        &mut Option<NativeLayer2Data>,
-        &mut Option<MwlLayer2Descriptor>,
+    auxiliary: (
+        (
+            &mut Option<NativeLayer2Data>,
+            &mut Option<MwlLayer2Descriptor>,
+        ),
+        &mut Option<LoadedExAnimationFeatures>,
     ),
     edits: &[NativeLevelAssetsControllerEdit],
     sprite_lengths: &SpriteLengthTable,
@@ -496,6 +556,7 @@ pub(crate) fn apply_native_level_assets_edits(
     double_size_modes: &[bool; 256],
     palette_ownership: &PaletteOwnership,
 ) -> Result<(), NativeLevelAssetsControllerError> {
+    let (layer2, staged_features) = auxiliary;
     let (staged_layer2, staged_layer2_descriptor) = layer2;
     let mut next = staged.clone();
     for (command, edit) in edits.iter().enumerate() {
@@ -556,6 +617,12 @@ pub(crate) fn apply_native_level_assets_edits(
                         error,
                     }
                 })?;
+            }
+            NativeLevelAssetsControllerEdit::ExAnimationFeatures(options) => {
+                let features = staged_features.as_mut().ok_or(
+                    NativeLevelAssetsControllerError::ExAnimationFeaturesUnavailable { command },
+                )?;
+                features.options = *options;
             }
             NativeLevelAssetsControllerEdit::ExpandedSettingsWords(edits) => {
                 let record = next.expanded_settings.as_mut().ok_or(
