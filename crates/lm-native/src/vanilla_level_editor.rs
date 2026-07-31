@@ -4748,15 +4748,13 @@ fn sprite_catalog_preview_mode(
     level_mode: u8,
     sprite_tileset: u8,
 ) -> lm_render::StandardSpritePreviewMode {
-    let placement_first = packed_sprite_first(NativeSpriteRecordFields {
-        y_low: form.y_low,
-        extra_bits: form.extra_bits,
-        screen: form.screen,
-        x: form.x,
-        sprite_number: form.sprite_number,
-    });
+    let placement_first = (form.y_low & 0x0f) << 4 | (form.x & 0x0f);
     lm_render::StandardSpritePreviewMode {
         placement_first,
+        placement_major: u16::from(form.screen)
+            .saturating_mul(16)
+            .saturating_add(u16::from(form.x)),
+        placement_minor: u16::from(form.y_low),
         level_mode,
         sprite_graphics_mode: sprite_tileset,
         placement_preview_mode: true,
@@ -10652,12 +10650,25 @@ mod tests {
     fn catalog_preview_uses_current_packed_position_and_orientation() {
         let form = SpriteForm {
             y_low: 0x11,
-            extra_bits: 3,
-            screen: 0x1f,
+            extra_bits: 2,
+            screen: 0x1e,
+            x: 0x0f,
             ..SpriteForm::default()
         };
         let mode = sprite_catalog_preview_mode(&form, true, 7, 5);
         assert_eq!(mode.placement_first, 0x1f);
+        assert_ne!(
+            mode.placement_first,
+            packed_sprite_first(NativeSpriteRecordFields {
+                y_low: form.y_low,
+                extra_bits: form.extra_bits,
+                screen: form.screen,
+                x: form.x,
+                sprite_number: form.sprite_number,
+            })
+        );
+        assert_eq!(mode.placement_major, 0x1ef);
+        assert_eq!(mode.placement_minor, 0x11);
         assert_eq!(mode.level_mode, 7);
         assert_eq!(mode.sprite_graphics_mode, 5);
         assert_eq!(

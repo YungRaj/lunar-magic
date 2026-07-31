@@ -2258,8 +2258,12 @@ extension bytes through coordinate placement. The OSC 2–15-byte compact/linear
 not treated as level-stream framing, matching the recovered loader boundary.
 The corresponding Add Sprite workflow now presents all standard IDs `$00–$ED` in a bounded,
 hex-filterable visual catalog. Each cell calls the authenticated standard-sprite dispatch table
-with the current packed position byte, level mode, and orientation, fits its complete composite
-geometry into a preview cell, and labels empty/default handlers explicitly. Selecting an entry
+with the current packed position byte, full native major/minor coordinates, level mode, and
+orientation, fits its complete composite geometry into a preview cell, and labels empty/default
+handlers explicitly. The full axes are derived exactly like stream placement (`screen * 16 + X`,
+five-bit minor), while the handler's first byte is the two coordinate nibbles rather than the
+serialized `yyyyEESY` byte containing extra/screen flags. This preserves parity/direction and
+absolute-layout handler inputs. Selecting an entry
 constructs the proven `yyyyEESY / XXXXssss / NNNNNNNN` record, retains the form's position and
 extra bits, and arms the same transactional canvas placement path.
 Both this catalog and the SSC atlas catalog now pass the current animated GFX33 texture alongside

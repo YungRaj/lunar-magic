@@ -520,8 +520,13 @@ interactive frontends cannot bypass confirmation and request correlation through
   cross-screen order. Failed placements leave the staged stream unchanged.
   The sprite form includes a searchable visual catalog for every authenticated standard handler
   from `$00` through `$ED`. Catalog cells render through the same recovered mode-, orientation-,
-  position-, and graphics-aware dispatcher as the canvas; choosing one constructs a valid native
-  record and arms one-shot placement instead of requiring users to type packed bytes.
+  position-, and graphics-aware dispatcher as the canvas. In addition to the packed within-screen
+  byte, catalog dispatch now receives the form's complete native major axis (`screen * 16 + X`) and
+  five-bit minor axis, so coordinate-sensitive handlers do not render as though every selection
+  were at origin. The packed handler byte is built from the minor and major coordinate nibbles; it
+  is no longer confused with the serialized `yyyyEESY` record byte containing extra and screen
+  flags. Choosing one constructs a valid native record and arms one-shot placement instead of
+  requiring users to type packed bytes.
   Attached `.ssc` metadata contributes a separate description/hex-searchable custom catalog.
   Default selectors are deduplicated by sprite number and extra-bit table, render through SSC plus
   optional external-Map16 definitions, and materialize the exact declared native record width with

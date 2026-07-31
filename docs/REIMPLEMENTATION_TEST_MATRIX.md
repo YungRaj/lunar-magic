@@ -59,6 +59,10 @@ routing: each subtile's `$0200` page bit selects the current GFX33 phase, while 
 remain on the ordinary SP atlas. Focused page classification covers both domains.
 The standard catalog also shares the canvas's handler-scoped half-opacity rules for `$E1/$1B8`
 and `$90/$1C0-$1F3`; SSC parts remain opaque under focused tint-domain coverage.
+Its dispatcher context additionally carries the form's exact native major and minor axes rather
+than only the packed coordinate nibbles, with focused coverage at screen `$1E`, X `$F`, and minor
+`$11` for coordinate-sensitive authenticated handlers. The same test distinguishes the handler's
+`$1F` minor/major nibble argument from the unrelated serialized `yyyyEESY` byte.
 The installed native-assets preview reuses the same recovered common-animation interpreter after
 resolving either Super GFX bypass files or legacy tileset assignments. Its staged
 `VanillaAnimation` and `PaletteAnimation` options independently gate the recovered eight-phase tile
