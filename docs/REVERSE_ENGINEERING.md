@@ -311,12 +311,14 @@ The Direct3D and Windows compatibility range through `00440f90` is now classifie
 Rust now exposes the safe process boundary of that external-GFX path in the installed graphics
 editor. The active staged slot is written under its canonical public filename in a private
 create-new directory. Persisted portable tools containing `{graphics}` can be selected and expand
-the private path plus ordinary project context only after staging; the executable and all direct
+the private path plus ordinary project context only after staging; eligibility requires that value
+in a direct argument rather than the process working directory. The executable and all direct
 arguments are approved explicitly, and a
 background worker waits for completion. Only a successful, exact-size, nonsymlink regular file is
 reloaded, through the revision-bound graphics controller; every terminal path removes the private
-workspace. Exact Lunar Magic command-template syntax and platform application-bundle routing remain
-separate recovery work.
+workspace. Existing macOS `.app` paths use the shell-free system launcher with explicit wait,
+new-instance, application, and argument boundaries. Exact Lunar Magic command-template syntax
+remains separate recovery work.
 
 The ROM-address and level-coordinate utilities through `00441fe0` are now named and annotated. High-confidence helpers implement both directions of SNES/PC address conversion for the detected mapping mode, horizontal/vertical level-layout cell indexing, status/scrollbar initialization, and packed ROM-word access. Several register-convention stream wrappers are intentionally given structural names and medium-confidence comments until their hidden value widths can be proved from disassembly and all callers; the ExLoROM Work RAM bank-byte validator is separately identified by its required `0x7E`/`0x7F` values.
 

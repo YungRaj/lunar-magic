@@ -1798,7 +1798,9 @@ templates support `{rom}`, `{project_dir}`, `{level_hex}`, and `{level_dec}` plu
 braces. Each argument is expanded independently: the core never invokes a command shell or starts a
 process. The installed graphics editor additionally supplies `{graphics}` only after it has created
 the private staged GFX/ExGFX file; persisted tools using that placeholder are selectable there and
-retain the ordinary ROM/project/level values. Tool identifiers and per-tool event subscriptions must be unique, so configuration
+retain the ordinary ROM/project/level values. Selection requires `{graphics}` in a direct argument;
+using the staged file as a working directory is rejected before any temporary workspace exists.
+Tool identifiers and per-tool event subscriptions must be unique, so configuration
 encoding is canonical and cannot silently collapse duplicate subscriptions. It emits a
 `LaunchExternalTool` effect for an explicit command or subscribed project event,
 leaving permission prompts, process lifetime, and platform sandbox policy to the native frontend.
@@ -3077,3 +3079,7 @@ staging and passes through the controller's normal raw-import validation, so it 
 uncommitted graphics edit. While pending or running, pixel mutation, other graphics file work,
 commit, and close/shutdown are gated. Cancellation, launch/read/shape failures, disconnected workers,
 template-expansion failures, and dropped unapproved prompts clean up without changing the controller.
+On macOS, an approved executable path ending in an existing `.app` directory is routed through the
+system `/usr/bin/open` tool with wait and new-instance flags; `--args` preserves each expanded
+argument as a separate process value. Ordinary executable paths retain the direct launch path on
+every platform, and neither route invokes a command shell.

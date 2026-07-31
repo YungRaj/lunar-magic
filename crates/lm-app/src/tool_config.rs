@@ -310,7 +310,7 @@ mod tests {
         expected.tools[0].arguments.push("--gfx={graphics}".into());
         let decoded = ToolConfig::decode(&expected.encode().unwrap()).unwrap();
         assert_eq!(decoded, expected);
-        assert!(decoded.tools[0].uses_placeholder("graphics"));
+        assert!(decoded.tools[0].uses_argument_placeholder("graphics"));
     }
 
     #[test]

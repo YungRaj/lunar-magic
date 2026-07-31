@@ -102,19 +102,23 @@ impl ExternalTool {
         })
     }
 
-    /// Reports whether any argument or working-directory template references `placeholder`.
+    /// Reports whether any argument template references `placeholder`.
     ///
     /// Escaped literal braces do not count. Malformed templates are left for [`Self::expand`] to
     /// reject when invoked.
     #[must_use]
-    pub fn uses_placeholder(&self, placeholder: &str) -> bool {
+    pub fn uses_argument_placeholder(&self, placeholder: &str) -> bool {
         self.arguments
             .iter()
             .any(|template| template_uses_placeholder(template, placeholder))
-            || self
-                .working_directory
-                .as_deref()
-                .is_some_and(|template| template_uses_placeholder(template, placeholder))
+    }
+
+    /// Reports whether the working-directory template references `placeholder`.
+    #[must_use]
+    pub fn uses_working_directory_placeholder(&self, placeholder: &str) -> bool {
+        self.working_directory
+            .as_deref()
+            .is_some_and(|template| template_uses_placeholder(template, placeholder))
     }
 
     fn validate(&self) -> Result<(), ExternalToolError> {
@@ -318,8 +322,11 @@ mod tests {
     fn graphics_placeholder_is_discoverable_expands_and_ignores_escaped_literals() {
         let mut editor = tool(&["--input={graphics}", "{{graphics}}"]);
         editor.working_directory = Some("{project_dir}".into());
-        assert!(editor.uses_placeholder("graphics"));
-        assert!(!tool(&["{{graphics}}"]).uses_placeholder("graphics"));
+        assert!(editor.uses_argument_placeholder("graphics"));
+        assert!(!tool(&["{{graphics}}"]).uses_argument_placeholder("graphics"));
+        let mut invalid_directory = tool(&["{graphics}"]);
+        invalid_directory.working_directory = Some("{graphics}".into());
+        assert!(invalid_directory.uses_working_directory_placeholder("graphics"));
         let graphics = Path::new("/tmp/Graphics/ExGFX123.bin");
         let invocation = editor
             .expand(ToolContext {

@@ -180,7 +180,10 @@ impl RomGraphicsEditor {
         let configured_graphics_tools = app
             .external_tools()
             .iter()
-            .filter(|tool| tool.uses_placeholder("graphics"))
+            .filter(|tool| {
+                tool.uses_argument_placeholder("graphics")
+                    && !tool.uses_working_directory_placeholder("graphics")
+            })
             .map(|tool| (tool.id.clone(), tool.name.clone()))
             .collect::<Vec<_>>();
         if !configured_graphics_tools
@@ -562,9 +565,15 @@ impl RomGraphicsEditor {
             ));
             return;
         };
-        if !tool.uses_placeholder("graphics") {
+        if !tool.uses_argument_placeholder("graphics") {
             self.error = Some(format!(
                 "configured graphics editor {tool_id:?} does not reference {{graphics}}"
+            ));
+            return;
+        }
+        if tool.uses_working_directory_placeholder("graphics") {
+            self.error = Some(format!(
+                "configured graphics editor {tool_id:?} cannot use {{graphics}} as its working directory"
             ));
             return;
         }

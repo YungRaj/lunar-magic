@@ -76,9 +76,15 @@ impl ExternalGraphicsEditor {
         bytes: &[u8],
         expected_revision: u64,
     ) -> Result<(), String> {
-        if !tool.uses_placeholder("graphics") {
+        if !tool.uses_argument_placeholder("graphics") {
             return Err(format!(
                 "configured external tool {:?} does not reference {{graphics}}",
+                tool.id
+            ));
+        }
+        if tool.uses_working_directory_placeholder("graphics") {
+            return Err(format!(
+                "configured external tool {:?} cannot use {{graphics}} as its working directory",
                 tool.id
             ));
         }
@@ -523,6 +529,18 @@ mod tests {
             )
             .unwrap_err();
         assert!(error.contains("does not reference {graphics}"), "{error}");
+        assert!(!editor.is_running());
+    }
+
+    #[test]
+    fn configured_tool_cannot_use_the_staged_file_as_its_working_directory() {
+        let mut editor = ExternalGraphicsEditor::default();
+        let mut tool = configured_tool(&["{graphics}"]);
+        tool.working_directory = Some("{graphics}".into());
+        let error = editor
+            .stage_configured(&tool, ToolContext::default(), "GFX00.bin", &[1; 32], 0)
+            .unwrap_err();
+        assert!(error.contains("cannot use {graphics}"), "{error}");
         assert!(!editor.is_running());
     }
 }

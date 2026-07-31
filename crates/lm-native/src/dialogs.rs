@@ -140,7 +140,7 @@ pub(crate) fn choose_raw_graphics_save_path(slot: u16) -> Option<PathBuf> {
 
 pub(crate) fn choose_external_graphics_editor() -> Option<PathBuf> {
     rfd::FileDialog::new()
-        .set_title("Choose External Graphics Editor Executable")
+        .set_title("Choose External Graphics Editor Executable or Application")
         .pick_file()
 }
 
