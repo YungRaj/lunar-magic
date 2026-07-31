@@ -1220,8 +1220,10 @@ Rust now routes selected-tile horizontal and vertical flips through the same typ
 as individual pixel painting in all three native graphics surfaces. The portable document records
 each flip as an independently undoable revision; pristine-layout and profile-backed ROM editors
 stage the exact transformed pixels for their normal atomic commit, and the installed editor applies
-its fixed/ExAnimation ownership plus stale-worker gates before enabling either transform. Keyboard,
-status, color-map filtering, and exact zoom interaction remain separate UI-parity work.
+its fixed/ExAnimation ownership plus stale-worker gates before enabling either transform. The three
+tile sheets now share focus-scoped, bounded eight-column navigation for arrows, row Home/End, and
+eight-row Page Up/Down, including focus transfer and automatic scrolling. Exact original key
+variants, status, color-map filtering, and exact zoom interaction remain separate UI-parity work.
 
 ## Compression formats
 

@@ -1679,6 +1679,10 @@ expose horizontal and vertical transforms of the selected tile. Each transform m
 exact flipped 64-pixel tile and enters the same controller path as painting and paste: portable
 documents receive one undoable revision, while installed fixed and ExAnimation-owned tiles remain
 read-only and stale or active-file-worker ROM workspaces cannot flip.
+Their eight-column tile sheets also share focus-scoped keyboard navigation. Unmodified arrow keys
+move by one tile or one row, Home/End move to the bounded ends of the current row, and Page Up/Down
+move by eight rows. Every move clamps to the available tile count, transfers keyboard focus, and
+scrolls the destination into view; keys are not consumed unless the selected tile owns focus.
 Level objects and sprites have corresponding typed adapters that retain their complete lossless
 record bytes. The complete portable level editor, interpretation-bound native-stream document, and
 shared aggregate level-assets panel can copy or replace one selected record without parsing it as

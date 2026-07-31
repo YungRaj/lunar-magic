@@ -1,7 +1,10 @@
 use crate::{
     dialogs,
     document_loader::DocumentLoader,
-    graphics_painter::{paint_tile, palette_color, tile_button, tile_coordinate},
+    graphics_painter::{
+        TILE_GRID_COLUMNS, apply_tile_keyboard_navigation, paint_tile, palette_color, tile_button,
+        tile_coordinate,
+    },
     native_clipboard,
 };
 use eframe::egui;
@@ -228,21 +231,25 @@ impl GraphicsEditor {
         };
         let tiles = &document.controller.value().graphics.tiles;
         self.selected_tile = self.selected_tile.min(tiles.len().saturating_sub(1));
+        let mut responses = Vec::with_capacity(tiles.len());
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("portable-graphics-tiles")
                 .spacing([4.0, 4.0])
                 .show(ui, |ui| {
                     for (index, tile) in tiles.iter().enumerate() {
                         let selected = index == self.selected_tile;
-                        if tile_button(ui, tile, palette, self.palette_row, selected).clicked() {
+                        let response = tile_button(ui, tile, palette, self.palette_row, selected);
+                        if response.clicked() {
                             self.selected_tile = index;
                         }
-                        if index % 8 == 7 {
+                        responses.push(response);
+                        if index % TILE_GRID_COLUMNS == TILE_GRID_COLUMNS - 1 {
                             ui.end_row();
                         }
                     }
                 });
         });
+        apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
     }
 
     fn pixel_editor(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {

@@ -1,4 +1,6 @@
-use crate::graphics_painter::{paint_tile, tile_button, tile_coordinate};
+use crate::graphics_painter::{
+    TILE_GRID_COLUMNS, apply_tile_keyboard_navigation, paint_tile, tile_button, tile_coordinate,
+};
 use eframe::egui;
 use lm_app::{
     AppState, Command, EditorMode, GraphicsController, GraphicsControllerEdit, RomExpansionCommand,
@@ -149,21 +151,25 @@ impl VanillaGraphicsEditor {
         let Some(controller) = &self.controller else {
             return;
         };
+        let mut responses = Vec::with_capacity(controller.graphics().tiles.len());
         egui::ScrollArea::vertical()
             .max_height(430.0)
             .show(ui, |ui| {
                 egui::Grid::new("vanilla-graphics-tiles").show(ui, |ui| {
                     for (index, tile) in controller.graphics().tiles.iter().enumerate() {
-                        if tile_button(ui, tile, palette, 0, index == self.selected_tile).clicked()
-                        {
+                        let response =
+                            tile_button(ui, tile, palette, 0, index == self.selected_tile);
+                        if response.clicked() {
                             self.selected_tile = index;
                         }
-                        if index % 8 == 7 {
+                        responses.push(response);
+                        if index % TILE_GRID_COLUMNS == TILE_GRID_COLUMNS - 1 {
                             ui.end_row();
                         }
                     }
                 });
             });
+        apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
     }
 
     fn pixel_editor(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
