@@ -61,11 +61,12 @@ use crate::{
     rom_title_recording_editor::RomTitleRecordingEditor,
     shortcut_editor::ShortcutEditor,
     ssc_sidecar_editor::SscSidecarEditor,
+    toolbar_editor::{ToolbarEditor, ToolbarEditorResult},
     vanilla_graphics_editor::VanillaGraphicsEditor,
     vanilla_level_editor::VanillaLevelEditor,
 };
 use eframe::egui;
-use lm_app::{AppState, Command, EditorMode, ShortcutConfig, UiTextKey};
+use lm_app::{AppState, Command, EditorMode, ShortcutConfig, ToolbarConfig, UiTextKey};
 
 mod document_menus;
 mod menus;
@@ -82,6 +83,7 @@ pub(crate) struct NativeApplication {
     about_dialog: AboutDialog,
     diagnostics_dialog: DiagnosticsDialog,
     shortcut_editor: ShortcutEditor,
+    toolbar_editor: ToolbarEditor,
     level_text: String,
     special_world_passed: bool,
     renderer: NativeRenderState,
@@ -157,6 +159,7 @@ pub(crate) struct NativeApplication {
 impl NativeApplication {
     const RESTORE_POLICY_STORAGE_KEY: &'static str = "lunar_magic_rust.restore_policy.v1";
     const SHORTCUT_STORAGE_KEY: &'static str = "lunar_magic_rust.shortcuts.v1";
+    const TOOLBAR_STORAGE_KEY: &'static str = "lunar_magic_rust.toolbar.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -198,6 +201,25 @@ impl NativeApplication {
                 Err(error) => {
                     self.effects.error = Some(format!("cannot load keyboard shortcuts: {error}"));
                 }
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::TOOLBAR_STORAGE_KEY) {
+            let result = if encoded == "default" {
+                self.app.clear_toolbar();
+                Ok(())
+            } else {
+                encoded
+                    .strip_prefix("hex:")
+                    .ok_or_else(|| "unknown toolbar preference version".to_owned())
+                    .and_then(decode_toolbar_preference)
+                    .and_then(|toolbar| {
+                        self.app
+                            .set_toolbar(toolbar)
+                            .map_err(|error| error.to_string())
+                    })
+            };
+            if let Err(error) = result {
+                self.effects.error = Some(format!("cannot load toolbar layout: {error}"));
             }
         }
     }
@@ -291,7 +313,7 @@ impl NativeApplication {
     fn prepare_frame(&mut self, context: &egui::Context) {
         self.show_configuration_loader(context);
         self.show_profile_loader(context);
-        if !self.shortcut_editor.is_open() {
+        if !self.shortcut_editor.is_open() && !self.toolbar_editor.is_open() {
             self.handle_shortcuts(context);
         }
         self.synchronize_localized_chrome(context);
@@ -371,6 +393,11 @@ impl eframe::App for NativeApplication {
                 encode_shortcut_preference(shortcuts),
             );
         }
+        let toolbar = self.app.toolbar().map_or_else(
+            || "default".to_owned(),
+            |toolbar| format!("hex:{}", encode_toolbar_preference(toolbar)),
+        );
+        storage.set_string(Self::TOOLBAR_STORAGE_KEY, toolbar);
     }
 
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
@@ -429,6 +456,18 @@ impl eframe::App for NativeApplication {
                 Err(error) => self.effects.error = Some(error.to_string()),
             }
         }
+        if let Some(result) = self.toolbar_editor.show(context) {
+            match result {
+                ToolbarEditorResult::Apply(toolbar) => match self.app.set_toolbar(toolbar) {
+                    Ok(()) => self.app.status = "Updated toolbar layout".into(),
+                    Err(error) => self.effects.error = Some(error.to_string()),
+                },
+                ToolbarEditorResult::UseDefault => {
+                    self.app.clear_toolbar();
+                    self.app.status = "Restored built-in toolbar".into();
+                }
+            }
+        }
         self.show_editor_windows(context);
         self.show_global_effects(context);
         #[cfg(feature = "visual-smoke")]
@@ -437,11 +476,30 @@ impl eframe::App for NativeApplication {
 }
 
 fn encode_shortcut_preference(config: &ShortcutConfig) -> String {
-    use std::fmt::Write as _;
-
     let bytes = config
         .encode()
         .expect("active shortcut configuration is already validated");
+    encode_hex(&bytes)
+}
+
+fn decode_shortcut_preference(value: &str) -> Result<ShortcutConfig, String> {
+    ShortcutConfig::decode(&decode_hex(value)?).map_err(|error| error.to_string())
+}
+
+fn encode_toolbar_preference(config: &ToolbarConfig) -> String {
+    let bytes = config
+        .encode()
+        .expect("active toolbar configuration is already validated");
+    encode_hex(&bytes)
+}
+
+fn decode_toolbar_preference(value: &str) -> Result<ToolbarConfig, String> {
+    ToolbarConfig::decode(&decode_hex(value)?).map_err(|error| error.to_string())
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
     let mut encoded = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
@@ -449,23 +507,22 @@ fn encode_shortcut_preference(config: &ShortcutConfig) -> String {
     encoded
 }
 
-fn decode_shortcut_preference(value: &str) -> Result<ShortcutConfig, String> {
+fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
     if value.len() % 2 != 0 {
-        return Err("encoded shortcut preference has an odd length".into());
+        return Err("encoded preference has an odd length".into());
     }
-    let bytes = value
+    value
         .as_bytes()
         .chunks_exact(2)
         .map(|pair| {
             std::str::from_utf8(pair)
-                .map_err(|_| "encoded shortcut preference is not UTF-8".to_owned())
+                .map_err(|_| "encoded preference is not UTF-8".to_owned())
                 .and_then(|pair| {
                     u8::from_str_radix(pair, 16)
-                        .map_err(|_| "encoded shortcut preference is not hexadecimal".to_owned())
+                        .map_err(|_| "encoded preference is not hexadecimal".to_owned())
                 })
         })
-        .collect::<Result<Vec<_>, _>>()?;
-    ShortcutConfig::decode(&bytes).map_err(|error| error.to_string())
+        .collect::<Result<Vec<_>, _>>()
 }
 
 #[cfg(test)]
@@ -493,6 +550,26 @@ mod preference_tests {
         assert!(decode_shortcut_preference("0").is_err());
         assert!(decode_shortcut_preference("zz").is_err());
         assert!(decode_shortcut_preference("00").is_err());
+    }
+
+    #[test]
+    fn toolbar_preference_round_trips_canonical_configuration() {
+        let config = ToolbarConfig {
+            items: vec![lm_app::ToolbarItem::Action {
+                id: "save".into(),
+                action: ToolbarAction::Save,
+                label: UiTextKey::FileSave,
+            }],
+        };
+        let encoded = encode_toolbar_preference(&config);
+        assert_eq!(decode_toolbar_preference(&encoded).unwrap(), config);
+    }
+
+    #[test]
+    fn toolbar_preference_rejects_malformed_payloads() {
+        assert!(decode_toolbar_preference("0").is_err());
+        assert!(decode_toolbar_preference("zz").is_err());
+        assert!(decode_toolbar_preference("00").is_err());
     }
 }
 

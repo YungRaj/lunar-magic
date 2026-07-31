@@ -336,6 +336,10 @@ impl NativeApplication {
                 ui.close_menu();
                 self.shortcut_editor.open(self.app.shortcuts());
             }
+            if ui.button("Customize Toolbar…").clicked() {
+                ui.close_menu();
+                self.toolbar_editor.open(self.app.toolbar());
+            }
             if ui
                 .add_enabled(
                     !self.configuration_loader.is_running(),

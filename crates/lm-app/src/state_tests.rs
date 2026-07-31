@@ -76,6 +76,10 @@ fn frontend_configuration_replacement_is_validated_and_atomic() {
     assert_eq!(app.localization().unwrap().locale, "de-DE");
     assert_eq!(app.toolbar(), Some(&toolbar));
     assert_eq!(app.shortcuts(), Some(&shortcuts));
+
+    app.clear_toolbar();
+    assert_eq!(app.toolbar(), None);
+    assert_eq!(app.shortcuts(), Some(&shortcuts));
 }
 
 #[test]

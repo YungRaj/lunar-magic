@@ -109,6 +109,7 @@ mod ssc_sidecar_editor_form;
 mod startup;
 #[cfg(test)]
 mod test_support;
+mod toolbar_editor;
 mod vanilla_graphics_editor;
 mod vanilla_level_editor;
 mod vanilla_map16_preview;

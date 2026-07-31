@@ -1,11 +1,11 @@
 use eframe::egui;
 use lm_app::{
     AppState, ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolbarActivation, ToolbarItem,
+    UiTextKey,
 };
 
 pub(crate) fn show_toolbar(ui: &mut egui::Ui, app: &AppState) -> Option<ToolbarActivation> {
     let toolbar = app.toolbar()?;
-    let localization = app.localization()?;
     let mut activation = None;
     ui.horizontal_wrapped(|ui| {
         for item in &toolbar.items {
@@ -14,10 +14,11 @@ pub(crate) fn show_toolbar(ui: &mut egui::Ui, app: &AppState) -> Option<ToolbarA
                     ui.separator();
                 }
                 ToolbarItem::Action { action, label, .. } => {
-                    let response = ui.add_enabled(
-                        app.toolbar_action_enabled(*action),
-                        egui::Button::new(localization.text(*label)),
-                    );
+                    let text = app
+                        .localization()
+                        .map_or_else(|| default_text(*label), |catalog| catalog.text(*label));
+                    let response = ui
+                        .add_enabled(app.toolbar_action_enabled(*action), egui::Button::new(text));
                     if response.clicked() {
                         activation = app.activate_toolbar_action(*action);
                     }
@@ -26,6 +27,30 @@ pub(crate) fn show_toolbar(ui: &mut egui::Ui, app: &AppState) -> Option<ToolbarA
         }
     });
     activation
+}
+
+pub(crate) const fn default_text(key: UiTextKey) -> &'static str {
+    match key {
+        UiTextKey::AppTitle => "Lunar Magic Rust",
+        UiTextKey::FileOpen => "Open",
+        UiTextKey::FileSave => "Save",
+        UiTextKey::FileSaveAs => "Save As",
+        UiTextKey::FileClose => "Close",
+        UiTextKey::FileQuit => "Quit",
+        UiTextKey::EditUndo => "Undo",
+        UiTextKey::EditRedo => "Redo",
+        UiTextKey::EditCopy => "Copy",
+        UiTextKey::EditCut => "Cut",
+        UiTextKey::EditPaste => "Paste",
+        UiTextKey::ViewLevel => "Level",
+        UiTextKey::ViewOverworld => "Overworld",
+        UiTextKey::ViewMap16 => "Map16",
+        UiTextKey::ViewGraphics => "Graphics",
+        UiTextKey::ViewPalette => "Palette",
+        UiTextKey::ViewExAnimation => "ExAnimation",
+        UiTextKey::StatusReady => "Ready",
+        UiTextKey::ViewLayer3 => "Layer 3",
+    }
 }
 
 pub(crate) fn shortcut_activation(
@@ -213,5 +238,17 @@ mod tests {
         assert_eq!(translate_text_key("界"), Some(ShortcutKey::Character('界')));
         assert_eq!(translate_text_key("ab"), None);
         assert_eq!(translate_text_key("\n"), None);
+    }
+
+    #[test]
+    fn english_fallback_covers_every_typed_localization_key() {
+        for key in UiTextKey::ALL {
+            assert!(
+                !default_text(key).is_empty(),
+                "missing fallback for {key:?}"
+            );
+        }
+        assert_eq!(default_text(UiTextKey::FileSaveAs), "Save As");
+        assert_eq!(default_text(UiTextKey::ViewLayer3), "Layer 3");
     }
 }

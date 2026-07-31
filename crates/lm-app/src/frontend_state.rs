@@ -76,6 +76,11 @@ impl AppState {
         self.toolbar.as_ref()
     }
 
+    /// Restores the frontend's built-in toolbar instead of a configured portable layout.
+    pub fn clear_toolbar(&mut self) {
+        self.toolbar = None;
+    }
+
     /// Atomically replaces portable keyboard bindings after complete validation.
     ///
     /// # Errors

@@ -2657,6 +2657,16 @@ populated or cleared binding set persists the canonical `LMSHORT1` configuration
 application storage and restores it on the next launch. Cancel and window close discard staged
 edits. The original Lunar Magic shortcut-dialog layout and Wine-observed behavior remain unverified.
 
+**Tools → Customize Toolbar** now stages the current portable toolbar as an ordered sequence of
+actions and separators. It preserves each action's stable ID and independently selected typed
+localization key, exposes every action and text key, supports bounded reorder/removal operations,
+and validates the whole layout before replacing the live toolbar. A separate built-in-toolbar action
+restores the native default instead of encoding an invented empty custom layout. Canonical
+`LMTBAR01` bytes persist through native application storage, while configured layouts without a
+localization catalog use a complete English fallback table rather than disappearing. Lunar Magic's
+bitmap/icon editor, separate user toolbar/menu surface, and Wine-observed customization behavior
+remain open parity gates.
+
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and
 publishes the returned framebuffer through `lm-render`'s bounded PNG encoder. This avoids relying
