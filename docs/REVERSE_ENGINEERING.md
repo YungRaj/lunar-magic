@@ -1269,6 +1269,11 @@ and `VK_NEXT` messages before restoring focus to the tile sheet. They are the vi
 page and previous/next palette routes for the already recovered keyboard branches. Rust now exposes
 all four controls on every graphics surface; control and keyboard actions share the same bounded
 selection/palette transitions and exact page, boundary, and rendered-palette status messages.
+Ctrl+Shift+Page Down is a separate diagnostic branch: it sends command `$24E7`, raises maximum page
+global `005E54F0` from its initialized `$05` to at least `$3F`, and reports `Internal GFX data
+viewing unlocked.` Window creation sends the same command when internal option byte `00E278D0` is
+set. Pages `$06-$3F` address Lunar Magic's separate 1 MiB decoded internal cache, which the current
+per-file Rust graphics controller does not yet model; Rust therefore does not fabricate this unlock.
 The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
 tile-edit selection. `HandleGraphicsEditorWindowMessage` at `005068c0` proves that primary and
@@ -1301,6 +1306,11 @@ the complete standard GFX table, and its buffers prove that even native 2bpp/3bp
 as decoded 4bpp files. The sprite loop conditionally omits its second slot when `00E278DF` is set;
 the ordinary path visits all four. Its exact completion messages are `Saved FG/BG/SP GFX to
 files.` and `Couldn't save FG/BG/SP GFX to file!`.
+Rust now exposes this exact F8 workflow on both pristine SMW-US and profile-backed installed ROM
+graphics editors. The pristine path reads the authenticated vanilla object/sprite assignment tables
+for the globally active level, while the installed path additionally honors expanded Super GFX
+bypass records. Both publish decoded `$1000`-byte files as one create-new group and substitute the
+active staged slot when it belongs to the exported set.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
 `006136B8`: zero has no animation attribution, `$01-$7F` encode OrigAnim slot minus one,
 `$80-$BF` encode a level ExAnimation slot, and `$C0-$FF` encode a global ExAnimation slot. Canonical

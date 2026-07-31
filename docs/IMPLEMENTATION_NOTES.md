@@ -1708,9 +1708,10 @@ Visible previous/next page and previous/next palette controls synthesize the sam
 navigation actions as Up/Down and Page Up/Down. They share selection clamping, focus transfer,
 default-palette traversal, and exact page, boundary, and rendered-palette status with the keyboard
 routes on all three graphics surfaces.
-The installed editor additionally reserves unmodified F8 for the recovered current-level export.
-It resolves the globally active level independently of the selected graphics page, presents the
-native confirmation text, and exports only that level's ordered FG/BG and sprite assignments.
+Both pristine SMW-US and profile-backed installed ROM editors additionally reserve unmodified F8
+for the recovered current-level export. They resolve the globally active level independently of the
+selected graphics page, present the native confirmation text, and export only that level's ordered
+FG/BG and sprite assignments.
 Expanded Super GFX bypass records contribute six plus four slots; the recovered vanilla SMW-US
 tables contribute four plus four. Repeated filenames are collapsed because publication is a file
 set. Every output is a decoded `$1000`-byte 4bpp GFX/ExGFX file, and the active staged graphics

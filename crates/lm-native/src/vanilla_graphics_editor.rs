@@ -1,4 +1,5 @@
 use crate::{
+    graphics_batch,
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
         GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, TILE_EDITOR_SIDE,
@@ -9,6 +10,9 @@ use crate::{
         take_graphics_character_shortcut, take_graphics_refresh_shortcut,
         take_graphics_save_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
         tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
+    },
+    level_graphics_export::{
+        pristine_current_level_graphics_files, take_level_graphics_export_shortcut,
     },
     native_clipboard,
 };
@@ -44,6 +48,8 @@ pub(crate) struct VanillaGraphicsEditor {
     clipboard_paste_target: Option<usize>,
     status: GraphicsEditorStatus,
     error: Option<String>,
+    pending_level_graphics_export: bool,
+    graphics_batch: graphics_batch::GraphicsBatchWorker,
 }
 
 impl VanillaGraphicsEditor {
@@ -56,6 +62,16 @@ impl VanillaGraphicsEditor {
 
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, app: &AppState) -> Option<Command> {
         take_graphics_refresh_shortcut(ui);
+        if let Some(result) = self.graphics_batch.show(ui.ctx()) {
+            match result {
+                Ok(Some(_)) => self.status.set("Saved FG/BG/SP GFX to files."),
+                Ok(None) => self.status.set("GFX extraction cancelled."),
+                Err(error) => {
+                    self.status.set("Couldn't save FG/BG/SP GFX to file!");
+                    self.error = Some(error);
+                }
+            }
+        }
         let snapshot = app.controller_snapshot().ok()?;
         let EditorMode::Graphics(slot) = snapshot.mode else {
             self.clear();
@@ -72,17 +88,28 @@ impl VanillaGraphicsEditor {
         if self.key != Some(key) {
             self.load(&snapshot, key);
         }
+        let file_work_running = self.graphics_batch.is_running();
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
                 _ => None,
             })
         });
-        if let Some(text) = pasted {
+        if !file_work_running && let Some(text) = pasted {
             self.paste_tile(&text);
         }
         ui.heading(format!("GFX{slot:02X} — built-in SMW graphics editor"));
         ui.label("Vanilla split pointer planes detected automatically.");
+        if ui
+            .add_enabled(
+                !file_work_running && app.current_level().is_some(),
+                egui::Button::new("Extract current level GFX…"),
+            )
+            .on_hover_text("F8 — saves the active level's FG/BG/SP files as decoded 4bpp")
+            .clicked()
+        {
+            self.pending_level_graphics_export = true;
+        }
         ui.separator();
         let palette = grayscale_palette();
         let Some(controller) = self.controller.as_ref() else {
@@ -132,8 +159,13 @@ impl VanillaGraphicsEditor {
             self.status.select_background_color(color);
         }
         ui.columns(2, |columns| {
-            self.tile_list(&mut columns[0], &palette);
-            self.pixel_editor(&mut columns[1], &palette);
+            self.tile_list(
+                &mut columns[0],
+                &palette,
+                !file_work_running,
+                !file_work_running && app.current_level().is_some(),
+            );
+            self.pixel_editor(&mut columns[1], &palette, !file_work_running);
         });
         self.status.show(ui);
         if let Some(error) = &self.error {
@@ -156,14 +188,16 @@ impl VanillaGraphicsEditor {
             .controller
             .as_ref()
             .is_some_and(GraphicsController::is_modified);
+        self.level_graphics_export_confirmation(ui.ctx(), app, &snapshot);
+        let file_work_running = self.graphics_batch.is_running();
         let commit_clicked = ui
             .add_enabled(
-                expanded && modified,
+                expanded && modified && !file_work_running,
                 egui::Button::new("Commit graphics changes to ROM"),
             )
             .clicked();
         let commit_shortcut = take_graphics_save_shortcut(ui);
-        if expanded && modified && (commit_clicked || commit_shortcut) {
+        if expanded && modified && !file_work_running && (commit_clicked || commit_shortcut) {
             match prepare_commit(
                 self.controller
                     .as_ref()
@@ -176,6 +210,63 @@ impl VanillaGraphicsEditor {
             }
         }
         None
+    }
+
+    fn level_graphics_export_confirmation(
+        &mut self,
+        context: &egui::Context,
+        app: &AppState,
+        snapshot: &lm_app::ControllerSnapshot,
+    ) {
+        if !self.pending_level_graphics_export {
+            return;
+        }
+        let mut accepted = false;
+        let mut cancelled = false;
+        egui::Window::new("Save level GFX to Graphics folder?")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(context, |ui| {
+                ui.label("Do you want to save the current level GFX to file,");
+                ui.label("so it can be inserted to the ROM later?");
+                ui.label("Don't do this if you haven't extracted the graphics yet!");
+                ui.horizontal(|ui| {
+                    accepted = ui.button("Yes").clicked();
+                    cancelled = ui.button("No").clicked();
+                });
+            });
+        if accepted {
+            self.pending_level_graphics_export = false;
+            self.begin_level_graphics_batch(app, snapshot);
+        } else if cancelled || context.input(|input| input.key_pressed(egui::Key::Escape)) {
+            self.pending_level_graphics_export = false;
+        }
+    }
+
+    fn begin_level_graphics_batch(
+        &mut self,
+        app: &AppState,
+        snapshot: &lm_app::ControllerSnapshot,
+    ) {
+        let Some(level) = app.current_level() else {
+            self.error = Some("no active level is available for GFX extraction".into());
+            return;
+        };
+        let source =
+            match pristine_level_graphics_batch_source(snapshot, self.controller.as_ref(), level) {
+                Ok(source) => source,
+                Err(error) => {
+                    self.error = Some(error);
+                    return;
+                }
+            };
+        let Some(directory) = crate::dialogs::choose_level_graphics_directory() else {
+            return;
+        };
+        if let Err(error) = self.graphics_batch.start(source, directory) {
+            self.error = Some(error);
+        }
     }
 
     fn load(&mut self, snapshot: &lm_app::ControllerSnapshot, key: EditorKey) {
@@ -201,7 +292,13 @@ impl VanillaGraphicsEditor {
         self.key = Some(key);
     }
 
-    fn tile_list(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
+    fn tile_list(
+        &mut self,
+        ui: &mut egui::Ui,
+        palette: &PaletteInterchangeFile,
+        edits_enabled: bool,
+        level_export_enabled: bool,
+    ) {
         let Some(controller) = &self.controller else {
             return;
         };
@@ -251,16 +348,16 @@ impl VanillaGraphicsEditor {
                                     }
                                 }
                                 Some(TilePointerAction::PasteSelected(index)) => {
-                                    if let Some(tile) = selected_tile.clone() {
+                                    if edits_enabled && let Some(tile) = selected_tile.clone() {
                                         selected_paste = Some((index, tile));
                                     }
                                 }
-                                Some(TilePointerAction::PasteClipboard(index)) => {
+                                Some(TilePointerAction::PasteClipboard(index)) if edits_enabled => {
                                     self.clipboard_paste_target = Some(index);
                                     ui.ctx()
                                         .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
                                 }
-                                None => {}
+                                Some(TilePointerAction::PasteClipboard(_)) | None => {}
                             }
                             responses.push(response);
                             if index % TILE_GRID_COLUMNS == TILE_GRID_COLUMNS - 1 {
@@ -308,7 +405,7 @@ impl VanillaGraphicsEditor {
         if copied {
             self.status.set("Copied tile to clipboard.");
         }
-        self.pending_shift = take_tile_shift(ui, self.selected_tile, &responses, true);
+        self.pending_shift = take_tile_shift(ui, self.selected_tile, &responses, edits_enabled);
         self.pending_character_shortcut =
             take_graphics_character_shortcut(ui, self.selected_tile, &responses);
         if let Some(status) =
@@ -316,9 +413,17 @@ impl VanillaGraphicsEditor {
         {
             self.status.set(status);
         }
+        if level_export_enabled && take_level_graphics_export_shortcut(ui) {
+            self.pending_level_graphics_export = true;
+        }
     }
 
-    fn pixel_editor(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
+    fn pixel_editor(
+        &mut self,
+        ui: &mut egui::Ui,
+        palette: &PaletteInterchangeFile,
+        edits_enabled: bool,
+    ) {
         let tile = self
             .controller
             .as_ref()
@@ -337,11 +442,13 @@ impl VanillaGraphicsEditor {
             self.color_map.open_dialog();
         }
         ui.label(format!("Tile {:03X}", self.selected_tile));
-        let clicked_mapping = self
-            .color_map
-            .show(ui, palette, self.display_palette, &tile, true);
+        let clicked_mapping =
+            self.color_map
+                .show(ui, palette, self.display_palette, &tile, edits_enabled);
         let mapped = character_shortcut
-            .filter(|shortcut| *shortcut == GraphicsCharacterShortcut::ApplyColorMap)
+            .filter(|shortcut| {
+                edits_enabled && *shortcut == GraphicsCharacterShortcut::ApplyColorMap
+            })
             .and_then(|_| self.color_map.apply(&tile))
             .or(clicked_mapping);
         if let Some(mapped) = mapped {
@@ -354,8 +461,10 @@ impl VanillaGraphicsEditor {
                 tile = current.clone();
             }
         }
-        let clicked_transform = graphics_transform_controls(ui, true);
-        let transform = shortcut_transform(character_shortcut).or(clicked_transform);
+        let clicked_transform = graphics_transform_controls(ui, edits_enabled);
+        let transform = shortcut_transform(character_shortcut)
+            .filter(|_| edits_enabled)
+            .or(clicked_transform);
         if let Some(transform) = transform {
             tile = match transform {
                 GraphicsTileTransform::RotateClockwise => tile.rotated_clockwise(),
@@ -378,7 +487,9 @@ impl VanillaGraphicsEditor {
         {
             match action {
                 TilePixelPointerAction::PaintForeground
-                | TilePixelPointerAction::PaintBackground => {
+                | TilePixelPointerAction::PaintBackground
+                    if edits_enabled =>
+                {
                     let color = match action {
                         TilePixelPointerAction::PaintForeground => self.foreground_color,
                         TilePixelPointerAction::PaintBackground => self.background_color,
@@ -398,6 +509,7 @@ impl VanillaGraphicsEditor {
                     self.background_color = tile.pixel(x, y).unwrap_or(0);
                     self.status.select_background_color(self.background_color);
                 }
+                _ => {}
             }
         }
     }
@@ -443,9 +555,39 @@ impl VanillaGraphicsEditor {
         self.key = None;
         self.controller = None;
         self.error = None;
+        self.pending_level_graphics_export = false;
         self.status = GraphicsEditorStatus::default();
         self.clipboard_paste_target = None;
     }
+}
+
+fn pristine_level_graphics_batch_source(
+    snapshot: &lm_app::ControllerSnapshot,
+    controller: Option<&GraphicsController>,
+    level: u16,
+) -> Result<graphics_batch::GraphicsBatchSource, String> {
+    let image =
+        RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
+    let slots = pristine_current_level_graphics_files(&image, level)?;
+    let controller = controller.ok_or_else(|| "graphics controller is closed".to_owned())?;
+    let raw = controller.export_raw().map_err(|error| error.to_string())?;
+    let EditorMode::Graphics(active_slot) = snapshot.mode else {
+        return Err("graphics workspace is no longer active".into());
+    };
+    let raw_4bpp_overrides = if slots.contains(&usize::from(active_slot)) {
+        vec![(usize::from(active_slot), raw)]
+    } else {
+        Vec::new()
+    };
+    Ok(graphics_batch::GraphicsBatchSource {
+        image,
+        layout: lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        slots: slots.clone(),
+        file_numbers: slots,
+        family: "level",
+        encoding: graphics_batch::GraphicsBatchEncoding::Decoded4Bpp,
+        raw_4bpp_overrides,
+    })
 }
 
 fn grayscale_palette() -> PaletteInterchangeFile {
@@ -517,6 +659,43 @@ fn prepare_commit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pristine_level_export_uses_exact_assignments_and_active_staged_slot() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::ShowGraphics(0x14)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = GraphicsController::decode_editable(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .unwrap();
+        let changed = IndexedTile::new([0x0d; IndexedTile::PIXEL_COUNT]);
+        controller
+            .apply_edits(&[GraphicsControllerEdit::ApplyChanges(vec![
+                GraphicsTileChange {
+                    index: 0,
+                    tile: changed,
+                },
+            ])])
+            .unwrap();
+
+        let source =
+            pristine_level_graphics_batch_source(&snapshot, Some(&controller), 0x105).unwrap();
+        assert_eq!(
+            source.slots,
+            [0x14, 0x17, 0x1b, 0x15, 0x00, 0x01, 0x13, 0x20]
+        );
+        assert_eq!(source.file_numbers, source.slots);
+        assert_eq!(source.raw_4bpp_overrides.len(), 1);
+        assert_eq!(source.raw_4bpp_overrides[0].0, 0x14);
+        assert_eq!(
+            source.raw_4bpp_overrides[0].1,
+            controller.export_raw().unwrap()
+        );
+    }
 
     #[test]
     fn pristine_editor_flips_enter_the_graphics_controller_staging_path() {

@@ -23,6 +23,8 @@ mod expanded_settings_editor_form;
 mod external_tool_launcher;
 mod external_tools;
 mod frontend_ui;
+#[path = "rom_graphics_editor/graphics_batch.rs"]
+mod graphics_batch;
 mod graphics_editor;
 mod graphics_migration_dialog;
 mod graphics_painter;
@@ -37,6 +39,7 @@ mod level_editor_auxiliary;
 mod level_editor_forms;
 mod level_editor_panels;
 mod level_editor_render;
+mod level_graphics_export;
 mod level_usage_dialog;
 mod map16_editor;
 mod map16_editor_render;

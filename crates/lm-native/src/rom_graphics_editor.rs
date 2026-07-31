@@ -1,5 +1,6 @@
 use crate::{
     document_loader::DocumentLoader,
+    graphics_batch,
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
         GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, TILE_EDITOR_SIDE,
@@ -11,6 +12,7 @@ use crate::{
         take_graphics_save_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
         tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
     },
+    level_graphics_export::{current_level_graphics_files, take_level_graphics_export_shortcut},
     native_clipboard,
 };
 use eframe::egui;
@@ -22,7 +24,6 @@ use lm_graphics::{GraphicsTileChange, IndexedTile, PaletteInterchangeFile, TileS
 
 mod commit;
 mod external_edit;
-mod graphics_batch;
 mod graphics_import;
 mod lifecycle;
 mod ownership;
@@ -1290,76 +1291,6 @@ fn standard_graphics_slots(layout: lm_project::GraphicsRomLayout) -> Vec<usize> 
     (0..layout.pointers.entries.min(STANDARD_GFX_LIMIT)).collect()
 }
 
-fn take_level_graphics_export_shortcut(ui: &mut egui::Ui) -> bool {
-    ui.input_mut(|input| {
-        !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F8)
-    })
-}
-
-fn current_level_graphics_files(
-    image: &lm_rom::RomImage,
-    profile: &RevisionProfile,
-    level: u16,
-) -> Result<Vec<usize>, String> {
-    let project = lm_project::Project::new(image.clone());
-    let level_layout = profile
-        .level_layout_for_rom(image)
-        .map_err(|error| error.to_string())?;
-    let loaded_level = project
-        .load_level_slot(usize::from(level), level_layout, &profile.sprite_lengths)
-        .map_err(|error| format!("cannot load level {level:03X} graphics settings: {error}"))?;
-    let mut files = if let Some(settings_layout) = profile.expanded_settings {
-        let settings = project
-            .load_expanded_level_settings(usize::from(level), settings_layout)
-            .map_err(|error| {
-                format!("cannot load level {level:03X} expanded graphics settings: {error}")
-            })?;
-        let selection = lm_level::ExpandedLevelHeader::from(&settings).super_graphics_bypass();
-        if selection.enabled {
-            selection
-                .foreground_background
-                .into_iter()
-                .chain(selection.sprites)
-                .map(usize::from)
-                .collect()
-        } else {
-            legacy_level_graphics_files(image, profile, loaded_level.layer1.header)?
-        }
-    } else {
-        legacy_level_graphics_files(image, profile, loaded_level.layer1.header)?
-    };
-    let mut seen = std::collections::HashSet::with_capacity(files.len());
-    files.retain(|file| seen.insert(*file));
-    Ok(files)
-}
-
-fn legacy_level_graphics_files(
-    image: &lm_rom::RomImage,
-    profile: &RevisionProfile,
-    header: lm_level::LegacyLevelHeader,
-) -> Result<Vec<usize>, String> {
-    if profile.game != lm_rom::SupportedGame::SuperMarioWorld
-        || profile.region != lm_rom::Region::NorthAmerica
-        || profile.revision != 0
-    {
-        return Err(format!(
-            "legacy level graphics assignment tables are not recovered for profile {}",
-            profile.name
-        ));
-    }
-    let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
-        image,
-        usize::from(header.object_tileset()),
-    )
-    .map_err(|error| error.to_string())?;
-    let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
-        image,
-        usize::from(header.sprite_tileset()),
-    )
-    .map_err(|error| error.to_string())?;
-    Ok(foreground.into_iter().chain(sprites).collect())
-}
-
 fn installed_exgraphics_slots(
     image: &lm_rom::RomImage,
     layout: lm_project::GraphicsRomLayout,
@@ -1383,9 +1314,10 @@ fn installed_exgraphics_slots(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_external_edit_revision, installed_exgraphics_slots, legacy_level_graphics_files,
-        pristine_special_graphics, supports_exgraphics,
+        ensure_external_edit_revision, installed_exgraphics_slots, pristine_special_graphics,
+        supports_exgraphics,
     };
+    use crate::level_graphics_export::legacy_level_graphics_files;
     use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
     use lm_rom::{Mapper, RomImage};
 

@@ -1,0 +1,129 @@
+use eframe::egui;
+use lm_app::RevisionProfile;
+use lm_level::{LegacyLevelHeader, SpriteLengthTable};
+use lm_rom::{Region, RomImage, SupportedGame};
+
+pub(crate) fn take_level_graphics_export_shortcut(ui: &mut egui::Ui) -> bool {
+    ui.input_mut(|input| {
+        !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F8)
+    })
+}
+
+pub(crate) fn current_level_graphics_files(
+    image: &RomImage,
+    profile: &RevisionProfile,
+    level: u16,
+) -> Result<Vec<usize>, String> {
+    let project = lm_project::Project::new(image.clone());
+    let level_layout = profile
+        .level_layout_for_rom(image)
+        .map_err(|error| error.to_string())?;
+    let loaded_level = project
+        .load_level_slot(usize::from(level), level_layout, &profile.sprite_lengths)
+        .map_err(|error| format!("cannot load level {level:03X} graphics settings: {error}"))?;
+    let files = if let Some(settings_layout) = profile.expanded_settings {
+        let settings = project
+            .load_expanded_level_settings(usize::from(level), settings_layout)
+            .map_err(|error| {
+                format!("cannot load level {level:03X} expanded graphics settings: {error}")
+            })?;
+        let selection = lm_level::ExpandedLevelHeader::from(&settings).super_graphics_bypass();
+        if selection.enabled {
+            selection
+                .foreground_background
+                .into_iter()
+                .chain(selection.sprites)
+                .map(usize::from)
+                .collect()
+        } else {
+            legacy_level_graphics_files(image, profile, loaded_level.layer1.header)?
+        }
+    } else {
+        legacy_level_graphics_files(image, profile, loaded_level.layer1.header)?
+    };
+    Ok(collapse_duplicate_files(files))
+}
+
+pub(crate) fn pristine_current_level_graphics_files(
+    image: &RomImage,
+    level: u16,
+) -> Result<Vec<usize>, String> {
+    let project = lm_project::Project::new(image.clone());
+    let loaded_level = project
+        .load_level_slot(
+            usize::from(level),
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .map_err(|error| format!("cannot load level {level:03X} graphics settings: {error}"))?;
+    let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
+        image,
+        usize::from(loaded_level.layer1.header.object_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+        image,
+        usize::from(loaded_level.layer1.header.sprite_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(collapse_duplicate_files(
+        foreground.into_iter().chain(sprites).collect(),
+    ))
+}
+
+pub(crate) fn legacy_level_graphics_files(
+    image: &RomImage,
+    profile: &RevisionProfile,
+    header: LegacyLevelHeader,
+) -> Result<Vec<usize>, String> {
+    if profile.game != SupportedGame::SuperMarioWorld
+        || profile.region != Region::NorthAmerica
+        || profile.revision != 0
+    {
+        return Err(format!(
+            "legacy level graphics assignment tables are not recovered for profile {}",
+            profile.name
+        ));
+    }
+    let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
+        image,
+        usize::from(header.object_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+        image,
+        usize::from(header.sprite_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(foreground.into_iter().chain(sprites).collect())
+}
+
+fn collapse_duplicate_files(files: Vec<usize>) -> Vec<usize> {
+    let mut seen = std::collections::HashSet::with_capacity(files.len());
+    files
+        .into_iter()
+        .filter(|file| seen.insert(*file))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pristine_level_105_resolves_the_exact_vanilla_fg_bg_and_sprite_set() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        assert_eq!(
+            pristine_current_level_graphics_files(&image, 0x105).unwrap(),
+            [0x14, 0x17, 0x1b, 0x15, 0x00, 0x01, 0x13, 0x20]
+        );
+    }
+
+    #[test]
+    fn duplicate_assignments_collapse_at_first_occurrence_for_file_publication() {
+        assert_eq!(
+            collapse_duplicate_files(vec![0x14, 0x17, 0x14, 0x00, 0x17]),
+            [0x14, 0x17, 0x00]
+        );
+    }
+}
