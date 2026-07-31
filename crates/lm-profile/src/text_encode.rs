@@ -143,8 +143,7 @@ fn encode_exanimation_feature_variant(
     let magnitude = displacement.unsigned_abs();
     writeln!(
         out,
-        "exanimation.{prefix}_feature_table_displacement={sign}0x{magnitude:x}\nexanimation.{prefix}_feature_marker_offset=0x{:x}\nexanimation.{prefix}_feature_marker_value=0x{:02x}",
-        layout.feature_runtime_marker.offset, layout.feature_runtime_marker.expected
+        "exanimation.{prefix}_feature_table_displacement={sign}0x{magnitude:x}"
     )
     .unwrap();
 }

@@ -255,13 +255,6 @@ fn append_installation_metadata(
         append_metadata_span(
             rom,
             metadata,
-            "exanimation.features.runtime_marker",
-            features.feature_runtime_marker.offset,
-            1,
-        )?;
-        append_metadata_span(
-            rom,
-            metadata,
             "exanimation.features.table",
             marker_offset,
             lm_project::EXANIMATION_FEATURE_LEVEL_COUNT + 1,

@@ -277,16 +277,6 @@ fn parse_exanimation_feature_variant(
                 &format!("exanimation.{prefix}_feature_table_displacement"),
             )?,
         },
-        feature_runtime_marker: InstallationMarker {
-            offset: number(
-                values,
-                &format!("exanimation.{prefix}_feature_marker_offset"),
-            )?,
-            expected: byte(
-                values,
-                &format!("exanimation.{prefix}_feature_marker_value"),
-            )?,
-        },
     })
 }
 

@@ -697,11 +697,7 @@ impl RevisionProfile {
                     .first_operand_offset
                     .checked_add(2)
                     .ok_or(RevisionProfileError::AddressOverflow(domain))?;
-                for offset in [
-                    layout.table_locator.first_operand_offset,
-                    final_byte,
-                    layout.feature_runtime_marker.offset,
-                ] {
+                for offset in [layout.table_locator.first_operand_offset, final_byte] {
                     pc_to_snes(self.mapper, offset)
                         .map_err(|_| RevisionProfileError::UnmappedPointerTable(domain))?;
                 }

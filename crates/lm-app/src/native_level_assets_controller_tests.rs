@@ -156,16 +156,11 @@ fn feature_installation() -> InstalledLayout<InstalledExAnimationFeatureRomLayou
             first_operand_offset: 0xb1,
             final_operand_displacement: 0x46,
         },
-        feature_runtime_marker: lm_project::InstallationMarker {
-            offset: 0xb0,
-            expected: 0xea,
-        },
     })
 }
 
 fn feature_snapshot() -> ControllerSnapshot {
     let mut snapshot = snapshot();
-    snapshot.rom_bytes[0xb0] = 0xea;
     pointer(&mut snapshot.rom_bytes, 0xb1, 0x300);
     pointer(&mut snapshot.rom_bytes, 0x346, 0x501);
     snapshot.rom_bytes[0x500] = 0;

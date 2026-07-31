@@ -265,10 +265,6 @@ fn installation_marker_ranges(
                 3,
                 image_len,
             )?);
-            markers.push(marker_range(
-                "exanimation.features.runtime_marker",
-                layout.feature_runtime_marker,
-            )?);
             Ok::<_, RevisionAllocationError>(())
         };
     match profile.exanimation_feature_installation {
@@ -581,7 +577,6 @@ mod tests {
         let final_operand = runtime + 0x46;
         let exanimation_operand = runtime - 0x20;
         let table = 0x2_a001;
-        let runtime_marker = 0x2_8890;
         if let lm_project::InstalledLayout::Unconditional(layout) =
             &mut profile.exanimation_installation
         {
@@ -597,10 +592,6 @@ mod tests {
                     mapper: profile.mapper,
                     first_operand_offset: first_operand,
                     final_operand_displacement: 0x46,
-                },
-                feature_runtime_marker: lm_project::InstallationMarker {
-                    offset: runtime_marker,
-                    expected: 0xea,
                 },
             },
         );
@@ -619,7 +610,6 @@ mod tests {
         for range in [
             ProtectedRange(first_operand..first_operand + 3),
             ProtectedRange(final_operand..final_operand + 3),
-            ProtectedRange(runtime_marker..runtime_marker + 1),
             ProtectedRange(table - 1..table + lm_project::EXANIMATION_FEATURE_LEVEL_COUNT),
         ] {
             assert!(policy.protected.contains(&range), "missing {range:?}");

@@ -2690,22 +2690,22 @@ Installed ROMs use `ExAnimationFeatureRomLayout`, which names the first byte of 
 The preceding byte is decoded as Lunar Magic's representation sentinel. Planning a write retains
 the exact legacy migration behavior—including the post-write level `$110 = $30` assignment—and
 returns `requires_runtime_installation` whenever the resulting feature byte is nonzero. The
-standalone save API refuses that case unless the caller has separately proved the feature-control
-runtime installed, then updates the data and SNES checksum in one undoable transaction. This keeps
-the storage migration distinct from the still-pending relocatable runtime installer.
+standalone save API refuses that case unless the caller has separately proved the expanded
+ExAnimation runtime installed, then updates the data and SNES checksum in one undoable transaction.
+This is the runtime ensured by `WriteExAnimationFeatureFlag`, not the separate feature-control patch
+installed at `004606b0`.
 
 `InstalledExAnimationFeatureRomLayout` follows the expanded-animation hook's mapped runtime target
-to the feature-table operand and checks an independent feature-runtime marker. Its installed
-load/save entry points first resolve Lunar Magic's primary/fallback installation gate, then use the
-resolved storage and marker result. Thus a valid table pointer cannot accidentally stand in for
-proof that the gameplay hook consuming the table is active.
+to the feature-table operand. Its installed load/save entry points first resolve Lunar Magic's
+primary/fallback expanded-ExAnimation installation gate, then use the resolved storage. That outer
+gate is the proof that the runtime consuming nonzero feature bytes is active.
 
 Revision profiles opt into that installed path with `exanimation.features=installed`. Each
 primary/fallback variant reuses the corresponding expanded-ExAnimation hook and first operand,
-while declaring only its feature-table displacement and independent runtime-marker byte. Validation
-rejects mismatched gate shapes or locator origins. ROM-aware profile audit and allocation planning
-resolve and protect the first operand, final operand, runtime marker, sentinel, and complete
-512-byte table; allocator searches therefore cannot overwrite any part of the feature contract.
+while declaring only its feature-table displacement. Validation rejects mismatched gate shapes or
+locator origins. ROM-aware profile audit and allocation planning resolve and protect the first
+operand, final operand, sentinel, and complete 512-byte table; allocator searches therefore cannot
+overwrite any part of the feature contract.
 
 The profile-native level-assets controller loads that installed feature record beside its existing
 payload aggregate and treats it as revision-bound staged state. The Settings panel exposes the same

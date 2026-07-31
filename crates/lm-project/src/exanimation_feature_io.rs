@@ -1,6 +1,6 @@
 use crate::{
-    ChainedSnesPointerLocator, InstallationMarker, InstalledLayout, InstalledLayoutError,
-    PointerLocatorError, Project, RomWrite, TransactionError,
+    ChainedSnesPointerLocator, InstalledLayout, InstalledLayoutError, PointerLocatorError, Project,
+    RomWrite, TransactionError,
 };
 use lm_graphics::ExAnimationFeatureOptions;
 use lm_rom::{RomError, compute_snes_checksum};
@@ -23,7 +23,6 @@ pub struct ExAnimationFeatureRomLayout {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InstalledExAnimationFeatureRomLayout {
     pub table_locator: ChainedSnesPointerLocator,
-    pub feature_runtime_marker: InstallationMarker,
 }
 
 impl InstalledExAnimationFeatureRomLayout {
@@ -31,7 +30,7 @@ impl InstalledExAnimationFeatureRomLayout {
     ///
     /// # Errors
     ///
-    /// Rejects malformed mapped operands or a truncated feature-runtime marker.
+    /// Rejects malformed mapped operands.
     pub fn resolve(
         self,
         rom: &lm_rom::RomImage,
@@ -40,7 +39,6 @@ impl InstalledExAnimationFeatureRomLayout {
             storage: ExAnimationFeatureRomLayout {
                 table_offset: self.table_locator.resolve(rom)?,
             },
-            runtime_installed: self.feature_runtime_marker.matches(rom)?,
         })
     }
 }
@@ -48,7 +46,6 @@ impl InstalledExAnimationFeatureRomLayout {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ResolvedExAnimationFeatureRomLayout {
     pub storage: ExAnimationFeatureRomLayout,
-    pub runtime_installed: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -135,11 +132,11 @@ impl Project {
         self.load_exanimation_features(level, installed.storage)
     }
 
-    /// Resolves installed code, then saves a level without assuming the gameplay runtime exists.
+    /// Resolves the installed expanded-animation runtime, then saves one level's feature byte.
     ///
     /// # Errors
     ///
-    /// Refuses a nonzero feature byte unless the independent feature-runtime marker matches.
+    /// Rejects missing installed code or malformed storage.
     pub fn save_installed_exanimation_features(
         &mut self,
         level: usize,
@@ -153,13 +150,7 @@ impl Project {
                 "ExAnimation feature storage",
             ))?
             .resolve(&self.rom)?;
-        self.save_exanimation_features(
-            level,
-            options,
-            installed.storage,
-            installed.runtime_installed,
-            checksum_field,
-        )
+        self.save_exanimation_features(level, options, installed.storage, true, checksum_field)
     }
 
     /// Loads one level's four Super GFX animation switches.
@@ -192,9 +183,8 @@ impl Project {
 
     /// Builds Lunar Magic's exact legacy-to-table conversion or one-byte table update.
     ///
-    /// A nonzero target byte also requires the feature-control runtime. The returned plan reports
-    /// that requirement separately so callers cannot mistake data persistence for an installed
-    /// executable patch.
+    /// A nonzero target byte also requires Lunar Magic's expanded `ExAnimation` runtime. The
+    /// returned plan reports that requirement separately for callers using a raw storage layout.
     ///
     /// # Errors
     ///
@@ -231,8 +221,8 @@ impl Project {
 
     /// Saves one level's switches and checksum as one undoable operation.
     ///
-    /// `runtime_installed` must be true for a nonzero feature byte. Installing Lunar Magic's
-    /// feature-control runtime is a separate patch transaction.
+    /// `runtime_installed` must prove the expanded `ExAnimation` runtime is present for a nonzero
+    /// feature byte. This is not the separate feature-control patch installed at `004606b0`.
     ///
     /// # Errors
     ///
@@ -307,6 +297,7 @@ fn level_offset(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::InstallationMarker;
     use lm_graphics::ExAnimationFeature;
     use lm_rom::{Mapper, RomImage, pc_to_snes};
 
@@ -346,10 +337,6 @@ mod tests {
                         mapper: Mapper::LoRom,
                         first_operand_offset: 0x101,
                         final_operand_displacement: 0x46,
-                    },
-                    feature_runtime_marker: InstallationMarker {
-                        offset: 0x180,
-                        expected: 0xea,
                     },
                 },
             },
@@ -431,10 +418,9 @@ mod tests {
     }
 
     #[test]
-    fn installed_path_follows_runtime_operand_and_checks_independent_marker() {
+    fn installed_path_follows_runtime_operand() {
         let mut project = project(0);
         project.rom.write(0x100, &[0x22]).unwrap();
-        project.rom.write(0x180, &[0xea]).unwrap();
         write_u24(
             &mut project,
             0x101,
@@ -461,16 +447,5 @@ mod tests {
                 .encode(),
             0x10
         );
-
-        project.rom.write(0x180, &[0xff]).unwrap();
-        assert!(matches!(
-            project.save_installed_exanimation_features(
-                0x106,
-                nonzero_options(),
-                installed_layout(),
-                CHECKSUM
-            ),
-            Err(ExAnimationFeatureIoError::RuntimeInstallationRequired)
-        ));
     }
 }
