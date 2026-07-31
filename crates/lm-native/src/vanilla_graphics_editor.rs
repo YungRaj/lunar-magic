@@ -4,9 +4,9 @@ use crate::{
         GraphicsEditorStatus, GraphicsTileGrid, TILE_EDITOR_SIDE, TILE_GRID_COLUMNS,
         TilePixelPointerAction, TilePointerAction, apply_tile_keyboard_navigation,
         apply_tile_palette_keyboard, color_selection_marker, paint_tile,
-        take_graphics_character_shortcut, take_graphics_save_shortcut, take_tile_grid_shortcut,
-        take_tile_shift, tile_button, tile_coordinate, tile_page_range, tile_pixel_pointer_action,
-        tile_pointer_action,
+        take_graphics_character_shortcut, take_graphics_refresh_shortcut,
+        take_graphics_save_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
+        tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -53,6 +53,7 @@ impl VanillaGraphicsEditor {
     }
 
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, app: &AppState) -> Option<Command> {
+        take_graphics_refresh_shortcut(ui);
         let snapshot = app.controller_snapshot().ok()?;
         let EditorMode::Graphics(slot) = snapshot.mode else {
             self.clear();

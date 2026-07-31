@@ -1271,6 +1271,12 @@ navigation publishes `Viewing 8x8 page 0x%X.`, while blocked movement publishes 
 `Already at Start`/`Already at End` diagnostics. Page Up/Down report the rendered hexadecimal
 palette. Rust now keeps this state event-driven so a stationary pointer does not overwrite a later
 keyboard action and leaving the tracked region clears it, matching the Win32 message boundary.
+The F1 table entry at `00505A1E` does not invoke help: it posts command `$1B59` to the main
+level-editor child. `HandleLevelEditorCommand` fans that command out as redraw command `7000` to
+the graphics, palette, Map16, background, ExAnimation, and other dependent editor windows, then
+rerenders the shared 512-pixel surface. The branch performs no modifier checks, model mutation, or
+status update. Rust therefore consumes every modifier form of F1 on each graphics surface and
+requests a toolkit repaint without fabricating a reload or message.
 The same keyboard jump table maps F7 to the branch at `00505A4D`. Ordinary F7 toggles byte
 `00E27B90`; Ctrl+Alt+F7 instead toggles grid DWORD `005E54F8` between its initialized white
 `$00FFFFFF` and black `$00000000`, reporting `Tile grid color 1.` or `Tile grid color 2.`. The

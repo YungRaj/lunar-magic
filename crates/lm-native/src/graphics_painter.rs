@@ -593,6 +593,17 @@ pub(crate) fn take_graphics_save_shortcut(ui: &mut egui::Ui) -> bool {
     })
 }
 
+pub(crate) fn take_graphics_refresh_shortcut(ui: &mut egui::Ui) -> bool {
+    let taken = ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        input.consume_key(modifiers, egui::Key::F1)
+    });
+    if taken {
+        ui.ctx().request_repaint();
+    }
+    taken
+}
+
 fn classify_tile_pointer_action(
     index: usize,
     primary: bool,
@@ -1100,6 +1111,33 @@ mod tests {
 
         assert!(taken);
         assert!(!modified_taken);
+    }
+
+    #[test]
+    fn graphics_refresh_shortcut_accepts_every_native_modifier_form() {
+        for modifiers in [
+            egui::Modifiers::NONE,
+            egui::Modifiers::SHIFT,
+            egui::Modifiers::CTRL,
+            egui::Modifiers::ALT,
+            egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+        ] {
+            let context = egui::Context::default();
+            let mut taken = false;
+            let _ = context.run(
+                egui::RawInput {
+                    events: vec![key_event(egui::Key::F1, modifiers)],
+                    modifiers,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        taken = take_graphics_refresh_shortcut(ui);
+                    });
+                },
+            );
+            assert!(taken, "F1 was not consumed for {modifiers:?}");
+        }
     }
 
     #[test]

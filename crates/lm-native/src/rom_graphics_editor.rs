@@ -5,9 +5,9 @@ use crate::{
         GraphicsEditorStatus, GraphicsTileGrid, TILE_EDITOR_SIDE, TILE_GRID_COLUMNS,
         TilePixelPointerAction, TilePointerAction, apply_tile_keyboard_navigation,
         apply_tile_palette_keyboard, color_selection_marker, paint_tile, palette_color,
-        take_graphics_character_shortcut, take_graphics_save_shortcut, take_tile_grid_shortcut,
-        take_tile_shift, tile_button, tile_coordinate, tile_page_range, tile_pixel_pointer_action,
-        tile_pointer_action,
+        take_graphics_character_shortcut, take_graphics_refresh_shortcut,
+        take_graphics_save_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
+        tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -184,6 +184,7 @@ impl RomGraphicsEditor {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui, app: &AppState) -> Option<Command> {
+        take_graphics_refresh_shortcut(ui);
         let revision = app.project_revision();
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {

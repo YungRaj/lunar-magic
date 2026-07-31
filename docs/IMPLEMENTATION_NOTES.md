@@ -1699,7 +1699,9 @@ remaining available rows, while Page Down reverses that path and stops at the de
 default selection uses the original fixed sixteen-entry RGBQUAD table, including its exact channel
 ordering, for the picker, tile sheet, color-map previews, and pixel editor on all three surfaces.
 Only the active page is materialized as a seamless 16×16 array of 16-logical-pixel cells, matching
-the original 256×256 backing canvas. F7 toggles the initially hidden tile grid. Ctrl+Alt+F7 changes
+the original 256×256 backing canvas. F1 consumes all modifier forms and requests an immediate
+repaint on every graphics surface, matching the native `$1B59` dependent-editor redraw fanout
+without changing model state or status. F7 toggles the initially hidden tile grid. Ctrl+Alt+F7 changes
 its retained color between the recovered white and black DWORDs without changing visibility and
 publishes `Tile grid color 1.` or `Tile grid color 2.` exactly.
 The installed editor additionally reserves unmodified F8 for the recovered current-level export.
