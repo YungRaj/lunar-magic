@@ -8,9 +8,11 @@ use lm_level::{Map16Set, NativeLayer2Data, ObjectStream};
 use lm_project::NativeLevelAssetsFile;
 use lm_render::{
     NativeLevelMap16Layout, NativeLevelRasterRequest, NativeMap16Placement, Rgba,
-    StandardObjectDefinitionSet, install_lunar_magic_shared_extended_objects,
-    install_lunar_magic_shared_standard_objects, install_lunar_magic_tileset_extended_objects,
-    render_mapped_standard_object_stream,
+    StandardLevelOrientation, StandardObjectDefinitionSet, StandardSpritePreviewMode,
+    StandardSpritePreviewSource, draw_native_sprite_preview_definition,
+    install_lunar_magic_shared_extended_objects, install_lunar_magic_shared_standard_objects,
+    install_lunar_magic_tileset_extended_objects, lunar_magic_standard_sprite_preview_source,
+    render_lunar_magic_standard_sprite_with_mode, render_mapped_standard_object_stream,
 };
 
 mod commit;
@@ -36,6 +38,13 @@ struct Workspace {
 
 struct PendingLoad {
     profiled: ProfiledControllerSnapshot,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NativeSpritePreviewPlacement {
+    subtiles: [u16; 4],
+    x: i32,
+    y: i32,
 }
 
 #[derive(Default)]
@@ -324,11 +333,19 @@ fn render_super_graphics_level_preview(
         }
         None => Vec::new(),
     };
+    let (sprites, sprite_diagnostics) = render_sprite_placements(
+        &workspace.controller.assets().level.sprites,
+        header.level_mode(),
+        header.sprite_tileset(),
+    );
+    diagnostics.extend(sprite_diagnostics);
     render_level_image(
         &[&layer2, &layer1],
+        &sprites,
         layout,
         &map16,
         &vram.foreground_background,
+        &vram.sprites,
         &workspace.controller.assets().palette,
     )
     .map(|image| (image, diagnostics))
@@ -336,9 +353,11 @@ fn render_super_graphics_level_preview(
 
 fn render_level_image(
     layers: &[&[NativeMap16Placement]],
+    sprites: &[NativeSpritePreviewPlacement],
     layout: NativeLevelMap16Layout,
     map16: &Map16Set,
     tiles: &[lm_graphics::IndexedTile],
+    sprite_tiles: &[lm_graphics::IndexedTile],
     palette: &lm_graphics::Palette,
 ) -> Result<egui::ColorImage, String> {
     let definitions = map16
@@ -357,7 +376,7 @@ fn render_level_image(
             blue: color.blue,
             alpha: 255,
         });
-    let canvas = lm_render::render_native_level_framebuffer(NativeLevelRasterRequest {
+    let mut canvas = lm_render::render_native_level_framebuffer(NativeLevelRasterRequest {
         width: layout.width * 16,
         height: layout.height * 16,
         camera_x: 0,
@@ -369,6 +388,16 @@ fn render_level_image(
         palette,
     })
     .map_err(|error| error.to_string())?;
+    for sprite in sprites {
+        draw_native_sprite_preview_definition(
+            &mut canvas,
+            sprite.subtiles,
+            sprite_tiles,
+            palette,
+            sprite.x,
+            sprite.y,
+        );
+    }
     let mut rgba = Vec::with_capacity(canvas.pixels().len() * 4);
     for pixel in canvas.pixels() {
         rgba.extend_from_slice(&[pixel.red, pixel.green, pixel.blue, pixel.alpha]);
@@ -455,6 +484,71 @@ fn render_object_placements(
         ));
     }
     Ok((placements, layout, diagnostics))
+}
+
+fn render_sprite_placements(
+    sprites: &lm_level::NativeSpriteStream,
+    level_mode: u8,
+    sprite_tileset: u8,
+) -> (Vec<NativeSpritePreviewPlacement>, Vec<String>) {
+    let mode = lm_profile::smw_us_v1_level_mode(level_mode);
+    let orientation = if mode.vertical {
+        StandardLevelOrientation::Vertical
+    } else {
+        StandardLevelOrientation::Horizontal
+    };
+    let mut rendered = Vec::new();
+    let mut diagnostics = Vec::new();
+    let mut sprite_8a_sequence_index = 0_u8;
+    for placement in sprites.native_placements() {
+        let preview = render_lunar_magic_standard_sprite_with_mode(
+            placement.sprite_number,
+            StandardSpritePreviewMode {
+                placement_first: placement.packed_display_position(),
+                placement_major: placement.major,
+                placement_minor: placement.minor,
+                level_mode,
+                level_orientation: orientation,
+                sprite_graphics_mode: sprite_tileset,
+                sprite_8a_sequence_index,
+                ..StandardSpritePreviewMode::default()
+            },
+        );
+        if placement.sprite_number == 0x8a {
+            sprite_8a_sequence_index = sprite_8a_sequence_index.saturating_add(1);
+        }
+        let Some(parts) = preview else {
+            if lunar_magic_standard_sprite_preview_source(placement.sprite_number)
+                == StandardSpritePreviewSource::BuiltIn
+            {
+                diagnostics.push(format!(
+                    "sprite ${:02X} has no materialized preview",
+                    placement.sprite_number
+                ));
+            }
+            continue;
+        };
+        let (tile_x, tile_y) = placement.tile_coordinates(mode.vertical);
+        let origin_x = i32::from(tile_x).saturating_mul(16);
+        let origin_y = i32::from(tile_y).saturating_mul(16);
+        for part in parts {
+            if part.subtiles.iter().any(|word| word & 0x0200 != 0) {
+                diagnostics.push(format!(
+                    "sprite ${:02X} definition ${:03X} uses the animated page",
+                    placement.sprite_number, part.definition_index
+                ));
+                continue;
+            }
+            rendered.push(NativeSpritePreviewPlacement {
+                subtiles: part.subtiles,
+                x: origin_x.saturating_add(i32::from(part.x)),
+                y: origin_y.saturating_add(i32::from(part.y)),
+            });
+        }
+    }
+    diagnostics.sort();
+    diagnostics.dedup();
+    (rendered, diagnostics)
 }
 
 fn layer2_placements(tilemap: &[u8]) -> Result<Vec<NativeMap16Placement>, String> {
@@ -551,6 +645,7 @@ mod tests {
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
         let image = render_level_image(
             &layers,
+            &[],
             NativeLevelMap16Layout {
                 width: 32,
                 height: 32,
@@ -560,6 +655,7 @@ mod tests {
             },
             &map16,
             &tiles,
+            &[],
             &Palette { colors },
         )
         .unwrap();
@@ -578,6 +674,26 @@ mod tests {
         assert_eq!(placements.len(), 32 * 13 * 16);
         assert!(placements.iter().all(|placement| placement.word == 0x25));
         assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn standard_sprite_stream_uses_native_placement_and_preview_dispatch() {
+        let sprites = lm_level::NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![lm_level::SpriteToken::Record(lm_level::SpriteRecord {
+                encoded: vec![0x20, 0x10, 0x00],
+            })],
+        };
+        let (rendered, diagnostics) = render_sprite_placements(&sprites, 0, 0);
+        assert!(diagnostics.is_empty());
+        assert_eq!(rendered.len(), 1);
+        assert_eq!(rendered[0].x, 16);
+        assert_eq!(rendered[0].y, 33);
+        assert_eq!(
+            rendered[0].subtiles,
+            lm_render::render_lunar_magic_standard_sprite(0, false).unwrap()[0].subtiles
+        );
     }
 
     #[test]
@@ -603,5 +719,11 @@ mod tests {
         .unwrap();
         assert!(diagnostics.is_empty(), "{diagnostics:?}");
         assert!(placements.iter().any(|placement| placement.word != 0x25));
+        let (sprites, sprite_diagnostics) = render_sprite_placements(
+            &level.sprites,
+            level.layer1.header.level_mode(),
+            level.layer1.header.sprite_tileset(),
+        );
+        assert!(!sprites.is_empty(), "{sprite_diagnostics:?}");
     }
 }

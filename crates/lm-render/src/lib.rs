@@ -59,7 +59,7 @@ pub use level_map16_cache::{
 pub use map16::draw_map16_tile;
 pub use native_level_raster::{
     NativeLevelRasterError, NativeLevelRasterRequest, NativeMap16Placement,
-    render_native_level_framebuffer,
+    draw_native_sprite_preview_definition, render_native_level_framebuffer,
 };
 pub use observe_editor_overlays::observe_editor_overlays;
 pub use observe_layer3_plane::observe_materialized_layer3_plane;

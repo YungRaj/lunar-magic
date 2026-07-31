@@ -468,8 +468,13 @@ definitions, `$1B0` horizontal page stride, and vertical cache mapping as the au
 The resulting bypass-aware framebuffer composites Layer 2 before Layer 1 at the recovered
 mode-specific editor dimensions and reports unresolved command IDs instead of fabricating tiles.
 A retained Lunar Magic-created level `$000` test additionally requires this path to materialize
-nonblank cells without unresolved definitions. Sprite preview composition remains a separate
-renderer boundary.
+nonblank cells without unresolved definitions. Standard sprite records now use their decoded
+native placements and the existing authenticated preview dispatch. Ordinary preview definitions
+are composited above the object layers from the four selected SP slots with Lunar Magic's
+column-major 2×2 definition order, nine-bit tile addressing, flip bits, and CGRAM rows 8–15. The
+retained level `$000` fixture must also materialize at least one sprite preview. Definitions that
+select bit `$0200` are reported and withheld until the separate animated-sprite page is connected,
+rather than being rendered from an incorrect ordinary SP tile.
 
 The actual Super GFX Bypass dialog callback at `0040CA80` is now defined as
 `HandleSuperGfxBypassDialog`. It exposes four animation switches, not additional graphics-file

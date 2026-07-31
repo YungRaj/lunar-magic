@@ -105,6 +105,35 @@ pub fn render_native_level_framebuffer(
     Ok(canvas)
 }
 
+/// Draws one Lunar Magic standard-sprite preview definition over an existing native framebuffer.
+///
+/// Sprite preview words address the four ordinary SP slots with a nine-bit tile index and use
+/// CGRAM rows 8–15. Bit `$0200` selects Lunar Magic's separate animated-sprite page and must be
+/// handled by the caller before invoking this ordinary-page renderer.
+pub fn draw_native_sprite_preview_definition(
+    canvas: &mut Canvas,
+    subtiles: [u16; 4],
+    tiles: &[IndexedTile],
+    palette: &Palette,
+    target_x: i32,
+    target_y: i32,
+) {
+    for (quadrant, word) in subtiles.into_iter().enumerate() {
+        let x = quadrant / 2;
+        let y = quadrant % 2;
+        draw_sprite_subtile_clipped(
+            canvas,
+            word,
+            tiles,
+            palette,
+            (
+                target_x.saturating_add(i32::try_from(x * 8).unwrap_or(i32::MAX)),
+                target_y.saturating_add(i32::try_from(y * 8).unwrap_or(i32::MAX)),
+            ),
+        );
+    }
+}
+
 fn draw_map16_clipped(
     canvas: &mut Canvas,
     definition: Map16Tile,
@@ -166,6 +195,62 @@ fn draw_subtile_clipped(
     let x_flip = subtile.x_flip() ^ horizontal_flip;
     let y_flip = subtile.y_flip() ^ vertical_flip;
     let palette_base = usize::from(subtile.palette()) * 16;
+    for y in 0..8 {
+        for x in 0..8 {
+            let source_x = if x_flip { 7 - x } else { x };
+            let source_y = if y_flip { 7 - y } else { y };
+            let Some(index) = tile.pixel(source_x, source_y) else {
+                continue;
+            };
+            if index == 0 {
+                continue;
+            }
+            let Some(color) = palette
+                .colors
+                .get(palette_base.saturating_add(usize::from(index)))
+            else {
+                continue;
+            };
+            let Some(output_x) = target_x.checked_add(i32::try_from(x).unwrap_or(i32::MAX)) else {
+                continue;
+            };
+            let Some(output_y) = target_y.checked_add(i32::try_from(y).unwrap_or(i32::MAX)) else {
+                continue;
+            };
+            let (Ok(output_x), Ok(output_y)) =
+                (usize::try_from(output_x), usize::try_from(output_y))
+            else {
+                continue;
+            };
+            let rgb = color.to_rgb8();
+            canvas.set(
+                output_x,
+                output_y,
+                Rgba {
+                    red: rgb.red,
+                    green: rgb.green,
+                    blue: rgb.blue,
+                    alpha: 255,
+                },
+            );
+        }
+    }
+}
+
+fn draw_sprite_subtile_clipped(
+    canvas: &mut Canvas,
+    word: u16,
+    tiles: &[IndexedTile],
+    palette: &Palette,
+    target: (i32, i32),
+) {
+    let (target_x, target_y) = target;
+    let Some(tile) = tiles.get(usize::from(word & 0x01ff)) else {
+        return;
+    };
+    let x_flip = word & 0x4000 != 0;
+    let y_flip = word & 0x8000 != 0;
+    let palette_base = (8 + usize::from((word >> 10) & 7)) * 16;
     for y in 0..8 {
         for x in 0..8 {
             let source_x = if x_flip { 7 - x } else { x };
@@ -272,6 +357,38 @@ mod tests {
         assert_eq!(canvas.get(0, 0).unwrap().red, 255);
         assert_eq!(canvas.get(1, 0).unwrap().green, 255);
         assert_eq!(canvas.get(16, 0).unwrap().green, 255);
+    }
+
+    #[test]
+    fn sprite_preview_uses_sp_tile_order_and_cgram_rows() {
+        let mut canvas = Canvas::try_new(16, 16).unwrap();
+        let mut tiles = vec![solid(0); 0x200];
+        tiles[1] = solid(1);
+        tiles[2] = solid(2);
+        tiles[3] = solid(3);
+        tiles[4] = solid(4);
+        let mut palette = Palette {
+            colors: vec![Bgr555(0); 16 * 16],
+        };
+        palette.colors[8 * 16 + 1] = Bgr555(0x001f);
+        palette.colors[8 * 16 + 2] = Bgr555(0x03e0);
+        palette.colors[8 * 16 + 3] = Bgr555(0x7c00);
+        palette.colors[8 * 16 + 4] = Bgr555(0x7fff);
+
+        draw_native_sprite_preview_definition(&mut canvas, [1, 2, 3, 4], &tiles, &palette, 0, 0);
+
+        assert_eq!(canvas.get(0, 0).unwrap().red, 255);
+        assert_eq!(canvas.get(0, 8).unwrap().green, 255);
+        assert_eq!(canvas.get(8, 0).unwrap().blue, 255);
+        assert_eq!(
+            canvas.get(8, 8).unwrap(),
+            Rgba {
+                red: 255,
+                green: 255,
+                blue: 255,
+                alpha: 255,
+            }
+        );
     }
 
     #[test]
