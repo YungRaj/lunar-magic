@@ -112,19 +112,24 @@ impl GraphicsEditorStatus {
         first_index: usize,
         modifiers: egui::Modifiers,
         owner: Option<GraphicsTileOwner>,
+        pointer_moved: bool,
     ) {
         let hovered = responses
             .iter()
             .position(egui::Response::hovered)
             .and_then(|index| first_index.checked_add(index));
-        if hovered == self.hovered_tile {
+        if hovered == self.hovered_tile && !pointer_moved {
+            return;
+        }
+        let text = hovered.map(|index| tile_hover_status(index, modifiers, owner));
+        if hovered == self.hovered_tile && text == self.text {
             return;
         }
         self.hovered_tile = hovered;
-        if let Some(index) = hovered {
+        if hovered.is_some() {
             self.editor_hovered = false;
             self.hovered_color = None;
-            self.text = Some(tile_hover_status(index, modifiers, owner));
+            self.text = text;
         } else {
             self.text = None;
         }
@@ -1686,6 +1691,60 @@ mod tests {
         assert_eq!(status.text.as_deref(), Some("Rendered with palette 0x4."));
         status.update_pixel_editor_hover(false, 0x2a);
         assert_eq!(status.text, None);
+    }
+
+    #[test]
+    fn same_tile_mouse_move_refreshes_attribution_but_stationary_pointer_does_not() {
+        let context = egui::Context::default();
+        let mut rect = egui::Rect::NOTHING;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                rect = ui.button("tile").rect;
+            });
+        });
+        let mut response = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::PointerMoved(rect.center())],
+                ..egui::RawInput::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    response = Some(ui.button("tile"));
+                });
+            },
+        );
+        let response = response.unwrap();
+        let mut status = GraphicsEditorStatus::default();
+        status.update_tile_hover(
+            std::slice::from_ref(&response),
+            0x20,
+            egui::Modifiers::NONE,
+            None,
+            true,
+        );
+        assert_eq!(status.text(), Some("Tile 0x20 (Address 0x400)"));
+
+        status.set("Copied tile to clipboard.");
+        let attribution_modifiers = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+        let owner = Some(GraphicsTileOwner::OriginalAnimation { slot: 3 });
+        status.update_tile_hover(
+            std::slice::from_ref(&response),
+            0x20,
+            attribution_modifiers,
+            owner,
+            false,
+        );
+        assert_eq!(status.text(), Some("Copied tile to clipboard."));
+
+        status.update_tile_hover(
+            std::slice::from_ref(&response),
+            0x20,
+            attribution_modifiers,
+            owner,
+            true,
+        );
+        assert_eq!(status.text(), Some("Tile 0x20, OrigAnim slot 0x3."));
     }
 
     #[test]

@@ -1302,6 +1302,8 @@ palette. Their native branches inspect modifiers only for the edit-vs-navigation
 exceptions above; they are not globally unmodified-only shortcuts. Rust now keeps this state
 event-driven so a stationary pointer does not overwrite a later
 keyboard action and leaving the tracked region clears it, matching the Win32 message boundary.
+Movement within the same tile still re-enters the native mouse-move branch and recomputes its
+Ctrl+Shift animation attribution; only a stationary pointer suppresses that hover refresh.
 The F1 table entry at `00505A1E` does not invoke help: it posts command `$1B59` to the main
 level-editor child. `HandleLevelEditorCommand` fans that command out as redraw command `7000` to
 the graphics, palette, Map16, background, ExAnimation, and other dependent editor windows, then

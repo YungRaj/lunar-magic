@@ -415,6 +415,7 @@ impl VanillaGraphicsEditor {
             page_start,
             ui.input(|input| input.modifiers),
             None,
+            ui.input(|input| input.pointer.delta() != egui::Vec2::ZERO),
         );
         if let Some(status) = navigation_status.or(palette_status) {
             self.status.set(status);

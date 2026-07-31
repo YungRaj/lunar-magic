@@ -1727,6 +1727,8 @@ Its event-driven status state reproduces the original tile/address and palette h
 tile and foreground/background-color messages, rendered-palette messages, viewed-page messages, and exact
 start/end boundary diagnostics. A stationary pointer does not overwrite a later keyboard message;
 changing or leaving its tracked tile, palette, or pixel-editor region updates or clears the status.
+Actual movement within the same tile also recomputes modifier-dependent animation attribution, while
+a stationary modifier change alone leaves the last action message intact.
 All three graphics surfaces initialize foreground color 1 and background color 0. Primary and
 secondary palette clicks select those colors; primary and secondary pixel gestures paint with them;
 Ctrl-primary and Ctrl-secondary sample the pointed pixel into foreground and background respectively.
