@@ -1271,6 +1271,12 @@ navigation publishes `Viewing 8x8 page 0x%X.`, while blocked movement publishes 
 `Already at Start`/`Already at End` diagnostics. Page Up/Down report the rendered hexadecimal
 palette. Rust now keeps this state event-driven so a stationary pointer does not overwrite a later
 keyboard action and leaving the tracked region clears it, matching the Win32 message boundary.
+The same keyboard jump table maps F7 to the branch at `00505A4D`. Ordinary F7 toggles byte
+`00E27B90`; Ctrl+Alt+F7 instead toggles grid DWORD `005E54F8` between its initialized white
+`$00FFFFFF` and black `$00000000`, reporting `Tile grid color 1.` or `Tile grid color 2.`. The
+renderer at `00504D00` overwrites every sixteenth row and column of the 256×256 page DIB, proving a
+seamless 16×16 array of 16-pixel tile cells rather than spaced widgets. The selected page global
+`00E27B80` determines which 256-tile slice is rendered.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
 `006136B8`: zero has no animation attribution, `$01-$7F` encode OrigAnim slot minus one,
 `$80-$BF` encode a level ExAnimation slot, and `$C0-$FF` encode a global ExAnimation slot. Canonical

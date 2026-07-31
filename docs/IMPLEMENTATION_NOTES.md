@@ -1692,12 +1692,16 @@ read-only and stale or active-file-worker ROM workspaces cannot flip.
 Their tile sheets also share focus-scoped keyboard navigation. Unmodified Up selects the same
 in-page offset on the previous 256-tile graphics page, while Down selects it on the next;
 missing pages are no-ops and a partial final page clamps to its last tile. Every move transfers
-keyboard focus and scrolls the destination into view; unmodified Left/Right remain unconsumed and
+keyboard focus; unmodified Left/Right remain unconsumed and
 keys are not consumed unless the selected tile owns focus. The active display palette is an explicit
 default-or-row state: Page Up advances from the recovered default palette through row zero and the
 remaining available rows, while Page Down reverses that path and stops at the default palette. The
 default selection uses the original fixed sixteen-entry RGBQUAD table, including its exact channel
 ordering, for the picker, tile sheet, color-map previews, and pixel editor on all three surfaces.
+Only the active page is materialized as a seamless 16×16 array of 16-logical-pixel cells, matching
+the original 256×256 backing canvas. F7 toggles the initially hidden tile grid. Ctrl+Alt+F7 changes
+its retained color between the recovered white and black DWORDs without changing visibility and
+publishes `Tile grid color 1.` or `Tile grid color 2.` exactly.
 The same tile-grid adapter draws a distinct outline around the current nonselected hover target.
 Its event-driven status state reproduces the original tile/address and palette hover text, selected
 tile and foreground/background-color messages, rendered-palette messages, viewed-page messages, and exact

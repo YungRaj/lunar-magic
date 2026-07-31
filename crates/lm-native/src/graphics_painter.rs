@@ -3,7 +3,8 @@ use lm_graphics::{
     GraphicsColorMapFilters, GraphicsTileOwner, IndexedTile, PaletteInterchangeFile, TileShift,
 };
 
-pub(crate) const TILE_GRID_COLUMNS: usize = 8;
+pub(crate) const TILE_GRID_COLUMNS: usize = 16;
+const TILE_SHEET_CELL_SIDE: f32 = 16.0;
 pub(crate) const TILE_EDITOR_SIDE: f32 = 256.0;
 const GRAPHICS_PAGE_TILES: usize = 0x100;
 const CELL_OFFSETS: [f32; 8] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
@@ -108,10 +109,14 @@ impl GraphicsEditorStatus {
     pub(crate) fn update_tile_hover(
         &mut self,
         responses: &[egui::Response],
+        first_index: usize,
         modifiers: egui::Modifiers,
         owner: Option<GraphicsTileOwner>,
     ) {
-        let hovered = responses.iter().position(egui::Response::hovered);
+        let hovered = responses
+            .iter()
+            .position(egui::Response::hovered)
+            .and_then(|index| first_index.checked_add(index));
         if hovered == self.hovered_tile {
             return;
         }
@@ -158,6 +163,52 @@ pub(crate) enum TilePixelPointerAction {
     PaintBackground,
     PickForeground,
     PickBackground,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GraphicsTileGridColor {
+    White,
+    Black,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct GraphicsTileGrid {
+    visible: bool,
+    color: GraphicsTileGridColor,
+}
+
+impl Default for GraphicsTileGrid {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            color: GraphicsTileGridColor::White,
+        }
+    }
+}
+
+impl GraphicsTileGrid {
+    fn color(self) -> Option<egui::Color32> {
+        self.visible.then_some(match self.color {
+            GraphicsTileGridColor::White => egui::Color32::WHITE,
+            GraphicsTileGridColor::Black => egui::Color32::BLACK,
+        })
+    }
+
+    fn apply_f7(&mut self, modifiers: egui::Modifiers) -> Option<&'static str> {
+        if modifiers.ctrl && modifiers.alt {
+            self.color = match self.color {
+                GraphicsTileGridColor::White => GraphicsTileGridColor::Black,
+                GraphicsTileGridColor::Black => GraphicsTileGridColor::White,
+            };
+            Some(match self.color {
+                GraphicsTileGridColor::White => "Tile grid color 1.",
+                GraphicsTileGridColor::Black => "Tile grid color 2.",
+            })
+        } else {
+            self.visible = !self.visible;
+            None
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -413,15 +464,31 @@ pub(crate) fn tile_button(
     palette: &PaletteInterchangeFile,
     display_palette: GraphicsDisplayPalette,
     selected: bool,
+    grid: GraphicsTileGrid,
 ) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(34.0), egui::Sense::click());
-    paint_tile(
-        ui.painter(),
-        rect.shrink(1.0),
-        tile,
-        palette,
-        display_palette,
+    let (rect, response) = ui.allocate_exact_size(
+        egui::Vec2::splat(TILE_SHEET_CELL_SIDE),
+        egui::Sense::click(),
     );
+    paint_tile(ui.painter(), rect, tile, palette, display_palette);
+    if let Some(color) = grid.color() {
+        ui.painter().rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(rect.right() - 1.0, rect.top()),
+                rect.right_bottom(),
+            ),
+            0.0,
+            color,
+        );
+        ui.painter().rect_filled(
+            egui::Rect::from_min_max(
+                egui::pos2(rect.left(), rect.bottom() - 1.0),
+                rect.right_bottom(),
+            ),
+            0.0,
+            color,
+        );
+    }
     if selected {
         ui.painter().rect_stroke(
             rect,
@@ -438,6 +505,27 @@ pub(crate) fn tile_button(
         );
     }
     response
+}
+
+pub(crate) fn take_tile_grid_shortcut(
+    ui: &mut egui::Ui,
+    selected: usize,
+    responses: &[egui::Response],
+    grid: &mut GraphicsTileGrid,
+) -> Option<&'static str> {
+    if !responses
+        .get(selected % GRAPHICS_PAGE_TILES)
+        .is_some_and(egui::Response::has_focus)
+    {
+        return None;
+    }
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        input
+            .consume_key(modifiers, egui::Key::F7)
+            .then(|| grid.apply_f7(modifiers))
+            .flatten()
+    })
 }
 
 pub(crate) fn tile_pointer_action(
@@ -554,8 +642,9 @@ pub(crate) fn apply_tile_keyboard_navigation(
     ui: &mut egui::Ui,
     selected: &mut usize,
     responses: &[egui::Response],
+    tile_count: usize,
 ) -> Option<String> {
-    let Some(response) = responses.get(*selected) else {
+    let Some(response) = responses.get(*selected % GRAPHICS_PAGE_TILES) else {
         return None;
     };
     if !response.has_focus() {
@@ -578,7 +667,7 @@ pub(crate) fn apply_tile_keyboard_navigation(
     let Some(navigation) = navigation else {
         return None;
     };
-    let next = navigated_tile_index(*selected, responses.len(), navigation);
+    let next = navigated_tile_index(*selected, tile_count, navigation);
     let page = *selected / GRAPHICS_PAGE_TILES;
     if next == *selected {
         return Some(match navigation {
@@ -586,7 +675,7 @@ pub(crate) fn apply_tile_keyboard_navigation(
             TileNavigation::NextPage => format!("Already at End (0x{page:X})."),
         });
     }
-    let Some(response) = responses.get(next) else {
+    let Some(response) = responses.get(next % GRAPHICS_PAGE_TILES) else {
         return None;
     };
     *selected = next;
@@ -607,7 +696,7 @@ pub(crate) fn apply_tile_palette_keyboard(
 ) -> Option<String> {
     if row_count == 0
         || !responses
-            .get(selected)
+            .get(selected % GRAPHICS_PAGE_TILES)
             .is_some_and(egui::Response::has_focus)
     {
         return None;
@@ -641,7 +730,7 @@ pub(crate) fn take_tile_shift(
 ) -> Option<TileShift> {
     if !enabled
         || !responses
-            .get(selected)
+            .get(selected % GRAPHICS_PAGE_TILES)
             .is_some_and(egui::Response::has_focus)
     {
         return None;
@@ -671,7 +760,7 @@ pub(crate) fn take_graphics_character_shortcut(
     responses: &[egui::Response],
 ) -> Option<GraphicsCharacterShortcut> {
     if !responses
-        .get(selected)
+        .get(selected % GRAPHICS_PAGE_TILES)
         .is_some_and(egui::Response::has_focus)
     {
         return None;
@@ -716,6 +805,12 @@ fn navigated_tile_index(selected: usize, tile_count: usize, navigation: TileNavi
             }
         }
     }
+}
+
+pub(crate) fn tile_page_range(selected: usize, tile_count: usize) -> std::ops::Range<usize> {
+    let selected = selected.min(tile_count.saturating_sub(1));
+    let start = selected / GRAPHICS_PAGE_TILES * GRAPHICS_PAGE_TILES;
+    start..start.saturating_add(GRAPHICS_PAGE_TILES).min(tile_count)
 }
 
 fn stepped_display_palette(
@@ -785,9 +880,9 @@ mod tests {
                 .map(|index| ui.button(index.to_string()))
                 .collect::<Vec<_>>();
             if request_focus {
-                responses[*selected].request_focus();
+                responses[*selected % GRAPHICS_PAGE_TILES].request_focus();
             }
-            apply_tile_keyboard_navigation(ui, selected, &responses);
+            apply_tile_keyboard_navigation(ui, selected, &responses, TEST_GRID_TILES);
         });
     }
 
@@ -802,9 +897,9 @@ mod tests {
                 .map(|index| ui.button(index.to_string()))
                 .collect::<Vec<_>>();
             if request_focus {
-                responses[*selected].request_focus();
+                responses[*selected % GRAPHICS_PAGE_TILES].request_focus();
             }
-            status = apply_tile_keyboard_navigation(ui, selected, &responses);
+            status = apply_tile_keyboard_navigation(ui, selected, &responses, TEST_GRID_TILES);
         });
         status
     }
@@ -835,6 +930,11 @@ mod tests {
 
     #[test]
     fn tile_page_navigation_is_bounded_and_preserves_offset() {
+        assert_eq!(tile_page_range(0, 0), 0..0);
+        assert_eq!(tile_page_range(9, 600), 0..256);
+        assert_eq!(tile_page_range(265, 600), 256..512);
+        assert_eq!(tile_page_range(599, 600), 512..600);
+        assert_eq!(tile_page_range(usize::MAX, 600), 512..600);
         assert_eq!(navigated_tile_index(0, 0, TileNavigation::NextPage), 0);
         assert_eq!(
             navigated_tile_index(9, 600, TileNavigation::PreviousPage),
@@ -1145,6 +1245,35 @@ mod tests {
     }
 
     #[test]
+    fn tile_sheet_geometry_and_f7_grid_state_match_native_defaults() {
+        assert_eq!(TILE_GRID_COLUMNS, 16);
+        assert_eq!(TILE_SHEET_CELL_SIDE, 16.0);
+        assert_eq!(TILE_SHEET_CELL_SIDE * TILE_GRID_COLUMNS as f32, 256.0);
+
+        let mut grid = GraphicsTileGrid::default();
+        assert!(!grid.visible);
+        assert_eq!(grid.color, GraphicsTileGridColor::White);
+        assert_eq!(grid.apply_f7(egui::Modifiers::NONE), None);
+        assert!(grid.visible);
+        assert_eq!(grid.color(), Some(egui::Color32::WHITE));
+
+        assert_eq!(
+            grid.apply_f7(egui::Modifiers::CTRL | egui::Modifiers::ALT),
+            Some("Tile grid color 2.")
+        );
+        assert!(grid.visible);
+        assert_eq!(grid.color(), Some(egui::Color32::BLACK));
+        assert_eq!(
+            grid.apply_f7(egui::Modifiers::CTRL | egui::Modifiers::ALT | egui::Modifiers::SHIFT),
+            Some("Tile grid color 1.")
+        );
+        assert_eq!(grid.color(), Some(egui::Color32::WHITE));
+
+        assert_eq!(grid.apply_f7(egui::Modifiers::CTRL), None);
+        assert!(!grid.visible);
+    }
+
+    #[test]
     fn focused_grid_consumes_unmodified_navigation_and_transfers_focus() {
         let context = egui::Context::default();
         let mut selected = 9;
@@ -1260,7 +1389,7 @@ mod tests {
                 let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
-                apply_tile_keyboard_navigation(ui, &mut selected, &responses);
+                apply_tile_keyboard_navigation(ui, &mut selected, &responses, TEST_GRID_TILES);
                 shift = take_tile_shift(ui, selected, &responses, true);
             });
         });
@@ -1301,7 +1430,7 @@ mod tests {
                 let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
-                apply_tile_keyboard_navigation(ui, &mut selected, &responses);
+                apply_tile_keyboard_navigation(ui, &mut selected, &responses, TEST_GRID_TILES);
                 status =
                     apply_tile_palette_keyboard(ui, selected, &responses, &mut display_palette, 8);
             });

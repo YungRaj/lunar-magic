@@ -1,11 +1,12 @@
 use crate::{
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
-        GraphicsEditorStatus, TILE_EDITOR_SIDE, TILE_GRID_COLUMNS, TilePixelPointerAction,
-        TilePointerAction, apply_tile_keyboard_navigation, apply_tile_palette_keyboard,
-        color_selection_marker, paint_tile, take_graphics_character_shortcut,
-        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
-        tile_pixel_pointer_action, tile_pointer_action,
+        GraphicsEditorStatus, GraphicsTileGrid, TILE_EDITOR_SIDE, TILE_GRID_COLUMNS,
+        TilePixelPointerAction, TilePointerAction, apply_tile_keyboard_navigation,
+        apply_tile_palette_keyboard, color_selection_marker, paint_tile,
+        take_graphics_character_shortcut, take_graphics_save_shortcut, take_tile_grid_shortcut,
+        take_tile_shift, tile_button, tile_coordinate, tile_page_range, tile_pixel_pointer_action,
+        tile_pointer_action,
     },
     native_clipboard,
 };
@@ -34,6 +35,7 @@ pub(crate) struct VanillaGraphicsEditor {
     foreground_color: u8,
     background_color: u8,
     display_palette: GraphicsDisplayPalette,
+    tile_grid: GraphicsTileGrid,
     color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
     pending_character_shortcut: Option<GraphicsCharacterShortcut>,
@@ -200,7 +202,12 @@ impl VanillaGraphicsEditor {
         let Some(controller) = &self.controller else {
             return;
         };
-        let mut responses = Vec::with_capacity(controller.graphics().tiles.len());
+        let tiles = &controller.graphics().tiles;
+        let tile_count = tiles.len();
+        self.selected_tile = self.selected_tile.min(tiles.len().saturating_sub(1));
+        let page = tile_page_range(self.selected_tile, tile_count);
+        let (page_start, page_end) = (page.start, page.end);
+        let mut responses = Vec::with_capacity(page_end.saturating_sub(page_start));
         let mut selected_by_pointer = None;
         let selected_tile = controller.graphics().tiles.get(self.selected_tile).cloned();
         let mut selected_paste = None;
@@ -209,48 +216,52 @@ impl VanillaGraphicsEditor {
         egui::ScrollArea::vertical()
             .max_height(430.0)
             .show(ui, |ui| {
-                egui::Grid::new("vanilla-graphics-tiles").show(ui, |ui| {
-                    for (index, tile) in controller.graphics().tiles.iter().enumerate() {
-                        let response = tile_button(
-                            ui,
-                            tile,
-                            palette,
-                            self.display_palette,
-                            index == self.selected_tile,
-                        );
-                        match tile_pointer_action(ui, &response, index) {
-                            Some(TilePointerAction::Select(index)) => {
-                                self.selected_tile = index;
-                                selected_by_pointer = Some(index);
-                            }
-                            Some(TilePointerAction::Copy(index)) => {
-                                self.selected_tile = index;
-                                match native_clipboard::encode_graphics_tile(tile) {
-                                    Ok(text) => {
-                                        ui.ctx().copy_text(text);
-                                        copied = true;
+                egui::Grid::new("vanilla-graphics-tiles")
+                    .spacing([0.0, 0.0])
+                    .show(ui, |ui| {
+                        for (offset, tile) in tiles[page_start..page_end].iter().enumerate() {
+                            let index = page_start + offset;
+                            let response = tile_button(
+                                ui,
+                                tile,
+                                palette,
+                                self.display_palette,
+                                index == self.selected_tile,
+                                self.tile_grid,
+                            );
+                            match tile_pointer_action(ui, &response, index) {
+                                Some(TilePointerAction::Select(index)) => {
+                                    self.selected_tile = index;
+                                    selected_by_pointer = Some(index);
+                                }
+                                Some(TilePointerAction::Copy(index)) => {
+                                    self.selected_tile = index;
+                                    match native_clipboard::encode_graphics_tile(tile) {
+                                        Ok(text) => {
+                                            ui.ctx().copy_text(text);
+                                            copied = true;
+                                        }
+                                        Err(error) => self.error = Some(error),
                                     }
-                                    Err(error) => self.error = Some(error),
                                 }
-                            }
-                            Some(TilePointerAction::PasteSelected(index)) => {
-                                if let Some(tile) = selected_tile.clone() {
-                                    selected_paste = Some((index, tile));
+                                Some(TilePointerAction::PasteSelected(index)) => {
+                                    if let Some(tile) = selected_tile.clone() {
+                                        selected_paste = Some((index, tile));
+                                    }
                                 }
+                                Some(TilePointerAction::PasteClipboard(index)) => {
+                                    self.clipboard_paste_target = Some(index);
+                                    ui.ctx()
+                                        .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                                }
+                                None => {}
                             }
-                            Some(TilePointerAction::PasteClipboard(index)) => {
-                                self.clipboard_paste_target = Some(index);
-                                ui.ctx()
-                                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                            responses.push(response);
+                            if index % TILE_GRID_COLUMNS == TILE_GRID_COLUMNS - 1 {
+                                ui.end_row();
                             }
-                            None => {}
                         }
-                        responses.push(response);
-                        if index % TILE_GRID_COLUMNS == TILE_GRID_COLUMNS - 1 {
-                            ui.end_row();
-                        }
-                    }
-                });
+                    });
             });
         if let Some((index, tile)) = selected_paste
             && self.apply_tile_at(index, tile)
@@ -258,7 +269,7 @@ impl VanillaGraphicsEditor {
             paste_status = Some(format!("Pasted selected tile over tile 0x{index:X}."));
         }
         let navigation_status =
-            apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
+            apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses, tile_count);
         let palette_status = apply_tile_palette_keyboard(
             ui,
             self.selected_tile,
@@ -266,8 +277,12 @@ impl VanillaGraphicsEditor {
             &mut self.display_palette,
             palette.palette.colors.len() / 16,
         );
-        self.status
-            .update_tile_hover(&responses, ui.input(|input| input.modifiers), None);
+        self.status.update_tile_hover(
+            &responses,
+            page_start,
+            ui.input(|input| input.modifiers),
+            None,
+        );
         if let Some(status) = navigation_status.or(palette_status) {
             self.status.set(status);
         }
@@ -283,6 +298,11 @@ impl VanillaGraphicsEditor {
         self.pending_shift = take_tile_shift(ui, self.selected_tile, &responses, true);
         self.pending_character_shortcut =
             take_graphics_character_shortcut(ui, self.selected_tile, &responses);
+        if let Some(status) =
+            take_tile_grid_shortcut(ui, self.selected_tile, &responses, &mut self.tile_grid)
+        {
+            self.status.set(status);
+        }
     }
 
     fn pixel_editor(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
