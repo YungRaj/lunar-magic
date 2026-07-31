@@ -332,6 +332,10 @@ impl NativeApplication {
 
     fn tools_menu(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
         ui.menu_button("Tools", |ui| {
+            if ui.button("Keyboard Shortcuts…").clicked() {
+                ui.close_menu();
+                self.shortcut_editor.open(self.app.shortcuts());
+            }
             if ui
                 .add_enabled(
                     !self.configuration_loader.is_running(),

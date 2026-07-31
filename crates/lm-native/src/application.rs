@@ -59,12 +59,13 @@ use crate::{
     rom_shared_palette_editor::RomSharedPaletteEditor,
     rom_tilemap_editor::{RomCreditsTilemapEditor, RomTitleTilemapEditor},
     rom_title_recording_editor::RomTitleRecordingEditor,
+    shortcut_editor::ShortcutEditor,
     ssc_sidecar_editor::SscSidecarEditor,
     vanilla_graphics_editor::VanillaGraphicsEditor,
     vanilla_level_editor::VanillaLevelEditor,
 };
 use eframe::egui;
-use lm_app::{AppState, Command, EditorMode, UiTextKey};
+use lm_app::{AppState, Command, EditorMode, ShortcutConfig, UiTextKey};
 
 mod document_menus;
 mod menus;
@@ -80,6 +81,7 @@ pub(crate) struct NativeApplication {
     effects: EffectState,
     about_dialog: AboutDialog,
     diagnostics_dialog: DiagnosticsDialog,
+    shortcut_editor: ShortcutEditor,
     level_text: String,
     special_world_passed: bool,
     renderer: NativeRenderState,
@@ -154,6 +156,7 @@ pub(crate) struct NativeApplication {
 
 impl NativeApplication {
     const RESTORE_POLICY_STORAGE_KEY: &'static str = "lunar_magic_rust.restore_policy.v1";
+    const SHORTCUT_STORAGE_KEY: &'static str = "lunar_magic_rust.shortcuts.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -175,16 +178,27 @@ impl NativeApplication {
     }
 
     pub(crate) fn load_persistent_preferences(&mut self, storage: Option<&dyn eframe::Storage>) {
-        let Some(encoded) =
-            storage.and_then(|storage| storage.get_string(Self::RESTORE_POLICY_STORAGE_KEY))
-        else {
+        let Some(storage) = storage else {
             return;
         };
-        if let Err(error) = self
-            .restore_point_dialog
-            .load_automatic_preferences(&encoded)
+        if let Some(encoded) = storage.get_string(Self::RESTORE_POLICY_STORAGE_KEY)
+            && let Err(error) = self
+                .restore_point_dialog
+                .load_automatic_preferences(&encoded)
         {
             self.effects.error = Some(format!("cannot load restore-point preferences: {error}"));
+        }
+        if let Some(encoded) = storage.get_string(Self::SHORTCUT_STORAGE_KEY) {
+            match decode_shortcut_preference(&encoded).and_then(|config| {
+                self.app
+                    .set_shortcuts(config)
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(()) => {}
+                Err(error) => {
+                    self.effects.error = Some(format!("cannot load keyboard shortcuts: {error}"));
+                }
+            }
         }
     }
 
@@ -277,7 +291,9 @@ impl NativeApplication {
     fn prepare_frame(&mut self, context: &egui::Context) {
         self.show_configuration_loader(context);
         self.show_profile_loader(context);
-        self.handle_shortcuts(context);
+        if !self.shortcut_editor.is_open() {
+            self.handle_shortcuts(context);
+        }
         self.synchronize_localized_chrome(context);
         self.synchronize_level_text();
     }
@@ -349,6 +365,12 @@ impl eframe::App for NativeApplication {
             Self::RESTORE_POLICY_STORAGE_KEY,
             self.restore_point_dialog.automatic_preferences(),
         );
+        if let Some(shortcuts) = self.app.shortcuts() {
+            storage.set_string(
+                Self::SHORTCUT_STORAGE_KEY,
+                encode_shortcut_preference(shortcuts),
+            );
+        }
     }
 
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
@@ -401,10 +423,76 @@ impl eframe::App for NativeApplication {
         self.show_confirmation(context);
         self.about_dialog.show(context);
         self.diagnostics_dialog.show(context, &self.app);
+        if let Some(shortcuts) = self.shortcut_editor.show(context) {
+            match self.app.set_shortcuts(shortcuts) {
+                Ok(()) => self.app.status = "Updated keyboard shortcuts".into(),
+                Err(error) => self.effects.error = Some(error.to_string()),
+            }
+        }
         self.show_editor_windows(context);
         self.show_global_effects(context);
         #[cfg(feature = "visual-smoke")]
         self.capture_visual_smoke(context);
+    }
+}
+
+fn encode_shortcut_preference(config: &ShortcutConfig) -> String {
+    use std::fmt::Write as _;
+
+    let bytes = config
+        .encode()
+        .expect("active shortcut configuration is already validated");
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(encoded, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    encoded
+}
+
+fn decode_shortcut_preference(value: &str) -> Result<ShortcutConfig, String> {
+    if value.len() % 2 != 0 {
+        return Err("encoded shortcut preference has an odd length".into());
+    }
+    let bytes = value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            std::str::from_utf8(pair)
+                .map_err(|_| "encoded shortcut preference is not UTF-8".to_owned())
+                .and_then(|pair| {
+                    u8::from_str_radix(pair, 16)
+                        .map_err(|_| "encoded shortcut preference is not hexadecimal".to_owned())
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    ShortcutConfig::decode(&bytes).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod preference_tests {
+    use super::*;
+    use lm_app::{ShortcutBinding, ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolbarAction};
+
+    #[test]
+    fn shortcut_preference_round_trips_canonical_configuration() {
+        let config = ShortcutConfig {
+            bindings: vec![ShortcutBinding {
+                gesture: ShortcutGesture {
+                    modifiers: ShortcutModifiers::PRIMARY,
+                    key: ShortcutKey::Character('s'),
+                },
+                action: ToolbarAction::Save,
+            }],
+        };
+        let encoded = encode_shortcut_preference(&config);
+        assert_eq!(decode_shortcut_preference(&encoded).unwrap(), config);
+    }
+
+    #[test]
+    fn shortcut_preference_rejects_malformed_text_and_payloads() {
+        assert!(decode_shortcut_preference("0").is_err());
+        assert!(decode_shortcut_preference("zz").is_err());
+        assert!(decode_shortcut_preference("00").is_err());
     }
 }
 

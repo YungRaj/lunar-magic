@@ -103,6 +103,7 @@ mod rom_secondary_exit_editor;
 mod rom_shared_palette_editor;
 mod rom_tilemap_editor;
 mod rom_title_recording_editor;
+mod shortcut_editor;
 mod ssc_sidecar_editor;
 mod ssc_sidecar_editor_form;
 mod startup;
