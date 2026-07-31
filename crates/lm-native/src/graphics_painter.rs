@@ -26,6 +26,13 @@ enum PaletteStep {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TilePointerAction {
+    Select(usize),
+    Copy(usize),
+    Paste(usize),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct TileEditorZoom(usize);
 
 impl Default for TileEditorZoom {
@@ -92,6 +99,36 @@ pub(crate) fn tile_button(
         );
     }
     response
+}
+
+pub(crate) fn tile_pointer_action(
+    ui: &egui::Ui,
+    response: &egui::Response,
+    index: usize,
+) -> Option<TilePointerAction> {
+    classify_tile_pointer_action(
+        index,
+        response.clicked_by(egui::PointerButton::Primary),
+        response.clicked_by(egui::PointerButton::Secondary),
+        ui.input(|input| input.modifiers),
+    )
+}
+
+fn classify_tile_pointer_action(
+    index: usize,
+    primary: bool,
+    secondary: bool,
+    modifiers: egui::Modifiers,
+) -> Option<TilePointerAction> {
+    if secondary && modifiers == egui::Modifiers::NONE {
+        Some(TilePointerAction::Paste(index))
+    } else if primary && modifiers == egui::Modifiers::CTRL {
+        Some(TilePointerAction::Copy(index))
+    } else if primary && modifiers == egui::Modifiers::NONE {
+        Some(TilePointerAction::Select(index))
+    } else {
+        None
+    }
 }
 
 pub(crate) fn show_tile_grid_status(
@@ -361,6 +398,32 @@ mod tests {
         assert_eq!(cycled_palette_row(7, 8, PaletteStep::Next), 0);
         assert_eq!(cycled_palette_row(0, 8, PaletteStep::Previous), 7);
         assert_eq!(cycled_palette_row(usize::MAX, 8, PaletteStep::Previous), 6);
+    }
+
+    #[test]
+    fn pointer_gestures_require_exact_buttons_and_modifiers() {
+        assert_eq!(
+            classify_tile_pointer_action(4, true, false, egui::Modifiers::NONE),
+            Some(TilePointerAction::Select(4))
+        );
+        assert_eq!(
+            classify_tile_pointer_action(5, true, false, egui::Modifiers::CTRL),
+            Some(TilePointerAction::Copy(5))
+        );
+        assert_eq!(
+            classify_tile_pointer_action(6, false, true, egui::Modifiers::NONE),
+            Some(TilePointerAction::Paste(6))
+        );
+        for modifiers in [egui::Modifiers::SHIFT, egui::Modifiers::COMMAND] {
+            assert_eq!(
+                classify_tile_pointer_action(7, true, false, modifiers),
+                None
+            );
+        }
+        assert_eq!(
+            classify_tile_pointer_action(8, false, true, egui::Modifiers::CTRL),
+            None
+        );
     }
 
     #[test]

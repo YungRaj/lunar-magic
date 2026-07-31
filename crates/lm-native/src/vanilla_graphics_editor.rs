@@ -1,6 +1,10 @@
-use crate::graphics_painter::{
-    TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, apply_tile_palette_keyboard,
-    paint_tile, show_tile_grid_status, take_tile_shift, tile_button, tile_coordinate,
+use crate::{
+    graphics_painter::{
+        TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
+        apply_tile_palette_keyboard, paint_tile, show_tile_grid_status, take_tile_shift,
+        tile_button, tile_coordinate, tile_pointer_action,
+    },
+    native_clipboard,
 };
 use eframe::egui;
 use lm_app::{
@@ -55,6 +59,15 @@ impl VanillaGraphicsEditor {
         };
         if self.key != Some(key) {
             self.load(&snapshot, key);
+        }
+        let pasted = ui.input(|input| {
+            input.events.iter().find_map(|event| match event {
+                egui::Event::Paste(text) => Some(text.clone()),
+                _ => None,
+            })
+        });
+        if let Some(text) = pasted {
+            self.paste_tile(&text);
         }
         ui.heading(format!("GFX{slot:02X} — built-in SMW graphics editor"));
         ui.label("Vanilla split pointer planes detected automatically.");
@@ -172,8 +185,20 @@ impl VanillaGraphicsEditor {
                             self.palette_row,
                             index == self.selected_tile,
                         );
-                        if response.clicked() {
-                            self.selected_tile = index;
+                        match tile_pointer_action(ui, &response, index) {
+                            Some(TilePointerAction::Select(index)) => self.selected_tile = index,
+                            Some(TilePointerAction::Copy(_)) => {
+                                match native_clipboard::encode_graphics_tile(tile) {
+                                    Ok(text) => ui.ctx().copy_text(text),
+                                    Err(error) => self.error = Some(error),
+                                }
+                            }
+                            Some(TilePointerAction::Paste(index)) => {
+                                self.selected_tile = index;
+                                ui.ctx()
+                                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                            }
+                            None => {}
                         }
                         responses.push(response);
                         if index % TILE_GRID_COLUMNS == TILE_GRID_COLUMNS - 1 {
@@ -251,6 +276,13 @@ impl VanillaGraphicsEditor {
             && let Err(error) = controller.apply_edits(&[edit])
         {
             self.error = Some(error.to_string());
+        }
+    }
+
+    fn paste_tile(&mut self, text: &str) {
+        match native_clipboard::decode_graphics_tile(text) {
+            Ok(tile) => self.apply_tile(tile),
+            Err(error) => self.error = Some(error),
         }
     }
 
@@ -359,5 +391,33 @@ mod tests {
             controller.graphics().tiles[0],
             original.flipped(true, false)
         );
+    }
+
+    #[test]
+    fn pristine_editor_typed_paste_enters_the_graphics_controller_staging_path() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::ShowGraphics(0)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let controller = GraphicsController::decode_editable(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .unwrap();
+        let mut editor = VanillaGraphicsEditor {
+            controller: Some(controller),
+            selected_tile: 1,
+            ..VanillaGraphicsEditor::default()
+        };
+        let tile = IndexedTile::new(std::array::from_fn(|index| {
+            index.to_le_bytes()[0].wrapping_mul(3) & 0x0f
+        }));
+        let encoded = native_clipboard::encode_graphics_tile(&tile).unwrap();
+        editor.paste_tile(&encoded);
+        assert_eq!(editor.error, None);
+        let controller = editor.controller.as_ref().unwrap();
+        assert!(controller.is_modified());
+        assert_eq!(controller.graphics().tiles[1], tile);
     }
 }

@@ -1231,7 +1231,9 @@ zoom with one geometry source for rendering and hit testing. Exact original key/
 variants and color-map filtering remain separate UI-parity work. The documented 8×8-editor
 Shift+Arrow behavior is now implemented exactly as a one-pixel directional wrap. It uses the same
 revisioned or ownership-guarded tile replacement paths as paint, paste, and flips rather than a
-presentation-only buffer.
+presentation-only buffer. Exact Ctrl+left-click copy and unmodified right-click paste gestures now
+publish/request the typed single-tile clipboard payload on all three tile sheets; installed paste
+cannot bypass fixed/ExAnimation ownership, stale revision, or active file-worker gates.
 
 ## Compression formats
 

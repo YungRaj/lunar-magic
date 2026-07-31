@@ -2,9 +2,9 @@ use crate::{
     dialogs,
     document_loader::DocumentLoader,
     graphics_painter::{
-        TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation,
+        TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
         apply_tile_palette_keyboard, paint_tile, palette_color, show_tile_grid_status,
-        take_tile_shift, tile_button, tile_coordinate,
+        take_tile_shift, tile_button, tile_coordinate, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -242,8 +242,20 @@ impl GraphicsEditor {
                     for (index, tile) in tiles.iter().enumerate() {
                         let selected = index == self.selected_tile;
                         let response = tile_button(ui, tile, palette, self.palette_row, selected);
-                        if response.clicked() {
-                            self.selected_tile = index;
+                        match tile_pointer_action(ui, &response, index) {
+                            Some(TilePointerAction::Select(index)) => self.selected_tile = index,
+                            Some(TilePointerAction::Copy(_)) => {
+                                match native_clipboard::encode_graphics_tile(tile) {
+                                    Ok(text) => ui.ctx().copy_text(text),
+                                    Err(error) => self.error = Some(error),
+                                }
+                            }
+                            Some(TilePointerAction::Paste(index)) => {
+                                self.selected_tile = index;
+                                ui.ctx()
+                                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                            }
+                            None => {}
                         }
                         responses.push(response);
                         if index % TILE_GRID_COLUMNS == TILE_GRID_COLUMNS - 1 {
