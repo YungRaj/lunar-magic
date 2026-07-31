@@ -19,6 +19,10 @@ impl NativeApplication {
 
     fn help_menu(&mut self, ui: &mut egui::Ui) {
         ui.menu_button("Help", |ui| {
+            if ui.button("Build diagnostics…").clicked() {
+                ui.close_menu();
+                self.diagnostics_dialog.open();
+            }
             if ui.button("About Lunar Magic Rust…").clicked() {
                 ui.close_menu();
                 self.about_dialog.open();
