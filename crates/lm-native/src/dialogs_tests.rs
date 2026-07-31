@@ -24,6 +24,14 @@ fn bounded_reader_accepts_regular_rom_files() {
 }
 
 #[test]
+fn raw_graphics_names_distinguish_standard_and_extended_slots() {
+    assert_eq!(raw_graphics_file_name(0), "GFX00.bin");
+    assert_eq!(raw_graphics_file_name(0x7f), "GFX7F.bin");
+    assert_eq!(raw_graphics_file_name(0x80), "ExGFX80.bin");
+    assert_eq!(raw_graphics_file_name(0x123), "ExGFX123.bin");
+}
+
+#[test]
 fn bounded_reader_rejects_directories_and_oversized_sparse_files() {
     let directory = temporary_path("directory");
     fs::create_dir(&directory).unwrap();

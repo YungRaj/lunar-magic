@@ -123,6 +123,26 @@ pub(crate) fn choose_graphics_ownership() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_raw_graphics() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Insert GFX/ExGFX File")
+        .add_filter("Raw SNES graphics", &["bin"])
+        .pick_file()
+}
+
+pub(crate) fn choose_raw_graphics_save_path(slot: u16) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Extract GFX/ExGFX File")
+        .add_filter("Raw SNES graphics", &["bin"])
+        .set_file_name(raw_graphics_file_name(slot))
+        .save_file()
+}
+
+fn raw_graphics_file_name(slot: u16) -> String {
+    let prefix = if slot <= 0x7f { "GFX" } else { "ExGFX" };
+    format!("{prefix}{slot:02X}.bin")
+}
+
 pub(crate) fn choose_rats_ownership() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("RATS ownership evidence", &["lmrats"])

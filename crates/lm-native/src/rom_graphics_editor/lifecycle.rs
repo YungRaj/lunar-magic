@@ -34,15 +34,18 @@ impl RomGraphicsEditor {
             "graphics ownership evidence",
         );
         match self.loader.start(vec![request]) {
-            Ok(()) => self.pending_load = Some(PendingLoad { profiled }),
+            Ok(()) => self.pending_load = Some(PendingLoad::Ownership { profiled }),
             Err(error) => self.error = Some(error),
         }
     }
 
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
-        if self.manifest_loader.is_running() || self.loader.is_running() {
+        if self.manifest_loader.is_running()
+            || self.loader.is_running()
+            || self.persistence.is_running()
+        {
             self.error =
-                Some("wait for graphics ownership loading to finish before closing".into());
+                Some("wait for graphics background file work to finish before closing".into());
             return false;
         }
         let Some(workspace) = &self.workspace else {
@@ -60,22 +63,45 @@ impl RomGraphicsEditor {
         false
     }
 
-    pub(super) fn finish_ownership_load(
-        &mut self,
-        result: Result<LoadedDocument, String>,
-        revision: u64,
-    ) {
+    pub(super) fn finish_load(&mut self, result: Result<LoadedDocument, String>, revision: u64) {
         let pending = self.pending_load.take();
-        match result.and_then(|loaded| decode_loaded(pending, loaded, revision)) {
-            Ok(workspace) => {
-                self.workspace = Some(workspace);
-                self.selected_tile = 0;
-                self.selected_color = 1;
-                self.palette_row = 0;
-                self.search_start.clear();
-                self.search_end.clear();
+        match pending {
+            Some(PendingLoad::Ownership { profiled }) => {
+                match result.and_then(|loaded| decode_loaded(profiled, loaded, revision)) {
+                    Ok(workspace) => {
+                        self.workspace = Some(workspace);
+                        self.selected_tile = 0;
+                        self.selected_color = 1;
+                        self.palette_row = 0;
+                        self.search_start.clear();
+                        self.search_end.clear();
+                    }
+                    Err(error) => self.error = Some(error),
+                }
             }
-            Err(error) => self.error = Some(error),
+            Some(PendingLoad::RawImport { expected_revision }) => {
+                let outcome = result.and_then(|loaded| {
+                    crate::rom_load::ensure_current_revision(
+                        expected_revision,
+                        revision,
+                        "raw graphics import",
+                    )?;
+                    let [(_, bytes)] = loaded.into_exact::<1>("raw graphics")?;
+                    let workspace = self
+                        .workspace
+                        .as_mut()
+                        .ok_or("graphics workspace is closed")?;
+                    workspace
+                        .controller
+                        .import_raw(&bytes)
+                        .map_err(|error| error.to_string())
+                });
+                match outcome {
+                    Ok(()) => self.io_status = Some("Raw graphics staged successfully.".into()),
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            None => self.error = Some("graphics load lost its pending operation".into()),
         }
     }
 
@@ -125,13 +151,10 @@ impl RomGraphicsEditor {
 }
 
 fn decode_loaded(
-    pending: Option<PendingLoad>,
+    profiled: lm_app::ProfiledControllerSnapshot,
     loaded: LoadedDocument,
     current_revision: u64,
 ) -> Result<Workspace, String> {
-    let profiled = pending
-        .ok_or_else(|| "graphics ownership load lost its controller snapshot".to_string())?
-        .profiled;
     crate::rom_load::ensure_current_revision(
         profiled.snapshot.revision,
         current_revision,

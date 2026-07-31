@@ -28,8 +28,13 @@ struct Workspace {
     internal_header: usize,
 }
 
-struct PendingLoad {
-    profiled: ProfiledControllerSnapshot,
+enum PendingLoad {
+    Ownership {
+        profiled: ProfiledControllerSnapshot,
+    },
+    RawImport {
+        expected_revision: u64,
+    },
 }
 
 #[derive(Default)]
@@ -45,6 +50,9 @@ pub(crate) struct RomGraphicsEditor {
     loader: DocumentLoader,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
+    persistence: crate::persistence_worker::PersistenceWorker,
+    next_persistence_request: u64,
+    io_status: Option<String>,
 }
 
 impl RomGraphicsEditor {
@@ -54,7 +62,13 @@ impl RomGraphicsEditor {
         revision: u64,
     ) -> (bool, Option<Command>) {
         if let Some(result) = self.loader.show(context) {
-            self.finish_ownership_load(result, revision);
+            self.finish_load(result, revision);
+        }
+        if let Some(completion) = self.persistence.show(context) {
+            self.io_status = Some(match completion.result {
+                Ok(()) => "Raw graphics file extracted successfully.".into(),
+                Err(error) => format!("Raw graphics extraction failed: {error}"),
+            });
         }
         let mut command = match self.manifest_loader.show(context, revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
@@ -93,6 +107,7 @@ impl RomGraphicsEditor {
         });
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.controller.revision() != revision;
+        let file_work_running = self.loader.is_running() || self.persistence.is_running();
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
@@ -128,9 +143,38 @@ impl RomGraphicsEditor {
             }
         });
         ui.separator();
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !stale && !file_work_running,
+                    egui::Button::new("Insert raw GFX/ExGFX…"),
+                )
+                .clicked()
+            {
+                self.begin_raw_import(revision);
+            }
+            if ui
+                .add_enabled(
+                    !stale && !file_work_running,
+                    egui::Button::new("Extract raw GFX/ExGFX…"),
+                )
+                .clicked()
+            {
+                self.begin_raw_export();
+            }
+        });
+        if let Some(status) = &self.io_status {
+            ui.label(status);
+        }
+        ui.separator();
         ui.columns(2, |columns| {
             self.tile_list(&mut columns[0], &palette);
-            self.pixel_editor(&mut columns[1], &palette, stale, pasted.as_deref());
+            self.pixel_editor(
+                &mut columns[1],
+                &palette,
+                stale || self.loader.is_running(),
+                pasted.as_deref(),
+            );
         });
         ui.separator();
         ui.horizontal(|ui| {
@@ -145,7 +189,7 @@ impl RomGraphicsEditor {
             .is_some_and(|w| w.controller.is_modified());
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified && !stale && !file_work_running && !self.manifest_loader.is_running(),
                 egui::Button::new("Commit graphics to ROM"),
             )
             .clicked()
@@ -159,7 +203,7 @@ impl RomGraphicsEditor {
         }
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified && !stale && !file_work_running && !self.manifest_loader.is_running(),
                 egui::Button::new("Commit and reclaim"),
             )
             .clicked()
@@ -280,6 +324,62 @@ impl RomGraphicsEditor {
         };
         if let Err(error) = workspace.controller.apply_edits(&[edit]) {
             self.error = Some(error.to_string());
+        }
+    }
+}
+
+impl RomGraphicsEditor {
+    fn begin_raw_import(&mut self, revision: u64) {
+        let maximum = match self
+            .workspace
+            .as_ref()
+            .and_then(|workspace| workspace.controller.export_raw().ok())
+            .and_then(|bytes| u64::try_from(bytes.len()).ok())
+        {
+            Some(maximum) => maximum,
+            None => {
+                self.error = Some("could not determine the current raw graphics size".into());
+                return;
+            }
+        };
+        let Some(path) = crate::dialogs::choose_raw_graphics() else {
+            return;
+        };
+        let request = crate::document_loader::BoundedRead::new(path, maximum, "raw GFX/ExGFX file");
+        match self.loader.start(vec![request]) {
+            Ok(()) => {
+                self.pending_load = Some(PendingLoad::RawImport {
+                    expected_revision: revision,
+                });
+                self.io_status = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn begin_raw_export(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let Some(path) = crate::dialogs::choose_raw_graphics_save_path(workspace.slot) else {
+            return;
+        };
+        let bytes = match workspace.controller.export_raw() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        self.next_persistence_request = self.next_persistence_request.wrapping_add(1);
+        if let Err(error) = self.persistence.start(
+            self.next_persistence_request,
+            crate::persistence_worker::PersistenceTarget::Create(path),
+            bytes,
+        ) {
+            self.error = Some(error);
+        } else {
+            self.io_status = None;
         }
     }
 }

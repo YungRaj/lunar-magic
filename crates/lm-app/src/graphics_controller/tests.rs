@@ -81,6 +81,13 @@ fn options() -> GraphicsSaveOptions {
     }
 }
 
+fn graphics_snapshot() -> crate::ControllerSnapshot {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::ShowGraphics(2)).unwrap();
+    app.controller_snapshot().unwrap()
+}
+
 #[test]
 fn edits_compresses_expands_dispatches_and_reloads() {
     let mut app = AppState::default();
@@ -295,4 +302,50 @@ fn wrong_mode_mapper_and_ownership_shape_are_rejected() {
             ..
         })
     ));
+}
+
+#[test]
+fn raw_import_round_trips_and_preserves_protected_tiles() {
+    let snapshot = graphics_snapshot();
+    let ownership = GraphicsOwnership::from_owners(vec![
+        GraphicsTileOwner::Editable,
+        GraphicsTileOwner::Fixed,
+        GraphicsTileOwner::Editable,
+    ]);
+    let mut controller = GraphicsController::decode(&snapshot, layout(), ownership).unwrap();
+    let original = controller.export_raw().unwrap();
+    controller.import_raw(&original).unwrap();
+    assert!(!controller.is_modified());
+
+    let mut edited = original.clone();
+    edited[0] ^= 0x80;
+    controller.import_raw(&edited).unwrap();
+    assert!(controller.is_modified());
+    assert_eq!(controller.export_raw().unwrap(), edited);
+
+    let before_rejection = controller.export_raw().unwrap();
+    let mut protected = before_rejection.clone();
+    protected[GraphicsFile4bpp::BYTES_PER_TILE] ^= 0x80;
+    assert!(controller.import_raw(&protected).is_err());
+    assert_eq!(controller.export_raw().unwrap(), before_rejection);
+}
+
+#[test]
+fn raw_import_rejects_partial_and_wrong_sized_files_atomically() {
+    let snapshot = graphics_snapshot();
+    let mut controller =
+        GraphicsController::decode(&snapshot, layout(), GraphicsOwnership::editable(3)).unwrap();
+    let before = controller.export_raw().unwrap();
+    assert!(matches!(
+        controller.import_raw(&before[..before.len() - 1]),
+        Err(GraphicsControllerError::File(_))
+    ));
+    assert!(matches!(
+        controller.import_raw(&before[..GraphicsFile4bpp::BYTES_PER_TILE]),
+        Err(GraphicsControllerError::ImportedTileCount {
+            expected: 3,
+            actual: 1
+        })
+    ));
+    assert_eq!(controller.export_raw().unwrap(), before);
 }
