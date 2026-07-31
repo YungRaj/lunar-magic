@@ -150,6 +150,18 @@ pub(crate) fn choose_graphics_import_directory() -> Option<PathBuf> {
         .pick_folder()
 }
 
+pub(crate) fn choose_exgraphics_directory() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Extract Installed ExGFX Files")
+        .pick_folder()
+}
+
+pub(crate) fn choose_exgraphics_import_directory() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Insert ExGFX Files")
+        .pick_folder()
+}
+
 pub(crate) fn choose_all_gfx_save_path() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Extract Joined Standard GFX")

@@ -208,7 +208,7 @@ fn audit_active_tables(
     for (domain, table) in active_tables {
         let report = if domain == "level.sprites" {
             audit_sprite_table(profile, rom, profile.level.sprites, metadata)?
-        } else if domain == "graphics" && profile.graphics.split_pointer_planes.is_some() {
+        } else if domain == "graphics" {
             audit_graphics_table(profile, rom, metadata)?
         } else {
             audit_table(profile, rom, domain, table, metadata)?
@@ -228,36 +228,40 @@ fn audit_graphics_table(
 ) -> Result<PointerTableAudit, RevisionProfileAuditError> {
     let entries = profile.graphics.pointers.entries;
     let mut targets = Vec::with_capacity(entries);
-    let planes = profile
-        .graphics
-        .split_pointer_planes
-        .expect("split graphics audit requires split planes");
     for index in 0..entries {
-        let displacement =
-            index
-                .checked_mul(planes.stride)
-                .ok_or(RevisionProfileAuditError::PointerOffset {
-                    domain: "graphics",
-                    index,
-                })?;
-        let read = |base: usize| {
+        let displacement = index.checked_mul(profile.graphics.pointers.stride).ok_or(
+            RevisionProfileAuditError::PointerOffset {
+                domain: "graphics",
+                index,
+            },
+        )?;
+        let read = |base: usize, width: usize| {
             let offset =
                 base.checked_add(displacement)
                     .ok_or(RevisionProfileAuditError::PointerOffset {
                         domain: "graphics",
                         index,
                     })?;
-            rom.read(offset, 1).map(|bytes| bytes[0]).map_err(|error| {
-                RevisionProfileAuditError::PointerRead {
+            rom.read(offset, width)
+                .map_err(|error| RevisionProfileAuditError::PointerRead {
                     domain: "graphics",
                     index,
                     error,
-                }
-            })
+                })
         };
-        let address = u32::from(read(planes.low_offset)?)
-            | (u32::from(read(planes.high_offset)?) << 8)
-            | (u32::from(read(planes.bank_offset)?) << 16);
+        let address = if let Some(planes) = profile.graphics.split_pointer_planes {
+            u32::from(read(planes.low_offset, 1)?[0])
+                | (u32::from(read(planes.high_offset, 1)?[0]) << 8)
+                | (u32::from(read(planes.bank_offset, 1)?[0]) << 16)
+        } else {
+            let bytes = read(profile.graphics.pointers.offset, 3)?;
+            u32::from(bytes[0]) | (u32::from(bytes[1]) << 8) | (u32::from(bytes[2]) << 16)
+        };
+        // GFX00..GFX33 are the complete required standard set. Expanded tables reserve later
+        // indices for optional auxiliary GFX and ExGFX entries.
+        if index >= 0x34 && address == 0 {
+            continue;
+        }
         push_audited_target(
             profile,
             rom,
@@ -657,6 +661,44 @@ mod tests {
         assert_eq!(graphics.unique_targets, 1);
         assert_eq!(graphics.minimum_target, 0x1_0000);
         assert_eq!(graphics.maximum_target, 0x1_0000);
+    }
+
+    #[test]
+    fn expanded_graphics_audit_accepts_only_extended_zero_pointer_sentinels() {
+        let (mut profile, mut rom) = audited_fixture();
+        profile.graphics.pointers = LevelPointerTable {
+            offset: 0x2_a000,
+            entries: 0x82,
+            stride: 3,
+        };
+        profile.graphics.split_pointer_planes = None;
+        let pointer = pc_to_snes(profile.mapper, 0x1_0000).unwrap().to_le_bytes();
+        for index in 0..0x34 {
+            rom.write(profile.graphics.pointers.offset + index * 3, &pointer[..3])
+                .unwrap();
+        }
+        rom.write(profile.graphics.pointers.offset + 0x81 * 3, &pointer[..3])
+            .unwrap();
+        let report = audit(&profile, &rom).unwrap();
+        let graphics = report
+            .tables
+            .iter()
+            .find(|table| table.domain == "graphics")
+            .unwrap();
+        assert_eq!(graphics.entries, 0x82);
+        assert_eq!(graphics.unique_targets, 1);
+
+        rom.write(profile.graphics.pointers.offset + 0x33 * 3, &[0; 3])
+            .unwrap();
+        assert!(matches!(
+            audit(&profile, &rom),
+            Err(RevisionProfileAuditError::InvalidTarget {
+                domain: "graphics",
+                index: 0x33,
+                address: 0,
+                ..
+            })
+        ));
     }
 
     #[test]

@@ -12,11 +12,13 @@ use std::sync::{
 pub(super) struct GraphicsBatchSource {
     pub(super) image: RomImage,
     pub(super) layout: GraphicsRomLayout,
+    pub(super) slots: Vec<usize>,
     pub(super) file_numbers: Vec<usize>,
     pub(super) family: &'static str,
 }
 
 struct RunningBatch {
+    family: &'static str,
     target: GraphicsExportTarget,
     total: usize,
     completed: Arc<AtomicUsize>,
@@ -76,13 +78,14 @@ impl GraphicsBatchWorker {
         target: GraphicsExportTarget,
     ) -> Result<(), String> {
         if self.running.is_some() {
-            return Err("a standard GFX extraction is already running".into());
+            return Err("a graphics extraction is already running".into());
         }
+        let family = source.family;
         let total = source.file_numbers.len();
-        if total != source.layout.pointers.entries {
-            return Err("graphics filename mapping does not match its pointer table".into());
+        if total != source.slots.len() {
+            return Err("graphics slot and filename mappings have different lengths".into());
         }
-        if total == 0 || total > 0x80 {
+        if total == 0 || total > 0x1000 {
             return Err(format!("unsupported {} GFX count {total}", source.family));
         }
         let completed = Arc::new(AtomicUsize::new(0));
@@ -100,6 +103,7 @@ impl GraphicsBatchWorker {
             })
             .map_err(|error| format!("could not create standard-GFX worker: {error}"))?;
         self.running = Some(RunningBatch {
+            family,
             target,
             total,
             completed,
@@ -117,7 +121,7 @@ impl GraphicsBatchWorker {
         if let Some(running) = &self.running {
             let completed = running.completed.load(Ordering::Relaxed);
             let cancellation_requested = running.cancelled.load(Ordering::Relaxed);
-            egui::Window::new("Extracting standard GFX")
+            egui::Window::new(format!("Extracting {} GFX", running.family))
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
@@ -151,7 +155,7 @@ impl GraphicsBatchWorker {
             Err(TryRecvError::Disconnected) => {
                 self.running = None;
                 Some(Err(
-                    "standard-GFX worker stopped without reporting a result".into(),
+                    "graphics worker stopped without reporting a result".into()
                 ))
             }
         }
@@ -169,16 +173,20 @@ fn export_batch(
     let mut group = matches!(target, GraphicsExportTarget::Directory(_))
         .then_some(lm_app::file_persistence::NewFileGroup::new());
     let mut joined_files = Vec::with_capacity(if group.is_some() { 0 } else { total });
-    for (slot, file_number) in source.file_numbers.iter().copied().enumerate() {
+    for (index, (slot, file_number)) in source
+        .slots
+        .iter()
+        .copied()
+        .zip(source.file_numbers.iter().copied())
+        .enumerate()
+    {
         if cancelled.load(Ordering::Relaxed) {
             return Ok(None);
         }
         let graphics = project
-            .load_graphics_file(slot, source.layout)
-            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
-        let bytes = graphics
-            .encode()
-            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
+            .load_decompressed_graphics_file(slot, source.layout)
+            .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?;
+        let bytes = graphics;
         match target {
             GraphicsExportTarget::Directory(directory) => group
                 .as_mut()
@@ -187,7 +195,7 @@ fn export_batch(
                 .map_err(|error| format!("GFX{file_number:02X}: {error}"))?,
             GraphicsExportTarget::JoinedFile(_) => joined_files.push(bytes),
         }
-        completed.store(slot + 1, Ordering::Relaxed);
+        completed.store(index + 1, Ordering::Relaxed);
     }
     if cancelled.load(Ordering::Relaxed) {
         return Ok(None);
@@ -213,7 +221,12 @@ fn export_batch(
 }
 
 fn batch_output_path(directory: &Path, slot: usize) -> PathBuf {
-    directory.join(format!("GFX{slot:02X}.bin"))
+    directory.join(graphics_file_name(slot))
+}
+
+fn graphics_file_name(slot: usize) -> String {
+    let prefix = if slot < 0x80 { "GFX" } else { "ExGFX" };
+    format!("{prefix}{slot:02X}.bin")
 }
 
 #[cfg(test)]
@@ -288,6 +301,7 @@ mod tests {
             GraphicsBatchSource {
                 image: project.rom,
                 layout,
+                slots: vec![0, 1],
                 file_numbers: vec![0, 1],
                 family: "standard",
             },
@@ -309,6 +323,14 @@ mod tests {
             batch_output_path(Path::new("/tmp/Graphics"), 0x33),
             Path::new("/tmp/Graphics/GFX33.bin")
         );
+        assert_eq!(
+            batch_output_path(Path::new("/tmp/Graphics"), 0x80),
+            Path::new("/tmp/Graphics/ExGFX80.bin")
+        );
+        assert_eq!(
+            batch_output_path(Path::new("/tmp/Graphics"), 0xfff),
+            Path::new("/tmp/Graphics/ExGFXFFF.bin")
+        );
     }
 
     #[test]
@@ -316,6 +338,7 @@ mod tests {
         let cancelled = Arc::new(AtomicBool::new(false));
         let (_sender, result) = mpsc::channel();
         let running = RunningBatch {
+            family: "standard",
             target: GraphicsExportTarget::Directory(PathBuf::from("Graphics")),
             total: 0x32,
             completed: Arc::new(AtomicUsize::new(0)),
@@ -389,6 +412,67 @@ mod tests {
             fs::read(path).unwrap(),
             [expected[0].clone(), expected[1].clone()].concat()
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn extended_batch_preserves_native_two_bitplane_bytes_and_name() {
+        let directory = temporary_directory();
+        fs::create_dir(&directory).unwrap();
+        let layout = GraphicsRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x200,
+                entries: 0x81,
+                stride: 3,
+            },
+            split_pointer_planes: None,
+            compression: GraphicsCompression::Lz2,
+            maximum_compressed_len: 0x8000,
+            maximum_decompressed_len: 0x1000,
+        };
+        let raw = vec![0x5a; 0x800];
+        let mut project = Project::new(RomImage::from_bytes(vec![0; 0x8000]).unwrap());
+        project
+            .save_decompressed_graphics_slots_with_checksum(
+                &[0x80],
+                std::slice::from_ref(&raw),
+                layout,
+                0x7fdc,
+                &GraphicsSaveOptions {
+                    allocation: AllocationPolicy {
+                        search: 0x1000..0x7000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0],
+                        protected: vec![
+                            ProtectedRange(0x200..0x383),
+                            ProtectedRange(0x7fdc..0x7fe0),
+                        ],
+                    },
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0,
+                },
+            )
+            .unwrap();
+        let source = GraphicsBatchSource {
+            image: project.rom,
+            layout,
+            slots: vec![0x80],
+            file_numbers: vec![0x80],
+            family: "extended",
+        };
+        assert_eq!(
+            export_batch(
+                source,
+                &GraphicsExportTarget::Directory(directory.clone()),
+                &AtomicUsize::new(0),
+                &AtomicBool::new(false),
+            )
+            .unwrap(),
+            Some(1)
+        );
+        assert_eq!(fs::read(directory.join("ExGFX80.bin")).unwrap(), raw);
         fs::remove_dir_all(directory).unwrap();
     }
 }

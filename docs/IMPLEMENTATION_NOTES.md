@@ -3049,3 +3049,15 @@ painter-ordered set of signed tile instances, an explicit placement behind Layer
 2 and 1, above Layer 1, or above entities, and the SHA-256 of its canonical `LMLAY3V1` source. The
 CLI refuses stale planes whose digest does not match the level bundle. Oracle-backed tools can thus
 materialize native remap behavior without duplicating or guessing that interpreter in the renderer.
+
+Expanded graphics profiles with 129 through 4,096 entries expose installed ExGFX transfer in the
+native graphics editor. The standard/extended boundary is file `$080`; canonical names are
+`ExGFX80.bin` through `ExGFXFFF.bin`. ROM audit requires every standard `$000..$033` pointer and
+permits all-zero sentinels only in later optional slots, while every nonzero pointer retains the
+normal mapping, bounds, and metadata-alias checks.
+Extraction walks the immutable pointer table, skips only those sentinels, preserves decompressed
+2bpp/3bpp/4bpp bytes, and publishes the complete create-new group or nothing. Import rejects
+noncanonical or out-of-table ExGFX-like names, sorts the sparse slots, bounds every read, preserves
+the existing raw length for replacements, and admits new slots only at the native `$800`, `$C00`,
+or `$1000` byte depths. Compression, allocation, pointer writes, checksum repair, and revision-bound
+publication remain one transaction; omitted slots and all pointer-table storage remain protected.

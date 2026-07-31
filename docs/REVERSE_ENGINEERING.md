@@ -1271,6 +1271,15 @@ exact match to the authenticated pristine layout also enables native `GFX33`/`GF
 transfer using the recovered special-pointer operands; the table's `$33,$32` order is retained
 internally while public filenames remain stable.
 
+Expanded-profile auditing and transfer now model the adjacent enumeration semantics without
+weakening ordinary pointers: `$000..$033` remain required, while an all-zero address in a later
+expanded-table slot is an unused auxiliary/ExGFX sentinel. The installed native editor enumerates
+nonzero `$080..$FFF` entries for extraction and canonical
+`ExGFX80.bin` through `ExGFXFFF.bin` directory members for insertion. Sparse insertion retains the
+actual table indices, preserves existing decompressed lengths, accepts new files only at the
+recovered `$800`/`$C00`/`$1000` native depths, and saves every selected payload and pointer in one
+checksum-repaired transaction. Raw transfer no longer coerces 2bpp or 3bpp files through 4bpp.
+
 The adjacent Layer 2 pointer table is descriptor index 26 (`+0x68`): its installed headered offset
 is `0x02E800`, hence logical offset `0x02E600`, with 512 contiguous 24-bit entries. Layer 2 storage
 depends on the five-bit level mode. Object-storage modes retain a terminated header/object stream.

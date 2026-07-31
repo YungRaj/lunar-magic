@@ -16,6 +16,10 @@ mod graphics_import;
 mod lifecycle;
 mod ownership;
 
+const STANDARD_GFX_LIMIT: usize = 0x34;
+const EXGFX_FIRST: usize = 0x80;
+const EXGFX_LIMIT: usize = 0x1000;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
     Editor,
@@ -148,6 +152,7 @@ impl RomGraphicsEditor {
         }
         let rows = workspace.palette.palette.colors.len() / 16;
         let special_graphics_available = pristine_special_graphics(&workspace.profile);
+        let exgraphics_available = supports_exgraphics(&workspace.profile);
         egui::ComboBox::from_label("Palette row")
             .selected_text(format!("{:X}", self.palette_row))
             .show_ui(ui, |ui| {
@@ -216,6 +221,16 @@ impl RomGraphicsEditor {
             }
             if ui
                 .add_enabled(
+                    !stale && !file_work_running && exgraphics_available,
+                    egui::Button::new("Extract installed ExGFX…"),
+                )
+                .on_hover_text("Exports every nonempty ExGFX pointer from the installed table")
+                .clicked()
+            {
+                self.begin_exgraphics_batch();
+            }
+            if ui
+                .add_enabled(
                     !stale && !file_work_running,
                     egui::Button::new("Extract AllGFX.bin…"),
                 )
@@ -245,6 +260,19 @@ impl RomGraphicsEditor {
                 .clicked()
             {
                 self.begin_special_graphics_import();
+            }
+            if ui
+                .add_enabled(
+                    !stale
+                        && !file_work_running
+                        && !modified_controller(self.workspace.as_ref())
+                        && exgraphics_available,
+                    egui::Button::new("Insert ExGFX…"),
+                )
+                .on_hover_text("Atomically inserts the canonical ExGFX files found in a directory")
+                .clicked()
+            {
+                self.begin_exgraphics_import();
             }
             if ui
                 .add_enabled(
@@ -484,10 +512,12 @@ impl RomGraphicsEditor {
         let Some(directory) = crate::dialogs::choose_graphics_directory() else {
             return;
         };
+        let slots = standard_graphics_slots(workspace.profile.graphics);
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
-            file_numbers: (0..workspace.profile.graphics.pointers.entries).collect(),
+            slots: slots.clone(),
+            file_numbers: slots,
             family: "standard",
         };
         match self.graphics_batch.start(source, directory) {
@@ -510,13 +540,15 @@ impl RomGraphicsEditor {
         let Some(directory) = crate::dialogs::choose_graphics_import_directory() else {
             return;
         };
+        let slots = standard_graphics_slots(workspace.profile.graphics);
         let source = graphics_import::GraphicsImportSource {
             expected_revision: workspace.controller.revision(),
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
             checksum_field: workspace.internal_header + 0x1c,
             options,
-            file_numbers: (0..workspace.profile.graphics.pointers.entries).collect(),
+            slots: slots.clone(),
+            file_numbers: slots,
             family: "standard",
             description: "Insert all standard GFX files",
         };
@@ -533,10 +565,12 @@ impl RomGraphicsEditor {
         let Some(path) = crate::dialogs::choose_all_gfx_save_path() else {
             return;
         };
+        let slots = standard_graphics_slots(workspace.profile.graphics);
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
-            file_numbers: (0..workspace.profile.graphics.pointers.entries).collect(),
+            slots: slots.clone(),
+            file_numbers: slots,
             family: "standard",
         };
         match self.graphics_batch.start_joined(source, path) {
@@ -559,13 +593,15 @@ impl RomGraphicsEditor {
         let Some(path) = crate::dialogs::choose_all_gfx_file() else {
             return;
         };
+        let slots = standard_graphics_slots(workspace.profile.graphics);
         let source = graphics_import::GraphicsImportSource {
             expected_revision: workspace.controller.revision(),
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
             checksum_field: workspace.internal_header + 0x1c,
             options,
-            file_numbers: (0..workspace.profile.graphics.pointers.entries).collect(),
+            slots: slots.clone(),
+            file_numbers: slots,
             family: "standard",
             description: "Insert AllGFX.bin",
         };
@@ -585,6 +621,7 @@ impl RomGraphicsEditor {
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
             layout: lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+            slots: vec![0, 1],
             file_numbers: vec![0x33, 0x32],
             family: "special",
         };
@@ -614,9 +651,82 @@ impl RomGraphicsEditor {
             layout: lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
             checksum_field: workspace.internal_header + 0x1c,
             options,
+            slots: vec![0, 1],
             file_numbers: vec![0x33, 0x32],
             family: "special",
             description: "Insert GFX32/GFX33 files",
+        };
+        match self.graphics_import.start(source, directory) {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn begin_exgraphics_batch(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let slots = match installed_exgraphics_slots(&workspace.image, workspace.profile.graphics) {
+            Ok(slots) if !slots.is_empty() => slots,
+            Ok(_) => {
+                self.error = Some("the installed graphics table contains no ExGFX files".into());
+                return;
+            }
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(directory) = crate::dialogs::choose_exgraphics_directory() else {
+            return;
+        };
+        let source = graphics_batch::GraphicsBatchSource {
+            image: workspace.image.clone(),
+            layout: workspace.profile.graphics,
+            slots: slots.clone(),
+            file_numbers: slots,
+            family: "extended",
+        };
+        match self.graphics_batch.start(source, directory) {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn begin_exgraphics_import(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let options = match self.save_options(workspace) {
+            Ok(options) => options,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(directory) = crate::dialogs::choose_exgraphics_import_directory() else {
+            return;
+        };
+        let slots = match graphics_import::enumerate_exgraphics_files(
+            &directory,
+            workspace.profile.graphics.pointers.entries,
+        ) {
+            Ok(slots) => slots,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let source = graphics_import::GraphicsImportSource {
+            expected_revision: workspace.controller.revision(),
+            image: workspace.image.clone(),
+            layout: workspace.profile.graphics,
+            checksum_field: workspace.internal_header + 0x1c,
+            options,
+            slots: slots.clone(),
+            file_numbers: slots,
+            family: "extended",
+            description: "Insert ExGFX files",
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -637,9 +747,39 @@ fn pristine_special_graphics(profile: &RevisionProfile) -> bool {
         && profile.graphics == lm_profile::smw_us_v1_vanilla_graphics_layout()
 }
 
+fn supports_exgraphics(profile: &RevisionProfile) -> bool {
+    (EXGFX_FIRST + 1..=EXGFX_LIMIT).contains(&profile.graphics.pointers.entries)
+}
+
+fn standard_graphics_slots(layout: lm_project::GraphicsRomLayout) -> Vec<usize> {
+    (0..layout.pointers.entries.min(STANDARD_GFX_LIMIT)).collect()
+}
+
+fn installed_exgraphics_slots(
+    image: &lm_rom::RomImage,
+    layout: lm_project::GraphicsRomLayout,
+) -> Result<Vec<usize>, String> {
+    if !(EXGFX_FIRST + 1..=EXGFX_LIMIT).contains(&layout.pointers.entries) {
+        return Err(format!(
+            "profile graphics table has {} entries; ExGFX requires 129 through 4096",
+            layout.pointers.entries
+        ));
+    }
+    let project = lm_project::Project::new(image.clone());
+    (EXGFX_FIRST..layout.pointers.entries)
+        .filter_map(|slot| match layout.read_pointer(&project, slot) {
+            Ok(pointer) if pointer.get() == 0 => None,
+            Ok(_) => Some(Ok(slot)),
+            Err(error) => Some(Err(format!("ExGFX{slot:02X}: {error}"))),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::pristine_special_graphics;
+    use super::{installed_exgraphics_slots, pristine_special_graphics, supports_exgraphics};
+    use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
+    use lm_rom::{Mapper, RomImage};
 
     #[test]
     fn special_pair_actions_require_the_exact_recovered_split_layout() {
@@ -660,5 +800,37 @@ mod tests {
         profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
         profile.region = lm_rom::Region::Japan;
         assert!(!pristine_special_graphics(&profile));
+    }
+
+    #[test]
+    fn installed_exgraphics_enumeration_uses_nonzero_pointer_entries_only() {
+        let layout = GraphicsRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x100,
+                entries: 0x83,
+                stride: 3,
+            },
+            split_pointer_planes: None,
+            compression: GraphicsCompression::Lz2,
+            maximum_compressed_len: 0x8000,
+            maximum_decompressed_len: 0x10000,
+        };
+        let mut bytes = vec![0; 0x8000];
+        for slot in [0x80, 0x82] {
+            let offset = layout.pointers.offset + slot * 3;
+            bytes[offset..offset + 3].copy_from_slice(&[0x00, 0x81, 0x80]);
+        }
+        let image = RomImage::from_bytes(bytes).unwrap();
+        assert_eq!(
+            installed_exgraphics_slots(&image, layout).unwrap(),
+            [0x80, 0x82]
+        );
+
+        let mut profile = lm_profile::test_support::profile();
+        profile.graphics = layout;
+        assert!(supports_exgraphics(&profile));
+        profile.graphics.pointers.entries = 0x80;
+        assert!(!supports_exgraphics(&profile));
     }
 }

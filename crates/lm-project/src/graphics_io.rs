@@ -307,6 +307,63 @@ impl Project {
         .map_err(GraphicsIoError::Save)
     }
 
+    /// Compresses, allocates, and repoints an arbitrary set of graphics-table slots atomically.
+    ///
+    /// Unlike [`Self::save_graphics_files_with_checksum`], this operation retains the supplied
+    /// slot identities. It is used for sparse installed `ExGFX` tables, where unused entries must
+    /// remain untouched while every selected file still commits as one transaction.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an empty or mismatched batch, duplicate/out-of-range slots, invalid graphics,
+    /// allocation or pointer failures, checksum failures, or semantic reopen mismatches.
+    pub fn save_graphics_slots_with_checksum(
+        &mut self,
+        slots: &[usize],
+        graphics: &[GraphicsFile4bpp],
+        layout: GraphicsRomLayout,
+        checksum_field: usize,
+        options: &GraphicsSaveOptions,
+    ) -> Result<Vec<PayloadSaveResult>, GraphicsIoError> {
+        validate_graphics_slots(slots, graphics.len(), layout)?;
+        let requests = slots
+            .iter()
+            .copied()
+            .zip(graphics)
+            .map(|(slot, graphics)| graphics_save_request(slot, graphics, layout, options))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.save_tagged_payloads_with_checksum("save graphics files", &requests, checksum_field)
+            .map_err(GraphicsIoError::Save)
+    }
+
+    /// Compresses and atomically saves raw decompressed graphics bytes at arbitrary table slots.
+    ///
+    /// This preserves native 2bpp, 3bpp, and 4bpp `ExGFX` payloads without coercing them through a
+    /// 4bpp tile model.
+    ///
+    /// # Errors
+    ///
+    /// Rejects empty/mismatched or duplicate/out-of-range slots, size limits, compression,
+    /// allocation, pointer, or checksum failures.
+    pub fn save_decompressed_graphics_slots_with_checksum(
+        &mut self,
+        slots: &[usize],
+        graphics: &[Vec<u8>],
+        layout: GraphicsRomLayout,
+        checksum_field: usize,
+        options: &GraphicsSaveOptions,
+    ) -> Result<Vec<PayloadSaveResult>, GraphicsIoError> {
+        validate_graphics_slots(slots, graphics.len(), layout)?;
+        let requests = slots
+            .iter()
+            .copied()
+            .zip(graphics)
+            .map(|(slot, bytes)| decompressed_graphics_save_request(slot, bytes, layout, options))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.save_tagged_payloads_with_checksum("save graphics files", &requests, checksum_field)
+            .map_err(GraphicsIoError::Save)
+    }
+
     /// Saves, reclaims the exactly owned displaced block, and repairs checksum in one transaction.
     ///
     /// # Errors
@@ -342,6 +399,15 @@ pub(crate) fn graphics_save_request(
     options: &GraphicsSaveOptions,
 ) -> Result<PayloadSaveRequest, GraphicsIoError> {
     let decoded = graphics.encode()?;
+    decompressed_graphics_save_request(file_number, &decoded, layout, options)
+}
+
+fn decompressed_graphics_save_request(
+    file_number: usize,
+    decoded: &[u8],
+    layout: GraphicsRomLayout,
+    options: &GraphicsSaveOptions,
+) -> Result<PayloadSaveRequest, GraphicsIoError> {
     if decoded.len() > layout.maximum_decompressed_len {
         return Err(GraphicsIoError::DecompressedLimit {
             actual: decoded.len(),
@@ -349,8 +415,8 @@ pub(crate) fn graphics_save_request(
         });
     }
     let payload = match layout.compression {
-        GraphicsCompression::Lz2 => encode_lz2(&decoded),
-        GraphicsCompression::Lz3 => encode_lz3(&decoded),
+        GraphicsCompression::Lz2 => encode_lz2(decoded),
+        GraphicsCompression::Lz3 => encode_lz3(decoded),
     };
     if payload.len() > layout.maximum_compressed_len {
         return Err(GraphicsIoError::CompressedLimit {
@@ -369,6 +435,32 @@ pub(crate) fn graphics_save_request(
         maximum_payload_len: layout.maximum_compressed_len,
         erase_fill: options.erase_fill,
     })
+}
+
+fn validate_graphics_slots(
+    slots: &[usize],
+    graphics_len: usize,
+    layout: GraphicsRomLayout,
+) -> Result<(), GraphicsIoError> {
+    if slots.is_empty() || slots.len() != graphics_len {
+        return Err(GraphicsIoError::Layout(LevelLoadError::LevelOutOfRange {
+            level: graphics_len,
+            entries: slots.len(),
+        }));
+    }
+    let mut ordered = slots.to_vec();
+    ordered.sort_unstable();
+    if ordered
+        .last()
+        .is_some_and(|slot| *slot >= layout.pointers.entries)
+        || ordered.windows(2).any(|pair| pair[0] == pair[1])
+    {
+        return Err(GraphicsIoError::Layout(LevelLoadError::LevelOutOfRange {
+            level: ordered.last().copied().unwrap_or_default(),
+            entries: layout.pointers.entries,
+        }));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -600,6 +692,45 @@ mod tests {
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);
         assert!(!project.history.can_undo());
+    }
+
+    #[test]
+    fn sparse_graphics_batch_retains_slot_identities_and_is_atomic() {
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        let original = project.save_snapshot();
+        let files = [
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([4; 64])],
+            },
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([9; 64])],
+            },
+        ];
+        let mut batch_options = options();
+        batch_options
+            .allocation
+            .protected
+            .push(ProtectedRange(0x7fdc..0x7fe0));
+        project
+            .save_graphics_slots_with_checksum(&[1, 3], &files, layout(), 0x7fdc, &batch_options)
+            .unwrap();
+        assert_eq!(project.load_graphics_file(1, layout()).unwrap(), files[0]);
+        assert_eq!(project.load_graphics_file(3, layout()).unwrap(), files[1]);
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
+
+        assert!(
+            project
+                .save_graphics_slots_with_checksum(
+                    &[1, 1],
+                    &files,
+                    layout(),
+                    0x7fdc,
+                    &batch_options,
+                )
+                .is_err()
+        );
+        assert_eq!(project.save_snapshot(), original);
     }
 
     #[test]

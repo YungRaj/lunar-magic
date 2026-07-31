@@ -1,5 +1,5 @@
 use crate::PreparedRomCommit;
-use lm_graphics::{GraphicsFile4bpp, JoinedGraphics};
+use lm_graphics::JoinedGraphics;
 use lm_project::{GraphicsRomLayout, GraphicsSaveOptions, Project, RomMutation};
 use lm_rats::ProtectedRange;
 use lm_rom::RomImage;
@@ -7,14 +7,16 @@ use lm_rom::RomImage;
 /// Public file identities for one complete graphics pointer table, in pointer-table order.
 #[derive(Clone, Copy, Debug)]
 pub struct NamedGraphicsImport<'a> {
+    /// Pointer-table slots to replace, in the same order as `file_numbers` and the raw inputs.
+    pub slots: &'a [usize],
     pub file_numbers: &'a [usize],
     pub description: &'a str,
 }
 
-/// Validates and prepares one atomic replacement of every profile-declared standard GFX file.
+/// Validates and prepares one atomic replacement of the profile's standard GFX range.
 ///
-/// Each raw input must be valid 4bpp and retain the exact decoded tile count of its corresponding
-/// ROM slot. All compressed payloads are then allocated, repointed, semantically reopened, and
+/// Each raw input must retain the exact decompressed size of its corresponding ROM slot. All
+/// compressed payloads are then allocated, repointed, semantically reopened, and
 /// checksum-repaired by one private project transaction before a revision-bound commit is returned.
 ///
 /// # Errors
@@ -28,7 +30,7 @@ pub fn prepare_standard_graphics_import(
     raw_files: &[Vec<u8>],
     options: &GraphicsSaveOptions,
 ) -> Result<PreparedRomCommit, String> {
-    let file_numbers = (0..layout.pointers.entries).collect::<Vec<_>>();
+    let file_numbers = (0..layout.pointers.entries.min(0x34)).collect::<Vec<_>>();
     prepare_named_graphics_import(
         expected_revision,
         image,
@@ -36,6 +38,7 @@ pub fn prepare_standard_graphics_import(
         checksum_field,
         raw_files,
         NamedGraphicsImport {
+            slots: &file_numbers,
             file_numbers: &file_numbers,
             description: "Insert all standard GFX files",
         },
@@ -62,36 +65,55 @@ pub fn prepare_named_graphics_import(
     named: NamedGraphicsImport<'_>,
     options: &GraphicsSaveOptions,
 ) -> Result<PreparedRomCommit, String> {
-    let total = layout.pointers.entries;
-    if raw_files.len() != total || named.file_numbers.len() != total || total == 0 {
+    let total = raw_files.len();
+    if total == 0 || named.slots.len() != total || named.file_numbers.len() != total {
         return Err(format!(
-            "graphics import requires exactly {total} files and file numbers, got {} files and {} numbers",
+            "graphics import requires equal nonzero file, slot, and file-number counts; got {} files, {} slots, and {} numbers",
             raw_files.len(),
+            named.slots.len(),
             named.file_numbers.len()
         ));
     }
     let before = image.logical_bytes().to_vec();
     let mut project = Project::new(image);
     let mut decoded = Vec::with_capacity(total);
-    for (slot, (bytes, file_number)) in raw_files.iter().zip(named.file_numbers).enumerate() {
-        let imported = GraphicsFile4bpp::decode(bytes)
-            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
-        let current = project
-            .load_graphics_file(slot, layout)
-            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
-        if imported.tiles.len() != current.tiles.len() {
-            return Err(format!(
-                "GFX{file_number:02X}: expected {} tiles, got {}",
-                current.tiles.len(),
-                imported.tiles.len()
-            ));
+    for ((bytes, slot), file_number) in raw_files.iter().zip(named.slots).zip(named.file_numbers) {
+        let pointer = layout
+            .read_pointer(&project, *slot)
+            .map_err(|error| format!("{}: {error}", graphics_file_label(*file_number)))?;
+        if *slot >= 0x80 && pointer.get() == 0 {
+            if !matches!(bytes.len(), 0x800 | 0x0c00 | 0x1000) {
+                return Err(format!(
+                    "{}: new ExGFX must contain 2048, 3072, or 4096 raw bytes, got {}",
+                    graphics_file_label(*file_number),
+                    bytes.len()
+                ));
+            }
+        } else {
+            let current = project
+                .load_decompressed_graphics_file(*slot, layout)
+                .map_err(|error| format!("{}: {error}", graphics_file_label(*file_number)))?;
+            if bytes.len() != current.len() {
+                return Err(format!(
+                    "{}: expected {} raw bytes, got {}",
+                    graphics_file_label(*file_number),
+                    current.len(),
+                    bytes.len()
+                ));
+            }
         }
-        decoded.push(imported);
+        decoded.push(bytes.clone());
     }
     let mut options = options.clone();
     protect_pointer_storage(&mut options, layout, project.rom.logical_len())?;
     project
-        .save_graphics_files_with_checksum(&decoded, layout, checksum_field, &options)
+        .save_decompressed_graphics_slots_with_checksum(
+            named.slots,
+            &decoded,
+            layout,
+            checksum_field,
+            &options,
+        )
         .map_err(|error| error.to_string())?;
     let mutation = RomMutation::between(layout.mapper, &before, project.rom.logical_bytes())
         .map_err(|error| error.to_string())?;
@@ -100,6 +122,11 @@ pub fn prepare_named_graphics_import(
         description: named.description.into(),
         mutation,
     })
+}
+
+fn graphics_file_label(file_number: usize) -> String {
+    let prefix = if file_number < 0x80 { "GFX" } else { "ExGFX" };
+    format!("{prefix}{file_number:02X}")
 }
 
 fn protect_pointer_storage(
@@ -163,11 +190,13 @@ pub fn prepare_joined_standard_graphics_import(
     options: &GraphicsSaveOptions,
 ) -> Result<PreparedRomCommit, String> {
     let project = Project::new(image.clone());
-    let sizes = (0..layout.pointers.entries)
+    let slots = (0..layout.pointers.entries.min(0x34)).collect::<Vec<_>>();
+    let sizes = slots
+        .iter()
+        .copied()
         .map(|slot| {
             project
-                .load_graphics_file(slot, layout)
-                .and_then(|graphics| graphics.encode().map_err(Into::into))
+                .load_decompressed_graphics_file(slot, layout)
                 .map(|bytes| bytes.len())
                 .map_err(|error| format!("GFX{slot:02X}: {error}"))
         })
@@ -175,12 +204,17 @@ pub fn prepare_joined_standard_graphics_import(
     let files = JoinedGraphics::split(joined, &sizes)
         .map_err(|error| format!("AllGFX.bin: {error}"))?
         .files;
-    prepare_standard_graphics_import(
+    prepare_named_graphics_import(
         expected_revision,
         image,
         layout,
         checksum_field,
         &files,
+        NamedGraphicsImport {
+            slots: &slots,
+            file_numbers: &slots,
+            description: "Insert AllGFX.bin",
+        },
         options,
     )
 }
@@ -188,7 +222,7 @@ pub fn prepare_joined_standard_graphics_import(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_graphics::IndexedTile;
+    use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{GraphicsCompression, LevelPointerTable};
     use lm_rats::{AllocationPolicy, ProtectedRange};
     use lm_rom::Mapper;
@@ -382,6 +416,7 @@ mod tests {
             0x7fdc,
             &raw,
             NamedGraphicsImport {
+                slots: &[0, 1],
                 file_numbers: &[0x33, 0x32],
                 description: "Insert GFX32/GFX33 files",
             },
@@ -406,6 +441,7 @@ mod tests {
             0x7fdc,
             &[vec![0; 31], raw[1].clone()],
             NamedGraphicsImport {
+                slots: &[0, 1],
                 file_numbers: &[0x33, 0x32],
                 description: "unused",
             },
@@ -413,6 +449,135 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.starts_with("GFX33:"), "{error}");
+    }
+
+    #[test]
+    fn named_import_replaces_only_the_selected_sparse_slots() {
+        let sparse_layout = GraphicsRomLayout {
+            pointers: LevelPointerTable {
+                entries: 4,
+                ..layout().pointers
+            },
+            ..layout()
+        };
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        let originals = (0_u8..4)
+            .map(|color| GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([color; 64])],
+            })
+            .collect::<Vec<_>>();
+        project
+            .save_graphics_files_with_checksum(
+                &originals,
+                sparse_layout,
+                0x7fdc,
+                &options(0x1000..0x4000),
+            )
+            .unwrap();
+        let source = project.rom;
+        let before = source.logical_bytes().to_vec();
+        let replacements = [
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([8; 64])],
+            },
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([9; 64])],
+            },
+        ];
+        let raw = replacements
+            .iter()
+            .map(|file| file.encode().unwrap())
+            .collect::<Vec<_>>();
+        let prepared = prepare_named_graphics_import(
+            7,
+            source,
+            sparse_layout,
+            0x7fdc,
+            &raw,
+            NamedGraphicsImport {
+                slots: &[1, 3],
+                file_numbers: &[0x81, 0x123],
+                description: "Insert ExGFX files",
+            },
+            &options(0x4000..0x7000),
+        )
+        .unwrap();
+        let reopened =
+            Project::new(RomImage::from_bytes(apply(before, &prepared.mutation)).unwrap());
+        assert_eq!(
+            reopened.load_graphics_file(0, sparse_layout).unwrap(),
+            originals[0]
+        );
+        assert_eq!(
+            reopened.load_graphics_file(1, sparse_layout).unwrap(),
+            replacements[0]
+        );
+        assert_eq!(
+            reopened.load_graphics_file(2, sparse_layout).unwrap(),
+            originals[2]
+        );
+        assert_eq!(
+            reopened.load_graphics_file(3, sparse_layout).unwrap(),
+            replacements[1]
+        );
+    }
+
+    #[test]
+    fn named_import_can_install_a_new_native_depth_exgraphics_slot() {
+        let expanded_layout = GraphicsRomLayout {
+            pointers: LevelPointerTable {
+                offset: 0x200,
+                entries: 0x81,
+                stride: 3,
+            },
+            maximum_decompressed_len: 0x1000,
+            ..layout()
+        };
+        let mut source_bytes = vec![0xff; 0x8000];
+        let pointer = expanded_layout.pointers.offset + 0x80 * 3;
+        source_bytes[pointer..pointer + 3].fill(0);
+        let source = RomImage::from_bytes(source_bytes).unwrap();
+        let raw = vec![vec![0x5a; 0x800]];
+        let prepared = prepare_named_graphics_import(
+            9,
+            source.clone(),
+            expanded_layout,
+            0x7fdc,
+            &raw,
+            NamedGraphicsImport {
+                slots: &[0x80],
+                file_numbers: &[0x80],
+                description: "Insert ExGFX files",
+            },
+            &options(0x4000..0x7000),
+        )
+        .unwrap();
+        let reopened = Project::new(
+            RomImage::from_bytes(apply(source.logical_bytes().to_vec(), &prepared.mutation))
+                .unwrap(),
+        );
+        assert_eq!(
+            reopened
+                .load_decompressed_graphics_file(0x80, expanded_layout)
+                .unwrap(),
+            raw[0]
+        );
+
+        let error = prepare_named_graphics_import(
+            0,
+            source,
+            expanded_layout,
+            0x7fdc,
+            &[vec![0; 0x801]],
+            NamedGraphicsImport {
+                slots: &[0x80],
+                file_numbers: &[0x80],
+                description: "unused",
+            },
+            &options(0x4000..0x7000),
+        )
+        .unwrap_err();
+        assert!(error.starts_with("ExGFX80:"), "{error}");
     }
 
     #[test]
