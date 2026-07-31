@@ -470,6 +470,9 @@ mode-specific editor dimensions and reports unresolved command IDs instead of fa
 A renderer-side ordered cache-write journal now supplies sparse object placements: it omits the
 initialized blank cache, collapses repeated construction writes within one object, and retains
 later same-cell object overwrites in serialized painter order.
+The installed native framebuffer now carries composition per Map16 placement and implements the
+routine's exact averaged RGB operation. The already-proved object-tileset-4 `$027`–`$02A` condition
+selects it for object or tilemap placements; all other installed placements remain opaque.
 A retained Lunar Magic-created level `$000` test additionally requires this path to materialize
 nonblank cells without unresolved definitions. Standard sprite records now use their decoded
 native placements and the existing authenticated preview dispatch. Ordinary preview definitions

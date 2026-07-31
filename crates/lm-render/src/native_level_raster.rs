@@ -11,6 +11,33 @@ pub struct NativeMap16Placement {
     pub x: i32,
     pub y: i32,
     pub word: u16,
+    pub composition: NativeMap16Composition,
+}
+
+/// How one nontransparent Map16 pixel combines with the framebuffer beneath it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NativeMap16Composition {
+    /// Replace the destination pixel.
+    #[default]
+    Opaque,
+    /// Average source and destination channels after clearing each low bit.
+    ///
+    /// This is Lunar Magic's `RenderMap16TileToPixelBuffer` averaged display path.
+    Average,
+}
+
+impl NativeMap16Composition {
+    fn compose(self, source: Rgba, destination: Rgba) -> Rgba {
+        match self {
+            Self::Opaque => source,
+            Self::Average => Rgba {
+                red: (source.red & 0xfe) / 2 + (destination.red & 0xfe) / 2,
+                green: (source.green & 0xfe) / 2 + (destination.green & 0xfe) / 2,
+                blue: (source.blue & 0xfe) / 2 + (destination.blue & 0xfe) / 2,
+                alpha: 255,
+            },
+        }
+    }
 }
 
 /// Deterministic native-level framebuffer input.
@@ -153,6 +180,7 @@ fn render_native_level_framebuffer_impl(
                 ),
                 (placement.word & 0x4000 != 0, placement.word & 0x8000 != 0),
                 palette_routing,
+                placement.composition,
             );
         }
     }
@@ -215,6 +243,7 @@ fn draw_map16_clipped(
     target: (i32, i32),
     outer_flips: (bool, bool),
     palette_routing: NativeMap16PaletteRouting,
+    composition: NativeMap16Composition,
 ) {
     let (target_x, target_y) = target;
     let (horizontal_flip, vertical_flip) = outer_flips;
@@ -249,6 +278,7 @@ fn draw_map16_clipped(
                 ),
                 outer_flips,
                 palette_routing,
+                composition,
             );
         }
     }
@@ -262,6 +292,7 @@ fn draw_subtile_clipped(
     target: (i32, i32),
     outer_flips: (bool, bool),
     palette_routing: NativeMap16PaletteRouting,
+    composition: NativeMap16Composition,
 ) {
     let (target_x, target_y) = target;
     let (horizontal_flip, vertical_flip) = outer_flips;
@@ -300,16 +331,14 @@ fn draw_subtile_clipped(
                 continue;
             };
             let rgb = color.to_rgb8();
-            canvas.set(
-                output_x,
-                output_y,
-                Rgba {
-                    red: rgb.red,
-                    green: rgb.green,
-                    blue: rgb.blue,
-                    alpha: 255,
-                },
-            );
+            let source = Rgba {
+                red: rgb.red,
+                green: rgb.green,
+                blue: rgb.blue,
+                alpha: 255,
+            };
+            let destination = canvas.get(output_x, output_y).unwrap_or_default();
+            canvas.set(output_x, output_y, composition.compose(source, destination));
         }
     }
 }
@@ -406,11 +435,13 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            composition: NativeMap16Composition::Opaque,
         }];
         let front = [NativeMap16Placement {
             x: 1,
             y: 0,
             word: 1,
+            composition: NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 2] = [&back, &front];
         let backdrop = Rgba {
@@ -434,6 +465,48 @@ mod tests {
         assert_eq!(canvas.get(0, 0).unwrap().red, 255);
         assert_eq!(canvas.get(1, 0).unwrap().green, 255);
         assert_eq!(canvas.get(16, 0).unwrap().green, 255);
+    }
+
+    #[test]
+    fn averaged_map16_pixels_match_lunar_magics_channel_flooring() {
+        let definitions = [definition([0, 1, 1, 1])];
+        let tiles = [solid(1), solid(0)];
+        let placements = [NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: 0,
+            composition: NativeMap16Composition::Average,
+        }];
+        let layers: [&[NativeMap16Placement]; 1] = [&placements];
+        let backdrop = Rgba {
+            red: 5,
+            green: 7,
+            blue: 9,
+            alpha: 255,
+        };
+        let canvas = render_native_level_framebuffer(NativeLevelRasterRequest {
+            width: 16,
+            height: 16,
+            camera_x: 0,
+            camera_y: 0,
+            backdrop,
+            layers: &layers,
+            definitions: &definitions,
+            tiles: &tiles,
+            palette: &palette(),
+        })
+        .unwrap();
+
+        assert_eq!(
+            canvas.get(0, 0),
+            Some(Rgba {
+                red: 129,
+                green: 3,
+                blue: 4,
+                alpha: 255,
+            })
+        );
+        assert_eq!(canvas.get(8, 0), Some(backdrop));
     }
 
     #[test]
@@ -499,6 +572,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0xc000,
+            composition: NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
         let canvas = render_native_level_framebuffer(NativeLevelRasterRequest {
@@ -525,6 +599,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            composition: NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
         let canvas = render_native_level_framebuffer(NativeLevelRasterRequest {
@@ -561,11 +636,13 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            composition: NativeMap16Composition::Opaque,
         }];
         let direct = [NativeMap16Placement {
             x: 1,
             y: 0,
             word: 0,
+            composition: NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 2] = [&shifted, &direct];
         let mut colors = vec![Bgr555(0); 16 * 8];

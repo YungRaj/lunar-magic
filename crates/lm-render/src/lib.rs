@@ -58,8 +58,8 @@ pub use level_map16_cache::{
 };
 pub use map16::draw_map16_tile;
 pub use native_level_raster::{
-    NativeLevelRasterError, NativeLevelRasterRequest, NativeMap16PaletteRouting,
-    NativeMap16Placement, draw_native_sprite_preview_definition,
+    NativeLevelRasterError, NativeLevelRasterRequest, NativeMap16Composition,
+    NativeMap16PaletteRouting, NativeMap16Placement, draw_native_sprite_preview_definition,
     draw_native_sprite_preview_definition_pages, render_native_level_framebuffer,
     render_native_level_framebuffer_with_layer_palette_routing,
 };

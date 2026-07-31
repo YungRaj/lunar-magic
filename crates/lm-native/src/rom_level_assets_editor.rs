@@ -8,12 +8,13 @@ use lm_level::{Map16Set, NativeLayer2Data, ObjectStream};
 use lm_project::NativeLevelAssetsFile;
 use lm_render::{
     MaterializedSuperGraphicsVram, NativeLevelMap16Layout, NativeLevelRasterRequest,
-    NativeMap16PaletteRouting, NativeMap16Placement, Rgba, StandardLevelOrientation,
-    StandardObjectDefinitionSet, StandardObjectPaintedCell, StandardSpritePreviewMode,
-    StandardSpritePreviewSource, draw_native_sprite_preview_definition_pages,
-    install_lunar_magic_shared_extended_objects, install_lunar_magic_shared_standard_objects,
-    install_lunar_magic_tileset_extended_objects, lunar_magic_standard_sprite_preview_source,
-    render_lunar_magic_standard_sprite_with_mode, render_mapped_standard_object_stream,
+    NativeMap16Composition, NativeMap16PaletteRouting, NativeMap16Placement, Rgba,
+    StandardLevelOrientation, StandardObjectDefinitionSet, StandardObjectPaintedCell,
+    StandardSpritePreviewMode, StandardSpritePreviewSource,
+    draw_native_sprite_preview_definition_pages, install_lunar_magic_shared_extended_objects,
+    install_lunar_magic_shared_standard_objects, install_lunar_magic_tileset_extended_objects,
+    lunar_magic_standard_sprite_preview_source, render_lunar_magic_standard_sprite_with_mode,
+    render_mapped_standard_object_stream,
     render_native_level_framebuffer_with_layer_palette_routing,
 };
 
@@ -234,6 +235,7 @@ const fn preview_map16_quadrant_label(index: usize) -> &'static str {
 struct PreviewMap16Hit {
     layer: PreviewMap16Layer,
     palette_routing: NativeMap16PaletteRouting,
+    composition: NativeMap16Composition,
     word: u16,
     definition: Option<lm_level::Map16Tile>,
     acts_like: Option<Result<lm_level::ActsLikeResolution, lm_level::Map16SetError>>,
@@ -439,6 +441,7 @@ fn inspect_preview_map16_selection(
                         } else {
                             NativeMap16PaletteRouting::Direct
                         },
+                        composition: placement.composition,
                         word: placement.word,
                         definition,
                         acts_like: definition
@@ -870,11 +873,15 @@ impl RomLevelAssetsEditor {
                         (true, true) => "XY",
                     };
                     ui.monospace(format!(
-                        "Paint {} {}: word ${:04X}, tile ${:04X}, outer flips {outer_flips}",
+                        "Paint {} {}: word ${:04X}, tile ${:04X}, outer flips {outer_flips}, composition {}",
                         paint_index + 1,
                         hit.layer.label(),
                         hit.word,
                         hit.word & 0x3fff,
+                        match hit.composition {
+                            NativeMap16Composition::Opaque => "opaque",
+                            NativeMap16Composition::Average => "average",
+                        },
                     ));
                     if let Some(definition) = hit.definition {
                         ui.monospace(format!(
@@ -1165,7 +1172,9 @@ fn render_super_graphics_level_preview(
         header.object_tileset(),
     );
     let layer2 = match layer2_data {
-        Some(NativeLayer2Data::Tilemap(tilemap)) => layer2_placements(tilemap)?,
+        Some(NativeLayer2Data::Tilemap(tilemap)) => {
+            layer2_placements(tilemap, header.object_tileset())?
+        }
         Some(NativeLayer2Data::Objects(objects)) => {
             let (placements, _, layer2_diagnostics) = render_object_placements(
                 &workspace.image,
@@ -1705,7 +1714,7 @@ fn render_object_placements(
     let rendered =
         render_mapped_standard_object_stream(objects, &definitions, handler_map, layout, 0x25)
             .map_err(|error| error.to_string())?;
-    let placements = object_paints_to_placements(&rendered.painted_cells, layout)?;
+    let placements = object_paints_to_placements(&rendered.painted_cells, layout, object_tileset)?;
     let mut diagnostics = Vec::new();
     if !rendered.missing_commands.is_empty() {
         diagnostics.push(format!("commands {:?}", rendered.missing_commands));
@@ -1722,6 +1731,7 @@ fn render_object_placements(
 fn object_paints_to_placements(
     painted_cells: &[StandardObjectPaintedCell],
     layout: NativeLevelMap16Layout,
+    object_tileset: u8,
 ) -> Result<Vec<NativeMap16Placement>, String> {
     let mut coordinates = vec![None; lm_render::LEVEL_MAP16_CACHE_CELLS];
     for y in 0..layout.height {
@@ -1741,6 +1751,7 @@ fn object_paints_to_placements(
             x: i32::try_from(x).map_err(|_| "object-layer X overflow".to_owned())?,
             y: i32::try_from(y).map_err(|_| "object-layer Y overflow".to_owned())?,
             word: paint.tile,
+            composition: native_map16_composition(object_tileset, paint.tile),
         });
     }
     Ok(placements)
@@ -1809,7 +1820,18 @@ fn render_sprite_placements(
     (rendered, diagnostics)
 }
 
-fn layer2_placements(tilemap: &[u8]) -> Result<Vec<NativeMap16Placement>, String> {
+const fn native_map16_composition(object_tileset: u8, word: u16) -> NativeMap16Composition {
+    if object_tileset == 4 && matches!(word & 0x3fff, 0x027..=0x02a) {
+        NativeMap16Composition::Average
+    } else {
+        NativeMap16Composition::Opaque
+    }
+}
+
+fn layer2_placements(
+    tilemap: &[u8],
+    object_tileset: u8,
+) -> Result<Vec<NativeMap16Placement>, String> {
     if tilemap.len() != lm_level::NATIVE_LAYER2_TILEMAP_LEN {
         return Err(format!(
             "native Layer 2 tilemap has {} bytes instead of {}",
@@ -1825,10 +1847,12 @@ fn layer2_placements(tilemap: &[u8]) -> Result<Vec<NativeMap16Placement>, String
             let index = lm_level::native_layer2_tilemap_index(x, y)
                 .ok_or_else(|| "bounded Layer 2 coordinate did not map to storage".to_owned())?;
             let offset = index * 2;
+            let word = u16::from_le_bytes([tilemap[offset], tilemap[offset + 1]]);
             placements.push(NativeMap16Placement {
                 x: i32::try_from(x).map_err(|_| "Layer 2 X coordinate overflow".to_owned())?,
                 y: i32::try_from(y).map_err(|_| "Layer 2 Y coordinate overflow".to_owned())?,
-                word: u16::from_le_bytes([tilemap[offset], tilemap[offset + 1]]),
+                word,
+                composition: native_map16_composition(object_tileset, word),
             });
         }
     }
@@ -2088,13 +2112,14 @@ mod tests {
             let index = lm_level::native_layer2_tilemap_index(x, y).unwrap();
             bytes[index * 2..index * 2 + 2].copy_from_slice(&word.to_le_bytes());
         }
-        let placements = layer2_placements(&bytes).unwrap();
+        let placements = layer2_placements(&bytes, 0).unwrap();
         assert_eq!(
             placements[0],
             NativeMap16Placement {
                 x: 0,
                 y: 0,
-                word: 0x0123
+                word: 0x0123,
+                composition: NativeMap16Composition::Opaque,
             }
         );
         assert_eq!(
@@ -2102,7 +2127,8 @@ mod tests {
             NativeMap16Placement {
                 x: 31,
                 y: 0,
-                word: 0x4567
+                word: 0x4567,
+                composition: NativeMap16Composition::Opaque,
             }
         );
         assert_eq!(
@@ -2110,14 +2136,15 @@ mod tests {
             NativeMap16Placement {
                 x: 0,
                 y: 31,
-                word: 0x89ab
+                word: 0x89ab,
+                composition: NativeMap16Composition::Opaque,
             }
         );
     }
 
     #[test]
     fn layer2_preview_rejects_noncanonical_tilemap_lengths() {
-        assert!(layer2_placements(&[0; 0x7ff]).is_err());
+        assert!(layer2_placements(&[0; 0x7ff], 0).is_err());
     }
 
     #[test]
@@ -2140,7 +2167,7 @@ mod tests {
         let mut colors = vec![Bgr555(0); 128];
         colors[1] = Bgr555(0x001f);
         let palette = Palette { colors };
-        let placements = layer2_placements(&tilemap).unwrap();
+        let placements = layer2_placements(&tilemap, 0).unwrap();
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
         let image = render_level_image(
             &layers,
@@ -2342,16 +2369,19 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x4001,
+                composition: NativeMap16Composition::Average,
             },
             NativeMap16Placement {
                 x: 8,
                 y: 8,
                 word: 0x0007,
+                composition: NativeMap16Composition::Opaque,
             },
             NativeMap16Placement {
                 x: 2,
                 y: 1,
                 word: 0x0002,
+                composition: NativeMap16Composition::Opaque,
             },
         ];
         let layer1 = [
@@ -2359,11 +2389,13 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x8003,
+                composition: NativeMap16Composition::Opaque,
             },
             NativeMap16Placement {
                 x: 2,
                 y: 1,
                 word: 0x3fff,
+                composition: NativeMap16Composition::Opaque,
             },
         ];
         let selection = PreviewMap16Selection {
@@ -2385,6 +2417,7 @@ mod tests {
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer2,
                         palette_routing: NativeMap16PaletteRouting::Direct,
+                        composition: NativeMap16Composition::Average,
                         word: 0x4001,
                         definition: Some(expected[0]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
@@ -2395,6 +2428,7 @@ mod tests {
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer2,
                         palette_routing: NativeMap16PaletteRouting::Direct,
+                        composition: NativeMap16Composition::Opaque,
                         word: 0x0002,
                         definition: Some(expected[1]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
@@ -2405,6 +2439,7 @@ mod tests {
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer1,
                         palette_routing: NativeMap16PaletteRouting::Direct,
+                        composition: NativeMap16Composition::Opaque,
                         word: 0x8003,
                         definition: Some(expected[2]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
@@ -2415,6 +2450,7 @@ mod tests {
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer1,
                         palette_routing: NativeMap16PaletteRouting::Direct,
+                        composition: NativeMap16Composition::Opaque,
                         word: 0x3fff,
                         definition: None,
                         acts_like: None,
@@ -2461,16 +2497,19 @@ mod tests {
                 x: 1,
                 y: 1,
                 word: 1,
+                composition: NativeMap16Composition::Opaque,
             },
             NativeMap16Placement {
                 x: 1,
                 y: 1,
                 word: 3,
+                composition: NativeMap16Composition::Opaque,
             },
             NativeMap16Placement {
                 x: 1,
                 y: 1,
                 word: 4,
+                composition: NativeMap16Composition::Opaque,
             },
         ];
         let inspection = inspect_preview_map16_selection(
@@ -2780,6 +2819,7 @@ mod tests {
                 },
             ],
             layout,
+            0,
         )
         .unwrap();
         assert_eq!(
@@ -2789,13 +2829,69 @@ mod tests {
                     x: 3,
                     y: 4,
                     word: 0x123,
+                    composition: NativeMap16Composition::Opaque,
                 },
                 NativeMap16Placement {
                     x: 3,
                     y: 4,
                     word: 0x456,
+                    composition: NativeMap16Composition::Opaque,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn underground_map16_paints_select_native_averaging() {
+        assert_eq!(
+            native_map16_composition(4, 0x0027),
+            NativeMap16Composition::Average
+        );
+        assert_eq!(
+            native_map16_composition(4, 0xc02a),
+            NativeMap16Composition::Average
+        );
+        assert_eq!(
+            native_map16_composition(0, 0x0028),
+            NativeMap16Composition::Opaque
+        );
+        assert_eq!(
+            native_map16_composition(4, 0x002b),
+            NativeMap16Composition::Opaque
+        );
+
+        let layout = NativeLevelMap16Layout {
+            width: 32,
+            height: 27,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let index = lm_render::NativeLevelMap16Cache::cell_index(layout, 1, 2);
+        let object = object_paints_to_placements(
+            &[StandardObjectPaintedCell {
+                record_index: 0,
+                index,
+                tile: 0x0027,
+            }],
+            layout,
+            4,
+        )
+        .unwrap();
+        assert_eq!(object[0].composition, NativeMap16Composition::Average);
+
+        let mut tilemap = vec![0; lm_level::NATIVE_LAYER2_TILEMAP_LEN];
+        let tilemap_index = lm_level::native_layer2_tilemap_index(1, 2).unwrap();
+        tilemap[tilemap_index * 2..tilemap_index * 2 + 2]
+            .copy_from_slice(&0x0027_u16.to_le_bytes());
+        let tilemap = layer2_placements(&tilemap, 4).unwrap();
+        assert_eq!(
+            tilemap
+                .iter()
+                .find(|placement| placement.x == 1 && placement.y == 2)
+                .unwrap()
+                .composition,
+            NativeMap16Composition::Average
         );
     }
 

@@ -76,6 +76,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            composition: crate::NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 1] = [&placement];
         let mut colors = vec![Bgr555(0); 128];

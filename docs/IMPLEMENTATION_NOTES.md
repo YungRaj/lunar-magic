@@ -2787,6 +2787,12 @@ rather than a scan of its `$25`-initialized cache. Each object's repeated intern
 cache index collapse to that object's final value, while later objects that overwrite the same
 visible cell remain separate entries in native stream order. Consequently unwritten initialization
 cells are absent from both the framebuffer input and the selected-cell inspection.
+Each placement also carries an explicit composition mode. The installed SMW-US preview selects
+Lunar Magic's recovered averaged-pixel path for Map16 `$027`–`$02A` only in object tileset 4,
+covering both object-backed paints and native Layer 2 tilemap words. Nonzero source pixels clear
+the low bit of each source and destination RGB channel before adding their halves; transparent
+source pixels preserve the prior framebuffer. The inspector reports `opaque` versus `average`
+from the same placement value consumed by the raster.
 The framebuffer accepts an explicit palette-routing rule for every layer while retaining direct
 routing as the public default. The installed preview selects the recovered low-row-plus-four rule
 only for object-backed Layer 2 under object tileset 3: encoded rows 0–3 address CGRAM rows 4–7,
