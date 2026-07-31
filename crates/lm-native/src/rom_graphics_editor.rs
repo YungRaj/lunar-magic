@@ -1,10 +1,10 @@
 use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
-        TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
-        apply_tile_palette_keyboard, paint_tile, palette_color, show_tile_grid_status,
-        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
-        tile_pointer_action,
+        GraphicsColorMapEditor, TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction,
+        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile, palette_color,
+        show_tile_grid_status, take_graphics_save_shortcut, take_tile_shift, tile_button,
+        tile_coordinate, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -56,6 +56,7 @@ pub(crate) struct RomGraphicsEditor {
     selected_color: u8,
     palette_row: usize,
     pixel_zoom: TileEditorZoom,
+    color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
     search_start: String,
     search_end: String,
@@ -531,6 +532,21 @@ impl RomGraphicsEditor {
             ui.label("No graphics tiles");
             return;
         };
+        if let Some(mapped) =
+            self.color_map
+                .show(ui, palette, self.palette_row, &tile, !stale && editable)
+        {
+            self.apply_tile(mapped);
+            if let Some(current) = self.workspace.as_ref().and_then(|workspace| {
+                workspace
+                    .controller
+                    .graphics()
+                    .tiles
+                    .get(self.selected_tile)
+            }) {
+                tile = current.clone();
+            }
+        }
         if let Some(direction) = self.pending_shift.take() {
             let shifted = tile.shifted_wrapping(direction);
             self.apply_tile(shifted);

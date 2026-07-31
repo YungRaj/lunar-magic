@@ -2,10 +2,10 @@ use crate::{
     dialogs,
     document_loader::DocumentLoader,
     graphics_painter::{
-        TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
-        apply_tile_palette_keyboard, paint_tile, palette_color, show_tile_grid_status,
-        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
-        tile_pointer_action,
+        GraphicsColorMapEditor, TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction,
+        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile, palette_color,
+        show_tile_grid_status, take_graphics_save_shortcut, take_tile_shift, tile_button,
+        tile_coordinate, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -17,7 +17,7 @@ mod document_io;
 mod editing;
 
 use document_io::decode_documents;
-use editing::{apply_pixel, flip_tile, paste_tile, shift_tile};
+use editing::{apply_pixel, apply_tile, flip_tile, paste_tile, shift_tile};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -37,6 +37,7 @@ pub(crate) struct GraphicsEditor {
     selected_color: u8,
     palette_row: usize,
     pixel_zoom: TileEditorZoom,
+    color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
@@ -312,6 +313,26 @@ impl GraphicsEditor {
         }
         ui.label(format!("Tile {:03X}", self.selected_tile));
         self.pixel_zoom.show(ui);
+        if let Some(mapped) = self
+            .color_map
+            .show(ui, palette, self.palette_row, &tile, true)
+        {
+            apply_tile(
+                &mut document.controller,
+                self.selected_tile,
+                mapped,
+                &mut self.error,
+            );
+            if let Some(current) = document
+                .controller
+                .value()
+                .graphics
+                .tiles
+                .get(self.selected_tile)
+            {
+                tile = current.clone();
+            }
+        }
         let transform = ui
             .horizontal(|ui| {
                 if ui.button("Flip horizontal").clicked() {
@@ -403,7 +424,9 @@ impl GraphicsEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_graphics::{GraphicsFile4bpp, GraphicsInterchangeFile, IndexedTile};
+    use lm_graphics::{
+        GraphicsColorMapFilters, GraphicsFile4bpp, GraphicsInterchangeFile, IndexedTile,
+    };
 
     fn controller() -> GraphicsDocumentController {
         let file = GraphicsInterchangeFile {
@@ -502,6 +525,33 @@ mod tests {
             original.shifted_wrapping(TileShift::Left)
         );
         assert!(controller.undo(3).unwrap());
+        assert_eq!(controller.value().graphics.tiles[0], original);
+    }
+
+    #[test]
+    fn color_map_application_is_one_controller_revision_and_is_undoable() {
+        let file = GraphicsInterchangeFile {
+            source_slot: 0,
+            graphics: GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new(std::array::from_fn(|index| {
+                    index.to_le_bytes()[0] & 0x0f
+                }))],
+            },
+        };
+        let mut controller =
+            GraphicsDocumentController::decode("graphics.lmgfx".into(), &file.encode().unwrap())
+                .unwrap();
+        let original = controller.value().graphics.tiles[0].clone();
+        let mut filters = GraphicsColorMapFilters::default();
+        filters.set_destination(9, 3, 12).unwrap();
+        let mapped = filters.apply(9, &original).unwrap();
+        let mut error = None;
+        apply_tile(&mut controller, 0, mapped.clone(), &mut error);
+
+        assert_eq!(error, None);
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(controller.value().graphics.tiles[0], mapped);
+        assert!(controller.undo(1).unwrap());
         assert_eq!(controller.value().graphics.tiles[0], original);
     }
 

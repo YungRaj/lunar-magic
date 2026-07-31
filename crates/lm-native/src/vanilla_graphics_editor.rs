@@ -1,9 +1,9 @@
 use crate::{
     graphics_painter::{
-        TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
-        apply_tile_palette_keyboard, paint_tile, show_tile_grid_status,
-        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
-        tile_pointer_action,
+        GraphicsColorMapEditor, TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction,
+        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile,
+        show_tile_grid_status, take_graphics_save_shortcut, take_tile_shift, tile_button,
+        tile_coordinate, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -32,6 +32,7 @@ pub(crate) struct VanillaGraphicsEditor {
     selected_color: u8,
     palette_row: usize,
     pixel_zoom: TileEditorZoom,
+    color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
     error: Option<String>,
 }
@@ -237,6 +238,19 @@ impl VanillaGraphicsEditor {
         }
         ui.label(format!("Tile {:03X}", self.selected_tile));
         self.pixel_zoom.show(ui);
+        if let Some(mapped) = self
+            .color_map
+            .show(ui, palette, self.palette_row, &tile, true)
+        {
+            self.apply_tile(mapped);
+            if let Some(current) = self
+                .controller
+                .as_ref()
+                .and_then(|controller| controller.graphics().tiles.get(self.selected_tile))
+            {
+                tile = current.clone();
+            }
+        }
         let transform = ui
             .horizontal(|ui| {
                 if ui.button("Flip horizontal").clicked() {

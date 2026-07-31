@@ -72,7 +72,7 @@ pub(super) fn shift_tile(
     );
 }
 
-fn apply_tile(
+pub(super) fn apply_tile(
     controller: &mut GraphicsDocumentController,
     index: usize,
     tile: IndexedTile,

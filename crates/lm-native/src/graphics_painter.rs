@@ -1,5 +1,5 @@
 use eframe::egui;
-use lm_graphics::{IndexedTile, PaletteInterchangeFile, TileShift};
+use lm_graphics::{GraphicsColorMapFilters, IndexedTile, PaletteInterchangeFile, TileShift};
 
 pub(crate) const TILE_GRID_COLUMNS: usize = 8;
 const TILE_EDITOR_ZOOMS: [(u16, f32); 5] = [
@@ -30,6 +30,199 @@ pub(crate) enum TilePointerAction {
     Select(usize),
     Copy(usize),
     Paste(usize),
+}
+
+#[derive(Clone, Debug)]
+struct ColorMapDialog {
+    draft: GraphicsColorMapFilters,
+    source: u8,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct GraphicsColorMapEditor {
+    filters: GraphicsColorMapFilters,
+    selected_filter: usize,
+    dialog: Option<ColorMapDialog>,
+}
+
+impl GraphicsColorMapEditor {
+    pub(crate) fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        palette: &PaletteInterchangeFile,
+        palette_row: usize,
+        tile: &IndexedTile,
+        apply_enabled: bool,
+    ) -> Option<IndexedTile> {
+        let mut apply = false;
+        ui.horizontal(|ui| {
+            if ui.button("Color-map filters…").clicked() {
+                self.begin_dialog();
+            }
+            apply = ui
+                .add_enabled(apply_enabled, egui::Button::new("Apply color-map filter"))
+                .clicked();
+            ui.monospace(format!("Filter {:X}", self.selected_filter));
+        });
+        self.show_dialog(ui.ctx(), palette, palette_row);
+        apply
+            .then(|| self.filters.apply(self.selected_filter, tile))
+            .flatten()
+    }
+
+    fn show_dialog(
+        &mut self,
+        context: &egui::Context,
+        palette: &PaletteInterchangeFile,
+        palette_row: usize,
+    ) {
+        let Some(mut dialog) = self.dialog.take() else {
+            return;
+        };
+        let mut window_open = true;
+        let mut accepted = false;
+        let mut cancelled = false;
+        let mut selected_filter = self.selected_filter;
+        egui::Window::new("Graphics color-map filters")
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut window_open)
+            .show(context, |ui| {
+                show_color_map_dialog_contents(
+                    ui,
+                    &mut dialog,
+                    palette,
+                    palette_row,
+                    &mut selected_filter,
+                    &mut accepted,
+                    &mut cancelled,
+                );
+            });
+        self.selected_filter = selected_filter;
+        if accepted {
+            self.finish_dialog(dialog, true);
+        } else if window_open && !cancelled {
+            self.dialog = Some(dialog);
+        } else {
+            self.finish_dialog(dialog, false);
+        }
+    }
+
+    fn begin_dialog(&mut self) {
+        self.dialog = Some(ColorMapDialog {
+            draft: self.filters.clone(),
+            source: 0,
+        });
+    }
+
+    fn finish_dialog(&mut self, dialog: ColorMapDialog, accepted: bool) {
+        if accepted {
+            self.filters = dialog.draft;
+        }
+    }
+}
+
+fn show_color_map_dialog_contents(
+    ui: &mut egui::Ui,
+    dialog: &mut ColorMapDialog,
+    palette: &PaletteInterchangeFile,
+    palette_row: usize,
+    selected_filter: &mut usize,
+    accepted: &mut bool,
+    cancelled: &mut bool,
+) {
+    egui::ComboBox::from_label("Filter")
+        .selected_text(format!("{selected_filter:X}"))
+        .show_ui(ui, |ui| {
+            for filter in 0..GraphicsColorMapFilters::FILTERS {
+                ui.selectable_value(
+                    selected_filter,
+                    filter,
+                    format!("Use color-map filter {filter:X}"),
+                );
+            }
+        });
+    ui.label("Source colors");
+    ui.horizontal(|ui| {
+        for source in 0_u8..16 {
+            if color_map_button(
+                ui,
+                palette_color(palette, palette_row, source),
+                source == dialog.source,
+                source,
+            )
+            .clicked()
+            {
+                dialog.source = source;
+            }
+        }
+    });
+    let destination = dialog
+        .draft
+        .destination(*selected_filter, dialog.source)
+        .unwrap_or(dialog.source);
+    ui.label("Mapped colors");
+    ui.horizontal(|ui| {
+        for source in 0_u8..16 {
+            let mapped = dialog
+                .draft
+                .destination(*selected_filter, source)
+                .unwrap_or(source);
+            if color_map_button(
+                ui,
+                palette_color(palette, palette_row, mapped),
+                source == dialog.source,
+                source,
+            )
+            .on_hover_text(format!("Color {source:X} → {mapped:X}"))
+            .clicked()
+            {
+                dialog.source = source;
+            }
+        }
+    });
+    ui.label(format!("Destination for color {:X}", dialog.source));
+    ui.horizontal(|ui| {
+        for color in 0_u8..16 {
+            let selected = color == destination;
+            if color_map_button(
+                ui,
+                palette_color(palette, palette_row, color),
+                selected,
+                color,
+            )
+            .clicked()
+            {
+                let _ = dialog
+                    .draft
+                    .set_destination(*selected_filter, dialog.source, color);
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        if ui.button("Reset filter").clicked() {
+            let _ = dialog.draft.reset(*selected_filter);
+        }
+        if ui.button("Cancel").clicked() {
+            *cancelled = true;
+        }
+        if ui.button("OK").clicked() {
+            *accepted = true;
+        }
+    });
+}
+
+fn color_map_button(
+    ui: &mut egui::Ui,
+    fill: egui::Color32,
+    selected: bool,
+    color: u8,
+) -> egui::Response {
+    ui.add_sized(
+        [24.0, 24.0],
+        egui::Button::new(if selected { "•" } else { "" }).fill(fill),
+    )
+    .on_hover_text(format!("Color {color:X}"))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -475,6 +668,22 @@ mod tests {
 
         assert!(taken);
         assert!(!modified_taken);
+    }
+
+    #[test]
+    fn color_map_dialog_commits_only_on_accept() {
+        let mut editor = GraphicsColorMapEditor::default();
+        editor.begin_dialog();
+        let mut cancelled = editor.dialog.take().unwrap();
+        cancelled.draft.set_destination(4, 2, 11).unwrap();
+        editor.finish_dialog(cancelled, false);
+        assert_eq!(editor.filters.destination(4, 2), Some(2));
+
+        editor.begin_dialog();
+        let mut accepted = editor.dialog.take().unwrap();
+        accepted.draft.set_destination(4, 2, 11).unwrap();
+        editor.finish_dialog(accepted, true);
+        assert_eq!(editor.filters.destination(4, 2), Some(11));
     }
 
     #[test]

@@ -1238,6 +1238,13 @@ The documented unmodified F9 save command now enters the existing button-backed 
 on each surface. The two ROM editors preserve their existing expansion, modified-state,
 stale-revision, active-worker, and manifest-loader eligibility checks instead of giving the
 shortcut a separate mutation route.
+Direct decompilation of `ApplyColorMapFilterToGraphicsTile` at `00503ce0`,
+`DrawColorMapFilterPreview` at `00503db0`, and `HandleColorMapFilterDialog` at `005040e0` proves
+sixteen filters of sixteen 4-bit destinations. Application maps every decoded tile pixel through
+the selected row before 4bpp re-encoding. The dialog previews the base and mapped rows, edits one
+source/destination pair, resets the selected row to identity, snapshots all 256 entries on open,
+and restores them on Cancel. Rust now models those exact dimensions and transactional semantics
+and routes selected-tile application through each graphics surface's existing mutation boundary.
 
 ## Compression formats
 

@@ -1,6 +1,7 @@
 //! SNES graphics, palette, and animation models.
 
 mod bitmap_palette;
+mod color_map;
 mod container;
 mod editing;
 mod exanimation;
@@ -32,6 +33,7 @@ pub use bitmap_palette::{
     ReducedBitmapPalette, allocate_bitmap_palette_rows, reduce_bitmap_palette,
     reduce_bitmap_palette_with_palette,
 };
+pub use color_map::{GraphicsColorMapError, GraphicsColorMapFilters};
 pub use container::{GraphicsFile4bpp, GraphicsFileError, JoinedGraphics};
 pub use editing::ExAnimationEditError;
 pub use exanimation::{CompactExAnimation, ExAnimationError, ExAnimationRecord, ExAnimationSet};

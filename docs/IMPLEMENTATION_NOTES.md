@@ -1706,6 +1706,15 @@ It enters the same persistence action as each visible Save/Commit button: the po
 uses its bounded background writer, pristine SMW requires an expanded ROM and staged changes, and
 the installed editor additionally retains dirty-state, revision, file-worker, and manifest-loader
 gates. Modified F9 combinations are left available to other shortcut routing.
+The recovered color-map subsystem is represented as sixteen independent sixteen-entry mappings.
+Every filter defaults to identity; each edit strictly selects one 4-bit source and destination,
+Reset restores only the active mapping, and tile application masks each stored pixel to its low
+nibble before replacing all 64 indexes. The shared native dialog shows the original base and
+mapped preview concepts, keeps a draft of all filters, commits it only on OK, and drops it on
+Cancel or window close. Applying the selected filter enters the same revisioned tile replacement
+as paint, paste, flips, and shifts; the installed editor retains its ownership and stale-worker
+guards. Focused model tests cover all sixteen identity filters, independent replacement, reset,
+all index bounds, and the portable controller's undo path.
 Level objects and sprites have corresponding typed adapters that retain their complete lossless
 record bytes. The complete portable level editor, interpretation-bound native-stream document, and
 shared aggregate level-assets panel can copy or replace one selected record without parsing it as
