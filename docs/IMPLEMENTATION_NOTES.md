@@ -1796,7 +1796,9 @@ state, history, and revision tracking disagree.
 External tools are stored in the bounded, deterministic `LMTOOLS1` configuration format. Argument
 templates support `{rom}`, `{project_dir}`, `{level_hex}`, and `{level_dec}` plus doubled literal
 braces. Each argument is expanded independently: the core never invokes a command shell or starts a
-process. Tool identifiers and per-tool event subscriptions must be unique, so configuration
+process. The installed graphics editor additionally supplies `{graphics}` only after it has created
+the private staged GFX/ExGFX file; persisted tools using that placeholder are selectable there and
+retain the ordinary ROM/project/level values. Tool identifiers and per-tool event subscriptions must be unique, so configuration
 encoding is canonical and cannot silently collapse duplicate subscriptions. It emits a
 `LaunchExternalTool` effect for an explicit command or subscribed project event,
 leaving permission prompts, process lifetime, and platform sandbox policy to the native frontend.
@@ -3064,12 +3066,14 @@ publication remain one transaction; omitted slots and all pointer-table storage 
 
 The installed graphics editor also owns a scoped external-edit round trip. It exports the current
 staged controller bytes—not a stale ROM decode—to a uniquely reserved private temporary directory
-under the canonical GFX/ExGFX filename. After the user chooses an executable, a second native
-permission window displays that executable and exact direct argument before launch. The worker does
+under the canonical GFX/ExGFX filename. Persisted `LMTOOLS1` tools whose templates reference
+`{graphics}` appear in a selector; expansion occurs only after staging and can also consume the
+normal ROM, project-directory, and level context. A direct executable chooser remains as a fallback.
+A second native permission window displays the executable and every exact argument before launch. The worker does
 not use a command shell, waits outside the UI thread, accepts only successful process termination,
 reopens only a nonsymlink regular file at the exact original byte length, and removes the private
 directory before returning bytes. The completion is bound to the application revision captured at
 staging and passes through the controller's normal raw-import validation, so it becomes an ordinary
 uncommitted graphics edit. While pending or running, pixel mutation, other graphics file work,
 commit, and close/shutdown are gated. Cancellation, launch/read/shape failures, disconnected workers,
-and dropped unapproved prompts clean up without changing the controller.
+template-expansion failures, and dropped unapproved prompts clean up without changing the controller.

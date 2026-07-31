@@ -4,13 +4,16 @@ use crate::{
 };
 
 impl AppState {
-    pub(crate) fn tool_context(&self) -> ToolContext<'_> {
+    /// Returns the ordinary project context available to configured external tools.
+    #[must_use]
+    pub fn tool_context(&self) -> ToolContext<'_> {
         ToolContext {
             rom: self.document_path.as_deref(),
             level: match self.mode {
                 EditorMode::Level(level) => Some(level),
                 _ => None,
             },
+            graphics: None,
         }
     }
 

@@ -50,7 +50,16 @@ impl NativeApplication {
         show_rom_editor!(self, context, rom_level_assets_editor);
         show_rom_editor!(self, context, rom_map16_editor);
         show_rom_editor!(self, context, rom_palette_editor);
-        show_rom_editor!(self, context, rom_graphics_editor);
+        let (quit, command) = self.rom_graphics_editor.show(context, &self.app);
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_graphics_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         show_rom_editor!(self, context, rom_exanimation_editor);
         show_rom_editor!(self, context, rom_overworld_editor);
     }

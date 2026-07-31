@@ -305,6 +305,15 @@ mod tests {
     }
 
     #[test]
+    fn graphics_editor_template_round_trips_without_a_schema_change() {
+        let mut expected = config();
+        expected.tools[0].arguments.push("--gfx={graphics}".into());
+        let decoded = ToolConfig::decode(&expected.encode().unwrap()).unwrap();
+        assert_eq!(decoded, expected);
+        assert!(decoded.tools[0].uses_placeholder("graphics"));
+    }
+
+    #[test]
     fn encoder_preflights_the_complete_aggregate_before_allocating() {
         let config = config();
         let exact = config.encoded_len_with_limit(usize::MAX).unwrap();

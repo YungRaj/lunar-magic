@@ -63,14 +63,16 @@ pub(crate) struct RomGraphicsEditor {
     graphics_batch: graphics_batch::GraphicsBatchWorker,
     graphics_import: graphics_import::GraphicsImportWorker,
     external_editor: external_edit::ExternalGraphicsEditor,
+    external_tool_id: Option<String>,
 }
 
 impl RomGraphicsEditor {
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
-        revision: u64,
+        app: &AppState,
     ) -> (bool, Option<Command>) {
+        let revision = app.project_revision();
         if let Some(result) = self.loader.show(context) {
             self.finish_load(result, revision);
         }
@@ -139,7 +141,7 @@ impl RomGraphicsEditor {
             egui::Window::new("ROM Graphics Editor")
                 .default_size([780.0, 680.0])
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, revision)
+                    if let Some(ui_command) = self.contents(ui, app)
                         && command.is_none()
                     {
                         command = Some(ui_command);
@@ -151,7 +153,8 @@ impl RomGraphicsEditor {
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
+    fn contents(&mut self, ui: &mut egui::Ui, app: &AppState) -> Option<Command> {
+        let revision = app.project_revision();
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
@@ -174,6 +177,18 @@ impl RomGraphicsEditor {
         let rows = workspace.palette.palette.colors.len() / 16;
         let special_graphics_available = pristine_special_graphics(&workspace.profile);
         let exgraphics_available = supports_exgraphics(&workspace.profile);
+        let configured_graphics_tools = app
+            .external_tools()
+            .iter()
+            .filter(|tool| tool.uses_placeholder("graphics"))
+            .map(|tool| (tool.id.clone(), tool.name.clone()))
+            .collect::<Vec<_>>();
+        if !configured_graphics_tools
+            .iter()
+            .any(|(id, _)| Some(id) == self.external_tool_id.as_ref())
+        {
+            self.external_tool_id = configured_graphics_tools.first().map(|(id, _)| id.clone());
+        }
         egui::ComboBox::from_label("Palette row")
             .selected_text(format!("{:X}", self.palette_row))
             .show_ui(ui, |ui| {
@@ -203,16 +218,43 @@ impl RomGraphicsEditor {
         });
         ui.separator();
         ui.horizontal(|ui| {
+            egui::ComboBox::from_label("Configured graphics editor")
+                .selected_text(
+                    self.external_tool_id
+                        .as_deref()
+                        .and_then(|selected| {
+                            configured_graphics_tools
+                                .iter()
+                                .find(|(id, _)| id == selected)
+                                .map(|(_, name)| name.as_str())
+                        })
+                        .unwrap_or("None"),
+                )
+                .show_ui(ui, |ui| {
+                    for (id, name) in &configured_graphics_tools {
+                        ui.selectable_value(&mut self.external_tool_id, Some(id.clone()), name);
+                    }
+                });
+            if ui
+                .add_enabled(
+                    !stale && !file_work_running && self.external_tool_id.is_some(),
+                    egui::Button::new("Edit with configured tool"),
+                )
+                .clicked()
+            {
+                self.begin_configured_external_edit(app);
+            }
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
-                    egui::Button::new("Edit current GFX externally…"),
+                    egui::Button::new("Edit with executable…"),
                 )
-                .on_hover_text("Stages this slot, launches one executable, and reloads after exit")
                 .clicked()
             {
-                self.begin_external_edit(revision);
+                self.begin_direct_external_edit(revision);
             }
+        });
+        ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
@@ -482,7 +524,7 @@ impl RomGraphicsEditor {
 }
 
 impl RomGraphicsEditor {
-    fn begin_external_edit(&mut self, revision: u64) {
+    fn begin_direct_external_edit(&mut self, revision: u64) {
         let Some(workspace) = &self.workspace else {
             return;
         };
@@ -501,6 +543,46 @@ impl RomGraphicsEditor {
             .external_editor
             .stage(executable, &file_name, &bytes, revision)
         {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn begin_configured_external_edit(&mut self, app: &AppState) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let Some(tool_id) = self.external_tool_id.as_deref() else {
+            self.error = Some("select a configured graphics editor".into());
+            return;
+        };
+        let Some(tool) = app.external_tools().iter().find(|tool| tool.id == tool_id) else {
+            self.error = Some(format!(
+                "configured graphics editor {tool_id:?} is unavailable"
+            ));
+            return;
+        };
+        if !tool.uses_placeholder("graphics") {
+            self.error = Some(format!(
+                "configured graphics editor {tool_id:?} does not reference {{graphics}}"
+            ));
+            return;
+        }
+        let bytes = match workspace.controller.export_raw() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        let file_name = crate::dialogs::raw_graphics_file_name(workspace.slot);
+        match self.external_editor.stage_configured(
+            tool,
+            app.tool_context(),
+            &file_name,
+            &bytes,
+            app.project_revision(),
+        ) {
             Ok(()) => self.io_status = None,
             Err(error) => self.error = Some(error),
         }

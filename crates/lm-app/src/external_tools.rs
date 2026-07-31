@@ -29,6 +29,8 @@ pub struct ExternalTool {
 pub struct ToolContext<'a> {
     pub rom: Option<&'a Path>,
     pub level: Option<u16>,
+    /// Private staged GFX/ExGFX path supplied only by the graphics-editor round trip.
+    pub graphics: Option<&'a Path>,
 }
 
 /// An already expanded process request for a platform frontend.
@@ -98,6 +100,21 @@ impl ExternalTool {
             arguments,
             working_directory,
         })
+    }
+
+    /// Reports whether any argument or working-directory template references `placeholder`.
+    ///
+    /// Escaped literal braces do not count. Malformed templates are left for [`Self::expand`] to
+    /// reject when invoked.
+    #[must_use]
+    pub fn uses_placeholder(&self, placeholder: &str) -> bool {
+        self.arguments
+            .iter()
+            .any(|template| template_uses_placeholder(template, placeholder))
+            || self
+                .working_directory
+                .as_deref()
+                .is_some_and(|template| template_uses_placeholder(template, placeholder))
     }
 
     fn validate(&self) -> Result<(), ExternalToolError> {
@@ -200,8 +217,41 @@ fn placeholder(key: &str, context: ToolContext<'_>) -> Result<String, ExternalTo
             .level
             .map(|level| level.to_string())
             .ok_or(ExternalToolError::MissingValue("level_dec")),
+        "graphics" => context
+            .graphics
+            .map(|path| path.to_string_lossy().into_owned())
+            .ok_or(ExternalToolError::MissingValue("graphics")),
         unknown => Err(ExternalToolError::UnknownPlaceholder(unknown.into())),
     }
+}
+
+fn template_uses_placeholder(template: &str, expected: &str) -> bool {
+    let mut characters = template.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '{' if characters.peek() == Some(&'{') => {
+                characters.next();
+            }
+            '}' if characters.peek() == Some(&'}') => {
+                characters.next();
+            }
+            '{' => {
+                let mut key = String::new();
+                loop {
+                    match characters.next() {
+                        Some('}') => break,
+                        Some('{') | None => return false,
+                        Some(value) => key.push(value),
+                    }
+                }
+                if key == expected {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -226,6 +276,7 @@ mod tests {
             .expand(ToolContext {
                 rom: Some(rom),
                 level: Some(0x105),
+                graphics: None,
             })
             .unwrap();
         assert_eq!(
@@ -261,6 +312,27 @@ mod tests {
             tool(&["rom}"]).expand(ToolContext::default()),
             Err(ExternalToolError::UnexpectedClosingBrace)
         );
+    }
+
+    #[test]
+    fn graphics_placeholder_is_discoverable_expands_and_ignores_escaped_literals() {
+        let mut editor = tool(&["--input={graphics}", "{{graphics}}"]);
+        editor.working_directory = Some("{project_dir}".into());
+        assert!(editor.uses_placeholder("graphics"));
+        assert!(!tool(&["{{graphics}}"]).uses_placeholder("graphics"));
+        let graphics = Path::new("/tmp/Graphics/ExGFX123.bin");
+        let invocation = editor
+            .expand(ToolContext {
+                rom: Some(Path::new("/tmp/game.smc")),
+                level: None,
+                graphics: Some(graphics),
+            })
+            .unwrap();
+        assert_eq!(
+            invocation.arguments[0],
+            "--input=/tmp/Graphics/ExGFX123.bin"
+        );
+        assert_eq!(invocation.arguments[1], "{graphics}");
     }
 
     #[test]

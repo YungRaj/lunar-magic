@@ -1,5 +1,5 @@
 use eframe::egui;
-use lm_app::ToolInvocation;
+use lm_app::{ExternalTool, ToolContext, ToolInvocation};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -53,14 +53,66 @@ impl ExternalGraphicsEditor {
         if executable.as_os_str().is_empty() {
             return Err("external graphics editor executable is empty".into());
         }
-        let (directory, path) = create_staged_file(file_name, bytes)?;
-        self.pending = Some(PendingEdit {
-            invocation: ToolInvocation {
-                tool_id: "graphics-editor".into(),
-                executable,
-                arguments: vec![path.to_string_lossy().into_owned()],
-                working_directory: Some(directory.clone()),
+        self.stage_with(
+            file_name,
+            bytes,
+            expected_revision,
+            move |directory, path| {
+                Ok(ToolInvocation {
+                    tool_id: "graphics-editor".into(),
+                    executable,
+                    arguments: vec![path.to_string_lossy().into_owned()],
+                    working_directory: Some(directory.to_path_buf()),
+                })
             },
+        )
+    }
+
+    pub(super) fn stage_configured(
+        &mut self,
+        tool: &ExternalTool,
+        context: ToolContext<'_>,
+        file_name: &str,
+        bytes: &[u8],
+        expected_revision: u64,
+    ) -> Result<(), String> {
+        if !tool.uses_placeholder("graphics") {
+            return Err(format!(
+                "configured external tool {:?} does not reference {{graphics}}",
+                tool.id
+            ));
+        }
+        self.stage_with(file_name, bytes, expected_revision, |_, path| {
+            tool.expand(ToolContext {
+                graphics: Some(path),
+                ..context
+            })
+            .map_err(|error| error.to_string())
+        })
+    }
+
+    fn stage_with(
+        &mut self,
+        file_name: &str,
+        bytes: &[u8],
+        expected_revision: u64,
+        invocation: impl FnOnce(&Path, &Path) -> Result<ToolInvocation, String>,
+    ) -> Result<(), String> {
+        if self.is_running() {
+            return Err("an external graphics edit is already pending".into());
+        }
+        let (directory, path) = create_staged_file(file_name, bytes)?;
+        let invocation = match invocation(&directory, &path) {
+            Ok(invocation) => invocation,
+            Err(error) => {
+                return Err(match remove_private_directory(&directory) {
+                    Ok(()) => error,
+                    Err(cleanup) => format!("{error}; {cleanup}"),
+                });
+            }
+        };
+        self.pending = Some(PendingEdit {
+            invocation,
             directory,
             path,
             expected_revision,
@@ -99,7 +151,10 @@ impl ExternalGraphicsEditor {
                     pending.invocation.executable.display()
                 ));
                 ui.label(format!("Staged file: {}", pending.path.display()));
-                ui.label("The executable receives the staged file as one direct argument.");
+                ui.label("Arguments are passed directly without a command shell:");
+                for (index, argument) in pending.invocation.arguments.iter().enumerate() {
+                    ui.monospace(format!("argument[{index}] = {argument:?}"));
+                }
                 ui.horizontal(|ui| {
                     cancel = ui.button("Cancel").clicked();
                     run = ui.button("Run editor").clicked();
@@ -273,6 +328,20 @@ fn remove_private_directory(directory: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    fn configured_tool(arguments: &[&str]) -> ExternalTool {
+        ExternalTool {
+            id: "configured-graphics".into(),
+            name: "Configured Graphics".into(),
+            executable: PathBuf::from("editor"),
+            arguments: arguments
+                .iter()
+                .map(|argument| (*argument).into())
+                .collect(),
+            working_directory: Some("{project_dir}".into()),
+            subscriptions: Vec::new(),
+        }
+    }
+
     #[test]
     fn cancellation_removes_the_private_staged_file() {
         let mut editor = ExternalGraphicsEditor::default();
@@ -387,5 +456,73 @@ mod tests {
             editor.pending.as_ref().unwrap().directory.clone()
         };
         assert!(!directory.exists());
+    }
+
+    #[test]
+    fn configured_tool_expands_the_private_path_and_ordinary_project_context() {
+        let mut editor = ExternalGraphicsEditor::default();
+        let tool = configured_tool(&["--gfx", "{graphics}", "--rom={rom}"]);
+        editor
+            .stage_configured(
+                &tool,
+                ToolContext {
+                    rom: Some(Path::new("/tmp/Project/game.smc")),
+                    level: Some(0x105),
+                    graphics: None,
+                },
+                "ExGFX123.bin",
+                &[6; 32],
+                19,
+            )
+            .unwrap();
+        let pending = editor.pending.as_ref().unwrap();
+        assert_eq!(pending.invocation.tool_id, "configured-graphics");
+        assert_eq!(pending.invocation.arguments[0], "--gfx");
+        assert_eq!(
+            pending.invocation.arguments[1],
+            pending.path.to_string_lossy()
+        );
+        assert_eq!(
+            pending.invocation.arguments[2],
+            "--rom=/tmp/Project/game.smc"
+        );
+        assert_eq!(
+            pending.invocation.working_directory,
+            Some(PathBuf::from("/tmp/Project"))
+        );
+    }
+
+    #[test]
+    fn configured_template_failure_removes_the_private_workspace() {
+        let mut editor = ExternalGraphicsEditor::default();
+        let observed = std::cell::RefCell::new(None);
+        let error = editor
+            .stage_with("GFX00.bin", &[1; 32], 0, |directory, _| {
+                *observed.borrow_mut() = Some(directory.to_path_buf());
+                Err("template expansion failed".into())
+            })
+            .unwrap_err();
+        assert_eq!(error, "template expansion failed");
+        assert!(!observed.into_inner().unwrap().exists());
+        assert!(!editor.is_running());
+    }
+
+    #[test]
+    fn configured_tool_without_graphics_placeholder_is_rejected_before_staging() {
+        let mut editor = ExternalGraphicsEditor::default();
+        let error = editor
+            .stage_configured(
+                &configured_tool(&["--rom={rom}"]),
+                ToolContext {
+                    rom: Some(Path::new("/tmp/game.smc")),
+                    ..ToolContext::default()
+                },
+                "GFX00.bin",
+                &[1; 32],
+                0,
+            )
+            .unwrap_err();
+        assert!(error.contains("does not reference {graphics}"), "{error}");
+        assert!(!editor.is_running());
     }
 }
