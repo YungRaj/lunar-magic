@@ -167,6 +167,31 @@ pub struct ExpandedLevelHeader {
     pub fields: [u16; Self::FIELD_COUNT],
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SuperGraphicsBypass {
+    pub enabled: bool,
+    pub foreground_background: [u16; 6],
+    pub sprites: [u16; 4],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GraphicsFileValueError {
+    pub slot: usize,
+    pub value: u16,
+}
+
+impl fmt::Display for GraphicsFileValueError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "graphics file value {:X} in slot {} exceeds FFF",
+            self.value, self.slot
+        )
+    }
+}
+
+impl std::error::Error for GraphicsFileValueError {}
+
 impl ExpandedLevelHeader {
     pub const FIELD_COUNT: usize = 16;
     pub const ENCODED_LEN: usize = Self::FIELD_COUNT * 2;
@@ -194,6 +219,51 @@ impl ExpandedLevelHeader {
             pair.copy_from_slice(&field.to_le_bytes());
         }
         bytes
+    }
+
+    /// Decodes Lunar Magic's expanded Super GFX bypass fields.
+    ///
+    /// The two recovered expanded-header loaders prove the reversed word order. Only the low
+    /// twelve bits name a GFX/ExGFX file; unknown high bits remain owned by the raw record.
+    #[must_use]
+    pub fn super_graphics_bypass(self) -> SuperGraphicsBypass {
+        SuperGraphicsBypass {
+            enabled: self.fields[0] & 0x8000 != 0,
+            foreground_background: std::array::from_fn(|slot| self.fields[7 - slot] & 0x0fff),
+            sprites: std::array::from_fn(|slot| self.fields[11 - slot] & 0x0fff),
+        }
+    }
+
+    /// Replaces the proven Super GFX bypass fields while preserving unrelated bits and words.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsFileValueError`] if any file number exceeds the native 12-bit range.
+    pub fn set_super_graphics_bypass(
+        &mut self,
+        value: SuperGraphicsBypass,
+    ) -> Result<(), GraphicsFileValueError> {
+        for (slot, file) in value
+            .foreground_background
+            .iter()
+            .chain(&value.sprites)
+            .copied()
+            .enumerate()
+        {
+            if file > 0x0fff {
+                return Err(GraphicsFileValueError { slot, value: file });
+            }
+        }
+        self.fields[0] = self.fields[0] & !0x8000 | u16::from(value.enabled) << 15;
+        for (slot, file) in value.foreground_background.into_iter().enumerate() {
+            let field = &mut self.fields[7 - slot];
+            *field = *field & 0xf000 | file;
+        }
+        for (slot, file) in value.sprites.into_iter().enumerate() {
+            let field = &mut self.fields[11 - slot];
+            *field = *field & 0xf000 | file;
+        }
+        Ok(())
     }
 }
 
@@ -251,5 +321,39 @@ mod tests {
             ExpandedLevelHeader::decode(&header.encode()).unwrap(),
             header
         );
+    }
+
+    #[test]
+    fn super_graphics_bypass_uses_reversed_words_and_preserves_unknown_bits() {
+        let mut header = ExpandedLevelHeader {
+            fields: std::array::from_fn(|index| 0xa000 | u16::try_from(index).unwrap()),
+        };
+        let before = header.fields;
+        let bypass = SuperGraphicsBypass {
+            enabled: true,
+            foreground_background: [0x101, 0x202, 0x303, 0x404, 0x505, 0x606],
+            sprites: [0x707, 0x808, 0x909, 0xa0a],
+        };
+        header.set_super_graphics_bypass(bypass).unwrap();
+        assert_eq!(header.super_graphics_bypass(), bypass);
+        assert_eq!(header.fields[7] & 0x0fff, 0x101);
+        assert_eq!(header.fields[2] & 0x0fff, 0x606);
+        assert_eq!(header.fields[11] & 0x0fff, 0x707);
+        assert_eq!(header.fields[8] & 0x0fff, 0xa0a);
+        for index in 0..ExpandedLevelHeader::FIELD_COUNT {
+            assert_eq!(header.fields[index] & 0x7000, before[index] & 0x7000);
+        }
+        assert_eq!(header.fields[1], before[1]);
+        assert_eq!(header.fields[12..], before[12..]);
+    }
+
+    #[test]
+    fn super_graphics_bypass_rejects_out_of_range_files_atomically() {
+        let mut header = ExpandedLevelHeader::default();
+        let before = header;
+        let mut bypass = header.super_graphics_bypass();
+        bypass.sprites[2] = 0x1000;
+        assert!(header.set_super_graphics_bypass(bypass).is_err());
+        assert_eq!(header, before);
     }
 }

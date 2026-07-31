@@ -231,8 +231,52 @@ fn show_expanded_header(
         ui.label("Enable the exact 16-word expanded record to edit its opaque fields.");
         return None;
     };
-    let mut fields = header.fields;
+    let mut edited_header = header;
+    let mut bypass = header.super_graphics_bypass();
     let mut changed = false;
+    ui.heading("Super GFX Bypass");
+    changed |= ui
+        .checkbox(&mut bypass.enabled, "Use per-level GFX/ExGFX files")
+        .changed();
+    egui::Grid::new("super-gfx-bypass")
+        .num_columns(4)
+        .show(ui, |ui| {
+            for (slot, label) in ["FG1", "FG2", "FG3", "BG1", "BG2", "BG3"]
+                .into_iter()
+                .enumerate()
+            {
+                ui.label(label);
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut bypass.foreground_background[slot])
+                            .hexadecimal(3, false, true)
+                            .range(0..=0x0fff),
+                    )
+                    .changed();
+                if slot % 2 == 1 {
+                    ui.end_row();
+                }
+            }
+            for (slot, label) in ["SP1", "SP2", "SP3", "SP4"].into_iter().enumerate() {
+                ui.label(label);
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut bypass.sprites[slot])
+                            .hexadecimal(3, false, true)
+                            .range(0..=0x0fff),
+                    )
+                    .changed();
+                if slot % 2 == 1 {
+                    ui.end_row();
+                }
+            }
+        });
+    edited_header
+        .set_super_graphics_bypass(bypass)
+        .expect("bounded Super GFX controls produce valid file numbers");
+    ui.separator();
+    ui.label("Raw expanded words (unproven fields remain editable and lossless):");
+    let mut fields = edited_header.fields;
     egui::Grid::new("expanded-level-header-fields")
         .num_columns(2)
         .show(ui, |ui| {

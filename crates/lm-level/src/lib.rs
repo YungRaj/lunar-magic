@@ -70,7 +70,10 @@ pub use expanded_settings::{ExpandedLevelSettingsError, ExpandedLevelSettingsRec
 pub use expanded_settings_layer3::{
     Layer3TilemapGraphicsDescriptor, Layer3TilemapGraphicsDescriptorError,
 };
-pub use header::{ExpandedLevelHeader, HeaderValueError, LegacyLevelHeader, LevelHeader};
+pub use header::{
+    ExpandedLevelHeader, GraphicsFileValueError, HeaderValueError, LegacyLevelHeader, LevelHeader,
+    SuperGraphicsBypass,
+};
 pub use layer3::{Layer3Data, Layer3Error, Layer3File, Layer3Settings};
 pub use layer3_editing::{Layer3Edit, Layer3EditError};
 pub use layer3_tilemap_workspace::{
