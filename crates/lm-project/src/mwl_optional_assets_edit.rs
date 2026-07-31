@@ -1,7 +1,7 @@
 use crate::MwlOptionalLevelAssets;
 use lm_graphics::{
-    Bgr555, CompactExAnimation, ExAnimationFrame, ExAnimationFrameEdit, ExAnimationFrameEditError,
-    ExAnimationRecord, edit_exanimation_frames,
+    Bgr555, CompactExAnimation, ExAnimationFeatureOptions, ExAnimationFrame, ExAnimationFrameEdit,
+    ExAnimationFrameEditError, ExAnimationRecord, edit_exanimation_frames,
 };
 use std::fmt;
 
@@ -14,6 +14,7 @@ pub enum MwlOptionalAssetsEdit {
         color: Bgr555,
     },
     SetExAnimationMetadata([u32; 2]),
+    SetExAnimationFeatures(ExAnimationFeatureOptions),
     CreateExAnimation,
     SetExAnimationGlobals {
         setting: u8,
@@ -82,6 +83,12 @@ pub fn apply_mwl_optional_assets_edit(
         }
         MwlOptionalAssetsEdit::SetExAnimationMetadata(metadata) => {
             assets.exanimation_metadata = *metadata;
+        }
+        MwlOptionalAssetsEdit::SetExAnimationFeatures(options) => {
+            let mut options = *options;
+            options.preserved_low_nibble = assets.exanimation_metadata[0].to_le_bytes()[0] & 0x0f;
+            assets.exanimation_metadata[0] =
+                assets.exanimation_metadata[0] & !0xff | u32::from(options.encode());
         }
         MwlOptionalAssetsEdit::CreateExAnimation => {
             if assets.exanimation.is_some() {
@@ -276,7 +283,7 @@ impl std::error::Error for MwlOptionalAssetsEditError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_graphics::Palette;
+    use lm_graphics::{ExAnimationFeature, Palette};
 
     fn assets() -> MwlOptionalLevelAssets {
         MwlOptionalLevelAssets {
@@ -320,6 +327,31 @@ mod tests {
         let animation = value.exanimation.unwrap();
         assert_eq!(animation.trigger_mask, 1 << 3);
         assert_eq!(animation.trigger_values[3], 7);
+    }
+
+    #[test]
+    fn animation_feature_edit_preserves_upper_metadata_and_unrelated_low_nibble() {
+        let mut value = assets();
+        value.exanimation_metadata[0] = 0x1234_56ab;
+        let mut options = ExAnimationFeatureOptions::decode(0);
+        options.set_enabled(ExAnimationFeature::PaletteAnimation, true);
+        options.set_enabled(ExAnimationFeature::VanillaAnimation, false);
+        options.set_enabled(ExAnimationFeature::GlobalExAnimation, true);
+        options.set_enabled(ExAnimationFeature::LevelExAnimation, false);
+        apply_mwl_optional_assets_edit(
+            &mut value,
+            &[false; 256],
+            &MwlOptionalAssetsEdit::SetExAnimationFeatures(options),
+        )
+        .unwrap();
+        assert_eq!(value.exanimation_metadata[0], 0x1234_565b);
+        let decoded =
+            ExAnimationFeatureOptions::decode(value.exanimation_metadata[0].to_le_bytes()[0]);
+        assert_eq!(decoded.preserved_low_nibble, 0x0b);
+        assert!(decoded.enabled(ExAnimationFeature::PaletteAnimation));
+        assert!(!decoded.enabled(ExAnimationFeature::VanillaAnimation));
+        assert!(decoded.enabled(ExAnimationFeature::GlobalExAnimation));
+        assert!(!decoded.enabled(ExAnimationFeature::LevelExAnimation));
     }
 
     #[test]

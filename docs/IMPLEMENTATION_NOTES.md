@@ -2677,6 +2677,14 @@ The cross-platform application exposes the same state through
 `ExAnimationSlotOptionsController`: edits are duplicate-checked and staged, commits are bound to
 the immutable application revision, repair the SNES checksum, and participate in ordinary
 application undo. Late commits are rejected without changing the open ROM.
+
+The per-level Super GFX animation switches are a distinct one-byte feature record. Their four
+inverted high bits enable palette animation, vanilla animated tiles, global ExAnimation, and level
+ExAnimation; the low nibble is unrelated state. `ExAnimationFeatureOptions` supplies named positive
+states while round-tripping all 256 byte values. Binary MWL files carry the byte in the low byte of
+ExAnimation metadata word 0, so typed GUI and `exanimation-features on|off on|off on|off on|off`
+script edits replace only bits 4–7 and preserve both the low nibble and the metadata word's upper
+24 bits.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to

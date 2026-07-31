@@ -2,7 +2,10 @@ use super::MwlEditor;
 use crate::exanimation_form::{self, GlobalForm, RecordForm};
 use eframe::egui;
 use lm_app::MwlOptionalAssetsEdit;
-use lm_graphics::{CompactExAnimation, ExAnimationFrame, Rgb8, exanimation_frames};
+use lm_graphics::{
+    CompactExAnimation, ExAnimationFeature, ExAnimationFeatureOptions, ExAnimationFrame, Rgb8,
+    exanimation_frames,
+};
 use lm_project::MwlOptionalLevelAssets;
 
 #[derive(Default)]
@@ -12,6 +15,7 @@ pub(super) struct MwlOptionalAssetsPanel {
     selected_color: usize,
     palette_metadata: [String; 2],
     exanimation_metadata: [String; 2],
+    exanimation_features: Option<ExAnimationFeatureOptions>,
     global: GlobalForm,
     trigger_index: usize,
     trigger_enabled: bool,
@@ -36,6 +40,9 @@ impl MwlOptionalAssetsPanel {
         self.exanimation_metadata = assets
             .exanimation_metadata
             .map(|value| format!("{value:08X}"));
+        self.exanimation_features = Some(ExAnimationFeatureOptions::decode(
+            assets.exanimation_metadata[0].to_le_bytes()[0],
+        ));
         if let Some(animation) = &assets.exanimation {
             self.global = GlobalForm::load(animation.setting, animation.header_value);
             self.load_trigger(animation);
@@ -146,6 +153,30 @@ impl MwlOptionalAssetsPanel {
             metadata_fields(ui, "ExAnimation metadata", &mut self.exanimation_metadata)
         {
             return Some(metadata.map(MwlOptionalAssetsEdit::SetExAnimationMetadata));
+        }
+        if let Some(features) = &mut self.exanimation_features {
+            ui.heading("Super GFX Bypass animation options");
+            for (feature, label) in [
+                (ExAnimationFeature::PaletteAnimation, "Palette animation"),
+                (
+                    ExAnimationFeature::VanillaAnimation,
+                    "Vanilla animated tiles",
+                ),
+                (ExAnimationFeature::GlobalExAnimation, "Global ExAnimation"),
+                (ExAnimationFeature::LevelExAnimation, "Level ExAnimation"),
+            ] {
+                let mut enabled = features.enabled(feature);
+                if ui.checkbox(&mut enabled, label).changed() {
+                    features.set_enabled(feature, enabled);
+                }
+            }
+            if ui.button("Apply animation options").clicked() {
+                return Some(Ok(MwlOptionalAssetsEdit::SetExAnimationFeatures(*features)));
+            }
+            ui.small(format!(
+                "Preserved unrelated low nibble: {:X}",
+                features.preserved_low_nibble
+            ));
         }
         let Some(animation) = assets.exanimation.as_ref() else {
             return ui

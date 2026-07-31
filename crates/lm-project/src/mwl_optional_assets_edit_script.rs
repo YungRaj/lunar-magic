@@ -1,5 +1,7 @@
 use crate::MwlOptionalAssetsEdit;
-use lm_graphics::{Bgr555, ExAnimationFrame, ExAnimationRecord};
+use lm_graphics::{
+    Bgr555, ExAnimationFeature, ExAnimationFeatureOptions, ExAnimationFrame, ExAnimationRecord,
+};
 use std::fmt;
 
 pub const MAGIC: &str = "LMMWLOE1";
@@ -56,6 +58,18 @@ fn parse_line(raw: &str, line: usize) -> Result<MwlOptionalAssetsEdit, EditScrip
                 hex_u32(second, line)?,
             ]))
         }
+        ["exanimation-features", palette, vanilla, global, level] => {
+            let mut options = ExAnimationFeatureOptions::decode(0);
+            for (feature, value) in [
+                (ExAnimationFeature::PaletteAnimation, palette),
+                (ExAnimationFeature::VanillaAnimation, vanilla),
+                (ExAnimationFeature::GlobalExAnimation, global),
+                (ExAnimationFeature::LevelExAnimation, level),
+            ] {
+                options.set_enabled(feature, switch(value, line)?);
+            }
+            Ok(MwlOptionalAssetsEdit::SetExAnimationFeatures(options))
+        }
         ["exanimation-create"] => Ok(MwlOptionalAssetsEdit::CreateExAnimation),
         ["exanimation-globals", setting, header] => {
             Ok(MwlOptionalAssetsEdit::SetExAnimationGlobals {
@@ -110,6 +124,17 @@ fn parse_line(raw: &str, line: usize) -> Result<MwlOptionalAssetsEdit, EditScrip
             command: (*command).to_owned(),
         }),
         [] => unreachable!("empty lines are filtered"),
+    }
+}
+
+fn switch(value: &str, line: usize) -> Result<bool, EditScriptError> {
+    match value {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        _ => Err(EditScriptError::UnknownOrMalformed {
+            line,
+            command: "exanimation-features".into(),
+        }),
     }
 }
 
@@ -204,24 +229,32 @@ mod tests {
     #[test]
     fn parses_every_semantic_edit_kind() {
         let text = format!(
-            "{MAGIC}\npalette-metadata 1 2\npalette-color 256 1234\nexanimation-metadata 3 4\nexanimation-create\nexanimation-globals 05 00000006\ntrigger 3 07\ntrigger 4 off\nrecord-insert 0 {}\nrecord-replace 0 {}\nrecord-remove 0\nframe-insert 0 1 1111\nframe-replace 0 0 2222 3333\nframe-remove 0 1\nframe-move 0 1 0\n",
+            "{MAGIC}\npalette-metadata 1 2\npalette-color 256 1234\nexanimation-metadata 3 4\nexanimation-features on off on off\nexanimation-create\nexanimation-globals 05 00000006\ntrigger 3 07\ntrigger 4 off\nrecord-insert 0 {}\nrecord-replace 0 {}\nrecord-remove 0\nframe-insert 0 1 1111\nframe-replace 0 0 2222 3333\nframe-remove 0 1\nframe-move 0 1 0\n",
             record_hex(),
             record_hex()
         );
         let edits = parse(&text).unwrap();
-        assert_eq!(edits.len(), 14);
+        assert_eq!(edits.len(), 15);
         assert!(matches!(
             edits[1],
             MwlOptionalAssetsEdit::SetPaletteColor { index: 256, .. }
         ));
         assert!(matches!(
-            edits[6],
+            edits[7],
             MwlOptionalAssetsEdit::SetTrigger { value: None, .. }
         ));
         assert!(matches!(
-            &edits[11],
+            &edits[12],
             MwlOptionalAssetsEdit::ReplaceFrame { frame, .. }
                 if frame.source_words == [0x2222, 0x3333]
+        ));
+        assert!(matches!(
+            edits[3],
+            MwlOptionalAssetsEdit::SetExAnimationFeatures(options)
+                if options.enabled(ExAnimationFeature::PaletteAnimation)
+                    && !options.enabled(ExAnimationFeature::VanillaAnimation)
+                    && options.enabled(ExAnimationFeature::GlobalExAnimation)
+                    && !options.enabled(ExAnimationFeature::LevelExAnimation)
         ));
     }
 
@@ -231,5 +264,6 @@ mod tests {
         assert!(parse(&format!("{MAGIC}\npalette-color no 1\n")).is_err());
         assert!(parse(&format!("{MAGIC}\nrecord-insert 0 00\n")).is_err());
         assert!(parse(&format!("{MAGIC}\nunknown 1\n")).is_err());
+        assert!(parse(&format!("{MAGIC}\nexanimation-features yes off on off\n")).is_err());
     }
 }

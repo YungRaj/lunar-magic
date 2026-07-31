@@ -4,6 +4,7 @@ mod bitmap_palette;
 mod container;
 mod editing;
 mod exanimation;
+mod exanimation_features;
 mod exanimation_file;
 mod exanimation_frames;
 mod exanimation_slot_options;
@@ -34,6 +35,7 @@ pub use bitmap_palette::{
 pub use container::{GraphicsFile4bpp, GraphicsFileError, JoinedGraphics};
 pub use editing::ExAnimationEditError;
 pub use exanimation::{CompactExAnimation, ExAnimationError, ExAnimationRecord, ExAnimationSet};
+pub use exanimation_features::{ExAnimationFeature, ExAnimationFeatureOptions};
 pub use exanimation_file::{CompactExAnimationFile, CompactExAnimationFileError};
 pub use exanimation_frames::{
     ExAnimationFrame, ExAnimationFrameEdit, ExAnimationFrameEditError, edit_exanimation_frames,
