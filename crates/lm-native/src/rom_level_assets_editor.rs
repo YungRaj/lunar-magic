@@ -8,12 +8,13 @@ use lm_level::{Map16Set, NativeLayer2Data, ObjectStream};
 use lm_project::NativeLevelAssetsFile;
 use lm_render::{
     MaterializedSuperGraphicsVram, NativeLevelMap16Layout, NativeLevelRasterRequest,
-    NativeMap16Placement, Rgba, StandardLevelOrientation, StandardObjectDefinitionSet,
-    StandardSpritePreviewMode, StandardSpritePreviewSource,
+    NativeMap16PaletteRouting, NativeMap16Placement, Rgba, StandardLevelOrientation,
+    StandardObjectDefinitionSet, StandardSpritePreviewMode, StandardSpritePreviewSource,
     draw_native_sprite_preview_definition_pages, install_lunar_magic_shared_extended_objects,
     install_lunar_magic_shared_standard_objects, install_lunar_magic_tileset_extended_objects,
     lunar_magic_standard_sprite_preview_source, render_lunar_magic_standard_sprite_with_mode,
     render_mapped_standard_object_stream,
+    render_native_level_framebuffer_with_layer_palette_routing,
 };
 
 mod commit;
@@ -178,6 +179,7 @@ struct PreviewMap16Subtile {
     source_quadrant: usize,
     word: u16,
     tile: u16,
+    encoded_palette_row: u8,
     cgram_row: u8,
     high_priority: bool,
     x_flip: bool,
@@ -187,6 +189,7 @@ struct PreviewMap16Subtile {
 fn decode_preview_map16_subtiles(
     definition: lm_level::Map16Tile,
     placement_word: u16,
+    palette_routing: NativeMap16PaletteRouting,
 ) -> [PreviewMap16Subtile; 4] {
     let source = [
         definition.top_left,
@@ -208,7 +211,8 @@ fn decode_preview_map16_subtiles(
             source_quadrant,
             word: subtile.0,
             tile: subtile.tile_number(),
-            cgram_row: subtile.palette(),
+            encoded_palette_row: subtile.palette(),
+            cgram_row: palette_routing.palette_row(subtile.palette()),
             high_priority: subtile.priority(),
             x_flip: subtile.x_flip() ^ outer_x_flip,
             y_flip: subtile.y_flip() ^ outer_y_flip,
@@ -229,6 +233,7 @@ const fn preview_map16_quadrant_label(index: usize) -> &'static str {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PreviewMap16Hit {
     layer: PreviewMap16Layer,
+    palette_routing: NativeMap16PaletteRouting,
     word: u16,
     definition: Option<lm_level::Map16Tile>,
     acts_like: Option<Result<lm_level::ActsLikeResolution, lm_level::Map16SetError>>,
@@ -405,6 +410,7 @@ fn inspect_preview_map16_selection(
     layer1: &[NativeMap16Placement],
     sprites: &[NativeSpritePreviewPlacement],
     map16: &Map16Set,
+    layer2_palette_routing: NativeMap16PaletteRouting,
 ) -> PreviewMap16Inspection {
     let mut hits = Vec::new();
     let resolution_limit = map16
@@ -428,6 +434,11 @@ fn inspect_preview_map16_selection(
                     let definition = map16.tile(tile).copied();
                     PreviewMap16Hit {
                         layer,
+                        palette_routing: if layer == PreviewMap16Layer::Layer2 {
+                            layer2_palette_routing
+                        } else {
+                            NativeMap16PaletteRouting::Direct
+                        },
                         word: placement.word,
                         definition,
                         acts_like: definition
@@ -874,13 +885,16 @@ impl RomLevelAssetsEditor {
                             definition.bottom_left.0,
                             definition.bottom_right.0,
                         ));
-                        for subtile in decode_preview_map16_subtiles(definition, hit.word) {
+                        for subtile in
+                            decode_preview_map16_subtiles(definition, hit.word, hit.palette_routing)
+                        {
                             ui.monospace(format!(
-                                "    {} <= {} word ${:04X}: tile ${:03X}, CGRAM row {}, priority {}, flips {}{}",
+                                "    {} <= {} word ${:04X}: tile ${:03X}, palette row {} => CGRAM row {}, priority {}, flips {}{}",
                                 preview_map16_quadrant_label(subtile.visual_quadrant),
                                 preview_map16_quadrant_label(subtile.source_quadrant),
                                 subtile.word,
                                 subtile.tile,
+                                subtile.encoded_palette_row,
                                 subtile.cgram_row,
                                 if subtile.high_priority { "high" } else { "low" },
                                 if subtile.x_flip { "X" } else { "-" },
@@ -1145,7 +1159,12 @@ fn render_super_graphics_level_preview(
         header.level_mode(),
         header.object_tileset(),
     )?;
-    let layer2 = match workspace.controller.layer2() {
+    let layer2_data = workspace.controller.layer2();
+    let layer2_palette_routing = installed_layer2_palette_routing(
+        matches!(layer2_data, Some(NativeLayer2Data::Objects(_))),
+        header.object_tileset(),
+    );
+    let layer2 = match layer2_data {
         Some(NativeLayer2Data::Tilemap(tilemap)) => layer2_placements(tilemap)?,
         Some(NativeLayer2Data::Objects(objects)) => {
             let (placements, _, layer2_diagnostics) = render_object_placements(
@@ -1170,7 +1189,14 @@ fn render_super_graphics_level_preview(
     );
     diagnostics.extend(sprite_diagnostics);
     let inspection = selection.map(|selection| {
-        inspect_preview_map16_selection(selection, &layer2, &layer1, &sprites, &map16)
+        inspect_preview_map16_selection(
+            selection,
+            &layer2,
+            &layer1,
+            &sprites,
+            &map16,
+            layer2_palette_routing,
+        )
     });
     let animated_sprite_tiles =
         crate::vanilla_map16_preview::materialize_sprite_display_tiles(special_graphics.gfx33);
@@ -1183,12 +1209,24 @@ fn render_super_graphics_level_preview(
         &vram.sprites,
         &animated_sprite_tiles,
         &palette,
+        &[layer2_palette_routing, NativeMap16PaletteRouting::Direct],
         viewport,
         show_map16_grid,
         selection,
         selection_phase,
     )
     .map(|image| (image, diagnostics, inspection))
+}
+
+const fn installed_layer2_palette_routing(
+    object_backed: bool,
+    object_tileset: u8,
+) -> NativeMap16PaletteRouting {
+    if object_backed && object_tileset == 3 {
+        NativeMap16PaletteRouting::ShiftLowRowsByFour
+    } else {
+        NativeMap16PaletteRouting::Direct
+    }
 }
 
 fn preview_world_extent(header: lm_level::LegacyLevelHeader) -> (usize, usize) {
@@ -1407,12 +1445,13 @@ fn render_level_viewport_image(
     sprite_tiles: &[lm_graphics::IndexedTile],
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
     palette: &lm_graphics::Palette,
+    layer_palette_routing: &[NativeMap16PaletteRouting],
     viewport: PreviewViewportState,
     show_map16_grid: bool,
     selection: Option<PreviewMap16Selection>,
     selection_phase: Option<u32>,
 ) -> Result<egui::ColorImage, String> {
-    let source = render_level_canvas(
+    let source = render_level_canvas_with_layer_palette_routing(
         layers,
         sprites,
         layout,
@@ -1421,6 +1460,7 @@ fn render_level_viewport_image(
         sprite_tiles,
         animated_sprite_tiles,
         palette,
+        layer_palette_routing,
     )?;
     render_level_viewport_canvas(
         &source,
@@ -1521,6 +1561,7 @@ fn render_level_viewport_canvas(
     Ok(output)
 }
 
+#[cfg(test)]
 fn render_level_canvas(
     layers: &[&[NativeMap16Placement]],
     sprites: &[NativeSpritePreviewPlacement],
@@ -1530,6 +1571,32 @@ fn render_level_canvas(
     sprite_tiles: &[lm_graphics::IndexedTile],
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
     palette: &lm_graphics::Palette,
+) -> Result<lm_render::Canvas, String> {
+    let routing = vec![NativeMap16PaletteRouting::Direct; layers.len()];
+    render_level_canvas_with_layer_palette_routing(
+        layers,
+        sprites,
+        layout,
+        map16,
+        tiles,
+        sprite_tiles,
+        animated_sprite_tiles,
+        palette,
+        &routing,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_level_canvas_with_layer_palette_routing(
+    layers: &[&[NativeMap16Placement]],
+    sprites: &[NativeSpritePreviewPlacement],
+    layout: NativeLevelMap16Layout,
+    map16: &Map16Set,
+    tiles: &[lm_graphics::IndexedTile],
+    sprite_tiles: &[lm_graphics::IndexedTile],
+    animated_sprite_tiles: &[lm_graphics::IndexedTile],
+    palette: &lm_graphics::Palette,
+    layer_palette_routing: &[NativeMap16PaletteRouting],
 ) -> Result<lm_render::Canvas, String> {
     let definitions = map16
         .pages
@@ -1547,17 +1614,20 @@ fn render_level_canvas(
             blue: color.blue,
             alpha: 255,
         });
-    let mut canvas = lm_render::render_native_level_framebuffer(NativeLevelRasterRequest {
-        width: layout.width * 16,
-        height: layout.height * 16,
-        camera_x: 0,
-        camera_y: 0,
-        backdrop,
-        layers,
-        definitions: &definitions,
-        tiles,
-        palette,
-    })
+    let mut canvas = render_native_level_framebuffer_with_layer_palette_routing(
+        NativeLevelRasterRequest {
+            width: layout.width * 16,
+            height: layout.height * 16,
+            camera_x: 0,
+            camera_y: 0,
+            backdrop,
+            layers,
+            definitions: &definitions,
+            tiles,
+            palette,
+        },
+        layer_palette_routing,
+    )
     .map_err(|error| error.to_string())?;
     for sprite in sprites {
         draw_native_sprite_preview_definition_pages(
@@ -2089,6 +2159,7 @@ mod tests {
             &[],
             &[],
             &palette,
+            &[NativeMap16PaletteRouting::Direct],
             PreviewViewportState {
                 origin_x: 16,
                 origin_y: 32,
@@ -2102,6 +2173,26 @@ mod tests {
         assert_eq!(viewport_image.size, [512, 448]);
         assert_eq!(viewport_image[(0, 0)], egui::Color32::from_rgb(255, 0, 0));
         assert_eq!(viewport_image[(31, 31)], egui::Color32::from_rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn installed_layer2_palette_shift_is_scoped_to_tileset_three_objects() {
+        assert_eq!(
+            installed_layer2_palette_routing(true, 3),
+            NativeMap16PaletteRouting::ShiftLowRowsByFour
+        );
+        assert_eq!(
+            installed_layer2_palette_routing(false, 3),
+            NativeMap16PaletteRouting::Direct
+        );
+        assert_eq!(
+            installed_layer2_palette_routing(true, 2),
+            NativeMap16PaletteRouting::Direct
+        );
+        assert_eq!(
+            installed_layer2_palette_routing(true, 4),
+            NativeMap16PaletteRouting::Direct
+        );
     }
 
     #[test]
@@ -2263,12 +2354,20 @@ mod tests {
             cell_y: 1,
         };
         assert_eq!(
-            inspect_preview_map16_selection(selection, &layer2, &layer1, &[], &map16),
+            inspect_preview_map16_selection(
+                selection,
+                &layer2,
+                &layer1,
+                &[],
+                &map16,
+                NativeMap16PaletteRouting::Direct,
+            ),
             PreviewMap16Inspection {
                 selection,
                 hits: vec![
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer2,
+                        palette_routing: NativeMap16PaletteRouting::Direct,
                         word: 0x4001,
                         definition: Some(expected[0]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
@@ -2278,6 +2377,7 @@ mod tests {
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer2,
+                        palette_routing: NativeMap16PaletteRouting::Direct,
                         word: 0x0002,
                         definition: Some(expected[1]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
@@ -2287,6 +2387,7 @@ mod tests {
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer1,
+                        palette_routing: NativeMap16PaletteRouting::Direct,
                         word: 0x8003,
                         definition: Some(expected[2]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
@@ -2296,6 +2397,7 @@ mod tests {
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer1,
+                        palette_routing: NativeMap16PaletteRouting::Direct,
                         word: 0x3fff,
                         definition: None,
                         acts_like: None,
@@ -2310,7 +2412,14 @@ mod tests {
             cell_y: 9,
         };
         assert_eq!(
-            inspect_preview_map16_selection(empty, &layer2, &layer1, &[], &map16),
+            inspect_preview_map16_selection(
+                empty,
+                &layer2,
+                &layer1,
+                &[],
+                &map16,
+                NativeMap16PaletteRouting::Direct,
+            ),
             PreviewMap16Inspection {
                 selection: empty,
                 hits: Vec::new(),
@@ -2356,6 +2465,7 @@ mod tests {
             &layer1,
             &[],
             &map16,
+            NativeMap16PaletteRouting::Direct,
         );
         assert_eq!(
             inspection.hits[0].acts_like,
@@ -2395,7 +2505,11 @@ mod tests {
             (0x8000, [2, 3, 0, 1]),
             (0xc000, [3, 2, 1, 0]),
         ] {
-            let decoded = decode_preview_map16_subtiles(definition, placement_word);
+            let decoded = decode_preview_map16_subtiles(
+                definition,
+                placement_word,
+                NativeMap16PaletteRouting::Direct,
+            );
             assert_eq!(
                 decoded.map(|subtile| subtile.source_quadrant),
                 expected_sources
@@ -2404,7 +2518,8 @@ mod tests {
                 let source_word = source_words[subtile.source_quadrant];
                 assert_eq!(subtile.word, source_word);
                 assert_eq!(subtile.tile, source_word & 0x03ff);
-                assert_eq!(subtile.cgram_row, ((source_word >> 10) & 7) as u8);
+                assert_eq!(subtile.encoded_palette_row, ((source_word >> 10) & 7) as u8);
+                assert_eq!(subtile.cgram_row, subtile.encoded_palette_row);
                 assert_eq!(subtile.high_priority, source_word & 0x2000 != 0);
                 assert_eq!(
                     subtile.x_flip,
@@ -2416,6 +2531,15 @@ mod tests {
                 );
             }
         }
+        let shifted = decode_preview_map16_subtiles(
+            definition,
+            0,
+            NativeMap16PaletteRouting::ShiftLowRowsByFour,
+        );
+        assert_eq!(
+            shifted.map(|subtile| (subtile.encoded_palette_row, subtile.cgram_row)),
+            [(0, 4), (5, 5), (2, 6), (7, 7)]
+        );
         assert_eq!(
             (0..4).map(preview_map16_quadrant_label).collect::<Vec<_>>(),
             ["top-left", "top-right", "bottom-left", "bottom-right"]
@@ -2451,6 +2575,7 @@ mod tests {
             &[],
             &sprites,
             &Map16Set::default(),
+            NativeMap16PaletteRouting::Direct,
         );
         assert_eq!(
             inspection

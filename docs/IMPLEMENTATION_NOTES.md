@@ -2782,6 +2782,11 @@ effective X/Y flips after composing the whole-definition flips. It also invokes
 `Map16Set::resolve_acts_like` with the complete installed tile count as its traversal bound,
 displaying the exact chain and self-linked terminal or preserving the typed cycle, out-of-range,
 and resolution-limit failure. Missing definitions and cells with no sparse placement are explicit.
+The framebuffer accepts an explicit palette-routing rule for every layer while retaining direct
+routing as the public default. The installed preview selects the recovered low-row-plus-four rule
+only for object-backed Layer 2 under object tileset 3: encoded rows 0–3 address CGRAM rows 4–7,
+encoded rows 4–7 remain direct, tilemap Layer 2 remains direct, and Layer 1 is always direct. The
+inspector reports both the encoded palette row and effective CGRAM row from that same rule.
 The same inspection retains provenance on every materialized 16×16 standard-sprite preview part:
 original serialized token index, sprite ID, recovered source class, per-sprite part ordinal, preview
 definition index, signed pixel origin, and all four tile words. Parts are included when their
@@ -2804,6 +2809,8 @@ and distinguishes a truly empty cell. Acts-like coverage requires a three-defini
 self-link, two-definition cycle, and three distinct out-of-range targets.
 Map16 subtile coverage checks all four whole-definition flip combinations, their visual-to-source
 quadrant permutations, and every raw tile/palette/priority/effective-flip field.
+Layer-routing coverage checks both layers independently, the 3→7 and 4→4 boundary, typed routing
+count mismatch, and the exact object-backed/tileset-3 activation predicate.
 Sprite inspection coverage requires materialization to retain its original sprite/part provenance
 and requires the overlap filter to accept top-left, bottom-right, and exact-cell intersections in
 painter order while rejecting left, right, and bottom edge-only contact.

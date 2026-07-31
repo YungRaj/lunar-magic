@@ -32,10 +32,33 @@ pub struct NativeLevelRasterRequest<'a> {
     pub palette: &'a Palette,
 }
 
+/// Lunar Magic's per-layer Map16 palette interpretation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NativeMap16PaletteRouting {
+    /// Use the three-bit Map16 palette row without modification.
+    #[default]
+    Direct,
+    /// Route rows 0–3 through rows 4–7, preserving rows 4–7.
+    ///
+    /// Lunar Magic enables this for object-backed Layer 2 when object tileset 3 is active.
+    ShiftLowRowsByFour,
+}
+
+impl NativeMap16PaletteRouting {
+    #[must_use]
+    pub const fn palette_row(self, encoded_row: u8) -> u8 {
+        match (self, encoded_row) {
+            (Self::ShiftLowRowsByFour, row @ 0..=3) => row + 4,
+            (_, row) => row,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeLevelRasterError {
     Canvas(CanvasError),
     InvalidPaletteLength(usize),
+    InvalidLayerPaletteRoutingLength { layers: usize, routing: usize },
 }
 
 impl std::fmt::Display for NativeLevelRasterError {
@@ -63,6 +86,32 @@ impl From<CanvasError> for NativeLevelRasterError {
 pub fn render_native_level_framebuffer(
     request: NativeLevelRasterRequest<'_>,
 ) -> Result<Canvas, NativeLevelRasterError> {
+    render_native_level_framebuffer_impl(request, None)
+}
+
+/// Renders a native framebuffer with one explicit palette-routing rule per input layer.
+///
+/// # Errors
+///
+/// Rejects a routing slice whose length differs from `request.layers`, an undersized CGRAM
+/// palette, or invalid output dimensions.
+pub fn render_native_level_framebuffer_with_layer_palette_routing(
+    request: NativeLevelRasterRequest<'_>,
+    layer_palette_routing: &[NativeMap16PaletteRouting],
+) -> Result<Canvas, NativeLevelRasterError> {
+    if layer_palette_routing.len() != request.layers.len() {
+        return Err(NativeLevelRasterError::InvalidLayerPaletteRoutingLength {
+            layers: request.layers.len(),
+            routing: layer_palette_routing.len(),
+        });
+    }
+    render_native_level_framebuffer_impl(request, Some(layer_palette_routing))
+}
+
+fn render_native_level_framebuffer_impl(
+    request: NativeLevelRasterRequest<'_>,
+    layer_palette_routing: Option<&[NativeMap16PaletteRouting]>,
+) -> Result<Canvas, NativeLevelRasterError> {
     if request.palette.colors.len() < 16 * 8 {
         return Err(NativeLevelRasterError::InvalidPaletteLength(
             request.palette.colors.len(),
@@ -77,7 +126,11 @@ pub fn render_native_level_framebuffer(
         request.height,
         vec![request.backdrop; pixel_count],
     )?;
-    for layer in request.layers {
+    for (layer_index, layer) in request.layers.iter().enumerate() {
+        let palette_routing = layer_palette_routing
+            .and_then(|routing| routing.get(layer_index))
+            .copied()
+            .unwrap_or_default();
         for placement in *layer {
             let definition_index = usize::from(placement.word & 0x3fff);
             let Some(definition) = request.definitions.get(definition_index).copied() else {
@@ -99,6 +152,7 @@ pub fn render_native_level_framebuffer(
                         .saturating_sub(request.camera_y),
                 ),
                 (placement.word & 0x4000 != 0, placement.word & 0x8000 != 0),
+                palette_routing,
             );
         }
     }
@@ -160,6 +214,7 @@ fn draw_map16_clipped(
     palette: &Palette,
     target: (i32, i32),
     outer_flips: (bool, bool),
+    palette_routing: NativeMap16PaletteRouting,
 ) {
     let (target_x, target_y) = target;
     let (horizontal_flip, vertical_flip) = outer_flips;
@@ -193,6 +248,7 @@ fn draw_map16_clipped(
                     target_y.saturating_add(i32::try_from(output_y * 8).unwrap_or(i32::MAX)),
                 ),
                 outer_flips,
+                palette_routing,
             );
         }
     }
@@ -205,6 +261,7 @@ fn draw_subtile_clipped(
     palette: &Palette,
     target: (i32, i32),
     outer_flips: (bool, bool),
+    palette_routing: NativeMap16PaletteRouting,
 ) {
     let (target_x, target_y) = target;
     let (horizontal_flip, vertical_flip) = outer_flips;
@@ -213,7 +270,8 @@ fn draw_subtile_clipped(
     };
     let x_flip = subtile.x_flip() ^ horizontal_flip;
     let y_flip = subtile.y_flip() ^ vertical_flip;
-    let palette_base = usize::from(subtile.palette()) * 16;
+    let palette_row = palette_routing.palette_row(subtile.palette());
+    let palette_base = usize::from(palette_row) * 16;
     for y in 0..8 {
         for x in 0..8 {
             let source_x = if x_flip { 7 - x } else { x };
@@ -496,6 +554,63 @@ mod tests {
     }
 
     #[test]
+    fn layer_palette_routing_shifts_only_low_rows_on_the_selected_layer() {
+        let definitions = [definition([0x0000, 0x0c00, 0x1000, 0x1c00])];
+        let tiles = [solid(1)];
+        let shifted = [NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: 0,
+        }];
+        let direct = [NativeMap16Placement {
+            x: 1,
+            y: 0,
+            word: 0,
+        }];
+        let layers: [&[NativeMap16Placement]; 2] = [&shifted, &direct];
+        let mut colors = vec![Bgr555(0); 16 * 8];
+        for row in 0..8 {
+            colors[row * 16 + 1] = Bgr555(u16::try_from(row + 1).unwrap());
+        }
+        let palette = Palette { colors };
+        let canvas = render_native_level_framebuffer_with_layer_palette_routing(
+            NativeLevelRasterRequest {
+                width: 32,
+                height: 16,
+                camera_x: 0,
+                camera_y: 0,
+                backdrop: Rgba::default(),
+                layers: &layers,
+                definitions: &definitions,
+                tiles: &tiles,
+                palette: &palette,
+            },
+            &[
+                NativeMap16PaletteRouting::ShiftLowRowsByFour,
+                NativeMap16PaletteRouting::Direct,
+            ],
+        )
+        .unwrap();
+        let rgba = |row: usize| {
+            let color = palette.colors[row * 16 + 1].to_rgb8();
+            Rgba {
+                red: color.red,
+                green: color.green,
+                blue: color.blue,
+                alpha: 255,
+            }
+        };
+        assert_eq!(canvas.get(0, 0), Some(rgba(4)));
+        assert_eq!(canvas.get(8, 0), Some(rgba(7)));
+        assert_eq!(canvas.get(0, 8), Some(rgba(4)));
+        assert_eq!(canvas.get(8, 8), Some(rgba(7)));
+        assert_eq!(canvas.get(16, 0), Some(rgba(0)));
+        assert_eq!(canvas.get(24, 0), Some(rgba(3)));
+        assert_eq!(canvas.get(16, 8), Some(rgba(4)));
+        assert_eq!(canvas.get(24, 8), Some(rgba(7)));
+    }
+
+    #[test]
     fn palette_and_canvas_failures_are_typed() {
         let layers: [&[NativeMap16Placement]; 0] = [];
         let request = NativeLevelRasterRequest {
@@ -512,6 +627,16 @@ mod tests {
         assert_eq!(
             render_native_level_framebuffer(request),
             Err(NativeLevelRasterError::InvalidPaletteLength(0))
+        );
+        assert_eq!(
+            render_native_level_framebuffer_with_layer_palette_routing(
+                request,
+                &[NativeMap16PaletteRouting::Direct],
+            ),
+            Err(NativeLevelRasterError::InvalidLayerPaletteRoutingLength {
+                layers: 0,
+                routing: 1,
+            })
         );
     }
 }
