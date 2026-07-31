@@ -881,6 +881,7 @@ impl RomLevelAssetsEditor {
                         match hit.composition {
                             NativeMap16Composition::Opaque => "opaque",
                             NativeMap16Composition::Average => "average",
+                            NativeMap16Composition::HalfColor => "half-color",
                         },
                     ));
                     if let Some(definition) = hit.definition {
@@ -1172,9 +1173,11 @@ fn render_super_graphics_level_preview(
         header.object_tileset(),
     );
     let layer2 = match layer2_data {
-        Some(NativeLayer2Data::Tilemap(tilemap)) => {
-            layer2_placements(tilemap, header.object_tileset())?
-        }
+        Some(NativeLayer2Data::Tilemap(tilemap)) => layer2_placements(
+            tilemap,
+            header.object_tileset(),
+            installed_layer2_background_half_color(header.level_mode()),
+        )?,
         Some(NativeLayer2Data::Objects(objects)) => {
             let (placements, _, layer2_diagnostics) = render_object_placements(
                 &workspace.image,
@@ -1828,9 +1831,14 @@ const fn native_map16_composition(object_tileset: u8, word: u16) -> NativeMap16C
     }
 }
 
+const fn installed_layer2_background_half_color(level_mode: u8) -> bool {
+    lm_profile::smw_us_v1_level_mode(level_mode).background_half_color
+}
+
 fn layer2_placements(
     tilemap: &[u8],
     object_tileset: u8,
+    background_half_color: bool,
 ) -> Result<Vec<NativeMap16Placement>, String> {
     if tilemap.len() != lm_level::NATIVE_LAYER2_TILEMAP_LEN {
         return Err(format!(
@@ -1852,7 +1860,11 @@ fn layer2_placements(
                 x: i32::try_from(x).map_err(|_| "Layer 2 X coordinate overflow".to_owned())?,
                 y: i32::try_from(y).map_err(|_| "Layer 2 Y coordinate overflow".to_owned())?,
                 word,
-                composition: native_map16_composition(object_tileset, word),
+                composition: if background_half_color {
+                    NativeMap16Composition::HalfColor
+                } else {
+                    native_map16_composition(object_tileset, word)
+                },
             });
         }
     }
@@ -2112,7 +2124,7 @@ mod tests {
             let index = lm_level::native_layer2_tilemap_index(x, y).unwrap();
             bytes[index * 2..index * 2 + 2].copy_from_slice(&word.to_le_bytes());
         }
-        let placements = layer2_placements(&bytes, 0).unwrap();
+        let placements = layer2_placements(&bytes, 0, false).unwrap();
         assert_eq!(
             placements[0],
             NativeMap16Placement {
@@ -2144,7 +2156,7 @@ mod tests {
 
     #[test]
     fn layer2_preview_rejects_noncanonical_tilemap_lengths() {
-        assert!(layer2_placements(&[0; 0x7ff], 0).is_err());
+        assert!(layer2_placements(&[0; 0x7ff], 0, false).is_err());
     }
 
     #[test]
@@ -2167,7 +2179,7 @@ mod tests {
         let mut colors = vec![Bgr555(0); 128];
         colors[1] = Bgr555(0x001f);
         let palette = Palette { colors };
-        let placements = layer2_placements(&tilemap, 0).unwrap();
+        let placements = layer2_placements(&tilemap, 0, false).unwrap();
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
         let image = render_level_image(
             &layers,
@@ -2381,7 +2393,7 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x0002,
-                composition: NativeMap16Composition::Opaque,
+                composition: NativeMap16Composition::HalfColor,
             },
         ];
         let layer1 = [
@@ -2428,7 +2440,7 @@ mod tests {
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer2,
                         palette_routing: NativeMap16PaletteRouting::Direct,
-                        composition: NativeMap16Composition::Opaque,
+                        composition: NativeMap16Composition::HalfColor,
                         word: 0x0002,
                         definition: Some(expected[1]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
@@ -2880,11 +2892,11 @@ mod tests {
         .unwrap();
         assert_eq!(object[0].composition, NativeMap16Composition::Average);
 
-        let mut tilemap = vec![0; lm_level::NATIVE_LAYER2_TILEMAP_LEN];
+        let mut tilemap_bytes = vec![0; lm_level::NATIVE_LAYER2_TILEMAP_LEN];
         let tilemap_index = lm_level::native_layer2_tilemap_index(1, 2).unwrap();
-        tilemap[tilemap_index * 2..tilemap_index * 2 + 2]
+        tilemap_bytes[tilemap_index * 2..tilemap_index * 2 + 2]
             .copy_from_slice(&0x0027_u16.to_le_bytes());
-        let tilemap = layer2_placements(&tilemap, 4).unwrap();
+        let tilemap = layer2_placements(&tilemap_bytes, 4, false).unwrap();
         assert_eq!(
             tilemap
                 .iter()
@@ -2893,6 +2905,24 @@ mod tests {
                 .composition,
             NativeMap16Composition::Average
         );
+
+        let half_color = layer2_placements(&tilemap_bytes, 4, true).unwrap();
+        assert_eq!(
+            half_color
+                .iter()
+                .find(|placement| placement.x == 1 && placement.y == 2)
+                .unwrap()
+                .composition,
+            NativeMap16Composition::HalfColor
+        );
+    }
+
+    #[test]
+    fn recovered_level_modes_select_layer2_background_half_color() {
+        assert!(installed_layer2_background_half_color(0x0c));
+        assert!(installed_layer2_background_half_color(0x0d));
+        assert!(!installed_layer2_background_half_color(0x0b));
+        assert!(!installed_layer2_background_half_color(0x0e));
     }
 
     #[test]

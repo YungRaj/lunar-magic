@@ -473,6 +473,9 @@ later same-cell object overwrites in serialized painter order.
 The installed native framebuffer now carries composition per Map16 placement and implements the
 routine's exact averaged RGB operation. The already-proved object-tileset-4 `$027`–`$02A` condition
 selects it for object or tilemap placements; all other installed placements remain opaque.
+The recovered Layer 2 render-property bit 6 is modeled separately: modes `$0C` and `$0D` route
+tilemap placements through source-only half color, matching
+`RenderTransparentLevelBackgroundMap16Tile` rather than averaging against the combined framebuffer.
 A retained Lunar Magic-created level `$000` test additionally requires this path to materialize
 nonblank cells without unresolved definitions. Standard sprite records now use their decoded
 native placements and the existing authenticated preview dispatch. Ordinary preview definitions

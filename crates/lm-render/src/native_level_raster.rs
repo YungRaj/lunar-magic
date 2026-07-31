@@ -24,6 +24,11 @@ pub enum NativeMap16Composition {
     ///
     /// This is Lunar Magic's `RenderMap16TileToPixelBuffer` averaged display path.
     Average,
+    /// Halve each source RGB channel without sampling the destination.
+    ///
+    /// Lunar Magic uses this for nontransparent Layer 2 background pixels in level modes whose
+    /// recovered render-property byte carries bit 6.
+    HalfColor,
 }
 
 impl NativeMap16Composition {
@@ -34,6 +39,12 @@ impl NativeMap16Composition {
                 red: (source.red & 0xfe) / 2 + (destination.red & 0xfe) / 2,
                 green: (source.green & 0xfe) / 2 + (destination.green & 0xfe) / 2,
                 blue: (source.blue & 0xfe) / 2 + (destination.blue & 0xfe) / 2,
+                alpha: 255,
+            },
+            Self::HalfColor => Rgba {
+                red: source.red >> 1,
+                green: source.green >> 1,
+                blue: source.blue >> 1,
                 alpha: 255,
             },
         }
@@ -503,6 +514,48 @@ mod tests {
                 red: 129,
                 green: 3,
                 blue: 4,
+                alpha: 255,
+            })
+        );
+        assert_eq!(canvas.get(8, 0), Some(backdrop));
+    }
+
+    #[test]
+    fn half_color_map16_pixels_ignore_destination_and_preserve_transparency() {
+        let definitions = [definition([0, 1, 1, 1])];
+        let tiles = [solid(1), solid(0)];
+        let placements = [NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: 0,
+            composition: NativeMap16Composition::HalfColor,
+        }];
+        let layers: [&[NativeMap16Placement]; 1] = [&placements];
+        let backdrop = Rgba {
+            red: 17,
+            green: 19,
+            blue: 21,
+            alpha: 255,
+        };
+        let canvas = render_native_level_framebuffer(NativeLevelRasterRequest {
+            width: 16,
+            height: 16,
+            camera_x: 0,
+            camera_y: 0,
+            backdrop,
+            layers: &layers,
+            definitions: &definitions,
+            tiles: &tiles,
+            palette: &palette(),
+        })
+        .unwrap();
+
+        assert_eq!(
+            canvas.get(0, 0),
+            Some(Rgba {
+                red: 127,
+                green: 0,
+                blue: 0,
                 alpha: 255,
             })
         );

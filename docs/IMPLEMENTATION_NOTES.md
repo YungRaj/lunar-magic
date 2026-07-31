@@ -2793,6 +2793,12 @@ covering both object-backed paints and native Layer 2 tilemap words. Nonzero sou
 the low bit of each source and destination RGB channel before adding their halves; transparent
 source pixels preserve the prior framebuffer. The inspector reports `opaque` versus `average`
 from the same placement value consumed by the raster.
+The distinct recovered background-half-color flag is also installed without treating it as
+destination averaging. Level modes `$0C` and `$0D` mark every native Layer 2 tilemap placement as
+`half-color`; its nontransparent source RGB channels shift right once independently of the
+framebuffer beneath them, while color zero remains transparent. This mode takes precedence over
+the tileset-specific average rule because Lunar Magic renders the background through its dedicated
+`RenderTransparentLevelBackgroundMap16Tile` path.
 The framebuffer accepts an explicit palette-routing rule for every layer while retaining direct
 routing as the public default. The installed preview selects the recovered low-row-plus-four rule
 only for object-backed Layer 2 under object tileset 3: encoded rows 0–3 address CGRAM rows 4–7,
