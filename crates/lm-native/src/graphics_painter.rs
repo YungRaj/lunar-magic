@@ -741,6 +741,7 @@ pub(crate) fn apply_tile_keyboard_navigation(
     selected: &mut usize,
     responses: &[egui::Response],
     tile_count: usize,
+    tile_shift_enabled: bool,
 ) -> Option<String> {
     let Some(response) = responses.get(*selected % GRAPHICS_PAGE_TILES) else {
         return None;
@@ -749,17 +750,15 @@ pub(crate) fn apply_tile_keyboard_navigation(
         return None;
     }
     let navigation = ui.input_mut(|input| {
-        if input.modifiers.any() {
-            return None;
-        }
         const KEYS: [(egui::Key, TileNavigation); 2] = [
             (egui::Key::ArrowUp, TileNavigation::PreviousPage),
             (egui::Key::ArrowDown, TileNavigation::NextPage),
         ];
         KEYS.into_iter().find_map(|(key, navigation)| {
-            input
-                .consume_key(egui::Modifiers::NONE, key)
-                .then_some(navigation)
+            let modifiers = input.modifiers;
+            (!native_vertical_tile_shift(modifiers, tile_shift_enabled)
+                && input.consume_key(modifiers, key))
+            .then_some(navigation)
         })
     });
     let Some(navigation) = navigation else {
@@ -809,12 +808,12 @@ pub(crate) fn apply_tile_palette_keyboard(
         return None;
     }
     let step = ui.input_mut(|input| {
-        if input.modifiers.any() {
-            return None;
-        }
-        if input.consume_key(egui::Modifiers::NONE, egui::Key::PageUp) {
+        let modifiers = input.modifiers;
+        if input.consume_key(modifiers, egui::Key::PageUp) {
             Some(PaletteStep::Next)
-        } else if input.consume_key(egui::Modifiers::NONE, egui::Key::PageDown) {
+        } else if !(modifiers.ctrl && modifiers.shift)
+            && input.consume_key(modifiers, egui::Key::PageDown)
+        {
             Some(PaletteStep::Previous)
         } else {
             None
@@ -850,7 +849,8 @@ pub(crate) fn take_tile_shift(
         return None;
     }
     ui.input_mut(|input| {
-        if input.modifiers != egui::Modifiers::SHIFT {
+        let modifiers = input.modifiers;
+        if !modifiers.shift {
             return None;
         }
         [
@@ -861,11 +861,15 @@ pub(crate) fn take_tile_shift(
         ]
         .into_iter()
         .find_map(|(key, shift)| {
-            input
-                .consume_key(egui::Modifiers::SHIFT, key)
-                .then_some(shift)
+            let allowed = matches!(shift, TileShift::Left | TileShift::Right)
+                || native_vertical_tile_shift(modifiers, enabled);
+            (allowed && input.consume_key(modifiers, key)).then_some(shift)
         })
     })
+}
+
+fn native_vertical_tile_shift(modifiers: egui::Modifiers, enabled: bool) -> bool {
+    enabled && modifiers.shift && !modifiers.ctrl && !modifiers.alt
 }
 
 pub(crate) fn take_graphics_character_shortcut(
@@ -996,7 +1000,7 @@ mod tests {
             if request_focus {
                 responses[*selected % GRAPHICS_PAGE_TILES].request_focus();
             }
-            apply_tile_keyboard_navigation(ui, selected, &responses, TEST_GRID_TILES);
+            apply_tile_keyboard_navigation(ui, selected, &responses, TEST_GRID_TILES, true);
         });
     }
 
@@ -1013,7 +1017,8 @@ mod tests {
             if request_focus {
                 responses[*selected % GRAPHICS_PAGE_TILES].request_focus();
             }
-            status = apply_tile_keyboard_navigation(ui, selected, &responses, TEST_GRID_TILES);
+            status =
+                apply_tile_keyboard_navigation(ui, selected, &responses, TEST_GRID_TILES, true);
         });
         status
     }
@@ -1570,7 +1575,7 @@ mod tests {
     }
 
     #[test]
-    fn focused_grid_routes_exact_shift_arrow_only_when_enabled() {
+    fn focused_grid_routes_native_asymmetric_shift_arrows() {
         let context = egui::Context::default();
         let mut selected = 9;
         let _ = context.run(egui::RawInput::default(), |context| {
@@ -1587,12 +1592,34 @@ mod tests {
                 let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
-                apply_tile_keyboard_navigation(ui, &mut selected, &responses, TEST_GRID_TILES);
+                apply_tile_keyboard_navigation(
+                    ui,
+                    &mut selected,
+                    &responses,
+                    TEST_GRID_TILES,
+                    true,
+                );
                 shift = take_tile_shift(ui, selected, &responses, true);
             });
         });
         assert_eq!(selected, 9);
         assert_eq!(shift, Some(TileShift::Left));
+
+        let control_shift = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+        let input = egui::RawInput {
+            events: vec![key_event(egui::Key::ArrowRight, control_shift)],
+            modifiers: control_shift,
+            ..Default::default()
+        };
+        let _ = context.run(input, |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..TEST_GRID_TILES)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                shift = take_tile_shift(ui, selected, &responses, true);
+            });
+        });
+        assert_eq!(shift, Some(TileShift::Right));
 
         let input = egui::RawInput {
             events: vec![key_event(egui::Key::ArrowRight, egui::Modifiers::SHIFT)],
@@ -1611,7 +1638,64 @@ mod tests {
     }
 
     #[test]
-    fn focused_grid_routes_unmodified_page_keys_to_palette_rows() {
+    fn modified_vertical_arrows_fall_back_to_native_page_navigation() {
+        let context = egui::Context::default();
+        let mut selected = 9;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_keyboard_grid(context, &mut selected, true);
+        });
+        let control_shift = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+        let input = egui::RawInput {
+            events: vec![key_event(egui::Key::ArrowDown, control_shift)],
+            modifiers: control_shift,
+            ..Default::default()
+        };
+        let mut status = None;
+        let _ = context.run(input, |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..TEST_GRID_TILES)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                status = apply_tile_keyboard_navigation(
+                    ui,
+                    &mut selected,
+                    &responses,
+                    TEST_GRID_TILES,
+                    true,
+                );
+            });
+        });
+        assert_eq!(selected, 0x109);
+        assert_eq!(status.as_deref(), Some("Viewing 8x8 page 0x1."));
+
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_keyboard_grid(context, &mut selected, true);
+        });
+        let input = egui::RawInput {
+            events: vec![key_event(egui::Key::ArrowUp, egui::Modifiers::SHIFT)],
+            modifiers: egui::Modifiers::SHIFT,
+            ..Default::default()
+        };
+        let _ = context.run(input, |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..TEST_GRID_TILES)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                status = apply_tile_keyboard_navigation(
+                    ui,
+                    &mut selected,
+                    &responses,
+                    TEST_GRID_TILES,
+                    false,
+                );
+            });
+        });
+        assert_eq!(selected, 9);
+        assert_eq!(status.as_deref(), Some("Viewing 8x8 page 0x0."));
+    }
+
+    #[test]
+    fn focused_grid_routes_native_modified_page_keys_to_palette_rows() {
         let context = egui::Context::default();
         let mut selected = 9;
         let mut display_palette = GraphicsDisplayPalette::Row(6);
@@ -1620,7 +1704,8 @@ mod tests {
             render_keyboard_grid(context, &mut selected, true);
         });
         let input = egui::RawInput {
-            events: vec![key_event(egui::Key::PageUp, egui::Modifiers::NONE)],
+            events: vec![key_event(egui::Key::PageUp, egui::Modifiers::CTRL)],
+            modifiers: egui::Modifiers::CTRL,
             ..Default::default()
         };
         let _ = context.run(input, |context| {
@@ -1628,7 +1713,13 @@ mod tests {
                 let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
-                apply_tile_keyboard_navigation(ui, &mut selected, &responses, TEST_GRID_TILES);
+                apply_tile_keyboard_navigation(
+                    ui,
+                    &mut selected,
+                    &responses,
+                    TEST_GRID_TILES,
+                    true,
+                );
                 status =
                     apply_tile_palette_keyboard(ui, selected, &responses, &mut display_palette, 8);
             });
@@ -1655,6 +1746,27 @@ mod tests {
         });
         assert_eq!(display_palette, GraphicsDisplayPalette::Row(6));
         assert_eq!(status.as_deref(), Some("Rendered with palette 0x6."));
+
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_keyboard_grid(context, &mut selected, true);
+        });
+        let control_shift = egui::Modifiers::CTRL | egui::Modifiers::SHIFT;
+        let input = egui::RawInput {
+            events: vec![key_event(egui::Key::PageDown, control_shift)],
+            modifiers: control_shift,
+            ..Default::default()
+        };
+        let _ = context.run(input, |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..TEST_GRID_TILES)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                status =
+                    apply_tile_palette_keyboard(ui, selected, &responses, &mut display_palette, 8);
+            });
+        });
+        assert_eq!(display_palette, GraphicsDisplayPalette::Row(6));
+        assert_eq!(status, None);
     }
 
     #[test]

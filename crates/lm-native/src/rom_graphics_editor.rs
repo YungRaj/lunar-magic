@@ -584,10 +584,21 @@ impl RomGraphicsEditor {
         {
             paste_status = Some(format!("Pasted selected tile over tile 0x{index:X}."));
         }
+        let selected_owner = self
+            .workspace
+            .as_ref()
+            .and_then(|workspace| workspace.controller.ownership().owner(self.selected_tile));
+        let tile_shift_enabled = edits_enabled && ownership::is_editable(selected_owner);
         let navigation_status = if let Some(navigation) = page_control {
             apply_tile_navigation(&mut self.selected_tile, &responses, tile_count, navigation)
         } else {
-            apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses, tile_count)
+            apply_tile_keyboard_navigation(
+                ui,
+                &mut self.selected_tile,
+                &responses,
+                tile_count,
+                tile_shift_enabled,
+            )
         };
         let palette_status = if let Some(step) = palette_control {
             apply_tile_palette_step(&mut self.display_palette, row_count, step)

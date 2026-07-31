@@ -1234,10 +1234,14 @@ and vertical window-DPI percentages, initialized from the window at `0050693D`�
 user-selected tile zoom. `LayoutGraphicsEditorForDpi` at `005063C0` scales the base control geometry,
 and `005066BA`–`005066F0` materializes an exact `0x100`-pixel logical selected-tile canvas. Rust now
 uses that fixed 256×256 logical square and delegates DPI scaling to the toolkit, removing the
-non-native discrete selector. The documented 8×8-editor
-Shift+Arrow behavior is now implemented exactly as a one-pixel directional wrap. It uses the same
-revisioned or ownership-guarded tile replacement paths as paint, paste, and flips rather than a
-presentation-only buffer. Exact Ctrl+left-click copies and selects the pointed tile. Unmodified
+non-native discrete selector. The documented 8×8-editor Shift+Arrow behavior is implemented as a
+one-pixel directional wrap. Direct decompilation also proves asymmetric modifier tests: Left/Right
+wrap whenever Shift is held; Up/Down wrap only when Shift is held without Ctrl or Alt, otherwise
+those vertical keys retain page navigation (including modified forms and Shift on a read-only tile).
+Page Up advances the palette with any modifiers, while Page Down reverses it unless Ctrl+Shift
+invokes the separate internal-cache unlock. Rust uses the same revisioned or ownership-guarded tile
+replacement paths as paint, paste, and flips rather than a presentation-only buffer. Exact
+Ctrl+left-click copies and selects the pointed tile. Unmodified
 right-click copies the active edit tile over its target, while Ctrl+right-click requests the typed
 single-tile clipboard payload and selects that target only after validation, matching the recovered
 mouse-message branches. Installed paste cannot bypass fixed/ExAnimation ownership, stale revision,
@@ -1284,7 +1288,9 @@ and background sampling. The corresponding messages are exactly `Color %X select
 0. Successful Up/Down
 navigation publishes `Viewing 8x8 page 0x%X.`, while blocked movement publishes the exact
 `Already at Start`/`Already at End` diagnostics. Page Up/Down report the rendered hexadecimal
-palette. Rust now keeps this state event-driven so a stationary pointer does not overwrite a later
+palette. Their native branches inspect modifiers only for the edit-vs-navigation and diagnostic
+exceptions above; they are not globally unmodified-only shortcuts. Rust now keeps this state
+event-driven so a stationary pointer does not overwrite a later
 keyboard action and leaving the tracked region clears it, matching the Win32 message boundary.
 The F1 table entry at `00505A1E` does not invoke help: it posts command `$1B59` to the main
 level-editor child. `HandleLevelEditorCommand` fans that command out as redraw command `7000` to

@@ -385,7 +385,13 @@ impl VanillaGraphicsEditor {
         let navigation_status = if let Some(navigation) = page_control {
             apply_tile_navigation(&mut self.selected_tile, &responses, tile_count, navigation)
         } else {
-            apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses, tile_count)
+            apply_tile_keyboard_navigation(
+                ui,
+                &mut self.selected_tile,
+                &responses,
+                tile_count,
+                edits_enabled,
+            )
         };
         let palette_status = if let Some(step) = palette_control {
             apply_tile_palette_step(&mut self.display_palette, row_count, step)

@@ -1741,9 +1741,13 @@ pixel exactly 32 logical pixels wide. The toolkit applies monitor DPI scaling to
 as the native window does; there is no user-facing graphics-editor zoom selector. The same square is
 passed to both rasterization and normalized hit testing.
 The recovered Shift+Arrow shortcut performs a lossless one-pixel wrap left, right, up, or down.
-The shared focus adapter accepts only the exact Shift modifier; portable wraps are independently
-undoable, pristine wraps enter the staged graphics controller, and installed wraps additionally
-require editable ownership plus a nonstale workspace with no active graphics file worker.
+Native Left/Right accept Shift with any other modifiers. Up/Down accept Shift without Ctrl/Alt only
+when the selected tile is editable; every other modifier/ownership combination falls through to the
+ordinary previous/next graphics-page route. Page Up accepts every modifier combination, and Page
+Down does the same except that Ctrl+Shift is reserved for Lunar Magic's unmodeled internal-cache
+unlock. Portable wraps are independently undoable, pristine wraps enter the staged graphics
+controller, and installed wraps additionally require editable ownership plus a nonstale workspace
+with no active graphics file worker.
 Unmodified F9 is consumed as the graphics editor's documented save command on all three surfaces.
 It enters the same persistence action as each visible Save/Commit button: the portable document
 uses its bounded background writer, pristine SMW requires an expanded ROM and staged changes, and
