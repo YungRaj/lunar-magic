@@ -1732,6 +1732,9 @@ a stationary modifier change alone leaves the last action message intact.
 The same movement boundary applies inside a palette swatch and the selected-tile pixel canvas:
 movement republishes their native hover text, but a stationary frame preserves a later select,
 sample, navigation, or palette message.
+Because the three toolkit regions are visited sequentially, an inactive region is a no-op unless it
+was the previously tracked region; it cannot erase hover text emitted by another active region in
+the same movement frame.
 All three graphics surfaces initialize foreground color 1 and background color 0. Primary and
 secondary palette clicks select those colors; primary and secondary pixel gestures paint with them;
 Ctrl-primary and Ctrl-secondary sample the pointed pixel into foreground and background respectively.

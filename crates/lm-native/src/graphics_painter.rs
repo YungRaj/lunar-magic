@@ -87,7 +87,7 @@ impl GraphicsEditorStatus {
     }
 
     pub(crate) fn update_palette_hover(&mut self, hovered: Option<u8>, pointer_moved: bool) {
-        if hovered == self.hovered_color && !pointer_moved {
+        if hovered == self.hovered_color && (hovered.is_none() || !pointer_moved) {
             return;
         }
         let text = hovered.map(|color| format!("Color {color:X}."));
@@ -116,7 +116,7 @@ impl GraphicsEditorStatus {
             .iter()
             .position(egui::Response::hovered)
             .and_then(|index| first_index.checked_add(index));
-        if hovered == self.hovered_tile && !pointer_moved {
+        if hovered == self.hovered_tile && (hovered.is_none() || !pointer_moved) {
             return;
         }
         let text = hovered.map(|index| tile_hover_status(index, modifiers, owner));
@@ -139,7 +139,7 @@ impl GraphicsEditorStatus {
         selected: usize,
         pointer_moved: bool,
     ) {
-        if hovered == self.editor_hovered && !pointer_moved {
+        if hovered == self.editor_hovered && (!hovered || !pointer_moved) {
             return;
         }
         let text = hovered.then(|| format!("Tile 0x{selected:X} selected for editing."));
@@ -1682,6 +1682,9 @@ mod tests {
         let mut status = GraphicsEditorStatus::default();
         status.update_palette_hover(Some(3), true);
         assert_eq!(status.text.as_deref(), Some("Color 3."));
+        status.update_tile_hover(&[], 0, egui::Modifiers::NONE, None, true);
+        status.update_pixel_editor_hover(false, 0, true);
+        assert_eq!(status.text.as_deref(), Some("Color 3."));
         status.select_foreground_color(3);
         status.update_palette_hover(Some(3), false);
         assert_eq!(status.text.as_deref(), Some("Color 3 selected for FG."));
@@ -1691,6 +1694,12 @@ mod tests {
         assert_eq!(status.text, None);
 
         status.update_pixel_editor_hover(true, 0x2a, true);
+        assert_eq!(
+            status.text.as_deref(),
+            Some("Tile 0x2A selected for editing.")
+        );
+        status.update_palette_hover(None, true);
+        status.update_tile_hover(&[], 0, egui::Modifiers::NONE, None, true);
         assert_eq!(
             status.text.as_deref(),
             Some("Tile 0x2A selected for editing.")
@@ -1737,6 +1746,9 @@ mod tests {
             None,
             true,
         );
+        assert_eq!(status.text(), Some("Tile 0x20 (Address 0x400)"));
+        status.update_palette_hover(None, true);
+        status.update_pixel_editor_hover(false, 0, true);
         assert_eq!(status.text(), Some("Tile 0x20 (Address 0x400)"));
 
         status.set("Copied tile to clipboard.");
