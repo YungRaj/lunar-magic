@@ -55,6 +55,9 @@ pub(crate) struct AggregatePanels {
     frame_index: usize,
     record: exanimation_form::RecordForm,
     settings: [String; 16],
+    bypass_enabled: bool,
+    bypass_foreground_background: [u16; 6],
+    bypass_sprites: [u16; 4],
     loaded_revision: Option<u64>,
     paste_target: Option<PasteTarget>,
 }
@@ -121,6 +124,10 @@ impl AggregatePanels {
             self.record = exanimation_form::RecordForm::load(record, &frames);
         }
         if let Some(settings) = &assets.expanded_settings {
+            let bypass = lm_level::ExpandedLevelHeader::from(settings).super_graphics_bypass();
+            self.bypass_enabled = bypass.enabled;
+            self.bypass_foreground_background = bypass.foreground_background;
+            self.bypass_sprites = bypass.sprites;
             for (index, field) in self.settings.iter_mut().enumerate() {
                 *field = format!("{:04X}", settings.word(index).expect("bounded word"));
             }
