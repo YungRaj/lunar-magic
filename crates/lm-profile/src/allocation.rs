@@ -139,30 +139,56 @@ impl RevisionProfile {
     ) -> Result<AllocationPolicy, RevisionAllocationError> {
         let mut policy =
             self.allocation_policy(search, rom.logical_len(), internal_header_offset)?;
-        let Some(installed) = self.exanimation_installation.resolve(rom)? else {
-            return Ok(policy);
-        };
-        let resolved = installed.resolve(rom)?;
-        let table = table_range(
-            "exanimation.installed",
-            resolved.payload.pointers,
-            rom.logical_len(),
-        )?;
-        if !policy.protected.contains(&table) {
-            policy.protected.push(table);
+        if let Some(installed) = self.exanimation_installation.resolve(rom)? {
+            let resolved = installed.resolve(rom)?;
+            let table = table_range(
+                "exanimation.installed",
+                resolved.payload.pointers,
+                rom.logical_len(),
+            )?;
+            if !policy.protected.contains(&table) {
+                policy.protected.push(table);
+            }
+            if let Some(locator) = installed.pointer_locator {
+                for (domain, offset) in [
+                    (
+                        "exanimation.locator.first_operand",
+                        locator.first_operand_offset,
+                    ),
+                    (
+                        "exanimation.locator.final_operand",
+                        locator.final_operand_offset(rom)?,
+                    ),
+                ] {
+                    let range = protected_range(domain, offset, 3, rom.logical_len())?;
+                    if !policy.protected.contains(&range) {
+                        policy.protected.push(range);
+                    }
+                }
+            }
         }
-        if let Some(locator) = installed.pointer_locator {
-            for (domain, offset) in [
-                (
-                    "exanimation.locator.first_operand",
-                    locator.first_operand_offset,
-                ),
-                (
-                    "exanimation.locator.final_operand",
-                    locator.final_operand_offset(rom)?,
-                ),
+        if let Some(features) = self.exanimation_feature_installation.resolve(rom)? {
+            let table_offset = features.table_locator.resolve(rom)?;
+            let marker_offset =
+                table_offset
+                    .checked_sub(1)
+                    .ok_or(RevisionAllocationError::RangeOverflow {
+                        domain: "exanimation.features.table",
+                    })?;
+            for range in [
+                protected_range(
+                    "exanimation.features.final_operand",
+                    features.table_locator.final_operand_offset(rom)?,
+                    3,
+                    rom.logical_len(),
+                )?,
+                protected_range(
+                    "exanimation.features.table",
+                    marker_offset,
+                    lm_project::EXANIMATION_FEATURE_LEVEL_COUNT + 1,
+                    rom.logical_len(),
+                )?,
             ] {
-                let range = protected_range(domain, offset, 3, rom.logical_len())?;
                 if !policy.protected.contains(&range) {
                     policy.protected.push(range);
                 }
@@ -230,6 +256,38 @@ fn installation_marker_ranges(
             3,
             image_len,
         )?);
+    }
+    let mut feature_variant =
+        |prefix: &'static str, layout: lm_project::InstalledExAnimationFeatureRomLayout| {
+            markers.push(protected_range(
+                prefix,
+                layout.table_locator.first_operand_offset,
+                3,
+                image_len,
+            )?);
+            markers.push(marker_range(
+                "exanimation.features.runtime_marker",
+                layout.feature_runtime_marker,
+            )?);
+            Ok::<_, RevisionAllocationError>(())
+        };
+    match profile.exanimation_feature_installation {
+        lm_project::InstalledLayout::Absent => {}
+        lm_project::InstalledLayout::Unconditional(layout) => {
+            feature_variant("exanimation.features.locator_operand", layout)?;
+        }
+        lm_project::InstalledLayout::Alternatives { primary, fallback } => {
+            feature_variant(
+                "exanimation.features.primary_locator_operand",
+                primary.layout,
+            )?;
+            if let Some(fallback) = fallback {
+                feature_variant(
+                    "exanimation.features.fallback_locator_operand",
+                    fallback.layout,
+                )?;
+            }
+        }
     }
     Ok(markers)
 }
@@ -512,6 +570,59 @@ mod tests {
                     .protected
                     .contains(&ProtectedRange(offset..offset + 1))
             );
+        }
+    }
+
+    #[test]
+    fn resolved_feature_table_operands_marker_and_storage_are_protected() {
+        let mut profile = crate::test_support::profile();
+        let first_operand = 0x2_8811;
+        let runtime = 0x2_c000;
+        let final_operand = runtime + 0x46;
+        let exanimation_operand = runtime - 0x20;
+        let table = 0x2_a001;
+        let runtime_marker = 0x2_8890;
+        if let lm_project::InstalledLayout::Unconditional(layout) =
+            &mut profile.exanimation_installation
+        {
+            layout.pointer_locator = Some(lm_project::ChainedSnesPointerLocator {
+                mapper: profile.mapper,
+                first_operand_offset: first_operand,
+                final_operand_displacement: -0x20,
+            });
+        }
+        profile.exanimation_feature_installation = lm_project::InstalledLayout::Unconditional(
+            lm_project::InstalledExAnimationFeatureRomLayout {
+                table_locator: lm_project::ChainedSnesPointerLocator {
+                    mapper: profile.mapper,
+                    first_operand_offset: first_operand,
+                    final_operand_displacement: 0x46,
+                },
+                feature_runtime_marker: lm_project::InstallationMarker {
+                    offset: runtime_marker,
+                    expected: 0xea,
+                },
+            },
+        );
+        let mut rom = lm_rom::RomImage::from_bytes(vec![0xff; 0x3_0000]).unwrap();
+        for (offset, target) in [
+            (first_operand, runtime),
+            (exanimation_operand, profile.exanimation.pointers.offset),
+            (final_operand, table),
+        ] {
+            let mapped = lm_rom::pc_to_snes(profile.mapper, target).unwrap();
+            rom.write(offset, &mapped.to_le_bytes()[..3]).unwrap();
+        }
+        let policy = profile
+            .allocation_policy_for_rom(0x6000..0x7000, &rom, 0x7fc0)
+            .unwrap();
+        for range in [
+            ProtectedRange(first_operand..first_operand + 3),
+            ProtectedRange(final_operand..final_operand + 3),
+            ProtectedRange(runtime_marker..runtime_marker + 1),
+            ProtectedRange(table - 1..table + lm_project::EXANIMATION_FEATURE_LEVEL_COUNT),
+        ] {
+            assert!(policy.protected.contains(&range), "missing {range:?}");
         }
     }
 }

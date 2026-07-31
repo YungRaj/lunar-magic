@@ -168,6 +168,7 @@ pub fn profile() -> RevisionProfile {
             maximum_encoded_len: 0x8000,
         },
         exanimation_installation: exanimation_installation(mapper),
+        exanimation_feature_installation: lm_project::InstalledLayout::Absent,
         expanded_settings: Some(expanded_settings(mapper)),
         overworld: CompleteOverworldRomLayout {
             layers: OverworldLayersRomLayout {
@@ -317,7 +318,47 @@ fn marker_gated_optional_asset_layouts_round_trip_canonically() {
             layout: lm_project::InstalledExAnimationRomLayout {
                 payload: expected.exanimation,
                 pointer_presence_mask: 0x00ff_0000,
-                pointer_locator: None,
+                pointer_locator: Some(lm_project::ChainedSnesPointerLocator {
+                    mapper: expected.mapper,
+                    first_operand_offset: 0x2_8821,
+                    final_operand_displacement: -0x40,
+                }),
+            },
+        }),
+    };
+    expected.exanimation_feature_installation = lm_project::InstalledLayout::Alternatives {
+        primary: lm_project::GatedLayout {
+            marker: lm_project::InstallationMarker {
+                offset: 0x2_8810,
+                expected: 0x22,
+            },
+            layout: lm_project::InstalledExAnimationFeatureRomLayout {
+                table_locator: lm_project::ChainedSnesPointerLocator {
+                    mapper: expected.mapper,
+                    first_operand_offset: 0x2_8811,
+                    final_operand_displacement: 0x46,
+                },
+                feature_runtime_marker: lm_project::InstallationMarker {
+                    offset: 0x2_8890,
+                    expected: 0xea,
+                },
+            },
+        },
+        fallback: Some(lm_project::GatedLayout {
+            marker: lm_project::InstallationMarker {
+                offset: 0x2_8820,
+                expected: 0x22,
+            },
+            layout: lm_project::InstalledExAnimationFeatureRomLayout {
+                table_locator: lm_project::ChainedSnesPointerLocator {
+                    mapper: expected.mapper,
+                    first_operand_offset: 0x2_8821,
+                    final_operand_displacement: 0x52,
+                },
+                feature_runtime_marker: lm_project::InstallationMarker {
+                    offset: 0x2_8891,
+                    expected: 0xea,
+                },
             },
         }),
     };
@@ -326,10 +367,14 @@ fn marker_gated_optional_asset_layouts_round_trip_canonically() {
     assert!(encoded.contains("exanimation.installation=alternatives\n"));
     assert!(encoded.contains("exanimation.primary_locator_operand_offset=0x28811\n"));
     assert!(encoded.contains("exanimation.primary_locator_displacement=-0x86\n"));
+    assert!(encoded.contains("exanimation.features=installed\n"));
+    assert!(encoded.contains("exanimation.primary_feature_table_displacement=0x46\n"));
+    assert!(encoded.contains("exanimation.fallback_feature_marker_offset=0x28891\n"));
     assert_eq!(RevisionProfile::parse(&encoded).unwrap(), expected);
 
     expected.palette_installation = lm_project::InstalledLayout::Absent;
     expected.exanimation_installation = lm_project::InstalledLayout::Absent;
+    expected.exanimation_feature_installation = lm_project::InstalledLayout::Absent;
     assert_eq!(
         RevisionProfile::parse(&expected.encode()).unwrap(),
         expected

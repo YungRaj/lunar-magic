@@ -11,10 +11,11 @@ use lm_level::SpriteLengthTable;
 use lm_project::{
     ChainedSnesPointerLocator, CompleteOverworldRomLayout, CompleteOverworldShape,
     EndpointRomLayout, EventRevealRomLayout, ExAnimationRomLayout, ExpandedLevelSettingsLayout,
-    GatedLayout, GraphicsRomLayout, InstallationMarker, InstalledExAnimationRomLayout,
-    InstalledLayout, LevelLayer2DescriptorTable, LevelLayer2RomLayout, LevelLayer2TilemapEncoding,
-    LevelPointerTable, LevelRomLayout, Map16RomLayout, MessageRomLayout, OverworldLayersRomLayout,
-    PaletteRomLayout, SpritePointerTable, SpriteRomLayout,
+    GatedLayout, GraphicsRomLayout, InstallationMarker, InstalledExAnimationFeatureRomLayout,
+    InstalledExAnimationRomLayout, InstalledLayout, LevelLayer2DescriptorTable,
+    LevelLayer2RomLayout, LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout,
+    Map16RomLayout, MessageRomLayout, OverworldLayersRomLayout, PaletteRomLayout,
+    SpritePointerTable, SpriteRomLayout,
 };
 use lm_rom::{Mapper, Region, SupportedGame};
 use std::collections::BTreeMap;
@@ -159,6 +160,8 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
     };
     let palette_installation = parse_palette_installation(&mut values, palette)?;
     let exanimation_installation = parse_exanimation_installation(&mut values, exanimation)?;
+    let exanimation_feature_installation =
+        parse_exanimation_feature_installation(&mut values, exanimation_installation)?;
     let profile = RevisionProfile {
         name,
         game,
@@ -189,6 +192,7 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
         palette_installation,
         exanimation,
         exanimation_installation,
+        exanimation_feature_installation,
         expanded_settings,
         overworld: build_overworld(
             mapper,
@@ -203,6 +207,87 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
     };
     profile.validate()?;
     Ok(profile)
+}
+
+fn parse_exanimation_feature_installation(
+    values: &mut BTreeMap<String, String>,
+    exanimation: InstalledLayout<InstalledExAnimationRomLayout>,
+) -> Result<InstalledLayout<InstalledExAnimationFeatureRomLayout>, RevisionProfileError> {
+    let mode = values
+        .remove("exanimation.features")
+        .unwrap_or_else(|| "absent".into());
+    if mode == "absent" {
+        return Ok(InstalledLayout::Absent);
+    }
+    if mode != "installed" {
+        return Err(RevisionProfileError::InvalidInstallationMode {
+            domain: "exanimation.features",
+            value: mode,
+        });
+    }
+    match exanimation {
+        InstalledLayout::Absent => Err(RevisionProfileError::InstallationLayoutMismatch(
+            "exanimation.features",
+        )),
+        InstalledLayout::Unconditional(layout) => Ok(InstalledLayout::Unconditional(
+            parse_exanimation_feature_variant(values, "primary", layout)?,
+        )),
+        InstalledLayout::Alternatives { primary, fallback } => {
+            let primary_features =
+                parse_exanimation_feature_variant(values, "primary", primary.layout)?;
+            let fallback_features = fallback
+                .map(|fallback| {
+                    Ok(GatedLayout {
+                        marker: fallback.marker,
+                        layout: parse_exanimation_feature_variant(
+                            values,
+                            "fallback",
+                            fallback.layout,
+                        )?,
+                    })
+                })
+                .transpose()?;
+            Ok(InstalledLayout::Alternatives {
+                primary: GatedLayout {
+                    marker: primary.marker,
+                    layout: primary_features,
+                },
+                fallback: fallback_features,
+            })
+        }
+    }
+}
+
+fn parse_exanimation_feature_variant(
+    values: &mut BTreeMap<String, String>,
+    prefix: &'static str,
+    exanimation: InstalledExAnimationRomLayout,
+) -> Result<InstalledExAnimationFeatureRomLayout, RevisionProfileError> {
+    let Some(base_locator) = exanimation.pointer_locator else {
+        return Err(RevisionProfileError::IncompleteInstallationLayout(
+            "exanimation feature table locator",
+        ));
+    };
+    Ok(InstalledExAnimationFeatureRomLayout {
+        table_locator: ChainedSnesPointerLocator {
+            mapper: base_locator.mapper,
+            first_operand_offset: base_locator.first_operand_offset,
+            final_operand_displacement: signed_number(
+                values,
+                &format!("exanimation.{prefix}_feature_table_displacement"),
+            )?,
+        },
+        feature_runtime_marker: InstallationMarker {
+            offset: number(
+                values,
+                &format!("exanimation.{prefix}_feature_marker_offset"),
+            )?,
+            expected: byte(
+                values,
+                &format!("exanimation.{prefix}_feature_marker_value"),
+            )?,
+        },
+    })
 }
 
 fn parse_palette_installation(

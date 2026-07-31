@@ -460,6 +460,8 @@ pub struct RevisionProfile {
     pub palette_installation: InstalledLayout<PaletteRomLayout>,
     pub exanimation: ExAnimationRomLayout,
     pub exanimation_installation: InstalledLayout<InstalledExAnimationRomLayout>,
+    pub exanimation_feature_installation:
+        InstalledLayout<lm_project::InstalledExAnimationFeatureRomLayout>,
     pub expanded_settings: Option<ExpandedLevelSettingsLayout>,
     pub overworld: CompleteOverworldRomLayout,
     pub overworld_shape: CompleteOverworldShape,
@@ -670,6 +672,101 @@ impl RevisionProfile {
                     validate_exanimation("exanimation.fallback", fallback.layout)?;
                     validate_marker("exanimation.fallback_installation_marker", fallback.marker)?;
                 }
+            }
+        }
+        self.validate_exanimation_feature_installation()?;
+        Ok(())
+    }
+
+    fn validate_exanimation_feature_installation(&self) -> Result<(), RevisionProfileError> {
+        let validate_marker = |domain, marker: lm_project::InstallationMarker| {
+            pc_to_snes(self.mapper, marker.offset)
+                .map(|_| ())
+                .map_err(|_| RevisionProfileError::UnmappedPointerTable(domain))
+        };
+        let validate_features =
+            |domain, layout: lm_project::InstalledExAnimationFeatureRomLayout| {
+                if layout.table_locator.mapper != self.mapper {
+                    return Err(RevisionProfileError::MapperMismatch {
+                        domain,
+                        actual: layout.table_locator.mapper,
+                    });
+                }
+                let final_byte = layout
+                    .table_locator
+                    .first_operand_offset
+                    .checked_add(2)
+                    .ok_or(RevisionProfileError::AddressOverflow(domain))?;
+                for offset in [
+                    layout.table_locator.first_operand_offset,
+                    final_byte,
+                    layout.feature_runtime_marker.offset,
+                ] {
+                    pc_to_snes(self.mapper, offset)
+                        .map_err(|_| RevisionProfileError::UnmappedPointerTable(domain))?;
+                }
+                Ok(())
+            };
+        match (
+            self.exanimation_installation,
+            self.exanimation_feature_installation,
+        ) {
+            (_, lm_project::InstalledLayout::Absent) => {}
+            (
+                lm_project::InstalledLayout::Unconditional(exanimation),
+                lm_project::InstalledLayout::Unconditional(features),
+            ) if exanimation.pointer_locator.is_some_and(|locator| {
+                locator.first_operand_offset == features.table_locator.first_operand_offset
+            }) =>
+            {
+                validate_features("exanimation.features", features)?;
+            }
+            (
+                lm_project::InstalledLayout::Alternatives {
+                    primary: exanimation_primary,
+                    fallback: exanimation_fallback,
+                },
+                lm_project::InstalledLayout::Alternatives {
+                    primary: feature_primary,
+                    fallback: feature_fallback,
+                },
+            ) if exanimation_primary.marker == feature_primary.marker
+                && exanimation_primary
+                    .layout
+                    .pointer_locator
+                    .is_some_and(|locator| {
+                        locator.first_operand_offset
+                            == feature_primary.layout.table_locator.first_operand_offset
+                    })
+                && match (exanimation_fallback, feature_fallback) {
+                    (None, None) => true,
+                    (Some(exanimation), Some(features)) => {
+                        exanimation.marker == features.marker
+                            && exanimation.layout.pointer_locator.is_some_and(|locator| {
+                                locator.first_operand_offset
+                                    == features.layout.table_locator.first_operand_offset
+                            })
+                    }
+                    _ => false,
+                } =>
+            {
+                validate_marker(
+                    "exanimation.features.installation_marker",
+                    feature_primary.marker,
+                )?;
+                validate_features("exanimation.features", feature_primary.layout)?;
+                if let Some(fallback) = feature_fallback {
+                    validate_marker(
+                        "exanimation.features.fallback_installation_marker",
+                        fallback.marker,
+                    )?;
+                    validate_features("exanimation.features.fallback", fallback.layout)?;
+                }
+            }
+            _ => {
+                return Err(RevisionProfileError::InstallationLayoutMismatch(
+                    "exanimation.features",
+                ));
             }
         }
         Ok(())

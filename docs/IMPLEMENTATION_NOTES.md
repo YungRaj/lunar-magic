@@ -2699,6 +2699,13 @@ to the feature-table operand and checks an independent feature-runtime marker. I
 load/save entry points first resolve Lunar Magic's primary/fallback installation gate, then use the
 resolved storage and marker result. Thus a valid table pointer cannot accidentally stand in for
 proof that the gameplay hook consuming the table is active.
+
+Revision profiles opt into that installed path with `exanimation.features=installed`. Each
+primary/fallback variant reuses the corresponding expanded-ExAnimation hook and first operand,
+while declaring only its feature-table displacement and independent runtime-marker byte. Validation
+rejects mismatched gate shapes or locator origins. ROM-aware profile audit and allocation planning
+resolve and protect the first operand, final operand, runtime marker, sentinel, and complete
+512-byte table; allocator searches therefore cannot overwrite any part of the feature contract.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to

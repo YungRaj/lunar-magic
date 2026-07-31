@@ -115,6 +115,7 @@ pub(super) fn audit(
         .map_err(RevisionProfileAuditError::Profile)?;
     let palette_installed = profile.palette_installation.resolve(rom)?.is_some();
     let selected_exanimation = profile.exanimation_installation.resolve(rom)?;
+    let selected_exanimation_features = profile.exanimation_feature_installation.resolve(rom)?;
     let resolved_exanimation = selected_exanimation
         .map(|layout| layout.resolve(rom))
         .transpose()?;
@@ -141,7 +142,13 @@ pub(super) fn audit(
         .map(|(domain, table)| Ok((domain, table_span(domain, table)?)))
         .collect::<Result<Vec<_>, RevisionProfileAuditError>>()?;
     metadata.extend(sprite_spans(profile.level.sprites)?);
-    append_installation_metadata(profile, rom, selected_exanimation, &mut metadata)?;
+    append_installation_metadata(
+        profile,
+        rom,
+        selected_exanimation,
+        selected_exanimation_features,
+        &mut metadata,
+    )?;
     let expanded_settings = if let Some(layout) = profile.expanded_settings {
         let expanded_settings = expanded_settings_span(layout)?;
         if expanded_settings.end > rom.logical_len() {
@@ -204,6 +211,7 @@ fn append_installation_metadata(
     profile: &RevisionProfile,
     rom: &RomImage,
     selected_exanimation: Option<InstalledExAnimationRomLayout>,
+    selected_features: Option<lm_project::InstalledExAnimationFeatureRomLayout>,
     metadata: &mut Vec<(&'static str, Range<usize>)>,
 ) -> Result<(), RevisionProfileAuditError> {
     for (domain, offset) in installation_markers(profile) {
@@ -223,6 +231,40 @@ fn append_installation_metadata(
             "exanimation.locator.final_operand",
             locator.final_operand_offset(rom)?,
             3,
+        )?;
+    }
+    if let Some(features) = selected_features {
+        let table_offset = features.table_locator.resolve(rom)?;
+        let marker_offset = table_offset
+            .checked_sub(1)
+            .ok_or(RevisionProfileAuditError::EntryCountOverflow)?;
+        append_metadata_span(
+            rom,
+            metadata,
+            "exanimation.features.locator.first_operand",
+            features.table_locator.first_operand_offset,
+            3,
+        )?;
+        append_metadata_span(
+            rom,
+            metadata,
+            "exanimation.features.locator.final_operand",
+            features.table_locator.final_operand_offset(rom)?,
+            3,
+        )?;
+        append_metadata_span(
+            rom,
+            metadata,
+            "exanimation.features.runtime_marker",
+            features.feature_runtime_marker.offset,
+            1,
+        )?;
+        append_metadata_span(
+            rom,
+            metadata,
+            "exanimation.features.table",
+            marker_offset,
+            lm_project::EXANIMATION_FEATURE_LEVEL_COUNT + 1,
         )?;
     }
     Ok(())

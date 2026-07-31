@@ -54,7 +54,7 @@ pub(super) const LAYER2_KEYS: [&str; 9] = [
     "level.layer2.descriptor_stride",
 ];
 
-pub(super) const INSTALLATION_KEYS: [&str; 14] = [
+pub(super) const INSTALLATION_KEYS: [&str; 21] = [
     "palette.installation",
     "palette.marker_offset",
     "palette.marker_value",
@@ -69,4 +69,11 @@ pub(super) const INSTALLATION_KEYS: [&str; 14] = [
     "exanimation.fallback_pointer_mask",
     "exanimation.fallback_locator_operand_offset",
     "exanimation.fallback_locator_displacement",
+    "exanimation.features",
+    "exanimation.primary_feature_table_displacement",
+    "exanimation.primary_feature_marker_offset",
+    "exanimation.primary_feature_marker_value",
+    "exanimation.fallback_feature_table_displacement",
+    "exanimation.fallback_feature_marker_offset",
+    "exanimation.fallback_feature_marker_value",
 ];

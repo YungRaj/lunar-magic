@@ -111,6 +111,42 @@ fn encode_installations(out: &mut String, profile: &RevisionProfile) {
             }
         }
     }
+    encode_exanimation_features(out, profile);
+}
+
+fn encode_exanimation_features(out: &mut String, profile: &RevisionProfile) {
+    match profile.exanimation_feature_installation {
+        lm_project::InstalledLayout::Absent => {
+            writeln!(out, "exanimation.features=absent").unwrap();
+        }
+        lm_project::InstalledLayout::Unconditional(layout) => {
+            writeln!(out, "exanimation.features=installed").unwrap();
+            encode_exanimation_feature_variant(out, "primary", layout);
+        }
+        lm_project::InstalledLayout::Alternatives { primary, fallback } => {
+            writeln!(out, "exanimation.features=installed").unwrap();
+            encode_exanimation_feature_variant(out, "primary", primary.layout);
+            if let Some(fallback) = fallback {
+                encode_exanimation_feature_variant(out, "fallback", fallback.layout);
+            }
+        }
+    }
+}
+
+fn encode_exanimation_feature_variant(
+    out: &mut String,
+    prefix: &str,
+    layout: lm_project::InstalledExAnimationFeatureRomLayout,
+) {
+    let displacement = layout.table_locator.final_operand_displacement;
+    let sign = if displacement < 0 { "-" } else { "" };
+    let magnitude = displacement.unsigned_abs();
+    writeln!(
+        out,
+        "exanimation.{prefix}_feature_table_displacement={sign}0x{magnitude:x}\nexanimation.{prefix}_feature_marker_offset=0x{:x}\nexanimation.{prefix}_feature_marker_value=0x{:02x}",
+        layout.feature_runtime_marker.offset, layout.feature_runtime_marker.expected
+    )
+    .unwrap();
 }
 
 fn encode_pointer_locator(
