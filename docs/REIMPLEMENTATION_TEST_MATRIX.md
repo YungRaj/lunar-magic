@@ -64,6 +64,9 @@ Its dispatcher context additionally carries the form's exact native major and mi
 than only the packed coordinate nibbles, with focused coverage at screen `$1E`, X `$F`, and minor
 `$11` for coordinate-sensitive authenticated handlers. The same test distinguishes the handler's
 `$1F` minor/major nibble argument from the unrelated serialized `yyyyEESY` byte.
+Resolved SSC display offsets also determine placed selection and hit bounds before external
+textures are available; focused negative/extended-offset coverage proves unresolved composite
+geometry does not collapse to the encoded marker.
 The installed native-assets preview reuses the same recovered common-animation interpreter after
 resolving either Super GFX bypass files or legacy tileset assignments. Its staged
 `VanillaAnimation` and `PaletteAnimation` options independently gate the recovered eight-phase tile

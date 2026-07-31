@@ -2272,6 +2272,9 @@ The standard catalog additionally applies the placed renderer's recovered `$E1/$
 `$90/$1C0-$1F3` half-opacity scopes. Both the catalog and placed renderer now require a standard
 preview source before applying them, preventing same-numbered SSC definitions from inheriting a
 built-in handler's translucency.
+Placed SSC sprites now derive interactive bounds from resolved display-part offsets independently
+of raster availability. Missing external graphics or palettes retain the unresolved marker but no
+longer discard negative or extended composite geometry from selection and hit testing.
 Resolved SSC selectors now supply the direct-ROM editor's actual four 256-entry native record-length
 tables instead of being used only for artwork. The editor key includes a stable length-authority
 signature, so attaching, removing, or changing the relevant SSC selectors forces a complete level

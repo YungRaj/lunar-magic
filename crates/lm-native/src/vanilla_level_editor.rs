@@ -6574,10 +6574,13 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         if uses_standard && placement.sprite_number == 0x8a {
             standard_8a_count = standard_8a_count.saturating_add(1);
         }
-        let mut interactive_rect = marker;
+        let interactive_rect = resolved_sprite_preview_bounds(
+            marker,
+            preview.as_deref(),
+            external_preview.as_deref(),
+            cell_size,
+        );
         if let (Some(texture), Some(parts)) = (texture, preview.as_deref()) {
-            interactive_rect =
-                sprite_preview_bounds(marker, parts.iter().map(|part| (part.x, part.y)), cell_size);
             for part in parts {
                 draw_sprite_preview_definition_tinted(
                     painter,
@@ -6599,8 +6602,6 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 .iter()
                 .all(|part| external_textures.contains_key(part))
         {
-            interactive_rect =
-                sprite_preview_bounds(marker, parts.iter().map(|part| (part.x, part.y)), cell_size);
             for part in parts {
                 let texture = &external_textures[part];
                 draw_external_sprite_part(
@@ -6659,6 +6660,21 @@ fn sprite_preview_bounds(
     offsets.into_iter().fold(marker, |bounds, (x, y)| {
         bounds.union(sprite_preview_part_rect(marker, x, y, cell_size))
     })
+}
+
+fn resolved_sprite_preview_bounds(
+    marker: egui::Rect,
+    atlas_parts: Option<&[lm_render::StandardSpritePreviewTile]>,
+    remapped_parts: Option<&[lm_render::RemappedCustomSpritePreviewTile]>,
+    cell_size: f32,
+) -> egui::Rect {
+    if let Some(parts) = atlas_parts {
+        sprite_preview_bounds(marker, parts.iter().map(|part| (part.x, part.y)), cell_size)
+    } else if let Some(parts) = remapped_parts {
+        sprite_preview_bounds(marker, parts.iter().map(|part| (part.x, part.y)), cell_size)
+    } else {
+        marker
+    }
 }
 
 fn should_draw_unresolved_sprite_marker(uses_standard: bool, sprite_number: u8) -> bool {
@@ -10080,6 +10096,28 @@ mod tests {
         assert_eq!(
             sprite_preview_bounds(marker, [], ROM_LEVEL_CANVAS_CELL),
             marker
+        );
+        let unresolved = [
+            lm_render::RemappedCustomSpritePreviewTile {
+                definition_index: 0x20,
+                subtiles: [0; 4],
+                graphics_base: 0x2000,
+                palette_source: Some(1),
+                x: -8,
+                y: 4,
+            },
+            lm_render::RemappedCustomSpritePreviewTile {
+                definition_index: 0x21,
+                subtiles: [0; 4],
+                graphics_base: 0x2000,
+                palette_source: Some(1),
+                x: 32,
+                y: -16,
+            },
+        ];
+        assert_eq!(
+            resolved_sprite_preview_bounds(marker, None, Some(&unresolved), ROM_LEVEL_CANVAS_CELL),
+            egui::Rect::from_min_max(egui::pos2(94.0, 88.0), egui::pos2(136.0, 115.0))
         );
     }
 
