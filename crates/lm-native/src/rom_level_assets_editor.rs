@@ -558,6 +558,7 @@ pub(crate) struct RomLevelAssetsEditor {
     pending_legacy_mwl_load: Option<mwl::PendingLegacyMwlLoad>,
     mwl_batch_worker: mwl_batch::MwlBatchExportWorker,
     mwl_batch_status: Option<String>,
+    level_image_status: Option<String>,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     bypass_validation: Option<String>,
@@ -1083,6 +1084,22 @@ impl RomLevelAssetsEditor {
             }
         }
         ui.separator();
+        if ui
+            .add_enabled(!stale, egui::Button::new("Export full level PNG…"))
+            .clicked()
+        {
+            match self.export_level_png() {
+                Ok(Some(path)) => {
+                    self.level_image_status =
+                        Some(format!("Exported full level image to {}.", path.display()));
+                }
+                Ok(None) => {}
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if let Some(status) = &self.level_image_status {
+            ui.label(status);
+        }
         let modified = self
             .workspace
             .as_ref()
@@ -1125,6 +1142,33 @@ impl RomLevelAssetsEditor {
     }
 }
 
+impl RomLevelAssetsEditor {
+    fn export_level_png(&self) -> Result<Option<std::path::PathBuf>, String> {
+        let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
+        let Some(destination) = crate::dialogs::choose_level_image_save_path(workspace.source_slot)
+        else {
+            return Ok(None);
+        };
+        let (canvas, _, _) = render_super_graphics_level_canvas(workspace, None, None)?;
+        publish_level_png(&destination, &canvas)?;
+        Ok(Some(destination))
+    }
+}
+
+fn publish_level_png(
+    destination: &std::path::Path,
+    canvas: &lm_render::Canvas,
+) -> Result<(), String> {
+    if !destination
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
+    {
+        return Err("full level image output must use the .png extension".into());
+    }
+    let bytes = lm_render::encode_png(canvas).map_err(|error| error.to_string())?;
+    lm_app::file_persistence::write_new(destination, &bytes).map_err(|error| error.to_string())
+}
+
 fn validate_super_graphics(workspace: &Workspace) -> String {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
@@ -1151,6 +1195,31 @@ fn render_super_graphics_level_preview(
 ) -> Result<
     (
         egui::ColorImage,
+        Vec<String>,
+        Option<PreviewMap16Inspection>,
+    ),
+    String,
+> {
+    let (canvas, diagnostics, inspection) =
+        render_super_graphics_level_canvas(workspace, animation_phase, selection)?;
+    render_level_viewport_canvas(
+        &canvas,
+        viewport,
+        show_map16_grid,
+        selection,
+        selection_phase,
+    )
+    .map(canvas_to_color_image)
+    .map(|image| (image, diagnostics, inspection))
+}
+
+fn render_super_graphics_level_canvas(
+    workspace: &Workspace,
+    animation_phase: Option<usize>,
+    selection: Option<PreviewMap16Selection>,
+) -> Result<
+    (
+        lm_render::Canvas,
         Vec<String>,
         Option<PreviewMap16Inspection>,
     ),
@@ -1264,7 +1333,7 @@ fn render_super_graphics_level_preview(
     });
     let animated_sprite_tiles =
         crate::vanilla_map16_preview::materialize_sprite_display_tiles(special_graphics.gfx33);
-    render_level_viewport_image(
+    render_level_canvas_with_layer_palette_routing(
         &[&layer2, &layer1],
         &sprites,
         layout,
@@ -1275,12 +1344,8 @@ fn render_super_graphics_level_preview(
         &animated_sprite_tiles,
         &palette,
         &[layer2_palette_routing, NativeMap16PaletteRouting::Direct],
-        viewport,
-        show_map16_grid,
-        selection,
-        selection_phase,
     )
-    .map(|image| (image, diagnostics, inspection))
+    .map(|canvas| (canvas, diagnostics, inspection))
 }
 
 const fn installed_layer2_palette_routing(
@@ -1527,6 +1592,7 @@ fn render_level_image(
     .map(canvas_to_color_image)
 }
 
+#[cfg(test)]
 fn render_level_viewport_image(
     layers: &[&[NativeMap16Placement]],
     sprites: &[NativeSpritePreviewPlacement],
@@ -1986,6 +2052,39 @@ mod tests {
     use super::*;
     use lm_graphics::{Bgr555, IndexedTile, Palette};
     use lm_level::{Map16Page, Map16Tile, Subtile};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn full_level_png_publication_is_bounded_valid_and_create_new() {
+        let path = std::env::temp_dir().join(format!(
+            "lm-native-level-image-{}-{}.png",
+            std::process::id(),
+            NEXT_IMAGE_PATH.fetch_add(1, Ordering::Relaxed)
+        ));
+        let canvas = lm_render::Canvas::from_pixels(
+            2,
+            3,
+            vec![
+                lm_render::Rgba {
+                    red: 0x12,
+                    green: 0x34,
+                    blue: 0x56,
+                    alpha: 0xff,
+                };
+                6
+            ],
+        )
+        .unwrap();
+        publish_level_png(&path, &canvas).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+        assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), 2);
+        assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), 3);
+        assert!(publish_level_png(&path, &canvas).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn live_preview_refreshes_once_per_enable_or_accepted_edit() {

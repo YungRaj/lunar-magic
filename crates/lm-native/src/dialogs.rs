@@ -240,6 +240,13 @@ pub(crate) fn choose_mwl_batch_template() -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_level_image_save_path(level: u16) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("PNG image", &["png"])
+        .set_file_name(format!("Level {level:03X}.png"))
+        .save_file()
+}
+
 pub(crate) fn choose_mwl_directory() -> Option<PathBuf> {
     rfd::FileDialog::new().pick_folder()
 }
