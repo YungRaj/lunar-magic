@@ -2756,9 +2756,14 @@ workspace reopen resets the view. Zoom changes use the shared exact `Viewport::z
 around the screen center instead of jumping to a new upper-left world point. The raster itself is
 drag-sensitive: a captured pointer/world origin converts the total screen displacement through the
 selected rational scale, clamps the result, and avoids accumulating fractional per-frame error.
+Ctrl/Command-wheel over the raster advances one exact zoom entry per raw wheel event and uses the
+pointer's clamped raster coordinate as the stationary world anchor. Unmodified and Alt-modified
+wheel input is left to the enclosing document, so ordinary vertical page scrolling is not captured
+by the preview.
 Focused raster coverage proves a camera-cropped 200% view repeats the selected source pixel buckets
 exactly; interaction-state coverage proves anchored 200% zoom, 200% and 50% drag conversion, and
-extreme edge clamping.
+extreme edge clamping. It also proves cross-platform modifier filtering, discrete zoom boundaries,
+pointer-coordinate clamping, and a noncentral stationary anchor.
 
 The global- and level-ExAnimation feature switches remain persistence/runtime controls in this
 workspace, not a claim that compact records have been interpreted for rendering. Their transfer

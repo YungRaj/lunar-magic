@@ -200,6 +200,34 @@ impl PreviewViewportState {
     }
 }
 
+fn preview_wheel_zoom_index(current: u8, delta_y: f32) -> Option<u8> {
+    if !delta_y.is_finite() || delta_y == 0.0 {
+        return None;
+    }
+    let maximum =
+        u8::try_from(PreviewViewportState::ZOOMS.len() - 1).expect("preview zoom count fits in u8");
+    let current = current.min(maximum);
+    let changed = if delta_y.is_sign_positive() {
+        current.saturating_add(1).min(maximum)
+    } else {
+        current.saturating_sub(1)
+    };
+    (changed != current).then_some(changed)
+}
+
+fn preview_modified_wheel_delta(modifiers: egui::Modifiers, delta_y: f32) -> Option<f32> {
+    (modifiers.ctrl || modifiers.command || modifiers.mac_cmd).then_some(delta_y)
+}
+
+fn preview_pointer_anchor(rect: egui::Rect, pointer: egui::Pos2) -> lm_render::Point {
+    let maximum_x = i64::from(PreviewViewportState::WIDTH.saturating_sub(1));
+    let maximum_y = i64::from(PreviewViewportState::HEIGHT.saturating_sub(1));
+    lm_render::Point {
+        x: ((pointer.x - rect.left()).round() as i64).clamp(0, maximum_x),
+        y: ((pointer.y - rect.top()).round() as i64).clamp(0, maximum_y),
+    }
+}
+
 impl InstalledAnimationOptions {
     const fn active(self) -> bool {
         self.vanilla_tiles || self.palette
@@ -524,7 +552,7 @@ impl RomLevelAssetsEditor {
                         .sense(egui::Sense::drag()),
                 )
                 .on_hover_cursor(egui::CursorIcon::Grab)
-                .on_hover_text("Drag to pan the installed-level preview");
+                .on_hover_text("Drag to pan; Ctrl/Command-wheel zooms around the pointer");
             if response.drag_started() {
                 if let Some(pointer) = response.interact_pointer_pos() {
                     self.bypass_drag = Some(PreviewDragState {
@@ -555,6 +583,28 @@ impl RomLevelAssetsEditor {
             }
             if response.drag_stopped() {
                 self.bypass_drag = None;
+            }
+            let wheel_delta = ui.input(|input| {
+                preview_modified_wheel_delta(input.modifiers, input.raw_scroll_delta.y)
+            });
+            if response.hovered()
+                && let (Some(delta_y), Some(pointer), Some(header)) =
+                    (wheel_delta, response.hover_pos(), header)
+                && let Some(zoom_index) =
+                    preview_wheel_zoom_index(self.bypass_viewport.zoom_index, delta_y)
+            {
+                let previous = self.bypass_viewport;
+                let anchor = preview_pointer_anchor(response.rect, pointer);
+                let (world_width, world_height) = preview_world_extent(header);
+                if self
+                    .bypass_viewport
+                    .zoom_at(zoom_index, anchor, world_width, world_height)
+                    .is_ok()
+                    && self.bypass_viewport != previous
+                {
+                    self.bypass_drag = None;
+                    self.bypass_preview.invalidate();
+                }
             }
         }
         ui.separator();
@@ -1543,6 +1593,75 @@ mod tests {
 
         viewport.pan_from_drag(drag, f32::MAX, f32::MAX, 4096, 2048);
         assert_eq!((viewport.origin_x, viewport.origin_y), (0, 0));
+    }
+
+    #[test]
+    fn installed_preview_wheel_zoom_is_discrete_and_pointer_anchored() {
+        assert_eq!(
+            preview_modified_wheel_delta(egui::Modifiers::NONE, 14.0),
+            None
+        );
+        assert_eq!(
+            preview_modified_wheel_delta(egui::Modifiers::ALT, 14.0),
+            None
+        );
+        assert_eq!(
+            preview_modified_wheel_delta(egui::Modifiers::CTRL, 14.0),
+            Some(14.0)
+        );
+        assert_eq!(
+            preview_modified_wheel_delta(egui::Modifiers::COMMAND, -14.0),
+            Some(-14.0)
+        );
+        assert_eq!(
+            preview_modified_wheel_delta(egui::Modifiers::MAC_CMD, 14.0),
+            Some(14.0)
+        );
+        assert_eq!(preview_wheel_zoom_index(1, 14.0), Some(2));
+        assert_eq!(preview_wheel_zoom_index(1, -14.0), Some(0));
+        assert_eq!(preview_wheel_zoom_index(0, -1.0), None);
+        assert_eq!(preview_wheel_zoom_index(4, 1.0), None);
+        assert_eq!(preview_wheel_zoom_index(1, 0.0), None);
+        assert_eq!(preview_wheel_zoom_index(1, f32::NAN), None);
+        assert_eq!(preview_wheel_zoom_index(1, f32::INFINITY), None);
+
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(100.0, 200.0),
+            egui::vec2(
+                PreviewViewportState::WIDTH as f32,
+                PreviewViewportState::HEIGHT as f32,
+            ),
+        );
+        assert_eq!(
+            preview_pointer_anchor(rect, egui::pos2(500.0, 300.0)),
+            lm_render::Point { x: 400, y: 100 }
+        );
+        assert_eq!(
+            preview_pointer_anchor(rect, egui::pos2(-100.0, 1_000.0)),
+            lm_render::Point { x: 0, y: 447 }
+        );
+
+        let anchor = lm_render::Point { x: 400, y: 100 };
+        let mut viewport = PreviewViewportState {
+            origin_x: 1_000,
+            origin_y: 500,
+            zoom_index: 1,
+        };
+        let anchored_world = viewport
+            .viewport()
+            .unwrap()
+            .screen_to_world(anchor)
+            .unwrap();
+        viewport.zoom_at(2, anchor, 4096, 2048).unwrap();
+        assert_eq!(
+            viewport
+                .viewport()
+                .unwrap()
+                .screen_to_world(anchor)
+                .unwrap(),
+            anchored_world
+        );
+        assert_eq!((viewport.origin_x, viewport.origin_y), (1_200, 550));
     }
 
     #[test]
