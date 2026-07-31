@@ -2,7 +2,7 @@ use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
-        GraphicsEditorStatus, TILE_GRID_COLUMNS, TileEditorZoom, TilePixelPointerAction,
+        GraphicsEditorStatus, TILE_EDITOR_SIDE, TILE_GRID_COLUMNS, TilePixelPointerAction,
         TilePointerAction, apply_tile_keyboard_navigation, apply_tile_palette_keyboard,
         color_selection_marker, paint_tile, palette_color, take_graphics_character_shortcut,
         take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
@@ -58,7 +58,6 @@ pub(crate) struct RomGraphicsEditor {
     foreground_color: u8,
     background_color: u8,
     display_palette: GraphicsDisplayPalette,
-    pixel_zoom: TileEditorZoom,
     color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
     pending_character_shortcut: Option<GraphicsCharacterShortcut>,
@@ -622,7 +621,6 @@ impl RomGraphicsEditor {
             return;
         }
         ui.label(format!("Tile {:03X}", self.selected_tile));
-        self.pixel_zoom.show(ui);
         let owner = self
             .workspace
             .as_ref()
@@ -740,7 +738,7 @@ impl RomGraphicsEditor {
             }
         }
         let (rect, response) = ui.allocate_exact_size(
-            egui::Vec2::splat(self.pixel_zoom.side()),
+            egui::Vec2::splat(TILE_EDITOR_SIDE),
             egui::Sense::click_and_drag(),
         );
         self.status

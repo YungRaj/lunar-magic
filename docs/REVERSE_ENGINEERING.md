@@ -1228,9 +1228,13 @@ Authenticated Page Up/Down input steps forward/backward without cycling from the
 through each surface's available display-palette rows. Their shared transient hover outline
 accompanies an event-driven status line with recovered tile/address, color, selection, palette,
 page, and boundary messages.
-Their selected-tile pixel grids also share 800–4000% discrete
-zoom with one geometry source for rendering and hit testing. Exact original status/zoom variants
-remain separate UI-parity work. The documented 8×8-editor
+Their selected-tile pixel grids share one geometry source for rendering and hit testing. A direct
+reference audit corrects the earlier interpretation of `005E54CC`/`005E54D4`: these hold horizontal
+and vertical window-DPI percentages, initialized from the window at `0050693D`–`00506955`, not a
+user-selected tile zoom. `LayoutGraphicsEditorForDpi` at `005063C0` scales the base control geometry,
+and `005066BA`–`005066F0` materializes an exact `0x100`-pixel logical selected-tile canvas. Rust now
+uses that fixed 256×256 logical square and delegates DPI scaling to the toolkit, removing the
+non-native discrete selector. The documented 8×8-editor
 Shift+Arrow behavior is now implemented exactly as a one-pixel directional wrap. It uses the same
 revisioned or ownership-guarded tile replacement paths as paint, paste, and flips rather than a
 presentation-only buffer. Exact Ctrl+left-click copies and selects the pointed tile. Unmodified

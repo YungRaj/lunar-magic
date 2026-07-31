@@ -1712,9 +1712,10 @@ the original-animation slots `$00-$7E` and level/global ExAnimation slots `$00-$
 exact `OrigAnim`, `ExAnim Level`, and `ExAnim Global` messages while keeping every such tile
 read-only. Version-1 generic ExAnimation records still decode and retain their conservative generic
 tile message because they do not contain a recoverable native slot class.
-Each pixel editor exposes the same discrete 800%, 1600%, 2400%, 3200%, and 4000% selected-tile
-zoom choices, retaining the prior 320-pixel (4000%) default. The chosen square is passed to both
-the rasterizer and normalized pixel-coordinate adapter, so painting remains exact at every size.
+Each pixel editor uses Lunar Magic's fixed 256×256 logical selected-tile canvas, making each source
+pixel exactly 32 logical pixels wide. The toolkit applies monitor DPI scaling to that logical square,
+as the native window does; there is no user-facing graphics-editor zoom selector. The same square is
+passed to both rasterization and normalized hit testing.
 The recovered Shift+Arrow shortcut performs a lossless one-pixel wrap left, right, up, or down.
 The shared focus adapter accepts only the exact Shift modifier; portable wraps are independently
 undoable, pristine wraps enter the staged graphics controller, and installed wraps additionally
