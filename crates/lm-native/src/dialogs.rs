@@ -150,6 +150,21 @@ pub(crate) fn choose_graphics_import_directory() -> Option<PathBuf> {
         .pick_folder()
 }
 
+pub(crate) fn choose_all_gfx_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Extract Joined Standard GFX")
+        .add_filter("Joined standard graphics", &["bin"])
+        .set_file_name("AllGFX.bin")
+        .save_file()
+}
+
+pub(crate) fn choose_all_gfx_file() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Insert Joined Standard GFX")
+        .add_filter("Joined standard graphics", &["bin"])
+        .pick_file()
+}
+
 fn raw_graphics_file_name(slot: u16) -> String {
     let prefix = if slot <= 0x7f { "GFX" } else { "ExGFX" };
     format!("{prefix}{slot:02X}.bin")

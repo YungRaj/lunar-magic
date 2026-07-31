@@ -205,6 +205,15 @@ impl RomGraphicsEditor {
             }
             if ui
                 .add_enabled(
+                    !stale && !file_work_running,
+                    egui::Button::new("Extract AllGFX.bin…"),
+                )
+                .clicked()
+            {
+                self.begin_all_gfx_export();
+            }
+            if ui
+                .add_enabled(
                     !stale && !file_work_running && !modified_controller(self.workspace.as_ref()),
                     egui::Button::new("Insert all standard GFX…"),
                 )
@@ -212,6 +221,16 @@ impl RomGraphicsEditor {
                 .clicked()
             {
                 self.begin_graphics_import();
+            }
+            if ui
+                .add_enabled(
+                    !stale && !file_work_running && !modified_controller(self.workspace.as_ref()),
+                    egui::Button::new("Insert AllGFX.bin…"),
+                )
+                .on_hover_text("Commit or discard staged tile edits before inserting AllGFX.bin")
+                .clicked()
+            {
+                self.begin_all_gfx_import();
             }
         });
         if let Some(status) = &self.io_status {
@@ -473,6 +492,50 @@ impl RomGraphicsEditor {
             options,
         };
         match self.graphics_import.start(source, directory) {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn begin_all_gfx_export(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let Some(path) = crate::dialogs::choose_all_gfx_save_path() else {
+            return;
+        };
+        let source = graphics_batch::GraphicsBatchSource {
+            image: workspace.image.clone(),
+            layout: workspace.profile.graphics,
+        };
+        match self.graphics_batch.start_joined(source, path) {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn begin_all_gfx_import(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let options = match self.save_options(workspace) {
+            Ok(options) => options,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(path) = crate::dialogs::choose_all_gfx_file() else {
+            return;
+        };
+        let source = graphics_import::GraphicsImportSource {
+            expected_revision: workspace.controller.revision(),
+            image: workspace.image.clone(),
+            layout: workspace.profile.graphics,
+            checksum_field: workspace.internal_header + 0x1c,
+            options,
+        };
+        match self.graphics_import.start_joined(source, path) {
             Ok(()) => self.io_status = None,
             Err(error) => self.error = Some(error),
         }

@@ -15,11 +15,25 @@ pub(super) struct GraphicsBatchSource {
 }
 
 struct RunningBatch {
-    directory: PathBuf,
+    target: GraphicsExportTarget,
     total: usize,
     completed: Arc<AtomicUsize>,
     cancelled: Arc<AtomicBool>,
     result: Receiver<Result<Option<usize>, String>>,
+}
+
+#[derive(Clone)]
+enum GraphicsExportTarget {
+    Directory(PathBuf),
+    JoinedFile(PathBuf),
+}
+
+impl GraphicsExportTarget {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Directory(path) | Self::JoinedFile(path) => path,
+        }
+    }
 }
 
 impl RunningBatch {
@@ -43,6 +57,22 @@ impl GraphicsBatchWorker {
         source: GraphicsBatchSource,
         directory: PathBuf,
     ) -> Result<(), String> {
+        self.start_target(source, GraphicsExportTarget::Directory(directory))
+    }
+
+    pub(super) fn start_joined(
+        &mut self,
+        source: GraphicsBatchSource,
+        path: PathBuf,
+    ) -> Result<(), String> {
+        self.start_target(source, GraphicsExportTarget::JoinedFile(path))
+    }
+
+    fn start_target(
+        &mut self,
+        source: GraphicsBatchSource,
+        target: GraphicsExportTarget,
+    ) -> Result<(), String> {
         if self.running.is_some() {
             return Err("a standard GFX extraction is already running".into());
         }
@@ -56,22 +86,18 @@ impl GraphicsBatchWorker {
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_completed = Arc::clone(&completed);
         let worker_cancelled = Arc::clone(&cancelled);
-        let worker_directory = directory.clone();
+        let worker_target = target.clone();
         let (sender, result) = mpsc::channel();
         std::thread::Builder::new()
             .name("lm-standard-gfx-export".into())
             .spawn(move || {
-                let result = export_batch(
-                    source,
-                    &worker_directory,
-                    &worker_completed,
-                    &worker_cancelled,
-                );
+                let result =
+                    export_batch(source, &worker_target, &worker_completed, &worker_cancelled);
                 let _send_result = sender.send(result);
             })
             .map_err(|error| format!("could not create standard-GFX worker: {error}"))?;
         self.running = Some(RunningBatch {
-            directory,
+            target,
             total,
             completed,
             cancelled,
@@ -92,7 +118,7 @@ impl GraphicsBatchWorker {
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!("Staging files in {}", running.directory.display()));
+                    ui.label(format!("Staging {}", running.target.path().display()));
                     ui.add(
                         egui::ProgressBar::new(completed as f32 / running.total as f32)
                             .text(format!("{completed} / {}", running.total)),
@@ -131,13 +157,15 @@ impl GraphicsBatchWorker {
 
 fn export_batch(
     source: GraphicsBatchSource,
-    directory: &Path,
+    target: &GraphicsExportTarget,
     completed: &AtomicUsize,
     cancelled: &AtomicBool,
 ) -> Result<Option<usize>, String> {
     let total = source.layout.pointers.entries;
     let project = Project::new(source.image);
-    let mut group = lm_app::file_persistence::NewFileGroup::new();
+    let mut group = matches!(target, GraphicsExportTarget::Directory(_))
+        .then_some(lm_app::file_persistence::NewFileGroup::new());
+    let mut joined_files = Vec::with_capacity(if group.is_some() { 0 } else { total });
     for slot in 0..total {
         if cancelled.load(Ordering::Relaxed) {
             return Ok(None);
@@ -148,15 +176,36 @@ fn export_batch(
         let bytes = graphics
             .encode()
             .map_err(|error| format!("GFX{slot:02X}: {error}"))?;
-        group
-            .stage(&batch_output_path(directory, slot), &bytes)
-            .map_err(|error| format!("GFX{slot:02X}: {error}"))?;
+        match target {
+            GraphicsExportTarget::Directory(directory) => group
+                .as_mut()
+                .expect("directory exports create a staging group")
+                .stage(&batch_output_path(directory, slot), &bytes)
+                .map_err(|error| format!("GFX{slot:02X}: {error}"))?,
+            GraphicsExportTarget::JoinedFile(_) => joined_files.push(bytes),
+        }
         completed.store(slot + 1, Ordering::Relaxed);
     }
     if cancelled.load(Ordering::Relaxed) {
         return Ok(None);
     }
-    group.publish().map_err(|error| error.to_string())?;
+    match target {
+        GraphicsExportTarget::Directory(_) => {
+            group
+                .expect("directory exports retain their staging group")
+                .publish()
+                .map_err(|error| error.to_string())?;
+        }
+        GraphicsExportTarget::JoinedFile(path) => {
+            let joined = lm_graphics::JoinedGraphics {
+                files: joined_files,
+            }
+            .join()
+            .map_err(|error| error.to_string())?;
+            lm_app::file_persistence::write_new(path, &joined)
+                .map_err(|error| error.to_string())?;
+        }
+    }
     Ok(Some(total))
 }
 
@@ -166,7 +215,9 @@ fn batch_output_path(directory: &Path, slot: usize) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{GraphicsBatchSource, RunningBatch, batch_output_path, export_batch};
+    use super::{
+        GraphicsBatchSource, GraphicsExportTarget, RunningBatch, batch_output_path, export_batch,
+    };
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{
         GraphicsCompression, GraphicsRomLayout, GraphicsSaveOptions, LevelPointerTable, Project,
@@ -256,7 +307,7 @@ mod tests {
         let cancelled = Arc::new(AtomicBool::new(false));
         let (_sender, result) = mpsc::channel();
         let running = RunningBatch {
-            directory: PathBuf::from("Graphics"),
+            target: GraphicsExportTarget::Directory(PathBuf::from("Graphics")),
             total: 0x32,
             completed: Arc::new(AtomicUsize::new(0)),
             cancelled: Arc::clone(&cancelled),
@@ -274,7 +325,13 @@ mod tests {
         let completed = AtomicUsize::new(0);
         let cancelled = AtomicBool::new(false);
         assert_eq!(
-            export_batch(source, &directory, &completed, &cancelled).unwrap(),
+            export_batch(
+                source,
+                &GraphicsExportTarget::Directory(directory.clone()),
+                &completed,
+                &cancelled,
+            )
+            .unwrap(),
             Some(2)
         );
         assert_eq!(completed.load(Ordering::Relaxed), 2);
@@ -292,7 +349,7 @@ mod tests {
         assert!(
             export_batch(
                 source,
-                &directory,
+                &GraphicsExportTarget::Directory(directory.clone()),
                 &AtomicUsize::new(0),
                 &AtomicBool::new(false),
             )
@@ -300,6 +357,29 @@ mod tests {
         );
         assert!(!directory.join("GFX00.bin").exists());
         assert_eq!(fs::read(directory.join("GFX01.bin")).unwrap(), b"keep");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn joined_batch_concatenates_slots_in_pointer_table_order() {
+        let directory = temporary_directory();
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("AllGFX.bin");
+        let (source, expected) = fixture_source();
+        assert_eq!(
+            export_batch(
+                source,
+                &GraphicsExportTarget::JoinedFile(path.clone()),
+                &AtomicUsize::new(0),
+                &AtomicBool::new(false),
+            )
+            .unwrap(),
+            Some(2)
+        );
+        assert_eq!(
+            fs::read(path).unwrap(),
+            [expected[0].clone(), expected[1].clone()].concat()
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 }

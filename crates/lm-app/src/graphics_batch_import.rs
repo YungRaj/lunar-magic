@@ -1,5 +1,5 @@
 use crate::PreparedRomCommit;
-use lm_graphics::GraphicsFile4bpp;
+use lm_graphics::{GraphicsFile4bpp, JoinedGraphics};
 use lm_project::{GraphicsRomLayout, GraphicsSaveOptions, Project, RomMutation};
 use lm_rom::RomImage;
 
@@ -55,6 +55,44 @@ pub fn prepare_standard_graphics_import(
         description: "Insert all standard GFX files".into(),
         mutation,
     })
+}
+
+/// Splits one `AllGFX.bin` image at the exact current-ROM file boundaries and prepares the same
+/// atomic complete standard-GFX replacement as [`prepare_standard_graphics_import`].
+///
+/// # Errors
+///
+/// Returns a diagnostic when current slots cannot be decoded, the joined size is inexact, or the
+/// resulting complete batch cannot be prepared.
+pub fn prepare_joined_standard_graphics_import(
+    expected_revision: u64,
+    image: RomImage,
+    layout: GraphicsRomLayout,
+    checksum_field: usize,
+    joined: &[u8],
+    options: &GraphicsSaveOptions,
+) -> Result<PreparedRomCommit, String> {
+    let project = Project::new(image.clone());
+    let sizes = (0..layout.pointers.entries)
+        .map(|slot| {
+            project
+                .load_graphics_file(slot, layout)
+                .and_then(|graphics| graphics.encode().map_err(Into::into))
+                .map(|bytes| bytes.len())
+                .map_err(|error| format!("GFX{slot:02X}: {error}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let files = JoinedGraphics::split(joined, &sizes)
+        .map_err(|error| format!("AllGFX.bin: {error}"))?
+        .files;
+    prepare_standard_graphics_import(
+        expected_revision,
+        image,
+        layout,
+        checksum_field,
+        &files,
+        options,
+    )
 }
 
 #[cfg(test)]
@@ -177,6 +215,54 @@ mod tests {
                 layout(),
                 0x7fdc,
                 &wrong,
+                &options(0x4000..0x7000),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn joined_import_uses_current_rom_boundaries_and_reopens_every_slot() {
+        let source = source_image();
+        let before = source.logical_bytes().to_vec();
+        let expected = [
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([12; 64])],
+            },
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([13; 64]), IndexedTile::new([14; 64])],
+            },
+        ];
+        let joined = JoinedGraphics {
+            files: expected.iter().map(|file| file.encode().unwrap()).collect(),
+        }
+        .join()
+        .unwrap();
+        let prepared = prepare_joined_standard_graphics_import(
+            23,
+            source,
+            layout(),
+            0x7fdc,
+            &joined,
+            &options(0x4000..0x7000),
+        )
+        .unwrap();
+        let reopened =
+            Project::new(RomImage::from_bytes(apply(before, &prepared.mutation)).unwrap());
+        for (slot, expected) in expected.iter().enumerate() {
+            assert_eq!(
+                reopened.load_graphics_file(slot, layout()).unwrap(),
+                *expected
+            );
+        }
+
+        assert!(
+            prepare_joined_standard_graphics_import(
+                0,
+                source_image(),
+                layout(),
+                0x7fdc,
+                &joined[..joined.len() - 1],
                 &options(0x4000..0x7000),
             )
             .is_err()

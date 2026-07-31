@@ -19,11 +19,25 @@ pub(super) struct GraphicsImportSource {
 }
 
 struct RunningImport {
-    directory: PathBuf,
+    target: GraphicsImportTarget,
     total: usize,
     completed: Arc<AtomicUsize>,
     cancelled: Arc<AtomicBool>,
     result: Receiver<Result<Option<PreparedRomCommit>, String>>,
+}
+
+#[derive(Clone)]
+enum GraphicsImportTarget {
+    Directory(PathBuf),
+    JoinedFile(PathBuf),
+}
+
+impl GraphicsImportTarget {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Directory(path) | Self::JoinedFile(path) => path,
+        }
+    }
 }
 
 impl RunningImport {
@@ -47,6 +61,22 @@ impl GraphicsImportWorker {
         source: GraphicsImportSource,
         directory: PathBuf,
     ) -> Result<(), String> {
+        self.start_target(source, GraphicsImportTarget::Directory(directory))
+    }
+
+    pub(super) fn start_joined(
+        &mut self,
+        source: GraphicsImportSource,
+        path: PathBuf,
+    ) -> Result<(), String> {
+        self.start_target(source, GraphicsImportTarget::JoinedFile(path))
+    }
+
+    fn start_target(
+        &mut self,
+        source: GraphicsImportSource,
+        target: GraphicsImportTarget,
+    ) -> Result<(), String> {
         if self.running.is_some() {
             return Err("a standard GFX insertion is already running".into());
         }
@@ -60,22 +90,18 @@ impl GraphicsImportWorker {
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_completed = Arc::clone(&completed);
         let worker_cancelled = Arc::clone(&cancelled);
-        let worker_directory = directory.clone();
+        let worker_target = target.clone();
         let (sender, result) = mpsc::channel();
         std::thread::Builder::new()
             .name("lm-standard-gfx-import".into())
             .spawn(move || {
-                let result = prepare_import(
-                    source,
-                    &worker_directory,
-                    &worker_completed,
-                    &worker_cancelled,
-                );
+                let result =
+                    prepare_import(source, &worker_target, &worker_completed, &worker_cancelled);
                 let _send_result = sender.send(result);
             })
             .map_err(|error| format!("could not create standard-GFX import worker: {error}"))?;
         self.running = Some(RunningImport {
-            directory,
+            target,
             total,
             completed,
             cancelled,
@@ -96,10 +122,7 @@ impl GraphicsImportWorker {
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label(format!(
-                        "Reading files from {}",
-                        running.directory.display()
-                    ));
+                    ui.label(format!("Reading {}", running.target.path().display()));
                     ui.add(
                         egui::ProgressBar::new(completed as f32 / running.total as f32)
                             .text(format!("{completed} / {}", running.total)),
@@ -138,43 +161,73 @@ impl GraphicsImportWorker {
 
 fn prepare_import(
     source: GraphicsImportSource,
-    directory: &Path,
+    target: &GraphicsImportTarget,
     completed: &AtomicUsize,
     cancelled: &AtomicBool,
 ) -> Result<Option<PreparedRomCommit>, String> {
     let total = source.layout.pointers.entries;
-    let mut files = Vec::with_capacity(total);
-    for slot in 0..total {
-        if cancelled.load(Ordering::Relaxed) {
-            return Ok(None);
+    match target {
+        GraphicsImportTarget::Directory(directory) => {
+            let mut files = Vec::with_capacity(total);
+            for slot in 0..total {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Ok(None);
+                }
+                let description = format!("GFX{slot:02X} raw graphics");
+                let bytes = crate::dialogs::read_regular_bounded(
+                    &directory.join(format!("GFX{slot:02X}.bin")),
+                    u64::try_from(source.layout.maximum_decompressed_len).unwrap_or(u64::MAX),
+                    &description,
+                )
+                .map_err(|error| format!("{description}: {error}"))?;
+                files.push(bytes);
+                completed.store(slot + 1, Ordering::Relaxed);
+            }
+            if cancelled.load(Ordering::Relaxed) {
+                return Ok(None);
+            }
+            lm_app::prepare_standard_graphics_import(
+                source.expected_revision,
+                source.image,
+                source.layout,
+                source.checksum_field,
+                &files,
+                &source.options,
+            )
+            .map(Some)
         }
-        let description = format!("GFX{slot:02X} raw graphics");
-        let bytes = crate::dialogs::read_regular_bounded(
-            &directory.join(format!("GFX{slot:02X}.bin")),
-            u64::try_from(source.layout.maximum_decompressed_len).unwrap_or(u64::MAX),
-            &description,
-        )
-        .map_err(|error| format!("{description}: {error}"))?;
-        files.push(bytes);
-        completed.store(slot + 1, Ordering::Relaxed);
+        GraphicsImportTarget::JoinedFile(path) => {
+            if cancelled.load(Ordering::Relaxed) {
+                return Ok(None);
+            }
+            let maximum = source
+                .layout
+                .maximum_decompressed_len
+                .checked_mul(total)
+                .and_then(|value| u64::try_from(value).ok())
+                .ok_or("AllGFX.bin read bound overflow")?;
+            let joined = crate::dialogs::read_regular_bounded(path, maximum, "AllGFX.bin")
+                .map_err(|error| format!("AllGFX.bin: {error}"))?;
+            completed.store(total, Ordering::Relaxed);
+            if cancelled.load(Ordering::Relaxed) {
+                return Ok(None);
+            }
+            lm_app::prepare_joined_standard_graphics_import(
+                source.expected_revision,
+                source.image,
+                source.layout,
+                source.checksum_field,
+                &joined,
+                &source.options,
+            )
+            .map(Some)
+        }
     }
-    if cancelled.load(Ordering::Relaxed) {
-        return Ok(None);
-    }
-    lm_app::prepare_standard_graphics_import(
-        source.expected_revision,
-        source.image,
-        source.layout,
-        source.checksum_field,
-        &files,
-        &source.options,
-    )
-    .map(Some)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::RunningImport;
+    use super::{GraphicsImportTarget, RunningImport};
     use std::path::PathBuf;
     use std::sync::{
         Arc,
@@ -187,7 +240,7 @@ mod tests {
         let cancelled = Arc::new(AtomicBool::new(false));
         let (_sender, result) = mpsc::channel();
         let running = RunningImport {
-            directory: PathBuf::from("Graphics"),
+            target: GraphicsImportTarget::Directory(PathBuf::from("Graphics")),
             total: 0x32,
             completed: Arc::new(AtomicUsize::new(0)),
             cancelled: Arc::clone(&cancelled),
