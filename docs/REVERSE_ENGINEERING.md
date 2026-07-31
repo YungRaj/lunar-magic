@@ -2369,6 +2369,9 @@ placements as background, and omits Acts-Like inspection for that namespace.
 Definition lookup combines descriptor bits 4–6 (the active 4K bank) with each
 stored word's low 12 bits. The renderer retains the complete raw word
 separately, so lookup no longer consumes attribute or whole-cell flip bits.
+Object-backed writes use the same typed placement boundary but preserve their
+complete 15-bit foreground definition identity; their bit 14 is not a
+background-cell X flip.
 The native-assets Layer 2 panel now uses the same shared bijection to present a
 clickable 32×32 Map16 grid. Selecting a canvas cell resolves its non-linear
 storage index and loads the complete 16-bit word; applying it continues through

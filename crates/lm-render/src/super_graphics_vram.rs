@@ -77,6 +77,8 @@ mod tests {
             y: 0,
             word: 0,
             definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: crate::NativeMap16DefinitionBank::Foreground,
             composition: crate::NativeMap16Composition::Opaque,
         }];

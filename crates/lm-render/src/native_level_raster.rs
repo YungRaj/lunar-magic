@@ -7,12 +7,16 @@ use lm_level::{Map16Tile, Subtile};
 /// `word` retains the source cell's exact attributes, including whole-definition flips.
 /// `definition_index` independently addresses the selected foreground or background namespace, so
 /// compressed Layer 2 can combine its descriptor's active 4K bank with the stored 12-bit tile.
+/// Outer flips are explicit because object paints use bit 14 as part of their 15-bit foreground
+/// definition identity rather than as a cell attribute.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeMap16Placement {
     pub x: i32,
     pub y: i32,
     pub word: u16,
     pub definition_index: u16,
+    pub outer_x_flip: bool,
+    pub outer_y_flip: bool,
     pub definition_bank: NativeMap16DefinitionBank,
     pub composition: NativeMap16Composition,
 }
@@ -209,7 +213,7 @@ fn render_native_level_framebuffer_impl(
                         .saturating_mul(16)
                         .saturating_sub(request.camera_y),
                 ),
-                (placement.word & 0x4000 != 0, placement.word & 0x8000 != 0),
+                (placement.outer_x_flip, placement.outer_y_flip),
                 palette_routing,
                 placement.composition,
             );
@@ -467,6 +471,8 @@ mod tests {
             y: 0,
             word: 0,
             definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -475,6 +481,8 @@ mod tests {
             y: 0,
             word: 1,
             definition_index: 1,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -514,6 +522,8 @@ mod tests {
             y: 0,
             word: 0,
             definition_index: 0x1000,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Background,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -537,6 +547,41 @@ mod tests {
     }
 
     #[test]
+    fn foreground_definition_bit_fourteen_does_not_imply_an_outer_flip() {
+        let mut definitions = vec![Map16Tile::default(); 0x4002];
+        definitions[1] = definition([0, 0, 0, 0]);
+        definitions[0x4001] = definition([1, 1, 1, 1]);
+        let tiles = [solid(1), solid(2)];
+        let placements = [NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: 0x4001,
+            definition_index: 0x4001,
+            outer_x_flip: false,
+            outer_y_flip: false,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
+            composition: NativeMap16Composition::Opaque,
+        }];
+        let layers: [&[NativeMap16Placement]; 1] = [&placements];
+        let canvas = render_native_level_framebuffer(NativeLevelRasterRequest {
+            width: 16,
+            height: 16,
+            camera_x: 0,
+            camera_y: 0,
+            backdrop: Rgba::default(),
+            layers: &layers,
+            definitions: &definitions,
+            background_definitions: &[],
+            tiles: &tiles,
+            palette: &palette(),
+        })
+        .unwrap();
+
+        assert_eq!(canvas.get(0, 0).unwrap().green, 255);
+        assert_eq!(canvas.get(0, 0).unwrap().red, 0);
+    }
+
+    #[test]
     fn averaged_map16_pixels_match_lunar_magics_channel_flooring() {
         let definitions = [definition([0, 1, 1, 1])];
         let tiles = [solid(1), solid(0)];
@@ -545,6 +590,8 @@ mod tests {
             y: 0,
             word: 0,
             definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Average,
         }];
@@ -590,6 +637,8 @@ mod tests {
             y: 0,
             word: 0,
             definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::HalfColor,
         }];
@@ -690,6 +739,8 @@ mod tests {
             y: 0,
             word: 0xc000,
             definition_index: 0,
+            outer_x_flip: true,
+            outer_y_flip: true,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -720,6 +771,8 @@ mod tests {
             y: 0,
             word: 0,
             definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -760,6 +813,8 @@ mod tests {
             y: 0,
             word: 0,
             definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -768,6 +823,8 @@ mod tests {
             y: 0,
             word: 0,
             definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];

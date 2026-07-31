@@ -189,7 +189,8 @@ struct PreviewMap16Subtile {
 
 fn decode_preview_map16_subtiles(
     definition: lm_level::Map16Tile,
-    placement_word: u16,
+    outer_x_flip: bool,
+    outer_y_flip: bool,
     palette_routing: NativeMap16PaletteRouting,
 ) -> [PreviewMap16Subtile; 4] {
     let source = [
@@ -198,8 +199,6 @@ fn decode_preview_map16_subtiles(
         definition.bottom_left,
         definition.bottom_right,
     ];
-    let outer_x_flip = placement_word & 0x4000 != 0;
-    let outer_y_flip = placement_word & 0x8000 != 0;
     std::array::from_fn(|visual_quadrant| {
         let output_x = visual_quadrant % 2;
         let output_y = visual_quadrant / 2;
@@ -239,6 +238,8 @@ struct PreviewMap16Hit {
     composition: NativeMap16Composition,
     word: u16,
     definition_index: u16,
+    outer_x_flip: bool,
+    outer_y_flip: bool,
     definition: Option<lm_level::Map16Tile>,
     acts_like: Option<Result<lm_level::ActsLikeResolution, lm_level::Map16SetError>>,
 }
@@ -453,6 +454,8 @@ fn inspect_preview_map16_selection(
                         composition: placement.composition,
                         word: placement.word,
                         definition_index: placement.definition_index,
+                        outer_x_flip: placement.outer_x_flip,
+                        outer_y_flip: placement.outer_y_flip,
                         definition,
                         acts_like: (placement.definition_bank
                             == NativeMap16DefinitionBank::Foreground)
@@ -880,7 +883,7 @@ impl RomLevelAssetsEditor {
                     ui.monospace("No Layer 2 or Layer 1 placement resolves at this cell.");
                 }
                 for (paint_index, hit) in inspection.hits.iter().enumerate() {
-                    let outer_flips = match (hit.word & 0x4000 != 0, hit.word & 0x8000 != 0) {
+                    let outer_flips = match (hit.outer_x_flip, hit.outer_y_flip) {
                         (false, false) => "--",
                         (true, false) => "X-",
                         (false, true) => "-Y",
@@ -921,7 +924,12 @@ impl RomLevelAssetsEditor {
                             definition.bottom_right.0,
                         ));
                         for subtile in
-                            decode_preview_map16_subtiles(definition, hit.word, hit.palette_routing)
+                            decode_preview_map16_subtiles(
+                                definition,
+                                hit.outer_x_flip,
+                                hit.outer_y_flip,
+                                hit.palette_routing,
+                            )
                         {
                             ui.monospace(format!(
                                 "    {} <= {} word ${:04X}: tile ${:03X}, palette row {} => CGRAM row {}, priority {}, flips {}{}",
@@ -1830,7 +1838,9 @@ fn object_paints_to_placements(
             x: i32::try_from(x).map_err(|_| "object-layer X overflow".to_owned())?,
             y: i32::try_from(y).map_err(|_| "object-layer Y overflow".to_owned())?,
             word: paint.tile,
-            definition_index: paint.tile & 0x3fff,
+            definition_index: paint.tile & 0x7fff,
+            outer_x_flip: false,
+            outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: native_map16_composition(object_tileset, paint.tile),
         });
@@ -1945,6 +1955,8 @@ fn layer2_placements(
                 y: i32::try_from(y).map_err(|_| "Layer 2 Y coordinate overflow".to_owned())?,
                 word,
                 definition_index: u16::from(active_bank) * 0x1000 + (word & 0x0fff),
+                outer_x_flip: word & 0x4000 != 0,
+                outer_y_flip: word & 0x8000 != 0,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: if background_half_color {
                     NativeMap16Composition::HalfColor
@@ -2218,6 +2230,8 @@ mod tests {
                 y: 0,
                 word: 0x0123,
                 definition_index: 0x0123,
+                outer_x_flip: false,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
@@ -2229,6 +2243,8 @@ mod tests {
                 y: 0,
                 word: 0x4567,
                 definition_index: 0x0567,
+                outer_x_flip: true,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
@@ -2240,6 +2256,8 @@ mod tests {
                 y: 31,
                 word: 0x89ab,
                 definition_index: 0x09ab,
+                outer_x_flip: false,
+                outer_y_flip: true,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
@@ -2489,6 +2507,8 @@ mod tests {
                 y: 1,
                 word: 0x4001,
                 definition_index: 0x1001,
+                outer_x_flip: true,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Average,
             },
@@ -2497,6 +2517,8 @@ mod tests {
                 y: 8,
                 word: 0x0007,
                 definition_index: 7,
+                outer_x_flip: false,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2505,6 +2527,8 @@ mod tests {
                 y: 1,
                 word: 0x0002,
                 definition_index: 0x1002,
+                outer_x_flip: false,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::HalfColor,
             },
@@ -2515,6 +2539,8 @@ mod tests {
                 y: 1,
                 word: 0x8003,
                 definition_index: 3,
+                outer_x_flip: false,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2523,6 +2549,8 @@ mod tests {
                 y: 1,
                 word: 0x3fff,
                 definition_index: 0x3fff,
+                outer_x_flip: false,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2551,6 +2579,8 @@ mod tests {
                         composition: NativeMap16Composition::Average,
                         word: 0x4001,
                         definition_index: 0x1001,
+                        outer_x_flip: true,
+                        outer_y_flip: false,
                         definition: Some(expected[0]),
                         acts_like: None,
                     },
@@ -2561,6 +2591,8 @@ mod tests {
                         composition: NativeMap16Composition::HalfColor,
                         word: 0x0002,
                         definition_index: 0x1002,
+                        outer_x_flip: false,
+                        outer_y_flip: false,
                         definition: Some(expected[1]),
                         acts_like: None,
                     },
@@ -2571,6 +2603,8 @@ mod tests {
                         composition: NativeMap16Composition::Opaque,
                         word: 0x8003,
                         definition_index: 3,
+                        outer_x_flip: false,
+                        outer_y_flip: false,
                         definition: Some(expected[2]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
                             tile: 3,
@@ -2584,6 +2618,8 @@ mod tests {
                         composition: NativeMap16Composition::Opaque,
                         word: 0x3fff,
                         definition_index: 0x3fff,
+                        outer_x_flip: false,
+                        outer_y_flip: false,
                         definition: None,
                         acts_like: None,
                     },
@@ -2631,6 +2667,8 @@ mod tests {
                 y: 1,
                 word: 1,
                 definition_index: 1,
+                outer_x_flip: false,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2639,6 +2677,8 @@ mod tests {
                 y: 1,
                 word: 3,
                 definition_index: 3,
+                outer_x_flip: false,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2647,6 +2687,8 @@ mod tests {
                 y: 1,
                 word: 4,
                 definition_index: 4,
+                outer_x_flip: false,
+                outer_y_flip: false,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2703,7 +2745,8 @@ mod tests {
         ] {
             let decoded = decode_preview_map16_subtiles(
                 definition,
-                placement_word,
+                placement_word & 0x4000 != 0,
+                placement_word & 0x8000 != 0,
                 NativeMap16PaletteRouting::Direct,
             );
             assert_eq!(
@@ -2729,7 +2772,8 @@ mod tests {
         }
         let shifted = decode_preview_map16_subtiles(
             definition,
-            0,
+            false,
+            false,
             NativeMap16PaletteRouting::ShiftLowRowsByFour,
         );
         assert_eq!(
@@ -2956,7 +3000,7 @@ mod tests {
                 StandardObjectPaintedCell {
                     record_index: 1,
                     index,
-                    tile: 0x456,
+                    tile: 0x4456,
                 },
             ],
             layout,
@@ -2971,14 +3015,18 @@ mod tests {
                     y: 4,
                     word: 0x123,
                     definition_index: 0x123,
+                    outer_x_flip: false,
+                    outer_y_flip: false,
                     definition_bank: NativeMap16DefinitionBank::Foreground,
                     composition: NativeMap16Composition::Opaque,
                 },
                 NativeMap16Placement {
                     x: 3,
                     y: 4,
-                    word: 0x456,
-                    definition_index: 0x456,
+                    word: 0x4456,
+                    definition_index: 0x4456,
+                    outer_x_flip: false,
+                    outer_y_flip: false,
                     definition_bank: NativeMap16DefinitionBank::Foreground,
                     composition: NativeMap16Composition::Opaque,
                 },

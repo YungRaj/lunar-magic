@@ -2781,7 +2781,9 @@ Layer 2 placements resolve Lunar Magic's separately loaded `$8000-$FFFF` backgro
 which has no Acts-Like table. Their definition identity is kept separate from the exact stored
 word: the installed descriptor's three-bit active bank supplies bits 12–14 and the cell supplies
 its low 12 bits, while raw attribute and whole-definition flip bits remain intact. The inspector
-reports the resulting global `$8000-$FFFF` number. Each subtile is additionally reported at its post-placement visual
+reports the resulting global `$8000-$FFFF` number. Object-backed paints instead retain all 15 bits
+of their foreground `$0000-$7FFF` identity and carry explicit false outer flips; definition bit 14
+is never reinterpreted as a Layer 2 attribute. Each subtile is additionally reported at its post-placement visual
 quadrant with its original definition quadrant, ten-bit tile number, CGRAM row, priority, and
 effective X/Y flips after composing the whole-definition flips. It also invokes
 `Map16Set::resolve_acts_like` with the complete installed tile count as its traversal bound,
