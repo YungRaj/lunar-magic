@@ -2809,6 +2809,10 @@ Its compressed Layer 2 presentation also retains the raw word's whole-cell X/Y f
 background planes reverse source pixels during precomposition, ordinary atlas cells reverse their
 texture coordinates, and M16-backed cells permute visual quadrants while composing the outer flips
 with each subtile's own flags.
+Standard-object cache paints now use the same bounded Map16 source resolver as OSC display parts.
+Entries below `$0200` select the vanilla atlas, `$0200-$03ff` may resolve through the loaded M16
+sidecar, and unavailable or higher 15-bit identities remain explicit unresolved markers instead of
+sampling outside the atlas or aliasing a low definition.
 The distinct recovered background-half-color flag is also installed without treating it as
 destination averaging. Level modes `$0C` and `$0D` mark every native Layer 2 tilemap placement as
 `half-color`; its nontransparent source RGB channels shift right once independently of the

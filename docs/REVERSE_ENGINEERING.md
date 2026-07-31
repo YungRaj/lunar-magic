@@ -2381,6 +2381,9 @@ masked into unrelated entry `$0001`, and its diagnostic marker retains all four 
 The main level editor now also consumes compressed Layer 2 whole-cell flips instead of using them
 only for definition masking. Shared-background precomposition reverses source pixels, ordinary
 atlas cells reverse UV axes, and M16-backed cells permute quadrants and XOR outer/subtile flips.
+Its standard-object cache renderer also follows the OSC display renderer's Map16 source boundary:
+only definitions below `$0200` address the shared vanilla atlas, the next 512 entries require an M16
+definition, and unavailable or higher identities retain an unresolved marker without low masking.
 The native-assets Layer 2 panel now uses the same shared bijection to present a
 clickable 32×32 Map16 grid. Selecting a canvas cell resolves its non-linear
 storage index and loads the complete 16-bit word; applying it continues through
