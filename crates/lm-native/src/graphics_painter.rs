@@ -1,5 +1,7 @@
 use eframe::egui;
-use lm_graphics::{GraphicsColorMapFilters, IndexedTile, PaletteInterchangeFile, TileShift};
+use lm_graphics::{
+    GraphicsColorMapFilters, GraphicsTileOwner, IndexedTile, PaletteInterchangeFile, TileShift,
+};
 
 pub(crate) const TILE_GRID_COLUMNS: usize = 8;
 const TILE_EDITOR_ZOOMS: [(u16, f32); 5] = [
@@ -106,6 +108,7 @@ impl GraphicsEditorStatus {
         &mut self,
         responses: &[egui::Response],
         modifiers: egui::Modifiers,
+        owner: Option<GraphicsTileOwner>,
     ) {
         let hovered = responses.iter().position(egui::Response::hovered);
         if hovered == self.hovered_tile {
@@ -115,7 +118,7 @@ impl GraphicsEditorStatus {
         if let Some(index) = hovered {
             self.editor_hovered = false;
             self.hovered_color = None;
-            self.text = Some(tile_hover_status(index, modifiers));
+            self.text = Some(tile_hover_status(index, modifiers, owner));
         } else {
             self.text = None;
         }
@@ -498,9 +501,24 @@ fn classify_tile_pointer_action(
     }
 }
 
-fn tile_hover_status(index: usize, modifiers: egui::Modifiers) -> String {
+fn tile_hover_status(
+    index: usize,
+    modifiers: egui::Modifiers,
+    owner: Option<GraphicsTileOwner>,
+) -> String {
     if modifiers == (egui::Modifiers::CTRL | egui::Modifiers::SHIFT) {
-        format!("Tile 0x{index:X}.")
+        match owner {
+            Some(GraphicsTileOwner::OriginalAnimation { slot }) => {
+                format!("Tile 0x{index:X}, OrigAnim slot 0x{slot:X}.")
+            }
+            Some(GraphicsTileOwner::LevelExAnimation { slot }) => {
+                format!("Tile 0x{index:X}, ExAnim Level slot 0x{slot:X}.")
+            }
+            Some(GraphicsTileOwner::GlobalExAnimation { slot }) => {
+                format!("Tile 0x{index:X}, ExAnim Global slot 0x{slot:X}.")
+            }
+            _ => format!("Tile 0x{index:X}."),
+        }
     } else {
         format!(
             "Tile 0x{index:X} (Address 0x{:X})",
@@ -980,13 +998,36 @@ mod tests {
     #[test]
     fn native_tile_status_formats_address_modifier_and_actions_exactly() {
         assert_eq!(
-            tile_hover_status(0x1f, egui::Modifiers::NONE),
+            tile_hover_status(0x1f, egui::Modifiers::NONE, None),
             "Tile 0x1F (Address 0x3E0)"
         );
         assert_eq!(
-            tile_hover_status(0x1f, egui::Modifiers::CTRL | egui::Modifiers::SHIFT),
+            tile_hover_status(0x1f, egui::Modifiers::CTRL | egui::Modifiers::SHIFT, None),
             "Tile 0x1F."
         );
+        for (owner, expected) in [
+            (
+                GraphicsTileOwner::OriginalAnimation { slot: 0x12 },
+                "Tile 0x1F, OrigAnim slot 0x12.",
+            ),
+            (
+                GraphicsTileOwner::LevelExAnimation { slot: 0x23 },
+                "Tile 0x1F, ExAnim Level slot 0x23.",
+            ),
+            (
+                GraphicsTileOwner::GlobalExAnimation { slot: 0x34 },
+                "Tile 0x1F, ExAnim Global slot 0x34.",
+            ),
+        ] {
+            assert_eq!(
+                tile_hover_status(
+                    0x1f,
+                    egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+                    Some(owner)
+                ),
+                expected
+            );
+        }
         let mut status = GraphicsEditorStatus::default();
         status.select_tile(0x123);
         assert_eq!(

@@ -376,7 +376,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   publish canonical copies, and emit entry-addressable semantic observations as one atomic
   create-new batch.
   ROM-backed graphics editing likewise requires exact `LMGFXOWN` tile ownership evidence and a
-  separate allocation range. Fixed and ExAnimation-owned tiles remain previewable and copyable,
+  separate allocation range. Version 2 distinguishes generic ExAnimation records from original,
+  level, and global animation slots while retaining version-1 decode compatibility. Fixed and
+  every animation-owned tile remain previewable and copyable,
   while paste and pixel-paint controls are disabled. The Documents menu opens canonical `LMGFX4BP`
   graphics with a selected `LMPAL1` color
   source. Its separate editor provides palette-row and index selection, a scrollable tile sheet,
@@ -1096,8 +1098,9 @@ application revision commit are all-or-nothing; undo restores the complete origi
 payload.
 
 `graphics-edit SCRIPT SEARCH_START SEARCH_END` uses bounded `LMGFXED1` scripts for compressed native
-4bpp files. Like palettes, a script declares the complete tile ownership shape and any fixed or
-ExAnimation-owned overrides before editing. Each tile is written as exactly 64 hexadecimal pixel
+4bpp files. Like palettes, a script declares the complete tile ownership shape and any fixed,
+generic ExAnimation, original-animation, level-ExAnimation, or global-ExAnimation overrides before
+editing. Each tile is written as exactly 64 hexadecimal pixel
 nibbles in row-major 8×8 order; `changes` performs a unique indexed batch and `range` replaces
 contiguous tiles:
 
@@ -1105,7 +1108,7 @@ contiguous tiles:
 LMGFXED1
 owners 3 editable
 owner 0 fixed
-owner 2 exanimation 0007
+owner 2 original-animation 007e
 changes 1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 range 1 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 ```
@@ -1700,6 +1703,11 @@ Its event-driven status state reproduces the original tile/address and palette h
 tile and foreground-color messages, rendered-palette messages, viewed-page messages, and exact
 start/end boundary diagnostics. A stationary pointer does not overwrite a later keyboard message;
 changing or leaving its tracked tile, palette, or pixel-editor region updates or clears the status.
+Installed Ctrl+Shift tile hover consumes the same ownership evidence. Canonical v2 records retain
+the original-animation slots `$00-$7E` and level/global ExAnimation slots `$00-$3F`, producing the
+exact `OrigAnim`, `ExAnim Level`, and `ExAnim Global` messages while keeping every such tile
+read-only. Version-1 generic ExAnimation records still decode and retain their conservative generic
+tile message because they do not contain a recoverable native slot class.
 Each pixel editor exposes the same discrete 800%, 1600%, 2400%, 3200%, and 4000% selected-tile
 zoom choices, retaining the prior 320-pixel (4000%) default. The chosen square is passed to both
 the rasterizer and normalized pixel-coordinate adapter, so painting remains exact at every size.

@@ -536,8 +536,16 @@ impl RomGraphicsEditor {
             &mut self.display_palette,
             palette.palette.colors.len() / 16,
         );
+        let hovered_owner = responses
+            .iter()
+            .position(egui::Response::hovered)
+            .and_then(|index| {
+                self.workspace
+                    .as_ref()
+                    .and_then(|workspace| workspace.controller.ownership().owner(index))
+            });
         self.status
-            .update_tile_hover(&responses, ui.input(|input| input.modifiers));
+            .update_tile_hover(&responses, ui.input(|input| input.modifiers), hovered_owner);
         if let Some(status) = navigation_status.or(palette_status) {
             self.status.set(status);
         }

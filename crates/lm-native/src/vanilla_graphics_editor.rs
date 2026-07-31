@@ -257,7 +257,7 @@ impl VanillaGraphicsEditor {
             palette.palette.colors.len() / 16,
         );
         self.status
-            .update_tile_hover(&responses, ui.input(|input| input.modifiers));
+            .update_tile_hover(&responses, ui.input(|input| input.modifiers), None);
         if let Some(status) = navigation_status.or(palette_status) {
             self.status.set(status);
         }

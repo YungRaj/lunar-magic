@@ -21,6 +21,9 @@ fn built_cli_normalizes_and_observes_both_ownership_domains_atomically() {
             GraphicsTileOwner::Editable,
             GraphicsTileOwner::Fixed,
             GraphicsTileOwner::ExAnimation { record: 7 },
+            GraphicsTileOwner::OriginalAnimation { slot: 0x12 },
+            GraphicsTileOwner::LevelExAnimation { slot: 0x23 },
+            GraphicsTileOwner::GlobalExAnimation { slot: 0x34 },
         ]),
     };
     let palette = PaletteOwnershipFile {
@@ -75,6 +78,18 @@ fn built_cli_normalizes_and_observes_both_ownership_domains_atomically() {
     assert_eq!(
         graphics_observed.get("ownership/entries/0002/record"),
         Some("7")
+    );
+    assert_eq!(
+        graphics_observed.get("ownership/entries/0003/owner"),
+        Some("original-animation")
+    );
+    assert_eq!(
+        graphics_observed.get("ownership/entries/0004/slot"),
+        Some("35")
+    );
+    assert_eq!(
+        graphics_observed.get("ownership/entries/0005/owner"),
+        Some("global-exanimation")
     );
     let palette_observed =
         Observation::from_text(&fs::read_to_string(&palette_observation).unwrap()).unwrap();

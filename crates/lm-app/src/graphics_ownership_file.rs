@@ -10,13 +10,14 @@ pub struct GraphicsOwnershipFile {
 
 impl GraphicsOwnershipFile {
     pub const MAGIC: [u8; 8] = *b"LMGFXOWN";
-    pub const VERSION: u16 = 1;
+    pub const VERSION: u16 = 2;
+    pub const LEGACY_VERSION: u16 = 1;
     pub const HEADER_LEN: usize = 16;
     pub const RECORD_LEN: usize = 4;
     pub const MAX_TILES: usize = 65_536;
     pub const MAX_FILE_LEN: usize = Self::HEADER_LEN + Self::MAX_TILES * Self::RECORD_LEN;
 
-    /// Encodes one canonical fixed-width ownership record per graphics tile.
+    /// Encodes one canonical version-2 fixed-width ownership record per graphics tile.
     ///
     /// # Errors
     ///
@@ -47,12 +48,24 @@ impl GraphicsOwnershipFile {
                     bytes.extend_from_slice(&[2, 0]);
                     bytes.extend_from_slice(&record.to_le_bytes());
                 }
+                GraphicsTileOwner::OriginalAnimation { slot } => {
+                    validate_animation_slot(index, 3, slot, 0x7e)?;
+                    bytes.extend_from_slice(&[3, 0, slot, 0]);
+                }
+                GraphicsTileOwner::LevelExAnimation { slot } => {
+                    validate_animation_slot(index, 4, slot, 0x3f)?;
+                    bytes.extend_from_slice(&[4, 0, slot, 0]);
+                }
+                GraphicsTileOwner::GlobalExAnimation { slot } => {
+                    validate_animation_slot(index, 5, slot, 0x3f)?;
+                    bytes.extend_from_slice(&[5, 0, slot, 0]);
+                }
             }
         }
         Ok(bytes)
     }
 
-    /// Decodes one exactly consumed graphics ownership artifact.
+    /// Decodes one exactly consumed version-1 or version-2 graphics ownership artifact.
     ///
     /// # Errors
     ///
@@ -66,7 +79,7 @@ impl GraphicsOwnershipFile {
             return Err(GraphicsOwnershipFileError::WrongMagic);
         }
         let version = u16::from_le_bytes([header[8], header[9]]);
-        if version != Self::VERSION {
+        if ![Self::LEGACY_VERSION, Self::VERSION].contains(&version) {
             return Err(GraphicsOwnershipFileError::UnsupportedVersion(version));
         }
         if header[10..12] != [0; 2] {
@@ -98,6 +111,24 @@ impl GraphicsOwnershipFile {
                     (0, 0) => Ok(GraphicsTileOwner::Editable),
                     (1, 0) => Ok(GraphicsTileOwner::Fixed),
                     (2, record) => Ok(GraphicsTileOwner::ExAnimation { record }),
+                    (3, slot @ 0..=0x7e) if version == Self::VERSION => {
+                        Ok(GraphicsTileOwner::OriginalAnimation {
+                            slot: u8::try_from(slot).expect("bounded animation slot"),
+                        })
+                    }
+                    (4, slot @ 0..=0x3f) if version == Self::VERSION => {
+                        Ok(GraphicsTileOwner::LevelExAnimation {
+                            slot: u8::try_from(slot).expect("bounded animation slot"),
+                        })
+                    }
+                    (5, slot @ 0..=0x3f) if version == Self::VERSION => {
+                        Ok(GraphicsTileOwner::GlobalExAnimation {
+                            slot: u8::try_from(slot).expect("bounded animation slot"),
+                        })
+                    }
+                    (kind @ 3..=5, slot) if version == Self::VERSION => {
+                        Err(GraphicsOwnershipFileError::InvalidAnimationSlot { index, kind, slot })
+                    }
                     (kind @ 0..=1, payload) => {
                         Err(GraphicsOwnershipFileError::NonCanonicalPayload {
                             index,
@@ -113,6 +144,22 @@ impl GraphicsOwnershipFile {
             ownership: GraphicsOwnership::from_owners(owners),
         })
     }
+}
+
+fn validate_animation_slot(
+    index: usize,
+    kind: u8,
+    slot: u8,
+    maximum: u8,
+) -> Result<(), GraphicsOwnershipFileError> {
+    if slot > maximum {
+        return Err(GraphicsOwnershipFileError::InvalidAnimationSlot {
+            index,
+            kind,
+            slot: u16::from(slot),
+        });
+    }
+    Ok(())
 }
 
 fn encoded_len(count: usize) -> Result<usize, GraphicsOwnershipFileError> {
@@ -142,6 +189,11 @@ pub enum GraphicsOwnershipFileError {
         kind: u8,
         payload: u16,
     },
+    InvalidAnimationSlot {
+        index: usize,
+        kind: u8,
+        slot: u16,
+    },
     OwnershipShape,
     Overflow,
 }
@@ -164,6 +216,9 @@ mod tests {
                 GraphicsTileOwner::Editable,
                 GraphicsTileOwner::Fixed,
                 GraphicsTileOwner::ExAnimation { record: 0x4321 },
+                GraphicsTileOwner::OriginalAnimation { slot: 0x7e },
+                GraphicsTileOwner::LevelExAnimation { slot: 0x3f },
+                GraphicsTileOwner::GlobalExAnimation { slot: 0x3f },
             ]),
         }
     }
@@ -183,6 +238,37 @@ mod tests {
     }
 
     #[test]
+    fn legacy_version_one_decodes_the_original_owner_kinds() {
+        let legacy = GraphicsOwnershipFile {
+            ownership: GraphicsOwnership::from_owners(vec![
+                GraphicsTileOwner::Editable,
+                GraphicsTileOwner::Fixed,
+                GraphicsTileOwner::ExAnimation { record: 7 },
+            ]),
+        };
+        let mut bytes = legacy.encode().unwrap();
+        bytes[8..10].copy_from_slice(&GraphicsOwnershipFile::LEGACY_VERSION.to_le_bytes());
+        assert_eq!(GraphicsOwnershipFile::decode(&bytes).unwrap(), legacy);
+    }
+
+    #[test]
+    fn animation_slot_bounds_are_canonical() {
+        for owner in [
+            GraphicsTileOwner::OriginalAnimation { slot: 0x7f },
+            GraphicsTileOwner::LevelExAnimation { slot: 0x40 },
+            GraphicsTileOwner::GlobalExAnimation { slot: 0x40 },
+        ] {
+            let file = GraphicsOwnershipFile {
+                ownership: GraphicsOwnership::from_owners(vec![owner]),
+            };
+            assert!(matches!(
+                file.encode(),
+                Err(GraphicsOwnershipFileError::InvalidAnimationSlot { index: 0, .. })
+            ));
+        }
+    }
+
+    #[test]
     fn malformed_framing_and_noncanonical_records_fail() {
         let bytes = file().encode().unwrap();
         for end in 0..bytes.len() {
@@ -195,9 +281,17 @@ mod tests {
             Err(GraphicsOwnershipFileError::WrongLength { .. })
         ));
         let mut unknown = bytes.clone();
-        unknown[GraphicsOwnershipFile::HEADER_LEN] = 3;
+        unknown[GraphicsOwnershipFile::HEADER_LEN] = 6;
         assert!(matches!(
             GraphicsOwnershipFile::decode(&unknown),
+            Err(GraphicsOwnershipFileError::UnknownOwner { index: 0, kind: 6 })
+        ));
+        let mut legacy_new_kind = file().encode().unwrap();
+        legacy_new_kind[8..10]
+            .copy_from_slice(&GraphicsOwnershipFile::LEGACY_VERSION.to_le_bytes());
+        legacy_new_kind[GraphicsOwnershipFile::HEADER_LEN] = 3;
+        assert!(matches!(
+            GraphicsOwnershipFile::decode(&legacy_new_kind),
             Err(GraphicsOwnershipFileError::UnknownOwner { index: 0, kind: 3 })
         ));
         let mut payload = bytes;

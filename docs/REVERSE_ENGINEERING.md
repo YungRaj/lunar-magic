@@ -1262,6 +1262,12 @@ navigation publishes `Viewing 8x8 page 0x%X.`, while blocked movement publishes 
 `Already at Start`/`Already at End` diagnostics. Page Up/Down report the rendered hexadecimal
 palette. Rust now keeps this state event-driven so a stationary pointer does not overwrite a later
 keyboard action and leaving the tracked region clears it, matching the Win32 message boundary.
+With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
+`006136B8`: zero has no animation attribution, `$01-$7F` encode OrigAnim slot minus one,
+`$80-$BF` encode a level ExAnimation slot, and `$C0-$FF` encode a global ExAnimation slot. Canonical
+`LMGFXOWN` version 2 preserves those three bounded classes directly, allowing the installed Rust
+editor to emit the exact recovered hover messages; version-1 generic record evidence still decodes
+without pretending that it identifies one of those classes.
 `LoadGraphicsEditorPaletteColors` (`00504860`) proves that the negative palette index is also a real
 rendering state: it copies sixteen RGBQUAD entries from `005E7B60`, whereas nonnegative indices copy
 the active palette bank. Rust models that default selection explicitly and reproduces all sixteen

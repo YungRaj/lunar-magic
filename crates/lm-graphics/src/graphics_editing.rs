@@ -10,6 +10,15 @@ pub enum GraphicsTileOwner {
     ExAnimation {
         record: u16,
     },
+    OriginalAnimation {
+        slot: u8,
+    },
+    LevelExAnimation {
+        slot: u8,
+    },
+    GlobalExAnimation {
+        slot: u8,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -113,8 +122,8 @@ impl std::error::Error for GraphicsEditError {}
 impl GraphicsFile4bpp {
     /// Atomically replaces unique editable tile targets after validating every 4bpp pixel.
     ///
-    /// Fixed tiles and tiles owned by an `ExAnimation` record are rejected. An empty batch still
-    /// validates that the ownership map describes this file exactly.
+    /// Fixed tiles and tiles with any animation ownership or attribution are rejected. An empty
+    /// batch still validates that the ownership map describes this file exactly.
     ///
     /// # Errors
     ///
@@ -331,6 +340,30 @@ mod tests {
             Err(GraphicsEditError::PixelOutOfRange { .. })
         ));
         assert_eq!(graphics, original);
+    }
+
+    #[test]
+    fn every_animation_attribution_is_protected() {
+        for owner in [
+            GraphicsTileOwner::ExAnimation { record: 4 },
+            GraphicsTileOwner::OriginalAnimation { slot: 5 },
+            GraphicsTileOwner::LevelExAnimation { slot: 6 },
+            GraphicsTileOwner::GlobalExAnimation { slot: 7 },
+        ] {
+            let mut graphics = graphics();
+            let original = graphics.clone();
+            let mut ownership = GraphicsOwnership::editable(3);
+            ownership.set_owner(1, owner).unwrap();
+            let change = GraphicsTileChange {
+                index: 1,
+                tile: IndexedTile::new([3; 64]),
+            };
+            assert!(matches!(
+                graphics.apply_tile_changes(&[change], &ownership),
+                Err(GraphicsEditError::ProtectedTile { index: 1, .. })
+            ));
+            assert_eq!(graphics, original);
+        }
     }
 
     #[test]

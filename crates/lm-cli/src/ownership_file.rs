@@ -84,6 +84,18 @@ fn observe_graphics(
                 observed.insert(format!("{base}/owner"), "exanimation")?;
                 observed.insert(format!("{base}/record"), record.to_string())?;
             }
+            GraphicsTileOwner::OriginalAnimation { slot } => {
+                observed.insert(format!("{base}/owner"), "original-animation")?;
+                observed.insert(format!("{base}/slot"), slot.to_string())?;
+            }
+            GraphicsTileOwner::LevelExAnimation { slot } => {
+                observed.insert(format!("{base}/owner"), "level-exanimation")?;
+                observed.insert(format!("{base}/slot"), slot.to_string())?;
+            }
+            GraphicsTileOwner::GlobalExAnimation { slot } => {
+                observed.insert(format!("{base}/owner"), "global-exanimation")?;
+                observed.insert(format!("{base}/slot"), slot.to_string())?;
+            }
         }
     }
     Ok(observed)

@@ -14,6 +14,21 @@ pub(super) fn show(ui: &mut egui::Ui, owner: Option<GraphicsTileOwner>) -> bool 
                 "Ownership: ExAnimation record {record:04X} (read-only)"
             ));
         }
+        Some(GraphicsTileOwner::OriginalAnimation { slot }) => {
+            ui.label(format!(
+                "Ownership: original animation slot {slot:02X} (read-only)"
+            ));
+        }
+        Some(GraphicsTileOwner::LevelExAnimation { slot }) => {
+            ui.label(format!(
+                "Ownership: level ExAnimation slot {slot:02X} (read-only)"
+            ));
+        }
+        Some(GraphicsTileOwner::GlobalExAnimation { slot }) => {
+            ui.label(format!(
+                "Ownership: global ExAnimation slot {slot:02X} (read-only)"
+            ));
+        }
         None => {
             ui.label("Ownership: invalid (read-only)");
         }
@@ -35,6 +50,9 @@ mod tests {
         for owner in [
             Some(GraphicsTileOwner::Fixed),
             Some(GraphicsTileOwner::ExAnimation { record: 3 }),
+            Some(GraphicsTileOwner::OriginalAnimation { slot: 2 }),
+            Some(GraphicsTileOwner::LevelExAnimation { slot: 3 }),
+            Some(GraphicsTileOwner::GlobalExAnimation { slot: 4 }),
             None,
         ] {
             assert!(!is_editable(owner));

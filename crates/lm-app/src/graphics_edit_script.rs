@@ -146,6 +146,12 @@ fn parse_line(
         ["owner", index, "exanimation", record] => {
             parse_owner_override(state, line, index, "exanimation", Some(record))
         }
+        [
+            "owner",
+            index,
+            kind @ ("original-animation" | "level-exanimation" | "global-exanimation"),
+            slot,
+        ] => parse_owner_override(state, line, index, kind, Some(slot)),
         ["set", index, tile] => push_edit(
             state,
             GraphicsControllerEdit::ApplyChanges(vec![GraphicsTileChange {
@@ -232,6 +238,15 @@ fn parse_owner_override(
         ("exanimation", Some(record)) => GraphicsTileOwner::ExAnimation {
             record: hex_u16(line, record)?,
         },
+        ("original-animation", Some(slot)) => GraphicsTileOwner::OriginalAnimation {
+            slot: animation_slot(line, owner, slot, 0x7e)?,
+        },
+        ("level-exanimation", Some(slot)) => GraphicsTileOwner::LevelExAnimation {
+            slot: animation_slot(line, owner, slot, 0x3f)?,
+        },
+        ("global-exanimation", Some(slot)) => GraphicsTileOwner::GlobalExAnimation {
+            slot: animation_slot(line, owner, slot, 0x3f)?,
+        },
         (_, None) => simple_owner(line, owner)?,
         _ => {
             return Err(GraphicsEditScriptError::InvalidOwner {
@@ -249,6 +264,22 @@ fn parse_owner_override(
             line,
             value: index.to_string(),
         })
+}
+
+fn animation_slot(
+    line: usize,
+    owner: &str,
+    value: &str,
+    maximum: u16,
+) -> Result<u8, GraphicsEditScriptError> {
+    let slot = hex_u16(line, value)?;
+    if slot > maximum {
+        return Err(GraphicsEditScriptError::InvalidOwner {
+            line,
+            value: format!("{owner} {value}"),
+        });
+    }
+    Ok(u8::try_from(slot).expect("bounded animation slot"))
 }
 
 fn simple_owner(line: usize, value: &str) -> Result<GraphicsTileOwner, GraphicsEditScriptError> {
@@ -339,18 +370,30 @@ mod tests {
     #[test]
     fn parses_ownership_and_both_graphics_edit_shapes() {
         let input = format!(
-            "LMGFXED1\nowners 3 editable\nowner 0 fixed\nowner 2 exanimation 9\nchanges 1 {}\nrange 1 {}\n",
+            "LMGFXED1\nowners 6 editable\nowner 0 fixed\nowner 2 exanimation 9\nowner 3 original-animation 7e\nowner 4 level-exanimation 3f\nowner 5 global-exanimation 3f\nchanges 1 {}\nrange 1 {}\n",
             tile('a'),
             tile('f')
         );
         let script = parse(&input).unwrap();
-        assert_eq!(script.ownership.len(), 3);
+        assert_eq!(script.ownership.len(), 6);
         assert_eq!(script.ownership.owner(0), Some(GraphicsTileOwner::Fixed));
         assert_eq!(
             script.ownership.owner(2),
             Some(GraphicsTileOwner::ExAnimation { record: 9 })
         );
         assert_eq!(script.edits.len(), 2);
+        assert_eq!(
+            script.ownership.owner(3),
+            Some(GraphicsTileOwner::OriginalAnimation { slot: 0x7e })
+        );
+        assert_eq!(
+            script.ownership.owner(4),
+            Some(GraphicsTileOwner::LevelExAnimation { slot: 0x3f })
+        );
+        assert_eq!(
+            script.ownership.owner(5),
+            Some(GraphicsTileOwner::GlobalExAnimation { slot: 0x3f })
+        );
     }
 
     #[test]
@@ -362,6 +405,9 @@ mod tests {
             format!("LMGFXED1\nowners 1 editable\nset 0 {}\n", tile('g')),
             "LMGFXED1\nowners 1 editable\nowner 2 fixed\n".into(),
             "LMGFXED1\nowners 1 unknown\n".into(),
+            "LMGFXED1\nowners 1 editable\nowner 0 original-animation 7f\n".into(),
+            "LMGFXED1\nowners 1 editable\nowner 0 level-exanimation 40\n".into(),
+            "LMGFXED1\nowners 1 editable\nowner 0 global-exanimation 40\n".into(),
             "LMGFXED1\nowners 1 editable\nowners 1 fixed\n".into(),
             format!(
                 "LMGFXED1\nowners 1 editable\nset 0 {}\nowner 0 fixed\n",

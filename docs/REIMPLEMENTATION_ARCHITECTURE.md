@@ -143,7 +143,9 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   palette shape before a controller is created. Presentation code may copy protected colors but
   disables their mutation controls; allocation authority remains a separate explicit range.
 - ROM-backed graphics mutation follows the same boundary through `LMGFXOWN`: one exact record per
-  decoded tile identifies editable, fixed, or ExAnimation ownership. The ownership-validating
+  decoded tile identifies editable, fixed, generic ExAnimation, original-animation, level
+  ExAnimation, or global ExAnimation ownership. Canonical version 2 retains the three native slot
+  classes and bounded slot number; version 1 remains decode-compatible. The ownership-validating
   controller decoder is mandatory for commit-capable frontends; the all-editable convenience
   decoder remains display-only. Protected tiles can be inspected and copied but not pasted or
   painted, and graphics allocation authority is still supplied separately.
