@@ -76,6 +76,8 @@ impl RomGraphicsEditor {
                         self.selected_tile = 0;
                         self.selected_color = 1;
                         self.palette_row = 0;
+                        self.status = Default::default();
+                        self.clipboard_paste_target = None;
                         self.search_start.clear();
                         self.search_end.clear();
                     }
@@ -146,6 +148,8 @@ impl RomGraphicsEditor {
         self.workspace = None;
         self.pending_load = None;
         self.pending_close = None;
+        self.clipboard_paste_target = None;
+        self.status = Default::default();
     }
 
     pub(crate) fn commit_succeeded(&mut self) {

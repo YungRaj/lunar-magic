@@ -1675,25 +1675,29 @@ wrong domains, multiple tiles, malformed pixels, empty destinations, and stale R
 Successful replacement passes through `GraphicsDocumentController` or `GraphicsController` with
 the full editable-ownership shape, preserving portable undo/redo and native staged-commit behavior.
 Portable, pristine-layout, and installed tile sheets all expose Lunar Magic's exact unmodified
-right-click paste target and exact Ctrl+left-click copy source gestures. The shared classifier
-rejects other button/modifier combinations. Installed right-click paste requests system clipboard
-data only for an editable owner in a current, idle workspace; fixed, ExAnimation-owned, stale, and
-file-worker targets cannot enter the paste path.
+right-click paste target and exact Ctrl+left-click copy source gestures. Direct executable evidence
+further distinguishes unmodified right-click, which copies the active edited tile over the target,
+from Ctrl+right-click, which requests a system-clipboard tile and selects the target only after a
+valid payload is applied. The shared classifier rejects other button/modifier combinations.
+Installed right-click paste admits only an editable owner in a current, idle workspace; fixed,
+ExAnimation-owned, stale, and file-worker targets cannot enter either paste path.
 The portable document, pristine-layout ROM surface, and profile-backed installed ROM window also
 expose horizontal and vertical transforms of the selected tile. Each transform materializes an
 exact flipped 64-pixel tile and enters the same controller path as painting and paste: portable
 documents receive one undoable revision, while installed fixed and ExAnimation-owned tiles remain
 read-only and stale or active-file-worker ROM workspaces cannot flip.
-Their tile sheets also share focus-scoped keyboard navigation. Unmodified left/up arrows select the
-same in-page offset on the previous 256-tile graphics page, while right/down select it on the next;
+Their tile sheets also share focus-scoped keyboard navigation. Unmodified Up selects the same
+in-page offset on the previous 256-tile graphics page, while Down selects it on the next;
 missing pages are no-ops and a partial final page clamps to its last tile. Every move transfers
-keyboard focus and scrolls the destination into view; keys are not consumed unless the selected
-tile owns focus. Page Up advances the active
-display-palette row and Page Down moves back, wrapping within the rows available to that surface.
+keyboard focus and scrolls the destination into view; unmodified Left/Right remain unconsumed and
+keys are not consumed unless the selected tile owns focus. Page Up advances the active
+display-palette row and Page Down moves back, stopping at the rows available to that surface.
 The pristine fallback currently has one grayscale row, so both shortcuts remain bounded at row zero.
-The same tile-grid adapter draws a distinct outline around the current nonselected hover target and
-reports the selected and hovered tile indices in bounded uppercase hexadecimal. Hover status is
-derived from the current frame's widget responses, so leaving the grid cannot retain a stale tile.
+The same tile-grid adapter draws a distinct outline around the current nonselected hover target.
+Its event-driven status state reproduces the original tile/address and palette hover text, selected
+tile and foreground-color messages, rendered-palette messages, viewed-page messages, and exact
+start/end boundary diagnostics. A stationary pointer does not overwrite a later keyboard message;
+changing or leaving its tracked tile, palette, or pixel-editor region updates or clears the status.
 Each pixel editor exposes the same discrete 800%, 1600%, 2400%, 3200%, and 4000% selected-tile
 zoom choices, retaining the prior 320-pixel (4000%) default. The chosen square is passed to both
 the rasterizer and normalized pixel-coordinate adapter, so painting remains exact at every size.

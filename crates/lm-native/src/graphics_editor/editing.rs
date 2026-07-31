@@ -20,18 +20,21 @@ pub(super) fn apply_pixel(
 
 pub(super) fn paste_tile(
     controller: &mut GraphicsDocumentController,
-    selected_tile: &mut usize,
+    target: usize,
     text: &str,
     error_slot: &mut Option<String>,
-) {
+) -> bool {
     let count = controller.value().graphics.tiles.len();
-    *selected_tile = (*selected_tile).min(count.saturating_sub(1));
     match native_clipboard::decode_graphics_tile(text) {
-        Ok(tile) if *selected_tile < count => {
-            apply_tile(controller, *selected_tile, tile, error_slot);
+        Ok(tile) if target < count => apply_tile(controller, target, tile, error_slot),
+        Ok(_) => {
+            *error_slot = Some("graphics document has no destination tile".into());
+            false
         }
-        Ok(_) => *error_slot = Some("graphics document has no destination tile".into()),
-        Err(error) => *error_slot = Some(error),
+        Err(error) => {
+            *error_slot = Some(error);
+            false
+        }
     }
 }
 
@@ -77,7 +80,7 @@ pub(super) fn apply_tile(
     index: usize,
     tile: IndexedTile,
     error_slot: &mut Option<String>,
-) {
+) -> bool {
     let count = controller.value().graphics.tiles.len();
     let edit = GraphicsControllerEdit::ApplyChanges(vec![GraphicsTileChange { index, tile }]);
     if let Err(error) = controller.apply_edits(
@@ -86,5 +89,8 @@ pub(super) fn apply_tile(
         &[edit],
     ) {
         *error_slot = Some(error.to_string());
+        false
+    } else {
+        true
     }
 }

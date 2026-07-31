@@ -1221,19 +1221,22 @@ as individual pixel painting in all three native graphics surfaces. The portable
 each flip as an independently undoable revision; pristine-layout and profile-backed ROM editors
 stage the exact transformed pixels for their normal atomic commit, and the installed editor applies
 its fixed/ExAnimation ownership plus stale-worker gates before enabling either transform. The three
-tile sheets now give unmodified arrows their authenticated page role: left/up move to the same
-offset on the previous 256-tile page and right/down move to the next, with bounded partial-page
-handling, focus transfer, and automatic scrolling. Authenticated Page Up/Down input instead cycles
-forward/backward through each surface's available display-palette rows. Their shared transient
-hover outline and status line distinguish bounded selected and hovered hexadecimal tile indices
-without persisting stale hover state. Their selected-tile pixel grids also share 800–4000% discrete
+tile sheets now give unmodified Up/Down their authenticated page role: Up moves to the same offset
+on the previous 256-tile page and Down moves to the next, with bounded partial-page handling, focus
+transfer, and automatic scrolling; Left/Right only enter the Shift-modified pixel-wrap path.
+Authenticated Page Up/Down input steps forward/backward without cycling through each surface's
+available display-palette rows. Their shared transient hover outline accompanies an event-driven
+status line with recovered tile/address, color, selection, palette, page, and boundary messages.
+Their selected-tile pixel grids also share 800–4000% discrete
 zoom with one geometry source for rendering and hit testing. Exact original status/zoom variants
 remain separate UI-parity work. The documented 8×8-editor
 Shift+Arrow behavior is now implemented exactly as a one-pixel directional wrap. It uses the same
 revisioned or ownership-guarded tile replacement paths as paint, paste, and flips rather than a
-presentation-only buffer. Exact Ctrl+left-click copy and unmodified right-click paste gestures now
-publish/request the typed single-tile clipboard payload on all three tile sheets; installed paste
-cannot bypass fixed/ExAnimation ownership, stale revision, or active file-worker gates.
+presentation-only buffer. Exact Ctrl+left-click copies and selects the pointed tile. Unmodified
+right-click copies the active edit tile over its target, while Ctrl+right-click requests the typed
+single-tile clipboard payload and selects that target only after validation, matching the recovered
+mouse-message branches. Installed paste cannot bypass fixed/ExAnimation ownership, stale revision,
+or active file-worker gates.
 The documented unmodified F9 save command now enters the existing button-backed save/commit path
 on each surface. The two ROM editors preserve their existing expansion, modified-state,
 stale-revision, active-worker, and manifest-loader eligibility checks instead of giving the
@@ -1251,6 +1254,13 @@ and Y, which synthesize the existing Do Map, Map Colors, Rotate 90°, Flip X, an
 commands respectively. The Rust editors now preserve that exact unmodified key set; rotation was
 added as a first-class clockwise indexed-tile transform and all five routes retain each surface's
 normal controller, ownership, stale-revision, and worker guards.
+The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
+status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
+tile-edit selection; selection clicks publish tile or foreground-color messages. Successful Up/Down
+navigation publishes `Viewing 8x8 page 0x%X.`, while blocked movement publishes the exact
+`Already at Start`/`Already at End` diagnostics. Page Up/Down report the rendered hexadecimal
+palette. Rust now keeps this state event-driven so a stationary pointer does not overwrite a later
+keyboard action and leaving the tracked region clears it, matching the Win32 message boundary.
 
 ## Compression formats
 

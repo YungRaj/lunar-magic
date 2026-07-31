@@ -25,11 +25,99 @@ enum PaletteStep {
     Next,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct GraphicsEditorStatus {
+    text: Option<String>,
+    hovered_tile: Option<usize>,
+    editor_hovered: bool,
+    hovered_color: Option<u8>,
+}
+
+impl GraphicsEditorStatus {
+    pub(crate) fn text(&self) -> Option<&str> {
+        self.text.as_deref()
+    }
+
+    pub(crate) fn set(&mut self, text: impl Into<String>) {
+        self.text = Some(text.into());
+    }
+
+    pub(crate) fn set_pointer_action(&mut self, text: impl Into<String>) {
+        self.hovered_tile = None;
+        self.editor_hovered = false;
+        self.hovered_color = None;
+        self.set(text);
+    }
+
+    pub(crate) fn select_tile(&mut self, index: usize) {
+        self.set(format!("Tile 0x{index:X} selected for editing."));
+    }
+
+    pub(crate) fn select_foreground_color(&mut self, color: u8) {
+        self.hovered_tile = None;
+        self.editor_hovered = false;
+        self.hovered_color = Some(color);
+        self.set(format!("Color {color:X} selected for FG."));
+    }
+
+    pub(crate) fn update_palette_hover(&mut self, hovered: Option<u8>) {
+        if hovered == self.hovered_color {
+            return;
+        }
+        self.hovered_color = hovered;
+        if let Some(color) = hovered {
+            self.hovered_tile = None;
+            self.editor_hovered = false;
+            self.text = Some(format!("Color {color:X}."));
+        } else {
+            self.text = None;
+        }
+    }
+
+    pub(crate) fn update_tile_hover(
+        &mut self,
+        responses: &[egui::Response],
+        modifiers: egui::Modifiers,
+    ) {
+        let hovered = responses.iter().position(egui::Response::hovered);
+        if hovered == self.hovered_tile {
+            return;
+        }
+        self.hovered_tile = hovered;
+        if let Some(index) = hovered {
+            self.editor_hovered = false;
+            self.hovered_color = None;
+            self.text = Some(tile_hover_status(index, modifiers));
+        } else {
+            self.text = None;
+        }
+    }
+
+    pub(crate) fn update_pixel_editor_hover(&mut self, hovered: bool, selected: usize) {
+        if hovered == self.editor_hovered {
+            return;
+        }
+        self.editor_hovered = hovered;
+        if hovered {
+            self.hovered_tile = None;
+            self.hovered_color = None;
+            self.select_tile(selected);
+        } else {
+            self.text = None;
+        }
+    }
+
+    pub(crate) fn show(&self, ui: &mut egui::Ui) {
+        ui.monospace(self.text().unwrap_or(""));
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TilePointerAction {
     Select(usize),
     Copy(usize),
-    Paste(usize),
+    PasteSelected(usize),
+    PasteClipboard(usize),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -337,7 +425,9 @@ fn classify_tile_pointer_action(
     modifiers: egui::Modifiers,
 ) -> Option<TilePointerAction> {
     if secondary && modifiers == egui::Modifiers::NONE {
-        Some(TilePointerAction::Paste(index))
+        Some(TilePointerAction::PasteSelected(index))
+    } else if secondary && modifiers == egui::Modifiers::CTRL {
+        Some(TilePointerAction::PasteClipboard(index))
     } else if primary && modifiers == egui::Modifiers::CTRL {
         Some(TilePointerAction::Copy(index))
     } else if primary && modifiers == egui::Modifiers::NONE {
@@ -347,27 +437,14 @@ fn classify_tile_pointer_action(
     }
 }
 
-pub(crate) fn show_tile_grid_status(
-    ui: &mut egui::Ui,
-    selected: usize,
-    responses: &[egui::Response],
-) {
-    let hovered = responses.iter().position(egui::Response::hovered);
-    if let Some(status) = tile_grid_status(selected, responses.len(), hovered) {
-        ui.monospace(status);
+fn tile_hover_status(index: usize, modifiers: egui::Modifiers) -> String {
+    if modifiers == (egui::Modifiers::CTRL | egui::Modifiers::SHIFT) {
+        format!("Tile 0x{index:X}.")
     } else {
-        ui.monospace("No graphics tiles");
-    }
-}
-
-fn tile_grid_status(selected: usize, tile_count: usize, hovered: Option<usize>) -> Option<String> {
-    let last = tile_count.checked_sub(1)?;
-    let selected = selected.min(last);
-    match hovered.filter(|index| *index <= last) {
-        Some(hovered) => Some(format!(
-            "Selected tile {selected:03X}  •  Hover tile {hovered:03X}"
-        )),
-        None => Some(format!("Selected tile {selected:03X}")),
+        format!(
+            "Tile 0x{index:X} (Address 0x{:X})",
+            index.saturating_mul(0x20)
+        )
     }
 }
 
@@ -375,20 +452,18 @@ pub(crate) fn apply_tile_keyboard_navigation(
     ui: &mut egui::Ui,
     selected: &mut usize,
     responses: &[egui::Response],
-) {
+) -> Option<String> {
     let Some(response) = responses.get(*selected) else {
-        return;
+        return None;
     };
     if !response.has_focus() {
-        return;
+        return None;
     }
     let navigation = ui.input_mut(|input| {
         if input.modifiers.any() {
             return None;
         }
-        const KEYS: [(egui::Key, TileNavigation); 4] = [
-            (egui::Key::ArrowLeft, TileNavigation::PreviousPage),
-            (egui::Key::ArrowRight, TileNavigation::NextPage),
+        const KEYS: [(egui::Key, TileNavigation); 2] = [
             (egui::Key::ArrowUp, TileNavigation::PreviousPage),
             (egui::Key::ArrowDown, TileNavigation::NextPage),
         ];
@@ -399,15 +474,26 @@ pub(crate) fn apply_tile_keyboard_navigation(
         })
     });
     let Some(navigation) = navigation else {
-        return;
+        return None;
     };
     let next = navigated_tile_index(*selected, responses.len(), navigation);
+    let page = *selected / GRAPHICS_PAGE_TILES;
+    if next == *selected {
+        return Some(match navigation {
+            TileNavigation::PreviousPage => format!("Already at Start (0x{page:X})."),
+            TileNavigation::NextPage => format!("Already at End (0x{page:X})."),
+        });
+    }
     let Some(response) = responses.get(next) else {
-        return;
+        return None;
     };
     *selected = next;
     response.request_focus();
     response.scroll_to_me(Some(egui::Align::Center));
+    Some(format!(
+        "Viewing 8x8 page 0x{:X}.",
+        next / GRAPHICS_PAGE_TILES
+    ))
 }
 
 pub(crate) fn apply_tile_palette_keyboard(
@@ -416,13 +502,13 @@ pub(crate) fn apply_tile_palette_keyboard(
     responses: &[egui::Response],
     palette_row: &mut usize,
     row_count: usize,
-) {
+) -> Option<String> {
     if row_count == 0
         || !responses
             .get(selected)
             .is_some_and(egui::Response::has_focus)
     {
-        return;
+        return None;
     }
     let step = ui.input_mut(|input| {
         if input.modifiers.any() {
@@ -436,9 +522,13 @@ pub(crate) fn apply_tile_palette_keyboard(
             None
         }
     });
-    if let Some(step) = step {
-        *palette_row = cycled_palette_row(*palette_row, row_count, step);
+    let step = step?;
+    let next = stepped_palette_row(*palette_row, row_count, step);
+    if next == *palette_row {
+        return None;
     }
+    *palette_row = next;
+    Some(format!("Rendered with palette 0x{next:X}."))
 }
 
 pub(crate) fn take_tile_shift(
@@ -526,14 +616,14 @@ fn navigated_tile_index(selected: usize, tile_count: usize, navigation: TileNavi
     }
 }
 
-fn cycled_palette_row(current: usize, row_count: usize, step: PaletteStep) -> usize {
+fn stepped_palette_row(current: usize, row_count: usize, step: PaletteStep) -> usize {
     if row_count == 0 {
         return 0;
     }
     let current = current.min(row_count - 1);
     match step {
-        PaletteStep::Previous => (current + row_count - 1) % row_count,
-        PaletteStep::Next => (current + 1) % row_count,
+        PaletteStep::Previous => current.saturating_sub(1),
+        PaletteStep::Next => (current + 1).min(row_count - 1),
     }
 }
 
@@ -587,6 +677,24 @@ mod tests {
         });
     }
 
+    fn render_navigation_status(
+        context: &egui::Context,
+        selected: &mut usize,
+        request_focus: bool,
+    ) -> Option<String> {
+        let mut status = None;
+        egui::CentralPanel::default().show(context, |ui| {
+            let responses = (0..TEST_GRID_TILES)
+                .map(|index| ui.button(index.to_string()))
+                .collect::<Vec<_>>();
+            if request_focus {
+                responses[*selected].request_focus();
+            }
+            status = apply_tile_keyboard_navigation(ui, selected, &responses);
+        });
+        status
+    }
+
     fn key_event(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
         egui::Event::Key {
             key,
@@ -638,13 +746,13 @@ mod tests {
     }
 
     #[test]
-    fn palette_row_shortcuts_are_bounded_and_wrap_both_directions() {
-        assert_eq!(cycled_palette_row(7, 0, PaletteStep::Next), 0);
-        assert_eq!(cycled_palette_row(7, 1, PaletteStep::Previous), 0);
-        assert_eq!(cycled_palette_row(0, 8, PaletteStep::Next), 1);
-        assert_eq!(cycled_palette_row(7, 8, PaletteStep::Next), 0);
-        assert_eq!(cycled_palette_row(0, 8, PaletteStep::Previous), 7);
-        assert_eq!(cycled_palette_row(usize::MAX, 8, PaletteStep::Previous), 6);
+    fn palette_row_shortcuts_are_bounded_in_both_directions() {
+        assert_eq!(stepped_palette_row(7, 0, PaletteStep::Next), 0);
+        assert_eq!(stepped_palette_row(7, 1, PaletteStep::Previous), 0);
+        assert_eq!(stepped_palette_row(0, 8, PaletteStep::Next), 1);
+        assert_eq!(stepped_palette_row(7, 8, PaletteStep::Next), 7);
+        assert_eq!(stepped_palette_row(0, 8, PaletteStep::Previous), 0);
+        assert_eq!(stepped_palette_row(usize::MAX, 8, PaletteStep::Previous), 6);
     }
 
     #[test]
@@ -659,7 +767,7 @@ mod tests {
         );
         assert_eq!(
             classify_tile_pointer_action(6, false, true, egui::Modifiers::NONE),
-            Some(TilePointerAction::Paste(6))
+            Some(TilePointerAction::PasteSelected(6))
         );
         for modifiers in [egui::Modifiers::SHIFT, egui::Modifiers::COMMAND] {
             assert_eq!(
@@ -669,7 +777,7 @@ mod tests {
         }
         assert_eq!(
             classify_tile_pointer_action(8, false, true, egui::Modifiers::CTRL),
-            None
+            Some(TilePointerAction::PasteClipboard(8))
         );
     }
 
@@ -735,20 +843,46 @@ mod tests {
     }
 
     #[test]
-    fn tile_grid_status_is_bounded_and_reports_hover_separately() {
-        assert_eq!(tile_grid_status(0, 0, Some(0)), None);
+    fn native_tile_status_formats_address_modifier_and_actions_exactly() {
         assert_eq!(
-            tile_grid_status(usize::MAX, 0x22, None).as_deref(),
-            Some("Selected tile 021")
+            tile_hover_status(0x1f, egui::Modifiers::NONE),
+            "Tile 0x1F (Address 0x3E0)"
         );
         assert_eq!(
-            tile_grid_status(3, 0x22, Some(0x1f)).as_deref(),
-            Some("Selected tile 003  •  Hover tile 01F")
+            tile_hover_status(0x1f, egui::Modifiers::CTRL | egui::Modifiers::SHIFT),
+            "Tile 0x1F."
         );
+        let mut status = GraphicsEditorStatus::default();
+        status.select_tile(0x123);
         assert_eq!(
-            tile_grid_status(3, 0x22, Some(0x22)).as_deref(),
-            Some("Selected tile 003")
+            status.text.as_deref(),
+            Some("Tile 0x123 selected for editing.")
         );
+        status.select_foreground_color(0xe);
+        assert_eq!(status.text.as_deref(), Some("Color E selected for FG."));
+    }
+
+    #[test]
+    fn transient_status_changes_only_when_the_pointer_region_changes() {
+        let mut status = GraphicsEditorStatus::default();
+        status.update_palette_hover(Some(3));
+        assert_eq!(status.text.as_deref(), Some("Color 3."));
+        status.select_foreground_color(3);
+        status.update_palette_hover(Some(3));
+        assert_eq!(status.text.as_deref(), Some("Color 3 selected for FG."));
+        status.update_palette_hover(None);
+        assert_eq!(status.text, None);
+
+        status.update_pixel_editor_hover(true, 0x2a);
+        assert_eq!(
+            status.text.as_deref(),
+            Some("Tile 0x2A selected for editing.")
+        );
+        status.set("Rendered with palette 0x4.");
+        status.update_pixel_editor_hover(true, 0x2a);
+        assert_eq!(status.text.as_deref(), Some("Rendered with palette 0x4."));
+        status.update_pixel_editor_hover(false, 0x2a);
+        assert_eq!(status.text, None);
     }
 
     #[test]
@@ -801,6 +935,57 @@ mod tests {
             render_keyboard_grid(context, &mut selected, false);
         });
         assert_eq!(selected, 9);
+    }
+
+    #[test]
+    fn focused_grid_reports_exact_page_and_boundary_status() {
+        let context = egui::Context::default();
+        let mut selected = 0;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_navigation_status(context, &mut selected, true);
+        });
+        let mut status = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![key_event(egui::Key::ArrowUp, egui::Modifiers::NONE)],
+                ..Default::default()
+            },
+            |context| status = render_navigation_status(context, &mut selected, false),
+        );
+        assert_eq!(selected, 0);
+        assert_eq!(status.as_deref(), Some("Already at Start (0x0)."));
+
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![key_event(egui::Key::ArrowLeft, egui::Modifiers::NONE)],
+                ..Default::default()
+            },
+            |context| status = render_navigation_status(context, &mut selected, false),
+        );
+        assert_eq!(status, None);
+
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![key_event(egui::Key::ArrowDown, egui::Modifiers::NONE)],
+                ..Default::default()
+            },
+            |context| status = render_navigation_status(context, &mut selected, false),
+        );
+        assert_eq!(selected, 256);
+        assert_eq!(status.as_deref(), Some("Viewing 8x8 page 0x1."));
+
+        selected = TEST_GRID_TILES - 1;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_navigation_status(context, &mut selected, true);
+        });
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![key_event(egui::Key::ArrowDown, egui::Modifiers::NONE)],
+                ..Default::default()
+            },
+            |context| status = render_navigation_status(context, &mut selected, false),
+        );
+        assert_eq!(status.as_deref(), Some("Already at End (0x2)."));
     }
 
     #[test]
@@ -866,7 +1051,8 @@ mod tests {
     fn focused_grid_routes_unmodified_page_keys_to_palette_rows() {
         let context = egui::Context::default();
         let mut selected = 9;
-        let mut palette_row = 7;
+        let mut palette_row = 6;
+        let mut status = None;
         let _ = context.run(egui::RawInput::default(), |context| {
             render_keyboard_grid(context, &mut selected, true);
         });
@@ -880,11 +1066,12 @@ mod tests {
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
                 apply_tile_keyboard_navigation(ui, &mut selected, &responses);
-                apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);
+                status = apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);
             });
         });
         assert_eq!(selected, 9);
-        assert_eq!(palette_row, 0);
+        assert_eq!(palette_row, 7);
+        assert_eq!(status.as_deref(), Some("Rendered with palette 0x7."));
 
         let _ = context.run(egui::RawInput::default(), |context| {
             render_keyboard_grid(context, &mut selected, true);
@@ -898,10 +1085,11 @@ mod tests {
                 let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
-                apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);
+                status = apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);
             });
         });
-        assert_eq!(palette_row, 7);
+        assert_eq!(palette_row, 6);
+        assert_eq!(status.as_deref(), Some("Rendered with palette 0x6."));
     }
 
     #[test]

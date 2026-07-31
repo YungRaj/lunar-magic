@@ -2,9 +2,9 @@ use crate::{
     dialogs,
     document_loader::DocumentLoader,
     graphics_painter::{
-        GraphicsCharacterShortcut, GraphicsColorMapEditor, TILE_GRID_COLUMNS, TileEditorZoom,
-        TilePointerAction, apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile,
-        palette_color, show_tile_grid_status, take_graphics_character_shortcut,
+        GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsEditorStatus, TILE_GRID_COLUMNS,
+        TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
+        apply_tile_palette_keyboard, paint_tile, palette_color, take_graphics_character_shortcut,
         take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
         tile_pointer_action,
     },
@@ -41,6 +41,8 @@ pub(crate) struct GraphicsEditor {
     color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
     pending_character_shortcut: Option<GraphicsCharacterShortcut>,
+    clipboard_paste_target: Option<usize>,
+    status: GraphicsEditorStatus,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     save_worker: crate::persistence_worker::PersistenceWorker,
@@ -102,6 +104,8 @@ impl GraphicsEditor {
                     self.selected_tile = 0;
                     self.selected_color = 1;
                     self.palette_row = 0;
+                    self.status = GraphicsEditorStatus::default();
+                    self.clipboard_paste_target = None;
                 }
                 Err(error) => self.error = Some(error),
             }
@@ -153,6 +157,7 @@ impl GraphicsEditor {
         };
         ui.separator();
         let rows = document.palette.palette.colors.len() / 16;
+        let previous_palette_row = self.palette_row;
         egui::ComboBox::from_label("Palette row")
             .selected_text(format!("{:X}", self.palette_row))
             .show_ui(ui, |ui| {
@@ -160,6 +165,10 @@ impl GraphicsEditor {
                     ui.selectable_value(&mut self.palette_row, row, format!("{row:X}"));
                 }
             });
+        if self.palette_row != previous_palette_row {
+            self.status
+                .set_pointer_action(format!("Rendered with palette 0x{:X}.", self.palette_row));
+        }
         let palette = document.palette.clone();
         self.color_picker(ui, &palette);
         ui.separator();
@@ -167,6 +176,7 @@ impl GraphicsEditor {
             self.tile_list(&mut columns[0], &palette);
             self.pixel_editor(&mut columns[1], &palette);
         });
+        self.status.show(ui);
     }
 
     fn toolbar(&mut self, ui: &mut egui::Ui, save_requested: bool) {
@@ -218,6 +228,8 @@ impl GraphicsEditor {
     }
 
     fn color_picker(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
+        let mut hovered_color = None;
+        let mut selected_color = None;
         ui.horizontal_wrapped(|ui| {
             for color in 0_u8..16 {
                 let fill = palette_color(palette, self.palette_row, color);
@@ -228,9 +240,17 @@ impl GraphicsEditor {
                 );
                 if response.clicked() {
                     self.selected_color = color;
+                    selected_color = Some(color);
+                }
+                if response.hovered() {
+                    hovered_color = Some(color);
                 }
             }
         });
+        self.status.update_palette_hover(hovered_color);
+        if let Some(color) = selected_color {
+            self.status.select_foreground_color(color);
+        }
     }
 
     fn tile_list(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
@@ -240,6 +260,11 @@ impl GraphicsEditor {
         let tiles = &document.controller.value().graphics.tiles;
         self.selected_tile = self.selected_tile.min(tiles.len().saturating_sub(1));
         let mut responses = Vec::with_capacity(tiles.len());
+        let mut selected_by_pointer = None;
+        let selected_tile = tiles.get(self.selected_tile).cloned();
+        let mut selected_paste = None;
+        let mut copied = false;
+        let mut paste_status = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("portable-graphics-tiles")
                 .spacing([4.0, 4.0])
@@ -248,15 +273,27 @@ impl GraphicsEditor {
                         let selected = index == self.selected_tile;
                         let response = tile_button(ui, tile, palette, self.palette_row, selected);
                         match tile_pointer_action(ui, &response, index) {
-                            Some(TilePointerAction::Select(index)) => self.selected_tile = index,
-                            Some(TilePointerAction::Copy(_)) => {
+                            Some(TilePointerAction::Select(index)) => {
+                                self.selected_tile = index;
+                                selected_by_pointer = Some(index);
+                            }
+                            Some(TilePointerAction::Copy(index)) => {
+                                self.selected_tile = index;
                                 match native_clipboard::encode_graphics_tile(tile) {
-                                    Ok(text) => ui.ctx().copy_text(text),
+                                    Ok(text) => {
+                                        ui.ctx().copy_text(text);
+                                        copied = true;
+                                    }
                                     Err(error) => self.error = Some(error),
                                 }
                             }
-                            Some(TilePointerAction::Paste(index)) => {
-                                self.selected_tile = index;
+                            Some(TilePointerAction::PasteSelected(index)) => {
+                                if let Some(tile) = selected_tile.clone() {
+                                    selected_paste = Some((index, tile));
+                                }
+                            }
+                            Some(TilePointerAction::PasteClipboard(index)) => {
+                                self.clipboard_paste_target = Some(index);
                                 ui.ctx()
                                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
                             }
@@ -269,15 +306,35 @@ impl GraphicsEditor {
                     }
                 });
         });
-        apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
-        apply_tile_palette_keyboard(
+        if let Some((index, tile)) = selected_paste
+            && let Some(document) = self.document.as_mut()
+            && apply_tile(&mut document.controller, index, tile, &mut self.error)
+        {
+            paste_status = Some(format!("Pasted selected tile over tile 0x{index:X}."));
+        }
+        let navigation_status =
+            apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
+        let palette_status = apply_tile_palette_keyboard(
             ui,
             self.selected_tile,
             &responses,
             &mut self.palette_row,
             palette.palette.colors.len() / 16,
         );
-        show_tile_grid_status(ui, self.selected_tile, &responses);
+        self.status
+            .update_tile_hover(&responses, ui.input(|input| input.modifiers));
+        if let Some(status) = navigation_status.or(palette_status) {
+            self.status.set(status);
+        }
+        if let Some(index) = selected_by_pointer {
+            self.status.select_tile(index);
+        }
+        if let Some(status) = paste_status {
+            self.status.set(status);
+        }
+        if copied {
+            self.status.set("Copied tile to clipboard.");
+        }
         self.pending_shift = take_tile_shift(ui, self.selected_tile, &responses, true);
         self.pending_character_shortcut =
             take_graphics_character_shortcut(ui, self.selected_tile, &responses);
@@ -400,6 +457,8 @@ impl GraphicsEditor {
             egui::Vec2::splat(self.pixel_zoom.side()),
             egui::Sense::click_and_drag(),
         );
+        self.status
+            .update_pixel_editor_hover(response.hovered(), self.selected_tile);
         paint_tile(ui.painter(), rect, &tile, palette, self.palette_row);
         if (response.clicked() || response.dragged())
             && let Some(position) = response.interact_pointer_pos()
@@ -446,12 +505,16 @@ impl GraphicsEditor {
         let Some(document) = self.document.as_mut() else {
             return;
         };
-        paste_tile(
-            &mut document.controller,
-            &mut self.selected_tile,
-            text,
-            &mut self.error,
-        );
+        let target = self
+            .clipboard_paste_target
+            .take()
+            .unwrap_or(self.selected_tile);
+        if paste_tile(&mut document.controller, target, text, &mut self.error) {
+            self.selected_tile = target;
+            self.status.set(format!(
+                "Pasted tile from clipboard over tile 0x{target:X}."
+            ));
+        }
     }
 }
 
@@ -632,8 +695,14 @@ mod tests {
         let document = editor.document.as_ref().unwrap();
         assert_eq!(document.controller.revision(), 1);
         assert_eq!(document.controller.value().graphics.tiles[0], replacement);
+        assert_eq!(
+            editor.status.text(),
+            Some("Pasted tile from clipboard over tile 0x0.")
+        );
+        editor.clipboard_paste_target = Some(0);
         editor.paste_tile(&native_clipboard::encode_palette_color(lm_graphics::Bgr555(3)).unwrap());
         assert!(editor.error.is_some());
+        assert_eq!(editor.clipboard_paste_target, None);
         assert_eq!(editor.document.as_ref().unwrap().controller.revision(), 1);
     }
 }
