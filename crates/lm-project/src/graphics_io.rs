@@ -271,6 +271,42 @@ impl Project {
             .remove(0))
     }
 
+    /// Compresses, allocates, and repoints a contiguous graphics-file batch as one transaction.
+    ///
+    /// Every request is fully encoded before mutation begins. Allocation, pointer writes, semantic
+    /// reopen verification, and checksum repair then commit together or leave the project exactly
+    /// unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsIoError`] for an empty or oversized batch, any invalid file, allocation
+    /// failure, pointer error, checksum failure, or semantic reopen mismatch.
+    pub fn save_graphics_files_with_checksum(
+        &mut self,
+        graphics: &[GraphicsFile4bpp],
+        layout: GraphicsRomLayout,
+        checksum_field: usize,
+        options: &GraphicsSaveOptions,
+    ) -> Result<Vec<PayloadSaveResult>, GraphicsIoError> {
+        if graphics.is_empty() || graphics.len() > layout.pointers.entries {
+            return Err(GraphicsIoError::Layout(LevelLoadError::LevelOutOfRange {
+                level: graphics.len(),
+                entries: layout.pointers.entries,
+            }));
+        }
+        let requests = graphics
+            .iter()
+            .enumerate()
+            .map(|(slot, graphics)| graphics_save_request(slot, graphics, layout, options))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.save_tagged_payloads_with_checksum(
+            "save standard graphics files",
+            &requests,
+            checksum_field,
+        )
+        .map_err(GraphicsIoError::Save)
+    }
+
     /// Saves, reclaims the exactly owned displaced block, and repairs checksum in one transaction.
     ///
     /// # Errors
@@ -529,6 +565,58 @@ mod tests {
                 }
             ))
         ));
+        assert_eq!(project.save_snapshot(), original);
+        assert!(!project.history.can_undo());
+    }
+
+    #[test]
+    fn graphics_batch_saves_reopens_and_undoes_as_one_transaction() {
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        let original = project.save_snapshot();
+        let files = [
+            graphics(),
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([7; 64]), IndexedTile::new([8; 64])],
+            },
+        ];
+        let mut batch_options = options();
+        batch_options
+            .allocation
+            .protected
+            .push(ProtectedRange(0x7fdc..0x7fe0));
+        assert_eq!(
+            project
+                .save_graphics_files_with_checksum(&files, layout(), 0x7fdc, &batch_options)
+                .unwrap()
+                .len(),
+            2
+        );
+        for (slot, expected) in files.iter().enumerate() {
+            assert_eq!(
+                project.load_graphics_file(slot, layout()).unwrap(),
+                *expected
+            );
+        }
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
+        assert!(!project.history.can_undo());
+    }
+
+    #[test]
+    fn late_invalid_graphics_batch_file_leaves_project_unchanged() {
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        let original = project.save_snapshot();
+        let files = [
+            graphics(),
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([16; 64])],
+            },
+        ];
+        assert!(
+            project
+                .save_graphics_files_with_checksum(&files, layout(), 0x7fdc, &options())
+                .is_err()
+        );
         assert_eq!(project.save_snapshot(), original);
         assert!(!project.history.can_undo());
     }

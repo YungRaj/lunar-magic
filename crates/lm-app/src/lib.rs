@@ -21,6 +21,7 @@ mod external_tools;
 pub mod file_persistence;
 mod frontend_config;
 mod frontend_state;
+mod graphics_batch_import;
 mod graphics_controller;
 mod graphics_document_controller;
 mod graphics_edit_batch;
@@ -161,6 +162,7 @@ pub use external_tools::{
     ExternalTool, ExternalToolError, ToolContext, ToolEvent, ToolInvocation, validate_tools,
 };
 pub use frontend_config::{FrontendConfig, FrontendConfigError};
+pub use graphics_batch_import::prepare_standard_graphics_import;
 pub use graphics_controller::{
     GraphicsController, GraphicsControllerEdit, GraphicsControllerError,
 };

@@ -144,6 +144,12 @@ pub(crate) fn choose_graphics_directory() -> Option<PathBuf> {
         .pick_folder()
 }
 
+pub(crate) fn choose_graphics_import_directory() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Insert All Standard GFX Files")
+        .pick_folder()
+}
+
 fn raw_graphics_file_name(slot: u16) -> String {
     let prefix = if slot <= 0x7f { "GFX" } else { "ExGFX" };
     format!("{prefix}{slot:02X}.bin")

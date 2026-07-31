@@ -12,6 +12,7 @@ use lm_graphics::{GraphicsTileChange, IndexedTile, PaletteInterchangeFile};
 
 mod commit;
 mod graphics_batch;
+mod graphics_import;
 mod lifecycle;
 mod ownership;
 
@@ -55,6 +56,7 @@ pub(crate) struct RomGraphicsEditor {
     next_persistence_request: u64,
     io_status: Option<String>,
     graphics_batch: graphics_batch::GraphicsBatchWorker,
+    graphics_import: graphics_import::GraphicsImportWorker,
 }
 
 impl RomGraphicsEditor {
@@ -79,25 +81,43 @@ impl RomGraphicsEditor {
                 Err(error) => format!("Standard GFX extraction failed: {error}"),
             });
         }
-        let mut command = match self.manifest_loader.show(context, revision) {
-            Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
-                Ok(command) => Some(command),
-                Err(error) => {
-                    self.error = Some(error);
-                    None
-                }
-            },
+        let import_command = match self.graphics_import.show(context) {
+            Some(Ok(Some(commit))) => {
+                self.io_status = Some("Standard GFX directory prepared successfully.".into());
+                Some(commit.into_command())
+            }
+            Some(Ok(None)) => {
+                self.io_status = Some("Standard GFX insertion cancelled.".into());
+                None
+            }
             Some(Err(error)) => {
                 self.error = Some(error);
                 None
             }
             None => None,
         };
+        let mut command =
+            import_command.or_else(|| match self.manifest_loader.show(context, revision) {
+                Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
+                    Ok(command) => Some(command),
+                    Err(error) => {
+                        self.error = Some(error);
+                        None
+                    }
+                },
+                Some(Err(error)) => {
+                    self.error = Some(error);
+                    None
+                }
+                None => None,
+            });
         if self.workspace.is_some() {
             egui::Window::new("ROM Graphics Editor")
                 .default_size([780.0, 680.0])
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, revision) {
+                    if let Some(ui_command) = self.contents(ui, revision)
+                        && command.is_none()
+                    {
                         command = Some(ui_command);
                     }
                 });
@@ -118,7 +138,8 @@ impl RomGraphicsEditor {
         let stale = workspace.controller.revision() != revision;
         let file_work_running = self.loader.is_running()
             || self.persistence.is_running()
-            || self.graphics_batch.is_running();
+            || self.graphics_batch.is_running()
+            || self.graphics_import.is_running();
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
@@ -181,6 +202,16 @@ impl RomGraphicsEditor {
                 .clicked()
             {
                 self.begin_graphics_batch();
+            }
+            if ui
+                .add_enabled(
+                    !stale && !file_work_running && !modified_controller(self.workspace.as_ref()),
+                    egui::Button::new("Insert all standard GFX…"),
+                )
+                .on_hover_text("Commit or discard staged tile edits before inserting a directory")
+                .clicked()
+            {
+                self.begin_graphics_import();
             }
         });
         if let Some(status) = &self.io_status {
@@ -419,4 +450,35 @@ impl RomGraphicsEditor {
             Err(error) => self.error = Some(error),
         }
     }
+
+    fn begin_graphics_import(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let options = match self.save_options(workspace) {
+            Ok(options) => options,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(directory) = crate::dialogs::choose_graphics_import_directory() else {
+            return;
+        };
+        let source = graphics_import::GraphicsImportSource {
+            expected_revision: workspace.controller.revision(),
+            image: workspace.image.clone(),
+            layout: workspace.profile.graphics,
+            checksum_field: workspace.internal_header + 0x1c,
+            options,
+        };
+        match self.graphics_import.start(source, directory) {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+}
+
+fn modified_controller(workspace: Option<&Workspace>) -> bool {
+    workspace.is_some_and(|workspace| workspace.controller.is_modified())
 }

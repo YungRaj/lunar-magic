@@ -33,7 +33,10 @@ impl RomGraphicsEditor {
             .map_err(|error| error.to_string())
     }
 
-    fn save_options(&self, workspace: &Workspace) -> Result<GraphicsSaveOptions, String> {
+    pub(super) fn save_options(
+        &self,
+        workspace: &Workspace,
+    ) -> Result<GraphicsSaveOptions, String> {
         let search = parse_search_range(&self.search_start, &self.search_end)?;
         let allocation = workspace
             .profile
