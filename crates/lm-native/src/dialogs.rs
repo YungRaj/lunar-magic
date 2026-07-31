@@ -242,7 +242,9 @@ pub(crate) fn choose_mwl_batch_template() -> Option<PathBuf> {
 
 pub(crate) fn choose_level_image_save_path(level: u16) -> Option<PathBuf> {
     rfd::FileDialog::new()
+        .add_filter("Level image", &["png", "bmp"])
         .add_filter("PNG image", &["png"])
+        .add_filter("Windows bitmap", &["bmp"])
         .set_file_name(format!("Level {level:03X}.png"))
         .save_file()
 }

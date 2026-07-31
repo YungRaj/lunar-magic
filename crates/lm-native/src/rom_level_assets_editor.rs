@@ -1085,10 +1085,10 @@ impl RomLevelAssetsEditor {
         }
         ui.separator();
         if ui
-            .add_enabled(!stale, egui::Button::new("Export full level PNG…"))
+            .add_enabled(!stale, egui::Button::new("Export full level image…"))
             .clicked()
         {
-            match self.export_level_png() {
+            match self.export_level_image() {
                 Ok(Some(path)) => {
                     self.level_image_status =
                         Some(format!("Exported full level image to {}.", path.display()));
@@ -1143,29 +1143,33 @@ impl RomLevelAssetsEditor {
 }
 
 impl RomLevelAssetsEditor {
-    fn export_level_png(&self) -> Result<Option<std::path::PathBuf>, String> {
+    fn export_level_image(&self) -> Result<Option<std::path::PathBuf>, String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let Some(destination) = crate::dialogs::choose_level_image_save_path(workspace.source_slot)
         else {
             return Ok(None);
         };
         let (canvas, _, _) = render_super_graphics_level_canvas(workspace, None, None)?;
-        publish_level_png(&destination, &canvas)?;
+        publish_level_image(&destination, &canvas)?;
         Ok(Some(destination))
     }
 }
 
-fn publish_level_png(
+fn publish_level_image(
     destination: &std::path::Path,
     canvas: &lm_render::Canvas,
 ) -> Result<(), String> {
-    if !destination
+    let extension = destination
         .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
-    {
-        return Err("full level image output must use the .png extension".into());
-    }
-    let bytes = lm_render::encode_png(canvas).map_err(|error| error.to_string())?;
+        .and_then(|extension| extension.to_str())
+        .ok_or("full level image output requires a .png or .bmp extension")?;
+    let bytes = if extension.eq_ignore_ascii_case("png") {
+        lm_render::encode_png(canvas).map_err(|error| error.to_string())?
+    } else if extension.eq_ignore_ascii_case("bmp") {
+        lm_render::encode_bmp(canvas).map_err(|error| error.to_string())?
+    } else {
+        return Err("full level image output requires a .png or .bmp extension".into());
+    };
     lm_app::file_persistence::write_new(destination, &bytes).map_err(|error| error.to_string())
 }
 
@@ -2057,12 +2061,14 @@ mod tests {
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
 
     #[test]
-    fn full_level_png_publication_is_bounded_valid_and_create_new() {
-        let path = std::env::temp_dir().join(format!(
-            "lm-native-level-image-{}-{}.png",
+    fn full_level_image_publication_routes_formats_and_is_create_new() {
+        let base = std::env::temp_dir().join(format!(
+            "lm-native-level-image-{}-{}",
             std::process::id(),
             NEXT_IMAGE_PATH.fetch_add(1, Ordering::Relaxed)
         ));
+        let png_path = base.with_extension("png");
+        let bmp_path = base.with_extension("BMP");
         let canvas = lm_render::Canvas::from_pixels(
             2,
             3,
@@ -2077,13 +2083,21 @@ mod tests {
             ],
         )
         .unwrap();
-        publish_level_png(&path, &canvas).unwrap();
-        let bytes = std::fs::read(&path).unwrap();
-        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
-        assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), 2);
-        assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), 3);
-        assert!(publish_level_png(&path, &canvas).is_err());
-        std::fs::remove_file(path).unwrap();
+        publish_level_image(&png_path, &canvas).unwrap();
+        let png = std::fs::read(&png_path).unwrap();
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        assert_eq!(u32::from_be_bytes(png[16..20].try_into().unwrap()), 2);
+        assert_eq!(u32::from_be_bytes(png[20..24].try_into().unwrap()), 3);
+        assert!(publish_level_image(&png_path, &canvas).is_err());
+
+        publish_level_image(&bmp_path, &canvas).unwrap();
+        let bmp = std::fs::read(&bmp_path).unwrap();
+        assert_eq!(&bmp[..2], b"BM");
+        assert_eq!(i32::from_le_bytes(bmp[18..22].try_into().unwrap()), 2);
+        assert_eq!(i32::from_le_bytes(bmp[22..26].try_into().unwrap()), 3);
+        assert!(publish_level_image(&base.with_extension("gif"), &canvas).is_err());
+        std::fs::remove_file(png_path).unwrap();
+        std::fs::remove_file(bmp_path).unwrap();
     }
 
     #[test]

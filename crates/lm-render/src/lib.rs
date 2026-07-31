@@ -1,5 +1,6 @@
 //! Deterministic software reference renderer.
 
+mod bmp;
 mod canvas;
 mod custom_object_renderer;
 mod custom_sprite_renderer;
@@ -30,6 +31,7 @@ mod viewport;
 mod viewport_raster;
 mod viewport_scene;
 
+pub use bmp::{BmpError, encode_bmp};
 pub use canvas::{Canvas, CanvasError, Rgba};
 pub use custom_object_renderer::{
     CustomObjectPreviewTile, render_lunar_magic_custom_object,
