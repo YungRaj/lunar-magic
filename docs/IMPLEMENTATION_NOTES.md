@@ -2729,6 +2729,13 @@ compression/pointer layout, materializes four FG/BG slots plus two blank native 
 SP slots, and renders the staged level with those active legacy assignments. Profiles whose legacy
 assignment tables have not been recovered are rejected explicitly instead of borrowing SMW-US
 offsets.
+When the staged per-level feature byte enables vanilla animation, the live installed preview also
+runs those resolved tiles through the recovered eight-phase GFX32/GFX33 frame-table interpreter
+using the active object tileset. Its 60 ms presentation clock regenerates only when the phase
+changes. Disabling the vanilla-animation option leaves the staged base cache static and stops
+repaint scheduling immediately. A failed phase render suspends timed retries until a subsequent
+accepted edit invalidates the preview, preserving actionable diagnostics without a GUI retry loop.
+The retained pristine-ROM gate proves adjacent phases produce distinct native tile caches.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to

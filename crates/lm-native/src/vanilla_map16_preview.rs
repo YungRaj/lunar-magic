@@ -473,7 +473,7 @@ fn render_layer3_planes(
     (low, high)
 }
 
-fn apply_vanilla_common_animation_frame(
+pub(crate) fn apply_vanilla_common_animation_frame(
     project: &Project,
     graphics: &mut [IndexedTile],
     phase: usize,

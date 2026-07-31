@@ -59,24 +59,34 @@ struct ResolvedLevelGraphics {
 struct LivePreviewState {
     enabled: bool,
     dirty: bool,
+    failed: bool,
+    phase: Option<usize>,
 }
 
 impl LivePreviewState {
     fn toggle(&mut self) {
         self.enabled = !self.enabled;
         self.dirty = self.enabled;
+        self.failed = false;
+        self.phase = None;
     }
 
     fn invalidate(&mut self) {
         if self.enabled {
             self.dirty = true;
+            self.failed = false;
         }
     }
 
-    fn take_refresh(&mut self) -> bool {
-        let refresh = self.enabled && self.dirty;
+    fn take_refresh(&mut self, phase: Option<usize>) -> bool {
+        let refresh = self.enabled && !self.failed && (self.dirty || self.phase != phase);
         self.dirty = false;
+        self.phase = phase;
         refresh
+    }
+
+    fn finish_refresh(&mut self, succeeded: bool) {
+        self.failed = !succeeded;
     }
 }
 
@@ -232,13 +242,22 @@ impl RomLevelAssetsEditor {
                 self.bypass_layer2_texture = None;
             }
         }
-        if self.bypass_preview.take_refresh() {
-            match self
+        let animation_enabled = self
+            .workspace
+            .as_ref()
+            .is_some_and(installed_vanilla_animation_enabled);
+        let animation_phase = animation_enabled
+            .then(|| installed_preview_animation_phase(ui.input(|input| input.time)));
+        if self.bypass_preview.take_refresh(animation_phase) {
+            let result = self
                 .workspace
                 .as_ref()
                 .ok_or_else(|| "level-assets workspace is closed".to_owned())
-                .and_then(render_super_graphics_level_preview)
-            {
+                .and_then(|workspace| {
+                    render_super_graphics_level_preview(workspace, animation_phase)
+                });
+            self.bypass_preview.finish_refresh(result.is_ok());
+            match result {
                 Ok((image, diagnostics)) => {
                     self.bypass_layer2_texture = Some(ui.ctx().load_texture(
                         "installed-super-gfx-level-preview",
@@ -259,6 +278,10 @@ impl RomLevelAssetsEditor {
                     self.bypass_validation = Some(error);
                 }
             }
+        }
+        if self.bypass_preview.enabled && animation_enabled && !self.bypass_preview.failed {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(60));
         }
         if let Some(validation) = &self.bypass_validation {
             ui.label(validation);
@@ -331,11 +354,26 @@ fn validate_super_graphics(workspace: &Workspace) -> String {
 
 fn render_super_graphics_level_preview(
     workspace: &Workspace,
+    animation_phase: Option<usize>,
 ) -> Result<(egui::ColorImage, Vec<String>), String> {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
     let resolved = resolve_level_graphics(workspace, &project, header)?;
-    let vram = resolved.vram;
+    let mut vram = resolved.vram;
+    if let Some(phase) = animation_phase {
+        if !is_smw_us_v1_profile(&workspace.profile) {
+            return Err(format!(
+                "vanilla animation frame tables are not recovered for profile {}",
+                workspace.profile.name
+            ));
+        }
+        crate::vanilla_map16_preview::apply_vanilla_common_animation_frame(
+            &project,
+            &mut vram.foreground_background,
+            phase,
+            header.object_tileset(),
+        )?;
+    }
     let map16 = project
         .load_map16_set(workspace.profile.map16)
         .map_err(|error| error.to_string())?;
@@ -384,6 +422,32 @@ fn render_super_graphics_level_preview(
     .map(|image| (image, diagnostics))
 }
 
+fn installed_vanilla_animation_enabled(workspace: &Workspace) -> bool {
+    workspace
+        .controller
+        .exanimation_features()
+        .is_none_or(|features| {
+            features
+                .options
+                .enabled(lm_graphics::ExAnimationFeature::VanillaAnimation)
+        })
+}
+
+fn installed_preview_animation_phase(seconds: f64) -> usize {
+    if let Ok(phase) = std::env::var("LM_NATIVE_ANIMATION_PHASE")
+        && let Ok(phase) = phase.parse::<usize>()
+        && phase < 8
+    {
+        return phase;
+    }
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return 0;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let ticks = (seconds / 0.06).floor() as u64;
+    usize::try_from(ticks & 7).expect("three-bit animation phase")
+}
+
 fn resolve_level_graphics(
     workspace: &Workspace,
     project: &lm_project::Project,
@@ -409,10 +473,7 @@ fn resolve_legacy_level_graphics(
     project: &lm_project::Project,
     header: lm_level::LegacyLevelHeader,
 ) -> Result<ResolvedLevelGraphics, String> {
-    if workspace.profile.game != lm_rom::SupportedGame::SuperMarioWorld
-        || workspace.profile.region != lm_rom::Region::NorthAmerica
-        || workspace.profile.revision != 0
-    {
+    if !is_smw_us_v1_profile(&workspace.profile) {
         return Err(format!(
             "legacy graphics assignment tables are not recovered for profile {}",
             workspace.profile.name
@@ -434,6 +495,12 @@ fn resolve_legacy_level_graphics(
         &foreground_files,
         &sprite_files,
     )
+}
+
+fn is_smw_us_v1_profile(profile: &RevisionProfile) -> bool {
+    profile.game == lm_rom::SupportedGame::SuperMarioWorld
+        && profile.region == lm_rom::Region::NorthAmerica
+        && profile.revision == 0
 }
 
 fn materialize_legacy_level_graphics(
@@ -711,21 +778,48 @@ mod tests {
     #[test]
     fn live_preview_refreshes_once_per_enable_or_accepted_edit() {
         let mut preview = LivePreviewState::default();
-        assert!(!preview.take_refresh());
+        assert!(!preview.take_refresh(None));
         preview.invalidate();
-        assert!(!preview.take_refresh());
+        assert!(!preview.take_refresh(None));
 
         preview.toggle();
-        assert!(preview.take_refresh());
-        assert!(!preview.take_refresh());
+        assert!(preview.take_refresh(None));
+        preview.finish_refresh(true);
+        assert!(!preview.take_refresh(None));
 
         preview.invalidate();
-        assert!(preview.take_refresh());
-        assert!(!preview.take_refresh());
+        assert!(preview.take_refresh(None));
+        preview.finish_refresh(true);
+        assert!(!preview.take_refresh(None));
 
         preview.toggle();
         preview.invalidate();
-        assert!(!preview.take_refresh());
+        assert!(!preview.take_refresh(None));
+    }
+
+    #[test]
+    fn live_preview_tracks_animation_phases_and_suspends_failures() {
+        let mut preview = LivePreviewState::default();
+        preview.toggle();
+        assert!(preview.take_refresh(Some(0)));
+        preview.finish_refresh(true);
+        assert!(!preview.take_refresh(Some(0)));
+        assert!(preview.take_refresh(Some(1)));
+        preview.finish_refresh(false);
+        assert!(!preview.take_refresh(Some(2)));
+        preview.invalidate();
+        assert!(preview.take_refresh(Some(2)));
+    }
+
+    #[test]
+    fn installed_animation_clock_is_bounded_and_deterministic() {
+        assert_eq!(installed_preview_animation_phase(f64::NAN), 0);
+        assert_eq!(installed_preview_animation_phase(-1.0), 0);
+        assert_eq!(installed_preview_animation_phase(0.0), 0);
+        assert_eq!(installed_preview_animation_phase(0.059), 0);
+        assert_eq!(installed_preview_animation_phase(0.06), 1);
+        assert_eq!(installed_preview_animation_phase(0.42), 7);
+        assert_eq!(installed_preview_animation_phase(0.48), 0);
     }
 
     #[test]
@@ -773,6 +867,26 @@ mod tests {
             resolved.vram.foreground_background[4 * 128..]
                 .iter()
                 .all(|tile| tile.pixels().iter().all(|pixel| *pixel == 0))
+        );
+        let mut phase_zero = resolved.vram.foreground_background.clone();
+        let mut phase_one = phase_zero.clone();
+        crate::vanilla_map16_preview::apply_vanilla_common_animation_frame(
+            &project,
+            &mut phase_zero,
+            0,
+            0,
+        )
+        .unwrap();
+        crate::vanilla_map16_preview::apply_vanilla_common_animation_frame(
+            &project,
+            &mut phase_one,
+            1,
+            0,
+        )
+        .unwrap();
+        assert_ne!(
+            phase_zero, phase_one,
+            "recovered animation phases must alter the materialized legacy cache"
         );
     }
 
