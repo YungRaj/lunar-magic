@@ -1288,7 +1288,10 @@ secondary palette clicks select foreground and background colors, while primary 
 pixel-grid gestures paint with those colors. Ctrl changes the pixel-grid actions into foreground
 and background sampling. The corresponding messages are exactly `Color %X selected for FG.` and
 `Color %X selected for BG.`; initialized globals `005E54F4` and `00E27B84` establish defaults 1 and
-0. Successful Up/Down
+0. The button-down branches choose paint or sample once: paint stores the selected color in
+`00E27B88`, sets capture byte `00E27B32`, and subsequent mouse moves reuse that mode without
+consulting Ctrl; sampling does not set capture. Rust retains the same per-press mode across modifier
+changes. Successful Up/Down
 navigation publishes `Viewing 8x8 page 0x%X.`, while blocked movement publishes the exact
 `Already at Start`/`Already at End` diagnostics. Page Up/Down report the rendered hexadecimal
 palette. Their native branches inspect modifiers only for the edit-vs-navigation and diagnostic

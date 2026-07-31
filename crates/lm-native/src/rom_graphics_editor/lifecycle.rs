@@ -79,6 +79,8 @@ impl RomGraphicsEditor {
                         self.display_palette = Default::default();
                         self.status = Default::default();
                         self.clipboard_paste_target = None;
+                        self.pixel_pointer_capture =
+                            crate::graphics_painter::TilePixelPointerCapture::None;
                         self.search_start.clear();
                         self.search_end.clear();
                     }
@@ -150,6 +152,7 @@ impl RomGraphicsEditor {
         self.pending_load = None;
         self.pending_close = None;
         self.clipboard_paste_target = None;
+        self.pixel_pointer_capture = crate::graphics_painter::TilePixelPointerCapture::None;
         self.status = Default::default();
     }
 

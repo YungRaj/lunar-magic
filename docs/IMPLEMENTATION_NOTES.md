@@ -1752,6 +1752,9 @@ The graphics character commands follow native `WM_CHAR` translation: D/M/R/X/Y w
 input and as Shift-produced uppercase input. Ctrl and Alt chords remain outside that dispatcher.
 Installed animation-attribution hover activates whenever Ctrl and Shift are both held; the native
 mouse-move branch does not exclude Alt, so Rust accepts Ctrl+Shift+Alt there as well.
+Pixel editing follows the native mouse-down capture boundary rather than reclassifying every drag
+frame. An ordinary primary/secondary press paints immediately and retains its FG/BG mode until
+release even if Ctrl changes; a Ctrl press samples once and cannot become paint during that press.
 Unmodified F9 is consumed as the graphics editor's documented save command on all three surfaces.
 It enters the same persistence action as each visible Save/Commit button: the portable document
 uses its bounded background writer, pristine SMW requires an expanded ROM and staged changes, and

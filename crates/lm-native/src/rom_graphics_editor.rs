@@ -4,7 +4,7 @@ use crate::{
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
         GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, TILE_EDITOR_SIDE,
-        TILE_GRID_COLUMNS, TilePixelPointerAction, TilePointerAction,
+        TILE_GRID_COLUMNS, TilePixelPointerAction, TilePixelPointerCapture, TilePointerAction,
         apply_tile_keyboard_navigation, apply_tile_navigation, apply_tile_palette_keyboard,
         apply_tile_palette_step, color_selection_marker, graphics_navigation_controls,
         graphics_transform_controls, paint_tile, palette_color, shortcut_transform,
@@ -66,6 +66,7 @@ pub(crate) struct RomGraphicsEditor {
     color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
     pending_character_shortcut: Option<GraphicsCharacterShortcut>,
+    pixel_pointer_capture: TilePixelPointerCapture,
     clipboard_paste_target: Option<usize>,
     status: GraphicsEditorStatus,
     search_start: String,
@@ -875,9 +876,11 @@ impl RomGraphicsEditor {
         self.status
             .update_pixel_editor_hover(response.hovered(), self.selected_tile);
         paint_tile(ui.painter(), rect, &tile, palette, self.display_palette);
-        if let Some(action) =
-            tile_pixel_pointer_action(&response, ui.input(|input| input.modifiers))
-            && let Some(position) = response.interact_pointer_pos()
+        if let Some(action) = tile_pixel_pointer_action(
+            &response,
+            ui.input(|input| input.modifiers),
+            &mut self.pixel_pointer_capture,
+        ) && let Some(position) = response.interact_pointer_pos()
             && let Some((x, y)) = tile_coordinate(rect, position)
         {
             match action {

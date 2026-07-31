@@ -165,6 +165,16 @@ pub(crate) enum TilePixelPointerAction {
     PickBackground,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum TilePixelPointerCapture {
+    #[default]
+    None,
+    SampleForeground,
+    SampleBackground,
+    PaintForeground,
+    PaintBackground,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum GraphicsTileGridColor {
     White,
@@ -631,37 +641,91 @@ pub(crate) fn tile_pointer_action(
 pub(crate) fn tile_pixel_pointer_action(
     response: &egui::Response,
     modifiers: egui::Modifiers,
+    capture: &mut TilePixelPointerCapture,
 ) -> Option<TilePixelPointerAction> {
-    classify_tile_pixel_pointer_action(
-        response.clicked_by(egui::PointerButton::Primary),
-        response.clicked_by(egui::PointerButton::Secondary),
-        response.dragged_by(egui::PointerButton::Primary),
-        response.dragged_by(egui::PointerButton::Secondary),
-        modifiers.ctrl,
-    )
+    let contains_pointer = response.contains_pointer();
+    let pointer = response.ctx.input(|input| TilePixelPointerInput {
+        contains_pointer,
+        primary: TilePixelButtonState::read(input, egui::PointerButton::Primary),
+        secondary: TilePixelButtonState::read(input, egui::PointerButton::Secondary),
+        control: modifiers.ctrl,
+    });
+    classify_tile_pixel_pointer_transition(capture, pointer)
 }
 
-fn classify_tile_pixel_pointer_action(
-    primary_clicked: bool,
-    secondary_clicked: bool,
-    primary_dragged: bool,
-    secondary_dragged: bool,
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TilePixelButtonState {
+    pressed: bool,
+    down: bool,
+    released: bool,
+}
+
+impl TilePixelButtonState {
+    fn read(input: &egui::InputState, button: egui::PointerButton) -> Self {
+        Self {
+            pressed: input.pointer.button_pressed(button),
+            down: input.pointer.button_down(button),
+            released: input.pointer.button_released(button),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TilePixelPointerInput {
+    contains_pointer: bool,
+    primary: TilePixelButtonState,
+    secondary: TilePixelButtonState,
     control: bool,
+}
+
+fn classify_tile_pixel_pointer_transition(
+    capture: &mut TilePixelPointerCapture,
+    input: TilePixelPointerInput,
 ) -> Option<TilePixelPointerAction> {
-    if control {
-        if primary_clicked {
+    if input.contains_pointer && input.primary.pressed {
+        return if input.control {
+            *capture = TilePixelPointerCapture::SampleForeground;
             Some(TilePixelPointerAction::PickForeground)
-        } else if secondary_clicked {
+        } else {
+            *capture = TilePixelPointerCapture::PaintForeground;
+            Some(TilePixelPointerAction::PaintForeground)
+        };
+    }
+    if input.contains_pointer && input.secondary.pressed {
+        return if input.control {
+            *capture = TilePixelPointerCapture::SampleBackground;
             Some(TilePixelPointerAction::PickBackground)
         } else {
+            *capture = TilePixelPointerCapture::PaintBackground;
+            Some(TilePixelPointerAction::PaintBackground)
+        };
+    }
+    let captured_button_released =
+        match *capture {
+            TilePixelPointerCapture::SampleForeground
+            | TilePixelPointerCapture::PaintForeground => input.primary.released,
+            TilePixelPointerCapture::SampleBackground
+            | TilePixelPointerCapture::PaintBackground => input.secondary.released,
+            TilePixelPointerCapture::None => false,
+        };
+    if captured_button_released {
+        *capture = TilePixelPointerCapture::None;
+        return None;
+    }
+    match *capture {
+        TilePixelPointerCapture::PaintForeground if input.primary.down => {
+            Some(TilePixelPointerAction::PaintForeground)
+        }
+        TilePixelPointerCapture::PaintBackground if input.secondary.down => {
+            Some(TilePixelPointerAction::PaintBackground)
+        }
+        TilePixelPointerCapture::SampleForeground if input.primary.down => None,
+        TilePixelPointerCapture::SampleBackground if input.secondary.down => None,
+        TilePixelPointerCapture::None => None,
+        _ => {
+            *capture = TilePixelPointerCapture::None;
             None
         }
-    } else if primary_clicked || primary_dragged {
-        Some(TilePixelPointerAction::PaintForeground)
-    } else if secondary_clicked || secondary_dragged {
-        Some(TilePixelPointerAction::PaintBackground)
-    } else {
-        None
     }
 }
 
@@ -1034,6 +1098,27 @@ mod tests {
         }
     }
 
+    fn pixel_pointer_input(
+        primary: (bool, bool, bool),
+        secondary: (bool, bool, bool),
+        control: bool,
+    ) -> TilePixelPointerInput {
+        TilePixelPointerInput {
+            contains_pointer: true,
+            primary: TilePixelButtonState {
+                pressed: primary.0,
+                down: primary.1,
+                released: primary.2,
+            },
+            secondary: TilePixelButtonState {
+                pressed: secondary.0,
+                down: secondary.1,
+                released: secondary.2,
+            },
+            control,
+        }
+    }
+
     #[test]
     fn tile_hit_testing_is_bounded_and_exact() {
         let rect = egui::Rect::from_min_size(egui::Pos2::new(10.0, 20.0), egui::Vec2::splat(80.0));
@@ -1391,38 +1476,88 @@ mod tests {
     }
 
     #[test]
-    fn pixel_pointer_gestures_distinguish_painting_from_color_sampling() {
-        use TilePixelPointerAction::{
-            PaintBackground, PaintForeground, PickBackground, PickForeground,
-        };
+    fn pixel_paint_capture_preserves_native_mouse_down_mode() {
+        use TilePixelPointerAction::{PaintBackground, PaintForeground};
+
+        let mut capture = TilePixelPointerCapture::None;
+        assert_eq!(
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((true, true, false), (false, false, false), false),
+            ),
+            Some(PaintForeground)
+        );
+        assert_eq!(capture, TilePixelPointerCapture::PaintForeground);
+        // Ctrl pressed after capture does not change the paint operation.
+        assert_eq!(
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((false, true, false), (false, false, false), true),
+            ),
+            Some(PaintForeground)
+        );
+        // Releasing the unrelated button does not clear primary capture.
+        assert_eq!(
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((false, true, false), (false, false, true), true),
+            ),
+            Some(PaintForeground)
+        );
+        assert_eq!(
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((false, false, true), (false, false, false), true),
+            ),
+            None
+        );
+        assert_eq!(capture, TilePixelPointerCapture::None);
 
         assert_eq!(
-            classify_tile_pixel_pointer_action(true, false, false, false, false),
-            Some(PaintForeground)
-        );
-        assert_eq!(
-            classify_tile_pixel_pointer_action(false, true, false, false, false),
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((false, false, false), (true, true, false), false),
+            ),
             Some(PaintBackground)
         );
+        assert_eq!(capture, TilePixelPointerCapture::PaintBackground);
+    }
+
+    #[test]
+    fn pixel_sample_capture_never_becomes_paint() {
+        use TilePixelPointerAction::{PickBackground, PickForeground};
+
+        let mut capture = TilePixelPointerCapture::None;
         assert_eq!(
-            classify_tile_pixel_pointer_action(false, false, true, false, false),
-            Some(PaintForeground)
-        );
-        assert_eq!(
-            classify_tile_pixel_pointer_action(false, false, false, true, false),
-            Some(PaintBackground)
-        );
-        assert_eq!(
-            classify_tile_pixel_pointer_action(true, false, false, false, true),
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((true, true, false), (false, false, false), true),
+            ),
             Some(PickForeground)
         );
+        // Releasing Ctrl while the button remains down cannot start painting.
         assert_eq!(
-            classify_tile_pixel_pointer_action(false, true, false, false, true),
-            Some(PickBackground)
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((false, true, false), (false, false, false), false),
+            ),
+            None
         );
         assert_eq!(
-            classify_tile_pixel_pointer_action(false, false, true, true, true),
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((false, false, true), (false, false, false), false),
+            ),
             None
+        );
+        assert_eq!(capture, TilePixelPointerCapture::None);
+
+        assert_eq!(
+            classify_tile_pixel_pointer_transition(
+                &mut capture,
+                pixel_pointer_input((false, false, false), (true, true, false), true),
+            ),
+            Some(PickBackground)
         );
     }
 
