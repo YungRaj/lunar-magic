@@ -4,9 +4,14 @@ use lm_app::{
     AppState, Command, NativeLevelAssetsController, ProfiledControllerSnapshot, RevisionProfile,
 };
 use lm_graphics::PaletteOwnership;
-use lm_level::{Map16Set, NativeLayer2Data};
+use lm_level::{Map16Set, NativeLayer2Data, ObjectStream};
 use lm_project::NativeLevelAssetsFile;
-use lm_render::{NativeLevelRasterRequest, NativeMap16Placement, Rgba};
+use lm_render::{
+    NativeLevelMap16Layout, NativeLevelRasterRequest, NativeMap16Placement, Rgba,
+    StandardObjectDefinitionSet, install_lunar_magic_shared_extended_objects,
+    install_lunar_magic_shared_standard_objects, install_lunar_magic_tileset_extended_objects,
+    render_mapped_standard_object_stream,
+};
 
 mod commit;
 mod lifecycle;
@@ -172,21 +177,27 @@ impl RomLevelAssetsEditor {
         if ui.button("Validate selected Super GFX files").clicked() {
             self.bypass_validation = self.workspace.as_ref().map(validate_super_graphics);
         }
-        if ui.button("Render bypass-aware Layer 2 preview").clicked() {
+        if ui.button("Render bypass-aware level preview").clicked() {
             match self
                 .workspace
                 .as_ref()
                 .ok_or_else(|| "level-assets workspace is closed".to_owned())
-                .and_then(render_super_graphics_layer2_preview)
+                .and_then(render_super_graphics_level_preview)
             {
-                Ok(image) => {
+                Ok((image, diagnostics)) => {
                     self.bypass_layer2_texture = Some(ui.ctx().load_texture(
-                        "installed-super-gfx-layer2-preview",
+                        "installed-super-gfx-level-preview",
                         image,
                         egui::TextureOptions::NEAREST,
                     ));
-                    self.bypass_validation =
-                        Some("Rendered the installed 32×32 Layer 2 tilemap with the selected Super GFX files, installed Map16 definitions, and staged level palette.".into());
+                    self.bypass_validation = Some(if diagnostics.is_empty() {
+                        "Rendered installed Layer 2 and Layer 1 object streams with the selected Super GFX files, installed Map16 definitions, and staged level palette.".into()
+                    } else {
+                        format!(
+                            "Rendered the installed object layers with unresolved definitions: {}",
+                            diagnostics.join("; ")
+                        )
+                    });
                 }
                 Err(error) => {
                     self.bypass_layer2_texture = None;
@@ -268,23 +279,15 @@ fn validate_super_graphics(workspace: &Workspace) -> String {
     }
 }
 
-fn render_super_graphics_layer2_preview(workspace: &Workspace) -> Result<egui::ColorImage, String> {
+fn render_super_graphics_level_preview(
+    workspace: &Workspace,
+) -> Result<(egui::ColorImage, Vec<String>), String> {
     let settings = workspace
         .controller
         .assets()
         .expanded_settings
         .as_ref()
         .ok_or_else(|| "No installed expanded-settings record is available.".to_owned())?;
-    let NativeLayer2Data::Tilemap(tilemap) = workspace
-        .controller
-        .layer2()
-        .ok_or_else(|| "This level has no decoded Layer 2 data.".to_owned())?
-    else {
-        return Err(
-            "This level uses an object-stream Layer 2; its bypass-aware preview is not yet routed."
-                .into(),
-        );
-    };
     let project = lm_project::Project::new(workspace.image.clone());
     let loaded = project
         .load_super_graphics_bypass(settings, workspace.profile.graphics)
@@ -296,27 +299,53 @@ fn render_super_graphics_layer2_preview(workspace: &Workspace) -> Result<egui::C
     let map16 = project
         .load_map16_set(workspace.profile.map16)
         .map_err(|error| error.to_string())?;
-    render_layer2_image(
-        tilemap,
+    let header = workspace.controller.assets().level.layer1.header;
+    let (layer1, layout, mut diagnostics) = render_object_placements(
+        &workspace.image,
+        &workspace.controller.assets().level.layer1.objects,
+        header.level_mode(),
+        header.object_tileset(),
+    )?;
+    let layer2 = match workspace.controller.layer2() {
+        Some(NativeLayer2Data::Tilemap(tilemap)) => layer2_placements(tilemap)?,
+        Some(NativeLayer2Data::Objects(objects)) => {
+            let (placements, _, layer2_diagnostics) = render_object_placements(
+                &workspace.image,
+                &objects.objects,
+                header.level_mode(),
+                header.object_tileset(),
+            )?;
+            diagnostics.extend(
+                layer2_diagnostics
+                    .into_iter()
+                    .map(|diagnostic| format!("Layer 2 {diagnostic}")),
+            );
+            placements
+        }
+        None => Vec::new(),
+    };
+    render_level_image(
+        &[&layer2, &layer1],
+        layout,
         &map16,
         &vram.foreground_background,
         &workspace.controller.assets().palette,
     )
+    .map(|image| (image, diagnostics))
 }
 
-fn render_layer2_image(
-    tilemap: &[u8],
+fn render_level_image(
+    layers: &[&[NativeMap16Placement]],
+    layout: NativeLevelMap16Layout,
     map16: &Map16Set,
     tiles: &[lm_graphics::IndexedTile],
     palette: &lm_graphics::Palette,
 ) -> Result<egui::ColorImage, String> {
-    let placements = layer2_placements(tilemap)?;
     let definitions = map16
         .pages
         .iter()
         .flat_map(|page| page.tiles.iter().copied())
         .collect::<Vec<_>>();
-    let layers: [&[NativeMap16Placement]; 1] = [&placements];
     let backdrop = palette
         .colors
         .first()
@@ -329,12 +358,12 @@ fn render_layer2_image(
             alpha: 255,
         });
     let canvas = lm_render::render_native_level_framebuffer(NativeLevelRasterRequest {
-        width: lm_level::NATIVE_LAYER2_TILEMAP_WIDTH * 16,
-        height: lm_level::NATIVE_LAYER2_TILEMAP_HEIGHT * 16,
+        width: layout.width * 16,
+        height: layout.height * 16,
         camera_x: 0,
         camera_y: 0,
         backdrop,
-        layers: &layers,
+        layers,
         definitions: &definitions,
         tiles,
         palette,
@@ -348,6 +377,84 @@ fn render_layer2_image(
         [canvas.width(), canvas.height()],
         &rgba,
     ))
+}
+
+fn render_object_placements(
+    image: &lm_rom::RomImage,
+    objects: &ObjectStream,
+    level_mode: u8,
+    object_tileset: u8,
+) -> Result<
+    (
+        Vec<NativeMap16Placement>,
+        NativeLevelMap16Layout,
+        Vec<String>,
+    ),
+    String,
+> {
+    let mode = lm_profile::smw_us_v1_level_mode(level_mode);
+    if mode.editor_major_screens == 0 {
+        return Err(format!("level mode {level_mode:02X} has no editor canvas"));
+    }
+    let layout = NativeLevelMap16Layout {
+        width: if mode.vertical {
+            32
+        } else {
+            usize::from(mode.editor_major_screens) * 16
+        },
+        height: if mode.vertical {
+            usize::from(mode.editor_major_screens) * 16
+        } else {
+            27
+        },
+        page_stride: 0x1b0,
+        base_cell: 0,
+        vertical: mode.vertical,
+    };
+    let object_map = lm_profile::load_smw_us_v1_standard_object_definition_map(image)
+        .map_err(|error| error.to_string())?;
+    let family = match lm_profile::smw_us_v1_object_family(object_tileset) {
+        lm_profile::VanillaObjectFamily::Normal => 0,
+        lm_profile::VanillaObjectFamily::Castle => 1,
+        lm_profile::VanillaObjectFamily::Rope => 2,
+        lm_profile::VanillaObjectFamily::Underground => 3,
+        lm_profile::VanillaObjectFamily::GhostHouse => 4,
+    };
+    let handler_map = object_map
+        .family(family)
+        .ok_or_else(|| format!("object-definition family {family} is unavailable"))?;
+    let mut definitions = StandardObjectDefinitionSet::empty();
+    install_lunar_magic_shared_extended_objects(&mut definitions)
+        .and_then(|()| install_lunar_magic_shared_standard_objects(&mut definitions))
+        .and_then(|()| {
+            install_lunar_magic_tileset_extended_objects(&mut definitions, object_tileset)
+        })
+        .map_err(|error| error.to_string())?;
+    let rendered =
+        render_mapped_standard_object_stream(objects, &definitions, handler_map, layout, 0x25)
+            .map_err(|error| error.to_string())?;
+    let mut placements = Vec::with_capacity(layout.width * layout.height);
+    for y in 0..layout.height {
+        for x in 0..layout.width {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+            placements.push(NativeMap16Placement {
+                x: i32::try_from(x).map_err(|_| "object-layer X overflow".to_owned())?,
+                y: i32::try_from(y).map_err(|_| "object-layer Y overflow".to_owned())?,
+                word: rendered.cache.cells()[index],
+            });
+        }
+    }
+    let mut diagnostics = Vec::new();
+    if !rendered.missing_commands.is_empty() {
+        diagnostics.push(format!("commands {:?}", rendered.missing_commands));
+    }
+    if !rendered.missing_extended_objects.is_empty() {
+        diagnostics.push(format!(
+            "extended objects {:?}",
+            rendered.missing_extended_objects
+        ));
+    }
+    Ok((placements, layout, diagnostics))
 }
 
 fn layer2_placements(tilemap: &[u8]) -> Result<Vec<NativeMap16Placement>, String> {
@@ -440,8 +547,61 @@ mod tests {
         let tiles = [IndexedTile::new([1; IndexedTile::PIXEL_COUNT])];
         let mut colors = vec![Bgr555(0); 128];
         colors[1] = Bgr555(0x001f);
-        let image = render_layer2_image(&tilemap, &map16, &tiles, &Palette { colors }).unwrap();
+        let placements = layer2_placements(&tilemap).unwrap();
+        let layers: [&[NativeMap16Placement]; 1] = [&placements];
+        let image = render_level_image(
+            &layers,
+            NativeLevelMap16Layout {
+                width: 32,
+                height: 32,
+                page_stride: 0x1b0,
+                base_cell: 0,
+                vertical: false,
+            },
+            &map16,
+            &tiles,
+            &Palette { colors },
+        )
+        .unwrap();
         assert_eq!(image.size, [512, 512]);
         assert_eq!(image[(16, 32)], egui::Color32::from_rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn object_stream_preview_uses_recovered_vertical_mode_dimensions() {
+        let image = lm_rom::RomImage::from_bytes(vec![0; 0x80000]).unwrap();
+        let (placements, layout, diagnostics) =
+            render_object_placements(&image, &ObjectStream::default(), 3, 0).unwrap();
+        assert_eq!(layout.width, 32);
+        assert_eq!(layout.height, 13 * 16);
+        assert!(layout.vertical);
+        assert_eq!(placements.len(), 32 * 13 * 16);
+        assert!(placements.iter().all(|placement| placement.word == 0x25));
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    #[ignore = "requires the retained Lunar Magic-created SMW-US ROM fixture"]
+    fn retained_level_zero_object_stream_materializes_nonblank_cells() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = std::fs::read(
+            root.join("oracle-work/lm363/pristine-us/exanimation-install-positive/after.smc"),
+        )
+        .unwrap();
+        let image = lm_rom::RomImage::from_bytes(bytes).unwrap();
+        let mut level_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        level_layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        let level = lm_project::Project::new(image.clone())
+            .load_level_slot(0, level_layout, &lm_level::SpriteLengthTable::standard())
+            .unwrap();
+        let (placements, _, diagnostics) = render_object_placements(
+            &image,
+            &level.layer1.objects,
+            level.layer1.header.level_mode(),
+            level.layer1.header.object_tileset(),
+        )
+        .unwrap();
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        assert!(placements.iter().any(|placement| placement.word != 0x25));
     }
 }

@@ -461,10 +461,15 @@ covering the special GFX01/GFX17 path instead of incorrectly assuming every file
 bypasses perform no pointer reads. The renderer concatenates the decoded payloads into six
 foreground/background and four sprite 128-tile VRAM slots. A framebuffer fixture proves that a
 bypassed tile drives the final RGBA pixel. The live ROM assets editor now goes beyond validation:
-for tilemap-backed Layer 2 it reads the exact native two-plane 32×32 word layout, retains whole-cell
-flip bits, loads the profile's installed Map16 set, uses the staged per-level palette, and presents
-the resulting 512×512 bypass-aware raster. Object-stream Layer 2 remains explicitly unsupported in
-this path instead of being approximated.
+it reads the exact native two-plane 32×32 Layer 2 word layout, retains whole-cell flip bits, loads
+the profile's installed Map16 set, and uses the staged per-level palette. Layer 1 and object-backed
+Layer 2 now run through the same recovered tileset-family dispatch, shared/tileset extended-object
+definitions, `$1B0` horizontal page stride, and vertical cache mapping as the audited usage scanner.
+The resulting bypass-aware framebuffer composites Layer 2 before Layer 1 at the recovered
+mode-specific editor dimensions and reports unresolved command IDs instead of fabricating tiles.
+A retained Lunar Magic-created level `$000` test additionally requires this path to materialize
+nonblank cells without unresolved definitions. Sprite preview composition remains a separate
+renderer boundary.
 
 The actual Super GFX Bypass dialog callback at `0040CA80` is now defined as
 `HandleSuperGfxBypassDialog`. It exposes four animation switches, not additional graphics-file
