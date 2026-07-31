@@ -71,6 +71,7 @@ mod rom_expansion;
 mod secondary_exit_patch;
 mod separate_midway_patch;
 mod shared_palette_io;
+mod super_graphics_io;
 mod title_recording_patch;
 mod title_tilemap_patch;
 mod transaction;
@@ -247,6 +248,7 @@ pub use separate_midway_patch::{
     LoadedSeparateMidwayTable, SeparateMidwayPatchError, SeparateMidwayPatchLocator,
 };
 pub use shared_palette_io::{SharedPaletteIoError, SharedPaletteRomLayout};
+pub use super_graphics_io::{LoadedSuperGraphicsBypass, SuperGraphicsIoError};
 pub use title_recording_patch::{
     LoadedTitleRecording, TitleRecordingPatchError, TitleRecordingPatchLocator,
     TitleRecordingStorage,

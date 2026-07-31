@@ -47,6 +47,7 @@ pub(crate) struct RomLevelAssetsEditor {
     mwl_batch_status: Option<String>,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
+    bypass_validation: Option<String>,
 }
 
 impl RomLevelAssetsEditor {
@@ -152,6 +153,7 @@ impl RomLevelAssetsEditor {
                         if let Err(error) = workspace.controller.apply_edits(&[edit]) {
                             self.error = Some(error.to_string());
                         } else {
+                            self.bypass_validation = None;
                             self.panels.invalidate();
                         }
                     } else {
@@ -161,6 +163,12 @@ impl RomLevelAssetsEditor {
                 Ok(_) => self.error = Some("stale ROM workspace cannot accept more edits".into()),
                 Err(error) => self.error = Some(error),
             }
+        }
+        if ui.button("Validate selected Super GFX files").clicked() {
+            self.bypass_validation = self.workspace.as_ref().map(validate_super_graphics);
+        }
+        if let Some(validation) = &self.bypass_validation {
+            ui.label(validation);
         }
         ui.separator();
         let modified = self
@@ -202,5 +210,33 @@ impl RomLevelAssetsEditor {
             "No staged changes"
         });
         None
+    }
+}
+
+fn validate_super_graphics(workspace: &Workspace) -> String {
+    let Some(settings) = workspace.controller.assets().expanded_settings.as_ref() else {
+        return "No installed expanded-settings record is available.".to_owned();
+    };
+    let project = lm_project::Project::new(workspace.image.clone());
+    match project.load_super_graphics_bypass(settings, workspace.profile.graphics) {
+        Ok(None) => {
+            "Super GFX bypass is disabled; legacy tileset assignments remain active.".into()
+        }
+        Ok(Some(loaded)) => {
+            let foreground_tiles: usize = loaded
+                .foreground_background
+                .iter()
+                .map(|graphics| graphics.tiles.len())
+                .sum();
+            let sprite_tiles: usize = loaded
+                .sprites
+                .iter()
+                .map(|graphics| graphics.tiles.len())
+                .sum();
+            format!(
+                "Validated 6 FG/BG files ({foreground_tiles} tiles) and 4 sprite files ({sprite_tiles} tiles)."
+            )
+        }
+        Err(error) => error.to_string(),
     }
 }

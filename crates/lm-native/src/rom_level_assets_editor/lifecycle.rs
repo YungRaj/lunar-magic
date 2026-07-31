@@ -74,6 +74,7 @@ impl RomLevelAssetsEditor {
                 self.search_start.clear();
                 self.search_end.clear();
                 self.mwl_batch_status = None;
+                self.bypass_validation = None;
                 self.workspace = Some(workspace);
                 self.panels.invalidate();
             }
@@ -121,6 +122,7 @@ impl RomLevelAssetsEditor {
         self.pending_legacy_mwl_load = None;
         self.pending_close = None;
         self.mwl_batch_status = None;
+        self.bypass_validation = None;
         self.panels.invalidate();
     }
 
