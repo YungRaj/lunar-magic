@@ -45,6 +45,7 @@ impl RomGraphicsEditor {
             || self.persistence.is_running()
             || self.graphics_batch.is_running()
             || self.graphics_import.is_running()
+            || self.external_editor.is_running()
         {
             self.error =
                 Some("wait for graphics background file work to finish before closing".into());

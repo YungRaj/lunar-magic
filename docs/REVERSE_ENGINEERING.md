@@ -308,6 +308,14 @@ The following block now covers object-reference remapping scripts, manual-comman
 
 The Direct3D and Windows compatibility range through `00440f90` is now classified. It includes complete renderer context lifecycle and tiled presentation, lazy USER32 multi-monitor API resolution with a single-monitor fallback, external ROM/GFX editor command-template expansion and process launch, executable-path startup validation, and CHM help-file opening with `Zone.Identifier` cleanup.
 
+Rust now exposes the safe process boundary of that external-GFX path in the installed graphics
+editor. The active staged slot is written under its canonical public filename in a private
+create-new directory, the executable and one direct path argument are approved explicitly, and a
+background worker waits for completion. Only a successful, exact-size, nonsymlink regular file is
+reloaded, through the revision-bound graphics controller; every terminal path removes the private
+workspace. Persisted Lunar Magic command-template syntax and platform application-bundle routing
+remain separate recovery work.
+
 The ROM-address and level-coordinate utilities through `00441fe0` are now named and annotated. High-confidence helpers implement both directions of SNES/PC address conversion for the detected mapping mode, horizontal/vertical level-layout cell indexing, status/scrollbar initialization, and packed ROM-word access. Several register-convention stream wrappers are intentionally given structural names and medium-confidence comments until their hidden value widths can be proved from disassembly and all callers; the ExLoROM Work RAM bank-byte validator is separately identified by its required `0x7E`/`0x7F` values.
 
 The range through `004431c0` now identifies expanded-ROM relocation validation, level dirty-state propagation, level-state teardown, packed level-header setters, writable-ROM-range checks, screen-count derivation, common file dialogs, auxiliary editor window lifecycle, and DPI-aware icon installation. The four compact level-header writers document exact byte and bit positions but deliberately leave the UI field names unresolved until the associated dialog controls or format tables prove whether each field is a palette, tileset, or other selector. Relocation helpers separately validate IRAM word/byte ranges and Work RAM bank bytes before altering ROM data.

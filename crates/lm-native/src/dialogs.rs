@@ -138,6 +138,12 @@ pub(crate) fn choose_raw_graphics_save_path(slot: u16) -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_external_graphics_editor() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Choose External Graphics Editor Executable")
+        .pick_file()
+}
+
 pub(crate) fn choose_graphics_directory() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Extract All Standard GFX Files")
@@ -177,7 +183,7 @@ pub(crate) fn choose_all_gfx_file() -> Option<PathBuf> {
         .pick_file()
 }
 
-fn raw_graphics_file_name(slot: u16) -> String {
+pub(crate) fn raw_graphics_file_name(slot: u16) -> String {
     let prefix = if slot <= 0x7f { "GFX" } else { "ExGFX" };
     format!("{prefix}{slot:02X}.bin")
 }

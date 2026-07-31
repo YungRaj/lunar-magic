@@ -11,6 +11,7 @@ use lm_app::{
 use lm_graphics::{GraphicsTileChange, IndexedTile, PaletteInterchangeFile};
 
 mod commit;
+mod external_edit;
 mod graphics_batch;
 mod graphics_import;
 mod lifecycle;
@@ -61,6 +62,7 @@ pub(crate) struct RomGraphicsEditor {
     io_status: Option<String>,
     graphics_batch: graphics_batch::GraphicsBatchWorker,
     graphics_import: graphics_import::GraphicsImportWorker,
+    external_editor: external_edit::ExternalGraphicsEditor,
 }
 
 impl RomGraphicsEditor {
@@ -84,6 +86,24 @@ impl RomGraphicsEditor {
                 Ok(None) => "GFX extraction cancelled.".into(),
                 Err(error) => format!("GFX extraction failed: {error}"),
             });
+        }
+        if let Some(result) = self.external_editor.show(context) {
+            match result.and_then(|completion| {
+                ensure_external_edit_revision(completion.expected_revision, revision)?;
+                let workspace = self
+                    .workspace
+                    .as_mut()
+                    .ok_or("graphics workspace is closed")?;
+                workspace
+                    .controller
+                    .import_raw(&completion.bytes)
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(()) => {
+                    self.io_status = Some("Externally edited graphics staged successfully.".into());
+                }
+                Err(error) => self.error = Some(error),
+            }
         }
         let import_command = match self.graphics_import.show(context) {
             Some(Ok(Some(commit))) => {
@@ -143,7 +163,8 @@ impl RomGraphicsEditor {
         let file_work_running = self.loader.is_running()
             || self.persistence.is_running()
             || self.graphics_batch.is_running()
-            || self.graphics_import.is_running();
+            || self.graphics_import.is_running()
+            || self.external_editor.is_running();
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
@@ -182,6 +203,16 @@ impl RomGraphicsEditor {
         });
         ui.separator();
         ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !stale && !file_work_running,
+                    egui::Button::new("Edit current GFX externally…"),
+                )
+                .on_hover_text("Stages this slot, launches one executable, and reloads after exit")
+                .clicked()
+            {
+                self.begin_external_edit(revision);
+            }
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
@@ -294,7 +325,7 @@ impl RomGraphicsEditor {
             self.pixel_editor(
                 &mut columns[1],
                 &palette,
-                stale || self.loader.is_running(),
+                stale || file_work_running,
                 pasted.as_deref(),
             );
         });
@@ -451,6 +482,30 @@ impl RomGraphicsEditor {
 }
 
 impl RomGraphicsEditor {
+    fn begin_external_edit(&mut self, revision: u64) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let bytes = match workspace.controller.export_raw() {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        let Some(executable) = crate::dialogs::choose_external_graphics_editor() else {
+            return;
+        };
+        let file_name = crate::dialogs::raw_graphics_file_name(workspace.slot);
+        match self
+            .external_editor
+            .stage(executable, &file_name, &bytes, revision)
+        {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+
     fn begin_raw_import(&mut self, revision: u64) {
         let maximum = match self
             .workspace
@@ -739,6 +794,10 @@ fn modified_controller(workspace: Option<&Workspace>) -> bool {
     workspace.is_some_and(|workspace| workspace.controller.is_modified())
 }
 
+fn ensure_external_edit_revision(expected: u64, current: u64) -> Result<(), String> {
+    crate::rom_load::ensure_current_revision(expected, current, "external graphics reload")
+}
+
 fn pristine_special_graphics(profile: &RevisionProfile) -> bool {
     profile.game == lm_rom::SupportedGame::SuperMarioWorld
         && profile.region == lm_rom::Region::NorthAmerica
@@ -777,7 +836,10 @@ fn installed_exgraphics_slots(
 
 #[cfg(test)]
 mod tests {
-    use super::{installed_exgraphics_slots, pristine_special_graphics, supports_exgraphics};
+    use super::{
+        ensure_external_edit_revision, installed_exgraphics_slots, pristine_special_graphics,
+        supports_exgraphics,
+    };
     use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
     use lm_rom::{Mapper, RomImage};
 
@@ -832,5 +894,12 @@ mod tests {
         assert!(supports_exgraphics(&profile));
         profile.graphics.pointers.entries = 0x80;
         assert!(!supports_exgraphics(&profile));
+    }
+
+    #[test]
+    fn external_reload_is_bound_to_the_revision_that_was_staged() {
+        ensure_external_edit_revision(12, 12).unwrap();
+        let error = ensure_external_edit_revision(12, 13).unwrap_err();
+        assert!(error.contains("external graphics reload"), "{error}");
     }
 }

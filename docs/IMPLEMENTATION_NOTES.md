@@ -3061,3 +3061,15 @@ noncanonical or out-of-table ExGFX-like names, sorts the sparse slots, bounds ev
 the existing raw length for replacements, and admits new slots only at the native `$800`, `$C00`,
 or `$1000` byte depths. Compression, allocation, pointer writes, checksum repair, and revision-bound
 publication remain one transaction; omitted slots and all pointer-table storage remain protected.
+
+The installed graphics editor also owns a scoped external-edit round trip. It exports the current
+staged controller bytes—not a stale ROM decode—to a uniquely reserved private temporary directory
+under the canonical GFX/ExGFX filename. After the user chooses an executable, a second native
+permission window displays that executable and exact direct argument before launch. The worker does
+not use a command shell, waits outside the UI thread, accepts only successful process termination,
+reopens only a nonsymlink regular file at the exact original byte length, and removes the private
+directory before returning bytes. The completion is bound to the application revision captured at
+staging and passes through the controller's normal raw-import validation, so it becomes an ordinary
+uncommitted graphics edit. While pending or running, pixel mutation, other graphics file work,
+commit, and close/shutdown are gated. Cancellation, launch/read/shape failures, disconnected workers,
+and dropped unapproved prompts clean up without changing the controller.
