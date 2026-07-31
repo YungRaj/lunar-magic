@@ -2,10 +2,11 @@ use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
-        GraphicsEditorStatus, TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction,
-        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile, palette_color,
-        take_graphics_character_shortcut, take_graphics_save_shortcut, take_tile_shift,
-        tile_button, tile_coordinate, tile_pointer_action,
+        GraphicsEditorStatus, TILE_GRID_COLUMNS, TileEditorZoom, TilePixelPointerAction,
+        TilePointerAction, apply_tile_keyboard_navigation, apply_tile_palette_keyboard,
+        color_selection_marker, paint_tile, palette_color, take_graphics_character_shortcut,
+        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
+        tile_pixel_pointer_action, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -54,7 +55,8 @@ enum PendingLoad {
 pub(crate) struct RomGraphicsEditor {
     workspace: Option<Workspace>,
     selected_tile: usize,
-    selected_color: u8,
+    foreground_color: u8,
+    background_color: u8,
     display_palette: GraphicsDisplayPalette,
     pixel_zoom: TileEditorZoom,
     color_map: GraphicsColorMapEditor,
@@ -227,22 +229,27 @@ impl RomGraphicsEditor {
         }
         let palette = workspace.palette.clone();
         let mut hovered_color = None;
-        let mut selected_color = None;
+        let mut selected_foreground = None;
+        let mut selected_background = None;
         ui.horizontal_wrapped(|ui| {
             for color in 0_u8..16 {
                 let fill = palette_color(&palette, self.display_palette, color);
                 let response = ui.add_sized(
                     [26.0, 26.0],
-                    egui::Button::new(if color == self.selected_color {
-                        "•"
-                    } else {
-                        ""
-                    })
+                    egui::Button::new(color_selection_marker(
+                        color,
+                        self.foreground_color,
+                        self.background_color,
+                    ))
                     .fill(fill),
                 );
-                if response.clicked() {
-                    self.selected_color = color;
-                    selected_color = Some(color);
+                if response.clicked_by(egui::PointerButton::Primary) {
+                    self.foreground_color = color;
+                    selected_foreground = Some(color);
+                }
+                if response.clicked_by(egui::PointerButton::Secondary) {
+                    self.background_color = color;
+                    selected_background = Some(color);
                 }
                 if response.hovered() {
                     hovered_color = Some(color);
@@ -250,8 +257,11 @@ impl RomGraphicsEditor {
             }
         });
         self.status.update_palette_hover(hovered_color);
-        if let Some(color) = selected_color {
+        if let Some(color) = selected_foreground {
             self.status.select_foreground_color(color);
+        }
+        if let Some(color) = selected_background {
+            self.status.select_background_color(color);
         }
         ui.separator();
         ui.horizontal(|ui| {
@@ -736,17 +746,32 @@ impl RomGraphicsEditor {
         self.status
             .update_pixel_editor_hover(response.hovered(), self.selected_tile);
         paint_tile(ui.painter(), rect, &tile, palette, self.display_palette);
-        if !stale
-            && editable
-            && (response.clicked() || response.dragged())
+        if let Some(action) =
+            tile_pixel_pointer_action(&response, ui.input(|input| input.modifiers))
             && let Some(position) = response.interact_pointer_pos()
             && let Some((x, y)) = tile_coordinate(rect, position)
         {
-            self.apply_pixel(x, y, tile);
+            match action {
+                TilePixelPointerAction::PaintForeground if !stale && editable => {
+                    self.apply_pixel(x, y, self.foreground_color, tile);
+                }
+                TilePixelPointerAction::PaintBackground if !stale && editable => {
+                    self.apply_pixel(x, y, self.background_color, tile);
+                }
+                TilePixelPointerAction::PickForeground => {
+                    self.foreground_color = tile.pixel(x, y).unwrap_or(0);
+                    self.status.select_foreground_color(self.foreground_color);
+                }
+                TilePixelPointerAction::PickBackground => {
+                    self.background_color = tile.pixel(x, y).unwrap_or(0);
+                    self.status.select_background_color(self.background_color);
+                }
+                _ => {}
+            }
         }
     }
-    fn apply_pixel(&mut self, x: usize, y: usize, mut tile: IndexedTile) {
-        if let Err(error) = tile.set_pixel(x, y, self.selected_color) {
+    fn apply_pixel(&mut self, x: usize, y: usize, color: u8, mut tile: IndexedTile) {
+        if let Err(error) = tile.set_pixel(x, y, color) {
             self.error = Some(error.to_string());
             return;
         }

@@ -90,6 +90,13 @@ impl GraphicsEditorStatus {
         self.set(format!("Color {color:X} selected for FG."));
     }
 
+    pub(crate) fn select_background_color(&mut self, color: u8) {
+        self.hovered_tile = None;
+        self.editor_hovered = false;
+        self.hovered_color = Some(color);
+        self.set(format!("Color {color:X} selected for BG."));
+    }
+
     pub(crate) fn update_palette_hover(&mut self, hovered: Option<u8>) {
         if hovered == self.hovered_color {
             return;
@@ -149,6 +156,14 @@ pub(crate) enum TilePointerAction {
     Copy(usize),
     PasteSelected(usize),
     PasteClipboard(usize),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TilePixelPointerAction {
+    PaintForeground,
+    PaintBackground,
+    PickForeground,
+    PickBackground,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -474,6 +489,52 @@ pub(crate) fn tile_pointer_action(
         response.clicked_by(egui::PointerButton::Secondary),
         ui.input(|input| input.modifiers),
     )
+}
+
+pub(crate) fn tile_pixel_pointer_action(
+    response: &egui::Response,
+    modifiers: egui::Modifiers,
+) -> Option<TilePixelPointerAction> {
+    classify_tile_pixel_pointer_action(
+        response.clicked_by(egui::PointerButton::Primary),
+        response.clicked_by(egui::PointerButton::Secondary),
+        response.dragged_by(egui::PointerButton::Primary),
+        response.dragged_by(egui::PointerButton::Secondary),
+        modifiers.ctrl,
+    )
+}
+
+fn classify_tile_pixel_pointer_action(
+    primary_clicked: bool,
+    secondary_clicked: bool,
+    primary_dragged: bool,
+    secondary_dragged: bool,
+    control: bool,
+) -> Option<TilePixelPointerAction> {
+    if control {
+        if primary_clicked {
+            Some(TilePixelPointerAction::PickForeground)
+        } else if secondary_clicked {
+            Some(TilePixelPointerAction::PickBackground)
+        } else {
+            None
+        }
+    } else if primary_clicked || primary_dragged {
+        Some(TilePixelPointerAction::PaintForeground)
+    } else if secondary_clicked || secondary_dragged {
+        Some(TilePixelPointerAction::PaintBackground)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn color_selection_marker(color: u8, foreground: u8, background: u8) -> &'static str {
+    match (color == foreground, color == background) {
+        (true, true) => "F/B",
+        (true, false) => "F",
+        (false, true) => "B",
+        (false, false) => "",
+    }
 }
 
 pub(crate) fn take_graphics_save_shortcut(ui: &mut egui::Ui) -> bool {
@@ -1036,6 +1097,52 @@ mod tests {
         );
         status.select_foreground_color(0xe);
         assert_eq!(status.text.as_deref(), Some("Color E selected for FG."));
+        status.select_background_color(0xa);
+        assert_eq!(status.text.as_deref(), Some("Color A selected for BG."));
+    }
+
+    #[test]
+    fn pixel_pointer_gestures_distinguish_painting_from_color_sampling() {
+        use TilePixelPointerAction::{
+            PaintBackground, PaintForeground, PickBackground, PickForeground,
+        };
+
+        assert_eq!(
+            classify_tile_pixel_pointer_action(true, false, false, false, false),
+            Some(PaintForeground)
+        );
+        assert_eq!(
+            classify_tile_pixel_pointer_action(false, true, false, false, false),
+            Some(PaintBackground)
+        );
+        assert_eq!(
+            classify_tile_pixel_pointer_action(false, false, true, false, false),
+            Some(PaintForeground)
+        );
+        assert_eq!(
+            classify_tile_pixel_pointer_action(false, false, false, true, false),
+            Some(PaintBackground)
+        );
+        assert_eq!(
+            classify_tile_pixel_pointer_action(true, false, false, false, true),
+            Some(PickForeground)
+        );
+        assert_eq!(
+            classify_tile_pixel_pointer_action(false, true, false, false, true),
+            Some(PickBackground)
+        );
+        assert_eq!(
+            classify_tile_pixel_pointer_action(false, false, true, true, true),
+            None
+        );
+    }
+
+    #[test]
+    fn palette_marks_foreground_background_and_shared_colors() {
+        assert_eq!(color_selection_marker(1, 1, 0), "F");
+        assert_eq!(color_selection_marker(0, 1, 0), "B");
+        assert_eq!(color_selection_marker(4, 4, 4), "F/B");
+        assert_eq!(color_selection_marker(7, 1, 0), "");
     }
 
     #[test]

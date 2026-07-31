@@ -1257,7 +1257,12 @@ added as a first-class clockwise indexed-tile transform and all five routes reta
 normal controller, ownership, stale-revision, and worker guards.
 The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
-tile-edit selection; selection clicks publish tile or foreground-color messages. Successful Up/Down
+tile-edit selection. `HandleGraphicsEditorWindowMessage` at `005068c0` proves that primary and
+secondary palette clicks select foreground and background colors, while primary and secondary
+pixel-grid gestures paint with those colors. Ctrl changes the pixel-grid actions into foreground
+and background sampling. The corresponding messages are exactly `Color %X selected for FG.` and
+`Color %X selected for BG.`; initialized globals `005E54F4` and `00E27B84` establish defaults 1 and
+0. Successful Up/Down
 navigation publishes `Viewing 8x8 page 0x%X.`, while blocked movement publishes the exact
 `Already at Start`/`Already at End` diagnostics. Page Up/Down report the rendered hexadecimal
 palette. Rust now keeps this state event-driven so a stationary pointer does not overwrite a later

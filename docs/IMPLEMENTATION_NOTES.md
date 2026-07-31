@@ -1700,9 +1700,13 @@ default selection uses the original fixed sixteen-entry RGBQUAD table, including
 ordering, for the picker, tile sheet, color-map previews, and pixel editor on all three surfaces.
 The same tile-grid adapter draws a distinct outline around the current nonselected hover target.
 Its event-driven status state reproduces the original tile/address and palette hover text, selected
-tile and foreground-color messages, rendered-palette messages, viewed-page messages, and exact
+tile and foreground/background-color messages, rendered-palette messages, viewed-page messages, and exact
 start/end boundary diagnostics. A stationary pointer does not overwrite a later keyboard message;
 changing or leaving its tracked tile, palette, or pixel-editor region updates or clears the status.
+All three graphics surfaces initialize foreground color 1 and background color 0. Primary and
+secondary palette clicks select those colors; primary and secondary pixel gestures paint with them;
+Ctrl-primary and Ctrl-secondary sample the pointed pixel into foreground and background respectively.
+Sampling remains enabled for installed read-only tiles because it changes only editor state.
 Installed Ctrl+Shift tile hover consumes the same ownership evidence. Canonical v2 records retain
 the original-animation slots `$00-$7E` and level/global ExAnimation slots `$00-$3F`, producing the
 exact `OrigAnim`, `ExAnim Level`, and `ExAnim Global` messages while keeping every such tile

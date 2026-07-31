@@ -74,7 +74,8 @@ impl RomGraphicsEditor {
                     Ok(workspace) => {
                         self.workspace = Some(workspace);
                         self.selected_tile = 0;
-                        self.selected_color = 1;
+                        self.foreground_color = 1;
+                        self.background_color = 0;
                         self.display_palette = Default::default();
                         self.status = Default::default();
                         self.clipboard_paste_target = None;
