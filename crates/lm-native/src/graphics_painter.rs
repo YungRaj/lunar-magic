@@ -220,6 +220,55 @@ pub(crate) enum GraphicsCharacterShortcut {
     FlipVertical,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GraphicsTileTransform {
+    RotateClockwise,
+    FlipHorizontal,
+    FlipVertical,
+}
+
+pub(crate) fn graphics_transform_controls(
+    ui: &mut egui::Ui,
+    enabled: bool,
+) -> Option<GraphicsTileTransform> {
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(enabled, egui::Button::new("Rotate 90°"))
+            .clicked()
+        {
+            Some(GraphicsTileTransform::RotateClockwise)
+        } else if ui
+            .add_enabled(enabled, egui::Button::new("Flip horizontal"))
+            .clicked()
+        {
+            Some(GraphicsTileTransform::FlipHorizontal)
+        } else if ui
+            .add_enabled(enabled, egui::Button::new("Flip vertical"))
+            .clicked()
+        {
+            Some(GraphicsTileTransform::FlipVertical)
+        } else {
+            None
+        }
+    })
+    .inner
+}
+
+pub(crate) const fn shortcut_transform(
+    shortcut: Option<GraphicsCharacterShortcut>,
+) -> Option<GraphicsTileTransform> {
+    match shortcut {
+        Some(GraphicsCharacterShortcut::RotateClockwise) => {
+            Some(GraphicsTileTransform::RotateClockwise)
+        }
+        Some(GraphicsCharacterShortcut::FlipHorizontal) => {
+            Some(GraphicsTileTransform::FlipHorizontal)
+        }
+        Some(GraphicsCharacterShortcut::FlipVertical) => Some(GraphicsTileTransform::FlipVertical),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ColorMapDialog {
     draft: GraphicsColorMapFilters,
@@ -1552,5 +1601,30 @@ mod tests {
             },
         );
         assert_eq!(modified, None);
+    }
+
+    #[test]
+    fn native_transform_shortcuts_share_the_visible_transform_actions() {
+        assert_eq!(
+            shortcut_transform(Some(GraphicsCharacterShortcut::RotateClockwise)),
+            Some(GraphicsTileTransform::RotateClockwise)
+        );
+        assert_eq!(
+            shortcut_transform(Some(GraphicsCharacterShortcut::FlipHorizontal)),
+            Some(GraphicsTileTransform::FlipHorizontal)
+        );
+        assert_eq!(
+            shortcut_transform(Some(GraphicsCharacterShortcut::FlipVertical)),
+            Some(GraphicsTileTransform::FlipVertical)
+        );
+        assert_eq!(
+            shortcut_transform(Some(GraphicsCharacterShortcut::ApplyColorMap)),
+            None
+        );
+        assert_eq!(
+            shortcut_transform(Some(GraphicsCharacterShortcut::EditColorMap)),
+            None
+        );
+        assert_eq!(shortcut_transform(None), None);
     }
 }

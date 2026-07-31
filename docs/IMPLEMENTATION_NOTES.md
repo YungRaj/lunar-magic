@@ -1744,7 +1744,10 @@ uppercase and lowercase input, and maps only five entries: D applies the selecte
 opens the map editor, R rotates the active tile 90 degrees clockwise, X flips horizontally, and Y
 flips vertically. The shared focus-scoped adapter accepts only unmodified forms of those keys.
 Every mutating form joins the existing undoable or ownership-guarded tile replacement path; M
-opens the same transactional color-map draft used by the visible button.
+opens the same transactional color-map draft used by the visible button. Rotate 90°, horizontal
+flip, and vertical flip are also visible controls on every graphics surface, matching the native
+command dispatcher; buttons and R/X/Y resolve through the same transform action and therefore the
+same portable revision or installed ownership/stale-worker gates.
 The recovered color-map subsystem is represented as sixteen independent sixteen-entry mappings.
 Every filter defaults to identity; each edit strictly selects one 4-bit source and destination,
 Reset restores only the active mapping, and tile application masks each stored pixel to its low

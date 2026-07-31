@@ -2,9 +2,10 @@ use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
-        GraphicsEditorStatus, GraphicsTileGrid, TILE_EDITOR_SIDE, TILE_GRID_COLUMNS,
-        TilePixelPointerAction, TilePointerAction, apply_tile_keyboard_navigation,
-        apply_tile_palette_keyboard, color_selection_marker, paint_tile, palette_color,
+        GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, TILE_EDITOR_SIDE,
+        TILE_GRID_COLUMNS, TilePixelPointerAction, TilePointerAction,
+        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, color_selection_marker,
+        graphics_transform_controls, paint_tile, palette_color, shortcut_transform,
         take_graphics_character_shortcut, take_graphics_refresh_shortcut,
         take_graphics_save_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
         tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
@@ -814,48 +815,17 @@ impl RomGraphicsEditor {
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
         });
-        let clicked_transform = ui
-            .horizontal(|ui| {
-                if ui
-                    .add_enabled(!stale && editable, egui::Button::new("Flip horizontal"))
-                    .clicked()
-                {
-                    Some((true, false))
-                } else if ui
-                    .add_enabled(!stale && editable, egui::Button::new("Flip vertical"))
-                    .clicked()
-                {
-                    Some((false, true))
-                } else {
-                    None
-                }
-            })
-            .inner;
-        let transform = match character_shortcut {
-            Some(GraphicsCharacterShortcut::FlipHorizontal) if !stale && editable => {
-                Some((true, false))
-            }
-            Some(GraphicsCharacterShortcut::FlipVertical) if !stale && editable => {
-                Some((false, true))
-            }
-            _ => clicked_transform,
-        };
-        if character_shortcut == Some(GraphicsCharacterShortcut::RotateClockwise)
-            && !stale
-            && editable
-        {
-            let transformed = tile.rotated_clockwise();
-            self.apply_tile(transformed);
-            if let Some(current) = self
-                .workspace
-                .as_ref()
-                .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
-            {
-                tile = current.clone();
-            }
-        }
-        if let Some((horizontal, vertical)) = transform {
-            let transformed = tile.flipped(horizontal, vertical);
+        let enabled = !stale && editable;
+        let clicked_transform = graphics_transform_controls(ui, enabled);
+        let transform = shortcut_transform(character_shortcut)
+            .filter(|_| enabled)
+            .or(clicked_transform);
+        if let Some(transform) = transform {
+            let transformed = match transform {
+                GraphicsTileTransform::RotateClockwise => tile.rotated_clockwise(),
+                GraphicsTileTransform::FlipHorizontal => tile.flipped(true, false),
+                GraphicsTileTransform::FlipVertical => tile.flipped(false, true),
+            };
             self.apply_tile(transformed);
             if let Some(current) = self
                 .workspace

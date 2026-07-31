@@ -1259,6 +1259,11 @@ and Y, which synthesize the existing Do Map, Map Colors, Rotate 90°, Flip X, an
 commands respectively. The Rust editors now preserve that exact unmodified key set; rotation was
 added as a first-class clockwise indexed-tile transform and all five routes retain each surface's
 normal controller, ownership, stale-revision, and worker guards.
+`HandleGraphicsEditorCommand` at `005054d0` confirms that Rotate 90° is also a directly reachable
+control command, alongside the two flip controls, rather than a keyboard-only operation. The three
+Rust graphics surfaces now expose the missing visible rotation control and route all three buttons
+and their R/X/Y shortcuts through one shared transform action while preserving their existing
+mutation gates.
 The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
 tile-edit selection. `HandleGraphicsEditorWindowMessage` at `005068c0` proves that primary and

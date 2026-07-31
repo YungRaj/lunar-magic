@@ -1,9 +1,10 @@
 use crate::{
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
-        GraphicsEditorStatus, GraphicsTileGrid, TILE_EDITOR_SIDE, TILE_GRID_COLUMNS,
-        TilePixelPointerAction, TilePointerAction, apply_tile_keyboard_navigation,
-        apply_tile_palette_keyboard, color_selection_marker, paint_tile,
+        GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, TILE_EDITOR_SIDE,
+        TILE_GRID_COLUMNS, TilePixelPointerAction, TilePointerAction,
+        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, color_selection_marker,
+        graphics_transform_controls, paint_tile, shortcut_transform,
         take_graphics_character_shortcut, take_graphics_refresh_shortcut,
         take_graphics_save_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
         tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
@@ -342,28 +343,14 @@ impl VanillaGraphicsEditor {
                 tile = current.clone();
             }
         }
-        let clicked_transform = ui
-            .horizontal(|ui| {
-                if ui.button("Flip horizontal").clicked() {
-                    Some((true, false))
-                } else if ui.button("Flip vertical").clicked() {
-                    Some((false, true))
-                } else {
-                    None
-                }
-            })
-            .inner;
-        let transform = match character_shortcut {
-            Some(GraphicsCharacterShortcut::FlipHorizontal) => Some((true, false)),
-            Some(GraphicsCharacterShortcut::FlipVertical) => Some((false, true)),
-            _ => clicked_transform,
-        };
-        if character_shortcut == Some(GraphicsCharacterShortcut::RotateClockwise) {
-            tile = tile.rotated_clockwise();
-            self.apply_tile(tile.clone());
-        }
-        if let Some((horizontal, vertical)) = transform {
-            tile = tile.flipped(horizontal, vertical);
+        let clicked_transform = graphics_transform_controls(ui, true);
+        let transform = shortcut_transform(character_shortcut).or(clicked_transform);
+        if let Some(transform) = transform {
+            tile = match transform {
+                GraphicsTileTransform::RotateClockwise => tile.rotated_clockwise(),
+                GraphicsTileTransform::FlipHorizontal => tile.flipped(true, false),
+                GraphicsTileTransform::FlipVertical => tile.flipped(false, true),
+            };
             self.apply_tile(tile.clone());
         }
         let (rect, response) = ui.allocate_exact_size(
