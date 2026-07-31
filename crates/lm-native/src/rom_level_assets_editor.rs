@@ -43,6 +43,11 @@ struct PendingLoad {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NativeSpritePreviewPlacement {
+    token_index: usize,
+    part_index: usize,
+    sprite_number: u8,
+    source: StandardSpritePreviewSource,
+    definition_index: u16,
     subtiles: [u16; 4],
     x: i32,
     y: i32,
@@ -109,6 +114,14 @@ impl PreviewMap16Layer {
     }
 }
 
+const fn preview_sprite_source_label(source: StandardSpritePreviewSource) -> &'static str {
+    match source {
+        StandardSpritePreviewSource::BuiltIn => "built-in",
+        StandardSpritePreviewSource::NativeEmpty => "native-empty",
+        StandardSpritePreviewSource::CustomDisplay => "custom-display",
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PreviewMap16Hit {
     layer: PreviewMap16Layer,
@@ -121,6 +134,7 @@ struct PreviewMap16Hit {
 struct PreviewMap16Inspection {
     selection: PreviewMap16Selection,
     hits: Vec<PreviewMap16Hit>,
+    sprites: Vec<NativeSpritePreviewPlacement>,
 }
 
 impl Default for PreviewViewportState {
@@ -285,6 +299,7 @@ fn inspect_preview_map16_selection(
     selection: PreviewMap16Selection,
     layer2: &[NativeMap16Placement],
     layer1: &[NativeMap16Placement],
+    sprites: &[NativeSpritePreviewPlacement],
     map16: &Map16Set,
 ) -> PreviewMap16Inspection {
     let mut hits = Vec::new();
@@ -317,7 +332,26 @@ fn inspect_preview_map16_selection(
                 }),
         );
     }
-    PreviewMap16Inspection { selection, hits }
+    let left = selection.cell_x.saturating_mul(16);
+    let top = selection.cell_y.saturating_mul(16);
+    let right = left.saturating_add(16);
+    let bottom = top.saturating_add(16);
+    let sprites = sprites
+        .iter()
+        .filter(|sprite| {
+            let sprite_left = i64::from(sprite.x);
+            let sprite_top = i64::from(sprite.y);
+            let sprite_right = sprite_left.saturating_add(16);
+            let sprite_bottom = sprite_top.saturating_add(16);
+            sprite_left < right && left < sprite_right && sprite_top < bottom && top < sprite_bottom
+        })
+        .copied()
+        .collect();
+    PreviewMap16Inspection {
+        selection,
+        hits,
+        sprites,
+    }
 }
 
 impl InstalledAnimationOptions {
@@ -758,6 +792,30 @@ impl RomLevelAssetsEditor {
                         ui.monospace("  Map16 definition is unavailable.");
                     }
                 }
+                ui.label("Overlapping staged sprite-preview parts in painter order");
+                if inspection.sprites.is_empty() {
+                    ui.monospace("No materialized sprite-preview part overlaps this cell.");
+                }
+                for (paint_index, sprite) in inspection.sprites.iter().enumerate() {
+                    ui.monospace(format!(
+                        "Sprite paint {}: token {}, ID ${:02X} {}, part {}, definition ${:04X}, origin ({}, {})",
+                        paint_index + 1,
+                        sprite.token_index,
+                        sprite.sprite_number,
+                        preview_sprite_source_label(sprite.source),
+                        sprite.part_index,
+                        sprite.definition_index,
+                        sprite.x,
+                        sprite.y,
+                    ));
+                    ui.monospace(format!(
+                        "  subtiles ${:04X} ${:04X} ${:04X} ${:04X}",
+                        sprite.subtiles[0],
+                        sprite.subtiles[1],
+                        sprite.subtiles[2],
+                        sprite.subtiles[3],
+                    ));
+                }
             });
         }
         if let Some(texture) = &self.bypass_layer2_texture {
@@ -981,8 +1039,9 @@ fn render_super_graphics_level_preview(
         header.sprite_tileset(),
     );
     diagnostics.extend(sprite_diagnostics);
-    let inspection = selection
-        .map(|selection| inspect_preview_map16_selection(selection, &layer2, &layer1, &map16));
+    let inspection = selection.map(|selection| {
+        inspect_preview_map16_selection(selection, &layer2, &layer1, &sprites, &map16)
+    });
     let animated_sprite_tiles =
         crate::vanilla_map16_preview::materialize_sprite_display_tiles(special_graphics.gfx33);
     render_level_viewport_image(
@@ -1485,6 +1544,8 @@ fn render_sprite_placements(
     let mut diagnostics = Vec::new();
     let mut sprite_8a_sequence_index = 0_u8;
     for placement in sprites.native_placements() {
+        let token_index = placement.token_index;
+        let source = lunar_magic_standard_sprite_preview_source(placement.sprite_number);
         let preview = render_lunar_magic_standard_sprite_with_mode(
             placement.sprite_number,
             StandardSpritePreviewMode {
@@ -1502,9 +1563,7 @@ fn render_sprite_placements(
             sprite_8a_sequence_index = sprite_8a_sequence_index.saturating_add(1);
         }
         let Some(parts) = preview else {
-            if lunar_magic_standard_sprite_preview_source(placement.sprite_number)
-                == StandardSpritePreviewSource::BuiltIn
-            {
+            if source == StandardSpritePreviewSource::BuiltIn {
                 diagnostics.push(format!(
                     "sprite ${:02X} has no materialized preview",
                     placement.sprite_number
@@ -1515,8 +1574,13 @@ fn render_sprite_placements(
         let (tile_x, tile_y) = placement.tile_coordinates(mode.vertical);
         let origin_x = i32::from(tile_x).saturating_mul(16);
         let origin_y = i32::from(tile_y).saturating_mul(16);
-        for part in parts {
+        for (part_index, part) in parts.into_iter().enumerate() {
             rendered.push(NativeSpritePreviewPlacement {
+                token_index,
+                part_index,
+                sprite_number: placement.sprite_number,
+                source,
+                definition_index: part.definition_index,
                 subtiles: part.subtiles,
                 x: origin_x.saturating_add(i32::from(part.x)),
                 y: origin_y.saturating_add(i32::from(part.y)),
@@ -2069,7 +2133,7 @@ mod tests {
             cell_y: 1,
         };
         assert_eq!(
-            inspect_preview_map16_selection(selection, &layer2, &layer1, &map16),
+            inspect_preview_map16_selection(selection, &layer2, &layer1, &[], &map16),
             PreviewMap16Inspection {
                 selection,
                 hits: vec![
@@ -2107,6 +2171,7 @@ mod tests {
                         acts_like: None,
                     },
                 ],
+                sprites: Vec::new(),
             }
         );
 
@@ -2115,10 +2180,11 @@ mod tests {
             cell_y: 9,
         };
         assert_eq!(
-            inspect_preview_map16_selection(empty, &layer2, &layer1, &map16),
+            inspect_preview_map16_selection(empty, &layer2, &layer1, &[], &map16),
             PreviewMap16Inspection {
                 selection: empty,
                 hits: Vec::new(),
+                sprites: Vec::new(),
             }
         );
     }
@@ -2158,6 +2224,7 @@ mod tests {
             },
             &[],
             &layer1,
+            &[],
             &map16,
         );
         assert_eq!(
@@ -2179,6 +2246,46 @@ mod tests {
             Some(Err(lm_level::Map16SetError::ActsLikeCycle {
                 cycle: vec![4, 5, 4],
             }))
+        );
+    }
+
+    #[test]
+    fn installed_preview_inspection_uses_half_open_sprite_overlap_bounds() {
+        let sprite = |token_index, x, y| NativeSpritePreviewPlacement {
+            token_index,
+            part_index: 0,
+            sprite_number: 0x42,
+            source: StandardSpritePreviewSource::BuiltIn,
+            definition_index: u16::try_from(token_index).unwrap(),
+            subtiles: [u16::try_from(token_index).unwrap(); 4],
+            x,
+            y,
+        };
+        let sprites = [
+            sprite(0, 0, 0),
+            sprite(1, 1, 1),
+            sprite(2, 31, 31),
+            sprite(3, 32, 16),
+            sprite(4, 16, 32),
+            sprite(5, 16, 16),
+        ];
+        let inspection = inspect_preview_map16_selection(
+            PreviewMap16Selection {
+                cell_x: 1,
+                cell_y: 1,
+            },
+            &[],
+            &[],
+            &sprites,
+            &Map16Set::default(),
+        );
+        assert_eq!(
+            inspection
+                .sprites
+                .iter()
+                .map(|sprite| sprite.token_index)
+                .collect::<Vec<_>>(),
+            vec![1, 2, 5]
         );
     }
 
@@ -2340,19 +2447,25 @@ mod tests {
         let sprites = lm_level::NativeSpriteStream {
             header: 0,
             expanded: false,
-            tokens: vec![lm_level::SpriteToken::Record(lm_level::SpriteRecord {
-                encoded: vec![0x20, 0x10, 0x00],
-            })],
+            tokens: vec![
+                lm_level::SpriteToken::Control(0x80),
+                lm_level::SpriteToken::Record(lm_level::SpriteRecord {
+                    encoded: vec![0x20, 0x10, 0x00],
+                }),
+            ],
         };
         let (rendered, diagnostics) = render_sprite_placements(&sprites, 0, 0);
         assert!(diagnostics.is_empty());
         assert_eq!(rendered.len(), 1);
+        assert_eq!(rendered[0].token_index, 1);
+        assert_eq!(rendered[0].part_index, 0);
+        assert_eq!(rendered[0].sprite_number, 0);
+        assert_eq!(rendered[0].source, StandardSpritePreviewSource::BuiltIn);
         assert_eq!(rendered[0].x, 16);
         assert_eq!(rendered[0].y, 33);
-        assert_eq!(
-            rendered[0].subtiles,
-            lm_render::render_lunar_magic_standard_sprite(0, false).unwrap()[0].subtiles
-        );
+        let expected = lm_render::render_lunar_magic_standard_sprite(0, false).unwrap();
+        assert_eq!(rendered[0].definition_index, expected[0].definition_index);
+        assert_eq!(rendered[0].subtiles, expected[0].subtiles);
     }
 
     #[test]

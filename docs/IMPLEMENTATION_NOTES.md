@@ -2780,6 +2780,12 @@ and four raw subtile words. It also invokes `Map16Set::resolve_acts_like` with t
 tile count as its traversal bound, displaying the exact chain and self-linked terminal or preserving
 the typed cycle, out-of-range, and resolution-limit failure. Missing definitions and cells with no
 sparse placement are explicit.
+The same inspection retains provenance on every materialized 16×16 standard-sprite preview part:
+original serialized token index, sprite ID, recovered source class, per-sprite part ordinal, preview
+definition index, signed pixel origin, and all four tile words. Parts are included when their
+half-open pixel bounds overlap the selected Map16 cell, remain in the same vector order used by the
+post-layer sprite painter, and exclude right/bottom edge-only contact. Native-empty and
+custom-display sprite IDs still produce no invented part.
 Accepted aggregate edits and failed renders clear stale inspection state before it can be shown.
 Focused raster coverage proves a camera-cropped 200% view repeats the selected source pixel buckets
 exactly; interaction-state coverage proves anchored 200% zoom, 200% and 50% drag conversion, and
@@ -2792,6 +2798,9 @@ independent refresh/asset/selection phase matrix. Inspection coverage requires d
 writes followed by Layer 1 writes, preserves an unavailable definition as a distinct final hit,
 and distinguishes a truly empty cell. Acts-like coverage requires a three-definition chain, direct
 self-link, two-definition cycle, and three distinct out-of-range targets.
+Sprite inspection coverage requires materialization to retain its original sprite/part provenance
+and requires the overlap filter to accept top-left, bottom-right, and exact-cell intersections in
+painter order while rejecting left, right, and bottom edge-only contact.
 
 The global- and level-ExAnimation feature switches remain persistence/runtime controls in this
 workspace, not a claim that compact records have been interpreted for rendering. Their transfer
