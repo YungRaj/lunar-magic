@@ -1245,6 +1245,8 @@ Ctrl+left-click copies and selects the pointed tile; adding Shift or Alt instead
 selection. Right-click tests only the Ctrl state: without Ctrl it copies the active edit tile over
 its target, while Ctrl with any other modifiers requests the typed single-tile clipboard payload
 and selects that target only after validation, matching the recovered mouse-message branches.
+All four tile-sheet routes dispatch directly from their primary/secondary button-down branch rather
+than waiting for a completed click.
 Installed paste cannot bypass fixed/ExAnimation ownership, stale revision,
 or active file-worker gates.
 The documented unmodified F9 save command now enters the existing button-backed save/commit path

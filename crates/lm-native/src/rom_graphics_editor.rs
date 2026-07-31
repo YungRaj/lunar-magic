@@ -543,7 +543,7 @@ impl RomGraphicsEditor {
                                 index == self.selected_tile,
                                 self.tile_grid,
                             );
-                            match tile_pointer_action(ui, &response, index) {
+                            match tile_pointer_action(&response, index) {
                                 Some(TilePointerAction::Select(index)) => {
                                     self.selected_tile = index;
                                     selected_by_pointer = Some(index);

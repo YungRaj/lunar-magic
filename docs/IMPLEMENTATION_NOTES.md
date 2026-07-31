@@ -1757,6 +1757,8 @@ frame. An ordinary primary/secondary press paints immediately and retains its FG
 release even if Ctrl changes; a Ctrl press samples once and cannot become paint during that press.
 Palette FG/BG selection likewise occurs on primary/secondary button-down on all three graphics
 surfaces, independent of keyboard modifiers, rather than waiting for a completed toolkit click.
+Tile-sheet selection, copy, selected-tile paste, and clipboard paste also dispatch on the initiating
+primary/secondary button-down while retaining their native Ctrl/Shift/Alt routing.
 Unmodified F9 is consumed as the graphics editor's documented save command on all three surfaces.
 It enters the same persistence action as each visible Save/Commit button: the portable document
 uses its bounded background writer, pristine SMW requires an expanded ROM and staged changes, and

@@ -632,16 +632,18 @@ pub(crate) fn take_tile_grid_shortcut(
 }
 
 pub(crate) fn tile_pointer_action(
-    ui: &egui::Ui,
     response: &egui::Response,
     index: usize,
 ) -> Option<TilePointerAction> {
-    classify_tile_pointer_action(
-        index,
-        response.clicked_by(egui::PointerButton::Primary),
-        response.clicked_by(egui::PointerButton::Secondary),
-        ui.input(|input| input.modifiers),
-    )
+    let contains_pointer = response.contains_pointer();
+    response.ctx.input(|input| {
+        classify_tile_pointer_action(
+            index,
+            contains_pointer && input.pointer.button_pressed(egui::PointerButton::Primary),
+            contains_pointer && input.pointer.button_pressed(egui::PointerButton::Secondary),
+            input.modifiers,
+        )
+    })
 }
 
 pub(crate) fn tile_pixel_pointer_action(
@@ -1367,6 +1369,49 @@ mod tests {
                 Some(TilePointerAction::PasteClipboard(9))
             );
         }
+        assert_eq!(
+            classify_tile_pointer_action(10, false, false, egui::Modifiers::NONE),
+            None
+        );
+        assert_eq!(
+            classify_tile_pointer_action(11, true, true, egui::Modifiers::NONE),
+            Some(TilePointerAction::PasteSelected(11))
+        );
+    }
+
+    #[test]
+    fn tile_pointer_adapter_dispatches_on_press_before_release() {
+        let context = egui::Context::default();
+        let mut rect = egui::Rect::NOTHING;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                rect = ui.button("tile").rect;
+            });
+        });
+
+        let mut action = None;
+        let modifiers = egui::Modifiers::CTRL;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(rect.center()),
+                    egui::Event::PointerButton {
+                        pos: rect.center(),
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers,
+                    },
+                ],
+                modifiers,
+                ..egui::RawInput::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    action = tile_pointer_action(&ui.button("tile"), 12);
+                });
+            },
+        );
+        assert_eq!(action, Some(TilePointerAction::Copy(12)));
     }
 
     #[test]
