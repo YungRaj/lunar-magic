@@ -9,17 +9,14 @@ const TILE_EDITOR_ZOOMS: [(u16, f32); 5] = [
     (3_200, 256.0),
     (4_000, 320.0),
 ];
+const GRAPHICS_PAGE_TILES: usize = 0x100;
 const CELL_OFFSETS: [f32; 8] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
 const CELL_ENDS: [f32; 8] = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TileNavigation {
-    Left,
-    Right,
-    Up,
-    Down,
-    RowStart,
-    RowEnd,
+    PreviousPage,
+    NextPage,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -136,13 +133,11 @@ pub(crate) fn apply_tile_keyboard_navigation(
         if input.modifiers.any() {
             return None;
         }
-        const KEYS: [(egui::Key, TileNavigation); 6] = [
-            (egui::Key::ArrowLeft, TileNavigation::Left),
-            (egui::Key::ArrowRight, TileNavigation::Right),
-            (egui::Key::ArrowUp, TileNavigation::Up),
-            (egui::Key::ArrowDown, TileNavigation::Down),
-            (egui::Key::Home, TileNavigation::RowStart),
-            (egui::Key::End, TileNavigation::RowEnd),
+        const KEYS: [(egui::Key, TileNavigation); 4] = [
+            (egui::Key::ArrowLeft, TileNavigation::PreviousPage),
+            (egui::Key::ArrowRight, TileNavigation::NextPage),
+            (egui::Key::ArrowUp, TileNavigation::PreviousPage),
+            (egui::Key::ArrowDown, TileNavigation::NextPage),
         ];
         KEYS.into_iter().find_map(|(key, navigation)| {
             input
@@ -231,14 +226,19 @@ fn navigated_tile_index(selected: usize, tile_count: usize, navigation: TileNavi
     };
     let selected = selected.min(last);
     match navigation {
-        TileNavigation::Left => selected.saturating_sub(1),
-        TileNavigation::Right => selected.saturating_add(1).min(last),
-        TileNavigation::Up => selected.saturating_sub(TILE_GRID_COLUMNS),
-        TileNavigation::Down => selected.saturating_add(TILE_GRID_COLUMNS).min(last),
-        TileNavigation::RowStart => selected / TILE_GRID_COLUMNS * TILE_GRID_COLUMNS,
-        TileNavigation::RowEnd => (selected / TILE_GRID_COLUMNS * TILE_GRID_COLUMNS)
-            .saturating_add(TILE_GRID_COLUMNS - 1)
-            .min(last),
+        TileNavigation::PreviousPage => selected
+            .checked_sub(GRAPHICS_PAGE_TILES)
+            .unwrap_or(selected),
+        TileNavigation::NextPage => {
+            let next = selected.saturating_add(GRAPHICS_PAGE_TILES);
+            if next <= last {
+                next
+            } else if selected / GRAPHICS_PAGE_TILES < last / GRAPHICS_PAGE_TILES {
+                last
+            } else {
+                selected
+            }
+        }
     }
 }
 
@@ -289,9 +289,11 @@ pub(crate) fn tile_coordinate(rect: egui::Rect, position: egui::Pos2) -> Option<
 mod tests {
     use super::*;
 
+    const TEST_GRID_TILES: usize = 600;
+
     fn render_keyboard_grid(context: &egui::Context, selected: &mut usize, request_focus: bool) {
         egui::CentralPanel::default().show(context, |ui| {
-            let responses = (0..70)
+            let responses = (0..TEST_GRID_TILES)
                 .map(|index| ui.button(index.to_string()))
                 .collect::<Vec<_>>();
             if request_focus {
@@ -326,19 +328,28 @@ mod tests {
     }
 
     #[test]
-    fn tile_navigation_is_bounded_and_preserves_grid_semantics() {
-        assert_eq!(navigated_tile_index(0, 0, TileNavigation::Right), 0);
-        assert_eq!(navigated_tile_index(0, 70, TileNavigation::Left), 0);
-        assert_eq!(navigated_tile_index(0, 70, TileNavigation::Up), 0);
-        assert_eq!(navigated_tile_index(0, 70, TileNavigation::Right), 1);
-        assert_eq!(navigated_tile_index(9, 70, TileNavigation::Up), 1);
-        assert_eq!(navigated_tile_index(9, 70, TileNavigation::Down), 17);
-        assert_eq!(navigated_tile_index(13, 70, TileNavigation::RowStart), 8);
-        assert_eq!(navigated_tile_index(13, 70, TileNavigation::RowEnd), 15);
-        assert_eq!(navigated_tile_index(68, 70, TileNavigation::RowEnd), 69);
+    fn tile_page_navigation_is_bounded_and_preserves_offset() {
+        assert_eq!(navigated_tile_index(0, 0, TileNavigation::NextPage), 0);
         assert_eq!(
-            navigated_tile_index(usize::MAX, 70, TileNavigation::Down),
-            69
+            navigated_tile_index(9, 600, TileNavigation::PreviousPage),
+            9
+        );
+        assert_eq!(navigated_tile_index(9, 600, TileNavigation::NextPage), 265);
+        assert_eq!(
+            navigated_tile_index(265, 600, TileNavigation::PreviousPage),
+            9
+        );
+        assert_eq!(
+            navigated_tile_index(500, 600, TileNavigation::NextPage),
+            599
+        );
+        assert_eq!(
+            navigated_tile_index(599, 600, TileNavigation::NextPage),
+            599
+        );
+        assert_eq!(
+            navigated_tile_index(usize::MAX, 600, TileNavigation::PreviousPage),
+            343
         );
     }
 
@@ -406,19 +417,19 @@ mod tests {
         let _ = context.run(input, |context| {
             render_keyboard_grid(context, &mut selected, false);
         });
-        assert_eq!(selected, 17);
+        assert_eq!(selected, 265);
         let _ = context.run(egui::RawInput::default(), |context| {
             render_keyboard_grid(context, &mut selected, true);
         });
 
         let input = egui::RawInput {
-            events: vec![key_event(egui::Key::End, egui::Modifiers::NONE)],
+            events: vec![key_event(egui::Key::ArrowUp, egui::Modifiers::NONE)],
             ..Default::default()
         };
         let _ = context.run(input, |context| {
             render_keyboard_grid(context, &mut selected, false);
         });
-        assert_eq!(selected, 23);
+        assert_eq!(selected, 9);
     }
 
     #[test]
@@ -454,7 +465,7 @@ mod tests {
         let mut shift = None;
         let _ = context.run(input, |context| {
             egui::CentralPanel::default().show(context, |ui| {
-                let responses = (0..70)
+                let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
                 apply_tile_keyboard_navigation(ui, &mut selected, &responses);
@@ -471,7 +482,7 @@ mod tests {
         };
         let _ = context.run(input, |context| {
             egui::CentralPanel::default().show(context, |ui| {
-                let responses = (0..70)
+                let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
                 shift = take_tile_shift(ui, selected, &responses, false);
@@ -494,7 +505,7 @@ mod tests {
         };
         let _ = context.run(input, |context| {
             egui::CentralPanel::default().show(context, |ui| {
-                let responses = (0..70)
+                let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
                 apply_tile_keyboard_navigation(ui, &mut selected, &responses);
@@ -513,7 +524,7 @@ mod tests {
         };
         let _ = context.run(input, |context| {
             egui::CentralPanel::default().show(context, |ui| {
-                let responses = (0..70)
+                let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
                 apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);

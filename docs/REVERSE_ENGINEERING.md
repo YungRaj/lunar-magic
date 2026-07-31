@@ -1221,8 +1221,9 @@ as individual pixel painting in all three native graphics surfaces. The portable
 each flip as an independently undoable revision; pristine-layout and profile-backed ROM editors
 stage the exact transformed pixels for their normal atomic commit, and the installed editor applies
 its fixed/ExAnimation ownership plus stale-worker gates before enabling either transform. The three
-tile sheets now share focus-scoped, bounded eight-column navigation for arrows and row Home/End,
-including focus transfer and automatic scrolling. Authenticated Page Up/Down input instead cycles
+tile sheets now give unmodified arrows their authenticated page role: left/up move to the same
+offset on the previous 256-tile page and right/down move to the next, with bounded partial-page
+handling, focus transfer, and automatic scrolling. Authenticated Page Up/Down input instead cycles
 forward/backward through each surface's available display-palette rows. Their shared transient
 hover outline and status line distinguish bounded selected and hovered hexadecimal tile indices
 without persisting stale hover state. Their selected-tile pixel grids also share 800–4000% discrete
