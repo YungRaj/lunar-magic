@@ -1224,9 +1224,10 @@ its fixed/ExAnimation ownership plus stale-worker gates before enabling either t
 tile sheets now give unmodified Up/Down their authenticated page role: Up moves to the same offset
 on the previous 256-tile page and Down moves to the next, with bounded partial-page handling, focus
 transfer, and automatic scrolling; Left/Right only enter the Shift-modified pixel-wrap path.
-Authenticated Page Up/Down input steps forward/backward without cycling through each surface's
-available display-palette rows. Their shared transient hover outline accompanies an event-driven
-status line with recovered tile/address, color, selection, palette, page, and boundary messages.
+Authenticated Page Up/Down input steps forward/backward without cycling from the default palette
+through each surface's available display-palette rows. Their shared transient hover outline
+accompanies an event-driven status line with recovered tile/address, color, selection, palette,
+page, and boundary messages.
 Their selected-tile pixel grids also share 800–4000% discrete
 zoom with one geometry source for rendering and hit testing. Exact original status/zoom variants
 remain separate UI-parity work. The documented 8×8-editor
@@ -1261,6 +1262,10 @@ navigation publishes `Viewing 8x8 page 0x%X.`, while blocked movement publishes 
 `Already at Start`/`Already at End` diagnostics. Page Up/Down report the rendered hexadecimal
 palette. Rust now keeps this state event-driven so a stationary pointer does not overwrite a later
 keyboard action and leaving the tracked region clears it, matching the Win32 message boundary.
+`LoadGraphicsEditorPaletteColors` (`00504860`) proves that the negative palette index is also a real
+rendering state: it copies sixteen RGBQUAD entries from `005E7B60`, whereas nonnegative indices copy
+the active palette bank. Rust models that default selection explicitly and reproduces all sixteen
+recovered RGB colors across the picker, tile sheet, color-map dialog, and selected-tile view.
 
 ## Compression formats
 

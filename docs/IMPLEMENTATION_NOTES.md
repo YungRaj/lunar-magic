@@ -1690,9 +1690,11 @@ Their tile sheets also share focus-scoped keyboard navigation. Unmodified Up sel
 in-page offset on the previous 256-tile graphics page, while Down selects it on the next;
 missing pages are no-ops and a partial final page clamps to its last tile. Every move transfers
 keyboard focus and scrolls the destination into view; unmodified Left/Right remain unconsumed and
-keys are not consumed unless the selected tile owns focus. Page Up advances the active
-display-palette row and Page Down moves back, stopping at the rows available to that surface.
-The pristine fallback currently has one grayscale row, so both shortcuts remain bounded at row zero.
+keys are not consumed unless the selected tile owns focus. The active display palette is an explicit
+default-or-row state: Page Up advances from the recovered default palette through row zero and the
+remaining available rows, while Page Down reverses that path and stops at the default palette. The
+default selection uses the original fixed sixteen-entry RGBQUAD table, including its exact channel
+ordering, for the picker, tile sheet, color-map previews, and pixel editor on all three surfaces.
 The same tile-grid adapter draws a distinct outline around the current nonselected hover target.
 Its event-driven status state reproduces the original tile/address and palette hover text, selected
 tile and foreground-color messages, rendered-palette messages, viewed-page messages, and exact

@@ -25,6 +25,34 @@ enum PaletteStep {
     Next,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GraphicsDisplayPalette {
+    Default,
+    Row(usize),
+}
+
+impl Default for GraphicsDisplayPalette {
+    fn default() -> Self {
+        Self::Row(0)
+    }
+}
+
+impl GraphicsDisplayPalette {
+    pub(crate) fn label(self) -> String {
+        match self {
+            Self::Default => "Default".into(),
+            Self::Row(row) => format!("{row:X}"),
+        }
+    }
+
+    pub(crate) fn status(self) -> String {
+        match self {
+            Self::Default => "Rendered with default palette.".into(),
+            Self::Row(row) => format!("Rendered with palette 0x{row:X}."),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct GraphicsEditorStatus {
     text: Option<String>,
@@ -155,7 +183,7 @@ impl GraphicsColorMapEditor {
         &mut self,
         ui: &mut egui::Ui,
         palette: &PaletteInterchangeFile,
-        palette_row: usize,
+        display_palette: GraphicsDisplayPalette,
         tile: &IndexedTile,
         apply_enabled: bool,
     ) -> Option<IndexedTile> {
@@ -169,7 +197,7 @@ impl GraphicsColorMapEditor {
                 .clicked();
             ui.monospace(format!("Filter {:X}", self.selected_filter));
         });
-        self.show_dialog(ui.ctx(), palette, palette_row);
+        self.show_dialog(ui.ctx(), palette, display_palette);
         apply
             .then(|| self.filters.apply(self.selected_filter, tile))
             .flatten()
@@ -179,7 +207,7 @@ impl GraphicsColorMapEditor {
         &mut self,
         context: &egui::Context,
         palette: &PaletteInterchangeFile,
-        palette_row: usize,
+        display_palette: GraphicsDisplayPalette,
     ) {
         let Some(mut dialog) = self.dialog.take() else {
             return;
@@ -197,7 +225,7 @@ impl GraphicsColorMapEditor {
                     ui,
                     &mut dialog,
                     palette,
-                    palette_row,
+                    display_palette,
                     &mut selected_filter,
                     &mut accepted,
                     &mut cancelled,
@@ -231,7 +259,7 @@ fn show_color_map_dialog_contents(
     ui: &mut egui::Ui,
     dialog: &mut ColorMapDialog,
     palette: &PaletteInterchangeFile,
-    palette_row: usize,
+    display_palette: GraphicsDisplayPalette,
     selected_filter: &mut usize,
     accepted: &mut bool,
     cancelled: &mut bool,
@@ -252,7 +280,7 @@ fn show_color_map_dialog_contents(
         for source in 0_u8..16 {
             if color_map_button(
                 ui,
-                palette_color(palette, palette_row, source),
+                palette_color(palette, display_palette, source),
                 source == dialog.source,
                 source,
             )
@@ -275,7 +303,7 @@ fn show_color_map_dialog_contents(
                 .unwrap_or(source);
             if color_map_button(
                 ui,
-                palette_color(palette, palette_row, mapped),
+                palette_color(palette, display_palette, mapped),
                 source == dialog.source,
                 source,
             )
@@ -292,7 +320,7 @@ fn show_color_map_dialog_contents(
             let selected = color == destination;
             if color_map_button(
                 ui,
-                palette_color(palette, palette_row, color),
+                palette_color(palette, display_palette, color),
                 selected,
                 color,
             )
@@ -364,23 +392,56 @@ impl TileEditorZoom {
 
 pub(crate) fn palette_color(
     palette: &PaletteInterchangeFile,
-    row: usize,
+    display_palette: GraphicsDisplayPalette,
     color: u8,
 ) -> egui::Color32 {
-    let index = row.saturating_mul(16).saturating_add(usize::from(color));
-    let rgb = palette.palette.colors[index].to_rgb8();
-    egui::Color32::from_rgb(rgb.red, rgb.green, rgb.blue)
+    match display_palette {
+        GraphicsDisplayPalette::Default => {
+            // RGBQUAD bytes at Lunar Magic 3.63 address 005E7B60, converted from BGR to RGB.
+            const COLORS: [(u8, u8, u8); 16] = [
+                (0, 0, 0),
+                (240, 240, 240),
+                (57, 51, 255),
+                (89, 140, 242),
+                (51, 0, 134),
+                (191, 115, 0),
+                (0, 207, 255),
+                (239, 235, 180),
+                (147, 0, 0),
+                (81, 255, 0),
+                (255, 172, 0),
+                (188, 17, 164),
+                (99, 207, 99),
+                (220, 255, 255),
+                (128, 128, 128),
+                (240, 0, 0),
+            ];
+            let (red, green, blue) = COLORS[usize::from(color.min(15))];
+            egui::Color32::from_rgb(red, green, blue)
+        }
+        GraphicsDisplayPalette::Row(row) => {
+            let index = row.saturating_mul(16).saturating_add(usize::from(color));
+            let rgb = palette.palette.colors[index].to_rgb8();
+            egui::Color32::from_rgb(rgb.red, rgb.green, rgb.blue)
+        }
+    }
 }
 
 pub(crate) fn tile_button(
     ui: &mut egui::Ui,
     tile: &IndexedTile,
     palette: &PaletteInterchangeFile,
-    row: usize,
+    display_palette: GraphicsDisplayPalette,
     selected: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(34.0), egui::Sense::click());
-    paint_tile(ui.painter(), rect.shrink(1.0), tile, palette, row);
+    paint_tile(
+        ui.painter(),
+        rect.shrink(1.0),
+        tile,
+        palette,
+        display_palette,
+    );
     if selected {
         ui.painter().rect_stroke(
             rect,
@@ -500,7 +561,7 @@ pub(crate) fn apply_tile_palette_keyboard(
     ui: &mut egui::Ui,
     selected: usize,
     responses: &[egui::Response],
-    palette_row: &mut usize,
+    display_palette: &mut GraphicsDisplayPalette,
     row_count: usize,
 ) -> Option<String> {
     if row_count == 0
@@ -523,12 +584,12 @@ pub(crate) fn apply_tile_palette_keyboard(
         }
     });
     let step = step?;
-    let next = stepped_palette_row(*palette_row, row_count, step);
-    if next == *palette_row {
+    let next = stepped_display_palette(*display_palette, row_count, step);
+    if next == *display_palette {
         return None;
     }
-    *palette_row = next;
-    Some(format!("Rendered with palette 0x{next:X}."))
+    *display_palette = next;
+    Some(next.status())
 }
 
 pub(crate) fn take_tile_shift(
@@ -616,14 +677,26 @@ fn navigated_tile_index(selected: usize, tile_count: usize, navigation: TileNavi
     }
 }
 
-fn stepped_palette_row(current: usize, row_count: usize, step: PaletteStep) -> usize {
+fn stepped_display_palette(
+    current: GraphicsDisplayPalette,
+    row_count: usize,
+    step: PaletteStep,
+) -> GraphicsDisplayPalette {
     if row_count == 0 {
-        return 0;
+        return GraphicsDisplayPalette::Default;
     }
-    let current = current.min(row_count - 1);
-    match step {
-        PaletteStep::Previous => current.saturating_sub(1),
-        PaletteStep::Next => (current + 1).min(row_count - 1),
+    match (current, step) {
+        (
+            GraphicsDisplayPalette::Default | GraphicsDisplayPalette::Row(0),
+            PaletteStep::Previous,
+        ) => GraphicsDisplayPalette::Default,
+        (GraphicsDisplayPalette::Default, PaletteStep::Next) => GraphicsDisplayPalette::Row(0),
+        (GraphicsDisplayPalette::Row(row), PaletteStep::Previous) => {
+            GraphicsDisplayPalette::Row(row.min(row_count - 1) - 1)
+        }
+        (GraphicsDisplayPalette::Row(row), PaletteStep::Next) => {
+            GraphicsDisplayPalette::Row((row.min(row_count - 1) + 1).min(row_count - 1))
+        }
     }
 }
 
@@ -632,12 +705,12 @@ pub(crate) fn paint_tile(
     rect: egui::Rect,
     tile: &IndexedTile,
     palette: &PaletteInterchangeFile,
-    row: usize,
+    display_palette: GraphicsDisplayPalette,
 ) {
     let cell = rect.width().min(rect.height()) / 8.0;
     for (y, y_offset) in CELL_OFFSETS.into_iter().enumerate() {
         for (x, x_offset) in CELL_OFFSETS.into_iter().enumerate() {
-            let color = palette_color(palette, row, tile.pixel(x, y).unwrap_or(0));
+            let color = palette_color(palette, display_palette, tile.pixel(x, y).unwrap_or(0));
             let minimum = rect.min + egui::vec2(x_offset * cell, y_offset * cell);
             painter.rect_filled(
                 egui::Rect::from_min_size(minimum, egui::Vec2::splat(cell + 0.25)),
@@ -746,13 +819,75 @@ mod tests {
     }
 
     #[test]
-    fn palette_row_shortcuts_are_bounded_in_both_directions() {
-        assert_eq!(stepped_palette_row(7, 0, PaletteStep::Next), 0);
-        assert_eq!(stepped_palette_row(7, 1, PaletteStep::Previous), 0);
-        assert_eq!(stepped_palette_row(0, 8, PaletteStep::Next), 1);
-        assert_eq!(stepped_palette_row(7, 8, PaletteStep::Next), 7);
-        assert_eq!(stepped_palette_row(0, 8, PaletteStep::Previous), 0);
-        assert_eq!(stepped_palette_row(usize::MAX, 8, PaletteStep::Previous), 6);
+    fn palette_shortcuts_include_the_native_default_palette_and_bound_rows() {
+        use GraphicsDisplayPalette::{Default, Row};
+
+        assert_eq!(
+            stepped_display_palette(Row(7), 0, PaletteStep::Next),
+            Default
+        );
+        assert_eq!(
+            stepped_display_palette(Default, 8, PaletteStep::Previous),
+            Default
+        );
+        assert_eq!(
+            stepped_display_palette(Default, 8, PaletteStep::Next),
+            Row(0)
+        );
+        assert_eq!(
+            stepped_display_palette(Row(0), 8, PaletteStep::Previous),
+            Default
+        );
+        assert_eq!(Default.status(), "Rendered with default palette.");
+        assert_eq!(Row(0xa).status(), "Rendered with palette 0xA.");
+        assert_eq!(
+            stepped_display_palette(Row(0), 8, PaletteStep::Next),
+            Row(1)
+        );
+        assert_eq!(
+            stepped_display_palette(Row(7), 8, PaletteStep::Next),
+            Row(7)
+        );
+        assert_eq!(
+            stepped_display_palette(Row(usize::MAX), 8, PaletteStep::Previous),
+            Row(6)
+        );
+    }
+
+    #[test]
+    fn default_palette_matches_the_recovered_rgbquad_table() {
+        let palette = PaletteInterchangeFile {
+            source_palette: 0,
+            palette: lm_graphics::Palette { colors: Vec::new() },
+        };
+        let expected = [
+            (0, 0, 0),
+            (240, 240, 240),
+            (57, 51, 255),
+            (89, 140, 242),
+            (51, 0, 134),
+            (191, 115, 0),
+            (0, 207, 255),
+            (239, 235, 180),
+            (147, 0, 0),
+            (81, 255, 0),
+            (255, 172, 0),
+            (188, 17, 164),
+            (99, 207, 99),
+            (220, 255, 255),
+            (128, 128, 128),
+            (240, 0, 0),
+        ];
+        for (color, (red, green, blue)) in expected.into_iter().enumerate() {
+            assert_eq!(
+                palette_color(
+                    &palette,
+                    GraphicsDisplayPalette::Default,
+                    u8::try_from(color).unwrap()
+                ),
+                egui::Color32::from_rgb(red, green, blue)
+            );
+        }
     }
 
     #[test]
@@ -1051,7 +1186,7 @@ mod tests {
     fn focused_grid_routes_unmodified_page_keys_to_palette_rows() {
         let context = egui::Context::default();
         let mut selected = 9;
-        let mut palette_row = 6;
+        let mut display_palette = GraphicsDisplayPalette::Row(6);
         let mut status = None;
         let _ = context.run(egui::RawInput::default(), |context| {
             render_keyboard_grid(context, &mut selected, true);
@@ -1066,11 +1201,12 @@ mod tests {
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
                 apply_tile_keyboard_navigation(ui, &mut selected, &responses);
-                status = apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);
+                status =
+                    apply_tile_palette_keyboard(ui, selected, &responses, &mut display_palette, 8);
             });
         });
         assert_eq!(selected, 9);
-        assert_eq!(palette_row, 7);
+        assert_eq!(display_palette, GraphicsDisplayPalette::Row(7));
         assert_eq!(status.as_deref(), Some("Rendered with palette 0x7."));
 
         let _ = context.run(egui::RawInput::default(), |context| {
@@ -1085,10 +1221,11 @@ mod tests {
                 let responses = (0..TEST_GRID_TILES)
                     .map(|index| ui.button(index.to_string()))
                     .collect::<Vec<_>>();
-                status = apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);
+                status =
+                    apply_tile_palette_keyboard(ui, selected, &responses, &mut display_palette, 8);
             });
         });
-        assert_eq!(palette_row, 6);
+        assert_eq!(display_palette, GraphicsDisplayPalette::Row(6));
         assert_eq!(status.as_deref(), Some("Rendered with palette 0x6."));
     }
 

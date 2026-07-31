@@ -1,10 +1,10 @@
 use crate::{
     graphics_painter::{
-        GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsEditorStatus, TILE_GRID_COLUMNS,
-        TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
-        apply_tile_palette_keyboard, paint_tile, take_graphics_character_shortcut,
-        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
-        tile_pointer_action,
+        GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
+        GraphicsEditorStatus, TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction,
+        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile,
+        take_graphics_character_shortcut, take_graphics_save_shortcut, take_tile_shift,
+        tile_button, tile_coordinate, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -31,7 +31,7 @@ pub(crate) struct VanillaGraphicsEditor {
     controller: Option<GraphicsController>,
     selected_tile: usize,
     selected_color: u8,
-    palette_row: usize,
+    display_palette: GraphicsDisplayPalette,
     pixel_zoom: TileEditorZoom,
     color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
@@ -94,7 +94,7 @@ impl VanillaGraphicsEditor {
             ui.label("Paint color");
             for color in 0_u8..16 {
                 let fill =
-                    crate::graphics_painter::palette_color(&palette, self.palette_row, color);
+                    crate::graphics_painter::palette_color(&palette, self.display_palette, color);
                 let response = ui.add(
                     egui::Button::new(if color == self.selected_color {
                         "●"
@@ -173,7 +173,7 @@ impl VanillaGraphicsEditor {
                 self.controller = Some(controller);
                 self.selected_tile = 0;
                 self.selected_color = 1;
-                self.palette_row = 0;
+                self.display_palette = GraphicsDisplayPalette::default();
                 self.status = GraphicsEditorStatus::default();
                 self.clipboard_paste_target = None;
                 self.error = None;
@@ -205,7 +205,7 @@ impl VanillaGraphicsEditor {
                             ui,
                             tile,
                             palette,
-                            self.palette_row,
+                            self.display_palette,
                             index == self.selected_tile,
                         );
                         match tile_pointer_action(ui, &response, index) {
@@ -253,7 +253,7 @@ impl VanillaGraphicsEditor {
             ui,
             self.selected_tile,
             &responses,
-            &mut self.palette_row,
+            &mut self.display_palette,
             palette.palette.colors.len() / 16,
         );
         self.status
@@ -297,7 +297,7 @@ impl VanillaGraphicsEditor {
         self.pixel_zoom.show(ui);
         let clicked_mapping = self
             .color_map
-            .show(ui, palette, self.palette_row, &tile, true);
+            .show(ui, palette, self.display_palette, &tile, true);
         let mapped = character_shortcut
             .filter(|shortcut| *shortcut == GraphicsCharacterShortcut::ApplyColorMap)
             .and_then(|_| self.color_map.apply(&tile))
@@ -342,7 +342,7 @@ impl VanillaGraphicsEditor {
         );
         self.status
             .update_pixel_editor_hover(response.hovered(), self.selected_tile);
-        paint_tile(ui.painter(), rect, &tile, palette, self.palette_row);
+        paint_tile(ui.painter(), rect, &tile, palette, self.display_palette);
         if (response.clicked() || response.dragged())
             && let Some(position) = response.interact_pointer_pos()
             && let Some((x, y)) = tile_coordinate(rect, position)

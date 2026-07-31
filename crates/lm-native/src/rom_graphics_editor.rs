@@ -1,11 +1,11 @@
 use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
-        GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsEditorStatus, TILE_GRID_COLUMNS,
-        TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
-        apply_tile_palette_keyboard, paint_tile, palette_color, take_graphics_character_shortcut,
-        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
-        tile_pointer_action,
+        GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
+        GraphicsEditorStatus, TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction,
+        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile, palette_color,
+        take_graphics_character_shortcut, take_graphics_save_shortcut, take_tile_shift,
+        tile_button, tile_coordinate, tile_pointer_action,
     },
     native_clipboard,
 };
@@ -55,7 +55,7 @@ pub(crate) struct RomGraphicsEditor {
     workspace: Option<Workspace>,
     selected_tile: usize,
     selected_color: u8,
-    palette_row: usize,
+    display_palette: GraphicsDisplayPalette,
     pixel_zoom: TileEditorZoom,
     color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
@@ -204,24 +204,33 @@ impl RomGraphicsEditor {
         {
             self.external_tool_id = configured_graphics_tools.first().map(|(id, _)| id.clone());
         }
-        let previous_palette_row = self.palette_row;
+        let previous_display_palette = self.display_palette;
         egui::ComboBox::from_label("Palette row")
-            .selected_text(format!("{:X}", self.palette_row))
+            .selected_text(self.display_palette.label())
             .show_ui(ui, |ui| {
+                ui.selectable_value(
+                    &mut self.display_palette,
+                    GraphicsDisplayPalette::Default,
+                    "Default",
+                );
                 for row in 0..rows {
-                    ui.selectable_value(&mut self.palette_row, row, format!("{row:X}"));
+                    ui.selectable_value(
+                        &mut self.display_palette,
+                        GraphicsDisplayPalette::Row(row),
+                        format!("{row:X}"),
+                    );
                 }
             });
-        if self.palette_row != previous_palette_row {
+        if self.display_palette != previous_display_palette {
             self.status
-                .set_pointer_action(format!("Rendered with palette 0x{:X}.", self.palette_row));
+                .set_pointer_action(self.display_palette.status());
         }
         let palette = workspace.palette.clone();
         let mut hovered_color = None;
         let mut selected_color = None;
         ui.horizontal_wrapped(|ui| {
             for color in 0_u8..16 {
-                let fill = palette_color(&palette, self.palette_row, color);
+                let fill = palette_color(&palette, self.display_palette, color);
                 let response = ui.add_sized(
                     [26.0, 26.0],
                     egui::Button::new(if color == self.selected_color {
@@ -469,7 +478,7 @@ impl RomGraphicsEditor {
                             ui,
                             tile,
                             palette,
-                            self.palette_row,
+                            self.display_palette,
                             index == self.selected_tile,
                         );
                         match tile_pointer_action(ui, &response, index) {
@@ -524,7 +533,7 @@ impl RomGraphicsEditor {
             ui,
             self.selected_tile,
             &responses,
-            &mut self.palette_row,
+            &mut self.display_palette,
             palette.palette.colors.len() / 16,
         );
         self.status
@@ -616,7 +625,7 @@ impl RomGraphicsEditor {
         }
         let clicked_mapping =
             self.color_map
-                .show(ui, palette, self.palette_row, &tile, !stale && editable);
+                .show(ui, palette, self.display_palette, &tile, !stale && editable);
         let mapped = (character_shortcut == Some(GraphicsCharacterShortcut::ApplyColorMap)
             && !stale
             && editable)
@@ -718,7 +727,7 @@ impl RomGraphicsEditor {
         );
         self.status
             .update_pixel_editor_hover(response.hovered(), self.selected_tile);
-        paint_tile(ui.painter(), rect, &tile, palette, self.palette_row);
+        paint_tile(ui.painter(), rect, &tile, palette, self.display_palette);
         if !stale
             && editable
             && (response.clicked() || response.dragged())
