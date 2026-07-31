@@ -114,6 +114,7 @@ fn animation_modes() -> [bool; 256] {
 }
 
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn profile() -> RevisionProfile {
     let mapper = Mapper::ExLoRom;
     let mut sprite_lengths = SpriteLengthTable::standard();
@@ -255,6 +256,53 @@ fn split_sprite_pointer_encodings_round_trip_canonically() {
     let encoded = parallel.encode();
     assert!(encoded.contains("level.sprites.encoding=split-bank-table\n"));
     assert_eq!(RevisionProfile::parse(&encoded).unwrap(), parallel);
+}
+
+#[test]
+fn split_graphics_pointer_planes_round_trip_canonically_and_reject_partial_forms() {
+    let mut expected = profile();
+    expected.graphics.pointers = pointer(0x2_a000, 0x100);
+    expected.graphics.pointers.stride = 1;
+    expected.graphics.split_pointer_planes = Some(lm_project::GraphicsPointerPlanes {
+        low_offset: 0x2_a000,
+        high_offset: 0x2_a100,
+        bank_offset: 0x2_a200,
+        entries: 0x100,
+        stride: 1,
+    });
+    let encoded = expected.encode();
+    assert!(encoded.contains("graphics.pointer_encoding=split_planes\n"));
+    assert!(encoded.contains("graphics.pointer_high_offset=0x2a100\n"));
+    assert!(encoded.contains("graphics.pointer_bank_offset=0x2a200\n"));
+    assert_eq!(RevisionProfile::parse(&encoded).unwrap(), expected);
+
+    let partial = encoded
+        .lines()
+        .filter(|line| !line.starts_with("graphics.pointer_bank_offset="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(matches!(
+        RevisionProfile::parse(&partial),
+        Err(RevisionProfileError::MissingKey(key))
+            if key == "graphics.pointer_bank_offset"
+    ));
+    assert!(matches!(
+        RevisionProfile::parse(&encoded.replace("split_planes", "interleaved")),
+        Err(RevisionProfileError::InvalidGraphicsPointerEncoding(value))
+            if value == "interleaved"
+    ));
+
+    let mut inconsistent = expected;
+    inconsistent
+        .graphics
+        .split_pointer_planes
+        .as_mut()
+        .unwrap()
+        .entries -= 1;
+    assert!(matches!(
+        inconsistent.validate(),
+        Err(RevisionProfileError::IncompleteGraphicsPointerLayout)
+    ));
 }
 
 #[test]

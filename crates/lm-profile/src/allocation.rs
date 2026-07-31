@@ -86,11 +86,14 @@ impl RevisionProfile {
         validate_search(self, &search, image_len)?;
         let mut protected = Vec::with_capacity(18);
         for (domain, table) in profile_tables(self) {
-            if domain != "level.sprites" {
+            if domain != "level.sprites"
+                && !(domain == "graphics" && self.graphics.split_pointer_planes.is_some())
+            {
                 protected.push(table_range(domain, table, image_len)?);
             }
         }
         protected.extend(sprite_ranges(self.level.sprites, image_len)?);
+        protected.extend(graphics_ranges(self.graphics, image_len)?);
         protected.extend(installation_marker_ranges(self, image_len)?);
         if let Some(layer2) = self.layer2 {
             protected.push(table_range("level.layer2", layer2.pointers, image_len)?);
@@ -310,6 +313,32 @@ fn sprite_ranges(
     }
 }
 
+fn graphics_ranges(
+    layout: lm_project::GraphicsRomLayout,
+    image_len: usize,
+) -> Result<Vec<ProtectedRange>, RevisionAllocationError> {
+    let Some(planes) = layout.split_pointer_planes else {
+        return Ok(Vec::new());
+    };
+    let component = |domain, offset| {
+        component_range(
+            domain,
+            LevelPointerTable {
+                offset,
+                entries: planes.entries,
+                stride: planes.stride,
+            },
+            1,
+            image_len,
+        )
+    };
+    Ok(vec![
+        component("graphics.low", planes.low_offset)?,
+        component("graphics.high", planes.high_offset)?,
+        component("graphics.bank", planes.bank_offset)?,
+    ])
+}
+
 fn component_range(
     domain: &'static str,
     table: LevelPointerTable,
@@ -484,6 +513,38 @@ mod tests {
             policy
                 .protected
                 .contains(&ProtectedRange(0x2_8000..0x2_8200))
+        );
+    }
+
+    #[test]
+    fn split_graphics_planes_are_independently_protected() {
+        let mut profile = crate::test_support::profile();
+        profile.graphics.pointers = LevelPointerTable {
+            offset: 0x2_a000,
+            entries: 0x100,
+            stride: 1,
+        };
+        profile.graphics.split_pointer_planes = Some(lm_project::GraphicsPointerPlanes {
+            low_offset: 0x2_a000,
+            high_offset: 0x2_a100,
+            bank_offset: 0x2_a200,
+            entries: 0x100,
+            stride: 1,
+        });
+        let policy = profile
+            .allocation_policy(0x6000..0x7000, 0x3_0000, 0x7fc0)
+            .unwrap();
+        for start in [0x2_a000, 0x2_a100, 0x2_a200] {
+            assert!(
+                policy
+                    .protected
+                    .contains(&ProtectedRange(start..start + 0x100))
+            );
+        }
+        assert!(
+            !policy
+                .protected
+                .contains(&ProtectedRange(0x2_a000..0x2_a102))
         );
     }
 

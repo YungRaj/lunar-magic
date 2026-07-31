@@ -196,8 +196,10 @@ fn prepare_import(
                 source.layout,
                 source.checksum_field,
                 &files,
-                &source.file_numbers,
-                source.description,
+                lm_app::NamedGraphicsImport {
+                    file_numbers: &source.file_numbers,
+                    description: source.description,
+                },
                 &source.options,
             )
             .map(Some)

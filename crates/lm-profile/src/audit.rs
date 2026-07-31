@@ -1,7 +1,7 @@
 use crate::{RevisionProfile, RevisionProfileError};
 mod layout;
 
-use layout::{expanded_settings_span, overlaps, sprite_spans, table_span, tables};
+use layout::{expanded_settings_span, graphics_spans, overlaps, sprite_spans, table_span, tables};
 use lm_project::{
     InstalledExAnimationRomLayout, InstalledLayoutError, LevelPointerTable, SpritePointerTable,
 };
@@ -138,10 +138,16 @@ pub(super) fn audit(
     let mut metadata = active_tables
         .iter()
         .copied()
-        .filter(|(domain, _)| *domain != "level.sprites")
+        .filter(|(domain, _)| {
+            *domain != "level.sprites"
+                && !(*domain == "graphics" && profile.graphics.split_pointer_planes.is_some())
+        })
         .map(|(domain, table)| Ok((domain, table_span(domain, table)?)))
         .collect::<Result<Vec<_>, RevisionProfileAuditError>>()?;
     metadata.extend(sprite_spans(profile.level.sprites)?);
+    if profile.graphics.split_pointer_planes.is_some() {
+        metadata.extend(graphics_spans(profile.graphics)?);
+    }
     append_installation_metadata(
         profile,
         rom,
@@ -183,28 +189,86 @@ pub(super) fn audit(
         }
     }
     metadata.push(("rom.internal_header_and_vectors", header));
+    let (tables, total_entries) = audit_active_tables(profile, rom, active_tables, &metadata)?;
+    Ok(RevisionProfileAudit {
+        tables,
+        total_entries,
+        expanded_settings,
+    })
+}
+
+fn audit_active_tables(
+    profile: &RevisionProfile,
+    rom: &RomImage,
+    active_tables: Vec<(&'static str, LevelPointerTable)>,
+    metadata: &[(&'static str, Range<usize>)],
+) -> Result<(Vec<PointerTableAudit>, usize), RevisionProfileAuditError> {
     let mut reports = Vec::with_capacity(metadata.len());
     let mut total_entries = 0usize;
     for (domain, table) in active_tables {
-        if domain == "level.sprites" {
-            reports.push(audit_sprite_table(
-                profile,
-                rom,
-                profile.level.sprites,
-                &metadata,
-            )?);
+        let report = if domain == "level.sprites" {
+            audit_sprite_table(profile, rom, profile.level.sprites, metadata)?
+        } else if domain == "graphics" && profile.graphics.split_pointer_planes.is_some() {
+            audit_graphics_table(profile, rom, metadata)?
         } else {
-            reports.push(audit_table(profile, rom, domain, table, &metadata)?);
-        }
+            audit_table(profile, rom, domain, table, metadata)?
+        };
+        reports.push(report);
         total_entries = total_entries
             .checked_add(table.entries)
             .ok_or(RevisionProfileAuditError::EntryCountOverflow)?;
     }
-    Ok(RevisionProfileAudit {
-        tables: reports,
-        total_entries,
-        expanded_settings,
-    })
+    Ok((reports, total_entries))
+}
+
+fn audit_graphics_table(
+    profile: &RevisionProfile,
+    rom: &RomImage,
+    metadata: &[(&'static str, Range<usize>)],
+) -> Result<PointerTableAudit, RevisionProfileAuditError> {
+    let entries = profile.graphics.pointers.entries;
+    let mut targets = Vec::with_capacity(entries);
+    let planes = profile
+        .graphics
+        .split_pointer_planes
+        .expect("split graphics audit requires split planes");
+    for index in 0..entries {
+        let displacement =
+            index
+                .checked_mul(planes.stride)
+                .ok_or(RevisionProfileAuditError::PointerOffset {
+                    domain: "graphics",
+                    index,
+                })?;
+        let read = |base: usize| {
+            let offset =
+                base.checked_add(displacement)
+                    .ok_or(RevisionProfileAuditError::PointerOffset {
+                        domain: "graphics",
+                        index,
+                    })?;
+            rom.read(offset, 1).map(|bytes| bytes[0]).map_err(|error| {
+                RevisionProfileAuditError::PointerRead {
+                    domain: "graphics",
+                    index,
+                    error,
+                }
+            })
+        };
+        let address = u32::from(read(planes.low_offset)?)
+            | (u32::from(read(planes.high_offset)?) << 8)
+            | (u32::from(read(planes.bank_offset)?) << 16);
+        push_audited_target(
+            profile,
+            rom,
+            "graphics",
+            metadata,
+            index,
+            address,
+            &mut targets,
+        )?;
+    }
+    Ok(finish_audit("graphics", entries, targets))
 }
 
 fn append_installation_metadata(
@@ -556,6 +620,43 @@ mod tests {
         assert_eq!(sprites.entries, original.entries);
         assert_eq!(sprites.unique_targets, 1);
         assert_eq!(sprites.minimum_target, 0x1_0000);
+    }
+
+    #[test]
+    fn split_graphics_planes_are_audited_as_one_pointer_table() {
+        let (mut profile, mut rom) = audited_fixture();
+        profile.graphics.pointers = LevelPointerTable {
+            offset: 0x2_a000,
+            entries: 0x100,
+            stride: 1,
+        };
+        let planes = lm_project::GraphicsPointerPlanes {
+            low_offset: 0x2_a000,
+            high_offset: 0x2_a100,
+            bank_offset: 0x2_a200,
+            entries: 0x100,
+            stride: 1,
+        };
+        profile.graphics.split_pointer_planes = Some(planes);
+        let pointer = pc_to_snes(profile.mapper, 0x1_0000).unwrap().to_le_bytes();
+        for index in 0..planes.entries {
+            rom.write(planes.low_offset + index, &pointer[0..1])
+                .unwrap();
+            rom.write(planes.high_offset + index, &pointer[1..2])
+                .unwrap();
+            rom.write(planes.bank_offset + index, &pointer[2..3])
+                .unwrap();
+        }
+        let report = audit(&profile, &rom).unwrap();
+        let graphics = report
+            .tables
+            .iter()
+            .find(|table| table.domain == "graphics")
+            .unwrap();
+        assert_eq!(graphics.entries, 0x100);
+        assert_eq!(graphics.unique_targets, 1);
+        assert_eq!(graphics.minimum_target, 0x1_0000);
+        assert_eq!(graphics.maximum_target, 0x1_0000);
     }
 
     #[test]

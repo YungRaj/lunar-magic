@@ -1498,6 +1498,13 @@ The required `graphics.compression=lz2|lz3` field binds native graphics decoding
 ROM revision. Profile-driven CLI and application controllers use it automatically; direct
 `graphics`, `graphics-export`, and `graphics-import` commands accept the same token before their
 optional observation or output path, while the legacy tokenless forms remain LZ2-compatible.
+Profiles omit `graphics.pointer_encoding` for the legacy contiguous three-byte table. Recovered
+parallel-byte layouts use `graphics.pointer_encoding=split_planes` together with
+`graphics.pointer_high_offset` and `graphics.pointer_bank_offset`; the ordinary `graphics` table
+continues to declare the low-plane offset, entry count, and stride. Parsing requires the complete
+form, validation rejects inconsistent programmatic layouts and overlapping components, ROM audit
+reassembles every 24-bit pointer from the three physical planes, and allocation policy protects
+each plane independently.
 `graphics-recompress` migrates the complete declared pointer table in one copy-on-write operation.
 It decodes every source slot before mutation, derives previous tagged ownership, protects the full
 pointer table and checksum field, stages every allocation/repoint, repairs the checksum, and

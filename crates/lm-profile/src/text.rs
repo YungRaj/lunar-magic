@@ -11,11 +11,11 @@ use lm_level::SpriteLengthTable;
 use lm_project::{
     ChainedSnesPointerLocator, CompleteOverworldRomLayout, CompleteOverworldShape,
     EndpointRomLayout, EventRevealRomLayout, ExAnimationRomLayout, ExpandedLevelSettingsLayout,
-    GatedLayout, GraphicsRomLayout, InstallationMarker, InstalledExAnimationFeatureRomLayout,
-    InstalledExAnimationRomLayout, InstalledLayout, LevelLayer2DescriptorTable,
-    LevelLayer2RomLayout, LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout,
-    Map16RomLayout, MessageRomLayout, OverworldLayersRomLayout, PaletteRomLayout,
-    SpritePointerTable, SpriteRomLayout,
+    GatedLayout, GraphicsPointerPlanes, GraphicsRomLayout, InstallationMarker,
+    InstalledExAnimationFeatureRomLayout, InstalledExAnimationRomLayout, InstalledLayout,
+    LevelLayer2DescriptorTable, LevelLayer2RomLayout, LevelLayer2TilemapEncoding,
+    LevelPointerTable, LevelRomLayout, Map16RomLayout, MessageRomLayout, OverworldLayersRomLayout,
+    PaletteRomLayout, SpritePointerTable, SpriteRomLayout,
 };
 use lm_rom::{Mapper, Region, SupportedGame};
 use std::collections::BTreeMap;
@@ -54,6 +54,8 @@ pub enum RevisionProfileError {
     },
     InvalidMapper(String),
     InvalidGraphicsCompression(String),
+    InvalidGraphicsPointerEncoding(String),
+    IncompleteGraphicsPointerLayout,
     InvalidSpritePointerEncoding(String),
     IncompleteSpritePointerLayout,
     InvalidLayer2TilemapEncoding(String),
@@ -139,6 +141,7 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
         number(&mut values, "graphics.maximum_decompressed_len")?;
     let graphics_compression =
         parse_graphics_compression(&take(&mut values, "graphics.compression")?)?;
+    let graphics_split_pointer_planes = parse_graphics_pointer_planes(&mut values, tables[4])?;
     let palette_colors = number(&mut values, "palette.colors")?;
     let exanimation_maximum_records = number(&mut values, "exanimation.maximum_records")?;
     let exanimation_maximum_encoded_len = number(&mut values, "exanimation.maximum_encoded_len")?;
@@ -183,7 +186,7 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
         graphics: GraphicsRomLayout {
             mapper,
             pointers: tables[4],
-            split_pointer_planes: None,
+            split_pointer_planes: graphics_split_pointer_planes,
             compression: graphics_compression,
             maximum_compressed_len: graphics_maximum_compressed_len,
             maximum_decompressed_len: graphics_maximum_decompressed_len,
@@ -207,6 +210,35 @@ pub(super) fn parse(input: &str) -> Result<RevisionProfile, RevisionProfileError
     };
     profile.validate()?;
     Ok(profile)
+}
+
+fn parse_graphics_pointer_planes(
+    values: &mut BTreeMap<String, String>,
+    pointers: LevelPointerTable,
+) -> Result<Option<GraphicsPointerPlanes>, RevisionProfileError> {
+    let encoding = values
+        .remove("graphics.pointer_encoding")
+        .unwrap_or_else(|| "contiguous".into());
+    match encoding.as_str() {
+        "contiguous" => {
+            if values.contains_key("graphics.pointer_high_offset")
+                || values.contains_key("graphics.pointer_bank_offset")
+            {
+                return Err(RevisionProfileError::IncompleteGraphicsPointerLayout);
+            }
+            Ok(None)
+        }
+        "split_planes" => Ok(Some(GraphicsPointerPlanes {
+            low_offset: pointers.offset,
+            high_offset: number(values, "graphics.pointer_high_offset")?,
+            bank_offset: number(values, "graphics.pointer_bank_offset")?,
+            entries: pointers.entries,
+            stride: pointers.stride,
+        })),
+        _ => Err(RevisionProfileError::InvalidGraphicsPointerEncoding(
+            encoding,
+        )),
+    }
 }
 
 fn parse_exanimation_feature_installation(

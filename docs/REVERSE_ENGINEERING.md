@@ -1263,6 +1263,14 @@ silently combine bytes belonging to different files. Native UI auto-detection
 must therefore select the split-plane backend until a verified expanded
 graphics runtime is installed.
 
+External revision profiles now carry that distinction canonically. Their ordinary `graphics`
+table declares the low plane, count, and stride; `graphics.pointer_encoding=split_planes` adds
+the high- and bank-plane offsets. Validation treats all three planes as independent metadata,
+ROM audit reconstructs each address bytewise, and allocation protects every physical span. An
+exact match to the authenticated pristine layout also enables native `GFX33`/`GFX32` directory
+transfer using the recovered special-pointer operands; the table's `$33,$32` order is retained
+internally while public filenames remain stable.
+
 The adjacent Layer 2 pointer table is descriptor index 26 (`+0x68`): its installed headered offset
 is `0x02E800`, hence logical offset `0x02E600`, with 512 contiguous 24-bit entries. Layer 2 storage
 depends on the five-bit level mode. Object-storage modes retain a terminated header/object stream.

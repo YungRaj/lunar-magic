@@ -147,6 +147,7 @@ impl RomGraphicsEditor {
             );
         }
         let rows = workspace.palette.palette.colors.len() / 16;
+        let special_graphics_available = pristine_special_graphics(&workspace.profile);
         egui::ComboBox::from_label("Palette row")
             .selected_text(format!("{:X}", self.palette_row))
             .show_ui(ui, |ui| {
@@ -205,6 +206,16 @@ impl RomGraphicsEditor {
             }
             if ui
                 .add_enabled(
+                    !stale && !file_work_running && special_graphics_available,
+                    egui::Button::new("Extract GFX32/GFX33…"),
+                )
+                .on_hover_text("Uses the authenticated pristine SMW special-pointer operands")
+                .clicked()
+            {
+                self.begin_special_graphics_batch();
+            }
+            if ui
+                .add_enabled(
                     !stale && !file_work_running,
                     egui::Button::new("Extract AllGFX.bin…"),
                 )
@@ -221,6 +232,19 @@ impl RomGraphicsEditor {
                 .clicked()
             {
                 self.begin_graphics_import();
+            }
+            if ui
+                .add_enabled(
+                    !stale
+                        && !file_work_running
+                        && !modified_controller(self.workspace.as_ref())
+                        && special_graphics_available,
+                    egui::Button::new("Insert GFX32/GFX33…"),
+                )
+                .on_hover_text("Uses the authenticated pristine SMW special-pointer operands")
+                .clicked()
+            {
+                self.begin_special_graphics_import();
             }
             if ui
                 .add_enabled(
@@ -550,8 +574,91 @@ impl RomGraphicsEditor {
             Err(error) => self.error = Some(error),
         }
     }
+
+    fn begin_special_graphics_batch(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let Some(directory) = crate::dialogs::choose_graphics_directory() else {
+            return;
+        };
+        let source = graphics_batch::GraphicsBatchSource {
+            image: workspace.image.clone(),
+            layout: lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+            file_numbers: vec![0x33, 0x32],
+            family: "special",
+        };
+        match self.graphics_batch.start(source, directory) {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn begin_special_graphics_import(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let options = match self.save_options(workspace) {
+            Ok(options) => options,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(directory) = crate::dialogs::choose_graphics_import_directory() else {
+            return;
+        };
+        let source = graphics_import::GraphicsImportSource {
+            expected_revision: workspace.controller.revision(),
+            image: workspace.image.clone(),
+            layout: lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+            checksum_field: workspace.internal_header + 0x1c,
+            options,
+            file_numbers: vec![0x33, 0x32],
+            family: "special",
+            description: "Insert GFX32/GFX33 files",
+        };
+        match self.graphics_import.start(source, directory) {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
+        }
+    }
 }
 
 fn modified_controller(workspace: Option<&Workspace>) -> bool {
     workspace.is_some_and(|workspace| workspace.controller.is_modified())
+}
+
+fn pristine_special_graphics(profile: &RevisionProfile) -> bool {
+    profile.game == lm_rom::SupportedGame::SuperMarioWorld
+        && profile.region == lm_rom::Region::NorthAmerica
+        && profile.revision == 0
+        && profile.mapper == lm_rom::Mapper::LoRom
+        && profile.graphics == lm_profile::smw_us_v1_vanilla_graphics_layout()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pristine_special_graphics;
+
+    #[test]
+    fn special_pair_actions_require_the_exact_recovered_split_layout() {
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = lm_rom::Mapper::LoRom;
+        profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        assert!(pristine_special_graphics(&profile));
+        profile.graphics.split_pointer_planes = None;
+        assert!(!pristine_special_graphics(&profile));
+        profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        profile
+            .graphics
+            .split_pointer_planes
+            .as_mut()
+            .unwrap()
+            .bank_offset += 1;
+        assert!(!pristine_special_graphics(&profile));
+        profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        profile.region = lm_rom::Region::Japan;
+        assert!(!pristine_special_graphics(&profile));
+    }
 }

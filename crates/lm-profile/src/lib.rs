@@ -819,7 +819,17 @@ impl RevisionProfile {
             tables.push(("level.layer2", layer2.pointers));
         }
         for (domain, table) in tables {
+            if domain == "graphics" && self.graphics.split_pointer_planes.is_some() {
+                continue;
+            }
             let pointer_span = table_span(domain, table)?;
+            if span.start < pointer_span.end && pointer_span.start < span.end {
+                return Err(RevisionProfileError::ExpandedSettingsTableOverlap {
+                    pointer_table: domain,
+                });
+            }
+        }
+        for (domain, pointer_span) in graphics_pointer_spans(self.graphics)? {
             if span.start < pointer_span.end && pointer_span.start < span.end {
                 return Err(RevisionProfileError::ExpandedSettingsTableOverlap {
                     pointer_table: domain,
@@ -888,15 +898,21 @@ impl RevisionProfile {
                     maximum: Self::MAX_POINTER_TABLE_ENTRIES,
                 });
             }
-            if domain != "level.sprites" {
+            if domain != "level.sprites"
+                && !(domain == "graphics" && self.graphics.split_pointer_planes.is_some())
+            {
                 validate_table(self.mapper, domain, table)?;
             }
         }
         let mut spans = tables
             .iter()
-            .filter(|(domain, _)| *domain != "level.sprites")
+            .filter(|(domain, _)| {
+                *domain != "level.sprites"
+                    && !(*domain == "graphics" && self.graphics.split_pointer_planes.is_some())
+            })
             .map(|(domain, table)| Ok((*domain, table_span(domain, *table)?)))
             .collect::<Result<Vec<_>, RevisionProfileError>>()?;
+        spans.extend(graphics_pointer_spans(self.graphics)?);
         match self.level.sprites {
             lm_project::SpritePointerTable::Contiguous(table) => {
                 validate_table(self.mapper, "level.sprites", table)?;
@@ -933,19 +949,7 @@ impl RevisionProfile {
                 ));
             }
         }
-        for first in 0..spans.len() {
-            let first_span = &spans[first].1;
-            for second in first + 1..spans.len() {
-                let second_span = &spans[second].1;
-                if first_span.start < second_span.end && second_span.start < first_span.end {
-                    return Err(RevisionProfileError::OverlappingPointerTables {
-                        first: spans[first].0,
-                        second: spans[second].0,
-                    });
-                }
-            }
-        }
-        Ok(())
+        validate_disjoint_spans(&spans)
     }
 
     fn validate_shapes(&self) -> Result<(), RevisionProfileError> {
@@ -1013,6 +1017,24 @@ impl RevisionProfile {
     }
 }
 
+fn validate_disjoint_spans(
+    spans: &[(&'static str, Range<usize>)],
+) -> Result<(), RevisionProfileError> {
+    for first in 0..spans.len() {
+        for second in first + 1..spans.len() {
+            if spans[first].1.start < spans[second].1.end
+                && spans[second].1.start < spans[first].1.end
+            {
+                return Err(RevisionProfileError::OverlappingPointerTables {
+                    first: spans[first].0,
+                    second: spans[second].0,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_component(
     mapper: Mapper,
     domain: &'static str,
@@ -1060,6 +1082,34 @@ fn component_span(
         .checked_add(len)
         .ok_or(RevisionProfileError::AddressOverflow(domain))?;
     Ok(table.offset..end)
+}
+
+fn graphics_pointer_spans(
+    layout: GraphicsRomLayout,
+) -> Result<Vec<(&'static str, Range<usize>)>, RevisionProfileError> {
+    let Some(planes) = layout.split_pointer_planes else {
+        return Ok(Vec::new());
+    };
+    if planes.low_offset != layout.pointers.offset
+        || planes.entries != layout.pointers.entries
+        || planes.stride != layout.pointers.stride
+    {
+        return Err(RevisionProfileError::IncompleteGraphicsPointerLayout);
+    }
+    let component = |domain, offset| {
+        let table = LevelPointerTable {
+            offset,
+            entries: planes.entries,
+            stride: planes.stride,
+        };
+        validate_component(layout.mapper, domain, table, 1)?;
+        Ok((domain, component_span(domain, table, 1)?))
+    };
+    Ok(vec![
+        component("graphics.low", planes.low_offset)?,
+        component("graphics.high", planes.high_offset)?,
+        component("graphics.bank", planes.bank_offset)?,
+    ])
 }
 
 fn validate_table(

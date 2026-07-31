@@ -39,6 +39,14 @@ pub(super) fn encode(profile: &RevisionProfile) -> String {
         )
         .unwrap();
     }
+    if let Some(planes) = profile.graphics.split_pointer_planes {
+        writeln!(
+            out,
+            "graphics.pointer_encoding=split_planes\ngraphics.pointer_high_offset=0x{:x}\ngraphics.pointer_bank_offset=0x{:x}",
+            planes.high_offset, planes.bank_offset
+        )
+        .unwrap();
+    }
     encode_sprite_pointers(&mut out, profile);
     encode_layer2(&mut out, profile);
     encode_installations(&mut out, profile);

@@ -1,6 +1,8 @@
 use super::RevisionProfileAuditError;
 use crate::RevisionProfile;
-use lm_project::{ExpandedLevelSettingsLayout, LevelPointerTable, SpritePointerTable};
+use lm_project::{
+    ExpandedLevelSettingsLayout, GraphicsRomLayout, LevelPointerTable, SpritePointerTable,
+};
 use std::ops::Range;
 
 pub(super) fn table_span(
@@ -76,6 +78,31 @@ pub(super) fn sprite_spans(
             component("level.sprites.banks", banks, 1)?,
         ]),
     }
+}
+
+pub(super) fn graphics_spans(
+    layout: GraphicsRomLayout,
+) -> Result<Vec<(&'static str, Range<usize>)>, RevisionProfileAuditError> {
+    let Some(planes) = layout.split_pointer_planes else {
+        return Ok(vec![("graphics", table_span("graphics", layout.pointers)?)]);
+    };
+    let component = |domain: &'static str,
+                     offset: usize|
+     -> Result<(&'static str, Range<usize>), RevisionProfileAuditError> {
+        let end = planes
+            .entries
+            .checked_sub(1)
+            .and_then(|last| last.checked_mul(planes.stride))
+            .and_then(|last| last.checked_add(1))
+            .and_then(|len| offset.checked_add(len))
+            .ok_or(RevisionProfileAuditError::PointerOffset { domain, index: 0 })?;
+        Ok((domain, offset..end))
+    };
+    Ok(vec![
+        component("graphics.low", planes.low_offset)?,
+        component("graphics.high", planes.high_offset)?,
+        component("graphics.bank", planes.bank_offset)?,
+    ])
 }
 
 pub(super) fn tables(profile: &RevisionProfile) -> Vec<(&'static str, LevelPointerTable)> {
