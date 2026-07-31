@@ -2760,10 +2760,17 @@ Ctrl/Command-wheel over the raster advances one exact zoom entry per raw wheel e
 pointer's clamped raster coordinate as the stationary world anchor. Unmodified and Alt-modified
 wheel input is left to the enclosing document, so ordinary vertical page scrolling is not captured
 by the preview.
+An optional Map16 grid is composed through the shared `draw_editor_overlays` path after viewport
+sampling. Its 16×16-world-pixel origin and spacing are transformed by the same exact viewport, so
+lines remain one screen pixel wide while tracking non-cell-aligned pans and every supported zoom.
+The toggle invalidates only the live texture and resets with the workspace; disabling it leaves the
+sampled viewport unchanged.
 Focused raster coverage proves a camera-cropped 200% view repeats the selected source pixel buckets
 exactly; interaction-state coverage proves anchored 200% zoom, 200% and 50% drag conversion, and
 extreme edge clamping. It also proves cross-platform modifier filtering, discrete zoom boundaries,
-pointer-coordinate clamping, and a noncentral stationary anchor.
+pointer-coordinate clamping, and a noncentral stationary anchor. Overlay integration coverage fixes
+the expected grid residues after odd-pixel pans at 200% and 50%, checks both axes and intersections,
+and requires the disabled path to retain the unmodified source color.
 
 The global- and level-ExAnimation feature switches remain persistence/runtime controls in this
 workspace, not a claim that compact records have been interpreted for rendering. Their transfer

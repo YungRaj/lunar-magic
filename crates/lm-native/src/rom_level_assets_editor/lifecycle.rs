@@ -79,6 +79,7 @@ impl RomLevelAssetsEditor {
                 self.bypass_preview = Default::default();
                 self.bypass_viewport = Default::default();
                 self.bypass_drag = None;
+                self.bypass_map16_grid = false;
                 self.workspace = Some(workspace);
                 self.panels.invalidate();
             }
@@ -131,6 +132,7 @@ impl RomLevelAssetsEditor {
         self.bypass_preview = Default::default();
         self.bypass_viewport = Default::default();
         self.bypass_drag = None;
+        self.bypass_map16_grid = false;
         self.panels.invalidate();
     }
 

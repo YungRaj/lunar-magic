@@ -290,6 +290,7 @@ pub(crate) struct RomLevelAssetsEditor {
     bypass_preview: LivePreviewState,
     bypass_viewport: PreviewViewportState,
     bypass_drag: Option<PreviewDragState>,
+    bypass_map16_grid: bool,
 }
 
 impl RomLevelAssetsEditor {
@@ -473,6 +474,9 @@ impl RomLevelAssetsEditor {
                     self.bypass_drag = None;
                     viewport_changed = true;
                 }
+                viewport_changed |= ui
+                    .checkbox(&mut self.bypass_map16_grid, "Map16 grid")
+                    .changed();
             });
             if selected_zoom != self.bypass_viewport.zoom_index {
                 let anchor = lm_render::Point {
@@ -512,6 +516,7 @@ impl RomLevelAssetsEditor {
                         workspace,
                         animation_phase,
                         self.bypass_viewport,
+                        self.bypass_map16_grid,
                     )
                 });
             self.bypass_preview.finish_refresh(result.is_ok());
@@ -670,6 +675,7 @@ fn render_super_graphics_level_preview(
     workspace: &Workspace,
     animation_phase: Option<usize>,
     viewport: PreviewViewportState,
+    show_map16_grid: bool,
 ) -> Result<(egui::ColorImage, Vec<String>), String> {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
@@ -754,6 +760,7 @@ fn render_super_graphics_level_preview(
         &animated_sprite_tiles,
         &palette,
         viewport,
+        show_map16_grid,
     )
     .map(|image| (image, diagnostics))
 }
@@ -975,6 +982,7 @@ fn render_level_viewport_image(
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
     palette: &lm_graphics::Palette,
     viewport: PreviewViewportState,
+    show_map16_grid: bool,
 ) -> Result<egui::ColorImage, String> {
     let source = render_level_canvas(
         layers,
@@ -986,12 +994,46 @@ fn render_level_viewport_image(
         animated_sprite_tiles,
         palette,
     )?;
-    lm_render::rasterize_canvas_viewport(
-        &source,
-        viewport.viewport().map_err(|error| error.to_string())?,
-    )
-    .map(canvas_to_color_image)
-    .map_err(|error| error.to_string())
+    render_level_viewport_canvas(&source, viewport, show_map16_grid).map(canvas_to_color_image)
+}
+
+fn render_level_viewport_canvas(
+    source: &lm_render::Canvas,
+    viewport: PreviewViewportState,
+    show_map16_grid: bool,
+) -> Result<lm_render::Canvas, String> {
+    let viewport = viewport.viewport().map_err(|error| error.to_string())?;
+    let mut output = lm_render::rasterize_canvas_viewport(source, viewport)
+        .map_err(|error| error.to_string())?;
+    if show_map16_grid {
+        let world_origin = viewport
+            .world_to_screen(lm_render::Point::default())
+            .map_err(|error| error.to_string())?;
+        let next_cell = viewport
+            .world_to_screen(lm_render::Point { x: 16, y: 16 })
+            .map_err(|error| error.to_string())?;
+        let cell_width = u32::try_from(next_cell.x - world_origin.x)
+            .map_err(|_| "Map16 grid width is not representable".to_owned())?;
+        let cell_height = u32::try_from(next_cell.y - world_origin.y)
+            .map_err(|_| "Map16 grid height is not representable".to_owned())?;
+        lm_render::draw_editor_overlays(
+            &mut output,
+            &[lm_render::EditorOverlay::Grid(lm_render::GridOverlay {
+                origin_x: world_origin.x,
+                origin_y: world_origin.y,
+                cell_width,
+                cell_height,
+                color: Rgba {
+                    red: 255,
+                    green: 255,
+                    blue: 255,
+                    alpha: 96,
+                },
+            })],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(output)
 }
 
 fn render_level_canvas(
@@ -1517,11 +1559,65 @@ mod tests {
                 origin_y: 32,
                 zoom_index: 2,
             },
+            false,
         )
         .unwrap();
         assert_eq!(viewport_image.size, [512, 448]);
         assert_eq!(viewport_image[(0, 0)], egui::Color32::from_rgb(255, 0, 0));
         assert_eq!(viewport_image[(31, 31)], egui::Color32::from_rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn installed_preview_map16_grid_tracks_exact_pan_and_zoom() {
+        let red = Rgba {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        };
+        let source = lm_render::Canvas::from_pixels(512, 512, vec![red; 512 * 512]).unwrap();
+        let output = render_level_viewport_canvas(
+            &source,
+            PreviewViewportState {
+                origin_x: 17,
+                origin_y: 9,
+                zoom_index: 2,
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(output.get(29, 0), Some(red));
+        assert_ne!(output.get(30, 0), Some(red));
+        assert_eq!(output.get(0, 13), Some(red));
+        assert_ne!(output.get(0, 14), Some(red));
+        assert_ne!(output.get(30, 14), Some(red));
+
+        let fractional = render_level_viewport_canvas(
+            &source,
+            PreviewViewportState {
+                origin_x: 3,
+                origin_y: 5,
+                zoom_index: 0,
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(fractional.get(5, 0), Some(red));
+        assert_ne!(fractional.get(6, 0), Some(red));
+        assert_eq!(fractional.get(0, 4), Some(red));
+        assert_ne!(fractional.get(0, 5), Some(red));
+
+        let without_grid = render_level_viewport_canvas(
+            &source,
+            PreviewViewportState {
+                origin_x: 17,
+                origin_y: 9,
+                zoom_index: 2,
+            },
+            false,
+        )
+        .unwrap();
+        assert_eq!(without_grid.get(30, 14), Some(red));
     }
 
     #[test]
