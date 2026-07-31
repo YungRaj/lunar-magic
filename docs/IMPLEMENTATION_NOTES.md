@@ -2733,9 +2733,19 @@ When the staged per-level feature byte enables vanilla animation, the live insta
 runs those resolved tiles through the recovered eight-phase GFX32/GFX33 frame-table interpreter
 using the active object tileset. Its 60 ms presentation clock regenerates only when the phase
 changes. Disabling the vanilla-animation option leaves the staged base cache static and stops
-repaint scheduling immediately. A failed phase render suspends timed retries until a subsequent
-accepted edit invalidates the preview, preserving actionable diagnostics without a GUI retry loop.
-The retained pristine-ROM gate proves adjacent phases produce distinct native tile caches.
+that tile-domain mutation immediately. The independent staged palette-animation option applies the
+recovered eight-color Dragon Coin cycle to CGRAM entry `$64`; either enabled built-in domain keeps
+the shared clock active, while disabling both stops repaint scheduling. A failed phase render
+suspends timed retries until a subsequent accepted edit invalidates the preview, preserving
+actionable diagnostics without a GUI retry loop. The retained pristine-ROM gate proves adjacent
+phases produce distinct native tile caches, and focused tests prove the two staged switches gate
+their domains independently while the palette pass changes no unrelated color.
+Installed graphics profiles that address files `$32` and `$33` now supply the player/animation and
+animated-display sources directly; only pristine-size tables that end before those file numbers
+use the recovered fixed startup pointers. This keeps relocated Lunar Magic graphics installations
+out of the pristine-pointer path. The retained fixture mirrors the two authentic special pointers
+into a 52-entry profiled table and requires profiled and pristine decoding to produce identical
+tiles before comparing animation phases.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to

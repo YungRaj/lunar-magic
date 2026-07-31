@@ -272,7 +272,7 @@ fn requested_vanilla_editor_palette_phase() -> usize {
         .unwrap_or(2)
 }
 
-fn apply_vanilla_editor_palette_animation(palette: &mut Palette, phase: usize) {
+pub(crate) fn apply_vanilla_editor_palette_animation(palette: &mut Palette, phase: usize) {
     // AdvanceExAnimationFrames @ 0045AAC0 applies the built-in palette record before Lunar
     // Magic builds its editor cache. The pristine-ROM sequence begins at logical PC $00360C
     // and oscillates through eight Dragon Coin colors before repeating.
@@ -494,6 +494,31 @@ pub(crate) fn apply_vanilla_common_animation_frame(
     )
 }
 
+pub(crate) fn apply_vanilla_common_animation_frame_with_tiles(
+    project: &Project,
+    graphics: &mut [IndexedTile],
+    phase: usize,
+    tileset: u8,
+    gfx33_tiles: &[IndexedTile],
+    gfx32_tiles: &[IndexedTile],
+) -> Result<(), String> {
+    if phase >= 8 {
+        return Err(format!(
+            "vanilla common animation phase {phase} is outside 0..8"
+        ));
+    }
+    apply_vanilla_common_animation_phases_with_tiles(
+        project,
+        graphics,
+        &vanilla_common_animation_phases(phase),
+        tileset,
+        0,
+        false,
+        gfx33_tiles,
+        gfx32_tiles,
+    )
+}
+
 fn vanilla_common_animation_phases(timer_phase: usize) -> [u8; 19] {
     // Lunar Magic's AdvanceExAnimationFrames (0045aac0) processes four consecutive
     // vanilla groups at the normal rate, while AdvanceVanillaAnimatedTileGroup
@@ -533,6 +558,49 @@ fn apply_vanilla_common_animation_phases(
     gfx33_decoded_tile_bias: usize,
     column_major_destinations: bool,
 ) -> Result<(), String> {
+    let (gfx33_tiles, gfx32_tiles) = load_vanilla_special_animation_tiles(project)?;
+    apply_vanilla_common_animation_phases_with_tiles(
+        project,
+        graphics,
+        phases,
+        tileset,
+        gfx33_decoded_tile_bias,
+        column_major_destinations,
+        &gfx33_tiles,
+        &gfx32_tiles,
+    )
+}
+
+fn load_vanilla_special_animation_tiles(
+    project: &Project,
+) -> Result<(Vec<IndexedTile>, Vec<IndexedTile>), String> {
+    let decoded_gfx33 = project
+        .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    let mut gfx33_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx33, 3)
+        .map_err(|error| format!("cannot decode pristine animated GFX33: {error}"))?;
+    gfx33_tiles.resize_with(gfx33_tiles.len() + GFX33_DECODED_TILE_PADDING, || {
+        IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
+    });
+    let decoded_gfx32 = project
+        .load_decompressed_graphics_file(1, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
+        .map_err(|error| error.to_string())?;
+    let gfx32_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx32, 4)
+        .map_err(|error| format!("cannot decode pristine player/animation GFX32: {error}"))?;
+    Ok((gfx33_tiles, gfx32_tiles))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_vanilla_common_animation_phases_with_tiles(
+    project: &Project,
+    graphics: &mut [IndexedTile],
+    phases: &[u8; 19],
+    tileset: u8,
+    gfx33_decoded_tile_bias: usize,
+    column_major_destinations: bool,
+    gfx33_tiles: &[IndexedTile],
+    gfx32_tiles: &[IndexedTile],
+) -> Result<(), String> {
     const VRAM_DESTINATIONS: [usize; 24] = [
         0x600, 0x640, 0x680, 0x740, 0xea0, 0x800, 0x500, 0x540, 0x580, 0x5c0, 0x780, 0x7c0, 0xda0,
         0x6c0, 0x700, 0x4c0, 0x440, 0x480, 0x400, 0, 0, 0, 0, 0,
@@ -551,19 +619,6 @@ fn apply_vanilla_common_animation_phases(
     const SNES_4BPP_TILE_BYTES: usize = 32;
     const TILES_PER_COPY: usize = 4;
 
-    let decoded_gfx33 = project
-        .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
-        .map_err(|error| error.to_string())?;
-    let mut gfx33_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx33, 3)
-        .map_err(|error| format!("cannot decode pristine animated GFX33: {error}"))?;
-    gfx33_tiles.resize_with(gfx33_tiles.len() + GFX33_DECODED_TILE_PADDING, || {
-        IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
-    });
-    let decoded_gfx32 = project
-        .load_decompressed_graphics_file(1, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
-        .map_err(|error| error.to_string())?;
-    let gfx32_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx32, 4)
-        .map_err(|error| format!("cannot decode pristine player/animation GFX32: {error}"))?;
     let blank_tiles = [
         IndexedTile::new([0; IndexedTile::PIXEL_COUNT]),
         IndexedTile::new([0; IndexedTile::PIXEL_COUNT]),
@@ -982,12 +1037,17 @@ fn load_vanilla_sprite_display_page(project: &Project) -> Result<Vec<Vec<Indexed
         .collect())
 }
 
-pub(crate) fn load_vanilla_sprite_display_tiles(
-    project: &Project,
-) -> Result<Vec<IndexedTile>, String> {
-    Ok(materialize_layer1_sprite_vram(
-        &load_vanilla_sprite_display_page(project)?,
-    ))
+pub(crate) fn materialize_sprite_display_tiles(
+    mut gfx33_tiles: Vec<IndexedTile>,
+) -> Vec<IndexedTile> {
+    let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+    gfx33_tiles.resize_with(4 * LAYER1_SPRITE_SLOT_TILES, || blank.clone());
+    let slots = gfx33_tiles
+        .chunks_exact(LAYER1_SPRITE_SLOT_TILES)
+        .take(4)
+        .map(<[IndexedTile]>::to_vec)
+        .collect::<Vec<_>>();
+    materialize_layer1_sprite_vram(&slots)
 }
 
 fn render_foreground_graphics_atlas(

@@ -55,6 +55,23 @@ struct ResolvedLevelGraphics {
     source: &'static str,
 }
 
+struct SpecialGraphicsTiles {
+    gfx33: Vec<lm_graphics::IndexedTile>,
+    gfx32: Option<Vec<lm_graphics::IndexedTile>>,
+}
+
+#[derive(Clone, Copy)]
+struct InstalledAnimationOptions {
+    vanilla_tiles: bool,
+    palette: bool,
+}
+
+impl InstalledAnimationOptions {
+    const fn active(self) -> bool {
+        self.vanilla_tiles || self.palette
+    }
+}
+
 #[derive(Default)]
 struct LivePreviewState {
     enabled: bool,
@@ -242,11 +259,15 @@ impl RomLevelAssetsEditor {
                 self.bypass_layer2_texture = None;
             }
         }
-        let animation_enabled = self
-            .workspace
-            .as_ref()
-            .is_some_and(installed_vanilla_animation_enabled);
-        let animation_phase = animation_enabled
+        let animation_options = self.workspace.as_ref().map_or(
+            InstalledAnimationOptions {
+                vanilla_tiles: false,
+                palette: false,
+            },
+            installed_animation_options,
+        );
+        let animation_phase = animation_options
+            .active()
             .then(|| installed_preview_animation_phase(ui.input(|input| input.time)));
         if self.bypass_preview.take_refresh(animation_phase) {
             let result = self
@@ -279,7 +300,8 @@ impl RomLevelAssetsEditor {
                 }
             }
         }
-        if self.bypass_preview.enabled && animation_enabled && !self.bypass_preview.failed {
+        if self.bypass_preview.enabled && animation_options.active() && !self.bypass_preview.failed
+        {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(60));
         }
@@ -360,19 +382,39 @@ fn render_super_graphics_level_preview(
     let header = workspace.controller.assets().level.layer1.header;
     let resolved = resolve_level_graphics(workspace, &project, header)?;
     let mut vram = resolved.vram;
+    let mut palette = workspace.controller.assets().palette.clone();
+    let animation_options = installed_animation_options(workspace);
+    let special_graphics = load_profiled_special_graphics(
+        &project,
+        workspace.profile.graphics,
+        animation_options.vanilla_tiles,
+    )?;
     if let Some(phase) = animation_phase {
         if !is_smw_us_v1_profile(&workspace.profile) {
             return Err(format!(
-                "vanilla animation frame tables are not recovered for profile {}",
+                "built-in animation tables are not recovered for profile {}",
                 workspace.profile.name
             ));
         }
-        crate::vanilla_map16_preview::apply_vanilla_common_animation_frame(
-            &project,
-            &mut vram.foreground_background,
-            phase,
-            header.object_tileset(),
-        )?;
+        if animation_options.vanilla_tiles {
+            crate::vanilla_map16_preview::apply_vanilla_common_animation_frame_with_tiles(
+                &project,
+                &mut vram.foreground_background,
+                phase,
+                header.object_tileset(),
+                &special_graphics.gfx33,
+                special_graphics
+                    .gfx32
+                    .as_deref()
+                    .ok_or_else(|| "enabled vanilla animation did not load GFX32".to_owned())?,
+            )?;
+        }
+        if animation_options.palette {
+            crate::vanilla_map16_preview::apply_vanilla_editor_palette_animation(
+                &mut palette,
+                phase,
+            );
+        }
     }
     let map16 = project
         .load_map16_set(workspace.profile.map16)
@@ -408,7 +450,7 @@ fn render_super_graphics_level_preview(
     );
     diagnostics.extend(sprite_diagnostics);
     let animated_sprite_tiles =
-        crate::vanilla_map16_preview::load_vanilla_sprite_display_tiles(&project)?;
+        crate::vanilla_map16_preview::materialize_sprite_display_tiles(special_graphics.gfx33);
     render_level_image(
         &[&layer2, &layer1],
         &sprites,
@@ -417,20 +459,68 @@ fn render_super_graphics_level_preview(
         &vram.foreground_background,
         &vram.sprites,
         &animated_sprite_tiles,
-        &workspace.controller.assets().palette,
+        &palette,
     )
     .map(|image| (image, diagnostics))
 }
 
-fn installed_vanilla_animation_enabled(workspace: &Workspace) -> bool {
-    workspace
-        .controller
-        .exanimation_features()
-        .is_none_or(|features| {
-            features
-                .options
-                .enabled(lm_graphics::ExAnimationFeature::VanillaAnimation)
+fn load_profiled_special_graphics(
+    project: &lm_project::Project,
+    layout: lm_project::GraphicsRomLayout,
+    include_gfx32: bool,
+) -> Result<SpecialGraphicsTiles, String> {
+    let entries = layout
+        .split_pointer_planes
+        .map_or(layout.pointers.entries, |planes| planes.entries);
+    let (gfx33_file, gfx32_file, source_layout) = if entries > 0x33 {
+        (0x33, 0x32, layout)
+    } else {
+        (
+            0,
+            1,
+            lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+        )
+    };
+    let decoded_gfx33 = project
+        .load_decompressed_graphics_file(gfx33_file, source_layout)
+        .map_err(|error| format!("cannot load profiled GFX33: {error}"))?;
+    let mut gfx33 = lm_graphics::decode_planar_tiles(&decoded_gfx33, 3)
+        .map_err(|error| format!("cannot decode profiled GFX33 as 3bpp: {error}"))?;
+    gfx33.resize_with(gfx33.len() + 0x30, || {
+        lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT])
+    });
+    let gfx32 = include_gfx32
+        .then(|| {
+            let decoded = project
+                .load_decompressed_graphics_file(gfx32_file, source_layout)
+                .map_err(|error| format!("cannot load profiled GFX32: {error}"))?;
+            lm_graphics::decode_planar_tiles(&decoded, 4)
+                .map_err(|error| format!("cannot decode profiled GFX32 as 4bpp: {error}"))
         })
+        .transpose()?;
+    Ok(SpecialGraphicsTiles { gfx33, gfx32 })
+}
+
+fn installed_animation_options(workspace: &Workspace) -> InstalledAnimationOptions {
+    animation_options_from_features(
+        workspace
+            .controller
+            .exanimation_features()
+            .map(|features| features.options),
+    )
+}
+
+fn animation_options_from_features(
+    features: Option<lm_graphics::ExAnimationFeatureOptions>,
+) -> InstalledAnimationOptions {
+    InstalledAnimationOptions {
+        vanilla_tiles: features.is_none_or(|options| {
+            options.enabled(lm_graphics::ExAnimationFeature::VanillaAnimation)
+        }),
+        palette: features.is_none_or(|options| {
+            options.enabled(lm_graphics::ExAnimationFeature::PaletteAnimation)
+        }),
+    }
 }
 
 fn installed_preview_animation_phase(seconds: f64) -> usize {
@@ -823,6 +913,40 @@ mod tests {
     }
 
     #[test]
+    fn staged_feature_options_gate_tile_and_palette_clocks_independently() {
+        let defaults = animation_options_from_features(None);
+        assert!(defaults.vanilla_tiles);
+        assert!(defaults.palette);
+        assert!(defaults.active());
+
+        let mut options = lm_graphics::ExAnimationFeatureOptions::decode(0);
+        options.set_enabled(lm_graphics::ExAnimationFeature::VanillaAnimation, false);
+        let palette_only = animation_options_from_features(Some(options));
+        assert!(!palette_only.vanilla_tiles);
+        assert!(palette_only.palette);
+        assert!(palette_only.active());
+
+        options.set_enabled(lm_graphics::ExAnimationFeature::PaletteAnimation, false);
+        let disabled = animation_options_from_features(Some(options));
+        assert!(!disabled.vanilla_tiles);
+        assert!(!disabled.palette);
+        assert!(!disabled.active());
+    }
+
+    #[test]
+    fn installed_palette_animation_changes_only_the_recovered_color() {
+        let mut colors = vec![Bgr555(0x1234); 128];
+        let before = colors.clone();
+        let mut palette = Palette {
+            colors: colors.clone(),
+        };
+        crate::vanilla_map16_preview::apply_vanilla_editor_palette_animation(&mut palette, 0);
+        colors[0x64] = Bgr555(0x02df);
+        assert_eq!(palette.colors, colors);
+        assert_ne!(palette.colors, before);
+    }
+
+    #[test]
     fn legacy_graphics_materializer_rejects_incomplete_assignment_rows() {
         let project =
             lm_project::Project::new(lm_rom::RomImage::from_bytes(vec![0; 0x8000]).unwrap());
@@ -841,7 +965,7 @@ mod tests {
     #[ignore = "requires the retained pristine SMW-US ROM fixture"]
     fn retained_legacy_assignments_materialize_fixed_preview_slots() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let bytes = std::fs::read(root.join("sysLMRestore/smwOrig.smc")).unwrap();
         let image = lm_rom::RomImage::from_bytes(bytes).unwrap();
         let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(&image, 0).unwrap();
         let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(&image, 0).unwrap();
@@ -868,20 +992,66 @@ mod tests {
                 .iter()
                 .all(|tile| tile.pixels().iter().all(|pixel| *pixel == 0))
         );
+        let special = load_profiled_special_graphics(
+            &project,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            true,
+        )
+        .unwrap();
+        assert!(!special.gfx33.is_empty());
+        assert!(
+            special
+                .gfx32
+                .as_ref()
+                .is_some_and(|tiles| !tiles.is_empty())
+        );
+        let mut profiled_bytes = project.rom.logical_bytes().to_vec();
+        let pointer_table = 0x70000;
+        let gfx33_pointer: [u8; 3] = profiled_bytes[0x3882..0x3885].try_into().unwrap();
+        let gfx32_pointer: [u8; 3] = profiled_bytes[0x3885..0x3888].try_into().unwrap();
+        profiled_bytes[pointer_table + 0x33 * 3..pointer_table + 0x34 * 3]
+            .copy_from_slice(&gfx33_pointer);
+        profiled_bytes[pointer_table + 0x32 * 3..pointer_table + 0x33 * 3]
+            .copy_from_slice(&gfx32_pointer);
+        let profiled_project =
+            lm_project::Project::new(lm_rom::RomImage::from_bytes(profiled_bytes).unwrap());
+        let profiled_special = load_profiled_special_graphics(
+            &profiled_project,
+            lm_project::GraphicsRomLayout {
+                mapper: lm_rom::Mapper::LoRom,
+                pointers: lm_project::LevelPointerTable {
+                    offset: pointer_table,
+                    entries: 0x34,
+                    stride: 3,
+                },
+                split_pointer_planes: None,
+                compression: lm_project::GraphicsCompression::Lz2,
+                maximum_compressed_len: 0x8000,
+                maximum_decompressed_len: 0x10000,
+            },
+            true,
+        )
+        .unwrap();
+        assert_eq!(profiled_special.gfx33, special.gfx33);
+        assert_eq!(profiled_special.gfx32, special.gfx32);
         let mut phase_zero = resolved.vram.foreground_background.clone();
         let mut phase_one = phase_zero.clone();
-        crate::vanilla_map16_preview::apply_vanilla_common_animation_frame(
+        crate::vanilla_map16_preview::apply_vanilla_common_animation_frame_with_tiles(
             &project,
             &mut phase_zero,
             0,
             0,
+            &special.gfx33,
+            special.gfx32.as_deref().unwrap(),
         )
         .unwrap();
-        crate::vanilla_map16_preview::apply_vanilla_common_animation_frame(
+        crate::vanilla_map16_preview::apply_vanilla_common_animation_frame_with_tiles(
             &project,
             &mut phase_one,
             1,
             0,
+            &special.gfx33,
+            special.gfx32.as_deref().unwrap(),
         )
         .unwrap();
         assert_ne!(
