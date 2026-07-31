@@ -20,25 +20,54 @@ pub fn prepare_standard_graphics_import(
     raw_files: &[Vec<u8>],
     options: &GraphicsSaveOptions,
 ) -> Result<PreparedRomCommit, String> {
+    let file_numbers = (0..layout.pointers.entries).collect::<Vec<_>>();
+    prepare_named_graphics_import(
+        expected_revision,
+        image,
+        layout,
+        checksum_field,
+        raw_files,
+        &file_numbers,
+        "Insert all standard GFX files",
+        options,
+    )
+}
+
+/// Validates and prepares one atomic replacement of a complete graphics pointer table while
+/// retaining the external GFX file numbers used for diagnostics and the commit description.
+///
+/// `file_numbers` is parallel to the pointer-table order. This matters for recovered tables such
+/// as pristine SMW's special pair, whose entries are ordered GFX33 then GFX32.
+pub fn prepare_named_graphics_import(
+    expected_revision: u64,
+    image: RomImage,
+    layout: GraphicsRomLayout,
+    checksum_field: usize,
+    raw_files: &[Vec<u8>],
+    file_numbers: &[usize],
+    description: &str,
+    options: &GraphicsSaveOptions,
+) -> Result<PreparedRomCommit, String> {
     let total = layout.pointers.entries;
-    if raw_files.len() != total || total == 0 {
+    if raw_files.len() != total || file_numbers.len() != total || total == 0 {
         return Err(format!(
-            "standard GFX import requires exactly {total} files, got {}",
-            raw_files.len()
+            "graphics import requires exactly {total} files and file numbers, got {} files and {} numbers",
+            raw_files.len(),
+            file_numbers.len()
         ));
     }
     let before = image.logical_bytes().to_vec();
     let mut project = Project::new(image);
     let mut decoded = Vec::with_capacity(total);
-    for (slot, bytes) in raw_files.iter().enumerate() {
-        let imported =
-            GraphicsFile4bpp::decode(bytes).map_err(|error| format!("GFX{slot:02X}: {error}"))?;
+    for (slot, (bytes, file_number)) in raw_files.iter().zip(file_numbers).enumerate() {
+        let imported = GraphicsFile4bpp::decode(bytes)
+            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
         let current = project
             .load_graphics_file(slot, layout)
-            .map_err(|error| format!("GFX{slot:02X}: {error}"))?;
+            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
         if imported.tiles.len() != current.tiles.len() {
             return Err(format!(
-                "GFX{slot:02X}: expected {} tiles, got {}",
+                "GFX{file_number:02X}: expected {} tiles, got {}",
                 current.tiles.len(),
                 imported.tiles.len()
             ));
@@ -52,7 +81,7 @@ pub fn prepare_standard_graphics_import(
         .map_err(|error| error.to_string())?;
     Ok(PreparedRomCommit {
         expected_revision,
-        description: "Insert all standard GFX files".into(),
+        description: description.into(),
         mutation,
     })
 }
@@ -267,5 +296,57 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn named_import_uses_external_file_numbers_and_one_atomic_commit() {
+        let source = source_image();
+        let before = source.logical_bytes().to_vec();
+        let expected = [
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([0x0d; 64])],
+            },
+            GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([0x0e; 64]), IndexedTile::new([0x0f; 64])],
+            },
+        ];
+        let raw = expected
+            .iter()
+            .map(|file| file.encode().unwrap())
+            .collect::<Vec<_>>();
+        let prepared = prepare_named_graphics_import(
+            31,
+            source,
+            layout(),
+            0x7fdc,
+            &raw,
+            &[0x33, 0x32],
+            "Insert GFX32/GFX33 files",
+            &options(0x4000..0x7000),
+        )
+        .unwrap();
+        assert_eq!(prepared.expected_revision, 31);
+        assert_eq!(prepared.description, "Insert GFX32/GFX33 files");
+        let reopened =
+            Project::new(RomImage::from_bytes(apply(before, &prepared.mutation)).unwrap());
+        for (slot, expected) in expected.iter().enumerate() {
+            assert_eq!(
+                reopened.load_graphics_file(slot, layout()).unwrap(),
+                *expected
+            );
+        }
+
+        let error = prepare_named_graphics_import(
+            0,
+            source_image(),
+            layout(),
+            0x7fdc,
+            &[vec![0; 31], raw[1].clone()],
+            &[0x33, 0x32],
+            "unused",
+            &options(0x4000..0x7000),
+        )
+        .unwrap_err();
+        assert!(error.starts_with("GFX33:"), "{error}");
     }
 }

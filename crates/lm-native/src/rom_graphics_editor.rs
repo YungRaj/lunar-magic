@@ -76,18 +76,18 @@ impl RomGraphicsEditor {
         }
         if let Some(result) = self.graphics_batch.show(context) {
             self.io_status = Some(match result {
-                Ok(Some(count)) => format!("Extracted {count} standard GFX files successfully."),
-                Ok(None) => "Standard GFX extraction cancelled.".into(),
-                Err(error) => format!("Standard GFX extraction failed: {error}"),
+                Ok(Some(count)) => format!("Extracted {count} GFX files successfully."),
+                Ok(None) => "GFX extraction cancelled.".into(),
+                Err(error) => format!("GFX extraction failed: {error}"),
             });
         }
         let import_command = match self.graphics_import.show(context) {
             Some(Ok(Some(commit))) => {
-                self.io_status = Some("Standard GFX directory prepared successfully.".into());
+                self.io_status = Some("GFX directory prepared successfully.".into());
                 Some(commit.into_command())
             }
             Some(Ok(None)) => {
-                self.io_status = Some("Standard GFX insertion cancelled.".into());
+                self.io_status = Some("GFX insertion cancelled.".into());
                 None
             }
             Some(Err(error)) => {
@@ -463,6 +463,8 @@ impl RomGraphicsEditor {
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
+            file_numbers: (0..workspace.profile.graphics.pointers.entries).collect(),
+            family: "standard",
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -490,6 +492,9 @@ impl RomGraphicsEditor {
             layout: workspace.profile.graphics,
             checksum_field: workspace.internal_header + 0x1c,
             options,
+            file_numbers: (0..workspace.profile.graphics.pointers.entries).collect(),
+            family: "standard",
+            description: "Insert all standard GFX files",
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -507,6 +512,8 @@ impl RomGraphicsEditor {
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
+            file_numbers: (0..workspace.profile.graphics.pointers.entries).collect(),
+            family: "standard",
         };
         match self.graphics_batch.start_joined(source, path) {
             Ok(()) => self.io_status = None,
@@ -534,6 +541,9 @@ impl RomGraphicsEditor {
             layout: workspace.profile.graphics,
             checksum_field: workspace.internal_header + 0x1c,
             options,
+            file_numbers: (0..workspace.profile.graphics.pointers.entries).collect(),
+            family: "standard",
+            description: "Insert AllGFX.bin",
         };
         match self.graphics_import.start_joined(source, path) {
             Ok(()) => self.io_status = None,

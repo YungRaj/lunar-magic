@@ -16,6 +16,9 @@ pub(super) struct GraphicsImportSource {
     pub(super) layout: GraphicsRomLayout,
     pub(super) checksum_field: usize,
     pub(super) options: GraphicsSaveOptions,
+    pub(super) file_numbers: Vec<usize>,
+    pub(super) family: &'static str,
+    pub(super) description: &'static str,
 }
 
 struct RunningImport {
@@ -80,11 +83,12 @@ impl GraphicsImportWorker {
         if self.running.is_some() {
             return Err("a standard GFX insertion is already running".into());
         }
-        let total = source.layout.pointers.entries;
+        let total = source.file_numbers.len();
+        if total != source.layout.pointers.entries {
+            return Err("graphics filename mapping does not match its pointer table".into());
+        }
         if total == 0 || total > 0x80 {
-            return Err(format!(
-                "profile declares unsupported standard GFX count {total}"
-            ));
+            return Err(format!("unsupported {} GFX count {total}", source.family));
         }
         let completed = Arc::new(AtomicUsize::new(0));
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -93,7 +97,7 @@ impl GraphicsImportWorker {
         let worker_target = target.clone();
         let (sender, result) = mpsc::channel();
         std::thread::Builder::new()
-            .name("lm-standard-gfx-import".into())
+            .name(format!("lm-{}-gfx-import", source.family))
             .spawn(move || {
                 let result =
                     prepare_import(source, &worker_target, &worker_completed, &worker_cancelled);
@@ -165,33 +169,35 @@ fn prepare_import(
     completed: &AtomicUsize,
     cancelled: &AtomicBool,
 ) -> Result<Option<PreparedRomCommit>, String> {
-    let total = source.layout.pointers.entries;
+    let total = source.file_numbers.len();
     match target {
         GraphicsImportTarget::Directory(directory) => {
             let mut files = Vec::with_capacity(total);
-            for slot in 0..total {
+            for file_number in source.file_numbers.iter().copied() {
                 if cancelled.load(Ordering::Relaxed) {
                     return Ok(None);
                 }
-                let description = format!("GFX{slot:02X} raw graphics");
+                let description = format!("GFX{file_number:02X} raw graphics");
                 let bytes = crate::dialogs::read_regular_bounded(
-                    &directory.join(format!("GFX{slot:02X}.bin")),
+                    &directory.join(format!("GFX{file_number:02X}.bin")),
                     u64::try_from(source.layout.maximum_decompressed_len).unwrap_or(u64::MAX),
                     &description,
                 )
                 .map_err(|error| format!("{description}: {error}"))?;
                 files.push(bytes);
-                completed.store(slot + 1, Ordering::Relaxed);
+                completed.fetch_add(1, Ordering::Relaxed);
             }
             if cancelled.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            lm_app::prepare_standard_graphics_import(
+            lm_app::prepare_named_graphics_import(
                 source.expected_revision,
                 source.image,
                 source.layout,
                 source.checksum_field,
                 &files,
+                &source.file_numbers,
+                source.description,
                 &source.options,
             )
             .map(Some)

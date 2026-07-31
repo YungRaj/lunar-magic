@@ -163,7 +163,8 @@ pub use external_tools::{
 };
 pub use frontend_config::{FrontendConfig, FrontendConfigError};
 pub use graphics_batch_import::{
-    prepare_joined_standard_graphics_import, prepare_standard_graphics_import,
+    prepare_joined_standard_graphics_import, prepare_named_graphics_import,
+    prepare_standard_graphics_import,
 };
 pub use graphics_controller::{
     GraphicsController, GraphicsControllerEdit, GraphicsControllerError,

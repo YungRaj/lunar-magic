@@ -12,6 +12,8 @@ use std::sync::{
 pub(super) struct GraphicsBatchSource {
     pub(super) image: RomImage,
     pub(super) layout: GraphicsRomLayout,
+    pub(super) file_numbers: Vec<usize>,
+    pub(super) family: &'static str,
 }
 
 struct RunningBatch {
@@ -76,11 +78,12 @@ impl GraphicsBatchWorker {
         if self.running.is_some() {
             return Err("a standard GFX extraction is already running".into());
         }
-        let total = source.layout.pointers.entries;
+        let total = source.file_numbers.len();
+        if total != source.layout.pointers.entries {
+            return Err("graphics filename mapping does not match its pointer table".into());
+        }
         if total == 0 || total > 0x80 {
-            return Err(format!(
-                "profile declares unsupported standard GFX count {total}"
-            ));
+            return Err(format!("unsupported {} GFX count {total}", source.family));
         }
         let completed = Arc::new(AtomicUsize::new(0));
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -89,7 +92,7 @@ impl GraphicsBatchWorker {
         let worker_target = target.clone();
         let (sender, result) = mpsc::channel();
         std::thread::Builder::new()
-            .name("lm-standard-gfx-export".into())
+            .name(format!("lm-{}-gfx-export", source.family))
             .spawn(move || {
                 let result =
                     export_batch(source, &worker_target, &worker_completed, &worker_cancelled);
@@ -161,27 +164,27 @@ fn export_batch(
     completed: &AtomicUsize,
     cancelled: &AtomicBool,
 ) -> Result<Option<usize>, String> {
-    let total = source.layout.pointers.entries;
+    let total = source.file_numbers.len();
     let project = Project::new(source.image);
     let mut group = matches!(target, GraphicsExportTarget::Directory(_))
         .then_some(lm_app::file_persistence::NewFileGroup::new());
     let mut joined_files = Vec::with_capacity(if group.is_some() { 0 } else { total });
-    for slot in 0..total {
+    for (slot, file_number) in source.file_numbers.iter().copied().enumerate() {
         if cancelled.load(Ordering::Relaxed) {
             return Ok(None);
         }
         let graphics = project
             .load_graphics_file(slot, source.layout)
-            .map_err(|error| format!("GFX{slot:02X}: {error}"))?;
+            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
         let bytes = graphics
             .encode()
-            .map_err(|error| format!("GFX{slot:02X}: {error}"))?;
+            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
         match target {
             GraphicsExportTarget::Directory(directory) => group
                 .as_mut()
                 .expect("directory exports create a staging group")
-                .stage(&batch_output_path(directory, slot), &bytes)
-                .map_err(|error| format!("GFX{slot:02X}: {error}"))?,
+                .stage(&batch_output_path(directory, file_number), &bytes)
+                .map_err(|error| format!("GFX{file_number:02X}: {error}"))?,
             GraphicsExportTarget::JoinedFile(_) => joined_files.push(bytes),
         }
         completed.store(slot + 1, Ordering::Relaxed);
@@ -285,6 +288,8 @@ mod tests {
             GraphicsBatchSource {
                 image: project.rom,
                 layout,
+                file_numbers: vec![0, 1],
+                family: "standard",
             },
             expected,
         )
@@ -299,6 +304,10 @@ mod tests {
         assert_eq!(
             batch_output_path(Path::new("/tmp/Graphics"), 0x31),
             Path::new("/tmp/Graphics/GFX31.bin")
+        );
+        assert_eq!(
+            batch_output_path(Path::new("/tmp/Graphics"), 0x33),
+            Path::new("/tmp/Graphics/GFX33.bin")
         );
     }
 
