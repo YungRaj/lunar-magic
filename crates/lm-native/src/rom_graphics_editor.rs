@@ -3,7 +3,8 @@ use crate::{
     graphics_painter::{
         TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
         apply_tile_palette_keyboard, paint_tile, palette_color, show_tile_grid_status,
-        take_tile_shift, tile_button, tile_coordinate, tile_pointer_action,
+        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
+        tile_pointer_action,
     },
     native_clipboard,
 };
@@ -391,13 +392,13 @@ impl RomGraphicsEditor {
             .workspace
             .as_ref()
             .is_some_and(|w| w.controller.is_modified());
-        if ui
-            .add_enabled(
-                modified && !stale && !file_work_running && !self.manifest_loader.is_running(),
-                egui::Button::new("Commit graphics to ROM"),
-            )
-            .clicked()
-        {
+        let commit_enabled =
+            modified && !stale && !file_work_running && !self.manifest_loader.is_running();
+        let commit_clicked = ui
+            .add_enabled(commit_enabled, egui::Button::new("Commit graphics to ROM"))
+            .clicked();
+        let commit_shortcut = take_graphics_save_shortcut(ui);
+        if commit_enabled && (commit_clicked || commit_shortcut) {
             match self.prepare_commit() {
                 Ok(command) => {
                     return Some(command);

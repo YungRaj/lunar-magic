@@ -4,7 +4,8 @@ use crate::{
     graphics_painter::{
         TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
         apply_tile_palette_keyboard, paint_tile, palette_color, show_tile_grid_status,
-        take_tile_shift, tile_button, tile_coordinate, tile_pointer_action,
+        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
+        tile_pointer_action,
     },
     native_clipboard,
 };
@@ -139,7 +140,8 @@ impl GraphicsEditor {
                 _ => None,
             })
         });
-        self.toolbar(ui);
+        let save_requested = take_graphics_save_shortcut(ui);
+        self.toolbar(ui, save_requested);
         if let Some(text) = pasted {
             self.paste_tile(&text);
         }
@@ -164,7 +166,7 @@ impl GraphicsEditor {
         });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
+    fn toolbar(&mut self, ui: &mut egui::Ui, save_requested: bool) {
         let save_available = !self.save_worker.is_running();
         let Some(document) = self.document.as_mut() else {
             return;
@@ -186,10 +188,10 @@ impl GraphicsEditor {
             {
                 self.error = Some(error.to_string());
             }
-            if ui
+            let save_clicked = ui
                 .add_enabled(save_available, egui::Button::new("Save"))
-                .clicked()
-            {
+                .clicked();
+            if save_available && (save_clicked || save_requested) {
                 document_io::begin_save(controller, &mut self.save_worker, &mut self.error);
             }
             if ui.button("Copy tile").clicked()

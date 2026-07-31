@@ -1701,6 +1701,11 @@ The recovered Shift+Arrow shortcut performs a lossless one-pixel wrap left, righ
 The shared focus adapter accepts only the exact Shift modifier; portable wraps are independently
 undoable, pristine wraps enter the staged graphics controller, and installed wraps additionally
 require editable ownership plus a nonstale workspace with no active graphics file worker.
+Unmodified F9 is consumed as the graphics editor's documented save command on all three surfaces.
+It enters the same persistence action as each visible Save/Commit button: the portable document
+uses its bounded background writer, pristine SMW requires an expanded ROM and staged changes, and
+the installed editor additionally retains dirty-state, revision, file-worker, and manifest-loader
+gates. Modified F9 combinations are left available to other shortcut routing.
 Level objects and sprites have corresponding typed adapters that retain their complete lossless
 record bytes. The complete portable level editor, interpretation-bound native-stream document, and
 shared aggregate level-assets panel can copy or replace one selected record without parsing it as

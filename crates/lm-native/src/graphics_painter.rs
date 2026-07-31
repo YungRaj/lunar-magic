@@ -114,6 +114,12 @@ pub(crate) fn tile_pointer_action(
     )
 }
 
+pub(crate) fn take_graphics_save_shortcut(ui: &mut egui::Ui) -> bool {
+    ui.input_mut(|input| {
+        !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F9)
+    })
+}
+
 fn classify_tile_pointer_action(
     index: usize,
     primary: bool,
@@ -424,6 +430,51 @@ mod tests {
             classify_tile_pointer_action(8, false, true, egui::Modifiers::CTRL),
             None
         );
+    }
+
+    #[test]
+    fn graphics_save_shortcut_requires_unmodified_f9() {
+        let context = egui::Context::default();
+        let mut taken = false;
+        let mut modified_taken = false;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::F9,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    taken = take_graphics_save_shortcut(ui);
+                });
+            },
+        );
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::F9,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::CTRL,
+                }],
+                modifiers: egui::Modifiers::CTRL,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    modified_taken = take_graphics_save_shortcut(ui);
+                });
+            },
+        );
+
+        assert!(taken);
+        assert!(!modified_taken);
     }
 
     #[test]

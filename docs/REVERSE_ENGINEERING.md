@@ -1234,6 +1234,10 @@ revisioned or ownership-guarded tile replacement paths as paint, paste, and flip
 presentation-only buffer. Exact Ctrl+left-click copy and unmodified right-click paste gestures now
 publish/request the typed single-tile clipboard payload on all three tile sheets; installed paste
 cannot bypass fixed/ExAnimation ownership, stale revision, or active file-worker gates.
+The documented unmodified F9 save command now enters the existing button-backed save/commit path
+on each surface. The two ROM editors preserve their existing expansion, modified-state,
+stale-revision, active-worker, and manifest-loader eligibility checks instead of giving the
+shortcut a separate mutation route.
 
 ## Compression formats
 

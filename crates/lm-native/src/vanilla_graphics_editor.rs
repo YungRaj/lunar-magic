@@ -1,8 +1,9 @@
 use crate::{
     graphics_painter::{
         TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction, apply_tile_keyboard_navigation,
-        apply_tile_palette_keyboard, paint_tile, show_tile_grid_status, take_tile_shift,
-        tile_button, tile_coordinate, tile_pointer_action,
+        apply_tile_palette_keyboard, paint_tile, show_tile_grid_status,
+        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
+        tile_pointer_action,
     },
     native_clipboard,
 };
@@ -127,13 +128,14 @@ impl VanillaGraphicsEditor {
             .controller
             .as_ref()
             .is_some_and(GraphicsController::is_modified);
-        if ui
+        let commit_clicked = ui
             .add_enabled(
                 expanded && modified,
                 egui::Button::new("Commit graphics changes to ROM"),
             )
-            .clicked()
-        {
+            .clicked();
+        let commit_shortcut = take_graphics_save_shortcut(ui);
+        if expanded && modified && (commit_clicked || commit_shortcut) {
             match prepare_commit(
                 self.controller
                     .as_ref()
