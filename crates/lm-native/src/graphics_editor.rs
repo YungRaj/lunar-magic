@@ -2,10 +2,11 @@ use crate::{
     dialogs,
     document_loader::DocumentLoader,
     graphics_painter::{
-        GraphicsColorMapEditor, TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction,
-        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile, palette_color,
-        show_tile_grid_status, take_graphics_save_shortcut, take_tile_shift, tile_button,
-        tile_coordinate, tile_pointer_action,
+        GraphicsCharacterShortcut, GraphicsColorMapEditor, TILE_GRID_COLUMNS, TileEditorZoom,
+        TilePointerAction, apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile,
+        palette_color, show_tile_grid_status, take_graphics_character_shortcut,
+        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
+        tile_pointer_action,
     },
     native_clipboard,
 };
@@ -39,6 +40,7 @@ pub(crate) struct GraphicsEditor {
     pixel_zoom: TileEditorZoom,
     color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
+    pending_character_shortcut: Option<GraphicsCharacterShortcut>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     save_worker: crate::persistence_worker::PersistenceWorker,
@@ -277,6 +279,8 @@ impl GraphicsEditor {
         );
         show_tile_grid_status(ui, self.selected_tile, &responses);
         self.pending_shift = take_tile_shift(ui, self.selected_tile, &responses, true);
+        self.pending_character_shortcut =
+            take_graphics_character_shortcut(ui, self.selected_tile, &responses);
     }
 
     fn pixel_editor(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
@@ -311,12 +315,20 @@ impl GraphicsEditor {
                 tile = current.clone();
             }
         }
+        let character_shortcut = self.pending_character_shortcut.take();
+        if character_shortcut == Some(GraphicsCharacterShortcut::EditColorMap) {
+            self.color_map.open_dialog();
+        }
         ui.label(format!("Tile {:03X}", self.selected_tile));
         self.pixel_zoom.show(ui);
-        if let Some(mapped) = self
+        let clicked_mapping = self
             .color_map
-            .show(ui, palette, self.palette_row, &tile, true)
-        {
+            .show(ui, palette, self.palette_row, &tile, true);
+        let mapped = character_shortcut
+            .filter(|shortcut| *shortcut == GraphicsCharacterShortcut::ApplyColorMap)
+            .and_then(|_| self.color_map.apply(&tile))
+            .or(clicked_mapping);
+        if let Some(mapped) = mapped {
             apply_tile(
                 &mut document.controller,
                 self.selected_tile,
@@ -333,7 +345,7 @@ impl GraphicsEditor {
                 tile = current.clone();
             }
         }
-        let transform = ui
+        let clicked_transform = ui
             .horizontal(|ui| {
                 if ui.button("Flip horizontal").clicked() {
                     Some((true, false))
@@ -344,6 +356,28 @@ impl GraphicsEditor {
                 }
             })
             .inner;
+        let transform = match character_shortcut {
+            Some(GraphicsCharacterShortcut::FlipHorizontal) => Some((true, false)),
+            Some(GraphicsCharacterShortcut::FlipVertical) => Some((false, true)),
+            _ => clicked_transform,
+        };
+        if character_shortcut == Some(GraphicsCharacterShortcut::RotateClockwise) {
+            apply_tile(
+                &mut document.controller,
+                self.selected_tile,
+                tile.rotated_clockwise(),
+                &mut self.error,
+            );
+            if let Some(current) = document
+                .controller
+                .value()
+                .graphics
+                .tiles
+                .get(self.selected_tile)
+            {
+                tile = current.clone();
+            }
+        }
         if let Some((horizontal, vertical)) = transform {
             flip_tile(
                 &mut document.controller,

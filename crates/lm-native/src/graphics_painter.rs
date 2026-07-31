@@ -32,6 +32,15 @@ pub(crate) enum TilePointerAction {
     Paste(usize),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GraphicsCharacterShortcut {
+    ApplyColorMap,
+    EditColorMap,
+    RotateClockwise,
+    FlipHorizontal,
+    FlipVertical,
+}
+
 #[derive(Clone, Debug)]
 struct ColorMapDialog {
     draft: GraphicsColorMapFilters,
@@ -46,6 +55,14 @@ pub(crate) struct GraphicsColorMapEditor {
 }
 
 impl GraphicsColorMapEditor {
+    pub(crate) fn apply(&self, tile: &IndexedTile) -> Option<IndexedTile> {
+        self.filters.apply(self.selected_filter, tile)
+    }
+
+    pub(crate) fn open_dialog(&mut self) {
+        self.begin_dialog();
+    }
+
     pub(crate) fn show(
         &mut self,
         ui: &mut egui::Ui,
@@ -456,6 +473,37 @@ pub(crate) fn take_tile_shift(
     })
 }
 
+pub(crate) fn take_graphics_character_shortcut(
+    ui: &mut egui::Ui,
+    selected: usize,
+    responses: &[egui::Response],
+) -> Option<GraphicsCharacterShortcut> {
+    if !responses
+        .get(selected)
+        .is_some_and(egui::Response::has_focus)
+    {
+        return None;
+    }
+    ui.input_mut(|input| {
+        if input.modifiers.any() {
+            return None;
+        }
+        [
+            (egui::Key::D, GraphicsCharacterShortcut::ApplyColorMap),
+            (egui::Key::M, GraphicsCharacterShortcut::EditColorMap),
+            (egui::Key::R, GraphicsCharacterShortcut::RotateClockwise),
+            (egui::Key::X, GraphicsCharacterShortcut::FlipHorizontal),
+            (egui::Key::Y, GraphicsCharacterShortcut::FlipVertical),
+        ]
+        .into_iter()
+        .find_map(|(key, shortcut)| {
+            input
+                .consume_key(egui::Modifiers::NONE, key)
+                .then_some(shortcut)
+        })
+    })
+}
+
 fn navigated_tile_index(selected: usize, tile_count: usize, navigation: TileNavigation) -> usize {
     let Some(last) = tile_count.checked_sub(1) else {
         return 0;
@@ -854,5 +902,62 @@ mod tests {
             });
         });
         assert_eq!(palette_row, 7);
+    }
+
+    #[test]
+    fn focused_grid_routes_exact_native_character_shortcuts() {
+        let cases = [
+            (egui::Key::D, GraphicsCharacterShortcut::ApplyColorMap),
+            (egui::Key::M, GraphicsCharacterShortcut::EditColorMap),
+            (egui::Key::R, GraphicsCharacterShortcut::RotateClockwise),
+            (egui::Key::X, GraphicsCharacterShortcut::FlipHorizontal),
+            (egui::Key::Y, GraphicsCharacterShortcut::FlipVertical),
+        ];
+        for (key, expected) in cases {
+            let context = egui::Context::default();
+            let mut selected = 0;
+            let _ = context.run(egui::RawInput::default(), |context| {
+                render_keyboard_grid(context, &mut selected, true);
+            });
+            let mut actual = None;
+            let _ = context.run(
+                egui::RawInput {
+                    events: vec![key_event(key, egui::Modifiers::NONE)],
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let responses = (0..TEST_GRID_TILES)
+                            .map(|index| ui.button(index.to_string()))
+                            .collect::<Vec<_>>();
+                        actual = take_graphics_character_shortcut(ui, selected, &responses);
+                    });
+                },
+            );
+            assert_eq!(actual, Some(expected));
+        }
+
+        let context = egui::Context::default();
+        let mut selected = 0;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_keyboard_grid(context, &mut selected, true);
+        });
+        let mut modified = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![key_event(egui::Key::X, egui::Modifiers::CTRL)],
+                modifiers: egui::Modifiers::CTRL,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    let responses = (0..TEST_GRID_TILES)
+                        .map(|index| ui.button(index.to_string()))
+                        .collect::<Vec<_>>();
+                    modified = take_graphics_character_shortcut(ui, selected, &responses);
+                });
+            },
+        );
+        assert_eq!(modified, None);
     }
 }

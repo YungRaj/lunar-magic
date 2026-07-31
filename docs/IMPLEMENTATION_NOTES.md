@@ -1706,6 +1706,12 @@ It enters the same persistence action as each visible Save/Commit button: the po
 uses its bounded background writer, pristine SMW requires an expanded ROM and staged changes, and
 the installed editor additionally retains dirty-state, revision, file-worker, and manifest-loader
 gates. Modified F9 combinations are left available to other shortcut routing.
+The executable's character jump table covers the inclusive `D` through `Y` range twice, for
+uppercase and lowercase input, and maps only five entries: D applies the selected color map, M
+opens the map editor, R rotates the active tile 90 degrees clockwise, X flips horizontally, and Y
+flips vertically. The shared focus-scoped adapter accepts only unmodified forms of those keys.
+Every mutating form joins the existing undoable or ownership-guarded tile replacement path; M
+opens the same transactional color-map draft used by the visible button.
 The recovered color-map subsystem is represented as sixteen independent sixteen-entry mappings.
 Every filter defaults to identity; each edit strictly selects one 4-bit source and destination,
 Reset restores only the active mapping, and tile application masks each stored pixel to its low

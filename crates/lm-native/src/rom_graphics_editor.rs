@@ -1,10 +1,11 @@
 use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
-        GraphicsColorMapEditor, TILE_GRID_COLUMNS, TileEditorZoom, TilePointerAction,
-        apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile, palette_color,
-        show_tile_grid_status, take_graphics_save_shortcut, take_tile_shift, tile_button,
-        tile_coordinate, tile_pointer_action,
+        GraphicsCharacterShortcut, GraphicsColorMapEditor, TILE_GRID_COLUMNS, TileEditorZoom,
+        TilePointerAction, apply_tile_keyboard_navigation, apply_tile_palette_keyboard, paint_tile,
+        palette_color, show_tile_grid_status, take_graphics_character_shortcut,
+        take_graphics_save_shortcut, take_tile_shift, tile_button, tile_coordinate,
+        tile_pointer_action,
     },
     native_clipboard,
 };
@@ -58,6 +59,7 @@ pub(crate) struct RomGraphicsEditor {
     pixel_zoom: TileEditorZoom,
     color_map: GraphicsColorMapEditor,
     pending_shift: Option<TileShift>,
+    pending_character_shortcut: Option<GraphicsCharacterShortcut>,
     search_start: String,
     search_end: String,
     error: Option<String>,
@@ -490,6 +492,8 @@ impl RomGraphicsEditor {
             &responses,
             edits_enabled && ownership::is_editable(owner),
         );
+        self.pending_character_shortcut =
+            take_graphics_character_shortcut(ui, self.selected_tile, &responses);
     }
     fn pixel_editor(
         &mut self,
@@ -532,10 +536,20 @@ impl RomGraphicsEditor {
             ui.label("No graphics tiles");
             return;
         };
-        if let Some(mapped) =
+        let character_shortcut = self.pending_character_shortcut.take();
+        if character_shortcut == Some(GraphicsCharacterShortcut::EditColorMap) {
+            self.color_map.open_dialog();
+        }
+        let clicked_mapping =
             self.color_map
-                .show(ui, palette, self.palette_row, &tile, !stale && editable)
-        {
+                .show(ui, palette, self.palette_row, &tile, !stale && editable);
+        let mapped = (character_shortcut == Some(GraphicsCharacterShortcut::ApplyColorMap)
+            && !stale
+            && editable)
+            .then(|| self.color_map.apply(&tile))
+            .flatten()
+            .or(clicked_mapping);
+        if let Some(mapped) = mapped {
             self.apply_tile(mapped);
             if let Some(current) = self.workspace.as_ref().and_then(|workspace| {
                 workspace
@@ -573,7 +587,7 @@ impl RomGraphicsEditor {
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
         });
-        let transform = ui
+        let clicked_transform = ui
             .horizontal(|ui| {
                 if ui
                     .add_enabled(!stale && editable, egui::Button::new("Flip horizontal"))
@@ -590,6 +604,29 @@ impl RomGraphicsEditor {
                 }
             })
             .inner;
+        let transform = match character_shortcut {
+            Some(GraphicsCharacterShortcut::FlipHorizontal) if !stale && editable => {
+                Some((true, false))
+            }
+            Some(GraphicsCharacterShortcut::FlipVertical) if !stale && editable => {
+                Some((false, true))
+            }
+            _ => clicked_transform,
+        };
+        if character_shortcut == Some(GraphicsCharacterShortcut::RotateClockwise)
+            && !stale
+            && editable
+        {
+            let transformed = tile.rotated_clockwise();
+            self.apply_tile(transformed);
+            if let Some(current) = self
+                .workspace
+                .as_ref()
+                .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
+            {
+                tile = current.clone();
+            }
+        }
         if let Some((horizontal, vertical)) = transform {
             let transformed = tile.flipped(horizontal, vertical);
             self.apply_tile(transformed);

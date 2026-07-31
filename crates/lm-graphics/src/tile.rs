@@ -74,6 +74,20 @@ impl IndexedTile {
         Self { pixels }
     }
 
+    /// Returns the tile rotated 90 degrees clockwise.
+    #[must_use]
+    pub fn rotated_clockwise(&self) -> Self {
+        let mut pixels = [0; Self::PIXEL_COUNT];
+        for y in 0..Self::HEIGHT {
+            for x in 0..Self::WIDTH {
+                let source_x = y;
+                let source_y = Self::HEIGHT - 1 - x;
+                pixels[y * Self::WIDTH + x] = self.pixels[source_y * Self::WIDTH + source_x];
+            }
+        }
+        Self { pixels }
+    }
+
     #[must_use]
     pub fn shifted_wrapping(&self, direction: TileShift) -> Self {
         let mut pixels = [0; Self::PIXEL_COUNT];
@@ -137,5 +151,23 @@ mod tests {
                 .fold(tile.clone(), |tile, _| tile.shifted_wrapping(direction));
             assert_eq!(cycled, tile);
         }
+    }
+
+    #[test]
+    fn clockwise_rotation_matches_the_native_editor_and_cycles_in_four_steps() {
+        let mut pixels = [0; IndexedTile::PIXEL_COUNT];
+        pixels[0] = 1;
+        pixels[7] = 2;
+        pixels[7 * IndexedTile::WIDTH] = 3;
+        let tile = IndexedTile::new(pixels);
+        let rotated = tile.rotated_clockwise();
+
+        assert_eq!(rotated.pixel(7, 0), Some(1));
+        assert_eq!(rotated.pixel(7, 7), Some(2));
+        assert_eq!(rotated.pixel(0, 0), Some(3));
+        assert_eq!(
+            (0..4).fold(tile.clone(), |tile, _| tile.rotated_clockwise()),
+            tile
+        );
     }
 }

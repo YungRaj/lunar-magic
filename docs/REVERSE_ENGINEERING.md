@@ -1227,8 +1227,8 @@ handling, focus transfer, and automatic scrolling. Authenticated Page Up/Down in
 forward/backward through each surface's available display-palette rows. Their shared transient
 hover outline and status line distinguish bounded selected and hovered hexadecimal tile indices
 without persisting stale hover state. Their selected-tile pixel grids also share 800–4000% discrete
-zoom with one geometry source for rendering and hit testing. Exact original key/status/zoom
-variants and color-map filtering remain separate UI-parity work. The documented 8×8-editor
+zoom with one geometry source for rendering and hit testing. Exact original status/zoom variants
+remain separate UI-parity work. The documented 8×8-editor
 Shift+Arrow behavior is now implemented exactly as a one-pixel directional wrap. It uses the same
 revisioned or ownership-guarded tile replacement paths as paint, paste, and flips rather than a
 presentation-only buffer. Exact Ctrl+left-click copy and unmodified right-click paste gestures now
@@ -1245,6 +1245,12 @@ the selected row before 4bpp re-encoding. The dialog previews the base and mappe
 source/destination pair, resets the selected row to identity, snapshots all 256 entries on open,
 and restores them on Cancel. Rust now models those exact dimensions and transactional semantics
 and routes selected-tile application through each graphics surface's existing mutation boundary.
+`HandleGraphicsEditorCharacterShortcut` at `005061e0` indexes a 54-byte dispatch table for both
+uppercase and lowercase characters from D through Y. Its only non-default entries are D, M, R, X,
+and Y, which synthesize the existing Do Map, Map Colors, Rotate 90°, Flip X, and Flip Y button
+commands respectively. The Rust editors now preserve that exact unmodified key set; rotation was
+added as a first-class clockwise indexed-tile transform and all five routes retain each surface's
+normal controller, ownership, stale-revision, and worker guards.
 
 ## Compression formats
 
