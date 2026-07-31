@@ -80,6 +80,9 @@ fn frontend_configuration_replacement_is_validated_and_atomic() {
     app.clear_toolbar();
     assert_eq!(app.toolbar(), None);
     assert_eq!(app.shortcuts(), Some(&shortcuts));
+    app.clear_localization();
+    assert_eq!(app.localization(), None);
+    assert_eq!(app.shortcuts(), Some(&shortcuts));
 }
 
 #[test]

@@ -5,18 +5,20 @@ use crate::{
     document_loader::{BoundedRead, DocumentLoader, LoadedDocument},
 };
 use eframe::egui;
-use lm_app::{FrontendConfig, ToolConfig};
+use lm_app::{FrontendConfig, LocalizationCatalog, ToolConfig};
 
 #[derive(Debug)]
 pub(crate) enum LoadedConfiguration {
     Frontend(FrontendConfig),
     ExternalTools(ToolConfig),
+    Localization(LocalizationCatalog),
 }
 
 #[derive(Clone, Copy)]
 enum ConfigurationKind {
     Frontend,
     ExternalTools,
+    Localization,
 }
 
 #[derive(Default)]
@@ -60,6 +62,21 @@ impl ConfigurationLoader {
         Ok(true)
     }
 
+    pub(crate) fn choose_localization_and_start(&mut self) -> Result<bool, String> {
+        let Some(path) = dialogs::choose_localization_catalog() else {
+            return Ok(false);
+        };
+        self.start(
+            ConfigurationKind::Localization,
+            BoundedRead::new(
+                path,
+                LocalizationCatalog::MAX_ENCODED_LEN as u64,
+                "language catalog",
+            ),
+        )?;
+        Ok(true)
+    }
+
     fn start(&mut self, kind: ConfigurationKind, request: BoundedRead) -> Result<(), String> {
         self.loader.start(vec![request])?;
         self.kind = Some(kind);
@@ -95,6 +112,9 @@ fn decode(kind: ConfigurationKind, loaded: LoadedDocument) -> Result<LoadedConfi
         ConfigurationKind::ExternalTools => ToolConfig::decode(&bytes)
             .map(LoadedConfiguration::ExternalTools)
             .map_err(|error| error.to_string()),
+        ConfigurationKind::Localization => LocalizationCatalog::decode(&bytes)
+            .map(LoadedConfiguration::Localization)
+            .map_err(|error| error.to_string()),
     }
 }
 
@@ -121,6 +141,21 @@ mod tests {
     #[test]
     fn rejects_malformed_configuration_without_a_replacement() {
         assert!(decode(ConfigurationKind::Frontend, loaded(vec![0; 8])).is_err());
+    }
+
+    #[test]
+    fn decodes_standalone_localization_catalog() {
+        let catalog = LocalizationCatalog::new(
+            "test",
+            lm_app::UiTextKey::ALL.map(|key| (key, format!("{key:?}"))),
+        )
+        .unwrap();
+        let result = decode(
+            ConfigurationKind::Localization,
+            loaded(catalog.encode().unwrap()),
+        )
+        .unwrap();
+        assert!(matches!(result, LoadedConfiguration::Localization(decoded) if decoded == catalog));
     }
 
     #[test]

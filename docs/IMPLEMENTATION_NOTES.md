@@ -2667,6 +2667,18 @@ localization catalog use a complete English fallback table rather than disappear
 bitmap/icon editor, separate user toolbar/menu surface, and Wine-observed customization behavior
 remain open parity gates.
 
+**Tools → Language** now exposes the active locale and installs standalone `.lmlang` catalogs using
+the canonical `LMLOC001` decoder on the existing bounded, non-blocking document worker. The public
+maximum encoded size exactly covers a valid catalog with the longest locale and every maximum-size
+text entry. A successful load replaces the complete catalog atomically and persists its exact
+canonical Unicode bytes; malformed, oversized, truncated, or incomplete catalogs leave the active
+language unchanged. **Use Built-in English** removes the custom catalog explicitly and persists that
+choice. Persisted localization, shortcut, and toolbar hex payloads are preflighted against their
+public canonical maximum sizes before byte-vector allocation. Native title, status, and
+configured-toolbar text consume the catalog today. Complete menu
+and dialog localization, automatic language discovery, original switch behavior, and Wine evidence
+remain open.
+
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and
 publishes the returned framebuffer through `lm-render`'s bounded PNG encoder. This avoids relying

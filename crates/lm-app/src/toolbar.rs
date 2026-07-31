@@ -7,6 +7,7 @@ use crate::{Command, LevelNavigationDirection, UiTextKey};
 const MAGIC: &[u8; 8] = b"LMTBAR01";
 const MAX_ITEMS: usize = 128;
 const MAX_ID_BYTES: usize = 64;
+const MAX_ENCODED_BYTES: usize = MAGIC.len() + 2 + MAX_ITEMS * (4 + MAX_ID_BYTES);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -128,6 +129,9 @@ impl std::fmt::Display for ToolbarError {
 impl std::error::Error for ToolbarError {}
 
 impl ToolbarConfig {
+    /// Maximum canonical `LMTBAR01` size accepted by native bounded loaders.
+    pub const MAX_ENCODED_LEN: usize = MAX_ENCODED_BYTES;
+
     /// Validates item limits, stable identifiers, and separator placement.
     ///
     /// # Errors

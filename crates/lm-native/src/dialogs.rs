@@ -99,6 +99,12 @@ pub(crate) fn choose_frontend_config() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_localization_catalog() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Lunar Magic language catalog", &["lmlang"])
+        .pick_file()
+}
+
 pub(crate) fn choose_palette_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Portable Lunar Magic palette", &["lmpal"])

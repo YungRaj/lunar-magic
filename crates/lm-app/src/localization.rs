@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 const MAGIC: &[u8; 8] = b"LMLOC001";
 const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
+const MAX_ENCODED_BYTES: usize =
+    MAGIC.len() + 2 + MAX_LOCALE_BYTES + 2 + UiTextKey::ALL.len() * (1 + 2 + MAX_TEXT_BYTES);
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -89,6 +91,9 @@ impl std::fmt::Display for LocalizationError {
 impl std::error::Error for LocalizationError {}
 
 impl LocalizationCatalog {
+    /// Maximum canonical `LMLOC001` size accepted by native bounded loaders.
+    pub const MAX_ENCODED_LEN: usize = MAX_ENCODED_BYTES;
+
     #[must_use]
     pub fn locale(&self) -> &str {
         &self.locale
@@ -302,6 +307,18 @@ mod tests {
                 .unwrap(),
             bytes
         );
+    }
+
+    #[test]
+    fn published_encoded_limit_accepts_the_largest_valid_catalog() {
+        let catalog = LocalizationCatalog::new(
+            "l".repeat(MAX_LOCALE_BYTES),
+            UiTextKey::ALL.map(|key| (key, "x".repeat(MAX_TEXT_BYTES))),
+        )
+        .unwrap();
+        let bytes = catalog.encode().unwrap();
+        assert_eq!(bytes.len(), LocalizationCatalog::MAX_ENCODED_LEN);
+        assert_eq!(LocalizationCatalog::decode(&bytes).unwrap(), catalog);
     }
 
     #[test]

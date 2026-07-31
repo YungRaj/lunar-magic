@@ -340,6 +340,35 @@ impl NativeApplication {
                 ui.close_menu();
                 self.toolbar_editor.open(self.app.toolbar());
             }
+            let locale = self.app.localization().map_or_else(
+                || "Built-in English".to_owned(),
+                |catalog| catalog.locale().into(),
+            );
+            ui.menu_button(format!("Language ({locale})"), |ui| {
+                if ui
+                    .add_enabled(
+                        !self.configuration_loader.is_running(),
+                        egui::Button::new("Install Language Catalog…"),
+                    )
+                    .clicked()
+                {
+                    ui.close_menu();
+                    if let Err(error) = self.configuration_loader.choose_localization_and_start() {
+                        self.effects.error = Some(error);
+                    }
+                }
+                if ui
+                    .add_enabled(
+                        self.app.localization().is_some(),
+                        egui::Button::new("Use Built-in English"),
+                    )
+                    .clicked()
+                {
+                    ui.close_menu();
+                    self.app.clear_localization();
+                    self.app.status = "Restored built-in English".into();
+                }
+            });
             if ui
                 .add_enabled(
                     !self.configuration_loader.is_running(),

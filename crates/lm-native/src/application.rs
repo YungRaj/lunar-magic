@@ -66,7 +66,9 @@ use crate::{
     vanilla_level_editor::VanillaLevelEditor,
 };
 use eframe::egui;
-use lm_app::{AppState, Command, EditorMode, ShortcutConfig, ToolbarConfig, UiTextKey};
+use lm_app::{
+    AppState, Command, EditorMode, LocalizationCatalog, ShortcutConfig, ToolbarConfig, UiTextKey,
+};
 
 mod document_menus;
 mod menus;
@@ -160,6 +162,7 @@ impl NativeApplication {
     const RESTORE_POLICY_STORAGE_KEY: &'static str = "lunar_magic_rust.restore_policy.v1";
     const SHORTCUT_STORAGE_KEY: &'static str = "lunar_magic_rust.shortcuts.v1";
     const TOOLBAR_STORAGE_KEY: &'static str = "lunar_magic_rust.toolbar.v1";
+    const LOCALIZATION_STORAGE_KEY: &'static str = "lunar_magic_rust.localization.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -220,6 +223,25 @@ impl NativeApplication {
             };
             if let Err(error) = result {
                 self.effects.error = Some(format!("cannot load toolbar layout: {error}"));
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::LOCALIZATION_STORAGE_KEY) {
+            let result = if encoded == "builtin-en" {
+                self.app.clear_localization();
+                Ok(())
+            } else {
+                encoded
+                    .strip_prefix("hex:")
+                    .ok_or_else(|| "unknown localization preference version".to_owned())
+                    .and_then(decode_localization_preference)
+                    .and_then(|catalog| {
+                        self.app
+                            .set_localization(catalog)
+                            .map_err(|error| error.to_string())
+                    })
+            };
+            if let Err(error) = result {
+                self.effects.error = Some(format!("cannot load language catalog: {error}"));
             }
         }
     }
@@ -353,6 +375,14 @@ impl NativeApplication {
                 self.app.status = "Installed external-tool configuration".into();
                 Ok(())
             }
+            LoadedConfiguration::Localization(catalog) => {
+                let locale = catalog.locale().to_owned();
+                self.app
+                    .set_localization(catalog)
+                    .map_err(|error| error.to_string())?;
+                self.app.status = format!("Installed {locale} language catalog");
+                Ok(())
+            }
         });
         if let Err(error) = result {
             self.effects.error = Some(error);
@@ -398,6 +428,11 @@ impl eframe::App for NativeApplication {
             |toolbar| format!("hex:{}", encode_toolbar_preference(toolbar)),
         );
         storage.set_string(Self::TOOLBAR_STORAGE_KEY, toolbar);
+        let localization = self.app.localization().map_or_else(
+            || "builtin-en".to_owned(),
+            |catalog| format!("hex:{}", encode_localization_preference(catalog)),
+        );
+        storage.set_string(Self::LOCALIZATION_STORAGE_KEY, localization);
     }
 
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
@@ -483,7 +518,8 @@ fn encode_shortcut_preference(config: &ShortcutConfig) -> String {
 }
 
 fn decode_shortcut_preference(value: &str) -> Result<ShortcutConfig, String> {
-    ShortcutConfig::decode(&decode_hex(value)?).map_err(|error| error.to_string())
+    ShortcutConfig::decode(&decode_hex(value, ShortcutConfig::MAX_ENCODED_LEN)?)
+        .map_err(|error| error.to_string())
 }
 
 fn encode_toolbar_preference(config: &ToolbarConfig) -> String {
@@ -494,7 +530,20 @@ fn encode_toolbar_preference(config: &ToolbarConfig) -> String {
 }
 
 fn decode_toolbar_preference(value: &str) -> Result<ToolbarConfig, String> {
-    ToolbarConfig::decode(&decode_hex(value)?).map_err(|error| error.to_string())
+    ToolbarConfig::decode(&decode_hex(value, ToolbarConfig::MAX_ENCODED_LEN)?)
+        .map_err(|error| error.to_string())
+}
+
+fn encode_localization_preference(catalog: &LocalizationCatalog) -> String {
+    let bytes = catalog
+        .encode()
+        .expect("active localization catalog is already validated");
+    encode_hex(&bytes)
+}
+
+fn decode_localization_preference(value: &str) -> Result<LocalizationCatalog, String> {
+    LocalizationCatalog::decode(&decode_hex(value, LocalizationCatalog::MAX_ENCODED_LEN)?)
+        .map_err(|error| error.to_string())
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -507,9 +556,12 @@ fn encode_hex(bytes: &[u8]) -> String {
     encoded
 }
 
-fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
+fn decode_hex(value: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
     if value.len() % 2 != 0 {
         return Err("encoded preference has an odd length".into());
+    }
+    if value.len() / 2 > max_bytes {
+        return Err("encoded preference exceeds its bounded format limit".into());
     }
     value
         .as_bytes()
@@ -570,6 +622,28 @@ mod preference_tests {
         assert!(decode_toolbar_preference("0").is_err());
         assert!(decode_toolbar_preference("zz").is_err());
         assert!(decode_toolbar_preference("00").is_err());
+    }
+
+    #[test]
+    fn localization_preference_round_trips_unicode_catalog() {
+        let catalog = LocalizationCatalog::new(
+            "ja-JP",
+            UiTextKey::ALL.map(|key| (key, format!("日本語-{key:?}"))),
+        )
+        .unwrap();
+        let encoded = encode_localization_preference(&catalog);
+        assert_eq!(decode_localization_preference(&encoded).unwrap(), catalog);
+    }
+
+    #[test]
+    fn localization_preference_rejects_malformed_payloads() {
+        assert!(decode_localization_preference("0").is_err());
+        assert!(decode_localization_preference("zz").is_err());
+        assert!(decode_localization_preference("00").is_err());
+        assert!(
+            decode_localization_preference(&"00".repeat(LocalizationCatalog::MAX_ENCODED_LEN + 1))
+                .is_err()
+        );
     }
 }
 

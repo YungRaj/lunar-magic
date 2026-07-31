@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 
 const MAGIC: &[u8; 8] = b"LMSHORT1";
 const MAX_BINDINGS: usize = 256;
+const MAX_ENCODED_BYTES: usize = MAGIC.len() + 2 + MAX_BINDINGS * 8;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ShortcutModifiers(u8);
@@ -83,6 +84,9 @@ impl std::fmt::Display for ShortcutError {
 impl std::error::Error for ShortcutError {}
 
 impl ShortcutConfig {
+    /// Maximum canonical `LMSHORT1` size accepted by native bounded loaders.
+    pub const MAX_ENCODED_LEN: usize = MAX_ENCODED_BYTES;
+
     /// Validates binding limits, logical keys, modifiers, and gesture uniqueness.
     ///
     /// # Errors

@@ -59,6 +59,11 @@ impl AppState {
         self.localization.as_ref()
     }
 
+    /// Restores the frontend's built-in English text instead of a custom catalog.
+    pub fn clear_localization(&mut self) {
+        self.localization = None;
+    }
+
     /// Atomically replaces the portable toolbar layout after structural validation.
     ///
     /// # Errors
