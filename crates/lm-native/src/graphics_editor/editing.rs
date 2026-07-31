@@ -1,6 +1,6 @@
 use crate::native_clipboard;
 use lm_app::{GraphicsControllerEdit, GraphicsDocumentController};
-use lm_graphics::{GraphicsOwnership, GraphicsTileChange, IndexedTile};
+use lm_graphics::{GraphicsOwnership, GraphicsTileChange, IndexedTile, TileShift};
 
 pub(super) fn apply_pixel(
     controller: &mut GraphicsDocumentController,
@@ -50,6 +50,24 @@ pub(super) fn flip_tile(
         controller,
         index,
         tile.flipped(horizontal, vertical),
+        error_slot,
+    );
+}
+
+pub(super) fn shift_tile(
+    controller: &mut GraphicsDocumentController,
+    index: usize,
+    direction: TileShift,
+    error_slot: &mut Option<String>,
+) {
+    let Some(tile) = controller.value().graphics.tiles.get(index) else {
+        *error_slot = Some("graphics document has no tile to shift".into());
+        return;
+    };
+    apply_tile(
+        controller,
+        index,
+        tile.shifted_wrapping(direction),
         error_slot,
     );
 }

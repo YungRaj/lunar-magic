@@ -2,7 +2,7 @@ use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
         TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, paint_tile,
-        palette_color, show_tile_grid_status, tile_button, tile_coordinate,
+        palette_color, show_tile_grid_status, take_tile_shift, tile_button, tile_coordinate,
     },
     native_clipboard,
 };
@@ -11,7 +11,7 @@ use lm_app::{
     AppState, Command, GraphicsController, GraphicsControllerEdit, ProfiledControllerSnapshot,
     RevisionProfile,
 };
-use lm_graphics::{GraphicsTileChange, IndexedTile, PaletteInterchangeFile};
+use lm_graphics::{GraphicsTileChange, IndexedTile, PaletteInterchangeFile, TileShift};
 
 mod commit;
 mod external_edit;
@@ -54,6 +54,7 @@ pub(crate) struct RomGraphicsEditor {
     selected_color: u8,
     palette_row: usize,
     pixel_zoom: TileEditorZoom,
+    pending_shift: Option<TileShift>,
     search_start: String,
     search_end: String,
     error: Option<String>,
@@ -370,7 +371,7 @@ impl RomGraphicsEditor {
         }
         ui.separator();
         ui.columns(2, |columns| {
-            self.tile_list(&mut columns[0], &palette);
+            self.tile_list(&mut columns[0], &palette, !stale && !file_work_running);
             self.pixel_editor(
                 &mut columns[1],
                 &palette,
@@ -421,7 +422,12 @@ impl RomGraphicsEditor {
         });
         None
     }
-    fn tile_list(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
+    fn tile_list(
+        &mut self,
+        ui: &mut egui::Ui,
+        palette: &PaletteInterchangeFile,
+        edits_enabled: bool,
+    ) {
         let Some(workspace) = &self.workspace else {
             return;
         };
@@ -452,6 +458,13 @@ impl RomGraphicsEditor {
             });
         apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
         show_tile_grid_status(ui, self.selected_tile, &responses);
+        let owner = workspace.controller.ownership().owner(self.selected_tile);
+        self.pending_shift = take_tile_shift(
+            ui,
+            self.selected_tile,
+            &responses,
+            edits_enabled && ownership::is_editable(owner),
+        );
     }
     fn pixel_editor(
         &mut self,
@@ -494,6 +507,17 @@ impl RomGraphicsEditor {
             ui.label("No graphics tiles");
             return;
         };
+        if let Some(direction) = self.pending_shift.take() {
+            let shifted = tile.shifted_wrapping(direction);
+            self.apply_tile(shifted);
+            if let Some(current) = self
+                .workspace
+                .as_ref()
+                .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
+            {
+                tile = current.clone();
+            }
+        }
         ui.horizontal(|ui| {
             if ui.button("Copy tile").clicked() {
                 match native_clipboard::encode_graphics_tile(&tile) {

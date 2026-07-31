@@ -21,7 +21,7 @@ pub(super) fn show(ui: &mut egui::Ui, owner: Option<GraphicsTileOwner>) -> bool 
     is_editable(owner)
 }
 
-const fn is_editable(owner: Option<GraphicsTileOwner>) -> bool {
+pub(super) const fn is_editable(owner: Option<GraphicsTileOwner>) -> bool {
     matches!(owner, Some(GraphicsTileOwner::Editable))
 }
 

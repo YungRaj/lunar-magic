@@ -3,19 +3,19 @@ use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
         TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, paint_tile,
-        palette_color, show_tile_grid_status, tile_button, tile_coordinate,
+        palette_color, show_tile_grid_status, take_tile_shift, tile_button, tile_coordinate,
     },
     native_clipboard,
 };
 use eframe::egui;
 use lm_app::GraphicsDocumentController;
-use lm_graphics::PaletteInterchangeFile;
+use lm_graphics::{PaletteInterchangeFile, TileShift};
 
 mod document_io;
 mod editing;
 
 use document_io::decode_documents;
-use editing::{apply_pixel, flip_tile, paste_tile};
+use editing::{apply_pixel, flip_tile, paste_tile, shift_tile};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -35,6 +35,7 @@ pub(crate) struct GraphicsEditor {
     selected_color: u8,
     palette_row: usize,
     pixel_zoom: TileEditorZoom,
+    pending_shift: Option<TileShift>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     save_worker: crate::persistence_worker::PersistenceWorker,
@@ -252,6 +253,7 @@ impl GraphicsEditor {
         });
         apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
         show_tile_grid_status(ui, self.selected_tile, &responses);
+        self.pending_shift = take_tile_shift(ui, self.selected_tile, &responses, true);
     }
 
     fn pixel_editor(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
@@ -269,6 +271,23 @@ impl GraphicsEditor {
             ui.label("No graphics tiles");
             return;
         };
+        if let Some(direction) = self.pending_shift.take() {
+            shift_tile(
+                &mut document.controller,
+                self.selected_tile,
+                direction,
+                &mut self.error,
+            );
+            if let Some(current) = document
+                .controller
+                .value()
+                .graphics
+                .tiles
+                .get(self.selected_tile)
+            {
+                tile = current.clone();
+            }
+        }
         ui.label(format!("Tile {:03X}", self.selected_tile));
         self.pixel_zoom.show(ui);
         let transform = ui
@@ -420,6 +439,45 @@ mod tests {
         assert_eq!(
             controller.value().graphics.tiles[0],
             original.flipped(true, false)
+        );
+        assert!(controller.undo(3).unwrap());
+        assert_eq!(controller.value().graphics.tiles[0], original);
+    }
+
+    #[test]
+    fn wrapping_tile_shifts_are_controller_revisioned_and_undoable() {
+        let file = GraphicsInterchangeFile {
+            source_slot: 0,
+            graphics: GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new(std::array::from_fn(|index| {
+                    index.to_le_bytes()[0] & 0x0f
+                }))],
+            },
+        };
+        let mut controller =
+            GraphicsDocumentController::decode("graphics.lmgfx".into(), &file.encode().unwrap())
+                .unwrap();
+        let original = controller.value().graphics.tiles[0].clone();
+        let mut error = None;
+        shift_tile(&mut controller, 0, TileShift::Left, &mut error);
+        assert_eq!(error, None);
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(
+            controller.value().graphics.tiles[0],
+            original.shifted_wrapping(TileShift::Left)
+        );
+        shift_tile(&mut controller, 0, TileShift::Down, &mut error);
+        assert_eq!(controller.revision(), 2);
+        assert_eq!(
+            controller.value().graphics.tiles[0],
+            original
+                .shifted_wrapping(TileShift::Left)
+                .shifted_wrapping(TileShift::Down)
+        );
+        assert!(controller.undo(2).unwrap());
+        assert_eq!(
+            controller.value().graphics.tiles[0],
+            original.shifted_wrapping(TileShift::Left)
         );
         assert!(controller.undo(3).unwrap());
         assert_eq!(controller.value().graphics.tiles[0], original);

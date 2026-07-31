@@ -1,12 +1,14 @@
 use crate::graphics_painter::{
     TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, paint_tile,
-    show_tile_grid_status, tile_button, tile_coordinate,
+    show_tile_grid_status, take_tile_shift, tile_button, tile_coordinate,
 };
 use eframe::egui;
 use lm_app::{
     AppState, Command, EditorMode, GraphicsController, GraphicsControllerEdit, RomExpansionCommand,
 };
-use lm_graphics::{Bgr555, GraphicsTileChange, IndexedTile, Palette, PaletteInterchangeFile};
+use lm_graphics::{
+    Bgr555, GraphicsTileChange, IndexedTile, Palette, PaletteInterchangeFile, TileShift,
+};
 use lm_project::GraphicsSaveOptions;
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
@@ -24,6 +26,7 @@ pub(crate) struct VanillaGraphicsEditor {
     selected_tile: usize,
     selected_color: u8,
     pixel_zoom: TileEditorZoom,
+    pending_shift: Option<TileShift>,
     error: Option<String>,
 }
 
@@ -173,6 +176,7 @@ impl VanillaGraphicsEditor {
             });
         apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
         show_tile_grid_status(ui, self.selected_tile, &responses);
+        self.pending_shift = take_tile_shift(ui, self.selected_tile, &responses, true);
     }
 
     fn pixel_editor(&mut self, ui: &mut egui::Ui, palette: &PaletteInterchangeFile) {
@@ -185,6 +189,10 @@ impl VanillaGraphicsEditor {
             ui.label("No tiles in this graphics file.");
             return;
         };
+        if let Some(direction) = self.pending_shift.take() {
+            tile = tile.shifted_wrapping(direction);
+            self.apply_tile(tile.clone());
+        }
         ui.label(format!("Tile {:03X}", self.selected_tile));
         self.pixel_zoom.show(ui);
         let transform = ui

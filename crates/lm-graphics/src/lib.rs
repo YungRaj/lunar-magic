@@ -83,7 +83,7 @@ pub use remap_stream::{
 };
 pub use rgb_palette_file::{RgbChannelExpansion, RgbPaletteFile, RgbPaletteFileError};
 pub use smw_palette_file::{SmwPaletteBackend, SmwPaletteFile, SmwPaletteFileError};
-pub use tile::{IndexedTile, TileEditError};
+pub use tile::{IndexedTile, TileEditError, TileShift};
 pub use tile_import::{
     BitmapImportError, ImportedTilePlacement, IndexedBitmapImport, IndexedBitmapImportOptions,
 };

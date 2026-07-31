@@ -1226,7 +1226,10 @@ eight-row Page Up/Down, including focus transfer and automatic scrolling. Their 
 hover outline and status line distinguish bounded selected and hovered hexadecimal tile indices
 without persisting stale hover state. Their selected-tile pixel grids also share 800–4000% discrete
 zoom with one geometry source for rendering and hit testing. Exact original key/status/zoom
-variants and color-map filtering remain separate UI-parity work.
+variants and color-map filtering remain separate UI-parity work. The documented 8×8-editor
+Shift+Arrow behavior is now implemented exactly as a one-pixel directional wrap. It uses the same
+revisioned or ownership-guarded tile replacement paths as paint, paste, and flips rather than a
+presentation-only buffer.
 
 ## Compression formats
 

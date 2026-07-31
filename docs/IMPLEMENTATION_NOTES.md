@@ -1689,6 +1689,10 @@ derived from the current frame's widget responses, so leaving the grid cannot re
 Each pixel editor exposes the same discrete 800%, 1600%, 2400%, 3200%, and 4000% selected-tile
 zoom choices, retaining the prior 320-pixel (4000%) default. The chosen square is passed to both
 the rasterizer and normalized pixel-coordinate adapter, so painting remains exact at every size.
+The recovered Shift+Arrow shortcut performs a lossless one-pixel wrap left, right, up, or down.
+The shared focus adapter accepts only the exact Shift modifier; portable wraps are independently
+undoable, pristine wraps enter the staged graphics controller, and installed wraps additionally
+require editable ownership plus a nonstale workspace with no active graphics file worker.
 Level objects and sprites have corresponding typed adapters that retain their complete lossless
 record bytes. The complete portable level editor, interpretation-bound native-stream document, and
 shared aggregate level-assets panel can copy or replace one selected record without parsing it as

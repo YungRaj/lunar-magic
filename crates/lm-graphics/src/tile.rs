@@ -9,6 +9,14 @@ pub enum TileEditError {
     ColorOutOfRange(u8),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TileShift {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
 impl std::fmt::Display for TileEditError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "invalid indexed-tile edit: {self:?}")
@@ -65,6 +73,23 @@ impl IndexedTile {
         }
         Self { pixels }
     }
+
+    #[must_use]
+    pub fn shifted_wrapping(&self, direction: TileShift) -> Self {
+        let mut pixels = [0; Self::PIXEL_COUNT];
+        for y in 0..Self::HEIGHT {
+            for x in 0..Self::WIDTH {
+                let (source_x, source_y) = match direction {
+                    TileShift::Left => ((x + 1) % Self::WIDTH, y),
+                    TileShift::Right => ((x + Self::WIDTH - 1) % Self::WIDTH, y),
+                    TileShift::Up => (x, (y + 1) % Self::HEIGHT),
+                    TileShift::Down => (x, (y + Self::HEIGHT - 1) % Self::HEIGHT),
+                };
+                pixels[y * Self::WIDTH + x] = self.pixels[source_y * Self::WIDTH + source_x];
+            }
+        }
+        Self { pixels }
+    }
 }
 
 #[cfg(test)]
@@ -87,5 +112,30 @@ mod tests {
         ));
         assert_eq!(tile, original);
         assert_eq!(tile.pixel(8, 0), None);
+    }
+
+    #[test]
+    fn wrapping_shifts_move_one_pixel_and_are_exactly_reversible() {
+        let tile = IndexedTile::new(std::array::from_fn(|index| index.to_le_bytes()[0] & 0x0f));
+        let left = tile.shifted_wrapping(TileShift::Left);
+        assert_eq!(left.pixel(0, 0), tile.pixel(1, 0));
+        assert_eq!(left.pixel(7, 0), tile.pixel(0, 0));
+        assert_eq!(left.shifted_wrapping(TileShift::Right), tile);
+
+        let up = tile.shifted_wrapping(TileShift::Up);
+        assert_eq!(up.pixel(0, 0), tile.pixel(0, 1));
+        assert_eq!(up.pixel(0, 7), tile.pixel(0, 0));
+        assert_eq!(up.shifted_wrapping(TileShift::Down), tile);
+
+        for direction in [
+            TileShift::Left,
+            TileShift::Right,
+            TileShift::Up,
+            TileShift::Down,
+        ] {
+            let cycled = (0..IndexedTile::WIDTH)
+                .fold(tile.clone(), |tile, _| tile.shifted_wrapping(direction));
+            assert_eq!(cycled, tile);
+        }
     }
 }

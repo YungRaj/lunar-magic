@@ -1,5 +1,5 @@
 use eframe::egui;
-use lm_graphics::{IndexedTile, PaletteInterchangeFile};
+use lm_graphics::{IndexedTile, PaletteInterchangeFile, TileShift};
 
 pub(crate) const TILE_GRID_COLUMNS: usize = 8;
 const TILE_GRID_PAGE_ROWS: usize = 8;
@@ -159,6 +159,38 @@ pub(crate) fn apply_tile_keyboard_navigation(
     *selected = next;
     response.request_focus();
     response.scroll_to_me(Some(egui::Align::Center));
+}
+
+pub(crate) fn take_tile_shift(
+    ui: &mut egui::Ui,
+    selected: usize,
+    responses: &[egui::Response],
+    enabled: bool,
+) -> Option<TileShift> {
+    if !enabled
+        || !responses
+            .get(selected)
+            .is_some_and(egui::Response::has_focus)
+    {
+        return None;
+    }
+    ui.input_mut(|input| {
+        if input.modifiers != egui::Modifiers::SHIFT {
+            return None;
+        }
+        [
+            (egui::Key::ArrowLeft, TileShift::Left),
+            (egui::Key::ArrowRight, TileShift::Right),
+            (egui::Key::ArrowUp, TileShift::Up),
+            (egui::Key::ArrowDown, TileShift::Down),
+        ]
+        .into_iter()
+        .find_map(|(key, shift)| {
+            input
+                .consume_key(egui::Modifiers::SHIFT, key)
+                .then_some(shift)
+        })
+    })
 }
 
 fn navigated_tile_index(selected: usize, tile_count: usize, navigation: TileNavigation) -> usize {
@@ -358,5 +390,46 @@ mod tests {
             render_keyboard_grid(context, &mut selected, false);
         });
         assert_eq!(selected, 9);
+    }
+
+    #[test]
+    fn focused_grid_routes_exact_shift_arrow_only_when_enabled() {
+        let context = egui::Context::default();
+        let mut selected = 9;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_keyboard_grid(context, &mut selected, true);
+        });
+        let input = egui::RawInput {
+            events: vec![key_event(egui::Key::ArrowLeft, egui::Modifiers::SHIFT)],
+            modifiers: egui::Modifiers::SHIFT,
+            ..Default::default()
+        };
+        let mut shift = None;
+        let _ = context.run(input, |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..70)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                apply_tile_keyboard_navigation(ui, &mut selected, &responses);
+                shift = take_tile_shift(ui, selected, &responses, true);
+            });
+        });
+        assert_eq!(selected, 9);
+        assert_eq!(shift, Some(TileShift::Left));
+
+        let input = egui::RawInput {
+            events: vec![key_event(egui::Key::ArrowRight, egui::Modifiers::SHIFT)],
+            modifiers: egui::Modifiers::SHIFT,
+            ..Default::default()
+        };
+        let _ = context.run(input, |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..70)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                shift = take_tile_shift(ui, selected, &responses, false);
+            });
+        });
+        assert_eq!(shift, None);
     }
 }
