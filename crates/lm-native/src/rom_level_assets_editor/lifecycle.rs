@@ -76,6 +76,7 @@ impl RomLevelAssetsEditor {
                 self.mwl_batch_status = None;
                 self.bypass_validation = None;
                 self.bypass_layer2_texture = None;
+                self.bypass_preview = Default::default();
                 self.workspace = Some(workspace);
                 self.panels.invalidate();
             }
@@ -125,6 +126,7 @@ impl RomLevelAssetsEditor {
         self.mwl_batch_status = None;
         self.bypass_validation = None;
         self.bypass_layer2_texture = None;
+        self.bypass_preview = Default::default();
         self.panels.invalidate();
     }
 

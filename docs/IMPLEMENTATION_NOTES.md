@@ -2717,6 +2717,11 @@ reopen, checksum validity, and exact undo. An ignored live-oracle test writes by
 that installed Rust path in the retained Lunar Magic-created ROM, asks Lunar Magic 3.63 under Wine
 to export level `$000`, and recovers `$5B` from MWL ExAnimation metadata word 0. This verifies all
 four inverted high bits plus preservation of the unrelated low nibble through the actual executable.
+The installed-assets Super GFX preview is a live staged view rather than a one-shot diagnostic:
+enabling it renders the current aggregate, and every accepted settings, level, Layer 2, palette, or
+ExAnimation-feature edit invalidates and regenerates the texture from the controller's new staged
+state. Preview failures are retained as diagnostics without retrying every GUI frame, and closing
+or reopening the workspace clears the live-preview lifecycle state.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to

@@ -48,6 +48,31 @@ struct NativeSpritePreviewPlacement {
 }
 
 #[derive(Default)]
+struct LivePreviewState {
+    enabled: bool,
+    dirty: bool,
+}
+
+impl LivePreviewState {
+    fn toggle(&mut self) {
+        self.enabled = !self.enabled;
+        self.dirty = self.enabled;
+    }
+
+    fn invalidate(&mut self) {
+        if self.enabled {
+            self.dirty = true;
+        }
+    }
+
+    fn take_refresh(&mut self) -> bool {
+        let refresh = self.enabled && self.dirty;
+        self.dirty = false;
+        refresh
+    }
+}
+
+#[derive(Default)]
 pub(crate) struct RomLevelAssetsEditor {
     workspace: Option<Workspace>,
     panels: AggregatePanels,
@@ -65,6 +90,7 @@ pub(crate) struct RomLevelAssetsEditor {
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     bypass_validation: Option<String>,
     bypass_layer2_texture: Option<egui::TextureHandle>,
+    bypass_preview: LivePreviewState,
 }
 
 impl RomLevelAssetsEditor {
@@ -173,6 +199,7 @@ impl RomLevelAssetsEditor {
                         } else {
                             self.bypass_validation = None;
                             self.bypass_layer2_texture = None;
+                            self.bypass_preview.invalidate();
                             self.panels.invalidate();
                         }
                     } else {
@@ -186,7 +213,18 @@ impl RomLevelAssetsEditor {
         if ui.button("Validate selected Super GFX files").clicked() {
             self.bypass_validation = self.workspace.as_ref().map(validate_super_graphics);
         }
-        if ui.button("Render bypass-aware level preview").clicked() {
+        let preview_button = if self.bypass_preview.enabled {
+            "Stop live bypass-aware preview"
+        } else {
+            "Start live bypass-aware preview"
+        };
+        if ui.button(preview_button).clicked() {
+            self.bypass_preview.toggle();
+            if self.bypass_preview.enabled {
+                self.bypass_layer2_texture = None;
+            }
+        }
+        if self.bypass_preview.take_refresh() {
             match self
                 .workspace
                 .as_ref()
@@ -580,6 +618,26 @@ mod tests {
     use super::*;
     use lm_graphics::{Bgr555, IndexedTile, Palette};
     use lm_level::{Map16Page, Map16Tile, Subtile};
+
+    #[test]
+    fn live_preview_refreshes_once_per_enable_or_accepted_edit() {
+        let mut preview = LivePreviewState::default();
+        assert!(!preview.take_refresh());
+        preview.invalidate();
+        assert!(!preview.take_refresh());
+
+        preview.toggle();
+        assert!(preview.take_refresh());
+        assert!(!preview.take_refresh());
+
+        preview.invalidate();
+        assert!(preview.take_refresh());
+        assert!(!preview.take_refresh());
+
+        preview.toggle();
+        preview.invalidate();
+        assert!(!preview.take_refresh());
+    }
 
     #[test]
     fn layer2_preview_uses_visual_coordinates_and_native_storage_planes() {
