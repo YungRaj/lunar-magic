@@ -138,6 +138,12 @@ pub(crate) fn choose_raw_graphics_save_path(slot: u16) -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_graphics_directory() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Extract All Standard GFX Files")
+        .pick_folder()
+}
+
 fn raw_graphics_file_name(slot: u16) -> String {
     let prefix = if slot <= 0x7f { "GFX" } else { "ExGFX" };
     format!("{prefix}{slot:02X}.bin")

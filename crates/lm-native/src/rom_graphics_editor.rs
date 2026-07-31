@@ -11,6 +11,7 @@ use lm_app::{
 use lm_graphics::{GraphicsTileChange, IndexedTile, PaletteInterchangeFile};
 
 mod commit;
+mod graphics_batch;
 mod lifecycle;
 mod ownership;
 
@@ -53,6 +54,7 @@ pub(crate) struct RomGraphicsEditor {
     persistence: crate::persistence_worker::PersistenceWorker,
     next_persistence_request: u64,
     io_status: Option<String>,
+    graphics_batch: graphics_batch::GraphicsBatchWorker,
 }
 
 impl RomGraphicsEditor {
@@ -68,6 +70,13 @@ impl RomGraphicsEditor {
             self.io_status = Some(match completion.result {
                 Ok(()) => "Raw graphics file extracted successfully.".into(),
                 Err(error) => format!("Raw graphics extraction failed: {error}"),
+            });
+        }
+        if let Some(result) = self.graphics_batch.show(context) {
+            self.io_status = Some(match result {
+                Ok(Some(count)) => format!("Extracted {count} standard GFX files successfully."),
+                Ok(None) => "Standard GFX extraction cancelled.".into(),
+                Err(error) => format!("Standard GFX extraction failed: {error}"),
             });
         }
         let mut command = match self.manifest_loader.show(context, revision) {
@@ -107,7 +116,9 @@ impl RomGraphicsEditor {
         });
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.controller.revision() != revision;
-        let file_work_running = self.loader.is_running() || self.persistence.is_running();
+        let file_work_running = self.loader.is_running()
+            || self.persistence.is_running()
+            || self.graphics_batch.is_running();
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
@@ -161,6 +172,15 @@ impl RomGraphicsEditor {
                 .clicked()
             {
                 self.begin_raw_export();
+            }
+            if ui
+                .add_enabled(
+                    !stale && !file_work_running,
+                    egui::Button::new("Extract all standard GFX…"),
+                )
+                .clicked()
+            {
+                self.begin_graphics_batch();
             }
         });
         if let Some(status) = &self.io_status {
@@ -380,6 +400,23 @@ impl RomGraphicsEditor {
             self.error = Some(error);
         } else {
             self.io_status = None;
+        }
+    }
+
+    fn begin_graphics_batch(&mut self) {
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let Some(directory) = crate::dialogs::choose_graphics_directory() else {
+            return;
+        };
+        let source = graphics_batch::GraphicsBatchSource {
+            image: workspace.image.clone(),
+            layout: workspace.profile.graphics,
+        };
+        match self.graphics_batch.start(source, directory) {
+            Ok(()) => self.io_status = None,
+            Err(error) => self.error = Some(error),
         }
     }
 }
