@@ -1222,8 +1222,10 @@ each flip as an independently undoable revision; pristine-layout and profile-bac
 stage the exact transformed pixels for their normal atomic commit, and the installed editor applies
 its fixed/ExAnimation ownership plus stale-worker gates before enabling either transform. The three
 tile sheets now share focus-scoped, bounded eight-column navigation for arrows, row Home/End, and
-eight-row Page Up/Down, including focus transfer and automatic scrolling. Exact original key
-variants, status, color-map filtering, and exact zoom interaction remain separate UI-parity work.
+eight-row Page Up/Down, including focus transfer and automatic scrolling. Their shared transient
+hover outline and status line distinguish bounded selected and hovered hexadecimal tile indices
+without persisting stale hover state. Exact original key/status variants, color-map filtering, and
+exact zoom interaction remain separate UI-parity work.
 
 ## Compression formats
 

@@ -1683,6 +1683,9 @@ Their eight-column tile sheets also share focus-scoped keyboard navigation. Unmo
 move by one tile or one row, Home/End move to the bounded ends of the current row, and Page Up/Down
 move by eight rows. Every move clamps to the available tile count, transfers keyboard focus, and
 scrolls the destination into view; keys are not consumed unless the selected tile owns focus.
+The same tile-grid adapter draws a distinct outline around the current nonselected hover target and
+reports the selected and hovered tile indices in bounded uppercase hexadecimal. Hover status is
+derived from the current frame's widget responses, so leaving the grid cannot retain a stale tile.
 Level objects and sprites have corresponding typed adapters that retain their complete lossless
 record bytes. The complete portable level editor, interpretation-bound native-stream document, and
 shared aggregate level-assets panel can copy or replace one selected record without parsing it as

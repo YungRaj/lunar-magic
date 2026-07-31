@@ -1,8 +1,8 @@
 use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
-        TILE_GRID_COLUMNS, apply_tile_keyboard_navigation, paint_tile, palette_color, tile_button,
-        tile_coordinate,
+        TILE_GRID_COLUMNS, apply_tile_keyboard_navigation, paint_tile, palette_color,
+        show_tile_grid_status, tile_button, tile_coordinate,
     },
     native_clipboard,
 };
@@ -450,6 +450,7 @@ impl RomGraphicsEditor {
                 });
             });
         apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
+        show_tile_grid_status(ui, self.selected_tile, &responses);
     }
     fn pixel_editor(
         &mut self,

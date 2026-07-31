@@ -44,8 +44,39 @@ pub(crate) fn tile_button(
             egui::Stroke::new(2.0_f32, egui::Color32::WHITE),
             egui::StrokeKind::Inside,
         );
+    } else if response.hovered() {
+        ui.painter().rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.0_f32, egui::Color32::LIGHT_BLUE),
+            egui::StrokeKind::Inside,
+        );
     }
     response
+}
+
+pub(crate) fn show_tile_grid_status(
+    ui: &mut egui::Ui,
+    selected: usize,
+    responses: &[egui::Response],
+) {
+    let hovered = responses.iter().position(egui::Response::hovered);
+    if let Some(status) = tile_grid_status(selected, responses.len(), hovered) {
+        ui.monospace(status);
+    } else {
+        ui.monospace("No graphics tiles");
+    }
+}
+
+fn tile_grid_status(selected: usize, tile_count: usize, hovered: Option<usize>) -> Option<String> {
+    let last = tile_count.checked_sub(1)?;
+    let selected = selected.min(last);
+    match hovered.filter(|index| *index <= last) {
+        Some(hovered) => Some(format!(
+            "Selected tile {selected:03X}  •  Hover tile {hovered:03X}"
+        )),
+        None => Some(format!("Selected tile {selected:03X}")),
+    }
 }
 
 pub(crate) fn apply_tile_keyboard_navigation(
@@ -200,6 +231,23 @@ mod tests {
         assert_eq!(
             navigated_tile_index(usize::MAX, 70, TileNavigation::Down),
             69
+        );
+    }
+
+    #[test]
+    fn tile_grid_status_is_bounded_and_reports_hover_separately() {
+        assert_eq!(tile_grid_status(0, 0, Some(0)), None);
+        assert_eq!(
+            tile_grid_status(usize::MAX, 0x22, None).as_deref(),
+            Some("Selected tile 021")
+        );
+        assert_eq!(
+            tile_grid_status(3, 0x22, Some(0x1f)).as_deref(),
+            Some("Selected tile 003  •  Hover tile 01F")
+        );
+        assert_eq!(
+            tile_grid_status(3, 0x22, Some(0x22)).as_deref(),
+            Some("Selected tile 003")
         );
     }
 
