@@ -2776,10 +2776,12 @@ Each successful staged render also materializes a semantic inspection for that s
 the exact Layer 2 and Layer 1 placement slices supplied to the framebuffer. It retains every
 duplicate placement in painter order instead of inventing a single top tile, decodes the 14-bit
 Map16 number and whole-definition X/Y flips, and reports the installed definition's acts-like value
-and four raw subtile words. It also invokes `Map16Set::resolve_acts_like` with the complete installed
-tile count as its traversal bound, displaying the exact chain and self-linked terminal or preserving
-the typed cycle, out-of-range, and resolution-limit failure. Missing definitions and cells with no
-sparse placement are explicit.
+and four raw subtile words. Each subtile is additionally reported at its post-placement visual
+quadrant with its original definition quadrant, ten-bit tile number, CGRAM row, priority, and
+effective X/Y flips after composing the whole-definition flips. It also invokes
+`Map16Set::resolve_acts_like` with the complete installed tile count as its traversal bound,
+displaying the exact chain and self-linked terminal or preserving the typed cycle, out-of-range,
+and resolution-limit failure. Missing definitions and cells with no sparse placement are explicit.
 The same inspection retains provenance on every materialized 16×16 standard-sprite preview part:
 original serialized token index, sprite ID, recovered source class, per-sprite part ordinal, preview
 definition index, signed pixel origin, and all four tile words. Parts are included when their
@@ -2800,6 +2802,8 @@ independent refresh/asset/selection phase matrix. Inspection coverage requires d
 writes followed by Layer 1 writes, preserves an unavailable definition as a distinct final hit,
 and distinguishes a truly empty cell. Acts-like coverage requires a three-definition chain, direct
 self-link, two-definition cycle, and three distinct out-of-range targets.
+Map16 subtile coverage checks all four whole-definition flip combinations, their visual-to-source
+quadrant permutations, and every raw tile/palette/priority/effective-flip field.
 Sprite inspection coverage requires materialization to retain its original sprite/part provenance
 and requires the overlap filter to accept top-left, bottom-right, and exact-cell intersections in
 painter order while rejecting left, right, and bottom edge-only contact.

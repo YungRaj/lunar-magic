@@ -172,6 +172,60 @@ const fn preview_sprite_quadrant_label(index: usize) -> &'static str {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PreviewMap16Subtile {
+    visual_quadrant: usize,
+    source_quadrant: usize,
+    word: u16,
+    tile: u16,
+    cgram_row: u8,
+    high_priority: bool,
+    x_flip: bool,
+    y_flip: bool,
+}
+
+fn decode_preview_map16_subtiles(
+    definition: lm_level::Map16Tile,
+    placement_word: u16,
+) -> [PreviewMap16Subtile; 4] {
+    let source = [
+        definition.top_left,
+        definition.top_right,
+        definition.bottom_left,
+        definition.bottom_right,
+    ];
+    let outer_x_flip = placement_word & 0x4000 != 0;
+    let outer_y_flip = placement_word & 0x8000 != 0;
+    std::array::from_fn(|visual_quadrant| {
+        let output_x = visual_quadrant % 2;
+        let output_y = visual_quadrant / 2;
+        let source_x = if outer_x_flip { 1 - output_x } else { output_x };
+        let source_y = if outer_y_flip { 1 - output_y } else { output_y };
+        let source_quadrant = source_y * 2 + source_x;
+        let subtile = source[source_quadrant];
+        PreviewMap16Subtile {
+            visual_quadrant,
+            source_quadrant,
+            word: subtile.0,
+            tile: subtile.tile_number(),
+            cgram_row: subtile.palette(),
+            high_priority: subtile.priority(),
+            x_flip: subtile.x_flip() ^ outer_x_flip,
+            y_flip: subtile.y_flip() ^ outer_y_flip,
+        }
+    })
+}
+
+const fn preview_map16_quadrant_label(index: usize) -> &'static str {
+    match index {
+        0 => "top-left",
+        1 => "top-right",
+        2 => "bottom-left",
+        3 => "bottom-right",
+        _ => "unknown",
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PreviewMap16Hit {
     layer: PreviewMap16Layer,
@@ -820,6 +874,19 @@ impl RomLevelAssetsEditor {
                             definition.bottom_left.0,
                             definition.bottom_right.0,
                         ));
+                        for subtile in decode_preview_map16_subtiles(definition, hit.word) {
+                            ui.monospace(format!(
+                                "    {} <= {} word ${:04X}: tile ${:03X}, CGRAM row {}, priority {}, flips {}{}",
+                                preview_map16_quadrant_label(subtile.visual_quadrant),
+                                preview_map16_quadrant_label(subtile.source_quadrant),
+                                subtile.word,
+                                subtile.tile,
+                                subtile.cgram_row,
+                                if subtile.high_priority { "high" } else { "low" },
+                                if subtile.x_flip { "X" } else { "-" },
+                                if subtile.y_flip { "Y" } else { "-" },
+                            ));
+                        }
                         match &hit.acts_like {
                             Some(Ok(resolution)) => {
                                 let chain = resolution
@@ -2309,6 +2376,49 @@ mod tests {
             Some(Err(lm_level::Map16SetError::ActsLikeCycle {
                 cycle: vec![4, 5, 4],
             }))
+        );
+    }
+
+    #[test]
+    fn map16_subtile_inspection_matches_visual_quadrants_and_composed_flips() {
+        let definition = Map16Tile {
+            top_left: Subtile(0x0155),
+            top_right: Subtile(0x56aa),
+            bottom_left: Subtile(0xabff),
+            bottom_right: Subtile(0xfc00),
+            acts_like: 0,
+        };
+        let source_words = [0x0155, 0x56aa, 0xabff, 0xfc00];
+        for (placement_word, expected_sources) in [
+            (0x0000, [0, 1, 2, 3]),
+            (0x4000, [1, 0, 3, 2]),
+            (0x8000, [2, 3, 0, 1]),
+            (0xc000, [3, 2, 1, 0]),
+        ] {
+            let decoded = decode_preview_map16_subtiles(definition, placement_word);
+            assert_eq!(
+                decoded.map(|subtile| subtile.source_quadrant),
+                expected_sources
+            );
+            for subtile in decoded {
+                let source_word = source_words[subtile.source_quadrant];
+                assert_eq!(subtile.word, source_word);
+                assert_eq!(subtile.tile, source_word & 0x03ff);
+                assert_eq!(subtile.cgram_row, ((source_word >> 10) & 7) as u8);
+                assert_eq!(subtile.high_priority, source_word & 0x2000 != 0);
+                assert_eq!(
+                    subtile.x_flip,
+                    (source_word & 0x4000 != 0) ^ (placement_word & 0x4000 != 0)
+                );
+                assert_eq!(
+                    subtile.y_flip,
+                    (source_word & 0x8000 != 0) ^ (placement_word & 0x8000 != 0)
+                );
+            }
+        }
+        assert_eq!(
+            (0..4).map(preview_map16_quadrant_label).collect::<Vec<_>>(),
+            ["top-left", "top-right", "bottom-left", "bottom-right"]
         );
     }
 
