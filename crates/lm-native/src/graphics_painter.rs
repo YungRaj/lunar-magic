@@ -2,7 +2,6 @@ use eframe::egui;
 use lm_graphics::{IndexedTile, PaletteInterchangeFile, TileShift};
 
 pub(crate) const TILE_GRID_COLUMNS: usize = 8;
-const TILE_GRID_PAGE_ROWS: usize = 8;
 const TILE_EDITOR_ZOOMS: [(u16, f32); 5] = [
     (800, 64.0),
     (1_600, 128.0),
@@ -21,8 +20,12 @@ enum TileNavigation {
     Down,
     RowStart,
     RowEnd,
-    PageUp,
-    PageDown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PaletteStep {
+    Previous,
+    Next,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -133,15 +136,13 @@ pub(crate) fn apply_tile_keyboard_navigation(
         if input.modifiers.any() {
             return None;
         }
-        const KEYS: [(egui::Key, TileNavigation); 8] = [
+        const KEYS: [(egui::Key, TileNavigation); 6] = [
             (egui::Key::ArrowLeft, TileNavigation::Left),
             (egui::Key::ArrowRight, TileNavigation::Right),
             (egui::Key::ArrowUp, TileNavigation::Up),
             (egui::Key::ArrowDown, TileNavigation::Down),
             (egui::Key::Home, TileNavigation::RowStart),
             (egui::Key::End, TileNavigation::RowEnd),
-            (egui::Key::PageUp, TileNavigation::PageUp),
-            (egui::Key::PageDown, TileNavigation::PageDown),
         ];
         KEYS.into_iter().find_map(|(key, navigation)| {
             input
@@ -159,6 +160,37 @@ pub(crate) fn apply_tile_keyboard_navigation(
     *selected = next;
     response.request_focus();
     response.scroll_to_me(Some(egui::Align::Center));
+}
+
+pub(crate) fn apply_tile_palette_keyboard(
+    ui: &mut egui::Ui,
+    selected: usize,
+    responses: &[egui::Response],
+    palette_row: &mut usize,
+    row_count: usize,
+) {
+    if row_count == 0
+        || !responses
+            .get(selected)
+            .is_some_and(egui::Response::has_focus)
+    {
+        return;
+    }
+    let step = ui.input_mut(|input| {
+        if input.modifiers.any() {
+            return None;
+        }
+        if input.consume_key(egui::Modifiers::NONE, egui::Key::PageUp) {
+            Some(PaletteStep::Next)
+        } else if input.consume_key(egui::Modifiers::NONE, egui::Key::PageDown) {
+            Some(PaletteStep::Previous)
+        } else {
+            None
+        }
+    });
+    if let Some(step) = step {
+        *palette_row = cycled_palette_row(*palette_row, row_count, step);
+    }
 }
 
 pub(crate) fn take_tile_shift(
@@ -207,10 +239,17 @@ fn navigated_tile_index(selected: usize, tile_count: usize, navigation: TileNavi
         TileNavigation::RowEnd => (selected / TILE_GRID_COLUMNS * TILE_GRID_COLUMNS)
             .saturating_add(TILE_GRID_COLUMNS - 1)
             .min(last),
-        TileNavigation::PageUp => selected.saturating_sub(TILE_GRID_COLUMNS * TILE_GRID_PAGE_ROWS),
-        TileNavigation::PageDown => selected
-            .saturating_add(TILE_GRID_COLUMNS * TILE_GRID_PAGE_ROWS)
-            .min(last),
+    }
+}
+
+fn cycled_palette_row(current: usize, row_count: usize, step: PaletteStep) -> usize {
+    if row_count == 0 {
+        return 0;
+    }
+    let current = current.min(row_count - 1);
+    match step {
+        PaletteStep::Previous => (current + row_count - 1) % row_count,
+        PaletteStep::Next => (current + 1) % row_count,
     }
 }
 
@@ -297,12 +336,20 @@ mod tests {
         assert_eq!(navigated_tile_index(13, 70, TileNavigation::RowStart), 8);
         assert_eq!(navigated_tile_index(13, 70, TileNavigation::RowEnd), 15);
         assert_eq!(navigated_tile_index(68, 70, TileNavigation::RowEnd), 69);
-        assert_eq!(navigated_tile_index(65, 70, TileNavigation::PageUp), 1);
-        assert_eq!(navigated_tile_index(9, 70, TileNavigation::PageDown), 69);
         assert_eq!(
             navigated_tile_index(usize::MAX, 70, TileNavigation::Down),
             69
         );
+    }
+
+    #[test]
+    fn palette_row_shortcuts_are_bounded_and_wrap_both_directions() {
+        assert_eq!(cycled_palette_row(7, 0, PaletteStep::Next), 0);
+        assert_eq!(cycled_palette_row(7, 1, PaletteStep::Previous), 0);
+        assert_eq!(cycled_palette_row(0, 8, PaletteStep::Next), 1);
+        assert_eq!(cycled_palette_row(7, 8, PaletteStep::Next), 0);
+        assert_eq!(cycled_palette_row(0, 8, PaletteStep::Previous), 7);
+        assert_eq!(cycled_palette_row(usize::MAX, 8, PaletteStep::Previous), 6);
     }
 
     #[test]
@@ -431,5 +478,47 @@ mod tests {
             });
         });
         assert_eq!(shift, None);
+    }
+
+    #[test]
+    fn focused_grid_routes_unmodified_page_keys_to_palette_rows() {
+        let context = egui::Context::default();
+        let mut selected = 9;
+        let mut palette_row = 7;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_keyboard_grid(context, &mut selected, true);
+        });
+        let input = egui::RawInput {
+            events: vec![key_event(egui::Key::PageUp, egui::Modifiers::NONE)],
+            ..Default::default()
+        };
+        let _ = context.run(input, |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..70)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                apply_tile_keyboard_navigation(ui, &mut selected, &responses);
+                apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);
+            });
+        });
+        assert_eq!(selected, 9);
+        assert_eq!(palette_row, 0);
+
+        let _ = context.run(egui::RawInput::default(), |context| {
+            render_keyboard_grid(context, &mut selected, true);
+        });
+        let input = egui::RawInput {
+            events: vec![key_event(egui::Key::PageDown, egui::Modifiers::NONE)],
+            ..Default::default()
+        };
+        let _ = context.run(input, |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let responses = (0..70)
+                    .map(|index| ui.button(index.to_string()))
+                    .collect::<Vec<_>>();
+                apply_tile_palette_keyboard(ui, selected, &responses, &mut palette_row, 8);
+            });
+        });
+        assert_eq!(palette_row, 7);
     }
 }

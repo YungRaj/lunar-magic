@@ -1680,9 +1680,11 @@ exact flipped 64-pixel tile and enters the same controller path as painting and 
 documents receive one undoable revision, while installed fixed and ExAnimation-owned tiles remain
 read-only and stale or active-file-worker ROM workspaces cannot flip.
 Their eight-column tile sheets also share focus-scoped keyboard navigation. Unmodified arrow keys
-move by one tile or one row, Home/End move to the bounded ends of the current row, and Page Up/Down
-move by eight rows. Every move clamps to the available tile count, transfers keyboard focus, and
-scrolls the destination into view; keys are not consumed unless the selected tile owns focus.
+move by one tile or one row, and Home/End move to the bounded ends of the current row. Every move
+clamps to the available tile count, transfers keyboard focus, and scrolls the destination into
+view; keys are not consumed unless the selected tile owns focus. Page Up advances the active
+display-palette row and Page Down moves back, wrapping within the rows available to that surface.
+The pristine fallback currently has one grayscale row, so both shortcuts remain bounded at row zero.
 The same tile-grid adapter draws a distinct outline around the current nonselected hover target and
 reports the selected and hovered tile indices in bounded uppercase hexadecimal. Hover status is
 derived from the current frame's widget responses, so leaving the grid cannot retain a stale tile.

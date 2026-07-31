@@ -1,8 +1,9 @@
 use crate::{
     document_loader::DocumentLoader,
     graphics_painter::{
-        TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, paint_tile,
-        palette_color, show_tile_grid_status, take_tile_shift, tile_button, tile_coordinate,
+        TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation,
+        apply_tile_palette_keyboard, paint_tile, palette_color, show_tile_grid_status,
+        take_tile_shift, tile_button, tile_coordinate,
     },
     native_clipboard,
 };
@@ -457,6 +458,13 @@ impl RomGraphicsEditor {
                 });
             });
         apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
+        apply_tile_palette_keyboard(
+            ui,
+            self.selected_tile,
+            &responses,
+            &mut self.palette_row,
+            palette.palette.colors.len() / 16,
+        );
         show_tile_grid_status(ui, self.selected_tile, &responses);
         let owner = workspace.controller.ownership().owner(self.selected_tile);
         self.pending_shift = take_tile_shift(

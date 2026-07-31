@@ -1,6 +1,6 @@
 use crate::graphics_painter::{
-    TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, paint_tile,
-    show_tile_grid_status, take_tile_shift, tile_button, tile_coordinate,
+    TILE_GRID_COLUMNS, TileEditorZoom, apply_tile_keyboard_navigation, apply_tile_palette_keyboard,
+    paint_tile, show_tile_grid_status, take_tile_shift, tile_button, tile_coordinate,
 };
 use eframe::egui;
 use lm_app::{
@@ -25,6 +25,7 @@ pub(crate) struct VanillaGraphicsEditor {
     controller: Option<GraphicsController>,
     selected_tile: usize,
     selected_color: u8,
+    palette_row: usize,
     pixel_zoom: TileEditorZoom,
     pending_shift: Option<TileShift>,
     error: Option<String>,
@@ -71,7 +72,8 @@ impl VanillaGraphicsEditor {
         ui.horizontal(|ui| {
             ui.label("Paint color");
             for color in 0_u8..16 {
-                let fill = crate::graphics_painter::palette_color(&palette, 0, color);
+                let fill =
+                    crate::graphics_painter::palette_color(&palette, self.palette_row, color);
                 if ui
                     .add(
                         egui::Button::new(if color == self.selected_color {
@@ -142,6 +144,7 @@ impl VanillaGraphicsEditor {
                 self.controller = Some(controller);
                 self.selected_tile = 0;
                 self.selected_color = 1;
+                self.palette_row = 0;
                 self.error = None;
             }
             Err(error) => {
@@ -162,8 +165,13 @@ impl VanillaGraphicsEditor {
             .show(ui, |ui| {
                 egui::Grid::new("vanilla-graphics-tiles").show(ui, |ui| {
                     for (index, tile) in controller.graphics().tiles.iter().enumerate() {
-                        let response =
-                            tile_button(ui, tile, palette, 0, index == self.selected_tile);
+                        let response = tile_button(
+                            ui,
+                            tile,
+                            palette,
+                            self.palette_row,
+                            index == self.selected_tile,
+                        );
                         if response.clicked() {
                             self.selected_tile = index;
                         }
@@ -175,6 +183,13 @@ impl VanillaGraphicsEditor {
                 });
             });
         apply_tile_keyboard_navigation(ui, &mut self.selected_tile, &responses);
+        apply_tile_palette_keyboard(
+            ui,
+            self.selected_tile,
+            &responses,
+            &mut self.palette_row,
+            palette.palette.colors.len() / 16,
+        );
         show_tile_grid_status(ui, self.selected_tile, &responses);
         self.pending_shift = take_tile_shift(ui, self.selected_tile, &responses, true);
     }
@@ -214,7 +229,7 @@ impl VanillaGraphicsEditor {
             egui::Vec2::splat(self.pixel_zoom.side()),
             egui::Sense::click_and_drag(),
         );
-        paint_tile(ui.painter(), rect, &tile, palette, 0);
+        paint_tile(ui.painter(), rect, &tile, palette, self.palette_row);
         if (response.clicked() || response.dragged())
             && let Some(position) = response.interact_pointer_pos()
             && let Some((x, y)) = tile_coordinate(rect, position)
