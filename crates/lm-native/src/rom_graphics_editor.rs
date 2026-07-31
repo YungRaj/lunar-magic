@@ -69,6 +69,7 @@ pub(crate) struct RomGraphicsEditor {
     search_end: String,
     error: Option<String>,
     pending_close: Option<PendingClose>,
+    pending_level_graphics_export: bool,
     loader: DocumentLoader,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
@@ -76,6 +77,7 @@ pub(crate) struct RomGraphicsEditor {
     next_persistence_request: u64,
     io_status: Option<String>,
     graphics_batch: graphics_batch::GraphicsBatchWorker,
+    level_graphics_batch_running: bool,
     graphics_import: graphics_import::GraphicsImportWorker,
     external_editor: external_edit::ExternalGraphicsEditor,
     external_tool_id: Option<String>,
@@ -98,10 +100,22 @@ impl RomGraphicsEditor {
             });
         }
         if let Some(result) = self.graphics_batch.show(context) {
-            self.io_status = Some(match result {
-                Ok(Some(count)) => format!("Extracted {count} GFX files successfully."),
-                Ok(None) => "GFX extraction cancelled.".into(),
-                Err(error) => format!("GFX extraction failed: {error}"),
+            let level_graphics = std::mem::take(&mut self.level_graphics_batch_running);
+            self.io_status = Some(if level_graphics {
+                match result {
+                    Ok(Some(_)) => "Saved FG/BG/SP GFX to files.".into(),
+                    Ok(None) => "GFX extraction cancelled.".into(),
+                    Err(error) => {
+                        self.error = Some(error);
+                        "Couldn't save FG/BG/SP GFX to file!".into()
+                    }
+                }
+            } else {
+                match result {
+                    Ok(Some(count)) => format!("Extracted {count} GFX files successfully."),
+                    Ok(None) => "GFX extraction cancelled.".into(),
+                    Err(error) => format!("GFX extraction failed: {error}"),
+                }
             });
         }
         if let Some(result) = self.external_editor.show(context) {
@@ -163,6 +177,7 @@ impl RomGraphicsEditor {
                     }
                 });
         }
+        self.level_graphics_export_confirmation(context, app);
         let approved = self.close_confirmation(context);
         self.show_error(context);
         (approved, command)
@@ -323,6 +338,16 @@ impl RomGraphicsEditor {
             }
             if ui
                 .add_enabled(
+                    !stale && !file_work_running && app.current_level().is_some(),
+                    egui::Button::new("Extract current level GFX…"),
+                )
+                .on_hover_text("F8 — saves the active level's FG/BG/SP files as decoded 4bpp")
+                .clicked()
+            {
+                self.pending_level_graphics_export = true;
+            }
+            if ui
+                .add_enabled(
                     !stale && !file_work_running,
                     egui::Button::new("Extract all standard GFX…"),
                 )
@@ -411,7 +436,12 @@ impl RomGraphicsEditor {
         }
         ui.separator();
         ui.columns(2, |columns| {
-            self.tile_list(&mut columns[0], &palette, !stale && !file_work_running);
+            self.tile_list(
+                &mut columns[0],
+                &palette,
+                !stale && !file_work_running,
+                !stale && !file_work_running && app.current_level().is_some(),
+            );
             self.pixel_editor(
                 &mut columns[1],
                 &palette,
@@ -468,6 +498,7 @@ impl RomGraphicsEditor {
         ui: &mut egui::Ui,
         palette: &PaletteInterchangeFile,
         edits_enabled: bool,
+        level_export_enabled: bool,
     ) {
         let Some(workspace) = &self.workspace else {
             return;
@@ -596,6 +627,84 @@ impl RomGraphicsEditor {
             take_tile_grid_shortcut(ui, self.selected_tile, &responses, &mut self.tile_grid)
         {
             self.status.set(status);
+        }
+        if level_export_enabled && take_level_graphics_export_shortcut(ui) {
+            self.pending_level_graphics_export = true;
+        }
+    }
+
+    fn level_graphics_export_confirmation(&mut self, context: &egui::Context, app: &AppState) {
+        if !self.pending_level_graphics_export {
+            return;
+        }
+        let mut accepted = false;
+        let mut cancelled = false;
+        egui::Window::new("Save level GFX to Graphics folder?")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(context, |ui| {
+                ui.label("Do you want to save the current level GFX to file,");
+                ui.label("so it can be inserted to the ROM later?");
+                ui.label("Don't do this if you haven't extracted the graphics yet!");
+                ui.horizontal(|ui| {
+                    accepted = ui.button("Yes").clicked();
+                    cancelled = ui.button("No").clicked();
+                });
+            });
+        if accepted {
+            self.pending_level_graphics_export = false;
+            self.begin_level_graphics_batch(app);
+        } else if cancelled || context.input(|input| input.key_pressed(egui::Key::Escape)) {
+            self.pending_level_graphics_export = false;
+        }
+    }
+
+    fn begin_level_graphics_batch(&mut self, app: &AppState) {
+        let Some(level) = app.current_level() else {
+            self.error = Some("no active level is available for GFX extraction".into());
+            return;
+        };
+        let Some(workspace) = &self.workspace else {
+            return;
+        };
+        let slots = match current_level_graphics_files(&workspace.image, &workspace.profile, level)
+        {
+            Ok(slots) => slots,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let raw = match workspace.controller.export_raw() {
+            Ok(raw) => raw,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        let Some(directory) = crate::dialogs::choose_level_graphics_directory() else {
+            return;
+        };
+        let raw_4bpp_overrides = slots
+            .contains(&usize::from(workspace.slot))
+            .then(|| vec![(usize::from(workspace.slot), raw)])
+            .unwrap_or_default();
+        let source = graphics_batch::GraphicsBatchSource {
+            image: workspace.image.clone(),
+            layout: workspace.profile.graphics,
+            slots: slots.clone(),
+            file_numbers: slots,
+            family: "level",
+            encoding: graphics_batch::GraphicsBatchEncoding::Decoded4Bpp,
+            raw_4bpp_overrides,
+        };
+        match self.graphics_batch.start(source, directory) {
+            Ok(()) => {
+                self.level_graphics_batch_running = true;
+                self.io_status = None;
+            }
+            Err(error) => self.error = Some(error),
         }
     }
     fn pixel_editor(
@@ -951,6 +1060,8 @@ impl RomGraphicsEditor {
             slots: slots.clone(),
             file_numbers: slots,
             family: "standard",
+            encoding: graphics_batch::GraphicsBatchEncoding::Native,
+            raw_4bpp_overrides: Vec::new(),
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1004,6 +1115,8 @@ impl RomGraphicsEditor {
             slots: slots.clone(),
             file_numbers: slots,
             family: "standard",
+            encoding: graphics_batch::GraphicsBatchEncoding::Native,
+            raw_4bpp_overrides: Vec::new(),
         };
         match self.graphics_batch.start_joined(source, path) {
             Ok(()) => self.io_status = None,
@@ -1056,6 +1169,8 @@ impl RomGraphicsEditor {
             slots: vec![0, 1],
             file_numbers: vec![0x33, 0x32],
             family: "special",
+            encoding: graphics_batch::GraphicsBatchEncoding::Native,
+            raw_4bpp_overrides: Vec::new(),
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1118,6 +1233,8 @@ impl RomGraphicsEditor {
             slots: slots.clone(),
             file_numbers: slots,
             family: "extended",
+            encoding: graphics_batch::GraphicsBatchEncoding::Native,
+            raw_4bpp_overrides: Vec::new(),
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1191,6 +1308,76 @@ fn standard_graphics_slots(layout: lm_project::GraphicsRomLayout) -> Vec<usize> 
     (0..layout.pointers.entries.min(STANDARD_GFX_LIMIT)).collect()
 }
 
+fn take_level_graphics_export_shortcut(ui: &mut egui::Ui) -> bool {
+    ui.input_mut(|input| {
+        !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F8)
+    })
+}
+
+fn current_level_graphics_files(
+    image: &lm_rom::RomImage,
+    profile: &RevisionProfile,
+    level: u16,
+) -> Result<Vec<usize>, String> {
+    let project = lm_project::Project::new(image.clone());
+    let level_layout = profile
+        .level_layout_for_rom(image)
+        .map_err(|error| error.to_string())?;
+    let loaded_level = project
+        .load_level_slot(usize::from(level), level_layout, &profile.sprite_lengths)
+        .map_err(|error| format!("cannot load level {level:03X} graphics settings: {error}"))?;
+    let mut files = if let Some(settings_layout) = profile.expanded_settings {
+        let settings = project
+            .load_expanded_level_settings(usize::from(level), settings_layout)
+            .map_err(|error| {
+                format!("cannot load level {level:03X} expanded graphics settings: {error}")
+            })?;
+        let selection = lm_level::ExpandedLevelHeader::from(&settings).super_graphics_bypass();
+        if selection.enabled {
+            selection
+                .foreground_background
+                .into_iter()
+                .chain(selection.sprites)
+                .map(usize::from)
+                .collect()
+        } else {
+            legacy_level_graphics_files(image, profile, loaded_level.layer1.header)?
+        }
+    } else {
+        legacy_level_graphics_files(image, profile, loaded_level.layer1.header)?
+    };
+    let mut seen = std::collections::HashSet::with_capacity(files.len());
+    files.retain(|file| seen.insert(*file));
+    Ok(files)
+}
+
+fn legacy_level_graphics_files(
+    image: &lm_rom::RomImage,
+    profile: &RevisionProfile,
+    header: lm_level::LegacyLevelHeader,
+) -> Result<Vec<usize>, String> {
+    if profile.game != lm_rom::SupportedGame::SuperMarioWorld
+        || profile.region != lm_rom::Region::NorthAmerica
+        || profile.revision != 0
+    {
+        return Err(format!(
+            "legacy level graphics assignment tables are not recovered for profile {}",
+            profile.name
+        ));
+    }
+    let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
+        image,
+        usize::from(header.object_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+        image,
+        usize::from(header.sprite_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(foreground.into_iter().chain(sprites).collect())
+}
+
 fn installed_exgraphics_slots(
     image: &lm_rom::RomImage,
     layout: lm_project::GraphicsRomLayout,
@@ -1214,8 +1401,8 @@ fn installed_exgraphics_slots(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_external_edit_revision, installed_exgraphics_slots, pristine_special_graphics,
-        supports_exgraphics,
+        ensure_external_edit_revision, installed_exgraphics_slots, legacy_level_graphics_files,
+        pristine_special_graphics, supports_exgraphics,
     };
     use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
     use lm_rom::{Mapper, RomImage};
@@ -1278,5 +1465,26 @@ mod tests {
         ensure_external_edit_revision(12, 12).unwrap();
         let error = ensure_external_edit_revision(12, 13).unwrap_err();
         assert!(error.contains("external graphics reload"), "{error}");
+    }
+
+    #[test]
+    fn legacy_level_export_uses_the_exact_object_then_sprite_assignment_order() {
+        let mut profile = lm_profile::test_support::profile();
+        profile.game = lm_rom::SupportedGame::SuperMarioWorld;
+        profile.region = lm_rom::Region::NorthAmerica;
+        profile.revision = 0;
+        let mut bytes = vec![0; 0x8000];
+        bytes[lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET
+            ..lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET + 4]
+            .copy_from_slice(&[0x14, 0x17, 0x19, 0x15]);
+        bytes[lm_profile::SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET
+            ..lm_profile::SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET + 4]
+            .copy_from_slice(&[0x00, 0x01, 0x13, 0x22]);
+        let image = RomImage::from_bytes(bytes).unwrap();
+        assert_eq!(
+            legacy_level_graphics_files(&image, &profile, lm_level::LegacyLevelHeader::default())
+                .unwrap(),
+            [0x14, 0x17, 0x19, 0x15, 0x00, 0x01, 0x13, 0x22]
+        );
     }
 }

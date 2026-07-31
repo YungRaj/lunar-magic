@@ -15,6 +15,14 @@ pub(super) struct GraphicsBatchSource {
     pub(super) slots: Vec<usize>,
     pub(super) file_numbers: Vec<usize>,
     pub(super) family: &'static str,
+    pub(super) encoding: GraphicsBatchEncoding,
+    pub(super) raw_4bpp_overrides: Vec<(usize, Vec<u8>)>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum GraphicsBatchEncoding {
+    Native,
+    Decoded4Bpp,
 }
 
 struct RunningBatch {
@@ -183,10 +191,41 @@ fn export_batch(
         if cancelled.load(Ordering::Relaxed) {
             return Ok(None);
         }
-        let graphics = project
-            .load_decompressed_graphics_file(slot, source.layout)
-            .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?;
-        let bytes = graphics;
+        let bytes = if let Some((_, bytes)) = source
+            .raw_4bpp_overrides
+            .iter()
+            .find(|(override_slot, _)| *override_slot == slot)
+        {
+            bytes.clone()
+        } else {
+            match source.encoding {
+                GraphicsBatchEncoding::Native => project
+                    .load_decompressed_graphics_file(slot, source.layout)
+                    .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?,
+                GraphicsBatchEncoding::Decoded4Bpp => {
+                    let loaded = project
+                        .load_super_graphics_file(
+                            u16::try_from(slot).map_err(|_| {
+                                format!("graphics slot {slot:X} exceeds the supported file range")
+                            })?,
+                            source.layout,
+                        )
+                        .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?;
+                    lm_graphics::GraphicsFile4bpp {
+                        tiles: loaded.tiles,
+                    }
+                    .encode()
+                    .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?
+                }
+            }
+        };
+        if source.encoding == GraphicsBatchEncoding::Decoded4Bpp && bytes.len() != 0x1000 {
+            return Err(format!(
+                "{}: decoded level GFX has {:#X} bytes instead of 0x1000",
+                graphics_file_name(file_number),
+                bytes.len()
+            ));
+        }
         match target {
             GraphicsExportTarget::Directory(directory) => group
                 .as_mut()
@@ -232,7 +271,8 @@ fn graphics_file_name(slot: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        GraphicsBatchSource, GraphicsExportTarget, RunningBatch, batch_output_path, export_batch,
+        GraphicsBatchEncoding, GraphicsBatchSource, GraphicsExportTarget, RunningBatch,
+        batch_output_path, export_batch,
     };
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{
@@ -304,6 +344,8 @@ mod tests {
                 slots: vec![0, 1],
                 file_numbers: vec![0, 1],
                 family: "standard",
+                encoding: GraphicsBatchEncoding::Native,
+                raw_4bpp_overrides: Vec::new(),
             },
             expected,
         )
@@ -461,6 +503,8 @@ mod tests {
             slots: vec![0x80],
             file_numbers: vec![0x80],
             family: "extended",
+            encoding: GraphicsBatchEncoding::Native,
+            raw_4bpp_overrides: Vec::new(),
         };
         assert_eq!(
             export_batch(
@@ -473,6 +517,92 @@ mod tests {
             Some(1)
         );
         assert_eq!(fs::read(directory.join("ExGFX80.bin")).unwrap(), raw);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn level_batch_expands_native_two_bitplane_source_to_one_4bpp_slot() {
+        let directory = temporary_directory();
+        fs::create_dir(&directory).unwrap();
+        let layout = GraphicsRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x200,
+                entries: 1,
+                stride: 3,
+            },
+            split_pointer_planes: None,
+            compression: GraphicsCompression::Lz2,
+            maximum_compressed_len: 0x8000,
+            maximum_decompressed_len: 0x1000,
+        };
+        let tiles = vec![IndexedTile::new([3; 64]); 128];
+        let raw_2bpp = lm_graphics::encode_planar_tiles(&tiles, 2).unwrap();
+        let expected_4bpp = GraphicsFile4bpp { tiles }.encode().unwrap();
+        let mut project = Project::new(RomImage::from_bytes(vec![0; 0x8000]).unwrap());
+        project
+            .save_decompressed_graphics_slots_with_checksum(
+                &[0],
+                &[raw_2bpp],
+                layout,
+                0x7fdc,
+                &GraphicsSaveOptions {
+                    allocation: AllocationPolicy {
+                        search: 0x1000..0x7000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0],
+                        protected: vec![
+                            ProtectedRange(0x200..0x203),
+                            ProtectedRange(0x7fdc..0x7fe0),
+                        ],
+                    },
+                    previous_block: None,
+                    reuse_identical: true,
+                    erase_fill: 0,
+                },
+            )
+            .unwrap();
+        let source = GraphicsBatchSource {
+            image: project.rom,
+            layout,
+            slots: vec![0],
+            file_numbers: vec![0],
+            family: "level",
+            encoding: GraphicsBatchEncoding::Decoded4Bpp,
+            raw_4bpp_overrides: Vec::new(),
+        };
+        export_batch(
+            source,
+            &GraphicsExportTarget::Directory(directory.clone()),
+            &AtomicUsize::new(0),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        let exported = fs::read(directory.join("GFX00.bin")).unwrap();
+        assert_eq!(exported.len(), 0x1000);
+        assert_eq!(exported, expected_4bpp);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn level_batch_prefers_the_staged_4bpp_override_for_an_active_file() {
+        let directory = temporary_directory();
+        fs::create_dir(&directory).unwrap();
+        let (mut source, _) = fixture_source();
+        let staged = vec![0xa5; 0x1000];
+        source.family = "level";
+        source.encoding = GraphicsBatchEncoding::Decoded4Bpp;
+        source.slots.truncate(1);
+        source.file_numbers.truncate(1);
+        source.raw_4bpp_overrides = vec![(0, staged.clone())];
+        export_batch(
+            source,
+            &GraphicsExportTarget::Directory(directory.clone()),
+            &AtomicUsize::new(0),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(fs::read(directory.join("GFX00.bin")).unwrap(), staged);
         fs::remove_dir_all(directory).unwrap();
     }
 }

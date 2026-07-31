@@ -150,6 +150,12 @@ pub(crate) fn choose_graphics_directory() -> Option<PathBuf> {
         .pick_folder()
 }
 
+pub(crate) fn choose_level_graphics_directory() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Save Current Level GFX Files")
+        .pick_folder()
+}
+
 pub(crate) fn choose_graphics_import_directory() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Insert All Standard GFX Files")

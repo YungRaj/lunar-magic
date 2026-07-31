@@ -1702,6 +1702,14 @@ Only the active page is materialized as a seamless 16×16 array of 16-logical-pi
 the original 256×256 backing canvas. F7 toggles the initially hidden tile grid. Ctrl+Alt+F7 changes
 its retained color between the recovered white and black DWORDs without changing visibility and
 publishes `Tile grid color 1.` or `Tile grid color 2.` exactly.
+The installed editor additionally reserves unmodified F8 for the recovered current-level export.
+It resolves the globally active level independently of the selected graphics page, presents the
+native confirmation text, and exports only that level's ordered FG/BG and sprite assignments.
+Expanded Super GFX bypass records contribute six plus four slots; the recovered vanilla SMW-US
+tables contribute four plus four. Repeated filenames are collapsed because publication is a file
+set. Every output is a decoded `$1000`-byte 4bpp GFX/ExGFX file, and the active staged graphics
+controller replaces its ROM source when it belongs to the set. The existing background group
+writer retains cancellation and create-new all-or-nothing publication.
 The same tile-grid adapter draws a distinct outline around the current nonselected hover target.
 Its event-driven status state reproduces the original tile/address and palette hover text, selected
 tile and foreground/background-color messages, rendered-palette messages, viewed-page messages, and exact

@@ -1277,6 +1277,14 @@ The same keyboard jump table maps F7 to the branch at `00505A4D`. Ordinary F7 to
 renderer at `00504D00` overwrites every sixteenth row and column of the 256×256 page DIB, proving a
 seamless 16×16 array of 16-pixel tile cells rather than spaced widgets. The selected page global
 `00E27B80` determines which 256-tile slice is rendered.
+The adjacent F8 branch at `00505B7B` displays `Save level GFX to Graphics folder?` and calls
+`00480B60` after confirmation. That routine walks six FG/BG source buffers at `0086B7E8` and four
+SP buffers at `008737E8`, each with a `$1000`-byte stride, pairing them with the active file-number
+tables at `008F3918` and `0061FC38`. It therefore exports the current level selection rather than
+the complete standard GFX table, and its buffers prove that even native 2bpp/3bpp sources are saved
+as decoded 4bpp files. The sprite loop conditionally omits its second slot when `00E278DF` is set;
+the ordinary path visits all four. Its exact completion messages are `Saved FG/BG/SP GFX to
+files.` and `Couldn't save FG/BG/SP GFX to file!`.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
 `006136B8`: zero has no animation attribution, `$01-$7F` encode OrigAnim slot minus one,
 `$80-$BF` encode a level ExAnimation slot, and `$C0-$FF` encode a global ExAnimation slot. Canonical

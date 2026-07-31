@@ -117,6 +117,10 @@ impl Default for LevelNavigationHistory {
 }
 
 impl LevelNavigationHistory {
+    pub(crate) fn current(&self) -> Option<LevelViewState> {
+        self.current
+    }
+
     pub(crate) fn can_navigate(&self, direction: LevelNavigationDirection) -> bool {
         match direction {
             LevelNavigationDirection::Back => !self.back.is_empty(),
@@ -205,6 +209,16 @@ mod tests {
         assert!(history.visit(0x108));
         assert_eq!(history.navigate(LevelNavigationDirection::Forward), None);
         assert!(!history.visit(0x108));
+    }
+
+    #[test]
+    fn current_reports_the_active_level_view() {
+        let mut history = LevelNavigationHistory::default();
+        assert_eq!(history.current(), None);
+        history.reset(Some(0x105));
+        assert_eq!(history.current(), Some(LevelViewState::initial(0x105)));
+        history.visit(0x106);
+        assert_eq!(history.current(), Some(LevelViewState::initial(0x106)));
     }
 
     #[test]

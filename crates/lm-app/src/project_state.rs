@@ -178,4 +178,14 @@ impl AppState {
     pub const fn revision_profile(&self) -> Option<&RevisionProfile> {
         self.revision_profile.as_ref()
     }
+
+    /// Returns the level whose view state remains active while another editor is open.
+    ///
+    /// Lunar Magic's graphics editor operates on the globally active level even though the
+    /// graphics window has its own selected GFX page. Keeping these identities separate prevents
+    /// graphics-page numbers from being interpreted as level numbers.
+    #[must_use]
+    pub fn current_level(&self) -> Option<u16> {
+        self.level_navigation.current().map(|state| state.level)
+    }
 }
