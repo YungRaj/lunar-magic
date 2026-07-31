@@ -118,13 +118,32 @@ pub fn draw_native_sprite_preview_definition(
     target_x: i32,
     target_y: i32,
 ) {
+    draw_native_sprite_preview_definition_pages(
+        canvas, subtiles, tiles, tiles, palette, target_x, target_y,
+    );
+}
+
+/// Draws a sprite preview while resolving bit `$0200` through Lunar Magic's separate display page.
+pub fn draw_native_sprite_preview_definition_pages(
+    canvas: &mut Canvas,
+    subtiles: [u16; 4],
+    ordinary_tiles: &[IndexedTile],
+    animated_tiles: &[IndexedTile],
+    palette: &Palette,
+    target_x: i32,
+    target_y: i32,
+) {
     for (quadrant, word) in subtiles.into_iter().enumerate() {
         let x = quadrant / 2;
         let y = quadrant % 2;
         draw_sprite_subtile_clipped(
             canvas,
             word,
-            tiles,
+            if word & 0x0200 != 0 {
+                animated_tiles
+            } else {
+                ordinary_tiles
+            },
             palette,
             (
                 target_x.saturating_add(i32::try_from(x * 8).unwrap_or(i32::MAX)),
@@ -382,6 +401,27 @@ mod tests {
         assert_eq!(canvas.get(8, 0).unwrap().blue, 255);
         assert_eq!(
             canvas.get(8, 8).unwrap(),
+            Rgba {
+                red: 255,
+                green: 255,
+                blue: 255,
+                alpha: 255,
+            }
+        );
+
+        let mut animated_tiles = tiles.clone();
+        animated_tiles[1] = solid(4);
+        draw_native_sprite_preview_definition_pages(
+            &mut canvas,
+            [0x0201, 2, 3, 4],
+            &tiles,
+            &animated_tiles,
+            &palette,
+            0,
+            0,
+        );
+        assert_eq!(
+            canvas.get(0, 0).unwrap(),
             Rgba {
                 red: 255,
                 green: 255,

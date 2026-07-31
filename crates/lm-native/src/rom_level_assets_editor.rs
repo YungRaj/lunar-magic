@@ -9,7 +9,7 @@ use lm_project::NativeLevelAssetsFile;
 use lm_render::{
     NativeLevelMap16Layout, NativeLevelRasterRequest, NativeMap16Placement, Rgba,
     StandardLevelOrientation, StandardObjectDefinitionSet, StandardSpritePreviewMode,
-    StandardSpritePreviewSource, draw_native_sprite_preview_definition,
+    StandardSpritePreviewSource, draw_native_sprite_preview_definition_pages,
     install_lunar_magic_shared_extended_objects, install_lunar_magic_shared_standard_objects,
     install_lunar_magic_tileset_extended_objects, lunar_magic_standard_sprite_preview_source,
     render_lunar_magic_standard_sprite_with_mode, render_mapped_standard_object_stream,
@@ -339,6 +339,8 @@ fn render_super_graphics_level_preview(
         header.sprite_tileset(),
     );
     diagnostics.extend(sprite_diagnostics);
+    let animated_sprite_tiles =
+        crate::vanilla_map16_preview::load_vanilla_sprite_display_tiles(&project)?;
     render_level_image(
         &[&layer2, &layer1],
         &sprites,
@@ -346,6 +348,7 @@ fn render_super_graphics_level_preview(
         &map16,
         &vram.foreground_background,
         &vram.sprites,
+        &animated_sprite_tiles,
         &workspace.controller.assets().palette,
     )
     .map(|image| (image, diagnostics))
@@ -358,6 +361,7 @@ fn render_level_image(
     map16: &Map16Set,
     tiles: &[lm_graphics::IndexedTile],
     sprite_tiles: &[lm_graphics::IndexedTile],
+    animated_sprite_tiles: &[lm_graphics::IndexedTile],
     palette: &lm_graphics::Palette,
 ) -> Result<egui::ColorImage, String> {
     let definitions = map16
@@ -389,10 +393,11 @@ fn render_level_image(
     })
     .map_err(|error| error.to_string())?;
     for sprite in sprites {
-        draw_native_sprite_preview_definition(
+        draw_native_sprite_preview_definition_pages(
             &mut canvas,
             sprite.subtiles,
             sprite_tiles,
+            animated_sprite_tiles,
             palette,
             sprite.x,
             sprite.y,
@@ -532,13 +537,6 @@ fn render_sprite_placements(
         let origin_x = i32::from(tile_x).saturating_mul(16);
         let origin_y = i32::from(tile_y).saturating_mul(16);
         for part in parts {
-            if part.subtiles.iter().any(|word| word & 0x0200 != 0) {
-                diagnostics.push(format!(
-                    "sprite ${:02X} definition ${:03X} uses the animated page",
-                    placement.sprite_number, part.definition_index
-                ));
-                continue;
-            }
             rendered.push(NativeSpritePreviewPlacement {
                 subtiles: part.subtiles,
                 x: origin_x.saturating_add(i32::from(part.x)),
@@ -655,6 +653,7 @@ mod tests {
             },
             &map16,
             &tiles,
+            &[],
             &[],
             &Palette { colors },
         )

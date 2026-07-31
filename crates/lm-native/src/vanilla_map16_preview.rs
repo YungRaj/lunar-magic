@@ -982,6 +982,14 @@ fn load_vanilla_sprite_display_page(project: &Project) -> Result<Vec<Vec<Indexed
         .collect())
 }
 
+pub(crate) fn load_vanilla_sprite_display_tiles(
+    project: &Project,
+) -> Result<Vec<IndexedTile>, String> {
+    Ok(materialize_layer1_sprite_vram(
+        &load_vanilla_sprite_display_page(project)?,
+    ))
+}
+
 fn render_foreground_graphics_atlas(
     graphics: &[IndexedTile],
     palette: &Palette,

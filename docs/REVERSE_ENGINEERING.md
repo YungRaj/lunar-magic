@@ -473,8 +473,9 @@ native placements and the existing authenticated preview dispatch. Ordinary prev
 are composited above the object layers from the four selected SP slots with Lunar Magic's
 column-major 2×2 definition order, nine-bit tile addressing, flip bits, and CGRAM rows 8–15. The
 retained level `$000` fixture must also materialize at least one sprite preview. Definitions that
-select bit `$0200` are reported and withheld until the separate animated-sprite page is connected,
-rather than being rendered from an incorrect ordinary SP tile.
+select bit `$0200` resolve per subtile through the separately decoded GFX33 display page recovered
+from `LoadAnimationAndPlayerGraphicsCaches`; mixed-page definitions therefore retain their exact
+ordinary/animated source instead of treating the page bit as an offset into SP1–SP4.
 
 The actual Super GFX Bypass dialog callback at `0040CA80` is now defined as
 `HandleSuperGfxBypassDialog`. It exposes four animation switches, not additional graphics-file
