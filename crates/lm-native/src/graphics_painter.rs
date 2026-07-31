@@ -719,7 +719,7 @@ fn tile_hover_status(
     modifiers: egui::Modifiers,
     owner: Option<GraphicsTileOwner>,
 ) -> String {
-    if modifiers == (egui::Modifiers::CTRL | egui::Modifiers::SHIFT) {
+    if modifiers.ctrl && modifiers.shift {
         match owner {
             Some(GraphicsTileOwner::OriginalAnimation { slot }) => {
                 format!("Tile 0x{index:X}, OrigAnim slot 0x{slot:X}.")
@@ -1349,6 +1349,14 @@ mod tests {
             tile_hover_status(0x1f, egui::Modifiers::CTRL | egui::Modifiers::SHIFT, None),
             "Tile 0x1F."
         );
+        assert_eq!(
+            tile_hover_status(
+                0x1f,
+                egui::Modifiers::CTRL | egui::Modifiers::SHIFT | egui::Modifiers::ALT,
+                None
+            ),
+            "Tile 0x1F."
+        );
         for (owner, expected) in [
             (
                 GraphicsTileOwner::OriginalAnimation { slot: 0x12 },
@@ -1363,14 +1371,12 @@ mod tests {
                 "Tile 0x1F, ExAnim Global slot 0x34.",
             ),
         ] {
-            assert_eq!(
-                tile_hover_status(
-                    0x1f,
-                    egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
-                    Some(owner)
-                ),
-                expected
-            );
+            for modifiers in [
+                egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+                egui::Modifiers::CTRL | egui::Modifiers::SHIFT | egui::Modifiers::ALT,
+            ] {
+                assert_eq!(tile_hover_status(0x1f, modifiers, Some(owner)), expected);
+            }
         }
         let mut status = GraphicsEditorStatus::default();
         status.select_tile(0x123);

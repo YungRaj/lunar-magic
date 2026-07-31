@@ -1326,7 +1326,8 @@ active staged slot when it belongs to the exported set. Rust's View menu exposes
 Special World option; pristine and installed previews substitute decoded GFX31 into SP2, and F8
 omits the normal SP2 assignment before stable duplicate collapse just like the native loop.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
-`006136B8`: zero has no animation attribution, `$01-$7F` encode OrigAnim slot minus one,
+`006136B8`; its two independent key-state tests do not reject Alt. Zero has no animation
+attribution, `$01-$7F` encode OrigAnim slot minus one,
 `$80-$BF` encode a level ExAnimation slot, and `$C0-$FF` encode a global ExAnimation slot. Canonical
 `LMGFXOWN` version 2 preserves those three bounded classes directly, allowing the installed Rust
 editor to emit the exact recovered hover messages; version-1 generic record evidence still decodes
