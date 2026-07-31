@@ -109,11 +109,12 @@ impl PreviewMap16Layer {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PreviewMap16Hit {
     layer: PreviewMap16Layer,
     word: u16,
     definition: Option<lm_level::Map16Tile>,
+    acts_like: Option<Result<lm_level::ActsLikeResolution, lm_level::Map16SetError>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -287,6 +288,11 @@ fn inspect_preview_map16_selection(
     map16: &Map16Set,
 ) -> PreviewMap16Inspection {
     let mut hits = Vec::new();
+    let resolution_limit = map16
+        .pages
+        .len()
+        .checked_mul(lm_level::Map16Page::TILE_COUNT)
+        .unwrap_or(usize::MAX);
     for (layer, placements) in [
         (PreviewMap16Layer::Layer2, layer2),
         (PreviewMap16Layer::Layer1, layer1),
@@ -298,10 +304,16 @@ fn inspect_preview_map16_selection(
                     i64::from(placement.x) == selection.cell_x
                         && i64::from(placement.y) == selection.cell_y
                 })
-                .map(|placement| PreviewMap16Hit {
-                    layer,
-                    word: placement.word,
-                    definition: map16.tile(placement.word & 0x3fff).copied(),
+                .map(|placement| {
+                    let tile = placement.word & 0x3fff;
+                    let definition = map16.tile(tile).copied();
+                    PreviewMap16Hit {
+                        layer,
+                        word: placement.word,
+                        definition,
+                        acts_like: definition
+                            .map(|_| map16.resolve_acts_like(tile, resolution_limit)),
+                    }
                 }),
         );
     }
@@ -724,6 +736,24 @@ impl RomLevelAssetsEditor {
                             definition.bottom_left.0,
                             definition.bottom_right.0,
                         ));
+                        match &hit.acts_like {
+                            Some(Ok(resolution)) => {
+                                let chain = resolution
+                                    .chain
+                                    .iter()
+                                    .map(|tile| format!("${tile:04X}"))
+                                    .collect::<Vec<_>>()
+                                    .join(" -> ");
+                                ui.monospace(format!(
+                                    "  resolved acts-like chain {chain}; terminal ${:04X}",
+                                    resolution.terminal
+                                ));
+                            }
+                            Some(Err(error)) => {
+                                ui.monospace(format!("  acts-like resolution failed: {error}"));
+                            }
+                            None => {}
+                        }
                     } else {
                         ui.monospace("  Map16 definition is unavailable.");
                     }
@@ -2047,21 +2077,34 @@ mod tests {
                         layer: PreviewMap16Layer::Layer2,
                         word: 0x4001,
                         definition: Some(expected[0]),
+                        acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
+                            tile: 1,
+                            target: 0x0101,
+                        })),
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer2,
                         word: 0x0002,
                         definition: Some(expected[1]),
+                        acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
+                            tile: 2,
+                            target: 0x0202,
+                        })),
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer1,
                         word: 0x8003,
                         definition: Some(expected[2]),
+                        acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
+                            tile: 3,
+                            target: 0x0303,
+                        })),
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer1,
                         word: 0x3fff,
                         definition: None,
+                        acts_like: None,
                     },
                 ],
             }
@@ -2077,6 +2120,65 @@ mod tests {
                 selection: empty,
                 hits: Vec::new(),
             }
+        );
+    }
+
+    #[test]
+    fn installed_preview_inspection_resolves_terminal_and_cyclic_acts_like_chains() {
+        let mut definitions = vec![Map16Tile::default(); Map16Page::TILE_COUNT];
+        definitions[1].acts_like = 2;
+        definitions[2].acts_like = 3;
+        definitions[3].acts_like = 3;
+        definitions[4].acts_like = 5;
+        definitions[5].acts_like = 4;
+        let map16 = Map16Set {
+            pages: vec![Map16Page::new(definitions).unwrap()],
+        };
+        let layer1 = [
+            NativeMap16Placement {
+                x: 1,
+                y: 1,
+                word: 1,
+            },
+            NativeMap16Placement {
+                x: 1,
+                y: 1,
+                word: 3,
+            },
+            NativeMap16Placement {
+                x: 1,
+                y: 1,
+                word: 4,
+            },
+        ];
+        let inspection = inspect_preview_map16_selection(
+            PreviewMap16Selection {
+                cell_x: 1,
+                cell_y: 1,
+            },
+            &[],
+            &layer1,
+            &map16,
+        );
+        assert_eq!(
+            inspection.hits[0].acts_like,
+            Some(Ok(lm_level::ActsLikeResolution {
+                chain: vec![1, 2, 3],
+                terminal: 3,
+            }))
+        );
+        assert_eq!(
+            inspection.hits[1].acts_like,
+            Some(Ok(lm_level::ActsLikeResolution {
+                chain: vec![3],
+                terminal: 3,
+            }))
+        );
+        assert_eq!(
+            inspection.hits[2].acts_like,
+            Some(Err(lm_level::Map16SetError::ActsLikeCycle {
+                cycle: vec![4, 5, 4],
+            }))
         );
     }
 
