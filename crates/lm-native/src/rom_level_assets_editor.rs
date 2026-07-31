@@ -122,6 +122,56 @@ const fn preview_sprite_source_label(source: StandardSpritePreviewSource) -> &'s
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PreviewSpriteGraphicsPage {
+    Ordinary,
+    Animated,
+}
+
+impl PreviewSpriteGraphicsPage {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Ordinary => "ordinary SP",
+            Self::Animated => "animated GFX33",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PreviewSpriteSubtile {
+    tile: u16,
+    page: PreviewSpriteGraphicsPage,
+    cgram_row: u8,
+    high_priority: bool,
+    x_flip: bool,
+    y_flip: bool,
+}
+
+const fn decode_preview_sprite_subtile(word: u16) -> PreviewSpriteSubtile {
+    PreviewSpriteSubtile {
+        tile: word & 0x01ff,
+        page: if word & 0x0200 == 0 {
+            PreviewSpriteGraphicsPage::Ordinary
+        } else {
+            PreviewSpriteGraphicsPage::Animated
+        },
+        cgram_row: 8 + ((word >> 10) & 7) as u8,
+        high_priority: word & 0x2000 != 0,
+        x_flip: word & 0x4000 != 0,
+        y_flip: word & 0x8000 != 0,
+    }
+}
+
+const fn preview_sprite_quadrant_label(index: usize) -> &'static str {
+    match index {
+        0 => "top-left",
+        1 => "bottom-left",
+        2 => "top-right",
+        3 => "bottom-right",
+        _ => "unknown",
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PreviewMap16Hit {
     layer: PreviewMap16Layer,
@@ -815,6 +865,19 @@ impl RomLevelAssetsEditor {
                         sprite.subtiles[2],
                         sprite.subtiles[3],
                     ));
+                    for (quadrant, word) in sprite.subtiles.into_iter().enumerate() {
+                        let subtile = decode_preview_sprite_subtile(word);
+                        ui.monospace(format!(
+                            "    {}: tile ${:03X}, {}, CGRAM row {}, priority {}, flips {}{}",
+                            preview_sprite_quadrant_label(quadrant),
+                            subtile.tile,
+                            subtile.page.label(),
+                            subtile.cgram_row,
+                            if subtile.high_priority { "high" } else { "low" },
+                            if subtile.x_flip { "X" } else { "-" },
+                            if subtile.y_flip { "Y" } else { "-" },
+                        ));
+                    }
                 }
             });
         }
@@ -2466,6 +2529,38 @@ mod tests {
         let expected = lm_render::render_lunar_magic_standard_sprite(0, false).unwrap();
         assert_eq!(rendered[0].definition_index, expected[0].definition_index);
         assert_eq!(rendered[0].subtiles, expected[0].subtiles);
+    }
+
+    #[test]
+    fn sprite_subtile_inspection_decodes_the_native_raster_fields() {
+        assert_eq!(
+            decode_preview_sprite_subtile(0xf755),
+            PreviewSpriteSubtile {
+                tile: 0x155,
+                page: PreviewSpriteGraphicsPage::Animated,
+                cgram_row: 13,
+                high_priority: true,
+                x_flip: true,
+                y_flip: true,
+            }
+        );
+        assert_eq!(
+            decode_preview_sprite_subtile(0x01ab),
+            PreviewSpriteSubtile {
+                tile: 0x1ab,
+                page: PreviewSpriteGraphicsPage::Ordinary,
+                cgram_row: 8,
+                high_priority: false,
+                x_flip: false,
+                y_flip: false,
+            }
+        );
+        assert_eq!(
+            (0..4)
+                .map(preview_sprite_quadrant_label)
+                .collect::<Vec<_>>(),
+            ["top-left", "bottom-left", "top-right", "bottom-right"]
+        );
     }
 
     #[test]

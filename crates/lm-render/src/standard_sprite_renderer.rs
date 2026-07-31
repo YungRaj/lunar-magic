@@ -3,7 +3,7 @@
 pub struct StandardSpritePreviewTile {
     /// Lunar Magic's preview-definition index.
     pub definition_index: u16,
-    /// Top-left, top-right, bottom-left, and bottom-right SNES tile words.
+    /// Top-left, bottom-left, top-right, and bottom-right SNES tile words.
     pub subtiles: [u16; 4],
     /// Signed preview displacement in pixels from the sprite placement origin.
     pub x: i16,
