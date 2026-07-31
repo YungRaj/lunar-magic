@@ -59,17 +59,31 @@ pub(crate) fn compose_native_map16_plane(
         for x in 0..TILES {
             let source_index = lm_level::native_layer2_tilemap_index(x, y)
                 .expect("bounded native Layer 2 coordinate");
-            let tile = usize::from(tilemap[source_index] & 0x3fff);
+            let word = tilemap[source_index];
+            let tile = usize::from(word & 0x3fff);
             if tile >= 512 {
                 continue;
             }
             let source_x = tile % TILES * TILE;
             let source_y = tile / TILES * TILE;
-            for pixel_y in 0..TILE {
-                let source_start = (source_y + pixel_y) * atlas.size[0] + source_x;
-                let target_start = (y * TILE + pixel_y) * EXTENT + x * TILE;
-                image.pixels[target_start..target_start + TILE]
-                    .copy_from_slice(&atlas.pixels[source_start..source_start + TILE]);
+            let x_flip = word & 0x4000 != 0;
+            let y_flip = word & 0x8000 != 0;
+            for target_y in 0..TILE {
+                let source_pixel_y = if y_flip {
+                    TILE - 1 - target_y
+                } else {
+                    target_y
+                };
+                for target_x in 0..TILE {
+                    let source_pixel_x = if x_flip {
+                        TILE - 1 - target_x
+                    } else {
+                        target_x
+                    };
+                    image.pixels[(y * TILE + target_y) * EXTENT + x * TILE + target_x] = atlas
+                        .pixels
+                        [(source_y + source_pixel_y) * atlas.size[0] + source_x + source_pixel_x];
+                }
             }
         }
     }
@@ -1299,20 +1313,29 @@ mod tests {
     fn native_background_plane_composes_column_major_storage_without_seams() {
         let mut atlas = egui::ColorImage::new([512, 256], egui::Color32::TRANSPARENT);
         atlas.pixels[16] = egui::Color32::RED;
+        atlas.pixels[16 + 15] = egui::Color32::BLUE;
+        atlas.pixels[15 * 512 + 16] = egui::Color32::YELLOW;
+        atlas.pixels[15 * 512 + 16 + 15] = egui::Color32::WHITE;
         let tile_two = 2 * 16;
         atlas.pixels[tile_two] = egui::Color32::GREEN;
         let mut tilemap = vec![0; 32 * 32];
         tilemap[lm_level::native_layer2_tilemap_index(0, 0).unwrap()] = 1;
+        tilemap[lm_level::native_layer2_tilemap_index(1, 0).unwrap()] = 0x4001;
+        tilemap[lm_level::native_layer2_tilemap_index(2, 0).unwrap()] = 0x8001;
+        tilemap[lm_level::native_layer2_tilemap_index(3, 0).unwrap()] = 0xc001;
         tilemap[lm_level::native_layer2_tilemap_index(31, 31).unwrap()] = 2;
 
         let plane = compose_native_map16_plane(&atlas, &tilemap).unwrap();
         assert_eq!(plane.size, [512, 512]);
         assert_eq!(plane.pixels[0], egui::Color32::RED);
+        assert_eq!(plane.pixels[16], egui::Color32::BLUE);
+        assert_eq!(plane.pixels[32], egui::Color32::YELLOW);
+        assert_eq!(plane.pixels[48], egui::Color32::WHITE);
         assert_eq!(
             plane.pixels[(31 * 16) * 512 + 31 * 16],
             egui::Color32::GREEN
         );
-        assert_eq!(plane.pixels[16], egui::Color32::TRANSPARENT);
+        assert_eq!(plane.pixels[64], egui::Color32::TRANSPARENT);
     }
 
     #[test]

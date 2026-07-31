@@ -2805,6 +2805,10 @@ transparent source pixels preserve the prior framebuffer. The inspector reports 
 The main level editor applies the same identity rule to OSC display parts. Their complete 15-bit
 tile number is passed to the bounded 1,024-definition M16 lookup, so an unavailable `$4001`
 definition remains an unresolved `$4001` marker instead of aliasing M16 entry `$0001`.
+Its compressed Layer 2 presentation also retains the raw word's whole-cell X/Y flips. Shared
+background planes reverse source pixels during precomposition, ordinary atlas cells reverse their
+texture coordinates, and M16-backed cells permute visual quadrants while composing the outer flips
+with each subtile's own flags.
 The distinct recovered background-half-color flag is also installed without treating it as
 destination averaging. Level modes `$0C` and `$0D` mark every native Layer 2 tilemap placement as
 `half-color`; its nontransparent source RGB channels shift right once independently of the

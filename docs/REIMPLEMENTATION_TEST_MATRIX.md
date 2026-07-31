@@ -135,6 +135,9 @@ Native-canvas selection and drag hit-testing unions the encoded placement footpr
 with every resolved OSC display tile, including negative and extended offsets, while
 an explicitly empty display retains the encoded target. Focused geometry coverage and
 the real-ROM level-`$105` custom-object commit/reopen test verify those interactive bounds.
+Compressed Layer 2 presentation retains both whole-cell flip bits in every main-editor route:
+precomposed shared-background pixels, ordinary atlas UVs, and M16 visual quadrants all cover the
+four X/Y combinations, with M16 outer flags XOR-composed into the selected subtiles.
 Tileset-dispatched standard objects likewise retain the bounds of every nonempty Map16
 cell from the exact cache already painted for that placement, avoiding a second render
 pass while making extended authenticated artwork selectable. A pristine-ROM sweep across

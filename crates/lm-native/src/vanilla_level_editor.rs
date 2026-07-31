@@ -5222,13 +5222,43 @@ fn draw_map16_atlas_tile_tinted(
     tile: u16,
     tint: egui::Color32,
 ) {
+    painter.image(
+        texture.id(),
+        target,
+        map16_atlas_uv(tile, false, false),
+        tint,
+    );
+}
+
+fn draw_map16_atlas_word(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    word: u16,
+    tint: egui::Color32,
+) {
+    painter.image(
+        texture.id(),
+        target,
+        map16_atlas_uv(word & 0x3fff, word & 0x4000 != 0, word & 0x8000 != 0),
+        tint,
+    );
+}
+
+fn map16_atlas_uv(tile: u16, x_flip: bool, y_flip: bool) -> egui::Rect {
     let column = f32::from(tile % 32);
     let row = f32::from(tile / 32);
-    let uv = egui::Rect::from_min_max(
-        egui::pos2(column / 32.0, row / 16.0),
-        egui::pos2((column + 1.0) / 32.0, (row + 1.0) / 16.0),
-    );
-    painter.image(texture.id(), target, uv, tint);
+    let (left, right) = if x_flip {
+        ((column + 1.0) / 32.0, column / 32.0)
+    } else {
+        (column / 32.0, (column + 1.0) / 32.0)
+    };
+    let (top, bottom) = if y_flip {
+        ((row + 1.0) / 16.0, row / 16.0)
+    } else {
+        (row / 16.0, (row + 1.0) / 16.0)
+    };
+    egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(right, bottom))
 }
 
 fn canvas_background_color(backdrop: Option<lm_graphics::Bgr555>) -> egui::Color32 {
@@ -5319,18 +5349,31 @@ fn draw_layer2_tilemap(
                 Some(lm_app::NativeMap16SidecarDocument::S16(_)) | None => None,
             };
             if let (Some(definition), Some(texture)) = (definition, foreground_texture) {
-                draw_custom_map16_tile(painter, texture, cell, definition);
+                draw_custom_map16_tile_with_outer_flips(
+                    painter,
+                    texture,
+                    cell,
+                    definition,
+                    word & 0x4000 != 0,
+                    word & 0x8000 != 0,
+                );
             } else if background_map16_texture.is_some()
                 && tile < 0x200
                 && let Some(texture) = background_map16_texture
             {
-                draw_map16_atlas_tile(painter, texture, cell, tile);
+                draw_map16_atlas_word(painter, texture, cell, word, egui::Color32::WHITE);
             } else if tile < 0x200
                 && let Some(texture) = map16_texture_variants
                     .and_then(|textures| textures.get(map16_screen_variant(x, y, vertical)))
                     .or(map16_texture)
             {
-                draw_map16_atlas_tile_for_tileset(painter, texture, cell, tile, object_tileset);
+                draw_map16_atlas_word(
+                    painter,
+                    texture,
+                    cell,
+                    word,
+                    vanilla_map16_atlas_tint(object_tileset, tile),
+                );
             }
         }
     }
@@ -5969,24 +6012,55 @@ pub(crate) fn draw_custom_map16_tile(
     target: egui::Rect,
     definition: lm_level::Map16Tile,
 ) {
+    draw_custom_map16_tile_with_outer_flips(painter, texture, target, definition, false, false);
+}
+
+fn draw_custom_map16_tile_with_outer_flips(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    definition: lm_level::Map16Tile,
+    outer_x_flip: bool,
+    outer_y_flip: bool,
+) {
     let half = target.size() / 2.0;
-    for (offset, subtile) in [
-        egui::vec2(0.0, 0.0),
-        egui::vec2(half.x, 0.0),
-        egui::vec2(0.0, half.y),
-        half,
-    ]
-    .into_iter()
-    .zip([
+    for (visual_quadrant, subtile) in map16_visual_subtiles(definition, outer_x_flip, outer_y_flip)
+        .into_iter()
+        .enumerate()
+    {
+        let output_x = visual_quadrant % 2;
+        let output_y = visual_quadrant / 2;
+        let position = target.min
+            + egui::vec2(
+                if output_x == 0 { 0.0 } else { half.x },
+                if output_y == 0 { 0.0 } else { half.y },
+            );
+        let quadrant = egui::Rect::from_min_size(position, half);
+        draw_foreground_subtile(painter, texture, quadrant, subtile);
+    }
+}
+
+fn map16_visual_subtiles(
+    definition: lm_level::Map16Tile,
+    outer_x_flip: bool,
+    outer_y_flip: bool,
+) -> [lm_level::Subtile; 4] {
+    let source = [
         definition.top_left,
         definition.top_right,
         definition.bottom_left,
         definition.bottom_right,
-    ]) {
-        let position = target.min + offset;
-        let quadrant = egui::Rect::from_min_size(position, half);
-        draw_foreground_subtile(painter, texture, quadrant, subtile);
-    }
+    ];
+    std::array::from_fn(|visual_quadrant| {
+        let output_x = visual_quadrant % 2;
+        let output_y = visual_quadrant / 2;
+        let source_x = output_x ^ usize::from(outer_x_flip);
+        let source_y = output_y ^ usize::from(outer_y_flip);
+        let mut subtile = source[source_y * 2 + source_x];
+        subtile.0 ^= if outer_x_flip { 0x4000 } else { 0 };
+        subtile.0 ^= if outer_y_flip { 0x8000 } else { 0 };
+        subtile
+    })
 }
 
 fn draw_foreground_subtile(
@@ -10933,6 +11007,44 @@ mod tests {
             .collect::<Vec<_>>();
         indexes.sort_unstable();
         assert_eq!(indexes, (0..1024).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn compressed_layer2_outer_flips_drive_atlas_uvs_and_custom_quadrants() {
+        let normal = map16_atlas_uv(0x21, false, false);
+        let flipped = map16_atlas_uv(0x21, true, true);
+        assert_eq!(normal.left(), 1.0 / 32.0);
+        assert_eq!(normal.right(), 2.0 / 32.0);
+        assert_eq!(normal.top(), 1.0 / 16.0);
+        assert_eq!(normal.bottom(), 2.0 / 16.0);
+        assert_eq!(flipped.left(), normal.right());
+        assert_eq!(flipped.right(), normal.left());
+        assert_eq!(flipped.top(), normal.bottom());
+        assert_eq!(flipped.bottom(), normal.top());
+
+        let definition = lm_level::Map16Tile {
+            top_left: lm_level::Subtile(0x0001),
+            top_right: lm_level::Subtile(0x4002),
+            bottom_left: lm_level::Subtile(0x8003),
+            bottom_right: lm_level::Subtile(0xc004),
+            acts_like: 0,
+        };
+        assert_eq!(
+            map16_visual_subtiles(definition, false, false).map(|subtile| subtile.0),
+            [0x0001, 0x4002, 0x8003, 0xc004]
+        );
+        assert_eq!(
+            map16_visual_subtiles(definition, true, false).map(|subtile| subtile.0),
+            [0x0002, 0x4001, 0x8004, 0xc003]
+        );
+        assert_eq!(
+            map16_visual_subtiles(definition, false, true).map(|subtile| subtile.0),
+            [0x0003, 0x4004, 0x8001, 0xc002]
+        );
+        assert_eq!(
+            map16_visual_subtiles(definition, true, true).map(|subtile| subtile.0),
+            [0x0004, 0x4003, 0x8002, 0xc001]
+        );
     }
 
     #[test]

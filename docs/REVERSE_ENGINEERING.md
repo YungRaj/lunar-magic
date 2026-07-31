@@ -2378,6 +2378,9 @@ background-cell X flip.
 OSC custom-object display parts now preserve that same 15-bit identity when consulting the
 fixed 1,024-definition M16 sidecar. Out-of-range `$4001` remains unresolved rather than being
 masked into unrelated entry `$0001`, and its diagnostic marker retains all four hexadecimal digits.
+The main level editor now also consumes compressed Layer 2 whole-cell flips instead of using them
+only for definition masking. Shared-background precomposition reverses source pixels, ordinary
+atlas cells reverse UV axes, and M16-backed cells permute quadrants and XOR outer/subtile flips.
 The native-assets Layer 2 panel now uses the same shared bijection to present a
 clickable 32×32 Map16 grid. Selecting a canvas cell resolves its non-linear
 storage index and loads the complete 16-bit word; applying it continues through
