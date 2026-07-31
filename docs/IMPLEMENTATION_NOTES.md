@@ -541,6 +541,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   Both the standard and SSC atlas catalogs now pass the same current animated GFX33 texture used
   by placed sprites. Each catalog subtile therefore routes bit `$0200` to the animated page while
   page-zero subtiles remain backed by the ordinary SP atlas.
+  Standard catalog parts also apply the placed canvas's authenticated translucency for `$E1`'s
+  `$1B8` ghost and `$90`'s `$1C0-$1F3` range. SSC catalog parts remain opaque because those
+  standard-handler-specific rules do not own custom definitions.
   The sprite atlas now materializes all eight native sprite palette rows instead of precoloring
   every definition with row 8; each 16-bit subtile selects its encoded palette while retaining
   flips. Resolved SSC previews also consume the global `$10000` graphics-base and `$20000`

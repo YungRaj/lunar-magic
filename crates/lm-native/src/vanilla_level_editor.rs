@@ -4790,6 +4790,7 @@ fn draw_custom_sprite_catalog_entry(
             &painter,
             texture,
             animated_texture,
+            None,
             preview_rect,
             parts,
         );
@@ -4897,6 +4898,7 @@ fn draw_sprite_catalog_entry(
             &painter,
             texture,
             animated_texture,
+            Some(sprite_number),
             preview_rect,
             &parts,
         );
@@ -4936,6 +4938,7 @@ fn draw_fitted_sprite_catalog_preview(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
     animated_texture: Option<&egui::TextureHandle>,
+    standard_sprite_number: Option<u8>,
     target: egui::Rect,
     parts: &[lm_render::StandardSpritePreviewTile],
 ) {
@@ -4969,9 +4972,18 @@ fn draw_fitted_sprite_catalog_preview(
             animated_texture,
             egui::Rect::from_min_size(position, egui::vec2(16.0 * scale, 16.0 * scale)),
             part.subtiles,
-            egui::Color32::WHITE,
+            sprite_catalog_preview_tint(standard_sprite_number, part.definition_index),
         );
     }
+}
+
+fn sprite_catalog_preview_tint(
+    standard_sprite_number: Option<u8>,
+    definition_index: u16,
+) -> egui::Color32 {
+    standard_sprite_number.map_or(egui::Color32::WHITE, |sprite_number| {
+        standard_sprite_preview_tint(sprite_number, definition_index)
+    })
 }
 
 fn sprite_fields_at_canvas_position(
@@ -8584,6 +8596,14 @@ mod tests {
         );
         assert_eq!(
             standard_sprite_preview_tint(0x90, 0x1bf),
+            egui::Color32::WHITE
+        );
+        assert_eq!(
+            sprite_catalog_preview_tint(Some(0xe1), 0x1b8),
+            egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
+        );
+        assert_eq!(
+            sprite_catalog_preview_tint(None, 0x1b8),
             egui::Color32::WHITE
         );
     }

@@ -57,6 +57,8 @@ real-ROM, and native-framebuffer GUI tests cover the recovered invariants.
 Standard and SSC sprite catalogs share the placed canvas's ordinary-versus-animated texture
 routing: each subtile's `$0200` page bit selects the current GFX33 phase, while page-zero subtiles
 remain on the ordinary SP atlas. Focused page classification covers both domains.
+The standard catalog also shares the canvas's handler-scoped half-opacity rules for `$E1/$1B8`
+and `$90/$1C0-$1F3`; SSC parts remain opaque under focused tint-domain coverage.
 The installed native-assets preview reuses the same recovered common-animation interpreter after
 resolving either Super GFX bypass files or legacy tileset assignments. Its staged
 `VanillaAnimation` and `PaletteAnimation` options independently gate the recovered eight-phase tile
