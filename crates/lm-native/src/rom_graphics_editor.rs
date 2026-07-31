@@ -282,7 +282,10 @@ impl RomGraphicsEditor {
                 }
             }
         });
-        self.status.update_palette_hover(hovered_color);
+        self.status.update_palette_hover(
+            hovered_color,
+            ui.input(|input| input.pointer.delta() != egui::Vec2::ZERO),
+        );
         if let Some(color) = selected_foreground {
             self.status.select_foreground_color(color);
         }
@@ -878,8 +881,11 @@ impl RomGraphicsEditor {
             egui::Vec2::splat(TILE_EDITOR_SIDE),
             egui::Sense::click_and_drag(),
         );
-        self.status
-            .update_pixel_editor_hover(response.hovered(), self.selected_tile);
+        self.status.update_pixel_editor_hover(
+            response.hovered(),
+            self.selected_tile,
+            ui.input(|input| input.pointer.delta() != egui::Vec2::ZERO),
+        );
         paint_tile(ui.painter(), rect, &tile, palette, self.display_palette);
         if let Some(action) = tile_pixel_pointer_action(
             &response,

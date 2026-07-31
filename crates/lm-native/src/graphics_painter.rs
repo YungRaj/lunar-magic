@@ -79,28 +79,26 @@ impl GraphicsEditorStatus {
     }
 
     pub(crate) fn select_foreground_color(&mut self, color: u8) {
-        self.hovered_tile = None;
-        self.editor_hovered = false;
-        self.hovered_color = Some(color);
         self.set(format!("Color {color:X} selected for FG."));
     }
 
     pub(crate) fn select_background_color(&mut self, color: u8) {
-        self.hovered_tile = None;
-        self.editor_hovered = false;
-        self.hovered_color = Some(color);
         self.set(format!("Color {color:X} selected for BG."));
     }
 
-    pub(crate) fn update_palette_hover(&mut self, hovered: Option<u8>) {
-        if hovered == self.hovered_color {
+    pub(crate) fn update_palette_hover(&mut self, hovered: Option<u8>, pointer_moved: bool) {
+        if hovered == self.hovered_color && !pointer_moved {
+            return;
+        }
+        let text = hovered.map(|color| format!("Color {color:X}."));
+        if hovered == self.hovered_color && text == self.text {
             return;
         }
         self.hovered_color = hovered;
-        if let Some(color) = hovered {
+        if hovered.is_some() {
             self.hovered_tile = None;
             self.editor_hovered = false;
-            self.text = Some(format!("Color {color:X}."));
+            self.text = text;
         } else {
             self.text = None;
         }
@@ -135,15 +133,24 @@ impl GraphicsEditorStatus {
         }
     }
 
-    pub(crate) fn update_pixel_editor_hover(&mut self, hovered: bool, selected: usize) {
-        if hovered == self.editor_hovered {
+    pub(crate) fn update_pixel_editor_hover(
+        &mut self,
+        hovered: bool,
+        selected: usize,
+        pointer_moved: bool,
+    ) {
+        if hovered == self.editor_hovered && !pointer_moved {
+            return;
+        }
+        let text = hovered.then(|| format!("Tile 0x{selected:X} selected for editing."));
+        if hovered == self.editor_hovered && text == self.text {
             return;
         }
         self.editor_hovered = hovered;
         if hovered {
             self.hovered_tile = None;
             self.hovered_color = None;
-            self.select_tile(selected);
+            self.text = text;
         } else {
             self.text = None;
         }
@@ -1671,25 +1678,32 @@ mod tests {
     }
 
     #[test]
-    fn transient_status_changes_only_when_the_pointer_region_changes() {
+    fn transient_status_follows_native_pointer_movement_boundaries() {
         let mut status = GraphicsEditorStatus::default();
-        status.update_palette_hover(Some(3));
+        status.update_palette_hover(Some(3), true);
         assert_eq!(status.text.as_deref(), Some("Color 3."));
         status.select_foreground_color(3);
-        status.update_palette_hover(Some(3));
+        status.update_palette_hover(Some(3), false);
         assert_eq!(status.text.as_deref(), Some("Color 3 selected for FG."));
-        status.update_palette_hover(None);
+        status.update_palette_hover(Some(3), true);
+        assert_eq!(status.text.as_deref(), Some("Color 3."));
+        status.update_palette_hover(None, true);
         assert_eq!(status.text, None);
 
-        status.update_pixel_editor_hover(true, 0x2a);
+        status.update_pixel_editor_hover(true, 0x2a, true);
         assert_eq!(
             status.text.as_deref(),
             Some("Tile 0x2A selected for editing.")
         );
-        status.set("Rendered with palette 0x4.");
-        status.update_pixel_editor_hover(true, 0x2a);
-        assert_eq!(status.text.as_deref(), Some("Rendered with palette 0x4."));
-        status.update_pixel_editor_hover(false, 0x2a);
+        status.select_foreground_color(5);
+        status.update_pixel_editor_hover(true, 0x2a, false);
+        assert_eq!(status.text.as_deref(), Some("Color 5 selected for FG."));
+        status.update_pixel_editor_hover(true, 0x2a, true);
+        assert_eq!(
+            status.text.as_deref(),
+            Some("Tile 0x2A selected for editing.")
+        );
+        status.update_pixel_editor_hover(false, 0x2a, true);
         assert_eq!(status.text, None);
     }
 

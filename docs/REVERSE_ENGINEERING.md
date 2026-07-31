@@ -1304,6 +1304,9 @@ event-driven so a stationary pointer does not overwrite a later
 keyboard action and leaving the tracked region clears it, matching the Win32 message boundary.
 Movement within the same tile still re-enters the native mouse-move branch and recomputes its
 Ctrl+Shift animation attribution; only a stationary pointer suppresses that hover refresh.
+Palette swatches and the selected-tile pixel canvas use the same rule: another mouse-move message
+inside the current region republishes `Color %X.` or the active tile selection, while modifier or
+repaint frames without movement leave the most recent action diagnostic intact.
 The F1 table entry at `00505A1E` does not invoke help: it posts command `$1B59` to the main
 level-editor child. `HandleLevelEditorCommand` fans that command out as redraw command `7000` to
 the graphics, palette, Map16, background, ExAnimation, and other dependent editor windows, then

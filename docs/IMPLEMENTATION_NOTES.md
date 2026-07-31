@@ -1729,6 +1729,9 @@ start/end boundary diagnostics. A stationary pointer does not overwrite a later 
 changing or leaving its tracked tile, palette, or pixel-editor region updates or clears the status.
 Actual movement within the same tile also recomputes modifier-dependent animation attribution, while
 a stationary modifier change alone leaves the last action message intact.
+The same movement boundary applies inside a palette swatch and the selected-tile pixel canvas:
+movement republishes their native hover text, but a stationary frame preserves a later select,
+sample, navigation, or palette message.
 All three graphics surfaces initialize foreground color 1 and background color 0. Primary and
 secondary palette clicks select those colors; primary and secondary pixel gestures paint with them;
 Ctrl-primary and Ctrl-secondary sample the pointed pixel into foreground and background respectively.
