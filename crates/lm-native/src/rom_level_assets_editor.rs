@@ -73,6 +73,14 @@ struct PreviewViewportState {
     zoom_index: u8,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct PreviewDragState {
+    pointer_x: f32,
+    pointer_y: f32,
+    origin_x: i64,
+    origin_y: i64,
+}
+
 impl Default for PreviewViewportState {
     fn default() -> Self {
         Self {
@@ -113,6 +121,63 @@ impl PreviewViewportState {
         let (maximum_x, maximum_y) = self.camera_maximum(width, height);
         self.origin_x = self.origin_x.clamp(0, maximum_x);
         self.origin_y = self.origin_y.clamp(0, maximum_y);
+    }
+
+    fn zoom_at(
+        &mut self,
+        zoom_index: u8,
+        screen_anchor: lm_render::Point,
+        width: usize,
+        height: usize,
+    ) -> Result<(), lm_render::ViewportError> {
+        let (numerator, denominator) = Self::ZOOMS
+            .get(usize::from(zoom_index))
+            .copied()
+            .ok_or(lm_render::ViewportError::ZeroZoom)?;
+        let mut viewport = self.viewport()?;
+        viewport.zoom_at(screen_anchor, numerator, denominator)?;
+        self.origin_x = viewport.origin.x;
+        self.origin_y = viewport.origin.y;
+        self.zoom_index = zoom_index;
+        self.clamp_to_world(width, height);
+        Ok(())
+    }
+
+    fn pan_from_drag(
+        &mut self,
+        drag: PreviewDragState,
+        pointer_x: f32,
+        pointer_y: f32,
+        width: usize,
+        height: usize,
+    ) {
+        let (numerator, denominator) = Self::ZOOMS
+            .get(usize::from(self.zoom_index))
+            .copied()
+            .unwrap_or((1, 1));
+        let screen_x = (pointer_x - drag.pointer_x).round() as i64;
+        let screen_y = (pointer_y - drag.pointer_y).round() as i64;
+        let world_x = i128::from(screen_x) * i128::from(denominator) / i128::from(numerator);
+        let world_y = i128::from(screen_y) * i128::from(denominator) / i128::from(numerator);
+        self.origin_x = drag
+            .origin_x
+            .saturating_sub(i64::try_from(world_x).unwrap_or_else(|_| {
+                if world_x.is_negative() {
+                    i64::MIN
+                } else {
+                    i64::MAX
+                }
+            }));
+        self.origin_y = drag
+            .origin_y
+            .saturating_sub(i64::try_from(world_y).unwrap_or_else(|_| {
+                if world_y.is_negative() {
+                    i64::MIN
+                } else {
+                    i64::MAX
+                }
+            }));
+        self.clamp_to_world(width, height);
     }
 
     fn camera_maximum(self, width: usize, height: usize) -> (i64, i64) {
@@ -196,6 +261,7 @@ pub(crate) struct RomLevelAssetsEditor {
     bypass_layer2_texture: Option<egui::TextureHandle>,
     bypass_preview: LivePreviewState,
     bypass_viewport: PreviewViewportState,
+    bypass_drag: Option<PreviewDragState>,
 }
 
 impl RomLevelAssetsEditor {
@@ -341,6 +407,7 @@ impl RomLevelAssetsEditor {
                 .bypass_viewport
                 .camera_maximum(world_width, world_height);
             let mut viewport_changed = false;
+            let mut selected_zoom = self.bypass_viewport.zoom_index;
             ui.horizontal(|ui| {
                 ui.label("Preview camera");
                 viewport_changed |= ui
@@ -365,20 +432,34 @@ impl RomLevelAssetsEditor {
                     .selected_text(selected)
                     .show_ui(ui, |ui| {
                         for (index, label) in PreviewViewportState::LABELS.iter().enumerate() {
-                            viewport_changed |= ui
-                                .selectable_value(
-                                    &mut self.bypass_viewport.zoom_index,
-                                    u8::try_from(index).expect("five zoom entries"),
-                                    *label,
-                                )
-                                .changed();
+                            ui.selectable_value(
+                                &mut selected_zoom,
+                                u8::try_from(index).expect("five zoom entries"),
+                                *label,
+                            );
                         }
                     });
                 if ui.button("Reset view").clicked() {
                     self.bypass_viewport = PreviewViewportState::default();
+                    selected_zoom = self.bypass_viewport.zoom_index;
+                    self.bypass_drag = None;
                     viewport_changed = true;
                 }
             });
+            if selected_zoom != self.bypass_viewport.zoom_index {
+                let anchor = lm_render::Point {
+                    x: i64::from(PreviewViewportState::WIDTH / 2),
+                    y: i64::from(PreviewViewportState::HEIGHT / 2),
+                };
+                if self
+                    .bypass_viewport
+                    .zoom_at(selected_zoom, anchor, world_width, world_height)
+                    .is_ok()
+                {
+                    self.bypass_drag = None;
+                    viewport_changed = true;
+                }
+            }
             if viewport_changed {
                 self.bypass_preview.invalidate();
             }
@@ -437,11 +518,44 @@ impl RomLevelAssetsEditor {
             ui.label(validation);
         }
         if let Some(texture) = &self.bypass_layer2_texture {
-            egui::ScrollArea::horizontal()
-                .id_salt("installed-super-gfx-layer2-preview")
-                .show(ui, |ui| {
-                    ui.image(texture);
-                });
+            let response = ui
+                .add(
+                    egui::Image::new((texture.id(), texture.size_vec2()))
+                        .sense(egui::Sense::drag()),
+                )
+                .on_hover_cursor(egui::CursorIcon::Grab)
+                .on_hover_text("Drag to pan the installed-level preview");
+            if response.drag_started() {
+                if let Some(pointer) = response.interact_pointer_pos() {
+                    self.bypass_drag = Some(PreviewDragState {
+                        pointer_x: pointer.x,
+                        pointer_y: pointer.y,
+                        origin_x: self.bypass_viewport.origin_x,
+                        origin_y: self.bypass_viewport.origin_y,
+                    });
+                }
+            }
+            if response.dragged() {
+                if let (Some(drag), Some(pointer), Some(header)) =
+                    (self.bypass_drag, response.interact_pointer_pos(), header)
+                {
+                    let previous = self.bypass_viewport;
+                    let (world_width, world_height) = preview_world_extent(header);
+                    self.bypass_viewport.pan_from_drag(
+                        drag,
+                        pointer.x,
+                        pointer.y,
+                        world_width,
+                        world_height,
+                    );
+                    if self.bypass_viewport != previous {
+                        self.bypass_preview.invalidate();
+                    }
+                }
+            }
+            if response.drag_stopped() {
+                self.bypass_drag = None;
+            }
         }
         ui.separator();
         let modified = self
@@ -1380,6 +1494,55 @@ mod tests {
         viewport.zoom_index = 4;
         assert_eq!(viewport.viewport().unwrap().zoom(), (4, 1));
         assert_eq!(viewport.camera_maximum(4096, 432), (3968, 320));
+    }
+
+    #[test]
+    fn installed_preview_zoom_preserves_center_and_drag_uses_exact_scale() {
+        let anchor = lm_render::Point { x: 256, y: 224 };
+        let mut viewport = PreviewViewportState {
+            origin_x: 1_000,
+            origin_y: 500,
+            zoom_index: 1,
+        };
+        let anchored_world = viewport
+            .viewport()
+            .unwrap()
+            .screen_to_world(anchor)
+            .unwrap();
+        viewport.zoom_at(2, anchor, 4096, 2048).unwrap();
+        assert_eq!(
+            viewport
+                .viewport()
+                .unwrap()
+                .screen_to_world(anchor)
+                .unwrap(),
+            anchored_world
+        );
+        assert_eq!((viewport.origin_x, viewport.origin_y), (1_128, 612));
+
+        let drag = PreviewDragState {
+            pointer_x: 10.0,
+            pointer_y: 10.0,
+            origin_x: viewport.origin_x,
+            origin_y: viewport.origin_y,
+        };
+        viewport.pan_from_drag(drag, 74.0, -22.0, 4096, 2048);
+        assert_eq!((viewport.origin_x, viewport.origin_y), (1_096, 628));
+
+        viewport.zoom_index = 0;
+        viewport.origin_x = 1_000;
+        viewport.origin_y = 500;
+        let drag = PreviewDragState {
+            pointer_x: 4.0,
+            pointer_y: 8.0,
+            origin_x: viewport.origin_x,
+            origin_y: viewport.origin_y,
+        };
+        viewport.pan_from_drag(drag, 9.0, 5.0, 4096, 2048);
+        assert_eq!((viewport.origin_x, viewport.origin_y), (990, 506));
+
+        viewport.pan_from_drag(drag, f32::MAX, f32::MAX, 4096, 2048);
+        assert_eq!((viewport.origin_x, viewport.origin_y), (0, 0));
     }
 
     #[test]

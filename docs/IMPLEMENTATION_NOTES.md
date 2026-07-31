@@ -2752,8 +2752,13 @@ screen raster supports exact 50%, 100%, 200%, 300%, and 400% nearest-neighbor zo
 pixel camera origins. Camera limits are derived from the viewport's exact visible-world rectangle,
 so the view cannot pan beyond the last fully visible source region; short axes clamp to zero.
 Changing camera or zoom invalidates one preview frame without disturbing staged assets, and
-workspace reopen resets the view. Focused raster coverage proves a camera-cropped 200% view repeats
-the selected source pixel buckets exactly.
+workspace reopen resets the view. Zoom changes use the shared exact `Viewport::zoom_at` transform
+around the screen center instead of jumping to a new upper-left world point. The raster itself is
+drag-sensitive: a captured pointer/world origin converts the total screen displacement through the
+selected rational scale, clamps the result, and avoids accumulating fractional per-frame error.
+Focused raster coverage proves a camera-cropped 200% view repeats the selected source pixel buckets
+exactly; interaction-state coverage proves anchored 200% zoom, 200% and 50% drag conversion, and
+extreme edge clamping.
 
 The global- and level-ExAnimation feature switches remain persistence/runtime controls in this
 workspace, not a claim that compact records have been interpreted for rendering. Their transfer
