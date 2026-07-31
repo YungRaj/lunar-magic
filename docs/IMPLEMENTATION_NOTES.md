@@ -2796,10 +2796,12 @@ visible cell remain separate entries in native stream order. Consequently unwrit
 cells are absent from both the framebuffer input and the selected-cell inspection.
 Each placement also carries an explicit composition mode. The installed SMW-US preview selects
 Lunar Magic's recovered averaged-pixel path for Map16 `$027`–`$02A` only in object tileset 4,
-covering both object-backed paints and native Layer 2 tilemap words. Nonzero source pixels clear
-the low bit of each source and destination RGB channel before adding their halves; transparent
-source pixels preserve the prior framebuffer. The inspector reports `opaque` versus `average`
-from the same placement value consumed by the raster.
+covering both object-backed paints and native Layer 2 tilemap words. Object paints compare their
+complete 15-bit foreground definition identity, so `$4027` does not alias `$0027`; compressed
+Layer 2 instead removes its two outer-flip bits before comparing the local word. Nonzero source
+pixels clear the low bit of each source and destination RGB channel before adding their halves;
+transparent source pixels preserve the prior framebuffer. The inspector reports `opaque` versus
+`average` from the same placement value consumed by the raster.
 The distinct recovered background-half-color flag is also installed without treating it as
 destination averaging. Level modes `$0C` and `$0D` mark every native Layer 2 tilemap placement as
 `half-color`; its nontransparent source RGB channels shift right once independently of the

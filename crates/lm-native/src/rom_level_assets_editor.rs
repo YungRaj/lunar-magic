@@ -1842,7 +1842,7 @@ fn object_paints_to_placements(
             outer_x_flip: false,
             outer_y_flip: false,
             definition_bank: NativeMap16DefinitionBank::Foreground,
-            composition: native_map16_composition(object_tileset, paint.tile),
+            composition: object_map16_composition(object_tileset, paint.tile),
         });
     }
     Ok(placements)
@@ -1911,7 +1911,18 @@ fn render_sprite_placements(
     (rendered, diagnostics)
 }
 
-const fn native_map16_composition(object_tileset: u8, word: u16) -> NativeMap16Composition {
+const fn object_map16_composition(
+    object_tileset: u8,
+    definition_index: u16,
+) -> NativeMap16Composition {
+    if object_tileset == 4 && matches!(definition_index & 0x7fff, 0x027..=0x02a) {
+        NativeMap16Composition::Average
+    } else {
+        NativeMap16Composition::Opaque
+    }
+}
+
+const fn layer2_map16_composition(object_tileset: u8, word: u16) -> NativeMap16Composition {
     if object_tileset == 4 && matches!(word & 0x3fff, 0x027..=0x02a) {
         NativeMap16Composition::Average
     } else {
@@ -1961,7 +1972,7 @@ fn layer2_placements(
                 composition: if background_half_color {
                     NativeMap16Composition::HalfColor
                 } else {
-                    native_map16_composition(object_tileset, word)
+                    layer2_map16_composition(object_tileset, word)
                 },
             });
         }
@@ -3037,19 +3048,23 @@ mod tests {
     #[test]
     fn underground_map16_paints_select_native_averaging() {
         assert_eq!(
-            native_map16_composition(4, 0x0027),
+            object_map16_composition(4, 0x0027),
             NativeMap16Composition::Average
         );
         assert_eq!(
-            native_map16_composition(4, 0xc02a),
-            NativeMap16Composition::Average
-        );
-        assert_eq!(
-            native_map16_composition(0, 0x0028),
+            object_map16_composition(4, 0x4027),
             NativeMap16Composition::Opaque
         );
         assert_eq!(
-            native_map16_composition(4, 0x002b),
+            layer2_map16_composition(4, 0xc02a),
+            NativeMap16Composition::Average
+        );
+        assert_eq!(
+            object_map16_composition(0, 0x0028),
+            NativeMap16Composition::Opaque
+        );
+        assert_eq!(
+            object_map16_composition(4, 0x002b),
             NativeMap16Composition::Opaque
         );
 
@@ -3062,16 +3077,25 @@ mod tests {
         };
         let index = lm_render::NativeLevelMap16Cache::cell_index(layout, 1, 2);
         let object = object_paints_to_placements(
-            &[StandardObjectPaintedCell {
-                record_index: 0,
-                index,
-                tile: 0x0027,
-            }],
+            &[
+                StandardObjectPaintedCell {
+                    record_index: 0,
+                    index,
+                    tile: 0x0027,
+                },
+                StandardObjectPaintedCell {
+                    record_index: 1,
+                    index,
+                    tile: 0x4027,
+                },
+            ],
             layout,
             4,
         )
         .unwrap();
         assert_eq!(object[0].composition, NativeMap16Composition::Average);
+        assert_eq!(object[1].definition_index, 0x4027);
+        assert_eq!(object[1].composition, NativeMap16Composition::Opaque);
 
         let mut tilemap_bytes = vec![0; lm_level::NATIVE_LAYER2_TILEMAP_LEN];
         let tilemap_index = lm_level::native_layer2_tilemap_index(1, 2).unwrap();

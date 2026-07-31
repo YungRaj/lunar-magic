@@ -96,7 +96,9 @@ value for a cache index rather than exposing internal construction rewrites.
 Native-raster fixtures require averaged Map16 paints to match Lunar Magic's per-channel low-bit
 clearing and floor behavior while leaving transparent pixels untouched. Installed fixtures scope
 that composition to tiles `$027`–`$02A` in object tileset 4 for both object and tilemap placement
-sources, retain opaque behavior outside the range/family, and expose the chosen mode in inspection.
+sources, retain opaque behavior outside the range/family, require foreground `$4027` not to alias
+`$0027`, preserve the rule for flipped compressed-Layer-2 `$C02A`, and expose the chosen mode in
+inspection.
 Separate half-color fixtures require source-only RGB halving independent of the destination,
 transparent-pixel preservation, exact selection by recovered level modes `$0C`/`$0D`, rejection
 for adjacent modes, and precedence over the underground average rule on Layer 2 backgrounds.

@@ -472,7 +472,10 @@ initialized blank cache, collapses repeated construction writes within one objec
 later same-cell object overwrites in serialized painter order.
 The installed native framebuffer now carries composition per Map16 placement and implements the
 routine's exact averaged RGB operation. The already-proved object-tileset-4 `$027`–`$02A` condition
-selects it for object or tilemap placements; all other installed placements remain opaque.
+selects it for object or tilemap placements; all other installed placements remain opaque. Object
+placements compare their complete 15-bit foreground definition, while compressed Layer 2 removes
+the two whole-cell flip bits from its local word. Thus foreground `$4027` is distinct from `$0027`,
+but flipped Layer 2 word `$C02A` still selects local tile `$02A`.
 The recovered Layer 2 render-property bit 6 is modeled separately: modes `$0C` and `$0D` route
 tilemap placements through source-only half color, matching
 `RenderTransparentLevelBackgroundMap16Tile` rather than averaging against the combined framebuffer.
