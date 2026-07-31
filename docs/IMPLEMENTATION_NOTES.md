@@ -1677,11 +1677,11 @@ The selected 8×8 tile is encoded as one validated 64-pixel `GraphicsTiles` reco
 wrong domains, multiple tiles, malformed pixels, empty destinations, and stale ROM controllers.
 Successful replacement passes through `GraphicsDocumentController` or `GraphicsController` with
 the full editable-ownership shape, preserving portable undo/redo and native staged-commit behavior.
-Portable, pristine-layout, and installed tile sheets all expose Lunar Magic's exact unmodified
-right-click paste target and exact Ctrl+left-click copy source gestures. Direct executable evidence
-further distinguishes unmodified right-click, which copies the active edited tile over the target,
-from Ctrl+right-click, which requests a system-clipboard tile and selects the target only after a
-valid payload is applied. The shared classifier rejects other button/modifier combinations.
+Portable, pristine-layout, and installed tile sheets expose Lunar Magic's Ctrl+left-click copy
+source gesture. Shift or Alt alongside Ctrl falls back to ordinary left-click selection, as do
+other non-Ctrl left clicks. Direct executable evidence further proves that right-click routing tests
+only Ctrl: without it the active edited tile is copied over the target, while any Ctrl combination
+requests a system-clipboard tile and selects the target only after a valid payload is applied.
 Installed right-click paste admits only an editable owner in a current, idle workspace; fixed,
 ExAnimation-owned, stale, and file-worker targets cannot enter either paste path.
 The portable document, pristine-layout ROM surface, and profile-backed installed ROM window also

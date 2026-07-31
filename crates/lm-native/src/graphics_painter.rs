@@ -697,14 +697,18 @@ fn classify_tile_pointer_action(
     secondary: bool,
     modifiers: egui::Modifiers,
 ) -> Option<TilePointerAction> {
-    if secondary && modifiers == egui::Modifiers::NONE {
-        Some(TilePointerAction::PasteSelected(index))
-    } else if secondary && modifiers == egui::Modifiers::CTRL {
-        Some(TilePointerAction::PasteClipboard(index))
-    } else if primary && modifiers == egui::Modifiers::CTRL {
-        Some(TilePointerAction::Copy(index))
-    } else if primary && modifiers == egui::Modifiers::NONE {
-        Some(TilePointerAction::Select(index))
+    if secondary {
+        if modifiers.ctrl {
+            Some(TilePointerAction::PasteClipboard(index))
+        } else {
+            Some(TilePointerAction::PasteSelected(index))
+        }
+    } else if primary {
+        if modifiers.ctrl && !modifiers.shift && !modifiers.alt {
+            Some(TilePointerAction::Copy(index))
+        } else {
+            Some(TilePointerAction::Select(index))
+        }
     } else {
         None
     }
@@ -1205,7 +1209,7 @@ mod tests {
     }
 
     #[test]
-    fn pointer_gestures_require_exact_buttons_and_modifiers() {
+    fn pointer_gestures_follow_native_control_fallback_routing() {
         assert_eq!(
             classify_tile_pointer_action(4, true, false, egui::Modifiers::NONE),
             Some(TilePointerAction::Select(4))
@@ -1218,16 +1222,33 @@ mod tests {
             classify_tile_pointer_action(6, false, true, egui::Modifiers::NONE),
             Some(TilePointerAction::PasteSelected(6))
         );
-        for modifiers in [egui::Modifiers::SHIFT, egui::Modifiers::COMMAND] {
+        for modifiers in [
+            egui::Modifiers::SHIFT,
+            egui::Modifiers::ALT,
+            egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+            egui::Modifiers::CTRL | egui::Modifiers::ALT,
+        ] {
             assert_eq!(
                 classify_tile_pointer_action(7, true, false, modifiers),
-                None
+                Some(TilePointerAction::Select(7))
             );
         }
-        assert_eq!(
-            classify_tile_pointer_action(8, false, true, egui::Modifiers::CTRL),
-            Some(TilePointerAction::PasteClipboard(8))
-        );
+        for modifiers in [egui::Modifiers::SHIFT, egui::Modifiers::ALT] {
+            assert_eq!(
+                classify_tile_pointer_action(8, false, true, modifiers),
+                Some(TilePointerAction::PasteSelected(8))
+            );
+        }
+        for modifiers in [
+            egui::Modifiers::CTRL,
+            egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+            egui::Modifiers::CTRL | egui::Modifiers::ALT,
+        ] {
+            assert_eq!(
+                classify_tile_pointer_action(9, false, true, modifiers),
+                Some(TilePointerAction::PasteClipboard(9))
+            );
+        }
     }
 
     #[test]

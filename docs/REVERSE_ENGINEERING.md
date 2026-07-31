@@ -1241,10 +1241,11 @@ those vertical keys retain page navigation (including modified forms and Shift o
 Page Up advances the palette with any modifiers, while Page Down reverses it unless Ctrl+Shift
 invokes the separate internal-cache unlock. Rust uses the same revisioned or ownership-guarded tile
 replacement paths as paint, paste, and flips rather than a presentation-only buffer. Exact
-Ctrl+left-click copies and selects the pointed tile. Unmodified
-right-click copies the active edit tile over its target, while Ctrl+right-click requests the typed
-single-tile clipboard payload and selects that target only after validation, matching the recovered
-mouse-message branches. Installed paste cannot bypass fixed/ExAnimation ownership, stale revision,
+Ctrl+left-click copies and selects the pointed tile; adding Shift or Alt instead follows ordinary
+selection. Right-click tests only the Ctrl state: without Ctrl it copies the active edit tile over
+its target, while Ctrl with any other modifiers requests the typed single-tile clipboard payload
+and selects that target only after validation, matching the recovered mouse-message branches.
+Installed paste cannot bypass fixed/ExAnimation ownership, stale revision,
 or active file-worker gates.
 The documented unmodified F9 save command now enters the existing button-backed save/commit path
 on each surface. The two ROM editors preserve their existing expansion, modified-state,
