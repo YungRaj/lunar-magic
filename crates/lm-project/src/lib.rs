@@ -2,6 +2,7 @@
 
 mod credits_tilemap_io;
 mod credits_tilemap_patch;
+mod exanimation_feature_io;
 mod exanimation_io;
 mod exanimation_slot_options_io;
 mod expanded_level_mode_io;
@@ -81,6 +82,11 @@ pub use credits_tilemap_io::{CreditsTilemapIoError, LegacyCreditsTilemapLayout};
 pub use credits_tilemap_patch::{
     CreditsTilemapPatchError, CreditsTilemapPatchLocator, CreditsTilemapStorage,
     LoadedCreditsTilemap,
+};
+pub use exanimation_feature_io::{
+    EXANIMATION_FEATURE_LEVEL_COUNT, ExAnimationFeatureIoError, ExAnimationFeatureRomLayout,
+    ExAnimationFeatureStorage, ExAnimationFeatureWritePlan, LEGACY_SPECIAL_LEVEL,
+    LEGACY_SPECIAL_LEVEL_FEATURE_BYTE, LoadedExAnimationFeatures,
 };
 pub use exanimation_io::{
     ExAnimationIoError, ExAnimationRomLayout, ExAnimationSaveOptions, InstalledExAnimationRomLayout,

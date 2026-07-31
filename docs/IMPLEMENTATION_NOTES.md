@@ -2685,6 +2685,14 @@ states while round-tripping all 256 byte values. Binary MWL files carry the byte
 ExAnimation metadata word 0, so typed GUI and `exanimation-features on|off on|off on|off on|off`
 script edits replace only bits 4–7 and preserve both the low nibble and the metadata word's upper
 24 bits.
+
+Installed ROMs use `ExAnimationFeatureRomLayout`, which names the first byte of the 512-entry table.
+The preceding byte is decoded as Lunar Magic's representation sentinel. Planning a write retains
+the exact legacy migration behavior—including the post-write level `$110 = $30` assignment—and
+returns `requires_runtime_installation` whenever the resulting feature byte is nonzero. The
+standalone save API refuses that case unless the caller has separately proved the feature-control
+runtime installed, then updates the data and SNES checksum in one undoable transaction. This keeps
+the storage migration distinct from the still-pending relocatable runtime installer.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to
