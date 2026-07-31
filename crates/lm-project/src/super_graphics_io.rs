@@ -39,6 +39,24 @@ impl std::fmt::Display for SuperGraphicsIoError {
 impl std::error::Error for SuperGraphicsIoError {}
 
 impl Project {
+    /// Resolves one native graphics file into indexed tiles at its encoded bit depth.
+    ///
+    /// This is the common boundary for expanded-header bypass selections and legacy
+    /// tileset-assignment tables. Every supported native `$800`/`$C00`/`$1000` payload decodes
+    /// to one 128-tile editor slot.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an unreadable graphics pointer or compression stream, unsupported decoded length,
+    /// invalid planar data, or a payload that does not materialize exactly one native slot.
+    pub fn load_super_graphics_file(
+        &self,
+        file: u16,
+        layout: GraphicsRomLayout,
+    ) -> Result<LoadedSuperGraphicsSlot, GraphicsIoError> {
+        load_super_graphics_slot(self, file, layout)
+    }
+
     /// Resolves every file selected by an enabled expanded-header Super GFX bypass.
     ///
     /// # Errors
@@ -210,5 +228,35 @@ mod tests {
             assert_eq!(loaded.bits_per_pixel, bits_per_pixel);
             assert_eq!(loaded.tiles, tiles);
         }
+    }
+
+    #[test]
+    fn public_single_file_loader_uses_the_same_native_slot_contract() {
+        let tiles = vec![IndexedTile::new([2; IndexedTile::PIXEL_COUNT]); 128];
+        let encoded = encode_lz2(&encode_planar_tiles(&tiles, 3).unwrap());
+        let mut bytes = vec![0xff; 0x8000];
+        bytes[0x20..0x23].copy_from_slice(&[0x00, 0x81, 0x80]);
+        bytes[0x100..0x100 + encoded.len()].copy_from_slice(&encoded);
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let loaded = project
+            .load_super_graphics_file(
+                0,
+                GraphicsRomLayout {
+                    mapper: Mapper::LoRom,
+                    pointers: LevelPointerTable {
+                        offset: 0x20,
+                        entries: 1,
+                        stride: 3,
+                    },
+                    split_pointer_planes: None,
+                    compression: GraphicsCompression::Lz2,
+                    maximum_compressed_len: 0x8000,
+                    maximum_decompressed_len: 0x1000,
+                },
+            )
+            .unwrap();
+        assert_eq!(loaded.file_number, 0);
+        assert_eq!(loaded.bits_per_pixel, 3);
+        assert_eq!(loaded.tiles, tiles);
     }
 }

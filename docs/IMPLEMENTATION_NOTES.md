@@ -2722,6 +2722,13 @@ enabling it renders the current aggregate, and every accepted settings, level, L
 ExAnimation-feature edit invalidates and regenerates the texture from the controller's new staged
 state. Preview failures are retained as diagnostics without retrying every GUI frame, and closing
 or reopening the workspace clears the live-preview lifecycle state.
+Disabling bypass no longer makes that preview unavailable. For the supported SMW-US revision-0
+profile, the same path reads the recovered four-byte object-tileset table at `$00292B` and
+sprite-tileset table at `$0028C3`, resolves each selected native GFX file through the profile's
+compression/pointer layout, materializes four FG/BG slots plus two blank native slots and all four
+SP slots, and renders the staged level with those active legacy assignments. Profiles whose legacy
+assignment tables have not been recovered are rejected explicitly instead of borrowing SMW-US
+offsets.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to

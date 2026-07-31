@@ -7,12 +7,13 @@ use lm_graphics::PaletteOwnership;
 use lm_level::{Map16Set, NativeLayer2Data, ObjectStream};
 use lm_project::NativeLevelAssetsFile;
 use lm_render::{
-    NativeLevelMap16Layout, NativeLevelRasterRequest, NativeMap16Placement, Rgba,
-    StandardLevelOrientation, StandardObjectDefinitionSet, StandardSpritePreviewMode,
-    StandardSpritePreviewSource, draw_native_sprite_preview_definition_pages,
-    install_lunar_magic_shared_extended_objects, install_lunar_magic_shared_standard_objects,
-    install_lunar_magic_tileset_extended_objects, lunar_magic_standard_sprite_preview_source,
-    render_lunar_magic_standard_sprite_with_mode, render_mapped_standard_object_stream,
+    MaterializedSuperGraphicsVram, NativeLevelMap16Layout, NativeLevelRasterRequest,
+    NativeMap16Placement, Rgba, StandardLevelOrientation, StandardObjectDefinitionSet,
+    StandardSpritePreviewMode, StandardSpritePreviewSource,
+    draw_native_sprite_preview_definition_pages, install_lunar_magic_shared_extended_objects,
+    install_lunar_magic_shared_standard_objects, install_lunar_magic_tileset_extended_objects,
+    lunar_magic_standard_sprite_preview_source, render_lunar_magic_standard_sprite_with_mode,
+    render_mapped_standard_object_stream,
 };
 
 mod commit;
@@ -45,6 +46,13 @@ struct NativeSpritePreviewPlacement {
     subtiles: [u16; 4],
     x: i32,
     y: i32,
+}
+
+struct ResolvedLevelGraphics {
+    vram: MaterializedSuperGraphicsVram,
+    foreground_background_files: usize,
+    sprite_files: usize,
+    source: &'static str,
 }
 
 #[derive(Default)]
@@ -306,20 +314,15 @@ impl RomLevelAssetsEditor {
 }
 
 fn validate_super_graphics(workspace: &Workspace) -> String {
-    let Some(settings) = workspace.controller.assets().expanded_settings.as_ref() else {
-        return "No installed expanded-settings record is available.".to_owned();
-    };
     let project = lm_project::Project::new(workspace.image.clone());
-    match project.load_super_graphics_bypass(settings, workspace.profile.graphics) {
-        Ok(None) => {
-            "Super GFX bypass is disabled; legacy tileset assignments remain active.".into()
-        }
-        Ok(Some(loaded)) => {
-            let vram = lm_render::materialize_super_graphics_vram(&loaded);
-            let foreground_tiles = vram.foreground_background.len();
-            let sprite_tiles = vram.sprites.len();
+    let header = workspace.controller.assets().level.layer1.header;
+    match resolve_level_graphics(workspace, &project, header) {
+        Ok(resolved) => {
+            let foreground_tiles = resolved.vram.foreground_background.len();
+            let sprite_tiles = resolved.vram.sprites.len();
             format!(
-                "Validated and materialized 6 FG/BG files ({foreground_tiles} VRAM tiles) and 4 sprite files ({sprite_tiles} VRAM tiles)."
+                "Validated and materialized {} {} FG/BG files ({foreground_tiles} VRAM tiles) and {} sprite files ({sprite_tiles} VRAM tiles).",
+                resolved.source, resolved.foreground_background_files, resolved.sprite_files,
             )
         }
         Err(error) => error.to_string(),
@@ -329,24 +332,13 @@ fn validate_super_graphics(workspace: &Workspace) -> String {
 fn render_super_graphics_level_preview(
     workspace: &Workspace,
 ) -> Result<(egui::ColorImage, Vec<String>), String> {
-    let settings = workspace
-        .controller
-        .assets()
-        .expanded_settings
-        .as_ref()
-        .ok_or_else(|| "No installed expanded-settings record is available.".to_owned())?;
     let project = lm_project::Project::new(workspace.image.clone());
-    let loaded = project
-        .load_super_graphics_bypass(settings, workspace.profile.graphics)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| {
-            "Super GFX bypass is disabled; legacy tileset assignments remain active.".to_owned()
-        })?;
-    let vram = lm_render::materialize_super_graphics_vram(&loaded);
+    let header = workspace.controller.assets().level.layer1.header;
+    let resolved = resolve_level_graphics(workspace, &project, header)?;
+    let vram = resolved.vram;
     let map16 = project
         .load_map16_set(workspace.profile.map16)
         .map_err(|error| error.to_string())?;
-    let header = workspace.controller.assets().level.layer1.header;
     let (layer1, layout, mut diagnostics) = render_object_placements(
         &workspace.image,
         &workspace.controller.assets().level.layer1.objects,
@@ -390,6 +382,103 @@ fn render_super_graphics_level_preview(
         &workspace.controller.assets().palette,
     )
     .map(|image| (image, diagnostics))
+}
+
+fn resolve_level_graphics(
+    workspace: &Workspace,
+    project: &lm_project::Project,
+    header: lm_level::LegacyLevelHeader,
+) -> Result<ResolvedLevelGraphics, String> {
+    if let Some(settings) = workspace.controller.assets().expanded_settings.as_ref()
+        && let Some(loaded) = project
+            .load_super_graphics_bypass(settings, workspace.profile.graphics)
+            .map_err(|error| error.to_string())?
+    {
+        return Ok(ResolvedLevelGraphics {
+            vram: lm_render::materialize_super_graphics_vram(&loaded),
+            foreground_background_files: loaded.foreground_background.len(),
+            sprite_files: loaded.sprites.len(),
+            source: "bypassed",
+        });
+    }
+    resolve_legacy_level_graphics(workspace, project, header)
+}
+
+fn resolve_legacy_level_graphics(
+    workspace: &Workspace,
+    project: &lm_project::Project,
+    header: lm_level::LegacyLevelHeader,
+) -> Result<ResolvedLevelGraphics, String> {
+    if workspace.profile.game != lm_rom::SupportedGame::SuperMarioWorld
+        || workspace.profile.region != lm_rom::Region::NorthAmerica
+        || workspace.profile.revision != 0
+    {
+        return Err(format!(
+            "legacy graphics assignment tables are not recovered for profile {}",
+            workspace.profile.name
+        ));
+    }
+    let foreground_files = lm_profile::smw_us_v1_object_tileset_graphics_files(
+        &workspace.image,
+        usize::from(header.object_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    let sprite_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+        &workspace.image,
+        usize::from(header.sprite_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    materialize_legacy_level_graphics(
+        project,
+        workspace.profile.graphics,
+        &foreground_files,
+        &sprite_files,
+    )
+}
+
+fn materialize_legacy_level_graphics(
+    project: &lm_project::Project,
+    layout: lm_project::GraphicsRomLayout,
+    foreground_files: &[usize],
+    sprite_files: &[usize],
+) -> Result<ResolvedLevelGraphics, String> {
+    if foreground_files.len() != 4 || sprite_files.len() != 4 {
+        return Err(format!(
+            "legacy level graphics require 4 FG/BG and 4 sprite files, received {} and {}",
+            foreground_files.len(),
+            sprite_files.len()
+        ));
+    }
+    let load_files = |domain: &str,
+                      files: &[usize]|
+     -> Result<Vec<lm_graphics::IndexedTile>, String> {
+        let mut tiles = Vec::with_capacity(files.len() * 128);
+        for (slot, file) in files.iter().copied().enumerate() {
+            let file = u16::try_from(file)
+                .map_err(|_| format!("{domain} slot {slot} graphics file {file} exceeds $FFFF"))?;
+            let loaded = project
+                .load_super_graphics_file(file, layout)
+                .map_err(|error| {
+                    format!("cannot load legacy {domain} slot {slot} file GFX{file:02X}: {error}")
+                })?;
+            tiles.extend(loaded.tiles);
+        }
+        Ok(tiles)
+    };
+    let mut foreground_background = load_files("FG/BG", foreground_files)?;
+    foreground_background.resize_with(6 * 128, || {
+        lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT])
+    });
+    let sprites = load_files("sprite", sprite_files)?;
+    Ok(ResolvedLevelGraphics {
+        vram: MaterializedSuperGraphicsVram {
+            foreground_background,
+            sprites,
+        },
+        foreground_background_files: foreground_files.len(),
+        sprite_files: sprite_files.len(),
+        source: "legacy",
+    })
 }
 
 fn render_level_image(
@@ -637,6 +726,54 @@ mod tests {
         preview.toggle();
         preview.invalidate();
         assert!(!preview.take_refresh());
+    }
+
+    #[test]
+    fn legacy_graphics_materializer_rejects_incomplete_assignment_rows() {
+        let project =
+            lm_project::Project::new(lm_rom::RomImage::from_bytes(vec![0; 0x8000]).unwrap());
+        let error = materialize_legacy_level_graphics(
+            &project,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            &[0, 1, 2],
+            &[3, 4, 5, 6],
+        )
+        .err()
+        .unwrap();
+        assert!(error.contains("require 4 FG/BG and 4 sprite files"));
+    }
+
+    #[test]
+    #[ignore = "requires the retained pristine SMW-US ROM fixture"]
+    fn retained_legacy_assignments_materialize_fixed_preview_slots() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = std::fs::read(root.join("Super Mario World (USA).sfc")).unwrap();
+        let image = lm_rom::RomImage::from_bytes(bytes).unwrap();
+        let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(&image, 0).unwrap();
+        let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(&image, 0).unwrap();
+        let project = lm_project::Project::new(image);
+        let resolved = materialize_legacy_level_graphics(
+            &project,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            &foreground,
+            &sprites,
+        )
+        .unwrap();
+        assert_eq!(resolved.source, "legacy");
+        assert_eq!(resolved.foreground_background_files, 4);
+        assert_eq!(resolved.sprite_files, 4);
+        assert_eq!(resolved.vram.foreground_background.len(), 6 * 128);
+        assert_eq!(resolved.vram.sprites.len(), 4 * 128);
+        assert!(
+            resolved.vram.foreground_background[..4 * 128]
+                .iter()
+                .any(|tile| tile.pixels().iter().any(|pixel| *pixel != 0))
+        );
+        assert!(
+            resolved.vram.foreground_background[4 * 128..]
+                .iter()
+                .all(|tile| tile.pixels().iter().all(|pixel| *pixel == 0))
+        );
     }
 
     #[test]
