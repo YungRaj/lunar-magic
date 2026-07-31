@@ -2693,6 +2693,12 @@ returns `requires_runtime_installation` whenever the resulting feature byte is n
 standalone save API refuses that case unless the caller has separately proved the feature-control
 runtime installed, then updates the data and SNES checksum in one undoable transaction. This keeps
 the storage migration distinct from the still-pending relocatable runtime installer.
+
+`InstalledExAnimationFeatureRomLayout` follows the expanded-animation hook's mapped runtime target
+to the feature-table operand and checks an independent feature-runtime marker. Its installed
+load/save entry points first resolve Lunar Magic's primary/fallback installation gate, then use the
+resolved storage and marker result. Thus a valid table pointer cannot accidentally stand in for
+proof that the gameplay hook consuming the table is active.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to

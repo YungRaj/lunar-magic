@@ -1,4 +1,7 @@
-use crate::{Project, RomWrite, TransactionError};
+use crate::{
+    ChainedSnesPointerLocator, InstallationMarker, InstalledLayout, InstalledLayoutError,
+    PointerLocatorError, Project, RomWrite, TransactionError,
+};
 use lm_graphics::ExAnimationFeatureOptions;
 use lm_rom::{RomError, compute_snes_checksum};
 use std::fmt;
@@ -14,6 +17,38 @@ pub const LEGACY_SPECIAL_LEVEL_FEATURE_BYTE: u8 = 0x30;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExAnimationFeatureRomLayout {
     pub table_offset: usize,
+}
+
+/// Marker-gated, allocator-dependent installed representation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InstalledExAnimationFeatureRomLayout {
+    pub table_locator: ChainedSnesPointerLocator,
+    pub feature_runtime_marker: InstallationMarker,
+}
+
+impl InstalledExAnimationFeatureRomLayout {
+    /// Resolves the table operand embedded in the installed expanded-animation runtime.
+    ///
+    /// # Errors
+    ///
+    /// Rejects malformed mapped operands or a truncated feature-runtime marker.
+    pub fn resolve(
+        self,
+        rom: &lm_rom::RomImage,
+    ) -> Result<ResolvedExAnimationFeatureRomLayout, ExAnimationFeatureIoError> {
+        Ok(ResolvedExAnimationFeatureRomLayout {
+            storage: ExAnimationFeatureRomLayout {
+                table_offset: self.table_locator.resolve(rom)?,
+            },
+            runtime_installed: self.feature_runtime_marker.matches(rom)?,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResolvedExAnimationFeatureRomLayout {
+    pub storage: ExAnimationFeatureRomLayout,
+    pub runtime_installed: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,6 +76,8 @@ pub enum ExAnimationFeatureIoError {
     OffsetOverflow,
     ChecksumOverlap,
     RuntimeInstallationRequired,
+    Installation(InstalledLayoutError),
+    PointerLocator(PointerLocatorError),
     Rom(RomError),
     Transaction(TransactionError),
 }
@@ -65,7 +102,66 @@ impl From<TransactionError> for ExAnimationFeatureIoError {
     }
 }
 
+impl From<InstalledLayoutError> for ExAnimationFeatureIoError {
+    fn from(value: InstalledLayoutError) -> Self {
+        Self::Installation(value)
+    }
+}
+
+impl From<PointerLocatorError> for ExAnimationFeatureIoError {
+    fn from(value: PointerLocatorError) -> Self {
+        Self::PointerLocator(value)
+    }
+}
+
 impl Project {
+    /// Resolves the expanded-animation hook and its feature-table operand before loading a level.
+    ///
+    /// # Errors
+    ///
+    /// Returns `NotInstalled` when no expanded-animation hook variant matches, or propagates
+    /// malformed marker, operand, layout, level, and ROM errors.
+    pub fn load_installed_exanimation_features(
+        &self,
+        level: usize,
+        installation: InstalledLayout<InstalledExAnimationFeatureRomLayout>,
+    ) -> Result<LoadedExAnimationFeatures, ExAnimationFeatureIoError> {
+        let installed = installation
+            .resolve(&self.rom)?
+            .ok_or(InstalledLayoutError::NotInstalled(
+                "ExAnimation feature storage",
+            ))?
+            .resolve(&self.rom)?;
+        self.load_exanimation_features(level, installed.storage)
+    }
+
+    /// Resolves installed code, then saves a level without assuming the gameplay runtime exists.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a nonzero feature byte unless the independent feature-runtime marker matches.
+    pub fn save_installed_exanimation_features(
+        &mut self,
+        level: usize,
+        options: ExAnimationFeatureOptions,
+        installation: InstalledLayout<InstalledExAnimationFeatureRomLayout>,
+        checksum_field: usize,
+    ) -> Result<bool, ExAnimationFeatureIoError> {
+        let installed = installation
+            .resolve(&self.rom)?
+            .ok_or(InstalledLayoutError::NotInstalled(
+                "ExAnimation feature storage",
+            ))?
+            .resolve(&self.rom)?;
+        self.save_exanimation_features(
+            level,
+            options,
+            installed.storage,
+            installed.runtime_installed,
+            checksum_field,
+        )
+    }
+
     /// Loads one level's four Super GFX animation switches.
     ///
     /// Lunar Magic treats every level as byte zero while the nonzero legacy sentinel is present.
@@ -212,7 +308,7 @@ fn level_offset(
 mod tests {
     use super::*;
     use lm_graphics::ExAnimationFeature;
-    use lm_rom::RomImage;
+    use lm_rom::{Mapper, RomImage, pc_to_snes};
 
     const LAYOUT: ExAnimationFeatureRomLayout = ExAnimationFeatureRomLayout {
         table_offset: 0x401,
@@ -229,6 +325,36 @@ mod tests {
         let mut options = ExAnimationFeatureOptions::decode(0);
         options.set_enabled(ExAnimationFeature::LevelExAnimation, false);
         options
+    }
+
+    fn write_u24(project: &mut Project, offset: usize, value: u32) {
+        project
+            .rom
+            .write(offset, &value.to_le_bytes()[..3])
+            .unwrap();
+    }
+
+    fn installed_layout() -> InstalledLayout<InstalledExAnimationFeatureRomLayout> {
+        InstalledLayout::Alternatives {
+            primary: crate::GatedLayout {
+                marker: InstallationMarker {
+                    offset: 0x100,
+                    expected: 0x22,
+                },
+                layout: InstalledExAnimationFeatureRomLayout {
+                    table_locator: ChainedSnesPointerLocator {
+                        mapper: Mapper::LoRom,
+                        first_operand_offset: 0x101,
+                        final_operand_displacement: 0x46,
+                    },
+                    feature_runtime_marker: InstallationMarker {
+                        offset: 0x180,
+                        expected: 0xea,
+                    },
+                },
+            },
+            fallback: None,
+        }
     }
 
     #[test]
@@ -302,5 +428,49 @@ mod tests {
             Err(ExAnimationFeatureIoError::LevelOutOfRange(0x200))
         ));
         assert_eq!(project.save_snapshot(), original);
+    }
+
+    #[test]
+    fn installed_path_follows_runtime_operand_and_checks_independent_marker() {
+        let mut project = project(0);
+        project.rom.write(0x100, &[0x22]).unwrap();
+        project.rom.write(0x180, &[0xea]).unwrap();
+        write_u24(
+            &mut project,
+            0x101,
+            pc_to_snes(Mapper::LoRom, 0x200).unwrap(),
+        );
+        write_u24(
+            &mut project,
+            0x246,
+            pc_to_snes(Mapper::LoRom, LAYOUT.table_offset).unwrap(),
+        );
+        project
+            .save_installed_exanimation_features(
+                0x105,
+                nonzero_options(),
+                installed_layout(),
+                CHECKSUM,
+            )
+            .unwrap();
+        assert_eq!(
+            project
+                .load_installed_exanimation_features(0x105, installed_layout())
+                .unwrap()
+                .options
+                .encode(),
+            0x10
+        );
+
+        project.rom.write(0x180, &[0xff]).unwrap();
+        assert!(matches!(
+            project.save_installed_exanimation_features(
+                0x106,
+                nonzero_options(),
+                installed_layout(),
+                CHECKSUM
+            ),
+            Err(ExAnimationFeatureIoError::RuntimeInstallationRequired)
+        ));
     }
 }

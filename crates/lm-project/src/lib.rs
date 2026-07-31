@@ -85,8 +85,9 @@ pub use credits_tilemap_patch::{
 };
 pub use exanimation_feature_io::{
     EXANIMATION_FEATURE_LEVEL_COUNT, ExAnimationFeatureIoError, ExAnimationFeatureRomLayout,
-    ExAnimationFeatureStorage, ExAnimationFeatureWritePlan, LEGACY_SPECIAL_LEVEL,
-    LEGACY_SPECIAL_LEVEL_FEATURE_BYTE, LoadedExAnimationFeatures,
+    ExAnimationFeatureStorage, ExAnimationFeatureWritePlan, InstalledExAnimationFeatureRomLayout,
+    LEGACY_SPECIAL_LEVEL, LEGACY_SPECIAL_LEVEL_FEATURE_BYTE, LoadedExAnimationFeatures,
+    ResolvedExAnimationFeatureRomLayout,
 };
 pub use exanimation_io::{
     ExAnimationIoError, ExAnimationRomLayout, ExAnimationSaveOptions, InstalledExAnimationRomLayout,
