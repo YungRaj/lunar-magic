@@ -400,7 +400,7 @@ impl eframe::App for NativeApplication {
         });
         self.show_confirmation(context);
         self.about_dialog.show(context);
-        self.diagnostics_dialog.show(context);
+        self.diagnostics_dialog.show(context, &self.app);
         self.show_editor_windows(context);
         self.show_global_effects(context);
         #[cfg(feature = "visual-smoke")]
