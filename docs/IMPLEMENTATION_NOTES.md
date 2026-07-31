@@ -1748,6 +1748,8 @@ Down does the same except that Ctrl+Shift is reserved for Lunar Magic's unmodele
 unlock. Portable wraps are independently undoable, pristine wraps enter the staged graphics
 controller, and installed wraps additionally require editable ownership plus a nonstale workspace
 with no active graphics file worker.
+The graphics character commands follow native `WM_CHAR` translation: D/M/R/X/Y work as lowercase
+input and as Shift-produced uppercase input. Ctrl and Alt chords remain outside that dispatcher.
 Unmodified F9 is consumed as the graphics editor's documented save command on all three surfaces.
 It enters the same persistence action as each visible Save/Commit button: the portable document
 uses its bounded background writer, pristine SMW requires an expanded ROM and staged changes, and

@@ -884,7 +884,8 @@ pub(crate) fn take_graphics_character_shortcut(
         return None;
     }
     ui.input_mut(|input| {
-        if input.modifiers.any() {
+        let modifiers = input.modifiers;
+        if modifiers.ctrl || modifiers.alt || modifiers.command || modifiers.mac_cmd {
             return None;
         }
         [
@@ -895,11 +896,7 @@ pub(crate) fn take_graphics_character_shortcut(
             (egui::Key::Y, GraphicsCharacterShortcut::FlipVertical),
         ]
         .into_iter()
-        .find_map(|(key, shortcut)| {
-            input
-                .consume_key(egui::Modifiers::NONE, key)
-                .then_some(shortcut)
-        })
+        .find_map(|(key, shortcut)| input.consume_key(modifiers, key).then_some(shortcut))
     })
 }
 
@@ -1770,7 +1767,7 @@ mod tests {
     }
 
     #[test]
-    fn focused_grid_routes_exact_native_character_shortcuts() {
+    fn focused_grid_routes_native_lowercase_and_uppercase_character_shortcuts() {
         let cases = [
             (egui::Key::D, GraphicsCharacterShortcut::ApplyColorMap),
             (egui::Key::M, GraphicsCharacterShortcut::EditColorMap),
@@ -1779,15 +1776,51 @@ mod tests {
             (egui::Key::Y, GraphicsCharacterShortcut::FlipVertical),
         ];
         for (key, expected) in cases {
+            for modifiers in [egui::Modifiers::NONE, egui::Modifiers::SHIFT] {
+                let context = egui::Context::default();
+                let mut selected = 0;
+                let _ = context.run(egui::RawInput::default(), |context| {
+                    render_keyboard_grid(context, &mut selected, true);
+                });
+                let mut actual = None;
+                let _ = context.run(
+                    egui::RawInput {
+                        events: vec![key_event(key, modifiers)],
+                        modifiers,
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            let responses = (0..TEST_GRID_TILES)
+                                .map(|index| ui.button(index.to_string()))
+                                .collect::<Vec<_>>();
+                            actual = take_graphics_character_shortcut(ui, selected, &responses);
+                        });
+                    },
+                );
+                assert_eq!(
+                    actual,
+                    Some(expected),
+                    "key {key:?}, modifiers {modifiers:?}"
+                );
+            }
+        }
+
+        for modifiers in [
+            egui::Modifiers::CTRL,
+            egui::Modifiers::ALT,
+            egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+        ] {
             let context = egui::Context::default();
             let mut selected = 0;
             let _ = context.run(egui::RawInput::default(), |context| {
                 render_keyboard_grid(context, &mut selected, true);
             });
-            let mut actual = None;
+            let mut modified = None;
             let _ = context.run(
                 egui::RawInput {
-                    events: vec![key_event(key, egui::Modifiers::NONE)],
+                    events: vec![key_event(egui::Key::X, modifiers)],
+                    modifiers,
                     ..Default::default()
                 },
                 |context| {
@@ -1795,35 +1828,12 @@ mod tests {
                         let responses = (0..TEST_GRID_TILES)
                             .map(|index| ui.button(index.to_string()))
                             .collect::<Vec<_>>();
-                        actual = take_graphics_character_shortcut(ui, selected, &responses);
+                        modified = take_graphics_character_shortcut(ui, selected, &responses);
                     });
                 },
             );
-            assert_eq!(actual, Some(expected));
+            assert_eq!(modified, None, "modifiers {modifiers:?}");
         }
-
-        let context = egui::Context::default();
-        let mut selected = 0;
-        let _ = context.run(egui::RawInput::default(), |context| {
-            render_keyboard_grid(context, &mut selected, true);
-        });
-        let mut modified = None;
-        let _ = context.run(
-            egui::RawInput {
-                events: vec![key_event(egui::Key::X, egui::Modifiers::CTRL)],
-                modifiers: egui::Modifiers::CTRL,
-                ..Default::default()
-            },
-            |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    let responses = (0..TEST_GRID_TILES)
-                        .map(|index| ui.button(index.to_string()))
-                        .collect::<Vec<_>>();
-                    modified = take_graphics_character_shortcut(ui, selected, &responses);
-                });
-            },
-        );
-        assert_eq!(modified, None);
     }
 
     #[test]

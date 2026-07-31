@@ -1260,9 +1260,11 @@ and routes selected-tile application through each graphics surface's existing mu
 `HandleGraphicsEditorCharacterShortcut` at `005061e0` indexes a 54-byte dispatch table for both
 uppercase and lowercase characters from D through Y. Its only non-default entries are D, M, R, X,
 and Y, which synthesize the existing Do Map, Map Colors, Rotate 90°, Flip X, and Flip Y button
-commands respectively. The Rust editors now preserve that exact unmodified key set; rotation was
-added as a first-class clockwise indexed-tile transform and all five routes retain each surface's
-normal controller, ownership, stale-revision, and worker guards.
+commands respectively. `HandleGraphicsEditorWindowMessage` calls it from `WM_CHAR`, so ordinary
+lowercase input and Shift-produced uppercase input both dispatch, while Ctrl character controls and
+Alt system characters do not enter that branch. The Rust editors preserve that translation; rotation
+is a first-class clockwise indexed-tile transform and all five routes retain each surface's normal
+controller, ownership, stale-revision, and worker guards.
 `HandleGraphicsEditorCommand` at `005054d0` confirms that Rotate 90° is also a directly reachable
 control command, alongside the two flip controls, rather than a keyboard-only operation. The three
 Rust graphics surfaces now expose the missing visible rotation control and route all three buttons
