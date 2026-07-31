@@ -2,14 +2,15 @@ use crate::{
     graphics_batch,
     graphics_painter::{
         GraphicsCharacterShortcut, GraphicsColorMapEditor, GraphicsDisplayPalette,
-        GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, TILE_EDITOR_SIDE,
-        TILE_GRID_COLUMNS, TilePixelPointerAction, TilePixelPointerCapture, TilePointerAction,
-        apply_tile_keyboard_navigation, apply_tile_navigation, apply_tile_palette_keyboard,
-        apply_tile_palette_step, color_selection_marker, graphics_navigation_controls,
-        graphics_transform_controls, paint_tile, shortcut_transform,
-        take_graphics_character_shortcut, take_graphics_refresh_shortcut,
-        take_graphics_save_shortcut, take_tile_grid_shortcut, take_tile_shift, tile_button,
-        tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
+        GraphicsEditorStatus, GraphicsTileGrid, GraphicsTileTransform, PalettePointerAction,
+        TILE_EDITOR_SIDE, TILE_GRID_COLUMNS, TilePixelPointerAction, TilePixelPointerCapture,
+        TilePointerAction, apply_tile_keyboard_navigation, apply_tile_navigation,
+        apply_tile_palette_keyboard, apply_tile_palette_step, color_selection_marker,
+        graphics_navigation_controls, graphics_transform_controls, paint_tile,
+        palette_pointer_action, shortcut_transform, take_graphics_character_shortcut,
+        take_graphics_refresh_shortcut, take_graphics_save_shortcut, take_tile_grid_shortcut,
+        take_tile_shift, tile_button, tile_coordinate, tile_page_range, tile_pixel_pointer_action,
+        tile_pointer_action,
     },
     level_graphics_export::{
         pristine_current_level_graphics_files, take_level_graphics_export_shortcut,
@@ -144,13 +145,16 @@ impl VanillaGraphicsEditor {
                     .min_size(egui::Vec2::splat(22.0))
                     .fill(fill),
                 );
-                if response.clicked_by(egui::PointerButton::Primary) {
-                    self.foreground_color = color;
-                    selected_foreground = Some(color);
-                }
-                if response.clicked_by(egui::PointerButton::Secondary) {
-                    self.background_color = color;
-                    selected_background = Some(color);
+                match palette_pointer_action(&response) {
+                    Some(PalettePointerAction::SelectForeground) => {
+                        self.foreground_color = color;
+                        selected_foreground = Some(color);
+                    }
+                    Some(PalettePointerAction::SelectBackground) => {
+                        self.background_color = color;
+                        selected_background = Some(color);
+                    }
+                    None => {}
                 }
                 if response.hovered() {
                     hovered_color = Some(color);

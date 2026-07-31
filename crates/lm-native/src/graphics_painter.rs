@@ -165,6 +165,12 @@ pub(crate) enum TilePixelPointerAction {
     PickBackground,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PalettePointerAction {
+    SelectForeground,
+    SelectBackground,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum TilePixelPointerCapture {
     #[default]
@@ -735,6 +741,33 @@ pub(crate) fn color_selection_marker(color: u8, foreground: u8, background: u8) 
         (true, false) => "F",
         (false, true) => "B",
         (false, false) => "",
+    }
+}
+
+pub(crate) fn palette_pointer_action(response: &egui::Response) -> Option<PalettePointerAction> {
+    let contains_pointer = response.contains_pointer();
+    response.ctx.input(|input| {
+        classify_palette_pointer_action(
+            contains_pointer,
+            input.pointer.button_pressed(egui::PointerButton::Primary),
+            input.pointer.button_pressed(egui::PointerButton::Secondary),
+        )
+    })
+}
+
+fn classify_palette_pointer_action(
+    contains_pointer: bool,
+    primary_pressed: bool,
+    secondary_pressed: bool,
+) -> Option<PalettePointerAction> {
+    if !contains_pointer {
+        None
+    } else if primary_pressed {
+        Some(PalettePointerAction::SelectForeground)
+    } else if secondary_pressed {
+        Some(PalettePointerAction::SelectBackground)
+    } else {
+        None
     }
 }
 
@@ -1567,6 +1600,24 @@ mod tests {
         assert_eq!(color_selection_marker(0, 1, 0), "B");
         assert_eq!(color_selection_marker(4, 4, 4), "F/B");
         assert_eq!(color_selection_marker(7, 1, 0), "");
+    }
+
+    #[test]
+    fn palette_pointer_actions_begin_on_native_button_down() {
+        assert_eq!(
+            classify_palette_pointer_action(true, true, false),
+            Some(PalettePointerAction::SelectForeground)
+        );
+        assert_eq!(
+            classify_palette_pointer_action(true, false, true),
+            Some(PalettePointerAction::SelectBackground)
+        );
+        assert_eq!(classify_palette_pointer_action(true, false, false), None);
+        assert_eq!(classify_palette_pointer_action(false, true, false), None);
+        assert_eq!(
+            classify_palette_pointer_action(true, true, true),
+            Some(PalettePointerAction::SelectForeground)
+        );
     }
 
     #[test]

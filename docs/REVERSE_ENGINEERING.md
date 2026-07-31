@@ -1285,7 +1285,9 @@ The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0`
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
 tile-edit selection. `HandleGraphicsEditorWindowMessage` at `005068c0` proves that primary and
 secondary palette clicks select foreground and background colors, while primary and secondary
-pixel-grid gestures paint with those colors. Ctrl changes the pixel-grid actions into foreground
+pixel-grid gestures paint with those colors. Both palette selections happen directly in the
+respective button-down message branches and do not inspect keyboard modifiers. Ctrl changes the
+pixel-grid actions into foreground
 and background sampling. The corresponding messages are exactly `Color %X selected for FG.` and
 `Color %X selected for BG.`; initialized globals `005E54F4` and `00E27B84` establish defaults 1 and
 0. The button-down branches choose paint or sample once: paint stores the selected color in
