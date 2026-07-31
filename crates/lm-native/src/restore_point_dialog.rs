@@ -19,7 +19,7 @@ struct CapturedAssociatedFiles {
     timestamps: [u64; LUNAR_RESTORE_ASSOCIATED_FILE_COUNT],
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct AutomaticPolicyDraft {
     interval_enabled: bool,
     full_interval: u32,
@@ -327,6 +327,7 @@ pub(crate) struct RestorePointDialog {
     completed: Option<String>,
     error: Option<String>,
     automatic_policy: Option<AutomaticPolicyDraft>,
+    automatic_defaults: AutomaticPolicyDraft,
 }
 
 impl RestorePointDialog {
@@ -335,7 +336,7 @@ impl RestorePointDialog {
     }
 
     pub(crate) fn open_automatic_policy(&mut self) {
-        self.automatic_policy = Some(AutomaticPolicyDraft::default());
+        self.automatic_policy = Some(self.automatic_defaults.clone());
         self.completed = None;
         self.error = None;
     }
@@ -421,12 +422,14 @@ impl RestorePointDialog {
         if cancel {
             self.automatic_policy = None;
         } else if create {
+            let selected = policy.clone();
             let policy = LunarRestoreAutomaticPolicy {
-                full_interval: policy.interval_enabled.then_some(policy.full_interval),
-                daily_full: policy.daily_full,
+                full_interval: selected.interval_enabled.then_some(selected.full_interval),
+                daily_full: selected.daily_full,
             };
             match append_for_open_project_with_policy(app, RestoreAppendMode::Automatic, policy) {
                 Ok(true) => {
+                    self.automatic_defaults = selected;
                     self.automatic_policy = None;
                     self.completed = Some("Automatic restore point appended.".to_owned());
                 }
