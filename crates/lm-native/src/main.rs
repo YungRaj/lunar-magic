@@ -130,6 +130,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         options,
         Box::new(move |context| {
             context.egui_ctx.set_zoom_factor(1.0);
+            let mut app = app;
+            app.load_persistent_preferences(context.storage);
             Ok(Box::new(app))
         }),
     )?;

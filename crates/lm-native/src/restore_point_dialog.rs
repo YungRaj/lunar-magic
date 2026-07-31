@@ -331,6 +331,35 @@ pub(crate) struct RestorePointDialog {
 }
 
 impl RestorePointDialog {
+    pub(crate) fn automatic_preferences(&self) -> String {
+        format!(
+            "{}:{}:{}",
+            u8::from(self.automatic_defaults.interval_enabled),
+            self.automatic_defaults.full_interval,
+            u8::from(self.automatic_defaults.daily_full),
+        )
+    }
+
+    pub(crate) fn load_automatic_preferences(&mut self, encoded: &str) -> Result<(), String> {
+        let mut fields = encoded.split(':');
+        let interval_enabled = parse_preference_bool(fields.next(), "interval enabled")?;
+        let full_interval = fields
+            .next()
+            .ok_or_else(|| "missing full interval".to_owned())?
+            .parse::<u32>()
+            .map_err(|_| "invalid full interval".to_owned())?;
+        let daily_full = parse_preference_bool(fields.next(), "daily full")?;
+        if fields.next().is_some() || full_interval == 0 {
+            return Err("invalid automatic restore preference fields".to_owned());
+        }
+        self.automatic_defaults = AutomaticPolicyDraft {
+            interval_enabled,
+            full_interval,
+            daily_full,
+        };
+        Ok(())
+    }
+
     pub(crate) const fn is_busy(&self) -> bool {
         self.loaded.is_some() || self.running.is_some() || self.automatic_policy.is_some()
     }
@@ -644,6 +673,15 @@ impl RestorePointDialog {
     }
 }
 
+fn parse_preference_bool(value: Option<&str>, field: &str) -> Result<bool, String> {
+    match value {
+        Some("0") => Ok(false),
+        Some("1") => Ok(true),
+        Some(_) => Err(format!("invalid {field} flag")),
+        None => Err(format!("missing {field} flag")),
+    }
+}
+
 fn validate_paths(archive: &Path, original: &Path, target: &Path) -> Result<(), String> {
     let archive = fs::canonicalize(archive)
         .map_err(|error| format!("cannot resolve restore archive: {error}"))?;
@@ -877,6 +915,16 @@ mod tests {
         assert_eq!(marked.records[1].rom_hash, 0);
         assert_eq!(marked.header.last_rom_timestamp, 0);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn automatic_preferences_round_trip_and_reject_malformed_values() {
+        let mut dialog = RestorePointDialog::default();
+        dialog.load_automatic_preferences("1:27:1").unwrap();
+        assert_eq!(dialog.automatic_preferences(), "1:27:1");
+        assert!(dialog.load_automatic_preferences("1:0:1").is_err());
+        assert!(dialog.load_automatic_preferences("yes:27:1").is_err());
+        assert!(dialog.load_automatic_preferences("1:27:1:extra").is_err());
     }
 
     #[test]

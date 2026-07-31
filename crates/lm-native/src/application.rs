@@ -149,6 +149,8 @@ pub(crate) struct NativeApplication {
 }
 
 impl NativeApplication {
+    const RESTORE_POLICY_STORAGE_KEY: &'static str = "lunar_magic_rust.restore_policy.v1";
+
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
     ) -> Self {
@@ -165,6 +167,20 @@ impl NativeApplication {
                 },
                 ..Self::default()
             },
+        }
+    }
+
+    pub(crate) fn load_persistent_preferences(&mut self, storage: Option<&dyn eframe::Storage>) {
+        let Some(encoded) =
+            storage.and_then(|storage| storage.get_string(Self::RESTORE_POLICY_STORAGE_KEY))
+        else {
+            return;
+        };
+        if let Err(error) = self
+            .restore_point_dialog
+            .load_automatic_preferences(&encoded)
+        {
+            self.effects.error = Some(format!("cannot load restore-point preferences: {error}"));
         }
     }
 
@@ -324,6 +340,13 @@ impl NativeApplication {
 }
 
 impl eframe::App for NativeApplication {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        storage.set_string(
+            Self::RESTORE_POLICY_STORAGE_KEY,
+            self.restore_point_dialog.automatic_preferences(),
+        );
+    }
+
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
         if context.input(|input| input.viewport().close_requested()) && !self.effects.quit_requested
         {
