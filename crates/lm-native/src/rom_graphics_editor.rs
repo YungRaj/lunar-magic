@@ -453,21 +453,39 @@ impl RomGraphicsEditor {
         stale: bool,
         pasted: Option<&str>,
     ) {
-        let tile = self
+        let has_tile = self
             .workspace
             .as_ref()
             .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
-            .cloned();
-        let Some(tile) = tile else {
+            .is_some();
+        if !has_tile {
             ui.label("No graphics tiles");
             return;
-        };
+        }
         ui.label(format!("Tile {:03X}", self.selected_tile));
         let owner = self
             .workspace
             .as_ref()
             .and_then(|workspace| workspace.controller.ownership().owner(self.selected_tile));
         let editable = ownership::show(ui, owner);
+        if !stale
+            && editable
+            && let Some(text) = pasted
+        {
+            match native_clipboard::decode_graphics_tile(text) {
+                Ok(tile) => self.apply_tile(tile),
+                Err(error) => self.error = Some(error),
+            }
+        }
+        let Some(mut tile) = self
+            .workspace
+            .as_ref()
+            .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
+            .cloned()
+        else {
+            ui.label("No graphics tiles");
+            return;
+        };
         ui.horizontal(|ui| {
             if ui.button("Copy tile").clicked() {
                 match native_clipboard::encode_graphics_tile(&tile) {
@@ -483,13 +501,32 @@ impl RomGraphicsEditor {
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
         });
-        if !stale
-            && editable
-            && let Some(text) = pasted
-        {
-            match native_clipboard::decode_graphics_tile(text) {
-                Ok(tile) => self.apply_tile(tile),
-                Err(error) => self.error = Some(error),
+        let transform = ui
+            .horizontal(|ui| {
+                if ui
+                    .add_enabled(!stale && editable, egui::Button::new("Flip horizontal"))
+                    .clicked()
+                {
+                    Some((true, false))
+                } else if ui
+                    .add_enabled(!stale && editable, egui::Button::new("Flip vertical"))
+                    .clicked()
+                {
+                    Some((false, true))
+                } else {
+                    None
+                }
+            })
+            .inner;
+        if let Some((horizontal, vertical)) = transform {
+            let transformed = tile.flipped(horizontal, vertical);
+            self.apply_tile(transformed);
+            if let Some(current) = self
+                .workspace
+                .as_ref()
+                .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
+            {
+                tile = current.clone();
             }
         }
         let (rect, response) =

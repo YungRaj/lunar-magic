@@ -1674,6 +1674,11 @@ The selected 8×8 tile is encoded as one validated 64-pixel `GraphicsTiles` reco
 wrong domains, multiple tiles, malformed pixels, empty destinations, and stale ROM controllers.
 Successful replacement passes through `GraphicsDocumentController` or `GraphicsController` with
 the full editable-ownership shape, preserving portable undo/redo and native staged-commit behavior.
+The portable document, pristine-layout ROM surface, and profile-backed installed ROM window also
+expose horizontal and vertical transforms of the selected tile. Each transform materializes an
+exact flipped 64-pixel tile and enters the same controller path as painting and paste: portable
+documents receive one undoable revision, while installed fixed and ExAnimation-owned tiles remain
+read-only and stale or active-file-worker ROM workspaces cannot flip.
 Level objects and sprites have corresponding typed adapters that retain their complete lossless
 record bytes. The complete portable level editor, interpretation-bound native-stream document, and
 shared aggregate level-assets panel can copy or replace one selected record without parsing it as

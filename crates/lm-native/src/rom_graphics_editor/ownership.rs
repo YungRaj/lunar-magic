@@ -5,21 +5,39 @@ pub(super) fn show(ui: &mut egui::Ui, owner: Option<GraphicsTileOwner>) -> bool 
     match owner {
         Some(GraphicsTileOwner::Editable) => {
             ui.label("Ownership: editable");
-            true
         }
         Some(GraphicsTileOwner::Fixed) => {
             ui.label("Ownership: fixed (read-only)");
-            false
         }
         Some(GraphicsTileOwner::ExAnimation { record }) => {
             ui.label(format!(
                 "Ownership: ExAnimation record {record:04X} (read-only)"
             ));
-            false
         }
         None => {
             ui.label("Ownership: invalid (read-only)");
-            false
+        }
+    }
+    is_editable(owner)
+}
+
+const fn is_editable(owner: Option<GraphicsTileOwner>) -> bool {
+    matches!(owner, Some(GraphicsTileOwner::Editable))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_explicitly_editable_tiles_admit_pixel_and_flip_mutations() {
+        assert!(is_editable(Some(GraphicsTileOwner::Editable)));
+        for owner in [
+            Some(GraphicsTileOwner::Fixed),
+            Some(GraphicsTileOwner::ExAnimation { record: 3 }),
+            None,
+        ] {
+            assert!(!is_editable(owner));
         }
     }
 }

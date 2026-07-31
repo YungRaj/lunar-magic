@@ -35,6 +35,25 @@ pub(super) fn paste_tile(
     }
 }
 
+pub(super) fn flip_tile(
+    controller: &mut GraphicsDocumentController,
+    index: usize,
+    horizontal: bool,
+    vertical: bool,
+    error_slot: &mut Option<String>,
+) {
+    let Some(tile) = controller.value().graphics.tiles.get(index) else {
+        *error_slot = Some("graphics document has no tile to flip".into());
+        return;
+    };
+    apply_tile(
+        controller,
+        index,
+        tile.flipped(horizontal, vertical),
+        error_slot,
+    );
+}
+
 fn apply_tile(
     controller: &mut GraphicsDocumentController,
     index: usize,

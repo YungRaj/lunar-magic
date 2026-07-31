@@ -12,7 +12,7 @@ mod document_io;
 mod editing;
 
 use document_io::decode_documents;
-use editing::{apply_pixel, paste_tile};
+use editing::{apply_pixel, flip_tile, paste_tile};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -249,7 +249,7 @@ impl GraphicsEditor {
         let Some(document) = self.document.as_mut() else {
             return;
         };
-        let Some(tile) = document
+        let Some(mut tile) = document
             .controller
             .value()
             .graphics
@@ -261,6 +261,35 @@ impl GraphicsEditor {
             return;
         };
         ui.label(format!("Tile {:03X}", self.selected_tile));
+        let transform = ui
+            .horizontal(|ui| {
+                if ui.button("Flip horizontal").clicked() {
+                    Some((true, false))
+                } else if ui.button("Flip vertical").clicked() {
+                    Some((false, true))
+                } else {
+                    None
+                }
+            })
+            .inner;
+        if let Some((horizontal, vertical)) = transform {
+            flip_tile(
+                &mut document.controller,
+                self.selected_tile,
+                horizontal,
+                vertical,
+                &mut self.error,
+            );
+            if let Some(current) = document
+                .controller
+                .value()
+                .graphics
+                .tiles
+                .get(self.selected_tile)
+            {
+                tile = current.clone();
+            }
+        }
         let (rect, response) =
             ui.allocate_exact_size(egui::Vec2::splat(320.0), egui::Sense::click_and_drag());
         paint_tile(ui.painter(), rect, &tile, palette, self.palette_row);
@@ -345,6 +374,43 @@ mod tests {
         assert_eq!(controller.value().graphics.tiles[0].pixel(7, 6), Some(15));
         assert!(controller.undo(1).unwrap());
         assert_eq!(controller.value().graphics.tiles[0].pixel(7, 6), Some(0));
+    }
+
+    #[test]
+    fn tile_flips_are_controller_revisioned_composable_and_undoable() {
+        let file = GraphicsInterchangeFile {
+            source_slot: 0,
+            graphics: GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new(std::array::from_fn(|index| {
+                    index.to_le_bytes()[0] & 0x0f
+                }))],
+            },
+        };
+        let mut controller =
+            GraphicsDocumentController::decode("graphics.lmgfx".into(), &file.encode().unwrap())
+                .unwrap();
+        let original = controller.value().graphics.tiles[0].clone();
+        let mut error = None;
+        flip_tile(&mut controller, 0, true, false, &mut error);
+        assert_eq!(error, None);
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(
+            controller.value().graphics.tiles[0],
+            original.flipped(true, false)
+        );
+        flip_tile(&mut controller, 0, false, true, &mut error);
+        assert_eq!(controller.revision(), 2);
+        assert_eq!(
+            controller.value().graphics.tiles[0],
+            original.flipped(true, true)
+        );
+        assert!(controller.undo(2).unwrap());
+        assert_eq!(
+            controller.value().graphics.tiles[0],
+            original.flipped(true, false)
+        );
+        assert!(controller.undo(3).unwrap());
+        assert_eq!(controller.value().graphics.tiles[0], original);
     }
 
     #[test]

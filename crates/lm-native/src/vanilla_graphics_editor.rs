@@ -3,7 +3,7 @@ use eframe::egui;
 use lm_app::{
     AppState, Command, EditorMode, GraphicsController, GraphicsControllerEdit, RomExpansionCommand,
 };
-use lm_graphics::{Bgr555, GraphicsTileChange, Palette, PaletteInterchangeFile};
+use lm_graphics::{Bgr555, GraphicsTileChange, IndexedTile, Palette, PaletteInterchangeFile};
 use lm_project::GraphicsSaveOptions;
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
@@ -177,6 +177,21 @@ impl VanillaGraphicsEditor {
             return;
         };
         ui.label(format!("Tile {:03X}", self.selected_tile));
+        let transform = ui
+            .horizontal(|ui| {
+                if ui.button("Flip horizontal").clicked() {
+                    Some((true, false))
+                } else if ui.button("Flip vertical").clicked() {
+                    Some((false, true))
+                } else {
+                    None
+                }
+            })
+            .inner;
+        if let Some((horizontal, vertical)) = transform {
+            tile = tile.flipped(horizontal, vertical);
+            self.apply_tile(tile.clone());
+        }
         let (rect, response) =
             ui.allocate_exact_size(egui::Vec2::splat(320.0), egui::Sense::click_and_drag());
         paint_tile(ui.painter(), rect, &tile, palette, 0);
@@ -188,15 +203,19 @@ impl VanillaGraphicsEditor {
                 self.error = Some(error.to_string());
                 return;
             }
-            let edit = GraphicsControllerEdit::ApplyChanges(vec![GraphicsTileChange {
-                index: self.selected_tile,
-                tile,
-            }]);
-            if let Some(controller) = self.controller.as_mut()
-                && let Err(error) = controller.apply_edits(&[edit])
-            {
-                self.error = Some(error.to_string());
-            }
+            self.apply_tile(tile);
+        }
+    }
+
+    fn apply_tile(&mut self, tile: IndexedTile) {
+        let edit = GraphicsControllerEdit::ApplyChanges(vec![GraphicsTileChange {
+            index: self.selected_tile,
+            tile,
+        }]);
+        if let Some(controller) = self.controller.as_mut()
+            && let Err(error) = controller.apply_edits(&[edit])
+        {
+            self.error = Some(error.to_string());
         }
     }
 
@@ -271,4 +290,39 @@ fn prepare_commit(
         )
         .map(lm_app::PreparedRomCommit::into_command)
         .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pristine_editor_flips_enter_the_graphics_controller_staging_path() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::ShowGraphics(0)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let controller = GraphicsController::decode_editable(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .unwrap();
+        let mut editor = VanillaGraphicsEditor {
+            controller: Some(controller),
+            selected_tile: 0,
+            ..VanillaGraphicsEditor::default()
+        };
+        let original = IndexedTile::new(std::array::from_fn(|index| index.to_le_bytes()[0] & 0x0f));
+        editor.apply_tile(original.clone());
+        assert_eq!(editor.error, None);
+        editor.apply_tile(original.flipped(true, false));
+        assert_eq!(editor.error, None);
+        let controller = editor.controller.as_ref().unwrap();
+        assert!(controller.is_modified());
+        assert_eq!(
+            controller.graphics().tiles[0],
+            original.flipped(true, false)
+        );
+    }
 }

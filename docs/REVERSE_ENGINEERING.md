@@ -1216,6 +1216,13 @@ Native `Lunar Magic Map8 Tiles` copy/paste entry points and fallbacks are now na
 
 The Map16 modeless parent dialog is now fully named through `00503ae0`, including its command dispatcher, exhaustive control initialization, DPI resize paths, render-child creation, teardown, and show/close entry points. The adjacent graphics editor is named through `00504fe0`: status-bar lifecycle, sixteen-by-sixteen color-map filter editing, indexed-to-SNES-4bpp encoding, active palette selection, editable 8x8 pixel grid, foreground/background swatches, complete tile-sheet rendering, commit propagation, zoomed presentation, and refresh paths.
 
+Rust now routes selected-tile horizontal and vertical flips through the same typed mutation boundary
+as individual pixel painting in all three native graphics surfaces. The portable document records
+each flip as an independently undoable revision; pristine-layout and profile-backed ROM editors
+stage the exact transformed pixels for their normal atomic commit, and the installed editor applies
+its fixed/ExAnimation ownership plus stale-worker gates before enabling either transform. Keyboard,
+status, color-map filtering, and exact zoom interaction remain separate UI-parity work.
+
 ## Compression formats
 
 The primary codec is the SMW/Lunar Magic LZ2 command stream. It supports literal copy, repeated-byte fill, repeated-word fill, incrementing-byte fill, and dictionary/back-reference operations. Commands use compact or extended headers and terminate with `0xFF`.
