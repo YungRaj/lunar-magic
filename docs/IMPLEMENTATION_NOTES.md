@@ -2772,6 +2772,12 @@ when a staged level-mode change shrinks the world, and can be cleared explicitly
 resets with the workspace. Its 60 ms outline clock is separated from the staged asset-animation
 phase: selection-only refreshes never enable disabled vanilla-tile or palette animation, nor do
 they trigger the unsupported-profile built-in-animation gate.
+Each successful staged render also materializes a semantic inspection for that selected cell from
+the exact Layer 2 and Layer 1 placement slices supplied to the framebuffer. It retains every
+duplicate placement in painter order instead of inventing a single top tile, decodes the 14-bit
+Map16 number and whole-definition X/Y flips, and reports the installed definition's acts-like value
+and four raw subtile words. Missing definitions and cells with no sparse placement are explicit.
+Accepted aggregate edits and failed renders clear stale inspection state before it can be shown.
 Focused raster coverage proves a camera-cropped 200% view repeats the selected source pixel buckets
 exactly; interaction-state coverage proves anchored 200% zoom, 200% and 50% drag conversion, and
 extreme edge clamping. It also proves cross-platform modifier filtering, discrete zoom boundaries,
@@ -2779,7 +2785,9 @@ pointer-coordinate clamping, and a noncentral stationary anchor. Overlay integra
 the expected grid residues after odd-pixel pans at 200% and 50%, checks both axes and intersections,
 and requires the disabled path to retain the unmodified source color. Selection coverage fixes
 pointer-to-cell mapping, exact transformed bounds and clipping, distinct marching phases, and the
-independent refresh/asset/selection phase matrix.
+independent refresh/asset/selection phase matrix. Inspection coverage requires duplicate Layer 2
+writes followed by Layer 1 writes, preserves an unavailable definition as a distinct final hit,
+and distinguishes a truly empty cell.
 
 The global- and level-ExAnimation feature switches remain persistence/runtime controls in this
 workspace, not a claim that compact records have been interpreted for rendering. Their transfer

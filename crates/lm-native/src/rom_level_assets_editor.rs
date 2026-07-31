@@ -94,6 +94,34 @@ struct InstalledPreviewPhases {
     selection: Option<u32>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PreviewMap16Layer {
+    Layer2,
+    Layer1,
+}
+
+impl PreviewMap16Layer {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Layer2 => "Layer 2",
+            Self::Layer1 => "Layer 1",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PreviewMap16Hit {
+    layer: PreviewMap16Layer,
+    word: u16,
+    definition: Option<lm_level::Map16Tile>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PreviewMap16Inspection {
+    selection: PreviewMap16Selection,
+    hits: Vec<PreviewMap16Hit>,
+}
+
 impl Default for PreviewViewportState {
     fn default() -> Self {
         Self {
@@ -252,6 +280,34 @@ fn preview_map16_selection(
     })
 }
 
+fn inspect_preview_map16_selection(
+    selection: PreviewMap16Selection,
+    layer2: &[NativeMap16Placement],
+    layer1: &[NativeMap16Placement],
+    map16: &Map16Set,
+) -> PreviewMap16Inspection {
+    let mut hits = Vec::new();
+    for (layer, placements) in [
+        (PreviewMap16Layer::Layer2, layer2),
+        (PreviewMap16Layer::Layer1, layer1),
+    ] {
+        hits.extend(
+            placements
+                .iter()
+                .filter(|placement| {
+                    i64::from(placement.x) == selection.cell_x
+                        && i64::from(placement.y) == selection.cell_y
+                })
+                .map(|placement| PreviewMap16Hit {
+                    layer,
+                    word: placement.word,
+                    definition: map16.tile(placement.word & 0x3fff).copied(),
+                }),
+        );
+    }
+    PreviewMap16Inspection { selection, hits }
+}
+
 impl InstalledAnimationOptions {
     const fn active(self) -> bool {
         self.vanilla_tiles || self.palette
@@ -330,6 +386,7 @@ pub(crate) struct RomLevelAssetsEditor {
     bypass_drag: Option<PreviewDragState>,
     bypass_map16_grid: bool,
     bypass_selection: Option<PreviewMap16Selection>,
+    bypass_inspection: Option<PreviewMap16Inspection>,
 }
 
 impl RomLevelAssetsEditor {
@@ -438,6 +495,7 @@ impl RomLevelAssetsEditor {
                         } else {
                             self.bypass_validation = None;
                             self.bypass_layer2_texture = None;
+                            self.bypass_inspection = None;
                             self.bypass_preview.invalidate();
                             self.panels.invalidate();
                         }
@@ -473,6 +531,7 @@ impl RomLevelAssetsEditor {
                 .clamp_to_world(world_width, world_height);
             if world_width < 16 || world_height < 16 {
                 if self.bypass_selection.take().is_some() {
+                    self.bypass_inspection = None;
                     self.bypass_preview.invalidate();
                 }
             } else if let Some(selection) = self.bypass_selection.as_mut() {
@@ -490,6 +549,7 @@ impl RomLevelAssetsEditor {
                         .saturating_sub(1),
                 );
                 if *selection != previous {
+                    self.bypass_inspection = None;
                     self.bypass_preview.invalidate();
                 }
             }
@@ -564,6 +624,7 @@ impl RomLevelAssetsEditor {
                     ));
                     if ui.button("Clear selection").clicked() {
                         self.bypass_selection = None;
+                        self.bypass_inspection = None;
                         self.bypass_preview.invalidate();
                     }
                 });
@@ -598,7 +659,7 @@ impl RomLevelAssetsEditor {
                 });
             self.bypass_preview.finish_refresh(result.is_ok());
             match result {
-                Ok((image, diagnostics)) => {
+                Ok((image, diagnostics, inspection)) => {
                     self.bypass_layer2_texture = Some(ui.ctx().load_texture(
                         "installed-super-gfx-level-preview",
                         image,
@@ -612,9 +673,11 @@ impl RomLevelAssetsEditor {
                             diagnostics.join("; ")
                         )
                     });
+                    self.bypass_inspection = inspection;
                 }
                 Err(error) => {
                     self.bypass_layer2_texture = None;
+                    self.bypass_inspection = None;
                     self.bypass_validation = Some(error);
                 }
             }
@@ -628,6 +691,44 @@ impl RomLevelAssetsEditor {
         }
         if let Some(validation) = &self.bypass_validation {
             ui.label(validation);
+        }
+        if let Some(inspection) = &self.bypass_inspection {
+            ui.group(|ui| {
+                ui.label(format!(
+                    "Resolved staged Map16 cell X ${:03X}, Y ${:03X} in painter order",
+                    inspection.selection.cell_x, inspection.selection.cell_y
+                ));
+                if inspection.hits.is_empty() {
+                    ui.monospace("No Layer 2 or Layer 1 placement resolves at this cell.");
+                }
+                for (paint_index, hit) in inspection.hits.iter().enumerate() {
+                    let outer_flips = match (hit.word & 0x4000 != 0, hit.word & 0x8000 != 0) {
+                        (false, false) => "--",
+                        (true, false) => "X-",
+                        (false, true) => "-Y",
+                        (true, true) => "XY",
+                    };
+                    ui.monospace(format!(
+                        "Paint {} {}: word ${:04X}, tile ${:04X}, outer flips {outer_flips}",
+                        paint_index + 1,
+                        hit.layer.label(),
+                        hit.word,
+                        hit.word & 0x3fff,
+                    ));
+                    if let Some(definition) = hit.definition {
+                        ui.monospace(format!(
+                            "  acts like ${:04X}; subtiles ${:04X} ${:04X} ${:04X} ${:04X}",
+                            definition.acts_like,
+                            definition.top_left.0,
+                            definition.top_right.0,
+                            definition.bottom_left.0,
+                            definition.bottom_right.0,
+                        ));
+                    } else {
+                        ui.monospace("  Map16 definition is unavailable.");
+                    }
+                }
+            });
         }
         if let Some(texture) = &self.bypass_layer2_texture {
             let response = ui
@@ -647,6 +748,7 @@ impl RomLevelAssetsEditor {
                     && self.bypass_selection != Some(selection)
                 {
                     self.bypass_selection = Some(selection);
+                    self.bypass_inspection = None;
                     self.bypass_preview.invalidate();
                 }
             }
@@ -770,7 +872,14 @@ fn render_super_graphics_level_preview(
     show_map16_grid: bool,
     selection: Option<PreviewMap16Selection>,
     selection_phase: Option<u32>,
-) -> Result<(egui::ColorImage, Vec<String>), String> {
+) -> Result<
+    (
+        egui::ColorImage,
+        Vec<String>,
+        Option<PreviewMap16Inspection>,
+    ),
+    String,
+> {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
     let resolved = resolve_level_graphics(workspace, &project, header)?;
@@ -842,6 +951,8 @@ fn render_super_graphics_level_preview(
         header.sprite_tileset(),
     );
     diagnostics.extend(sprite_diagnostics);
+    let inspection = selection
+        .map(|selection| inspect_preview_map16_selection(selection, &layer2, &layer1, &map16));
     let animated_sprite_tiles =
         crate::vanilla_map16_preview::materialize_sprite_display_tiles(special_graphics.gfx33);
     render_level_viewport_image(
@@ -858,7 +969,7 @@ fn render_super_graphics_level_preview(
         selection,
         selection_phase,
     )
-    .map(|image| (image, diagnostics))
+    .map(|image| (image, diagnostics, inspection))
 }
 
 fn preview_world_extent(header: lm_level::LegacyLevelHeader) -> (usize, usize) {
@@ -1864,6 +1975,109 @@ mod tests {
         assert_ne!(phase_zero.get(30, 14), phase_four.get(30, 14));
         assert_ne!(phase_zero.get(61, 45), Some(red));
         assert_eq!(phase_zero.get(62, 46), Some(red));
+    }
+
+    #[test]
+    fn installed_preview_inspection_preserves_layer_and_placement_painter_order() {
+        let mut definitions = vec![Map16Tile::default(); Map16Page::TILE_COUNT];
+        definitions[1] = Map16Tile {
+            top_left: Subtile(0x1001),
+            top_right: Subtile(0x1002),
+            bottom_left: Subtile(0x1003),
+            bottom_right: Subtile(0x1004),
+            acts_like: 0x0101,
+        };
+        definitions[2] = Map16Tile {
+            top_left: Subtile(0x2001),
+            top_right: Subtile(0x2002),
+            bottom_left: Subtile(0x2003),
+            bottom_right: Subtile(0x2004),
+            acts_like: 0x0202,
+        };
+        definitions[3] = Map16Tile {
+            top_left: Subtile(0x3001),
+            top_right: Subtile(0x3002),
+            bottom_left: Subtile(0x3003),
+            bottom_right: Subtile(0x3004),
+            acts_like: 0x0303,
+        };
+        let expected = [definitions[1], definitions[2], definitions[3]];
+        let map16 = Map16Set {
+            pages: vec![Map16Page::new(definitions).unwrap()],
+        };
+        let layer2 = [
+            NativeMap16Placement {
+                x: 2,
+                y: 1,
+                word: 0x4001,
+            },
+            NativeMap16Placement {
+                x: 8,
+                y: 8,
+                word: 0x0007,
+            },
+            NativeMap16Placement {
+                x: 2,
+                y: 1,
+                word: 0x0002,
+            },
+        ];
+        let layer1 = [
+            NativeMap16Placement {
+                x: 2,
+                y: 1,
+                word: 0x8003,
+            },
+            NativeMap16Placement {
+                x: 2,
+                y: 1,
+                word: 0x3fff,
+            },
+        ];
+        let selection = PreviewMap16Selection {
+            cell_x: 2,
+            cell_y: 1,
+        };
+        assert_eq!(
+            inspect_preview_map16_selection(selection, &layer2, &layer1, &map16),
+            PreviewMap16Inspection {
+                selection,
+                hits: vec![
+                    PreviewMap16Hit {
+                        layer: PreviewMap16Layer::Layer2,
+                        word: 0x4001,
+                        definition: Some(expected[0]),
+                    },
+                    PreviewMap16Hit {
+                        layer: PreviewMap16Layer::Layer2,
+                        word: 0x0002,
+                        definition: Some(expected[1]),
+                    },
+                    PreviewMap16Hit {
+                        layer: PreviewMap16Layer::Layer1,
+                        word: 0x8003,
+                        definition: Some(expected[2]),
+                    },
+                    PreviewMap16Hit {
+                        layer: PreviewMap16Layer::Layer1,
+                        word: 0x3fff,
+                        definition: None,
+                    },
+                ],
+            }
+        );
+
+        let empty = PreviewMap16Selection {
+            cell_x: 9,
+            cell_y: 9,
+        };
+        assert_eq!(
+            inspect_preview_map16_selection(empty, &layer2, &layer1, &map16),
+            PreviewMap16Inspection {
+                selection: empty,
+                hits: Vec::new(),
+            }
+        );
     }
 
     #[test]
