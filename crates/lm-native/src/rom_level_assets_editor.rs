@@ -66,6 +66,75 @@ struct InstalledAnimationOptions {
     palette: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PreviewViewportState {
+    origin_x: i64,
+    origin_y: i64,
+    zoom_index: u8,
+}
+
+impl Default for PreviewViewportState {
+    fn default() -> Self {
+        Self {
+            origin_x: 0,
+            origin_y: 0,
+            zoom_index: 1,
+        }
+    }
+}
+
+impl PreviewViewportState {
+    const WIDTH: u32 = 512;
+    const HEIGHT: u32 = 448;
+    const ZOOMS: [(u32, u32); 5] = [(1, 2), (1, 1), (2, 1), (3, 1), (4, 1)];
+    const LABELS: [&'static str; 5] = ["50%", "100%", "200%", "300%", "400%"];
+
+    fn viewport(self) -> Result<lm_render::Viewport, lm_render::ViewportError> {
+        let (numerator, denominator) = Self::ZOOMS
+            .get(usize::from(self.zoom_index))
+            .copied()
+            .unwrap_or((1, 1));
+        lm_render::Viewport::new(
+            lm_render::Point {
+                x: self.origin_x,
+                y: self.origin_y,
+            },
+            Self::WIDTH,
+            Self::HEIGHT,
+            numerator,
+            denominator,
+        )
+    }
+
+    fn clamp_to_world(&mut self, width: usize, height: usize) {
+        if usize::from(self.zoom_index) >= Self::ZOOMS.len() {
+            self.zoom_index = 1;
+        }
+        let (maximum_x, maximum_y) = self.camera_maximum(width, height);
+        self.origin_x = self.origin_x.clamp(0, maximum_x);
+        self.origin_y = self.origin_y.clamp(0, maximum_y);
+    }
+
+    fn camera_maximum(self, width: usize, height: usize) -> (i64, i64) {
+        let world_width = i64::try_from(width).unwrap_or(i64::MAX);
+        let world_height = i64::try_from(height).unwrap_or(i64::MAX);
+        let visible = Self {
+            origin_x: 0,
+            origin_y: 0,
+            ..self
+        }
+        .viewport()
+        .and_then(lm_render::Viewport::visible_world)
+        .ok();
+        let visible_width = visible.map_or(0, |bounds| bounds.right - bounds.left);
+        let visible_height = visible.map_or(0, |bounds| bounds.bottom - bounds.top);
+        (
+            world_width.saturating_sub(visible_width).max(0),
+            world_height.saturating_sub(visible_height).max(0),
+        )
+    }
+}
+
 impl InstalledAnimationOptions {
     const fn active(self) -> bool {
         self.vanilla_tiles || self.palette
@@ -126,6 +195,7 @@ pub(crate) struct RomLevelAssetsEditor {
     bypass_validation: Option<String>,
     bypass_layer2_texture: Option<egui::TextureHandle>,
     bypass_preview: LivePreviewState,
+    bypass_viewport: PreviewViewportState,
 }
 
 impl RomLevelAssetsEditor {
@@ -259,6 +329,60 @@ impl RomLevelAssetsEditor {
                 self.bypass_layer2_texture = None;
             }
         }
+        let header = self
+            .workspace
+            .as_ref()
+            .map(|workspace| workspace.controller.assets().level.layer1.header);
+        if let Some(header) = header {
+            let (world_width, world_height) = preview_world_extent(header);
+            self.bypass_viewport
+                .clamp_to_world(world_width, world_height);
+            let (maximum_x, maximum_y) = self
+                .bypass_viewport
+                .camera_maximum(world_width, world_height);
+            let mut viewport_changed = false;
+            ui.horizontal(|ui| {
+                ui.label("Preview camera");
+                viewport_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut self.bypass_viewport.origin_x)
+                            .range(0..=maximum_x)
+                            .prefix("X "),
+                    )
+                    .changed();
+                viewport_changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut self.bypass_viewport.origin_y)
+                            .range(0..=maximum_y)
+                            .prefix("Y "),
+                    )
+                    .changed();
+                let selected = PreviewViewportState::LABELS
+                    .get(usize::from(self.bypass_viewport.zoom_index))
+                    .copied()
+                    .unwrap_or("100%");
+                egui::ComboBox::from_id_salt("installed-super-gfx-preview-zoom")
+                    .selected_text(selected)
+                    .show_ui(ui, |ui| {
+                        for (index, label) in PreviewViewportState::LABELS.iter().enumerate() {
+                            viewport_changed |= ui
+                                .selectable_value(
+                                    &mut self.bypass_viewport.zoom_index,
+                                    u8::try_from(index).expect("five zoom entries"),
+                                    *label,
+                                )
+                                .changed();
+                        }
+                    });
+                if ui.button("Reset view").clicked() {
+                    self.bypass_viewport = PreviewViewportState::default();
+                    viewport_changed = true;
+                }
+            });
+            if viewport_changed {
+                self.bypass_preview.invalidate();
+            }
+        }
         let animation_options = self.workspace.as_ref().map_or(
             InstalledAnimationOptions {
                 vanilla_tiles: false,
@@ -275,7 +399,11 @@ impl RomLevelAssetsEditor {
                 .as_ref()
                 .ok_or_else(|| "level-assets workspace is closed".to_owned())
                 .and_then(|workspace| {
-                    render_super_graphics_level_preview(workspace, animation_phase)
+                    render_super_graphics_level_preview(
+                        workspace,
+                        animation_phase,
+                        self.bypass_viewport,
+                    )
                 });
             self.bypass_preview.finish_refresh(result.is_ok());
             match result {
@@ -377,6 +505,7 @@ fn validate_super_graphics(workspace: &Workspace) -> String {
 fn render_super_graphics_level_preview(
     workspace: &Workspace,
     animation_phase: Option<usize>,
+    viewport: PreviewViewportState,
 ) -> Result<(egui::ColorImage, Vec<String>), String> {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
@@ -451,7 +580,7 @@ fn render_super_graphics_level_preview(
     diagnostics.extend(sprite_diagnostics);
     let animated_sprite_tiles =
         crate::vanilla_map16_preview::materialize_sprite_display_tiles(special_graphics.gfx33);
-    render_level_image(
+    render_level_viewport_image(
         &[&layer2, &layer1],
         &sprites,
         layout,
@@ -460,8 +589,18 @@ fn render_super_graphics_level_preview(
         &vram.sprites,
         &animated_sprite_tiles,
         &palette,
+        viewport,
     )
     .map(|image| (image, diagnostics))
+}
+
+fn preview_world_extent(header: lm_level::LegacyLevelHeader) -> (usize, usize) {
+    let mode = lm_profile::smw_us_v1_level_mode(header.level_mode());
+    if mode.vertical {
+        (32 * 16, usize::from(mode.editor_major_screens) * 16 * 16)
+    } else {
+        (usize::from(mode.editor_major_screens) * 16 * 16, 27 * 16)
+    }
 }
 
 fn load_profiled_special_graphics(
@@ -638,6 +777,7 @@ fn materialize_legacy_level_graphics(
     })
 }
 
+#[cfg(test)]
 fn render_level_image(
     layers: &[&[NativeMap16Placement]],
     sprites: &[NativeSpritePreviewPlacement],
@@ -648,6 +788,58 @@ fn render_level_image(
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
     palette: &lm_graphics::Palette,
 ) -> Result<egui::ColorImage, String> {
+    render_level_canvas(
+        layers,
+        sprites,
+        layout,
+        map16,
+        tiles,
+        sprite_tiles,
+        animated_sprite_tiles,
+        palette,
+    )
+    .map(canvas_to_color_image)
+}
+
+fn render_level_viewport_image(
+    layers: &[&[NativeMap16Placement]],
+    sprites: &[NativeSpritePreviewPlacement],
+    layout: NativeLevelMap16Layout,
+    map16: &Map16Set,
+    tiles: &[lm_graphics::IndexedTile],
+    sprite_tiles: &[lm_graphics::IndexedTile],
+    animated_sprite_tiles: &[lm_graphics::IndexedTile],
+    palette: &lm_graphics::Palette,
+    viewport: PreviewViewportState,
+) -> Result<egui::ColorImage, String> {
+    let source = render_level_canvas(
+        layers,
+        sprites,
+        layout,
+        map16,
+        tiles,
+        sprite_tiles,
+        animated_sprite_tiles,
+        palette,
+    )?;
+    lm_render::rasterize_canvas_viewport(
+        &source,
+        viewport.viewport().map_err(|error| error.to_string())?,
+    )
+    .map(canvas_to_color_image)
+    .map_err(|error| error.to_string())
+}
+
+fn render_level_canvas(
+    layers: &[&[NativeMap16Placement]],
+    sprites: &[NativeSpritePreviewPlacement],
+    layout: NativeLevelMap16Layout,
+    map16: &Map16Set,
+    tiles: &[lm_graphics::IndexedTile],
+    sprite_tiles: &[lm_graphics::IndexedTile],
+    animated_sprite_tiles: &[lm_graphics::IndexedTile],
+    palette: &lm_graphics::Palette,
+) -> Result<lm_render::Canvas, String> {
     let definitions = map16
         .pages
         .iter()
@@ -687,14 +879,15 @@ fn render_level_image(
             sprite.y,
         );
     }
+    Ok(canvas)
+}
+
+fn canvas_to_color_image(canvas: lm_render::Canvas) -> egui::ColorImage {
     let mut rgba = Vec::with_capacity(canvas.pixels().len() * 4);
     for pixel in canvas.pixels() {
         rgba.extend_from_slice(&[pixel.red, pixel.green, pixel.blue, pixel.alpha]);
     }
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
-        [canvas.width(), canvas.height()],
-        &rgba,
-    ))
+    egui::ColorImage::from_rgba_unmultiplied([canvas.width(), canvas.height()], &rgba)
 }
 
 fn render_object_placements(
@@ -1118,6 +1311,7 @@ mod tests {
         let tiles = [IndexedTile::new([1; IndexedTile::PIXEL_COUNT])];
         let mut colors = vec![Bgr555(0); 128];
         colors[1] = Bgr555(0x001f);
+        let palette = Palette { colors };
         let placements = layer2_placements(&tilemap).unwrap();
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
         let image = render_level_image(
@@ -1134,11 +1328,58 @@ mod tests {
             &tiles,
             &[],
             &[],
-            &Palette { colors },
+            &palette,
         )
         .unwrap();
         assert_eq!(image.size, [512, 512]);
         assert_eq!(image[(16, 32)], egui::Color32::from_rgb(255, 0, 0));
+        let viewport_image = render_level_viewport_image(
+            &layers,
+            &[],
+            NativeLevelMap16Layout {
+                width: 32,
+                height: 32,
+                page_stride: 0x1b0,
+                base_cell: 0,
+                vertical: false,
+            },
+            &map16,
+            &tiles,
+            &[],
+            &[],
+            &palette,
+            PreviewViewportState {
+                origin_x: 16,
+                origin_y: 32,
+                zoom_index: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(viewport_image.size, [512, 448]);
+        assert_eq!(viewport_image[(0, 0)], egui::Color32::from_rgb(255, 0, 0));
+        assert_eq!(viewport_image[(31, 31)], egui::Color32::from_rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn installed_preview_viewport_clamps_camera_and_exact_zoom() {
+        let mut viewport = PreviewViewportState {
+            origin_x: -10,
+            origin_y: i64::MAX,
+            zoom_index: u8::MAX,
+        };
+        viewport.clamp_to_world(4096, 432);
+        assert_eq!(viewport.origin_x, 0);
+        assert_eq!(viewport.origin_y, 0);
+        assert_eq!(viewport.zoom_index, 1);
+        assert_eq!(viewport.viewport().unwrap().zoom(), (1, 1));
+        assert_eq!(viewport.camera_maximum(4096, 432), (3584, 0));
+
+        viewport.zoom_index = 0;
+        assert_eq!(viewport.viewport().unwrap().zoom(), (1, 2));
+        assert_eq!(viewport.camera_maximum(4096, 432), (3072, 0));
+        viewport.zoom_index = 4;
+        assert_eq!(viewport.viewport().unwrap().zoom(), (4, 1));
+        assert_eq!(viewport.camera_maximum(4096, 432), (3968, 320));
     }
 
     #[test]

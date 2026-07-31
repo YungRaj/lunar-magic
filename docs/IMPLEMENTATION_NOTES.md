@@ -2746,6 +2746,19 @@ use the recovered fixed startup pointers. This keeps relocated Lunar Magic graph
 out of the pristine-pointer path. The retained fixture mirrors the two authentic special pointers
 into a 52-entry profiled table and requires profiled and pristine decoding to produce identical
 tiles before comparing animation phases.
+The same live preview now presents the staged full-level canvas through
+`rasterize_canvas_viewport`, rather than relying on toolkit texture scaling. Its fixed 512×448
+screen raster supports exact 50%, 100%, 200%, 300%, and 400% nearest-neighbor zoom plus bounded
+pixel camera origins. Camera limits are derived from the viewport's exact visible-world rectangle,
+so the view cannot pan beyond the last fully visible source region; short axes clamp to zero.
+Changing camera or zoom invalidates one preview frame without disturbing staged assets, and
+workspace reopen resets the view. Focused raster coverage proves a camera-cropped 200% view repeats
+the selected source pixel buckets exactly.
+
+The global- and level-ExAnimation feature switches remain persistence/runtime controls in this
+workspace, not a claim that compact records have been interpreted for rendering. Their transfer
+types still require an oracle-backed `LMANFRM` provider as documented by the portable renderer;
+the installed preview does not invent tile or palette overrides from lossless record fields alone.
 The graphical reveal-table workspace covers all 1–255 records, preserves the mixed native
 endianness behind the model boundary, initializes growth with zero reveals, and rejects source
 tiles above `$07FF` before they can be normalized on reopen. Growing pristine storage from 112 to
