@@ -1,11 +1,22 @@
 use eframe::egui;
 use lm_app::{MwlBatchExportMode, ProfiledControllerSnapshot};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+    mpsc::{self, Receiver, TryRecvError},
+};
 
 struct RunningBatchExport {
     template: PathBuf,
-    result: Receiver<Result<usize, String>>,
+    cancelled: Arc<AtomicBool>,
+    result: Receiver<Result<Option<usize>, String>>,
+}
+
+impl RunningBatchExport {
+    fn request_cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
 }
 
 #[derive(Default)]
@@ -29,23 +40,39 @@ impl MwlBatchExportWorker {
         }
         let (sender, result) = mpsc::channel();
         let worker_template = template.clone();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = Arc::clone(&cancelled);
         std::thread::Builder::new()
             .name("lm-batch-mwl-export".into())
             .spawn(move || {
-                let result = lm_app::export_smw_us_v1_installed_mwl_batch(&profiled, mode)
-                    .and_then(|documents| {
-                        lm_app::publish_mwl_batch_new(&worker_template, &documents)
+                let result =
+                    lm_app::export_smw_us_v1_installed_mwl_batch_until(&profiled, mode, || {
+                        worker_cancelled.load(Ordering::Relaxed)
+                    })
+                    .and_then(|documents| match documents {
+                        Some(documents) if !worker_cancelled.load(Ordering::Relaxed) => {
+                            lm_app::publish_mwl_batch_new(&worker_template, &documents).map(Some)
+                        }
+                        Some(_) | None => Ok(None),
                     });
                 let _send_result = sender.send(result);
             })
             .map_err(|error| format!("could not create batch-MWL worker: {error}"))?;
-        self.running = Some(RunningBatchExport { template, result });
+        self.running = Some(RunningBatchExport {
+            template,
+            cancelled,
+            result,
+        });
         Ok(())
     }
 
-    pub(super) fn show(&mut self, context: &egui::Context) -> Option<Result<usize, String>> {
+    pub(super) fn show(
+        &mut self,
+        context: &egui::Context,
+    ) -> Option<Result<Option<usize>, String>> {
         let completion = self.poll();
         if let Some(running) = &self.running {
+            let cancellation_requested = running.cancelled.load(Ordering::Relaxed);
             egui::Window::new("Exporting levels")
                 .collapsible(false)
                 .resizable(false)
@@ -54,13 +81,21 @@ impl MwlBatchExportWorker {
                         "Creating numbered MWLs from {}",
                         running.template.display()
                     ));
+                    ui.label("Cancellation takes effect before grouped publication starts.");
+                    if cancellation_requested {
+                        ui.label("Cancelling after the current level…");
+                    } else if ui.button("Cancel").clicked()
+                        || context.input(|input| input.key_pressed(egui::Key::Escape))
+                    {
+                        running.request_cancel();
+                    }
                 });
             context.request_repaint_after(std::time::Duration::from_millis(100));
         }
         completion
     }
 
-    fn poll(&mut self) -> Option<Result<usize, String>> {
+    fn poll(&mut self) -> Option<Result<Option<usize>, String>> {
         let running = self.running.as_ref()?;
         match running.result.try_recv() {
             Ok(result) => {
@@ -75,5 +110,31 @@ impl MwlBatchExportWorker {
                 ))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MwlBatchExportWorker, RunningBatchExport};
+    use std::path::PathBuf;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    };
+
+    #[test]
+    fn running_export_cancellation_flag_is_shared_with_worker() {
+        let (_sender, result) = mpsc::channel();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker = MwlBatchExportWorker {
+            running: Some(RunningBatchExport {
+                template: PathBuf::from("Export.mwl"),
+                cancelled: Arc::clone(&cancelled),
+                result,
+            }),
+        };
+        worker.running.as_ref().unwrap().request_cancel();
+        assert!(cancelled.load(Ordering::Relaxed));
     }
 }

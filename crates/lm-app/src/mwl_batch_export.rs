@@ -27,6 +27,28 @@ pub fn export_smw_us_v1_installed_mwl_batch(
     profiled: &ProfiledControllerSnapshot,
     mode: MwlBatchExportMode,
 ) -> Result<Vec<MwlBatchExportDocument>, String> {
+    export_smw_us_v1_installed_mwl_batch_until(profiled, mode, || false).map(|documents| {
+        documents.expect("an export with a false cancellation predicate cannot be cancelled")
+    })
+}
+
+/// Materializes selected MWLs, stopping between levels when cancellation is requested.
+///
+/// A `None` result means cancellation won before another level was started. Callers should check
+/// the same predicate once more before publishing the returned batch so cancellation cannot race
+/// the materialization/publication boundary.
+///
+/// # Errors
+///
+/// Returns the same diagnostics as [`export_smw_us_v1_installed_mwl_batch`].
+pub fn export_smw_us_v1_installed_mwl_batch_until(
+    profiled: &ProfiledControllerSnapshot,
+    mode: MwlBatchExportMode,
+    mut cancelled: impl FnMut() -> bool,
+) -> Result<Option<Vec<MwlBatchExportDocument>>, String> {
+    if cancelled() {
+        return Ok(None);
+    }
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
     let palette = profiled
@@ -39,6 +61,9 @@ pub fn export_smw_us_v1_installed_mwl_batch(
     let level_count = profiled.profile.level.layer1.entries;
     let mut documents = Vec::with_capacity(level_count);
     for slot in 0..level_count {
+        if cancelled() {
+            return Ok(None);
+        }
         if mode == MwlBatchExportMode::Modified
             && !mwl_level_is_modified(
                 &image,
@@ -67,7 +92,7 @@ pub fn export_smw_us_v1_installed_mwl_batch(
             .map_err(|error: lm_project::MwlNativeLevelError| error.to_string())?;
         documents.push(MwlBatchExportDocument { level, bytes });
     }
-    Ok(documents)
+    Ok(Some(documents))
 }
 
 /// Publishes a complete numbered MWL batch without replacing any existing destination.

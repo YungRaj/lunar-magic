@@ -578,10 +578,11 @@ impl RomLevelAssetsEditor {
     ) -> (bool, Option<Command>) {
         if let Some(result) = self.mwl_batch_worker.show(context) {
             match result {
-                Ok(count) => {
+                Ok(Some(count)) => {
                     self.mwl_batch_status =
                         Some(format!("{count} levels were exported successfully."));
                 }
+                Ok(None) => self.mwl_batch_status = Some("Batch MWL export cancelled.".into()),
                 Err(error) => self.error = Some(error),
             }
         }
