@@ -538,6 +538,9 @@ interactive frontends cannot bypass confirmation and request correlation through
   mode-dependent generator labels no longer render with a fabricated horizontal mode-zero context.
   Animated standard previews advance through their recovered four phases at 8 Hz, with repaint
   scheduling enabled only while an animated sprite is present.
+  Both the standard and SSC atlas catalogs now pass the same current animated GFX33 texture used
+  by placed sprites. Each catalog subtile therefore routes bit `$0200` to the animated page while
+  page-zero subtiles remain backed by the ordinary SP atlas.
   The sprite atlas now materializes all eight native sprite palette rows instead of precoloring
   every definition with row 8; each 16-bit subtile selects its encoded palette while retaining
   flips. Resolved SSC previews also consume the global `$10000` graphics-base and `$20000`

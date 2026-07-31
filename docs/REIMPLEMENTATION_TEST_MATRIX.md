@@ -54,6 +54,9 @@ placeholder pixels with the real question/music/turn-block artwork. Question and
 advance through their four exact GFX33 frames on the editor's 125 ms presentation clock while the
 ordinary turn block retains its static group. Focused codec, zero-gap, camera, animated-tile,
 real-ROM, and native-framebuffer GUI tests cover the recovered invariants.
+Standard and SSC sprite catalogs share the placed canvas's ordinary-versus-animated texture
+routing: each subtile's `$0200` page bit selects the current GFX33 phase, while page-zero subtiles
+remain on the ordinary SP atlas. Focused page classification covers both domains.
 The installed native-assets preview reuses the same recovered common-animation interpreter after
 resolving either Super GFX bypass files or legacy tileset assignments. Its staged
 `VanillaAnimation` and `PaletteAnimation` options independently gate the recovered eight-phase tile

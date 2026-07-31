@@ -3555,6 +3555,13 @@ impl VanillaLevelEditor {
                 );
                 let ids = sprite_catalog_ids(&self.sprite_catalog_filter);
                 let texture = self.sprite_texture.clone();
+                let animated_texture = self
+                    .animated_sprite_textures
+                    .get(usize::from(sprite_animation_phase(
+                        ui.input(|input| input.time),
+                    )))
+                    .cloned()
+                    .or_else(|| texture.clone());
                 let (vertical, level_mode) =
                     self.controller.as_ref().map_or((false, 0), |controller| {
                         let header = &controller.level().layer1.header;
@@ -3579,6 +3586,7 @@ impl VanillaLevelEditor {
                                 let response = draw_sprite_catalog_entry(
                                     ui,
                                     texture.as_ref(),
+                                    animated_texture.as_ref(),
                                     id,
                                     mode,
                                     id == self.sprite_form.sprite_number,
@@ -3620,6 +3628,13 @@ impl VanillaLevelEditor {
                     &self.custom_sprite_catalog_filter,
                 );
                 let texture = self.sprite_texture.clone();
+                let animated_texture = self
+                    .animated_sprite_textures
+                    .get(usize::from(sprite_animation_phase(
+                        ui.input(|input| input.time),
+                    )))
+                    .cloned()
+                    .or_else(|| texture.clone());
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt("vanilla-custom-sprite-catalog-scroll")
@@ -3656,6 +3671,7 @@ impl VanillaLevelEditor {
                                 let response = draw_custom_sprite_catalog_entry(
                                     ui,
                                     texture.as_ref(),
+                                    animated_texture.as_ref(),
                                     entry,
                                     atlas_parts.as_deref(),
                                     external_parts.as_deref(),
@@ -4756,6 +4772,7 @@ fn sprite_catalog_preview_mode(
 fn draw_custom_sprite_catalog_entry(
     ui: &mut egui::Ui,
     texture: Option<&egui::TextureHandle>,
+    animated_texture: Option<&egui::TextureHandle>,
     sprite: &lm_level::SscResolvedSprite,
     parts: Option<&[lm_render::StandardSpritePreviewTile]>,
     external_parts: Option<&[lm_render::RemappedCustomSpritePreviewTile]>,
@@ -4769,7 +4786,13 @@ fn draw_custom_sprite_catalog_entry(
         rect.max - egui::vec2(3.0, 22.0),
     );
     if let (Some(texture), Some(parts)) = (texture, parts) {
-        draw_fitted_sprite_catalog_preview(&painter, texture, preview_rect, parts);
+        draw_fitted_sprite_catalog_preview(
+            &painter,
+            texture,
+            animated_texture,
+            preview_rect,
+            parts,
+        );
     } else if let Some(parts) = external_parts
         && parts
             .iter()
@@ -4856,6 +4879,7 @@ fn draw_fitted_external_sprite_catalog_preview(
 fn draw_sprite_catalog_entry(
     ui: &mut egui::Ui,
     texture: Option<&egui::TextureHandle>,
+    animated_texture: Option<&egui::TextureHandle>,
     sprite_number: u8,
     mode: lm_render::StandardSpritePreviewMode,
     selected: bool,
@@ -4869,7 +4893,13 @@ fn draw_sprite_catalog_entry(
     );
     let parts = lm_render::render_lunar_magic_standard_sprite_with_mode(sprite_number, mode);
     if let (Some(texture), Some(parts)) = (texture, parts) {
-        draw_fitted_sprite_catalog_preview(&painter, texture, preview_rect, &parts);
+        draw_fitted_sprite_catalog_preview(
+            &painter,
+            texture,
+            animated_texture,
+            preview_rect,
+            &parts,
+        );
     } else if lm_render::lunar_magic_standard_sprite_preview_source(sprite_number)
         == lm_render::StandardSpritePreviewSource::NativeEmpty
     {
@@ -4905,6 +4935,7 @@ fn draw_sprite_catalog_entry(
 fn draw_fitted_sprite_catalog_preview(
     painter: &egui::Painter,
     texture: &egui::TextureHandle,
+    animated_texture: Option<&egui::TextureHandle>,
     target: egui::Rect,
     parts: &[lm_render::StandardSpritePreviewTile],
 ) {
@@ -4932,11 +4963,13 @@ fn draw_fitted_sprite_catalog_preview(
                 f32::from(part.x.saturating_sub(min_x)) * scale,
                 f32::from(part.y.saturating_sub(min_y)) * scale,
             );
-        draw_sprite_preview_definition(
+        draw_sprite_preview_definition_tinted(
             painter,
             texture,
+            animated_texture,
             egui::Rect::from_min_size(position, egui::vec2(16.0 * scale, 16.0 * scale)),
             part.subtiles,
+            egui::Color32::WHITE,
         );
     }
 }

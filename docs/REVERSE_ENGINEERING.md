@@ -2262,6 +2262,8 @@ with the current packed position byte, level mode, and orientation, fits its com
 geometry into a preview cell, and labels empty/default handlers explicitly. Selecting an entry
 constructs the proven `yyyyEESY / XXXXssss / NNNNNNNN` record, retains the form's position and
 extra bits, and arms the same transactional canvas placement path.
+Both this catalog and the SSC atlas catalog now pass the current animated GFX33 texture alongside
+the ordinary SP atlas, so subtile page bit `$0200` selects the same source before and after placement.
 Resolved SSC selectors now supply the direct-ROM editor's actual four 256-entry native record-length
 tables instead of being used only for artwork. The editor key includes a stable length-authority
 signature, so attaching, removing, or changing the relevant SSC selectors forces a complete level
