@@ -2269,7 +2269,9 @@ extra bits, and arms the same transactional canvas placement path.
 Both this catalog and the SSC atlas catalog now pass the current animated GFX33 texture alongside
 the ordinary SP atlas, so subtile page bit `$0200` selects the same source before and after placement.
 The standard catalog additionally applies the placed renderer's recovered `$E1/$1B8` and
-`$90/$1C0-$1F3` half-opacity scopes without leaking those handler rules into SSC definitions.
+`$90/$1C0-$1F3` half-opacity scopes. Both the catalog and placed renderer now require a standard
+preview source before applying them, preventing same-numbered SSC definitions from inheriting a
+built-in handler's translucency.
 Resolved SSC selectors now supply the direct-ROM editor's actual four 256-entry native record-length
 tables instead of being used only for artwork. The editor key includes a stable length-authority
 signature, so attaching, removing, or changing the relevant SSC selectors forces a complete level

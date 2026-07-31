@@ -58,7 +58,8 @@ Standard and SSC sprite catalogs share the placed canvas's ordinary-versus-anima
 routing: each subtile's `$0200` page bit selects the current GFX33 phase, while page-zero subtiles
 remain on the ordinary SP atlas. Focused page classification covers both domains.
 The standard catalog also shares the canvas's handler-scoped half-opacity rules for `$E1/$1B8`
-and `$90/$1C0-$1F3`; SSC parts remain opaque under focused tint-domain coverage.
+and `$90/$1C0-$1F3`; SSC catalog and placed-canvas parts remain opaque under focused tint-domain
+coverage even when their custom sprite number and definition index match those standard scopes.
 Its dispatcher context additionally carries the form's exact native major and minor axes rather
 than only the packed coordinate nibbles, with focused coverage at screen `$1E`, X `$F`, and minor
 `$11` for coordinate-sensitive authenticated handlers. The same test distinguishes the handler's

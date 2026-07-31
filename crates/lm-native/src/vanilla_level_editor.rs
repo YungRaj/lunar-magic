@@ -4970,12 +4970,12 @@ fn draw_fitted_sprite_catalog_preview(
             animated_texture,
             egui::Rect::from_min_size(position, egui::vec2(16.0 * scale, 16.0 * scale)),
             part.subtiles,
-            sprite_catalog_preview_tint(standard_sprite_number, part.definition_index),
+            sprite_preview_source_tint(standard_sprite_number, part.definition_index),
         );
     }
 }
 
-fn sprite_catalog_preview_tint(
+fn sprite_preview_source_tint(
     standard_sprite_number: Option<u8>,
     definition_index: u16,
 ) -> egui::Color32 {
@@ -6588,7 +6588,10 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     // Lunar Magic draws $E1's ghost definition at 50% opacity while keeping
                     // its separate $114 star overlay opaque. egui tint colors are premultiplied;
                     // white-with-alpha would gamma-adjust this to roughly 75% opacity.
-                    standard_sprite_preview_tint(placement.sprite_number, part.definition_index),
+                    sprite_preview_source_tint(
+                        uses_standard.then_some(placement.sprite_number),
+                        part.definition_index,
+                    ),
                 );
             }
         } else if let Some(parts) = external_preview.as_deref()
@@ -8597,11 +8600,11 @@ mod tests {
             egui::Color32::WHITE
         );
         assert_eq!(
-            sprite_catalog_preview_tint(Some(0xe1), 0x1b8),
+            sprite_preview_source_tint(Some(0xe1), 0x1b8),
             egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
         );
         assert_eq!(
-            sprite_catalog_preview_tint(None, 0x1b8),
+            sprite_preview_source_tint(None, 0x1b8),
             egui::Color32::WHITE
         );
     }
