@@ -223,18 +223,11 @@ fn validate_super_graphics(workspace: &Workspace) -> String {
             "Super GFX bypass is disabled; legacy tileset assignments remain active.".into()
         }
         Ok(Some(loaded)) => {
-            let foreground_tiles: usize = loaded
-                .foreground_background
-                .iter()
-                .map(|graphics| graphics.tiles.len())
-                .sum();
-            let sprite_tiles: usize = loaded
-                .sprites
-                .iter()
-                .map(|graphics| graphics.tiles.len())
-                .sum();
+            let vram = lm_render::materialize_super_graphics_vram(&loaded);
+            let foreground_tiles = vram.foreground_background.len();
+            let sprite_tiles = vram.sprites.len();
             format!(
-                "Validated 6 FG/BG files ({foreground_tiles} tiles) and 4 sprite files ({sprite_tiles} tiles)."
+                "Validated and materialized 6 FG/BG files ({foreground_tiles} VRAM tiles) and 4 sprite files ({sprite_tiles} VRAM tiles)."
             )
         }
         Err(error) => error.to_string(),

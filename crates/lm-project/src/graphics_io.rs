@@ -3,7 +3,7 @@ use crate::{
     PayloadSaveError, PayloadSaveRequest, PayloadSaveResult, Project, RatsOwnershipManifest,
 };
 use lm_codec::{CodecError, decode_lz2_prefix, decode_lz3_prefix, encode_lz2, encode_lz3};
-use lm_graphics::{GraphicsFile4bpp, GraphicsFileError};
+use lm_graphics::{GraphicsFile4bpp, GraphicsFileError, PlanarGraphicsError};
 use lm_rats::{AllocationPolicy, RatsBlock};
 use lm_rom::{Mapper, RomError, SnesPointer24};
 use std::fmt;
@@ -48,6 +48,8 @@ pub enum GraphicsIoError {
     Load(PayloadLoadError),
     Codec(CodecError),
     Graphics(GraphicsFileError),
+    Planar(PlanarGraphicsError),
+    UnsupportedBitDepthLength(usize),
     DecompressedLimit { actual: usize, maximum: usize },
     CompressedLimit { actual: usize, maximum: usize },
     ReopenMismatch { slot: usize },
@@ -81,6 +83,11 @@ impl From<CodecError> for GraphicsIoError {
 impl From<GraphicsFileError> for GraphicsIoError {
     fn from(value: GraphicsFileError) -> Self {
         Self::Graphics(value)
+    }
+}
+impl From<PlanarGraphicsError> for GraphicsIoError {
+    fn from(value: PlanarGraphicsError) -> Self {
+        Self::Planar(value)
     }
 }
 impl From<PayloadSaveError> for GraphicsIoError {

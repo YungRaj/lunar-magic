@@ -25,6 +25,7 @@ mod portable_palette;
 mod scene;
 mod standard_object_renderer;
 mod standard_sprite_renderer;
+mod super_graphics_vram;
 mod viewport;
 mod viewport_raster;
 mod viewport_scene;
@@ -93,6 +94,7 @@ pub use standard_sprite_renderer::{
     lunar_magic_standard_sprite_preview_source, render_lunar_magic_standard_sprite,
     render_lunar_magic_standard_sprite_with_mode,
 };
+pub use super_graphics_vram::{MaterializedSuperGraphicsVram, materialize_super_graphics_vram};
 pub use viewport::{Point, Viewport, ViewportError, WorldRect};
 pub use viewport_raster::{ViewportRasterError, rasterize_canvas_viewport};
 pub use viewport_scene::draw_scene_viewport;

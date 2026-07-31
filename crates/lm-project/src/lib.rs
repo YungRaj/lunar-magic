@@ -248,7 +248,9 @@ pub use separate_midway_patch::{
     LoadedSeparateMidwayTable, SeparateMidwayPatchError, SeparateMidwayPatchLocator,
 };
 pub use shared_palette_io::{SharedPaletteIoError, SharedPaletteRomLayout};
-pub use super_graphics_io::{LoadedSuperGraphicsBypass, SuperGraphicsIoError};
+pub use super_graphics_io::{
+    LoadedSuperGraphicsBypass, LoadedSuperGraphicsSlot, SuperGraphicsIoError,
+};
 pub use title_recording_patch::{
     LoadedTitleRecording, TitleRecordingPatchError, TitleRecordingPatchLocator,
     TitleRecordingStorage,
