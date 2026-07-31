@@ -60,7 +60,12 @@ impl VanillaGraphicsEditor {
             })
     }
 
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, app: &AppState) -> Option<Command> {
+    pub(crate) fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        app: &AppState,
+        special_world_passed: bool,
+    ) -> Option<Command> {
         take_graphics_refresh_shortcut(ui);
         if let Some(result) = self.graphics_batch.show(ui.ctx()) {
             match result {
@@ -188,7 +193,7 @@ impl VanillaGraphicsEditor {
             .controller
             .as_ref()
             .is_some_and(GraphicsController::is_modified);
-        self.level_graphics_export_confirmation(ui.ctx(), app, &snapshot);
+        self.level_graphics_export_confirmation(ui.ctx(), app, &snapshot, special_world_passed);
         let file_work_running = self.graphics_batch.is_running();
         let commit_clicked = ui
             .add_enabled(
@@ -217,6 +222,7 @@ impl VanillaGraphicsEditor {
         context: &egui::Context,
         app: &AppState,
         snapshot: &lm_app::ControllerSnapshot,
+        special_world_passed: bool,
     ) {
         if !self.pending_level_graphics_export {
             return;
@@ -238,7 +244,7 @@ impl VanillaGraphicsEditor {
             });
         if accepted {
             self.pending_level_graphics_export = false;
-            self.begin_level_graphics_batch(app, snapshot);
+            self.begin_level_graphics_batch(app, snapshot, special_world_passed);
         } else if cancelled || context.input(|input| input.key_pressed(egui::Key::Escape)) {
             self.pending_level_graphics_export = false;
         }
@@ -248,19 +254,24 @@ impl VanillaGraphicsEditor {
         &mut self,
         app: &AppState,
         snapshot: &lm_app::ControllerSnapshot,
+        special_world_passed: bool,
     ) {
         let Some(level) = app.current_level() else {
             self.error = Some("no active level is available for GFX extraction".into());
             return;
         };
-        let source =
-            match pristine_level_graphics_batch_source(snapshot, self.controller.as_ref(), level) {
-                Ok(source) => source,
-                Err(error) => {
-                    self.error = Some(error);
-                    return;
-                }
-            };
+        let source = match pristine_level_graphics_batch_source(
+            snapshot,
+            self.controller.as_ref(),
+            level,
+            special_world_passed,
+        ) {
+            Ok(source) => source,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
         let Some(directory) = crate::dialogs::choose_level_graphics_directory() else {
             return;
         };
@@ -565,10 +576,11 @@ fn pristine_level_graphics_batch_source(
     snapshot: &lm_app::ControllerSnapshot,
     controller: Option<&GraphicsController>,
     level: u16,
+    special_world_passed: bool,
 ) -> Result<graphics_batch::GraphicsBatchSource, String> {
     let image =
         RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
-    let slots = pristine_current_level_graphics_files(&image, level)?;
+    let slots = pristine_current_level_graphics_files(&image, level, special_world_passed)?;
     let controller = controller.ok_or_else(|| "graphics controller is closed".to_owned())?;
     let raw = controller.export_raw().map_err(|error| error.to_string())?;
     let EditorMode::Graphics(active_slot) = snapshot.mode else {
@@ -683,7 +695,8 @@ mod tests {
             .unwrap();
 
         let source =
-            pristine_level_graphics_batch_source(&snapshot, Some(&controller), 0x105).unwrap();
+            pristine_level_graphics_batch_source(&snapshot, Some(&controller), 0x105, false)
+                .unwrap();
         assert_eq!(
             source.slots,
             [0x14, 0x17, 0x1b, 0x15, 0x00, 0x01, 0x13, 0x20]

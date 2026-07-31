@@ -1304,13 +1304,18 @@ SP buffers at `008737E8`, each with a `$1000`-byte stride, pairing them with the
 tables at `008F3918` and `0061FC38`. It therefore exports the current level selection rather than
 the complete standard GFX table, and its buffers prove that even native 2bpp/3bpp sources are saved
 as decoded 4bpp files. The sprite loop conditionally omits its second slot when `00E278DF` is set;
-the ordinary path visits all four. Its exact completion messages are `Saved FG/BG/SP GFX to
-files.` and `Couldn't save FG/BG/SP GFX to file!`.
+the ordinary path visits all four. Cross-references prove that `00E278DF` is the non-persistent
+`Special World Passed Graphics` view flag: `LoadSpecialWorldGraphicsFile` (`00464890`) decodes the
+half-size 3bpp GFX31, synthesizes the absent fourth plane, and installs it in the SP2 working slot.
+F8 omits the ordinary SP2 filename because that working buffer no longer represents it. Its exact
+completion messages are `Saved FG/BG/SP GFX to files.` and `Couldn't save FG/BG/SP GFX to file!`.
 Rust now exposes this exact F8 workflow on both pristine SMW-US and profile-backed installed ROM
 graphics editors. The pristine path reads the authenticated vanilla object/sprite assignment tables
 for the globally active level, while the installed path additionally honors expanded Super GFX
 bypass records. Both publish decoded `$1000`-byte files as one create-new group and substitute the
-active staged slot when it belongs to the exported set.
+active staged slot when it belongs to the exported set. Rust's View menu exposes the same ephemeral
+Special World option; pristine and installed previews substitute decoded GFX31 into SP2, and F8
+omits the normal SP2 assignment before stable duplicate collapse just like the native loop.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
 `006136B8`: zero has no animation attribution, `$01-$7F` encode OrigAnim slot minus one,
 `$80-$BF` encode a level ExAnimation slot, and `$C0-$FF` encode a global ExAnimation slot. Canonical

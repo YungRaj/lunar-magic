@@ -47,10 +47,25 @@ impl NativeApplication {
         show_rom_editor!(self, context, rom_overworld_event_tilemap_editor);
         show_rom_editor!(self, context, rom_overworld_level_name_editor);
         show_rom_editor!(self, context, rom_overworld_special_event_editor);
-        show_rom_editor!(self, context, rom_level_assets_editor);
+        let (quit, command) = self.rom_level_assets_editor.show(
+            context,
+            self.app.project_revision(),
+            self.special_world_passed,
+        );
+        if let Some(command) = command
+            && self.try_dispatch(context, command)
+        {
+            self.rom_level_assets_editor.commit_succeeded();
+            self.renderer.invalidate();
+        }
+        if quit {
+            self.request_quit(context);
+        }
         show_rom_editor!(self, context, rom_map16_editor);
         show_rom_editor!(self, context, rom_palette_editor);
-        let (quit, command) = self.rom_graphics_editor.show(context, &self.app);
+        let (quit, command) =
+            self.rom_graphics_editor
+                .show(context, &self.app, self.special_world_passed);
         if let Some(command) = command
             && self.try_dispatch(context, command)
         {

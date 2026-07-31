@@ -583,10 +583,16 @@ pub(crate) struct RomLevelAssetsEditor {
 }
 
 impl RomLevelAssetsEditor {
+    pub(crate) fn invalidate_graphics_preview(&mut self) {
+        self.bypass_preview.invalidate();
+        self.bypass_layer2_texture = None;
+    }
+
     pub(crate) fn show(
         &mut self,
         context: &egui::Context,
         project_revision: u64,
+        special_world_passed: bool,
     ) -> (bool, Option<Command>) {
         if let Some(result) = self.mwl_batch_worker.show(context) {
             match result {
@@ -649,7 +655,9 @@ impl RomLevelAssetsEditor {
                 .default_size([900.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, project_revision) {
+                    if let Some(ui_command) =
+                        self.contents(ui, project_revision, special_world_passed)
+                    {
                         command = Some(ui_command);
                     }
                 });
@@ -659,7 +667,12 @@ impl RomLevelAssetsEditor {
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        project_revision: u64,
+        special_world_passed: bool,
+    ) -> Option<Command> {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.controller.revision() != project_revision;
         if stale {
@@ -859,6 +872,7 @@ impl RomLevelAssetsEditor {
                         self.bypass_map16_grid,
                         self.bypass_selection,
                         phases.selection,
+                        special_world_passed,
                     )
                 });
             self.bypass_preview.finish_refresh(result.is_ok());
@@ -1213,7 +1227,7 @@ impl RomLevelAssetsEditor {
         else {
             return Ok(None);
         };
-        let (canvas, _, _) = render_super_graphics_level_canvas(workspace, None, None)?;
+        let (canvas, _, _) = render_super_graphics_level_canvas(workspace, None, None, false)?;
         publish_level_image(&destination, &canvas)?;
         Ok(Some(destination))
     }
@@ -1238,7 +1252,7 @@ fn render_batch_level_canvas(
         image: source.image.clone(),
         ownership: source.ownership.clone(),
     };
-    render_super_graphics_level_canvas(&workspace, None, None).map(|(canvas, _, _)| canvas)
+    render_super_graphics_level_canvas(&workspace, None, None, false).map(|(canvas, _, _)| canvas)
 }
 
 fn publish_level_image(
@@ -1262,7 +1276,7 @@ fn publish_level_image(
 fn validate_super_graphics(workspace: &Workspace) -> String {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
-    match resolve_level_graphics(workspace, &project, header) {
+    match resolve_level_graphics(workspace, &project, header, false) {
         Ok(resolved) => {
             let foreground_tiles = resolved.vram.foreground_background.len();
             let sprite_tiles = resolved.vram.sprites.len();
@@ -1282,6 +1296,7 @@ fn render_super_graphics_level_preview(
     show_map16_grid: bool,
     selection: Option<PreviewMap16Selection>,
     selection_phase: Option<u32>,
+    special_world_passed: bool,
 ) -> Result<
     (
         egui::ColorImage,
@@ -1290,8 +1305,12 @@ fn render_super_graphics_level_preview(
     ),
     String,
 > {
-    let (canvas, diagnostics, inspection) =
-        render_super_graphics_level_canvas(workspace, animation_phase, selection)?;
+    let (canvas, diagnostics, inspection) = render_super_graphics_level_canvas(
+        workspace,
+        animation_phase,
+        selection,
+        special_world_passed,
+    )?;
     render_level_viewport_canvas(
         &canvas,
         viewport,
@@ -1307,6 +1326,7 @@ fn render_super_graphics_level_canvas(
     workspace: &Workspace,
     animation_phase: Option<usize>,
     selection: Option<PreviewMap16Selection>,
+    special_world_passed: bool,
 ) -> Result<
     (
         lm_render::Canvas,
@@ -1317,7 +1337,7 @@ fn render_super_graphics_level_canvas(
 > {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
-    let resolved = resolve_level_graphics(workspace, &project, header)?;
+    let resolved = resolve_level_graphics(workspace, &project, header, special_world_passed)?;
     let mut vram = resolved.vram;
     let mut palette = workspace.controller.assets().palette.clone();
     let animation_options = installed_animation_options(workspace);
@@ -1536,26 +1556,35 @@ fn resolve_level_graphics(
     workspace: &Workspace,
     project: &lm_project::Project,
     header: lm_level::LegacyLevelHeader,
+    special_world_passed: bool,
 ) -> Result<ResolvedLevelGraphics, String> {
     if let Some(settings) = workspace.controller.assets().expanded_settings.as_ref()
         && let Some(loaded) = project
             .load_super_graphics_bypass(settings, workspace.profile.graphics)
             .map_err(|error| error.to_string())?
     {
-        return Ok(ResolvedLevelGraphics {
+        let mut resolved = ResolvedLevelGraphics {
             vram: lm_render::materialize_super_graphics_vram(&loaded),
             foreground_background_files: loaded.foreground_background.len(),
             sprite_files: loaded.sprites.len(),
             source: "bypassed",
-        });
+        };
+        apply_special_world_graphics(
+            &mut resolved,
+            project,
+            workspace.profile.graphics,
+            special_world_passed,
+        )?;
+        return Ok(resolved);
     }
-    resolve_legacy_level_graphics(workspace, project, header)
+    resolve_legacy_level_graphics(workspace, project, header, special_world_passed)
 }
 
 fn resolve_legacy_level_graphics(
     workspace: &Workspace,
     project: &lm_project::Project,
     header: lm_level::LegacyLevelHeader,
+    special_world_passed: bool,
 ) -> Result<ResolvedLevelGraphics, String> {
     if !is_smw_us_v1_profile(&workspace.profile) {
         return Err(format!(
@@ -1568,17 +1597,65 @@ fn resolve_legacy_level_graphics(
         usize::from(header.object_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    let sprite_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+    let mut sprite_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
         &workspace.image,
         usize::from(header.sprite_tileset()),
     )
     .map_err(|error| error.to_string())?;
+    if special_world_passed {
+        sprite_files[1] = 0x31;
+    }
     materialize_legacy_level_graphics(
         project,
         workspace.profile.graphics,
         &foreground_files,
         &sprite_files,
     )
+}
+
+fn apply_special_world_graphics(
+    resolved: &mut ResolvedLevelGraphics,
+    project: &lm_project::Project,
+    layout: lm_project::GraphicsRomLayout,
+    enabled: bool,
+) -> Result<(), String> {
+    if !enabled {
+        return Ok(());
+    }
+    let decoded = project
+        .load_decompressed_graphics_file(0x31, layout)
+        .map_err(|error| format!("cannot load Special World file GFX31: {error}"))?;
+    let special = decode_special_world_graphics(&decoded)?;
+    if resolved.vram.sprites.len() < 256 {
+        return Err("resolved sprite VRAM does not contain a complete SP2 slot".into());
+    }
+    resolved.vram.sprites[128..256].clone_from_slice(&special);
+    Ok(())
+}
+
+fn decode_special_world_graphics(decoded: &[u8]) -> Result<Vec<lm_graphics::IndexedTile>, String> {
+    let bitplanes = match decoded.len() {
+        0x600 | 0xc00 => 3,
+        0x1000 => 4,
+        length => {
+            return Err(format!(
+                "Special World file GFX31 expands to unsupported length {length}"
+            ));
+        }
+    };
+    let mut special = lm_graphics::decode_planar_tiles(decoded, bitplanes).map_err(|error| {
+        format!("cannot decode Special World file GFX31 as {bitplanes}bpp: {error}")
+    })?;
+    if special.len() > 128 {
+        return Err(format!(
+            "Special World file GFX31 has {} tiles, exceeding the 128-tile SP2 slot",
+            special.len()
+        ));
+    }
+    special.resize_with(128, || {
+        lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT])
+    });
+    Ok(special)
 }
 
 fn is_smw_us_v1_profile(profile: &RevisionProfile) -> bool {
@@ -2145,6 +2222,64 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn special_world_view_replaces_only_the_materialized_sp2_slot() {
+        let image =
+            lm_rom::RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let project = lm_project::Project::new(image);
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let mut resolved = ResolvedLevelGraphics {
+            vram: MaterializedSuperGraphicsVram {
+                foreground_background: vec![blank.clone(); 6 * 128],
+                sprites: vec![blank.clone(); 4 * 128],
+            },
+            foreground_background_files: 6,
+            sprite_files: 4,
+            source: "bypassed",
+        };
+        apply_special_world_graphics(
+            &mut resolved,
+            &project,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            true,
+        )
+        .unwrap();
+        let special = project
+            .load_decompressed_graphics_file(0x31, lm_profile::smw_us_v1_vanilla_graphics_layout())
+            .unwrap();
+        let mut special = lm_graphics::decode_planar_tiles(&special, 3).unwrap();
+        special.resize_with(128, || blank.clone());
+
+        assert!(
+            resolved.vram.sprites[..128]
+                .iter()
+                .all(|tile| tile == &blank)
+        );
+        assert_eq!(&resolved.vram.sprites[128..256], special.as_slice());
+        assert!(
+            resolved.vram.sprites[256..]
+                .iter()
+                .all(|tile| tile == &blank)
+        );
+    }
+
+    #[test]
+    fn special_world_decoder_accepts_legacy_and_expanded_native_forms() {
+        assert_eq!(
+            decode_special_world_graphics(&[0; 0x600]).unwrap().len(),
+            128
+        );
+        assert_eq!(
+            decode_special_world_graphics(&[0; 0xc00]).unwrap().len(),
+            128
+        );
+        assert_eq!(
+            decode_special_world_graphics(&[0; 0x1000]).unwrap().len(),
+            128
+        );
+        assert!(decode_special_world_graphics(&[0; 0x800]).is_err());
+    }
 
     #[test]
     fn full_level_image_publication_routes_formats_and_is_create_new() {

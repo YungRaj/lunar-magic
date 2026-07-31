@@ -8,10 +8,30 @@ impl NativeApplication {
         egui::menu::bar(ui, |ui| {
             self.file_menu(context, ui, capabilities.project);
             self.edit_menu(context, ui, capabilities.history);
+            self.view_menu(ui, capabilities.project);
             self.editors_menu(context, ui, capabilities.project);
             self.profile_menu(context, ui, capabilities.project);
             self.tools_menu(context, ui);
             self.documents_menu(ui);
+        });
+    }
+
+    fn view_menu(&mut self, ui: &mut egui::Ui, status: ProjectStatus) {
+        ui.menu_button("View", |ui| {
+            let enabled =
+                !matches!(status, ProjectStatus::Closed) && self.app.current_level().is_some();
+            if ui
+                .add_enabled(
+                    enabled,
+                    egui::Button::new("Special World Passed Graphics")
+                        .selected(self.special_world_passed),
+                )
+                .clicked()
+            {
+                self.special_world_passed = !self.special_world_passed;
+                self.vanilla_level_editor.invalidate_graphics_preview();
+                self.rom_level_assets_editor.invalidate_graphics_preview();
+            }
         });
     }
 

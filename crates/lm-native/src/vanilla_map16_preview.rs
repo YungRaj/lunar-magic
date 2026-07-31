@@ -128,6 +128,7 @@ pub(crate) fn render(
     level: u16,
     header: LegacyLevelHeader,
     game_runtime: bool,
+    special_world_passed: bool,
 ) -> Result<VanillaMap16Preview, String> {
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
@@ -161,11 +162,16 @@ pub(crate) fn render(
             requested_vanilla_editor_palette_phase(),
         );
     }
-    let sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+    let mut sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
         &project.rom,
         usize::from(header.sprite_tileset()),
     )
     .map_err(|error| error.to_string())?;
+    if special_world_passed {
+        // LoadSpecialWorldGraphicsFile @ 00464890 materializes GFX31 into Lunar Magic's SP2
+        // working slot whenever the non-persistent editor-view flag at $00E278DF is enabled.
+        sprite_graphics_files[1] = 0x31;
+    }
     let sprite_graphics = load_layer1_sprite_graphics_slots(&project, sprite_graphics_files)?;
     // The pristine ROM stores ordinary SNES 16-bit tilemap words here. Lunar Magic expands
     // those words into a wider internal descriptor while loading them, but the native renderer
@@ -1019,7 +1025,7 @@ fn load_layer1_sprite_graphics_slots(
 const fn vanilla_graphics_bitplanes(decoded_len: usize) -> Option<u8> {
     match decoded_len {
         0x800 => Some(2),
-        0xc00 => Some(3),
+        0x600 | 0xc00 => Some(3),
         0x1000 => Some(4),
         _ => None,
     }
@@ -1460,7 +1466,7 @@ mod tests {
                 &lm_level::SpriteLengthTable::standard(),
             )
             .unwrap();
-        let preview = render(bytes, 0, level.layer1.header, true).unwrap();
+        let preview = render(bytes, 0, level.layer1.header, true, false).unwrap();
         let map16 = lm_profile::load_smw_us_v1_level_map16_base(
             &project.rom,
             usize::from(level.layer1.header.object_tileset()),
@@ -1546,6 +1552,28 @@ mod tests {
             .unwrap()
         );
         assert_eq!(preview.common_tiles + preview.tileset_tiles, 512);
+    }
+
+    #[test]
+    fn special_world_view_materializes_gfx31_in_the_sp2_working_slot() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let preview = render(bytes, 0x105, level.layer1.header, false, true).unwrap();
+        let special = project
+            .load_decompressed_graphics_file(0x31, lm_profile::smw_us_v1_vanilla_graphics_layout())
+            .unwrap();
+        let mut special = lm_graphics::decode_planar_tiles(&special, 3).unwrap();
+        special.resize_with(128, || IndexedTile::new([0; IndexedTile::PIXEL_COUNT]));
+
+        assert_eq!(preview.sprite_graphics_files[1], 0x31);
+        assert_eq!(&preview.sprite_tiles[128..256], special.as_slice());
     }
 
     #[test]
@@ -1978,8 +2006,8 @@ mod tests {
         );
 
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
-        let editor = render(bytes.clone(), 1, raw, false).unwrap();
-        let runtime = render(bytes, 1, raw, true).unwrap();
+        let editor = render(bytes.clone(), 1, raw, false, false).unwrap();
+        let runtime = render(bytes, 1, raw, true, false).unwrap();
         assert_eq!(
             editor.backdrop.0, 0x7393,
             "Lunar Magic 3.63 live editor DIB uses the authored cyan backdrop"
@@ -1992,7 +2020,7 @@ mod tests {
     fn cookie_mountain_keeps_foreground_and_background_graphics_slots_distinct() {
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let header = LegacyLevelHeader::decode(&[0x13, 0xc0, 0x00, 0x86, 0x20]).unwrap();
-        let preview = render(bytes, 1, header, true).unwrap();
+        let preview = render(bytes, 1, header, true, false).unwrap();
         assert_eq!(preview.graphics_files, [0x14, 0x17, 0x19, 0x15]);
         assert_eq!(preview.background_graphics_files, [0x14, 0x17, 0x19, 0x16]);
     }

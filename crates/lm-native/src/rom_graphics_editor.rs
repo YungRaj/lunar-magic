@@ -91,6 +91,7 @@ impl RomGraphicsEditor {
         &mut self,
         context: &egui::Context,
         app: &AppState,
+        special_world_passed: bool,
     ) -> (bool, Option<Command>) {
         let revision = app.project_revision();
         if let Some(result) = self.loader.show(context) {
@@ -180,7 +181,7 @@ impl RomGraphicsEditor {
                     }
                 });
         }
-        self.level_graphics_export_confirmation(context, app);
+        self.level_graphics_export_confirmation(context, app, special_world_passed);
         let approved = self.close_confirmation(context);
         self.show_error(context);
         (approved, command)
@@ -647,7 +648,12 @@ impl RomGraphicsEditor {
         }
     }
 
-    fn level_graphics_export_confirmation(&mut self, context: &egui::Context, app: &AppState) {
+    fn level_graphics_export_confirmation(
+        &mut self,
+        context: &egui::Context,
+        app: &AppState,
+        special_world_passed: bool,
+    ) {
         if !self.pending_level_graphics_export {
             return;
         }
@@ -668,13 +674,13 @@ impl RomGraphicsEditor {
             });
         if accepted {
             self.pending_level_graphics_export = false;
-            self.begin_level_graphics_batch(app);
+            self.begin_level_graphics_batch(app, special_world_passed);
         } else if cancelled || context.input(|input| input.key_pressed(egui::Key::Escape)) {
             self.pending_level_graphics_export = false;
         }
     }
 
-    fn begin_level_graphics_batch(&mut self, app: &AppState) {
+    fn begin_level_graphics_batch(&mut self, app: &AppState, special_world_passed: bool) {
         let Some(level) = app.current_level() else {
             self.error = Some("no active level is available for GFX extraction".into());
             return;
@@ -682,8 +688,12 @@ impl RomGraphicsEditor {
         let Some(workspace) = &self.workspace else {
             return;
         };
-        let slots = match current_level_graphics_files(&workspace.image, &workspace.profile, level)
-        {
+        let slots = match current_level_graphics_files(
+            &workspace.image,
+            &workspace.profile,
+            level,
+            special_world_passed,
+        ) {
             Ok(slots) => slots,
             Err(error) => {
                 self.error = Some(error);
@@ -1396,8 +1406,13 @@ mod tests {
             .copy_from_slice(&[0x00, 0x01, 0x13, 0x22]);
         let image = RomImage::from_bytes(bytes).unwrap();
         assert_eq!(
-            legacy_level_graphics_files(&image, &profile, lm_level::LegacyLevelHeader::default())
-                .unwrap(),
+            legacy_level_graphics_files(
+                &image,
+                &profile,
+                lm_level::LegacyLevelHeader::default(),
+                false,
+            )
+            .unwrap(),
             [0x14, 0x17, 0x19, 0x15, 0x00, 0x01, 0x13, 0x22]
         );
     }

@@ -13,6 +13,7 @@ pub(crate) fn current_level_graphics_files(
     image: &RomImage,
     profile: &RevisionProfile,
     level: u16,
+    special_world_passed: bool,
 ) -> Result<Vec<usize>, String> {
     let project = lm_project::Project::new(image.clone());
     let level_layout = profile
@@ -29,17 +30,26 @@ pub(crate) fn current_level_graphics_files(
             })?;
         let selection = lm_level::ExpandedLevelHeader::from(&settings).super_graphics_bypass();
         if selection.enabled {
-            selection
-                .foreground_background
-                .into_iter()
-                .chain(selection.sprites)
-                .map(usize::from)
-                .collect()
+            level_graphics_files(
+                selection.foreground_background.map(usize::from),
+                selection.sprites.map(usize::from),
+                special_world_passed,
+            )
         } else {
-            legacy_level_graphics_files(image, profile, loaded_level.layer1.header)?
+            legacy_level_graphics_files(
+                image,
+                profile,
+                loaded_level.layer1.header,
+                special_world_passed,
+            )?
         }
     } else {
-        legacy_level_graphics_files(image, profile, loaded_level.layer1.header)?
+        legacy_level_graphics_files(
+            image,
+            profile,
+            loaded_level.layer1.header,
+            special_world_passed,
+        )?
     };
     Ok(collapse_duplicate_files(files))
 }
@@ -47,6 +57,7 @@ pub(crate) fn current_level_graphics_files(
 pub(crate) fn pristine_current_level_graphics_files(
     image: &RomImage,
     level: u16,
+    special_world_passed: bool,
 ) -> Result<Vec<usize>, String> {
     let project = lm_project::Project::new(image.clone());
     let loaded_level = project
@@ -66,15 +77,18 @@ pub(crate) fn pristine_current_level_graphics_files(
         usize::from(loaded_level.layer1.header.sprite_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    Ok(collapse_duplicate_files(
-        foreground.into_iter().chain(sprites).collect(),
-    ))
+    Ok(collapse_duplicate_files(level_graphics_files(
+        foreground,
+        sprites,
+        special_world_passed,
+    )))
 }
 
 pub(crate) fn legacy_level_graphics_files(
     image: &RomImage,
     profile: &RevisionProfile,
     header: LegacyLevelHeader,
+    special_world_passed: bool,
 ) -> Result<Vec<usize>, String> {
     if profile.game != SupportedGame::SuperMarioWorld
         || profile.region != Region::NorthAmerica
@@ -95,7 +109,27 @@ pub(crate) fn legacy_level_graphics_files(
         usize::from(header.sprite_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    Ok(foreground.into_iter().chain(sprites).collect())
+    Ok(level_graphics_files(
+        foreground,
+        sprites,
+        special_world_passed,
+    ))
+}
+
+fn level_graphics_files<const FOREGROUND: usize>(
+    foreground_background: [usize; FOREGROUND],
+    sprites: [usize; 4],
+    special_world_passed: bool,
+) -> Vec<usize> {
+    foreground_background
+        .into_iter()
+        .chain(
+            sprites
+                .into_iter()
+                .enumerate()
+                .filter_map(|(slot, file)| (!special_world_passed || slot != 1).then_some(file)),
+        )
+        .collect()
 }
 
 fn collapse_duplicate_files(files: Vec<usize>) -> Vec<usize> {
@@ -114,8 +148,17 @@ mod tests {
     fn pristine_level_105_resolves_the_exact_vanilla_fg_bg_and_sprite_set() {
         let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         assert_eq!(
-            pristine_current_level_graphics_files(&image, 0x105).unwrap(),
+            pristine_current_level_graphics_files(&image, 0x105, false).unwrap(),
             [0x14, 0x17, 0x1b, 0x15, 0x00, 0x01, 0x13, 0x20]
+        );
+    }
+
+    #[test]
+    fn special_world_view_omits_the_normal_sp2_assignment_before_publication() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        assert_eq!(
+            pristine_current_level_graphics_files(&image, 0x105, true).unwrap(),
+            [0x14, 0x17, 0x1b, 0x15, 0x00, 0x13, 0x20]
         );
     }
 

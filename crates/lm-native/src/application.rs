@@ -78,6 +78,7 @@ pub(crate) struct NativeApplication {
     app: AppState,
     effects: EffectState,
     level_text: String,
+    special_world_passed: bool,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
     vanilla_level_editor: VanillaLevelEditor,
@@ -372,6 +373,7 @@ impl eframe::App for NativeApplication {
                 && let Some(command) = self.vanilla_level_editor.show(
                     ui,
                     &self.app,
+                    self.special_world_passed,
                     self.ssc_sidecar_editor.resolved(),
                     self.ssc_sidecar_editor.external_assets(),
                     self.ssc_sidecar_editor.asset_revision(),
@@ -381,7 +383,9 @@ impl eframe::App for NativeApplication {
             {
                 self.dispatch(context, command);
             } else if vanilla_graphics
-                && let Some(command) = self.vanilla_graphics_editor.show(ui, &self.app)
+                && let Some(command) =
+                    self.vanilla_graphics_editor
+                        .show(ui, &self.app, self.special_world_passed)
             {
                 self.dispatch(context, command);
             } else if !vanilla_level

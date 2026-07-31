@@ -1717,6 +1717,11 @@ tables contribute four plus four. Repeated filenames are collapsed because publi
 set. Every output is a decoded `$1000`-byte 4bpp GFX/ExGFX file, and the active staged graphics
 controller replaces its ROM source when it belongs to the set. The existing background group
 writer retains cancellation and create-new all-or-nothing publication.
+The View menu's non-persistent `Special World Passed Graphics` option mirrors the native global
+display flag. It loads legacy GFX31 as half-size 3bpp data (or accepts its already expanded 4bpp
+form), pads the synthesized SP2 working slot, and invalidates both built-in and installed level previews. Current-level F8 export
+then omits the ordinary SP2 assignment before duplicate collapse because the preview buffer contains
+GFX31 rather than that assigned file; GFX31 itself is not published by this command.
 The same tile-grid adapter draws a distinct outline around the current nonselected hover target.
 Its event-driven status state reproduces the original tile/address and palette hover text, selected
 tile and foreground/background-color messages, rendered-palette messages, viewed-page messages, and exact

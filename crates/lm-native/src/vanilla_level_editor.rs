@@ -269,7 +269,7 @@ pub(crate) struct VanillaLevelEditor {
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
     error: Option<String>,
-    map16_key: Option<(u64, u16, u8, u8, bool)>,
+    map16_key: Option<(u64, u16, u8, u8, bool, bool)>,
     map16_texture: Option<egui::TextureHandle>,
     layer2_map16_texture: Option<egui::TextureHandle>,
     background_map16_texture: Option<egui::TextureHandle>,
@@ -306,6 +306,10 @@ pub(crate) struct VanillaLevelEditor {
 }
 
 impl VanillaLevelEditor {
+    pub(crate) fn invalidate_graphics_preview(&mut self) {
+        self.map16_key = None;
+    }
+
     pub(crate) fn foreground_texture(&self) -> Option<&egui::TextureHandle> {
         self.foreground_texture.as_ref()
     }
@@ -326,6 +330,7 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         app: &AppState,
+        special_world_passed: bool,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         external_assets: &lm_graphics::ExternalSpriteAssets,
         external_asset_revision: u64,
@@ -368,7 +373,7 @@ impl VanillaLevelEditor {
         let sprite_count = controller.level().sprites.tokens.len();
         let object_tileset = controller.level().layer1.header.object_tileset();
         let object_family = lm_profile::smw_us_v1_object_family(object_tileset);
-        self.ensure_map16_assets(ui.ctx(), &snapshot, object_tileset);
+        self.ensure_map16_assets(ui.ctx(), &snapshot, object_tileset, special_world_passed);
         ui.horizontal(|ui| {
             ui.label(format!(
                 "{} standard-object definitions (tileset {object_tileset:X})",
@@ -1258,6 +1263,7 @@ impl VanillaLevelEditor {
         context: &egui::Context,
         snapshot: &lm_app::ControllerSnapshot,
         object_tileset: u8,
+        special_world_passed: bool,
     ) {
         let sprite_tileset = self.form.sprite_tileset;
         let level = self.controller.as_ref().map_or(0, |controller| {
@@ -1270,6 +1276,7 @@ impl VanillaLevelEditor {
             object_tileset,
             sprite_tileset,
             game_runtime,
+            special_world_passed,
         );
         if self.map16_key == Some(key) {
             return;
@@ -1305,6 +1312,7 @@ impl VanillaLevelEditor {
                 .as_ref()
                 .map_or_default(|controller| controller.level().layer1.header),
             game_runtime,
+            special_world_passed,
         ) {
             Ok(preview) => {
                 let background_planes = self
@@ -8284,6 +8292,7 @@ mod tests {
                             snapshot.rom_bytes,
                             level,
                             controller.level().layer1.header,
+                            false,
                             false,
                         )
                         .unwrap_or_else(|error| {
