@@ -2361,7 +2361,11 @@ pristine sentinels remain absent rather than being interpreted as pointers.
 `RenderLevelBackgroundMap16Canvas` at `0051C550` proves the compressed form is
 a 32×32 Map16 plane with index `((y >> 4) * 31 + x) * 16 + y`: two
 column-major 32×16 halves. The native canvas uses that exact bijection for the
-decoded 1,024-word plane and paints it before both object layers.
+decoded 1,024-word plane and paints it before both object layers. Those words
+select Lunar Magic's distinct background definition namespace `$8000-$FFFF`,
+not foreground definitions with matching low indexes. The installed preview
+therefore loads the authenticated secondary Map16 blocks, tags tilemap
+placements as background, and omits Acts-Like inspection for that namespace.
 The native-assets Layer 2 panel now uses the same shared bijection to present a
 clickable 32×32 Map16 grid. Selecting a canvas cell resolves its non-linear
 storage index and loads the complete 16-bit word; applying it continues through

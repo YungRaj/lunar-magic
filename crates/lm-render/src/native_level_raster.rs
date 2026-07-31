@@ -11,7 +11,18 @@ pub struct NativeMap16Placement {
     pub x: i32,
     pub y: i32,
     pub word: u16,
+    pub definition_bank: NativeMap16DefinitionBank,
     pub composition: NativeMap16Composition,
+}
+
+/// Which Lunar Magic Map16 definition namespace one placement addresses.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum NativeMap16DefinitionBank {
+    /// Foreground definitions `$0000-$7FFF`, including Acts-Like behavior.
+    #[default]
+    Foreground,
+    /// Background definitions `$8000-$FFFF`, which have no Acts-Like behavior.
+    Background,
 }
 
 /// How one nontransparent Map16 pixel combines with the framebuffer beneath it.
@@ -64,7 +75,10 @@ pub struct NativeLevelRasterRequest<'a> {
     pub camera_y: i32,
     pub backdrop: Rgba,
     pub layers: &'a [&'a [NativeMap16Placement]],
+    /// Foreground Map16 definitions in local `$0000`-based order.
     pub definitions: &'a [Map16Tile],
+    /// Background Map16 definitions in local `$0000`-based order (global `$8000-$FFFF`).
+    pub background_definitions: &'a [Map16Tile],
     pub tiles: &'a [IndexedTile],
     /// Complete SNES CGRAM order. Map16 palette row `n` addresses colors `n*16..n*16+16`.
     pub palette: &'a Palette,
@@ -171,7 +185,11 @@ fn render_native_level_framebuffer_impl(
             .unwrap_or_default();
         for placement in *layer {
             let definition_index = usize::from(placement.word & 0x3fff);
-            let Some(definition) = request.definitions.get(definition_index).copied() else {
+            let definitions = match placement.definition_bank {
+                NativeMap16DefinitionBank::Foreground => request.definitions,
+                NativeMap16DefinitionBank::Background => request.background_definitions,
+            };
+            let Some(definition) = definitions.get(definition_index).copied() else {
                 continue;
             };
             draw_map16_clipped(
@@ -446,12 +464,14 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
         let front = [NativeMap16Placement {
             x: 1,
             y: 0,
             word: 1,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 2] = [&back, &front];
@@ -469,6 +489,7 @@ mod tests {
             backdrop,
             layers: &layers,
             definitions: &definitions,
+            background_definitions: &[],
             tiles: &tiles,
             palette: &palette(),
         })
@@ -479,6 +500,37 @@ mod tests {
     }
 
     #[test]
+    fn background_placements_use_the_separate_definition_bank() {
+        let foreground_definitions = [definition([0, 0, 0, 0])];
+        let background_definitions = [definition([1, 1, 1, 1])];
+        let tiles = [solid(1), solid(2)];
+        let placements = [NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: 0,
+            definition_bank: NativeMap16DefinitionBank::Background,
+            composition: NativeMap16Composition::Opaque,
+        }];
+        let layers: [&[NativeMap16Placement]; 1] = [&placements];
+        let canvas = render_native_level_framebuffer(NativeLevelRasterRequest {
+            width: 16,
+            height: 16,
+            camera_x: 0,
+            camera_y: 0,
+            backdrop: Rgba::default(),
+            layers: &layers,
+            definitions: &foreground_definitions,
+            background_definitions: &background_definitions,
+            tiles: &tiles,
+            palette: &palette(),
+        })
+        .unwrap();
+
+        assert_eq!(canvas.get(0, 0).unwrap().green, 255);
+        assert_eq!(canvas.get(0, 0).unwrap().red, 0);
+    }
+
+    #[test]
     fn averaged_map16_pixels_match_lunar_magics_channel_flooring() {
         let definitions = [definition([0, 1, 1, 1])];
         let tiles = [solid(1), solid(0)];
@@ -486,6 +538,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Average,
         }];
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
@@ -503,6 +556,7 @@ mod tests {
             backdrop,
             layers: &layers,
             definitions: &definitions,
+            background_definitions: &[],
             tiles: &tiles,
             palette: &palette(),
         })
@@ -528,6 +582,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::HalfColor,
         }];
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
@@ -545,6 +600,7 @@ mod tests {
             backdrop,
             layers: &layers,
             definitions: &definitions,
+            background_definitions: &[],
             tiles: &tiles,
             palette: &palette(),
         })
@@ -625,6 +681,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0xc000,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
@@ -636,6 +693,7 @@ mod tests {
             backdrop: Rgba::default(),
             layers: &layers,
             definitions: &definitions,
+            background_definitions: &[],
             tiles: &tiles,
             palette: &palette(),
         })
@@ -652,6 +710,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
@@ -663,6 +722,7 @@ mod tests {
             backdrop: Rgba::default(),
             layers: &layers,
             definitions: &definitions,
+            background_definitions: &[],
             tiles: &tiles,
             palette: &palette(),
         })
@@ -689,12 +749,14 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
         let direct = [NativeMap16Placement {
             x: 1,
             y: 0,
             word: 0,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 2] = [&shifted, &direct];
@@ -712,6 +774,7 @@ mod tests {
                 backdrop: Rgba::default(),
                 layers: &layers,
                 definitions: &definitions,
+                background_definitions: &[],
                 tiles: &tiles,
                 palette: &palette,
             },
@@ -751,6 +814,7 @@ mod tests {
             backdrop: Rgba::default(),
             layers: &layers,
             definitions: &[],
+            background_definitions: &[],
             tiles: &[],
             palette: &Palette { colors: vec![] },
         };

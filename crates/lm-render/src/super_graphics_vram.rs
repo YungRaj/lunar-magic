@@ -76,6 +76,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_bank: crate::NativeMap16DefinitionBank::Foreground,
             composition: crate::NativeMap16Composition::Opaque,
         }];
         let layers: [&[NativeMap16Placement]; 1] = [&placement];
@@ -89,6 +90,7 @@ mod tests {
             backdrop: Rgba::default(),
             layers: &layers,
             definitions: &[definition],
+            background_definitions: &[],
             tiles: &vram.foreground_background,
             palette: &Palette { colors },
         })

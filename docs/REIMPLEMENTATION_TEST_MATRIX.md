@@ -78,8 +78,9 @@ screen coordinate back to its exact Map16 cell, transforms the cell into half-op
 checks both selection edges and the first outside pixel, and requires separated phases to animate
 the marching outline without enabling disabled tile or palette animation. Selected-cell inspection
 fixtures require two same-cell Layer 2 placements followed by two Layer 1 placements, retain outer
-flip bits and the complete installed definitions, expose an unavailable definition rather than
-dropping it, and distinguish an empty sparse cell. Acts-like observations use the installed tile
+flip bits and the complete installed definitions, resolve tilemap Layer 2 against a conflicting
+background definition bank without inventing Acts-Like data, expose an unavailable definition
+rather than dropping it, and distinguish an empty sparse cell. Foreground Acts-like observations use the installed tile
 count as the resolution bound and require a three-node chain ending in a self-link, a direct
 self-link, a two-node cycle, and out-of-range targets to remain typed failures. Sprite provenance
 is retained through materialization as original token index/part ordinal, ID, source class,
@@ -98,6 +99,8 @@ sources, retain opaque behavior outside the range/family, and expose the chosen 
 Separate half-color fixtures require source-only RGB halving independent of the destination,
 transparent-pixel preservation, exact selection by recovered level modes `$0C`/`$0D`, rejection
 for adjacent modes, and precedence over the underground average rule on Layer 2 backgrounds.
+An independent raster fixture gives the same tile index conflicting foreground and background
+subtiles and requires a background-tagged placement to use the latter.
 ExAnimation remains provider-gated rather than being inferred from unrecovered transfer kinds.
 | Copier-header conversion | Detect absent/present 512-byte file prefixes independently from logical ROM offsets and compare-replace exact optional prefixes | Add caller-filled headers and remove them through model, CLI, application specification, built-process, revision-checked open-project, and native-dialog workflows while preserving every logical byte; require header-only dirty/save state, byte-exact restoration of nonuniform removed headers, and guarded one-step undo/redo | Reject no-op states, stale dialogs/revisions, pending saves, mismatched history bytes, invalid exact-prefix shapes, oversized headered results, malformed specifications, aliases, and existing outputs without changing project/source state or publishing partial files |
 | IPS patching | Parse exact `PATCH`/record/`EOF` framing, raw and RLE records, ordered overlaps, optional 24-bit truncate metadata, bounded application specifications, native apply previews, and native original/modified/output creation | Deterministically create and reapply patches for equal-size edits, zero-filled bank-aligned growth, bank-aligned shrinkage, RLE runs, and changes at the reserved `EOF` offset; exercise create-new CLI/application-shell workflows, background native creation, copier-header normalization, and revision-checked open-project application; require exact apply-time copier-header preservation, one-step undo/redo, checksum-evidence synchronization, and revision-profile invalidation after a successful arbitrary patch | Reject wrong magic, truncation, zero-length RLE, malformed trailers/specifications, 24-bit offset/result overflow, oversized images/patches, canonical input/output aliases, stale revisions, stable-identity changes, partial-bank results, and no-op commits without mutation or partial publication |

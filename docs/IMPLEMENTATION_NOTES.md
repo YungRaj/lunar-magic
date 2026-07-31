@@ -2775,8 +2775,10 @@ they trigger the unsupported-profile built-in-animation gate.
 Each successful staged render also materializes a semantic inspection for that selected cell from
 the exact Layer 2 and Layer 1 placement slices supplied to the framebuffer. It retains every
 duplicate placement in painter order instead of inventing a single top tile, decodes the 14-bit
-Map16 number and whole-definition X/Y flips, and reports the installed definition's acts-like value
-and four raw subtile words. Each subtile is additionally reported at its post-placement visual
+Map16 number and whole-definition X/Y flips, and reports the definition bank plus four raw subtile
+words. Object-backed placements resolve the foreground namespace and its Acts-Like data; compressed
+Layer 2 placements resolve Lunar Magic's separately loaded `$8000-$FFFF` background namespace,
+which has no Acts-Like table. Each subtile is additionally reported at its post-placement visual
 quadrant with its original definition quadrant, ten-bit tile number, CGRAM row, priority, and
 effective X/Y flips after composing the whole-definition flips. It also invokes
 `Map16Set::resolve_acts_like` with the complete installed tile count as its traversal bound,

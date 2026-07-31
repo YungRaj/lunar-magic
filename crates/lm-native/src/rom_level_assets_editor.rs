@@ -8,9 +8,9 @@ use lm_level::{Map16Set, NativeLayer2Data, ObjectStream};
 use lm_project::NativeLevelAssetsFile;
 use lm_render::{
     MaterializedSuperGraphicsVram, NativeLevelMap16Layout, NativeLevelRasterRequest,
-    NativeMap16Composition, NativeMap16PaletteRouting, NativeMap16Placement, Rgba,
-    StandardLevelOrientation, StandardObjectDefinitionSet, StandardObjectPaintedCell,
-    StandardSpritePreviewMode, StandardSpritePreviewSource,
+    NativeMap16Composition, NativeMap16DefinitionBank, NativeMap16PaletteRouting,
+    NativeMap16Placement, Rgba, StandardLevelOrientation, StandardObjectDefinitionSet,
+    StandardObjectPaintedCell, StandardSpritePreviewMode, StandardSpritePreviewSource,
     draw_native_sprite_preview_definition_pages, install_lunar_magic_shared_extended_objects,
     install_lunar_magic_shared_standard_objects, install_lunar_magic_tileset_extended_objects,
     lunar_magic_standard_sprite_preview_source, render_lunar_magic_standard_sprite_with_mode,
@@ -234,6 +234,7 @@ const fn preview_map16_quadrant_label(index: usize) -> &'static str {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PreviewMap16Hit {
     layer: PreviewMap16Layer,
+    definition_bank: NativeMap16DefinitionBank,
     palette_routing: NativeMap16PaletteRouting,
     composition: NativeMap16Composition,
     word: u16,
@@ -412,6 +413,7 @@ fn inspect_preview_map16_selection(
     layer1: &[NativeMap16Placement],
     sprites: &[NativeSpritePreviewPlacement],
     map16: &Map16Set,
+    background_definitions: &[lm_level::Map16Tile],
     layer2_palette_routing: NativeMap16PaletteRouting,
 ) -> PreviewMap16Inspection {
     let mut hits = Vec::new();
@@ -433,9 +435,15 @@ fn inspect_preview_map16_selection(
                 })
                 .map(|placement| {
                     let tile = placement.word & 0x3fff;
-                    let definition = map16.tile(tile).copied();
+                    let definition = match placement.definition_bank {
+                        NativeMap16DefinitionBank::Foreground => map16.tile(tile).copied(),
+                        NativeMap16DefinitionBank::Background => {
+                            background_definitions.get(usize::from(tile)).copied()
+                        }
+                    };
                     PreviewMap16Hit {
                         layer,
+                        definition_bank: placement.definition_bank,
                         palette_routing: if layer == PreviewMap16Layer::Layer2 {
                             layer2_palette_routing
                         } else {
@@ -444,8 +452,12 @@ fn inspect_preview_map16_selection(
                         composition: placement.composition,
                         word: placement.word,
                         definition,
-                        acts_like: definition
-                            .map(|_| map16.resolve_acts_like(tile, resolution_limit)),
+                        acts_like: (placement.definition_bank
+                            == NativeMap16DefinitionBank::Foreground)
+                            .then(|| {
+                                definition.map(|_| map16.resolve_acts_like(tile, resolution_limit))
+                            })
+                            .flatten(),
                     }
                 }),
         );
@@ -873,10 +885,14 @@ impl RomLevelAssetsEditor {
                         (true, true) => "XY",
                     };
                     ui.monospace(format!(
-                        "Paint {} {}: word ${:04X}, tile ${:04X}, outer flips {outer_flips}, composition {}",
+                        "Paint {} {}: word ${:04X}, {} tile ${:04X}, outer flips {outer_flips}, composition {}",
                         paint_index + 1,
                         hit.layer.label(),
                         hit.word,
+                        match hit.definition_bank {
+                            NativeMap16DefinitionBank::Foreground => "foreground",
+                            NativeMap16DefinitionBank::Background => "background",
+                        },
                         hit.word & 0x3fff,
                         match hit.composition {
                             NativeMap16Composition::Opaque => "opaque",
@@ -886,8 +902,12 @@ impl RomLevelAssetsEditor {
                     ));
                     if let Some(definition) = hit.definition {
                         ui.monospace(format!(
-                            "  acts like ${:04X}; subtiles ${:04X} ${:04X} ${:04X} ${:04X}",
-                            definition.acts_like,
+                            "  {}subtiles ${:04X} ${:04X} ${:04X} ${:04X}",
+                            if hit.definition_bank == NativeMap16DefinitionBank::Foreground {
+                                format!("acts like ${:04X}; ", definition.acts_like)
+                            } else {
+                                "no Acts-Like; ".to_owned()
+                            },
                             definition.top_left.0,
                             definition.top_right.0,
                             definition.bottom_left.0,
@@ -1168,6 +1188,17 @@ fn render_super_graphics_level_preview(
         header.object_tileset(),
     )?;
     let layer2_data = workspace.controller.layer2();
+    let background_definitions = if matches!(layer2_data, Some(NativeLayer2Data::Tilemap(_))) {
+        if !is_smw_us_v1_profile(&workspace.profile) {
+            return Err(format!(
+                "background Map16 definitions are not recovered for profile {}",
+                workspace.profile.name
+            ));
+        }
+        background_map16_definitions(&project)?
+    } else {
+        Vec::new()
+    };
     let layer2_palette_routing = installed_layer2_palette_routing(
         matches!(layer2_data, Some(NativeLayer2Data::Objects(_))),
         header.object_tileset(),
@@ -1207,6 +1238,7 @@ fn render_super_graphics_level_preview(
             &layer1,
             &sprites,
             &map16,
+            &background_definitions,
             layer2_palette_routing,
         )
     });
@@ -1217,6 +1249,7 @@ fn render_super_graphics_level_preview(
         &sprites,
         layout,
         &map16,
+        &background_definitions,
         &vram.foreground_background,
         &vram.sprites,
         &animated_sprite_tiles,
@@ -1379,6 +1412,30 @@ fn is_smw_us_v1_profile(profile: &RevisionProfile) -> bool {
         && profile.revision == 0
 }
 
+fn background_map16_definitions(
+    project: &lm_project::Project,
+) -> Result<Vec<lm_level::Map16Tile>, String> {
+    let loaded =
+        lm_profile::load_smw_us_v1_secondary_map16(project).map_err(|error| error.to_string())?;
+    if loaded.definitions.len() % 4 != 0 {
+        return Err(format!(
+            "background Map16 data has {} words instead of complete four-word definitions",
+            loaded.definitions.len()
+        ));
+    }
+    Ok(loaded
+        .definitions
+        .chunks_exact(4)
+        .map(|words| lm_level::Map16Tile {
+            top_left: lm_level::Subtile(words[0]),
+            top_right: lm_level::Subtile(words[1]),
+            bottom_left: lm_level::Subtile(words[2]),
+            bottom_right: lm_level::Subtile(words[3]),
+            acts_like: 0,
+        })
+        .collect())
+}
+
 fn materialize_legacy_level_graphics(
     project: &lm_project::Project,
     layout: lm_project::GraphicsRomLayout,
@@ -1430,6 +1487,7 @@ fn render_level_image(
     sprites: &[NativeSpritePreviewPlacement],
     layout: NativeLevelMap16Layout,
     map16: &Map16Set,
+    background_definitions: &[lm_level::Map16Tile],
     tiles: &[lm_graphics::IndexedTile],
     sprite_tiles: &[lm_graphics::IndexedTile],
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
@@ -1440,6 +1498,7 @@ fn render_level_image(
         sprites,
         layout,
         map16,
+        background_definitions,
         tiles,
         sprite_tiles,
         animated_sprite_tiles,
@@ -1453,6 +1512,7 @@ fn render_level_viewport_image(
     sprites: &[NativeSpritePreviewPlacement],
     layout: NativeLevelMap16Layout,
     map16: &Map16Set,
+    background_definitions: &[lm_level::Map16Tile],
     tiles: &[lm_graphics::IndexedTile],
     sprite_tiles: &[lm_graphics::IndexedTile],
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
@@ -1468,6 +1528,7 @@ fn render_level_viewport_image(
         sprites,
         layout,
         map16,
+        background_definitions,
         tiles,
         sprite_tiles,
         animated_sprite_tiles,
@@ -1579,6 +1640,7 @@ fn render_level_canvas(
     sprites: &[NativeSpritePreviewPlacement],
     layout: NativeLevelMap16Layout,
     map16: &Map16Set,
+    background_definitions: &[lm_level::Map16Tile],
     tiles: &[lm_graphics::IndexedTile],
     sprite_tiles: &[lm_graphics::IndexedTile],
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
@@ -1590,6 +1652,7 @@ fn render_level_canvas(
         sprites,
         layout,
         map16,
+        background_definitions,
         tiles,
         sprite_tiles,
         animated_sprite_tiles,
@@ -1604,6 +1667,7 @@ fn render_level_canvas_with_layer_palette_routing(
     sprites: &[NativeSpritePreviewPlacement],
     layout: NativeLevelMap16Layout,
     map16: &Map16Set,
+    background_definitions: &[lm_level::Map16Tile],
     tiles: &[lm_graphics::IndexedTile],
     sprite_tiles: &[lm_graphics::IndexedTile],
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
@@ -1635,6 +1699,7 @@ fn render_level_canvas_with_layer_palette_routing(
             backdrop,
             layers,
             definitions: &definitions,
+            background_definitions,
             tiles,
             palette,
         },
@@ -1754,6 +1819,7 @@ fn object_paints_to_placements(
             x: i32::try_from(x).map_err(|_| "object-layer X overflow".to_owned())?,
             y: i32::try_from(y).map_err(|_| "object-layer Y overflow".to_owned())?,
             word: paint.tile,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: native_map16_composition(object_tileset, paint.tile),
         });
     }
@@ -1860,6 +1926,7 @@ fn layer2_placements(
                 x: i32::try_from(x).map_err(|_| "Layer 2 X coordinate overflow".to_owned())?,
                 y: i32::try_from(y).map_err(|_| "Layer 2 Y coordinate overflow".to_owned())?,
                 word,
+                definition_bank: NativeMap16DefinitionBank::Background,
                 composition: if background_half_color {
                     NativeMap16Composition::HalfColor
                 } else {
@@ -2131,6 +2198,7 @@ mod tests {
                 x: 0,
                 y: 0,
                 word: 0x0123,
+                definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
         );
@@ -2140,6 +2208,7 @@ mod tests {
                 x: 31,
                 y: 0,
                 word: 0x4567,
+                definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
         );
@@ -2149,6 +2218,7 @@ mod tests {
                 x: 0,
                 y: 31,
                 word: 0x89ab,
+                definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
         );
@@ -2173,7 +2243,7 @@ mod tests {
             acts_like: 1,
         };
         let map16 = Map16Set {
-            pages: vec![Map16Page::new(definitions).unwrap()],
+            pages: vec![Map16Page::new(definitions.clone()).unwrap()],
         };
         let tiles = [IndexedTile::new([1; IndexedTile::PIXEL_COUNT])];
         let mut colors = vec![Bgr555(0); 128];
@@ -2192,6 +2262,7 @@ mod tests {
                 vertical: false,
             },
             &map16,
+            &definitions,
             &tiles,
             &[],
             &[],
@@ -2211,6 +2282,7 @@ mod tests {
                 vertical: false,
             },
             &map16,
+            &definitions,
             &tiles,
             &[],
             &[],
@@ -2373,6 +2445,7 @@ mod tests {
             acts_like: 0x0303,
         };
         let expected = [definitions[1], definitions[2], definitions[3]];
+        let background_definitions = definitions.clone();
         let map16 = Map16Set {
             pages: vec![Map16Page::new(definitions).unwrap()],
         };
@@ -2381,18 +2454,21 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x4001,
+                definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Average,
             },
             NativeMap16Placement {
                 x: 8,
                 y: 8,
                 word: 0x0007,
+                definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             },
             NativeMap16Placement {
                 x: 2,
                 y: 1,
                 word: 0x0002,
+                definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::HalfColor,
             },
         ];
@@ -2401,12 +2477,14 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x8003,
+                definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
             NativeMap16Placement {
                 x: 2,
                 y: 1,
                 word: 0x3fff,
+                definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
         ];
@@ -2421,6 +2499,7 @@ mod tests {
                 &layer1,
                 &[],
                 &map16,
+                &background_definitions,
                 NativeMap16PaletteRouting::Direct,
             ),
             PreviewMap16Inspection {
@@ -2428,28 +2507,25 @@ mod tests {
                 hits: vec![
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer2,
+                        definition_bank: NativeMap16DefinitionBank::Background,
                         palette_routing: NativeMap16PaletteRouting::Direct,
                         composition: NativeMap16Composition::Average,
                         word: 0x4001,
                         definition: Some(expected[0]),
-                        acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
-                            tile: 1,
-                            target: 0x0101,
-                        })),
+                        acts_like: None,
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer2,
+                        definition_bank: NativeMap16DefinitionBank::Background,
                         palette_routing: NativeMap16PaletteRouting::Direct,
                         composition: NativeMap16Composition::HalfColor,
                         word: 0x0002,
                         definition: Some(expected[1]),
-                        acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
-                            tile: 2,
-                            target: 0x0202,
-                        })),
+                        acts_like: None,
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer1,
+                        definition_bank: NativeMap16DefinitionBank::Foreground,
                         palette_routing: NativeMap16PaletteRouting::Direct,
                         composition: NativeMap16Composition::Opaque,
                         word: 0x8003,
@@ -2461,6 +2537,7 @@ mod tests {
                     },
                     PreviewMap16Hit {
                         layer: PreviewMap16Layer::Layer1,
+                        definition_bank: NativeMap16DefinitionBank::Foreground,
                         palette_routing: NativeMap16PaletteRouting::Direct,
                         composition: NativeMap16Composition::Opaque,
                         word: 0x3fff,
@@ -2483,6 +2560,7 @@ mod tests {
                 &layer1,
                 &[],
                 &map16,
+                &background_definitions,
                 NativeMap16PaletteRouting::Direct,
             ),
             PreviewMap16Inspection {
@@ -2509,18 +2587,21 @@ mod tests {
                 x: 1,
                 y: 1,
                 word: 1,
+                definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
             NativeMap16Placement {
                 x: 1,
                 y: 1,
                 word: 3,
+                definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
             NativeMap16Placement {
                 x: 1,
                 y: 1,
                 word: 4,
+                definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
         ];
@@ -2533,6 +2614,7 @@ mod tests {
             &layer1,
             &[],
             &map16,
+            &[],
             NativeMap16PaletteRouting::Direct,
         );
         assert_eq!(
@@ -2643,6 +2725,7 @@ mod tests {
             &[],
             &sprites,
             &Map16Set::default(),
+            &[],
             NativeMap16PaletteRouting::Direct,
         );
         assert_eq!(
@@ -2841,12 +2924,14 @@ mod tests {
                     x: 3,
                     y: 4,
                     word: 0x123,
+                    definition_bank: NativeMap16DefinitionBank::Foreground,
                     composition: NativeMap16Composition::Opaque,
                 },
                 NativeMap16Placement {
                     x: 3,
                     y: 4,
                     word: 0x456,
+                    definition_bank: NativeMap16DefinitionBank::Foreground,
                     composition: NativeMap16Composition::Opaque,
                 },
             ]
