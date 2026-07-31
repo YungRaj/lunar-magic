@@ -2814,6 +2814,9 @@ OSC display parts. Entries below `$0200` select the vanilla atlas, `$0200-$03ff`
 the loaded M16 sidecar, and unavailable or higher 15-bit identities remain explicit unresolved
 markers instead of sampling outside the atlas or aliasing a low definition. Catalog previews and
 placed artwork therefore cannot disagree about the source of one rendered object cell.
+The OSC visual catalog also paints that same four-digit unresolved marker when a definition or
+required texture is unavailable; it no longer collapses an unresolved display part into blank
+space before placement.
 The distinct recovered background-half-color flag is also installed without treating it as
 destination averaging. Level modes `$0C` and `$0D` mark every native Layer 2 tilemap placement as
 `half-color`; its nontransparent source RGB channels shift right once independently of the

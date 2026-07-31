@@ -142,6 +142,9 @@ Standard-object cache paints, visual-catalog cells, and OSC display parts share 
 classification: vanilla `$0000-$01ff`, M16-backed `$0200-$03ff`, and explicit unresolved higher or
 unavailable identities. This prevents both standard-object presentations from addressing beyond
 the vanilla atlas or disagreeing about loaded M16 artwork.
+OSC visual-catalog and placed-canvas parts likewise retain the same four-digit unresolved identity
+when their M16 definition or required texture is unavailable, rather than presenting a blank
+catalog preview for a visibly unresolved placement.
 Tileset-dispatched standard objects likewise retain the bounds of every nonempty Map16
 cell from the exact cache already painted for that placement, avoiding a second render
 pass while making extended authenticated artwork selectable. A pristine-ROM sweep across

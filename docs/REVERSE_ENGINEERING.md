@@ -2385,6 +2385,8 @@ Its standard-object cache and visual-catalog renderers also follow the OSC displ
 Map16 source boundary: only definitions below `$0200` address the shared vanilla atlas, the next 512
 entries require an M16 definition, and unavailable or higher identities retain an unresolved
 marker without low masking. Catalog selection and placed artwork consequently share the same source.
+OSC catalog previews now retain that marker as well, including the complete four-digit identity,
+when the M16 definition or its required texture cannot be drawn.
 The native-assets Layer 2 panel now uses the same shared bijection to present a
 clickable 32×32 Map16 grid. Selecting a canvas cell resolves its non-linear
 storage index and loads the complete 16-bit word; applying it continues through

@@ -4408,14 +4408,20 @@ fn draw_fitted_custom_object_preview(
             Map16PaintSource::Base(tile) => {
                 if let Some(texture) = map16_texture {
                     draw_map16_atlas_tile(painter, texture, tile_rect, tile);
+                } else {
+                    draw_unresolved_map16_paint(painter, tile_rect, part.tile);
                 }
             }
             Map16PaintSource::Custom(definition) => {
                 if let Some(texture) = foreground_texture {
                     draw_custom_map16_tile(painter, texture, tile_rect, definition);
+                } else {
+                    draw_unresolved_map16_paint(painter, tile_rect, part.tile);
                 }
             }
-            Map16PaintSource::Unresolved => {}
+            Map16PaintSource::Unresolved => {
+                draw_unresolved_map16_paint(painter, tile_rect, part.tile);
+            }
         }
     }
 }
@@ -6043,10 +6049,14 @@ fn draw_unresolved_map16_paint(painter: &egui::Painter, target: egui::Rect, tile
     painter.text(
         target.center(),
         egui::Align2::CENTER_CENTER,
-        format!("{tile:04X}"),
+        unresolved_map16_label(tile),
         egui::FontId::monospace(6.0),
         egui::Color32::WHITE,
     );
+}
+
+fn unresolved_map16_label(tile: u16) -> String {
+    format!("{tile:04X}")
 }
 
 pub(crate) fn draw_custom_map16_tile(
@@ -8883,6 +8893,7 @@ mod tests {
             map16_paint_source(0x4001, Some(&m16)),
             Map16PaintSource::Unresolved
         );
+        assert_eq!(unresolved_map16_label(0x4001), "4001");
     }
 
     #[test]
