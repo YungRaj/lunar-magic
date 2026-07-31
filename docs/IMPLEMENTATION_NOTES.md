@@ -2638,6 +2638,12 @@ target a new file until those differential gates pass.
 
 ## Current boundary
 
+The native menu bar now includes a bounded **Help → About Lunar Magic Rust** surface. It identifies
+the running Cargo package version, the clean-room Rust implementation, its Lunar Magic 3.63
+workflow-compatibility target, dual license, and source repository without presenting itself as the
+original executable. This is only the version/about slice; original CHM topic launching,
+diagnostics, and Wine-observed About behavior remain open parity gates.
+
 The native frontend now has an opt-in, self-capturing `visual-smoke` build. It waits until the
 workspace has rendered across multiple frames, requests the real Glow viewport through egui, and
 publishes the returned framebuffer through `lm-render`'s bounded PNG encoder. This avoids relying

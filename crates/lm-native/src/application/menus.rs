@@ -13,6 +13,16 @@ impl NativeApplication {
             self.profile_menu(context, ui, capabilities.project);
             self.tools_menu(context, ui);
             self.documents_menu(ui);
+            self.help_menu(ui);
+        });
+    }
+
+    fn help_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Help", |ui| {
+            if ui.button("About Lunar Magic Rust…").clicked() {
+                ui.close_menu();
+                self.about_dialog.open();
+            }
         });
     }
 

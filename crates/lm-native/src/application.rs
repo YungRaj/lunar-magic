@@ -1,4 +1,5 @@
 use crate::{
+    about_dialog::AboutDialog,
     appearance_editor::AppearanceEditor,
     built_in_runtime_installer::BuiltInRuntimeInstaller,
     configuration_loader::{ConfigurationLoader, LoadedConfiguration},
@@ -77,6 +78,7 @@ mod windows;
 pub(crate) struct NativeApplication {
     app: AppState,
     effects: EffectState,
+    about_dialog: AboutDialog,
     level_text: String,
     special_world_passed: bool,
     renderer: NativeRenderState,
@@ -396,6 +398,7 @@ impl eframe::App for NativeApplication {
             }
         });
         self.show_confirmation(context);
+        self.about_dialog.show(context);
         self.show_editor_windows(context);
         self.show_global_effects(context);
         #[cfg(feature = "visual-smoke")]

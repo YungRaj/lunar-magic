@@ -92,7 +92,7 @@ interactive level import workflow, and a CLI transaction does not prove its nati
 | Configuration | Main/user toolbar customization | P | P | ~ | - | ~ | Partial | Config model exists; original bitmap/icon/menu editor behavior incomplete |
 | Configuration | Localization | P | P | ~ | - | ~ | Partial | Catalog model exists; original language discovery/switch behavior unverified |
 | Configuration | External tools and event subscriptions | P | P | P | ~ | ~ | Partial | Safe argument-vector launcher passes; compare original menus, events, and registry migration |
-| Help | Help topics, diagnostics, version/about | - | N/A | - | - | - | Missing | Original help launcher and diagnostic surfaces have no Rust parity ledger evidence |
+| Help | Help topics, diagnostics, version/about | ~ | N/A | ~ | - | - | Partial | Native Help → About now exposes the Rust build version, clean-room identity, Lunar Magic 3.63 compatibility target, license, and source link. Original CHM topic launching, diagnostics, About layout/clipboard behavior, and Wine evidence remain missing |
 | Release | Installer, portable packaging, updates, crash recovery | - | - | - | - | - | Missing | Required for mature drop-in replacement; not represented by format tests |
 
 ## Current critical path

@@ -1,3 +1,4 @@
+mod about_dialog;
 mod animation_modes;
 mod appearance_editor;
 mod appearance_editor_form;
