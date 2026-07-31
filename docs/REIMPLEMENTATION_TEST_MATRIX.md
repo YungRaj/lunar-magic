@@ -138,9 +138,10 @@ the real-ROM level-`$105` custom-object commit/reopen test verify those interact
 Compressed Layer 2 presentation retains both whole-cell flip bits in every main-editor route:
 precomposed shared-background pixels, ordinary atlas UVs, and M16 visual quadrants all cover the
 four X/Y combinations, with M16 outer flags XOR-composed into the selected subtiles.
-Standard-object cache paints and OSC display parts share one bounded source classification:
-vanilla `$0000-$01ff`, M16-backed `$0200-$03ff`, and explicit unresolved higher or unavailable
-identities. This prevents standard-object paints from addressing beyond the vanilla atlas.
+Standard-object cache paints, visual-catalog cells, and OSC display parts share one bounded source
+classification: vanilla `$0000-$01ff`, M16-backed `$0200-$03ff`, and explicit unresolved higher or
+unavailable identities. This prevents both standard-object presentations from addressing beyond
+the vanilla atlas or disagreeing about loaded M16 artwork.
 Tileset-dispatched standard objects likewise retain the bounds of every nonempty Map16
 cell from the exact cache already painted for that placement, avoiding a second render
 pass while making extended authenticated artwork selectable. A pristine-ROM sweep across

@@ -3056,7 +3056,7 @@ impl VanillaLevelEditor {
         } else {
             ui.label("No selected object.");
         }
-        self.object_catalog(ui);
+        self.object_catalog(ui, custom_map16);
         self.custom_object_catalog(ui, custom_objects, custom_map16);
         if let Some((screen, destination_and_flags)) = &mut self.object_form.screen_exit {
             ui.label("Native screen-exit object");
@@ -3125,7 +3125,11 @@ impl VanillaLevelEditor {
         }
     }
 
-    fn object_catalog(&mut self, ui: &mut egui::Ui) {
+    fn object_catalog(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
         egui::CollapsingHeader::new("Add standard object visually")
             .id_salt("vanilla-standard-object-catalog")
             .show(ui, |ui| {
@@ -3139,6 +3143,7 @@ impl VanillaLevelEditor {
                 ui.label("Choose a tileset-resolved object, then click its destination tile.");
                 let commands = object_catalog_commands(&self.object_catalog_filter);
                 let texture = self.map16_texture.clone();
+                let foreground_texture = self.foreground_texture.clone();
                 let handler_map = self.active_standard_object_handler_map().copied();
                 let Some(handler_map) = handler_map else {
                     ui.label("The active standard-object handler map is unavailable.");
@@ -3158,6 +3163,8 @@ impl VanillaLevelEditor {
                                 let response = draw_object_catalog_entry(
                                     ui,
                                     texture.as_ref(),
+                                    foreground_texture.as_ref(),
+                                    custom_map16,
                                     command,
                                     &handler_map,
                                     &definitions,
@@ -4422,7 +4429,9 @@ fn standard_object_definitions() -> Option<lm_render::StandardObjectDefinitionSe
 
 fn draw_object_catalog_entry(
     ui: &mut egui::Ui,
-    texture: Option<&egui::TextureHandle>,
+    map16_texture: Option<&egui::TextureHandle>,
+    foreground_texture: Option<&egui::TextureHandle>,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     command: u8,
     handler_map: &[u8; 64],
     definitions: &lm_render::StandardObjectDefinitionSet,
@@ -4435,10 +4444,15 @@ fn draw_object_catalog_entry(
         rect.min + egui::vec2(3.0, 3.0),
         rect.max - egui::vec2(3.0, 15.0),
     );
-    if let Some(texture) = texture
-        && let Some(tiles) = object_catalog_tiles(command, handler_map, definitions)
-    {
-        draw_fitted_object_catalog_preview(&painter, texture, preview_rect, &tiles);
+    if let Some(tiles) = object_catalog_tiles(command, handler_map, definitions) {
+        draw_fitted_object_catalog_preview(
+            &painter,
+            map16_texture,
+            foreground_texture,
+            custom_map16,
+            preview_rect,
+            &tiles,
+        );
     } else {
         painter.text(
             preview_rect.center(),
@@ -4530,7 +4544,9 @@ fn object_catalog_tiles(
 
 fn draw_fitted_object_catalog_preview(
     painter: &egui::Painter,
-    texture: &egui::TextureHandle,
+    map16_texture: Option<&egui::TextureHandle>,
+    foreground_texture: Option<&egui::TextureHandle>,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     target: egui::Rect,
     tiles: &[(usize, usize, u16)],
 ) {
@@ -4551,12 +4567,26 @@ fn draw_fitted_object_catalog_preview(
         let relative_y = u16::try_from(y - min_y).expect("catalog y is at most 15");
         let position =
             origin + egui::vec2(f32::from(relative_x) * cell, f32::from(relative_y) * cell);
-        draw_map16_atlas_tile(
-            painter,
-            texture,
-            egui::Rect::from_min_size(position, egui::vec2(cell, cell)),
-            tile,
-        );
+        let tile_rect = egui::Rect::from_min_size(position, egui::vec2(cell, cell));
+        match map16_paint_source(tile, custom_map16) {
+            Map16PaintSource::Base(tile) => {
+                if let Some(texture) = map16_texture {
+                    draw_map16_atlas_tile(painter, texture, tile_rect, tile);
+                } else {
+                    draw_unresolved_map16_paint(painter, tile_rect, tile);
+                }
+            }
+            Map16PaintSource::Custom(definition) => {
+                if let Some(texture) = foreground_texture {
+                    draw_custom_map16_tile(painter, texture, tile_rect, definition);
+                } else {
+                    draw_unresolved_map16_paint(painter, tile_rect, tile);
+                }
+            }
+            Map16PaintSource::Unresolved => {
+                draw_unresolved_map16_paint(painter, tile_rect, tile);
+            }
+        }
     }
 }
 
