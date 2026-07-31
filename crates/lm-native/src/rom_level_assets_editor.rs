@@ -2,6 +2,7 @@ use crate::{document_loader::DocumentLoader, native_level_assets_panels::Aggrega
 use eframe::egui;
 use lm_app::{
     AppState, Command, NativeLevelAssetsController, ProfiledControllerSnapshot, RevisionProfile,
+    RevisionProfileControllers,
 };
 use lm_graphics::PaletteOwnership;
 use lm_level::{Map16Set, NativeLayer2Data, ObjectStream};
@@ -19,6 +20,7 @@ use lm_render::{
 };
 
 mod commit;
+mod image_batch;
 mod lifecycle;
 mod mwl;
 mod mwl_batch;
@@ -41,6 +43,14 @@ struct Workspace {
 
 struct PendingLoad {
     profiled: ProfiledControllerSnapshot,
+}
+
+#[derive(Clone)]
+struct BatchImageSource {
+    snapshot: lm_app::ControllerSnapshot,
+    profile: RevisionProfile,
+    image: lm_rom::RomImage,
+    ownership: PaletteOwnership,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -559,6 +569,7 @@ pub(crate) struct RomLevelAssetsEditor {
     mwl_batch_worker: mwl_batch::MwlBatchExportWorker,
     mwl_batch_status: Option<String>,
     level_image_status: Option<String>,
+    image_batch_worker: image_batch::LevelImageBatchWorker,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     bypass_validation: Option<String>,
@@ -584,6 +595,16 @@ impl RomLevelAssetsEditor {
                         Some(format!("{count} levels were exported successfully."));
                 }
                 Ok(None) => self.mwl_batch_status = Some("Batch MWL export cancelled.".into()),
+                Err(error) => self.error = Some(error),
+            }
+        }
+        if let Some(result) = self.image_batch_worker.show(context) {
+            match result {
+                Ok(Some(count)) => {
+                    self.level_image_status =
+                        Some(format!("{count} level images were exported successfully."));
+                }
+                Ok(None) => self.level_image_status = Some("Level image export cancelled.".into()),
                 Err(error) => self.error = Some(error),
             }
         }
@@ -1084,8 +1105,15 @@ impl RomLevelAssetsEditor {
             }
         }
         ui.separator();
+        let modified = self
+            .workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.controller.is_modified());
         if ui
-            .add_enabled(!stale, egui::Button::new("Export full level image…"))
+            .add_enabled(
+                !stale && !self.image_batch_worker.is_running(),
+                egui::Button::new("Export full level image…"),
+            )
             .clicked()
         {
             match self.export_level_image() {
@@ -1097,20 +1125,35 @@ impl RomLevelAssetsEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+        ui.horizontal(|ui| {
+            let enabled = !stale
+                && !modified
+                && !self.image_batch_worker.is_running()
+                && !self.mwl_batch_worker.is_running();
+            for (label, format) in [
+                ("Export all level PNGs…", image_batch::LevelImageFormat::Png),
+                ("Export all level BMPs…", image_batch::LevelImageFormat::Bmp),
+            ] {
+                if ui.add_enabled(enabled, egui::Button::new(label)).clicked()
+                    && let Err(error) = self.start_level_image_batch(format)
+                {
+                    self.error = Some(error);
+                }
+            }
+        });
         if let Some(status) = &self.level_image_status {
             ui.label(status);
         }
-        let modified = self
-            .workspace
-            .as_ref()
-            .is_some_and(|w| w.controller.is_modified());
         self.show_mwl_actions(ui, stale, modified);
         if let Some(status) = &self.mwl_batch_status {
             ui.label(status);
         }
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified
+                    && !stale
+                    && !self.manifest_loader.is_running()
+                    && !self.image_batch_worker.is_running(),
                 egui::Button::new("Commit all domains to ROM"),
             )
             .clicked()
@@ -1124,7 +1167,10 @@ impl RomLevelAssetsEditor {
         }
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified
+                    && !stale
+                    && !self.manifest_loader.is_running()
+                    && !self.image_batch_worker.is_running(),
                 egui::Button::new("Commit and reclaim with LMRATS01 evidence"),
             )
             .clicked()
@@ -1143,6 +1189,24 @@ impl RomLevelAssetsEditor {
 }
 
 impl RomLevelAssetsEditor {
+    fn start_level_image_batch(
+        &mut self,
+        format: image_batch::LevelImageFormat,
+    ) -> Result<(), String> {
+        let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
+        let Some(directory) = crate::dialogs::choose_level_image_directory() else {
+            return Ok(());
+        };
+        let source = BatchImageSource {
+            snapshot: workspace.snapshot.clone(),
+            profile: workspace.profile.clone(),
+            image: workspace.image.clone(),
+            ownership: workspace.ownership.clone(),
+        };
+        self.level_image_status = None;
+        self.image_batch_worker.start(source, directory, format)
+    }
+
     fn export_level_image(&self) -> Result<Option<std::path::PathBuf>, String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let Some(destination) = crate::dialogs::choose_level_image_save_path(workspace.source_slot)
@@ -1153,6 +1217,28 @@ impl RomLevelAssetsEditor {
         publish_level_image(&destination, &canvas)?;
         Ok(Some(destination))
     }
+}
+
+fn render_batch_level_canvas(
+    source: &BatchImageSource,
+    level: u16,
+) -> Result<lm_render::Canvas, String> {
+    let mut snapshot = source.snapshot.clone();
+    snapshot.mode = lm_app::EditorMode::Level(level);
+    let controller = source
+        .profile
+        .decode_native_level_assets(&snapshot, source.ownership.clone())
+        .map_err(|error| error.to_string())?;
+    let workspace = Workspace {
+        controller,
+        internal_header: snapshot.identity.internal_header_offset,
+        snapshot,
+        profile: source.profile.clone(),
+        source_slot: level,
+        image: source.image.clone(),
+        ownership: source.ownership.clone(),
+    };
+    render_super_graphics_level_canvas(&workspace, None, None).map(|(canvas, _, _)| canvas)
 }
 
 fn publish_level_image(

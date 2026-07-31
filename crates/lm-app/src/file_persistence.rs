@@ -32,61 +32,117 @@ pub fn write_new(destination: &Path, bytes: &[u8]) -> io::Result<()> {
 /// Returns an I/O error for an empty or aliased destination, an existing destination, staging or
 /// synchronization failure, or publication failure.
 pub fn write_new_group(documents: &[(&Path, &[u8])]) -> io::Result<()> {
-    if documents.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "grouped save requires at least one document",
-        ));
+    let mut group = NewFileGroup::new();
+    for (destination, bytes) in documents.iter().copied() {
+        group.stage(destination, bytes)?;
     }
-    let mut staged = Vec::with_capacity(documents.len());
-    let mut resolved = Vec::with_capacity(documents.len());
-    for (index, (destination, bytes)) in documents.iter().copied().enumerate() {
+    group.publish()
+}
+
+/// A streaming create-new publication group.
+///
+/// Each payload is staged and synchronized immediately, allowing callers to discard large encoded
+/// buffers before preparing the next document. Dropping an unpublished group removes all private
+/// staging files. [`Self::publish`] makes the complete group visible with rollback on failure.
+#[derive(Default)]
+pub struct NewFileGroup {
+    entries: Vec<(PathBuf, PathBuf)>,
+    resolved: Vec<PathBuf>,
+}
+
+impl NewFileGroup {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            resolved: Vec::new(),
+        }
+    }
+
+    /// Stages and synchronizes one new document without publishing it.
+    ///
+    /// # Errors
+    ///
+    /// Rejects missing names, canonical destination aliases, and staging failures.
+    pub fn stage(&mut self, destination: &Path, bytes: &[u8]) -> io::Result<()> {
         let name = destination.file_name().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name")
         })?;
         let parent = fs::canonicalize(destination.parent().unwrap_or_else(|| Path::new(".")))?;
         let resolved_destination = parent.join(name);
-        if resolved[..index].contains(&resolved_destination) {
-            cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+        if self.resolved.contains(&resolved_destination) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "grouped save destinations must differ",
             ));
         }
-        resolved.push(resolved_destination);
-        match stage(destination, bytes, None) {
-            Ok(path) => staged.push(path),
-            Err(error) => {
-                cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
-                return Err(error);
+        match fs::symlink_metadata(destination) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "grouped save destination already exists",
+                ));
             }
+            Err(error) => return Err(error),
         }
+        let staged = stage(destination, bytes, None)?;
+        self.resolved.push(resolved_destination);
+        self.entries.push((destination.to_owned(), staged));
+        Ok(())
     }
 
-    let mut published: Vec<(&Path, fs::Metadata)> = Vec::with_capacity(documents.len());
-    for ((destination, _), staged_path) in documents.iter().zip(&staged) {
-        let destination = *destination;
-        let metadata = match fs::metadata(staged_path) {
-            Ok(metadata) => metadata,
-            Err(error) => {
+    /// Publishes every staged document, rolling back this group's visible files on failure.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an empty group and reports metadata, collision, or hard-link failures.
+    pub fn publish(mut self) -> io::Result<()> {
+        if self.entries.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "grouped save requires at least one document",
+            ));
+        }
+        let mut published: Vec<(PathBuf, fs::Metadata)> = Vec::with_capacity(self.entries.len());
+        for (destination, staged_path) in &self.entries {
+            let metadata = match fs::metadata(staged_path) {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    for (path, expected) in &published {
+                        let _ = remove_if_same_file(path, expected);
+                    }
+                    return Err(error);
+                }
+            };
+            if let Err(error) = fs::hard_link(staged_path, destination) {
                 for (path, expected) in &published {
                     let _ = remove_if_same_file(path, expected);
                 }
-                cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
                 return Err(error);
             }
-        };
-        if let Err(error) = fs::hard_link(staged_path, destination) {
-            for (path, expected) in &published {
-                let _ = remove_if_same_file(path, expected);
-            }
-            cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
-            return Err(error);
+            published.push((destination.clone(), metadata));
         }
-        published.push((destination, metadata));
+        self.cleanup();
+        Ok(())
     }
-    cleanup_paths(&staged.iter().map(PathBuf::as_path).collect::<Vec<_>>());
-    Ok(())
+
+    fn cleanup(&mut self) {
+        cleanup_paths(
+            &self
+                .entries
+                .iter()
+                .map(|(_, staged)| staged.as_path())
+                .collect::<Vec<_>>(),
+        );
+        self.entries.clear();
+    }
+}
+
+impl Drop for NewFileGroup {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
 }
 
 fn finalize_new_publication(

@@ -249,6 +249,12 @@ pub(crate) fn choose_level_image_save_path(level: u16) -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_level_image_directory() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export All Level Images")
+        .pick_folder()
+}
+
 pub(crate) fn choose_mwl_directory() -> Option<PathBuf> {
     rfd::FileDialog::new().pick_folder()
 }

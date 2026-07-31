@@ -23,7 +23,9 @@ impl RomLevelAssetsEditor {
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
-                    !stale && !self.mwl_loader.is_running(),
+                    !stale
+                        && !self.mwl_loader.is_running()
+                        && !self.image_batch_worker.is_running(),
                     eframe::egui::Button::new("Export complete MWL…"),
                 )
                 .clicked()
@@ -48,6 +50,7 @@ impl RomLevelAssetsEditor {
         });
         ui.horizontal(|ui| {
             let legacy_enabled = !stale
+                && !self.image_batch_worker.is_running()
                 && !self.mwl_loader.is_running()
                 && !self.legacy_mwl_loader.is_running()
                 && !self.manifest_loader.is_running();
@@ -75,6 +78,7 @@ impl RomLevelAssetsEditor {
         ui.horizontal(|ui| {
             let batch_enabled = !modified
                 && !stale
+                && !self.image_batch_worker.is_running()
                 && !self.mwl_loader.is_running()
                 && !self.legacy_mwl_loader.is_running()
                 && !self.manifest_loader.is_running()

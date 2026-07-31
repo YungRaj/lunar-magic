@@ -69,6 +69,24 @@ fn grouped_new_save_publishes_every_document_without_debris() {
 }
 
 #[test]
+fn streaming_new_group_drop_cancels_every_staged_document() {
+    let directory = TestDirectory::new();
+    let first = directory.0.join("Level 000.png");
+    let second = directory.0.join("Level 001.png");
+    {
+        let mut group = NewFileGroup::new();
+        group.stage(&first, b"zero").unwrap();
+        group.stage(&second, b"one").unwrap();
+        assert!(!first.exists());
+        assert!(!second.exists());
+        assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 2);
+    }
+    assert!(!first.exists());
+    assert!(!second.exists());
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 0);
+}
+
+#[test]
 fn grouped_new_save_rolls_back_its_publications_on_collision() {
     let directory = TestDirectory::new();
     let first = directory.0.join("Level 000.mwl");

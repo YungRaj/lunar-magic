@@ -43,9 +43,10 @@ impl RomLevelAssetsEditor {
             || self.mwl_loader.is_running()
             || self.legacy_mwl_loader.is_running()
             || self.mwl_batch_worker.is_running()
+            || self.image_batch_worker.is_running()
         {
             self.error =
-                Some("wait for native-assets ownership loading to finish before closing".into());
+                Some("wait for native-assets background work to finish before closing".into());
             return false;
         }
         let Some(workspace) = &self.workspace else {
