@@ -81,6 +81,19 @@ struct PreviewDragState {
     origin_y: i64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PreviewMap16Selection {
+    cell_x: i64,
+    cell_y: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct InstalledPreviewPhases {
+    refresh: Option<usize>,
+    assets: Option<usize>,
+    selection: Option<u32>,
+}
+
 impl Default for PreviewViewportState {
     fn default() -> Self {
         Self {
@@ -228,9 +241,34 @@ fn preview_pointer_anchor(rect: egui::Rect, pointer: egui::Pos2) -> lm_render::P
     }
 }
 
+fn preview_map16_selection(
+    viewport: PreviewViewportState,
+    screen: lm_render::Point,
+) -> Result<PreviewMap16Selection, lm_render::ViewportError> {
+    let world = viewport.viewport()?.screen_to_world(screen)?;
+    Ok(PreviewMap16Selection {
+        cell_x: world.x.div_euclid(16),
+        cell_y: world.y.div_euclid(16),
+    })
+}
+
 impl InstalledAnimationOptions {
     const fn active(self) -> bool {
         self.vanilla_tiles || self.palette
+    }
+}
+
+fn installed_preview_phases(
+    options: InstalledAnimationOptions,
+    has_selection: bool,
+    seconds: f64,
+) -> InstalledPreviewPhases {
+    let refresh =
+        (options.active() || has_selection).then(|| installed_preview_animation_phase(seconds));
+    InstalledPreviewPhases {
+        refresh,
+        assets: options.active().then_some(refresh.unwrap_or(0)),
+        selection: has_selection.then_some(u32::try_from(refresh.unwrap_or(0)).unwrap_or(0)),
     }
 }
 
@@ -291,6 +329,7 @@ pub(crate) struct RomLevelAssetsEditor {
     bypass_viewport: PreviewViewportState,
     bypass_drag: Option<PreviewDragState>,
     bypass_map16_grid: bool,
+    bypass_selection: Option<PreviewMap16Selection>,
 }
 
 impl RomLevelAssetsEditor {
@@ -432,6 +471,28 @@ impl RomLevelAssetsEditor {
             let (world_width, world_height) = preview_world_extent(header);
             self.bypass_viewport
                 .clamp_to_world(world_width, world_height);
+            if world_width < 16 || world_height < 16 {
+                if self.bypass_selection.take().is_some() {
+                    self.bypass_preview.invalidate();
+                }
+            } else if let Some(selection) = self.bypass_selection.as_mut() {
+                let previous = *selection;
+                selection.cell_x = selection.cell_x.clamp(
+                    0,
+                    i64::try_from(world_width / 16)
+                        .unwrap_or(i64::MAX)
+                        .saturating_sub(1),
+                );
+                selection.cell_y = selection.cell_y.clamp(
+                    0,
+                    i64::try_from(world_height / 16)
+                        .unwrap_or(i64::MAX)
+                        .saturating_sub(1),
+                );
+                if *selection != previous {
+                    self.bypass_preview.invalidate();
+                }
+            }
             let (maximum_x, maximum_y) = self
                 .bypass_viewport
                 .camera_maximum(world_width, world_height);
@@ -495,6 +556,18 @@ impl RomLevelAssetsEditor {
             if viewport_changed {
                 self.bypass_preview.invalidate();
             }
+            if let Some(selection) = self.bypass_selection {
+                ui.horizontal(|ui| {
+                    ui.label(format!(
+                        "Selected Map16 cell X ${:03X}, Y ${:03X}",
+                        selection.cell_x, selection.cell_y
+                    ));
+                    if ui.button("Clear selection").clicked() {
+                        self.bypass_selection = None;
+                        self.bypass_preview.invalidate();
+                    }
+                });
+            }
         }
         let animation_options = self.workspace.as_ref().map_or(
             InstalledAnimationOptions {
@@ -503,10 +576,12 @@ impl RomLevelAssetsEditor {
             },
             installed_animation_options,
         );
-        let animation_phase = animation_options
-            .active()
-            .then(|| installed_preview_animation_phase(ui.input(|input| input.time)));
-        if self.bypass_preview.take_refresh(animation_phase) {
+        let phases = installed_preview_phases(
+            animation_options,
+            self.bypass_selection.is_some(),
+            ui.input(|input| input.time),
+        );
+        if self.bypass_preview.take_refresh(phases.refresh) {
             let result = self
                 .workspace
                 .as_ref()
@@ -514,9 +589,11 @@ impl RomLevelAssetsEditor {
                 .and_then(|workspace| {
                     render_super_graphics_level_preview(
                         workspace,
-                        animation_phase,
+                        phases.assets,
                         self.bypass_viewport,
                         self.bypass_map16_grid,
+                        self.bypass_selection,
+                        phases.selection,
                     )
                 });
             self.bypass_preview.finish_refresh(result.is_ok());
@@ -542,7 +619,9 @@ impl RomLevelAssetsEditor {
                 }
             }
         }
-        if self.bypass_preview.enabled && animation_options.active() && !self.bypass_preview.failed
+        if self.bypass_preview.enabled
+            && (animation_options.active() || self.bypass_selection.is_some())
+            && !self.bypass_preview.failed
         {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(60));
@@ -554,10 +633,23 @@ impl RomLevelAssetsEditor {
             let response = ui
                 .add(
                     egui::Image::new((texture.id(), texture.size_vec2()))
-                        .sense(egui::Sense::drag()),
+                        .sense(egui::Sense::click_and_drag()),
                 )
                 .on_hover_cursor(egui::CursorIcon::Grab)
-                .on_hover_text("Drag to pan; Ctrl/Command-wheel zooms around the pointer");
+                .on_hover_text(
+                    "Click to select a Map16 cell; drag to pan; Ctrl/Command-wheel zooms",
+                );
+            if response.clicked()
+                && let Some(pointer) = response.interact_pointer_pos()
+            {
+                let anchor = preview_pointer_anchor(response.rect, pointer);
+                if let Ok(selection) = preview_map16_selection(self.bypass_viewport, anchor)
+                    && self.bypass_selection != Some(selection)
+                {
+                    self.bypass_selection = Some(selection);
+                    self.bypass_preview.invalidate();
+                }
+            }
             if response.drag_started() {
                 if let Some(pointer) = response.interact_pointer_pos() {
                     self.bypass_drag = Some(PreviewDragState {
@@ -676,6 +768,8 @@ fn render_super_graphics_level_preview(
     animation_phase: Option<usize>,
     viewport: PreviewViewportState,
     show_map16_grid: bool,
+    selection: Option<PreviewMap16Selection>,
+    selection_phase: Option<u32>,
 ) -> Result<(egui::ColorImage, Vec<String>), String> {
     let project = lm_project::Project::new(workspace.image.clone());
     let header = workspace.controller.assets().level.layer1.header;
@@ -761,6 +855,8 @@ fn render_super_graphics_level_preview(
         &palette,
         viewport,
         show_map16_grid,
+        selection,
+        selection_phase,
     )
     .map(|image| (image, diagnostics))
 }
@@ -983,6 +1079,8 @@ fn render_level_viewport_image(
     palette: &lm_graphics::Palette,
     viewport: PreviewViewportState,
     show_map16_grid: bool,
+    selection: Option<PreviewMap16Selection>,
+    selection_phase: Option<u32>,
 ) -> Result<egui::ColorImage, String> {
     let source = render_level_canvas(
         layers,
@@ -994,17 +1092,27 @@ fn render_level_viewport_image(
         animated_sprite_tiles,
         palette,
     )?;
-    render_level_viewport_canvas(&source, viewport, show_map16_grid).map(canvas_to_color_image)
+    render_level_viewport_canvas(
+        &source,
+        viewport,
+        show_map16_grid,
+        selection,
+        selection_phase,
+    )
+    .map(canvas_to_color_image)
 }
 
 fn render_level_viewport_canvas(
     source: &lm_render::Canvas,
     viewport: PreviewViewportState,
     show_map16_grid: bool,
+    selection: Option<PreviewMap16Selection>,
+    selection_phase: Option<u32>,
 ) -> Result<lm_render::Canvas, String> {
     let viewport = viewport.viewport().map_err(|error| error.to_string())?;
     let mut output = lm_render::rasterize_canvas_viewport(source, viewport)
         .map_err(|error| error.to_string())?;
+    let mut overlays = Vec::with_capacity(2);
     if show_map16_grid {
         let world_origin = viewport
             .world_to_screen(lm_render::Point::default())
@@ -1016,22 +1124,69 @@ fn render_level_viewport_canvas(
             .map_err(|_| "Map16 grid width is not representable".to_owned())?;
         let cell_height = u32::try_from(next_cell.y - world_origin.y)
             .map_err(|_| "Map16 grid height is not representable".to_owned())?;
-        lm_render::draw_editor_overlays(
-            &mut output,
-            &[lm_render::EditorOverlay::Grid(lm_render::GridOverlay {
-                origin_x: world_origin.x,
-                origin_y: world_origin.y,
-                cell_width,
-                cell_height,
-                color: Rgba {
+        overlays.push(lm_render::EditorOverlay::Grid(lm_render::GridOverlay {
+            origin_x: world_origin.x,
+            origin_y: world_origin.y,
+            cell_width,
+            cell_height,
+            color: Rgba {
+                red: 255,
+                green: 255,
+                blue: 255,
+                alpha: 96,
+            },
+        }));
+    }
+    if let Some(selection) = selection {
+        let left = selection
+            .cell_x
+            .checked_mul(16)
+            .ok_or_else(|| "Map16 selection X coordinate overflowed".to_owned())?;
+        let top = selection
+            .cell_y
+            .checked_mul(16)
+            .ok_or_else(|| "Map16 selection Y coordinate overflowed".to_owned())?;
+        let top_left = viewport
+            .world_to_screen(lm_render::Point { x: left, y: top })
+            .map_err(|error| error.to_string())?;
+        let bottom_right = viewport
+            .world_to_screen(lm_render::Point {
+                x: left
+                    .checked_add(16)
+                    .ok_or_else(|| "Map16 selection right edge overflowed".to_owned())?,
+                y: top
+                    .checked_add(16)
+                    .ok_or_else(|| "Map16 selection bottom edge overflowed".to_owned())?,
+            })
+            .map_err(|error| error.to_string())?;
+        overlays.push(lm_render::EditorOverlay::Selection(
+            lm_render::SelectionOverlay {
+                bounds: lm_render::WorldRect {
+                    left: top_left.x,
+                    top: top_left.y,
+                    right: bottom_right.x,
+                    bottom: bottom_right.y,
+                },
+                light: Rgba {
                     red: 255,
                     green: 255,
                     blue: 255,
-                    alpha: 96,
+                    alpha: 255,
                 },
-            })],
-        )
-        .map_err(|error| error.to_string())?;
+                dark: Rgba {
+                    red: 0,
+                    green: 0,
+                    blue: 0,
+                    alpha: 255,
+                },
+                dash_length: 4,
+                phase: selection_phase.unwrap_or(0),
+            },
+        ));
+    }
+    if !overlays.is_empty() {
+        lm_render::draw_editor_overlays(&mut output, &overlays)
+            .map_err(|error| error.to_string())?;
     }
     Ok(output)
 }
@@ -1312,6 +1467,51 @@ mod tests {
     }
 
     #[test]
+    fn selection_clock_does_not_enable_disabled_asset_animation() {
+        let disabled = InstalledAnimationOptions {
+            vanilla_tiles: false,
+            palette: false,
+        };
+        assert_eq!(
+            installed_preview_phases(disabled, false, 0.12),
+            InstalledPreviewPhases {
+                refresh: None,
+                assets: None,
+                selection: None,
+            }
+        );
+        assert_eq!(
+            installed_preview_phases(disabled, true, 0.12),
+            InstalledPreviewPhases {
+                refresh: Some(2),
+                assets: None,
+                selection: Some(2),
+            }
+        );
+
+        let tiles_only = InstalledAnimationOptions {
+            vanilla_tiles: true,
+            palette: false,
+        };
+        assert_eq!(
+            installed_preview_phases(tiles_only, false, 0.12),
+            InstalledPreviewPhases {
+                refresh: Some(2),
+                assets: Some(2),
+                selection: None,
+            }
+        );
+        assert_eq!(
+            installed_preview_phases(tiles_only, true, 0.12),
+            InstalledPreviewPhases {
+                refresh: Some(2),
+                assets: Some(2),
+                selection: Some(2),
+            }
+        );
+    }
+
+    #[test]
     fn staged_feature_options_gate_tile_and_palette_clocks_independently() {
         let defaults = animation_options_from_features(None);
         assert!(defaults.vanilla_tiles);
@@ -1560,6 +1760,8 @@ mod tests {
                 zoom_index: 2,
             },
             false,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(viewport_image.size, [512, 448]);
@@ -1584,6 +1786,8 @@ mod tests {
                 zoom_index: 2,
             },
             true,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(output.get(29, 0), Some(red));
@@ -1600,6 +1804,8 @@ mod tests {
                 zoom_index: 0,
             },
             true,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(fractional.get(5, 0), Some(red));
@@ -1615,9 +1821,49 @@ mod tests {
                 zoom_index: 2,
             },
             false,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(without_grid.get(30, 14), Some(red));
+    }
+
+    #[test]
+    fn installed_preview_selection_maps_world_cell_and_animates_after_sampling() {
+        let viewport = PreviewViewportState {
+            origin_x: 17,
+            origin_y: 9,
+            zoom_index: 2,
+        };
+        let selection =
+            preview_map16_selection(viewport, lm_render::Point { x: 30, y: 14 }).unwrap();
+        assert_eq!(
+            selection,
+            PreviewMap16Selection {
+                cell_x: 2,
+                cell_y: 1
+            }
+        );
+
+        let red = Rgba {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        };
+        let source = lm_render::Canvas::from_pixels(512, 512, vec![red; 512 * 512]).unwrap();
+        let phase_zero =
+            render_level_viewport_canvas(&source, viewport, false, Some(selection), Some(0))
+                .unwrap();
+        let phase_four =
+            render_level_viewport_canvas(&source, viewport, false, Some(selection), Some(4))
+                .unwrap();
+
+        assert_ne!(phase_zero.get(30, 14), Some(red));
+        assert_eq!(phase_zero.get(31, 15), Some(red));
+        assert_ne!(phase_zero.get(30, 14), phase_four.get(30, 14));
+        assert_ne!(phase_zero.get(61, 45), Some(red));
+        assert_eq!(phase_zero.get(62, 46), Some(red));
     }
 
     #[test]
