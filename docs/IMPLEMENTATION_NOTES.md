@@ -2778,7 +2778,10 @@ duplicate placement in painter order instead of inventing a single top tile, dec
 Map16 number and whole-definition X/Y flips, and reports the definition bank plus four raw subtile
 words. Object-backed placements resolve the foreground namespace and its Acts-Like data; compressed
 Layer 2 placements resolve Lunar Magic's separately loaded `$8000-$FFFF` background namespace,
-which has no Acts-Like table. Each subtile is additionally reported at its post-placement visual
+which has no Acts-Like table. Their definition identity is kept separate from the exact stored
+word: the installed descriptor's three-bit active bank supplies bits 12–14 and the cell supplies
+its low 12 bits, while raw attribute and whole-definition flip bits remain intact. The inspector
+reports the resulting global `$8000-$FFFF` number. Each subtile is additionally reported at its post-placement visual
 quadrant with its original definition quadrant, ten-bit tile number, CGRAM row, priority, and
 effective X/Y flips after composing the whole-definition flips. It also invokes
 `Map16Set::resolve_acts_like` with the complete installed tile count as its traversal bound,

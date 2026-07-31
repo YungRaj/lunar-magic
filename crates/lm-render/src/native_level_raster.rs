@@ -4,13 +4,15 @@ use lm_level::{Map16Tile, Subtile};
 
 /// One Map16 cell in world tile coordinates.
 ///
-/// Bits 0–13 select the Map16 definition. Bits 14 and 15 flip the complete 16×16 definition
-/// horizontally and vertically, matching Lunar Magic's Layer 2 tilemap words.
+/// `word` retains the source cell's exact attributes, including whole-definition flips.
+/// `definition_index` independently addresses the selected foreground or background namespace, so
+/// compressed Layer 2 can combine its descriptor's active 4K bank with the stored 12-bit tile.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeMap16Placement {
     pub x: i32,
     pub y: i32,
     pub word: u16,
+    pub definition_index: u16,
     pub definition_bank: NativeMap16DefinitionBank,
     pub composition: NativeMap16Composition,
 }
@@ -184,7 +186,7 @@ fn render_native_level_framebuffer_impl(
             .copied()
             .unwrap_or_default();
         for placement in *layer {
-            let definition_index = usize::from(placement.word & 0x3fff);
+            let definition_index = usize::from(placement.definition_index);
             let definitions = match placement.definition_bank {
                 NativeMap16DefinitionBank::Foreground => request.definitions,
                 NativeMap16DefinitionBank::Background => request.background_definitions,
@@ -464,6 +466,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_index: 0,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -471,6 +474,7 @@ mod tests {
             x: 1,
             y: 0,
             word: 1,
+            definition_index: 1,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -502,12 +506,14 @@ mod tests {
     #[test]
     fn background_placements_use_the_separate_definition_bank() {
         let foreground_definitions = [definition([0, 0, 0, 0])];
-        let background_definitions = [definition([1, 1, 1, 1])];
+        let mut background_definitions = vec![Map16Tile::default(); 0x1001];
+        background_definitions[0x1000] = definition([1, 1, 1, 1]);
         let tiles = [solid(1), solid(2)];
         let placements = [NativeMap16Placement {
             x: 0,
             y: 0,
             word: 0,
+            definition_index: 0x1000,
             definition_bank: NativeMap16DefinitionBank::Background,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -538,6 +544,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_index: 0,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Average,
         }];
@@ -582,6 +589,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_index: 0,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::HalfColor,
         }];
@@ -681,6 +689,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0xc000,
+            definition_index: 0,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -710,6 +719,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_index: 0,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -749,6 +759,7 @@ mod tests {
             x: 0,
             y: 0,
             word: 0,
+            definition_index: 0,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];
@@ -756,6 +767,7 @@ mod tests {
             x: 1,
             y: 0,
             word: 0,
+            definition_index: 0,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: NativeMap16Composition::Opaque,
         }];

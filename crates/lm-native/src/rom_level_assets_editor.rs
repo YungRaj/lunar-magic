@@ -238,6 +238,7 @@ struct PreviewMap16Hit {
     palette_routing: NativeMap16PaletteRouting,
     composition: NativeMap16Composition,
     word: u16,
+    definition_index: u16,
     definition: Option<lm_level::Map16Tile>,
     acts_like: Option<Result<lm_level::ActsLikeResolution, lm_level::Map16SetError>>,
 }
@@ -434,7 +435,7 @@ fn inspect_preview_map16_selection(
                         && i64::from(placement.y) == selection.cell_y
                 })
                 .map(|placement| {
-                    let tile = placement.word & 0x3fff;
+                    let tile = placement.definition_index;
                     let definition = match placement.definition_bank {
                         NativeMap16DefinitionBank::Foreground => map16.tile(tile).copied(),
                         NativeMap16DefinitionBank::Background => {
@@ -451,6 +452,7 @@ fn inspect_preview_map16_selection(
                         },
                         composition: placement.composition,
                         word: placement.word,
+                        definition_index: placement.definition_index,
                         definition,
                         acts_like: (placement.definition_bank
                             == NativeMap16DefinitionBank::Foreground)
@@ -884,8 +886,14 @@ impl RomLevelAssetsEditor {
                         (false, true) => "-Y",
                         (true, true) => "XY",
                     };
+                    let definition_number = match hit.definition_bank {
+                        NativeMap16DefinitionBank::Foreground => u32::from(hit.definition_index),
+                        NativeMap16DefinitionBank::Background => {
+                            0x8000 + u32::from(hit.definition_index)
+                        }
+                    };
                     ui.monospace(format!(
-                        "Paint {} {}: word ${:04X}, {} tile ${:04X}, outer flips {outer_flips}, composition {}",
+                        "Paint {} {}: word ${:04X}, {} definition ${definition_number:04X}, outer flips {outer_flips}, composition {}",
                         paint_index + 1,
                         hit.layer.label(),
                         hit.word,
@@ -893,7 +901,6 @@ impl RomLevelAssetsEditor {
                             NativeMap16DefinitionBank::Foreground => "foreground",
                             NativeMap16DefinitionBank::Background => "background",
                         },
-                        hit.word & 0x3fff,
                         match hit.composition {
                             NativeMap16Composition::Opaque => "opaque",
                             NativeMap16Composition::Average => "average",
@@ -1206,6 +1213,10 @@ fn render_super_graphics_level_preview(
     let layer2 = match layer2_data {
         Some(NativeLayer2Data::Tilemap(tilemap)) => layer2_placements(
             tilemap,
+            workspace
+                .controller
+                .layer2_descriptor()
+                .map_or(0, lm_level::MwlLayer2Descriptor::active_bank),
             header.object_tileset(),
             installed_layer2_background_half_color(header.level_mode()),
         )?,
@@ -1819,6 +1830,7 @@ fn object_paints_to_placements(
             x: i32::try_from(x).map_err(|_| "object-layer X overflow".to_owned())?,
             y: i32::try_from(y).map_err(|_| "object-layer Y overflow".to_owned())?,
             word: paint.tile,
+            definition_index: paint.tile & 0x3fff,
             definition_bank: NativeMap16DefinitionBank::Foreground,
             composition: native_map16_composition(object_tileset, paint.tile),
         });
@@ -1903,6 +1915,7 @@ const fn installed_layer2_background_half_color(level_mode: u8) -> bool {
 
 fn layer2_placements(
     tilemap: &[u8],
+    active_bank: u8,
     object_tileset: u8,
     background_half_color: bool,
 ) -> Result<Vec<NativeMap16Placement>, String> {
@@ -1911,6 +1924,11 @@ fn layer2_placements(
             "native Layer 2 tilemap has {} bytes instead of {}",
             tilemap.len(),
             lm_level::NATIVE_LAYER2_TILEMAP_LEN
+        ));
+    }
+    if active_bank >= 8 {
+        return Err(format!(
+            "native Layer 2 background bank {active_bank} is outside $0-$7"
         ));
     }
     let mut placements = Vec::with_capacity(
@@ -1926,6 +1944,7 @@ fn layer2_placements(
                 x: i32::try_from(x).map_err(|_| "Layer 2 X coordinate overflow".to_owned())?,
                 y: i32::try_from(y).map_err(|_| "Layer 2 Y coordinate overflow".to_owned())?,
                 word,
+                definition_index: u16::from(active_bank) * 0x1000 + (word & 0x0fff),
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: if background_half_color {
                     NativeMap16Composition::HalfColor
@@ -2191,13 +2210,14 @@ mod tests {
             let index = lm_level::native_layer2_tilemap_index(x, y).unwrap();
             bytes[index * 2..index * 2 + 2].copy_from_slice(&word.to_le_bytes());
         }
-        let placements = layer2_placements(&bytes, 0, false).unwrap();
+        let placements = layer2_placements(&bytes, 0, 0, false).unwrap();
         assert_eq!(
             placements[0],
             NativeMap16Placement {
                 x: 0,
                 y: 0,
                 word: 0x0123,
+                definition_index: 0x0123,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
@@ -2208,6 +2228,7 @@ mod tests {
                 x: 31,
                 y: 0,
                 word: 0x4567,
+                definition_index: 0x0567,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
@@ -2218,6 +2239,7 @@ mod tests {
                 x: 0,
                 y: 31,
                 word: 0x89ab,
+                definition_index: 0x09ab,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             }
@@ -2226,7 +2248,17 @@ mod tests {
 
     #[test]
     fn layer2_preview_rejects_noncanonical_tilemap_lengths() {
-        assert!(layer2_placements(&[0; 0x7ff], 0, false).is_err());
+        assert!(layer2_placements(&[0; 0x7ff], 0, 0, false).is_err());
+    }
+
+    #[test]
+    fn layer2_preview_combines_descriptor_bank_with_low_twelve_tile_bits() {
+        let mut bytes = vec![0; lm_level::NATIVE_LAYER2_TILEMAP_LEN];
+        bytes[0..2].copy_from_slice(&0xd234_u16.to_le_bytes());
+        let placements = layer2_placements(&bytes, 5, 0, false).unwrap();
+        assert_eq!(placements[0].word, 0xd234);
+        assert_eq!(placements[0].definition_index, 0x5234);
+        assert!(layer2_placements(&bytes, 8, 0, false).is_err());
     }
 
     #[test]
@@ -2249,7 +2281,7 @@ mod tests {
         let mut colors = vec![Bgr555(0); 128];
         colors[1] = Bgr555(0x001f);
         let palette = Palette { colors };
-        let placements = layer2_placements(&tilemap, 0, false).unwrap();
+        let placements = layer2_placements(&tilemap, 0, 0, false).unwrap();
         let layers: [&[NativeMap16Placement]; 1] = [&placements];
         let image = render_level_image(
             &layers,
@@ -2445,7 +2477,9 @@ mod tests {
             acts_like: 0x0303,
         };
         let expected = [definitions[1], definitions[2], definitions[3]];
-        let background_definitions = definitions.clone();
+        let mut background_definitions = vec![Map16Tile::default(); 0x1003];
+        background_definitions[0x1001] = expected[0];
+        background_definitions[0x1002] = expected[1];
         let map16 = Map16Set {
             pages: vec![Map16Page::new(definitions).unwrap()],
         };
@@ -2454,6 +2488,7 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x4001,
+                definition_index: 0x1001,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Average,
             },
@@ -2461,6 +2496,7 @@ mod tests {
                 x: 8,
                 y: 8,
                 word: 0x0007,
+                definition_index: 7,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2468,6 +2504,7 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x0002,
+                definition_index: 0x1002,
                 definition_bank: NativeMap16DefinitionBank::Background,
                 composition: NativeMap16Composition::HalfColor,
             },
@@ -2477,6 +2514,7 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x8003,
+                definition_index: 3,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2484,6 +2522,7 @@ mod tests {
                 x: 2,
                 y: 1,
                 word: 0x3fff,
+                definition_index: 0x3fff,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2511,6 +2550,7 @@ mod tests {
                         palette_routing: NativeMap16PaletteRouting::Direct,
                         composition: NativeMap16Composition::Average,
                         word: 0x4001,
+                        definition_index: 0x1001,
                         definition: Some(expected[0]),
                         acts_like: None,
                     },
@@ -2520,6 +2560,7 @@ mod tests {
                         palette_routing: NativeMap16PaletteRouting::Direct,
                         composition: NativeMap16Composition::HalfColor,
                         word: 0x0002,
+                        definition_index: 0x1002,
                         definition: Some(expected[1]),
                         acts_like: None,
                     },
@@ -2529,6 +2570,7 @@ mod tests {
                         palette_routing: NativeMap16PaletteRouting::Direct,
                         composition: NativeMap16Composition::Opaque,
                         word: 0x8003,
+                        definition_index: 3,
                         definition: Some(expected[2]),
                         acts_like: Some(Err(lm_level::Map16SetError::ActsLikeOutOfRange {
                             tile: 3,
@@ -2541,6 +2583,7 @@ mod tests {
                         palette_routing: NativeMap16PaletteRouting::Direct,
                         composition: NativeMap16Composition::Opaque,
                         word: 0x3fff,
+                        definition_index: 0x3fff,
                         definition: None,
                         acts_like: None,
                     },
@@ -2587,6 +2630,7 @@ mod tests {
                 x: 1,
                 y: 1,
                 word: 1,
+                definition_index: 1,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2594,6 +2638,7 @@ mod tests {
                 x: 1,
                 y: 1,
                 word: 3,
+                definition_index: 3,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2601,6 +2646,7 @@ mod tests {
                 x: 1,
                 y: 1,
                 word: 4,
+                definition_index: 4,
                 definition_bank: NativeMap16DefinitionBank::Foreground,
                 composition: NativeMap16Composition::Opaque,
             },
@@ -2924,6 +2970,7 @@ mod tests {
                     x: 3,
                     y: 4,
                     word: 0x123,
+                    definition_index: 0x123,
                     definition_bank: NativeMap16DefinitionBank::Foreground,
                     composition: NativeMap16Composition::Opaque,
                 },
@@ -2931,6 +2978,7 @@ mod tests {
                     x: 3,
                     y: 4,
                     word: 0x456,
+                    definition_index: 0x456,
                     definition_bank: NativeMap16DefinitionBank::Foreground,
                     composition: NativeMap16Composition::Opaque,
                 },
@@ -2981,7 +3029,7 @@ mod tests {
         let tilemap_index = lm_level::native_layer2_tilemap_index(1, 2).unwrap();
         tilemap_bytes[tilemap_index * 2..tilemap_index * 2 + 2]
             .copy_from_slice(&0x0027_u16.to_le_bytes());
-        let tilemap = layer2_placements(&tilemap_bytes, 4, false).unwrap();
+        let tilemap = layer2_placements(&tilemap_bytes, 0, 4, false).unwrap();
         assert_eq!(
             tilemap
                 .iter()
@@ -2991,7 +3039,7 @@ mod tests {
             NativeMap16Composition::Average
         );
 
-        let half_color = layer2_placements(&tilemap_bytes, 4, true).unwrap();
+        let half_color = layer2_placements(&tilemap_bytes, 0, 4, true).unwrap();
         assert_eq!(
             half_color
                 .iter()
