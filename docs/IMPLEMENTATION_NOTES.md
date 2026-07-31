@@ -2782,6 +2782,11 @@ effective X/Y flips after composing the whole-definition flips. It also invokes
 `Map16Set::resolve_acts_like` with the complete installed tile count as its traversal bound,
 displaying the exact chain and self-linked terminal or preserving the typed cycle, out-of-range,
 and resolution-limit failure. Missing definitions and cells with no sparse placement are explicit.
+Object-backed placement slices come from the standard renderer's authenticated write history
+rather than a scan of its `$25`-initialized cache. Each object's repeated internal writes to one
+cache index collapse to that object's final value, while later objects that overwrite the same
+visible cell remain separate entries in native stream order. Consequently unwritten initialization
+cells are absent from both the framebuffer input and the selected-cell inspection.
 The framebuffer accepts an explicit palette-routing rule for every layer while retaining direct
 routing as the public default. The installed preview selects the recovered low-row-plus-four rule
 only for object-backed Layer 2 under object tileset 3: encoded rows 0–3 address CGRAM rows 4–7,

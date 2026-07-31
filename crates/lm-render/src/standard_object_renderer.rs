@@ -3,7 +3,7 @@ use crate::{
     NativeLevelMap16Layout,
 };
 use lm_level::ObjectStream;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 pub const STANDARD_OBJECT_COMMANDS: usize = 78;
@@ -388,9 +388,17 @@ pub struct StandardObjectDefinitionSet {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StandardObjectRenderReport {
     pub cache: NativeLevelMap16Cache,
+    pub painted_cells: Vec<StandardObjectPaintedCell>,
     pub rendered_objects: usize,
     pub missing_commands: BTreeSet<u8>,
     pub missing_extended_objects: BTreeSet<u8>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StandardObjectPaintedCell {
+    pub record_index: usize,
+    pub index: usize,
+    pub tile: u16,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -706,6 +714,7 @@ fn render_standard_object_stream_with_map(
 ) -> Result<StandardObjectRenderReport, StandardObjectRenderError> {
     let mut cache = NativeLevelMap16Cache::filled(blank_tile);
     let mut rendered_objects = 0;
+    let mut painted_cells = Vec::new();
     let mut missing_commands = BTreeSet::new();
     let mut missing_extended_objects = BTreeSet::new();
     for placement in stream.native_placements_for_orientation(layout.vertical) {
@@ -729,6 +738,7 @@ fn render_standard_object_stream_with_map(
             }
             continue;
         };
+        let write_start = cache.writes().len();
         render_definition(
             &mut cache,
             layout,
@@ -737,10 +747,30 @@ fn render_standard_object_stream_with_map(
             record.parameter(),
             definition,
         )?;
+        let mut final_writes = BTreeMap::new();
+        for (sequence, write) in cache.writes()[write_start..].iter().enumerate() {
+            final_writes.insert(write.index, (sequence, write.tile));
+        }
+        let mut object_paints = final_writes
+            .into_iter()
+            .map(|(index, (sequence, tile))| {
+                (
+                    sequence,
+                    StandardObjectPaintedCell {
+                        record_index: placement.record_index,
+                        index,
+                        tile,
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        object_paints.sort_by_key(|(sequence, _)| *sequence);
+        painted_cells.extend(object_paints.into_iter().map(|(_, paint)| paint));
         rendered_objects += 1;
     }
     Ok(StandardObjectRenderReport {
         cache,
+        painted_cells,
         rendered_objects,
         missing_commands,
         missing_extended_objects,
@@ -4987,6 +5017,36 @@ mod tests {
         assert!(report.missing_extended_objects.is_empty());
         let first = NativeLevelMap16Cache::cell_index(layout(), 0, 0);
         assert_eq!(report.cache.cells()[first], 0x456);
+        assert_eq!(
+            report.painted_cells,
+            [
+                StandardObjectPaintedCell {
+                    record_index: 0,
+                    index: first,
+                    tile: 0x123,
+                },
+                StandardObjectPaintedCell {
+                    record_index: 0,
+                    index: NativeLevelMap16Cache::cell_index(layout(), 0, 1),
+                    tile: 0x123,
+                },
+                StandardObjectPaintedCell {
+                    record_index: 0,
+                    index: NativeLevelMap16Cache::cell_index(layout(), 1, 0),
+                    tile: 0x123,
+                },
+                StandardObjectPaintedCell {
+                    record_index: 0,
+                    index: NativeLevelMap16Cache::cell_index(layout(), 1, 1),
+                    tile: 0x123,
+                },
+                StandardObjectPaintedCell {
+                    record_index: 1,
+                    index: first,
+                    tile: 0x456,
+                },
+            ]
+        );
         assert_eq!(
             report.cache.cells()[NativeLevelMap16Cache::cell_index(layout(), 1, 0)],
             0x123

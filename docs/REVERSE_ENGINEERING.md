@@ -467,6 +467,9 @@ Layer 2 now run through the same recovered tileset-family dispatch, shared/tiles
 definitions, `$1B0` horizontal page stride, and vertical cache mapping as the audited usage scanner.
 The resulting bypass-aware framebuffer composites Layer 2 before Layer 1 at the recovered
 mode-specific editor dimensions and reports unresolved command IDs instead of fabricating tiles.
+A renderer-side ordered cache-write journal now supplies sparse object placements: it omits the
+initialized blank cache, collapses repeated construction writes within one object, and retains
+later same-cell object overwrites in serialized painter order.
 A retained Lunar Magic-created level `$000` test additionally requires this path to materialize
 nonblank cells without unresolved definitions. Standard sprite records now use their decoded
 native placements and the existing authenticated preview dispatch. Ordinary preview definitions

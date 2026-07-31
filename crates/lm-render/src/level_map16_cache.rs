@@ -17,6 +17,13 @@ pub struct NativeLevelMap16Layout {
 pub struct NativeLevelMap16Cache {
     cells: Vec<u16>,
     written: Vec<bool>,
+    writes: Vec<NativeLevelMap16Write>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeLevelMap16Write {
+    pub index: usize,
+    pub tile: u16,
 }
 
 impl PartialEq for NativeLevelMap16Cache {
@@ -48,6 +55,7 @@ impl NativeLevelMap16Cache {
         Self {
             cells: vec![tile; LEVEL_MAP16_CACHE_CELLS],
             written: vec![false; LEVEL_MAP16_CACHE_CELLS],
+            writes: Vec::new(),
         }
     }
 
@@ -66,6 +74,7 @@ impl NativeLevelMap16Cache {
                 .map(|word| u16::from_le_bytes([word[0], word[1]]))
                 .collect(),
             written: vec![false; LEVEL_MAP16_CACHE_CELLS],
+            writes: Vec::new(),
         })
     }
 
@@ -82,6 +91,12 @@ impl NativeLevelMap16Cache {
         &self.cells
     }
 
+    /// Returns every explicit cache write in execution order.
+    #[must_use]
+    pub fn writes(&self) -> &[NativeLevelMap16Write] {
+        &self.writes
+    }
+
     /// Overlays only cells explicitly written while constructing `source`.
     ///
     /// Lunar Magic shares one physical cache between Layer 1 and object-based Layer 2. Rendering
@@ -94,6 +109,7 @@ impl NativeLevelMap16Cache {
                 self.written[index] = true;
             }
         }
+        self.writes.extend_from_slice(&source.writes);
     }
 
     /// Fills rows in a consecutive set of horizontal `$1B0`-word screen pages.
@@ -115,6 +131,8 @@ impl NativeLevelMap16Cache {
                 if let Some(cells) = self.cells.get_mut(start..end) {
                     cells.fill(tile);
                     self.written[start..end].fill(true);
+                    self.writes
+                        .extend((start..end).map(|index| NativeLevelMap16Write { index, tile }));
                 }
             }
         }
@@ -144,6 +162,7 @@ impl NativeLevelMap16Cache {
             .ok_or(NativeLevelMap16CacheError::CellOutOfRange(index))?;
         *cell = tile;
         self.written[index] = true;
+        self.writes.push(NativeLevelMap16Write { index, tile });
         Ok(())
     }
 
@@ -209,6 +228,7 @@ impl NativeLevelMap16Cache {
             .ok_or(NativeLevelMap16CacheError::CellOutOfRange(index))?;
         *cell = tile;
         self.written[index] = true;
+        self.writes.push(NativeLevelMap16Write { index, tile });
         Ok(())
     }
 }
@@ -259,6 +279,22 @@ mod tests {
             Err(NativeLevelMap16CacheError::CellOutOfRange(
                 LEVEL_MAP16_CACHE_SENTINEL
             ))
+        );
+    }
+
+    #[test]
+    fn explicit_write_history_preserves_duplicate_painter_order() {
+        let mut cache = NativeLevelMap16Cache::filled(0x25);
+        let index = NativeLevelMap16Cache::cell_index(horizontal(), 2, 3);
+        cache.set(horizontal(), 2, 3, 0x123).unwrap();
+        cache.set(horizontal(), 2, 3, 0x456).unwrap();
+
+        assert_eq!(
+            cache.writes(),
+            [
+                NativeLevelMap16Write { index, tile: 0x123 },
+                NativeLevelMap16Write { index, tile: 0x456 },
+            ]
         );
     }
 

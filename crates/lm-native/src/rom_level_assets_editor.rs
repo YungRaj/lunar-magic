@@ -9,11 +9,11 @@ use lm_project::NativeLevelAssetsFile;
 use lm_render::{
     MaterializedSuperGraphicsVram, NativeLevelMap16Layout, NativeLevelRasterRequest,
     NativeMap16PaletteRouting, NativeMap16Placement, Rgba, StandardLevelOrientation,
-    StandardObjectDefinitionSet, StandardSpritePreviewMode, StandardSpritePreviewSource,
-    draw_native_sprite_preview_definition_pages, install_lunar_magic_shared_extended_objects,
-    install_lunar_magic_shared_standard_objects, install_lunar_magic_tileset_extended_objects,
-    lunar_magic_standard_sprite_preview_source, render_lunar_magic_standard_sprite_with_mode,
-    render_mapped_standard_object_stream,
+    StandardObjectDefinitionSet, StandardObjectPaintedCell, StandardSpritePreviewMode,
+    StandardSpritePreviewSource, draw_native_sprite_preview_definition_pages,
+    install_lunar_magic_shared_extended_objects, install_lunar_magic_shared_standard_objects,
+    install_lunar_magic_tileset_extended_objects, lunar_magic_standard_sprite_preview_source,
+    render_lunar_magic_standard_sprite_with_mode, render_mapped_standard_object_stream,
     render_native_level_framebuffer_with_layer_palette_routing,
 };
 
@@ -1705,17 +1705,7 @@ fn render_object_placements(
     let rendered =
         render_mapped_standard_object_stream(objects, &definitions, handler_map, layout, 0x25)
             .map_err(|error| error.to_string())?;
-    let mut placements = Vec::with_capacity(layout.width * layout.height);
-    for y in 0..layout.height {
-        for x in 0..layout.width {
-            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
-            placements.push(NativeMap16Placement {
-                x: i32::try_from(x).map_err(|_| "object-layer X overflow".to_owned())?,
-                y: i32::try_from(y).map_err(|_| "object-layer Y overflow".to_owned())?,
-                word: rendered.cache.cells()[index],
-            });
-        }
-    }
+    let placements = object_paints_to_placements(&rendered.painted_cells, layout)?;
     let mut diagnostics = Vec::new();
     if !rendered.missing_commands.is_empty() {
         diagnostics.push(format!("commands {:?}", rendered.missing_commands));
@@ -1727,6 +1717,33 @@ fn render_object_placements(
         ));
     }
     Ok((placements, layout, diagnostics))
+}
+
+fn object_paints_to_placements(
+    painted_cells: &[StandardObjectPaintedCell],
+    layout: NativeLevelMap16Layout,
+) -> Result<Vec<NativeMap16Placement>, String> {
+    let mut coordinates = vec![None; lm_render::LEVEL_MAP16_CACHE_CELLS];
+    for y in 0..layout.height {
+        for x in 0..layout.width {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+            if let Some(coordinate) = coordinates.get_mut(index) {
+                *coordinate = Some((x, y));
+            }
+        }
+    }
+    let mut placements = Vec::with_capacity(painted_cells.len());
+    for paint in painted_cells {
+        let Some((x, y)) = coordinates.get(paint.index).copied().flatten() else {
+            continue;
+        };
+        placements.push(NativeMap16Placement {
+            x: i32::try_from(x).map_err(|_| "object-layer X overflow".to_owned())?,
+            y: i32::try_from(y).map_err(|_| "object-layer Y overflow".to_owned())?,
+            word: paint.tile,
+        });
+    }
+    Ok(placements)
 }
 
 fn render_sprite_placements(
@@ -2735,9 +2752,51 @@ mod tests {
         assert_eq!(layout.width, 32);
         assert_eq!(layout.height, 13 * 16);
         assert!(layout.vertical);
-        assert_eq!(placements.len(), 32 * 13 * 16);
-        assert!(placements.iter().all(|placement| placement.word == 0x25));
+        assert!(placements.is_empty());
         assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn object_paints_preserve_sparse_duplicate_painter_order() {
+        let layout = NativeLevelMap16Layout {
+            width: 32,
+            height: 27,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let index = lm_render::NativeLevelMap16Cache::cell_index(layout, 3, 4);
+        let placements = object_paints_to_placements(
+            &[
+                StandardObjectPaintedCell {
+                    record_index: 0,
+                    index,
+                    tile: 0x123,
+                },
+                StandardObjectPaintedCell {
+                    record_index: 1,
+                    index,
+                    tile: 0x456,
+                },
+            ],
+            layout,
+        )
+        .unwrap();
+        assert_eq!(
+            placements,
+            [
+                NativeMap16Placement {
+                    x: 3,
+                    y: 4,
+                    word: 0x123,
+                },
+                NativeMap16Placement {
+                    x: 3,
+                    y: 4,
+                    word: 0x456,
+                },
+            ]
+        );
     }
 
     #[test]
