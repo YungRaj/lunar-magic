@@ -8,6 +8,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 pub(crate) enum PersistenceTarget {
     Replace(PathBuf),
     Create(PathBuf),
+    CreateRemoving { create: PathBuf, remove: PathBuf },
     ReplacePair { first: PathBuf, second: PathBuf },
     CreatePair { first: PathBuf, second: PathBuf },
 }
@@ -16,6 +17,9 @@ impl PersistenceTarget {
     fn description(&self) -> String {
         match self {
             Self::Replace(path) | Self::Create(path) => path.display().to_string(),
+            Self::CreateRemoving { create, remove } => {
+                format!("{} and removal of {}", create.display(), remove.display())
+            }
             Self::ReplacePair { first, second } | Self::CreatePair { first, second } => {
                 format!("{} and {}", first.display(), second.display())
             }
@@ -81,6 +85,20 @@ impl PersistenceWorker {
         )
     }
 
+    pub(crate) fn start_create_removing(
+        &mut self,
+        request_id: u64,
+        create: PathBuf,
+        bytes: Vec<u8>,
+        remove: PathBuf,
+    ) -> Result<(), String> {
+        self.start(
+            request_id,
+            PersistenceTarget::CreateRemoving { create, remove },
+            bytes,
+        )
+    }
+
     pub(crate) fn start_create_pair(
         &mut self,
         request_id: u64,
@@ -117,6 +135,12 @@ impl PersistenceWorker {
                     (PersistenceTarget::Create(path), PersistencePayload::Single(bytes)) => {
                         lm_app::file_persistence::write_new(path, &bytes)
                     }
+                    (
+                        PersistenceTarget::CreateRemoving { create, remove },
+                        PersistencePayload::Single(bytes),
+                    ) => lm_app::file_persistence::write_new_removing_existing(
+                        create, remove, &bytes,
+                    ),
                     (
                         PersistenceTarget::ReplacePair { first, second },
                         PersistencePayload::Pair(first_bytes, second_bytes),
@@ -290,6 +314,30 @@ mod tests {
         assert!(!first.exists());
         assert_eq!(fs::read(&second).unwrap(), [3, 4]);
         fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn create_removing_deletes_only_a_stale_regular_sibling() {
+        let created = path("create-removing-new");
+        let obsolete = path("create-removing-obsolete");
+        fs::write(&obsolete, [9, 8]).unwrap();
+        let mut worker = PersistenceWorker::default();
+        worker
+            .start_create_removing(13, created.clone(), vec![1, 2, 3], obsolete.clone())
+            .unwrap();
+        wait(&mut worker).result.unwrap();
+        assert_eq!(fs::read(&created).unwrap(), [1, 2, 3]);
+        assert!(!obsolete.exists());
+
+        fs::write(&obsolete, [7, 6]).unwrap();
+        worker
+            .start_create_removing(14, created.clone(), vec![4], obsolete.clone())
+            .unwrap();
+        assert!(wait(&mut worker).result.is_err());
+        assert_eq!(fs::read(&created).unwrap(), [1, 2, 3]);
+        assert_eq!(fs::read(&obsolete).unwrap(), [7, 6]);
+        fs::remove_file(created).unwrap();
+        fs::remove_file(obsolete).unwrap();
     }
 
     #[test]

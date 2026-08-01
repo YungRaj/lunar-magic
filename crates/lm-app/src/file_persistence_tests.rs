@@ -44,6 +44,45 @@ fn new_save_publishes_complete_bytes_and_never_overwrites() {
 }
 
 #[test]
+fn new_save_removes_obsolete_regular_file_and_preserves_it_on_collision() {
+    let directory = TestDirectory::new();
+    let destination = directory.0.join("palette.tpl");
+    let obsolete = directory.0.join("palette.palmask");
+    fs::write(&obsolete, b"stale-mask").unwrap();
+    write_new_removing_existing(&destination, &obsolete, b"palette").unwrap();
+    assert_eq!(fs::read(&destination).unwrap(), b"palette");
+    assert!(!obsolete.exists());
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 1);
+
+    fs::write(&obsolete, b"restored-mask").unwrap();
+    assert_eq!(
+        write_new_removing_existing(&destination, &obsolete, b"replacement")
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::AlreadyExists
+    );
+    assert_eq!(fs::read(&destination).unwrap(), b"palette");
+    assert_eq!(fs::read(&obsolete).unwrap(), b"restored-mask");
+    assert_eq!(fs::read_dir(&directory.0).unwrap().count(), 2);
+}
+
+#[test]
+fn new_save_does_not_remove_an_obsolete_non_file() {
+    let directory = TestDirectory::new();
+    let destination = directory.0.join("palette.tpl");
+    let obsolete = directory.0.join("palette.palmask");
+    fs::create_dir(&obsolete).unwrap();
+    assert_eq!(
+        write_new_removing_existing(&destination, &obsolete, b"palette")
+            .unwrap_err()
+            .kind(),
+        io::ErrorKind::InvalidInput
+    );
+    assert!(!destination.exists());
+    assert!(obsolete.is_dir());
+}
+
+#[test]
 fn published_save_is_success_even_if_private_link_cleanup_fails() {
     assert!(finalize_new_publication(Ok(()), Err(io::Error::other("cleanup"))).is_ok());
     assert_eq!(

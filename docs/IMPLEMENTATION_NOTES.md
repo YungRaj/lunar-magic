@@ -1627,7 +1627,9 @@ each ROM palette open, draws disabled colors with `X`, and reproduces the docume
 Alt-click whole-row gestures plus enable-all/disable-all controls. Its 257th entry forms a bounded
 one-color final row. Exports with any disabled entry snapshot and create-new publish the selected
 palette format plus its same-basename `.palmask` as one rollback-safe group; all-enabled exports
-publish only the palette, and neither route replaces an existing destination.
+publish only the palette and recoverably remove an existing regular `.palmask`, matching the
+LM 2.42 changelog fix for stale masks. A palette collision restores that sidecar and publishes
+nothing; masked exports likewise replace neither destination.
 Graphics mode likewise exposes a ROM-backed 4bpp pixel editor. It decodes the selected native GFX
 slot with the profile-selected LZ2/LZ3 codec, obtains palette zero through the same profile, and
 reuses the portable editor's nearest-neighbor tile painter and hit testing. Pixel changes are

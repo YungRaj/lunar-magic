@@ -1,5 +1,5 @@
 use super::RomPaletteEditor;
-use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
+use crate::{dialogs, document_loader::BoundedRead};
 use eframe::egui;
 use lm_graphics::{
     PaletteMaskFile, RawSnesPaletteFile, RgbChannelExpansion, RgbPaletteFile, TplPaletteFile,
@@ -247,8 +247,9 @@ impl RomPaletteEditor {
             return;
         }
         let result = if self.palette_mask.iter().all(|entry| *entry != 0) {
+            let mask_path = path.with_extension("palmask");
             self.transfer_persistence
-                .start(revision, PersistenceTarget::Create(path), bytes)
+                .start_create_removing(revision, path, bytes, mask_path)
         } else {
             let mask_path = path.with_extension("palmask");
             self.transfer_persistence.start_create_pair(
@@ -509,6 +510,8 @@ mod tests {
     #[test]
     fn export_publishes_palmask_only_when_a_color_is_disabled() {
         let unmasked = export_path("all-enabled");
+        let stale_mask = unmasked.with_extension("palmask");
+        std::fs::write(&stale_mask, vec![0; PaletteMaskFile::FILE_LEN]).unwrap();
         let mut editor = RomPaletteEditor {
             palette_mask: vec![1; PaletteMaskFile::FILE_LEN],
             ..RomPaletteEditor::default()
@@ -516,7 +519,7 @@ mod tests {
         editor.start_palette_export(7, unmasked.clone(), vec![1, 2, 3]);
         editor.transfer_persistence.wait_for_test().result.unwrap();
         assert_eq!(std::fs::read(&unmasked).unwrap(), [1, 2, 3]);
-        assert!(!unmasked.with_extension("palmask").exists());
+        assert!(!stale_mask.exists());
         std::fs::remove_file(unmasked).unwrap();
 
         let masked = export_path("disabled");

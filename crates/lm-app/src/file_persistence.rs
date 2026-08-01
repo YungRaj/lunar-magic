@@ -20,6 +20,93 @@ pub fn write_new(destination: &Path, bytes: &[u8]) -> io::Result<()> {
     finalize_new_publication(publication, cleanup)
 }
 
+/// Publishes a new document while removing an obsolete regular sibling as one recoverable change.
+///
+/// The destination must remain create-new. If the obsolete file exists, it is moved to a private
+/// backup before publication and restored if publication loses a collision race or otherwise
+/// fails. Symbolic links and non-files are rejected rather than removed.
+///
+/// # Errors
+///
+/// Returns an I/O error for aliased paths, an existing destination, a non-regular obsolete path,
+/// staging or publication failure, or failure to restore the obsolete file.
+pub fn write_new_removing_existing(
+    destination: &Path,
+    obsolete: &Path,
+    bytes: &[u8],
+) -> io::Result<()> {
+    let destination_name = destination.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name")
+    })?;
+    let obsolete_name = obsolete.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "obsolete path has no file name",
+        )
+    })?;
+    let destination_parent =
+        fs::canonicalize(destination.parent().unwrap_or_else(|| Path::new(".")))?;
+    let obsolete_parent = fs::canonicalize(obsolete.parent().unwrap_or_else(|| Path::new(".")))?;
+    if destination_parent.join(destination_name) == obsolete_parent.join(obsolete_name) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "new and obsolete destinations must differ",
+        ));
+    }
+    match fs::symlink_metadata(destination) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Ok(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "save destination already exists",
+            ));
+        }
+        Err(error) => return Err(error),
+    }
+    let obsolete_metadata = match fs::symlink_metadata(obsolete) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return write_new(destination, bytes);
+        }
+        Ok(metadata) if metadata.file_type().is_file() => metadata,
+        Ok(_) => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "obsolete destination must be absent or an existing regular file",
+            ));
+        }
+        Err(error) => return Err(error),
+    };
+
+    let staged = stage(destination, bytes, None)?;
+    let staged_metadata = fs::metadata(&staged).inspect_err(|_| {
+        let _ = fs::remove_file(&staged);
+    })?;
+    let backup = unused_backup_path(obsolete).inspect_err(|_| {
+        let _ = fs::remove_file(&staged);
+    })?;
+    if let Err(error) = fs::rename(obsolete, &backup) {
+        let _ = fs::remove_file(staged);
+        return Err(error);
+    }
+    if let Err(error) = fs::hard_link(&staged, destination) {
+        let restore = fs::rename(&backup, obsolete);
+        let _ = fs::remove_file(staged);
+        return match restore {
+            Ok(()) => Err(error),
+            Err(restore_error) => Err(io::Error::new(
+                restore_error.kind(),
+                format!(
+                    "new publication failed ({error}) and the obsolete file could not be restored ({restore_error}); backup remains at {}",
+                    backup.display()
+                ),
+            )),
+        };
+    }
+    let _ = remove_if_same_file(&staged, &staged_metadata);
+    let _ = remove_if_same_file(&backup, &obsolete_metadata);
+    Ok(())
+}
+
 /// Publishes a group of newly staged documents with rollback of this group's publications.
 ///
 /// Every payload is staged and synchronized before the first destination is created. Destinations
