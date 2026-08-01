@@ -9,6 +9,7 @@ pub(crate) struct BoundedRead {
     pub(crate) path: PathBuf,
     pub(crate) maximum: u64,
     pub(crate) description: String,
+    optional: bool,
 }
 
 impl BoundedRead {
@@ -17,6 +18,17 @@ impl BoundedRead {
             path,
             maximum,
             description: description.into(),
+            optional: false,
+        }
+    }
+
+    /// Creates a bounded sibling read that is omitted only when the path does not exist.
+    pub(crate) fn optional(path: PathBuf, maximum: u64, description: impl Into<String>) -> Self {
+        Self {
+            path,
+            maximum,
+            description: description.into(),
+            optional: true,
         }
     }
 }
@@ -75,16 +87,25 @@ impl DocumentLoader {
                 let loaded = requests
                     .into_iter()
                     .map(|request| {
-                        crate::dialogs::read_regular_bounded(
+                        match crate::dialogs::read_regular_bounded(
                             &request.path,
                             request.maximum,
                             &request.description,
-                        )
-                        .map(|bytes| (request.path, bytes))
-                        .map_err(|error| error.to_string())
+                        ) {
+                            Ok(bytes) => Ok(Some((request.path, bytes))),
+                            Err(error)
+                                if request.optional
+                                    && error.kind() == std::io::ErrorKind::NotFound =>
+                            {
+                                Ok(None)
+                            }
+                            Err(error) => Err(error.to_string()),
+                        }
                     })
                     .collect::<Result<Vec<_>, _>>()
-                    .map(|files| LoadedDocument { files });
+                    .map(|files| LoadedDocument {
+                        files: files.into_iter().flatten().collect(),
+                    });
                 let _send_result = sender.send(loaded);
             })
             .map_err(|error| format!("could not create document-loader worker: {error}"))?;
@@ -211,6 +232,36 @@ mod tests {
         assert!(loader.wait_for_test().is_err());
         fs::remove_file(first).unwrap();
         fs::remove_file(second).unwrap();
+    }
+
+    #[test]
+    fn optional_read_omits_only_a_missing_sibling() {
+        let required = path("optional-required");
+        let missing = path("optional-missing");
+        fs::write(&required, [1, 2]).unwrap();
+        let mut loader = DocumentLoader::default();
+        loader
+            .start(vec![
+                BoundedRead::new(required.clone(), 2, "required fixture"),
+                BoundedRead::optional(missing, 1, "optional fixture"),
+            ])
+            .unwrap();
+        assert_eq!(
+            loader.wait_for_test().unwrap().files,
+            vec![(required.clone(), vec![1, 2])]
+        );
+
+        let invalid = path("optional-directory");
+        fs::create_dir(&invalid).unwrap();
+        loader
+            .start(vec![
+                BoundedRead::new(required.clone(), 2, "required fixture"),
+                BoundedRead::optional(invalid.clone(), 1, "optional fixture"),
+            ])
+            .unwrap();
+        assert!(loader.wait_for_test().is_err());
+        fs::remove_dir(invalid).unwrap();
+        fs::remove_file(required).unwrap();
     }
 
     #[test]

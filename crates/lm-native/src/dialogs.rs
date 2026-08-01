@@ -131,13 +131,6 @@ pub(crate) fn choose_raw_palette_document() -> Option<PathBuf> {
         .pick_file()
 }
 
-pub(crate) fn choose_palette_mask_document() -> Option<PathBuf> {
-    rfd::FileDialog::new()
-        .set_title("Import Lunar Magic Palette Selection Mask")
-        .add_filter("Lunar Magic palette mask", &["palm"])
-        .pick_file()
-}
-
 pub(crate) fn choose_raw_palette_save_path() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Export Raw 257-Color SMW Palette")

@@ -8,11 +8,8 @@ use lm_graphics::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PendingTransfer {
     Raw,
-    RawWithMask,
     Tpl,
-    TplWithMask,
     Rgb,
-    RgbWithMask,
 }
 
 enum DecodedImport {
@@ -83,38 +80,11 @@ impl RomPaletteEditor {
                 .clicked()
                 && let Some(path) = dialogs::choose_raw_palette_document()
             {
-                self.start_raw_import(
-                    vec![BoundedRead::new(
-                        path,
-                        RawSnesPaletteFile::FILE_LEN as u64,
-                        "raw 257-color palette",
-                    )],
+                self.start_palette_import(
+                    path,
+                    RawSnesPaletteFile::FILE_LEN as u64,
+                    "raw 257-color palette",
                     PendingTransfer::Raw,
-                );
-            }
-            if ui
-                .add_enabled(
-                    !stale && !busy,
-                    egui::Button::new("Import raw palette + .palm…"),
-                )
-                .clicked()
-                && let Some(palette) = dialogs::choose_raw_palette_document()
-                && let Some(mask) = dialogs::choose_palette_mask_document()
-            {
-                self.start_raw_import(
-                    vec![
-                        BoundedRead::new(
-                            palette,
-                            RawSnesPaletteFile::FILE_LEN as u64,
-                            "raw 257-color palette",
-                        ),
-                        BoundedRead::new(
-                            mask,
-                            PaletteMaskFile::FILE_LEN as u64,
-                            "257-entry palette selection mask",
-                        ),
-                    ],
-                    PendingTransfer::RawWithMask,
                 );
             }
             if ui
@@ -124,7 +94,7 @@ impl RomPaletteEditor {
                 self.start_raw_export(revision);
             }
         });
-        ui.small("Raw transfer preserves all 257 native words; optional .palm selection follows Lunar Magic row-zero clearing.");
+        ui.small("Raw transfer preserves all 257 native words and automatically applies a same-name .palmask sidecar when present.");
         self.supported_palette_file_controls(ui, stale, busy, revision);
     }
 
@@ -141,35 +111,11 @@ impl RomPaletteEditor {
                 .clicked()
                 && let Some(path) = dialogs::choose_tpl_palette_document()
             {
-                self.start_import(
-                    vec![BoundedRead::new(
-                        path,
-                        TplPaletteFile::FILE_LEN as u64,
-                        "TPL v2 palette",
-                    )],
+                self.start_palette_import(
+                    path,
+                    TplPaletteFile::FILE_LEN as u64,
+                    "TPL v2 palette",
                     PendingTransfer::Tpl,
-                );
-            }
-            if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import TPL v2 + .palm…"))
-                .clicked()
-                && let Some(palette) = dialogs::choose_tpl_palette_document()
-                && let Some(mask) = dialogs::choose_palette_mask_document()
-            {
-                self.start_import(
-                    vec![
-                        BoundedRead::new(
-                            palette,
-                            TplPaletteFile::FILE_LEN as u64,
-                            "TPL v2 palette",
-                        ),
-                        BoundedRead::new(
-                            mask,
-                            PaletteMaskFile::FILE_LEN as u64,
-                            "257-entry palette selection mask",
-                        ),
-                    ],
-                    PendingTransfer::TplWithMask,
                 );
             }
             if ui
@@ -185,31 +131,11 @@ impl RomPaletteEditor {
                 .clicked()
                 && let Some(path) = dialogs::choose_rgb_palette_document()
             {
-                self.start_import(
-                    vec![BoundedRead::new(
-                        path,
-                        RgbPaletteFile::FILE_LEN as u64,
-                        "RGB24 palette",
-                    )],
+                self.start_palette_import(
+                    path,
+                    RgbPaletteFile::FILE_LEN as u64,
+                    "RGB24 palette",
                     PendingTransfer::Rgb,
-                );
-            }
-            if ui
-                .add_enabled(!stale && !busy, egui::Button::new("Import RGB24 + .palm…"))
-                .clicked()
-                && let Some(palette) = dialogs::choose_rgb_palette_document()
-                && let Some(mask) = dialogs::choose_palette_mask_document()
-            {
-                self.start_import(
-                    vec![
-                        BoundedRead::new(palette, RgbPaletteFile::FILE_LEN as u64, "RGB24 palette"),
-                        BoundedRead::new(
-                            mask,
-                            PaletteMaskFile::FILE_LEN as u64,
-                            "257-entry palette selection mask",
-                        ),
-                    ],
-                    PendingTransfer::RgbWithMask,
                 );
             }
             if ui
@@ -219,11 +145,17 @@ impl RomPaletteEditor {
                 self.start_rgb_export(revision);
             }
         });
-        ui.small("TPL/RGB transfer uses retained installed-to-supported ordering; optional .palm selection preserves unselected colors and clears selected row-zero entries 1–15.");
+        ui.small("TPL/RGB transfer uses retained installed-to-supported ordering; an automatic same-name .palmask preserves unselected colors and clears selected row-zero entries 1–15.");
     }
 
-    fn start_raw_import(&mut self, requests: Vec<BoundedRead>, pending: PendingTransfer) {
-        self.start_import(requests, pending);
+    fn start_palette_import(
+        &mut self,
+        path: std::path::PathBuf,
+        maximum: u64,
+        description: &'static str,
+        pending: PendingTransfer,
+    ) {
+        self.start_import(palette_import_requests(path, maximum, description), pending);
     }
 
     fn start_import(&mut self, requests: Vec<BoundedRead>, pending: PendingTransfer) {
@@ -341,57 +273,67 @@ fn encode_rgb_export(
         .map_err(|error| error.to_string())
 }
 
+fn palette_import_requests(
+    path: std::path::PathBuf,
+    maximum: u64,
+    description: &'static str,
+) -> Vec<BoundedRead> {
+    let mask = path.with_extension("palmask");
+    vec![
+        BoundedRead::new(path, maximum, description),
+        BoundedRead::optional(
+            mask,
+            PaletteMaskFile::FILE_LEN as u64,
+            "257-entry palette selection mask",
+        ),
+    ]
+}
+
+fn palette_and_optional_mask(
+    loaded: crate::document_loader::LoadedDocument,
+    description: &str,
+) -> Result<(Vec<u8>, PaletteMaskFile), String> {
+    let mut files = loaded.files.into_iter();
+    let (_, palette) = files
+        .next()
+        .ok_or_else(|| format!("{description} loader returned no palette"))?;
+    let mask = files
+        .next()
+        .map(|(_, bytes)| PaletteMaskFile::decode(&bytes).map_err(|error| error.to_string()))
+        .transpose()?
+        .unwrap_or_else(PaletteMaskFile::all_selected);
+    if files.next().is_some() {
+        return Err(format!(
+            "{description} loader returned more than one palette mask"
+        ));
+    }
+    Ok((palette, mask))
+}
+
 fn decode_import(
     pending: Option<PendingTransfer>,
     loaded: crate::document_loader::LoadedDocument,
 ) -> Result<DecodedImport, String> {
     match pending.ok_or("raw palette load lost its request kind")? {
         PendingTransfer::Raw => {
-            let [(_, bytes)] = loaded.into_exact::<1>("raw palette")?;
+            let (bytes, mask) = palette_and_optional_mask(loaded, "raw palette")?;
             Ok(DecodedImport::Raw(
                 RawSnesPaletteFile::decode(&bytes).map_err(|error| error.to_string())?,
-                PaletteMaskFile::all_selected(),
-            ))
-        }
-        PendingTransfer::RawWithMask => {
-            let [(_, palette), (_, mask)] = loaded.into_exact::<2>("raw palette and mask")?;
-            Ok(DecodedImport::Raw(
-                RawSnesPaletteFile::decode(&palette).map_err(|error| error.to_string())?,
-                PaletteMaskFile::decode(&mask).map_err(|error| error.to_string())?,
+                mask,
             ))
         }
         PendingTransfer::Tpl => {
-            let [(_, bytes)] = loaded.into_exact::<1>("TPL v2 palette")?;
+            let (bytes, mask) = palette_and_optional_mask(loaded, "TPL v2 palette")?;
             let file = TplPaletteFile::decode(&bytes).map_err(|error| error.to_string())?;
             Ok(DecodedImport::Supported {
                 palette: file.palette,
-                mask: PaletteMaskFile::all_selected(),
-                rgb_expansion: None,
-            })
-        }
-        PendingTransfer::TplWithMask => {
-            let [(_, palette), (_, mask)] = loaded.into_exact::<2>("TPL v2 palette and mask")?;
-            let file = TplPaletteFile::decode(&palette).map_err(|error| error.to_string())?;
-            Ok(DecodedImport::Supported {
-                palette: file.palette,
-                mask: PaletteMaskFile::decode(&mask).map_err(|error| error.to_string())?,
+                mask,
                 rgb_expansion: None,
             })
         }
         PendingTransfer::Rgb => {
-            let [(_, bytes)] = loaded.into_exact::<1>("RGB24 palette")?;
-            let file = RgbPaletteFile::decode(&bytes).map_err(|error| error.to_string())?;
-            let expansion = file.detected_expansion;
-            Ok(DecodedImport::Supported {
-                palette: file.to_snes_palette(),
-                mask: PaletteMaskFile::all_selected(),
-                rgb_expansion: Some(expansion),
-            })
-        }
-        PendingTransfer::RgbWithMask => {
-            let [(_, palette), (_, mask)] = loaded.into_exact::<2>("RGB24 palette and mask")?;
-            let mask = PaletteMaskFile::decode(&mask).map_err(|error| error.to_string())?;
-            let file = RgbPaletteFile::decode_with_mask(&palette, &mask)
+            let (bytes, mask) = palette_and_optional_mask(loaded, "RGB24 palette")?;
+            let file = RgbPaletteFile::decode_with_mask(&bytes, &mask)
                 .map_err(|error| error.to_string())?;
             let expansion = file.detected_expansion;
             Ok(DecodedImport::Supported {
@@ -424,11 +366,11 @@ mod tests {
         let loaded = LoadedDocument {
             files: vec![
                 (PathBuf::from("palette.bin"), raw),
-                (PathBuf::from("palette.palm"), mask.clone()),
+                (PathBuf::from("palette.palmask"), mask.clone()),
             ],
         };
         let DecodedImport::Raw(actual, actual_mask) =
-            decode_import(Some(PendingTransfer::RawWithMask), loaded).unwrap()
+            decode_import(Some(PendingTransfer::Raw), loaded).unwrap()
         else {
             panic!("raw transfer decodes as raw");
         };
@@ -501,11 +443,11 @@ mod tests {
         entries[0] = 0x80;
         entries[256] = 7;
         let decoded = decode_import(
-            Some(PendingTransfer::RgbWithMask),
+            Some(PendingTransfer::Rgb),
             LoadedDocument {
                 files: vec![
                     (PathBuf::from("palette.pal"), rgb),
-                    (PathBuf::from("palette.palm"), entries.clone()),
+                    (PathBuf::from("palette.palmask"), entries.clone()),
                 ],
             },
         )
@@ -519,5 +461,20 @@ mod tests {
             panic!("masked RGB transfer retains selector and selected expansion evidence");
         };
         assert_eq!(mask.encode(), entries);
+    }
+
+    #[test]
+    fn import_requests_use_automatic_same_name_palmask_sibling() {
+        let requests = palette_import_requests(
+            PathBuf::from("palettes/Level 105.tpl"),
+            TplPaletteFile::FILE_LEN as u64,
+            "TPL v2 palette",
+        );
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].path, PathBuf::from("palettes/Level 105.tpl"));
+        assert_eq!(
+            requests[1].path,
+            PathBuf::from("palettes/Level 105.palmask")
+        );
     }
 }

@@ -45,7 +45,7 @@ impl RawSnesPaletteFile {
     }
 }
 
-/// A lossless `.palm` selection sidecar. Lunar Magic treats zero as retained and every nonzero
+/// A lossless `.palmask` selection sidecar. Lunar Magic treats zero as retained and every nonzero
 /// byte as selected, so noncanonical nonzero values are preserved rather than normalized.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PaletteMaskFile {
@@ -73,7 +73,7 @@ impl PaletteMaskFile {
         })
     }
 
-    /// Constructs a mask with all entries selected, matching Lunar Magic when no `.palm` sidecar
+    /// Constructs a mask with all entries selected, matching Lunar Magic when no `.palmask` sidecar
     /// exists.
     #[must_use]
     pub fn all_selected() -> Self {

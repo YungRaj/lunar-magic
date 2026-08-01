@@ -30,7 +30,8 @@ impl RgbPaletteFile {
         Self::decode_selected(bytes, None)
     }
 
-    /// Decodes RGB triplets while limiting expansion evidence to `.palm`-selected entries, exactly
+    /// Decodes RGB triplets while limiting expansion evidence to `.palmask`-selected entries,
+    /// exactly
     /// like Lunar Magic's importer. RGB bytes remain lossless regardless of selection.
     ///
     /// # Errors

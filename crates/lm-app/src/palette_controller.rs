@@ -134,7 +134,7 @@ impl PaletteController {
         self.import_supported_palette_with_mask(source, &PaletteMaskFile::all_selected())
     }
 
-    /// Imports selected TPL/RGB colors using their natural supported-file `.palm` indices.
+    /// Imports selected TPL/RGB colors using their natural supported-file `.palmask` indices.
     ///
     /// Supported index 0 maps to installed word 0 and indices 1–255 map to installed words
     /// 2–256. Installed backdrop word 1 is never selected by this file order. Selected row-zero

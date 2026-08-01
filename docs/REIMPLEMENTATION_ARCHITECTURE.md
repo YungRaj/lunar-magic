@@ -156,7 +156,7 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   256 little-endian BGR555 words. Its decoder does not conflate version 0's RGB triplets with native
   words, and its own CLI normalization/observation path uses the same grouped publication rules.
 - Raw native palette interchange is modeled as exactly 257 BGR555 words, paired when requested
-  with a lossless 257-byte `.palm` mask where zero retains the destination and any nonzero byte
+  with a lossless 257-byte `.palmask` mask where zero retains the destination and any nonzero byte
   selects the source. Masked application validates all three shapes before cloning, applies selected
   colors, then clears selected indices `0, 16, …, 240` exactly like the recovered loader. Palette
   argument parsing is isolated in a focused CLI module rather than growing the generic asset parser.

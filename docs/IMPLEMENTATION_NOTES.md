@@ -106,7 +106,7 @@ instead of deleting from stale pathname state.
   BGR555 palette persistence with checked two-byte aggregate sizing, lossless exact-length legacy
   and expanded `.smwpal` working-palette files including the expanded auxiliary region, exact
   version-2 TPL files with 256 native color words, exact 257-word raw SNES palette files and
-  lossless 257-byte `.palm` selection masks with failure-atomic masked-import semantics, and exact
+  lossless 257-byte `.palmask` selection masks with failure-atomic masked-import semantics, and exact
   256-color RGB24 `.pal` files with recovered high-bit versus bit-replicated expansion detection,
   fixed-record ExAnimation sets
   with visible-slot and aggregate-size validation, compact ExAnimation
@@ -859,7 +859,7 @@ cargo run -p lm-cli -- palette-file palette.lmpal normalized.lmpal palette.obs
 cargo run -p lm-cli -- smw-palette-file SMW_Shared.smwpal normalized.smwpal shared-palette.obs
 cargo run -p lm-cli -- tpl-palette-file palette.tpl normalized.tpl tpl-palette.obs
 cargo run -p lm-cli -- raw-palette-file palette.bin normalized.bin raw-palette.obs
-cargo run -p lm-cli -- palette-mask-file palette.palm normalized.palm palette-mask.obs
+cargo run -p lm-cli -- palette-mask-file palette.palmask normalized.palmask palette-mask.obs
 cargo run -p lm-cli -- rgb-palette-file palette.pal normalized.pal rgb-palette.obs
 cargo run -p lm-cli -- map16-page-file page.map16 normalized.map16 page.obs
 cargo run -p lm-cli -- exanimation-file animation.lmexan modes.bin 20 normalized.lmexan animation.obs
@@ -1612,9 +1612,11 @@ proves that installed word 0 plus words 2 through 256 are supported-file words 0
 installed word 1 remains the separate backdrop. TPL/RGB import preserves that backdrop and clears
 only supported row-zero entries 16 through 240, matching the live import/re-export artifact. RGB
 imports retain the detected high-bit or replicated-bit expansion convention for reciprocal export.
-Every route optionally consumes the exact lossless 257-byte `.palm` selector. Supported-file
-selectors use their natural 256-color order: entry 0 addresses installed word 0, entries 1–255
-address installed words 2–256, and selector entry 256 has no supported-file color to address.
+Every route automatically discovers and optionally consumes the exact lossless 257-byte
+same-basename `.palmask` selector, matching the bundled 3.63 help and executable extension string.
+Only a missing sibling is ignored; malformed, non-regular, oversized, or unreadable siblings reject
+the import. Supported-file selectors use their natural 256-color order: entry 0 addresses installed
+word 0, entries 1–255 address installed words 2–256, and selector entry 256 has no supported-file color to address.
 Thus the separate installed backdrop remains unreachable and retained. Masked RGB expansion
 detection considers only selected triplets, and only selected supported row-zero entries are
 cleared. All routes compute only actual word differences before the controller's immutable

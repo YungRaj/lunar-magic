@@ -41,8 +41,8 @@ fn built_cli_normalizes_and_observes_raw_palette_and_mask() {
     let observed = Observation::from_text(&fs::read_to_string(&raw_observation).unwrap()).unwrap();
     assert_eq!(observed.get("raw-palette/color-count"), Some("257"));
 
-    let mask_input = directory.join("selection.palm");
-    let mask_output = directory.join("normalized.palm");
+    let mask_input = directory.join("selection.palmask");
+    let mask_output = directory.join("normalized.palmask");
     let mask_observation = directory.join("mask.obs");
     let mut mask = vec![0; PaletteMaskFile::FILE_LEN];
     mask[256] = 0x80;

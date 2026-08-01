@@ -7,7 +7,7 @@ pub fn observe_raw_palette(file: &RawSnesPaletteFile) -> Observation {
     prefixed_palette("raw-palette", &file.palette)
 }
 
-/// Produces an entry-addressable snapshot of a lossless `.palm` selection sidecar.
+/// Produces an entry-addressable snapshot of a lossless `.palmask` selection sidecar.
 #[must_use]
 pub fn observe_palette_mask(mask: &PaletteMaskFile) -> Observation {
     let mut result = Observation::new();
