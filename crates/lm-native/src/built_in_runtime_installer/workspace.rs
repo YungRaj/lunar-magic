@@ -8,6 +8,7 @@ pub(super) enum BuiltInRuntime {
     CompleteLayer3,
     Lfix3Core,
     Map16Runtime,
+    Layer2Runtime,
     Sprite19Fix,
     ExpandedSharedPalettes,
 }
@@ -19,6 +20,7 @@ impl BuiltInRuntime {
             Self::CompleteLayer3 => "Complete Layer 3 family (includes expanded settings)",
             Self::Lfix3Core => "Lfix3 core runtime and shared tables",
             Self::Map16Runtime => "Complete Map16 runtime and auxiliary table",
+            Self::Layer2Runtime => "Layer 2 object-data runtime format $103",
             Self::Sprite19Fix => "Sprite 19 ASM fix",
             Self::ExpandedSharedPalettes => "Expanded shared/custom palettes",
         }
@@ -40,6 +42,9 @@ impl BuiltInRuntime {
             Self::Map16Runtime => {
                 "Install the recovered fixed Map16 hooks and the relocated 32-KiB auxiliary table."
             }
+            Self::Layer2Runtime => {
+                "Migrate an authenticated format-$102 Layer 2 pointer/descriptor table and runtime hook to format $103."
+            }
             Self::Sprite19Fix => {
                 "Install the recovered shared helper and branch patch that make sprite $19 safe on any level."
             }
@@ -56,6 +61,7 @@ pub(super) struct BuiltInRuntimeWorkspace {
     pub runtime: BuiltInRuntime,
     lfix3_generation: lm_profile::SmwUsV1Lfix3Generation,
     map16_generation: lm_profile::SmwUsV1Map16RuntimeGeneration,
+    layer2_generation: lm_profile::SmwUsV1Layer2RuntimeGeneration,
     sprite19_fix_installed: bool,
 }
 
@@ -84,6 +90,8 @@ impl BuiltInRuntimeWorkspace {
         let map16_generation =
             lm_profile::probe_smw_us_v1_map16_runtime_generation(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?;
+        let layer2_generation = lm_profile::probe_smw_us_v1_layer2_runtime_generation(&project.rom)
+            .map_err(|error| error.to_string())?;
         let sprite19_fix_installed =
             lm_profile::detect_smw_us_v1_sprite19_fix(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?
@@ -93,6 +101,7 @@ impl BuiltInRuntimeWorkspace {
             runtime: BuiltInRuntime::default(),
             lfix3_generation,
             map16_generation,
+            layer2_generation,
             sprite19_fix_installed,
         })
     }
@@ -108,6 +117,10 @@ impl BuiltInRuntimeWorkspace {
             }
             BuiltInRuntime::Map16Runtime => {
                 self.map16_generation == lm_profile::SmwUsV1Map16RuntimeGeneration::StageFourCurrent
+            }
+            BuiltInRuntime::Layer2Runtime => {
+                self.layer2_generation
+                    == lm_profile::SmwUsV1Layer2RuntimeGeneration::Format103Current
             }
             BuiltInRuntime::Sprite19Fix => self.sprite19_fix_installed,
             _ => false,
@@ -127,6 +140,10 @@ impl BuiltInRuntimeWorkspace {
                     | lm_profile::SmwUsV1Map16RuntimeGeneration::StageTwoLegacy
                     | lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy
             ),
+            BuiltInRuntime::Layer2Runtime => {
+                self.layer2_generation
+                    == lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy
+            }
             _ => false,
         }
     }
@@ -145,6 +162,17 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::CompleteLayer3 => Command::InstallLayer3 { rev: self.revision },
             BuiltInRuntime::Lfix3Core => Command::InstallLfix3 { rev: self.revision },
             BuiltInRuntime::Map16Runtime => Command::InstallMap16Runtime { rev: self.revision },
+            BuiltInRuntime::Layer2Runtime => {
+                if self.layer2_generation
+                    != lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy
+                {
+                    return Err(format!(
+                        "Layer 2 migration currently requires authenticated format $102; detected {:?}",
+                        self.layer2_generation
+                    ));
+                }
+                Command::InstallLayer2Runtime { rev: self.revision }
+            }
             BuiltInRuntime::Sprite19Fix => Command::InstallSprite19Fix { rev: self.revision },
             BuiltInRuntime::ExpandedSharedPalettes => {
                 Command::InstallExpandedSharedPalettes { rev: self.revision }
@@ -200,6 +228,15 @@ mod tests {
             Command::InstallSprite19Fix { rev: 0 }
         ));
         assert!(workspace.prepare(app.project_revision() + 1).is_err());
+
+        workspace.runtime = BuiltInRuntime::Layer2Runtime;
+        assert!(workspace.prepare(app.project_revision()).is_err());
+        workspace.layer2_generation = lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy;
+        assert!(workspace.selection_migrates_legacy_runtime());
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallLayer2Runtime { rev: 0 }
+        ));
 
         workspace.runtime = BuiltInRuntime::Lfix3Core;
         workspace.lfix3_generation = lm_profile::SmwUsV1Lfix3Generation::Generation2;

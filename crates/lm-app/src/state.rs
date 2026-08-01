@@ -101,6 +101,8 @@ pub enum AppError {
     Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
     Map16RuntimeLegacyMigration(lm_profile::SmwUsV1Map16LegacyMigrationBuildError),
     Map16RuntimeStageThreeMigration(lm_profile::SmwUsV1Map16StageThreeMigrationBuildError),
+    Layer2RuntimeMigration(lm_profile::SmwUsV1Layer2Format102MigrationError),
+    Layer2RuntimeProbe(lm_profile::SmwUsV1Layer2LayoutError),
     Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError),
     SecondaryExitInstallPlan(lm_profile::SecondaryExitInstallBuildError),
     SecondaryExitLfix3AuthenticationMissing,
@@ -115,6 +117,9 @@ pub enum AppError {
     Lfix3LegacyMigrationRequired,
     Map16RuntimeIdentityMismatch,
     Map16RuntimeAlreadyInstalled,
+    Layer2RuntimeIdentityMismatch,
+    Layer2RuntimeAlreadyInstalled,
+    Layer2RuntimeFormat102Required(lm_profile::SmwUsV1Layer2RuntimeGeneration),
     Sprite19FixIdentityMismatch,
     Sprite19FixAlreadyInstalled,
     NativeOverworldPathIdentityMismatch,
@@ -352,6 +357,18 @@ impl From<lm_profile::SmwUsV1Map16LegacyMigrationBuildError> for AppError {
 impl From<lm_profile::SmwUsV1Map16StageThreeMigrationBuildError> for AppError {
     fn from(value: lm_profile::SmwUsV1Map16StageThreeMigrationBuildError) -> Self {
         Self::Map16RuntimeStageThreeMigration(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Layer2Format102MigrationError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Layer2Format102MigrationError) -> Self {
+        Self::Layer2RuntimeMigration(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Layer2LayoutError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Layer2LayoutError) -> Self {
+        Self::Layer2RuntimeProbe(value)
     }
 }
 
@@ -762,6 +779,7 @@ impl AppState {
             Command::InstallLayer3 { rev } => self.install(rev, true)?,
             Command::InstallLfix3 { rev } => self.install_lfix3(rev)?,
             Command::InstallMap16Runtime { rev } => self.install_map16_runtime(rev)?,
+            Command::InstallLayer2Runtime { rev } => self.install_layer2_runtime(rev)?,
             Command::InstallSprite19Fix { rev } => self.install_sprite19_fix(rev)?,
             Command::InstallExpandedSharedPalettes { rev } => {
                 self.install_native_expanded_shared_palettes(rev)?

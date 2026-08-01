@@ -74,6 +74,11 @@ impl BuiltInRuntimeInstaller {
                 );
                 ui.selectable_value(
                     &mut workspace.runtime,
+                    BuiltInRuntime::Layer2Runtime,
+                    BuiltInRuntime::Layer2Runtime.label(),
+                );
+                ui.selectable_value(
+                    &mut workspace.runtime,
                     BuiltInRuntime::Sprite19Fix,
                     BuiltInRuntime::Sprite19Fix.label(),
                 );
@@ -96,6 +101,10 @@ impl BuiltInRuntimeInstaller {
                 BuiltInRuntime::Map16Runtime => {
                     "The authenticated stage-three Map16 runtime will be migrated in place while \
                      leaving existing Map16 data and allocations untouched."
+                }
+                BuiltInRuntime::Layer2Runtime => {
+                    "The authenticated format-$102 pointer table and per-level descriptors will \
+                     be converted to format $103 together with the exact current runtime hook."
                 }
                 _ => unreachable!(),
             });
@@ -415,6 +424,49 @@ mod tests {
         assert_eq!(app.project().unwrap().history.undo_len(), 1);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), stage_three);
+    }
+
+    #[test]
+    #[ignore = "requires an externally supplied Lunar Magic 3.01 format-$102 ROM"]
+    fn layer2_runtime_selection_migrates_authentic_format_102_and_undoes_exactly() {
+        let source = fs::read(
+            std::env::var_os("LM_LAYER2_FORMAT_102_ROM").expect("LM_LAYER2_FORMAT_102_ROM"),
+        )
+        .unwrap();
+        let mut app = AppState::default();
+        app.load_rom(source.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Layer2Runtime;
+        assert!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .selection_migrates_legacy_runtime()
+        );
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        assert!(matches!(command, Command::InstallLayer2Runtime { rev: 0 }));
+        app.dispatch(command).unwrap();
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_layer2_runtime_generation(&app.project().unwrap().rom)
+                .unwrap(),
+            lm_profile::SmwUsV1Layer2RuntimeGeneration::Format103Current
+        );
+        assert!(matches!(
+            app.dispatch(Command::InstallLayer2Runtime {
+                rev: app.project_revision()
+            }),
+            Err(lm_app::AppError::Layer2RuntimeAlreadyInstalled)
+        ));
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), source);
     }
 
     #[test]

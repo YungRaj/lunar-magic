@@ -210,6 +210,47 @@ impl AppState {
         }])
     }
 
+    pub(crate) fn install_layer2_runtime(
+        &mut self,
+        expected_revision: u64,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if expected_revision != self.project_revision {
+            return Err(AppError::StaleProjectRevision {
+                expected: expected_revision,
+                actual: self.project_revision,
+            });
+        }
+        self.require_no_pending_save()?;
+        self.ensure_project_revision_capacity()?;
+        let project = self.project.as_mut().ok_or(AppError::NoProject)?;
+        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+        if identity.game != SupportedGame::SuperMarioWorld
+            || identity.region != Region::NorthAmerica
+            || identity.revision != 0
+            || identity.mapper != Mapper::LoRom
+        {
+            return Err(AppError::Layer2RuntimeIdentityMismatch);
+        }
+        let generation = lm_profile::probe_smw_us_v1_layer2_runtime_generation(&project.rom)?;
+        match generation {
+            lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy => {}
+            lm_profile::SmwUsV1Layer2RuntimeGeneration::Format103Current => {
+                return Err(AppError::Layer2RuntimeAlreadyInstalled);
+            }
+            other => return Err(AppError::Layer2RuntimeFormat102Required(other)),
+        }
+        let plan = lm_profile::smw_us_v1_layer2_format_102_migration(project.rom.logical_bytes())?;
+        project.install_relocatable_patch(&plan)?;
+        self.advance_project_revision()?;
+        let description = "Migrate SMW US Layer 2 runtime format $102 to $103".to_owned();
+        self.status.clone_from(&description);
+        Ok(vec![FrontendEffect::ProjectChanged {
+            description,
+            mode: self.mode,
+            revision: self.project_revision,
+        }])
+    }
+
     pub(crate) fn install_sprite19_fix(
         &mut self,
         expected_revision: u64,

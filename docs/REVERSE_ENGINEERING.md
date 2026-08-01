@@ -876,7 +876,14 @@ opcodes `$5C`, `$4B`, and `$A9` at hook offset `$09` identify formats `$102`, `$
 respectively. Rust now classifies all four generations, rejects unknown `LM` versions, and refuses
 to treat legacy installed runtimes as pristine layouts. An authentic Lunar Magic 3.01 ROM selects
 format `$102`; a disposable Lunar Magic 3.63 `-ImportLevel` run upgrades it to `LM $0103`, providing
-the retained before/after migration oracle. In the retained installed SMW-US ROM,
+the retained before/after migration oracle. The recovered `$102` loop reads the complete Layer 1
+and Layer 2 three-byte pointer tables at logical `$02E000` and `$02E600`. Bank-`$FF` Layer 2
+pointers materialize in bank `$0C`; their descriptor becomes `$08` below raw boundary `$FFE8FE`
+and `$18` at or above it, with the special `$068000`/`$FFD900` pair redirected to `$FFDE54`.
+Non-sentinel pointers resolve their level-mode byte: object-backed modes receive descriptor zero,
+while compressed-tilemap modes retain only mask `$F6`. Rust's transactional migration reproduces
+all 1,536 pointer bytes, all 512 descriptors, and the exact 64-byte `$103` hook from the authentic
+3.01→3.63 oracle. In the retained installed SMW-US ROM,
 the headerless hook is `$077510`, the marker is `$07754C`, and descriptor entry `$3E` points to the
 512-byte per-level descriptor table at `$077310`. `ExpandLegacyLayer2TilemapLayout` (`004670D0`)
 uses bits 4–6 as the legacy expansion high byte and then normalizes the descriptor with

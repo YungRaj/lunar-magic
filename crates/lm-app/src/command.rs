@@ -86,6 +86,10 @@ pub enum Command {
     InstallMap16Runtime {
         rev: u64,
     },
+    /// Migrates an authenticated Lunar Magic Layer 2 format-$102 runtime to format `$103`.
+    InstallLayer2Runtime {
+        rev: u64,
+    },
     /// Installs Lunar Magic's recovered user-requested sprite `$19` ASM fix.
     InstallSprite19Fix {
         rev: u64,

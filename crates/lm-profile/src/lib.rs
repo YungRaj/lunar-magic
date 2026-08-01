@@ -10,6 +10,7 @@ mod expanded_settings_install;
 mod expanded_settings_runtime;
 mod expanded_settings_runtime_21c;
 mod expanded_settings_runtime_bundle;
+mod layer2_runtime_install;
 mod layer3_compatibility;
 mod layer3_dispatch_code;
 mod layer3_extended_runtime;
@@ -140,6 +141,9 @@ pub use expanded_settings_runtime_bundle::{
     SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_DESTINATIONS, resolve_expanded_settings_runtime_allocation,
     smw_us_v1_expanded_settings_fixed_writes, smw_us_v1_expanded_settings_runtime_bundle,
     smw_us_v1_expanded_settings_runtime_writes,
+};
+pub use layer2_runtime_install::{
+    SmwUsV1Layer2Format102MigrationError, smw_us_v1_layer2_format_102_migration,
 };
 pub use layer3_compatibility::{
     Layer3CompatibilityBuildError, SMW_US_V1_LAYER3_AUXILIARY_PAYLOAD_LEN,
