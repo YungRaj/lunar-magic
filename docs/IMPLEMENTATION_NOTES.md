@@ -1630,6 +1630,11 @@ palette format plus its same-basename `.palmask` as one rollback-safe group; all
 publish only the palette and recoverably remove an existing regular `.palmask`, matching the
 LM 2.42 changelog fix for stale masks. A palette collision restores that sidecar and publishes
 nothing; masked exports likewise replace neither destination.
+The installed palette surface also carries exact 16-word palette rows in its existing typed system
+clipboard envelope. Ctrl+left/right performs color copy/paste and adding Alt addresses the complete
+aligned row, with equivalent explicit controls. The standalone 257th installed word is not treated
+as a row. Paste requests retain their color/row target, are cleared across workspace lifecycles,
+reject stale or import-locked delivery, and submit the row as one ownership-atomic edit batch.
 Graphics mode likewise exposes a ROM-backed 4bpp pixel editor. It decodes the selected native GFX
 slot with the profile-selected LZ2/LZ3 codec, obtains palette zero through the same profile, and
 reuses the portable editor's nearest-neighbor tile painter and hit testing. Pixel changes are

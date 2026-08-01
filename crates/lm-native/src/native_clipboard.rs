@@ -55,6 +55,13 @@ pub(crate) fn encode_palette_color(color: Bgr555) -> Result<String, String> {
     encode(&ClipboardPayload::from_palette_colors(&[color]))
 }
 
+pub(crate) fn encode_palette_row(colors: &[Bgr555]) -> Result<String, String> {
+    if colors.len() != 16 {
+        return Err("palette-row copy requires exactly 16 colors".into());
+    }
+    encode(&ClipboardPayload::from_palette_colors(colors))
+}
+
 pub(crate) fn decode_palette_color(text: &str) -> Result<Bgr555, String> {
     let colors = decode(text)?
         .to_palette_colors()
@@ -63,6 +70,15 @@ pub(crate) fn decode_palette_color(text: &str) -> Result<Bgr555, String> {
         return Err("palette paste requires exactly one color".into());
     };
     Ok(*color)
+}
+
+pub(crate) fn decode_palette_row(text: &str) -> Result<[Bgr555; 16], String> {
+    let colors = decode(text)?
+        .to_palette_colors()
+        .map_err(|error| error.to_string())?;
+    colors
+        .try_into()
+        .map_err(|_| "palette-row paste requires exactly 16 colors".to_string())
 }
 
 pub(crate) fn encode_graphics_tile(tile: &IndexedTile) -> Result<String, String> {
@@ -278,6 +294,17 @@ mod tests {
         );
         let two = ClipboardPayload::from_palette_colors(&[Bgr555(1), Bgr555(2)]);
         assert!(decode_palette_color(&encode(&two).unwrap()).is_err());
+    }
+
+    #[test]
+    fn palette_row_requires_and_round_trips_exactly_sixteen_colors() {
+        let colors = std::array::from_fn(|index| {
+            Bgr555(u16::try_from(index).expect("sixteen palette entries fit u16"))
+        });
+        let text = encode_palette_row(&colors).unwrap();
+        assert_eq!(decode_palette_row(&text).unwrap(), colors);
+        assert!(encode_palette_row(&colors[..15]).is_err());
+        assert!(decode_palette_row(&encode_palette_color(Bgr555(1)).unwrap()).is_err());
     }
 
     #[test]

@@ -75,6 +75,7 @@ impl RomPaletteEditor {
                 self.rgb_expansion = None;
                 self.palette_mask = vec![1; colors];
                 self.palette_mask_edit = false;
+                self.palette_paste_target = None;
                 self.search_start.clear();
                 self.search_end.clear();
             }
@@ -123,6 +124,7 @@ impl RomPaletteEditor {
         self.rgb_expansion = None;
         self.palette_mask.clear();
         self.palette_mask_edit = false;
+        self.palette_paste_target = None;
         self.pending_close = None;
     }
 
