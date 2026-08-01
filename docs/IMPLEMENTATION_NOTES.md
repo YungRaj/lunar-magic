@@ -1612,9 +1612,14 @@ proves that installed word 0 plus words 2 through 256 are supported-file words 0
 installed word 1 remains the separate backdrop. TPL/RGB import preserves that backdrop and clears
 only supported row-zero entries 16 through 240, matching the live import/re-export artifact. RGB
 imports retain the detected high-bit or replicated-bit expansion convention for reciprocal export.
-Raw imports optionally consume the exact lossless `.palm` selector. All routes compute only actual
-word differences before the controller's immutable ownership check, so a late protected color
-rejects the complete staged import; revision, worker, commit, and close gates remain shared.
+Every route optionally consumes the exact lossless 257-byte `.palm` selector. Supported-file
+selectors use their natural 256-color order: entry 0 addresses installed word 0, entries 1–255
+address installed words 2–256, and selector entry 256 has no supported-file color to address.
+Thus the separate installed backdrop remains unreachable and retained. Masked RGB expansion
+detection considers only selected triplets, and only selected supported row-zero entries are
+cleared. All routes compute only actual word differences before the controller's immutable
+ownership check, so a late protected color rejects the complete staged import; revision, worker,
+commit, and close gates remain shared.
 Graphics mode likewise exposes a ROM-backed 4bpp pixel editor. It decodes the selected native GFX
 slot with the profile-selected LZ2/LZ3 codec, obtains palette zero through the same profile, and
 reuses the portable editor's nearest-neighbor tile painter and hit testing. Pixel changes are

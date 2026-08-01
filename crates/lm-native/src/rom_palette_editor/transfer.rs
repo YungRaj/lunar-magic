@@ -10,13 +10,16 @@ pub(super) enum PendingTransfer {
     Raw,
     RawWithMask,
     Tpl,
+    TplWithMask,
     Rgb,
+    RgbWithMask,
 }
 
 enum DecodedImport {
     Raw(RawSnesPaletteFile, PaletteMaskFile),
     Supported {
         palette: lm_graphics::Palette,
+        mask: PaletteMaskFile,
         rgb_expansion: Option<RgbChannelExpansion>,
     },
 }
@@ -40,11 +43,12 @@ impl RomPaletteEditor {
                         .map_err(|error| error.to_string()),
                     DecodedImport::Supported {
                         palette,
+                        mask,
                         rgb_expansion,
                     } => {
                         workspace
                             .controller
-                            .import_supported_palette(&palette)
+                            .import_supported_palette_with_mask(&palette, &mask)
                             .map_err(|error| error.to_string())?;
                         if let Some(expansion) = rgb_expansion {
                             self.rgb_expansion = Some(expansion);
@@ -121,6 +125,16 @@ impl RomPaletteEditor {
             }
         });
         ui.small("Raw transfer preserves all 257 native words; optional .palm selection follows Lunar Magic row-zero clearing.");
+        self.supported_palette_file_controls(ui, stale, busy, revision);
+    }
+
+    fn supported_palette_file_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        busy: bool,
+        revision: u64,
+    ) {
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(!stale && !busy, egui::Button::new("Import TPL v2…"))
@@ -137,11 +151,35 @@ impl RomPaletteEditor {
                 );
             }
             if ui
+                .add_enabled(!stale && !busy, egui::Button::new("Import TPL v2 + .palm…"))
+                .clicked()
+                && let Some(palette) = dialogs::choose_tpl_palette_document()
+                && let Some(mask) = dialogs::choose_palette_mask_document()
+            {
+                self.start_import(
+                    vec![
+                        BoundedRead::new(
+                            palette,
+                            TplPaletteFile::FILE_LEN as u64,
+                            "TPL v2 palette",
+                        ),
+                        BoundedRead::new(
+                            mask,
+                            PaletteMaskFile::FILE_LEN as u64,
+                            "257-entry palette selection mask",
+                        ),
+                    ],
+                    PendingTransfer::TplWithMask,
+                );
+            }
+            if ui
                 .add_enabled(!stale && !busy, egui::Button::new("Export TPL v2…"))
                 .clicked()
             {
                 self.start_tpl_export(revision);
             }
+        });
+        ui.horizontal(|ui| {
             if ui
                 .add_enabled(!stale && !busy, egui::Button::new("Import RGB24…"))
                 .clicked()
@@ -157,13 +195,31 @@ impl RomPaletteEditor {
                 );
             }
             if ui
+                .add_enabled(!stale && !busy, egui::Button::new("Import RGB24 + .palm…"))
+                .clicked()
+                && let Some(palette) = dialogs::choose_rgb_palette_document()
+                && let Some(mask) = dialogs::choose_palette_mask_document()
+            {
+                self.start_import(
+                    vec![
+                        BoundedRead::new(palette, RgbPaletteFile::FILE_LEN as u64, "RGB24 palette"),
+                        BoundedRead::new(
+                            mask,
+                            PaletteMaskFile::FILE_LEN as u64,
+                            "257-entry palette selection mask",
+                        ),
+                    ],
+                    PendingTransfer::RgbWithMask,
+                );
+            }
+            if ui
                 .add_enabled(!stale && !busy, egui::Button::new("Export RGB24…"))
                 .clicked()
             {
                 self.start_rgb_export(revision);
             }
         });
-        ui.small("TPL/RGB transfer uses the retained installed-to-supported ordering and clears row-zero entries 1–15 on import.");
+        ui.small("TPL/RGB transfer uses retained installed-to-supported ordering; optional .palm selection preserves unselected colors and clears selected row-zero entries 1–15.");
     }
 
     fn start_raw_import(&mut self, requests: Vec<BoundedRead>, pending: PendingTransfer) {
@@ -309,6 +365,16 @@ fn decode_import(
             let file = TplPaletteFile::decode(&bytes).map_err(|error| error.to_string())?;
             Ok(DecodedImport::Supported {
                 palette: file.palette,
+                mask: PaletteMaskFile::all_selected(),
+                rgb_expansion: None,
+            })
+        }
+        PendingTransfer::TplWithMask => {
+            let [(_, palette), (_, mask)] = loaded.into_exact::<2>("TPL v2 palette and mask")?;
+            let file = TplPaletteFile::decode(&palette).map_err(|error| error.to_string())?;
+            Ok(DecodedImport::Supported {
+                palette: file.palette,
+                mask: PaletteMaskFile::decode(&mask).map_err(|error| error.to_string())?,
                 rgb_expansion: None,
             })
         }
@@ -318,6 +384,19 @@ fn decode_import(
             let expansion = file.detected_expansion;
             Ok(DecodedImport::Supported {
                 palette: file.to_snes_palette(),
+                mask: PaletteMaskFile::all_selected(),
+                rgb_expansion: Some(expansion),
+            })
+        }
+        PendingTransfer::RgbWithMask => {
+            let [(_, palette), (_, mask)] = loaded.into_exact::<2>("RGB24 palette and mask")?;
+            let mask = PaletteMaskFile::decode(&mask).map_err(|error| error.to_string())?;
+            let file = RgbPaletteFile::decode_with_mask(&palette, &mask)
+                .map_err(|error| error.to_string())?;
+            let expansion = file.detected_expansion;
+            Ok(DecodedImport::Supported {
+                palette: file.to_snes_palette(),
+                mask,
                 rgb_expansion: Some(expansion),
             })
         }
@@ -384,12 +463,14 @@ mod tests {
         .unwrap();
         let DecodedImport::Supported {
             palette: actual,
+            mask,
             rgb_expansion: None,
         } = decoded
         else {
             panic!("TPL transfer decodes as supported native words");
         };
         assert_eq!(actual, palette);
+        assert!(mask.entries().iter().all(|entry| *entry == 1));
 
         let rgb = encode_rgb_export(&palette, RgbChannelExpansion::HighBits).unwrap();
         let decoded = decode_import(
@@ -401,11 +482,42 @@ mod tests {
         .unwrap();
         let DecodedImport::Supported {
             palette: actual,
+            mask,
             rgb_expansion: Some(RgbChannelExpansion::HighBits),
         } = decoded
         else {
             panic!("RGB transfer retains its detected expansion");
         };
         assert_eq!(actual, palette);
+        assert!(mask.entries().iter().all(|entry| *entry == 1));
+    }
+
+    #[test]
+    fn supported_mask_is_retained_and_limits_rgb_expansion_evidence() {
+        let mut rgb = vec![0; RgbPaletteFile::FILE_LEN];
+        rgb[0..3].copy_from_slice(&[248, 248, 248]);
+        rgb[3..6].copy_from_slice(&[255, 255, 255]);
+        let mut entries = vec![0; PaletteMaskFile::FILE_LEN];
+        entries[0] = 0x80;
+        entries[256] = 7;
+        let decoded = decode_import(
+            Some(PendingTransfer::RgbWithMask),
+            LoadedDocument {
+                files: vec![
+                    (PathBuf::from("palette.pal"), rgb),
+                    (PathBuf::from("palette.palm"), entries.clone()),
+                ],
+            },
+        )
+        .unwrap();
+        let DecodedImport::Supported {
+            mask,
+            rgb_expansion: Some(RgbChannelExpansion::HighBits),
+            ..
+        } = decoded
+        else {
+            panic!("masked RGB transfer retains selector and selected expansion evidence");
+        };
+        assert_eq!(mask.encode(), entries);
     }
 }

@@ -131,6 +131,23 @@ impl PaletteController {
         &mut self,
         source: &Palette,
     ) -> Result<(), PaletteControllerError> {
+        self.import_supported_palette_with_mask(source, &PaletteMaskFile::all_selected())
+    }
+
+    /// Imports selected TPL/RGB colors using their natural supported-file `.palm` indices.
+    ///
+    /// Supported index 0 maps to installed word 0 and indices 1–255 map to installed words
+    /// 2–256. Installed backdrop word 1 is never selected by this file order. Selected row-zero
+    /// entries 16, 32, …, 240 are cleared after transfer, while unselected entries are retained.
+    ///
+    /// # Errors
+    ///
+    /// Returns a shape or ownership error atomically.
+    pub fn import_supported_palette_with_mask(
+        &mut self,
+        source: &Palette,
+        mask: &PaletteMaskFile,
+    ) -> Result<(), PaletteControllerError> {
         if self.palette.colors.len() != RawSnesPaletteFile::COLOR_COUNT
             || source.colors.len() != 256
         {
@@ -140,10 +157,17 @@ impl PaletteController {
             });
         }
         let mut imported = self.palette.clone();
-        imported.colors[0] = source.colors[0];
-        imported.colors[2..].copy_from_slice(&source.colors[1..]);
+        for (supported, color) in source.colors.iter().copied().enumerate() {
+            if mask.is_selected(supported).unwrap_or(false) {
+                let installed = if supported == 0 { 0 } else { supported + 1 };
+                imported.colors[installed] = color;
+            }
+        }
         for row in 1..16 {
-            imported.colors[row * Palette::COLORS_PER_ROW + 1] = Bgr555(0);
+            let supported = row * Palette::COLORS_PER_ROW;
+            if mask.is_selected(supported).unwrap_or(false) {
+                imported.colors[supported + 1] = Bgr555(0);
+            }
         }
         self.apply_imported_palette(imported)
     }
