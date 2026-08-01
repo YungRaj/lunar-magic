@@ -29,6 +29,7 @@ struct Workspace {
     internal_header: usize,
 }
 
+#[derive(Clone)]
 enum Controller {
     Profile(Map16Controller),
     Smw(SmwMap16Controller),
@@ -63,6 +64,33 @@ impl Controller {
         }
     }
 
+    fn replace_set(&mut self, set: &lm_level::Map16Set) -> Result<(), String> {
+        if self.set().pages.len() != set.pages.len() {
+            return Err("Map16 history page count changed unexpectedly".into());
+        }
+        let mut replacements = Vec::with_capacity(set.pages.len() * Map16Page::TILE_COUNT);
+        for (page, value) in set.pages.iter().enumerate() {
+            if value.tiles.len() != Map16Page::TILE_COUNT {
+                return Err(format!(
+                    "Map16 history page {page:02X} has {} tiles",
+                    value.tiles.len()
+                ));
+            }
+            replacements.extend(
+                value
+                    .tiles
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(tile, value)| (Map16Address { page, tile }, value)),
+            );
+        }
+        self.apply_edits(&[Map16ControllerEdit::ReplaceTiles {
+            replacements,
+            resolution_limit: set.pages.len() * Map16Page::TILE_COUNT,
+        }])
+    }
+
     const fn supports_reclamation(&self) -> bool {
         matches!(self, Self::Profile(_))
     }
@@ -92,7 +120,10 @@ pub(crate) struct RomMap16Editor {
     search_end: String,
     error: Option<String>,
     pending_close: Option<PendingClose>,
-    clipboard_paste_target: Option<(u64, Map16Address)>,
+    clipboard_paste_target: Option<(u64, u64, Map16Address)>,
+    staged_revision: u64,
+    undo_history: Vec<lm_level::Map16Set>,
+    redo_history: Vec<lm_level::Map16Set>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     page_texture: Option<egui::TextureHandle>,
     page_texture_key: Option<(usize, u64, u16, u8, u8)>,
@@ -193,6 +224,7 @@ impl RomMap16Editor {
             || self.bitmap_clipboard_loader.is_running()
             || self.bitmap_session.is_some();
         let edit_blocked = stale || file_busy;
+        self.history_controls(ui, edit_blocked);
         self.selection_and_clipboard(ui, edit_blocked, pages, pasted.as_deref());
         self.visual_page(ui);
         self.tile_fields(ui, edit_blocked, pages);
@@ -362,41 +394,108 @@ impl RomMap16Editor {
                     .workspace
                     .as_ref()
                     .map(|workspace| workspace.controller.revision());
-                self.clipboard_paste_target = revision.map(|revision| (revision, self.address()));
+                self.clipboard_paste_target =
+                    revision.map(|revision| (revision, self.staged_revision, self.address()));
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
         });
         if let Some(text) = pasted
-            && let Some((revision, address)) = self.clipboard_paste_target.take()
+            && let Some((revision, staged_revision, address)) = self.clipboard_paste_target.take()
         {
             if stale {
                 self.error =
                     Some("the ROM or Map16 editor changed while waiting for clipboard data".into());
             } else {
-                self.paste_tile_at(text, revision, address, pages);
+                self.paste_tile_at(text, revision, staged_revision, address, pages);
             }
         }
     }
 
-    fn paste_tile_at(&mut self, text: &str, revision: u64, address: Map16Address, pages: usize) {
+    fn paste_tile_at(
+        &mut self,
+        text: &str,
+        revision: u64,
+        staged_revision: u64,
+        address: Map16Address,
+        pages: usize,
+    ) {
         let result = native_clipboard::decode_map16_tile(text).and_then(|tile| {
-            let workspace = self.workspace.as_mut().ok_or("Map16 workspace is closed")?;
-            if workspace.controller.revision() != revision {
-                return Err("the ROM changed while waiting for Map16 clipboard data".into());
+            let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+            if workspace.controller.revision() != revision
+                || self.staged_revision != staged_revision
+            {
+                return Err("the ROM Map16 state changed while waiting for clipboard data".into());
             }
-            workspace
-                .controller
-                .apply_edits(&[Map16ControllerEdit::ReplaceTiles {
-                    replacements: vec![(address, tile)],
-                    resolution_limit: pages * Map16Page::TILE_COUNT,
-                }])?;
-            self.invalidate();
-            Ok(())
+            self.apply_staged_edits(&[Map16ControllerEdit::ReplaceTiles {
+                replacements: vec![(address, tile)],
+                resolution_limit: pages * Map16Page::TILE_COUNT,
+            }])
         });
         if let Err(error) = result {
             self.error = Some(error);
         }
+    }
+
+    fn history_controls(&mut self, ui: &mut egui::Ui, blocked: bool) {
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !blocked && !self.undo_history.is_empty(),
+                    egui::Button::new("Undo"),
+                )
+                .clicked()
+                && let Err(error) = self.navigate_history(true)
+            {
+                self.error = Some(error);
+            }
+            if ui
+                .add_enabled(
+                    !blocked && !self.redo_history.is_empty(),
+                    egui::Button::new("Redo"),
+                )
+                .clicked()
+                && let Err(error) = self.navigate_history(false)
+            {
+                self.error = Some(error);
+            }
+        });
+    }
+
+    fn navigate_history(&mut self, undo: bool) -> Result<(), String> {
+        let target = if undo {
+            self.undo_history.pop()
+        } else {
+            self.redo_history.pop()
+        };
+        let Some(target) = target else {
+            return Ok(());
+        };
+        let next_revision = self
+            .staged_revision
+            .checked_add(1)
+            .ok_or("Map16 staged revision exhausted")?;
+        let workspace = self.workspace.as_mut().ok_or("Map16 workspace is closed")?;
+        let current = workspace.controller.set().clone();
+        if let Err(error) = workspace.controller.replace_set(&target) {
+            if undo {
+                self.undo_history.push(target);
+            } else {
+                self.redo_history.push(target);
+            }
+            return Err(error);
+        }
+        if undo {
+            push_history(&mut self.redo_history, current);
+        } else {
+            push_history(&mut self.undo_history, current);
+        }
+        self.staged_revision = next_revision;
+        self.clipboard_paste_target = None;
+        self.page_texture = None;
+        self.page_texture_key = None;
+        self.invalidate();
+        Ok(())
     }
 
     fn tile_fields(&mut self, ui: &mut egui::Ui, stale: bool, pages: usize) {
@@ -518,17 +617,32 @@ impl RomMap16Editor {
         None
     }
     fn apply(&mut self, edit: Map16ControllerEdit) {
-        let Some(workspace) = self.workspace.as_mut() else {
-            self.error = Some("Map16 workspace is closed".into());
-            return;
-        };
-        if let Err(error) = workspace.controller.apply_edits(&[edit]) {
+        if let Err(error) = self.apply_staged_edits(&[edit]) {
             self.error = Some(error);
-        } else {
-            self.page_texture = None;
-            self.page_texture_key = None;
-            self.invalidate();
         }
+    }
+
+    fn apply_staged_edits(&mut self, edits: &[Map16ControllerEdit]) -> Result<(), String> {
+        let workspace = self.workspace.as_mut().ok_or("Map16 workspace is closed")?;
+        let before = workspace.controller.set().clone();
+        let mut staged = workspace.controller.clone();
+        staged.apply_edits(edits)?;
+        if staged.set() == &before {
+            return Ok(());
+        }
+        let next_revision = self
+            .staged_revision
+            .checked_add(1)
+            .ok_or("Map16 staged revision exhausted")?;
+        workspace.controller = staged;
+        push_history(&mut self.undo_history, before);
+        self.redo_history.clear();
+        self.staged_revision = next_revision;
+        self.clipboard_paste_target = None;
+        self.page_texture = None;
+        self.page_texture_key = None;
+        self.invalidate();
+        Ok(())
     }
     fn load(&mut self) {
         let Some(workspace) = &self.workspace else {
@@ -585,4 +699,13 @@ impl RomMap16Editor {
     fn invalidate(&mut self) {
         self.loaded = None;
     }
+}
+
+const MAP16_HISTORY_LIMIT: usize = 100;
+
+fn push_history(history: &mut Vec<lm_level::Map16Set>, value: lm_level::Map16Set) {
+    if history.len() == MAP16_HISTORY_LIMIT {
+        history.remove(0);
+    }
+    history.push(value);
 }

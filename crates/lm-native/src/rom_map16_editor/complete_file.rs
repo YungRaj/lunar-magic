@@ -22,17 +22,11 @@ impl RomMap16Editor {
                     import_replacements(&file, workspace.controller.set())?
                 };
                 let resolution_limit = lm_app::SMW_COMPLETE_MAP16_PAGES * Map16Page::TILE_COUNT;
-                let workspace = self.workspace.as_mut().ok_or("Map16 workspace is closed")?;
-                workspace
-                    .controller
-                    .apply_edits(&[Map16ControllerEdit::ReplaceTiles {
-                        replacements,
-                        resolution_limit,
-                    }])?;
+                self.apply_staged_edits(&[Map16ControllerEdit::ReplaceTiles {
+                    replacements,
+                    resolution_limit,
+                }])?;
                 self.complete_template = Some(file);
-                self.page_texture = None;
-                self.page_texture_key = None;
-                self.invalidate();
                 Ok(())
             });
             if let Err(error) = result {

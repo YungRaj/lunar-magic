@@ -1629,6 +1629,14 @@ portable page and complete-set editors store their monotonic document revision p
 full address. Selection changes cannot retarget delivery, stale portable revisions reject without
 mutation, unsolicited paste events are ignored, and opening or clearing a workspace drops a pending
 target. Successful delivery still uses each surface's existing complete-tile controller edit.
+The installed ROM Map16 workspace additionally wraps every successful staged controller mutation in
+a bounded 100-entry complete-set history. Manual subtile/Acts-Like edits, clipboard replacement,
+legacy page-pair import, and complete structured import each produce at most one predecessor
+snapshot; semantic no-ops produce none. Undo and redo restore the exact set through one validated
+complete replacement, advance a separate monotonic staged revision, invalidate pending clipboard
+delivery, and preserve the opposite history. A divergent mutation clears redo. Opening, clearing,
+or committing the workspace discards this staging history, while the resulting ROM commit retains
+the application's existing single checksum-valid undo transaction.
 Palette mode now has a ROM-backed swatch editor over the profile-declared native palette. It
 displays the exact retained BGR555 word beside the platform color picker, stages changes through
 `PaletteController`, and retains controller ownership checks. Like the other relocatable native

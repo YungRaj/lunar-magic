@@ -34,6 +34,9 @@ impl RomMap16Editor {
                 self.pending_legacy_page = None;
                 self.pending_bitmap_import = None;
                 self.clipboard_paste_target = None;
+                self.staged_revision = 0;
+                self.undo_history.clear();
+                self.redo_history.clear();
                 self.bitmap_session = None;
                 self.bitmap_extra_slot_4.clear();
                 self.bitmap_extra_slot_5.clear();
@@ -145,6 +148,9 @@ impl RomMap16Editor {
         self.pending_legacy_page = None;
         self.pending_bitmap_import = None;
         self.clipboard_paste_target = None;
+        self.staged_revision = 0;
+        self.undo_history.clear();
+        self.redo_history.clear();
         self.pending_close = None;
         self.invalidate();
     }

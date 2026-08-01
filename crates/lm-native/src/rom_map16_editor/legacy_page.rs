@@ -18,22 +18,17 @@ impl RomMap16Editor {
                 let [(_, acts_like), (_, graphics)] =
                     loaded.into_exact::<2>("legacy Map16 page pair")?;
                 let imported = decode_legacy_page(&acts_like, &graphics)?;
-                let workspace = self.workspace.as_mut().ok_or("Map16 workspace is closed")?;
+                let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
                 if workspace.controller.revision() != revision {
                     return Err("the ROM changed while the Map16 page was loading".into());
                 }
                 let replacements = page_replacements(page, imported)?;
                 let resolution_limit =
                     workspace.controller.set().pages.len() * Map16Page::TILE_COUNT;
-                workspace
-                    .controller
-                    .apply_edits(&[Map16ControllerEdit::ReplaceTiles {
-                        replacements,
-                        resolution_limit,
-                    }])?;
-                self.page_texture = None;
-                self.page_texture_key = None;
-                self.invalidate();
+                self.apply_staged_edits(&[Map16ControllerEdit::ReplaceTiles {
+                    replacements,
+                    resolution_limit,
+                }])?;
                 Ok(())
             });
             if let Err(error) = result {

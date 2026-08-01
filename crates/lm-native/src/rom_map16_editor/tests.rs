@@ -213,9 +213,77 @@ fn rom_clipboard_delivery_uses_the_requested_map16_address() {
 
     editor.page = untouched.page;
     editor.tile = untouched.tile;
-    editor.paste_tile_at(&text, revision, target, lm_app::SMW_COMPLETE_MAP16_PAGES);
+    editor.paste_tile_at(
+        &text,
+        revision,
+        editor.staged_revision,
+        target,
+        lm_app::SMW_COMPLETE_MAP16_PAGES,
+    );
 
     let set = editor.workspace.as_ref().unwrap().controller.set();
     assert_eq!(set.pages[target.page].tiles[target.tile], replacement);
     assert_eq!(set.pages[untouched.page].tiles[untouched.tile], before);
+}
+
+#[test]
+fn staged_map16_history_restores_exact_sets_and_invalidates_divergent_redo() {
+    let mut app = AppState::default();
+    app.load_rom(pristine_fixture()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut editor = RomMap16Editor::default();
+    editor.open(&app);
+    let address = Map16Address { page: 2, tile: 3 };
+    let original = editor.workspace.as_ref().unwrap().controller.set().pages[2].tiles[3];
+
+    editor.apply(Map16ControllerEdit::SetSubtile {
+        address,
+        quadrant: Map16Quadrant::TopLeft,
+        subtile: Subtile(0x1234),
+        resolution_limit: lm_app::SMW_COMPLETE_MAP16_PAGES * Map16Page::TILE_COUNT,
+    });
+    assert_eq!(editor.staged_revision, 1);
+    assert_eq!(editor.undo_history.len(), 1);
+    assert!(editor.redo_history.is_empty());
+
+    editor.navigate_history(true).unwrap();
+    assert_eq!(
+        editor.workspace.as_ref().unwrap().controller.set().pages[2].tiles[3],
+        original
+    );
+    assert_eq!(editor.staged_revision, 2);
+    assert_eq!(editor.redo_history.len(), 1);
+
+    editor.navigate_history(false).unwrap();
+    assert_eq!(
+        editor.workspace.as_ref().unwrap().controller.set().pages[2].tiles[3].top_left,
+        Subtile(0x1234)
+    );
+    editor.navigate_history(true).unwrap();
+    editor.apply(Map16ControllerEdit::SetSubtile {
+        address,
+        quadrant: Map16Quadrant::TopRight,
+        subtile: Subtile(0x5678),
+        resolution_limit: lm_app::SMW_COMPLETE_MAP16_PAGES * Map16Page::TILE_COUNT,
+    });
+    assert!(editor.redo_history.is_empty());
+}
+
+#[test]
+fn staged_map16_history_is_bounded_to_one_hundred_snapshots() {
+    let page = Map16Page::new(vec![lm_level::Map16Tile::default(); Map16Page::TILE_COUNT]).unwrap();
+    let mut history = Vec::new();
+    for index in 0..=MAP16_HISTORY_LIMIT {
+        let mut set = lm_level::Map16Set {
+            pages: vec![page.clone()],
+        };
+        set.pages[0].tiles[0].acts_like = u16::try_from(index).unwrap();
+        push_history(&mut history, set);
+    }
+    assert_eq!(history.len(), MAP16_HISTORY_LIMIT);
+    assert_eq!(history[0].pages[0].tiles[0].acts_like, 1);
+    assert_eq!(
+        history[MAP16_HISTORY_LIMIT - 1].pages[0].tiles[0].acts_like,
+        100
+    );
 }
