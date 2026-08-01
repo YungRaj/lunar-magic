@@ -24,6 +24,7 @@ pub(super) enum PasteTarget {
     Layer2Tilemap,
     Sprite,
     PaletteColor,
+    PaletteRow,
     AnimationRecord,
     AnimationFrame,
 }

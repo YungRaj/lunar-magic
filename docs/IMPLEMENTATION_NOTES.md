@@ -1635,6 +1635,11 @@ clipboard envelope. Ctrl+left/right performs color copy/paste and adding Alt add
 aligned row, with equivalent explicit controls. The standalone 257th installed word is not treated
 as a row. Paste requests retain their color/row target, are cleared across workspace lifecycles,
 reject stale or import-locked delivery, and submit the row as one ownership-atomic edit batch.
+The installed level-assets and both overworld palette panels reuse that same row envelope and
+gesture/control model, returning one aggregate ownership-aware edit for all sixteen changes. The
+shared/custom editor applies the row by decoding its exact legacy or expanded backend once, so the
+operation is all-or-nothing and expanded auxiliary bytes remain untouched; stale/import-busy paste
+delivery is rejected and clipboard targets clear when its workspace closes.
 Graphics mode likewise exposes a ROM-backed 4bpp pixel editor. It decodes the selected native GFX
 slot with the profile-selected LZ2/LZ3 codec, obtains palette zero through the same profile, and
 reuses the portable editor's nearest-neighbor tile painter and hit testing. Pixel changes are

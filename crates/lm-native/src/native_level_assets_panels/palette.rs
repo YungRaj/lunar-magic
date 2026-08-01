@@ -14,24 +14,7 @@ impl AggregatePanels {
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let colors = &file.assets.palette.colors;
         self.selected_color = self.selected_color.min(colors.len().saturating_sub(1));
-        egui::Grid::new("aggregate-palette").show(ui, |ui| {
-            for (i, color) in colors.iter().copied().enumerate() {
-                let rgb = color.to_rgb8();
-                if ui
-                    .add_sized(
-                        [22.0, 22.0],
-                        egui::Button::new("")
-                            .fill(egui::Color32::from_rgb(rgb.red, rgb.green, rgb.blue)),
-                    )
-                    .clicked()
-                {
-                    self.selected_color = i;
-                }
-                if i % 16 == 15 {
-                    ui.end_row();
-                }
-            }
-        });
+        let mut copy_result = self.palette_clipboard_grid(ui, colors);
         let color = colors.get(self.selected_color).copied()?;
         let rgb = color.to_rgb8();
         let mut value = [rgb.red, rgb.green, rgb.blue];
@@ -41,6 +24,12 @@ impl AggregatePanels {
         ));
         let owner = ownership.owner(self.selected_color);
         let editable = owner == Some(PaletteEntryOwner::Editable);
+        let row = palette_row(colors, self.selected_color).ok();
+        let row_editable = row.is_some_and(|_| {
+            let start = self.selected_color / 16 * 16;
+            (start..start + 16)
+                .all(|index| ownership.owner(index) == Some(PaletteEntryOwner::Editable))
+        });
         ui.label(match owner {
             Some(PaletteEntryOwner::Editable) => "Ownership: editable".into(),
             Some(PaletteEntryOwner::Fixed) => "Ownership: fixed (read-only)".into(),
@@ -49,7 +38,6 @@ impl AggregatePanels {
             }
             None => "Ownership: invalid (read-only)".into(),
         });
-        let mut copy_result = None;
         ui.horizontal(|ui| {
             if ui.button("Copy color").clicked() {
                 copy_result = Some(native_clipboard::encode_palette_color(color));
@@ -62,24 +50,48 @@ impl AggregatePanels {
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
+            if ui
+                .add_enabled(row.is_some(), egui::Button::new("Copy row"))
+                .clicked()
+            {
+                copy_result = Some(native_clipboard::encode_palette_row(
+                    row.expect("enabled row is complete"),
+                ));
+            }
+            if ui
+                .add_enabled(row_editable, egui::Button::new("Paste row"))
+                .clicked()
+            {
+                self.paste_target = Some(PasteTarget::PaletteRow);
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
         });
+        ui.small("Ctrl+left/right copies or pastes a color; add Alt for its complete row.");
         if let Some(result) = copy_result {
             match result {
                 Ok(text) => ui.ctx().copy_text(text),
                 Err(error) => return Some(Err(error)),
             }
         }
-        if editable
-            && self.paste_target == Some(PasteTarget::PaletteColor)
-            && let Some(text) = pasted_text(ui)
-        {
-            self.paste_target = None;
-            return Some(native_clipboard::decode_palette_color(&text).map(|color| {
+        if let Some(text) = pasted_text(ui) {
+            let changes = match self.paste_target.take() {
+                Some(PasteTarget::PaletteColor) if editable => {
+                    native_clipboard::decode_palette_color(&text).map(|color| {
+                        vec![PaletteChange {
+                            index: self.selected_color,
+                            color,
+                        }]
+                    })
+                }
+                Some(PasteTarget::PaletteRow) => {
+                    palette_row_changes(&text, self.selected_color, colors.len())
+                }
+                _ => return None,
+            };
+            return Some(changes.map(|changes| {
                 NativeLevelAssetsControllerEdit::Palette(vec![PaletteControllerEdit::ApplyChanges(
-                    vec![PaletteChange {
-                        index: self.selected_color,
-                        color,
-                    }],
+                    changes,
                 )])
             }));
         }
@@ -98,5 +110,91 @@ impl AggregatePanels {
                     }]),
                 ]))
             })
+    }
+
+    fn palette_clipboard_grid(
+        &mut self,
+        ui: &mut egui::Ui,
+        colors: &[Bgr555],
+    ) -> Option<Result<String, String>> {
+        let mut copy_result = None;
+        egui::Grid::new("aggregate-palette").show(ui, |ui| {
+            for (index, color) in colors.iter().copied().enumerate() {
+                let rgb = color.to_rgb8();
+                let response = ui.add_sized(
+                    [22.0, 22.0],
+                    egui::Button::new("")
+                        .fill(egui::Color32::from_rgb(rgb.red, rgb.green, rgb.blue)),
+                );
+                if response.clicked() {
+                    self.selected_color = index;
+                    let modifiers = ui.input(|input| input.modifiers);
+                    if modifiers.ctrl {
+                        copy_result = Some(if modifiers.alt {
+                            palette_row(colors, index)
+                                .and_then(native_clipboard::encode_palette_row)
+                        } else {
+                            native_clipboard::encode_palette_color(color)
+                        });
+                    }
+                }
+                if response.secondary_clicked() && ui.input(|input| input.modifiers.ctrl) {
+                    self.selected_color = index;
+                    self.paste_target = Some(if ui.input(|input| input.modifiers.alt) {
+                        PasteTarget::PaletteRow
+                    } else {
+                        PasteTarget::PaletteColor
+                    });
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                }
+                if index % 16 == 15 {
+                    ui.end_row();
+                }
+            }
+        });
+        copy_result
+    }
+}
+
+fn palette_row(colors: &[Bgr555], selected: usize) -> Result<&[Bgr555], String> {
+    let start = selected / 16 * 16;
+    colors
+        .get(start..start.saturating_add(16))
+        .ok_or_else(|| "selected color does not belong to a complete palette row".to_string())
+}
+
+fn palette_row_changes(
+    text: &str,
+    selected: usize,
+    color_count: usize,
+) -> Result<Vec<PaletteChange>, String> {
+    let start = selected / 16 * 16;
+    if start.saturating_add(16) > color_count {
+        return Err("selected color does not belong to a complete palette row".into());
+    }
+    Ok(native_clipboard::decode_palette_row(text)?
+        .into_iter()
+        .enumerate()
+        .map(|(offset, color)| PaletteChange {
+            index: start + offset,
+            color,
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::palette_row_changes;
+    use crate::native_clipboard;
+    use lm_graphics::Bgr555;
+
+    #[test]
+    fn aggregate_row_paste_is_aligned_and_complete() {
+        let row = [Bgr555(0x1234); 16];
+        let text = native_clipboard::encode_palette_row(&row).unwrap();
+        let changes = palette_row_changes(&text, 31, 32).unwrap();
+        assert_eq!((changes[0].index, changes[15].index), (16, 31));
+        assert!(palette_row_changes(&text, 32, 33).is_err());
     }
 }

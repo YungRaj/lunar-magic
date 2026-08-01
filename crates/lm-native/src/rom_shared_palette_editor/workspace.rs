@@ -36,6 +36,26 @@ impl Workspace {
         Ok(())
     }
 
+    pub(super) fn replace_row(&mut self, start: usize, colors: [Bgr555; 16]) -> Result<(), String> {
+        if colors.iter().any(|color| color.0 > 0x7fff) {
+            return Err("SNES BGR555 colors must be 0000–7FFF".into());
+        }
+        if start % 16 != 0 {
+            return Err("shared-palette row must begin at a 16-color boundary".into());
+        }
+        let mut bytes = self.current.encode();
+        let palette_len = self.current.palette_bytes().len();
+        let offset = start
+            .checked_mul(2)
+            .filter(|offset| offset.saturating_add(32) <= palette_len)
+            .ok_or_else(|| "shared-palette row is out of range".to_owned())?;
+        for (target, color) in bytes[offset..offset + 32].chunks_exact_mut(2).zip(colors) {
+            target.copy_from_slice(&color.0.to_le_bytes());
+        }
+        self.current = SmwPaletteFile::decode(&bytes).map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
     pub(super) fn replace_auxiliary(&mut self, auxiliary: Vec<u8>) -> Result<(), String> {
         if auxiliary.len() != self.current.auxiliary_bytes().len() {
             return Err(format!(
@@ -75,6 +95,15 @@ mod tests {
             &(0_u8..16).collect::<Vec<_>>()
         );
         assert!(workspace.replace_color(0x400, Bgr555(1)).is_err());
+        workspace.replace_row(0x20, [Bgr555(0x1234); 16]).unwrap();
+        assert_eq!(
+            &workspace.current.palette_bytes()[0x40..0x60],
+            [0x34, 0x12].repeat(16)
+        );
+        let before_bad_row = workspace.current.clone();
+        assert!(workspace.replace_row(0x21, [Bgr555(1); 16]).is_err());
+        assert!(workspace.replace_row(0x3f8, [Bgr555(1); 16]).is_err());
+        assert_eq!(workspace.current, before_bad_row);
         assert!(workspace.replace_auxiliary(vec![0; 15]).is_err());
         assert!(workspace.dirty());
     }
