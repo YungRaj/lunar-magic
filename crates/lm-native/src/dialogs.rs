@@ -146,6 +146,36 @@ pub(crate) fn choose_raw_palette_save_path() -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_tpl_palette_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Lunar Magic TPL v2 Palette")
+        .add_filter("Lunar Magic TPL palette", &["tpl"])
+        .pick_file()
+}
+
+pub(crate) fn choose_tpl_palette_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Lunar Magic TPL v2 Palette")
+        .add_filter("Lunar Magic TPL palette", &["tpl"])
+        .set_file_name("Level Palette.tpl")
+        .save_file()
+}
+
+pub(crate) fn choose_rgb_palette_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import RGB24 Palette")
+        .add_filter("RGB24 palette", &["pal"])
+        .pick_file()
+}
+
+pub(crate) fn choose_rgb_palette_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export RGB24 Palette")
+        .add_filter("RGB24 palette", &["pal"])
+        .set_file_name("Level Palette RGB.pal")
+        .save_file()
+}
+
 pub(crate) fn choose_shared_palette_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Import Native Shared/Custom SMW Palettes")

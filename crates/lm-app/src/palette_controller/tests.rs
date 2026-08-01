@@ -292,3 +292,55 @@ fn raw_import_is_masked_row_zero_canonical_and_ownership_atomic() {
     );
     assert_eq!(controller.palette(), &accepted);
 }
+
+#[test]
+fn supported_palette_mapping_matches_retained_tpl_oracle_and_is_ownership_atomic() {
+    let palette = Palette {
+        colors: (0_u16..=256).map(Bgr555).collect(),
+    };
+    let mut owners = vec![lm_graphics::PaletteEntryOwner::Editable; palette.colors.len()];
+    owners[34] = lm_graphics::PaletteEntryOwner::Fixed;
+    let mut controller = PaletteController {
+        revision: 0,
+        palette_number: 0,
+        layout: PaletteRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0,
+                entries: 1,
+                stride: 3,
+            },
+            colors_per_palette: RawSnesPaletteFile::COLOR_COUNT,
+        },
+        checksum_field_offset: 0,
+        source_file_bytes: Vec::new(),
+        baseline: palette.clone(),
+        palette,
+        ownership: PaletteOwnership::from_owners(owners),
+        previous_block: None,
+    };
+    let exported = controller.supported_palette().unwrap();
+    assert_eq!(exported.colors[0], Bgr555(0));
+    assert_eq!(exported.colors[1], Bgr555(2));
+    assert_eq!(exported.colors[255], Bgr555(256));
+
+    let mut imported = exported.clone();
+    imported.colors[0] = Bgr555(0x1234);
+    imported.colors[1] = Bgr555(0x2345);
+    imported.colors[33] = Bgr555(34);
+    controller.import_supported_palette(&imported).unwrap();
+    assert_eq!(controller.palette().colors[0], Bgr555(0x1234));
+    assert_eq!(controller.palette().colors[1], Bgr555(1));
+    assert_eq!(controller.palette().colors[2], Bgr555(0x2345));
+    for row in 1..16 {
+        assert_eq!(
+            controller.palette().colors[row * Palette::COLORS_PER_ROW + 1],
+            Bgr555(0)
+        );
+    }
+
+    let accepted = controller.palette().clone();
+    imported.colors[33] = Bgr555(0x3456);
+    assert!(controller.import_supported_palette(&imported).is_err());
+    assert_eq!(controller.palette(), &accepted);
+}

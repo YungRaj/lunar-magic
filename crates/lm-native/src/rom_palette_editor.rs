@@ -43,6 +43,7 @@ pub(crate) struct RomPaletteEditor {
     transfer_loader: DocumentLoader,
     transfer_persistence: crate::persistence_worker::PersistenceWorker,
     pending_transfer: Option<transfer::PendingTransfer>,
+    rgb_expansion: Option<lm_graphics::RgbChannelExpansion>,
 }
 
 impl RomPaletteEditor {

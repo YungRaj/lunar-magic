@@ -1606,6 +1606,15 @@ application history entry remain one stale-revision-checked transaction.
 The ROM palette adapter separates its swatch coordinator from bounded `LMPALOWN` acquisition,
 profile decoding, dirty-close lifecycle, and shared allocation/reclamation commit construction.
 Malformed or stale evidence therefore never reaches the interactive controller workspace.
+Its native transfer panel now also accepts and create-new exports the recovered raw 257-word,
+version-2 TPL, and RGB24 formats without blocking the UI. The retained LM 3.63 installation fixture
+proves that installed word 0 plus words 2 through 256 are supported-file words 0 through 255, while
+installed word 1 remains the separate backdrop. TPL/RGB import preserves that backdrop and clears
+only supported row-zero entries 16 through 240, matching the live import/re-export artifact. RGB
+imports retain the detected high-bit or replicated-bit expansion convention for reciprocal export.
+Raw imports optionally consume the exact lossless `.palm` selector. All routes compute only actual
+word differences before the controller's immutable ownership check, so a late protected color
+rejects the complete staged import; revision, worker, commit, and close gates remain shared.
 Graphics mode likewise exposes a ROM-backed 4bpp pixel editor. It decodes the selected native GFX
 slot with the profile-selected LZ2/LZ3 codec, obtains palette zero through the same profile, and
 reuses the portable editor's nearest-neighbor tile painter and hit testing. Pixel changes are

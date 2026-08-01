@@ -71,6 +71,7 @@ impl RomPaletteEditor {
             Ok(workspace) => {
                 self.workspace = Some(workspace);
                 self.selected = 0;
+                self.rgb_expansion = None;
                 self.search_start.clear();
                 self.search_end.clear();
             }
@@ -116,6 +117,7 @@ impl RomPaletteEditor {
         self.workspace = None;
         self.pending_load = None;
         self.pending_transfer = None;
+        self.rgb_expansion = None;
         self.pending_close = None;
     }
 

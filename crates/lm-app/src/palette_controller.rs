@@ -33,6 +33,10 @@ pub enum PaletteControllerError {
         error: PaletteBatchEditError,
     },
     RawImport(RawPaletteFileError),
+    SupportedPaletteShape {
+        installed: usize,
+        supported: usize,
+    },
     Mutation(TransactionError),
 }
 
@@ -111,6 +115,58 @@ impl PaletteController {
         let mut imported = self.palette.clone();
         apply_raw_palette_import(&mut imported, source, mask)
             .map_err(PaletteControllerError::RawImport)?;
+        self.apply_imported_palette(imported)
+    }
+
+    /// Imports the recovered 256-color TPL/RGB order into the installed 257-word payload.
+    ///
+    /// Installed word 1 is the separately owned backdrop and is retained. Supported-file word 0
+    /// maps to installed word 0; words 1–255 map to installed words 2–256. Lunar Magic clears the
+    /// first color of rows 1–15 after this import while leaving supported-file word 0 intact.
+    ///
+    /// # Errors
+    ///
+    /// Returns a shape or ownership error atomically.
+    pub fn import_supported_palette(
+        &mut self,
+        source: &Palette,
+    ) -> Result<(), PaletteControllerError> {
+        if self.palette.colors.len() != RawSnesPaletteFile::COLOR_COUNT
+            || source.colors.len() != 256
+        {
+            return Err(PaletteControllerError::SupportedPaletteShape {
+                installed: self.palette.colors.len(),
+                supported: source.colors.len(),
+            });
+        }
+        let mut imported = self.palette.clone();
+        imported.colors[0] = source.colors[0];
+        imported.colors[2..].copy_from_slice(&source.colors[1..]);
+        for row in 1..16 {
+            imported.colors[row * Palette::COLORS_PER_ROW + 1] = Bgr555(0);
+        }
+        self.apply_imported_palette(imported)
+    }
+
+    /// Exports the recovered installed payload in natural 256-color TPL/RGB order.
+    ///
+    /// # Errors
+    ///
+    /// Returns a shape error unless the installed payload contains exactly 257 words.
+    pub fn supported_palette(&self) -> Result<Palette, PaletteControllerError> {
+        if self.palette.colors.len() != RawSnesPaletteFile::COLOR_COUNT {
+            return Err(PaletteControllerError::SupportedPaletteShape {
+                installed: self.palette.colors.len(),
+                supported: 256,
+            });
+        }
+        let mut colors = Vec::with_capacity(256);
+        colors.push(self.palette.colors[0]);
+        colors.extend_from_slice(&self.palette.colors[2..]);
+        Ok(Palette { colors })
+    }
+
+    fn apply_imported_palette(&mut self, imported: Palette) -> Result<(), PaletteControllerError> {
         let changes = self
             .palette
             .colors
