@@ -215,10 +215,12 @@ pub use lunar_magic_metadata::{
     SMW_US_V1_LM_VRAM_VERSION_OFFSET, smw_us_v1_lunar_magic_metadata_layout,
 };
 pub use map16_runtime_install::{
-    SmwUsV1Map16RuntimeDetectError, SmwUsV1Map16RuntimeGeneration,
-    SmwUsV1Map16RuntimeInstallBuildError, SmwUsV1Map16StageThreeMigrationBuildError,
-    detect_smw_us_v1_current_map16_runtime, detect_smw_us_v1_stage_three_map16_runtime,
-    probe_smw_us_v1_map16_runtime_generation, smw_us_v1_builtin_map16_runtime_installation_plan,
+    SmwUsV1Map16LegacyMigrationBuildError, SmwUsV1Map16RuntimeDetectError,
+    SmwUsV1Map16RuntimeGeneration, SmwUsV1Map16RuntimeInstallBuildError,
+    SmwUsV1Map16StageThreeMigrationBuildError, detect_smw_us_v1_current_map16_runtime,
+    detect_smw_us_v1_stage_one_map16_runtime, detect_smw_us_v1_stage_three_map16_runtime,
+    detect_smw_us_v1_stage_two_map16_runtime, probe_smw_us_v1_map16_runtime_generation,
+    smw_us_v1_builtin_map16_runtime_installation_plan, smw_us_v1_legacy_map16_runtime_migration,
     smw_us_v1_map16_runtime_installation_plan, smw_us_v1_stage_three_map16_runtime_migration,
 };
 pub use native_map16_complete::{

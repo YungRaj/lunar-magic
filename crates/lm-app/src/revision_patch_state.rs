@@ -187,12 +187,14 @@ impl AppState {
                 project.install_relocatable_patch(&plan)?;
                 "Install SMW US Map16 runtime"
             }
-            lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy => {
-                let plan = lm_profile::smw_us_v1_stage_three_map16_runtime_migration(
+            lm_profile::SmwUsV1Map16RuntimeGeneration::StageOneLegacy
+            | lm_profile::SmwUsV1Map16RuntimeGeneration::StageTwoLegacy
+            | lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy => {
+                let plan = lm_profile::smw_us_v1_legacy_map16_runtime_migration(
                     project.rom.logical_bytes(),
                 )?;
                 project.install_relocatable_patch(&plan)?;
-                "Migrate SMW US Map16 runtime stage 3"
+                "Migrate legacy SMW US Map16 runtime"
             }
             lm_profile::SmwUsV1Map16RuntimeGeneration::StageFourCurrent => {
                 return Err(AppError::Map16RuntimeAlreadyInstalled);

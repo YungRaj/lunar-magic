@@ -121,9 +121,12 @@ impl BuiltInRuntimeWorkspace {
                 lm_profile::SmwUsV1Lfix3Generation::Generation1
                     | lm_profile::SmwUsV1Lfix3Generation::Generation2
             ),
-            BuiltInRuntime::Map16Runtime => {
-                self.map16_generation == lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy
-            }
+            BuiltInRuntime::Map16Runtime => matches!(
+                self.map16_generation,
+                lm_profile::SmwUsV1Map16RuntimeGeneration::StageOneLegacy
+                    | lm_profile::SmwUsV1Map16RuntimeGeneration::StageTwoLegacy
+                    | lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy
+            ),
             _ => false,
         }
     }
@@ -212,11 +215,17 @@ mod tests {
             Command::InstallLfix3 { rev: 0 }
         ));
         workspace.runtime = BuiltInRuntime::Map16Runtime;
-        workspace.map16_generation = lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy;
-        assert!(workspace.selection_migrates_legacy_runtime());
-        assert!(matches!(
-            workspace.prepare(app.project_revision()).unwrap(),
-            Command::InstallMap16Runtime { rev: 0 }
-        ));
+        for generation in [
+            lm_profile::SmwUsV1Map16RuntimeGeneration::StageOneLegacy,
+            lm_profile::SmwUsV1Map16RuntimeGeneration::StageTwoLegacy,
+            lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy,
+        ] {
+            workspace.map16_generation = generation;
+            assert!(workspace.selection_migrates_legacy_runtime());
+            assert!(matches!(
+                workspace.prepare(app.project_revision()).unwrap(),
+                Command::InstallMap16Runtime { rev: 0 }
+            ));
+        }
     }
 }
