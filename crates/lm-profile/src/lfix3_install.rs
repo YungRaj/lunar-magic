@@ -42,6 +42,16 @@ pub fn smw_us_v1_lfix3_installation_plan(
     })
 }
 
+/// Builds the complete Lfix3 core plan from the revision profile's bundled runtime template.
+///
+/// # Errors
+///
+/// Rejects an inconsistent bundled runtime template.
+pub fn smw_us_v1_builtin_lfix3_installation_plan()
+-> Result<RelocatablePatchPlan, Lfix3RuntimeLengthError> {
+    smw_us_v1_lfix3_installation_plan(&crate::smw_us_v1_lfix3_runtime_template())
+}
+
 fn fixed_writes() -> Vec<PatchWrite> {
     let mut writes = vec![
         direct(

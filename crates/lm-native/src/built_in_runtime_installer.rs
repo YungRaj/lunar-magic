@@ -64,6 +64,11 @@ impl BuiltInRuntimeInstaller {
                 );
                 ui.selectable_value(
                     &mut workspace.runtime,
+                    BuiltInRuntime::Lfix3Core,
+                    BuiltInRuntime::Lfix3Core.label(),
+                );
+                ui.selectable_value(
+                    &mut workspace.runtime,
                     BuiltInRuntime::ExpandedSharedPalettes,
                     BuiltInRuntime::ExpandedSharedPalettes.label(),
                 );
@@ -196,6 +201,38 @@ mod tests {
                 .is_some()
         );
         assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn lfix3_selection_installs_exact_hooks_checksums_and_undoes() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Lfix3Core;
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        app.dispatch(command).unwrap();
+        installer.commit_succeeded();
+
+        let project = app.project().unwrap();
+        assert_eq!(project.history.undo_len(), 1);
+        assert_eq!(
+            project.rom.read(0x0002_da17, 5).unwrap(),
+            &[0x22, 0x08, 0x80, 0x10, 0xea]
+        );
+        assert!(
+            lm_rom::SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc)
+                .unwrap()
+                .is_complementary()
+        );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }

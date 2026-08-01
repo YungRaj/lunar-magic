@@ -196,7 +196,8 @@ pub use layer3_scroll_code::{
 };
 pub use level_access_restriction::smw_us_v1_level_access_restriction_layout;
 pub use lfix3_install::{
-    SMW_US_V1_LFIX3_SEARCH_END, SMW_US_V1_LFIX3_SEARCH_START, smw_us_v1_lfix3_installation_plan,
+    SMW_US_V1_LFIX3_SEARCH_END, SMW_US_V1_LFIX3_SEARCH_START,
+    smw_us_v1_builtin_lfix3_installation_plan, smw_us_v1_lfix3_installation_plan,
 };
 pub use lfix3_runtime::{
     Lfix3RuntimeLengthError, SMW_US_V1_LFIX3_RUNTIME_LEN, smw_us_v1_lfix3_runtime_payload,

@@ -6,6 +6,7 @@ pub(super) enum BuiltInRuntime {
     #[default]
     ExpandedSettings,
     CompleteLayer3,
+    Lfix3Core,
     ExpandedSharedPalettes,
 }
 
@@ -14,6 +15,7 @@ impl BuiltInRuntime {
         match self {
             Self::ExpandedSettings => "Expanded level settings",
             Self::CompleteLayer3 => "Complete Layer 3 family (includes expanded settings)",
+            Self::Lfix3Core => "Lfix3 core runtime and shared tables",
             Self::ExpandedSharedPalettes => "Expanded shared/custom palettes",
         }
     }
@@ -26,6 +28,10 @@ impl BuiltInRuntime {
             Self::CompleteLayer3 => {
                 "Install all recovered Layer 3 runtime allocations, hooks, compatibility code, \
                  and expanded settings as one transaction."
+            }
+            Self::Lfix3Core => {
+                "Install the recovered Lfix3 runtime, three initialized 512-entry tables, and all \
+                 fixed entry hooks."
             }
             Self::ExpandedSharedPalettes => {
                 "Install the recovered shared-palette hooks, helpers, expanded table, and the \
@@ -73,6 +79,7 @@ impl BuiltInRuntimeWorkspace {
         Ok(match self.runtime {
             BuiltInRuntime::ExpandedSettings => Command::InstallSettings { rev: self.revision },
             BuiltInRuntime::CompleteLayer3 => Command::InstallLayer3 { rev: self.revision },
+            BuiltInRuntime::Lfix3Core => Command::InstallLfix3 { rev: self.revision },
             BuiltInRuntime::ExpandedSharedPalettes => {
                 Command::InstallExpandedSharedPalettes { rev: self.revision }
             }
@@ -110,6 +117,11 @@ mod tests {
         assert!(matches!(
             workspace.prepare(app.project_revision()).unwrap(),
             Command::InstallExpandedSharedPalettes { rev: 0 }
+        ));
+        workspace.runtime = BuiltInRuntime::Lfix3Core;
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallLfix3 { rev: 0 }
         ));
         assert!(workspace.prepare(app.project_revision() + 1).is_err());
     }

@@ -78,6 +78,10 @@ pub enum Command {
     InstallLayer3 {
         rev: u64,
     },
+    /// Installs the recovered SMW US revision-0 Lfix3 core runtime and shared tables.
+    InstallLfix3 {
+        rev: u64,
+    },
     InstallExpandedSharedPalettes {
         rev: u64,
     },
