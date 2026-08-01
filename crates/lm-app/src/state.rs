@@ -119,7 +119,7 @@ pub enum AppError {
     Map16RuntimeAlreadyInstalled,
     Layer2RuntimeIdentityMismatch,
     Layer2RuntimeAlreadyInstalled,
-    Layer2RuntimeFormat102Required(lm_profile::SmwUsV1Layer2RuntimeGeneration),
+    Layer2RuntimeLegacyMigrationRequired(lm_profile::SmwUsV1Layer2RuntimeGeneration),
     Sprite19FixIdentityMismatch,
     Sprite19FixAlreadyInstalled,
     NativeOverworldPathIdentityMismatch,

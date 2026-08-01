@@ -1,4 +1,4 @@
-//! Authenticated Lunar Magic format-$102 to format-$103 Layer 2 table migration.
+//! Authenticated Lunar Magic legacy to format-$103 Layer 2 table migration.
 
 use crate::{
     SMW_US_V1_CHECKSUM_FIELD, SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
@@ -20,6 +20,13 @@ const SPECIAL_OLD_LAYER2_POINTER: u32 = 0xff_d900;
 const SPECIAL_NEW_LAYER2_POINTER: u32 = 0xff_de54;
 const LAYER2_BANK_BOUNDARY: u32 = 0xff_e8fe;
 
+const FORMAT_101_HOOK: [u8; 0x40] = [
+    0xc9, 0xff, 0xd0, 0x04, 0x5c, 0x3f, 0x80, 0x05, 0x8b, 0x4b, 0xab, 0xa4, 0x0e, 0xb9, 0x10, 0xf3,
+    0xaa, 0x29, 0x02, 0xd0, 0x05, 0xab, 0x5c, 0x74, 0x80, 0x05, 0x8a, 0x29, 0x01, 0xd0, 0x05, 0x8a,
+    0x4a, 0x4a, 0x4a, 0x4a, 0xa0, 0x00, 0x00, 0xa2, 0x00, 0x00, 0x9f, 0x00, 0xbd, 0x7e, 0x9f, 0x00,
+    0xbf, 0x7e, 0xe8, 0xe0, 0x00, 0x02, 0xd0, 0xf2, 0xab, 0x5c, 0x64, 0x80, 0x05, 0xff, 0xff, 0xff,
+];
+
 const FORMAT_102_HOOK: [u8; 0x40] = [
     0xc9, 0xff, 0xd0, 0x09, 0x1a, 0x8f, 0x0b, 0xc0, 0x7f, 0x5c, 0x3f, 0x80, 0x05, 0xa6, 0x0e, 0xbf,
     0x10, 0xf3, 0x0e, 0x8f, 0x0b, 0xc0, 0x7f, 0x89, 0x02, 0xd0, 0x04, 0x5c, 0x74, 0x80, 0x05, 0x89,
@@ -36,6 +43,7 @@ const FORMAT_103_HOOK: [u8; 0x40] = [
 
 #[derive(Debug)]
 pub enum SmwUsV1Layer2Format102MigrationError {
+    MissingFormat101,
     MissingFormat102,
     SourceRange {
         offset: usize,
@@ -60,12 +68,28 @@ impl fmt::Display for SmwUsV1Layer2Format102MigrationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "cannot migrate SMW-US Layer 2 format $102: {self:?}"
+            "cannot migrate legacy SMW-US Layer 2 runtime: {self:?}"
         )
     }
 }
 
 impl std::error::Error for SmwUsV1Layer2Format102MigrationError {}
+
+/// Builds the exact table and hook conversion used by Lunar Magic when opening format `$101`.
+///
+/// In addition to the pointer conversion shared with `$102`, `$101` first normalizes the legacy
+/// descriptor flag layout. The hook is authenticated byte-for-byte before a plan is returned.
+///
+/// # Errors
+///
+/// Rejects a missing or modified `$101` hook, truncated tables, invalid mapped pointers, or a
+/// pointer whose level-mode byte lies outside the source image.
+pub fn smw_us_v1_layer2_format_101_migration(
+    bytes: &[u8],
+) -> Result<RelocatablePatchPlan, SmwUsV1Layer2Format102MigrationError> {
+    authenticate_hook(bytes, &FORMAT_101_HOOK, 0x4b, true)?;
+    build_migration(bytes, &FORMAT_101_HOOK, true, "$101")
+}
 
 /// Builds the exact table and hook conversion used by Lunar Magic when opening format `$102`.
 ///
@@ -81,7 +105,16 @@ impl std::error::Error for SmwUsV1Layer2Format102MigrationError {}
 pub fn smw_us_v1_layer2_format_102_migration(
     bytes: &[u8],
 ) -> Result<RelocatablePatchPlan, SmwUsV1Layer2Format102MigrationError> {
-    authenticate_format_102_hook(bytes)?;
+    authenticate_hook(bytes, &FORMAT_102_HOOK, 0x5c, false)?;
+    build_migration(bytes, &FORMAT_102_HOOK, false, "$102")
+}
+
+fn build_migration(
+    bytes: &[u8],
+    source_hook: &[u8; 0x40],
+    normalize_format_101_descriptors: bool,
+    source_format: &str,
+) -> Result<RelocatablePatchPlan, SmwUsV1Layer2Format102MigrationError> {
     let layer1 = source_range(bytes, LAYER1_POINTER_TABLE_OFFSET, POINTER_TABLE_LEN)?;
     let layer2 = source_range(bytes, LAYER2_POINTER_TABLE_OFFSET, POINTER_TABLE_LEN)?;
     let descriptors = source_range(
@@ -89,11 +122,16 @@ pub fn smw_us_v1_layer2_format_102_migration(
         SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
         DESCRIPTOR_TABLE_LEN,
     )?;
-    let (migrated_layer2, migrated_descriptors) =
-        migrate_format_102_tables(bytes, layer1, layer2, descriptors)?;
+    let (migrated_layer2, migrated_descriptors) = migrate_legacy_tables(
+        bytes,
+        layer1,
+        layer2,
+        descriptors,
+        normalize_format_101_descriptors,
+    )?;
 
     Ok(RelocatablePatchPlan {
-        description: "Migrate SMW US Layer 2 runtime format $102 to $103".into(),
+        description: format!("Migrate SMW US Layer 2 runtime format {source_format} to $103"),
         mapper: Mapper::LoRom,
         allocation: AllocationPolicy {
             search: 0..bytes.len(),
@@ -125,7 +163,7 @@ pub fn smw_us_v1_layer2_format_102_migration(
             },
             PatchWrite {
                 offset: SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET,
-                expected: FORMAT_102_HOOK.to_vec(),
+                expected: source_hook.to_vec(),
                 replacement: FORMAT_103_HOOK.to_vec(),
                 fixups: Vec::new(),
             },
@@ -133,14 +171,22 @@ pub fn smw_us_v1_layer2_format_102_migration(
     })
 }
 
-fn migrate_format_102_tables(
+fn migrate_legacy_tables(
     bytes: &[u8],
     layer1: &[u8],
     layer2: &[u8],
     descriptors: &[u8],
+    normalize_format_101_descriptors: bool,
 ) -> Result<(Vec<u8>, Vec<u8>), SmwUsV1Layer2Format102MigrationError> {
     let mut migrated_layer2 = layer2.to_vec();
     let mut migrated_descriptors = descriptors.to_vec();
+    if normalize_format_101_descriptors {
+        for descriptor in &mut migrated_descriptors {
+            if *descriptor & 1 != 0 {
+                *descriptor = (*descriptor & 0x0e) | 0x10;
+            }
+        }
+    }
     for (level, descriptor) in migrated_descriptors.iter_mut().enumerate() {
         let pointer_offset = level * 3;
         let layer1_pointer = read_pointer(layer1, pointer_offset);
@@ -188,20 +234,29 @@ fn migrate_format_102_tables(
     Ok((migrated_layer2, migrated_descriptors))
 }
 
-fn authenticate_format_102_hook(bytes: &[u8]) -> Result<(), SmwUsV1Layer2Format102MigrationError> {
+fn authenticate_hook(
+    bytes: &[u8],
+    expected_hook: &[u8; 0x40],
+    generation_opcode: u8,
+    format_101: bool,
+) -> Result<(), SmwUsV1Layer2Format102MigrationError> {
     let Some(actual) = bytes.get(
         SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET
-            ..SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + FORMAT_102_HOOK.len(),
+            ..SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + expected_hook.len(),
     ) else {
         return Err(SmwUsV1Layer2Format102MigrationError::SourceRange {
             offset: SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET,
-            len: FORMAT_102_HOOK.len(),
+            len: expected_hook.len(),
         });
     };
-    if actual.get(9).copied() != Some(0x5c) {
-        return Err(SmwUsV1Layer2Format102MigrationError::MissingFormat102);
+    if actual.get(9).copied() != Some(generation_opcode) {
+        return Err(if format_101 {
+            SmwUsV1Layer2Format102MigrationError::MissingFormat101
+        } else {
+            SmwUsV1Layer2Format102MigrationError::MissingFormat102
+        });
     }
-    for (index, (&expected, &actual)) in FORMAT_102_HOOK.iter().zip(actual).enumerate() {
+    for (index, (&expected, &actual)) in expected_hook.iter().zip(actual).enumerate() {
         if expected != actual {
             return Err(SmwUsV1Layer2Format102MigrationError::HookMismatch {
                 offset: SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + index,
@@ -233,7 +288,7 @@ fn read_pointer(bytes: &[u8], offset: usize) -> u32 {
 mod tests {
     use super::*;
     use lm_project::Project;
-    use lm_rom::RomImage;
+    use lm_rom::{RomImage, apply_ips};
     use std::{env, fs};
 
     #[test]
@@ -302,5 +357,68 @@ mod tests {
             smw_us_v1_layer2_format_102_migration(&corrupt),
             Err(SmwUsV1Layer2Format102MigrationError::HookMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn format_101_hook_and_descriptor_flags_migrate_transactionally() {
+        let mut bytes = vec![0xff; 0x80_000];
+        bytes[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET
+            ..SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + FORMAT_101_HOOK.len()]
+            .copy_from_slice(&FORMAT_101_HOOK);
+        bytes[LAYER1_POINTER_TABLE_OFFSET..LAYER1_POINTER_TABLE_OFFSET + POINTER_TABLE_LEN].fill(0);
+        for pointer in bytes
+            [LAYER2_POINTER_TABLE_OFFSET..LAYER2_POINTER_TABLE_OFFSET + POINTER_TABLE_LEN]
+            .chunks_exact_mut(3)
+        {
+            pointer.copy_from_slice(&[0x54, 0xde, 0xff]);
+        }
+        bytes[LAYER2_POINTER_TABLE_OFFSET..LAYER2_POINTER_TABLE_OFFSET + 3]
+            .copy_from_slice(&[0x00, 0x80, 0x00]);
+        bytes[1] = 0;
+        bytes[SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET] = 0x0f;
+
+        let image = RomImage::from_bytes(bytes).unwrap();
+        let original = image.logical_bytes().to_vec();
+        let plan = smw_us_v1_layer2_format_101_migration(image.logical_bytes()).unwrap();
+        let mut project = Project::new(image);
+        project.install_relocatable_patch(&plan).unwrap();
+
+        assert_eq!(
+            project.rom.logical_bytes()[SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET],
+            0x16
+        );
+        assert_eq!(
+            &project.rom.logical_bytes()[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET
+                ..SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + FORMAT_103_HOOK.len()],
+            &FORMAT_103_HOOK
+        );
+        assert!(project.undo().unwrap());
+        assert_eq!(project.rom.logical_bytes(), original);
+
+        let mut corrupt = original;
+        corrupt[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + 20] ^= 1;
+        assert!(matches!(
+            smw_us_v1_layer2_format_101_migration(&corrupt),
+            Err(SmwUsV1Layer2Format102MigrationError::HookMismatch { .. })
+        ));
+    }
+
+    #[test]
+    #[ignore = "requires an authorized SMW base ROM and authenticated format-$101 IPS"]
+    fn external_lunar_magic_format_101_patch_migrates_and_undoes_exactly() {
+        let base =
+            fs::read(env::var_os("LM_SMW_US_ROM").expect("authorized SMW base ROM")).unwrap();
+        let patch = fs::read(
+            env::var_os("LM_LAYER2_FORMAT_101_IPS").expect("authenticated format-$101 IPS"),
+        )
+        .unwrap();
+        let source = apply_ips(&base, &patch).unwrap();
+        let image = RomImage::from_bytes(source).unwrap();
+        let original = image.logical_bytes().to_vec();
+        let plan = smw_us_v1_layer2_format_101_migration(image.logical_bytes()).unwrap();
+        let mut project = Project::new(image);
+        project.install_relocatable_patch(&plan).unwrap();
+        assert!(project.undo().unwrap());
+        assert_eq!(project.rom.logical_bytes(), original);
     }
 }

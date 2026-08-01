@@ -232,17 +232,23 @@ impl AppState {
             return Err(AppError::Layer2RuntimeIdentityMismatch);
         }
         let generation = lm_profile::probe_smw_us_v1_layer2_runtime_generation(&project.rom)?;
-        match generation {
-            lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy => {}
+        let (plan, description) = match generation {
+            lm_profile::SmwUsV1Layer2RuntimeGeneration::Format101Legacy => (
+                lm_profile::smw_us_v1_layer2_format_101_migration(project.rom.logical_bytes())?,
+                "Migrate SMW US Layer 2 runtime format $101 to $103",
+            ),
+            lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy => (
+                lm_profile::smw_us_v1_layer2_format_102_migration(project.rom.logical_bytes())?,
+                "Migrate SMW US Layer 2 runtime format $102 to $103",
+            ),
             lm_profile::SmwUsV1Layer2RuntimeGeneration::Format103Current => {
                 return Err(AppError::Layer2RuntimeAlreadyInstalled);
             }
-            other => return Err(AppError::Layer2RuntimeFormat102Required(other)),
-        }
-        let plan = lm_profile::smw_us_v1_layer2_format_102_migration(project.rom.logical_bytes())?;
+            other => return Err(AppError::Layer2RuntimeLegacyMigrationRequired(other)),
+        };
         project.install_relocatable_patch(&plan)?;
         self.advance_project_revision()?;
-        let description = "Migrate SMW US Layer 2 runtime format $102 to $103".to_owned();
+        let description = description.to_owned();
         self.status.clone_from(&description);
         Ok(vec![FrontendEffect::ProjectChanged {
             description,
