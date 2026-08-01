@@ -6,13 +6,13 @@ use lm_graphics::{
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum PendingTransfer {
+pub(crate) enum PendingTransfer {
     Raw,
     Tpl,
     Rgb,
 }
 
-enum DecodedImport {
+pub(crate) enum DecodedImport {
     Raw(RawSnesPaletteFile, PaletteMaskFile),
     Supported {
         palette: lm_graphics::Palette,
@@ -266,7 +266,7 @@ impl RomPaletteEditor {
     }
 }
 
-fn encode_raw_export(palette: &lm_graphics::Palette) -> Result<Vec<u8>, String> {
+pub(crate) fn encode_raw_export(palette: &lm_graphics::Palette) -> Result<Vec<u8>, String> {
     RawSnesPaletteFile {
         palette: palette.clone(),
     }
@@ -274,7 +274,7 @@ fn encode_raw_export(palette: &lm_graphics::Palette) -> Result<Vec<u8>, String> 
     .map_err(|error| error.to_string())
 }
 
-fn encode_tpl_export(palette: &lm_graphics::Palette) -> Result<Vec<u8>, String> {
+pub(crate) fn encode_tpl_export(palette: &lm_graphics::Palette) -> Result<Vec<u8>, String> {
     TplPaletteFile {
         palette: palette.clone(),
     }
@@ -282,7 +282,7 @@ fn encode_tpl_export(palette: &lm_graphics::Palette) -> Result<Vec<u8>, String> 
     .map_err(|error| error.to_string())
 }
 
-fn encode_rgb_export(
+pub(crate) fn encode_rgb_export(
     palette: &lm_graphics::Palette,
     expansion: RgbChannelExpansion,
 ) -> Result<Vec<u8>, String> {
@@ -291,7 +291,7 @@ fn encode_rgb_export(
         .map_err(|error| error.to_string())
 }
 
-fn palette_import_requests(
+pub(crate) fn palette_import_requests(
     path: std::path::PathBuf,
     maximum: u64,
     description: &'static str,
@@ -328,7 +328,7 @@ fn palette_and_optional_mask(
     Ok((palette, mask))
 }
 
-fn decode_import(
+pub(crate) fn decode_import(
     pending: Option<PendingTransfer>,
     loaded: crate::document_loader::LoadedDocument,
 ) -> Result<DecodedImport, String> {

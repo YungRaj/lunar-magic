@@ -3246,14 +3246,20 @@ to a new destination. Loading or persistence gates commit and close, and a ROM r
 loading rejects the import. Original Lunar Magic prompt and file behavior and broader variants
 remain incomplete.
 
-The installed native-level-assets editor now transfers its complete staged palette through the
-portable `.lmpal` format. Reads are bounded and non-blocking. Import requires the active palette's
-exact color count and converts every changed word into one aggregate ownership-aware edit, so fixed
-or ExAnimation-owned differences reject the whole operation without disturbing any level domain.
-The source level remains provenance rather than a destination lock, permitting explicit cross-level
-copies. Export snapshots the staged palette and publishes only to a new destination. Palette loading
-gates aggregate editing, commit, and close; export persistence gates commit and close, and a ROM
-revision change during loading rejects the result. Original row and shared-format dialogs remain.
+The installed native-level-assets editor now transfers its complete staged palette through portable
+`.lmpal`, Lunar Magic's exact 257-word raw format, version-2 TPL, and RGB24. Reads are bounded and
+non-blocking. Raw/TPL/RGB imports automatically request the same-basename optional `.palmask` and
+reuse the authenticated decoders. Raw applies the recovered 257-word operation; TPL/RGB apply the
+exact installed `[0],[2..256]` to supported `[0..255]` mapping, retain installed backdrop word 1,
+and clear only selected supported row-zero entries. RGB imports retain their detected channel-bit
+expansion for reciprocal export. Full exports snapshot staged colors, publish only to a new
+destination, and recoverably remove a stale `.palmask` because this surface exports every color.
+Every imported result becomes one aggregate ownership-aware palette replacement, so fixed or
+ExAnimation-owned differences reject the whole operation without disturbing any level domain. The
+`.lmpal` source level remains provenance rather than a destination lock, permitting explicit
+cross-level copies. Palette loading gates aggregate editing, commit, and close; export persistence
+gates commit and close, and a ROM revision change during loading rejects the result. Original row
+dialogs and the complete Wine ownership/animation-reservation matrix remain.
 
 The ten-argument form additionally accepts a versioned `LMANFRM` materialized-animation frame
 between the appearance file (use `none` when absent) and completed-reveal count. This provider-neutral

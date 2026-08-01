@@ -568,6 +568,8 @@ pub(crate) struct RomLevelAssetsEditor {
     legacy_mwl_loader: DocumentLoader,
     palette_loader: DocumentLoader,
     palette_persistence: crate::persistence_worker::PersistenceWorker,
+    pending_palette_transfer: Option<crate::rom_palette_editor::transfer::PendingTransfer>,
+    palette_rgb_expansion: Option<lm_graphics::RgbChannelExpansion>,
     pending_legacy_mwl_load: Option<mwl::PendingLegacyMwlLoad>,
     mwl_batch_worker: mwl_batch::MwlBatchExportWorker,
     mwl_batch_status: Option<String>,

@@ -131,6 +131,8 @@ impl RomLevelAssetsEditor {
         self.workspace = None;
         self.pending_load = None;
         self.pending_legacy_mwl_load = None;
+        self.pending_palette_transfer = None;
+        self.palette_rgb_expansion = None;
         self.pending_close = None;
         self.mwl_batch_status = None;
         self.level_image_status = None;

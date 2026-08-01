@@ -9,7 +9,7 @@ use lm_graphics::{Bgr555, PaletteChange, PaletteEntryOwner, Rgb8};
 mod commit;
 mod lifecycle;
 mod ownership;
-mod transfer;
+pub(crate) mod transfer;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
