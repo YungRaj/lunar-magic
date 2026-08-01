@@ -1623,6 +1623,12 @@ once and rejects a changed ROM revision before constructing the import session, 
 controls cannot silently retarget an in-flight image. Active image loading or an open bitmap preview
 gates ordinary Map16 edits, legacy/complete transfers, another bitmap request, and ROM commit.
 Loading blocks close; an open preview instead participates in the existing discard confirmation.
+All three Map16 editing surfaces now correlate asynchronous system-paste delivery with the tile that
+requested it. The installed ROM editor stores its source revision and full page/tile address; the
+portable page and complete-set editors store their monotonic document revision plus local tile or
+full address. Selection changes cannot retarget delivery, stale portable revisions reject without
+mutation, unsolicited paste events are ignored, and opening or clearing a workspace drops a pending
+target. Successful delivery still uses each surface's existing complete-tile controller edit.
 Palette mode now has a ROM-backed swatch editor over the profile-declared native palette. It
 displays the exact retained BGR555 word beside the platform color picker, stages changes through
 `PaletteController`, and retains controller ownership checks. Like the other relocatable native

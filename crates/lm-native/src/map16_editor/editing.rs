@@ -43,20 +43,22 @@ impl Map16Editor {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn paste_tile(&mut self, text: &str) {
+        let Some(document) = self.document.as_ref() else {
+            return;
+        };
+        self.paste_tile_at(text, document.controller.revision(), self.selected_tile);
+    }
+
+    pub(super) fn paste_tile_at(&mut self, text: &str, revision: u64, tile: usize) {
         let Some(document) = self.document.as_mut() else {
             return;
         };
         match native_clipboard::decode_map16_tile(text) {
             Ok(value) => {
-                let edit = Map16PageDocumentEdit::ReplaceTile {
-                    tile: self.selected_tile,
-                    value,
-                };
-                match document
-                    .controller
-                    .apply_edits(document.controller.revision(), &[edit])
-                {
+                let edit = Map16PageDocumentEdit::ReplaceTile { tile, value };
+                match document.controller.apply_edits(revision, &[edit]) {
                     Ok(()) => {
                         self.loaded_selection = None;
                         self.rendered_revision = None;

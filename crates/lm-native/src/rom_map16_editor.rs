@@ -92,6 +92,7 @@ pub(crate) struct RomMap16Editor {
     search_end: String,
     error: Option<String>,
     pending_close: Option<PendingClose>,
+    clipboard_paste_target: Option<(u64, Map16Address)>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     page_texture: Option<egui::TextureHandle>,
     page_texture_key: Option<(usize, u64, u16, u8, u8)>,
@@ -357,18 +358,44 @@ impl RomMap16Editor {
                 .add_enabled(!stale, egui::Button::new("Paste tile"))
                 .clicked()
             {
+                let revision = self
+                    .workspace
+                    .as_ref()
+                    .map(|workspace| workspace.controller.revision());
+                self.clipboard_paste_target = revision.map(|revision| (revision, self.address()));
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
         });
-        if !stale && let Some(text) = pasted {
-            match native_clipboard::decode_map16_tile(text) {
-                Ok(tile) => self.apply(Map16ControllerEdit::ReplaceTiles {
-                    replacements: vec![(self.address(), tile)],
-                    resolution_limit: pages * Map16Page::TILE_COUNT,
-                }),
-                Err(error) => self.error = Some(error),
+        if let Some(text) = pasted
+            && let Some((revision, address)) = self.clipboard_paste_target.take()
+        {
+            if stale {
+                self.error =
+                    Some("the ROM or Map16 editor changed while waiting for clipboard data".into());
+            } else {
+                self.paste_tile_at(text, revision, address, pages);
             }
+        }
+    }
+
+    fn paste_tile_at(&mut self, text: &str, revision: u64, address: Map16Address, pages: usize) {
+        let result = native_clipboard::decode_map16_tile(text).and_then(|tile| {
+            let workspace = self.workspace.as_mut().ok_or("Map16 workspace is closed")?;
+            if workspace.controller.revision() != revision {
+                return Err("the ROM changed while waiting for Map16 clipboard data".into());
+            }
+            workspace
+                .controller
+                .apply_edits(&[Map16ControllerEdit::ReplaceTiles {
+                    replacements: vec![(address, tile)],
+                    resolution_limit: pages * Map16Page::TILE_COUNT,
+                }])?;
+            self.invalidate();
+            Ok(())
+        });
+        if let Err(error) = result {
+            self.error = Some(error);
         }
     }
 

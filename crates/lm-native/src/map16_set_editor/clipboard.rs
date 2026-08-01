@@ -17,18 +17,46 @@ impl Map16SetEditor {
             .copied()
     }
 
+    #[cfg(test)]
     pub(super) fn paste_tile(&mut self, text: &str) {
+        let Some(document) = self.document.as_ref() else {
+            return;
+        };
+        self.paste_tile_at(
+            text,
+            document.controller.revision(),
+            Map16Address {
+                page: self.page,
+                tile: self.tile,
+            },
+        );
+    }
+
+    pub(super) fn paste_tile_at(&mut self, text: &str, revision: u64, address: Map16Address) {
         match native_clipboard::decode_map16_tile(text) {
-            Ok(tile) => self.apply_edit(&Map16DocumentEdit::ReplaceTiles {
-                replacements: vec![(
-                    Map16Address {
-                        page: self.page,
-                        tile: self.tile,
-                    },
-                    tile,
-                )],
-                resolution_limit: self.resolution_limit(),
-            }),
+            Ok(tile) => {
+                let resolution_limit = self.resolution_limit();
+                let result = self
+                    .document
+                    .as_mut()
+                    .ok_or_else(|| "no complete Map16 document".to_owned())
+                    .and_then(|document| {
+                        document
+                            .controller
+                            .apply_edits(
+                                revision,
+                                &[Map16DocumentEdit::ReplaceTiles {
+                                    replacements: vec![(address, tile)],
+                                    resolution_limit,
+                                }],
+                            )
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
+                    Ok(()) => self.invalidate(),
+                    Err(error) => self.error = Some(error),
+                }
+            }
             Err(error) => self.error = Some(error),
         }
     }
@@ -106,5 +134,59 @@ mod tests {
         assert_eq!(document.controller.revision(), 0);
         assert_eq!(document.controller.value(), &before);
         assert!(editor.error.is_some());
+    }
+
+    #[test]
+    fn clipboard_delivery_uses_requested_address_and_rejects_a_stale_revision() {
+        let mut editor = editor();
+        let replacement = Map16Tile {
+            top_left: Subtile(5),
+            top_right: Subtile(6),
+            bottom_left: Subtile(7),
+            bottom_right: Subtile(8),
+            acts_like: 0x0034,
+        };
+        let text = native_clipboard::encode_map16_tile(replacement).unwrap();
+        editor.tile = 9;
+        editor.paste_tile_at(&text, 0, Map16Address { page: 0, tile: 3 });
+        assert_eq!(
+            editor
+                .document
+                .as_ref()
+                .unwrap()
+                .controller
+                .value()
+                .set
+                .pages[0]
+                .tiles[3],
+            replacement
+        );
+        assert_eq!(
+            editor
+                .document
+                .as_ref()
+                .unwrap()
+                .controller
+                .value()
+                .set
+                .pages[0]
+                .tiles[9],
+            Map16Tile::default()
+        );
+
+        editor.paste_tile_at(&text, 0, Map16Address { page: 0, tile: 4 });
+        assert!(editor.error.is_some());
+        assert_eq!(
+            editor
+                .document
+                .as_ref()
+                .unwrap()
+                .controller
+                .value()
+                .set
+                .pages[0]
+                .tiles[4],
+            Map16Tile::default()
+        );
     }
 }

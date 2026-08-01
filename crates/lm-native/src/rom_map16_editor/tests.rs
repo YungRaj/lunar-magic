@@ -190,3 +190,32 @@ fn complete_file_workers_prevent_close_until_io_finishes() {
     saving.complete_persistence.wait_for_test().result.unwrap();
     fs::remove_file(output).unwrap();
 }
+
+#[test]
+fn rom_clipboard_delivery_uses_the_requested_map16_address() {
+    let mut app = AppState::default();
+    app.load_rom(pristine_fixture()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut editor = RomMap16Editor::default();
+    editor.open(&app);
+    let revision = editor.workspace.as_ref().unwrap().controller.revision();
+    let target = Map16Address { page: 2, tile: 3 };
+    let untouched = Map16Address { page: 4, tile: 9 };
+    let before = editor.workspace.as_ref().unwrap().controller.set().pages[4].tiles[9];
+    let replacement = lm_level::Map16Tile {
+        top_left: Subtile(5),
+        top_right: Subtile(6),
+        bottom_left: Subtile(7),
+        bottom_right: Subtile(8),
+        acts_like: 0x1234,
+    };
+    let text = native_clipboard::encode_map16_tile(replacement).unwrap();
+
+    editor.page = untouched.page;
+    editor.tile = untouched.tile;
+    editor.paste_tile_at(&text, revision, target, lm_app::SMW_COMPLETE_MAP16_PAGES);
+
+    let set = editor.workspace.as_ref().unwrap().controller.set();
+    assert_eq!(set.pages[target.page].tiles[target.tile], replacement);
+    assert_eq!(set.pages[untouched.page].tiles[untouched.tile], before);
+}

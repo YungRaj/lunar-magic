@@ -41,6 +41,7 @@ pub(crate) struct Map16SetEditor {
     texture: Option<egui::TextureHandle>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
+    clipboard_paste_target: Option<(u64, lm_level::Map16Address)>,
     persistence: DocumentPersistence,
     loader: DocumentLoader,
 }
@@ -102,6 +103,7 @@ impl Map16SetEditor {
                     self.document = Some(document);
                     self.page = 0;
                     self.tile = 0;
+                    self.clipboard_paste_target = None;
                     self.invalidate();
                 }
                 Err(error) => self.error = Some(error),
@@ -133,8 +135,10 @@ impl Map16SetEditor {
             })
         });
         self.toolbar(ui);
-        if let Some(text) = pasted {
-            self.paste_tile(&text);
+        if let Some(text) = pasted
+            && let Some((revision, address)) = self.clipboard_paste_target.take()
+        {
+            self.paste_tile_at(&text, revision, address);
         }
         ui.separator();
         let page_count = self
@@ -209,6 +213,7 @@ impl Map16SetEditor {
     fn clear(&mut self) {
         self.document = None;
         self.pending_close = None;
+        self.clipboard_paste_target = None;
         self.invalidate();
     }
 }

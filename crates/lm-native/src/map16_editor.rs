@@ -34,6 +34,7 @@ pub(crate) struct Map16Editor {
     texture: Option<egui::TextureHandle>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
+    clipboard_paste_target: Option<(u64, usize)>,
     save_worker: crate::persistence_worker::PersistenceWorker,
     loader: DocumentLoader,
 }
@@ -97,6 +98,7 @@ impl Map16Editor {
                     self.loaded_selection = None;
                     self.rendered_revision = None;
                     self.texture = None;
+                    self.clipboard_paste_target = None;
                 }
                 Err(error) => self.error = Some(error),
             }
@@ -140,8 +142,10 @@ impl Map16Editor {
             })
         });
         self.toolbar(ui);
-        if let Some(text) = pasted {
-            self.paste_tile(&text);
+        if let Some(text) = pasted
+            && let Some((revision, tile)) = self.clipboard_paste_target.take()
+        {
+            self.paste_tile_at(&text, revision, tile);
         }
         ui.separator();
         ui.columns(2, |columns| {
@@ -187,6 +191,7 @@ impl Map16Editor {
                 }
             }
             if ui.button("Paste tile").clicked() {
+                self.clipboard_paste_target = Some((controller.revision(), self.selected_tile));
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
@@ -321,6 +326,7 @@ impl Map16Editor {
         self.pending_close = None;
         self.rendered_revision = None;
         self.loaded_selection = None;
+        self.clipboard_paste_target = None;
     }
 
     fn show_error(&mut self, context: &egui::Context) {
@@ -396,5 +402,56 @@ mod tests {
         assert_eq!(document.controller.value().page.tiles[0], replacement);
         assert!(editor.loaded_selection.is_none());
         assert!(editor.rendered_revision.is_none());
+    }
+
+    #[test]
+    fn clipboard_delivery_uses_requested_tile_and_rejects_a_stale_revision() {
+        let mut editor = editor();
+        let replacement = Map16Tile {
+            top_left: Subtile(5),
+            top_right: Subtile(6),
+            bottom_left: Subtile(7),
+            bottom_right: Subtile(8),
+            acts_like: 0x1234,
+        };
+        let text = native_clipboard::encode_map16_tile(replacement).unwrap();
+        editor.selected_tile = 9;
+        editor.paste_tile_at(&text, 0, 3);
+        assert_eq!(
+            editor
+                .document
+                .as_ref()
+                .unwrap()
+                .controller
+                .value()
+                .page
+                .tiles[3],
+            replacement
+        );
+        assert_eq!(
+            editor
+                .document
+                .as_ref()
+                .unwrap()
+                .controller
+                .value()
+                .page
+                .tiles[9],
+            Map16Tile::default()
+        );
+
+        editor.paste_tile_at(&text, 0, 4);
+        assert!(editor.error.is_some());
+        assert_eq!(
+            editor
+                .document
+                .as_ref()
+                .unwrap()
+                .controller
+                .value()
+                .page
+                .tiles[4],
+            Map16Tile::default()
+        );
     }
 }

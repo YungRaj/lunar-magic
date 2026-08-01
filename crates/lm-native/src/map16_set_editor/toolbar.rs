@@ -39,6 +39,13 @@ impl Map16SetEditor {
                 .clicked();
             copy_requested = ui.button("Copy tile").clicked();
             if ui.button("Paste tile").clicked() {
+                self.clipboard_paste_target = Some((
+                    controller.revision(),
+                    lm_level::Map16Address {
+                        page: self.page,
+                        tile: self.tile,
+                    },
+                ));
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
