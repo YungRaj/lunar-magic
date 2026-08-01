@@ -69,6 +69,11 @@ impl BuiltInRuntimeInstaller {
                 );
                 ui.selectable_value(
                     &mut workspace.runtime,
+                    BuiltInRuntime::Map16Runtime,
+                    BuiltInRuntime::Map16Runtime.label(),
+                );
+                ui.selectable_value(
+                    &mut workspace.runtime,
                     BuiltInRuntime::ExpandedSharedPalettes,
                     BuiltInRuntime::ExpandedSharedPalettes.label(),
                 );
@@ -228,6 +233,37 @@ mod tests {
             project.rom.read(0x0002_da17, 5).unwrap(),
             &[0x22, 0x08, 0x80, 0x10, 0xea]
         );
+        assert!(
+            lm_rom::SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc)
+                .unwrap()
+                .is_complementary()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn map16_runtime_selection_installs_auxiliary_hooks_and_undoes_exactly() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Map16Runtime;
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        app.dispatch(command).unwrap();
+        installer.commit_succeeded();
+
+        let project = app.project().unwrap();
+        assert_eq!(project.history.undo_len(), 1);
+        let secondary = lm_profile::load_smw_us_v1_secondary_map16(project).unwrap();
+        assert!(secondary.installed);
+        assert!(secondary.blocks.iter().all(Option::is_none));
         assert!(
             lm_rom::SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc)
                 .unwrap()

@@ -1465,7 +1465,7 @@ revision hooks, pointer publications, typed allocation fixups, checksum repair, 
 installation are complete. `layer3-install` groups that separately aligned plan with the five
 runtime allocations, preserving the `$087FF8` RATS header / `$088000` payload boundary while
 committing all six allocations as one undoable project operation.
-The cross-platform GUI exposes four recovered installation paths through a revision-bound
+The cross-platform GUI exposes five recovered installation paths through a revision-bound
 **Install Built-in Runtime** dialog. It can install the expanded-settings family alone, the
 complete Layer 3 family (which includes expanded settings), or the expanded shared/custom-palette
 runtime with its 512-entry per-level pointer table. The fourth path promotes the complete Lfix3
@@ -1476,6 +1476,13 @@ shared tables, and repairs the checksum as one application revision. The dialog 
 identity, rejects a stale project revision, and closes only after application acceptance. Native
 tests route every selection through the same application commands, semantically reopen the
 installed subsystem, and prove exact input restoration with one undo.
+The fifth route promotes the Wine-authenticated pristine Map16 runtime transformation to the same
+native transaction boundary. It applies all recovered fixed changes under exact byte
+preconditions, places the exact `$8000`-byte auxiliary payload at the recovered aligned expansion
+location, relocates its low-bank operand through a typed fixup, repairs the checksum, and reopens
+the installed secondary Map16 model before acceptance. This route intentionally covers pristine
+installation only; the four named compatibility-stage detectors and migrations remain separate
+evidence-gated work.
 Complete Layer 3 installation also detects an already-valid expanded-settings allocation. In that
 state it reuses the prerequisite and installs only the five missing Layer 3 allocations, avoiding
 the guarded-hook collision that would otherwise follow selecting expanded settings first. The

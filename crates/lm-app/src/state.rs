@@ -93,6 +93,7 @@ pub enum AppError {
     ExpandedSettingsPlan(lm_profile::ExpandedSettingsInstallPlanError),
     Layer3Plan(lm_profile::CompleteLayer3BuildError),
     Lfix3Plan(lm_profile::Lfix3RuntimeLengthError),
+    Map16RuntimePlan(lm_profile::SmwUsV1Map16RuntimeInstallBuildError),
     SecondaryExitInstallPlan(lm_profile::SecondaryExitInstallBuildError),
     RevisionPatch(lm_project::RelocatablePatchError),
     RevisionPatchGroup(lm_project::RelocatablePatchGroupError),
@@ -100,6 +101,7 @@ pub enum AppError {
     ExpandedSettingsIdentityMismatch,
     Layer3IdentityMismatch,
     Lfix3IdentityMismatch,
+    Map16RuntimeIdentityMismatch,
     NativeOverworldPathIdentityMismatch,
     NativeOverworldPathReopenMismatch,
     NativeOverworldPath(lm_project::OverworldPathLinkIoError),
@@ -287,6 +289,12 @@ impl From<lm_profile::CompleteLayer3BuildError> for AppError {
 impl From<lm_profile::Lfix3RuntimeLengthError> for AppError {
     fn from(value: lm_profile::Lfix3RuntimeLengthError) -> Self {
         Self::Lfix3Plan(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Map16RuntimeInstallBuildError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Map16RuntimeInstallBuildError) -> Self {
+        Self::Map16RuntimePlan(value)
     }
 }
 
@@ -678,6 +686,7 @@ impl AppState {
             Command::InstallSettings { rev } => self.install(rev, false)?,
             Command::InstallLayer3 { rev } => self.install(rev, true)?,
             Command::InstallLfix3 { rev } => self.install_lfix3(rev)?,
+            Command::InstallMap16Runtime { rev } => self.install_map16_runtime(rev)?,
             Command::InstallExpandedSharedPalettes { rev } => {
                 self.install_native_expanded_shared_palettes(rev)?
             }

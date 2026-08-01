@@ -11,6 +11,28 @@ const PRISTINE_LOGICAL_LEN: usize = 0x80_000;
 const AUXILIARY_PAYLOAD_LEN: usize = 0x8000;
 const AUXILIARY_BANK_OPERAND: usize = 0x37_626;
 
+/// Builds the authenticated pristine-ROM Map16 runtime plan with Lunar Magic's recovered
+/// 512-KiB-to-1-MiB allocation window.
+///
+/// # Errors
+///
+/// Rejects any source that is not the exact pristine logical ROM shape, or malformed embedded
+/// runtime evidence.
+pub fn smw_us_v1_builtin_map16_runtime_installation_plan(
+    pristine: &[u8],
+) -> Result<RelocatablePatchPlan, SmwUsV1Map16RuntimeInstallBuildError> {
+    smw_us_v1_map16_runtime_installation_plan(
+        pristine,
+        AllocationPolicy {
+            search: 0x80_000..0x10_0000,
+            bank_size: Some(0x8000),
+            fill_bytes: vec![0x00, 0xff],
+            protected: vec![ProtectedRange(0x7fc0..0x8000)],
+        },
+        crate::SMW_US_V1_CHECKSUM_FIELD,
+    )
+}
+
 #[derive(Debug)]
 pub enum SmwUsV1Map16RuntimeInstallBuildError {
     PristineLength(usize),
@@ -255,5 +277,14 @@ mod tests {
             smw_us_v1_map16_runtime_installation_plan(&[0; 1], allocation(), 0x7fdc),
             Err(SmwUsV1Map16RuntimeInstallBuildError::PristineLength(1))
         ));
+    }
+
+    #[test]
+    fn builtin_plan_uses_the_recovered_expansion_window() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let plan = smw_us_v1_builtin_map16_runtime_installation_plan(&original).unwrap();
+        assert_eq!(plan.allocation.search, 0x80_000..0x10_0000);
+        assert_eq!(plan.checksum_field, crate::SMW_US_V1_CHECKSUM_FIELD);
+        assert_eq!(plan.payloads[0].bytes.len(), AUXILIARY_PAYLOAD_LEN);
     }
 }

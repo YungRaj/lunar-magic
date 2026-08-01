@@ -7,6 +7,7 @@ pub(super) enum BuiltInRuntime {
     ExpandedSettings,
     CompleteLayer3,
     Lfix3Core,
+    Map16Runtime,
     ExpandedSharedPalettes,
 }
 
@@ -16,6 +17,7 @@ impl BuiltInRuntime {
             Self::ExpandedSettings => "Expanded level settings",
             Self::CompleteLayer3 => "Complete Layer 3 family (includes expanded settings)",
             Self::Lfix3Core => "Lfix3 core runtime and shared tables",
+            Self::Map16Runtime => "Complete Map16 runtime and auxiliary table",
             Self::ExpandedSharedPalettes => "Expanded shared/custom palettes",
         }
     }
@@ -32,6 +34,9 @@ impl BuiltInRuntime {
             Self::Lfix3Core => {
                 "Install the recovered Lfix3 runtime, three initialized 512-entry tables, and all \
                  fixed entry hooks."
+            }
+            Self::Map16Runtime => {
+                "Install the recovered fixed Map16 hooks and the relocated 32-KiB auxiliary table."
             }
             Self::ExpandedSharedPalettes => {
                 "Install the recovered shared-palette hooks, helpers, expanded table, and the \
@@ -80,6 +85,7 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::ExpandedSettings => Command::InstallSettings { rev: self.revision },
             BuiltInRuntime::CompleteLayer3 => Command::InstallLayer3 { rev: self.revision },
             BuiltInRuntime::Lfix3Core => Command::InstallLfix3 { rev: self.revision },
+            BuiltInRuntime::Map16Runtime => Command::InstallMap16Runtime { rev: self.revision },
             BuiltInRuntime::ExpandedSharedPalettes => {
                 Command::InstallExpandedSharedPalettes { rev: self.revision }
             }
@@ -122,6 +128,11 @@ mod tests {
         assert!(matches!(
             workspace.prepare(app.project_revision()).unwrap(),
             Command::InstallLfix3 { rev: 0 }
+        ));
+        workspace.runtime = BuiltInRuntime::Map16Runtime;
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallMap16Runtime { rev: 0 }
         ));
         assert!(workspace.prepare(app.project_revision() + 1).is_err());
     }

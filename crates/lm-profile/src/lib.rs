@@ -208,7 +208,8 @@ pub use lunar_magic_metadata::{
     SMW_US_V1_LM_VRAM_VERSION_OFFSET, smw_us_v1_lunar_magic_metadata_layout,
 };
 pub use map16_runtime_install::{
-    SmwUsV1Map16RuntimeInstallBuildError, smw_us_v1_map16_runtime_installation_plan,
+    SmwUsV1Map16RuntimeInstallBuildError, smw_us_v1_builtin_map16_runtime_installation_plan,
+    smw_us_v1_map16_runtime_installation_plan,
 };
 pub use native_map16_complete::{
     LoadedSmwUsV1CompleteMap16, SavedSmwUsV1CompleteMap16, SmwUsV1CompleteMap16Error,

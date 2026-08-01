@@ -82,6 +82,10 @@ pub enum Command {
     InstallLfix3 {
         rev: u64,
     },
+    /// Installs the recovered pristine SMW US revision-0 Map16 runtime and auxiliary table.
+    InstallMap16Runtime {
+        rev: u64,
+    },
     InstallExpandedSharedPalettes {
         rev: u64,
     },

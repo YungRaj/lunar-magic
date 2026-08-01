@@ -535,6 +535,14 @@ rejects unloaded selections and stale project revisions, dispatches exactly one
 `ReplaceNativeSecondaryExits` command, and protects staged changes during close and application
 shutdown. Acceptance—not preparation—clears the editor workspace.
 
+Native Map16 runtime installation now routes the authenticated Lunar Magic 3.63 pristine-ROM
+transformation through the revision-bound built-in runtime dialog. The exact fixed ranges and
+`$8000`-byte auxiliary payload remain Wine-derived evidence; the variable bank operand is a typed
+relocation into the recovered 512-KiB-to-1-MiB allocation window. Tests require exact source-byte
+preconditions, semantic secondary-Map16 reopen, checksum repair, one application history entry,
+stale-revision rejection, and byte-exact undo. Compatibility-stage detection and migration remain
+outside this pristine-install boundary.
+
 Level property batches edit only the five proven legacy-header bitfields while preserving every
 unowned bit, and treat expanded-header fields as opaque 16-bit values. Raw Layer 1/2 tile changes
 require explicit caller-provided dimensions because shape is level-mode and revision dependent;
