@@ -55,7 +55,7 @@ pub(super) struct BuiltInRuntimeWorkspace {
     revision: u64,
     pub runtime: BuiltInRuntime,
     lfix3_generation: lm_profile::SmwUsV1Lfix3Generation,
-    map16_runtime_installed: bool,
+    map16_generation: lm_profile::SmwUsV1Map16RuntimeGeneration,
     sprite19_fix_installed: bool,
 }
 
@@ -81,10 +81,9 @@ impl BuiltInRuntimeWorkspace {
         let lfix3_generation =
             lm_profile::probe_smw_us_v1_lfix3_generation(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?;
-        let map16_runtime_installed =
-            lm_profile::detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())
-                .map_err(|error| error.to_string())?
-                .is_some();
+        let map16_generation =
+            lm_profile::probe_smw_us_v1_map16_runtime_generation(project.rom.logical_bytes())
+                .map_err(|error| error.to_string())?;
         let sprite19_fix_installed =
             lm_profile::detect_smw_us_v1_sprite19_fix(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?
@@ -93,7 +92,7 @@ impl BuiltInRuntimeWorkspace {
             revision: snapshot.revision,
             runtime: BuiltInRuntime::default(),
             lfix3_generation,
-            map16_runtime_installed,
+            map16_generation,
             sprite19_fix_installed,
         })
     }
@@ -107,19 +106,26 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::Lfix3Core => {
                 self.lfix3_generation == lm_profile::SmwUsV1Lfix3Generation::Generation3Current
             }
-            BuiltInRuntime::Map16Runtime => self.map16_runtime_installed,
+            BuiltInRuntime::Map16Runtime => {
+                self.map16_generation == lm_profile::SmwUsV1Map16RuntimeGeneration::StageFourCurrent
+            }
             BuiltInRuntime::Sprite19Fix => self.sprite19_fix_installed,
             _ => false,
         }
     }
 
-    pub(super) fn selection_migrates_legacy_lfix3(&self) -> bool {
-        self.runtime == BuiltInRuntime::Lfix3Core
-            && matches!(
+    pub(super) fn selection_migrates_legacy_runtime(&self) -> bool {
+        match self.runtime {
+            BuiltInRuntime::Lfix3Core => matches!(
                 self.lfix3_generation,
                 lm_profile::SmwUsV1Lfix3Generation::Generation1
                     | lm_profile::SmwUsV1Lfix3Generation::Generation2
-            )
+            ),
+            BuiltInRuntime::Map16Runtime => {
+                self.map16_generation == lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy
+            }
+            _ => false,
+        }
     }
 
     pub(super) fn prepare(&self, project_revision: u64) -> Result<Command, String> {
@@ -194,16 +200,23 @@ mod tests {
 
         workspace.runtime = BuiltInRuntime::Lfix3Core;
         workspace.lfix3_generation = lm_profile::SmwUsV1Lfix3Generation::Generation2;
-        assert!(workspace.selection_migrates_legacy_lfix3());
+        assert!(workspace.selection_migrates_legacy_runtime());
         assert!(matches!(
             workspace.prepare(app.project_revision()).unwrap(),
             Command::InstallLfix3 { rev: 0 }
         ));
         workspace.lfix3_generation = lm_profile::SmwUsV1Lfix3Generation::Generation1;
-        assert!(workspace.selection_migrates_legacy_lfix3());
+        assert!(workspace.selection_migrates_legacy_runtime());
         assert!(matches!(
             workspace.prepare(app.project_revision()).unwrap(),
             Command::InstallLfix3 { rev: 0 }
+        ));
+        workspace.runtime = BuiltInRuntime::Map16Runtime;
+        workspace.map16_generation = lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy;
+        assert!(workspace.selection_migrates_legacy_runtime());
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallMap16Runtime { rev: 0 }
         ));
     }
 }

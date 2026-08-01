@@ -99,6 +99,7 @@ pub enum AppError {
     Lfix3Generation2Migration(lm_profile::SmwUsV1Lfix3Generation2MigrationBuildError),
     Map16RuntimePlan(lm_profile::SmwUsV1Map16RuntimeInstallBuildError),
     Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
+    Map16RuntimeStageThreeMigration(lm_profile::SmwUsV1Map16StageThreeMigrationBuildError),
     Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError),
     SecondaryExitInstallPlan(lm_profile::SecondaryExitInstallBuildError),
     SecondaryExitLfix3AuthenticationMissing,
@@ -338,6 +339,12 @@ impl From<lm_profile::SmwUsV1Map16RuntimeInstallBuildError> for AppError {
 impl From<lm_profile::SmwUsV1Map16RuntimeDetectError> for AppError {
     fn from(value: lm_profile::SmwUsV1Map16RuntimeDetectError) -> Self {
         Self::Map16RuntimeDetect(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Map16StageThreeMigrationBuildError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Map16StageThreeMigrationBuildError) -> Self {
+        Self::Map16RuntimeStageThreeMigration(value)
     }
 }
 

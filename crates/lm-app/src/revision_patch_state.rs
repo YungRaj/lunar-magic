@@ -177,17 +177,29 @@ impl AppState {
         {
             return Err(AppError::Map16RuntimeIdentityMismatch);
         }
-        if lm_profile::detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())?
-            .is_some()
-        {
-            return Err(AppError::Map16RuntimeAlreadyInstalled);
-        }
-        let plan = lm_profile::smw_us_v1_builtin_map16_runtime_installation_plan(
+        let description = match lm_profile::probe_smw_us_v1_map16_runtime_generation(
             project.rom.logical_bytes(),
-        )?;
-        project.install_relocatable_patch(&plan)?;
+        )? {
+            lm_profile::SmwUsV1Map16RuntimeGeneration::Absent => {
+                let plan = lm_profile::smw_us_v1_builtin_map16_runtime_installation_plan(
+                    project.rom.logical_bytes(),
+                )?;
+                project.install_relocatable_patch(&plan)?;
+                "Install SMW US Map16 runtime"
+            }
+            lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy => {
+                let plan = lm_profile::smw_us_v1_stage_three_map16_runtime_migration(
+                    project.rom.logical_bytes(),
+                )?;
+                project.install_relocatable_patch(&plan)?;
+                "Migrate SMW US Map16 runtime stage 3"
+            }
+            lm_profile::SmwUsV1Map16RuntimeGeneration::StageFourCurrent => {
+                return Err(AppError::Map16RuntimeAlreadyInstalled);
+            }
+        };
         self.advance_project_revision()?;
-        let description = "Install SMW US Map16 runtime".to_owned();
+        let description = description.to_owned();
         self.status.clone_from(&description);
         Ok(vec![FrontendEffect::ProjectChanged {
             description,

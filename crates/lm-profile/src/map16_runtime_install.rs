@@ -10,6 +10,33 @@ const AUXILIARY_PAYLOAD_GZIP_BASE64: &str = include_str!("assets/map16_auxiliary
 const PRISTINE_LOGICAL_LEN: usize = 0x80_000;
 const AUXILIARY_PAYLOAD_LEN: usize = 0x8000;
 const AUXILIARY_BANK_OPERAND: usize = 0x37_626;
+const STAGED_HOOK_BASE_OFFSET: usize = 0x37_600;
+const STAGE_MARKER_OFFSET: usize = 0x37_65c;
+const STAGE_FOUR_HOOK_OFFSET: usize = 0x37_7a0;
+const STAGED_HOOK_BASE: [u8; 0x44] = [
+    0xea, 0xea, 0x98, 0x5c, 0x45, 0xf5, 0x00, 0xea, 0xac, 0x9b, 0x0d, 0x10, 0x0a, 0x7a, 0x7a, 0x80,
+    0xf2, 0xea, 0xea, 0xea, 0xea, 0xea, 0xea, 0xeb, 0xad, 0x93, 0x16, 0xda, 0xc2, 0x30, 0xa8, 0x0a,
+    0xaa, 0x30, 0x16, 0xbf, 0x00, 0x80, 0x11, 0xc9, 0x00, 0x02, 0xb0, 0xf2, 0x84, 0x03, 0xe2, 0x30,
+    0xfa, 0x8d, 0x93, 0x16, 0xeb, 0xa8, 0xa3, 0x08, 0x60, 0xbf, 0x00, 0x80, 0xff, 0xc9, 0x00, 0x02,
+    0xb0, 0xdc, 0x80, 0xe8,
+];
+const STAGE_THREE_MARKER: [u8; 4] = [0x4c, 0x4d, 0x11, 0x01];
+const STAGE_FOUR_MARKER: [u8; 4] = [0x4c, 0x4d, 0x12, 0x01];
+const STAGE_THREE_HOOK: [u8; 0x14] = [
+    0x20, 0x08, 0xf6, 0xc9, 0xda, 0xf0, 0x19, 0x4c, 0x02, 0xf6, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0xff,
+];
+const STAGE_FOUR_HOOK: [u8; 0x14] = [
+    0x20, 0x08, 0xf6, 0xa5, 0x0f, 0xf0, 0x04, 0xa3, 0x0a, 0x80, 0x02, 0xa3, 0x06, 0xc9, 0xda, 0xf0,
+    0x0f, 0x4c, 0x02, 0xf6,
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmwUsV1Map16RuntimeGeneration {
+    Absent,
+    StageThreeLegacy,
+    StageFourCurrent,
+}
 
 /// Builds the authenticated pristine-ROM Map16 runtime plan with Lunar Magic's recovered
 /// 512-KiB-to-1-MiB allocation window.
@@ -63,6 +90,23 @@ pub enum SmwUsV1Map16RuntimeDetectError {
     AuxiliaryPayloadMismatch,
 }
 
+#[derive(Debug)]
+pub enum SmwUsV1Map16StageThreeMigrationBuildError {
+    Detect(SmwUsV1Map16RuntimeDetectError),
+    MissingStageThree,
+}
+
+impl fmt::Display for SmwUsV1Map16StageThreeMigrationBuildError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "cannot build SMW-US Map16 stage-three migration: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1Map16StageThreeMigrationBuildError {}
+
 impl fmt::Display for SmwUsV1Map16RuntimeDetectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -95,7 +139,116 @@ pub fn detect_smw_us_v1_current_map16_runtime(
     {
         return Ok(None);
     }
-    for (offset, expected) in
+    authenticate_current_map16_runtime(bytes).map(Some)
+}
+
+/// Classifies the retained stage-three runtime emitted by Lunar Magic 3.01 and the current
+/// stage-four runtime. Every non-absent result is authenticated across the complete staged hook
+/// network, including the currently unused stage-four destination.
+///
+/// # Errors
+///
+/// Rejects a partial or modified legacy/current runtime candidate.
+pub fn probe_smw_us_v1_map16_runtime_generation(
+    bytes: &[u8],
+) -> Result<SmwUsV1Map16RuntimeGeneration, SmwUsV1Map16RuntimeDetectError> {
+    match bytes.get(STAGE_MARKER_OFFSET..STAGE_MARKER_OFFSET + 4) {
+        Some(marker) if marker == STAGE_THREE_MARKER => {
+            detect_smw_us_v1_stage_three_map16_runtime(bytes)?;
+            Ok(SmwUsV1Map16RuntimeGeneration::StageThreeLegacy)
+        }
+        Some(marker) if marker == STAGE_FOUR_MARKER => {
+            authenticate_staged_map16_hooks(bytes, &STAGE_FOUR_MARKER, &STAGE_FOUR_HOOK)?;
+            Ok(SmwUsV1Map16RuntimeGeneration::StageFourCurrent)
+        }
+        Some(marker) if marker.starts_with(b"LM") => {
+            Err(SmwUsV1Map16RuntimeDetectError::FixedByteMismatch {
+                offset: STAGE_MARKER_OFFSET + 2,
+                expected: STAGE_FOUR_MARKER[2],
+                actual: marker[2],
+            })
+        }
+        _ => Ok(SmwUsV1Map16RuntimeGeneration::Absent),
+    }
+}
+
+/// Authenticates Lunar Magic 3.01's retained stage-three Map16 runtime.
+///
+/// Returns `Ok(false)` only when its exact stage marker is absent.
+///
+/// # Errors
+///
+/// Rejects any staged hook or destination mismatch.
+pub fn detect_smw_us_v1_stage_three_map16_runtime(
+    bytes: &[u8],
+) -> Result<bool, SmwUsV1Map16RuntimeDetectError> {
+    if bytes.get(STAGE_MARKER_OFFSET..STAGE_MARKER_OFFSET + 4)
+        != Some(STAGE_THREE_MARKER.as_slice())
+    {
+        return Ok(false);
+    }
+    authenticate_staged_map16_hooks(bytes, &STAGE_THREE_MARKER, &STAGE_THREE_HOOK)?;
+    Ok(true)
+}
+
+/// Builds Lunar Magic's exact stage-three-to-stage-four compatibility upgrade while leaving all
+/// Map16 data and allocations untouched. No editor-version stamp is written.
+///
+/// The returned plan carries a no-op precondition for the full staged hook base, so a change after
+/// planning rejects the transaction rather than upgrading hooks authenticated from an older
+/// snapshot.
+///
+/// # Errors
+///
+/// Rejects a missing or modified stage-three runtime.
+pub fn smw_us_v1_stage_three_map16_runtime_migration(
+    bytes: &[u8],
+) -> Result<RelocatablePatchPlan, SmwUsV1Map16StageThreeMigrationBuildError> {
+    if !detect_smw_us_v1_stage_three_map16_runtime(bytes)
+        .map_err(SmwUsV1Map16StageThreeMigrationBuildError::Detect)?
+    {
+        return Err(SmwUsV1Map16StageThreeMigrationBuildError::MissingStageThree);
+    }
+    let writes = vec![
+        PatchWrite {
+            offset: STAGED_HOOK_BASE_OFFSET,
+            expected: STAGED_HOOK_BASE.to_vec(),
+            replacement: STAGED_HOOK_BASE.to_vec(),
+            fixups: Vec::new(),
+        },
+        PatchWrite {
+            offset: STAGE_MARKER_OFFSET,
+            expected: STAGE_THREE_MARKER.to_vec(),
+            replacement: STAGE_FOUR_MARKER.to_vec(),
+            fixups: Vec::new(),
+        },
+        PatchWrite {
+            offset: STAGE_FOUR_HOOK_OFFSET,
+            expected: STAGE_THREE_HOOK.to_vec(),
+            replacement: STAGE_FOUR_HOOK.to_vec(),
+            fixups: Vec::new(),
+        },
+    ];
+    Ok(RelocatablePatchPlan {
+        description: "Migrate Lunar Magic Map16 runtime stage 3 to stage 4".into(),
+        mapper: Mapper::LoRom,
+        allocation: AllocationPolicy {
+            search: 0..bytes.len(),
+            bank_size: None,
+            fill_bytes: vec![0, 0xff],
+            protected: Vec::new(),
+        },
+        checksum_field: crate::SMW_US_V1_CHECKSUM_FIELD,
+        expansion_fill: 0xff,
+        payloads: Vec::new(),
+        writes,
+    })
+}
+
+fn authenticate_current_map16_runtime(
+    bytes: &[u8],
+) -> Result<RatsBlock, SmwUsV1Map16RuntimeDetectError> {
+    for (offset, current) in
         fixed_patch_replacements().map_err(SmwUsV1Map16RuntimeDetectError::Embedded)?
     {
         if (crate::SMW_US_V1_CHECKSUM_FIELD..crate::SMW_US_V1_CHECKSUM_FIELD + 4).contains(&offset)
@@ -103,6 +256,7 @@ pub fn detect_smw_us_v1_current_map16_runtime(
         {
             continue;
         }
+        let expected = current;
         let actual = bytes.get(offset).copied().ok_or(
             SmwUsV1Map16RuntimeDetectError::FixedByteMismatch {
                 offset,
@@ -147,7 +301,35 @@ pub fn detect_smw_us_v1_current_map16_runtime(
     if bytes.get(block.payload.clone()) != Some(expected.as_slice()) {
         return Err(SmwUsV1Map16RuntimeDetectError::AuxiliaryPayloadMismatch);
     }
-    Ok(Some(block))
+    Ok(block)
+}
+
+fn authenticate_staged_map16_hooks(
+    bytes: &[u8],
+    marker: &[u8],
+    final_hook: &[u8],
+) -> Result<(), SmwUsV1Map16RuntimeDetectError> {
+    authenticate_exact_range(bytes, STAGED_HOOK_BASE_OFFSET, &STAGED_HOOK_BASE)?;
+    authenticate_exact_range(bytes, STAGE_MARKER_OFFSET, marker)?;
+    authenticate_exact_range(bytes, STAGE_FOUR_HOOK_OFFSET, final_hook)
+}
+
+fn authenticate_exact_range(
+    bytes: &[u8],
+    offset: usize,
+    expected: &[u8],
+) -> Result<(), SmwUsV1Map16RuntimeDetectError> {
+    for (index, expected) in expected.iter().copied().enumerate() {
+        let actual = bytes.get(offset + index).copied().unwrap_or(0);
+        if actual != expected {
+            return Err(SmwUsV1Map16RuntimeDetectError::FixedByteMismatch {
+                offset: offset + index,
+                expected,
+                actual,
+            });
+        }
+    }
+    Ok(())
 }
 
 impl fmt::Display for SmwUsV1Map16RuntimeInstallBuildError {
@@ -461,5 +643,123 @@ mod tests {
             detect_smw_us_v1_current_map16_runtime(&modified),
             Err(SmwUsV1Map16RuntimeDetectError::AuxiliaryPayloadMismatch)
         ));
+    }
+
+    #[test]
+    fn stage_three_runtime_is_authenticated_migrated_and_undoes_exactly() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let install = smw_us_v1_builtin_map16_runtime_installation_plan(&original).unwrap();
+        let mut installed = Project::new(RomImage::from_bytes(original).unwrap());
+        installed.install_relocatable_patch(&install).unwrap();
+        let mut stage_three = installed.save_snapshot();
+        stage_three[STAGE_MARKER_OFFSET..STAGE_MARKER_OFFSET + STAGE_THREE_MARKER.len()]
+            .copy_from_slice(&STAGE_THREE_MARKER);
+        stage_three[STAGE_FOUR_HOOK_OFFSET..STAGE_FOUR_HOOK_OFFSET + STAGE_THREE_HOOK.len()]
+            .copy_from_slice(&STAGE_THREE_HOOK);
+        let checksum =
+            compute_snes_checksum(&stage_three, crate::SMW_US_V1_CHECKSUM_FIELD).unwrap();
+        stage_three[crate::SMW_US_V1_CHECKSUM_FIELD..crate::SMW_US_V1_CHECKSUM_FIELD + 4]
+            .copy_from_slice(&checksum.encoded());
+
+        assert_eq!(
+            probe_smw_us_v1_map16_runtime_generation(&stage_three).unwrap(),
+            SmwUsV1Map16RuntimeGeneration::StageThreeLegacy
+        );
+        assert!(detect_smw_us_v1_stage_three_map16_runtime(&stage_three).unwrap());
+        let before = stage_three.clone();
+        let plan = smw_us_v1_stage_three_map16_runtime_migration(&stage_three).unwrap();
+        assert!(plan.payloads.is_empty());
+        assert!(plan.writes.iter().any(|write| {
+            write.offset <= STAGE_MARKER_OFFSET
+                && STAGE_MARKER_OFFSET < write.offset + write.replacement.len()
+        }));
+        assert!(plan.writes.iter().any(|write| {
+            write.offset <= STAGE_FOUR_HOOK_OFFSET
+                && STAGE_FOUR_HOOK_OFFSET < write.offset + write.replacement.len()
+        }));
+
+        let mut project = Project::new(RomImage::from_bytes(stage_three).unwrap());
+        project.install_relocatable_patch(&plan).unwrap();
+        assert_eq!(
+            probe_smw_us_v1_map16_runtime_generation(project.rom.logical_bytes()).unwrap(),
+            SmwUsV1Map16RuntimeGeneration::StageFourCurrent
+        );
+        assert_eq!(
+            &project.rom.logical_bytes()
+                [STAGE_MARKER_OFFSET..STAGE_MARKER_OFFSET + STAGE_FOUR_MARKER.len()],
+            STAGE_FOUR_MARKER
+        );
+        assert_eq!(
+            &project.rom.logical_bytes()
+                [STAGE_FOUR_HOOK_OFFSET..STAGE_FOUR_HOOK_OFFSET + STAGE_FOUR_HOOK.len()],
+            STAGE_FOUR_HOOK
+        );
+        assert_eq!(project.history.undo_len(), 1);
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), before);
+    }
+
+    #[test]
+    fn stage_three_migration_rejects_staged_hooks_changed_after_planning() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let install = smw_us_v1_builtin_map16_runtime_installation_plan(&original).unwrap();
+        let mut installed = Project::new(RomImage::from_bytes(original).unwrap());
+        installed.install_relocatable_patch(&install).unwrap();
+        let mut stage_three = installed.save_snapshot();
+        stage_three[STAGE_MARKER_OFFSET..STAGE_MARKER_OFFSET + STAGE_THREE_MARKER.len()]
+            .copy_from_slice(&STAGE_THREE_MARKER);
+        stage_three[STAGE_FOUR_HOOK_OFFSET..STAGE_FOUR_HOOK_OFFSET + STAGE_THREE_HOOK.len()]
+            .copy_from_slice(&STAGE_THREE_HOOK);
+        let plan = smw_us_v1_stage_three_map16_runtime_migration(&stage_three).unwrap();
+
+        for offset in [STAGED_HOOK_BASE_OFFSET, STAGE_FOUR_HOOK_OFFSET] {
+            let mut changed = stage_three.clone();
+            changed[offset] ^= 1;
+            let snapshot = changed.clone();
+            let mut project = Project::new(RomImage::from_bytes(changed).unwrap());
+            assert!(project.install_relocatable_patch(&plan).is_err());
+            assert_eq!(project.history.undo_len(), 0);
+            assert_eq!(project.save_snapshot(), snapshot);
+        }
+    }
+
+    #[test]
+    #[ignore = "requires external LM 3.01 and LM 3.63 before/after oracle ROMs"]
+    fn external_stage_three_oracle_matches_lunar_magic_upgrade_bytes() {
+        let before = std::fs::read(
+            std::env::var_os("LM_MAP16_STAGE3_BEFORE").expect("LM_MAP16_STAGE3_BEFORE"),
+        )
+        .unwrap();
+        let after = std::fs::read(
+            std::env::var_os("LM_MAP16_STAGE3_AFTER").expect("LM_MAP16_STAGE3_AFTER"),
+        )
+        .unwrap();
+        let before = RomImage::from_bytes(before).unwrap();
+        let after = RomImage::from_bytes(after).unwrap();
+        assert_eq!(
+            probe_smw_us_v1_map16_runtime_generation(before.logical_bytes()).unwrap(),
+            SmwUsV1Map16RuntimeGeneration::StageThreeLegacy
+        );
+        let plan = smw_us_v1_stage_three_map16_runtime_migration(before.logical_bytes()).unwrap();
+        let mut project = Project::new(before);
+        project.install_relocatable_patch(&plan).unwrap();
+
+        let editor_only = [
+            0x7fdc..0x7fe0,
+            0x7f_08e..0x7f_095,
+            0x7f_0b6..0x7f_0b8,
+            0x7f_0c3..0x7f_0c5,
+        ];
+        for (offset, (&actual, &expected)) in project
+            .rom
+            .logical_bytes()
+            .iter()
+            .zip(after.logical_bytes())
+            .enumerate()
+        {
+            if !editor_only.iter().any(|range| range.contains(&offset)) {
+                assert_eq!(actual, expected, "oracle mismatch at logical {offset:#x}");
+            }
+        }
     }
 }

@@ -87,11 +87,18 @@ impl BuiltInRuntimeInstaller {
         if workspace.selection_is_installed() {
             ui.label("The selected current runtime is already installed and authenticated.");
         }
-        if workspace.selection_migrates_legacy_lfix3() {
-            ui.label(
-                "The authenticated legacy Lfix3 generation will be migrated to the current \
-                 runtime while preserving or converting its live per-level tables.",
-            );
+        if workspace.selection_migrates_legacy_runtime() {
+            ui.label(match workspace.runtime {
+                BuiltInRuntime::Lfix3Core => {
+                    "The authenticated legacy Lfix3 generation will be migrated to the current \
+                     runtime while preserving or converting its live per-level tables."
+                }
+                BuiltInRuntime::Map16Runtime => {
+                    "The authenticated stage-three Map16 runtime will be migrated in place while \
+                     leaving existing Map16 data and allocations untouched."
+                }
+                _ => unreachable!(),
+            });
         }
         ui.label(
             "Installation may expand the ROM. All allocations, hooks, checksum repair, and \
@@ -111,7 +118,7 @@ impl BuiltInRuntimeInstaller {
             if ui
                 .add_enabled(
                     !stale && !workspace.selection_is_installed(),
-                    egui::Button::new(if workspace.selection_migrates_legacy_lfix3() {
+                    egui::Button::new(if workspace.selection_migrates_legacy_runtime() {
                         "Migrate transactionally"
                     } else {
                         "Install transactionally"
@@ -350,6 +357,64 @@ mod tests {
         );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn map16_runtime_selection_migrates_stage_three_and_undoes_exactly() {
+        const STAGE_MARKER_OFFSET: usize = 0x37_65c;
+        const STAGE_FOUR_HOOK_OFFSET: usize = 0x37_7a0;
+        const STAGE_THREE_MARKER: [u8; 4] = [0x4c, 0x4d, 0x11, 0x01];
+        const STAGE_THREE_HOOK: [u8; 0x14] = [
+            0x20, 0x08, 0xf6, 0xc9, 0xda, 0xf0, 0x19, 0x4c, 0x02, 0xf6, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        ];
+
+        let mut source = AppState::default();
+        source
+            .load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        source
+            .dispatch(Command::InstallMap16Runtime { rev: 0 })
+            .unwrap();
+        let mut stage_three = source.project().unwrap().save_snapshot();
+        stage_three[STAGE_MARKER_OFFSET..STAGE_MARKER_OFFSET + STAGE_THREE_MARKER.len()]
+            .copy_from_slice(&STAGE_THREE_MARKER);
+        stage_three[STAGE_FOUR_HOOK_OFFSET..STAGE_FOUR_HOOK_OFFSET + STAGE_THREE_HOOK.len()]
+            .copy_from_slice(&STAGE_THREE_HOOK);
+        let checksum = lm_rom::compute_snes_checksum(&stage_three, 0x7fdc).unwrap();
+        stage_three[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+
+        let mut app = AppState::default();
+        app.load_rom(stage_three.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Map16Runtime;
+        assert!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .selection_migrates_legacy_runtime()
+        );
+        app.dispatch(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .prepare(app.project_revision())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_map16_runtime_generation(
+                app.project().unwrap().rom.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1Map16RuntimeGeneration::StageFourCurrent
+        );
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), stage_three);
     }
 
     #[test]

@@ -1176,6 +1176,18 @@ installer before committing a pristine background tile such as `$8200`; the resu
 block reopens at the Wine-authenticated trimmed length `$1008`, while the complete multi-domain
 operation remains one application undo.
 
+The adjacent named compatibility stages are independently versioned. A retained Lunar Magic 3.01
+ROM contains the complete `$037600` 68-byte hook base, marker `LM $0111` at `$03765C`, and the old
+20-byte destination at `$0377A0`. Importing an unchanged complete Map16 file into that ROM with
+Lunar Magic 3.63 changes only the marker to `LM $0112` and replaces the destination with
+`20 08 F6 A5 0F F0 04 A3 0A 80 02 A3 06 C9 DA F0 0F 4C 02 F6`; its other changes are the editor
+version stamp. This agrees exactly with `InstallMap16HookStageFour` at `0046FFB0`, which first
+requires `CheckLegacyMap16HookStageThree`, writes the 20-byte blob from executable address
+`005B77CC`, writes the four-byte marker from `005B77F0`, and patches byte `base+$1AE` from descriptor
+entry `$3E4`. The Rust migration authenticates all three staged regions, retains every live Map16
+table/allocation, applies those two effective changes transactionally, and matches the Wine oracle
+outside the editor stamp and explicit checksum policy.
+
 The same runtime exposes eight foreground definition blocks, not one monolithic allocation.
 `SavePrimaryMap16DataBlocks` scans eight consecutive `$8000`-byte slices of the live primary
 buffer. Block zero retains its first `$1000` bytes in legacy fixed storage and allocates only the
