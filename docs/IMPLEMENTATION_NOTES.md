@@ -1004,15 +1004,16 @@ bypass the revision-checked command boundary.
 After opening a ROM, installing its audited revision profile, and selecting a level, the terminal
 frontend can exercise a real native edit with
 `level-header FIELD VALUE SEARCH_START SEARCH_END`. Supported fields are `background-palette`,
-`mode`, `background-color`, `sprite-palette`, and `foreground-palette`; numeric arguments are
-hexadecimal. The explicit search range is converted into a bank-aware policy that protects all 16
-profile tables and the complete 64-byte internal-header/vector block. The command decodes through
-`LevelController`, stages a typed edit, allocates and repairs the checksum on a private image, then
-dispatches the prepared mutation through the authoritative revision check. It is therefore
-undoable and cannot bypass normal dirty-state/save handling.
+`mode`, `background-color`, `sprite-tileset`, `sprite-palette`, `foreground-palette`, and
+`object-tileset`; numeric arguments are hexadecimal. The explicit search range is converted into a
+bank-aware policy that protects all 16 profile tables and the complete 64-byte
+internal-header/vector block. The command decodes through `LevelController`, stages a typed edit,
+allocates and repairs the checksum on a private image, then dispatches the prepared mutation
+through the authoritative revision check. It is therefore undoable and cannot bypass normal
+dirty-state/save handling.
 
 For complete native level-controller batches, `level-edit SCRIPT SEARCH_START SEARCH_END` reads a
-bounded UTF-8 `LMLEDIT1` script. It supports all five recovered header fields; object
+bounded UTF-8 `LMLEDIT1` script. It supports all seven recovered header fields; object
 insert/replace/remove/move plus typed command-ID, parameter, coordinate-nibble, and screen-advance
 edits and exact packed screen-jump targets; sprite-header replacement;
 and native sprite-token
