@@ -20,12 +20,15 @@ impl RomLevelAssetsEditor {
         stale: bool,
         modified: bool,
     ) {
+        let palette_busy =
+            self.palette_loader.is_running() || self.palette_persistence.is_running();
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     !stale
                         && !self.mwl_loader.is_running()
-                        && !self.image_batch_worker.is_running(),
+                        && !self.image_batch_worker.is_running()
+                        && !palette_busy,
                     eframe::egui::Button::new("Export complete MWL…"),
                 )
                 .clicked()
@@ -39,7 +42,8 @@ impl RomLevelAssetsEditor {
                         && !stale
                         && !self.mwl_loader.is_running()
                         && !self.legacy_mwl_loader.is_running()
-                        && !self.manifest_loader.is_running(),
+                        && !self.manifest_loader.is_running()
+                        && !palette_busy,
                     eframe::egui::Button::new("Import complete MWL…"),
                 )
                 .clicked()
@@ -53,7 +57,8 @@ impl RomLevelAssetsEditor {
                 && !self.image_batch_worker.is_running()
                 && !self.mwl_loader.is_running()
                 && !self.legacy_mwl_loader.is_running()
-                && !self.manifest_loader.is_running();
+                && !self.manifest_loader.is_running()
+                && !palette_busy;
             if ui
                 .add_enabled(
                     legacy_enabled,
@@ -82,7 +87,8 @@ impl RomLevelAssetsEditor {
                 && !self.mwl_loader.is_running()
                 && !self.legacy_mwl_loader.is_running()
                 && !self.manifest_loader.is_running()
-                && !self.mwl_batch_worker.is_running();
+                && !self.mwl_batch_worker.is_running()
+                && !palette_busy;
             if ui
                 .add_enabled(batch_enabled, eframe::egui::Button::new("Export all MWLs…"))
                 .clicked()

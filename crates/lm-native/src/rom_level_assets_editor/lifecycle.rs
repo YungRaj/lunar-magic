@@ -44,6 +44,8 @@ impl RomLevelAssetsEditor {
             || self.legacy_mwl_loader.is_running()
             || self.mwl_batch_worker.is_running()
             || self.image_batch_worker.is_running()
+            || self.palette_loader.is_running()
+            || self.palette_persistence.is_running()
         {
             self.error =
                 Some("wait for native-assets background work to finish before closing".into());

@@ -3206,6 +3206,15 @@ to a new destination. Loading or persistence gates commit and close, and a ROM r
 loading rejects the import. Original Lunar Magic prompt and file behavior and broader variants
 remain incomplete.
 
+The installed native-level-assets editor now transfers its complete staged palette through the
+portable `.lmpal` format. Reads are bounded and non-blocking. Import requires the active palette's
+exact color count and converts every changed word into one aggregate ownership-aware edit, so fixed
+or ExAnimation-owned differences reject the whole operation without disturbing any level domain.
+The source level remains provenance rather than a destination lock, permitting explicit cross-level
+copies. Export snapshots the staged palette and publishes only to a new destination. Palette loading
+gates aggregate editing, commit, and close; export persistence gates commit and close, and a ROM
+revision change during loading rejects the result. Original row and shared-format dialogs remain.
+
 The ten-argument form additionally accepts a versioned `LMANFRM` materialized-animation frame
 between the appearance file (use `none` when absent) and completed-reveal count. This provider-neutral
 artifact contains unique absolute tile and palette-color overrides for an explicit tick. Its decoder

@@ -4,7 +4,10 @@ use crate::{
     ControllerSnapshot, EditorMode, ExAnimationControllerEdit, ExAnimationControllerEditFailure,
     NativeLevelEdit, PaletteControllerEdit,
 };
-use lm_graphics::{ExAnimationFeatureOptions, PaletteBatchEditError, PaletteOwnership};
+use lm_graphics::{
+    ExAnimationFeatureOptions, PaletteBatchEditError, PaletteChange, PaletteInterchangeFile,
+    PaletteOwnership,
+};
 use lm_level::{
     ExpandedLevelSettingsError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
     NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit,
@@ -87,6 +90,10 @@ pub enum NativeLevelAssetsControllerError {
         command: usize,
         inner: usize,
         error: PaletteBatchEditError,
+    },
+    ImportPaletteShape {
+        expected: usize,
+        actual: usize,
     },
     ExAnimationEdit {
         command: usize,
@@ -395,6 +402,43 @@ impl NativeLevelAssetsController {
         self.layer2_descriptor = staged_layer2_descriptor;
         self.features = staged_features;
         Ok(())
+    }
+
+    /// Atomically stages a complete portable palette through the active ownership map.
+    ///
+    /// The file's source palette is provenance only, allowing intentional cross-level copies.
+    /// Every changed protected color rejects the complete import without changing staged assets.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NativeLevelAssetsControllerError`] for a different palette shape or any
+    /// ownership-protected imported color.
+    pub fn replace_palette_file(
+        &mut self,
+        file: &PaletteInterchangeFile,
+    ) -> Result<(), NativeLevelAssetsControllerError> {
+        let expected = self.assets.palette.colors.len();
+        let actual = file.palette.colors.len();
+        if actual != expected {
+            return Err(NativeLevelAssetsControllerError::ImportPaletteShape { expected, actual });
+        }
+        let changes = self
+            .assets
+            .palette
+            .colors
+            .iter()
+            .zip(&file.palette.colors)
+            .enumerate()
+            .filter_map(|(index, (current, imported))| {
+                (current != imported).then_some(PaletteChange {
+                    index,
+                    color: *imported,
+                })
+            })
+            .collect();
+        self.apply_edits(&[NativeLevelAssetsControllerEdit::Palette(vec![
+            PaletteControllerEdit::ApplyChanges(changes),
+        ])])
     }
 
     /// Replaces every modeled per-level ROM asset from one fully preflighted MWL aggregate.

@@ -24,6 +24,7 @@ mod image_batch;
 mod lifecycle;
 mod mwl;
 mod mwl_batch;
+mod palette_transfer;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -565,6 +566,8 @@ pub(crate) struct RomLevelAssetsEditor {
     loader: DocumentLoader,
     mwl_loader: DocumentLoader,
     legacy_mwl_loader: DocumentLoader,
+    palette_loader: DocumentLoader,
+    palette_persistence: crate::persistence_worker::PersistenceWorker,
     pending_legacy_mwl_load: Option<mwl::PendingLegacyMwlLoad>,
     mwl_batch_worker: mwl_batch::MwlBatchExportWorker,
     mwl_batch_status: Option<String>,
@@ -594,6 +597,7 @@ impl RomLevelAssetsEditor {
         project_revision: u64,
         special_world_passed: bool,
     ) -> (bool, Option<Command>) {
+        self.poll_palette_file_io(context, project_revision);
         if let Some(result) = self.mwl_batch_worker.show(context) {
             match result {
                 Ok(Some(count)) => {
@@ -673,8 +677,9 @@ impl RomLevelAssetsEditor {
         project_revision: u64,
         special_world_passed: bool,
     ) -> Option<Command> {
-        let workspace = self.workspace.as_ref()?;
-        let stale = workspace.controller.revision() != project_revision;
+        let stale = self.workspace.as_ref()?.controller.revision() != project_revision;
+        let palette_busy =
+            self.palette_loader.is_running() || self.palette_persistence.is_running();
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
@@ -687,22 +692,28 @@ impl RomLevelAssetsEditor {
             ui.label("..");
             ui.text_edit_singleline(&mut self.search_end);
         });
+        self.palette_file_controls(ui, stale, project_revision);
+        let workspace = self.workspace.as_ref()?;
         let file = NativeLevelAssetsFile {
             source_slot: workspace.source_slot,
             assets: workspace.controller.assets().clone(),
         };
-        let edit = self.panels.show(
-            ui,
-            workspace.controller.revision(),
-            &file,
-            (
-                workspace.controller.layer2(),
-                workspace.controller.layer2_descriptor(),
-            ),
-            workspace.controller.exanimation_features(),
-            &workspace.profile.exanimation_double_size_modes,
-            &workspace.ownership,
-        );
+        let edit = ui
+            .add_enabled_ui(!self.palette_loader.is_running(), |ui| {
+                self.panels.show(
+                    ui,
+                    workspace.controller.revision(),
+                    &file,
+                    (
+                        workspace.controller.layer2(),
+                        workspace.controller.layer2_descriptor(),
+                    ),
+                    workspace.controller.exanimation_features(),
+                    &workspace.profile.exanimation_double_size_modes,
+                    &workspace.ownership,
+                )
+            })
+            .inner;
         if let Some(edit) = edit {
             match edit {
                 Ok(edit) if !stale => {
@@ -1125,7 +1136,7 @@ impl RomLevelAssetsEditor {
             .is_some_and(|workspace| workspace.controller.is_modified());
         if ui
             .add_enabled(
-                !stale && !self.image_batch_worker.is_running(),
+                !stale && !self.image_batch_worker.is_running() && !palette_busy,
                 egui::Button::new("Export full level image…"),
             )
             .clicked()
@@ -1143,7 +1154,8 @@ impl RomLevelAssetsEditor {
             let enabled = !stale
                 && !modified
                 && !self.image_batch_worker.is_running()
-                && !self.mwl_batch_worker.is_running();
+                && !self.mwl_batch_worker.is_running()
+                && !palette_busy;
             for (label, format) in [
                 ("Export all level PNGs…", image_batch::LevelImageFormat::Png),
                 ("Export all level BMPs…", image_batch::LevelImageFormat::Bmp),
@@ -1167,7 +1179,8 @@ impl RomLevelAssetsEditor {
                 modified
                     && !stale
                     && !self.manifest_loader.is_running()
-                    && !self.image_batch_worker.is_running(),
+                    && !self.image_batch_worker.is_running()
+                    && !palette_busy,
                 egui::Button::new("Commit all domains to ROM"),
             )
             .clicked()
@@ -1184,7 +1197,8 @@ impl RomLevelAssetsEditor {
                 modified
                     && !stale
                     && !self.manifest_loader.is_running()
-                    && !self.image_batch_worker.is_running(),
+                    && !self.image_batch_worker.is_running()
+                    && !palette_busy,
                 egui::Button::new("Commit and reclaim with LMRATS01 evidence"),
             )
             .clicked()

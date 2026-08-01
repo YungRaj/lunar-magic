@@ -111,6 +111,13 @@ pub(crate) fn choose_palette_document() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_palette_save_path(slot: u16) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Portable Lunar Magic palette", &["lmpal"])
+        .set_file_name(format!("Palette {slot:03X}.lmpal"))
+        .save_file()
+}
+
 pub(crate) fn choose_palette_ownership() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Palette ownership evidence", &["lmpalown"])

@@ -1,7 +1,9 @@
 use super::*;
 use crate::PaletteControllerEdit;
 use lm_codec::encode_terminated_rle;
-use lm_graphics::{Bgr555, ExAnimationFeature, PaletteChange};
+use lm_graphics::{
+    Bgr555, ExAnimationFeature, Palette, PaletteChange, PaletteEntryOwner, PaletteInterchangeFile,
+};
 use lm_level::{
     LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection,
     NATIVE_LAYER2_TILEMAP_LEN, SpriteRecord, SpriteToken, split_layer2_tilemap_planes,
@@ -857,6 +859,45 @@ fn late_cross_domain_failure_rolls_back_the_complete_aggregate() {
     );
     assert_eq!(controller.assets(), &before);
     assert!(!controller.is_modified());
+}
+
+#[test]
+fn complete_palette_replacement_is_slot_agnostic_shape_checked_and_atomic() {
+    let ownership =
+        PaletteOwnership::from_owners(vec![PaletteEntryOwner::Editable, PaletteEntryOwner::Fixed]);
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot(),
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        ownership,
+    )
+    .unwrap();
+    let baseline = controller.assets().clone();
+    let imported = PaletteInterchangeFile {
+        source_palette: 0x1ff,
+        palette: Palette {
+            colors: vec![Bgr555(0x1234), baseline.palette.colors[1]],
+        },
+    };
+    controller.replace_palette_file(&imported).unwrap();
+    assert_eq!(controller.assets().palette, imported.palette);
+    let accepted = controller.assets().clone();
+
+    let wrong_shape = PaletteInterchangeFile {
+        source_palette: 0,
+        palette: Palette { colors: vec![] },
+    };
+    assert!(controller.replace_palette_file(&wrong_shape).is_err());
+    assert_eq!(controller.assets(), &accepted);
+
+    let mut protected = imported;
+    protected.palette.colors[1].0 ^= 1;
+    assert!(matches!(
+        controller.replace_palette_file(&protected),
+        Err(NativeLevelAssetsControllerError::PaletteEdit { .. })
+    ));
+    assert_eq!(controller.assets(), &accepted);
 }
 
 #[test]
