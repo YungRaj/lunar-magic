@@ -95,6 +95,60 @@ fn late_fixup_and_hook_failures_are_atomic() {
 }
 
 #[test]
+fn replacement_reclaims_owned_block_reuses_space_and_undoes_as_one_batch() {
+    let mut bytes = vec![0xff; 0x1_0000];
+    let previous = FreeSpaceAllocator::new(&mut bytes, AllocationPolicy::lorom(0x8000..0x1_0000))
+        .allocate(&[0x44; 0x40])
+        .unwrap();
+    let original = bytes.clone();
+    let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+
+    let result = project
+        .replace_relocatable_patch(
+            &plan(),
+            &RatsOwnershipManifest {
+                owned: vec![previous.clone()],
+                retained: Vec::new(),
+            },
+            0xff,
+        )
+        .unwrap();
+
+    assert_eq!(result.blocks[0].header_offset, previous.header_offset);
+    assert_eq!(project.history.undo_len(), 1);
+    project.undo().unwrap();
+    assert_eq!(project.rom.logical_bytes(), original);
+}
+
+#[test]
+fn replacement_late_plan_failure_does_not_escape_staged_reclamation() {
+    let mut bytes = vec![0xff; 0x1_0000];
+    let previous = FreeSpaceAllocator::new(&mut bytes, AllocationPolicy::lorom(0x8000..0x1_0000))
+        .allocate(&[0x44; 0x40])
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+    let before = project.rom.logical_bytes().to_vec();
+    let mut invalid = plan();
+    invalid.writes[0].expected[0] = 0;
+
+    assert!(matches!(
+        project.replace_relocatable_patch(
+            &invalid,
+            &RatsOwnershipManifest {
+                owned: vec![previous],
+                retained: Vec::new(),
+            },
+            0xff,
+        ),
+        Err(RelocatablePatchReplacementError::Patch(
+            RelocatablePatchError::HookPreconditionMismatch { .. }
+        ))
+    ));
+    assert_eq!(project.rom.logical_bytes(), before);
+    assert_eq!(project.history.undo_len(), 0);
+}
+
+#[test]
 fn grouped_plans_keep_independent_policies_and_commit_once() {
     let first = plan();
     let mut second = plan();

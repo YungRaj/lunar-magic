@@ -544,10 +544,14 @@ Legacy-generation probing must reproduce Lunar Magic's descriptor-selected prior
 authenticating every immutable generation boundary. Generation 1 requires its exact `$02D7CE` JSL
 and complete fixed `$02DC50` helper; generation 2 requires its exact `$240` RATS runtime, six hooks,
 fixed helpers, `$0110` marker, and the legitimately retained generation-1 hook; generation 3
-requires complete current `$0111` authentication. Corrupt candidates reject. The recovered
+requires complete current `$0111` authentication. Both pristine hook sites added only by the
+current runtime must also authenticate before generation-2 migration. Corrupt candidates reject. The recovered
 generation-1 table conversion must cover both `$20` flag branches across all 512 entries. Until the
-complete table-preserving transaction is authenticated, application/native installation must refuse
-generations 1/2 without a ROM or history change.
+generation-2 replacement must reclaim only its authenticated RATS owner, preserve all three live
+tables byte-for-byte, authenticate as current, repair checksum, commit once, undo exactly, and keep
+staged reclamation private on a late failure. Application/native installation may route that proven
+migration. Generation 1 must still refuse without a ROM or history change until its complete fixed
+write preconditions are authenticated.
 The user-requested Sprite 19 ASM-fix gate requires the exact SMW-US-v1 hook at `$00E762`, fixed
 `$20`-byte helper at `$01BCA0`, and branch removal at `$0020A0` recovered from Lunar Magic 3.63
 command `$26AC`. Pristine and authenticated shared-helper-only sources must both install to the

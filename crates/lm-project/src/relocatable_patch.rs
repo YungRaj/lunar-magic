@@ -1,6 +1,8 @@
 //! Failure-atomic installation of mutually relocatable tagged runtime payloads.
 
-use crate::{Project, payload::staging::commit_staged};
+use crate::{
+    Project, RatsOwnershipManifest, RatsReclamationError, payload::staging::commit_staged,
+};
 use lm_rats::{AllocationError, AllocationPolicy, FreeSpaceAllocator, ProtectedRange, RatsBlock};
 use lm_rom::{Mapper, RomError, RomImage, compute_snes_checksum, pc_to_snes};
 use std::fmt;
@@ -80,6 +82,20 @@ pub struct RelocatablePatchGroupError {
     pub plan: usize,
     pub source: RelocatablePatchError,
 }
+
+#[derive(Debug)]
+pub enum RelocatablePatchReplacementError {
+    Reclamation(RatsReclamationError),
+    Patch(RelocatablePatchError),
+}
+
+impl fmt::Display for RelocatablePatchReplacementError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "relocatable patch replacement failed: {self:?}")
+    }
+}
+
+impl std::error::Error for RelocatablePatchReplacementError {}
 
 impl fmt::Display for RelocatablePatchGroupError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -225,6 +241,39 @@ impl Project {
             }
         })?;
         Ok(results)
+    }
+
+    /// Reclaims explicitly owned obsolete blocks and installs their replacement as one history
+    /// operation.
+    ///
+    /// Ownership is validated against the original ROM before any bytes are staged. The reclaimed
+    /// ranges become available to the allocator, while the replacement plan still checks every
+    /// fixed-write precondition against the otherwise unchanged source. A reclamation, allocation,
+    /// fixup, precondition, or checksum failure leaves ROM bytes and history untouched.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed reclamation or relocatable-patch error without modifying the project.
+    pub fn replace_relocatable_patch(
+        &mut self,
+        plan: &RelocatablePatchPlan,
+        obsolete: &RatsOwnershipManifest,
+        reclamation_fill: u8,
+    ) -> Result<RelocatablePatchResult, RelocatablePatchReplacementError> {
+        let original = self.rom.logical_bytes().to_vec();
+        let reclamation = self
+            .plan_rats_reclamation(obsolete, reclamation_fill)
+            .map_err(RelocatablePatchReplacementError::Reclamation)?;
+        let mut reclaimed = original.clone();
+        for write in reclamation.writes {
+            let end = write.offset + write.bytes.len();
+            reclaimed[write.offset..end].copy_from_slice(&write.bytes);
+        }
+        let (staged, result) = stage_relocatable_patch(&reclaimed, plan)
+            .map_err(RelocatablePatchReplacementError::Patch)?;
+        commit_staged(self, plan.description.clone(), &original, &staged)
+            .map_err(|error| RelocatablePatchReplacementError::Patch(error.into()))?;
+        Ok(result)
     }
 }
 

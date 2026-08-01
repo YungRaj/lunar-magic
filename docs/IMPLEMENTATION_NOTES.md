@@ -1492,8 +1492,12 @@ so generation 2 is classified by exact `$240`-byte RATS-runtime, fixed-helper, m
 hook authentication instead of treating simultaneous hooks as ambiguous. Generation 1 now requires
 both its exact JSL and complete `$30`-byte helper at `$02DC50`. Its recovered 512-entry conversion
 moves packed bit `$10` into a new plane and clears it only when the legacy flag's `$20` bit is clear.
-Application and native installation report generations 1/2 as requiring migration and leave their
-ROM bytes and history untouched until the complete installation transactions are authenticated.
+Generation 2 now migrates through an explicit owned-block replacement: the old `$240` RATS block is
+validated and reclaimed only in staging, its free run is reused for the current `$510` runtime,
+all three live tables are rebound as exact precondition-preserving writes, and checksum plus every
+hook commits in one undo batch. Late failure exposes neither reclamation nor history. The
+application and native dialog route that transaction. Generation 1 remains refused without a ROM
+or history change until its complete fixed-write preconditions are authenticated.
 The adjacent Sprite 19 user-requested fix is recovered from Lunar Magic command `$26AC`, its
 `PromptAndInstallSprite19AsmFix`/`InstallSprite19AsmFixRuntime` control flow, and a matched
 pristine-ROM Wine transaction. On SMW-US-v1 it replaces the six-byte hook at logical `$00E762`,

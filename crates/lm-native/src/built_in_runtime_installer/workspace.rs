@@ -115,11 +115,12 @@ impl BuiltInRuntimeWorkspace {
 
     pub(super) fn selection_requires_legacy_migration(&self) -> bool {
         self.runtime == BuiltInRuntime::Lfix3Core
-            && matches!(
-                self.lfix3_generation,
-                lm_profile::SmwUsV1Lfix3Generation::Generation1
-                    | lm_profile::SmwUsV1Lfix3Generation::Generation2
-            )
+            && self.lfix3_generation == lm_profile::SmwUsV1Lfix3Generation::Generation1
+    }
+
+    pub(super) fn selection_migrates_generation_2(&self) -> bool {
+        self.runtime == BuiltInRuntime::Lfix3Core
+            && self.lfix3_generation == lm_profile::SmwUsV1Lfix3Generation::Generation2
     }
 
     pub(super) fn prepare(&self, project_revision: u64) -> Result<Command, String> {
@@ -200,6 +201,13 @@ mod tests {
 
         workspace.runtime = BuiltInRuntime::Lfix3Core;
         workspace.lfix3_generation = lm_profile::SmwUsV1Lfix3Generation::Generation2;
+        assert!(workspace.selection_migrates_generation_2());
+        assert!(!workspace.selection_requires_legacy_migration());
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallLfix3 { rev: 0 }
+        ));
+        workspace.lfix3_generation = lm_profile::SmwUsV1Lfix3Generation::Generation1;
         assert!(workspace.selection_requires_legacy_migration());
         assert!(workspace.prepare(app.project_revision()).is_err());
     }

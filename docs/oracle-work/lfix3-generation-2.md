@@ -15,8 +15,16 @@ The result proves that generation 2 retains the generation-1 JSL at logical `$02
 the simultaneous presence of both descriptor-selected hooks is valid and cannot be rejected as
 ambiguous. The generation-2 primary hook at `$02DA17` owns a `$240`-byte RATS payload. The strict
 detector authenticates that payload, its six relocated entry hooks, the two fixed helpers, the old
-`LM $0110` table-helper marker, and the retained generation-1 hook. The three mutable 512-byte level
-tables remain outside runtime authentication.
+`LM $0110` table-helper marker, the retained generation-1 hook, and both pristine hook sites needed
+only by the current runtime. The three mutable 512-byte level tables remain outside runtime
+authentication.
+
+The authenticated owner now feeds one failure-atomic Rust replacement transaction. It erases only
+that explicitly proven `$240` block in staging, reuses the reclaimed free-space run for the current
+`$510` runtime, rewrites every generation-2 hook/helper precondition to the current form, preserves
+all three live tables byte-for-byte, repairs the checksum, and commits one undo batch. A late hook
+failure cannot expose the staged reclamation. The result authenticates as current and exact undo
+restores the complete generation-2 source ROM.
 
 The recovered payload is stored as lowercase hexadecimal in
 `crates/lm-profile/src/assets/lfix3_runtime_generation_2.hex`; its decoded length is `$240` bytes.

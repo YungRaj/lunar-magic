@@ -95,6 +95,7 @@ pub enum AppError {
     Lfix3Plan(lm_profile::Lfix3RuntimeLengthError),
     Lfix3Detect(lm_profile::SmwUsV1Lfix3DetectError),
     Lfix3Generation(lm_profile::SmwUsV1Lfix3GenerationError),
+    Lfix3Generation2Migration(lm_profile::SmwUsV1Lfix3Generation2MigrationBuildError),
     Map16RuntimePlan(lm_profile::SmwUsV1Map16RuntimeInstallBuildError),
     Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
     Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError),
@@ -102,6 +103,7 @@ pub enum AppError {
     SecondaryExitLfix3AuthenticationMissing,
     RevisionPatch(lm_project::RelocatablePatchError),
     RevisionPatchGroup(lm_project::RelocatablePatchGroupError),
+    RevisionPatchReplacement(lm_project::RelocatablePatchReplacementError),
     RatsReclamation(lm_project::RatsReclamationError),
     ExpandedSettingsIdentityMismatch,
     Layer3IdentityMismatch,
@@ -314,6 +316,12 @@ impl From<lm_profile::SmwUsV1Lfix3GenerationError> for AppError {
     }
 }
 
+impl From<lm_profile::SmwUsV1Lfix3Generation2MigrationBuildError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Lfix3Generation2MigrationBuildError) -> Self {
+        Self::Lfix3Generation2Migration(value)
+    }
+}
+
 impl From<lm_profile::SmwUsV1Map16RuntimeInstallBuildError> for AppError {
     fn from(value: lm_profile::SmwUsV1Map16RuntimeInstallBuildError) -> Self {
         Self::Map16RuntimePlan(value)
@@ -365,6 +373,12 @@ impl From<lm_profile::SharedPaletteInstallPlanError> for AppError {
 impl From<lm_project::RelocatablePatchGroupError> for AppError {
     fn from(value: lm_project::RelocatablePatchGroupError) -> Self {
         Self::RevisionPatchGroup(value)
+    }
+}
+
+impl From<lm_project::RelocatablePatchReplacementError> for AppError {
+    fn from(value: lm_project::RelocatablePatchReplacementError) -> Self {
+        Self::RevisionPatchReplacement(value)
     }
 }
 

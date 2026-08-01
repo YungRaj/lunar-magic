@@ -237,7 +237,8 @@ pub use rats_manifest_file::{RatsManifestFileError, RatsOwnershipManifestFile};
 pub use rats_reclamation::{RatsOwnershipManifest, RatsReclamationError, RatsReclamationPlan};
 pub use relocatable_patch::{
     PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchError,
-    RelocatablePatchGroupError, RelocatablePatchPlan, RelocatablePatchResult,
+    RelocatablePatchGroupError, RelocatablePatchPlan, RelocatablePatchReplacementError,
+    RelocatablePatchResult,
 };
 pub use restore_archive::{
     LUNAR_RESTORE_ASSOCIATED_EXTENSIONS, LUNAR_RESTORE_ASSOCIATED_FILE_COUNT, LunarRestoreArchive,

@@ -2219,7 +2219,10 @@ authenticates generation 3, and prevents the pristine installer from overwriting
 family. The exact generation-1 table conversion is also recovered: for each of 512 entries with
 legacy flag `$20` clear, packed bit `$10` moves to bit zero of the new plane and is cleared in the
 packed plane. The table-preserving installation transactions remain to be authenticated against
-retained legacy fixtures.
+retained legacy fixtures for generation 1. Generation 2 is now complete: Rust reclaims its exactly
+authenticated `$240` RATS owner in staging, installs and relocates the current `$510` runtime,
+preserves all three live planes byte-for-byte, repairs the checksum, authenticates the result, and
+undoes exactly as one transaction.
 
 `LoadLegacyCreditsTilemapRows` at `004C1280`,
 `LoadExpandedCreditsTilemapRows` at `004C13B0`, and `SaveCreditsTilemapToRom` at `004C0DE0`

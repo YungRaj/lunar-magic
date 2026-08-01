@@ -65,6 +65,31 @@ impl fmt::Display for SmwUsV1Lfix3GenerationError {
 impl std::error::Error for SmwUsV1Lfix3GenerationError {}
 
 #[derive(Debug)]
+pub enum SmwUsV1Lfix3Generation2MigrationBuildError {
+    Detect(SmwUsV1Lfix3DetectError),
+    MissingGeneration2,
+    Plan(Lfix3RuntimeLengthError),
+    SourceRange { offset: usize, len: usize },
+}
+
+impl fmt::Display for SmwUsV1Lfix3Generation2MigrationBuildError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "cannot build SMW-US Lfix3 generation-2 migration: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1Lfix3Generation2MigrationBuildError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmwUsV1Lfix3Generation2Migration {
+    pub plan: RelocatablePatchPlan,
+    pub previous_runtime: RatsBlock,
+}
+
+#[derive(Debug)]
 pub enum SmwUsV1Lfix3DetectError {
     Plan(Lfix3RuntimeLengthError),
     PlanMissingRuntimeHook,
@@ -189,6 +214,44 @@ pub fn migrate_smw_us_v1_generation_1_lfix3_tables(
     extracted
 }
 
+/// Builds a table-preserving replacement of Lunar Magic's authenticated generation-2 runtime.
+///
+/// Every immutable write is rebound from its exact generation-2 bytes to the current runtime.
+/// The three mutable 512-byte tables use their live source bytes as both precondition and
+/// replacement, preventing either normalization or accidental loss. The returned previous block
+/// is the exact RATS owner that must be reclaimed atomically with installation.
+///
+/// # Errors
+///
+/// Rejects absent, malformed, or modified generation-2 input, an inconsistent bundled current
+/// runtime, or a truncated mutable table.
+pub fn smw_us_v1_generation_2_lfix3_migration(
+    bytes: &[u8],
+) -> Result<SmwUsV1Lfix3Generation2Migration, SmwUsV1Lfix3Generation2MigrationBuildError> {
+    let previous_runtime = detect_smw_us_v1_generation_2_lfix3_runtime(bytes)
+        .map_err(SmwUsV1Lfix3Generation2MigrationBuildError::Detect)?
+        .ok_or(SmwUsV1Lfix3Generation2MigrationBuildError::MissingGeneration2)?;
+    let mut plan = smw_us_v1_builtin_lfix3_installation_plan()
+        .map_err(SmwUsV1Lfix3Generation2MigrationBuildError::Plan)?;
+    plan.description = "migrate SMW US v1 Lfix3 generation 2".into();
+    for write in &mut plan.writes {
+        let source = bytes
+            .get(write.offset..write.offset + write.expected.len())
+            .ok_or(SmwUsV1Lfix3Generation2MigrationBuildError::SourceRange {
+                offset: write.offset,
+                len: write.expected.len(),
+            })?;
+        write.expected.copy_from_slice(source);
+        if MUTABLE_TABLE_OFFSETS.contains(&write.offset) {
+            write.replacement.copy_from_slice(source);
+        }
+    }
+    Ok(SmwUsV1Lfix3Generation2Migration {
+        plan,
+        previous_runtime,
+    })
+}
+
 /// Authenticates the generation-2 `$240`-byte Lfix3 runtime emitted by Lunar Magic 3.01.
 ///
 /// Mutable per-level tables are intentionally excluded, while every fixed helper and runtime hook
@@ -236,6 +299,8 @@ pub fn detect_smw_us_v1_generation_2_lfix3_runtime(
         (GENERATION_1_HOOK_OFFSET, &[0x22, 0x50, 0xdc, 0x05][..]),
         (0x0002_d97d, &[0x22, 0x30, 0xdd, 0x05][..]),
         (0x0002_dd00, &CORE_HELPER[..]),
+        (0x0002_bca5, &[0xa9, 0x04, 0x8d, 0x56][..]),
+        (0x0000_6966, &[0xc2, 0x20, 0xa5, 0x94][..]),
     ] {
         require_exact(bytes, offset, expected)?;
     }
@@ -568,7 +633,7 @@ fn payload_hook(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_project::Project;
+    use lm_project::{Project, RatsOwnershipManifest};
     use lm_rats::make_header;
     use lm_rom::{RomImage, SnesChecksum};
     use std::{fs, path::PathBuf};
@@ -788,6 +853,60 @@ mod tests {
                 assert_eq!(packed[index], original[index]);
             }
         }
+    }
+
+    #[test]
+    fn generation_2_migration_reclaims_runtime_preserves_tables_and_undoes_exactly() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut generation_2 = generation_2_fixture(original);
+        for (table, seed) in MUTABLE_TABLE_OFFSETS.into_iter().zip([0x13_u8, 0x57, 0xa9]) {
+            for index in 0..0x200 {
+                generation_2[table + index] = seed.wrapping_add(index.to_le_bytes()[0]);
+            }
+        }
+        let before = generation_2.clone();
+        for offset in [0x0002_bca5, 0x0000_6966] {
+            let mut corrupt = generation_2.clone();
+            corrupt[offset] ^= 1;
+            assert!(matches!(
+                smw_us_v1_generation_2_lfix3_migration(&corrupt),
+                Err(SmwUsV1Lfix3Generation2MigrationBuildError::Detect(
+                    SmwUsV1Lfix3DetectError::FixedByteMismatch {
+                        offset: actual,
+                        ..
+                    }
+                )) if actual == offset
+            ));
+        }
+        let migration = smw_us_v1_generation_2_lfix3_migration(&generation_2).unwrap();
+        let previous = migration.previous_runtime.clone();
+        let expected_tables: [[u8; 0x200]; 3] = MUTABLE_TABLE_OFFSETS
+            .map(|offset| generation_2[offset..offset + 0x200].try_into().unwrap());
+        let mut project = Project::new(RomImage::from_bytes(generation_2).unwrap());
+
+        let installed = project
+            .replace_relocatable_patch(
+                &migration.plan,
+                &RatsOwnershipManifest {
+                    owned: vec![previous],
+                    retained: Vec::new(),
+                },
+                0xff,
+            )
+            .unwrap();
+
+        assert_eq!(installed.blocks[0].header_offset, 0x0008_0000);
+        assert!(
+            detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())
+                .unwrap()
+                .is_some()
+        );
+        for (offset, expected) in MUTABLE_TABLE_OFFSETS.into_iter().zip(expected_tables) {
+            assert_eq!(project.rom.read(offset, 0x200).unwrap(), expected);
+        }
+        assert_eq!(project.history.undo_len(), 1);
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), before);
     }
 
     fn generation_2_fixture(mut bytes: Vec<u8>) -> Vec<u8> {

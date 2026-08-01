@@ -114,20 +114,36 @@ impl AppState {
         {
             return Err(AppError::Lfix3IdentityMismatch);
         }
-        match lm_profile::probe_smw_us_v1_lfix3_generation(project.rom.logical_bytes())? {
-            lm_profile::SmwUsV1Lfix3Generation::Absent => {}
-            lm_profile::SmwUsV1Lfix3Generation::Generation3Current => {
-                return Err(AppError::Lfix3AlreadyInstalled);
-            }
-            lm_profile::SmwUsV1Lfix3Generation::Generation1
-            | lm_profile::SmwUsV1Lfix3Generation::Generation2 => {
-                return Err(AppError::Lfix3LegacyMigrationRequired);
-            }
-        }
-        let plan = lm_profile::smw_us_v1_builtin_lfix3_installation_plan()?;
-        project.install_relocatable_patch(&plan)?;
+        let description =
+            match lm_profile::probe_smw_us_v1_lfix3_generation(project.rom.logical_bytes())? {
+                lm_profile::SmwUsV1Lfix3Generation::Absent => {
+                    let plan = lm_profile::smw_us_v1_builtin_lfix3_installation_plan()?;
+                    project.install_relocatable_patch(&plan)?;
+                    "Install SMW US Lfix3 core runtime"
+                }
+                lm_profile::SmwUsV1Lfix3Generation::Generation3Current => {
+                    return Err(AppError::Lfix3AlreadyInstalled);
+                }
+                lm_profile::SmwUsV1Lfix3Generation::Generation1 => {
+                    return Err(AppError::Lfix3LegacyMigrationRequired);
+                }
+                lm_profile::SmwUsV1Lfix3Generation::Generation2 => {
+                    let migration = lm_profile::smw_us_v1_generation_2_lfix3_migration(
+                        project.rom.logical_bytes(),
+                    )?;
+                    project.replace_relocatable_patch(
+                        &migration.plan,
+                        &lm_project::RatsOwnershipManifest {
+                            owned: vec![migration.previous_runtime],
+                            retained: Vec::new(),
+                        },
+                        0xff,
+                    )?;
+                    "Migrate SMW US Lfix3 generation 2"
+                }
+            };
         self.advance_project_revision()?;
-        let description = "Install SMW US Lfix3 core runtime".to_owned();
+        let description = description.to_owned();
         self.status.clone_from(&description);
         Ok(vec![FrontendEffect::ProjectChanged {
             description,
