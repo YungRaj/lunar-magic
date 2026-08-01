@@ -1,6 +1,6 @@
 use super::*;
 use crate::{AppError, AppState, Command, FrontendEffect};
-use lm_level::{ObjectRecord, SpriteLengthTable, SpriteRecord};
+use lm_level::{CustomTimeSettings, ObjectRecord, SpriteLengthTable, SpriteRecord};
 use lm_project::{
     LevelLayer2RomLayout, LevelLayer2SaveOptions, LevelLayer2TilemapEncoding, LevelPointerTable,
     LevelSaveOptions, RatsOwnershipManifest,
@@ -212,6 +212,54 @@ fn decoded_edit_allocates_through_app_and_reloads_natively() {
     assert_eq!(app.project().unwrap().rom.logical_len(), 0x8000);
     app.dispatch(Command::Redo).unwrap();
     assert_eq!(app.project().unwrap().rom.logical_len(), 0x10000);
+}
+
+#[test]
+fn custom_time_edit_uses_staged_level_orientation_and_reopens_from_rom() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let mut controller = LevelController::decode(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    let settings = CustomTimeSettings::new(0xabc, true).unwrap();
+    controller
+        .apply_edits(&[
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(3)),
+            NativeLevelEdit::SetCustomTime(Some(settings)),
+        ])
+        .unwrap();
+    assert_eq!(
+        controller.level().layer1.objects.encode().unwrap(),
+        [9, 8, 7, 0x4c, 0x8b, 0x8a, 0xff]
+    );
+
+    let prepared = controller
+        .prepare_commit("Set custom level time", &options())
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    let reopened = LevelController::decode(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    assert_eq!(
+        reopened.level().layer1.objects.custom_time(true),
+        Some(settings)
+    );
+
+    controller
+        .apply_edits(&[NativeLevelEdit::SetCustomTime(None)])
+        .unwrap();
+    assert_eq!(controller.level().layer1.objects.custom_time(true), None);
+    assert!(controller.undo());
+    assert_eq!(
+        controller.level().layer1.objects.custom_time(true),
+        Some(settings)
+    );
 }
 
 #[test]

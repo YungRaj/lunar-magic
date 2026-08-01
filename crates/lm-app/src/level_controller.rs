@@ -1,8 +1,8 @@
 use crate::{ControllerSnapshot, EditorMode};
 use lm_level::{
-    HeaderValueError, LegacyHeaderEdit, LevelEditError, MwlLayer2Descriptor,
-    NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, ObjectEdit, ObjectEditError, ObjectStreamError,
-    SpriteToken,
+    CustomTimeError, CustomTimeSettings, HeaderValueError, LegacyHeaderEdit, LevelEditError,
+    MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, ObjectEdit, ObjectEditError,
+    ObjectStreamError, SpriteToken,
 };
 use lm_project::{
     LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelRomLayout, LevelSaveError,
@@ -18,6 +18,7 @@ mod commit;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NativeLevelEdit {
     LegacyHeader(LegacyHeaderEdit),
+    SetCustomTime(Option<CustomTimeSettings>),
     Objects(Vec<ObjectEdit>),
     SetSpriteHeader(u8),
     InsertSprite {
@@ -66,6 +67,10 @@ pub enum LevelControllerError {
     HeaderEdit {
         command: usize,
         error: HeaderValueError,
+    },
+    CustomTimeEdit {
+        command: usize,
+        error: CustomTimeError,
     },
     InvalidSpriteSerialization(lm_level::NativeSpriteEncodingError),
     InvalidSpriteEncoding(lm_level::SpriteStreamError),

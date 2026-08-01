@@ -1,7 +1,7 @@
 use lm_app::{AppState, Command, LevelController, MwlDocumentController, NativeLevelEdit};
 use lm_level::{
-    LevelObjectData, MwlFile, MwlLevelHeaderSection, MwlSectionKind, NativeSpriteStream,
-    ObjectCoordinateNibbles, ObjectEdit, SpriteLengthTable, SpriteToken,
+    CustomTimeSettings, LevelObjectData, MwlFile, MwlLevelHeaderSection, MwlSectionKind,
+    NativeSpriteStream, ObjectCoordinateNibbles, ObjectEdit, SpriteLengthTable, SpriteToken,
 };
 use lm_project::{LevelSaveOptions, MwlNativeLevel, Project, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -43,13 +43,20 @@ fn rust_semantic_mwl_round_trip_is_accepted_by_lunar_magic() {
     );
     let lengths = SpriteLengthTable::standard();
     let modes = [false; 256];
-    let source = MwlNativeLevel::decode(
+    let mut source = MwlNativeLevel::decode(
         &MwlFile::decode(&fs::read(&source_mwl).unwrap()).unwrap(),
         &lengths,
         32,
         &modes,
     )
     .unwrap();
+    let custom_time = CustomTimeSettings::new(0xabc, true).unwrap();
+    let vertical = lm_profile::smw_us_v1_level_mode(source.layer1.header.level_mode()).vertical;
+    source
+        .layer1
+        .objects
+        .set_custom_time(vertical, Some(custom_time))
+        .unwrap();
     fs::write(
         &rust_mwl,
         source.encode(&lengths, &modes).unwrap().encode().unwrap(),
@@ -84,6 +91,10 @@ fn rust_semantic_mwl_round_trip_is_accepted_by_lunar_magic() {
     assert_eq!(actual.secondary_exits, source.secondary_exits);
     assert_eq!(actual.exanimation, source.exanimation);
     assert_eq!(actual.expanded_settings, source.expanded_settings);
+    assert_eq!(
+        actual.layer1.objects.custom_time(vertical),
+        Some(custom_time)
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 

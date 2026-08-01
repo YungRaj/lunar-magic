@@ -2817,3 +2817,20 @@ the exact four new definition records. Both Rust native canvases now maintain
 this counter in placement order. An SSC custom-display override does not
 consume it, matching the native path where the standard handler is never
 called.
+
+Custom level time is not part of the five-byte legacy header or the 32-byte
+expanded-settings record. `DecodeLevelObjectStreamToNodeList` at `00435200`
+intercepts object command `$28`, combines the two coordinate nibbles into the
+low byte, and copies the third record byte into bits 8–15 of global
+`DAT_008f3870`. Bit 15 is the dialog's force-reset flag and the low 12 bits are
+the `$000`–`$FFF` timer. The decoder swaps the two low nibbles for vertical
+orientation. `SerializeLevelObjectList` at `00435650` performs the reciprocal
+mapping and appends the three-byte control immediately before `$FF`; it omits
+the record when the complete value is zero. The Rust model and native editor
+now expose this exact representation, including forced zero for infinite time,
+and a live Lunar Magic 3.63 import/re-export preserves `$ABC` plus force reset
+in both semantic models. `SaveLevelToRom` separately calls
+`CheckLevelSaveSupportPatchB`/`InstallLevelSaveSupportPatchB` at
+`00463950`/`00463990` when the global is nonzero; reproducing that gameplay
+runtime installation remains tracked patch work rather than being inferred
+from successful editor interoperability.

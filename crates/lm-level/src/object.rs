@@ -31,6 +31,65 @@ pub struct ObjectStream {
     pub records: Vec<ObjectRecord>,
 }
 
+/// Lunar Magic's custom level timer stored in object-stream control command `$28`.
+///
+/// The ordinary five-byte level header can only select a preset timer. This control record
+/// carries the complete 12-bit value used by Lunar Magic's bypass dialog. A value of zero means
+/// infinite time and therefore requires `force_reset`; without that bit Lunar Magic treats the
+/// all-zero control value as a disabled bypass and omits it when the level is next serialized.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CustomTimeSettings {
+    value: u16,
+    force_reset: bool,
+}
+
+impl CustomTimeSettings {
+    pub const MAX_VALUE: u16 = 0x0fff;
+
+    /// Constructs a persistable Lunar Magic custom-time setting.
+    ///
+    /// # Errors
+    ///
+    /// Rejects values above `$FFF` and the non-persistable zero-without-force representation.
+    pub const fn new(value: u16, force_reset: bool) -> Result<Self, CustomTimeError> {
+        if value > Self::MAX_VALUE {
+            Err(CustomTimeError::ValueOutOfRange(value))
+        } else if value == 0 && !force_reset {
+            Err(CustomTimeError::DisabledEncoding)
+        } else {
+            Ok(Self { value, force_reset })
+        }
+    }
+
+    #[must_use]
+    pub const fn value(self) -> u16 {
+        self.value
+    }
+
+    #[must_use]
+    pub const fn force_reset(self) -> bool {
+        self.force_reset
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CustomTimeError {
+    ValueOutOfRange(u16),
+    DisabledEncoding,
+    BankLimitExceeded,
+}
+
+impl fmt::Display for CustomTimeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "invalid Lunar Magic custom-time setting: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for CustomTimeError {}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LevelObjectData {
     pub header: LegacyLevelHeader,
@@ -162,6 +221,68 @@ impl ObjectStream {
         }
         self.encode()
     }
+
+    /// Returns the last custom-time control value, matching Lunar Magic's decoder behavior.
+    ///
+    /// `vertical` selects the alternate nibble ordering used for vertical level modes. Reserved
+    /// bits from noncanonical third-party streams are ignored while the raw record remains
+    /// lossless until this setting is explicitly changed.
+    #[must_use]
+    pub fn custom_time(&self, vertical: bool) -> Option<CustomTimeSettings> {
+        self.records.iter().rev().find_map(|record| {
+            (record.command_id() == 0x28).then(|| {
+                let first = u16::from(record.encoded[0] & 0x0f);
+                let second = u16::from(record.encoded[1] & 0x0f);
+                let low = if vertical {
+                    (second << 4) | first
+                } else {
+                    (first << 4) | second
+                };
+                let raw = low | (u16::from(record.encoded[2]) << 8);
+                CustomTimeSettings {
+                    value: raw & CustomTimeSettings::MAX_VALUE,
+                    force_reset: raw & 0x8000 != 0,
+                }
+            })
+        })
+    }
+
+    /// Replaces Lunar Magic custom-time controls with one canonical trailing command `$28`.
+    ///
+    /// `None` disables the bypass. Duplicate or non-trailing command `$28` records are collapsed
+    /// exactly as Lunar Magic does when it decodes and reserializes a level. Failure is atomic.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CustomTimeError::BankLimitExceeded`] if adding the control would cross Lunar
+    /// Magic's single-bank object-stream limit.
+    pub fn set_custom_time(
+        &mut self,
+        vertical: bool,
+        settings: Option<CustomTimeSettings>,
+    ) -> Result<(), CustomTimeError> {
+        let mut staged = self.clone();
+        staged.records.retain(|record| record.command_id() != 0x28);
+        if let Some(settings) = settings {
+            let low = settings.value.to_le_bytes()[0];
+            let high_nibble = low >> 4;
+            let low_nibble = low & 0x0f;
+            let (first, second) = if vertical {
+                (low_nibble | 0x40, high_nibble | 0x80)
+            } else {
+                (high_nibble | 0x40, low_nibble | 0x80)
+            };
+            let third = ((settings.value >> 8) as u8) | (u8::from(settings.force_reset) << 7);
+            staged.records.push(ObjectRecord {
+                encoded: vec![first, second, third],
+            });
+        }
+        staged
+            .encode_banked()
+            .map_err(|_| CustomTimeError::BankLimitExceeded)?;
+        *self = staged;
+        Ok(())
+    }
 }
 
 fn checked_stream_len(
@@ -254,5 +375,51 @@ mod tests {
             checked_stream_len([usize::MAX]),
             Err(ObjectStreamError::SizeOverflow)
         );
+    }
+
+    #[test]
+    fn custom_time_matches_lunar_magic_horizontal_and_vertical_command_28() {
+        let settings = CustomTimeSettings::new(0xabc, true).unwrap();
+        let mut horizontal = ObjectStream::default();
+        horizontal.set_custom_time(false, Some(settings)).unwrap();
+        assert_eq!(horizontal.encode().unwrap(), [0x4b, 0x8c, 0x8a, 0xff]);
+        assert_eq!(horizontal.custom_time(false), Some(settings));
+
+        let mut vertical = ObjectStream::default();
+        vertical.set_custom_time(true, Some(settings)).unwrap();
+        assert_eq!(vertical.encode().unwrap(), [0x4c, 0x8b, 0x8a, 0xff]);
+        assert_eq!(vertical.custom_time(true), Some(settings));
+    }
+
+    #[test]
+    fn custom_time_edit_collapses_controls_and_preserves_ordinary_records() {
+        let mut stream = ObjectStream::parse(&[
+            0x11, 0x22, 0x33, 0x41, 0x82, 0x03, 0x55, 0x66, 0x77, 0x44, 0x85, 0x06, 0xff,
+        ])
+        .unwrap();
+        let ordinary = [stream.records[0].clone(), stream.records[2].clone()];
+        let settings = CustomTimeSettings::new(0x789, false).unwrap();
+        stream.set_custom_time(false, Some(settings)).unwrap();
+        assert_eq!(stream.records.len(), 3);
+        assert_eq!(stream.records[..2], ordinary);
+        assert_eq!(
+            stream.encode().unwrap(),
+            [0x11, 0x22, 0x33, 0x55, 0x66, 0x77, 0x48, 0x89, 0x07, 0xff,]
+        );
+        stream.set_custom_time(false, None).unwrap();
+        assert_eq!(stream.records, ordinary);
+    }
+
+    #[test]
+    fn custom_time_rejects_nonpersistable_values() {
+        assert_eq!(
+            CustomTimeSettings::new(0x1000, false),
+            Err(CustomTimeError::ValueOutOfRange(0x1000))
+        );
+        assert_eq!(
+            CustomTimeSettings::new(0, false),
+            Err(CustomTimeError::DisabledEncoding)
+        );
+        assert_eq!(CustomTimeSettings::new(0, true).unwrap().value(), 0);
     }
 }

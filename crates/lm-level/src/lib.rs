@@ -112,7 +112,8 @@ pub use native_sprite::{
     NativeSpriteStream, SpriteLengthTable, SpriteLengthTableError, SpriteToken,
 };
 pub use object::{
-    LevelObjectData, ObjectRecord, ObjectStream, ObjectStreamError, encoded_record_length,
+    CustomTimeError, CustomTimeSettings, LevelObjectData, ObjectRecord, ObjectStream,
+    ObjectStreamError, encoded_record_length,
 };
 pub use object_editing::{ObjectEdit, ObjectEditError};
 pub use object_fields::{

@@ -4,8 +4,9 @@ use lm_app::{
     VanillaEntranceController,
 };
 use lm_level::{
-    LegacyHeaderEdit, NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
-    SeparateMidwayEntrance, SpriteLengthTable, SpriteToken,
+    CustomTimeError, CustomTimeSettings, LegacyHeaderEdit, NativeSpriteRecordFields,
+    ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SeparateMidwayEntrance, SpriteLengthTable,
+    SpriteToken,
 };
 use lm_project::LevelSaveOptions;
 use lm_project::VanillaMainEntrance;
@@ -51,6 +52,9 @@ struct HeaderForm {
     sprite_tileset: u8,
     default_music_selector: u8,
     time_limit_selector: u8,
+    custom_time_enabled: bool,
+    custom_time_value: u16,
+    force_time_reset: bool,
     sprite_palette: u8,
     foreground_palette: u8,
     object_tileset: u8,
@@ -59,6 +63,8 @@ struct HeaderForm {
 impl HeaderForm {
     fn from_controller(controller: &LevelController) -> Self {
         let header = controller.level().layer1.header;
+        let vertical = lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical;
+        let custom_time = controller.level().layer1.objects.custom_time(vertical);
         Self {
             background_palette: header.background_palette(),
             level_mode: header.level_mode(),
@@ -66,14 +72,21 @@ impl HeaderForm {
             sprite_tileset: header.sprite_tileset(),
             default_music_selector: header.default_music_selector(),
             time_limit_selector: header.time_limit_selector(),
+            custom_time_enabled: custom_time.is_some(),
+            custom_time_value: custom_time.map_or(300, CustomTimeSettings::value),
+            force_time_reset: custom_time.is_some_and(CustomTimeSettings::force_reset),
             sprite_palette: header.sprite_palette(),
             foreground_palette: header.foreground_palette(),
             object_tileset: header.object_tileset(),
         }
     }
 
-    fn edits(self) -> [NativeLevelEdit; 9] {
-        [
+    fn edits(self) -> Result<Vec<NativeLevelEdit>, CustomTimeError> {
+        let custom_time = self
+            .custom_time_enabled
+            .then(|| CustomTimeSettings::new(self.custom_time_value, self.force_time_reset))
+            .transpose()?;
+        Ok(vec![
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(
                 self.background_palette,
             )),
@@ -91,7 +104,8 @@ impl HeaderForm {
                 self.foreground_palette,
             )),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ObjectTileset(self.object_tileset)),
-        ]
+            NativeLevelEdit::SetCustomTime(custom_time),
+        ])
     }
 }
 
@@ -796,6 +810,23 @@ impl VanillaLevelEditor {
                 &mut self.form.time_limit_selector,
                 3,
             );
+            ui.label("Custom time bypass");
+            ui.checkbox(&mut self.form.custom_time_enabled, "Enabled");
+            ui.end_row();
+            ui.label("Custom time (hex)");
+            ui.add_enabled(
+                self.form.custom_time_enabled,
+                egui::DragValue::new(&mut self.form.custom_time_value)
+                    .range(0..=CustomTimeSettings::MAX_VALUE)
+                    .hexadecimal(3, false, true),
+            );
+            ui.end_row();
+            ui.label("Force time reset");
+            ui.add_enabled(
+                self.form.custom_time_enabled,
+                egui::Checkbox::without_text(&mut self.form.force_time_reset),
+            );
+            ui.end_row();
             header_row(
                 ui,
                 "Foreground palette",
@@ -810,14 +841,20 @@ impl VanillaLevelEditor {
         }
         ui.horizontal(|ui| {
             if ui.button("Stage header changes").clicked() {
-                match self
-                    .controller
-                    .as_mut()
-                    .expect("controller presence checked above")
-                    .apply_edits(&self.form.edits())
-                {
+                let result = self
+                    .form
+                    .edits()
+                    .map_err(|error| error.to_string())
+                    .and_then(|edits| {
+                        self.controller
+                            .as_mut()
+                            .expect("controller presence checked above")
+                            .apply_edits(&edits)
+                            .map_err(|error| error.to_string())
+                    });
+                match result {
                     Ok(()) => self.error = None,
-                    Err(error) => self.error = Some(error.to_string()),
+                    Err(error) => self.error = Some(error),
                 }
             }
             if ui.button("Reset staged values").clicked() {

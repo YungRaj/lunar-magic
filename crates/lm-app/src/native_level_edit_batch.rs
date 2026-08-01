@@ -33,6 +33,14 @@ pub(crate) fn apply_native_level_edits(
         match edit {
             NativeLevelEdit::LegacyHeader(edit) => apply_header_edit(&mut staged_layer1, *edit)
                 .map_err(|error| LevelControllerError::HeaderEdit { command, error })?,
+            NativeLevelEdit::SetCustomTime(settings) => {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(staged_layer1.header.level_mode()).vertical;
+                staged_layer1
+                    .objects
+                    .set_custom_time(vertical, *settings)
+                    .map_err(|error| LevelControllerError::CustomTimeEdit { command, error })?;
+            }
             NativeLevelEdit::Objects(edits) => staged_layer1
                 .objects
                 .apply_edits(edits)
