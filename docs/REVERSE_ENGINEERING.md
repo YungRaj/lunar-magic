@@ -871,7 +871,12 @@ the installed SMW-US fixture these are logical offsets `$02EC00`, `$02D8F5`, and
 level 000 resolves to `$109ED5`, matching the second sprite metadata word emitted by Lunar Magic.
 
 `DetectLayer2DataTableFormat` (`004664E0`) resolves the active descriptor's entry `$3F` hook base;
-an `LM` marker at hook offset `$3C` identifies format `$103`. In the retained installed SMW-US ROM,
+the exact `LM $0103` marker at hook offset `$3C` identifies format `$103`. Without that marker,
+opcodes `$5C`, `$4B`, and `$A9` at hook offset `$09` identify formats `$102`, `$101`, and `$100`
+respectively. Rust now classifies all four generations, rejects unknown `LM` versions, and refuses
+to treat legacy installed runtimes as pristine layouts. An authentic Lunar Magic 3.01 ROM selects
+format `$102`; a disposable Lunar Magic 3.63 `-ImportLevel` run upgrades it to `LM $0103`, providing
+the retained before/after migration oracle. In the retained installed SMW-US ROM,
 the headerless hook is `$077510`, the marker is `$07754C`, and descriptor entry `$3E` points to the
 512-byte per-level descriptor table at `$077310`. `ExpandLegacyLayer2TilemapLayout` (`004670D0`)
 uses bits 4–6 as the legacy expansion high byte and then normalizes the descriptor with

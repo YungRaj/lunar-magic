@@ -89,7 +89,18 @@ pub enum SmwUsV1ObjectTilesetGraphicsError {
 pub enum SmwUsV1Layer2LayoutError {
     LevelOutOfRange(usize),
     AddressOverflow,
+    UnsupportedRuntimeMarker([u8; 4]),
+    LegacyRuntime(SmwUsV1Layer2RuntimeGeneration),
     Rom(RomError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmwUsV1Layer2RuntimeGeneration {
+    Absent,
+    Format100Legacy,
+    Format101Legacy,
+    Format102Legacy,
+    Format103Current,
 }
 
 impl fmt::Display for SmwUsV1Layer2LayoutError {
@@ -157,7 +168,7 @@ pub fn smw_us_v1_level_layer2_layout(
         )
         .ok_or(SmwUsV1Layer2LayoutError::AddressOverflow)?;
     rom.read(pointer_offset, 3)?;
-    smw_us_v1_layer2_layout(rom).map(Some).map_err(Into::into)
+    smw_us_v1_layer2_layout(rom).map(Some)
 }
 
 /// Reports whether a pristine level entry selects SMW's shared bank-$0C background path.
@@ -189,26 +200,68 @@ pub fn smw_us_v1_level_uses_shared_background(
 ///
 /// # Errors
 ///
-/// Returns a ROM bounds error when the image is too short to contain the recovered format marker
-/// or descriptor table.
-pub fn smw_us_v1_layer2_layout(rom: &RomImage) -> Result<LevelLayer2RomLayout, RomError> {
-    let marker = rom.read(SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET, 2)?;
+/// Returns a typed error for truncated metadata, unknown markers, or legacy formats that require
+/// migration before the current descriptor layout can be used.
+pub fn smw_us_v1_layer2_layout(
+    rom: &RomImage,
+) -> Result<LevelLayer2RomLayout, SmwUsV1Layer2LayoutError> {
     let mut layout = smw_us_v1_vanilla_layer2_layout();
-    if marker == b"LM" {
-        rom.read(
-            SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
-            SMW_US_V1_VANILLA_LEVEL_SLOTS,
-        )?;
-        layout.descriptor_table = Some(LevelLayer2DescriptorTable {
-            offset: SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
-            entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
-            stride: 1,
-        });
-        // Format $103 can still load pre-migration $360 tilemaps, but Lunar Magic's next save
-        // normalizes them to the current split-plane representation together with the descriptor.
-        layout.tilemap_encoding = LevelLayer2TilemapEncoding::SplitPlanes;
+    let generation = probe_smw_us_v1_layer2_runtime_generation(rom)?;
+    match generation {
+        SmwUsV1Layer2RuntimeGeneration::Absent => return Ok(layout),
+        SmwUsV1Layer2RuntimeGeneration::Format100Legacy
+        | SmwUsV1Layer2RuntimeGeneration::Format101Legacy
+        | SmwUsV1Layer2RuntimeGeneration::Format102Legacy => {
+            return Err(SmwUsV1Layer2LayoutError::LegacyRuntime(generation));
+        }
+        SmwUsV1Layer2RuntimeGeneration::Format103Current => {}
     }
+    rom.read(
+        SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
+        SMW_US_V1_VANILLA_LEVEL_SLOTS,
+    )?;
+    layout.descriptor_table = Some(LevelLayer2DescriptorTable {
+        offset: SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET,
+        entries: SMW_US_V1_VANILLA_LEVEL_SLOTS,
+        stride: 1,
+    });
+    // Format $103 can still load pre-migration $360 tilemaps, but Lunar Magic's next save
+    // normalizes them to the current split-plane representation together with the descriptor.
+    layout.tilemap_encoding = LevelLayer2TilemapEncoding::SplitPlanes;
     Ok(layout)
+}
+
+/// Classifies Lunar Magic's four Layer 2 table formats at the recovered SMW-US hook base.
+///
+/// Format `$103` is selected by the exact `LM $0103` marker at hook offset `$3C`. Earlier
+/// generations use the `$A9`, `$4B`, and `$5C` opcodes at hook offset `$09`. The current marker
+/// takes precedence because its runtime also retains `$5C` at that legacy discriminator.
+///
+/// # Errors
+///
+/// Rejects truncated ROMs and `LM` markers carrying an unknown format version.
+pub fn probe_smw_us_v1_layer2_runtime_generation(
+    rom: &RomImage,
+) -> Result<SmwUsV1Layer2RuntimeGeneration, SmwUsV1Layer2LayoutError> {
+    const CURRENT_MARKER: [u8; 4] = [0x4c, 0x4d, 0x03, 0x01];
+    let marker: [u8; 4] = rom
+        .read(SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET, 4)?
+        .try_into()
+        .map_err(|_| SmwUsV1Layer2LayoutError::AddressOverflow)?;
+    if marker == CURRENT_MARKER {
+        return Ok(SmwUsV1Layer2RuntimeGeneration::Format103Current);
+    }
+    if marker.starts_with(b"LM") {
+        return Err(SmwUsV1Layer2LayoutError::UnsupportedRuntimeMarker(marker));
+    }
+    Ok(
+        match rom.read(SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + 9, 1)?[0] {
+            0xa9 => SmwUsV1Layer2RuntimeGeneration::Format100Legacy,
+            0x4b => SmwUsV1Layer2RuntimeGeneration::Format101Legacy,
+            0x5c => SmwUsV1Layer2RuntimeGeneration::Format102Legacy,
+            _ => SmwUsV1Layer2RuntimeGeneration::Absent,
+        },
+    )
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -485,14 +538,22 @@ mod tests {
         let mut bytes = vec![0xff; 0x80_000];
         let pristine = RomImage::from_bytes(bytes.clone()).unwrap();
         assert_eq!(
+            probe_smw_us_v1_layer2_runtime_generation(&pristine).unwrap(),
+            SmwUsV1Layer2RuntimeGeneration::Absent
+        );
+        assert_eq!(
             smw_us_v1_layer2_layout(&pristine).unwrap(),
             smw_us_v1_vanilla_layer2_layout()
         );
 
         bytes[SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET
-            ..SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET + 2]
-            .copy_from_slice(b"LM");
+            ..SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET + 4]
+            .copy_from_slice(&[0x4c, 0x4d, 0x03, 0x01]);
         let installed = RomImage::from_bytes(bytes).unwrap();
+        assert_eq!(
+            probe_smw_us_v1_layer2_runtime_generation(&installed).unwrap(),
+            SmwUsV1Layer2RuntimeGeneration::Format103Current
+        );
         let installed_layout = smw_us_v1_layer2_layout(&installed).unwrap();
         assert_eq!(
             installed_layout.descriptor_table,
@@ -506,6 +567,80 @@ mod tests {
             installed_layout.tilemap_encoding,
             LevelLayer2TilemapEncoding::SplitPlanes
         );
+    }
+
+    #[test]
+    fn layer2_runtime_probe_classifies_legacy_opcodes_and_rejects_unknown_lm_marker() {
+        for (opcode, expected) in [
+            (0xa9, SmwUsV1Layer2RuntimeGeneration::Format100Legacy),
+            (0x4b, SmwUsV1Layer2RuntimeGeneration::Format101Legacy),
+            (0x5c, SmwUsV1Layer2RuntimeGeneration::Format102Legacy),
+        ] {
+            let mut bytes = vec![0xff; 0x80_000];
+            bytes[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + 9] = opcode;
+            let image = RomImage::from_bytes(bytes).unwrap();
+            assert_eq!(
+                probe_smw_us_v1_layer2_runtime_generation(&image).unwrap(),
+                expected
+            );
+            assert!(matches!(
+                smw_us_v1_layer2_layout(&image),
+                Err(SmwUsV1Layer2LayoutError::LegacyRuntime(actual)) if actual == expected
+            ));
+        }
+
+        let mut bytes = vec![0xff; 0x80_000];
+        bytes[SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET
+            ..SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET + 4]
+            .copy_from_slice(&[0x4c, 0x4d, 0x04, 0x01]);
+        let image = RomImage::from_bytes(bytes).unwrap();
+        assert!(matches!(
+            probe_smw_us_v1_layer2_runtime_generation(&image),
+            Err(SmwUsV1Layer2LayoutError::UnsupportedRuntimeMarker([
+                0x4c, 0x4d, 0x04, 0x01
+            ]))
+        ));
+    }
+
+    #[test]
+    fn retained_lunar_magic_layer2_runtime_is_format_103() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image = RomImage::from_bytes(
+            fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            probe_smw_us_v1_layer2_runtime_generation(&image).unwrap(),
+            SmwUsV1Layer2RuntimeGeneration::Format103Current
+        );
+        assert!(
+            smw_us_v1_layer2_layout(&image)
+                .unwrap()
+                .descriptor_table
+                .is_some()
+        );
+    }
+
+    #[test]
+    #[ignore = "requires an externally supplied Lunar Magic 3.01 format-$102 ROM"]
+    fn external_lunar_magic_301_layer2_runtime_is_format_102() {
+        let image = RomImage::from_bytes(
+            fs::read(
+                std::env::var_os("LM_LAYER2_FORMAT_102_ROM").expect("LM_LAYER2_FORMAT_102_ROM"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            probe_smw_us_v1_layer2_runtime_generation(&image).unwrap(),
+            SmwUsV1Layer2RuntimeGeneration::Format102Legacy
+        );
+        assert!(matches!(
+            smw_us_v1_layer2_layout(&image),
+            Err(SmwUsV1Layer2LayoutError::LegacyRuntime(
+                SmwUsV1Layer2RuntimeGeneration::Format102Legacy
+            ))
+        ));
     }
 
     #[test]
