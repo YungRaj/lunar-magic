@@ -52,6 +52,7 @@ mod secondary_exit_runtime;
 mod separate_midway_install;
 mod shared_palette;
 mod shared_palette_install;
+mod sprite19_fix;
 mod text;
 mod text_encode;
 mod text_schema;
@@ -383,6 +384,12 @@ pub use shared_palette_install::{
     SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET, SharedPaletteInstallPlanError,
     smw_us_v1_custom_palette_installation, smw_us_v1_custom_palette_layout,
     smw_us_v1_expanded_shared_palette_installation_plan,
+};
+pub use sprite19_fix::{
+    SMW_US_V1_SPRITE19_FIX_BRANCH_OFFSET, SMW_US_V1_SPRITE19_FIX_HOOK_OFFSET,
+    SMW_US_V1_SPRITE19_FIX_RUNTIME_OFFSET, SmwUsV1Sprite19FixDetectError,
+    SmwUsV1Sprite19FixInstallError, SmwUsV1Sprite19FixState, detect_smw_us_v1_sprite19_fix,
+    smw_us_v1_sprite19_fix_installation_plan,
 };
 pub use text::RevisionProfileError;
 pub use title_recording::{

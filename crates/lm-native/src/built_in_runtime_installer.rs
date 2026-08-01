@@ -74,6 +74,11 @@ impl BuiltInRuntimeInstaller {
                 );
                 ui.selectable_value(
                     &mut workspace.runtime,
+                    BuiltInRuntime::Sprite19Fix,
+                    BuiltInRuntime::Sprite19Fix.label(),
+                );
+                ui.selectable_value(
+                    &mut workspace.runtime,
                     BuiltInRuntime::ExpandedSharedPalettes,
                     BuiltInRuntime::ExpandedSharedPalettes.label(),
                 );
@@ -332,6 +337,49 @@ mod tests {
                 .unwrap()
                 .prepare(app.project_revision())
                 .is_err()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn sprite19_selection_installs_oracle_exact_fix_and_undoes() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Sprite19Fix;
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        app.dispatch(command).unwrap();
+        installer.commit_succeeded();
+
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_sprite19_fix(app.project().unwrap().rom.logical_bytes())
+                .unwrap(),
+            lm_profile::SmwUsV1Sprite19FixState::Installed
+        );
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        let revision = app.project_revision();
+        assert!(matches!(
+            app.dispatch(Command::InstallSprite19Fix { rev: revision }),
+            Err(lm_app::AppError::Sprite19FixAlreadyInstalled)
+        ));
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Sprite19Fix;
+        assert!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .selection_is_installed()
         );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);

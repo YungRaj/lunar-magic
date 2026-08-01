@@ -96,6 +96,7 @@ pub enum AppError {
     Lfix3Detect(lm_profile::SmwUsV1Lfix3DetectError),
     Map16RuntimePlan(lm_profile::SmwUsV1Map16RuntimeInstallBuildError),
     Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
+    Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError),
     SecondaryExitInstallPlan(lm_profile::SecondaryExitInstallBuildError),
     SecondaryExitLfix3AuthenticationMissing,
     RevisionPatch(lm_project::RelocatablePatchError),
@@ -107,6 +108,8 @@ pub enum AppError {
     Lfix3AlreadyInstalled,
     Map16RuntimeIdentityMismatch,
     Map16RuntimeAlreadyInstalled,
+    Sprite19FixIdentityMismatch,
+    Sprite19FixAlreadyInstalled,
     NativeOverworldPathIdentityMismatch,
     NativeOverworldPathReopenMismatch,
     NativeOverworldPath(lm_project::OverworldPathLinkIoError),
@@ -312,6 +315,18 @@ impl From<lm_profile::SmwUsV1Map16RuntimeInstallBuildError> for AppError {
 impl From<lm_profile::SmwUsV1Map16RuntimeDetectError> for AppError {
     fn from(value: lm_profile::SmwUsV1Map16RuntimeDetectError) -> Self {
         Self::Map16RuntimeDetect(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Sprite19FixInstallError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Sprite19FixInstallError) -> Self {
+        Self::Sprite19FixPlan(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Sprite19FixDetectError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Sprite19FixDetectError) -> Self {
+        Self::Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError::Detect(value))
     }
 }
 
@@ -704,6 +719,7 @@ impl AppState {
             Command::InstallLayer3 { rev } => self.install(rev, true)?,
             Command::InstallLfix3 { rev } => self.install_lfix3(rev)?,
             Command::InstallMap16Runtime { rev } => self.install_map16_runtime(rev)?,
+            Command::InstallSprite19Fix { rev } => self.install_sprite19_fix(rev)?,
             Command::InstallExpandedSharedPalettes { rev } => {
                 self.install_native_expanded_shared_palettes(rev)?
             }

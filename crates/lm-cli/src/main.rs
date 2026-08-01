@@ -149,6 +149,7 @@ mod secondary_exit_native;
 mod shared_palette_native;
 mod size_mode_file;
 mod smw_palette_file;
+mod sprite19_fix_install;
 mod sprite_length_file;
 mod title_recording_native;
 mod title_tilemap_native;

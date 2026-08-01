@@ -1484,6 +1484,14 @@ runtime payload. It deliberately excludes the three 512-byte tables from byte eq
 normal level edits change them. Marker-only, damaged-marker, modified-hook, malformed-owner, and
 modified-runtime states reject; authenticated current installs disable duplicate installation, and
 installed secondary-exit edits authenticate this shared prerequisite before mutation.
+The adjacent Sprite 19 user-requested fix is recovered from Lunar Magic command `$26AC`, its
+`PromptAndInstallSprite19AsmFix`/`InstallSprite19AsmFixRuntime` control flow, and a matched
+pristine-ROM Wine transaction. On SMW-US-v1 it replaces the six-byte hook at logical `$00E762`,
+installs the fixed `$20`-byte helper at `$01BCA0`, and removes the old three-byte branch at
+`$0020A0`. Detection distinguishes pristine, authenticated shared-helper-only, and complete forms;
+the middle state receives only the final branch removal, matching Lunar Magic's reuse path. Every
+other partial or modified combination rejects before mutation. Application, CLI, and native dialog
+routes authenticate after one checksum-repaired transaction and preserve exact undo.
 The fifth route promotes the Wine-authenticated pristine Map16 runtime transformation to the same
 native transaction boundary. It applies all recovered fixed changes under exact byte
 preconditions, places the exact `$8000`-byte auxiliary payload at the recovered aligned expansion

@@ -8,6 +8,7 @@ pub(super) enum BuiltInRuntime {
     CompleteLayer3,
     Lfix3Core,
     Map16Runtime,
+    Sprite19Fix,
     ExpandedSharedPalettes,
 }
 
@@ -18,6 +19,7 @@ impl BuiltInRuntime {
             Self::CompleteLayer3 => "Complete Layer 3 family (includes expanded settings)",
             Self::Lfix3Core => "Lfix3 core runtime and shared tables",
             Self::Map16Runtime => "Complete Map16 runtime and auxiliary table",
+            Self::Sprite19Fix => "Sprite 19 ASM fix",
             Self::ExpandedSharedPalettes => "Expanded shared/custom palettes",
         }
     }
@@ -38,6 +40,9 @@ impl BuiltInRuntime {
             Self::Map16Runtime => {
                 "Install the recovered fixed Map16 hooks and the relocated 32-KiB auxiliary table."
             }
+            Self::Sprite19Fix => {
+                "Install the recovered shared helper and branch patch that make sprite $19 safe on any level."
+            }
             Self::ExpandedSharedPalettes => {
                 "Install the recovered shared-palette hooks, helpers, expanded table, and the \
                  512-entry per-level custom-palette pointer table."
@@ -51,6 +56,7 @@ pub(super) struct BuiltInRuntimeWorkspace {
     pub runtime: BuiltInRuntime,
     lfix3_installed: bool,
     map16_runtime_installed: bool,
+    sprite19_fix_installed: bool,
 }
 
 impl BuiltInRuntimeWorkspace {
@@ -80,11 +86,16 @@ impl BuiltInRuntimeWorkspace {
             lm_profile::detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?
                 .is_some();
+        let sprite19_fix_installed =
+            lm_profile::detect_smw_us_v1_sprite19_fix(project.rom.logical_bytes())
+                .map_err(|error| error.to_string())?
+                == lm_profile::SmwUsV1Sprite19FixState::Installed;
         Ok(Self {
             revision: snapshot.revision,
             runtime: BuiltInRuntime::default(),
             lfix3_installed,
             map16_runtime_installed,
+            sprite19_fix_installed,
         })
     }
 
@@ -96,6 +107,7 @@ impl BuiltInRuntimeWorkspace {
         match self.runtime {
             BuiltInRuntime::Lfix3Core => self.lfix3_installed,
             BuiltInRuntime::Map16Runtime => self.map16_runtime_installed,
+            BuiltInRuntime::Sprite19Fix => self.sprite19_fix_installed,
             _ => false,
         }
     }
@@ -114,6 +126,7 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::CompleteLayer3 => Command::InstallLayer3 { rev: self.revision },
             BuiltInRuntime::Lfix3Core => Command::InstallLfix3 { rev: self.revision },
             BuiltInRuntime::Map16Runtime => Command::InstallMap16Runtime { rev: self.revision },
+            BuiltInRuntime::Sprite19Fix => Command::InstallSprite19Fix { rev: self.revision },
             BuiltInRuntime::ExpandedSharedPalettes => {
                 Command::InstallExpandedSharedPalettes { rev: self.revision }
             }
@@ -161,6 +174,11 @@ mod tests {
         assert!(matches!(
             workspace.prepare(app.project_revision()).unwrap(),
             Command::InstallMap16Runtime { rev: 0 }
+        ));
+        workspace.runtime = BuiltInRuntime::Sprite19Fix;
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallSprite19Fix { rev: 0 }
         ));
         assert!(workspace.prepare(app.project_revision() + 1).is_err());
     }

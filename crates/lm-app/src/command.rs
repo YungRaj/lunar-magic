@@ -86,6 +86,10 @@ pub enum Command {
     InstallMap16Runtime {
         rev: u64,
     },
+    /// Installs Lunar Magic's recovered user-requested sprite `$19` ASM fix.
+    InstallSprite19Fix {
+        rev: u64,
+    },
     InstallExpandedSharedPalettes {
         rev: u64,
     },

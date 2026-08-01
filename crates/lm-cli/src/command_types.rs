@@ -70,6 +70,10 @@ pub enum Command {
         input_rom: PathBuf,
         output_rom: PathBuf,
     },
+    Sprite19FixInstall {
+        input_rom: PathBuf,
+        output_rom: PathBuf,
+    },
     SmwMap16CompleteExport {
         rom: PathBuf,
         template: Option<PathBuf>,

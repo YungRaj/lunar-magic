@@ -36,6 +36,26 @@ struct dialog_values {
     void *remote;
 };
 
+struct child_control_search {
+    int control_id;
+    const char *window_class;
+    HWND window;
+};
+
+static BOOL CALLBACK find_child_control(HWND window, LPARAM opaque) {
+    struct child_control_search *search = (struct child_control_search *)opaque;
+    char class_name[128] = {0};
+    GetClassName(window, class_name, sizeof(class_name));
+    if (
+        GetDlgCtrlID(window) == search->control_id &&
+        _stricmp(class_name, search->window_class) == 0
+    ) {
+        search->window = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
 static HWND read_process_window_handle(DWORD process_id, uintptr_t address) {
     HANDLE process = OpenProcess(PROCESS_VM_READ, FALSE, process_id);
     HWND window = NULL;
@@ -239,6 +259,27 @@ static int list_toolbar_buttons(HWND parent, DWORD process_id) {
     return 0;
 }
 
+static void list_menu_items(HMENU menu, unsigned int depth) {
+    int count = GetMenuItemCount(menu);
+    for (int position = 0; position < count; position++) {
+        char title[512] = {0};
+        GetMenuStringA(menu, (UINT)position, title, sizeof(title), MF_BYPOSITION);
+        UINT command = GetMenuItemID(menu, position);
+        for (unsigned int indent = 0; indent < depth; indent++) {
+            fputs("  ", stdout);
+        }
+        if (command == (UINT)-1) {
+            printf("submenu title=%s\n", title);
+        } else {
+            printf("command=0x%04x title=%s\n", command, title);
+        }
+        HMENU child = GetSubMenu(menu, position);
+        if (child != NULL) {
+            list_menu_items(child, depth + 1);
+        }
+    }
+}
+
 static BOOL CALLBACK list_child_window(HWND window, LPARAM opaque) {
     (void)opaque;
     char class_name[128] = {0};
@@ -402,12 +443,15 @@ int main(int argc, char **argv) {
             stderr,
             "usage: wine-window-command.exe EXECUTABLE COMMAND_ID [WINDOW_CLASS]\n"
             "       wine-window-command.exe EXECUTABLE toolbar\n"
+            "       wine-window-command.exe EXECUTABLE menu\n"
             "       wine-window-command.exe EXECUTABLE dialog-values\n"
+            "       wine-window-command.exe EXECUTABLE children\n"
             "       wine-window-command.exe EXECUTABLE click CONTROL_ID\n"
             "       wine-window-command.exe EXECUTABLE set-text CONTROL_ID,TEXT\n"
             "       wine-window-command.exe EXECUTABLE clipboard-bmp WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE clipboard-bmp-paste WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE command-at HWND_ADDRESS,COMMAND_ID\n"
+            "       wine-window-command.exe EXECUTABLE post-command COMMAND_ID [WINDOW_CLASS]\n"
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
             "       wine-window-command.exe EXECUTABLE find-u32 VALUE\n"
             "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
@@ -423,14 +467,17 @@ int main(int argc, char **argv) {
         return 1;
     }
     BOOL save = _stricmp(argv[2], "save") == 0;
+    BOOL menu = _stricmp(argv[2], "menu") == 0;
     BOOL level = _stricmp(argv[2], "level") == 0;
     BOOL open_level_command = _stricmp(argv[2], "open-level") == 0;
     BOOL dialog_values = _stricmp(argv[2], "dialog-values") == 0;
+    BOOL children = _stricmp(argv[2], "children") == 0;
     BOOL click = _stricmp(argv[2], "click") == 0;
     BOOL set_text = _stricmp(argv[2], "set-text") == 0;
     BOOL clipboard_bmp = _stricmp(argv[2], "clipboard-bmp") == 0;
     BOOL clipboard_bmp_paste = _stricmp(argv[2], "clipboard-bmp-paste") == 0;
     BOOL command_at = _stricmp(argv[2], "command-at") == 0;
+    BOOL post_command = _stricmp(argv[2], "post-command") == 0;
     BOOL read = _stricmp(argv[2], "read") == 0;
     BOOL find_u32 = _stricmp(argv[2], "find-u32") == 0;
     BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
@@ -455,9 +502,9 @@ int main(int argc, char **argv) {
         .process_id = process_id,
         .window = NULL,
         .list = _stricmp(argv[2], "list") == 0,
-        .window_class = save || level || dialog_values || click || set_text
+        .window_class = save || level || dialog_values || children || click || set_text
             ? "#32770"
-            : (clipboard_bmp || clipboard_bmp_paste
+            : (menu || post_command || clipboard_bmp || clipboard_bmp_paste
                 ? "LMFrame"
                 : (argc == 4 ? argv[3] : NULL))
     };
@@ -681,6 +728,23 @@ int main(int argc, char **argv) {
         }
         return 0;
     }
+    if (post_command) {
+        if (argc != 4) {
+            fprintf(stderr, "post-command requires a command id\n");
+            return 2;
+        }
+        char *end = NULL;
+        unsigned long command = strtoul(argv[3], &end, 0);
+        if (end == argv[3] || *end != '\0' || command > 0xffff) {
+            fprintf(stderr, "invalid command id: %s\n", argv[3]);
+            return 2;
+        }
+        if (!PostMessage(search.window, WM_COMMAND, MAKEWPARAM(command, 0), 0)) {
+            fprintf(stderr, "cannot post command 0x%04lx\n", command);
+            return 1;
+        }
+        return 0;
+    }
     if (search.list) {
         return 0;
     }
@@ -693,6 +757,19 @@ int main(int argc, char **argv) {
     }
     if (dialog_values) {
         return list_dialog_values(search.window, process_id);
+    }
+    if (children) {
+        EnumChildWindows(search.window, list_child_window, 0);
+        return 0;
+    }
+    if (menu) {
+        HMENU root = GetMenu(search.window);
+        if (root == NULL) {
+            fprintf(stderr, "menu not found\n");
+            return 1;
+        }
+        list_menu_items(root, 0);
+        return 0;
     }
     if (click) {
         if (argc != 4) {
@@ -738,7 +815,21 @@ int main(int argc, char **argv) {
             fprintf(stderr, "dialog control not found: 0x%04lx\n", control_id);
             return 1;
         }
-        SendMessage(control, WM_SETTEXT, 0, (LPARAM)(separator + 1));
+        struct child_control_search edit_search = {
+            .control_id = (int)control_id,
+            .window_class = "Edit",
+            .window = NULL
+        };
+        EnumChildWindows(search.window, find_child_control, (LPARAM)&edit_search);
+        if (edit_search.window != NULL) {
+            control = edit_search.window;
+        }
+        PostMessage(control, EM_SETSEL, 0, -1);
+        for (const unsigned char *character = (unsigned char *)(separator + 1);
+             *character != '\0';
+             character++) {
+            PostMessage(control, WM_CHAR, *character, 0);
+        }
         return 0;
     }
     if (clipboard_bmp || clipboard_bmp_paste) {

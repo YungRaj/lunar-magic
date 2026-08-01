@@ -2197,6 +2197,16 @@ all reader operands after placement, initializes the shared tables, repairs the 
 commits once. Pristine compact and all-tagged semantic-reopen tests, late-hook rollback, application
 undo, and a built CLI process test now cover the complete installation boundary.
 
+The adjacent user-requested Sprite 19 ASM fix is recovered independently from hidden command
+`$26AC`, `PromptAndInstallSprite19AsmFix`, and `InstallSprite19AsmFixRuntime`. A matched pristine
+SMW-US-v1 transaction under Lunar Magic 3.63 replaces the six-byte hook at logical `$00E762`,
+installs the fixed `$20`-byte helper at `$01BCA0`, and removes the three-byte branch at `$0020A0`.
+The helper is shared with normal Lunar Magic level installation, so Rust distinguishes pristine,
+authenticated shared-helper-only, and fully installed states: the shared state requires only the
+final branch removal. Partial or modified forms reject rather than being silently normalized, and
+the native, application, and CLI routes all authenticate the completed byte shape after applying
+one checksum-repaired transaction.
+
 `LoadLegacyCreditsTilemapRows` at `004C1280`,
 `LoadExpandedCreditsTilemapRows` at `004C13B0`, and `SaveCreditsTilemapToRom` at `004C0DE0`
 operate on a 256×32 word editor tilemap. A row is trimmed to its first and last nonblank word,

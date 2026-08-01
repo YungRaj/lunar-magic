@@ -540,6 +540,12 @@ all 107 relocations at its actual address. The three per-level tables remain mut
 Marker-only, damaged-marker, fixed-hook, ownership, and payload corruption must reject before an
 installed secondary-exit update; duplicate native installation must leave application history
 unchanged.
+The user-requested Sprite 19 ASM-fix gate requires the exact SMW-US-v1 hook at `$00E762`, fixed
+`$20`-byte helper at `$01BCA0`, and branch removal at `$0020A0` recovered from Lunar Magic 3.63
+command `$26AC`. Pristine and authenticated shared-helper-only sources must both install to the
+same current state; duplicate, truncated, partial, or modified forms must reject without history
+changes. Native and CLI routes must reopen the authenticated state, repair the checksum, and undo
+or preserve their input byte-exactly.
 
 Native Map16 runtime installation now routes the authenticated Lunar Magic 3.63 pristine-ROM
 transformation through the revision-bound built-in runtime dialog. The exact fixed ranges and

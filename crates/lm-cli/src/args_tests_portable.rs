@@ -404,6 +404,22 @@ fn parses_complete_layer3_install() {
 }
 
 #[test]
+fn parses_built_in_sprite19_fix_install() {
+    assert_eq!(
+        parse_from(&[
+            "smw-sprite19-fix-install".into(),
+            "input.smc".into(),
+            "output.smc".into(),
+        ])
+        .unwrap(),
+        Command::Sprite19FixInstall {
+            input_rom: "input.smc".into(),
+            output_rom: "output.smc".into(),
+        }
+    );
+}
+
+#[test]
 fn parses_native_smw_overworld_path_workflows() {
     assert_eq!(
         parse_from(&[
