@@ -29,6 +29,13 @@ const GENERATION_2_RUNTIME_LEN: usize = 0x240;
 const GENERATION_2_RUNTIME_HEX: &str = include_str!("assets/lfix3_runtime_generation_2.hex");
 const GENERATION_2_HOOK_OFFSET: usize = 0x0002_da17;
 const GENERATION_1_HOOK_OFFSET: usize = 0x0002_d7ce;
+const GENERATION_1_HELPER_OFFSET: usize = 0x0002_dc50;
+const GENERATION_1_HOOK: [u8; 4] = [0x22, 0x50, 0xdc, 0x05];
+const GENERATION_1_HELPER: [u8; 0x30] = [
+    0xbd, 0xd8, 0x19, 0x89, 0x04, 0xf0, 0x1a, 0x48, 0x48, 0x29, 0x02, 0x4a, 0x8d, 0x93, 0x1b, 0x68,
+    0x29, 0x08, 0x0a, 0x0a, 0x0a, 0x8d, 0x2a, 0x19, 0x68, 0x4a, 0x08, 0x4a, 0x4a, 0x4a, 0x28, 0x2a,
+    0x6b, 0x9c, 0x2a, 0x19, 0xad, 0xbf, 0x13, 0xc9, 0x25, 0xa9, 0x00, 0x2a, 0x6b, 0xff, 0xff, 0xff,
+];
 const MUTABLE_TABLE_OFFSETS: [usize; 3] = [0x0002_de00, 0x0003_7c00, 0x0003_7e00];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,6 +48,7 @@ pub enum SmwUsV1Lfix3Generation {
 
 #[derive(Debug)]
 pub enum SmwUsV1Lfix3GenerationError {
+    Generation1(SmwUsV1Lfix3DetectError),
     Generation2(SmwUsV1Lfix3DetectError),
     Current(SmwUsV1Lfix3DetectError),
 }
@@ -90,9 +98,7 @@ impl std::error::Error for SmwUsV1Lfix3DetectError {}
 
 /// Classifies the three Lfix3 generations selected by Lunar Magic's migration coordinator.
 ///
-/// Generations 2 and 3 are returned only after complete runtime authentication. Generation 1 is
-/// the remaining descriptor-selected fixed-hook probe; its migration still requires a separately
-/// authenticated legacy transaction.
+/// Every generation is returned only after authenticating its immutable hook/runtime evidence.
 ///
 /// # Errors
 ///
@@ -130,13 +136,57 @@ pub fn probe_smw_us_v1_lfix3_generation(
             },
         ));
     }
-    let generation_1 = bytes.get(GENERATION_1_HOOK_OFFSET..GENERATION_1_HOOK_OFFSET + 4)
-        == Some(&[0x22, 0x50, 0xdc, 0x05]);
-    Ok(if generation_1 {
-        SmwUsV1Lfix3Generation::Generation1
-    } else {
-        SmwUsV1Lfix3Generation::Absent
-    })
+    detect_smw_us_v1_generation_1_lfix3_runtime(bytes)
+        .map_err(SmwUsV1Lfix3GenerationError::Generation1)
+        .map(|present| {
+            if present {
+                SmwUsV1Lfix3Generation::Generation1
+            } else {
+                SmwUsV1Lfix3Generation::Absent
+            }
+        })
+}
+
+/// Authenticates Lunar Magic's first variable-level-height implementation.
+///
+/// Generation 1 has no relocatable RATS runtime. Its descriptor-selected JSL and complete fixed
+/// helper are therefore the immutable identity boundary; the two 512-byte level tables remain
+/// mutable and are intentionally excluded.
+///
+/// # Errors
+///
+/// Rejects a partial or modified generation-1 hook/helper candidate.
+pub fn detect_smw_us_v1_generation_1_lfix3_runtime(
+    bytes: &[u8],
+) -> Result<bool, SmwUsV1Lfix3DetectError> {
+    let hook_signal = bytes.get(GENERATION_1_HOOK_OFFSET).copied() == Some(GENERATION_1_HOOK[0]);
+    let helper_signal = bytes.get(GENERATION_1_HELPER_OFFSET..GENERATION_1_HELPER_OFFSET + 3)
+        == Some(&GENERATION_1_HELPER[..3]);
+    if !hook_signal && !helper_signal {
+        return Ok(false);
+    }
+    require_exact(bytes, GENERATION_1_HOOK_OFFSET, &GENERATION_1_HOOK)?;
+    require_exact(bytes, GENERATION_1_HELPER_OFFSET, &GENERATION_1_HELPER)?;
+    Ok(true)
+}
+
+/// Converts generation-1 packed level-height state into Lunar Magic's later two-plane layout.
+///
+/// For levels whose legacy flags have bit `$20` clear, packed bit `$10` moves into bit zero of
+/// the new plane and is cleared in place. Levels with bit `$20` set retain the packed byte and
+/// receive zero in the new plane, exactly matching Lunar Magic's migration loop.
+pub fn migrate_smw_us_v1_generation_1_lfix3_tables(
+    legacy_flags: &[u8; 0x200],
+    packed: &mut [u8; 0x200],
+) -> [u8; 0x200] {
+    let mut extracted = [0; 0x200];
+    for index in 0..0x200 {
+        if legacy_flags[index] & 0x20 == 0 {
+            extracted[index] = (packed[index] >> 4) & 1;
+            packed[index] &= 0xef;
+        }
+    }
+    extracted
 }
 
 /// Authenticates the generation-2 `$240`-byte Lfix3 runtime emitted by Lunar Magic 3.01.
@@ -651,11 +701,36 @@ mod tests {
         );
         let mut generation_1 = original.clone();
         generation_1[GENERATION_1_HOOK_OFFSET..GENERATION_1_HOOK_OFFSET + 4]
-            .copy_from_slice(&[0x22, 0x50, 0xdc, 0x05]);
+            .copy_from_slice(&GENERATION_1_HOOK);
+        generation_1
+            [GENERATION_1_HELPER_OFFSET..GENERATION_1_HELPER_OFFSET + GENERATION_1_HELPER.len()]
+            .copy_from_slice(&GENERATION_1_HELPER);
         assert_eq!(
             probe_smw_us_v1_lfix3_generation(&generation_1).unwrap(),
             SmwUsV1Lfix3Generation::Generation1
         );
+        let mut modified = generation_1.clone();
+        modified[GENERATION_1_HOOK_OFFSET + 1] ^= 1;
+        assert!(matches!(
+            probe_smw_us_v1_lfix3_generation(&modified),
+            Err(SmwUsV1Lfix3GenerationError::Generation1(
+                SmwUsV1Lfix3DetectError::FixedByteMismatch {
+                    offset,
+                    ..
+                }
+            )) if offset == GENERATION_1_HOOK_OFFSET + 1
+        ));
+        let mut modified = generation_1;
+        modified[GENERATION_1_HELPER_OFFSET + 0x20] ^= 1;
+        assert!(matches!(
+            probe_smw_us_v1_lfix3_generation(&modified),
+            Err(SmwUsV1Lfix3GenerationError::Generation1(
+                SmwUsV1Lfix3DetectError::FixedByteMismatch {
+                    offset,
+                    ..
+                }
+            )) if offset == GENERATION_1_HELPER_OFFSET + 0x20
+        ));
         let generation_2 = generation_2_fixture(original.clone());
         assert_eq!(
             probe_smw_us_v1_lfix3_generation(&generation_2).unwrap(),
@@ -691,6 +766,30 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn generation_1_table_migration_matches_the_recovered_lunar_magic_loop() {
+        let mut flags = [0; 0x200];
+        let mut packed = [0; 0x200];
+        let mut original = [0; 0x200];
+        for index in 0..0x200 {
+            flags[index] = if index & 2 == 0 { 0 } else { 0x20 };
+            packed[index] = u8::try_from(index & 0xff).unwrap();
+            original[index] = packed[index];
+        }
+
+        let extracted = migrate_smw_us_v1_generation_1_lfix3_tables(&flags, &mut packed);
+
+        for index in 0..0x200 {
+            if flags[index] & 0x20 == 0 {
+                assert_eq!(extracted[index], (original[index] >> 4) & 1);
+                assert_eq!(packed[index], original[index] & 0xef);
+            } else {
+                assert_eq!(extracted[index], 0);
+                assert_eq!(packed[index], original[index]);
+            }
+        }
+    }
+
     fn generation_2_fixture(mut bytes: Vec<u8>) -> Vec<u8> {
         bytes.resize(0x0010_0000, 0xff);
         let runtime_offset = 0x0008_0008;
@@ -700,7 +799,7 @@ mod tests {
         bytes[runtime_offset..runtime_offset + runtime.len()].copy_from_slice(&runtime);
         for (offset, replacement) in [
             (0x0000_26cc, &[0x22, 0x00, 0xdd, 0x05][..]),
-            (GENERATION_1_HOOK_OFFSET, &[0x22, 0x50, 0xdc, 0x05][..]),
+            (GENERATION_1_HOOK_OFFSET, &GENERATION_1_HOOK[..]),
             (0x0002_d97d, &[0x22, 0x30, 0xdd, 0x05][..]),
             (0x0002_dd00, &CORE_HELPER[..]),
         ] {

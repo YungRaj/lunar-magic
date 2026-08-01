@@ -2212,10 +2212,14 @@ logical `$02DD7C` contains `LM` plus version `$0111` for generation 3; the execu
 `CMP $0111 / SBB / ADD` sequence accepts versions greater than or equal to `$0111`, despite the
 older reverse-engineering label suggesting the opposite. Without that marker, a JSL at descriptor
 entry `$263` (logical `$02DA17`) selects generation 2, and a JSL at entry `$119` (logical
-`$02D7CE`) selects generation 1. Rust now exposes this exact signature probe, fully authenticates
-generation 3, rejects conflicting generation-1/2 hooks, and prevents the pristine installer from
-overwriting either legacy family. The table-preserving generation-1/2 migration transactions
-remain to be authenticated against retained legacy fixtures.
+`$02D7CE`) selects generation 1. Generation 2 legitimately retains the generation-1 hook. Rust now
+authenticates generation 1 from both that exact JSL and its complete fixed `$02DC50` helper,
+authenticates generation 2 from its `$240` RATS owner and complete immutable runtime network, fully
+authenticates generation 3, and prevents the pristine installer from overwriting either legacy
+family. The exact generation-1 table conversion is also recovered: for each of 512 entries with
+legacy flag `$20` clear, packed bit `$10` moves to bit zero of the new plane and is cleared in the
+packed plane. The table-preserving installation transactions remain to be authenticated against
+retained legacy fixtures.
 
 `LoadLegacyCreditsTilemapRows` at `004C1280`,
 `LoadExpandedCreditsTilemapRows` at `004C13B0`, and `SaveCreditsTilemapToRom` at `004C0DE0`
