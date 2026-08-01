@@ -2222,7 +2222,12 @@ packed plane. The table-preserving installation transactions remain to be authen
 retained legacy fixtures for generation 1. Generation 2 is now complete: Rust reclaims its exactly
 authenticated `$240` RATS owner in staging, installs and relocates the current `$510` runtime,
 preserves all three live planes byte-for-byte, repairs the checksum, authenticates the result, and
-undoes exactly as one transaction.
+undoes exactly as one transaction. Generation 1 now migrates as well: the legacy hook/helper pair
+is authenticated, every later core/runtime destination must retain its exact pristine
+precondition, the live packed plane is rebound transactionally and converted into the recovered
+two-plane form, the third plane receives its `$1A` default, and the current runtime plus checksum
+commit in one undo batch. Corrupt fixed or destination-table bytes reject before mutation, current
+authentication proves the result, and exact undo restores the full legacy image.
 
 `LoadLegacyCreditsTilemapRows` at `004C1280`,
 `LoadExpandedCreditsTilemapRows` at `004C13B0`, and `SaveCreditsTilemapToRom` at `004C0DE0`

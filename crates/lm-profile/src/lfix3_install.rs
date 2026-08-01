@@ -36,6 +36,7 @@ const GENERATION_1_HELPER: [u8; 0x30] = [
     0x29, 0x08, 0x0a, 0x0a, 0x0a, 0x8d, 0x2a, 0x19, 0x68, 0x4a, 0x08, 0x4a, 0x4a, 0x4a, 0x28, 0x2a,
     0x6b, 0x9c, 0x2a, 0x19, 0xad, 0xbf, 0x13, 0xc9, 0x25, 0xa9, 0x00, 0x2a, 0x6b, 0xff, 0xff, 0xff,
 ];
+const GENERATION_1_FLAGS_OFFSET: usize = 0x0002_f600;
 const MUTABLE_TABLE_OFFSETS: [usize; 3] = [0x0002_de00, 0x0003_7c00, 0x0003_7e00];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +64,36 @@ impl fmt::Display for SmwUsV1Lfix3GenerationError {
 }
 
 impl std::error::Error for SmwUsV1Lfix3GenerationError {}
+
+#[derive(Debug)]
+pub enum SmwUsV1Lfix3Generation1MigrationBuildError {
+    Detect(SmwUsV1Lfix3DetectError),
+    MissingGeneration1,
+    Plan(Lfix3RuntimeLengthError),
+    PlanMissingTable {
+        offset: usize,
+    },
+    PlanTableLength {
+        offset: usize,
+        expected: usize,
+        actual: usize,
+    },
+    SourceRange {
+        offset: usize,
+        len: usize,
+    },
+}
+
+impl fmt::Display for SmwUsV1Lfix3Generation1MigrationBuildError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "cannot build SMW-US Lfix3 generation-1 migration: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1Lfix3Generation1MigrationBuildError {}
 
 #[derive(Debug)]
 pub enum SmwUsV1Lfix3Generation2MigrationBuildError {
@@ -212,6 +243,94 @@ pub fn migrate_smw_us_v1_generation_1_lfix3_tables(
         }
     }
     extracted
+}
+
+/// Builds Lunar Magic's authenticated generation-1 table conversion and current-runtime install.
+///
+/// Generation 1 has no relocatable owner to reclaim. Its hook and complete helper authenticate the
+/// legacy family, while every fixed site written by the later runtime must still have the pristine
+/// precondition used by Lunar Magic's migration. The live packed table is captured byte-for-byte,
+/// converted with the recovered 512-entry loop, and paired with the newly extracted plane. The
+/// third current-format plane retains its recovered `$1A` initialization.
+///
+/// # Errors
+///
+/// Rejects an absent or modified generation-1 identity, any non-pristine fixed destination, a
+/// truncated legacy table, or an inconsistent bundled current runtime.
+pub fn smw_us_v1_generation_1_lfix3_migration(
+    bytes: &[u8],
+) -> Result<RelocatablePatchPlan, SmwUsV1Lfix3Generation1MigrationBuildError> {
+    if !detect_smw_us_v1_generation_1_lfix3_runtime(bytes)
+        .map_err(SmwUsV1Lfix3Generation1MigrationBuildError::Detect)?
+    {
+        return Err(SmwUsV1Lfix3Generation1MigrationBuildError::MissingGeneration1);
+    }
+    let mut plan = smw_us_v1_builtin_lfix3_installation_plan()
+        .map_err(SmwUsV1Lfix3Generation1MigrationBuildError::Plan)?;
+    plan.description = "migrate SMW US v1 Lfix3 generation 1".into();
+
+    for write in &plan.writes {
+        if write.offset != MUTABLE_TABLE_OFFSETS[0] {
+            require_exact(bytes, write.offset, &write.expected)
+                .map_err(SmwUsV1Lfix3Generation1MigrationBuildError::Detect)?;
+        }
+    }
+
+    let legacy_flags = bytes
+        .get(GENERATION_1_FLAGS_OFFSET..GENERATION_1_FLAGS_OFFSET + 0x200)
+        .ok_or(SmwUsV1Lfix3Generation1MigrationBuildError::SourceRange {
+            offset: GENERATION_1_FLAGS_OFFSET,
+            len: 0x200,
+        })?;
+    let legacy_flags: &[u8; 0x200] = legacy_flags.try_into().map_err(|_| {
+        SmwUsV1Lfix3Generation1MigrationBuildError::PlanTableLength {
+            offset: GENERATION_1_FLAGS_OFFSET,
+            expected: 0x200,
+            actual: legacy_flags.len(),
+        }
+    })?;
+    let packed_write = plan
+        .writes
+        .iter_mut()
+        .find(|write| write.offset == MUTABLE_TABLE_OFFSETS[0])
+        .ok_or(
+            SmwUsV1Lfix3Generation1MigrationBuildError::PlanMissingTable {
+                offset: MUTABLE_TABLE_OFFSETS[0],
+            },
+        )?;
+    let source = bytes
+        .get(packed_write.offset..packed_write.offset + packed_write.expected.len())
+        .ok_or(SmwUsV1Lfix3Generation1MigrationBuildError::SourceRange {
+            offset: packed_write.offset,
+            len: packed_write.expected.len(),
+        })?;
+    packed_write.expected.copy_from_slice(source);
+    packed_write.replacement.copy_from_slice(source);
+    let packed_len = packed_write.replacement.len();
+    let packed: &mut [u8; 0x200] =
+        packed_write
+            .replacement
+            .as_mut_slice()
+            .try_into()
+            .map_err(
+                |_| SmwUsV1Lfix3Generation1MigrationBuildError::PlanTableLength {
+                    offset: MUTABLE_TABLE_OFFSETS[0],
+                    expected: 0x200,
+                    actual: packed_len,
+                },
+            )?;
+    let extracted = migrate_smw_us_v1_generation_1_lfix3_tables(legacy_flags, packed);
+    plan.writes
+        .iter_mut()
+        .find(|write| write.offset == MUTABLE_TABLE_OFFSETS[1])
+        .ok_or(
+            SmwUsV1Lfix3Generation1MigrationBuildError::PlanMissingTable {
+                offset: MUTABLE_TABLE_OFFSETS[1],
+            },
+        )?
+        .replacement
+        .copy_from_slice(&extracted);
+    Ok(plan)
 }
 
 /// Builds a table-preserving replacement of Lunar Magic's authenticated generation-2 runtime.
@@ -856,6 +975,82 @@ mod tests {
     }
 
     #[test]
+    fn generation_1_migration_converts_tables_authenticates_fixed_sites_and_undoes_exactly() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut generation_1 = generation_1_fixture(original);
+        for index in 0..0x200 {
+            generation_1[GENERATION_1_FLAGS_OFFSET + index] = if index & 2 == 0 { 0 } else { 0x20 };
+            generation_1[MUTABLE_TABLE_OFFSETS[0] + index] = u8::try_from(index & 0xff).unwrap();
+        }
+        let before = generation_1.clone();
+        let mut expected_packed: [u8; 0x200] = generation_1
+            [MUTABLE_TABLE_OFFSETS[0]..MUTABLE_TABLE_OFFSETS[0] + 0x200]
+            .try_into()
+            .unwrap();
+        let flags: &[u8; 0x200] = generation_1
+            [GENERATION_1_FLAGS_OFFSET..GENERATION_1_FLAGS_OFFSET + 0x200]
+            .try_into()
+            .unwrap();
+        let expected_extracted =
+            migrate_smw_us_v1_generation_1_lfix3_tables(flags, &mut expected_packed);
+
+        for offset in [
+            0x0000_26cc,
+            MUTABLE_TABLE_OFFSETS[1],
+            MUTABLE_TABLE_OFFSETS[2],
+        ] {
+            let mut corrupt = generation_1.clone();
+            corrupt[offset] ^= 1;
+            assert!(matches!(
+                smw_us_v1_generation_1_lfix3_migration(&corrupt),
+                Err(SmwUsV1Lfix3Generation1MigrationBuildError::Detect(
+                    SmwUsV1Lfix3DetectError::FixedByteMismatch {
+                        offset: actual,
+                        ..
+                    }
+                )) if actual == offset
+            ));
+        }
+
+        let plan = smw_us_v1_generation_1_lfix3_migration(&generation_1).unwrap();
+        let mut changed_after_planning = generation_1.clone();
+        changed_after_planning[0x0000_6966] ^= 1;
+        let changed_snapshot = changed_after_planning.clone();
+        let mut rejected = Project::new(RomImage::from_bytes(changed_after_planning).unwrap());
+        assert!(rejected.install_relocatable_patch(&plan).is_err());
+        assert_eq!(rejected.history.undo_len(), 0);
+        assert_eq!(rejected.save_snapshot(), changed_snapshot);
+
+        let mut project = Project::new(RomImage::from_bytes(generation_1).unwrap());
+        project.install_relocatable_patch(&plan).unwrap();
+
+        assert!(
+            detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            project.rom.read(MUTABLE_TABLE_OFFSETS[0], 0x200).unwrap(),
+            expected_packed
+        );
+        assert_eq!(
+            project.rom.read(MUTABLE_TABLE_OFFSETS[1], 0x200).unwrap(),
+            expected_extracted
+        );
+        assert!(
+            project
+                .rom
+                .read(MUTABLE_TABLE_OFFSETS[2], 0x200)
+                .unwrap()
+                .iter()
+                .all(|byte| *byte == 0x1a)
+        );
+        assert_eq!(project.history.undo_len(), 1);
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), before);
+    }
+
+    #[test]
     fn generation_2_migration_reclaims_runtime_preserves_tables_and_undoes_exactly() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut generation_2 = generation_2_fixture(original);
@@ -946,6 +1141,14 @@ mod tests {
             }
             bytes[offset..offset + hook.len()].copy_from_slice(&hook);
         }
+        bytes
+    }
+
+    fn generation_1_fixture(mut bytes: Vec<u8>) -> Vec<u8> {
+        bytes[GENERATION_1_HOOK_OFFSET..GENERATION_1_HOOK_OFFSET + GENERATION_1_HOOK.len()]
+            .copy_from_slice(&GENERATION_1_HOOK);
+        bytes[GENERATION_1_HELPER_OFFSET..GENERATION_1_HELPER_OFFSET + GENERATION_1_HELPER.len()]
+            .copy_from_slice(&GENERATION_1_HELPER);
         bytes
     }
 

@@ -16,7 +16,17 @@ bytes from logical `$02DE00`. For each level whose flag bit `$20` is clear, it m
 the packed byte unchanged and writes zero to the new plane. The resulting planes are written to
 logical `$02DE00` and `$037C00` before the current runtime is installed.
 
-The Rust conversion function and exhaustive 512-entry branch test preserve this behavior. The
-remaining migration transaction still requires authentication of every generation-1 precondition
-that Lunar Magic replaces; the application continues to refuse legacy installation until that
-transaction is proven failure-atomic.
+Named decompilation also proves the migration calls `InstallLfix3CoreHooks`,
+`InitializeLfix3RuntimeTables`, and `InstallLfix3Runtime` before publishing the converted planes.
+Generation 1 therefore leaves the later core/runtime destinations in their pristine state: its
+only immutable installation is the separately authenticated hook/helper pair. The Rust migration
+requires every later fixed write and both new table destinations to retain their exact pristine
+preconditions. It captures the live packed plane as an exact transactional precondition, performs
+the recovered conversion, initializes the third plane to `$1A`, installs the current `$510`
+runtime, repairs the checksum, and commits once. Corrupt destinations reject before mutation;
+successful output authenticates as current, and undo restores the complete source byte-for-byte.
+
+An attempted historical-binary cross-check followed the 2019 WiiDatabase article to its archived
+stable `Lunar-Magic.zip` URL. The Internet Archive has no payload capture between the 2016 and 2021
+digests, and replay returns a later executable dated 2020. That file was rejected as generation-1
+evidence rather than silently treated as Lunar Magic 3.00.

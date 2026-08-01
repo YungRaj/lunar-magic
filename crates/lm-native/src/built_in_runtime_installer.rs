@@ -87,16 +87,10 @@ impl BuiltInRuntimeInstaller {
         if workspace.selection_is_installed() {
             ui.label("The selected current runtime is already installed and authenticated.");
         }
-        if workspace.selection_requires_legacy_migration() {
+        if workspace.selection_migrates_legacy_lfix3() {
             ui.label(
-                "Lfix3 generation 1 is installed. Installation remains disabled until every \
-                 legacy write precondition is authenticated.",
-            );
-        }
-        if workspace.selection_migrates_generation_2() {
-            ui.label(
-                "Authenticated Lfix3 generation 2 will be migrated to the current runtime while \
-                 preserving all live per-level tables.",
+                "The authenticated legacy Lfix3 generation will be migrated to the current \
+                 runtime while preserving or converting its live per-level tables.",
             );
         }
         ui.label(
@@ -116,10 +110,8 @@ impl BuiltInRuntimeInstaller {
             }
             if ui
                 .add_enabled(
-                    !stale
-                        && !workspace.selection_is_installed()
-                        && !workspace.selection_requires_legacy_migration(),
-                    egui::Button::new(if workspace.selection_migrates_generation_2() {
+                    !stale && !workspace.selection_is_installed(),
+                    egui::Button::new(if workspace.selection_migrates_legacy_lfix3() {
                         "Migrate transactionally"
                     } else {
                         "Install transactionally"

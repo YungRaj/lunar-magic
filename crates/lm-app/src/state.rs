@@ -95,6 +95,7 @@ pub enum AppError {
     Lfix3Plan(lm_profile::Lfix3RuntimeLengthError),
     Lfix3Detect(lm_profile::SmwUsV1Lfix3DetectError),
     Lfix3Generation(lm_profile::SmwUsV1Lfix3GenerationError),
+    Lfix3Generation1Migration(lm_profile::SmwUsV1Lfix3Generation1MigrationBuildError),
     Lfix3Generation2Migration(lm_profile::SmwUsV1Lfix3Generation2MigrationBuildError),
     Map16RuntimePlan(lm_profile::SmwUsV1Map16RuntimeInstallBuildError),
     Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
@@ -313,6 +314,12 @@ impl From<lm_profile::SmwUsV1Lfix3DetectError> for AppError {
 impl From<lm_profile::SmwUsV1Lfix3GenerationError> for AppError {
     fn from(value: lm_profile::SmwUsV1Lfix3GenerationError) -> Self {
         Self::Lfix3Generation(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Lfix3Generation1MigrationBuildError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Lfix3Generation1MigrationBuildError) -> Self {
+        Self::Lfix3Generation1Migration(value)
     }
 }
 

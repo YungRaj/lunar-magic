@@ -1492,12 +1492,18 @@ so generation 2 is classified by exact `$240`-byte RATS-runtime, fixed-helper, m
 hook authentication instead of treating simultaneous hooks as ambiguous. Generation 1 now requires
 both its exact JSL and complete `$30`-byte helper at `$02DC50`. Its recovered 512-entry conversion
 moves packed bit `$10` into a new plane and clears it only when the legacy flag's `$20` bit is clear.
+Generation 1 now migrates through a strict current-runtime plan. Its immutable hook/helper identity
+is checked first; every later fixed write and new table destination must retain the exact pristine
+precondition installed over by Lunar Magic's migration callees. The live `$02DE00` plane is bound
+as an exact source precondition, converted with the recovered 512-entry loop, and paired with the
+new `$037C00` plane while `$037E00` receives `$1A` defaults. The application and native dialog
+route the single checksum-repaired transaction, current authentication verifies the result, and
+undo restores the complete generation-1 image.
 Generation 2 now migrates through an explicit owned-block replacement: the old `$240` RATS block is
 validated and reclaimed only in staging, its free run is reused for the current `$510` runtime,
 all three live tables are rebound as exact precondition-preserving writes, and checksum plus every
 hook commits in one undo batch. Late failure exposes neither reclamation nor history. The
-application and native dialog route that transaction. Generation 1 remains refused without a ROM
-or history change until its complete fixed-write preconditions are authenticated.
+application and native dialog route that transaction.
 The adjacent Sprite 19 user-requested fix is recovered from Lunar Magic command `$26AC`, its
 `PromptAndInstallSprite19AsmFix`/`InstallSprite19AsmFixRuntime` control flow, and a matched
 pristine-ROM Wine transaction. On SMW-US-v1 it replaces the six-byte hook at logical `$00E762`,

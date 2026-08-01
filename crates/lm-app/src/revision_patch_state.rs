@@ -125,7 +125,11 @@ impl AppState {
                     return Err(AppError::Lfix3AlreadyInstalled);
                 }
                 lm_profile::SmwUsV1Lfix3Generation::Generation1 => {
-                    return Err(AppError::Lfix3LegacyMigrationRequired);
+                    let plan = lm_profile::smw_us_v1_generation_1_lfix3_migration(
+                        project.rom.logical_bytes(),
+                    )?;
+                    project.install_relocatable_patch(&plan)?;
+                    "Migrate SMW US Lfix3 generation 1"
                 }
                 lm_profile::SmwUsV1Lfix3Generation::Generation2 => {
                     let migration = lm_profile::smw_us_v1_generation_2_lfix3_migration(
@@ -412,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn lfix3_install_reports_legacy_generation_without_mutating_history() {
+    fn lfix3_install_migrates_generation_1_and_undoes_exactly() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut image = RomImage::from_bytes(original).unwrap();
         image
@@ -437,11 +441,16 @@ mod tests {
         let legacy = image.as_file_bytes().to_vec();
         let mut app = AppState::default();
         app.load_rom(legacy.clone()).unwrap();
-        assert!(matches!(
-            app.dispatch(Command::InstallLfix3 { rev: 0 }),
-            Err(AppError::Lfix3LegacyMigrationRequired)
-        ));
-        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        app.dispatch(Command::InstallLfix3 { rev: 0 }).unwrap();
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        assert!(
+            lm_profile::detect_smw_us_v1_current_lfix3_runtime(
+                app.project().unwrap().rom.logical_bytes()
+            )
+            .unwrap()
+            .is_some()
+        );
+        app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), legacy);
     }
 
