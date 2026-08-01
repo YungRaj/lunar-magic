@@ -42,6 +42,9 @@ pub(crate) fn edit_level_header(
         shell_command::LevelHeaderField::DefaultMusicSelector => {
             LegacyHeaderEdit::DefaultMusicSelector(value)
         }
+        shell_command::LevelHeaderField::TimeLimitSelector => {
+            LegacyHeaderEdit::TimeLimitSelector(value)
+        }
         shell_command::LevelHeaderField::SpritePalette => LegacyHeaderEdit::SpritePalette(value),
         shell_command::LevelHeaderField::ForegroundPalette => {
             LegacyHeaderEdit::ForegroundPalette(value)

@@ -27,6 +27,7 @@ pub enum LegacyHeaderEdit {
     BackgroundColor(u8),
     SpriteTileset(u8),
     DefaultMusicSelector(u8),
+    TimeLimitSelector(u8),
     SpritePalette(u8),
     ForegroundPalette(u8),
     ObjectTileset(u8),
@@ -197,6 +198,9 @@ fn apply_header_edit(level: &mut Level, edit: LegacyHeaderEdit) -> Result<(), He
         LegacyHeaderEdit::DefaultMusicSelector(value) => {
             level.header.legacy.set_default_music_selector(value)
         }
+        LegacyHeaderEdit::TimeLimitSelector(value) => {
+            level.header.legacy.set_time_limit_selector(value)
+        }
         LegacyHeaderEdit::SpritePalette(value) => level.header.legacy.set_sprite_palette(value),
         LegacyHeaderEdit::ForegroundPalette(value) => {
             level.header.legacy.set_foreground_palette(value)
@@ -250,6 +254,7 @@ mod tests {
                 LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(2)),
                 LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(3)),
                 LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::DefaultMusicSelector(6)),
+                LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::TimeLimitSelector(2)),
                 LevelPropertyEdit::SetExpandedHeader(Some(ExpandedLevelHeader::default())),
                 LevelPropertyEdit::SetExpandedField {
                     index: 3,
@@ -278,6 +283,7 @@ mod tests {
         assert_eq!(encoded_header[0] & 0x1f, 0x9f & 0x1f);
         assert_eq!(encoded_header[1] >> 5, 0xba >> 5);
         assert_eq!(encoded_header[2], 0x67);
+        assert_eq!(encoded_header[3], 0x87);
         assert_eq!(encoded_header[4], 0x55);
         assert_eq!(level.header.expanded.unwrap().fields[3], 0x1234);
         assert_eq!(level.number, 0x123);

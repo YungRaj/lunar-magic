@@ -122,6 +122,7 @@ fn apply_header_edit(
         LegacyHeaderEdit::DefaultMusicSelector(value) => {
             layer1.header.set_default_music_selector(value)
         }
+        LegacyHeaderEdit::TimeLimitSelector(value) => layer1.header.set_time_limit_selector(value),
         LegacyHeaderEdit::SpritePalette(value) => layer1.header.set_sprite_palette(value),
         LegacyHeaderEdit::ForegroundPalette(value) => layer1.header.set_foreground_palette(value),
         LegacyHeaderEdit::ObjectTileset(value) => layer1.header.set_object_tileset(value),

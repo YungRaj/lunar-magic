@@ -234,6 +234,7 @@ fn parse_header(
         "background-color" => LegacyHeaderEdit::BackgroundColor(value),
         "sprite-tileset" => LegacyHeaderEdit::SpriteTileset(value),
         "music" => LegacyHeaderEdit::DefaultMusicSelector(value),
+        "time" => LegacyHeaderEdit::TimeLimitSelector(value),
         "sprite-palette" => LegacyHeaderEdit::SpritePalette(value),
         "foreground-palette" => LegacyHeaderEdit::ForegroundPalette(value),
         "object-tileset" => LegacyHeaderEdit::ObjectTileset(value),
@@ -468,9 +469,9 @@ mod tests {
     }
 
     #[test]
-    fn parses_recovered_tileset_and_music_header_fields() {
+    fn parses_recovered_tileset_music_and_time_header_fields() {
         let edits = parse(
-            "LMLEDIT1\nheader sprite-tileset 0f\nheader music 06\nheader object-tileset 0a\n",
+            "LMLEDIT1\nheader sprite-tileset 0f\nheader music 06\nheader time 02\nheader object-tileset 0a\n",
         )
         .unwrap();
         assert_eq!(
@@ -478,6 +479,7 @@ mod tests {
             [
                 NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpriteTileset(0x0f)),
                 NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::DefaultMusicSelector(6)),
+                NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::TimeLimitSelector(2)),
                 NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ObjectTileset(0x0a)),
             ]
         );

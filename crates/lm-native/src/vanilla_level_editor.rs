@@ -50,6 +50,7 @@ struct HeaderForm {
     background_color: u8,
     sprite_tileset: u8,
     default_music_selector: u8,
+    time_limit_selector: u8,
     sprite_palette: u8,
     foreground_palette: u8,
     object_tileset: u8,
@@ -64,13 +65,14 @@ impl HeaderForm {
             background_color: header.background_color(),
             sprite_tileset: header.sprite_tileset(),
             default_music_selector: header.default_music_selector(),
+            time_limit_selector: header.time_limit_selector(),
             sprite_palette: header.sprite_palette(),
             foreground_palette: header.foreground_palette(),
             object_tileset: header.object_tileset(),
         }
     }
 
-    fn edits(self) -> [NativeLevelEdit; 8] {
+    fn edits(self) -> [NativeLevelEdit; 9] {
         [
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(
                 self.background_palette,
@@ -80,6 +82,9 @@ impl HeaderForm {
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpriteTileset(self.sprite_tileset)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::DefaultMusicSelector(
                 self.default_music_selector,
+            )),
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::TimeLimitSelector(
+                self.time_limit_selector,
             )),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpritePalette(self.sprite_palette)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ForegroundPalette(
@@ -784,6 +789,12 @@ impl VanillaLevelEditor {
                 "Default music selector",
                 &mut self.form.default_music_selector,
                 7,
+            );
+            header_row(
+                ui,
+                "Time limit selector",
+                &mut self.form.time_limit_selector,
+                3,
             );
             header_row(
                 ui,

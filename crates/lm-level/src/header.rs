@@ -69,6 +69,12 @@ impl LegacyLevelHeader {
         self.bytes[3] >> 3 & 7
     }
 
+    /// Returns the two-bit selector used by SMW's original level time-limit table.
+    #[must_use]
+    pub const fn time_limit_selector(self) -> u8 {
+        self.bytes[3] >> 6
+    }
+
     #[must_use]
     pub const fn foreground_palette(self) -> u8 {
         self.bytes[3] & 7
@@ -122,6 +128,15 @@ impl LegacyLevelHeader {
     /// Returns [`HeaderValueError`] for values greater than seven.
     pub fn set_sprite_palette(&mut self, value: u8) -> Result<(), HeaderValueError> {
         set_bits(&mut self.bytes[3], value, 0x38, 3)
+    }
+
+    /// Replaces the two-bit time-limit selector while preserving both palette fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HeaderValueError`] for values greater than three.
+    pub fn set_time_limit_selector(&mut self, value: u8) -> Result<(), HeaderValueError> {
+        set_bits(&mut self.bytes[3], value, 0xc0, 6)
     }
 
     /// Preserves byte 3 outside the proven foreground-palette field.
@@ -306,6 +321,7 @@ mod tests {
         header.set_sprite_tileset(6).unwrap();
         header.set_default_music_selector(5).unwrap();
         header.set_sprite_palette(1).unwrap();
+        header.set_time_limit_selector(2).unwrap();
         header.set_foreground_palette(5).unwrap();
         header.set_object_tileset(9).unwrap();
         let encoded = header.encoded();
@@ -315,11 +331,25 @@ mod tests {
         assert_eq!(encoded[2] & 0x80, original[2] & 0x80);
         assert_eq!(header.sprite_tileset(), 6);
         assert_eq!(header.default_music_selector(), 5);
-        assert_eq!(encoded[3] & 0xc0, original[3] & 0xc0);
+        assert_eq!(header.time_limit_selector(), 2);
         assert_eq!(header.sprite_palette(), 1);
         assert_eq!(header.foreground_palette(), 5);
         assert_eq!(encoded[4] & 0xf0, original[4] & 0xf0);
         assert_eq!(header.object_tileset(), 9);
+    }
+
+    #[test]
+    fn time_limit_selector_rejects_out_of_range_values_atomically() {
+        let mut header = LegacyLevelHeader::decode(&[0x12, 0x34, 0x56, 0x9a, 0xbc]).unwrap();
+        let before = header;
+        assert_eq!(
+            header.set_time_limit_selector(4),
+            Err(HeaderValueError {
+                value: 4,
+                maximum: 3,
+            })
+        );
+        assert_eq!(header, before);
     }
 
     #[test]
