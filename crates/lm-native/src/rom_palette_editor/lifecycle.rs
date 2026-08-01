@@ -69,9 +69,12 @@ impl RomPaletteEditor {
         let pending = self.pending_load.take();
         match result.and_then(|loaded| decode_loaded(pending, loaded, revision)) {
             Ok(workspace) => {
+                let colors = workspace.controller.palette().colors.len();
                 self.workspace = Some(workspace);
                 self.selected = 0;
                 self.rgb_expansion = None;
+                self.palette_mask = vec![1; colors];
+                self.palette_mask_edit = false;
                 self.search_start.clear();
                 self.search_end.clear();
             }
@@ -118,6 +121,8 @@ impl RomPaletteEditor {
         self.pending_load = None;
         self.pending_transfer = None;
         self.rgb_expansion = None;
+        self.palette_mask.clear();
+        self.palette_mask_edit = false;
         self.pending_close = None;
     }
 

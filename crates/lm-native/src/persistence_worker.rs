@@ -9,13 +9,14 @@ pub(crate) enum PersistenceTarget {
     Replace(PathBuf),
     Create(PathBuf),
     ReplacePair { first: PathBuf, second: PathBuf },
+    CreatePair { first: PathBuf, second: PathBuf },
 }
 
 impl PersistenceTarget {
     fn description(&self) -> String {
         match self {
             Self::Replace(path) | Self::Create(path) => path.display().to_string(),
-            Self::ReplacePair { first, second } => {
+            Self::ReplacePair { first, second } | Self::CreatePair { first, second } => {
                 format!("{} and {}", first.display(), second.display())
             }
         }
@@ -56,7 +57,10 @@ impl PersistenceWorker {
         target: PersistenceTarget,
         bytes: Vec<u8>,
     ) -> Result<(), String> {
-        if matches!(&target, PersistenceTarget::ReplacePair { .. }) {
+        if matches!(
+            &target,
+            PersistenceTarget::ReplacePair { .. } | PersistenceTarget::CreatePair { .. }
+        ) {
             return Err("paired persistence requires two explicit payloads".into());
         }
         self.start_payload(request_id, target, PersistencePayload::Single(bytes))
@@ -73,6 +77,21 @@ impl PersistenceWorker {
         self.start_payload(
             request_id,
             PersistenceTarget::ReplacePair { first, second },
+            PersistencePayload::Pair(first_bytes, second_bytes),
+        )
+    }
+
+    pub(crate) fn start_create_pair(
+        &mut self,
+        request_id: u64,
+        first: PathBuf,
+        first_bytes: Vec<u8>,
+        second: PathBuf,
+        second_bytes: Vec<u8>,
+    ) -> Result<(), String> {
+        self.start_payload(
+            request_id,
+            PersistenceTarget::CreatePair { first, second },
             PersistencePayload::Pair(first_bytes, second_bytes),
         )
     }
@@ -105,6 +124,13 @@ impl PersistenceWorker {
                         (first, &first_bytes),
                         (second, &second_bytes),
                     ),
+                    (
+                        PersistenceTarget::CreatePair { first, second },
+                        PersistencePayload::Pair(first_bytes, second_bytes),
+                    ) => lm_app::file_persistence::write_new_group(&[
+                        (first.as_path(), first_bytes.as_slice()),
+                        (second.as_path(), second_bytes.as_slice()),
+                    ]),
                     _ => unreachable!("persistence target and payload are constructed together"),
                 }
                 .map_err(|error| error.to_string());
@@ -245,6 +271,28 @@ mod tests {
     }
 
     #[test]
+    fn create_pair_is_all_or_nothing_and_never_replaces() {
+        let first = path("create-pair-first");
+        let second = path("create-pair-second");
+        let mut worker = PersistenceWorker::default();
+        worker
+            .start_create_pair(11, first.clone(), vec![1, 2], second.clone(), vec![3, 4])
+            .unwrap();
+        wait(&mut worker).result.unwrap();
+        assert_eq!(fs::read(&first).unwrap(), [1, 2]);
+        assert_eq!(fs::read(&second).unwrap(), [3, 4]);
+
+        fs::remove_file(&first).unwrap();
+        worker
+            .start_create_pair(12, first.clone(), vec![5], second.clone(), vec![6])
+            .unwrap();
+        assert!(wait(&mut worker).result.is_err());
+        assert!(!first.exists());
+        assert_eq!(fs::read(&second).unwrap(), [3, 4]);
+        fs::remove_file(second).unwrap();
+    }
+
+    #[test]
     fn overlapping_worker_is_rejected_without_replacing_running_request() {
         let (sender, receiver) = mpsc::channel();
         let mut worker = PersistenceWorker {
@@ -283,5 +331,17 @@ mod tests {
                 .is_err()
         );
         assert!(!worker.is_running());
+        assert!(
+            worker
+                .start(
+                    13,
+                    PersistenceTarget::CreatePair {
+                        first: PathBuf::from("first.tpl"),
+                        second: PathBuf::from("first.palmask"),
+                    },
+                    vec![1, 2],
+                )
+                .is_err()
+        );
     }
 }

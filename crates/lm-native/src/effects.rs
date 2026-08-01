@@ -130,7 +130,8 @@ impl EffectState {
                 crate::persistence_worker::PersistenceTarget::Create(path) => {
                     app.confirm_saved_at(completion.request_id, path)
                 }
-                crate::persistence_worker::PersistenceTarget::ReplacePair { .. } => {
+                crate::persistence_worker::PersistenceTarget::ReplacePair { .. }
+                | crate::persistence_worker::PersistenceTarget::CreatePair { .. } => {
                     unreachable!("application ROM saves never use paired persistence")
                 }
             },

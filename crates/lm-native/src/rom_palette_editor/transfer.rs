@@ -34,10 +34,14 @@ impl RomPaletteEditor {
                     return Err("the ROM changed while the raw palette was loading".into());
                 }
                 match decode_import(pending, loaded)? {
-                    DecodedImport::Raw(source, mask) => workspace
-                        .controller
-                        .import_raw_palette(&source, &mask)
-                        .map_err(|error| error.to_string()),
+                    DecodedImport::Raw(source, mask) => {
+                        workspace
+                            .controller
+                            .import_raw_palette(&source, &mask)
+                            .map_err(|error| error.to_string())?;
+                        self.palette_mask = mask.encode();
+                        Ok(())
+                    }
                     DecodedImport::Supported {
                         palette,
                         mask,
@@ -50,6 +54,7 @@ impl RomPaletteEditor {
                         if let Some(expansion) = rgb_expansion {
                             self.rgb_expansion = Some(expansion);
                         }
+                        self.palette_mask = mask.encode();
                         Ok(())
                     }
                 }
@@ -180,12 +185,7 @@ impl RomPaletteEditor {
         let Some(path) = dialogs::choose_raw_palette_save_path() else {
             return;
         };
-        if let Err(error) =
-            self.transfer_persistence
-                .start(revision, PersistenceTarget::Create(path), bytes)
-        {
-            self.error = Some(error);
-        }
+        self.start_palette_export(revision, path, bytes);
     }
 
     fn start_tpl_export(&mut self, revision: u64) {
@@ -208,12 +208,7 @@ impl RomPaletteEditor {
         let Some(path) = dialogs::choose_tpl_palette_save_path() else {
             return;
         };
-        if let Err(error) =
-            self.transfer_persistence
-                .start(revision, PersistenceTarget::Create(path), bytes)
-        {
-            self.error = Some(error);
-        }
+        self.start_palette_export(revision, path, bytes);
     }
 
     fn start_rgb_export(&mut self, revision: u64) {
@@ -239,10 +234,32 @@ impl RomPaletteEditor {
         let Some(path) = dialogs::choose_rgb_palette_save_path() else {
             return;
         };
-        if let Err(error) =
+        self.start_palette_export(revision, path, bytes);
+    }
+
+    fn start_palette_export(&mut self, revision: u64, path: std::path::PathBuf, bytes: Vec<u8>) {
+        if self.palette_mask.len() != PaletteMaskFile::FILE_LEN {
+            self.error = Some(format!(
+                "palette mask has {} entries instead of {}",
+                self.palette_mask.len(),
+                PaletteMaskFile::FILE_LEN
+            ));
+            return;
+        }
+        let result = if self.palette_mask.iter().all(|entry| *entry != 0) {
             self.transfer_persistence
                 .start(revision, PersistenceTarget::Create(path), bytes)
-        {
+        } else {
+            let mask_path = path.with_extension("palmask");
+            self.transfer_persistence.start_create_pair(
+                revision,
+                path,
+                bytes,
+                mask_path,
+                self.palette_mask.clone(),
+            )
+        };
+        if let Err(error) = result {
             self.error = Some(error);
         }
     }
@@ -351,6 +368,17 @@ mod tests {
     use crate::document_loader::LoadedDocument;
     use lm_graphics::{Bgr555, Palette};
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_EXPORT: AtomicU64 = AtomicU64::new(0);
+
+    fn export_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "lm-palette-mask-{name}-{}-{}.tpl",
+            std::process::id(),
+            NEXT_EXPORT.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
 
     #[test]
     fn raw_transfer_helper_preserves_exact_words_and_noncanonical_mask_bytes() {
@@ -476,5 +504,30 @@ mod tests {
             requests[1].path,
             PathBuf::from("palettes/Level 105.palmask")
         );
+    }
+
+    #[test]
+    fn export_publishes_palmask_only_when_a_color_is_disabled() {
+        let unmasked = export_path("all-enabled");
+        let mut editor = RomPaletteEditor {
+            palette_mask: vec![1; PaletteMaskFile::FILE_LEN],
+            ..RomPaletteEditor::default()
+        };
+        editor.start_palette_export(7, unmasked.clone(), vec![1, 2, 3]);
+        editor.transfer_persistence.wait_for_test().result.unwrap();
+        assert_eq!(std::fs::read(&unmasked).unwrap(), [1, 2, 3]);
+        assert!(!unmasked.with_extension("palmask").exists());
+        std::fs::remove_file(unmasked).unwrap();
+
+        let masked = export_path("disabled");
+        editor.palette_mask[17] = 0;
+        editor.start_palette_export(8, masked.clone(), vec![4, 5]);
+        editor.transfer_persistence.wait_for_test().result.unwrap();
+        assert_eq!(std::fs::read(&masked).unwrap(), [4, 5]);
+        let mask_path = masked.with_extension("palmask");
+        let exported_mask = std::fs::read(&mask_path).unwrap();
+        assert_eq!(exported_mask, editor.palette_mask);
+        std::fs::remove_file(masked).unwrap();
+        std::fs::remove_file(mask_path).unwrap();
     }
 }

@@ -1622,6 +1622,12 @@ detection considers only selected triplets, and only selected supported row-zero
 cleared. All routes compute only actual word differences before the controller's immutable
 ownership check, so a late protected color rejects the complete staged import; revision, worker,
 commit, and close gates remain shared.
+The editor retains that selector as transient workspace state, initially enables it completely on
+each ROM palette open, draws disabled colors with `X`, and reproduces the documented click and
+Alt-click whole-row gestures plus enable-all/disable-all controls. Its 257th entry forms a bounded
+one-color final row. Exports with any disabled entry snapshot and create-new publish the selected
+palette format plus its same-basename `.palmask` as one rollback-safe group; all-enabled exports
+publish only the palette, and neither route replaces an existing destination.
 Graphics mode likewise exposes a ROM-backed 4bpp pixel editor. It decodes the selected native GFX
 slot with the profile-selected LZ2/LZ3 codec, obtains palette zero through the same profile, and
 reuses the portable editor's nearest-neighbor tile painter and hit testing. Pixel changes are
