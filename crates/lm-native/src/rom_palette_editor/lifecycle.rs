@@ -38,8 +38,12 @@ impl RomPaletteEditor {
     }
 
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
-        if self.manifest_loader.is_running() || self.loader.is_running() {
-            self.error = Some("wait for palette ownership loading to finish before closing".into());
+        if self.manifest_loader.is_running()
+            || self.loader.is_running()
+            || self.transfer_loader.is_running()
+            || self.transfer_persistence.is_running()
+        {
+            self.error = Some("wait for palette file work to finish before closing".into());
             return false;
         }
         let Some(workspace) = &self.workspace else {
@@ -111,6 +115,7 @@ impl RomPaletteEditor {
     fn clear(&mut self) {
         self.workspace = None;
         self.pending_load = None;
+        self.pending_transfer = None;
         self.pending_close = None;
     }
 

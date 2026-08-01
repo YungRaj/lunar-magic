@@ -237,3 +237,58 @@ fn wrong_mode_mapper_and_ownership_shape_are_rejected() {
         })
     ));
 }
+
+#[test]
+fn raw_import_is_masked_row_zero_canonical_and_ownership_atomic() {
+    let palette = Palette {
+        colors: vec![Bgr555(0x7fff); RawSnesPaletteFile::COLOR_COUNT],
+    };
+    let mut owners = vec![lm_graphics::PaletteEntryOwner::Editable; palette.colors.len()];
+    owners[2] = lm_graphics::PaletteEntryOwner::Fixed;
+    let mut controller = PaletteController {
+        revision: 0,
+        palette_number: 0,
+        layout: PaletteRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0,
+                entries: 1,
+                stride: 3,
+            },
+            colors_per_palette: RawSnesPaletteFile::COLOR_COUNT,
+        },
+        checksum_field_offset: 0,
+        source_file_bytes: Vec::new(),
+        baseline: palette.clone(),
+        palette,
+        ownership: PaletteOwnership::from_owners(owners),
+        previous_block: None,
+    };
+    let source = RawSnesPaletteFile {
+        palette: Palette {
+            colors: (0_u16..=256).map(Bgr555).collect(),
+        },
+    };
+    let mut mask = vec![0; PaletteMaskFile::FILE_LEN];
+    mask[0] = 1;
+    mask[1] = 0x80;
+    mask[16] = 2;
+    mask[256] = 1;
+    controller
+        .import_raw_palette(&source, &PaletteMaskFile::decode(&mask).unwrap())
+        .unwrap();
+    assert_eq!(controller.palette().colors[0], Bgr555(0));
+    assert_eq!(controller.palette().colors[1], Bgr555(1));
+    assert_eq!(controller.palette().colors[16], Bgr555(0));
+    assert_eq!(controller.palette().colors[256], Bgr555(256));
+    assert_eq!(controller.palette().colors[2], Bgr555(0x7fff));
+
+    let accepted = controller.palette().clone();
+    mask[2] = 1;
+    assert!(
+        controller
+            .import_raw_palette(&source, &PaletteMaskFile::decode(&mask).unwrap())
+            .is_err()
+    );
+    assert_eq!(controller.palette(), &accepted);
+}

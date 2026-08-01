@@ -9,6 +9,7 @@ use lm_graphics::{Bgr555, PaletteChange, Rgb8};
 mod commit;
 mod lifecycle;
 mod ownership;
+mod transfer;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -39,6 +40,9 @@ pub(crate) struct RomPaletteEditor {
     loader: DocumentLoader,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
+    transfer_loader: DocumentLoader,
+    transfer_persistence: crate::persistence_worker::PersistenceWorker,
+    pending_transfer: Option<transfer::PendingTransfer>,
 }
 
 impl RomPaletteEditor {
@@ -50,6 +54,7 @@ impl RomPaletteEditor {
         if let Some(result) = self.loader.show(context) {
             self.finish_ownership_load(result, revision);
         }
+        self.poll_transfer_file_io(context, revision);
         let mut command = match self.manifest_loader.show(context, revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
                 Ok(command) => Some(command),
@@ -86,13 +91,18 @@ impl RomPaletteEditor {
         });
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.controller.revision() != revision;
+        let transfer_busy =
+            self.transfer_loader.is_running() || self.transfer_persistence.is_running();
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
                 "The ROM changed; reopen before editing or committing.",
             );
         }
-        self.palette_surface(ui, stale, pasted);
+        self.raw_palette_file_controls(ui, stale, revision);
+        ui.add_enabled_ui(!self.transfer_loader.is_running(), |ui| {
+            self.palette_surface(ui, stale, pasted);
+        });
         ui.separator();
         ui.horizontal(|ui| {
             ui.label("Allocation logical PC hex");
@@ -106,7 +116,7 @@ impl RomPaletteEditor {
             .is_some_and(|w| w.controller.is_modified());
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
                 egui::Button::new("Commit palette to ROM"),
             )
             .clicked()
@@ -120,7 +130,7 @@ impl RomPaletteEditor {
         }
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
                 egui::Button::new("Commit and reclaim"),
             )
             .clicked()

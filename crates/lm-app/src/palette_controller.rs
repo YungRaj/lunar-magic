@@ -1,6 +1,9 @@
 use crate::EditorMode;
 use crate::palette_edit_batch::apply_palette_edit_batch;
-use lm_graphics::{Bgr555, Palette, PaletteBatchEditError, PaletteChange, PaletteOwnership};
+use lm_graphics::{
+    Bgr555, Palette, PaletteBatchEditError, PaletteChange, PaletteMaskFile, PaletteOwnership,
+    RawPaletteFileError, RawSnesPaletteFile, apply_raw_palette_import,
+};
 use lm_project::{PaletteIoError, PaletteRomLayout, TransactionError};
 use lm_rats::RatsBlock;
 use lm_rom::{Mapper, RomError};
@@ -29,6 +32,7 @@ pub enum PaletteControllerError {
         command: usize,
         error: PaletteBatchEditError,
     },
+    RawImport(RawPaletteFileError),
     Mutation(TransactionError),
 }
 
@@ -87,6 +91,37 @@ impl PaletteController {
     ) -> Result<(), PaletteControllerError> {
         apply_palette_edit_batch(&mut self.palette, &self.ownership, edits)
             .map_err(|(command, error)| PaletteControllerError::Edit { command, error })
+    }
+
+    /// Applies Lunar Magic's exact raw-palette import semantics through immutable ownership.
+    ///
+    /// Only colors whose final value differs are submitted to the ownership-aware edit batch, so
+    /// selected protected entries may remain byte-exact while any attempted protected mutation
+    /// rejects the complete import atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns a raw-format shape error or the first ownership failure without changing staged
+    /// palette state.
+    pub fn import_raw_palette(
+        &mut self,
+        source: &RawSnesPaletteFile,
+        mask: &PaletteMaskFile,
+    ) -> Result<(), PaletteControllerError> {
+        let mut imported = self.palette.clone();
+        apply_raw_palette_import(&mut imported, source, mask)
+            .map_err(PaletteControllerError::RawImport)?;
+        let changes = self
+            .palette
+            .colors
+            .iter()
+            .zip(imported.colors)
+            .enumerate()
+            .filter_map(|(index, (current, color))| {
+                (*current != color).then_some(PaletteChange { index, color })
+            })
+            .collect();
+        self.apply_edits(&[PaletteControllerEdit::ApplyChanges(changes)])
     }
 }
 
