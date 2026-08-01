@@ -14,6 +14,7 @@ use lm_project::{CompleteOverworldFile, CompleteOverworldShape};
 
 mod commit;
 mod lifecycle;
+mod transfer;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 enum Panel {
@@ -67,6 +68,8 @@ pub(crate) struct RomOverworldEditor {
     loader: DocumentLoader,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
+    transfer_loader: DocumentLoader,
+    transfer_persistence: crate::persistence_worker::PersistenceWorker,
 }
 
 impl RomOverworldEditor {
@@ -75,6 +78,7 @@ impl RomOverworldEditor {
         context: &egui::Context,
         revision: u64,
     ) -> (bool, Option<Command>) {
+        self.poll_transfer_file_io(context, revision);
         if let Some(result) = self.loader.show(context) {
             self.finish_ownership_load(result, revision);
         }
@@ -130,6 +134,7 @@ impl RomOverworldEditor {
                 "The ROM changed; reopen before editing or committing.",
             );
         }
+        self.complete_file_controls(ui, stale, revision);
         self.layer_tile_controls(ui, shape, stale);
         ui.separator();
         ui.horizontal(|ui| {
@@ -214,9 +219,11 @@ impl RomOverworldEditor {
             .workspace
             .as_ref()
             .is_some_and(|value| value.controller.is_modified());
+        let transfer_busy =
+            self.transfer_loader.is_running() || self.transfer_persistence.is_running();
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
                 egui::Button::new("Commit all nine overworld payloads"),
             )
             .clicked()
@@ -230,7 +237,7 @@ impl RomOverworldEditor {
         }
         if ui
             .add_enabled(
-                modified && !stale && !self.manifest_loader.is_running(),
+                modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
                 egui::Button::new("Commit and reclaim all nine"),
             )
             .clicked()

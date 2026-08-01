@@ -8,7 +8,8 @@ use lm_overworld::{
     EventReveal, OverworldEditError, OverworldEndpoint, OverworldMessage, OverworldSprite,
 };
 use lm_project::{
-    CompleteOverworldData, CompleteOverworldIoError, CompleteOverworldRomLayout, LevelLoadError,
+    CompleteOverworldData, CompleteOverworldFile, CompleteOverworldFileError,
+    CompleteOverworldIoError, CompleteOverworldRomLayout, CompleteOverworldShape, LevelLoadError,
     PayloadLoadError, TransactionError,
 };
 use lm_rats::RatsBlock;
@@ -85,6 +86,15 @@ pub enum OverworldControllerError {
         error: ExAnimationControllerEditFailure,
     },
     Mutation(TransactionError),
+    ImportShape {
+        expected: Box<CompleteOverworldShape>,
+        actual: Box<CompleteOverworldShape>,
+    },
+    ImportAnimationRecords {
+        actual: usize,
+        maximum: usize,
+    },
+    ImportFile(CompleteOverworldFileError),
 }
 
 impl fmt::Display for OverworldControllerError {
@@ -147,6 +157,57 @@ impl OverworldController {
             },
         )
         .map_err(map_batch_error)
+    }
+
+    /// Atomically stages all nine domains from one validated complete-overworld file.
+    ///
+    /// The source slot is provenance only; imports may intentionally copy between slots. Shape,
+    /// animation limits, compact encoding, and palette ownership must match this controller.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OverworldControllerError`] without changing staged data when any aggregate
+    /// invariant is incompatible with the installed ROM workspace.
+    pub fn replace_complete_file(
+        &mut self,
+        file: &CompleteOverworldFile,
+        expected_shape: CompleteOverworldShape,
+    ) -> Result<(), OverworldControllerError> {
+        if file.shape != expected_shape {
+            return Err(OverworldControllerError::ImportShape {
+                expected: Box::new(expected_shape),
+                actual: Box::new(file.shape),
+            });
+        }
+        let maximum = self.layout.animation.maximum_records;
+        if file.data.animation.records.len() > maximum {
+            return Err(OverworldControllerError::ImportAnimationRecords {
+                actual: file.data.animation.records.len(),
+                maximum,
+            });
+        }
+        file.encode(&self.double_size_modes)
+            .map_err(OverworldControllerError::ImportFile)?;
+        let palette_changes = self
+            .data
+            .palette
+            .colors
+            .iter()
+            .zip(&file.data.palette.colors)
+            .enumerate()
+            .filter_map(|(index, (current, imported))| {
+                (current != imported).then_some(PaletteChange {
+                    index,
+                    color: *imported,
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut palette = self.data.palette.clone();
+        palette
+            .apply_changes(&palette_changes, &self.palette_ownership)
+            .map_err(|error| OverworldControllerError::Palette { command: 0, error })?;
+        self.data = file.data.clone();
+        Ok(())
     }
 }
 

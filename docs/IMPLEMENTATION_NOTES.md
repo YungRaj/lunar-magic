@@ -3197,6 +3197,15 @@ baselines, and invalidates redo after divergent nine-domain edits. Canonical reo
 revision advancement, saves use immutable snapshots, and dirty quit or scripted EOF preserves the
 underlying file.
 
+The installed-ROM complete-overworld editor also imports and exports the complete nine-domain
+`.lmow` aggregate without blocking the UI. Import is bounded and requires the active profile shape,
+animation limit and size-mode table, canonical re-encoding, and palette ownership before replacing
+the staged controller in one atomic operation. The file's source slot is provenance, so intentional
+cross-slot copies remain possible. Export snapshots the current staged aggregate and publishes only
+to a new destination. Loading or persistence gates commit and close, and a ROM revision change while
+loading rejects the import. Original Lunar Magic prompt and file behavior and broader variants
+remain incomplete.
+
 The ten-argument form additionally accepts a versioned `LMANFRM` materialized-animation frame
 between the appearance file (use `none` when absent) and completed-reveal count. This provider-neutral
 artifact contains unique absolute tile and palette-color overrides for an explicit tick. Its decoder

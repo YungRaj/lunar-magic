@@ -267,6 +267,13 @@ pub(crate) fn choose_complete_overworld_document() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_complete_overworld_save_path(slot: u16) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .add_filter("Portable Lunar Magic complete overworld", &["lmow"])
+        .set_file_name(format!("Overworld {slot:03X}.lmow"))
+        .save_file()
+}
+
 pub(crate) fn choose_overworld_path_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Portable Lunar Magic overworld paths", &["lmowpath"])

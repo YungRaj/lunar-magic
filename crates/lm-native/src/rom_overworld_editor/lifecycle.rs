@@ -30,9 +30,12 @@ impl RomOverworldEditor {
     }
 
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
-        if self.manifest_loader.is_running() || self.loader.is_running() {
-            self.error =
-                Some("wait for overworld ownership loading to finish before closing".into());
+        if self.manifest_loader.is_running()
+            || self.loader.is_running()
+            || self.transfer_loader.is_running()
+            || self.transfer_persistence.is_running()
+        {
+            self.error = Some("wait for overworld file work to finish before closing".into());
             return false;
         }
         if self.pending_open.is_some() {

@@ -70,6 +70,19 @@ fn layout() -> CompleteOverworldRomLayout {
     }
 }
 
+fn shape() -> CompleteOverworldShape {
+    CompleteOverworldShape {
+        width: 2,
+        height: 2,
+        event_reveals: 1,
+        endpoints: 1,
+        messages: 1,
+        sprites: 1,
+        sprite_record_len: 9,
+        palette_colors: 16,
+    }
+}
+
 fn animation_record(value: u8) -> ExAnimationRecord {
     ExAnimationRecord::new(1, 0, 0, 0x1234, false, &[value, value + 1], false).unwrap()
 }
@@ -350,6 +363,65 @@ fn every_payload_edit() -> Vec<OverworldControllerEdit> {
             record: animation_record(12),
         }]),
     ]
+}
+
+#[test]
+fn complete_file_replacement_is_atomic_validated_and_slot_agnostic() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::ShowOverworld).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut owners = vec![PaletteEntryOwner::Editable; 16];
+    owners[2] = PaletteEntryOwner::Fixed;
+    let mut controller = OverworldController::decode(
+        &snapshot,
+        0,
+        layout(),
+        &MODES,
+        PaletteOwnership::from_owners(owners),
+    )
+    .unwrap();
+    let baseline = controller.data().clone();
+    let mut imported = data();
+    imported.layers.layer1.tiles[0] = 0x1234;
+    let file = CompleteOverworldFile {
+        source_slot: 0x1ff,
+        shape: shape(),
+        data: imported.clone(),
+    };
+    controller.replace_complete_file(&file, shape()).unwrap();
+    assert_eq!(controller.data(), &imported);
+    assert!(controller.is_modified());
+
+    let mut wrong_shape = file.clone();
+    wrong_shape.shape.width += 1;
+    assert!(
+        controller
+            .replace_complete_file(&wrong_shape, shape())
+            .is_err()
+    );
+    assert_eq!(controller.data(), &imported);
+
+    let mut protected_palette = file.clone();
+    protected_palette.data.palette.colors[2].0 ^= 1;
+    let protected_error = controller
+        .replace_complete_file(&protected_palette, shape())
+        .unwrap_err();
+    assert!(
+        matches!(protected_error, OverworldControllerError::Palette { .. }),
+        "{protected_error:?}"
+    );
+    assert_eq!(controller.data(), &imported);
+
+    let mut too_many = file;
+    too_many.data.animation.records = vec![animation_record(1); 33];
+    assert!(
+        controller
+            .replace_complete_file(&too_many, shape())
+            .is_err()
+    );
+    assert_eq!(controller.data(), &imported);
+    assert_ne!(controller.data(), &baseline);
 }
 
 #[test]
