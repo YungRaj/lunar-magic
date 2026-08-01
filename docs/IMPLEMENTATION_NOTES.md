@@ -1603,6 +1603,15 @@ page beyond the profile's parallel pointer-table counts.
 The ROM Map16 adapter separates packed tile/subtile and clipboard interaction from profile-backed
 workspace lifecycle and paired graphics/Acts-Like allocation construction. Normal and reclaiming
 commits therefore share the exact same page-shaped save options and protection policy.
+The same native editor now exposes Lunar Magic's recovered legacy current-page pair for editable
+foreground pages `$02–$7F`. It reads exact `0x200`-byte `Map16Page.bin` Acts-Like data together with
+the automatic same-stem `Map16PageG.bin` sibling containing exactly `0x800` definition bytes. The
+selected page and application revision are captured before bounded background loading; completion
+decodes all 256 tiles and submits one complete-page replacement through the existing set-wide graph
+validation. Built-in pages `$00–$01` and background pages reject this foreground-only boundary.
+Export snapshots the selected staged page and publishes both exact files create-new and
+all-or-nothing. Active legacy or complete-file I/O gates Map16 mutation, bitmap import, ROM commit,
+and close. Modern selected-range structured `.map16` prompts and Wine interaction coverage remain.
 Palette mode now has a ROM-backed swatch editor over the profile-declared native palette. It
 displays the exact retained BGR555 word beside the platform color picker, stages changes through
 `PaletteController`, and retains controller ownership checks. Like the other relocatable native

@@ -328,6 +328,22 @@ pub(crate) fn choose_complete_map16_save_path() -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_legacy_map16_page_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Legacy Map16 Page Pair")
+        .add_filter("Lunar Magic Map16Page", &["bin"])
+        .set_file_name("Map16Page.bin")
+        .pick_file()
+}
+
+pub(crate) fn choose_legacy_map16_page_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Legacy Map16 Page Pair")
+        .add_filter("Lunar Magic Map16Page", &["bin"])
+        .set_file_name("Map16Page.bin")
+        .save_file()
+}
+
 pub(crate) fn choose_complete_overworld_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Portable Lunar Magic complete overworld", &["lmow"])

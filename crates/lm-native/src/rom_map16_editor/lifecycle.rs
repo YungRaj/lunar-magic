@@ -30,6 +30,7 @@ impl RomMap16Editor {
                 self.page_texture = None;
                 self.page_texture_key = None;
                 self.complete_template = None;
+                self.pending_legacy_page = None;
                 self.bitmap_session = None;
                 self.bitmap_extra_slot_4.clear();
                 self.bitmap_extra_slot_5.clear();
@@ -67,6 +68,14 @@ impl RomMap16Editor {
         }
         if self.complete_persistence.is_running() {
             self.error = Some("wait for complete Map16 saving to finish before closing".into());
+            return false;
+        }
+        if self.legacy_page_loader.is_running() {
+            self.error = Some("wait for Map16 page loading to finish before closing".into());
+            return false;
+        }
+        if self.legacy_page_persistence.is_running() {
+            self.error = Some("wait for Map16 page saving to finish before closing".into());
             return false;
         }
         let Some(workspace) = &self.workspace else {
@@ -129,6 +138,7 @@ impl RomMap16Editor {
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
         self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
         self.complete_template = None;
+        self.pending_legacy_page = None;
         self.pending_close = None;
         self.invalidate();
     }

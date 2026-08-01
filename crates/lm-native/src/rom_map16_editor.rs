@@ -10,6 +10,7 @@ use lm_level::{Map16Address, Map16Page};
 mod bitmap_import;
 mod commit;
 mod complete_file;
+mod legacy_page;
 mod lifecycle;
 #[cfg(test)]
 mod tests;
@@ -102,6 +103,9 @@ pub(crate) struct RomMap16Editor {
     complete_loader: DocumentLoader,
     complete_persistence: crate::persistence_worker::PersistenceWorker,
     complete_template: Option<lm_level::Lm16Map16File>,
+    legacy_page_loader: DocumentLoader,
+    legacy_page_persistence: crate::persistence_worker::PersistenceWorker,
+    pending_legacy_page: Option<(u64, usize)>,
     bitmap_session: Option<lm_app::NativeMap16BitmapImportSession>,
     bitmap_extra_slot_4: String,
     bitmap_extra_slot_5: String,
@@ -122,6 +126,7 @@ impl RomMap16Editor {
     ) -> (bool, Option<Command>) {
         let mut command = self.poll_bitmap_loader(context);
         self.poll_complete_file_io(context);
+        self.poll_legacy_page_io(context);
         let manifest_command = match self.manifest_loader.show(context, project_revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
                 Ok(command) => Some(command),
@@ -177,12 +182,24 @@ impl RomMap16Editor {
                 "The ROM changed; reopen before editing or committing.",
             );
         }
-        self.selection_and_clipboard(ui, stale, pages, pasted.as_deref());
+        let file_busy = self.complete_loader.is_running()
+            || self.complete_persistence.is_running()
+            || self.legacy_page_loader.is_running()
+            || self.legacy_page_persistence.is_running();
+        let edit_blocked = stale || file_busy;
+        self.selection_and_clipboard(ui, edit_blocked, pages, pasted.as_deref());
         self.visual_page(ui);
-        self.tile_fields(ui, stale, pages);
-        self.complete_file_controls(ui, stale, project_revision);
-        self.bitmap_import_controls(ui, stale);
-        self.commit_controls(ui, stale, project_revision)
+        self.tile_fields(ui, edit_blocked, pages);
+        self.complete_file_controls(
+            ui,
+            stale
+                || self.legacy_page_loader.is_running()
+                || self.legacy_page_persistence.is_running(),
+            project_revision,
+        );
+        self.legacy_page_controls(ui, stale, project_revision);
+        self.bitmap_import_controls(ui, edit_blocked);
+        self.commit_controls(ui, edit_blocked, project_revision)
     }
     fn visual_page(&mut self, ui: &mut egui::Ui) {
         let changed = ui
