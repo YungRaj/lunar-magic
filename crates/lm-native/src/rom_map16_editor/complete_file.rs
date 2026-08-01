@@ -10,11 +10,15 @@ const PROTECTED_FOREGROUND_TILES: usize = 0x200;
 impl RomMap16Editor {
     pub(super) fn poll_complete_file_io(&mut self, context: &egui::Context) {
         if let Some(result) = self.complete_loader.show(context) {
+            let pending_revision = self.pending_complete_revision.take();
             let result = result.and_then(|loaded| {
+                let requested_revision = pending_revision
+                    .ok_or("complete Map16 import request is missing its ROM revision")?;
                 let [(_, bytes)] = loaded.into_exact::<1>("complete Map16")?;
                 let file = Lm16Map16File::decode(&bytes).map_err(|error| error.to_string())?;
                 let replacements = {
                     let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+                    validate_import_revision(workspace.controller.revision(), requested_revision)?;
                     import_replacements(&file, workspace.controller.set())?
                 };
                 let resolution_limit = lm_app::SMW_COMPLETE_MAP16_PAGES * Map16Page::TILE_COUNT;
@@ -61,13 +65,15 @@ impl RomMap16Editor {
                 )
                 .clicked()
                 && let Some(path) = dialogs::choose_complete_map16_document()
-                && let Err(error) = self.complete_loader.start(vec![BoundedRead::new(
+            {
+                match self.complete_loader.start(vec![BoundedRead::new(
                     path,
                     Lm16Map16File::MAX_FILE_LEN as u64,
                     "complete Map16 file",
-                )])
-            {
-                self.error = Some(error);
+                )]) {
+                    Ok(()) => self.pending_complete_revision = Some(project_revision),
+                    Err(error) => self.error = Some(error),
+                }
             }
             if ui
                 .add_enabled(
@@ -107,6 +113,13 @@ impl RomMap16Editor {
             );
         }
     }
+}
+
+fn validate_import_revision(current: u64, requested: u64) -> Result<(), String> {
+    if current != requested {
+        return Err("the ROM changed while the complete Map16 file was loading".into());
+    }
+    Ok(())
 }
 
 pub(super) fn export_file(
@@ -304,5 +317,14 @@ mod tests {
         }
         let exported = export_file(&set, Some(&source)).unwrap();
         assert_eq!(exported.encode(), bytes);
+    }
+
+    #[test]
+    fn complete_import_is_bound_to_the_revision_that_started_loading() {
+        assert!(validate_import_revision(41, 41).is_ok());
+        assert_eq!(
+            validate_import_revision(42, 41).unwrap_err(),
+            "the ROM changed while the complete Map16 file was loading"
+        );
     }
 }

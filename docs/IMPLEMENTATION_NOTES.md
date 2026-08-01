@@ -1612,6 +1612,10 @@ validation. Built-in pages `$00–$01` and background pages reject this foregrou
 Export snapshots the selected staged page and publishes both exact files create-new and
 all-or-nothing. Active legacy or complete-file I/O gates Map16 mutation, bitmap import, ROM commit,
 and close. Modern selected-range structured `.map16` prompts and Wine interaction coverage remain.
+Complete structured `.map16` loading uses the same asynchronous safety boundary: the editor records
+the application revision only after the bounded loader accepts the request, consumes that token once
+when the result arrives, and rejects the decoded file before controller mutation if the staged ROM
+revision no longer matches. Opening or clearing a workspace also clears any pending token.
 Palette mode now has a ROM-backed swatch editor over the profile-declared native palette. It
 displays the exact retained BGR555 word beside the platform color picker, stages changes through
 `PaletteController`, and retains controller ownership checks. Like the other relocatable native

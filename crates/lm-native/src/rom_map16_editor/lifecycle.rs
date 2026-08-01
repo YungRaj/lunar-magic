@@ -30,6 +30,7 @@ impl RomMap16Editor {
                 self.page_texture = None;
                 self.page_texture_key = None;
                 self.complete_template = None;
+                self.pending_complete_revision = None;
                 self.pending_legacy_page = None;
                 self.bitmap_session = None;
                 self.bitmap_extra_slot_4.clear();
@@ -138,6 +139,7 @@ impl RomMap16Editor {
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
         self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
         self.complete_template = None;
+        self.pending_complete_revision = None;
         self.pending_legacy_page = None;
         self.pending_close = None;
         self.invalidate();

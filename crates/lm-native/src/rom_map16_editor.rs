@@ -103,6 +103,7 @@ pub(crate) struct RomMap16Editor {
     complete_loader: DocumentLoader,
     complete_persistence: crate::persistence_worker::PersistenceWorker,
     complete_template: Option<lm_level::Lm16Map16File>,
+    pending_complete_revision: Option<u64>,
     legacy_page_loader: DocumentLoader,
     legacy_page_persistence: crate::persistence_worker::PersistenceWorker,
     pending_legacy_page: Option<(u64, usize)>,
