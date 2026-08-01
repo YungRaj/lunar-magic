@@ -14,6 +14,7 @@ pub(super) fn show_header(
         header.level_mode(),
         header.background_color(),
         header.sprite_tileset(),
+        header.default_music_selector(),
         header.sprite_palette(),
         header.foreground_palette(),
         header.object_tileset(),
@@ -23,6 +24,7 @@ pub(super) fn show_header(
         "Level mode",
         "Background color",
         "Sprite tileset",
+        "Default music selector",
         "Sprite palette",
         "Foreground palette",
         "Object tileset",
@@ -37,7 +39,7 @@ pub(super) fn show_header(
     for (index, value) in values.iter_mut().enumerate() {
         let maximum = match index {
             1 => 31,
-            3 | 6 => 15,
+            3 | 7 => 15,
             _ => 7,
         };
         changed |= ui
@@ -50,9 +52,10 @@ pub(super) fn show_header(
             LegacyHeaderEdit::LevelMode(values[1]),
             LegacyHeaderEdit::BackgroundColor(values[2]),
             LegacyHeaderEdit::SpriteTileset(values[3]),
-            LegacyHeaderEdit::SpritePalette(values[4]),
-            LegacyHeaderEdit::ForegroundPalette(values[5]),
-            LegacyHeaderEdit::ObjectTileset(values[6]),
+            LegacyHeaderEdit::DefaultMusicSelector(values[4]),
+            LegacyHeaderEdit::SpritePalette(values[5]),
+            LegacyHeaderEdit::ForegroundPalette(values[6]),
+            LegacyHeaderEdit::ObjectTileset(values[7]),
         ];
         let mut edits = vec![
             CompleteLevelDocumentEdit::Property(LevelPropertyEdit::SetLevelNumber(level_number)),

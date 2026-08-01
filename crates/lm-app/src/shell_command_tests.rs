@@ -948,6 +948,15 @@ fn level_header_edit_requires_a_field_value_and_explicit_search_range() {
         }
     );
     assert_eq!(
+        parse("level-header music 6 300000 400000").unwrap(),
+        ShellCommand::EditLevelHeader {
+            field: LevelHeaderField::DefaultMusicSelector,
+            value: 6,
+            search_start: 0x30_0000,
+            search_end: 0x40_0000,
+        }
+    );
+    assert_eq!(
         parse("level-header object-tileset a 300000 400000").unwrap(),
         ShellCommand::EditLevelHeader {
             field: LevelHeaderField::ObjectTileset,

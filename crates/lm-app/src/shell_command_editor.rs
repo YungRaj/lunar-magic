@@ -368,6 +368,7 @@ pub(super) fn parse_level_header_edit(argument: &str) -> Result<ShellCommand, Sh
         "mode" => LevelHeaderField::LevelMode,
         "background-color" => LevelHeaderField::BackgroundColor,
         "sprite-tileset" => LevelHeaderField::SpriteTileset,
+        "music" => LevelHeaderField::DefaultMusicSelector,
         "sprite-palette" => LevelHeaderField::SpritePalette,
         "foreground-palette" => LevelHeaderField::ForegroundPalette,
         "object-tileset" => LevelHeaderField::ObjectTileset,

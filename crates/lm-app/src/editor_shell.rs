@@ -39,6 +39,9 @@ pub(crate) fn edit_level_header(
             LegacyHeaderEdit::BackgroundColor(value)
         }
         shell_command::LevelHeaderField::SpriteTileset => LegacyHeaderEdit::SpriteTileset(value),
+        shell_command::LevelHeaderField::DefaultMusicSelector => {
+            LegacyHeaderEdit::DefaultMusicSelector(value)
+        }
         shell_command::LevelHeaderField::SpritePalette => LegacyHeaderEdit::SpritePalette(value),
         shell_command::LevelHeaderField::ForegroundPalette => {
             LegacyHeaderEdit::ForegroundPalette(value)

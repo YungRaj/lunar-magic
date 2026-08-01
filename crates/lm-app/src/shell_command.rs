@@ -24,6 +24,7 @@ pub enum LevelHeaderField {
     LevelMode,
     BackgroundColor,
     SpriteTileset,
+    DefaultMusicSelector,
     SpritePalette,
     ForegroundPalette,
     ObjectTileset,

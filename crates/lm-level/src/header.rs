@@ -54,6 +54,16 @@ impl LegacyLevelHeader {
         self.bytes[2] >> 4 & 7
     }
 
+    /// Replaces the three-bit default-music selector while preserving the sprite tileset and
+    /// unrelated high bit.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HeaderValueError`] for values greater than seven.
+    pub fn set_default_music_selector(&mut self, value: u8) -> Result<(), HeaderValueError> {
+        set_bits(&mut self.bytes[2], value, 0x70, 4)
+    }
+
     #[must_use]
     pub const fn sprite_palette(self) -> u8 {
         self.bytes[3] >> 3 & 7
@@ -294,6 +304,7 @@ mod tests {
         header.set_level_mode(3).unwrap();
         header.set_background_color(7).unwrap();
         header.set_sprite_tileset(6).unwrap();
+        header.set_default_music_selector(5).unwrap();
         header.set_sprite_palette(1).unwrap();
         header.set_foreground_palette(5).unwrap();
         header.set_object_tileset(9).unwrap();
@@ -301,9 +312,9 @@ mod tests {
         assert_eq!(encoded[0] & 0x1f, original[0] & 0x1f);
         assert_eq!(encoded[1] & 0x1f, 3);
         assert_eq!(encoded[1] >> 5, 7);
-        assert_eq!(encoded[2] & 0xf0, original[2] & 0xf0);
+        assert_eq!(encoded[2] & 0x80, original[2] & 0x80);
         assert_eq!(header.sprite_tileset(), 6);
-        assert_eq!(header.default_music_selector(), 2);
+        assert_eq!(header.default_music_selector(), 5);
         assert_eq!(encoded[3] & 0xc0, original[3] & 0xc0);
         assert_eq!(header.sprite_palette(), 1);
         assert_eq!(header.foreground_palette(), 5);
