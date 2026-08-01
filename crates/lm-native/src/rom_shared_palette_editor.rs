@@ -5,6 +5,7 @@ use lm_graphics::{Bgr555, SmwPaletteBackend};
 use lm_profile::smw_us_v1_shared_palette_layout;
 
 mod form;
+mod transfer;
 mod workspace;
 
 use form::ColorForm;
@@ -28,6 +29,8 @@ pub(crate) struct RomSharedPaletteEditor {
     auxiliary: String,
     error: Option<String>,
     pending_close: Option<PendingClose>,
+    transfer_loader: crate::document_loader::DocumentLoader,
+    transfer_persistence: crate::persistence_worker::PersistenceWorker,
 }
 
 impl RomSharedPaletteEditor {
@@ -72,6 +75,10 @@ impl RomSharedPaletteEditor {
     }
 
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
+        if self.transfer_loader.is_running() || self.transfer_persistence.is_running() {
+            self.error = Some("wait for shared-palette file work to finish before closing".into());
+            return false;
+        }
         let Some(workspace) = &self.workspace else {
             return true;
         };
@@ -92,6 +99,7 @@ impl RomSharedPaletteEditor {
         context: &egui::Context,
         project_revision: u64,
     ) -> (bool, Option<Command>) {
+        self.poll_transfer_file_io(context, project_revision);
         let mut command = None;
         if self.workspace.is_some() {
             egui::Window::new("Native Shared/Custom SMW Palettes")
@@ -107,6 +115,8 @@ impl RomSharedPaletteEditor {
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.revision != project_revision;
         let dirty = workspace.dirty();
+        let transfer_busy =
+            self.transfer_loader.is_running() || self.transfer_persistence.is_running();
         let backend = workspace.current.backend();
         let palette = match workspace.current.palette() {
             Ok(palette) => palette,
@@ -128,16 +138,24 @@ impl RomSharedPaletteEditor {
                 "The ROM changed after this palette was opened. Reopen before committing.",
             );
         }
-        self.show_palette_grid(ui, &colors, pages);
-        self.show_color_form(ui, stale);
+        self.complete_file_controls(ui, stale, project_revision);
+        ui.add_enabled_ui(!self.transfer_loader.is_running(), |ui| {
+            self.show_palette_grid(ui, &colors, pages);
+            self.show_color_form(ui, stale);
+        });
         if backend == SmwPaletteBackend::Expanded {
-            self.show_auxiliary_form(ui, stale);
+            ui.add_enabled_ui(!self.transfer_loader.is_running(), |ui| {
+                self.show_auxiliary_form(ui, stale);
+            });
         }
         ui.separator();
         let mut command = None;
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(dirty && !stale, egui::Button::new("Commit palette to ROM"))
+                .add_enabled(
+                    dirty && !stale && !transfer_busy,
+                    egui::Button::new("Commit palette to ROM"),
+                )
                 .clicked()
             {
                 match self.prepare_commit(project_revision) {
@@ -421,5 +439,32 @@ mod tests {
         assert!(editor.prepare_commit(app.project_revision() + 1).is_err());
         assert!(!editor.request_close(false));
         assert!(editor.is_open());
+    }
+
+    #[test]
+    fn complete_file_upgrade_dispatches_and_reopens_exact_expanded_backend() {
+        let (mut app, _) = pristine_app();
+        let mut editor = RomSharedPaletteEditor::default();
+        editor.open(&app);
+        let imported = lm_graphics::SmwPaletteFile::expanded(
+            vec![0x24; lm_graphics::SmwPaletteFile::EXPANDED_PALETTE_LEN],
+            (0_u8..16).collect(),
+        )
+        .unwrap();
+        editor
+            .workspace
+            .as_mut()
+            .unwrap()
+            .replace_file(imported.clone())
+            .unwrap();
+        let command = editor.prepare_commit(0).unwrap().unwrap();
+        app.dispatch(command).unwrap();
+        assert_eq!(
+            app.project()
+                .unwrap()
+                .load_shared_palette(smw_us_v1_shared_palette_layout())
+                .unwrap(),
+            imported
+        );
     }
 }

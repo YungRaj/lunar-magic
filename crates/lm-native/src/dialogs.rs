@@ -124,6 +124,21 @@ pub(crate) fn choose_palette_ownership() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_shared_palette_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Native Shared/Custom SMW Palettes")
+        .add_filter("Native SMW shared palette", &["smwpal", "pal"])
+        .pick_file()
+}
+
+pub(crate) fn choose_shared_palette_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Native Shared/Custom SMW Palettes")
+        .add_filter("Native SMW shared palette", &["smwpal", "pal"])
+        .set_file_name("Shared Palette.smwpal")
+        .save_file()
+}
+
 pub(crate) fn choose_graphics_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Portable Lunar Magic graphics", &["lmgfx"])

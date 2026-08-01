@@ -1,4 +1,4 @@
-use lm_graphics::{Bgr555, SmwPaletteFile};
+use lm_graphics::{Bgr555, SmwPaletteBackend, SmwPaletteFile};
 
 #[derive(Clone)]
 pub(super) struct Workspace {
@@ -8,6 +8,19 @@ pub(super) struct Workspace {
 }
 
 impl Workspace {
+    pub(super) fn replace_file(&mut self, file: SmwPaletteFile) -> Result<(), String> {
+        if self.current.backend() == SmwPaletteBackend::Expanded
+            && file.backend() == SmwPaletteBackend::Legacy
+        {
+            return Err(
+                "an installed expanded shared-palette runtime cannot be downgraded by import"
+                    .into(),
+            );
+        }
+        self.current = file;
+        Ok(())
+    }
+
     pub(super) fn replace_color(&mut self, index: usize, color: Bgr555) -> Result<(), String> {
         if color.0 > 0x7fff {
             return Err("SNES BGR555 color must be 0000–7FFF".into());
@@ -64,5 +77,26 @@ mod tests {
         assert!(workspace.replace_color(0x400, Bgr555(1)).is_err());
         assert!(workspace.replace_auxiliary(vec![0; 15]).is_err());
         assert!(workspace.dirty());
+    }
+
+    #[test]
+    fn complete_file_replacement_allows_install_upgrade_but_rejects_downgrade_atomically() {
+        let legacy = SmwPaletteFile::legacy(vec![0; SmwPaletteFile::LEGACY_PALETTE_LEN]).unwrap();
+        let expanded = SmwPaletteFile::expanded(
+            vec![0; SmwPaletteFile::EXPANDED_PALETTE_LEN],
+            vec![0; SmwPaletteFile::EXPANDED_AUXILIARY_LEN],
+        )
+        .unwrap();
+        let mut workspace = Workspace {
+            revision: 0,
+            original: legacy.clone(),
+            current: legacy,
+        };
+        workspace.replace_file(expanded.clone()).unwrap();
+        assert_eq!(workspace.current, expanded);
+        let accepted = workspace.current.clone();
+        let legacy = SmwPaletteFile::legacy(vec![0; SmwPaletteFile::LEGACY_PALETTE_LEN]).unwrap();
+        assert!(workspace.replace_file(legacy).is_err());
+        assert_eq!(workspace.current, accepted);
     }
 }
