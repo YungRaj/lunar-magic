@@ -143,8 +143,8 @@ pub use expanded_settings_runtime_bundle::{
     smw_us_v1_expanded_settings_runtime_writes,
 };
 pub use layer2_runtime_install::{
-    SmwUsV1Layer2Format102MigrationError, smw_us_v1_layer2_format_101_migration,
-    smw_us_v1_layer2_format_102_migration,
+    SmwUsV1Layer2Format102MigrationError, smw_us_v1_layer2_format_100_migration,
+    smw_us_v1_layer2_format_101_migration, smw_us_v1_layer2_format_102_migration,
 };
 pub use layer3_compatibility::{
     Layer3CompatibilityBuildError, SMW_US_V1_LAYER3_AUXILIARY_PAYLOAD_LEN,

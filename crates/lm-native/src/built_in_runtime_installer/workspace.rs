@@ -143,7 +143,8 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::Layer2Runtime => {
                 matches!(
                     self.layer2_generation,
-                    lm_profile::SmwUsV1Layer2RuntimeGeneration::Format101Legacy
+                    lm_profile::SmwUsV1Layer2RuntimeGeneration::Format100Legacy
+                        | lm_profile::SmwUsV1Layer2RuntimeGeneration::Format101Legacy
                         | lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy
                 )
             }
@@ -168,11 +169,12 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::Layer2Runtime => {
                 if !matches!(
                     self.layer2_generation,
-                    lm_profile::SmwUsV1Layer2RuntimeGeneration::Format101Legacy
+                    lm_profile::SmwUsV1Layer2RuntimeGeneration::Format100Legacy
+                        | lm_profile::SmwUsV1Layer2RuntimeGeneration::Format101Legacy
                         | lm_profile::SmwUsV1Layer2RuntimeGeneration::Format102Legacy
                 ) {
                     return Err(format!(
-                        "Layer 2 migration currently requires authenticated format $101 or $102; detected {:?}",
+                        "Layer 2 migration requires authenticated format $100, $101, or $102; detected {:?}",
                         self.layer2_generation
                     ));
                 }
@@ -243,6 +245,12 @@ mod tests {
             Command::InstallLayer2Runtime { rev: 0 }
         ));
         workspace.layer2_generation = lm_profile::SmwUsV1Layer2RuntimeGeneration::Format101Legacy;
+        assert!(workspace.selection_migrates_legacy_runtime());
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallLayer2Runtime { rev: 0 }
+        ));
+        workspace.layer2_generation = lm_profile::SmwUsV1Layer2RuntimeGeneration::Format100Legacy;
         assert!(workspace.selection_migrates_legacy_runtime());
         assert!(matches!(
             workspace.prepare(app.project_revision()).unwrap(),

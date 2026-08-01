@@ -2888,6 +2888,15 @@ raster. `LoadSpriteDataPcOffsetTable` (`004810E0`) additionally proves that opco
 storage uses the shared bank operand at `$02D8F6`. The SMW-US profile now resolves that generation
 at runtime instead of reading relocated sprites through the obsolete shared bank.
 
+The adjacent Layer 2 runtime migration now accepts all three legacy table generations. Ghidra's
+`DetectLayer2DataTableFormat` selects `$100`, `$101`, and `$102` from hook byte 9, while
+`MigrateLayer2ObjectDataTable` proves `$100` and `$101` share the same descriptor-flag
+normalization before the common 512-entry pointer conversion. The recovered `$100` hook uses
+`LDA #$05 / PHA / PLB` to select its hard-coded data bank; `$101` substitutes `PHK / PLB` and
+retains the same instruction tail. Rust authenticates the complete 64-byte source hook for every
+generation, captures both pointer tables and the descriptor table as exact preconditions, commits
+the `$103` conversion as one revision, and restores the legacy image byte-for-byte on undo.
+
 The installed 257-word palette payload and Lunar Magic's MWL working buffer differ by one exact
 word rotation; export rotates left and import rotates right, making the transformation reciprocal.
 A live ignored Wine oracle now performs Rust installed-ROM export, Lunar Magic import, and Lunar

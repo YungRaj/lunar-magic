@@ -233,6 +233,10 @@ impl AppState {
         }
         let generation = lm_profile::probe_smw_us_v1_layer2_runtime_generation(&project.rom)?;
         let (plan, description) = match generation {
+            lm_profile::SmwUsV1Layer2RuntimeGeneration::Format100Legacy => (
+                lm_profile::smw_us_v1_layer2_format_100_migration(project.rom.logical_bytes())?,
+                "Migrate SMW US Layer 2 runtime format $100 to $103",
+            ),
             lm_profile::SmwUsV1Layer2RuntimeGeneration::Format101Legacy => (
                 lm_profile::smw_us_v1_layer2_format_101_migration(project.rom.logical_bytes())?,
                 "Migrate SMW US Layer 2 runtime format $101 to $103",
@@ -244,7 +248,9 @@ impl AppState {
             lm_profile::SmwUsV1Layer2RuntimeGeneration::Format103Current => {
                 return Err(AppError::Layer2RuntimeAlreadyInstalled);
             }
-            other => return Err(AppError::Layer2RuntimeLegacyMigrationRequired(other)),
+            absent @ lm_profile::SmwUsV1Layer2RuntimeGeneration::Absent => {
+                return Err(AppError::Layer2RuntimeLegacyMigrationRequired(absent));
+            }
         };
         project.install_relocatable_patch(&plan)?;
         self.advance_project_revision()?;

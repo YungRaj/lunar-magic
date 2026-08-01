@@ -874,7 +874,12 @@ level 000 resolves to `$109ED5`, matching the second sprite metadata word emitte
 the exact `LM $0103` marker at hook offset `$3C` identifies format `$103`. Without that marker,
 opcodes `$5C`, `$4B`, and `$A9` at hook offset `$09` identify formats `$102`, `$101`, and `$100`
 respectively. Rust now classifies all four generations, rejects unknown `LM` versions, and refuses
-to treat legacy installed runtimes as pristine layouts. An authentic Lunar Magic 3.01 ROM selects
+to treat legacy installed runtimes as pristine layouts. The complete `$100` hook is the recovered
+predecessor of `$101`: it selects hard-coded data bank `$05` with `LDA #$05 / PHA / PLB`, while
+`$101` replaces those three bytes with `PHK / PLB` and shifts the otherwise identical tail two
+bytes earlier. `MigrateLayer2ObjectDataTable` independently proves both `$100` and `$101` take the
+same descriptor-normalization branch before the common pointer conversion. Rust therefore
+authenticates all 64 `$100` bytes rather than trusting the `$A9` discriminator alone. An authentic Lunar Magic 3.01 ROM selects
 format `$102`; a disposable Lunar Magic 3.63 `-ImportLevel` run upgrades it to `LM $0103`, providing
 the retained before/after migration oracle. The recovered `$102` loop reads the complete Layer 1
 and Layer 2 three-byte pointer tables at logical `$02E000` and `$02E600`. Bank-`$FF` Layer 2

@@ -20,6 +20,15 @@ const SPECIAL_OLD_LAYER2_POINTER: u32 = 0xff_d900;
 const SPECIAL_NEW_LAYER2_POINTER: u32 = 0xff_de54;
 const LAYER2_BANK_BOUNDARY: u32 = 0xff_e8fe;
 
+// Format $100 hard-coded data bank $05 with `LDA #$05 / PHA / PLB`. Format $101 replaced that
+// three-byte bank selection with `PHK / PLB`, shifting the shared tail two bytes earlier.
+const FORMAT_100_HOOK: [u8; 0x40] = [
+    0xc9, 0xff, 0xd0, 0x04, 0x5c, 0x3f, 0x80, 0x05, 0x8b, 0xa9, 0x05, 0x48, 0xab, 0xa4, 0x0e, 0xb9,
+    0x10, 0xf3, 0xaa, 0x29, 0x02, 0xd0, 0x05, 0xab, 0x5c, 0x74, 0x80, 0x05, 0x8a, 0x29, 0x01, 0xd0,
+    0x05, 0x8a, 0x4a, 0x4a, 0x4a, 0x4a, 0xa0, 0x00, 0x00, 0xa2, 0x00, 0x00, 0x9f, 0x00, 0xbd, 0x7e,
+    0x9f, 0x00, 0xbf, 0x7e, 0xe8, 0xe0, 0x00, 0x02, 0xd0, 0xf2, 0xab, 0x5c, 0x64, 0x80, 0x05, 0xff,
+];
+
 const FORMAT_101_HOOK: [u8; 0x40] = [
     0xc9, 0xff, 0xd0, 0x04, 0x5c, 0x3f, 0x80, 0x05, 0x8b, 0x4b, 0xab, 0xa4, 0x0e, 0xb9, 0x10, 0xf3,
     0xaa, 0x29, 0x02, 0xd0, 0x05, 0xab, 0x5c, 0x74, 0x80, 0x05, 0x8a, 0x29, 0x01, 0xd0, 0x05, 0x8a,
@@ -43,6 +52,7 @@ const FORMAT_103_HOOK: [u8; 0x40] = [
 
 #[derive(Debug)]
 pub enum SmwUsV1Layer2Format102MigrationError {
+    MissingFormat100,
     MissingFormat101,
     MissingFormat102,
     SourceRange {
@@ -75,6 +85,23 @@ impl fmt::Display for SmwUsV1Layer2Format102MigrationError {
 
 impl std::error::Error for SmwUsV1Layer2Format102MigrationError {}
 
+/// Builds the exact table and hook conversion used by Lunar Magic when opening format `$100`.
+///
+/// The recovered migration coordinator applies the same legacy descriptor normalization to
+/// formats `$100` and `$101`. The complete `$100` hook, including its hard-coded bank `$05`
+/// setup, is authenticated byte-for-byte before a plan is returned.
+///
+/// # Errors
+///
+/// Rejects a missing or modified `$100` hook, truncated tables, invalid mapped pointers, or a
+/// pointer whose level-mode byte lies outside the source image.
+pub fn smw_us_v1_layer2_format_100_migration(
+    bytes: &[u8],
+) -> Result<RelocatablePatchPlan, SmwUsV1Layer2Format102MigrationError> {
+    authenticate_hook(bytes, &FORMAT_100_HOOK, 0xa9, 0x100)?;
+    build_migration(bytes, &FORMAT_100_HOOK, true, "$100")
+}
+
 /// Builds the exact table and hook conversion used by Lunar Magic when opening format `$101`.
 ///
 /// In addition to the pointer conversion shared with `$102`, `$101` first normalizes the legacy
@@ -87,7 +114,7 @@ impl std::error::Error for SmwUsV1Layer2Format102MigrationError {}
 pub fn smw_us_v1_layer2_format_101_migration(
     bytes: &[u8],
 ) -> Result<RelocatablePatchPlan, SmwUsV1Layer2Format102MigrationError> {
-    authenticate_hook(bytes, &FORMAT_101_HOOK, 0x4b, true)?;
+    authenticate_hook(bytes, &FORMAT_101_HOOK, 0x4b, 0x101)?;
     build_migration(bytes, &FORMAT_101_HOOK, true, "$101")
 }
 
@@ -105,7 +132,7 @@ pub fn smw_us_v1_layer2_format_101_migration(
 pub fn smw_us_v1_layer2_format_102_migration(
     bytes: &[u8],
 ) -> Result<RelocatablePatchPlan, SmwUsV1Layer2Format102MigrationError> {
-    authenticate_hook(bytes, &FORMAT_102_HOOK, 0x5c, false)?;
+    authenticate_hook(bytes, &FORMAT_102_HOOK, 0x5c, 0x102)?;
     build_migration(bytes, &FORMAT_102_HOOK, false, "$102")
 }
 
@@ -238,7 +265,7 @@ fn authenticate_hook(
     bytes: &[u8],
     expected_hook: &[u8; 0x40],
     generation_opcode: u8,
-    format_101: bool,
+    format: u16,
 ) -> Result<(), SmwUsV1Layer2Format102MigrationError> {
     let Some(actual) = bytes.get(
         SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET
@@ -250,10 +277,10 @@ fn authenticate_hook(
         });
     };
     if actual.get(9).copied() != Some(generation_opcode) {
-        return Err(if format_101 {
-            SmwUsV1Layer2Format102MigrationError::MissingFormat101
-        } else {
-            SmwUsV1Layer2Format102MigrationError::MissingFormat102
+        return Err(match format {
+            0x100 => SmwUsV1Layer2Format102MigrationError::MissingFormat100,
+            0x101 => SmwUsV1Layer2Format102MigrationError::MissingFormat101,
+            _ => SmwUsV1Layer2Format102MigrationError::MissingFormat102,
         });
     }
     for (index, (&expected, &actual)) in expected_hook.iter().zip(actual).enumerate() {
@@ -355,6 +382,50 @@ mod tests {
         corrupt[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + 1] ^= 1;
         assert!(matches!(
             smw_us_v1_layer2_format_102_migration(&corrupt),
+            Err(SmwUsV1Layer2Format102MigrationError::HookMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn format_100_hook_and_descriptor_flags_migrate_transactionally() {
+        let mut bytes = vec![0xff; 0x80_000];
+        bytes[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET
+            ..SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + FORMAT_100_HOOK.len()]
+            .copy_from_slice(&FORMAT_100_HOOK);
+        bytes[LAYER1_POINTER_TABLE_OFFSET..LAYER1_POINTER_TABLE_OFFSET + POINTER_TABLE_LEN].fill(0);
+        for pointer in bytes
+            [LAYER2_POINTER_TABLE_OFFSET..LAYER2_POINTER_TABLE_OFFSET + POINTER_TABLE_LEN]
+            .chunks_exact_mut(3)
+        {
+            pointer.copy_from_slice(&[0x54, 0xde, 0xff]);
+        }
+        bytes[LAYER2_POINTER_TABLE_OFFSET..LAYER2_POINTER_TABLE_OFFSET + 3]
+            .copy_from_slice(&[0x00, 0x80, 0x00]);
+        bytes[1] = 0;
+        bytes[SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET] = 0x0f;
+
+        let image = RomImage::from_bytes(bytes).unwrap();
+        let original = image.logical_bytes().to_vec();
+        let plan = smw_us_v1_layer2_format_100_migration(image.logical_bytes()).unwrap();
+        let mut project = Project::new(image);
+        project.install_relocatable_patch(&plan).unwrap();
+
+        assert_eq!(
+            project.rom.logical_bytes()[SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET],
+            0x16
+        );
+        assert_eq!(
+            &project.rom.logical_bytes()[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET
+                ..SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + FORMAT_103_HOOK.len()],
+            &FORMAT_103_HOOK
+        );
+        assert!(project.undo().unwrap());
+        assert_eq!(project.rom.logical_bytes(), original);
+
+        let mut corrupt = original;
+        corrupt[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + 12] ^= 1;
+        assert!(matches!(
+            smw_us_v1_layer2_format_100_migration(&corrupt),
             Err(SmwUsV1Layer2Format102MigrationError::HookMismatch { .. })
         ));
     }
