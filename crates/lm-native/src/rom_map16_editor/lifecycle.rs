@@ -32,6 +32,7 @@ impl RomMap16Editor {
                 self.complete_template = None;
                 self.pending_complete_revision = None;
                 self.pending_legacy_page = None;
+                self.pending_bitmap_import = None;
                 self.bitmap_session = None;
                 self.bitmap_extra_slot_4.clear();
                 self.bitmap_extra_slot_5.clear();
@@ -141,6 +142,7 @@ impl RomMap16Editor {
         self.complete_template = None;
         self.pending_complete_revision = None;
         self.pending_legacy_page = None;
+        self.pending_bitmap_import = None;
         self.pending_close = None;
         self.invalidate();
     }

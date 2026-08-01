@@ -1616,6 +1616,13 @@ Complete structured `.map16` loading uses the same asynchronous safety boundary:
 the application revision only after the bounded loader accepts the request, consumes that token once
 when the result arrives, and rejects the decoded file before controller mutation if the staged ROM
 revision no longer matches. Opening or clearing a workspace also clears any pending token.
+Native bitmap PNG and system-clipboard loading share a single start-bound request token. It records
+the application revision plus the parsed level, first Map16 tile, optional graphics slots, and
+palette row only after the selected worker starts. Worker completion consumes that token exactly
+once and rejects a changed ROM revision before constructing the import session, so edits to visible
+controls cannot silently retarget an in-flight image. Active image loading or an open bitmap preview
+gates ordinary Map16 edits, legacy/complete transfers, another bitmap request, and ROM commit.
+Loading blocks close; an open preview instead participates in the existing discard confirmation.
 Palette mode now has a ROM-backed swatch editor over the profile-declared native palette. It
 displays the exact retained BGR555 word beside the platform color picker, stages changes through
 `PaletteController`, and retains controller ownership checks. Like the other relocatable native

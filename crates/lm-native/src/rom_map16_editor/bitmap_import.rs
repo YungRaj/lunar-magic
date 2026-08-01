@@ -10,6 +10,15 @@ use lm_graphics::{
 };
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct PendingBitmapImport {
+    revision: u64,
+    level: usize,
+    start_map16_tile: usize,
+    extra_graphics: [Option<usize>; 2],
+    palette_row: u8,
+}
+
 #[derive(Default)]
 pub(super) struct BitmapClipboardLoader {
     running: Option<Receiver<Result<DecodedMap16Bitmap, String>>>,
@@ -80,16 +89,22 @@ impl BitmapClipboardLoader {
 impl RomMap16Editor {
     pub(super) fn poll_bitmap_loader(&mut self, context: &egui::Context) -> Option<Command> {
         if let Some(completion) = self.bitmap_loader.show(context) {
+            let pending = self.pending_bitmap_import.take();
             match completion.and_then(|loaded| {
+                let pending = pending.ok_or("Map16 bitmap request is missing")?;
                 let [(_, bytes)] = loaded.into_exact::<1>("Map16 bitmap")?;
-                self.open_bitmap_session(&bytes)
+                self.open_bitmap_session(&bytes, pending)
             }) {
                 Ok(()) => {}
                 Err(error) => self.error = Some(error),
             }
         }
         if let Some(completion) = self.bitmap_clipboard_loader.show(context) {
-            match completion.and_then(|bitmap| self.open_decoded_bitmap_session(bitmap)) {
+            let pending = self.pending_bitmap_import.take();
+            match completion.and_then(|bitmap| {
+                let pending = pending.ok_or("clipboard Map16 bitmap request is missing")?;
+                self.open_decoded_bitmap_session(bitmap, pending)
+            }) {
                 Ok(()) => {}
                 Err(error) => self.error = Some(error),
             }
@@ -97,32 +112,30 @@ impl RomMap16Editor {
         None
     }
 
-    fn open_bitmap_session(&mut self, bytes: &[u8]) -> Result<(), String> {
+    fn open_bitmap_session(
+        &mut self,
+        bytes: &[u8],
+        pending: PendingBitmapImport,
+    ) -> Result<(), String> {
         let bitmap = decode_map16_bitmap_png_image(bytes).map_err(|error| error.to_string())?;
-        self.open_decoded_bitmap_session(bitmap)
+        self.open_decoded_bitmap_session(bitmap, pending)
     }
 
-    fn open_decoded_bitmap_session(&mut self, bitmap: DecodedMap16Bitmap) -> Result<(), String> {
+    fn open_decoded_bitmap_session(
+        &mut self,
+        bitmap: DecodedMap16Bitmap,
+        pending: PendingBitmapImport,
+    ) -> Result<(), String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
-        let level = u16::from_str_radix(self.preview_level.trim(), 16)
-            .map_err(|_| "bitmap import level must be hexadecimal")?;
-        if level > 0x01ff {
-            return Err("bitmap import level must be between 000 and 1FF".into());
-        }
-        let start_map16_tile = usize::from_str_radix(self.bitmap_map16_start.trim(), 16)
-            .map_err(|_| "first Map16 tile must be hexadecimal")?;
-        let extra_graphics = [
-            parse_optional_graphics(&self.bitmap_extra_slot_4, "GFX slot 4")?,
-            parse_optional_graphics(&self.bitmap_extra_slot_5, "GFX slot 5")?,
-        ];
+        validate_bitmap_revision(workspace.controller.revision(), pending.revision)?;
         let request = NativeMap16BitmapImportSessionRequest {
-            level: usize::from(level),
-            start_map16_tile,
-            extra_graphics,
+            level: pending.level,
+            start_map16_tile: pending.start_map16_tile,
+            extra_graphics: pending.extra_graphics,
             pixels: bitmap.pixels,
             width: bitmap.width,
             height: bitmap.height,
-            palette_row: self.bitmap_palette_row,
+            palette_row: pending.palette_row,
         };
         self.bitmap_session = Some(
             if let Some(profile) = workspace.profile.clone() {
@@ -396,24 +409,35 @@ impl RomMap16Editor {
         self.bitmap_preview_scroll = next_scroll;
     }
 
-    pub(super) fn bitmap_import_controls(&mut self, ui: &mut egui::Ui, stale: bool) {
+    pub(super) fn bitmap_import_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        project_revision: u64,
+    ) {
         ui.separator();
         ui.heading("Bitmap to Map16");
         ui.label("The preview level and its real object tileset are used.");
-        ui.horizontal(|ui| {
-            ui.label("Editable GFX slot 4");
-            ui.text_edit_singleline(&mut self.bitmap_extra_slot_4);
-            ui.label("slot 5");
-            ui.text_edit_singleline(&mut self.bitmap_extra_slot_5);
+        let busy = self.bitmap_loader.is_running()
+            || self.bitmap_clipboard_loader.is_running()
+            || self.bitmap_session.is_some();
+        ui.add_enabled_ui(!busy, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Editable GFX slot 4");
+                ui.text_edit_singleline(&mut self.bitmap_extra_slot_4);
+                ui.label("slot 5");
+                ui.text_edit_singleline(&mut self.bitmap_extra_slot_5);
+            });
         });
         ui.small("Enter hexadecimal GFX/ExGFX file numbers. Blank slots cannot store new tiles.");
-        ui.horizontal(|ui| {
-            ui.add(egui::Slider::new(&mut self.bitmap_palette_row, 0..=7).text("Palette row"));
-            ui.label("First Map16 tile");
-            ui.text_edit_singleline(&mut self.bitmap_map16_start);
+        ui.add_enabled_ui(!busy, |ui| {
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut self.bitmap_palette_row, 0..=7).text("Palette row"));
+                ui.label("First Map16 tile");
+                ui.text_edit_singleline(&mut self.bitmap_map16_start);
+            });
         });
         let supported = self.workspace.is_some();
-        let busy = self.bitmap_loader.is_running() || self.bitmap_clipboard_loader.is_running();
         if ui
             .add_enabled(
                 supported && !stale && !busy,
@@ -421,13 +445,21 @@ impl RomMap16Editor {
             )
             .clicked()
             && let Some(path) = dialogs::choose_map16_bitmap_png()
-            && let Err(error) = self.bitmap_loader.start(vec![BoundedRead::new(
-                path,
-                u64::try_from(MAP16_BITMAP_MAX_PNG_BYTES).unwrap_or(u64::MAX),
-                "Map16 bitmap PNG",
-            )])
         {
-            self.error = Some(error);
+            let result = self
+                .capture_bitmap_import(project_revision)
+                .and_then(|pending| {
+                    self.bitmap_loader.start(vec![BoundedRead::new(
+                        path,
+                        u64::try_from(MAP16_BITMAP_MAX_PNG_BYTES).unwrap_or(u64::MAX),
+                        "Map16 bitmap PNG",
+                    )])?;
+                    self.pending_bitmap_import = Some(pending);
+                    Ok(())
+                });
+            if let Err(error) = result {
+                self.error = Some(error);
+            }
         }
         if ui
             .add_enabled(
@@ -435,10 +467,28 @@ impl RomMap16Editor {
                 egui::Button::new("Paste bitmap from clipboard"),
             )
             .clicked()
-            && let Err(error) = self.bitmap_clipboard_loader.start()
         {
-            self.error = Some(error);
+            let result = self
+                .capture_bitmap_import(project_revision)
+                .and_then(|pending| {
+                    self.bitmap_clipboard_loader.start()?;
+                    self.pending_bitmap_import = Some(pending);
+                    Ok(())
+                });
+            if let Err(error) = result {
+                self.error = Some(error);
+            }
         }
+    }
+
+    fn capture_bitmap_import(&self, revision: u64) -> Result<PendingBitmapImport, String> {
+        capture_bitmap_import(
+            revision,
+            &self.preview_level,
+            &self.bitmap_map16_start,
+            [&self.bitmap_extra_slot_4, &self.bitmap_extra_slot_5],
+            self.bitmap_palette_row,
+        )
     }
 
     fn clear_bitmap_session(&mut self) {
@@ -448,6 +498,39 @@ impl RomMap16Editor {
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
         self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
     }
+}
+
+fn validate_bitmap_revision(current: u64, requested: u64) -> Result<(), String> {
+    if current != requested {
+        return Err("the ROM changed while the Map16 bitmap was loading".into());
+    }
+    Ok(())
+}
+
+fn capture_bitmap_import(
+    revision: u64,
+    level: &str,
+    start_map16_tile: &str,
+    extra_graphics: [&str; 2],
+    palette_row: u8,
+) -> Result<PendingBitmapImport, String> {
+    let level = u16::from_str_radix(level.trim(), 16)
+        .map_err(|_| "bitmap import level must be hexadecimal")?;
+    if level > 0x01ff {
+        return Err("bitmap import level must be between 000 and 1FF".into());
+    }
+    let start_map16_tile = usize::from_str_radix(start_map16_tile.trim(), 16)
+        .map_err(|_| "first Map16 tile must be hexadecimal")?;
+    Ok(PendingBitmapImport {
+        revision,
+        level: usize::from(level),
+        start_map16_tile,
+        extra_graphics: [
+            parse_optional_graphics(extra_graphics[0], "GFX slot 4")?,
+            parse_optional_graphics(extra_graphics[1], "GFX slot 5")?,
+        ],
+        palette_row,
+    })
 }
 
 fn bitmap_multi_row_color_options(
@@ -657,6 +740,32 @@ mod tests {
         assert_eq!(parse_optional_graphics(" 7F ", "slot").unwrap(), Some(0x7f));
         assert_eq!(parse_optional_graphics("100", "slot").unwrap(), Some(0x100));
         assert!(parse_optional_graphics("xyz", "slot").is_err());
+    }
+
+    #[test]
+    fn bitmap_request_captures_every_typed_target_before_loading() {
+        assert_eq!(
+            capture_bitmap_import(17, " 105 ", " 234 ", [" 7f ", "100"], 6).unwrap(),
+            PendingBitmapImport {
+                revision: 17,
+                level: 0x105,
+                start_map16_tile: 0x234,
+                extra_graphics: [Some(0x7f), Some(0x100)],
+                palette_row: 6,
+            }
+        );
+        assert!(capture_bitmap_import(17, "200", "234", ["", ""], 6).is_err());
+        assert!(capture_bitmap_import(17, "105", "nope", ["", ""], 6).is_err());
+        assert!(capture_bitmap_import(17, "105", "234", ["xyz", ""], 6).is_err());
+    }
+
+    #[test]
+    fn bitmap_completion_is_bound_to_the_revision_that_started_loading() {
+        assert!(validate_bitmap_revision(17, 17).is_ok());
+        assert_eq!(
+            validate_bitmap_revision(18, 17).unwrap_err(),
+            "the ROM changed while the Map16 bitmap was loading"
+        );
     }
 
     #[test]

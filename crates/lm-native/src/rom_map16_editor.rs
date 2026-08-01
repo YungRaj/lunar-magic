@@ -100,6 +100,7 @@ pub(crate) struct RomMap16Editor {
     preview_palette: u8,
     bitmap_loader: DocumentLoader,
     bitmap_clipboard_loader: bitmap_import::BitmapClipboardLoader,
+    pending_bitmap_import: Option<bitmap_import::PendingBitmapImport>,
     complete_loader: DocumentLoader,
     complete_persistence: crate::persistence_worker::PersistenceWorker,
     complete_template: Option<lm_level::Lm16Map16File>,
@@ -186,7 +187,10 @@ impl RomMap16Editor {
         let file_busy = self.complete_loader.is_running()
             || self.complete_persistence.is_running()
             || self.legacy_page_loader.is_running()
-            || self.legacy_page_persistence.is_running();
+            || self.legacy_page_persistence.is_running()
+            || self.bitmap_loader.is_running()
+            || self.bitmap_clipboard_loader.is_running()
+            || self.bitmap_session.is_some();
         let edit_blocked = stale || file_busy;
         self.selection_and_clipboard(ui, edit_blocked, pages, pasted.as_deref());
         self.visual_page(ui);
@@ -195,11 +199,21 @@ impl RomMap16Editor {
             ui,
             stale
                 || self.legacy_page_loader.is_running()
-                || self.legacy_page_persistence.is_running(),
+                || self.legacy_page_persistence.is_running()
+                || self.bitmap_loader.is_running()
+                || self.bitmap_clipboard_loader.is_running()
+                || self.bitmap_session.is_some(),
             project_revision,
         );
-        self.legacy_page_controls(ui, stale, project_revision);
-        self.bitmap_import_controls(ui, edit_blocked);
+        self.legacy_page_controls(
+            ui,
+            stale
+                || self.bitmap_loader.is_running()
+                || self.bitmap_clipboard_loader.is_running()
+                || self.bitmap_session.is_some(),
+            project_revision,
+        );
+        self.bitmap_import_controls(ui, edit_blocked, project_revision);
         self.commit_controls(ui, edit_blocked, project_revision)
     }
     fn visual_page(&mut self, ui: &mut egui::Ui) {
