@@ -318,7 +318,13 @@ interactive frontends cannot bypass confirmation and request correlation through
   the same revision-checked application command as the headless workflow. A pristine commit
   installs the recovered Lfix3 and expanded-secondary-exit runtime transactionally; an installed
   commit updates its owned planes. Stale dispatches leave the staged workspace open, and dirty
-  close or quit requires confirmation.
+  close or quit requires confirmation. The same workspace stages clear-current only when the
+  displayed index is the loaded form, and offers confirmation-gated clear-all across all 8,192
+  native zero records. Clear-all rechecks the application revision when confirmation is delivered,
+  reloads the selected form, and remains an ordinary dirty edit until the atomic commit succeeds.
+  First-time compact installation compares each fixed-plane write against the detected pristine
+  source table rather than the requested destination table. This preserves exact transactional
+  preconditions while permitting clear/import operations to intentionally replace those bytes.
   A separate title-screen recording window exposes the recovered `$4..=$8000`-byte movement
   payload without interpreting unknown input commands. It detects pristine ROMs or the exact
   two-RATS-block Lunar Magic playback installation, displays installed bytes in canonical

@@ -4,7 +4,7 @@ use crate::{
 };
 use lm_level::SecondaryExitTable;
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_builtin_secondary_exit_installation_plan,
+    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_builtin_secondary_exit_installation_plan_from_source,
     smw_us_v1_secondary_exit_allocation_policy, smw_us_v1_secondary_exit_locator,
 };
 use lm_project::{Project, SecondaryExitStorage};
@@ -36,10 +36,14 @@ pub(crate) fn execute_command(
             )?)?;
             let mut project = open_smw_us_v1(input_rom)?;
             let locator = smw_us_v1_secondary_exit_locator();
-            match project.load_secondary_exit_table_detected(locator)?.storage {
+            let loaded = project.load_secondary_exit_table_detected(locator)?;
+            match loaded.storage {
                 SecondaryExitStorage::Pristine => {
                     project.install_relocatable_patch(
-                        &smw_us_v1_builtin_secondary_exit_installation_plan(&table)?,
+                        &smw_us_v1_builtin_secondary_exit_installation_plan_from_source(
+                            &loaded.table,
+                            &table,
+                        )?,
                     )?;
                 }
                 SecondaryExitStorage::Installed { .. } => {

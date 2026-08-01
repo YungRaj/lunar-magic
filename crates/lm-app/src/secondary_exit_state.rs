@@ -1,7 +1,7 @@
 use crate::{AppError, AppState, FrontendEffect};
 use lm_level::SecondaryExitTable;
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_builtin_secondary_exit_installation_plan,
+    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_builtin_secondary_exit_installation_plan_from_source,
     smw_us_v1_secondary_exit_allocation_policy, smw_us_v1_secondary_exit_locator,
 };
 use lm_project::SecondaryExitStorage;
@@ -40,7 +40,10 @@ impl AppState {
         match loaded.storage {
             SecondaryExitStorage::Pristine => {
                 project.install_relocatable_patch(
-                    &smw_us_v1_builtin_secondary_exit_installation_plan(table)?,
+                    &smw_us_v1_builtin_secondary_exit_installation_plan_from_source(
+                        &loaded.table,
+                        table,
+                    )?,
                 )?;
             }
             SecondaryExitStorage::Installed { .. } => {

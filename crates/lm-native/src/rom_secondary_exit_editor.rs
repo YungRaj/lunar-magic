@@ -1,7 +1,7 @@
 use crate::level_editor_forms::{SecondaryExitForm, parse_hex_u16};
 use eframe::egui;
 use lm_app::{AppState, Command};
-use lm_level::SecondaryExitTable;
+use lm_level::{SecondaryExit, SecondaryExitTable};
 use lm_profile::smw_us_v1_secondary_exit_locator;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,6 +24,7 @@ pub(crate) struct RomSecondaryExitEditor {
     form: SecondaryExitForm,
     error: Option<String>,
     pending_close: Option<PendingClose>,
+    pending_clear_all: bool,
 }
 
 impl RomSecondaryExitEditor {
@@ -89,6 +90,7 @@ impl RomSecondaryExitEditor {
                 });
         }
         let approved = self.close_confirmation(context);
+        self.clear_all_confirmation(context, project_revision);
         self.show_error(context);
         (approved, command)
     }
@@ -123,6 +125,19 @@ impl RomSecondaryExitEditor {
                 if let Err(error) = self.apply_selected() {
                     self.error = Some(error);
                 }
+            }
+            if ui
+                .add_enabled(!stale, egui::Button::new("Clear entry"))
+                .clicked()
+                && let Err(error) = self.clear_selected()
+            {
+                self.error = Some(error);
+            }
+            if ui
+                .add_enabled(!stale, egui::Button::new("Clear all…"))
+                .clicked()
+            {
+                self.pending_clear_all = true;
             }
             if ui
                 .add_enabled(modified && !stale, egui::Button::new("Commit table to ROM"))
@@ -200,6 +215,58 @@ impl RomSecondaryExitEditor {
         Ok(())
     }
 
+    fn clear_selected(&mut self) -> Result<(), String> {
+        let index = self.selected_index()?;
+        if self.loaded_index != Some(index) {
+            return Err("load the selected entry before clearing it".into());
+        }
+        let workspace = self
+            .workspace
+            .as_mut()
+            .ok_or_else(|| "secondary-exit workspace is closed".to_owned())?;
+        workspace.table.entries[index] = SecondaryExit::default();
+        self.form = SecondaryExitForm::load(SecondaryExit::default());
+        Ok(())
+    }
+
+    fn clear_all(&mut self, project_revision: u64) -> Result<(), String> {
+        let workspace = self
+            .workspace
+            .as_mut()
+            .ok_or_else(|| "secondary-exit workspace is closed".to_owned())?;
+        if workspace.revision != project_revision {
+            return Err("stale secondary-exit workspace cannot be cleared".into());
+        }
+        workspace.table.entries.fill(SecondaryExit::default());
+        if let Some(index) = self.loaded_index {
+            self.form = SecondaryExitForm::load(workspace.table.entries[index]);
+        }
+        self.pending_clear_all = false;
+        Ok(())
+    }
+
+    fn clear_all_confirmation(&mut self, context: &egui::Context, project_revision: u64) {
+        if !self.pending_clear_all {
+            return;
+        }
+        egui::Window::new("Clear all secondary exits?")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label("This stages 8,192 cleared entries. The ROM is unchanged until commit.");
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.pending_clear_all = false;
+                    }
+                    if ui.button("Clear all").clicked()
+                        && let Err(error) = self.clear_all(project_revision)
+                    {
+                        self.error = Some(error);
+                    }
+                });
+            });
+    }
+
     fn close_confirmation(&mut self, context: &egui::Context) -> bool {
         let Some(pending) = self.pending_close else {
             return false;
@@ -238,6 +305,7 @@ impl RomSecondaryExitEditor {
         self.workspace = None;
         self.loaded_index = None;
         self.pending_close = None;
+        self.pending_clear_all = false;
     }
 
     pub(crate) fn commit_succeeded(&mut self) {
@@ -314,5 +382,85 @@ mod tests {
         editor.apply_selected().unwrap();
         assert!(!editor.request_close(false));
         assert_eq!(editor.pending_close, Some(PendingClose::Editor));
+    }
+
+    #[test]
+    fn clear_entry_requires_loaded_selection_and_changes_only_that_entry() {
+        let mut editor = opened_editor();
+        editor.index = "0400".into();
+        assert!(editor.clear_selected().is_err());
+        editor.loaded_index = None;
+        editor.load_selected();
+        editor.form.destination = "0105".into();
+        editor.apply_selected().unwrap();
+        editor.workspace.as_mut().unwrap().table.entries[0x401].destination_level = 0x106;
+
+        editor.clear_selected().unwrap();
+        let table = &editor.workspace.as_ref().unwrap().table;
+        assert_eq!(table.entries[0x400], SecondaryExit::default());
+        assert_eq!(table.entries[0x401].destination_level, 0x106);
+        assert_eq!(editor.form.parse().unwrap(), SecondaryExit::default());
+    }
+
+    #[test]
+    fn clear_all_stages_one_complete_zero_table_and_reloads_selection() {
+        let (mut app, mut editor) = opened_app_and_editor();
+        editor.index = "0123".into();
+        editor.loaded_index = None;
+        editor.load_selected();
+        editor.form.destination = "0105".into();
+        editor.apply_selected().unwrap();
+        editor.pending_clear_all = true;
+
+        editor.clear_all(0).unwrap();
+        let workspace = editor.workspace.as_ref().unwrap();
+        assert_eq!(
+            workspace.table.entries.len(),
+            SecondaryExitTable::ENTRY_COUNT
+        );
+        assert!(
+            workspace
+                .table
+                .entries
+                .iter()
+                .all(|entry| *entry == SecondaryExit::default())
+        );
+        assert!(!editor.pending_clear_all);
+        assert_eq!(editor.form.parse().unwrap(), SecondaryExit::default());
+        let command = editor.prepare_commit(0).unwrap().unwrap();
+        app.dispatch(command).unwrap();
+        let mut reopened = RomSecondaryExitEditor::default();
+        reopened.open(&app);
+        assert!(
+            reopened
+                .workspace
+                .as_ref()
+                .unwrap()
+                .table
+                .entries
+                .iter()
+                .all(|entry| *entry == SecondaryExit::default())
+        );
+
+        editor.workspace.as_mut().unwrap().table.entries[7].destination_level = 0x107;
+        let before_stale = editor.workspace.as_ref().unwrap().table.clone();
+        editor.pending_clear_all = true;
+        assert!(editor.clear_all(1).is_err());
+        assert!(editor.pending_clear_all);
+        assert_eq!(editor.workspace.as_ref().unwrap().table, before_stale);
+    }
+
+    fn opened_editor() -> RomSecondaryExitEditor {
+        opened_app_and_editor().1
+    }
+
+    fn opened_app_and_editor() -> (AppState, RomSecondaryExitEditor) {
+        let _root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut editor = RomSecondaryExitEditor::default();
+        editor.open(&app);
+        (app, editor)
     }
 }

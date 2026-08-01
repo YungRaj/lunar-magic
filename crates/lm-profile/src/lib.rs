@@ -357,7 +357,9 @@ pub use secondary_exit::{
 };
 pub use secondary_exit_install::{
     SecondaryExitInstallBuildError, smw_us_v1_builtin_secondary_exit_installation_plan,
+    smw_us_v1_builtin_secondary_exit_installation_plan_from_source,
     smw_us_v1_secondary_exit_installation_plan,
+    smw_us_v1_secondary_exit_installation_plan_from_source,
 };
 pub use secondary_exit_runtime::{
     SMW_US_V1_SECONDARY_EXIT_BASE_SUPPORT, SMW_US_V1_SECONDARY_EXIT_BASE_SUPPORT_LEN,

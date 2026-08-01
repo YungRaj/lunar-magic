@@ -58,13 +58,28 @@ impl From<SecondaryExitEncodingError> for SecondaryExitInstallBuildError {
 ///
 /// # Errors
 ///
-/// Rejects a malformed Lfix3 template or an unrepresentable secondary-exit table.
+/// Rejects a malformed Lfix3 template or an unrepresentable table. This compatibility builder
+/// assumes fixed-plane bytes are unchanged; use the source-aware variant for replacements.
 pub fn smw_us_v1_secondary_exit_installation_plan(
     lfix3_template: &[u8],
     table: &SecondaryExitTable,
 ) -> Result<RelocatablePatchPlan, SecondaryExitInstallBuildError> {
+    smw_us_v1_secondary_exit_installation_plan_from_source(lfix3_template, table, table)
+}
+
+/// Builds a pristine installation whose fixed-plane preconditions come from `source_table`.
+///
+/// # Errors
+///
+/// Rejects a malformed Lfix3 template or an unrepresentable source or destination table.
+pub fn smw_us_v1_secondary_exit_installation_plan_from_source(
+    lfix3_template: &[u8],
+    source_table: &SecondaryExitTable,
+    table: &SecondaryExitTable,
+) -> Result<RelocatablePatchPlan, SecondaryExitInstallBuildError> {
     let mut plan = smw_us_v1_lfix3_installation_plan(lfix3_template)?;
     plan.description = "install SMW US v1 expanded secondary exits".into();
+    let source_encoded = source_table.encode()?;
     let encoded = table.encode()?;
     let used_len = used_plane_len(&encoded).max(1);
     let fixed_prefix = usize::from(used_len <= 0x200) * 4;
@@ -79,6 +94,7 @@ pub fn smw_us_v1_secondary_exit_installation_plan(
         *plane_target = Some(target);
     }
     plan.writes.extend(secondary_fixed_writes(
+        &source_encoded,
         &encoded,
         fixed_prefix,
         plane_targets,
@@ -101,7 +117,24 @@ pub fn smw_us_v1_builtin_secondary_exit_installation_plan(
     smw_us_v1_secondary_exit_installation_plan(&smw_us_v1_lfix3_runtime_template(), table)
 }
 
+/// Builds the bundled pristine installation with detected fixed-plane preconditions.
+///
+/// # Errors
+///
+/// Rejects an unrepresentable source or destination table.
+pub fn smw_us_v1_builtin_secondary_exit_installation_plan_from_source(
+    source_table: &SecondaryExitTable,
+    table: &SecondaryExitTable,
+) -> Result<RelocatablePatchPlan, SecondaryExitInstallBuildError> {
+    smw_us_v1_secondary_exit_installation_plan_from_source(
+        &smw_us_v1_lfix3_runtime_template(),
+        source_table,
+        table,
+    )
+}
+
 fn secondary_fixed_writes(
+    source_encoded: &[u8],
     encoded: &[u8],
     fixed_prefix: usize,
     plane_targets: [Option<usize>; 6],
@@ -190,7 +223,7 @@ fn secondary_fixed_writes(
             let start = plane * SecondaryExitTable::ENTRY_COUNT;
             writes.push(direct(
                 fixed_plane,
-                &encoded[start..start + 0x200],
+                &source_encoded[start..start + 0x200],
                 &encoded[start..start + 0x200],
             ));
         }
@@ -339,6 +372,42 @@ mod tests {
                 used_len: 0x401,
                 tagged_planes,
             } if tagged_planes.len() == 6
+        ));
+    }
+
+    #[test]
+    fn compact_install_can_replace_pristine_fixed_planes() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let executable = fs::read(root.join("lm363/Lunar Magic.exe")).unwrap();
+        let template = pe_rva(&executable, 0x1b_7f78, 0x510);
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut project = Project::open_supported(RomImage::from_bytes(original).unwrap()).unwrap();
+        let source = project
+            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+            .unwrap()
+            .table;
+        let cleared = SecondaryExitTable {
+            entries: vec![SecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT],
+        };
+
+        project
+            .install_relocatable_patch(
+                &smw_us_v1_secondary_exit_installation_plan_from_source(
+                    template, &source, &cleared,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let reopened = project
+            .load_secondary_exit_table_detected(smw_us_v1_secondary_exit_locator())
+            .unwrap();
+        assert_eq!(reopened.table, cleared);
+        assert!(matches!(
+            reopened.storage,
+            SecondaryExitStorage::Installed {
+                fixed_prefix_planes: 4,
+                ..
+            }
         ));
     }
 
