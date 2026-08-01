@@ -1637,6 +1637,11 @@ complete replacement, advance a separate monotonic staged revision, invalidate p
 delivery, and preserve the opposite history. A divergent mutation clears redo. Opening, clearing,
 or committing the workspace discards this staging history, while the resulting ROM commit retains
 the application's existing single checksum-valid undo transaction.
+The pristine/native SMW controller no longer bypasses the complete-set mutation boundary used by
+the profile controller. Replacement, subtile, and Acts-Like commands now honor their supplied
+resolution limit and validate the resulting complete Acts-Like graph before publication. Missing
+targets or multi-node cycles therefore leave the entire ordered edit batch unchanged; background
+replacement tiles still canonicalize their non-semantic Acts-Like field to zero before validation.
 Palette mode now has a ROM-backed swatch editor over the profile-declared native palette. It
 displays the exact retained BGR555 word beside the platform color picker, stages changes through
 `PaletteController`, and retains controller ownership checks. Like the other relocatable native

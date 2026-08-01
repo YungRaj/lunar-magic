@@ -6,7 +6,7 @@ use lm_profile::{
 };
 use lm_project::{Project, RomMutation, TransactionError};
 use lm_rom::{Mapper, RomError, RomImage};
-use std::{collections::BTreeSet, fmt};
+use std::fmt;
 
 pub const SMW_COMPLETE_MAP16_FOREGROUND_PAGES: usize = 0x80;
 pub const SMW_COMPLETE_MAP16_PAGES: usize = 0x100;
@@ -102,52 +102,41 @@ impl SmwMap16Controller {
     ) -> Result<(), SmwMap16ControllerError> {
         let mut staged = self.set.clone();
         for (command, edit) in edits.iter().enumerate() {
-            let result = (|| {
-                validate_shape(&staged)?;
-                match edit {
-                    Map16ControllerEdit::ReplaceTiles { replacements, .. } => {
-                        let mut targets = BTreeSet::new();
-                        for (address, _) in replacements {
-                            validate_address(&staged, *address)?;
-                            if !targets.insert(*address) {
-                                return Err(Map16EditError::DuplicateTarget(*address));
-                            }
-                        }
-                        for (address, tile) in replacements {
+            let result = match edit {
+                Map16ControllerEdit::ReplaceTiles {
+                    replacements,
+                    resolution_limit,
+                } => {
+                    let replacements = replacements
+                        .iter()
+                        .map(|(address, tile)| {
                             let mut tile = *tile;
                             if address.page >= SMW_COMPLETE_MAP16_FOREGROUND_PAGES {
                                 tile.acts_like = 0;
                             }
-                            staged.pages[address.page].tiles[address.tile] = tile;
-                        }
-                    }
-                    Map16ControllerEdit::SetSubtile {
-                        address,
-                        quadrant,
-                        subtile,
-                        ..
-                    } => {
-                        validate_address(&staged, *address)?;
-                        let tile = &mut staged.pages[address.page].tiles[address.tile];
-                        match quadrant {
-                            lm_level::Map16Quadrant::TopLeft => tile.top_left = *subtile,
-                            lm_level::Map16Quadrant::TopRight => tile.top_right = *subtile,
-                            lm_level::Map16Quadrant::BottomLeft => tile.bottom_left = *subtile,
-                            lm_level::Map16Quadrant::BottomRight => tile.bottom_right = *subtile,
-                        }
-                    }
-                    Map16ControllerEdit::SetActsLike {
-                        address, acts_like, ..
-                    } => {
-                        validate_address(&staged, *address)?;
-                        if address.page >= SMW_COMPLETE_MAP16_FOREGROUND_PAGES {
-                            return Err(Map16EditError::BackgroundActsLike(*address));
-                        }
-                        staged.pages[address.page].tiles[address.tile].acts_like = *acts_like;
+                            (*address, tile)
+                        })
+                        .collect::<Vec<_>>();
+                    staged.replace_tiles(&replacements, *resolution_limit)
+                }
+                Map16ControllerEdit::SetSubtile {
+                    address,
+                    quadrant,
+                    subtile,
+                    resolution_limit,
+                } => staged.set_subtile(*address, *quadrant, *subtile, *resolution_limit),
+                Map16ControllerEdit::SetActsLike {
+                    address,
+                    acts_like,
+                    resolution_limit,
+                } => {
+                    if address.page >= SMW_COMPLETE_MAP16_FOREGROUND_PAGES {
+                        Err(Map16EditError::BackgroundActsLike(*address))
+                    } else {
+                        staged.set_acts_like(*address, *acts_like, *resolution_limit)
                     }
                 }
-                Ok(())
-            })();
+            };
             result.map_err(|error| SmwMap16ControllerError::Edit { command, error })?;
         }
         self.set = staged;
@@ -244,34 +233,6 @@ fn map16_pages(definitions: &[u16], acts_like: Option<&[u16]>) -> Vec<Map16Page>
         .collect()
 }
 
-fn validate_shape(set: &Map16Set) -> Result<(), Map16EditError> {
-    if set.pages.len() > Map16Set::MAX_PAGES {
-        return Err(Map16EditError::TooManyPages(set.pages.len()));
-    }
-    for (page, value) in set.pages.iter().enumerate() {
-        if value.tiles.len() != Map16Page::TILE_COUNT {
-            return Err(Map16EditError::MalformedPage {
-                page,
-                tiles: value.tiles.len(),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn validate_address(set: &Map16Set, address: lm_level::Map16Address) -> Result<(), Map16EditError> {
-    if address.page >= set.pages.len() {
-        return Err(Map16EditError::PageOutOfRange {
-            page: address.page,
-            len: set.pages.len(),
-        });
-    }
-    if address.tile >= Map16Page::TILE_COUNT {
-        return Err(Map16EditError::TileOutOfRange { tile: address.tile });
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,5 +324,80 @@ mod tests {
             load_smw_us_v1_complete_map16(app.project().unwrap()).unwrap(),
             before
         );
+    }
+
+    #[test]
+    fn native_edits_reject_acts_like_cycles_atomically_and_normalize_background_behavior() {
+        let mut app = AppState::default();
+        app.load_rom(fixture()).unwrap();
+        app.dispatch(Command::ShowMap16).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = SmwMap16Controller::decode(&snapshot).unwrap();
+        let before = controller.set().clone();
+        let first = Map16Address { page: 2, tile: 0 };
+        let second = Map16Address { page: 2, tile: 1 };
+        let mut first_tile = before.pages[first.page].tiles[first.tile];
+        let mut second_tile = before.pages[second.page].tiles[second.tile];
+        first_tile.acts_like = 0x0201;
+        second_tile.acts_like = 0x0200;
+
+        assert!(matches!(
+            controller.apply_edits(&[Map16ControllerEdit::ReplaceTiles {
+                replacements: vec![(first, first_tile), (second, second_tile)],
+                resolution_limit: SMW_COMPLETE_MAP16_PAGES * Map16Page::TILE_COUNT,
+            }]),
+            Err(SmwMap16ControllerError::Edit {
+                command: 0,
+                error: Map16EditError::ActsLike(lm_level::Map16SetError::ActsLikeCycle { .. }),
+            })
+        ));
+        assert_eq!(controller.set(), &before);
+        assert!(!controller.is_modified());
+
+        let background = Map16Address {
+            page: SMW_COMPLETE_MAP16_FOREGROUND_PAGES,
+            tile: 7,
+        };
+        let mut background_tile = before.pages[background.page].tiles[background.tile];
+        background_tile.top_left = Subtile(0x1234);
+        background_tile.acts_like = 0xbeef;
+        controller
+            .apply_edits(&[Map16ControllerEdit::ReplaceTiles {
+                replacements: vec![(background, background_tile)],
+                resolution_limit: SMW_COMPLETE_MAP16_PAGES * Map16Page::TILE_COUNT,
+            }])
+            .unwrap();
+        assert_eq!(
+            controller.set().pages[background.page].tiles[background.tile],
+            Map16Tile {
+                acts_like: 0,
+                ..background_tile
+            }
+        );
+    }
+
+    #[test]
+    fn native_edits_enforce_the_caller_resolution_limit() {
+        let mut app = AppState::default();
+        app.load_rom(fixture()).unwrap();
+        app.dispatch(Command::ShowMap16).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = SmwMap16Controller::decode(&snapshot).unwrap();
+        let before = controller.set().clone();
+
+        assert!(matches!(
+            controller.apply_edits(&[Map16ControllerEdit::SetSubtile {
+                address: Map16Address { page: 2, tile: 0 },
+                quadrant: Map16Quadrant::TopLeft,
+                subtile: Subtile(0x0123),
+                resolution_limit: 0,
+            }]),
+            Err(SmwMap16ControllerError::Edit {
+                command: 0,
+                error: Map16EditError::ActsLike(lm_level::Map16SetError::ResolutionLimit(0)),
+            })
+        ));
+        assert_eq!(controller.set(), &before);
+        assert!(!controller.is_modified());
     }
 }
