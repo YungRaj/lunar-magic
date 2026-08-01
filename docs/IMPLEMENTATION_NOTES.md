@@ -1487,7 +1487,9 @@ installed secondary-exit edits authenticate this shared prerequisite before muta
 The migration coordinator's three-way signature probe is now modeled separately from full current
 authentication. Generation 3 requires the exact `$0111` marker/helper plus the authenticated
 runtime; generation 2 is selected by a JSL at logical `$02DA17`, and generation 1 by a JSL at
-`$02D7CE`. Simultaneous legacy hooks reject as ambiguous. Application and native installation
+`$02D7CE`. Authentic Lunar Magic 3.01 output proves generation 2 retains that generation-1 hook,
+so generation 2 is classified by exact `$240`-byte RATS-runtime, fixed-helper, marker, and relocated
+hook authentication instead of treating simultaneous hooks as ambiguous. Application and native installation
 report generations 1/2 as requiring migration and leave their ROM bytes and history untouched.
 The adjacent Sprite 19 user-requested fix is recovered from Lunar Magic command `$26AC`, its
 `PromptAndInstallSprite19AsmFix`/`InstallSprite19AsmFixRuntime` control flow, and a matched

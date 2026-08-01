@@ -24,6 +24,9 @@ const TABLE_HELPER: [u8; 0x50] = [
 
 const CURRENT_MARKER_OFFSET: usize = 0x0002_dd30 + 0x4c;
 const CURRENT_HELPER_PREFIX_END: usize = 0x0002_dd30 + 0x4c;
+const GENERATION_2_MARKER: [u8; 4] = [0x4c, 0x4d, 0x10, 0x01];
+const GENERATION_2_RUNTIME_LEN: usize = 0x240;
+const GENERATION_2_RUNTIME_HEX: &str = include_str!("assets/lfix3_runtime_generation_2.hex");
 const GENERATION_2_HOOK_OFFSET: usize = 0x0002_da17;
 const GENERATION_1_HOOK_OFFSET: usize = 0x0002_d7ce;
 const MUTABLE_TABLE_OFFSETS: [usize; 3] = [0x0002_de00, 0x0003_7c00, 0x0003_7e00];
@@ -38,7 +41,7 @@ pub enum SmwUsV1Lfix3Generation {
 
 #[derive(Debug)]
 pub enum SmwUsV1Lfix3GenerationError {
-    AmbiguousLegacyHooks,
+    Generation2(SmwUsV1Lfix3DetectError),
     Current(SmwUsV1Lfix3DetectError),
 }
 
@@ -87,13 +90,13 @@ impl std::error::Error for SmwUsV1Lfix3DetectError {}
 
 /// Classifies the three Lfix3 generations selected by Lunar Magic's migration coordinator.
 ///
-/// Generation 3 is returned only after complete current-runtime authentication. Generations 1
-/// and 2 are signature probes for the exact descriptor-selected JSL hook locations recovered from
-/// Lunar Magic 3.63; migration still requires a separately authenticated legacy transaction.
+/// Generations 2 and 3 are returned only after complete runtime authentication. Generation 1 is
+/// the remaining descriptor-selected fixed-hook probe; its migration still requires a separately
+/// authenticated legacy transaction.
 ///
 /// # Errors
 ///
-/// Rejects conflicting legacy hooks and every malformed current-runtime candidate.
+/// Rejects every malformed generation-2 or current-runtime candidate.
 pub fn probe_smw_us_v1_lfix3_generation(
     bytes: &[u8],
 ) -> Result<SmwUsV1Lfix3Generation, SmwUsV1Lfix3GenerationError> {
@@ -101,21 +104,137 @@ pub fn probe_smw_us_v1_lfix3_generation(
         bytes.get(0x0002_dd30..CURRENT_HELPER_PREFIX_END) == Some(&TABLE_HELPER[..0x4c]);
     let current_marker =
         bytes.get(CURRENT_MARKER_OFFSET..CURRENT_MARKER_OFFSET + 4) == Some(&TABLE_HELPER[0x4c..]);
-    if current_helper_prefix || current_marker {
+    if current_marker {
         return detect_smw_us_v1_current_lfix3_runtime(bytes)
             .map_err(SmwUsV1Lfix3GenerationError::Current)?
             .map_or(Ok(SmwUsV1Lfix3Generation::Absent), |_| {
                 Ok(SmwUsV1Lfix3Generation::Generation3Current)
             });
     }
-    let generation_2 = bytes.get(GENERATION_2_HOOK_OFFSET).copied() == Some(0x22);
-    let generation_1 = bytes.get(GENERATION_1_HOOK_OFFSET).copied() == Some(0x22);
-    match (generation_1, generation_2) {
-        (false, false) => Ok(SmwUsV1Lfix3Generation::Absent),
-        (true, false) => Ok(SmwUsV1Lfix3Generation::Generation1),
-        (false, true) => Ok(SmwUsV1Lfix3Generation::Generation2),
-        (true, true) => Err(SmwUsV1Lfix3GenerationError::AmbiguousLegacyHooks),
+    let generation_2_marker =
+        bytes.get(CURRENT_MARKER_OFFSET..CURRENT_MARKER_OFFSET + 4) == Some(&GENERATION_2_MARKER);
+    let generation_2_hook = bytes.get(GENERATION_2_HOOK_OFFSET).copied() == Some(0x22);
+    if generation_2_marker || generation_2_hook {
+        return detect_smw_us_v1_generation_2_lfix3_runtime(bytes)
+            .map_err(SmwUsV1Lfix3GenerationError::Generation2)?
+            .map_or(Ok(SmwUsV1Lfix3Generation::Absent), |_| {
+                Ok(SmwUsV1Lfix3Generation::Generation2)
+            });
     }
+    if current_helper_prefix {
+        return Err(SmwUsV1Lfix3GenerationError::Current(
+            SmwUsV1Lfix3DetectError::FixedByteMismatch {
+                offset: CURRENT_MARKER_OFFSET,
+                expected: TABLE_HELPER[0x4c],
+                actual: bytes.get(CURRENT_MARKER_OFFSET).copied(),
+            },
+        ));
+    }
+    let generation_1 = bytes.get(GENERATION_1_HOOK_OFFSET..GENERATION_1_HOOK_OFFSET + 4)
+        == Some(&[0x22, 0x50, 0xdc, 0x05]);
+    Ok(if generation_1 {
+        SmwUsV1Lfix3Generation::Generation1
+    } else {
+        SmwUsV1Lfix3Generation::Absent
+    })
+}
+
+/// Authenticates the generation-2 `$240`-byte Lfix3 runtime emitted by Lunar Magic 3.01.
+///
+/// Mutable per-level tables are intentionally excluded, while every fixed helper and runtime hook
+/// is checked against the authenticated RATS owner and recovered runtime body.
+///
+/// # Errors
+///
+/// Rejects malformed hooks, helpers, RATS ownership, runtime length, or runtime bytes.
+pub fn detect_smw_us_v1_generation_2_lfix3_runtime(
+    bytes: &[u8],
+) -> Result<Option<RatsBlock>, SmwUsV1Lfix3DetectError> {
+    let marker_present =
+        bytes.get(CURRENT_MARKER_OFFSET..CURRENT_MARKER_OFFSET + 4) == Some(&GENERATION_2_MARKER);
+    let primary_hook_present = bytes.get(GENERATION_2_HOOK_OFFSET).copied() == Some(0x22);
+    if !marker_present && !primary_hook_present {
+        return Ok(None);
+    }
+    let operand = bytes
+        .get(GENERATION_2_HOOK_OFFSET + 1..GENERATION_2_HOOK_OFFSET + 4)
+        .ok_or(SmwUsV1Lfix3DetectError::FixedByteMismatch {
+            offset: GENERATION_2_HOOK_OFFSET + 1,
+            expected: 0,
+            actual: None,
+        })?;
+    let runtime_offset = snes_to_pc(
+        Mapper::LoRom,
+        u32::from_le_bytes([operand[0], operand[1], operand[2], 0]),
+    )
+    .map_err(SmwUsV1Lfix3DetectError::RuntimeAddress)?;
+    let header_offset = runtime_offset
+        .checked_sub(HEADER_LEN)
+        .ok_or(SmwUsV1Lfix3DetectError::RuntimeBeforeHeader(runtime_offset))?;
+    let block = parse_at(bytes, header_offset).map_err(SmwUsV1Lfix3DetectError::RuntimeHeader)?;
+    if block.payload.start != runtime_offset {
+        return Err(SmwUsV1Lfix3DetectError::RuntimeOwnership {
+            expected: runtime_offset,
+            actual: block.payload.start,
+        });
+    }
+    if block.payload.len() != GENERATION_2_RUNTIME_LEN {
+        return Err(SmwUsV1Lfix3DetectError::RuntimeLength(block.payload.len()));
+    }
+    for (offset, expected) in [
+        (0x0000_26cc, &[0x22, 0x00, 0xdd, 0x05][..]),
+        (GENERATION_1_HOOK_OFFSET, &[0x22, 0x50, 0xdc, 0x05][..]),
+        (0x0002_d97d, &[0x22, 0x30, 0xdd, 0x05][..]),
+        (0x0002_dd00, &CORE_HELPER[..]),
+    ] {
+        require_exact(bytes, offset, expected)?;
+    }
+    require_exact(bytes, 0x0002_dd30, &TABLE_HELPER[..0x4c])?;
+    require_exact(bytes, CURRENT_MARKER_OFFSET, &GENERATION_2_MARKER)?;
+    for (offset, opcode, addend, trailing_nop) in [
+        (GENERATION_2_HOOK_OFFSET, 0x22, 0x000, true),
+        (0x0000_1708, 0x22, 0x180, false),
+        (0x0000_52b2, 0x22, 0x1b0, false),
+        (0x0000_7871, 0x5c, 0x1c0, false),
+        (0x0000_777b, 0x5c, 0x1e0, false),
+        (0x0000_779d, 0x5c, 0x1f0, false),
+    ] {
+        let mut expected = vec![opcode, 0, 0, 0];
+        let mut encoded = pc_to_snes(Mapper::LoRom, runtime_offset + addend)
+            .map_err(SmwUsV1Lfix3DetectError::RuntimeAddress)?
+            .to_le_bytes();
+        encoded[2] &= 0x7f;
+        expected[1..4].copy_from_slice(&encoded[..3]);
+        if trailing_nop {
+            expected.push(0xea);
+        }
+        require_exact(bytes, offset, &expected)?;
+    }
+    let expected_runtime = decode_embedded_hex(GENERATION_2_RUNTIME_HEX);
+    if expected_runtime.len() != GENERATION_2_RUNTIME_LEN
+        || bytes.get(block.payload.clone()) != Some(expected_runtime.as_slice())
+    {
+        return Err(SmwUsV1Lfix3DetectError::RuntimePayloadMismatch);
+    }
+    Ok(Some(block))
+}
+
+fn decode_embedded_hex(source: &str) -> Vec<u8> {
+    let digits = source
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    digits
+        .chunks_exact(2)
+        .map(|pair| {
+            let nibble = |byte| match byte {
+                b'0'..=b'9' => byte - b'0',
+                b'a'..=b'f' => byte - b'a' + 10,
+                _ => unreachable!("embedded runtime is lowercase hexadecimal"),
+            };
+            (nibble(pair[0]) << 4) | nibble(pair[1])
+        })
+        .collect()
 }
 
 /// Authenticates Lunar Magic's current Lfix3 core without constraining its mutable level tables.
@@ -400,6 +519,7 @@ fn payload_hook(
 mod tests {
     use super::*;
     use lm_project::Project;
+    use lm_rats::make_header;
     use lm_rom::{RomImage, SnesChecksum};
     use std::{fs, path::PathBuf};
 
@@ -523,28 +643,36 @@ mod tests {
     }
 
     #[test]
-    fn generation_probe_distinguishes_both_legacy_hooks_and_authenticates_current() {
+    fn generation_probe_authenticates_generation_2_with_retained_generation_1_hook() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         assert_eq!(
             probe_smw_us_v1_lfix3_generation(&original).unwrap(),
             SmwUsV1Lfix3Generation::Absent
         );
         let mut generation_1 = original.clone();
-        generation_1[GENERATION_1_HOOK_OFFSET] = 0x22;
+        generation_1[GENERATION_1_HOOK_OFFSET..GENERATION_1_HOOK_OFFSET + 4]
+            .copy_from_slice(&[0x22, 0x50, 0xdc, 0x05]);
         assert_eq!(
             probe_smw_us_v1_lfix3_generation(&generation_1).unwrap(),
             SmwUsV1Lfix3Generation::Generation1
         );
-        let mut generation_2 = original.clone();
-        generation_2[GENERATION_2_HOOK_OFFSET] = 0x22;
+        let generation_2 = generation_2_fixture(original.clone());
         assert_eq!(
             probe_smw_us_v1_lfix3_generation(&generation_2).unwrap(),
             SmwUsV1Lfix3Generation::Generation2
         );
-        generation_2[GENERATION_1_HOOK_OFFSET] = 0x22;
+        assert!(
+            detect_smw_us_v1_generation_2_lfix3_runtime(&generation_2)
+                .unwrap()
+                .is_some()
+        );
+        let mut modified = generation_2;
+        modified[0x0008_0008] ^= 1;
         assert!(matches!(
-            probe_smw_us_v1_lfix3_generation(&generation_2),
-            Err(SmwUsV1Lfix3GenerationError::AmbiguousLegacyHooks)
+            probe_smw_us_v1_lfix3_generation(&modified),
+            Err(SmwUsV1Lfix3GenerationError::Generation2(
+                SmwUsV1Lfix3DetectError::RuntimePayloadMismatch
+            ))
         ));
 
         let mut project = Project::new(RomImage::from_bytes(original).unwrap());
@@ -561,6 +689,46 @@ mod tests {
             probe_smw_us_v1_lfix3_generation(&modified),
             Err(SmwUsV1Lfix3GenerationError::Current(_))
         ));
+    }
+
+    fn generation_2_fixture(mut bytes: Vec<u8>) -> Vec<u8> {
+        bytes.resize(0x0010_0000, 0xff);
+        let runtime_offset = 0x0008_0008;
+        let runtime = decode_embedded_hex(GENERATION_2_RUNTIME_HEX);
+        bytes[runtime_offset - HEADER_LEN..runtime_offset]
+            .copy_from_slice(&make_header(runtime.len()).unwrap());
+        bytes[runtime_offset..runtime_offset + runtime.len()].copy_from_slice(&runtime);
+        for (offset, replacement) in [
+            (0x0000_26cc, &[0x22, 0x00, 0xdd, 0x05][..]),
+            (GENERATION_1_HOOK_OFFSET, &[0x22, 0x50, 0xdc, 0x05][..]),
+            (0x0002_d97d, &[0x22, 0x30, 0xdd, 0x05][..]),
+            (0x0002_dd00, &CORE_HELPER[..]),
+        ] {
+            bytes[offset..offset + replacement.len()].copy_from_slice(replacement);
+        }
+        bytes[0x0002_dd30..CURRENT_HELPER_PREFIX_END].copy_from_slice(&TABLE_HELPER[..0x4c]);
+        bytes[CURRENT_MARKER_OFFSET..CURRENT_MARKER_OFFSET + 4]
+            .copy_from_slice(&GENERATION_2_MARKER);
+        for (offset, opcode, addend, trailing_nop) in [
+            (GENERATION_2_HOOK_OFFSET, 0x22, 0x000, true),
+            (0x0000_1708, 0x22, 0x180, false),
+            (0x0000_52b2, 0x22, 0x1b0, false),
+            (0x0000_7871, 0x5c, 0x1c0, false),
+            (0x0000_777b, 0x5c, 0x1e0, false),
+            (0x0000_779d, 0x5c, 0x1f0, false),
+        ] {
+            let mut hook = vec![opcode, 0, 0, 0];
+            let mut encoded = pc_to_snes(Mapper::LoRom, runtime_offset + addend)
+                .unwrap()
+                .to_le_bytes();
+            encoded[2] &= 0x7f;
+            hook[1..4].copy_from_slice(&encoded[..3]);
+            if trailing_nop {
+                hook.push(0xea);
+            }
+            bytes[offset..offset + hook.len()].copy_from_slice(&hook);
+        }
+        bytes
     }
 
     fn pe_rva(image: &[u8], rva: usize, len: usize) -> &[u8] {

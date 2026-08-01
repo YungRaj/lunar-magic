@@ -455,6 +455,7 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
             "       wine-window-command.exe EXECUTABLE find-u32 VALUE\n"
             "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
+            "       wine-window-command.exe EXECUTABLE key VIRTUAL_KEY\n"
             "       wine-window-command.exe EXECUTABLE save WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE level HEX_LEVEL\n"
             "       wine-window-command.exe EXECUTABLE open-level HEX_LEVEL\n"
@@ -481,6 +482,7 @@ int main(int argc, char **argv) {
     BOOL read = _stricmp(argv[2], "read") == 0;
     BOOL find_u32 = _stricmp(argv[2], "find-u32") == 0;
     BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
+    BOOL key = _stricmp(argv[2], "key") == 0;
     if (open_level_command) {
         if (argc != 4) {
             fprintf(stderr, "open-level requires a hexadecimal level number\n");
@@ -504,7 +506,7 @@ int main(int argc, char **argv) {
         .list = _stricmp(argv[2], "list") == 0,
         .window_class = save || level || dialog_values || children || click || set_text
             ? "#32770"
-            : (menu || post_command || clipboard_bmp || clipboard_bmp_paste
+            : (menu || post_command || clipboard_bmp || clipboard_bmp_paste || key
                 ? "LMFrame"
                 : (argc == 4 ? argv[3] : NULL))
     };
@@ -741,6 +743,26 @@ int main(int argc, char **argv) {
         }
         if (!PostMessage(search.window, WM_COMMAND, MAKEWPARAM(command, 0), 0)) {
             fprintf(stderr, "cannot post command 0x%04lx\n", command);
+            return 1;
+        }
+        return 0;
+    }
+    if (key) {
+        if (argc != 4) {
+            fprintf(stderr, "key requires a virtual-key code\n");
+            return 2;
+        }
+        char *end = NULL;
+        unsigned long virtual_key = strtoul(argv[3], &end, 0);
+        if (end == argv[3] || *end != '\0' || virtual_key > 0xff) {
+            fprintf(stderr, "invalid virtual-key code: %s\n", argv[3]);
+            return 2;
+        }
+        if (
+            !PostMessage(search.window, WM_KEYDOWN, virtual_key, 0) ||
+            !PostMessage(search.window, WM_KEYUP, virtual_key, 0xc0000000)
+        ) {
+            fprintf(stderr, "cannot post virtual-key code 0x%02lx\n", virtual_key);
             return 1;
         }
         return 0;

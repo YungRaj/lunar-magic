@@ -399,7 +399,13 @@ mod tests {
     fn lfix3_install_reports_legacy_generation_without_mutating_history() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut image = RomImage::from_bytes(original).unwrap();
-        image.replace_exact(0x0002_d7ce, &[0xf0], &[0x22]).unwrap();
+        image
+            .replace_exact(
+                0x0002_d7ce,
+                &[0xf0, 0x02, 0xa9, 0x01],
+                &[0x22, 0x50, 0xdc, 0x05],
+            )
+            .unwrap();
         let legacy = image.as_file_bytes().to_vec();
         let mut app = AppState::default();
         app.load_rom(legacy.clone()).unwrap();
