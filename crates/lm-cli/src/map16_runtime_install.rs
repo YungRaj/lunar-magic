@@ -1,5 +1,8 @@
 use crate::{atomic_output::write_new, oracle_input::read_rom};
-use lm_profile::{load_smw_us_v1_secondary_map16, smw_us_v1_map16_runtime_installation_plan};
+use lm_profile::{
+    detect_smw_us_v1_current_map16_runtime, load_smw_us_v1_secondary_map16,
+    smw_us_v1_map16_runtime_installation_plan,
+};
 use lm_project::Project;
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SupportedGame};
@@ -41,6 +44,11 @@ pub(crate) fn execute(
     let secondary = load_smw_us_v1_secondary_map16(&project)?;
     if !secondary.installed {
         return Err("installed Map16 runtime did not reopen".into());
+    }
+    let authenticated = detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())?
+        .ok_or("installed Map16 runtime did not authenticate")?;
+    if authenticated != result.blocks[0] {
+        return Err("authenticated Map16 auxiliary allocation does not match installation".into());
     }
     write_new(output_rom, project.save_snapshot())?;
     println!(

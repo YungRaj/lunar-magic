@@ -1,8 +1,8 @@
 //! Authenticated pristine SMW-US installation of Lunar Magic's complete Map16 runtime.
 
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchPlan};
-use lm_rats::{AllocationPolicy, ProtectedRange};
-use lm_rom::{IpsError, Mapper, apply_ips};
+use lm_rats::{AllocationPolicy, HEADER_LEN, HeaderError, ProtectedRange, RatsBlock, parse_at};
+use lm_rom::{IpsError, Mapper, RomError, apply_ips, snes_to_pc};
 use std::{fmt, io::Read};
 
 const FIXED_PATCH_BASE64: &str = include_str!("assets/map16_runtime_fixed.ips.b64");
@@ -42,6 +42,112 @@ pub enum SmwUsV1Map16RuntimeInstallBuildError {
     Ips(IpsError),
     PatchedLength(usize),
     MissingAuxiliaryBankOperand,
+}
+
+#[derive(Debug)]
+pub enum SmwUsV1Map16RuntimeDetectError {
+    Embedded(SmwUsV1Map16RuntimeInstallBuildError),
+    FixedByteMismatch {
+        offset: usize,
+        expected: u8,
+        actual: u8,
+    },
+    AuxiliaryAddress(RomError),
+    AuxiliaryBeforeHeader(usize),
+    AuxiliaryHeader(HeaderError),
+    AuxiliaryOwnership {
+        expected: usize,
+        actual: usize,
+    },
+    AuxiliaryLength(usize),
+    AuxiliaryPayloadMismatch,
+}
+
+impl fmt::Display for SmwUsV1Map16RuntimeDetectError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "cannot authenticate current SMW-US Map16 runtime: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1Map16RuntimeDetectError {}
+
+/// Authenticates the current Map16 runtime and its complete auxiliary allocation.
+///
+/// Returns `Ok(None)` only when the recovered runtime marker is absent. A present marker upgrades
+/// the operation to strict authentication: every fixed IPS byte except the checksum and typed bank
+/// relocation must match, and that relocation must resolve to an exactly owned `$8000`-byte RATS
+/// payload equal to the recovered auxiliary table.
+///
+/// # Errors
+///
+/// Rejects malformed embedded evidence, truncated or modified fixed patches, invalid relocated
+/// addresses, malformed/non-exact RATS ownership, and any auxiliary payload difference.
+pub fn detect_smw_us_v1_current_map16_runtime(
+    bytes: &[u8],
+) -> Result<Option<RatsBlock>, SmwUsV1Map16RuntimeDetectError> {
+    if bytes
+        .get(super::native_map16_secondary::SMW_US_V1_SECONDARY_MAP16_RUNTIME_MARKER_OFFSET)
+        .copied()
+        != Some(0x22)
+    {
+        return Ok(None);
+    }
+    for (offset, expected) in
+        fixed_patch_replacements().map_err(SmwUsV1Map16RuntimeDetectError::Embedded)?
+    {
+        if (crate::SMW_US_V1_CHECKSUM_FIELD..crate::SMW_US_V1_CHECKSUM_FIELD + 4).contains(&offset)
+            || offset == AUXILIARY_BANK_OPERAND
+        {
+            continue;
+        }
+        let actual = bytes.get(offset).copied().ok_or(
+            SmwUsV1Map16RuntimeDetectError::FixedByteMismatch {
+                offset,
+                expected,
+                actual: 0,
+            },
+        )?;
+        if actual != expected {
+            return Err(SmwUsV1Map16RuntimeDetectError::FixedByteMismatch {
+                offset,
+                expected,
+                actual,
+            });
+        }
+    }
+    let bank = bytes.get(AUXILIARY_BANK_OPERAND).copied().ok_or(
+        SmwUsV1Map16RuntimeDetectError::FixedByteMismatch {
+            offset: AUXILIARY_BANK_OPERAND,
+            expected: 0,
+            actual: 0,
+        },
+    )?;
+    let payload_offset = snes_to_pc(Mapper::LoRom, u32::from(bank) << 16 | 0x8000)
+        .map_err(SmwUsV1Map16RuntimeDetectError::AuxiliaryAddress)?;
+    let header_offset = payload_offset.checked_sub(HEADER_LEN).ok_or(
+        SmwUsV1Map16RuntimeDetectError::AuxiliaryBeforeHeader(payload_offset),
+    )?;
+    let block =
+        parse_at(bytes, header_offset).map_err(SmwUsV1Map16RuntimeDetectError::AuxiliaryHeader)?;
+    if block.payload.start != payload_offset {
+        return Err(SmwUsV1Map16RuntimeDetectError::AuxiliaryOwnership {
+            expected: payload_offset,
+            actual: block.payload.start,
+        });
+    }
+    if block.payload.len() != AUXILIARY_PAYLOAD_LEN {
+        return Err(SmwUsV1Map16RuntimeDetectError::AuxiliaryLength(
+            block.payload.len(),
+        ));
+    }
+    let expected = decode_auxiliary_payload().map_err(SmwUsV1Map16RuntimeDetectError::Embedded)?;
+    if bytes.get(block.payload.clone()) != Some(expected.as_slice()) {
+        return Err(SmwUsV1Map16RuntimeDetectError::AuxiliaryPayloadMismatch);
+    }
+    Ok(Some(block))
 }
 
 impl fmt::Display for SmwUsV1Map16RuntimeInstallBuildError {
@@ -128,6 +234,23 @@ fn decode_auxiliary_payload() -> Result<Vec<u8>, SmwUsV1Map16RuntimeInstallBuild
         ));
     }
     Ok(payload)
+}
+
+fn fixed_patch_replacements() -> Result<Vec<(usize, u8)>, SmwUsV1Map16RuntimeInstallBuildError> {
+    let patch = decode_base64(FIXED_PATCH_BASE64)?;
+    let zero = apply_ips(&vec![0; PRISTINE_LOGICAL_LEN], &patch)?;
+    let ones = apply_ips(&vec![0xff; PRISTINE_LOGICAL_LEN], &patch)?;
+    if zero.len() != PRISTINE_LOGICAL_LEN || ones.len() != PRISTINE_LOGICAL_LEN {
+        return Err(SmwUsV1Map16RuntimeInstallBuildError::PatchedLength(
+            zero.len().max(ones.len()),
+        ));
+    }
+    Ok(zero
+        .into_iter()
+        .zip(ones)
+        .enumerate()
+        .filter_map(|(offset, (zero, ones))| (zero == ones).then_some((offset, zero)))
+        .collect())
 }
 
 fn changed_patch_writes(
@@ -269,6 +392,13 @@ mod tests {
             &project.rom.logical_bytes()[0x7fdc..0x7fe0],
             checksum.encoded()
         );
+        assert_eq!(
+            detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())
+                .unwrap()
+                .unwrap()
+                .payload,
+            0x88_000..0x90_000
+        );
     }
 
     #[test]
@@ -286,5 +416,50 @@ mod tests {
         assert_eq!(plan.allocation.search, 0x80_000..0x10_0000);
         assert_eq!(plan.checksum_field, crate::SMW_US_V1_CHECKSUM_FIELD);
         assert_eq!(plan.payloads[0].bytes.len(), AUXILIARY_PAYLOAD_LEN);
+    }
+
+    #[test]
+    fn current_detector_rejects_marker_only_fixed_and_payload_modifications() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        assert!(
+            detect_smw_us_v1_current_map16_runtime(&original)
+                .unwrap()
+                .is_none()
+        );
+
+        let mut marker_only = original.clone();
+        marker_only[super::super::native_map16_secondary::SMW_US_V1_SECONDARY_MAP16_RUNTIME_MARKER_OFFSET] = 0x22;
+        assert!(matches!(
+            detect_smw_us_v1_current_map16_runtime(&marker_only),
+            Err(SmwUsV1Map16RuntimeDetectError::FixedByteMismatch { .. })
+        ));
+
+        let plan = smw_us_v1_builtin_map16_runtime_installation_plan(&original).unwrap();
+        let mut project = Project::new(RomImage::from_bytes(original).unwrap());
+        let installed = project.install_relocatable_patch(&plan).unwrap();
+        let fixed_offset = plan
+            .writes
+            .iter()
+            .find(|write| {
+                let range = write.offset..write.offset + write.replacement.len();
+                !range
+                    .contains(&super::super::native_map16_secondary::SMW_US_V1_SECONDARY_MAP16_RUNTIME_MARKER_OFFSET)
+                    && !range.contains(&AUXILIARY_BANK_OPERAND)
+            })
+            .unwrap()
+            .offset;
+        let mut modified = project.rom.logical_bytes().to_vec();
+        modified[fixed_offset] ^= 1;
+        assert!(matches!(
+            detect_smw_us_v1_current_map16_runtime(&modified),
+            Err(SmwUsV1Map16RuntimeDetectError::FixedByteMismatch { offset, .. })
+                if offset == fixed_offset
+        ));
+        let mut modified = project.rom.logical_bytes().to_vec();
+        modified[installed.blocks[0].payload.start] ^= 1;
+        assert!(matches!(
+            detect_smw_us_v1_current_map16_runtime(&modified),
+            Err(SmwUsV1Map16RuntimeDetectError::AuxiliaryPayloadMismatch)
+        ));
     }
 }

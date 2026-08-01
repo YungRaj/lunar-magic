@@ -147,6 +147,11 @@ impl AppState {
         {
             return Err(AppError::Map16RuntimeIdentityMismatch);
         }
+        if lm_profile::detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())?
+            .is_some()
+        {
+            return Err(AppError::Map16RuntimeAlreadyInstalled);
+        }
         let plan = lm_profile::smw_us_v1_builtin_map16_runtime_installation_plan(
             project.rom.logical_bytes(),
         )?;

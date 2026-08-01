@@ -542,6 +542,11 @@ relocation into the recovered 512-KiB-to-1-MiB allocation window. Tests require 
 preconditions, semantic secondary-Map16 reopen, checksum repair, one application history entry,
 stale-revision rejection, and byte-exact undo. Compatibility-stage detection and migration remain
 outside this pristine-install boundary.
+Current-format acceptance additionally authenticates every recovered fixed replacement byte except
+the checksum and typed bank relocation, resolves that bank into exact RATS ownership, and compares
+the complete `$8000` auxiliary payload. Marker-only and modified fixed/payload fixtures must reject;
+an authenticated installation must be recognized by the application, native dialog, and built CLI
+without recording a duplicate history entry.
 
 Level property batches edit only the five proven legacy-header bitfields while preserving every
 unowned bit, and treat expanded-header fields as opaque 16-bit values. Raw Layer 1/2 tile changes

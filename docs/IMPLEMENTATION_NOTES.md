@@ -1483,6 +1483,13 @@ location, relocates its low-bank operand through a typed fixup, repairs the chec
 the installed secondary Map16 model before acceptance. This route intentionally covers pristine
 installation only; the four named compatibility-stage detectors and migrations remain separate
 evidence-gated work.
+Current Map16 runtime detection uses the complete recovered patch as its authentication boundary,
+not the historically convenient `$22` marker alone. It derives every fixed replacement byte from
+the embedded IPS evidence, excludes only the checksum field and the one typed bank relocation,
+resolves that operand through LoROM mapping, requires an exact `$8000`-byte RATS owner, and compares
+the complete auxiliary payload. The application and CLI both require this check after installation;
+the native dialog recognizes an authenticated current install and disables duplicate installation,
+while marker-only, modified-hook, malformed-owner, and modified-payload states reject explicitly.
 Complete Layer 3 installation also detects an already-valid expanded-settings allocation. In that
 state it reuses the prerequisite and installs only the five missing Layer 3 allocations, avoiding
 the guarded-hook collision that would otherwise follow selecting expanded settings first. The

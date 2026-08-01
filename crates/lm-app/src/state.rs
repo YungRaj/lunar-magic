@@ -94,6 +94,7 @@ pub enum AppError {
     Layer3Plan(lm_profile::CompleteLayer3BuildError),
     Lfix3Plan(lm_profile::Lfix3RuntimeLengthError),
     Map16RuntimePlan(lm_profile::SmwUsV1Map16RuntimeInstallBuildError),
+    Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
     SecondaryExitInstallPlan(lm_profile::SecondaryExitInstallBuildError),
     RevisionPatch(lm_project::RelocatablePatchError),
     RevisionPatchGroup(lm_project::RelocatablePatchGroupError),
@@ -102,6 +103,7 @@ pub enum AppError {
     Layer3IdentityMismatch,
     Lfix3IdentityMismatch,
     Map16RuntimeIdentityMismatch,
+    Map16RuntimeAlreadyInstalled,
     NativeOverworldPathIdentityMismatch,
     NativeOverworldPathReopenMismatch,
     NativeOverworldPath(lm_project::OverworldPathLinkIoError),
@@ -295,6 +297,12 @@ impl From<lm_profile::Lfix3RuntimeLengthError> for AppError {
 impl From<lm_profile::SmwUsV1Map16RuntimeInstallBuildError> for AppError {
     fn from(value: lm_profile::SmwUsV1Map16RuntimeInstallBuildError) -> Self {
         Self::Map16RuntimePlan(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Map16RuntimeDetectError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Map16RuntimeDetectError) -> Self {
+        Self::Map16RuntimeDetect(value)
     }
 }
 

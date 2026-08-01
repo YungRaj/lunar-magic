@@ -49,6 +49,7 @@ impl BuiltInRuntime {
 pub(super) struct BuiltInRuntimeWorkspace {
     revision: u64,
     pub runtime: BuiltInRuntime,
+    map16_runtime_installed: bool,
 }
 
 impl BuiltInRuntimeWorkspace {
@@ -67,9 +68,18 @@ impl BuiltInRuntimeWorkspace {
                     .to_owned(),
             );
         }
+        let map16_runtime_installed = lm_profile::detect_smw_us_v1_current_map16_runtime(
+            app.project()
+                .ok_or("built-in runtime installation requires an open project")?
+                .rom
+                .logical_bytes(),
+        )
+        .map_err(|error| error.to_string())?
+        .is_some();
         Ok(Self {
             revision: snapshot.revision,
             runtime: BuiltInRuntime::default(),
+            map16_runtime_installed,
         })
     }
 
@@ -77,9 +87,16 @@ impl BuiltInRuntimeWorkspace {
         self.revision != project_revision
     }
 
+    pub(super) const fn selection_is_installed(&self) -> bool {
+        matches!(self.runtime, BuiltInRuntime::Map16Runtime) && self.map16_runtime_installed
+    }
+
     pub(super) fn prepare(&self, project_revision: u64) -> Result<Command, String> {
         if self.is_stale(project_revision) {
             return Err("the ROM changed after the runtime installer was opened; reopen it".into());
+        }
+        if self.selection_is_installed() {
+            return Err("the current Map16 runtime is already installed and authenticated".into());
         }
         Ok(match self.runtime {
             BuiltInRuntime::ExpandedSettings => Command::InstallSettings { rev: self.revision },
