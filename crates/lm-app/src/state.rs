@@ -94,6 +94,7 @@ pub enum AppError {
     Layer3Plan(lm_profile::CompleteLayer3BuildError),
     Lfix3Plan(lm_profile::Lfix3RuntimeLengthError),
     Lfix3Detect(lm_profile::SmwUsV1Lfix3DetectError),
+    Lfix3Generation(lm_profile::SmwUsV1Lfix3GenerationError),
     Map16RuntimePlan(lm_profile::SmwUsV1Map16RuntimeInstallBuildError),
     Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
     Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError),
@@ -106,6 +107,7 @@ pub enum AppError {
     Layer3IdentityMismatch,
     Lfix3IdentityMismatch,
     Lfix3AlreadyInstalled,
+    Lfix3LegacyMigrationRequired,
     Map16RuntimeIdentityMismatch,
     Map16RuntimeAlreadyInstalled,
     Sprite19FixIdentityMismatch,
@@ -303,6 +305,12 @@ impl From<lm_profile::Lfix3RuntimeLengthError> for AppError {
 impl From<lm_profile::SmwUsV1Lfix3DetectError> for AppError {
     fn from(value: lm_profile::SmwUsV1Lfix3DetectError) -> Self {
         Self::Lfix3Detect(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Lfix3GenerationError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Lfix3GenerationError) -> Self {
+        Self::Lfix3Generation(value)
     }
 }
 

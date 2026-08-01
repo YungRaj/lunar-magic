@@ -540,6 +540,12 @@ all 107 relocations at its actual address. The three per-level tables remain mut
 Marker-only, damaged-marker, fixed-hook, ownership, and payload corruption must reject before an
 installed secondary-exit update; duplicate native installation must leave application history
 unchanged.
+Legacy-generation probing must reproduce Lunar Magic's descriptor-selected priority without
+claiming that a hook opcode authenticates its complete runtime: generation 1 uses `$02D7CE`,
+generation 2 uses `$02DA17`, and generation 3 requires complete current `$0111` authentication.
+Conflicting legacy hooks and corrupt current candidates reject. Until table-preserving migration is
+authenticated, application/native pristine installation must refuse generations 1/2 without a ROM
+or history change.
 The user-requested Sprite 19 ASM-fix gate requires the exact SMW-US-v1 hook at `$00E762`, fixed
 `$20`-byte helper at `$01BCA0`, and branch removal at `$0020A0` recovered from Lunar Magic 3.63
 command `$26AC`. Pristine and authenticated shared-helper-only sources must both install to the

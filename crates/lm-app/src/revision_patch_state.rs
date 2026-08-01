@@ -114,10 +114,15 @@ impl AppState {
         {
             return Err(AppError::Lfix3IdentityMismatch);
         }
-        if lm_profile::detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())?
-            .is_some()
-        {
-            return Err(AppError::Lfix3AlreadyInstalled);
+        match lm_profile::probe_smw_us_v1_lfix3_generation(project.rom.logical_bytes())? {
+            lm_profile::SmwUsV1Lfix3Generation::Absent => {}
+            lm_profile::SmwUsV1Lfix3Generation::Generation3Current => {
+                return Err(AppError::Lfix3AlreadyInstalled);
+            }
+            lm_profile::SmwUsV1Lfix3Generation::Generation1
+            | lm_profile::SmwUsV1Lfix3Generation::Generation2 => {
+                return Err(AppError::Lfix3LegacyMigrationRequired);
+            }
         }
         let plan = lm_profile::smw_us_v1_builtin_lfix3_installation_plan()?;
         project.install_relocatable_patch(&plan)?;
@@ -261,7 +266,7 @@ mod tests {
     use crate::Command;
     use lm_profile::RevisionProfile;
     use lm_project::{PatchFixup, PatchPayload, PatchWrite};
-    use lm_rom::{Mapper, pc_to_snes};
+    use lm_rom::{Mapper, RomImage, pc_to_snes};
     use std::{fs, path::PathBuf};
 
     fn write_pointer(bytes: &mut [u8], offset: usize, mapper: Mapper, target: usize) {
@@ -388,6 +393,22 @@ mod tests {
             .is_err()
         );
         assert!(app.project().is_none());
+    }
+
+    #[test]
+    fn lfix3_install_reports_legacy_generation_without_mutating_history() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut image = RomImage::from_bytes(original).unwrap();
+        image.replace_exact(0x0002_d7ce, &[0xf0], &[0x22]).unwrap();
+        let legacy = image.as_file_bytes().to_vec();
+        let mut app = AppState::default();
+        app.load_rom(legacy.clone()).unwrap();
+        assert!(matches!(
+            app.dispatch(Command::InstallLfix3 { rev: 0 }),
+            Err(AppError::Lfix3LegacyMigrationRequired)
+        ));
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+        assert_eq!(app.project().unwrap().save_snapshot(), legacy);
     }
 
     #[test]

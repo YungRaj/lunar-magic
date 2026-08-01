@@ -54,7 +54,7 @@ impl BuiltInRuntime {
 pub(super) struct BuiltInRuntimeWorkspace {
     revision: u64,
     pub runtime: BuiltInRuntime,
-    lfix3_installed: bool,
+    lfix3_generation: lm_profile::SmwUsV1Lfix3Generation,
     map16_runtime_installed: bool,
     sprite19_fix_installed: bool,
 }
@@ -78,10 +78,9 @@ impl BuiltInRuntimeWorkspace {
         let project = app
             .project()
             .ok_or("built-in runtime installation requires an open project")?;
-        let lfix3_installed =
-            lm_profile::detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())
-                .map_err(|error| error.to_string())?
-                .is_some();
+        let lfix3_generation =
+            lm_profile::probe_smw_us_v1_lfix3_generation(project.rom.logical_bytes())
+                .map_err(|error| error.to_string())?;
         let map16_runtime_installed =
             lm_profile::detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?
@@ -93,7 +92,7 @@ impl BuiltInRuntimeWorkspace {
         Ok(Self {
             revision: snapshot.revision,
             runtime: BuiltInRuntime::default(),
-            lfix3_installed,
+            lfix3_generation,
             map16_runtime_installed,
             sprite19_fix_installed,
         })
@@ -103,13 +102,24 @@ impl BuiltInRuntimeWorkspace {
         self.revision != project_revision
     }
 
-    pub(super) const fn selection_is_installed(&self) -> bool {
+    pub(super) fn selection_is_installed(&self) -> bool {
         match self.runtime {
-            BuiltInRuntime::Lfix3Core => self.lfix3_installed,
+            BuiltInRuntime::Lfix3Core => {
+                self.lfix3_generation == lm_profile::SmwUsV1Lfix3Generation::Generation3Current
+            }
             BuiltInRuntime::Map16Runtime => self.map16_runtime_installed,
             BuiltInRuntime::Sprite19Fix => self.sprite19_fix_installed,
             _ => false,
         }
+    }
+
+    pub(super) fn selection_requires_legacy_migration(&self) -> bool {
+        self.runtime == BuiltInRuntime::Lfix3Core
+            && matches!(
+                self.lfix3_generation,
+                lm_profile::SmwUsV1Lfix3Generation::Generation1
+                    | lm_profile::SmwUsV1Lfix3Generation::Generation2
+            )
     }
 
     pub(super) fn prepare(&self, project_revision: u64) -> Result<Command, String> {
@@ -119,6 +129,12 @@ impl BuiltInRuntimeWorkspace {
         if self.selection_is_installed() {
             return Err(
                 "the selected current runtime is already installed and authenticated".into(),
+            );
+        }
+        if self.selection_requires_legacy_migration() {
+            return Err(
+                "the selected ROM contains a legacy Lfix3 generation; authenticated migration is required"
+                    .into(),
             );
         }
         Ok(match self.runtime {
@@ -181,5 +197,10 @@ mod tests {
             Command::InstallSprite19Fix { rev: 0 }
         ));
         assert!(workspace.prepare(app.project_revision() + 1).is_err());
+
+        workspace.runtime = BuiltInRuntime::Lfix3Core;
+        workspace.lfix3_generation = lm_profile::SmwUsV1Lfix3Generation::Generation2;
+        assert!(workspace.selection_requires_legacy_migration());
+        assert!(workspace.prepare(app.project_revision()).is_err());
     }
 }

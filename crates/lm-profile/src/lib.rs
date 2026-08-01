@@ -198,7 +198,8 @@ pub use layer3_scroll_code::{
 pub use level_access_restriction::smw_us_v1_level_access_restriction_layout;
 pub use lfix3_install::{
     SMW_US_V1_LFIX3_SEARCH_END, SMW_US_V1_LFIX3_SEARCH_START, SmwUsV1Lfix3DetectError,
-    detect_smw_us_v1_current_lfix3_runtime, smw_us_v1_builtin_lfix3_installation_plan,
+    SmwUsV1Lfix3Generation, SmwUsV1Lfix3GenerationError, detect_smw_us_v1_current_lfix3_runtime,
+    probe_smw_us_v1_lfix3_generation, smw_us_v1_builtin_lfix3_installation_plan,
     smw_us_v1_lfix3_installation_plan,
 };
 pub use lfix3_runtime::{

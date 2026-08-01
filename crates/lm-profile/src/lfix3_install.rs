@@ -23,7 +23,35 @@ const TABLE_HELPER: [u8; 0x50] = [
 ];
 
 const CURRENT_MARKER_OFFSET: usize = 0x0002_dd30 + 0x4c;
+const CURRENT_HELPER_PREFIX_END: usize = 0x0002_dd30 + 0x4c;
+const GENERATION_2_HOOK_OFFSET: usize = 0x0002_da17;
+const GENERATION_1_HOOK_OFFSET: usize = 0x0002_d7ce;
 const MUTABLE_TABLE_OFFSETS: [usize; 3] = [0x0002_de00, 0x0003_7c00, 0x0003_7e00];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmwUsV1Lfix3Generation {
+    Absent,
+    Generation1,
+    Generation2,
+    Generation3Current,
+}
+
+#[derive(Debug)]
+pub enum SmwUsV1Lfix3GenerationError {
+    AmbiguousLegacyHooks,
+    Current(SmwUsV1Lfix3DetectError),
+}
+
+impl fmt::Display for SmwUsV1Lfix3GenerationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "cannot classify SMW-US Lfix3 generation: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1Lfix3GenerationError {}
 
 #[derive(Debug)]
 pub enum SmwUsV1Lfix3DetectError {
@@ -56,6 +84,39 @@ impl fmt::Display for SmwUsV1Lfix3DetectError {
 }
 
 impl std::error::Error for SmwUsV1Lfix3DetectError {}
+
+/// Classifies the three Lfix3 generations selected by Lunar Magic's migration coordinator.
+///
+/// Generation 3 is returned only after complete current-runtime authentication. Generations 1
+/// and 2 are signature probes for the exact descriptor-selected JSL hook locations recovered from
+/// Lunar Magic 3.63; migration still requires a separately authenticated legacy transaction.
+///
+/// # Errors
+///
+/// Rejects conflicting legacy hooks and every malformed current-runtime candidate.
+pub fn probe_smw_us_v1_lfix3_generation(
+    bytes: &[u8],
+) -> Result<SmwUsV1Lfix3Generation, SmwUsV1Lfix3GenerationError> {
+    let current_helper_prefix =
+        bytes.get(0x0002_dd30..CURRENT_HELPER_PREFIX_END) == Some(&TABLE_HELPER[..0x4c]);
+    let current_marker =
+        bytes.get(CURRENT_MARKER_OFFSET..CURRENT_MARKER_OFFSET + 4) == Some(&TABLE_HELPER[0x4c..]);
+    if current_helper_prefix || current_marker {
+        return detect_smw_us_v1_current_lfix3_runtime(bytes)
+            .map_err(SmwUsV1Lfix3GenerationError::Current)?
+            .map_or(Ok(SmwUsV1Lfix3Generation::Absent), |_| {
+                Ok(SmwUsV1Lfix3Generation::Generation3Current)
+            });
+    }
+    let generation_2 = bytes.get(GENERATION_2_HOOK_OFFSET).copied() == Some(0x22);
+    let generation_1 = bytes.get(GENERATION_1_HOOK_OFFSET).copied() == Some(0x22);
+    match (generation_1, generation_2) {
+        (false, false) => Ok(SmwUsV1Lfix3Generation::Absent),
+        (true, false) => Ok(SmwUsV1Lfix3Generation::Generation1),
+        (false, true) => Ok(SmwUsV1Lfix3Generation::Generation2),
+        (true, true) => Err(SmwUsV1Lfix3GenerationError::AmbiguousLegacyHooks),
+    }
+}
 
 /// Authenticates Lunar Magic's current Lfix3 core without constraining its mutable level tables.
 ///
@@ -458,6 +519,47 @@ mod tests {
         assert!(matches!(
             detect_smw_us_v1_current_lfix3_runtime(&modified),
             Err(SmwUsV1Lfix3DetectError::RuntimePayloadMismatch)
+        ));
+    }
+
+    #[test]
+    fn generation_probe_distinguishes_both_legacy_hooks_and_authenticates_current() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        assert_eq!(
+            probe_smw_us_v1_lfix3_generation(&original).unwrap(),
+            SmwUsV1Lfix3Generation::Absent
+        );
+        let mut generation_1 = original.clone();
+        generation_1[GENERATION_1_HOOK_OFFSET] = 0x22;
+        assert_eq!(
+            probe_smw_us_v1_lfix3_generation(&generation_1).unwrap(),
+            SmwUsV1Lfix3Generation::Generation1
+        );
+        let mut generation_2 = original.clone();
+        generation_2[GENERATION_2_HOOK_OFFSET] = 0x22;
+        assert_eq!(
+            probe_smw_us_v1_lfix3_generation(&generation_2).unwrap(),
+            SmwUsV1Lfix3Generation::Generation2
+        );
+        generation_2[GENERATION_1_HOOK_OFFSET] = 0x22;
+        assert!(matches!(
+            probe_smw_us_v1_lfix3_generation(&generation_2),
+            Err(SmwUsV1Lfix3GenerationError::AmbiguousLegacyHooks)
+        ));
+
+        let mut project = Project::new(RomImage::from_bytes(original).unwrap());
+        project
+            .install_relocatable_patch(&smw_us_v1_builtin_lfix3_installation_plan().unwrap())
+            .unwrap();
+        assert_eq!(
+            probe_smw_us_v1_lfix3_generation(project.rom.logical_bytes()).unwrap(),
+            SmwUsV1Lfix3Generation::Generation3Current
+        );
+        let mut modified = project.rom.logical_bytes().to_vec();
+        modified[0x0000_26cc] ^= 1;
+        assert!(matches!(
+            probe_smw_us_v1_lfix3_generation(&modified),
+            Err(SmwUsV1Lfix3GenerationError::Current(_))
         ));
     }
 

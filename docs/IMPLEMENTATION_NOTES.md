@@ -1484,6 +1484,11 @@ runtime payload. It deliberately excludes the three 512-byte tables from byte eq
 normal level edits change them. Marker-only, damaged-marker, modified-hook, malformed-owner, and
 modified-runtime states reject; authenticated current installs disable duplicate installation, and
 installed secondary-exit edits authenticate this shared prerequisite before mutation.
+The migration coordinator's three-way signature probe is now modeled separately from full current
+authentication. Generation 3 requires the exact `$0111` marker/helper plus the authenticated
+runtime; generation 2 is selected by a JSL at logical `$02DA17`, and generation 1 by a JSL at
+`$02D7CE`. Simultaneous legacy hooks reject as ambiguous. Application and native installation
+report generations 1/2 as requiring migration and leave their ROM bytes and history untouched.
 The adjacent Sprite 19 user-requested fix is recovered from Lunar Magic command `$26AC`, its
 `PromptAndInstallSprite19AsmFix`/`InstallSprite19AsmFixRuntime` control flow, and a matched
 pristine-ROM Wine transaction. On SMW-US-v1 it replaces the six-byte hook at logical `$00E762`,

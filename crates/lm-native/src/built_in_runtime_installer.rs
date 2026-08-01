@@ -87,6 +87,12 @@ impl BuiltInRuntimeInstaller {
         if workspace.selection_is_installed() {
             ui.label("The selected current runtime is already installed and authenticated.");
         }
+        if workspace.selection_requires_legacy_migration() {
+            ui.label(
+                "A legacy Lfix3 generation is installed. Use a recovered migration transaction; \
+                 pristine installation is disabled to preserve its tables.",
+            );
+        }
         ui.label(
             "Installation may expand the ROM. All allocations, hooks, checksum repair, and \
              history changes commit atomically.",
@@ -104,7 +110,9 @@ impl BuiltInRuntimeInstaller {
             }
             if ui
                 .add_enabled(
-                    !stale && !workspace.selection_is_installed(),
+                    !stale
+                        && !workspace.selection_is_installed()
+                        && !workspace.selection_requires_legacy_migration(),
                     egui::Button::new("Install transactionally"),
                 )
                 .clicked()
