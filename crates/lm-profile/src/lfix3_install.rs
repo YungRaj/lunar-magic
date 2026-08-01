@@ -2,8 +2,9 @@
 
 use crate::{Lfix3RuntimeLengthError, SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_lfix3_runtime_payload};
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchWrite, RelocatablePatchPlan};
-use lm_rats::AllocationPolicy;
-use lm_rom::Mapper;
+use lm_rats::{AllocationPolicy, HEADER_LEN, HeaderError, RatsBlock, parse_at};
+use lm_rom::{Mapper, RomError, pc_to_snes, snes_to_pc};
+use std::fmt;
 
 pub const SMW_US_V1_LFIX3_SEARCH_START: usize = 0x0008_0000;
 pub const SMW_US_V1_LFIX3_SEARCH_END: usize = 0x0010_0000;
@@ -20,6 +21,168 @@ const TABLE_HELPER: [u8; 0x50] = [
     0x0a, 0x0a, 0x29, 0x70, 0x04, 0x94, 0xb9, 0x00, 0xf0, 0x0a, 0x0a, 0x0a, 0x0a, 0x85, 0x96, 0xa5,
     0x04, 0x29, 0x3f, 0x85, 0x97, 0x6b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x4c, 0x4d, 0x11, 0x01,
 ];
+
+const CURRENT_MARKER_OFFSET: usize = 0x0002_dd30 + 0x4c;
+const MUTABLE_TABLE_OFFSETS: [usize; 3] = [0x0002_de00, 0x0003_7c00, 0x0003_7e00];
+
+#[derive(Debug)]
+pub enum SmwUsV1Lfix3DetectError {
+    Plan(Lfix3RuntimeLengthError),
+    PlanMissingRuntimeHook,
+    RuntimeAddress(RomError),
+    RuntimeBeforeHeader(usize),
+    RuntimeHeader(HeaderError),
+    RuntimeOwnership {
+        expected: usize,
+        actual: usize,
+    },
+    RuntimeLength(usize),
+    FixupTargetOverflow,
+    FixedByteMismatch {
+        offset: usize,
+        expected: u8,
+        actual: Option<u8>,
+    },
+    RuntimePayloadMismatch,
+}
+
+impl fmt::Display for SmwUsV1Lfix3DetectError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "cannot authenticate current SMW-US Lfix3 runtime: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1Lfix3DetectError {}
+
+/// Authenticates Lunar Magic's current Lfix3 core without constraining its mutable level tables.
+///
+/// Returns `Ok(None)` only when both the fixed current-version marker and primary hook are absent.
+/// Either current-format signal requires every helper and entry hook to match, all seven hooks to resolve through their typed
+/// addends to one exactly owned `$510`-byte RATS payload, and that complete relocated payload to
+/// equal the recovered runtime. The three initialized 512-byte tables are deliberately excluded
+/// because ordinary level editing changes their contents.
+///
+/// # Errors
+///
+/// Rejects malformed bundled evidence, truncated or modified hooks/helpers, invalid runtime
+/// addresses, malformed/non-exact RATS ownership, and any relocated runtime payload difference.
+pub fn detect_smw_us_v1_current_lfix3_runtime(
+    bytes: &[u8],
+) -> Result<Option<RatsBlock>, SmwUsV1Lfix3DetectError> {
+    let marker_present =
+        bytes.get(CURRENT_MARKER_OFFSET..CURRENT_MARKER_OFFSET + 4) == Some(&TABLE_HELPER[0x4c..]);
+    let primary_hook_present = bytes.get(0x0002_da17).copied() == Some(0x22);
+    if !marker_present && !primary_hook_present {
+        return Ok(None);
+    }
+    let plan =
+        smw_us_v1_builtin_lfix3_installation_plan().map_err(SmwUsV1Lfix3DetectError::Plan)?;
+    let first_hook = plan
+        .writes
+        .iter()
+        .find(|write| !write.fixups.is_empty())
+        .ok_or(SmwUsV1Lfix3DetectError::PlanMissingRuntimeHook)?;
+    let operand = bytes
+        .get(first_hook.offset + 1..first_hook.offset + 4)
+        .ok_or(SmwUsV1Lfix3DetectError::FixedByteMismatch {
+            offset: first_hook.offset + 1,
+            expected: 0,
+            actual: None,
+        })?;
+    let runtime_offset = snes_to_pc(
+        Mapper::LoRom,
+        u32::from_le_bytes([operand[0], operand[1], operand[2], 0]),
+    )
+    .map_err(SmwUsV1Lfix3DetectError::RuntimeAddress)?;
+    let header_offset = runtime_offset
+        .checked_sub(HEADER_LEN)
+        .ok_or(SmwUsV1Lfix3DetectError::RuntimeBeforeHeader(runtime_offset))?;
+    let block = parse_at(bytes, header_offset).map_err(SmwUsV1Lfix3DetectError::RuntimeHeader)?;
+    if block.payload.start != runtime_offset {
+        return Err(SmwUsV1Lfix3DetectError::RuntimeOwnership {
+            expected: runtime_offset,
+            actual: block.payload.start,
+        });
+    }
+    if block.payload.len() != crate::SMW_US_V1_LFIX3_RUNTIME_LEN {
+        return Err(SmwUsV1Lfix3DetectError::RuntimeLength(block.payload.len()));
+    }
+    for write in &plan.writes {
+        if MUTABLE_TABLE_OFFSETS.contains(&write.offset) {
+            continue;
+        }
+        let mut expected = write.replacement.clone();
+        relocate_for_runtime(
+            &mut expected,
+            &write.fixups,
+            runtime_offset,
+            block.payload.len(),
+        )?;
+        require_exact(bytes, write.offset, &expected)?;
+    }
+    let mut expected_runtime = plan.payloads[0].bytes.clone();
+    relocate_for_runtime(
+        &mut expected_runtime,
+        &plan.payloads[0].fixups,
+        runtime_offset,
+        block.payload.len(),
+    )?;
+    if bytes.get(block.payload.clone()) != Some(expected_runtime.as_slice()) {
+        return Err(SmwUsV1Lfix3DetectError::RuntimePayloadMismatch);
+    }
+    Ok(Some(block))
+}
+
+fn require_exact(
+    bytes: &[u8],
+    offset: usize,
+    expected: &[u8],
+) -> Result<(), SmwUsV1Lfix3DetectError> {
+    for (index, expected) in expected.iter().copied().enumerate() {
+        let actual = bytes.get(offset + index).copied();
+        if actual != Some(expected) {
+            return Err(SmwUsV1Lfix3DetectError::FixedByteMismatch {
+                offset: offset + index,
+                expected,
+                actual,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn relocate_for_runtime(
+    bytes: &mut [u8],
+    fixups: &[PatchFixup],
+    runtime_offset: usize,
+    runtime_len: usize,
+) -> Result<(), SmwUsV1Lfix3DetectError> {
+    for fixup in fixups {
+        let target = runtime_offset
+            .checked_add(fixup.target_addend)
+            .filter(|target| *target < runtime_offset + runtime_len)
+            .ok_or(SmwUsV1Lfix3DetectError::FixupTargetOverflow)?;
+        let mut encoded = pc_to_snes(Mapper::LoRom, target)
+            .map_err(SmwUsV1Lfix3DetectError::RuntimeAddress)?
+            .to_le_bytes();
+        if matches!(
+            fixup.encoding,
+            PatchFixupEncoding::Long24LowBank | PatchFixupEncoding::Bank8LowBank
+        ) {
+            encoded[2] &= 0x7f;
+        }
+        let replacement: &[u8] = match fixup.encoding {
+            PatchFixupEncoding::Long24 | PatchFixupEncoding::Long24LowBank => &encoded[..3],
+            PatchFixupEncoding::Low16 => &encoded[..2],
+            PatchFixupEncoding::Bank8 | PatchFixupEncoding::Bank8LowBank => &encoded[2..3],
+        };
+        bytes[fixup.offset..fixup.offset + replacement.len()].copy_from_slice(replacement);
+    }
+    Ok(())
+}
 
 /// Builds the complete independently recovered Lfix3 core plan.
 ///
@@ -235,6 +398,67 @@ mod tests {
         );
         project.undo().unwrap();
         assert_eq!(project.save_snapshot(), original);
+    }
+
+    #[test]
+    fn current_detector_authenticates_runtime_but_allows_mutable_level_tables() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        assert!(
+            detect_smw_us_v1_current_lfix3_runtime(&original)
+                .unwrap()
+                .is_none()
+        );
+        let plan = smw_us_v1_builtin_lfix3_installation_plan().unwrap();
+        let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+        let installed = project.install_relocatable_patch(&plan).unwrap();
+        assert_eq!(
+            detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())
+                .unwrap()
+                .unwrap(),
+            installed.blocks[0]
+        );
+
+        let mut edited_tables = project.rom.logical_bytes().to_vec();
+        for offset in MUTABLE_TABLE_OFFSETS {
+            edited_tables[offset] ^= 0x5a;
+        }
+        assert!(
+            detect_smw_us_v1_current_lfix3_runtime(&edited_tables)
+                .unwrap()
+                .is_some()
+        );
+
+        let mut marker_only = original;
+        marker_only[CURRENT_MARKER_OFFSET..CURRENT_MARKER_OFFSET + 4]
+            .copy_from_slice(&TABLE_HELPER[0x4c..]);
+        assert!(matches!(
+            detect_smw_us_v1_current_lfix3_runtime(&marker_only),
+            Err(SmwUsV1Lfix3DetectError::RuntimeAddress(_)
+                | SmwUsV1Lfix3DetectError::RuntimeHeader(_)
+                | SmwUsV1Lfix3DetectError::RuntimeBeforeHeader(_))
+        ));
+
+        let mut modified = project.rom.logical_bytes().to_vec();
+        modified[0x0000_26cc] ^= 1;
+        assert!(matches!(
+            detect_smw_us_v1_current_lfix3_runtime(&modified),
+            Err(SmwUsV1Lfix3DetectError::FixedByteMismatch { offset: 0x26cc, .. })
+        ));
+        let mut modified = project.rom.logical_bytes().to_vec();
+        modified[CURRENT_MARKER_OFFSET] ^= 1;
+        assert!(matches!(
+            detect_smw_us_v1_current_lfix3_runtime(&modified),
+            Err(SmwUsV1Lfix3DetectError::FixedByteMismatch {
+                offset: CURRENT_MARKER_OFFSET,
+                ..
+            })
+        ));
+        let mut modified = project.rom.logical_bytes().to_vec();
+        modified[installed.blocks[0].payload.start] ^= 1;
+        assert!(matches!(
+            detect_smw_us_v1_current_lfix3_runtime(&modified),
+            Err(SmwUsV1Lfix3DetectError::RuntimePayloadMismatch)
+        ));
     }
 
     fn pe_rva(image: &[u8], rva: usize, len: usize) -> &[u8] {

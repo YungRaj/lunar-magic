@@ -32,6 +32,12 @@ impl AppState {
         }
         let locator = smw_us_v1_secondary_exit_locator();
         let loaded = project.load_secondary_exit_table_detected(locator)?;
+        if matches!(loaded.storage, SecondaryExitStorage::Installed { .. })
+            && lm_profile::detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())?
+                .is_none()
+        {
+            return Err(AppError::SecondaryExitLfix3AuthenticationMissing);
+        }
         if loaded.table == *table
             && matches!(loaded.storage, SecondaryExitStorage::Installed { .. })
         {

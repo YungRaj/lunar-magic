@@ -4,7 +4,8 @@ use crate::{
 };
 use lm_level::SecondaryExitTable;
 use lm_profile::{
-    SMW_US_V1_CHECKSUM_FIELD, smw_us_v1_builtin_secondary_exit_installation_plan_from_source,
+    SMW_US_V1_CHECKSUM_FIELD, detect_smw_us_v1_current_lfix3_runtime,
+    smw_us_v1_builtin_secondary_exit_installation_plan_from_source,
     smw_us_v1_secondary_exit_allocation_policy, smw_us_v1_secondary_exit_locator,
 };
 use lm_project::{Project, SecondaryExitStorage};
@@ -37,6 +38,11 @@ pub(crate) fn execute_command(
             let mut project = open_smw_us_v1(input_rom)?;
             let locator = smw_us_v1_secondary_exit_locator();
             let loaded = project.load_secondary_exit_table_detected(locator)?;
+            if matches!(loaded.storage, SecondaryExitStorage::Installed { .. })
+                && detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())?.is_none()
+            {
+                return Err("installed secondary-exit Lfix3 runtime did not authenticate".into());
+            }
             match loaded.storage {
                 SecondaryExitStorage::Pristine => {
                     project.install_relocatable_patch(
@@ -58,6 +64,9 @@ pub(crate) fn execute_command(
             }
             if project.load_secondary_exit_table_detected(locator)?.table != table {
                 return Err("secondary-exit semantic reopen mismatch".into());
+            }
+            if detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())?.is_none() {
+                return Err("secondary-exit Lfix3 runtime did not authenticate".into());
             }
             write_new(output_rom, project.save_snapshot())?;
             println!("imported-native-secondary-exits: 8192");

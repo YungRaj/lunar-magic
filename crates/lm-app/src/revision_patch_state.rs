@@ -114,6 +114,11 @@ impl AppState {
         {
             return Err(AppError::Lfix3IdentityMismatch);
         }
+        if lm_profile::detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())?
+            .is_some()
+        {
+            return Err(AppError::Lfix3AlreadyInstalled);
+        }
         let plan = lm_profile::smw_us_v1_builtin_lfix3_installation_plan()?;
         project.install_relocatable_patch(&plan)?;
         self.advance_project_revision()?;

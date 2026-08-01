@@ -1476,6 +1476,14 @@ shared tables, and repairs the checksum as one application revision. The dialog 
 identity, rejects a stale project revision, and closes only after application acceptance. Native
 tests route every selection through the same application commands, semantically reopen the
 installed subsystem, and prove exact input restoration with one undo.
+Current Lfix3 detection authenticates the runtime rather than trusting its fixed marker. Either the
+marker or primary hook activates strict validation of both fixed helpers, all immutable hooks, and
+the exact `$510`-byte RATS owner reached by the primary long address. The detector rebuilds every
+hook operand and all 107 internal relocations for that actual address before comparing the complete
+runtime payload. It deliberately excludes the three 512-byte tables from byte equality because
+normal level edits change them. Marker-only, damaged-marker, modified-hook, malformed-owner, and
+modified-runtime states reject; authenticated current installs disable duplicate installation, and
+installed secondary-exit edits authenticate this shared prerequisite before mutation.
 The fifth route promotes the Wine-authenticated pristine Map16 runtime transformation to the same
 native transaction boundary. It applies all recovered fixed changes under exact byte
 preconditions, places the exact `$8000`-byte auxiliary payload at the recovered aligned expansion

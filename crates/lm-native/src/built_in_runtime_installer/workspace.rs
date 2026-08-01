@@ -49,6 +49,7 @@ impl BuiltInRuntime {
 pub(super) struct BuiltInRuntimeWorkspace {
     revision: u64,
     pub runtime: BuiltInRuntime,
+    lfix3_installed: bool,
     map16_runtime_installed: bool,
 }
 
@@ -68,17 +69,21 @@ impl BuiltInRuntimeWorkspace {
                     .to_owned(),
             );
         }
-        let map16_runtime_installed = lm_profile::detect_smw_us_v1_current_map16_runtime(
-            app.project()
-                .ok_or("built-in runtime installation requires an open project")?
-                .rom
-                .logical_bytes(),
-        )
-        .map_err(|error| error.to_string())?
-        .is_some();
+        let project = app
+            .project()
+            .ok_or("built-in runtime installation requires an open project")?;
+        let lfix3_installed =
+            lm_profile::detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())
+                .map_err(|error| error.to_string())?
+                .is_some();
+        let map16_runtime_installed =
+            lm_profile::detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())
+                .map_err(|error| error.to_string())?
+                .is_some();
         Ok(Self {
             revision: snapshot.revision,
             runtime: BuiltInRuntime::default(),
+            lfix3_installed,
             map16_runtime_installed,
         })
     }
@@ -88,7 +93,11 @@ impl BuiltInRuntimeWorkspace {
     }
 
     pub(super) const fn selection_is_installed(&self) -> bool {
-        matches!(self.runtime, BuiltInRuntime::Map16Runtime) && self.map16_runtime_installed
+        match self.runtime {
+            BuiltInRuntime::Lfix3Core => self.lfix3_installed,
+            BuiltInRuntime::Map16Runtime => self.map16_runtime_installed,
+            _ => false,
+        }
     }
 
     pub(super) fn prepare(&self, project_revision: u64) -> Result<Command, String> {
@@ -96,7 +105,9 @@ impl BuiltInRuntimeWorkspace {
             return Err("the ROM changed after the runtime installer was opened; reopen it".into());
         }
         if self.selection_is_installed() {
-            return Err("the current Map16 runtime is already installed and authenticated".into());
+            return Err(
+                "the selected current runtime is already installed and authenticated".into(),
+            );
         }
         Ok(match self.runtime {
             BuiltInRuntime::ExpandedSettings => Command::InstallSettings { rev: self.revision },

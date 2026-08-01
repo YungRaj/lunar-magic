@@ -534,6 +534,12 @@ entry by hexadecimal index, stages all six logical fields through the shared sec
 rejects unloaded selections and stale project revisions, dispatches exactly one
 `ReplaceNativeSecondaryExits` command, and protects staged changes during close and application
 shutdown. Acceptance—not preparation—clears the editor workspace.
+Current Lfix3 acceptance additionally authenticates both fixed helpers, every immutable hook, all
+seven hook-to-runtime addends, exact `$510` RATS ownership, and the complete runtime after rebuilding
+all 107 relocations at its actual address. The three per-level tables remain mutable by design.
+Marker-only, damaged-marker, fixed-hook, ownership, and payload corruption must reject before an
+installed secondary-exit update; duplicate native installation must leave application history
+unchanged.
 
 Native Map16 runtime installation now routes the authenticated Lunar Magic 3.63 pristine-ROM
 transformation through the revision-bound built-in runtime dialog. The exact fixed ranges and

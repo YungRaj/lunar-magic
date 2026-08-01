@@ -93,15 +93,18 @@ pub enum AppError {
     ExpandedSettingsPlan(lm_profile::ExpandedSettingsInstallPlanError),
     Layer3Plan(lm_profile::CompleteLayer3BuildError),
     Lfix3Plan(lm_profile::Lfix3RuntimeLengthError),
+    Lfix3Detect(lm_profile::SmwUsV1Lfix3DetectError),
     Map16RuntimePlan(lm_profile::SmwUsV1Map16RuntimeInstallBuildError),
     Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
     SecondaryExitInstallPlan(lm_profile::SecondaryExitInstallBuildError),
+    SecondaryExitLfix3AuthenticationMissing,
     RevisionPatch(lm_project::RelocatablePatchError),
     RevisionPatchGroup(lm_project::RelocatablePatchGroupError),
     RatsReclamation(lm_project::RatsReclamationError),
     ExpandedSettingsIdentityMismatch,
     Layer3IdentityMismatch,
     Lfix3IdentityMismatch,
+    Lfix3AlreadyInstalled,
     Map16RuntimeIdentityMismatch,
     Map16RuntimeAlreadyInstalled,
     NativeOverworldPathIdentityMismatch,
@@ -291,6 +294,12 @@ impl From<lm_profile::CompleteLayer3BuildError> for AppError {
 impl From<lm_profile::Lfix3RuntimeLengthError> for AppError {
     fn from(value: lm_profile::Lfix3RuntimeLengthError) -> Self {
         Self::Lfix3Plan(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1Lfix3DetectError> for AppError {
+    fn from(value: lm_profile::SmwUsV1Lfix3DetectError) -> Self {
+        Self::Lfix3Detect(value)
     }
 }
 

@@ -80,7 +80,7 @@ impl BuiltInRuntimeInstaller {
             });
         ui.label(workspace.runtime.description());
         if workspace.selection_is_installed() {
-            ui.label("The current Map16 runtime is already installed and authenticated.");
+            ui.label("The selected current runtime is already installed and authenticated.");
         }
         ui.label(
             "Installation may expand the ROM. All allocations, hooks, checksum repair, and \
@@ -243,6 +243,35 @@ mod tests {
             lm_rom::SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc)
                 .unwrap()
                 .is_complementary()
+        );
+        assert!(
+            lm_profile::detect_smw_us_v1_current_lfix3_runtime(project.rom.logical_bytes())
+                .unwrap()
+                .is_some()
+        );
+        let revision = app.project_revision();
+        assert!(matches!(
+            app.dispatch(Command::InstallLfix3 { rev: revision }),
+            Err(lm_app::AppError::Lfix3AlreadyInstalled)
+        ));
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Lfix3Core;
+        assert!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .selection_is_installed()
+        );
+        assert!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .prepare(app.project_revision())
+                .is_err()
         );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
