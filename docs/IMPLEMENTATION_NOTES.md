@@ -2952,6 +2952,14 @@ Layer 1 and sprite pointers and a neighboring Layer 2 pointer remain byte-exact.
 complete staged Layer 2 value, Lunar Magic 3.63 re-exports the baseline-canonicalized stream plus
 the same insertion, the repaired checksum validates, and one application undo restores the exact
 logical ROM.
+
+The authentic Layer 1 boundary now covers existing-record lifecycle operations in addition to
+growth. `external_lunar_magic_rom_object_move_and_delete_round_trip_exactly` drags one ordinary
+object through the native canvas relocation path and removes a second through the native action
+path. The resulting RATS-owned publication changes only level `$102`'s Layer 1 pointer, reopens as
+the complete staged Rust value, and exports from Lunar Magic 3.63 as the baseline-canonicalized
+stream with the identical relocation and removal. Layer 2, sprites, the neighboring Layer 1
+pointer, checksum repair, and exact application undo are independently asserted.
 Selecting a new standard catalog command remains the explicit boundary that creates a fresh
 ordinary record and clears prior extension provenance.
 The parallel SSC catalog now has a complete application-backed mixed-table save fixture. One `$F0`

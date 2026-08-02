@@ -1935,6 +1935,13 @@ and a neighboring Layer 2 pointer exact. Lunar Magic 3.63 reopens and exports th
 stream, confirming that the recovered descriptor/pointer interpretation and allocation boundary
 agree with the original editor.
 
+The reciprocal authentic Layer 1 lifecycle gate now drives both `RelocateOrdinaryPosition` and
+record removal through the native editor before saving. The recovered relocation algorithm's
+screen-stable reorder and synthesized screen transitions survive Lunar Magic 3.63 reopen/export
+exactly, and deleting a second ordinary record preserves that resulting control-stream shape.
+Only the selected Layer 1 pointer changes; Layer 2, sprites, and the neighboring level remain
+untouched.
+
 The structure allocator consistently accounts for the 8-byte RATS header. `FindDuplicateRatsPayload` reads and compares only validated candidates and rejects sizes over `0x8000` for level payloads.
 
 ## Native overworld path-link tables

@@ -9175,6 +9175,211 @@ mod tests {
     #[ignore = "requires a locally supplied Lunar Magic-modified SMW-US ROM"]
     #[allow(
         clippy::too_many_lines,
+        reason = "one external gate retains the complete object move/delete and Lunar Magic oracle boundary"
+    )]
+    fn external_lunar_magic_rom_object_move_and_delete_round_trip_exactly() {
+        let path = std::env::var_os("LM_MODIFIED_LEVEL_ROM")
+            .expect("LM_MODIFIED_LEVEL_ROM must name the modified ROM");
+        let source = std::fs::read(path).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(source.clone()).unwrap();
+        app.dispatch(Command::SelectLevel(0x102)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let baseline = RomImage::from_bytes(snapshot.rom_bytes.clone())
+            .unwrap()
+            .logical_bytes()
+            .to_vec();
+        let baseline_image = RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap();
+        let mut baseline_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        baseline_layout.sprites =
+            lm_profile::smw_us_v1_sprite_pointer_table(&baseline_image).unwrap();
+        let baseline_layer1_pointer = baseline_layout
+            .layer1
+            .read_snes_pointer(&baseline_image, 0x102)
+            .unwrap();
+        let neighboring_layer1_pointer = baseline_layout
+            .layer1
+            .read_snes_pointer(&baseline_image, 0x101)
+            .unwrap();
+        let baseline_sprite_pointer = baseline_layout
+            .sprites
+            .read_snes_pointer(&baseline_image, 0x102)
+            .unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x102,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        assert_eq!(editor.error, None);
+        let ordinary_indexes = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .into_iter()
+            .filter(|placement| {
+                editor
+                    .controller
+                    .as_ref()
+                    .unwrap()
+                    .level()
+                    .layer1
+                    .objects
+                    .records[placement.record_index]
+                    .command_id()
+                    != 0
+            })
+            .map(|placement| placement.record_index)
+            .collect::<Vec<_>>();
+        assert!(
+            ordinary_indexes.len() >= 2,
+            "level 102 must contain two movable ordinary objects"
+        );
+        let moved_original_index = ordinary_indexes[0];
+        let vertical = editor.controller.as_ref().is_some_and(|controller| {
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
+        });
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+        );
+        let target_position = egui::pos2(52.5, 9.5);
+        let (target_screen, target_coordinates, target_perpendicular_high) =
+            object_placement_at_canvas_position(target_position, canvas, 1.0, vertical).unwrap();
+        editor.move_object_to_canvas(moved_original_index, target_position, canvas, 1.0, vertical);
+        assert_eq!(editor.error, None);
+        let moved_index = editor.selected_object;
+        let deleted_index = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .into_iter()
+            .map(|placement| placement.record_index)
+            .find(|&index| {
+                index != moved_index
+                    && editor
+                        .controller
+                        .as_ref()
+                        .unwrap()
+                        .level()
+                        .layer1
+                        .objects
+                        .records[index]
+                        .command_id()
+                        != 0
+            })
+            .expect("a second ordinary object must survive relocation");
+        editor.selected_object = deleted_index;
+        editor.reload_object_form();
+        editor.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Remove {
+            index: deleted_index,
+        }])));
+        assert_eq!(editor.error, None);
+        let expected_rust_layer1 = editor.controller.as_ref().unwrap().level().layer1.clone();
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
+            .unwrap();
+
+        let image = app.project().unwrap().rom.clone();
+        let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        let relocated_layer1_pointer = layout.layer1.read_snes_pointer(&image, 0x102).unwrap();
+        assert_ne!(relocated_layer1_pointer, baseline_layer1_pointer);
+        let relocated_layer1_offset = relocated_layer1_pointer.to_pc(layout.mapper).unwrap();
+        assert!(
+            lm_rats::parse_at(
+                image.logical_bytes(),
+                relocated_layer1_offset - lm_rats::HEADER_LEN
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            layout.layer1.read_snes_pointer(&image, 0x101).unwrap(),
+            neighboring_layer1_pointer
+        );
+        assert_eq!(
+            layout.sprites.read_snes_pointer(&image, 0x102).unwrap(),
+            baseline_sprite_pointer
+        );
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(0x102, layout, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(reopened.layer1, expected_rust_layer1);
+
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let temporary = tempfile::Builder::new()
+            .prefix("lm-modified-level-object-lifecycle-wine-")
+            .tempdir()
+            .unwrap();
+        let directory = temporary.path();
+        let baseline_rom_path = directory.join("baseline modified ROM.smc");
+        let baseline_mwl_path = directory.join("baseline object lifecycle.mwl");
+        let rom_path = directory.join("rust object lifecycle ROM.smc");
+        let mwl_path = directory.join("rust object lifecycle.mwl");
+        std::fs::write(&baseline_rom_path, &source).unwrap();
+        std::fs::write(&rom_path, app.project().unwrap().rom.as_file_bytes()).unwrap();
+        prepare_lunar_magic_restore_files(&root, directory);
+        export_level_with_lunar_magic(&root, &baseline_rom_path, &baseline_mwl_path, 0x102);
+        export_level_with_lunar_magic(&root, &rom_path, &mwl_path, 0x102);
+        let decode_export = |path: &std::path::Path| {
+            lm_project::MwlNativeLevel::decode(
+                &lm_level::MwlFile::decode(&std::fs::read(path).unwrap()).unwrap(),
+                &SpriteLengthTable::standard(),
+                32,
+                &[false; 256],
+            )
+            .unwrap()
+        };
+        let baseline_exported = decode_export(&baseline_mwl_path);
+        let exported = decode_export(&mwl_path);
+        let mut expected_exported_layer1 = baseline_exported.layer1.clone();
+        let expected_moved_index = expected_exported_layer1
+            .objects
+            .relocate_ordinary_object_position(
+                moved_original_index,
+                target_screen,
+                target_coordinates,
+                target_perpendicular_high,
+            )
+            .unwrap();
+        assert_eq!(expected_moved_index, moved_index);
+        expected_exported_layer1
+            .objects
+            .apply_edits(&[ObjectEdit::Remove {
+                index: deleted_index,
+            }])
+            .unwrap();
+        assert_eq!(exported.layer1, expected_exported_layer1);
+        assert_eq!(exported.layer2, baseline_exported.layer2);
+        assert_eq!(exported.sprites, baseline_exported.sprites);
+        assert!(
+            lm_rom::detect_identity(
+                &RomImage::from_bytes(std::fs::read(&rom_path).unwrap()).unwrap()
+            )
+            .unwrap()
+            .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.logical_bytes(), baseline);
+    }
+
+    #[test]
+    #[ignore = "requires a locally supplied Lunar Magic-modified SMW-US ROM"]
+    #[allow(
+        clippy::too_many_lines,
         reason = "one external gate retains the complete Layer 2 save and Lunar Magic oracle boundary"
     )]
     fn external_lunar_magic_rom_layer2_object_insertion_is_isolated_and_undoes() {
