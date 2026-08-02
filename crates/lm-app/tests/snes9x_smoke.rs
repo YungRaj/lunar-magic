@@ -2,8 +2,8 @@
 
 use lm_app::{AppState, Command as AppCommand, Map16ControllerEdit, SmwMap16Controller};
 use lm_level::{
-    Map16Address, Map16Quadrant, NativeLayer2Data, ObjectEdit, SpriteLengthTable, SpriteToken,
-    Subtile,
+    CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, ObjectEdit,
+    SpriteLengthTable, SpriteToken, Subtile,
 };
 use lm_profile::{SmwUsV1CompleteMap16SaveOptions, load_smw_us_v1_transferred_map16};
 use lm_project::Project;
@@ -305,6 +305,83 @@ fn rust_layer1_object_edit_survives_snes9x_initialization() {
     fs::create_dir(&directory).expect("create Snes9x smoke directory");
     let output = directory.join("Rust-Layer1-object-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write Layer 1 object-edited ROM");
+    require_snes9x_initialization(&snes9x, &output);
+    fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
+}
+
+#[test]
+#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
+fn rust_custom_time_and_support_patch_b_survive_snes9x_initialization() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = snes9x_binary();
+    let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    let sprite_lengths = SpriteLengthTable::standard();
+    let custom_time = CustomTimeSettings::new(0xabc, true).expect("construct custom time");
+    let mut project = Project::new(
+        RomImage::from_bytes(fs::read(source_rom(&root)).expect("read source SMW ROM"))
+            .expect("decode source SMW ROM"),
+    );
+    let patch =
+        lm_profile::smw_us_v1_support_patch_b_installation_plan(project.rom.logical_bytes())
+            .expect("build support patch B installation");
+    project
+        .install_relocatable_patch(&patch)
+        .expect("install support patch B");
+    let mut level = project
+        .load_level_slot(0x105, layout, &sprite_lengths)
+        .expect("load level 105");
+    level
+        .layer1
+        .objects
+        .set_custom_time(false, Some(custom_time))
+        .expect("stage forced custom time");
+
+    let allocation_start = project.rom.logical_len();
+    let logical_len = 0x10_0000;
+    project
+        .expand_rom(Mapper::LoRom, logical_len, 0xff, 0x7fdc)
+        .expect("expand custom-time ROM");
+    let allocation = AllocationPolicy {
+        search: allocation_start..logical_len,
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0xff],
+        protected: vec![
+            ProtectedRange(0x2e000..0x2e600),
+            ProtectedRange(0x7fc0..0x8000),
+        ],
+    };
+    project
+        .save_level_layer1_with_checksum(
+            layout,
+            &level,
+            0x7fdc,
+            &LevelSaveOptions {
+                layer1_allocation: allocation.clone(),
+                sprite_allocation: allocation,
+                previous_layer1: None,
+                previous_sprites: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .expect("save custom-time level");
+    let reopened = project
+        .load_level_slot(0x105, layout, &sprite_lengths)
+        .expect("reopen custom-time level");
+    assert_eq!(
+        reopened.layer1.objects.custom_time(false),
+        Some(custom_time)
+    );
+    assert_eq!(
+        lm_profile::detect_smw_us_v1_support_patch_b(project.rom.logical_bytes())
+            .expect("authenticate support patch B"),
+        lm_profile::SmwUsV1SupportPatchBState::Installed
+    );
+
+    let directory = smoke_directory();
+    fs::create_dir(&directory).expect("create Snes9x smoke directory");
+    let output = directory.join("Rust-custom-time-support-patch-B-SMW.sfc");
+    fs::write(&output, project.save_snapshot()).expect("write custom-time ROM");
     require_snes9x_initialization(&snes9x, &output);
     fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
 }

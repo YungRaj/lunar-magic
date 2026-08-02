@@ -21,8 +21,9 @@ Cached identity checksum evidence is revision-coherent: tests require checksum-v
 prepared commits, grouped payload saves, undo, and redo to refresh both stored and computed values.
 Unqualified projects remain explicitly without identity rather than fabricating checksum metadata.
 On macOS, the opt-in `snes9x_smoke` gates expand the supplied pristine fixture, insert/repoint a
-standard Layer 1 object, update a fixed-width standard sprite placement in place, and independently
-edit/repoint installed level `$105` Layer 2 through the Rust project API. A fifth gate starts from
+standard Layer 1 object, install support patch B plus a forced `$ABC` custom-time command, update a
+fixed-width standard sprite placement in place, and independently edit/repoint installed level
+`$105` Layer 2 through the Rust project API. Another gate starts from
 the pristine fixture, uses the snapshot-bound application controller to change a Map16 quadrant,
 expands and installs all native split tables, and reopens the exact definition before launch. Every
 path repairs the checksum, semantically reopens the generated state, launches only the temporary
