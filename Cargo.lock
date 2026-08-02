@@ -1657,6 +1657,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lm-package"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "tempfile",
+]
+
+[[package]]
 name = "lm-profile"
 version = "0.1.0"
 dependencies = [

@@ -136,6 +136,7 @@ The detailed inventory, usage guides, and recovery evidence live in `docs/`:
 - [Architecture](docs/REIMPLEMENTATION_ARCHITECTURE.md)
 - [Compatibility and test matrix](docs/REIMPLEMENTATION_TEST_MATRIX.md)
 - [Product feature-parity ledger](docs/FEATURE_PARITY_MATRIX.md)
+- [Portable release bundles](docs/PORTABLE_RELEASES.md)
 
 ## What is not finished
 
@@ -147,7 +148,7 @@ This is not yet a drop-in replacement for Lunar Magic. Important remaining areas
 - Broader ROM-revision and ecosystem compatibility, including more SA-1 and modified-ROM fixtures.
 - Exhaustive behavioral comparison against Lunar Magic 3.63 for all save and transfer operations.
 - Usability work expected from a mature editor: polished tools, keyboard workflows, diagnostics,
-  documentation, and installer/release packaging.
+  installers, signed releases, updates, and crash-session recovery.
 
 Do not infer feature parity from the number of implemented formats. A format is considered complete
 only when its decode, edit, save, reopen, undo/redo, GUI, and differential compatibility evidence
@@ -211,6 +212,7 @@ native GUI and CLI
 | `lm-app` | GUI-neutral application state, commands, effects, and controllers |
 | `lm-native` | Cross-platform `egui`/`eframe` graphical frontend |
 | `lm-cli` | Headless format, rendering, ROM-editing, and oracle workflows |
+| `lm-package` | Deterministic create-new portable release archives and SHA-256 manifests |
 
 ### Where to start reading
 

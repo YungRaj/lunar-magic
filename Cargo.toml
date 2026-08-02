@@ -15,6 +15,7 @@ members = [
     "crates/lm-native",
     "crates/lm-snes",
     "crates/lm-title",
+    "crates/lm-package",
 ]
 resolver = "2"
 

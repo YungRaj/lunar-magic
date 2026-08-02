@@ -1,0 +1,54 @@
+name: Portable release bundles
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  PACKAGE_VERSION: 0.1.0
+
+jobs:
+  package:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build editor binaries
+        run: cargo build --locked --release --target ${{ matrix.target }} -p lm-native -p lm-cli
+      - name: Test the portable packager
+        run: cargo test --locked -p lm-package
+      - name: Create deterministic bundle
+        run: >-
+          cargo run --locked --release -p lm-package --
+          --bin-dir target/${{ matrix.target }}/release
+          --output-dir dist
+          --target ${{ matrix.target }}
+          --version ${{ env.PACKAGE_VERSION }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lunar-magic-rust-${{ env.PACKAGE_VERSION }}-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
