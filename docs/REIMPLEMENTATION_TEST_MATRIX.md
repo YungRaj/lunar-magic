@@ -512,6 +512,9 @@ operation so an exit cannot be accidentally rewritten as an ordinary object. The
 derives original/staged serialized lengths with the active SSC table and identifies the exact
 in-place or shared-bank copy-on-write save path; a live Lunar Magic 3.63 Wine oracle reopens the
 grown RATS-owned stream and exports the identical canonical decoded sprite sequence. Native
+screen-jump controls expose their encoding-order first component as five bits and second component
+as four bits, reconstruct only the respective `$0F1F`/`$1F0F` packed domains, preserve low-first or
+high-first ordering, and reload the accepted staged target into semantic and raw controls. Native
 screen-exit records expose their five-bit source screen and exact 16-bit destination/flags value;
 semantic edits set Lunar Magic's required `$0400` flag, canonically switch between parameter-0
 compact and parameter-2 extended shapes, preserve the unrelated new-screen bit, reject non-exit

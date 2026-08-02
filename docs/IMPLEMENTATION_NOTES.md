@@ -435,7 +435,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   baseline, redo survives ordinary navigation, and a divergent semantic edit invalidates only the
   abandoned branch; the visible forms and canvas selection are refreshed after either operation.
   Native screen-jump controls receive a separate packed-target editor that preserves their recovered
-  low-first or high-first encoding and rejects targets that the original record form cannot hold.
+  low-first or high-first encoding. The GUI presents the real five-bit first and four-bit second
+  encoded components, so it cannot construct holes outside the encoding's `$0F1F`/`$1F0F` mask;
+  accepted edits reload the staged semantic and raw forms, while programmatic invalid targets still
+  reject atomically.
   Native screen-exit objects likewise have a dedicated source-screen and destination/flags form.
   Editing follows Lunar Magic's recovered command-zero parameter-0/parameter-2 compact and extended
   representations, can change record shape without losing the unrelated new-screen bit, and reloads

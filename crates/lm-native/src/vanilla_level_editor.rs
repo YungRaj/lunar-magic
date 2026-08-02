@@ -3171,16 +3171,27 @@ impl VanillaLevelEditor {
                     lm_level::ScreenJumpEncoding::FirstHigh => "high byte first",
                 }
             ));
+            let (mut first, mut second) = screen_jump_components(*encoding, *target);
             egui::Grid::new("vanilla-screen-jump-fields").show(ui, |ui| {
-                ui.label("Packed target");
+                ui.label("First encoded component");
                 ui.add(
-                    egui::DragValue::new(target)
-                        .range(0..=0x1f1f)
-                        .hexadecimal(4, false, true),
+                    egui::DragValue::new(&mut first)
+                        .range(0..=0x1f)
+                        .hexadecimal(2, false, true),
+                );
+                ui.end_row();
+                ui.label("Second encoded component");
+                ui.add(
+                    egui::DragValue::new(&mut second)
+                        .range(0..=0x0f)
+                        .hexadecimal(2, false, true),
                 );
                 ui.end_row();
             });
-            ui.small("Only bits representable by the selected native encoding are accepted.");
+            *target = pack_screen_jump_components(*encoding, first, second);
+            ui.small(format!(
+                "Packed target: {target:04X}. The original low/high ordering is preserved."
+            ));
         } else {
             egui::Grid::new("vanilla-object-fields").show(ui, |ui| {
                 header_row(ui, "Command", &mut self.object_form.command_id, 0x3f);
@@ -7806,6 +7817,30 @@ fn selected_object_form(records: &[ObjectRecord], selected: usize) -> Option<Obj
     records.get(selected).map(ObjectForm::from_record)
 }
 
+const fn screen_jump_components(
+    encoding: lm_level::ScreenJumpEncoding,
+    packed_target: u16,
+) -> (u8, u8) {
+    let [low, high] = packed_target.to_le_bytes();
+    match encoding {
+        lm_level::ScreenJumpEncoding::FirstLow => (low & 0x1f, high & 0x0f),
+        lm_level::ScreenJumpEncoding::FirstHigh => (high & 0x1f, low & 0x0f),
+    }
+}
+
+const fn pack_screen_jump_components(
+    encoding: lm_level::ScreenJumpEncoding,
+    first: u8,
+    second: u8,
+) -> u16 {
+    match encoding {
+        lm_level::ScreenJumpEncoding::FirstLow => u16::from_le_bytes([first & 0x1f, second & 0x0f]),
+        lm_level::ScreenJumpEncoding::FirstHigh => {
+            u16::from_le_bytes([second & 0x0f, first & 0x1f])
+        }
+    }
+}
+
 fn is_supported(snapshot: &lm_app::ControllerSnapshot) -> bool {
     snapshot.identity.game == SupportedGame::SuperMarioWorld
         && snapshot.identity.region == Region::NorthAmerica
@@ -8806,6 +8841,52 @@ mod tests {
             ObjectForm::from_record(&ObjectRecord::new(vec![0, 0, 0]).unwrap()).screen_jump,
             None
         );
+    }
+
+    #[test]
+    fn screen_jump_components_bound_every_valid_value_and_preserve_encoding_order() {
+        use lm_level::ScreenJumpEncoding::{FirstHigh, FirstLow};
+
+        for (encoding, packed, components) in [
+            (FirstLow, 0x0f1f, (0x1f, 0x0f)),
+            (FirstHigh, 0x1f0f, (0x1f, 0x0f)),
+            (FirstLow, 0x0c0d, (0x0d, 0x0c)),
+            (FirstHigh, 0x1c0d, (0x1c, 0x0d)),
+        ] {
+            assert_eq!(screen_jump_components(encoding, packed), components);
+            assert_eq!(
+                pack_screen_jump_components(encoding, components.0, components.1),
+                packed
+            );
+        }
+
+        assert_eq!(pack_screen_jump_components(FirstLow, 0xff, 0xff), 0x0f1f);
+        assert_eq!(pack_screen_jump_components(FirstHigh, 0xff, 0xff), 0x1f0f);
+    }
+
+    #[test]
+    fn applied_screen_jump_form_reloads_the_original_encoding_and_exact_target() {
+        for (source, requested) in [(vec![0x0d, 0x0c, 1], 0x0f1f), (vec![0x1c, 0x0d, 3], 0x1f0f)] {
+            let source = ObjectRecord::new(source).unwrap();
+            let encoding = source.screen_jump().unwrap().encoding;
+            let mut form = ObjectForm::from_record(&source);
+            form.screen_jump = Some((encoding, requested));
+            let edits = object_field_edits(&form, 0, Some(&source)).unwrap();
+            let [
+                ObjectEdit::SetScreenJumpTarget {
+                    index: 0,
+                    packed_target,
+                },
+            ] = edits.as_slice()
+            else {
+                panic!("screen-jump form must stage one semantic edit");
+            };
+            assert_eq!(*packed_target, requested);
+            let mut staged = source.clone();
+            staged.set_screen_jump_target(*packed_target).unwrap();
+            let refreshed = selected_object_form(std::slice::from_ref(&staged), 0).unwrap();
+            assert_eq!(refreshed.screen_jump, Some((encoding, requested)));
+        }
     }
 
     #[test]
