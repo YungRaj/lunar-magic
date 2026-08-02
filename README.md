@@ -128,6 +128,8 @@ The project currently has tested support for substantial parts of the SMW editin
   that ignores irrelevant allocation placement.
 - A permission-gated external-emulator workflow that runs the current in-memory ROM snapshot,
   supports configured level-context arguments, and owns stop/reap/temporary-file cleanup.
+- Checksummed native crash recovery for committed unsaved ROM revisions, restored as an unnamed
+  dirty project so the recovered result must be published explicitly with Save As.
 
 The detailed inventory, usage guides, and recovery evidence live in `docs/`:
 
@@ -150,7 +152,8 @@ This is not yet a drop-in replacement for Lunar Magic. Important remaining areas
 - Broader ROM-revision and ecosystem compatibility, including more SA-1 and modified-ROM fixtures.
 - Exhaustive behavioral comparison against Lunar Magic 3.63 for all save and transfer operations.
 - Usability work expected from a mature editor: polished tools, keyboard workflows, diagnostics,
-  installers, signed releases, updates, and crash-session recovery.
+  installers, signed releases, updates, and recovery of editor-local staged forms in addition to
+  the implemented committed-ROM crash snapshot.
 
 Do not infer feature parity from the number of implemented formats. A format is considered complete
 only when its decode, edit, save, reopen, undo/redo, GUI, and differential compatibility evidence

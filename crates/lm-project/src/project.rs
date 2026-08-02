@@ -51,6 +51,19 @@ impl Project {
         Ok(project)
     }
 
+    /// Opens recovered bytes while retaining their last-saved physical baseline.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either image is malformed or the current image is unsupported.
+    pub fn open_recovered(
+        original: Vec<u8>,
+        current: Vec<u8>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let rom = RomImage::from_recovery(original, current)?;
+        Ok(Self::open_supported(rom)?)
+    }
+
     #[must_use]
     pub fn is_modified(&self) -> bool {
         self.rom.has_file_changes()
@@ -386,6 +399,12 @@ impl Project {
     #[must_use]
     pub fn save_snapshot(&self) -> Vec<u8> {
         self.rom.as_file_bytes().to_vec()
+    }
+
+    /// Returns the exact physical bytes at the last successful save boundary.
+    #[must_use]
+    pub fn saved_baseline_snapshot(&self) -> Vec<u8> {
+        self.rom.original_file_bytes().to_vec()
     }
 
     /// Marks the current ROM state as successfully persisted.

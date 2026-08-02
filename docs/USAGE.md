@@ -59,6 +59,18 @@ After saving:
 2. Test it in an emulator.
 3. Retain the source and output hashes when reporting a discrepancy.
 
+## Recover after an interrupted session
+
+While the ROM has committed changes that have not been saved, the native editor maintains a
+checksummed recovery record in the platform application-data directory. If the process or machine
+stops unexpectedly, the next ordinary launch offers **Recover** or **Discard Recovery**. Recovery
+opens the exact unsaved ROM as an unnamed dirty project and restores the active level; use
+**File → Save As** to publish it without silently replacing the source ROM.
+
+A normal save or clean close removes the record. This milestone protects changes already committed
+to the project ROM. Values still staged inside an open editor form, multi-document recovery, and
+undo-history restoration are not yet included.
+
 ## Test the current ROM in an emulator
 
 While a level is open, choose **Tools → Test ROM in Emulator…** and select an emulator executable

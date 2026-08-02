@@ -38,6 +38,19 @@ impl RomImage {
         })
     }
 
+    /// Reconstructs an image whose accepted baseline and current file bytes differ.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RomError::ImageTooSmall`] if either physical image is too small.
+    pub fn from_recovery(original: Vec<u8>, current: Vec<u8>) -> Result<Self, RomError> {
+        let mut image = Self::from_bytes(original)?;
+        let current = Self::from_bytes(current)?;
+        image.bytes = current.bytes;
+        image.header = current.header;
+        Ok(image)
+    }
+
     #[must_use]
     pub const fn copier_header(&self) -> CopierHeader {
         self.header
@@ -49,6 +62,12 @@ impl RomImage {
     #[must_use]
     pub fn as_file_bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Returns the exact physical bytes of the last accepted save baseline.
+    #[must_use]
+    pub fn original_file_bytes(&self) -> &[u8] {
+        &self.original
     }
     #[must_use]
     pub fn logical_bytes(&self) -> &[u8] {
@@ -459,5 +478,22 @@ mod tests {
         );
         rom.replace_logical_tail(0x8000, &appended, &[]).unwrap();
         assert_eq!(rom.logical_len(), 0x8000);
+    }
+
+    #[test]
+    fn recovery_retains_baseline_across_header_and_length_changes() {
+        let original = vec![0x11; 0x8000];
+        let mut current = vec![0x22; COPIER_HEADER_LEN];
+        current.extend(vec![0x11; 0x1_0000]);
+        let mut recovered = RomImage::from_recovery(original.clone(), current.clone()).unwrap();
+        assert_eq!(recovered.original_file_bytes(), original);
+        assert_eq!(recovered.as_file_bytes(), current);
+        assert_eq!(recovered.copier_header(), CopierHeader::Present);
+        assert!(recovered.has_file_changes());
+
+        recovered.restore_original();
+        assert_eq!(recovered.as_file_bytes(), original);
+        assert_eq!(recovered.copier_header(), CopierHeader::Absent);
+        assert!(!recovered.has_file_changes());
     }
 }

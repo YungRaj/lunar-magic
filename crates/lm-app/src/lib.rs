@@ -85,6 +85,7 @@ mod project_state;
 mod rats_reclamation_state;
 mod recent_documents;
 pub mod recent_state_file;
+mod recovery;
 mod revision_patch_state;
 mod revision_profile;
 mod revision_profile_state;
@@ -284,6 +285,7 @@ pub use palette_ownership_file::{PaletteOwnershipFile, PaletteOwnershipFileError
 pub use prepared_commit::PreparedRomCommit;
 pub use profile_controller::{ProfileControllerError, RevisionProfileControllers};
 pub use recent_documents::{RecentDocuments, RecentDocumentsError};
+pub use recovery::RecoverySnapshot;
 pub use revision_profile::{
     DirectTableAudit, PointerTableAudit, RevisionAllocationError, RevisionProfile,
     RevisionProfileAudit, RevisionProfileAuditError, RevisionProfileError,

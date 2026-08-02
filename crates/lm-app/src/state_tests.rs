@@ -1,4 +1,5 @@
 use super::*;
+use crate::RecoverySnapshot;
 use crate::ToolInvocation;
 
 fn localization(locale: &str) -> LocalizationCatalog {
@@ -182,6 +183,77 @@ fn test_rom() -> Vec<u8> {
     let checksum = lm_rom::compute_snes_checksum(&bytes, 0x7fdc).unwrap();
     bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
     bytes
+}
+
+#[test]
+fn crash_recovery_restores_exact_dirty_bytes_level_and_saved_baseline() {
+    let original = test_rom();
+    let mut app = AppState::default();
+    app.load_rom_at(original.clone(), Some("source.smc".into()))
+        .unwrap();
+    app.dispatch(Command::SelectLevel(0x1ab)).unwrap();
+    app.dispatch(Command::CommitRomWrites {
+        expected_revision: 0,
+        description: "unsaved recovery edit".into(),
+        writes: vec![lm_project::RomWrite {
+            offset: 4,
+            bytes: vec![0xa5],
+        }],
+    })
+    .unwrap();
+    let snapshot = app.recovery_snapshot().unwrap();
+    assert_eq!(snapshot.saved_baseline, original);
+    assert_ne!(snapshot.current_rom, snapshot.saved_baseline);
+    assert_eq!(snapshot.level, Some(0x1ab));
+
+    let mut recovered = AppState::default();
+    recovered.load_recovery(snapshot.clone()).unwrap();
+    assert_eq!(recovered.document_path, None);
+    assert_eq!(recovered.mode, EditorMode::Level(0x1ab));
+    assert_eq!(
+        recovered.controller_snapshot().unwrap().rom_bytes,
+        snapshot.current_rom
+    );
+    assert_eq!(
+        recovered.recovery_snapshot().unwrap().saved_baseline,
+        snapshot.saved_baseline
+    );
+    assert_eq!(
+        recovered.capabilities().project,
+        ProjectStatus::OpenModified
+    );
+}
+
+#[test]
+fn crash_recovery_rejects_clean_records_and_open_project_replacement() {
+    let original = test_rom();
+    let clean = RecoverySnapshot {
+        revision: 7,
+        level: Some(0x105),
+        saved_baseline: original.clone(),
+        current_rom: original.clone(),
+    };
+    let mut app = AppState::default();
+    assert!(matches!(
+        app.load_recovery(clean),
+        Err(AppError::Recovery(_))
+    ));
+
+    app.load_rom(original).unwrap();
+    let dirty = RecoverySnapshot {
+        revision: 8,
+        level: None,
+        saved_baseline: test_rom(),
+        current_rom: {
+            let mut bytes = test_rom();
+            bytes[3] = 1;
+            bytes
+        },
+    };
+    assert!(matches!(
+        app.load_recovery(dirty),
+        Err(AppError::ProjectAlreadyOpen)
+    ));
 }
 
 fn test_profile() -> RevisionProfile {

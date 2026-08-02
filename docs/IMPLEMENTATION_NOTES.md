@@ -2518,6 +2518,17 @@ Normal close refuses unsaved changes. Save acknowledges the controller revision 
 sidecars publish; a failed paired write releases its pending token and remains immediately
 retryable without marking the edited model clean.
 
+Native crash recovery is deliberately separate from normal ROM persistence. Every new dirty
+application revision captures both the exact accepted physical save baseline and the exact current
+physical ROM in a bounded `LMRECOV1` record. A worker publishes through a synchronized temporary
+file in the platform-local application-data directory, keeping frame rendering independent of ROM
+size. The record carries explicit lengths, active-level context, and CRC-32 framing; malformed,
+oversized, clean, non-regular, and unsupported records cannot replace application state. Startup
+recovery installs an unnamed project whose current bytes remain dirty relative to the retained
+baseline, forcing the first publication through Save As. Clean save/close and explicit discard
+remove the record. Editor-local forms that have not yet dispatched a project mutation and undo
+history remain outside this first recovery boundary.
+
 `LM16SET1` stores all Map16 graphics pages followed by all Acts Like pages with an explicit bounded
 page count. `map16-set-file` can inspect it, validate every Acts Like chain in near-linear time,
 write a normalized copy, and emit a page/tile-addressable oracle observation. Inspection reports

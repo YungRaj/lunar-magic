@@ -74,6 +74,7 @@ mod path_editor_forms;
 mod persistence_worker;
 mod profile_loader;
 mod rats_reclamation_dialog;
+mod recovery_store;
 mod restore_point_dialog;
 mod revision_patch_installer;
 mod rom_allocation;
@@ -137,6 +138,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(move |context| {
             context.egui_ctx.set_zoom_factor(1.0);
             let mut app = app;
+            app.enable_crash_recovery();
             app.load_persistent_preferences(context.storage);
             Ok(Box::new(app))
         }),

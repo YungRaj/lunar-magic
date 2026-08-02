@@ -2,7 +2,8 @@
 
 Portable bundles are the first release-engineering milestone for the Rust editor. They provide a
 repeatable archive containing the graphical editor and command-line tool; they do not yet provide
-an installer, code signing or notarization, automatic updates, or crash-session recovery.
+an installer, code signing or notarization, or automatic updates. The graphical editor separately
+maintains a local crash-recovery record for committed unsaved ROM changes.
 
 ## Bundle contents
 

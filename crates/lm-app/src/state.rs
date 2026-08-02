@@ -49,6 +49,7 @@ pub enum AppError {
     NoLevelView,
     NoRevisionProfile,
     ProjectAlreadyOpen,
+    Recovery(String),
     EmptyEditDescription,
     StaleProjectRevision {
         expected: u64,

@@ -34,6 +34,7 @@ use crate::{
     palette_editor::PaletteEditor,
     path_editor::PathEditor,
     rats_reclamation_dialog::RatsReclamationDialog,
+    recovery_store::RecoveryStore,
     restore_point_dialog::RestorePointDialog,
     revision_patch_installer::RevisionPatchInstaller,
     rom_boss_sequence_editor::RomBossSequenceEditor,
@@ -149,6 +150,7 @@ pub(crate) struct NativeApplication {
     revision_patch_installer: RevisionPatchInstaller,
     rats_reclamation_dialog: RatsReclamationDialog,
     restore_point_dialog: RestorePointDialog,
+    recovery_store: RecoveryStore,
     recent_state: Option<lm_app::recent_state_file::RecentStateFile>,
     configuration_loader: ConfigurationLoader,
     profile_loader: crate::profile_loader::ProfileLoader,
@@ -181,6 +183,58 @@ impl NativeApplication {
                 ..Self::default()
             },
         }
+    }
+
+    pub(crate) fn enable_crash_recovery(&mut self) {
+        self.recovery_store.enable();
+        if let Some(error) = self.recovery_store.error.take() {
+            self.effects.error = Some(error);
+        }
+    }
+
+    fn show_crash_recovery(&mut self, context: &egui::Context) {
+        let Some(snapshot) = self.recovery_store.pending.as_ref() else {
+            return;
+        };
+        let revision = snapshot.revision;
+        let level = snapshot.level;
+        let project_open = self.app.controller_snapshot().is_ok();
+        egui::Window::new("Recover unsaved ROM")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(context, |ui| {
+                ui.label("An unsaved ROM snapshot from an interrupted session is available.");
+                ui.label(format!("Revision: {revision}"));
+                if let Some(level) = level {
+                    ui.label(format!("Last active level: {level:03X}"));
+                }
+                ui.label("Recovery opens an unnamed dirty copy and requires Save As.");
+                if project_open {
+                    ui.label("Close the current ROM before recovering this snapshot.");
+                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(!project_open, egui::Button::new("Recover"))
+                        .clicked()
+                    {
+                        let snapshot = self
+                            .recovery_store
+                            .take_pending()
+                            .expect("the recovery prompt owns a pending record");
+                        match self.app.load_recovery(snapshot) {
+                            Ok(()) => {
+                                self.recovery_store.clear_current();
+                                self.renderer.invalidate();
+                            }
+                            Err(error) => self.effects.error = Some(error.to_string()),
+                        }
+                    }
+                    if ui.button("Discard Recovery").clicked() {
+                        self.recovery_store.discard_pending();
+                    }
+                });
+            });
     }
 
     pub(crate) fn load_persistent_preferences(&mut self, storage: Option<&dyn eframe::Storage>) {
@@ -442,6 +496,7 @@ impl eframe::App for NativeApplication {
             self.request_quit(context);
         }
         self.prepare_frame(context);
+        self.show_crash_recovery(context);
         egui::TopBottomPanel::top("menu").show(context, |ui| self.menu_bar(context, ui));
         egui::TopBottomPanel::top("toolbar").show(context, |ui| self.toolbar(context, ui));
         egui::TopBottomPanel::bottom("status").show(context, |ui| {
@@ -505,6 +560,16 @@ impl eframe::App for NativeApplication {
         }
         self.show_editor_windows(context);
         self.show_global_effects(context);
+        let recovery_revision = matches!(
+            self.app.capabilities().project,
+            lm_app::ProjectStatus::OpenModified
+        )
+        .then(|| self.app.project_revision());
+        self.recovery_store
+            .synchronize_project(recovery_revision, || self.app.recovery_snapshot());
+        if let Some(error) = self.recovery_store.error.take() {
+            self.effects.error = Some(error);
+        }
         #[cfg(feature = "visual-smoke")]
         self.capture_visual_smoke(context);
     }
