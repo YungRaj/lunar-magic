@@ -3,6 +3,7 @@
 mod app_types;
 mod clipboard;
 mod command;
+mod compatibility_report;
 mod complete_level_document_controller;
 mod copier_header_state;
 mod credits_tilemap_state;
@@ -119,6 +120,7 @@ pub use clipboard::{
     NativeMap16ClipboardError,
 };
 pub use command::{Command, RomExpansionCommand};
+pub use compatibility_report::RomCompatibilityReport;
 pub use complete_level_document_controller::{
     CompleteLevelDocumentController, CompleteLevelDocumentControllerError,
     CompleteLevelDocumentEdit, CompleteLevelDocumentEditError, CompleteLevelDocumentSaveSnapshot,

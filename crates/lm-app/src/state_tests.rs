@@ -256,6 +256,131 @@ fn crash_recovery_rejects_clean_records_and_open_project_replacement() {
     ));
 }
 
+#[test]
+fn compatibility_report_is_path_free_and_classifies_pristine_runtime_state() {
+    let mut app = AppState::default();
+    app.load_rom_at(
+        crate::test_support::pristine_smw_us_rom_bytes(),
+        Some("/secret/projects/private-hack.sfc".into()),
+    )
+    .unwrap();
+    let report = app.rom_compatibility_report();
+    for field in [
+        "Game: Super Mario World",
+        "Region: North America",
+        "Revision: 0",
+        "Mapper: LoROM",
+        "Current identity: valid",
+        "Copier header: absent",
+        "Logical bytes: 524288",
+        "Checksum status: valid",
+        "Dirty: false",
+        "Revision profile: not-installed",
+        "Layer 2 runtime: absent",
+        "Map16 runtime: absent",
+        "Lfix3 runtime: absent",
+        "Compatibility warnings: 0",
+    ] {
+        assert!(
+            report.text.contains(field),
+            "missing report field {field:?}"
+        );
+    }
+    assert_eq!(report.warnings, 0);
+    assert!(report.text.len() < 8192);
+    assert!(!report.text.contains("secret"));
+    assert!(!report.text.contains("private-hack"));
+}
+
+#[test]
+fn compatibility_report_surfaces_checksum_and_partial_runtime_corruption() {
+    let mut app = AppState::default();
+    app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+        .unwrap();
+    app.dispatch(Command::CommitRomWrites {
+        expected_revision: 0,
+        description: "corrupt runtime marker for diagnostic".into(),
+        writes: vec![lm_project::RomWrite {
+            offset: lm_profile::SMW_US_V1_LEVEL_LAYER2_FORMAT_103_MARKER_OFFSET,
+            bytes: b"LM\xff\xff".to_vec(),
+        }],
+    })
+    .unwrap();
+    let report = app.rom_compatibility_report();
+    assert!(report.text.contains("Checksum status: mismatch"));
+    assert!(report.text.contains("Dirty: true"));
+    assert!(report.text.contains("Layer 2 runtime: probe-failed"));
+    assert!(report.text.contains("Warning: stored SNES checksum"));
+    assert!(
+        report
+            .text
+            .contains("Warning: Layer 2 runtime probe failed")
+    );
+    assert_eq!(report.warnings, 2);
+}
+
+#[test]
+fn compatibility_report_distinguishes_headered_and_sa1_variants() {
+    let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+    let mut headered = vec![0xa5; lm_rom::COPIER_HEADER_LEN];
+    headered.extend_from_slice(&pristine);
+    let mut app = AppState::default();
+    app.load_rom(headered).unwrap();
+    let report = app.rom_compatibility_report();
+    assert!(report.text.contains("Copier header: present"));
+    assert!(report.text.contains("Physical bytes: 524800"));
+    assert!(report.text.contains("Logical bytes: 524288"));
+    assert_eq!(report.warnings, 0);
+
+    let mut sa1 = test_rom();
+    sa1[0x7fd5] = 0x23;
+    let checksum = lm_rom::compute_snes_checksum(&sa1, 0x7fdc).unwrap();
+    sa1[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    let mut app = AppState::default();
+    app.load_rom(sa1).unwrap();
+    let report = app.rom_compatibility_report();
+    assert!(report.text.contains("Mapper: SA-1"));
+    assert!(report.text.contains("Layer 2 runtime: not-applicable"));
+    assert!(report.text.contains("Map16 runtime: not-applicable"));
+    assert!(report.text.contains("Lfix3 runtime: not-applicable"));
+    assert_eq!(report.warnings, 0);
+}
+
+#[test]
+fn compatibility_report_detects_when_current_bytes_break_opened_identity() {
+    let mut app = AppState::default();
+    app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+        .unwrap();
+    app.dispatch(Command::CommitRomWrites {
+        expected_revision: 0,
+        description: "break internal title".into(),
+        writes: vec![lm_project::RomWrite {
+            offset: 0x7fc0,
+            bytes: vec![b'X'],
+        }],
+    })
+    .unwrap();
+    let report = app.rom_compatibility_report();
+    assert!(report.text.contains("Current identity: invalid"));
+    assert!(
+        report
+            .text
+            .contains("Warning: current ROM identity validation failed")
+    );
+    assert_eq!(report.warnings, 2);
+}
+
+#[test]
+fn compatibility_report_reaudits_an_installed_revision_profile() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::InstallRevisionProfile(Box::new(test_profile())))
+        .unwrap();
+    let report = app.rom_compatibility_report();
+    assert!(report.text.contains("Revision profile: audited ("));
+    assert!(report.text.contains("pointer entries)"));
+}
+
 fn test_profile() -> RevisionProfile {
     let mut profile = lm_profile::test_support::profile();
     profile.mapper = lm_rom::Mapper::LoRom;

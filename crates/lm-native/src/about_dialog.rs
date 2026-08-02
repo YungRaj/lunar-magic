@@ -51,28 +51,35 @@ impl AboutDialog {
 pub(crate) struct DiagnosticsDialog {
     open: bool,
     copied: bool,
+    report: String,
 }
 
 impl DiagnosticsDialog {
-    pub(crate) fn open(&mut self) {
+    pub(crate) fn open(&mut self, app: &AppState) {
         self.open = true;
         self.copied = false;
+        let compatibility = app.rom_compatibility_report();
+        self.report = format!("{}\n\n{}", diagnostic_report(app), compatibility.text);
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) {
+    pub(crate) fn show(&mut self, context: &egui::Context) {
         if !self.open {
             return;
         }
-        let report = diagnostic_report(app);
+        let report = self.report.clone();
         let mut copied = self.copied;
-        egui::Window::new("Build diagnostics")
+        egui::Window::new("Compatibility diagnostics")
             .open(&mut self.open)
             .collapsible(false)
-            .resizable(false)
+            .resizable(true)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Non-sensitive build information for compatibility reports:");
-                ui.monospace(&report);
+                ui.label("Path-free build and ROM information for compatibility reports:");
+                egui::ScrollArea::vertical()
+                    .max_height(520.0)
+                    .show(ui, |ui| {
+                        ui.monospace(&report);
+                    });
                 if ui.button("Copy diagnostics").clicked() {
                     ui.ctx().copy_text(report.clone());
                     copied = true;
@@ -221,12 +228,17 @@ mod tests {
 
     #[test]
     fn diagnostics_dialog_open_resets_copy_confirmation() {
+        let mut app = AppState::default();
         let mut dialog = DiagnosticsDialog {
             copied: true,
             ..DiagnosticsDialog::default()
         };
-        dialog.open();
+        dialog.open(&app);
         assert!(dialog.open);
         assert!(!dialog.copied);
+        assert!(dialog.report.contains("ROM compatibility: no project open"));
+        let captured = dialog.report.clone();
+        app.mode = EditorMode::Level(0x105);
+        assert_eq!(dialog.report, captured);
     }
 }

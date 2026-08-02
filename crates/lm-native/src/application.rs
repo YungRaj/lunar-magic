@@ -539,7 +539,7 @@ impl eframe::App for NativeApplication {
         });
         self.show_confirmation(context);
         self.about_dialog.show(context);
-        self.diagnostics_dialog.show(context, &self.app);
+        self.diagnostics_dialog.show(context);
         if let Some(shortcuts) = self.shortcut_editor.show(context) {
             match self.app.set_shortcuts(shortcuts) {
                 Ok(()) => self.app.status = "Updated keyboard shortcuts".into(),

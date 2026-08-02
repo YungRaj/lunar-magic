@@ -71,6 +71,18 @@ A normal save or clean close removes the record. This milestone protects changes
 to the project ROM. Values still staged inside an open editor form, multi-document recovery, and
 undo-history restoration are not yet included.
 
+## Collect compatibility diagnostics
+
+Choose **Help → Compatibility diagnostics…** after opening a ROM. The copyable report contains
+the detected game/region/mapper, copier-header and ROM sizes, current identity and checksum health,
+unsaved range counts, RATS allocation totals, installed profile audit status, the classified Layer 2
+format, and authenticated Map16/Lfix3 runtime generations. Probes that do not apply to the detected
+ROM family are labeled `not-applicable`; malformed partial runtimes are warnings rather than guessed
+formats.
+
+The report deliberately excludes the ROM path, project name, and ROM bytes. Include it with a bug
+report when testing a modified ROM or ecosystem patch.
+
 ## Test the current ROM in an emulator
 
 While a level is open, choose **Tools → Test ROM in Emulator…** and select an emulator executable

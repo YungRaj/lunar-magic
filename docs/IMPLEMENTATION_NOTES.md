@@ -2529,6 +2529,16 @@ baseline, forcing the first publication through Save As. Clean save/close and ex
 remove the record. Editor-local forms that have not yet dispatched a project mutation and undo
 history remain outside this first recovery boundary.
 
+Compatibility diagnostics are generated in `lm-app`, not inferred from native widget state. The
+report revalidates the current physical ROM identity against the identity accepted at open time,
+compares stored and computed checksums, distinguishes copier-header and logical sizes, counts
+changed logical ranges and valid RATS payloads, and reruns any installed revision-profile audit.
+For the SMW-US LoROM/ExLoROM family it classifies Layer 2 formats `$100`–`$103` and uses the same
+complete immutable probes as the patch migration routes for Map16 stages one through four and all
+three Lfix3 generations. Other mappers/families are explicitly `not-applicable`; a partial or
+unknown runtime becomes a warning and never a guessed generation. The native dialog snapshots the
+bounded path-free text when opened, scrolls it, and copies that immutable report for support use.
+
 `LM16SET1` stores all Map16 graphics pages followed by all Acts Like pages with an explicit bounded
 page count. `map16-set-file` can inspect it, validate every Acts Like chain in near-linear time,
 write a normalized copy, and emit a page/tile-addressable oracle observation. Inspection reports
