@@ -50,6 +50,8 @@ impl RomMap16Editor {
     ) {
         let busy = self.complete_loader.is_running()
             || self.complete_persistence.is_running()
+            || self.selected_loader.is_running()
+            || self.selected_persistence.is_running()
             || self.legacy_page_loader.is_running()
             || self.legacy_page_persistence.is_running();
         let supported = (FIRST_EDITABLE_PAGE..FOREGROUND_PAGE_LIMIT).contains(&self.page);

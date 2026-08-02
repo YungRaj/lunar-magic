@@ -330,6 +330,21 @@ pub(crate) fn choose_complete_map16_save_path() -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_selected_map16_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Selected Map16 Range")
+        .add_filter("Lunar Magic selected Map16", &["map16"])
+        .pick_file()
+}
+
+pub(crate) fn choose_selected_map16_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Selected Map16 Range")
+        .add_filter("Lunar Magic selected Map16", &["map16"])
+        .set_file_name("Map16Selection.map16")
+        .save_file()
+}
+
 pub(crate) fn choose_legacy_map16_page_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Import Legacy Map16 Page Pair")

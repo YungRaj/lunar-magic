@@ -1672,7 +1672,18 @@ decodes all 256 tiles and submits one complete-page replacement through the exis
 validation. Built-in pages `$00–$01` and background pages reject this foreground-only boundary.
 Export snapshots the selected staged page and publishes both exact files create-new and
 all-or-nothing. Active legacy or complete-file I/O gates Map16 mutation, bitmap import, ROM commit,
-and close. Modern selected-range structured `.map16` prompts and Wine interaction coverage remain.
+and close.
+The modern selected-range `.map16` route now follows the recovered
+`WriteSelectedMap16ExportFile`/`ReadMap16ImportFile` structure rather than treating every LM16 file
+as complete. The 64-byte header retains rectangle width/height, column, and band-relative row;
+flags 2/4/8 preserve the `$0000–$3FFF`, `$4000–$7FFF`, `$8000–$BFFF`, and `$C000–$FFFF`
+namespace ambiguity exactly. Compact definition and Acts-Like sections contain one row-major record
+per selected tile. Native export anchors a hexadecimal width/height rectangle at the selected tile;
+native import can restore the file origin or use the destination captured when loading starts.
+Row wrapping, namespace overflow, complete-container substitution, malformed semantic lengths, and
+stale completion reject before staged mutation. Built-in graphics `$0000–$01FF` remain protected
+and background Acts-Like words canonicalize to zero. Original prompt gestures and a retained Wine
+selected-range fixture remain oracle gaps.
 Complete structured `.map16` loading uses the same asynchronous safety boundary: the editor records
 the application revision only after the bounded loader accepts the request, consumes that token once
 when the result arrives, and rejects the decoded file before controller mutation if the staged ROM

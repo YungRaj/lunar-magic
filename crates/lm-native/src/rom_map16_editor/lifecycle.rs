@@ -31,6 +31,10 @@ impl RomMap16Editor {
                 self.page_texture_key = None;
                 self.complete_template = None;
                 self.pending_complete_revision = None;
+                self.pending_selected_import = None;
+                self.selected_width = "1".into();
+                self.selected_height = "1".into();
+                self.selected_use_file_origin = true;
                 self.pending_legacy_page = None;
                 self.pending_bitmap_import = None;
                 self.clipboard_paste_target = None;
@@ -74,6 +78,14 @@ impl RomMap16Editor {
         }
         if self.complete_persistence.is_running() {
             self.error = Some("wait for complete Map16 saving to finish before closing".into());
+            return false;
+        }
+        if self.selected_loader.is_running() {
+            self.error = Some("wait for selected Map16 loading to finish before closing".into());
+            return false;
+        }
+        if self.selected_persistence.is_running() {
+            self.error = Some("wait for selected Map16 saving to finish before closing".into());
             return false;
         }
         if self.legacy_page_loader.is_running() {
@@ -145,6 +157,7 @@ impl RomMap16Editor {
         self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
         self.complete_template = None;
         self.pending_complete_revision = None;
+        self.pending_selected_import = None;
         self.pending_legacy_page = None;
         self.pending_bitmap_import = None;
         self.clipboard_paste_target = None;

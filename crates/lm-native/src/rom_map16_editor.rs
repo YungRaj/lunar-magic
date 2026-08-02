@@ -12,6 +12,7 @@ mod commit;
 mod complete_file;
 mod legacy_page;
 mod lifecycle;
+mod selected_file;
 #[cfg(test)]
 mod tests;
 
@@ -137,6 +138,12 @@ pub(crate) struct RomMap16Editor {
     complete_persistence: crate::persistence_worker::PersistenceWorker,
     complete_template: Option<lm_level::Lm16Map16File>,
     pending_complete_revision: Option<u64>,
+    selected_loader: DocumentLoader,
+    selected_persistence: crate::persistence_worker::PersistenceWorker,
+    pending_selected_import: Option<selected_file::PendingSelectedImport>,
+    selected_width: String,
+    selected_height: String,
+    selected_use_file_origin: bool,
     legacy_page_loader: DocumentLoader,
     legacy_page_persistence: crate::persistence_worker::PersistenceWorker,
     pending_legacy_page: Option<(u64, usize)>,
@@ -160,6 +167,7 @@ impl RomMap16Editor {
     ) -> (bool, Option<Command>) {
         let mut command = self.poll_bitmap_loader(context);
         self.poll_complete_file_io(context);
+        self.poll_selected_file_io(context);
         self.poll_legacy_page_io(context);
         let manifest_command = match self.manifest_loader.show(context, project_revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
@@ -218,6 +226,8 @@ impl RomMap16Editor {
         }
         let file_busy = self.complete_loader.is_running()
             || self.complete_persistence.is_running()
+            || self.selected_loader.is_running()
+            || self.selected_persistence.is_running()
             || self.legacy_page_loader.is_running()
             || self.legacy_page_persistence.is_running()
             || self.bitmap_loader.is_running()
@@ -231,6 +241,8 @@ impl RomMap16Editor {
         self.complete_file_controls(
             ui,
             stale
+                || self.selected_loader.is_running()
+                || self.selected_persistence.is_running()
                 || self.legacy_page_loader.is_running()
                 || self.legacy_page_persistence.is_running()
                 || self.bitmap_loader.is_running()
@@ -238,9 +250,12 @@ impl RomMap16Editor {
                 || self.bitmap_session.is_some(),
             project_revision,
         );
+        self.selected_file_controls(ui, edit_blocked, project_revision);
         self.legacy_page_controls(
             ui,
             stale
+                || self.selected_loader.is_running()
+                || self.selected_persistence.is_running()
                 || self.bitmap_loader.is_running()
                 || self.bitmap_clipboard_loader.is_running()
                 || self.bitmap_session.is_some(),

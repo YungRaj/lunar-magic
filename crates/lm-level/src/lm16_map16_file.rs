@@ -25,6 +25,10 @@ pub struct Lm16Map16File {
     pub format_version: u32,
     pub lunar_magic_version: u32,
     pub flags: u32,
+    pub selection_width: usize,
+    pub selection_height: usize,
+    pub selection_column: usize,
+    pub selection_row: usize,
     pub attribution: [u8; Self::ATTRIBUTION_LEN],
     pub sections: [Lm16Map16Section; Self::SECTION_COUNT],
     bytes: Vec<u8>,
@@ -48,6 +52,92 @@ impl Lm16Map16File {
     pub const FOREGROUND_TILES_LEN: usize = Self::FOREGROUND_TILE_COUNT * Self::TILE_BYTES;
     pub const BACKGROUND_TILES_LEN: usize = Self::BACKGROUND_TILE_COUNT * Self::TILE_BYTES;
     pub const ACTS_LIKE_LEN: usize = Self::FOREGROUND_TILE_COUNT * 2;
+
+    /// Constructs Lunar Magic's compact structured selected-range container.
+    ///
+    /// `origin_tile` is the absolute first Map16 tile. `tiles` are row-major and must exactly fill
+    /// `width × height`; a row may not wrap past column 15. The header stores Lunar Magic's
+    /// band-relative row plus its foreground/background disambiguation flags.
+    ///
+    /// # Errors
+    ///
+    /// Rejects empty, overflowing, wrapped, out-of-namespace, or mismatched selections.
+    pub fn from_selected_tiles(
+        origin_tile: usize,
+        width: usize,
+        height: usize,
+        tiles: &[Map16Tile],
+    ) -> Result<Self, Lm16Map16FileError> {
+        let count = width
+            .checked_mul(height)
+            .ok_or(Lm16Map16FileError::Overflow)?;
+        let origin_column = origin_tile % 0x10;
+        let origin_row = origin_tile / 0x10;
+        if width == 0
+            || width > 0x10
+            || height == 0
+            || origin_tile >= Self::TILE_COUNT
+            || origin_column + width > 0x10
+            || origin_row
+                .checked_add(height)
+                .is_none_or(|end| end > Self::TILE_COUNT / 0x10)
+            || tiles.len() != count
+        {
+            return Err(Lm16Map16FileError::SelectionShape {
+                origin: origin_tile,
+                width,
+                height,
+                tiles: tiles.len(),
+            });
+        }
+        let combined_len = count
+            .checked_mul(Self::TILE_BYTES)
+            .ok_or(Lm16Map16FileError::Overflow)?;
+        let acts_len = count.checked_mul(2).ok_or(Lm16Map16FileError::Overflow)?;
+        let acts_offset = Self::DATA_OFFSET
+            .checked_add(combined_len)
+            .ok_or(Lm16Map16FileError::Overflow)?;
+        let mut bytes = vec![0; acts_offset + acts_len];
+        bytes[..4].copy_from_slice(&Self::MAGIC);
+        bytes[4..8].copy_from_slice(&0x0001_0100_u32.to_le_bytes());
+        bytes[8..12].copy_from_slice(&0x0001_0363_u32.to_le_bytes());
+        write_u32(&mut bytes, 0x10, Self::DIRECTORY_OFFSET)?;
+        write_u32(&mut bytes, 0x14, Self::DIRECTORY_LEN)?;
+        write_u32(&mut bytes, 0x18, width)?;
+        write_u32(&mut bytes, 0x1c, height)?;
+        write_u32(&mut bytes, 0x20, origin_column)?;
+        let (stored_row, band_flag) = selected_row_and_flag(origin_tile, origin_row);
+        write_u32(&mut bytes, 0x24, stored_row)?;
+        bytes[0x28..0x2c].copy_from_slice(&(Self::REQUIRED_CAPABILITY | band_flag).to_le_bytes());
+        let attribution = b"Lunar Magic Rust clean-room implementation      ";
+        bytes[Self::HEADER_LEN..Self::DIRECTORY_OFFSET].copy_from_slice(attribution);
+        write_section(
+            &mut bytes,
+            Lm16Map16SectionKind::CombinedTiles,
+            Self::DATA_OFFSET,
+            combined_len,
+        )?;
+        write_section(
+            &mut bytes,
+            Lm16Map16SectionKind::ActsLike,
+            acts_offset,
+            acts_len,
+        )?;
+        for (index, tile) in tiles.iter().enumerate() {
+            let at = Self::DATA_OFFSET + index * Self::TILE_BYTES;
+            for (target, word) in bytes[at..at + Self::TILE_BYTES].chunks_exact_mut(2).zip([
+                tile.top_left.0,
+                tile.top_right.0,
+                tile.bottom_left.0,
+                tile.bottom_right.0,
+            ]) {
+                target.copy_from_slice(&word.to_le_bytes());
+            }
+            let at = acts_offset + index * 2;
+            bytes[at..at + 2].copy_from_slice(&tile.acts_like.to_le_bytes());
+        }
+        Self::decode(&bytes)
+    }
 
     /// Constructs a canonical complete container from all 65,536 definitions and 32,768
     /// foreground Acts-Like words.
@@ -181,6 +271,14 @@ impl Lm16Map16File {
             format_version,
             lunar_magic_version,
             flags,
+            selection_width: usize::try_from(read_u32(prefix, 0x18)?)
+                .map_err(|_| Lm16Map16FileError::Overflow)?,
+            selection_height: usize::try_from(read_u32(prefix, 0x1c)?)
+                .map_err(|_| Lm16Map16FileError::Overflow)?,
+            selection_column: usize::try_from(read_u32(prefix, 0x20)?)
+                .map_err(|_| Lm16Map16FileError::Overflow)?,
+            selection_row: usize::try_from(read_u32(prefix, 0x24)?)
+                .map_err(|_| Lm16Map16FileError::Overflow)?,
             attribution,
             sections,
             bytes: bytes.to_vec(),
@@ -191,6 +289,61 @@ impl Lm16Map16File {
     pub fn section(&self, kind: Lm16Map16SectionKind) -> &[u8] {
         let section = self.sections[kind as usize];
         &self.bytes[section.offset..section.offset + section.len]
+    }
+
+    /// Decodes a compact selected-range container into its absolute origin and row-major tiles.
+    ///
+    /// # Errors
+    ///
+    /// Rejects complete or malformed containers whose dimensions, origin, or compact semantic
+    /// sections do not describe exactly one bounded rectangle.
+    pub fn selected_tiles(&self) -> Result<(usize, Vec<Map16Tile>), Lm16Map16FileError> {
+        let count = self
+            .selection_width
+            .checked_mul(self.selection_height)
+            .ok_or(Lm16Map16FileError::Overflow)?;
+        let combined = self.section(Lm16Map16SectionKind::CombinedTiles);
+        let acts = self.section(Lm16Map16SectionKind::ActsLike);
+        let expected_combined = count
+            .checked_mul(Self::TILE_BYTES)
+            .ok_or(Lm16Map16FileError::Overflow)?;
+        let expected_acts = count.checked_mul(2).ok_or(Lm16Map16FileError::Overflow)?;
+        let restored_row = restore_selected_row(self.selection_row, self.flags)
+            .ok_or(Lm16Map16FileError::Overflow)?;
+        let origin = restored_row
+            .checked_mul(0x10)
+            .and_then(|row| row.checked_add(self.selection_column))
+            .ok_or(Lm16Map16FileError::Overflow)?;
+        if self.selection_width == 0
+            || self.selection_width > 0x10
+            || self.selection_height == 0
+            || self.selection_column + self.selection_width > 0x10
+            || origin >= Self::TILE_COUNT
+            || restored_row
+                .checked_add(self.selection_height)
+                .is_none_or(|end| end > Self::TILE_COUNT / 0x10)
+            || combined.len() != expected_combined
+            || acts.len() != expected_acts
+        {
+            return Err(Lm16Map16FileError::SelectionShape {
+                origin,
+                width: self.selection_width,
+                height: self.selection_height,
+                tiles: combined.len() / Self::TILE_BYTES,
+            });
+        }
+        let tiles = combined
+            .chunks_exact(Self::TILE_BYTES)
+            .zip(acts.chunks_exact(2))
+            .map(|(definition, acts_like)| Map16Tile {
+                top_left: Subtile(u16::from_le_bytes([definition[0], definition[1]])),
+                top_right: Subtile(u16::from_le_bytes([definition[2], definition[3]])),
+                bottom_left: Subtile(u16::from_le_bytes([definition[4], definition[5]])),
+                bottom_right: Subtile(u16::from_le_bytes([definition[6], definition[7]])),
+                acts_like: u16::from_le_bytes([acts_like[0], acts_like[1]]),
+            })
+            .collect();
+        Ok((origin, tiles))
     }
 
     /// Returns one foreground or background definition from the complete combined tile bank.
@@ -377,6 +530,12 @@ pub enum Lm16Map16FileError {
         combined: usize,
         acts_like: usize,
     },
+    SelectionShape {
+        origin: usize,
+        width: usize,
+        height: usize,
+        tiles: usize,
+    },
 }
 
 impl fmt::Display for Lm16Map16FileError {
@@ -386,6 +545,25 @@ impl fmt::Display for Lm16Map16FileError {
 }
 
 impl std::error::Error for Lm16Map16FileError {}
+
+fn selected_row_and_flag(origin_tile: usize, origin_row: usize) -> (usize, u32) {
+    match origin_tile {
+        0x4000..=0x7fff => (origin_row, 4),
+        0x8000..=0xbfff => (origin_row - 0x400, 0),
+        0xc000..=0xffff => (origin_row - 0x800, 8),
+        _ => (origin_row, 0),
+    }
+}
+
+fn restore_selected_row(stored_row: usize, flags: u32) -> Option<usize> {
+    if flags & 8 != 0 {
+        stored_row.checked_add(0x800)
+    } else if flags & 4 == 0 && (0x400..0x800).contains(&stored_row) {
+        stored_row.checked_add(0x400)
+    } else {
+        Some(stored_row)
+    }
+}
 
 fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, Lm16Map16FileError> {
     Ok(u32::from_le_bytes(
@@ -636,6 +814,70 @@ mod tests {
             Err(Lm16Map16FileError::TileOutOfRange(
                 Lm16Map16File::TILE_COUNT
             ))
+        );
+    }
+
+    #[test]
+    fn selected_range_round_trips_dimensions_origin_and_tiles() {
+        let tiles = (0..6)
+            .map(|index| Map16Tile {
+                top_left: Subtile(0x1000 + index),
+                top_right: Subtile(0x2000 + index),
+                bottom_left: Subtile(0x3000 + index),
+                bottom_right: Subtile(0x4000 + index),
+                acts_like: 0x0130 + index,
+            })
+            .collect::<Vec<_>>();
+        let file = Lm16Map16File::from_selected_tiles(0x2344, 3, 2, &tiles).unwrap();
+        assert_eq!(file.selection_width, 3);
+        assert_eq!(file.selection_height, 2);
+        assert_eq!(file.selection_column, 4);
+        assert_eq!(file.selection_row, 0x234);
+        assert_eq!(file.flags, Lm16Map16File::REQUIRED_CAPABILITY);
+        assert_eq!(file.selected_tiles().unwrap(), (0x2344, tiles));
+        assert_eq!(Lm16Map16File::decode(&file.encode()).unwrap(), file);
+        assert!(
+            file.section(Lm16Map16SectionKind::ForegroundTiles)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn selected_range_band_flags_restore_all_ambiguous_namespaces() {
+        for (origin, stored_row, band_flag) in
+            [(0x4000, 0x400, 4), (0x8000, 0x400, 0), (0xc000, 0x400, 8)]
+        {
+            let tile = Map16Tile {
+                top_left: Subtile(u16::try_from(origin).unwrap()),
+                top_right: Subtile(2),
+                bottom_left: Subtile(3),
+                bottom_right: Subtile(4),
+                acts_like: 5,
+            };
+            let file = Lm16Map16File::from_selected_tiles(origin, 1, 1, &[tile]).unwrap();
+            assert_eq!(file.selection_row, stored_row);
+            assert_eq!(file.flags, Lm16Map16File::REQUIRED_CAPABILITY | band_flag);
+            assert_eq!(file.selected_tiles().unwrap(), (origin, vec![tile]));
+        }
+    }
+
+    #[test]
+    fn selected_range_rejects_wrap_shape_and_complete_container() {
+        let tile = Map16Tile {
+            top_left: Subtile(1),
+            top_right: Subtile(2),
+            bottom_left: Subtile(3),
+            bottom_right: Subtile(4),
+            acts_like: 5,
+        };
+        assert!(Lm16Map16File::from_selected_tiles(0x000f, 2, 1, &[tile; 2]).is_err());
+        assert!(Lm16Map16File::from_selected_tiles(0xffff, 1, 2, &[tile; 2]).is_err());
+        assert!(Lm16Map16File::from_selected_tiles(0, 2, 2, &[tile; 3]).is_err());
+        assert!(
+            Lm16Map16File::decode(&complete_tile_banks())
+                .unwrap()
+                .selected_tiles()
+                .is_err()
         );
     }
 }
