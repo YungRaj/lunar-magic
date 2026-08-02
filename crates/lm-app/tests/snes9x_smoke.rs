@@ -1,5 +1,3 @@
-#![cfg(target_os = "macos")]
-
 use lm_app::{AppState, Command as AppCommand, Map16ControllerEdit, SmwMap16Controller};
 use lm_level::{
     CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, ObjectEdit,
@@ -15,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -28,11 +26,67 @@ impl Drop for ChildGuard {
     }
 }
 
-fn snes9x_binary() -> PathBuf {
-    std::env::var_os("SNES9X_BIN").map_or_else(
-        || PathBuf::from("/Applications/Snes9x.app/Contents/MacOS/Snes9x"),
-        PathBuf::from,
-    )
+struct SmokeDirectory(PathBuf);
+
+impl SmokeDirectory {
+    fn create() -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "lm-snes9x-smoke-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path).expect("create Snes9x smoke directory");
+        Self(path)
+    }
+}
+
+impl Drop for SmokeDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn path_executable(names: &[&str]) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .flat_map(|directory| names.iter().map(move |name| directory.join(name)))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+fn snes9x_binary() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("SNES9X_BIN").map(PathBuf::from) {
+        return path.is_file().then_some(path);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let application = PathBuf::from("/Applications/Snes9x.app/Contents/MacOS/Snes9x");
+        if application.is_file() {
+            return Some(application);
+        }
+        path_executable(&["snes9x"])
+    }
+    #[cfg(target_os = "windows")]
+    {
+        path_executable(&["snes9x-x64.exe", "snes9x.exe"])
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        path_executable(&["snes9x-gtk", "snes9x"])
+    }
+    #[cfg(not(any(unix, target_os = "windows")))]
+    {
+        None
+    }
+}
+
+fn require_snes9x_binary() -> PathBuf {
+    snes9x_binary().unwrap_or_else(|| {
+        panic!(
+            "Snes9x executable was not found; set SNES9X_BIN to its executable path (the test also searches the platform default and PATH)"
+        )
+    })
 }
 
 fn source_rom(root: &Path) -> PathBuf {
@@ -56,14 +110,6 @@ fn source_rom(root: &Path) -> PathBuf {
     panic!("verified pristine SMW-US fixture not found");
 }
 
-fn smoke_directory() -> PathBuf {
-    std::env::temp_dir().join(format!(
-        "lm-snes9x-smoke-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ))
-}
-
 fn require_snes9x_initialization(snes9x: &Path, output: &Path) {
     let child = Command::new(snes9x)
         .arg(output)
@@ -73,11 +119,13 @@ fn require_snes9x_initialization(snes9x: &Path, output: &Path) {
         .spawn()
         .expect("launch Snes9x");
     let mut child = ChildGuard(child);
-    thread::sleep(Duration::from_secs(8));
-    assert!(
-        child.0.try_wait().expect("query Snes9x process").is_none(),
-        "Snes9x exited during generated-ROM initialization"
-    );
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while Instant::now() < deadline {
+        if let Some(status) = child.0.try_wait().expect("query Snes9x process") {
+            panic!("Snes9x exited during generated-ROM initialization with {status}");
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
     child.0.kill().expect("stop Snes9x smoke process");
     child.0.wait().expect("reap Snes9x smoke process");
 }
@@ -86,12 +134,7 @@ fn require_snes9x_initialization(snes9x: &Path, output: &Path) {
 #[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
 fn rust_expanded_rom_survives_snes9x_initialization() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let snes9x = snes9x_binary();
-    assert!(
-        snes9x.is_file(),
-        "Snes9x executable is missing: {}",
-        snes9x.display()
-    );
+    let snes9x = require_snes9x_binary();
 
     let mut project = Project::new(
         RomImage::from_bytes(fs::read(source_rom(&root)).expect("read source SMW ROM"))
@@ -101,25 +144,18 @@ fn rust_expanded_rom_survives_snes9x_initialization() {
         .expand_rom(Mapper::LoRom, 0x10_0000, 0xff, 0x7fdc)
         .expect("expand and checksum generated ROM");
 
-    let directory = smoke_directory();
-    fs::create_dir(&directory).expect("create Snes9x smoke directory");
-    let output = directory.join("Rust-generated-SMW.sfc");
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-generated-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write generated ROM");
 
     require_snes9x_initialization(&snes9x, &output);
-    fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
 }
 
 #[test]
 #[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
 fn rust_map16_edit_survives_snes9x_initialization() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let snes9x = snes9x_binary();
-    assert!(
-        snes9x.is_file(),
-        "Snes9x executable is missing: {}",
-        snes9x.display()
-    );
+    let snes9x = require_snes9x_binary();
     let mut app = AppState::default();
     app.load_rom(fs::read(source_rom(&root)).expect("read source SMW ROM"))
         .expect("open source SMW ROM");
@@ -162,19 +198,17 @@ fn rust_map16_edit_survives_snes9x_initialization() {
         0x2345
     );
 
-    let directory = smoke_directory();
-    fs::create_dir(&directory).expect("create Snes9x smoke directory");
-    let output = directory.join("Rust-Map16-edited-SMW.sfc");
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-Map16-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write Map16-edited ROM");
     require_snes9x_initialization(&snes9x, &output);
-    fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
 }
 
 #[test]
 #[ignore = "requires local Snes9x plus retained Lunar Magic 3.63 installed-ROM fixture"]
 fn rust_layer2_edit_survives_snes9x_initialization() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let snes9x = snes9x_binary();
+    let snes9x = require_snes9x_binary();
     let installed = root.join("oracle-work/lm363/pristine-us/level-save-105/after.smc");
     let mut project = Project::new(
         RomImage::from_bytes(fs::read(installed).expect("read installed SMW fixture"))
@@ -226,19 +260,17 @@ fn rust_layer2_edit_survives_snes9x_initialization() {
         loaded
     );
 
-    let directory = smoke_directory();
-    fs::create_dir(&directory).expect("create Snes9x smoke directory");
-    let output = directory.join("Rust-Layer2-edited-SMW.smc");
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-Layer2-edited-SMW.smc");
     fs::write(&output, project.save_snapshot()).expect("write Layer 2 edited ROM");
     require_snes9x_initialization(&snes9x, &output);
-    fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
 }
 
 #[test]
 #[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
 fn rust_layer1_object_edit_survives_snes9x_initialization() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let snes9x = snes9x_binary();
+    let snes9x = require_snes9x_binary();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
     let sprite_lengths = SpriteLengthTable::standard();
     let mut project = Project::new(
@@ -301,19 +333,17 @@ fn rust_layer1_object_edit_survives_snes9x_initialization() {
         level.layer1
     );
 
-    let directory = smoke_directory();
-    fs::create_dir(&directory).expect("create Snes9x smoke directory");
-    let output = directory.join("Rust-Layer1-object-edited-SMW.sfc");
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-Layer1-object-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write Layer 1 object-edited ROM");
     require_snes9x_initialization(&snes9x, &output);
-    fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
 }
 
 #[test]
 #[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
 fn rust_custom_time_and_support_patch_b_survive_snes9x_initialization() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let snes9x = snes9x_binary();
+    let snes9x = require_snes9x_binary();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
     let sprite_lengths = SpriteLengthTable::standard();
     let custom_time = CustomTimeSettings::new(0xabc, true).expect("construct custom time");
@@ -378,19 +408,17 @@ fn rust_custom_time_and_support_patch_b_survive_snes9x_initialization() {
         lm_profile::SmwUsV1SupportPatchBState::Installed
     );
 
-    let directory = smoke_directory();
-    fs::create_dir(&directory).expect("create Snes9x smoke directory");
-    let output = directory.join("Rust-custom-time-support-patch-B-SMW.sfc");
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-custom-time-support-patch-B-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write custom-time ROM");
     require_snes9x_initialization(&snes9x, &output);
-    fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
 }
 
 #[test]
 #[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
 fn rust_standard_sprite_edit_survives_snes9x_initialization() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let snes9x = snes9x_binary();
+    let snes9x = require_snes9x_binary();
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
     let sprite_lengths = SpriteLengthTable::standard();
     let mut project = Project::new(
@@ -436,10 +464,8 @@ fn rust_standard_sprite_edit_survives_snes9x_initialization() {
         replacement.sprites
     );
 
-    let directory = smoke_directory();
-    fs::create_dir(&directory).expect("create Snes9x smoke directory");
-    let output = directory.join("Rust-standard-sprite-edited-SMW.sfc");
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-standard-sprite-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write sprite-edited ROM");
     require_snes9x_initialization(&snes9x, &output);
-    fs::remove_dir_all(directory).expect("remove Snes9x smoke directory");
 }

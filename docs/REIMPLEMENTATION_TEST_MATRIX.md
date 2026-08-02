@@ -22,16 +22,30 @@ This document defines the behavioral boundary for a clean, cross-platform Rust r
 Cached identity checksum evidence is revision-coherent: tests require checksum-valid writes,
 prepared commits, grouped payload saves, undo, and redo to refresh both stored and computed values.
 Unqualified projects remain explicitly without identity rather than fabricating checksum metadata.
-On macOS, the opt-in `snes9x_smoke` gates expand the supplied pristine fixture, insert/repoint a
+On macOS, Windows, and Linux, the opt-in `snes9x_smoke` gates find Snes9x through `SNES9X_BIN`,
+the platform default, or `PATH`; expand the supplied pristine fixture; insert/repoint a
 standard Layer 1 object, install support patch B plus a forced `$ABC` custom-time command, update a
 fixed-width standard sprite placement in place, and independently edit/repoint installed level
 `$105` Layer 2 through the Rust project API. Another gate starts from
 the pristine fixture, uses the snapshot-bound application controller to change a Map16 quadrant,
 expands and installs all native split tables, and reopens the exact definition before launch. Every
 path repairs the checksum, semantically reopens the generated state, launches only the temporary
-output in Snes9x, requires the emulator process to survive initialization, and then terminates it
-and removes the temporary copy. This is launch-time runtime evidence, not a substitute for
+output in Snes9x, requires the emulator process to survive eight seconds of initialization, and
+then terminates and reaps it and removes the temporary copy, including during test failure. This is
+launch-time runtime evidence, not a substitute for
 screenshot- or input-driven gameplay assertions.
+
+Run the gates serially so GUI instances cannot share state:
+
+```text
+SNES9X_BIN=/absolute/path/to/snes9x cargo test -p lm-app --test snes9x_smoke -- --ignored --test-threads=1
+```
+
+`SNES9X_BIN` may be omitted for `/Applications/Snes9x.app` on macOS or when `snes9x`,
+`snes9x-gtk`, `snes9x.exe`, or `snes9x-x64.exe` is on `PATH`. CI compiles this same test target on
+all three operating systems without requiring the copyrighted ROM fixture; emulator execution is a
+fixture-owning, opt-in release gate.
+
 The `lm-native` crate also has an opt-in `visual-smoke` feature. With
 `LM_NATIVE_SCREENSHOT_TO` set, it waits eight rendered frames, requests a screenshot through the
 native egui/Glow viewport, encodes the returned framebuffer through the bounded shared PNG writer,
