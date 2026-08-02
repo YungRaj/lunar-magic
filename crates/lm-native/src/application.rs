@@ -83,6 +83,7 @@ mod windows;
 pub(crate) struct LevelViewVisibility {
     pub layer1: bool,
     pub layer2: bool,
+    pub layer3: bool,
     pub sprites: bool,
 }
 
@@ -91,6 +92,7 @@ impl Default for LevelViewVisibility {
         Self {
             layer1: true,
             layer2: true,
+            layer3: true,
             sprites: true,
         }
     }

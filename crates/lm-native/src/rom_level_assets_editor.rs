@@ -96,6 +96,16 @@ struct ResolvedLevelGraphics {
     source: &'static str,
 }
 
+struct InstalledLayer3 {
+    tilemap: Vec<u16>,
+    tiles: Vec<lm_graphics::IndexedTile>,
+    initial_x: i16,
+    initial_y: i16,
+    vertical: bool,
+    between_background_and_foreground: bool,
+    additive: bool,
+}
+
 struct SpecialGraphicsTiles {
     gfx33: Vec<lm_graphics::IndexedTile>,
     gfx32: Option<Vec<lm_graphics::IndexedTile>>,
@@ -1581,6 +1591,7 @@ fn render_super_graphics_level_canvas(
         diagnostics.extend(sprite_diagnostics);
     }
     let visible = visible_level_parts(visibility, &layer2, &layer1, &sprites);
+    let layer3 = load_installed_layer3(workspace, &project, header, visibility.layer3)?;
     let inspection = selection.map(|selection| {
         inspect_preview_map16_selection(
             selection,
@@ -1605,6 +1616,7 @@ fn render_super_graphics_level_canvas(
         &animated_sprite_tiles,
         &palette,
         &[layer2_palette_routing, NativeMap16PaletteRouting::Direct],
+        layer3.as_ref(),
     )
     .map(|canvas| (canvas, diagnostics, inspection))
 }
@@ -1673,6 +1685,71 @@ fn installed_animation_options(workspace: &Workspace) -> InstalledAnimationOptio
             .exanimation_features()
             .map(|features| features.options),
     )
+}
+
+fn load_installed_layer3(
+    workspace: &Workspace,
+    project: &lm_project::Project,
+    header: lm_level::LegacyLevelHeader,
+    visible: bool,
+) -> Result<Option<InstalledLayer3>, String> {
+    if !visible {
+        return Ok(None);
+    }
+    if workspace
+        .controller
+        .assets()
+        .expanded_settings
+        .as_ref()
+        .is_some_and(lm_level::ExpandedLevelSettingsRecord::layer3_tilemap_enabled)
+    {
+        return Err(
+            "installed custom Layer 3 is enabled but its tilemap provider is not available".into(),
+        );
+    }
+    if !is_smw_us_v1_profile(&workspace.profile) {
+        return Err(format!(
+            "ordinary Layer 3 tables are not recovered for profile {}",
+            workspace.profile.name
+        ));
+    }
+    let entrance = project
+        .load_vanilla_main_entrance(
+            usize::from(workspace.source_slot),
+            lm_profile::smw_us_v1_vanilla_entrance_layout(),
+        )
+        .map_err(|error| error.to_string())?;
+    let Some(layer3) =
+        lm_profile::load_smw_us_v1_level_layer3(project, entrance, header.object_tileset())
+            .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    let tiles = crate::vanilla_map16_preview::load_layer3_tiles(
+        project,
+        usize::from(workspace.source_slot),
+        workspace.profile.graphics,
+    )?;
+    Ok(Some(InstalledLayer3 {
+        tilemap: layer3.tilemap,
+        tiles,
+        initial_x: layer3.initial_x,
+        initial_y: crate::vanilla_map16_preview::vanilla_layer3_editor_row_offset(
+            layer3.behavior,
+            header.object_tileset(),
+        )
+        .map_or(layer3.initial_y, |row| row * 16),
+        vertical: lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical,
+        between_background_and_foreground:
+            crate::vanilla_map16_preview::vanilla_layer3_between_background_and_foreground(
+                layer3.behavior,
+            ),
+        additive: crate::vanilla_map16_preview::vanilla_layer3_additive(
+            header.level_mode(),
+            layer3.behavior,
+            header.object_tileset(),
+        ),
+    }))
 }
 
 fn animation_options_from_features(
@@ -1938,6 +2015,7 @@ fn render_level_viewport_image(
         animated_sprite_tiles,
         palette,
         layer_palette_routing,
+        None,
     )?;
     render_level_viewport_canvas(
         &source,
@@ -2062,6 +2140,7 @@ fn render_level_canvas(
         animated_sprite_tiles,
         palette,
         &routing,
+        None,
     )
 }
 
@@ -2077,6 +2156,7 @@ fn render_level_canvas_with_layer_palette_routing(
     animated_sprite_tiles: &[lm_graphics::IndexedTile],
     palette: &lm_graphics::Palette,
     layer_palette_routing: &[NativeMap16PaletteRouting],
+    installed_layer3: Option<&InstalledLayer3>,
 ) -> Result<lm_render::Canvas, String> {
     let definitions = map16
         .pages
@@ -2094,22 +2174,72 @@ fn render_level_canvas_with_layer_palette_routing(
             blue: color.blue,
             alpha: 255,
         });
-    let mut canvas = render_native_level_framebuffer_with_layer_palette_routing(
-        NativeLevelRasterRequest {
-            width: layout.width * 16,
-            height: layout.height * 16,
-            camera_x: 0,
-            camera_y: 0,
-            backdrop,
-            layers,
-            definitions: &definitions,
-            background_definitions,
-            tiles,
-            palette,
-        },
-        layer_palette_routing,
-    )
-    .map_err(|error| error.to_string())?;
+    let request = |layers| NativeLevelRasterRequest {
+        width: layout.width * 16,
+        height: layout.height * 16,
+        camera_x: 0,
+        camera_y: 0,
+        backdrop,
+        layers,
+        definitions: &definitions,
+        background_definitions,
+        tiles,
+        palette,
+    };
+    let mut canvas = if let Some(layer3) = installed_layer3 {
+        if layers.len() != 2 || layer_palette_routing.len() != 2 {
+            return Err(format!(
+                "Layer 3 composition requires exactly two Map16 layers and routing entries; got {} layers and {} routing entries",
+                layers.len(),
+                layer_palette_routing.len()
+            ));
+        }
+        let pixel_count = (layout.width * 16)
+            .checked_mul(layout.height * 16)
+            .ok_or_else(|| "level image dimensions overflowed".to_owned())?;
+        let mut canvas = lm_render::Canvas::from_pixels(
+            layout.width * 16,
+            layout.height * 16,
+            vec![backdrop; pixel_count],
+        )
+        .map_err(|error| error.to_string())?;
+        let background = [layers[0]];
+        let foreground = [layers[1]];
+        let background_routing = [layer_palette_routing[0]];
+        let foreground_routing = [layer_palette_routing[1]];
+        if layer3.between_background_and_foreground {
+            lm_render::draw_native_level_layers_with_layer_palette_routing(
+                &mut canvas,
+                request(&background),
+                &background_routing,
+            )
+            .map_err(|error| error.to_string())?;
+            draw_installed_layer3_plane(&mut canvas, layer3, palette, false);
+            draw_installed_layer3_plane(&mut canvas, layer3, palette, true);
+            lm_render::draw_native_level_layers_with_layer_palette_routing(
+                &mut canvas,
+                request(&foreground),
+                &foreground_routing,
+            )
+            .map_err(|error| error.to_string())?;
+        } else {
+            draw_installed_layer3_plane(&mut canvas, layer3, palette, false);
+            lm_render::draw_native_level_layers_with_layer_palette_routing(
+                &mut canvas,
+                request(layers),
+                layer_palette_routing,
+            )
+            .map_err(|error| error.to_string())?;
+            draw_installed_layer3_plane(&mut canvas, layer3, palette, true);
+        }
+        canvas
+    } else {
+        render_native_level_framebuffer_with_layer_palette_routing(
+            request(layers),
+            layer_palette_routing,
+        )
+        .map_err(|error| error.to_string())?
+    };
     for sprite in sprites {
         draw_native_sprite_preview_definition_pages(
             &mut canvas,
@@ -2122,6 +2252,110 @@ fn render_level_canvas_with_layer_palette_routing(
         );
     }
     Ok(canvas)
+}
+
+fn draw_installed_layer3_plane(
+    canvas: &mut lm_render::Canvas,
+    layer3: &InstalledLayer3,
+    palette: &lm_graphics::Palette,
+    high_priority: bool,
+) {
+    const TILES_PER_SIDE: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
+    const TILE_PIXELS: usize = lm_graphics::IndexedTile::WIDTH;
+    let x_origins = repeating_layer3_plane_origins(layer3.initial_x, canvas.width());
+    let y_origins = if layer3.vertical {
+        repeating_layer3_plane_origins(layer3.initial_y, canvas.height())
+    } else {
+        vec![-i32::from(layer3.initial_y)]
+    };
+    for (position, &word) in layer3
+        .tilemap
+        .iter()
+        .take(TILES_PER_SIDE * TILES_PER_SIDE)
+        .enumerate()
+    {
+        if word == 0x38fc || (word & 0x2000 != 0) != high_priority {
+            continue;
+        }
+        let Some(tile) = layer3.tiles.get(usize::from(word & 0x03ff)) else {
+            continue;
+        };
+        let palette_number = usize::from((word >> 10) & 7);
+        let x_flip = word & 0x4000 != 0;
+        let y_flip = word & 0x8000 != 0;
+        let plane_x = (position % TILES_PER_SIDE) * TILE_PIXELS;
+        let plane_y = (position / TILES_PER_SIDE) * TILE_PIXELS;
+        for &origin_y in &y_origins {
+            for &origin_x in &x_origins {
+                for y in 0..TILE_PIXELS {
+                    for x in 0..TILE_PIXELS {
+                        let source_x = if x_flip { TILE_PIXELS - 1 - x } else { x };
+                        let source_y = if y_flip { TILE_PIXELS - 1 - y } else { y };
+                        let Some(index) = tile.pixel(source_x, source_y) else {
+                            continue;
+                        };
+                        if index == 0 {
+                            continue;
+                        }
+                        let Some(color) = palette
+                            .colors
+                            .get(palette_number * 4 + usize::from(index))
+                            .copied()
+                            .map(lm_graphics::Bgr555::to_rgb8)
+                        else {
+                            continue;
+                        };
+                        let target_x = origin_x + i32::try_from(plane_x + x).unwrap_or(i32::MAX);
+                        let target_y = origin_y + i32::try_from(plane_y + y).unwrap_or(i32::MAX);
+                        let (Ok(target_x), Ok(target_y)) =
+                            (usize::try_from(target_x), usize::try_from(target_y))
+                        else {
+                            continue;
+                        };
+                        if target_x >= canvas.width() || target_y >= canvas.height() {
+                            continue;
+                        }
+                        let source = Rgba {
+                            red: color.red,
+                            green: color.green,
+                            blue: color.blue,
+                            alpha: 255,
+                        };
+                        let output = if layer3.additive {
+                            let destination = canvas.get(target_x, target_y).unwrap_or_default();
+                            Rgba {
+                                red: destination.red.saturating_add(source.red),
+                                green: destination.green.saturating_add(source.green),
+                                blue: destination.blue.saturating_add(source.blue),
+                                alpha: 255,
+                            }
+                        } else {
+                            source
+                        };
+                        canvas.set(target_x, target_y, output);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn repeating_layer3_plane_origins(position: i16, world_extent: usize) -> Vec<i32> {
+    const PLANE_PIXELS: i32 = 512;
+    let world_extent = i32::try_from(world_extent).unwrap_or(i32::MAX);
+    let mut origin = -i32::from(position);
+    while origin > 0 {
+        origin -= PLANE_PIXELS;
+    }
+    while origin + PLANE_PIXELS <= 0 {
+        origin += PLANE_PIXELS;
+    }
+    let mut origins = Vec::new();
+    while origin < world_extent {
+        origins.push(origin);
+        origin += PLANE_PIXELS;
+    }
+    origins
 }
 
 fn canvas_to_color_image(canvas: lm_render::Canvas) -> egui::ColorImage {
@@ -2416,6 +2650,7 @@ mod tests {
             crate::application::LevelViewVisibility {
                 layer1: false,
                 layer2: true,
+                layer3: false,
                 sprites: false,
             },
             &layer2,
@@ -2425,6 +2660,129 @@ mod tests {
         assert_eq!(hidden.layers[0][0].word, 2);
         assert!(hidden.layers[1].is_empty());
         assert!(hidden.sprites.is_empty());
+    }
+
+    fn test_installed_layer3(word: u16, additive: bool) -> InstalledLayer3 {
+        let mut tilemap = vec![0x38fc; lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE.pow(2)];
+        tilemap[0] = word;
+        InstalledLayer3 {
+            tilemap,
+            tiles: vec![IndexedTile::new([1; IndexedTile::PIXEL_COUNT])],
+            initial_x: 0,
+            initial_y: 0,
+            vertical: true,
+            between_background_and_foreground: false,
+            additive,
+        }
+    }
+
+    #[test]
+    fn installed_layer3_raster_honors_priority_addition_and_plane_wrapping() {
+        let mut colors = vec![Bgr555(0); 128];
+        colors[1] = Bgr555(0x001f);
+        let palette = Palette { colors };
+        let backdrop = Rgba {
+            red: 10,
+            green: 20,
+            blue: 30,
+            alpha: 255,
+        };
+        let mut canvas =
+            lm_render::Canvas::from_pixels(520, 520, vec![backdrop; 520 * 520]).unwrap();
+        let layer3 = test_installed_layer3(0x2000, true);
+
+        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, false);
+        assert_eq!(canvas.get(0, 0), Some(backdrop));
+        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, true);
+        let expected = Rgba {
+            red: 255,
+            green: 20,
+            blue: 30,
+            alpha: 255,
+        };
+        assert_eq!(canvas.get(0, 0), Some(expected));
+        assert_eq!(canvas.get(512, 0), Some(expected));
+        assert_eq!(canvas.get(0, 512), Some(expected));
+    }
+
+    #[test]
+    fn installed_layer3_priority_order_matches_normal_and_between_layer_modes() {
+        let definition = |tile| Map16Tile {
+            top_left: Subtile(tile),
+            top_right: Subtile(tile),
+            bottom_left: Subtile(tile),
+            bottom_right: Subtile(tile),
+            acts_like: 0,
+        };
+        let mut definitions = vec![Map16Tile::default(); Map16Page::TILE_COUNT];
+        definitions[0] = definition(0);
+        definitions[1] = definition(1);
+        let map16 = Map16Set {
+            pages: vec![Map16Page::new(definitions.clone()).unwrap()],
+        };
+        let tiles = [
+            IndexedTile::new([2; IndexedTile::PIXEL_COUNT]),
+            IndexedTile::new([3; IndexedTile::PIXEL_COUNT]),
+        ];
+        let mut colors = vec![Bgr555(0); 128];
+        colors[1] = Bgr555(0x001f);
+        colors[2] = Bgr555(0x03e0);
+        colors[3] = Bgr555(0x7c00);
+        let palette = Palette { colors };
+        let placement = |definition_index| NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: definition_index,
+            definition_index,
+            outer_x_flip: false,
+            outer_y_flip: false,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
+            composition: NativeMap16Composition::Opaque,
+        };
+        let layer2 = [placement(0)];
+        let layer1 = [placement(1)];
+        let layer_stack: [&[NativeMap16Placement]; 2] = [&layer2, &layer1];
+        let layout = NativeLevelMap16Layout {
+            width: 1,
+            height: 1,
+            page_stride: 1,
+            base_cell: 0,
+            vertical: false,
+        };
+        let routing = [NativeMap16PaletteRouting::Direct; 2];
+        let mut layer3 = test_installed_layer3(0x2000, false);
+        let normal = render_level_canvas_with_layer_palette_routing(
+            &layer_stack,
+            &[],
+            layout,
+            &map16,
+            &definitions,
+            &tiles,
+            &[],
+            &[],
+            &palette,
+            &routing,
+            Some(&layer3),
+        )
+        .unwrap();
+        assert_eq!(normal.get(0, 0).unwrap().red, 255);
+
+        layer3.between_background_and_foreground = true;
+        let between = render_level_canvas_with_layer_palette_routing(
+            &layer_stack,
+            &[],
+            layout,
+            &map16,
+            &definitions,
+            &tiles,
+            &[],
+            &[],
+            &palette,
+            &routing,
+            Some(&layer3),
+        )
+        .unwrap();
+        assert_eq!(between.get(0, 0).unwrap().blue, 255);
     }
 
     fn level_for_image_crop(mode: u8, stored_screen: u8, sprite_screen: u8) -> LoadedLevelSlot {

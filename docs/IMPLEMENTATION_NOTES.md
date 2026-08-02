@@ -3035,10 +3035,16 @@ along their recovered major axis through the same stride-preserving bounded rast
 Both paths snapshot the active animation phase and Special World state at dispatch, then carry
 those immutable view inputs through background rendering. This matches the documented current-view
 boundary without letting a long batch mix view states when the frontend clock or toggle advances.
-The shared View menu additionally owns independent Layer 1, Layer 2, and sprite visibility. The
+The shared View menu additionally owns independent Layer 1, Layer 2, Layer 3, and sprite visibility. The
 primary canvas and installed preview omit hidden artwork and its interaction targets; inspection
 and image export receive the same immutable visibility snapshot. Visible raster layers retain the
 native Layer 2-before-Layer 1 painter order instead of rebuilding a reordered filtered list.
+For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
+the source level's stripe tilemap and active profile graphics, honor editor start offsets and
+horizontal/vertical plane repetition, split the priority planes, and preserve normal or
+background/Layer-3/foreground painter order plus additive pixels. An enabled custom installed
+Layer 3 tilemap fails closed until its provider is recovered; batch export skips that level rather
+than publishing an image with the plane silently missing.
 Encoding or destination failures still abort the grouped create-new publication, and cancellation
 before publication leaves no output files visible.
 

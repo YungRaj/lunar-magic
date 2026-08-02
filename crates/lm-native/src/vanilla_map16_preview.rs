@@ -223,7 +223,11 @@ pub(crate) fn render(
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let entrance_image = render_default_entrance_marker(&project, &palette)?;
     let foreground_image = render_foreground_graphics_atlas(&foreground_graphics, &palette);
-    let layer3_tiles = load_layer3_tiles(&project, usize::from(level))?;
+    let layer3_tiles = load_layer3_tiles(
+        &project,
+        usize::from(level),
+        lm_profile::smw_us_v1_vanilla_graphics_layout(),
+    )?;
     let entrance = project
         .load_vanilla_main_entrance(
             usize::from(level),
@@ -311,7 +315,7 @@ pub(crate) fn apply_vanilla_editor_palette_animation(palette: &mut Palette, phas
     }
 }
 
-const fn vanilla_layer3_editor_row_offset(
+pub(crate) const fn vanilla_layer3_editor_row_offset(
     behavior: lm_profile::SmwUsV1Layer3Behavior,
     object_tileset: u8,
 ) -> Option<i16> {
@@ -328,7 +332,7 @@ const fn vanilla_layer3_editor_row_offset(
     }
 }
 
-const fn vanilla_layer3_between_background_and_foreground(
+pub(crate) const fn vanilla_layer3_between_background_and_foreground(
     behavior: lm_profile::SmwUsV1Layer3Behavior,
 ) -> bool {
     matches!(
@@ -337,7 +341,7 @@ const fn vanilla_layer3_between_background_and_foreground(
     )
 }
 
-const fn vanilla_layer3_additive(
+pub(crate) const fn vanilla_layer3_additive(
     level_mode: u8,
     behavior: lm_profile::SmwUsV1Layer3Behavior,
     object_tileset: u8,
@@ -942,7 +946,11 @@ const fn map16_quadrant_offset(quadrant: usize) -> (usize, usize) {
     (quadrant / 2 * 8, quadrant % 2 * 8)
 }
 
-fn load_layer3_tiles(project: &Project, level: usize) -> Result<Vec<IndexedTile>, String> {
+pub(crate) fn load_layer3_tiles(
+    project: &Project,
+    level: usize,
+    graphics_layout: lm_project::GraphicsRomLayout,
+) -> Result<Vec<IndexedTile>, String> {
     let settings = lm_profile::load_smw_us_v1_expanded_level_settings(project, level)
         .map_err(|error| error.to_string())?
         .settings;
@@ -966,7 +974,7 @@ fn load_layer3_tiles(project: &Project, level: usize) -> Result<Vec<IndexedTile>
             continue;
         }
         let mut decoded = project
-            .load_decompressed_graphics_file(file, lm_profile::smw_us_v1_vanilla_graphics_layout())
+            .load_decompressed_graphics_file(file, graphics_layout)
             .map_err(|error| error.to_string())?;
         if decoded.len() > LAYER3_SLOT_BYTES {
             return Err(format!(
@@ -1960,7 +1968,12 @@ mod tests {
         let project = Project::new(
             RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
         );
-        let actual = load_layer3_tiles(&project, slot).unwrap();
+        let actual = load_layer3_tiles(
+            &project,
+            slot,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        )
+        .unwrap();
         let actual = actual
             .iter()
             .flat_map(|tile| tile.pixels().iter().copied())

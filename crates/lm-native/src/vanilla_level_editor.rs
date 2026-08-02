@@ -2029,7 +2029,8 @@ impl VanillaLevelEditor {
                 screen_pixels_f32(layer1_y - layer2_y) * cell / 16.0,
             ))
         });
-        if !self.layer3_between_background_and_foreground
+        if visibility.layer3
+            && !self.layer3_between_background_and_foreground
             && let (Some(texture), Some(position), Some(camera)) = (
                 self.layer3_low_texture.as_ref(),
                 layer3_position,
@@ -2076,7 +2077,8 @@ impl VanillaLevelEditor {
                 game_camera,
             );
         }
-        if self.layer3_between_background_and_foreground
+        if visibility.layer3
+            && self.layer3_between_background_and_foreground
             && let (Some(position), Some(camera)) = (layer3_position, layer3_camera)
         {
             for texture in [
@@ -2141,7 +2143,8 @@ impl VanillaLevelEditor {
         } else {
             HashMap::new()
         };
-        if game_camera.is_none()
+        if visibility.layer3
+            && game_camera.is_none()
             && !self.layer3_between_background_and_foreground
             && let (Some(texture), Some(position), Some(camera)) = (
                 self.layer3_high_texture.as_ref(),
@@ -2242,7 +2245,8 @@ impl VanillaLevelEditor {
                 })
             })
             .flatten();
-        if game_camera.is_some()
+        if visibility.layer3
+            && game_camera.is_some()
             && !self.layer3_between_background_and_foreground
             && let (Some(texture), Some(position), Some(camera)) = (
                 self.layer3_high_texture.as_ref(),
@@ -8115,6 +8119,7 @@ mod tests {
         let visibility = crate::application::LevelViewVisibility {
             layer1: false,
             layer2: true,
+            layer3: false,
             sprites: false,
         };
         assert!(!placement_mode_visible(

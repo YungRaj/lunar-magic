@@ -115,8 +115,17 @@ impl NativeMap16PaletteRouting {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeLevelRasterError {
     Canvas(CanvasError),
+    CanvasDimensionsMismatch {
+        canvas_width: usize,
+        canvas_height: usize,
+        request_width: usize,
+        request_height: usize,
+    },
     InvalidPaletteLength(usize),
-    InvalidLayerPaletteRoutingLength { layers: usize, routing: usize },
+    InvalidLayerPaletteRoutingLength {
+        layers: usize,
+        routing: usize,
+    },
 }
 
 impl std::fmt::Display for NativeLevelRasterError {
@@ -184,6 +193,51 @@ fn render_native_level_framebuffer_impl(
         request.height,
         vec![request.backdrop; pixel_count],
     )?;
+    draw_native_level_layers_impl(&mut canvas, request, layer_palette_routing)?;
+    Ok(canvas)
+}
+
+/// Draws native Map16 layers into an existing framebuffer without clearing earlier artwork.
+///
+/// This is the ordering boundary used when a non-Map16 plane, such as Layer 3, must be inserted
+/// between native layers while retaining destination-dependent Map16 composition.
+///
+/// # Errors
+///
+/// Rejects canvas/request dimension disagreement, an undersized palette, or a routing slice whose
+/// length differs from the input layer count.
+pub fn draw_native_level_layers_with_layer_palette_routing(
+    canvas: &mut Canvas,
+    request: NativeLevelRasterRequest<'_>,
+    layer_palette_routing: &[NativeMap16PaletteRouting],
+) -> Result<(), NativeLevelRasterError> {
+    if layer_palette_routing.len() != request.layers.len() {
+        return Err(NativeLevelRasterError::InvalidLayerPaletteRoutingLength {
+            layers: request.layers.len(),
+            routing: layer_palette_routing.len(),
+        });
+    }
+    draw_native_level_layers_impl(canvas, request, Some(layer_palette_routing))
+}
+
+fn draw_native_level_layers_impl(
+    canvas: &mut Canvas,
+    request: NativeLevelRasterRequest<'_>,
+    layer_palette_routing: Option<&[NativeMap16PaletteRouting]>,
+) -> Result<(), NativeLevelRasterError> {
+    if canvas.width() != request.width || canvas.height() != request.height {
+        return Err(NativeLevelRasterError::CanvasDimensionsMismatch {
+            canvas_width: canvas.width(),
+            canvas_height: canvas.height(),
+            request_width: request.width,
+            request_height: request.height,
+        });
+    }
+    if request.palette.colors.len() < 16 * 8 {
+        return Err(NativeLevelRasterError::InvalidPaletteLength(
+            request.palette.colors.len(),
+        ));
+    }
     for (layer_index, layer) in request.layers.iter().enumerate() {
         let palette_routing = layer_palette_routing
             .and_then(|routing| routing.get(layer_index))
@@ -199,7 +253,7 @@ fn render_native_level_framebuffer_impl(
                 continue;
             };
             draw_map16_clipped(
-                &mut canvas,
+                canvas,
                 definition,
                 request.tiles,
                 request.palette,
@@ -219,7 +273,7 @@ fn render_native_level_framebuffer_impl(
             );
         }
     }
-    Ok(canvas)
+    Ok(())
 }
 
 /// Draws one Lunar Magic standard-sprite preview definition over an existing native framebuffer.
@@ -673,6 +727,98 @@ mod tests {
             })
         );
         assert_eq!(canvas.get(8, 0), Some(backdrop));
+    }
+
+    #[test]
+    fn drawing_layers_into_an_existing_canvas_preserves_prior_pixels_and_order() {
+        let definitions = [definition([0, 0, 0, 0]), definition([1, 1, 1, 1])];
+        let tiles = [solid(1), solid(2)];
+        let back = [NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: 0,
+            definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
+            composition: NativeMap16Composition::Opaque,
+        }];
+        let front = [NativeMap16Placement {
+            definition_index: 1,
+            word: 1,
+            ..back[0]
+        }];
+        let back_layers: [&[NativeMap16Placement]; 1] = [&back];
+        let front_layers: [&[NativeMap16Placement]; 1] = [&front];
+        let routing = [NativeMap16PaletteRouting::Direct];
+        let palette = palette();
+        let request = |layers| NativeLevelRasterRequest {
+            width: 24,
+            height: 16,
+            camera_x: 0,
+            camera_y: 0,
+            backdrop: Rgba::default(),
+            layers,
+            definitions: &definitions,
+            background_definitions: &[],
+            tiles: &tiles,
+            palette: &palette,
+        };
+        let prior = Rgba {
+            red: 7,
+            green: 9,
+            blue: 11,
+            alpha: 255,
+        };
+        let mut canvas = Canvas::from_pixels(24, 16, vec![prior; 24 * 16]).unwrap();
+        draw_native_level_layers_with_layer_palette_routing(
+            &mut canvas,
+            request(&back_layers),
+            &routing,
+        )
+        .unwrap();
+        draw_native_level_layers_with_layer_palette_routing(
+            &mut canvas,
+            request(&front_layers),
+            &routing,
+        )
+        .unwrap();
+
+        assert_eq!(canvas.get(0, 0).unwrap().green, 255);
+        assert_eq!(canvas.get(20, 0), Some(prior));
+    }
+
+    #[test]
+    fn drawing_layers_rejects_canvas_dimension_disagreement() {
+        let mut canvas = Canvas::try_new(2, 2).unwrap();
+        let layers: [&[NativeMap16Placement]; 0] = [];
+        let palette = palette();
+        let error = draw_native_level_layers_with_layer_palette_routing(
+            &mut canvas,
+            NativeLevelRasterRequest {
+                width: 1,
+                height: 2,
+                camera_x: 0,
+                camera_y: 0,
+                backdrop: Rgba::default(),
+                layers: &layers,
+                definitions: &[],
+                background_definitions: &[],
+                tiles: &[],
+                palette: &palette,
+            },
+            &[],
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            NativeLevelRasterError::CanvasDimensionsMismatch {
+                canvas_width: 2,
+                canvas_height: 2,
+                request_width: 1,
+                request_height: 2,
+            }
+        );
     }
 
     #[test]

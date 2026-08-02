@@ -43,6 +43,9 @@ impl NativeApplication {
                     .checkbox(&mut self.level_view_visibility.layer2, "Layer 2")
                     .changed();
                 visibility_changed |= ui
+                    .checkbox(&mut self.level_view_visibility.layer3, "Layer 3")
+                    .changed();
+                visibility_changed |= ui
                     .checkbox(&mut self.level_view_visibility.sprites, "Sprites")
                     .changed();
             });
