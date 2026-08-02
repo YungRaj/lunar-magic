@@ -1433,6 +1433,15 @@ addresses `$108549` and `$108640`. The Rust layout model therefore represents co
 split/shared-bank, and split/per-entry-bank encodings explicitly, including atomic writes and
 profile-wide protection/auditing of every component.
 
+The installed form is also verified as a Rust-to-Lunar-Magic write boundary. On an authentic
+2 MiB modified ROM, the native level editor changes one sprite number in level `$102`, writes the
+stream through that level's resolved `$077100` bank entry, repairs the checksum, and reopens the
+exact token. Lunar Magic 3.63 exports the result with the same Layer 1 aggregate as its export of
+the untouched baseline and with exactly that sprite-token replacement. Comparing two Lunar Magic
+exports is required here because 3.63 independently canonicalizes two legacy compact screen-exit
+records in the source ROM even when no Rust edit is present. Native undo restores every logical
+input byte.
+
 ### Pristine graphics pointer planes
 
 `ReadGraphicsFileRomPointer` (`00463A90`) proves that pristine GFX files

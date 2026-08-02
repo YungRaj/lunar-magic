@@ -3034,6 +3034,15 @@ and from 2.175570 to 1.205272 mean absolute channel error. The audit comparator 
 observed 656×448 DIB as the same fixed `(870,338)` editor crop as the existing 656×464 capture,
 avoiding a false heuristic offset.
 
+That installed pointer generation is now covered in the write direction as well. The ignored
+`vanilla_level_editor::tests::external_lunar_magic_rom_sprite_edit_saves_reopens_and_undoes` gate
+opens an authentic 2 MiB Lunar Magic-modified ROM, changes one level-$102 sprite number through the
+native controller, commits through the installed per-entry bank layout, and reopens the exact
+edited token in Rust. Lunar Magic 3.63 then exports both the untouched input and Rust-written ROM:
+their complete Layer 1 aggregates agree after Lunar Magic's own legacy screen-exit canonicalization,
+and the sprite aggregates differ by exactly the requested token. The physical output retains a
+valid checksum, while one native undo restores the complete logical input byte-for-byte.
+
 The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
 pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at
 `$00388B`, GFX32's at `$0038D8`, and their shared bank operand at `$003890`. The SMW-US resolver

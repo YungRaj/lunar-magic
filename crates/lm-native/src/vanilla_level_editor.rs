@@ -8618,6 +8618,140 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a locally supplied Lunar Magic-modified SMW-US ROM"]
+    fn external_lunar_magic_rom_sprite_edit_saves_reopens_and_undoes() {
+        let path = std::env::var_os("LM_MODIFIED_LEVEL_ROM")
+            .expect("LM_MODIFIED_LEVEL_ROM must name the modified ROM");
+        let source = std::fs::read(path).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(source.clone()).unwrap();
+        app.dispatch(Command::SelectLevel(0x102)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let baseline = RomImage::from_bytes(snapshot.rom_bytes.clone())
+            .unwrap()
+            .logical_bytes()
+            .to_vec();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x102,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let controller = editor.controller.as_mut().unwrap();
+        let (index, mut replacement) = controller
+            .level()
+            .sprites
+            .tokens
+            .iter()
+            .enumerate()
+            .find_map(|(index, token)| match token {
+                lm_level::SpriteToken::Record(record) => Some((index, record.clone())),
+                _ => None,
+            })
+            .expect("level 102 must contain an ordinary sprite");
+        replacement.encoded[2] ^= 0x01;
+        let expected = lm_level::SpriteToken::Record(replacement.clone());
+        controller
+            .apply_edits(&[NativeLevelEdit::ReplaceSprite {
+                index,
+                token: expected.clone(),
+            }])
+            .unwrap();
+        app.dispatch(prepare_commit(controller, &snapshot).unwrap())
+            .unwrap();
+        let image = app.project().unwrap().rom.clone();
+        let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(0x102, layout, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(reopened.sprites.tokens[index], expected);
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let executable = root.join("lm363/Lunar Magic.exe");
+        assert!(executable.is_file(), "missing {}", executable.display());
+        let temporary = tempfile::Builder::new()
+            .prefix("lm-modified-level-save-wine-")
+            .tempdir()
+            .unwrap();
+        let directory = temporary.path();
+        let baseline_rom_path = directory.join("baseline modified ROM.smc");
+        let baseline_mwl_path = directory.join("baseline level 102.mwl");
+        let rom_path = directory.join("rust saved modified ROM.smc");
+        let mwl_path = directory.join("rust saved level 102.mwl");
+        std::fs::write(&baseline_rom_path, &source).unwrap();
+        std::fs::write(&rom_path, app.project().unwrap().rom.as_file_bytes()).unwrap();
+        let restore = directory.join("sysLMRestore");
+        std::fs::create_dir(&restore).unwrap();
+        std::fs::copy(
+            root.join("sysLMRestore/smwOrig.smc"),
+            restore.join("smwOrig.smc"),
+        )
+        .unwrap();
+        std::fs::copy(
+            root.join("sysLMRestore/Super Mario World (USA).lrp"),
+            restore.join("Super Mario World (USA).lrp"),
+        )
+        .unwrap();
+        let wine_path = |path: &std::path::Path| {
+            let rendered = path.display().to_string().replace('/', r"\");
+            format!(r"Z:\{}", rendered.trim_start_matches('\\'))
+        };
+        let export = |rom_path: &std::path::Path, mwl_path: &std::path::Path| {
+            let output = std::process::Command::new("wine")
+                .env("WINEDEBUG", "-all")
+                .arg(&executable)
+                .arg("-ExportLevel")
+                .arg(wine_path(rom_path))
+                .arg(wine_path(mwl_path))
+                .arg("102")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "Lunar Magic export stdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        export(&baseline_rom_path, &baseline_mwl_path);
+        export(&rom_path, &mwl_path);
+        let baseline_exported = lm_project::MwlNativeLevel::decode(
+            &lm_level::MwlFile::decode(&std::fs::read(&baseline_mwl_path).unwrap()).unwrap(),
+            &SpriteLengthTable::standard(),
+            32,
+            &[false; 256],
+        )
+        .unwrap();
+        let exported = lm_project::MwlNativeLevel::decode(
+            &lm_level::MwlFile::decode(&std::fs::read(&mwl_path).unwrap()).unwrap(),
+            &SpriteLengthTable::standard(),
+            32,
+            &[false; 256],
+        )
+        .unwrap();
+        assert_eq!(exported.layer1, baseline_exported.layer1);
+        let mut expected_exported_sprites = baseline_exported.sprites;
+        expected_exported_sprites.tokens[index] = expected;
+        assert_eq!(exported.sprites, expected_exported_sprites);
+        assert!(
+            lm_rom::detect_identity(
+                &RomImage::from_bytes(std::fs::read(&rom_path).unwrap()).unwrap()
+            )
+            .unwrap()
+            .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.logical_bytes(), baseline);
+    }
+
+    #[test]
     fn every_pristine_level_materializes_its_builtin_render_assets() {
         let bytes = std::sync::Arc::new(crate::test_support::pristine_smw_us_rom_bytes());
         std::thread::scope(|scope| {
