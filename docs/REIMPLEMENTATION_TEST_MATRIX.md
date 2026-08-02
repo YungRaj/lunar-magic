@@ -515,7 +515,8 @@ grown RATS-owned stream and exports the identical canonical decoded sprite seque
 screen-exit records expose their five-bit source screen and exact 16-bit destination/flags value;
 semantic edits set Lunar Magic's required `$0400` flag, canonically switch between parameter-0
 compact and parameter-2 extended shapes, preserve the unrelated new-screen bit, reject non-exit
-records/out-of-range screens atomically, and round-trip all source-screen and representation
+records/out-of-range screens atomically, reload the visible semantic and raw forms from the staged
+canonical record after every accepted edit, and round-trip all source-screen and representation
 boundaries through real Lunar Magic 3.63 MWL import/re-export cycles.
 
 Auxiliary level editing stages entrances, screen exits, secondary exits, and Map16 overrides in one

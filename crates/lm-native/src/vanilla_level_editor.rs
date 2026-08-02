@@ -3161,7 +3161,7 @@ impl VanillaLevelEditor {
                 ui.end_row();
             });
             ui.small(
-                "Values below 1000 use the compact four-byte form; higher flag values use Lunar Magic's five-byte extended form.",
+                "Lunar Magic always sets flag 0400. Resulting values below 1000 use the compact four-byte form; higher flag values use the five-byte extended form.",
             );
         } else if let Some((encoding, target)) = &mut self.object_form.screen_jump {
             ui.label(format!(
@@ -3374,7 +3374,16 @@ impl VanillaLevelEditor {
                 };
                 if let Some(controller) = self.controller.as_mut() {
                     match controller.apply_edits(&[NativeLevelEdit::Objects(edits)]) {
-                        Ok(()) => self.error = None,
+                        Ok(()) => {
+                            if let Some(form) = selected_object_form(
+                                &controller.level().layer1.objects.records,
+                                self.selected_object,
+                            ) {
+                                self.object_form = form;
+                                self.object_placement_template = None;
+                            }
+                            self.error = None;
+                        }
                         Err(error) => self.error = Some(error.to_string()),
                     }
                 }
@@ -7793,6 +7802,10 @@ fn object_field_edits(
     ])
 }
 
+fn selected_object_form(records: &[ObjectRecord], selected: usize) -> Option<ObjectForm> {
+    records.get(selected).map(ObjectForm::from_record)
+}
+
 fn is_supported(snapshot: &lm_app::ControllerSnapshot) -> bool {
     snapshot.identity.game == SupportedGame::SuperMarioWorld
         && snapshot.identity.region == Region::NorthAmerica
@@ -8807,6 +8820,32 @@ mod tests {
             ObjectForm::from_record(&extended).screen_exit,
             Some((0x1f, 0xbcde))
         );
+    }
+
+    #[test]
+    fn applied_screen_exit_form_reloads_canonical_flag_and_encoding_shape() {
+        let source = ObjectRecord::new(vec![0x85, 0x0a, 0, 0x34]).unwrap();
+        for (requested, expected, encoded_len) in [(0, 0x0400, 4), (0x1000, 0x1400, 5)] {
+            let mut form = ObjectForm::from_record(&source);
+            form.screen_exit = Some((0x1f, requested));
+            let edits = object_field_edits(&form, 0, Some(&source)).unwrap();
+            let [ObjectEdit::Replace { index: 0, record }] = edits.as_slice() else {
+                panic!("screen-exit form must stage one replacement");
+            };
+            assert_eq!(record.encoded().len(), encoded_len);
+            assert_eq!(record.encoded()[0] & 0x80, 0x80);
+            let refreshed = selected_object_form(std::slice::from_ref(record), 0).unwrap();
+            assert_eq!(refreshed.screen_exit, Some((0x1f, expected)));
+            assert_eq!(
+                refreshed.encoded,
+                crate::level_editor_forms::format_bytes(record.encoded())
+            );
+        }
+
+        let mut invalid = ObjectForm::from_record(&source);
+        invalid.screen_exit = Some((0x20, 0));
+        assert!(object_field_edits(&invalid, 0, Some(&source)).is_err());
+        assert_eq!(source.encoded(), &[0x85, 0x0a, 0, 0x34]);
     }
 
     #[test]
