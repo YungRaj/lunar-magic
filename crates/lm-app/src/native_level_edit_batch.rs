@@ -129,6 +129,7 @@ fn apply_header_edit(
 ) -> Result<(), HeaderValueError> {
     match edit {
         LegacyHeaderEdit::BackgroundPalette(value) => layer1.header.set_background_palette(value),
+        LegacyHeaderEdit::LastScreen(value) => layer1.header.set_last_screen(value),
         LegacyHeaderEdit::LevelMode(value) => layer1.header.set_level_mode(value),
         LegacyHeaderEdit::BackgroundColor(value) => layer1.header.set_background_color(value),
         LegacyHeaderEdit::SpriteTileset(value) => layer1.header.set_sprite_tileset(value),

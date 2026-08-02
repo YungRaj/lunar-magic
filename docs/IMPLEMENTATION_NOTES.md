@@ -1010,10 +1010,10 @@ bypass the revision-checked command boundary.
 After opening a ROM, installing its audited revision profile, and selecting a level, the terminal
 frontend can exercise a real native edit with
 `level-header FIELD VALUE SEARCH_START SEARCH_END`. Supported fields are `background-palette`,
-`mode`, `background-color`, `sprite-tileset`, `music`, `time`, `sprite-palette`, `foreground-palette`, and
-`object-tileset`; numeric arguments are hexadecimal. The explicit search range is converted into a
-bank-aware policy that protects all 16 profile tables and the complete 64-byte
-internal-header/vector block. The command decodes through `LevelController`, stages a typed edit,
+`last-screen`, `mode`, `background-color`, `sprite-tileset`, `music`, `time`, `sprite-palette`,
+`foreground-palette`, and `object-tileset`; numeric arguments are hexadecimal. The explicit search
+range is converted into a bank-aware policy that protects all 16 profile tables and the complete
+64-byte internal-header/vector block. The command decodes through `LevelController`, stages a typed edit,
 allocates and repairs the checksum on a private image, then dispatches the prepared mutation
 through the authoritative revision check. It is therefore undoable and cannot bypass normal
 dirty-state/save handling.
@@ -3247,7 +3247,10 @@ exactly through `$13`, `$14`, and `$1F` as injected Layer 1 objects required. A 
 backward `$1F`→`$00` object stream remained byte-for-byte ordered, proving that import updates the
 extent without globally sorting raw objects. Installed Rust MWL import now stages those two effects
 separately: canonical sprites participate in automatic extent, the header receives `count - 1`,
-and the source object sequence is retained exactly.
+and the source object sequence is retained exactly. Direct ROM-to-MWL export instead preserves the
+stored field even when a raw sprite lies beyond it, as confirmed by a separate live oracle. Both
+native level editors, edit scripts, and the terminal expose this independent `last-screen` value;
+generic ROM save/export therefore does not incorrectly substitute the import-only calculation.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and

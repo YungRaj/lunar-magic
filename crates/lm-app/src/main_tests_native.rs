@@ -206,11 +206,19 @@ fn terminal_level_header_edit_commits_reloads_and_undoes() {
     app.load_rom(profiled_rom(&profile)).unwrap();
     app.dispatch(Command::InstallRevisionProfile(Box::new(profile.clone())))
         .unwrap();
+    let original_last_screen = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap()
+        .layer1
+        .header
+        .last_screen();
     let revision_before_edit = app.project_revision();
     edit_level_header(
         &mut app,
-        shell_command::LevelHeaderField::LevelMode,
-        3,
+        shell_command::LevelHeaderField::LastScreen,
+        0x1d,
         0x1_0000..0x1_8000,
     )
     .unwrap();
@@ -219,7 +227,7 @@ fn terminal_level_header_edit_commits_reloads_and_undoes() {
         .unwrap()
         .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
         .unwrap();
-    assert_eq!(loaded.layer1.header.level_mode(), 3);
+    assert_eq!(loaded.layer1.header.last_screen(), 0x1d);
     assert_eq!(app.project_revision(), revision_before_edit + 1);
     let logical = app.project().unwrap().rom.logical_bytes();
     assert_eq!(
@@ -232,7 +240,7 @@ fn terminal_level_header_edit_commits_reloads_and_undoes() {
         .unwrap()
         .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
         .unwrap();
-    assert_eq!(restored.layer1.header.level_mode(), 2);
+    assert_eq!(restored.layer1.header.last_screen(), original_last_screen);
 }
 
 #[test]

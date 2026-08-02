@@ -514,6 +514,10 @@ fn lunar_magic_sorts_raw_legacy_sprite_records_on_export() {
     let mut expected = written.sprites.clone();
     expected.sort_legacy_records_by_screen(*first).unwrap();
     assert_eq!(actual.sprites, expected);
+    assert_eq!(
+        actual.layer1.header.last_screen(),
+        written.layer1.header.last_screen()
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 

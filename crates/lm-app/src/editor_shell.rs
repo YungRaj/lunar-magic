@@ -34,6 +34,7 @@ pub(crate) fn edit_level_header(
         shell_command::LevelHeaderField::BackgroundPalette => {
             LegacyHeaderEdit::BackgroundPalette(value)
         }
+        shell_command::LevelHeaderField::LastScreen => LegacyHeaderEdit::LastScreen(value),
         shell_command::LevelHeaderField::LevelMode => LegacyHeaderEdit::LevelMode(value),
         shell_command::LevelHeaderField::BackgroundColor => {
             LegacyHeaderEdit::BackgroundColor(value)

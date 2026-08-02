@@ -25,6 +25,7 @@ pub struct TileCoordinate {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LegacyHeaderEdit {
     BackgroundPalette(u8),
+    LastScreen(u8),
     LevelMode(u8),
     BackgroundColor(u8),
     SpriteTileset(u8),
@@ -195,6 +196,7 @@ fn apply_header_edit(level: &mut Level, edit: LegacyHeaderEdit) -> Result<(), He
         LegacyHeaderEdit::BackgroundPalette(value) => {
             level.header.legacy.set_background_palette(value)
         }
+        LegacyHeaderEdit::LastScreen(value) => level.header.legacy.set_last_screen(value),
         LegacyHeaderEdit::LevelMode(value) => level.header.legacy.set_level_mode(value),
         LegacyHeaderEdit::BackgroundColor(value) => level.header.legacy.set_background_color(value),
         LegacyHeaderEdit::SpriteTileset(value) => level.header.legacy.set_sprite_tileset(value),
@@ -259,6 +261,7 @@ mod tests {
                 LevelPropertyEdit::SetLevelNumber(0x123),
                 LevelPropertyEdit::SetSpriteHeader(0x5a),
                 LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(2)),
+                LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::LastScreen(0x1d)),
                 LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(3)),
                 LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::DefaultMusicSelector(6)),
                 LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::TimeLimitSelector(2)),
@@ -287,7 +290,8 @@ mod tests {
             ])
             .unwrap();
         let encoded_header = level.header.legacy.encoded();
-        assert_eq!(encoded_header[0] & 0x1f, 0x9f & 0x1f);
+        assert_eq!(level.header.legacy.last_screen(), 0x1d);
+        assert_eq!(encoded_header[0], 0x5d);
         assert_eq!(encoded_header[1] >> 5, 0xba >> 5);
         assert_eq!(encoded_header[2], 0x67);
         assert_eq!(encoded_header[3], 0x87);
@@ -320,6 +324,15 @@ mod tests {
                 },
             ]),
             Err(LevelPropertyEditError::TilemapShapeMismatch { command: 1, .. })
+        ));
+        assert_eq!(level, original);
+
+        assert!(matches!(
+            level.apply_property_edits(&[
+                LevelPropertyEdit::SetSpriteHeader(0x22),
+                LevelPropertyEdit::LegacyHeader(LegacyHeaderEdit::LastScreen(0x20)),
+            ]),
+            Err(LevelPropertyEditError::Header { command: 1, .. })
         ));
         assert_eq!(level, original);
 

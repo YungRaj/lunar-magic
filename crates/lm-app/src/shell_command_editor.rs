@@ -365,6 +365,7 @@ pub(super) fn parse_level_header_edit(argument: &str) -> Result<ShellCommand, Sh
     };
     let field = match *field {
         "background-palette" => LevelHeaderField::BackgroundPalette,
+        "last-screen" => LevelHeaderField::LastScreen,
         "mode" => LevelHeaderField::LevelMode,
         "background-color" => LevelHeaderField::BackgroundColor,
         "sprite-tileset" => LevelHeaderField::SpriteTileset,

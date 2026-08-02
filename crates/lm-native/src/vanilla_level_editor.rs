@@ -47,6 +47,7 @@ struct EditorKey {
 #[derive(Clone, Copy, Debug, Default)]
 struct HeaderForm {
     background_palette: u8,
+    last_screen: u8,
     level_mode: u8,
     background_color: u8,
     sprite_tileset: u8,
@@ -68,6 +69,7 @@ impl HeaderForm {
         let custom_time = controller.level().layer1.objects.custom_time(vertical);
         Self {
             background_palette: header.background_palette(),
+            last_screen: header.last_screen(),
             level_mode: header.level_mode(),
             background_color: header.background_color(),
             sprite_tileset: header.sprite_tileset(),
@@ -92,6 +94,7 @@ impl HeaderForm {
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(
                 self.background_palette,
             )),
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LastScreen(self.last_screen)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(self.level_mode)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundColor(self.background_color)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpriteTileset(self.sprite_tileset)),
@@ -838,6 +841,7 @@ impl VanillaLevelEditor {
                 &mut self.form.background_palette,
                 7,
             );
+            header_row(ui, "Last screen", &mut self.form.last_screen, 31);
             header_row(ui, "Background color", &mut self.form.background_color, 7);
             header_row(ui, "Sprite tileset", &mut self.form.sprite_tileset, 15);
             header_row(

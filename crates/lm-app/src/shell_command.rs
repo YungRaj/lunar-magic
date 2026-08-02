@@ -21,6 +21,7 @@ pub use crate::shell_document_command::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LevelHeaderField {
     BackgroundPalette,
+    LastScreen,
     LevelMode,
     BackgroundColor,
     SpriteTileset,

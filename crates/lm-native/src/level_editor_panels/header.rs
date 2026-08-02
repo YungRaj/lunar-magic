@@ -11,6 +11,7 @@ pub(super) fn show_header(
     let mut sprite_header = level.0.sprites.header;
     let mut values = [
         header.background_palette(),
+        header.last_screen(),
         header.level_mode(),
         header.background_color(),
         header.sprite_tileset(),
@@ -22,6 +23,7 @@ pub(super) fn show_header(
     ];
     let labels = [
         "Background palette",
+        "Last screen",
         "Level mode",
         "Background color",
         "Sprite tileset",
@@ -41,9 +43,9 @@ pub(super) fn show_header(
         .changed();
     for (index, value) in values.iter_mut().enumerate() {
         let maximum = match index {
-            1 => 31,
-            3 | 8 => 15,
-            5 => 3,
+            1 | 2 => 31,
+            4 | 9 => 15,
+            6 => 3,
             _ => 7,
         };
         changed |= ui
@@ -56,14 +58,15 @@ pub(super) fn show_header(
     changed.then(|| {
         let header_edits = [
             LegacyHeaderEdit::BackgroundPalette(values[0]),
-            LegacyHeaderEdit::LevelMode(values[1]),
-            LegacyHeaderEdit::BackgroundColor(values[2]),
-            LegacyHeaderEdit::SpriteTileset(values[3]),
-            LegacyHeaderEdit::DefaultMusicSelector(values[4]),
-            LegacyHeaderEdit::TimeLimitSelector(values[5]),
-            LegacyHeaderEdit::SpritePalette(values[6]),
-            LegacyHeaderEdit::ForegroundPalette(values[7]),
-            LegacyHeaderEdit::ObjectTileset(values[8]),
+            LegacyHeaderEdit::LastScreen(values[1]),
+            LegacyHeaderEdit::LevelMode(values[2]),
+            LegacyHeaderEdit::BackgroundColor(values[3]),
+            LegacyHeaderEdit::SpriteTileset(values[4]),
+            LegacyHeaderEdit::DefaultMusicSelector(values[5]),
+            LegacyHeaderEdit::TimeLimitSelector(values[6]),
+            LegacyHeaderEdit::SpritePalette(values[7]),
+            LegacyHeaderEdit::ForegroundPalette(values[8]),
+            LegacyHeaderEdit::ObjectTileset(values[9]),
             LegacyHeaderEdit::Layer1VerticalScroll(Layer1VerticalScrollMode::from_raw(
                 layer1_vertical_scroll,
             )),
