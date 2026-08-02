@@ -144,6 +144,10 @@ enum EntityPasteTarget {
     Object,
     Layer2Object,
     Sprite,
+    DirectMap16Rectangle {
+        key: EditorKey,
+        controller_revision: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3235,11 +3239,24 @@ impl VanillaLevelEditor {
         }
         show_raw_object_record(ui, "vanilla-layer1-raw-object", &mut self.object_form);
         self.object_action_buttons(ui, record_count, has_selection);
+        self.handle_object_paste(ui, record_count);
+    }
+
+    fn handle_object_paste(&mut self, ui: &egui::Ui, record_count: usize) {
         if self.paste_target == Some(EntityPasteTarget::Object)
             && let Some(text) = pasted_text(ui)
         {
             self.paste_target = None;
             self.paste_object(&text, record_count);
+        }
+        if let Some(EntityPasteTarget::DirectMap16Rectangle {
+            key,
+            controller_revision,
+        }) = self.paste_target
+            && let Some(text) = pasted_text(ui)
+        {
+            self.paste_target = None;
+            self.stage_direct_map16_rectangle(&text, key, controller_revision);
         }
     }
 
@@ -3438,7 +3455,49 @@ impl VanillaLevelEditor {
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
             }
+            if ui.button("Paste Map16 rectangle for placement").clicked() {
+                match (self.key, self.controller.as_ref()) {
+                    (Some(key), Some(controller)) => {
+                        self.paste_target = Some(EntityPasteTarget::DirectMap16Rectangle {
+                            key,
+                            controller_revision: controller.revision(),
+                        });
+                        ui.ctx()
+                            .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                    }
+                    _ => self.error = Some("level controller is unavailable".into()),
+                }
+            }
         });
+    }
+
+    fn stage_direct_map16_rectangle(
+        &mut self,
+        text: &str,
+        requested_key: EditorKey,
+        requested_controller_revision: u64,
+    ) {
+        let request_is_current = self.key == Some(requested_key)
+            && self
+                .controller
+                .as_ref()
+                .is_some_and(|controller| controller.revision() == requested_controller_revision);
+        if !request_is_current {
+            self.error = Some(
+                "Map16 rectangle paste was discarded because the level changed while reading the clipboard"
+                    .into(),
+            );
+            return;
+        }
+        match direct_map16_rectangle_from_clipboard(text) {
+            Ok(record) => {
+                self.object_form = ObjectForm::from_record(&record);
+                self.object_placement_template = Some(record);
+                self.placement_mode = Some(CanvasPlacementMode::Object);
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
     }
 
     fn selected_object_field_edits(&self) -> Result<Vec<ObjectEdit>, String> {
@@ -4177,6 +4236,20 @@ fn object_insertion_index(selected: usize, record_count: usize) -> usize {
 fn pasted_object_edit(text: &str, index: usize) -> Result<NativeLevelEdit, String> {
     crate::native_clipboard::decode_level_object(text)
         .map(|record| NativeLevelEdit::Objects(vec![ObjectEdit::Insert { index, record }]))
+}
+
+fn direct_map16_rectangle_from_clipboard(text: &str) -> Result<ObjectRecord, String> {
+    let rectangle = crate::native_clipboard::decode_native_map16_rectangle(text)?;
+    let source_tile = u16::try_from(rectangle.source_index)
+        .map_err(|_| "Map16 rectangle source lies outside the Direct Map16 namespace".to_owned())?;
+    let width = u8::try_from(rectangle.width).map_err(|_| {
+        "Map16 rectangle width is not representable by a Direct Map16 object".to_owned()
+    })?;
+    let height = u8::try_from(rectangle.height).map_err(|_| {
+        "Map16 rectangle height is not representable by a Direct Map16 object".to_owned()
+    })?;
+    ObjectRecord::direct_map16_rectangle(source_tile, width, height)
+        .map_err(|error| error.to_string())
 }
 
 fn pasted_sprite_edit(text: &str, index: usize) -> Result<NativeLevelEdit, String> {
@@ -9181,6 +9254,133 @@ mod tests {
         assert_eq!(
             app.project().unwrap().rom.logical_bytes(),
             expanded_baseline
+        );
+    }
+
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "keeps clipboard conversion, revision rejection, canvas placement, ROM reopen, and undo in one application-backed fixture"
+    )]
+    fn direct_map16_clipboard_rectangle_places_reopens_and_undoes_in_pristine_rom() {
+        let source = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(source).unwrap();
+        app.dispatch(Command::ExpandRom(RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        let expanded_baseline = app.project().unwrap().rom.logical_bytes().to_vec();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let key = EditorKey {
+            revision: snapshot.revision,
+            level: 0x105,
+            sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+        };
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(&snapshot, key, None);
+        let rectangle = lm_app::NativeMap16Clipboard::from_rectangle(
+            0x4000,
+            3,
+            2,
+            vec![lm_level::Map16Tile::default(); 6],
+        )
+        .unwrap();
+        let text = crate::native_clipboard::encode_native_map16_rectangle(&rectangle).unwrap();
+        let revision = editor.controller.as_ref().unwrap().revision();
+        let original_template = editor.object_placement_template.clone();
+
+        editor.stage_direct_map16_rectangle(&text, key, revision + 1);
+        assert_eq!(editor.object_placement_template, original_template);
+        assert!(editor.error.as_deref().unwrap().contains("level changed"));
+
+        editor.stage_direct_map16_rectangle(&text, key, revision);
+        let staged = editor.object_placement_template.as_ref().unwrap().clone();
+        assert_eq!(staged.encoded(), &[0x40, 0x90, 2, 0xc0, 0, 0x12, 1]);
+        assert_eq!(
+            staged.direct_map16_fields(),
+            Some(lm_level::DirectMap16Rectangle {
+                source_tile: 0x4000,
+                pattern_width: 3,
+                pattern_height: 2,
+                output_width: 3,
+                output_height: 2,
+            })
+        );
+        assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Object));
+
+        let vertical = lm_profile::smw_us_v1_level_mode(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .header
+                .level_mode(),
+        )
+        .vertical;
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            rom_canvas_size(512, 32, vertical, ROM_LEVEL_CANVAS_CELL),
+        );
+        editor.place_object_at_canvas(
+            egui::pos2(2.5 * ROM_LEVEL_CANVAS_CELL, 3.5 * ROM_LEVEL_CANVAS_CELL),
+            canvas,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        );
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let placed = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records[editor.selected_object]
+            .clone();
+        assert_eq!(placed.direct_map16_fields(), staged.direct_map16_fields());
+        assert_ne!(placed.coordinate_nibbles(), staged.coordinate_nibbles());
+
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
+            .unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        assert!(reopened.layer1.objects.records.contains(&placed));
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_bytes(),
+            expanded_baseline
+        );
+    }
+
+    #[test]
+    fn direct_map16_clipboard_conversion_rejects_source_outside_object_namespace() {
+        let rectangle = lm_app::NativeMap16Clipboard::from_rectangle(
+            0x8000,
+            1,
+            1,
+            vec![lm_level::Map16Tile::default()],
+        )
+        .unwrap();
+        let text = crate::native_clipboard::encode_native_map16_rectangle(&rectangle).unwrap();
+        assert!(
+            direct_map16_rectangle_from_clipboard(&text)
+                .unwrap_err()
+                .contains("InvalidDirectMap16Source")
         );
     }
 

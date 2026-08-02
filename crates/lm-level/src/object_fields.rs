@@ -16,6 +16,9 @@ pub enum ObjectFieldError {
     EncodedLengthMismatch { expected: usize, actual: usize },
     NotExtendedCommand27,
     InvalidExtendedSize { horizontal: u8, vertical: u8 },
+    InvalidDirectMap16Source(u16),
+    InvalidDirectMap16Pattern { width: u8, height: u8 },
+    DirectMap16PatternCrossesBoundary,
 }
 
 impl std::fmt::Display for ObjectFieldError {
@@ -39,21 +42,82 @@ impl ObjectRecord {
         self.encoded[2]
     }
 
-    /// Returns Lunar Magic's two seven-bit size components for the extended command `$27` form.
+    /// Returns Lunar Magic's two seven-bit size components for the Direct Map16 `$27`/`$29` form.
     ///
-    /// The recovered editor recognizes command `$27` with byte 3's mode bits set to `$C0`.
+    /// The recovered editor recognizes commands `$27` and `$29` with byte 3's mode bits set to `$C0`.
     /// Horizontal size minus one occupies byte 2's low seven bits and vertical size minus one
     /// occupies extension byte 6. Byte 2's high bit controls the optional eighth record byte and
     /// is deliberately excluded from the size.
     #[must_use]
     pub fn extended_command27_tile_size(&self) -> Option<(u8, u8)> {
-        (self.command_id() == 0x27
+        (matches!(self.command_id(), 0x27 | 0x29)
             && self
                 .encoded
                 .get(3)
                 .is_some_and(|flags| flags & 0xc0 == 0xc0)
             && self.encoded.len() >= 7)
             .then(|| ((self.encoded[2] & 0x7f) + 1, (self.encoded[6] & 0x7f) + 1))
+    }
+
+    /// Constructs Lunar Magic's canonical Direct Map16 rectangle object at coordinate zero.
+    ///
+    /// The source pattern and output rectangle have the same dimensions, matching the native
+    /// `Lunar Magic 16x16 Tiles` rectangle-conversion path. Placement code may subsequently set
+    /// the coordinate nibbles, perpendicular high bit, and screen-advance bit losslessly.
+    ///
+    /// # Errors
+    ///
+    /// Rejects source tiles outside `$0000–$7FFF`, dimensions outside 1–16, or a row-major
+    /// pattern whose final tile crosses the `$8000` Direct Map16 namespace boundary.
+    pub fn direct_map16_rectangle(
+        source_tile: u16,
+        width: u8,
+        height: u8,
+    ) -> Result<Self, ObjectFieldError> {
+        let fields = DirectMap16Rectangle {
+            source_tile,
+            pattern_width: width,
+            pattern_height: height,
+            output_width: width,
+            output_height: height,
+        };
+        fields.validate()?;
+        let command_low = if source_tile < 0x4000 { 0x70 } else { 0x90 };
+        let [tile_low, tile_high] = source_tile.to_le_bytes();
+        Ok(Self {
+            encoded: vec![
+                0x40,
+                command_low,
+                width - 1,
+                0xc0 | (tile_high & 0x3f),
+                tile_low,
+                ((height - 1) << 4) | (width - 1),
+                height - 1,
+            ],
+        })
+    }
+
+    /// Decodes the complete Direct Map16 pattern and output dimensions.
+    #[must_use]
+    pub fn direct_map16_fields(&self) -> Option<DirectMap16Rectangle> {
+        let command = self.command_id();
+        if !matches!(command, 0x27 | 0x29)
+            || self.encoded.len() < 7
+            || self.encoded[3] & 0xc0 != 0xc0
+        {
+            return None;
+        }
+        let source_tile = u16::from(self.encoded[4])
+            | (u16::from(self.encoded[3] & 0x3f) << 8)
+            | if command == 0x29 { 0x4000 } else { 0 };
+        let fields = DirectMap16Rectangle {
+            source_tile,
+            pattern_width: (self.encoded[5] & 0x0f) + 1,
+            pattern_height: (self.encoded[5] >> 4) + 1,
+            output_width: (self.encoded[2] & 0x7f) + 1,
+            output_height: (self.encoded[6] & 0x7f) + 1,
+        };
+        fields.validate().ok().map(|()| fields)
     }
 
     /// Changes only Lunar Magic's recovered extended command `$27` size fields.
@@ -323,6 +387,43 @@ pub struct ObjectCoordinateNibbles {
     pub second: u8,
 }
 
+/// Exact semantic fields of Lunar Magic's Direct Map16 `$27`/`$29` object encoding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DirectMap16Rectangle {
+    pub source_tile: u16,
+    pub pattern_width: u8,
+    pub pattern_height: u8,
+    pub output_width: u8,
+    pub output_height: u8,
+}
+
+impl DirectMap16Rectangle {
+    fn validate(self) -> Result<(), ObjectFieldError> {
+        if self.source_tile >= 0x8000 {
+            return Err(ObjectFieldError::InvalidDirectMap16Source(self.source_tile));
+        }
+        if !(1..=16).contains(&self.pattern_width) || !(1..=16).contains(&self.pattern_height) {
+            return Err(ObjectFieldError::InvalidDirectMap16Pattern {
+                width: self.pattern_width,
+                height: self.pattern_height,
+            });
+        }
+        if !(1..=128).contains(&self.output_width) || !(1..=128).contains(&self.output_height) {
+            return Err(ObjectFieldError::InvalidExtendedSize {
+                horizontal: self.output_width,
+                vertical: self.output_height,
+            });
+        }
+        let end = u32::from(self.source_tile)
+            + u32::from(self.pattern_height - 1) * 0x10
+            + u32::from(self.pattern_width);
+        if end > 0x8000 {
+            return Err(ObjectFieldError::DirectMap16PatternCrossesBoundary);
+        }
+        Ok(())
+    }
+}
+
 /// Which half of the packed target is stored in the first command byte.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScreenJumpEncoding {
@@ -499,6 +600,70 @@ mod tests {
             Err(ObjectFieldError::InvalidExtendedSize { .. })
         ));
         assert_eq!(extended, original);
+    }
+
+    #[test]
+    fn direct_map16_rectangles_encode_both_native_commands_exactly() {
+        let below = ObjectRecord::direct_map16_rectangle(0x3fff, 1, 1).unwrap();
+        assert_eq!(below.encoded(), &[0x40, 0x70, 0, 0xff, 0xff, 0, 0]);
+        assert_eq!(
+            below.direct_map16_fields(),
+            Some(DirectMap16Rectangle {
+                source_tile: 0x3fff,
+                pattern_width: 1,
+                pattern_height: 1,
+                output_width: 1,
+                output_height: 1,
+            })
+        );
+
+        let above = ObjectRecord::direct_map16_rectangle(0x4000, 16, 3).unwrap();
+        assert_eq!(above.encoded(), &[0x40, 0x90, 0x0f, 0xc0, 0, 0x2f, 2]);
+        assert_eq!(above.command_id(), 0x29);
+        assert_eq!(above.extended_command27_tile_size(), Some((16, 3)));
+        assert_eq!(above.direct_map16_fields().unwrap().source_tile, 0x4000);
+    }
+
+    #[test]
+    fn direct_map16_rectangle_validates_dimensions_and_namespace_boundary() {
+        assert!(matches!(
+            ObjectRecord::direct_map16_rectangle(0, 0, 1),
+            Err(ObjectFieldError::InvalidDirectMap16Pattern { .. })
+        ));
+        assert!(matches!(
+            ObjectRecord::direct_map16_rectangle(0, 17, 1),
+            Err(ObjectFieldError::InvalidDirectMap16Pattern { .. })
+        ));
+        assert_eq!(
+            ObjectRecord::direct_map16_rectangle(0x8000, 1, 1),
+            Err(ObjectFieldError::InvalidDirectMap16Source(0x8000))
+        );
+        assert!(ObjectRecord::direct_map16_rectangle(0x7fff, 1, 1).is_ok());
+        assert_eq!(
+            ObjectRecord::direct_map16_rectangle(0x7fff, 2, 1),
+            Err(ObjectFieldError::DirectMap16PatternCrossesBoundary)
+        );
+        assert_eq!(
+            ObjectRecord::direct_map16_rectangle(0x7ff0, 1, 2),
+            Err(ObjectFieldError::DirectMap16PatternCrossesBoundary)
+        );
+    }
+
+    #[test]
+    fn direct_map16_decode_retains_distinct_pattern_and_output_sizes() {
+        let record =
+            ObjectRecord::new(vec![0x4a, 0x9b, 0xff, 0xc1, 0x20, 0x23, 0x7f, 0xaa]).unwrap();
+        assert_eq!(
+            record.direct_map16_fields(),
+            Some(DirectMap16Rectangle {
+                source_tile: 0x4120,
+                pattern_width: 4,
+                pattern_height: 3,
+                output_width: 128,
+                output_height: 128,
+            })
+        );
+        assert_eq!(record.extended_command27_tile_size(), Some((128, 128)));
     }
 
     #[test]
