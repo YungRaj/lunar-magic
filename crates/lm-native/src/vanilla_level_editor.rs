@@ -296,6 +296,7 @@ pub(crate) struct VanillaLevelEditor {
     resizing_object: Option<usize>,
     resizing_layer2_object: Option<usize>,
     object_catalog_filter: String,
+    extended_object_catalog_filter: String,
     custom_object_catalog_filter: String,
     object_placement_template: Option<ObjectRecord>,
     selected_sprite: usize,
@@ -3301,6 +3302,7 @@ impl VanillaLevelEditor {
             ui.label("No selected object.");
         }
         self.object_catalog(ui, custom_map16);
+        self.extended_object_catalog(ui, custom_map16);
         self.custom_object_catalog(ui, custom_objects, custom_map16);
         if let Some((screen, destination_and_flags)) = &mut self.object_form.screen_exit {
             ui.label("Native screen-exit object");
@@ -3514,6 +3516,82 @@ impl VanillaLevelEditor {
                     }
                 }
             });
+    }
+
+    fn extended_object_catalog(
+        &mut self,
+        ui: &mut egui::Ui,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    ) {
+        egui::CollapsingHeader::new("Add extended object visually")
+            .id_salt("vanilla-extended-object-catalog")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Hex filter");
+                    ui.text_edit_singleline(&mut self.extended_object_catalog_filter);
+                    if ui.button("Clear").clicked() {
+                        self.extended_object_catalog_filter.clear();
+                    }
+                });
+                ui.label(
+                    "Choose a tileset-resolved extended object, then click its destination tile.",
+                );
+                let object_tileset = self.controller.as_ref().map_or(0, |controller| {
+                    controller.level().layer1.header.object_tileset()
+                });
+                let Some(definitions) = standard_object_definitions_for_tileset(object_tileset)
+                else {
+                    ui.label("The recovered extended-object definitions are unavailable.");
+                    return;
+                };
+                let selectors = extended_object_catalog_selectors(
+                    &definitions,
+                    &self.extended_object_catalog_filter,
+                );
+                let texture = self.map16_texture.clone();
+                let foreground_texture = self.foreground_texture.clone();
+                let handler_map = self.active_standard_object_handler_map().copied();
+                let Some(handler_map) = handler_map else {
+                    ui.label("The active standard-object handler map is unavailable.");
+                    return;
+                };
+                let mut chosen = None;
+                egui::ScrollArea::vertical()
+                    .id_salt("vanilla-extended-object-catalog-scroll")
+                    .max_height(280.0)
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            for selector in selectors {
+                                let response = draw_extended_object_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    foreground_texture.as_ref(),
+                                    custom_map16,
+                                    selector,
+                                    &handler_map,
+                                    &definitions,
+                                    self.object_form.command_id == 0
+                                        && self.object_form.parameter == selector,
+                                );
+                                if response.clicked() {
+                                    chosen = Some(selector);
+                                }
+                            }
+                        });
+                    });
+                if let Some(selector) = chosen {
+                    self.select_extended_object_from_catalog(selector);
+                }
+            });
+    }
+
+    fn select_extended_object_from_catalog(&mut self, selector: u8) {
+        let record = ObjectRecord::new(vec![0, 0, selector])
+            .expect("extended catalog selectors always encode three-byte objects");
+        self.object_form = ObjectForm::from_record(&record);
+        self.object_placement_template = Some(record);
+        self.placement_mode = Some(CanvasPlacementMode::Object);
+        self.error = None;
     }
 
     fn object_action_buttons(
@@ -4656,6 +4734,17 @@ fn object_catalog_commands(filter: &str) -> Vec<u8> {
         .collect()
 }
 
+fn extended_object_catalog_selectors(
+    definitions: &lm_render::StandardObjectDefinitionSet,
+    filter: &str,
+) -> Vec<u8> {
+    let filter = filter.trim().to_ascii_uppercase();
+    (4..=u8::MAX)
+        .filter(|selector| definitions.get_extended(*selector).is_some())
+        .filter(|selector| filter.is_empty() || format!("{selector:02X}").contains(&filter))
+        .collect()
+}
+
 fn custom_object_catalog_entries<'a>(
     table: &'a lm_level::OscResolvedTable,
     variant: u8,
@@ -4823,6 +4912,15 @@ fn standard_object_definitions() -> Option<lm_render::StandardObjectDefinitionSe
     Some(definitions)
 }
 
+fn standard_object_definitions_for_tileset(
+    object_tileset: u8,
+) -> Option<lm_render::StandardObjectDefinitionSet> {
+    let mut definitions = standard_object_definitions()?;
+    lm_render::install_lunar_magic_tileset_extended_objects(&mut definitions, object_tileset)
+        .ok()?;
+    Some(definitions)
+}
+
 fn draw_object_catalog_entry(
     ui: &mut egui::Ui,
     map16_texture: Option<&egui::TextureHandle>,
@@ -4868,6 +4966,53 @@ fn draw_object_catalog_entry(
     response.on_hover_text(format!("Standard object ${command:02X}"))
 }
 
+fn draw_extended_object_catalog_entry(
+    ui: &mut egui::Ui,
+    map16_texture: Option<&egui::TextureHandle>,
+    foreground_texture: Option<&egui::TextureHandle>,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    selector: u8,
+    handler_map: &[u8; 64],
+    definitions: &lm_render::StandardObjectDefinitionSet,
+    selected: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(62.0, 62.0), egui::Sense::click());
+    let painter = ui.painter_at(rect);
+    draw_catalog_background(&painter, rect, selected);
+    let preview_rect = egui::Rect::from_min_max(
+        rect.min + egui::vec2(3.0, 3.0),
+        rect.max - egui::vec2(3.0, 15.0),
+    );
+    let record = ObjectRecord::new(vec![0, 0, selector])
+        .expect("extended catalog selectors always encode three-byte objects");
+    if let Some(tiles) = object_catalog_record_tiles(&record, handler_map, definitions) {
+        draw_fitted_object_catalog_preview(
+            &painter,
+            map16_texture,
+            foreground_texture,
+            custom_map16,
+            preview_rect,
+            &tiles,
+        );
+    } else {
+        painter.text(
+            preview_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            format!("{selector:02X}"),
+            egui::FontId::monospace(12.0),
+            egui::Color32::LIGHT_BLUE,
+        );
+    }
+    painter.text(
+        egui::pos2(rect.center().x, rect.bottom() - 7.0),
+        egui::Align2::CENTER_CENTER,
+        format!("{selector:02X}"),
+        egui::FontId::monospace(10.0),
+        egui::Color32::WHITE,
+    );
+    response.on_hover_text(format!("Extended object ${selector:02X}"))
+}
+
 fn draw_catalog_background(painter: &egui::Painter, rect: egui::Rect, selected: bool) {
     painter.rect_filled(
         rect,
@@ -4904,6 +5049,14 @@ fn object_catalog_tiles(
     }
     .ordinary_record()
     .ok()?;
+    object_catalog_record_tiles(&record, handler_map, definitions)
+}
+
+fn object_catalog_record_tiles(
+    record: &ObjectRecord,
+    handler_map: &[u8; 64],
+    definitions: &lm_render::StandardObjectDefinitionSet,
+) -> Option<Vec<(usize, usize, u16)>> {
     let layout = lm_render::NativeLevelMap16Layout {
         width: 16,
         height: 16,
@@ -4913,7 +5066,7 @@ fn object_catalog_tiles(
     };
     let report = lm_render::render_mapped_standard_object_stream(
         &lm_level::ObjectStream {
-            records: vec![record],
+            records: vec![record.clone()],
         },
         definitions,
         handler_map,
@@ -9723,6 +9876,90 @@ mod tests {
                 &ObjectRecord::new(vec![0, 0, parameter]).unwrap()
             ));
         }
+    }
+
+    #[test]
+    fn extended_catalog_filters_previews_and_places_the_selected_object() {
+        let definitions = standard_object_definitions_for_tileset(0).unwrap();
+        assert_eq!(
+            extended_object_catalog_selectors(&definitions, "17"),
+            [0x17]
+        );
+        assert!(
+            extended_object_catalog_selectors(&definitions, "")
+                .iter()
+                .all(|selector| *selector >= 4)
+        );
+        let record = ObjectRecord::new(vec![0, 0, 0x17]).unwrap();
+        let tiles = object_catalog_record_tiles(&record, &[0; 64], &definitions).unwrap();
+        assert_eq!(tiles, [(0, 0, 0x12d)]);
+        let alternate_definitions = standard_object_definitions_for_tileset(1).unwrap();
+        assert_ne!(
+            object_catalog_record_tiles(&record, &[0; 64], &alternate_definitions).unwrap(),
+            tiles,
+            "selector $17 preview must follow the active object-tileset substitution"
+        );
+
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let before = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .len();
+        editor.select_extended_object_from_catalog(0x17);
+        assert_eq!(editor.object_form.command_id, 0);
+        assert_eq!(editor.object_form.parameter, 0x17);
+        assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Object));
+        editor.place_object_at_canvas(
+            egui::pos2(36.5, 8.5),
+            egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+            ),
+            1.0,
+            false,
+        );
+        assert_eq!(editor.error, None);
+        let records = &editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records;
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .native_placements()
+                .len(),
+            before + 1
+        );
+        assert_eq!(records[editor.selected_object].command_id(), 0);
+        assert_eq!(records[editor.selected_object].parameter(), 0x17);
     }
 
     #[test]
