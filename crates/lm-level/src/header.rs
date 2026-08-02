@@ -1,5 +1,11 @@
 use std::fmt;
 
+/// Whether one of Lunar Magic's 32 native level modes uses vertical coordinate ordering.
+#[must_use]
+pub const fn native_level_mode_is_vertical(mode: u8) -> bool {
+    matches!(mode & 0x1f, 3 | 4 | 7 | 8 | 10 | 13)
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LegacyLevelHeader {
     bytes: [u8; Self::ENCODED_LEN],
@@ -60,6 +66,12 @@ impl LegacyLevelHeader {
     #[must_use]
     pub const fn level_mode(self) -> u8 {
         self.bytes[1] & 0x1f
+    }
+
+    /// Whether the selected native level mode uses Lunar Magic's vertical coordinate ordering.
+    #[must_use]
+    pub const fn is_vertical(self) -> bool {
+        native_level_mode_is_vertical(self.level_mode())
     }
 
     #[must_use]
@@ -398,6 +410,18 @@ mod tests {
             })
         );
         assert_eq!(header, before);
+    }
+
+    #[test]
+    fn recovered_vertical_modes_are_exposed_by_the_native_header() {
+        let vertical = (0..32_u8)
+            .filter(|mode| {
+                let mut header = LegacyLevelHeader::default();
+                header.set_level_mode(*mode).unwrap();
+                header.is_vertical()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(vertical, [3, 4, 7, 8, 10, 13]);
     }
 
     #[test]

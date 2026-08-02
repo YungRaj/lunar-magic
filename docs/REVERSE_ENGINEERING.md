@@ -974,6 +974,12 @@ original same-screen priority. This binds legacy semantic serialization to the r
 path; expanded sorting remains orientation-aware because vertical levels add the recovered low-Y
 nibble tie-breaker.
 
+A matching direct-ROM expanded oracle writes two level `$105` records in descending screen and
+resolved upper-Y order, then invokes export without an edit gesture. Lunar Magic 3.63 restores the
+same stable horizontal comparator and minimum `$FF vv` transitions used after positional edits.
+Together with the retained vertical oracle, this proves expanded ordering is a semantic
+load/serialization invariant and that vertical modes alone add the low-Y-nibble key.
+
 The complete byte-sized standard-sprite preview domain is now classified against that dispatch
 table. IDs `$29`, `$30`, `$EE`, `$F0`, and `$F1` deliberately select Lunar Magic's native
 empty/default handler; IDs `$F6`–`$FF` are reserved for SSC custom-display bookkeeping; every other

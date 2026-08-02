@@ -1,10 +1,10 @@
 use lm_graphics::{Palette, PaletteEncodingError};
 use lm_level::{
     ExpandedLevelSettingsRecord, Layer2Storage, LegacyMwlError, LegacyMwlManifest,
-    LegacyMwlSecondaryExit, LegacyMwlSidecar, LevelObjectData, MwlFile, MwlLayer2Descriptor,
-    MwlLevelHeaderSection, MwlSecondaryExit, NativeLayer2Data, NativeLayer2Error,
-    NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError, SecondaryExit,
-    SpriteLengthTable, SpriteStreamError, level_mode_layer2_storage,
+    LegacyMwlSecondaryExit, LegacyMwlSidecar, LevelEditError, LevelObjectData, MwlFile,
+    MwlLayer2Descriptor, MwlLevelHeaderSection, MwlSecondaryExit, NativeLayer2Data,
+    NativeLayer2Error, NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError,
+    SecondaryExit, SpriteLengthTable, SpriteStreamError, level_mode_layer2_storage,
 };
 use std::fmt;
 
@@ -46,7 +46,7 @@ impl LegacyMwlBundle {
         let layer1 = source.layer1.encode()?;
         let layer2 = source.layer2.encode_mwl()?;
         let mut canonical_sprites = source.sprites.clone();
-        canonical_sprites.canonicalize_framing();
+        canonical_sprites.canonicalize_for_orientation(source.layer1.header.is_vertical())?;
         let sprites = canonical_sprites.encode_for_table(sprite_lengths)?;
         validate_payloads(&layer1, &layer2, &sprites)?;
         let palette = if source.layer1_metadata[0] & 1 != 0 {
@@ -309,6 +309,7 @@ pub enum LegacyMwlBundleError {
     Layer2(NativeLayer2Error),
     Sprites(SpriteStreamError),
     SpriteEncoding(NativeSpriteEncodingError),
+    SpriteCanonicalization(LevelEditError),
     Palette(PaletteEncodingError),
     SecondaryExit(lm_level::SecondaryExitEncodingError),
     UnsafeBaseName(String),
@@ -341,6 +342,7 @@ from_error!(ObjectStreamError, Objects);
 from_error!(NativeLayer2Error, Layer2);
 from_error!(SpriteStreamError, Sprites);
 from_error!(NativeSpriteEncodingError, SpriteEncoding);
+from_error!(LevelEditError, SpriteCanonicalization);
 from_error!(PaletteEncodingError, Palette);
 from_error!(lm_level::SecondaryExitEncodingError, SecondaryExit);
 

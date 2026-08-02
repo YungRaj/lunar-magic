@@ -1,9 +1,10 @@
 use crate::portable_value_history::PortableValueHistory;
 use lm_level::{
     ExpandedLevelSettingsError, Layer2ScrollSettings, Layer3TilemapGraphicsDescriptor,
-    LevelObjectData, MwlError, MwlFile, MwlLevelHeaderSection, MwlMainEntranceSettings,
-    MwlMidwayEntranceSettings, MwlSection, MwlSectionKind, NativeSpriteEncodingError,
-    NativeSpriteStream, ObjectStreamError, SpriteLengthTable, SpriteStreamError,
+    LevelEditError, LevelObjectData, MwlError, MwlFile, MwlLevelHeaderSection,
+    MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlSection, MwlSectionKind,
+    NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError, SpriteLengthTable,
+    SpriteStreamError,
 };
 use lm_project::{
     MwlOptionalAssetsEdit, MwlOptionalAssetsEditError, MwlOptionalLevelAssets,
@@ -299,8 +300,11 @@ impl MwlDocumentController {
                 actual: self.revision,
             });
         }
+        let vertical = self.layer1()?.header.is_vertical();
         let mut canonical = sprites.clone();
-        canonical.canonicalize_framing();
+        canonical
+            .canonicalize_for_orientation(vertical)
+            .map_err(MwlDocumentControllerError::SpriteCanonicalization)?;
         let encoded = canonical
             .encode_for_table(lengths)
             .map_err(MwlDocumentControllerError::SpriteEncoding)?;
@@ -569,6 +573,7 @@ pub enum MwlDocumentControllerError {
     SpriteSection(MwlError),
     SpriteParse(SpriteStreamError),
     SpriteEncoding(NativeSpriteEncodingError),
+    SpriteCanonicalization(LevelEditError),
     NonCanonicalSprites,
     Layer1Section(MwlError),
     Layer1Parse(ObjectStreamError),

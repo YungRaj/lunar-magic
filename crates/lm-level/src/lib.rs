@@ -75,7 +75,7 @@ pub use expanded_settings_layer3::{
 };
 pub use header::{
     ExpandedLevelHeader, GraphicsFileValueError, HeaderValueError, Layer1VerticalScrollMode,
-    LegacyLevelHeader, LevelHeader, SuperGraphicsBypass,
+    LegacyLevelHeader, LevelHeader, SuperGraphicsBypass, native_level_mode_is_vertical,
 };
 pub use layer3::{Layer3Data, Layer3Error, Layer3File, Layer3Settings};
 pub use layer3_editing::{Layer3Edit, Layer3EditError};

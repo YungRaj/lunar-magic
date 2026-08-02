@@ -517,6 +517,116 @@ fn lunar_magic_sorts_raw_legacy_sprite_records_on_export() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Determines whether Lunar Magic sorts an out-of-order expanded stream while loading it.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_sorts_raw_expanded_sprite_records_on_export() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc");
+    assert!(original_rom.is_file(), "missing {}", original_rom.display());
+    let directory = std::env::temp_dir().join(format!(
+        "lm-raw-expanded-sprite-order-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let edited_rom = directory.join("Rust out-of-order expanded sprites.sfc");
+    let reexported_mwl = directory.join("Lunar Magic expanded sprite order.mwl");
+    let lengths = SpriteLengthTable::standard();
+    let image = RomImage::from_bytes(fs::read(&original_rom).unwrap()).unwrap();
+    let mut project = Project::new(image.clone());
+    let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+    let loaded = project.load_level_slot(0x105, layout, &lengths).unwrap();
+    assert!(!lm_profile::smw_us_v1_level_mode(loaded.layer1.header.level_mode()).vertical);
+    let records = loaded
+        .sprites
+        .tokens
+        .iter()
+        .filter_map(|token| match token {
+            SpriteToken::Record(record) => Some(record.clone()),
+            SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+        })
+        .take(2)
+        .collect::<Vec<_>>();
+    let [late, early] = records.as_slice() else {
+        panic!("level 105 must contain at least two sprites");
+    };
+    let mut late = late.clone();
+    let mut early = early.clone();
+    let mut late_fields = late.native_fields().unwrap();
+    late_fields.screen = 0x1f;
+    late_fields.y_low = 0x0f;
+    late.set_native_fields(late_fields, &lengths).unwrap();
+    let mut early_fields = early.native_fields().unwrap();
+    early_fields.screen = 0;
+    early_fields.y_low = 0;
+    early.set_native_fields(early_fields, &lengths).unwrap();
+    let mut written = loaded.clone();
+    written.sprites = NativeSpriteStream {
+        header: loaded.sprites.header | NativeSpriteStream::EXPANDED_HEADER_FLAG,
+        expanded: true,
+        tokens: vec![
+            SpriteToken::Screen(2),
+            SpriteToken::Record(late),
+            SpriteToken::Screen(1),
+            SpriteToken::Record(early),
+        ],
+    };
+
+    layout.expanded_sprites = true;
+    let protected = vec![ProtectedRange(0x7fc0..0x8000)];
+    project
+        .relocate_level_sprites_with_checksum(
+            layout,
+            &written,
+            &lengths,
+            0x7fdc,
+            &LevelSaveOptions {
+                layer1_allocation: AllocationPolicy {
+                    search: 0..0,
+                    bank_size: None,
+                    fill_bytes: vec![0xff],
+                    protected: protected.clone(),
+                },
+                sprite_allocation: AllocationPolicy {
+                    search: 0x80_000..image.logical_len(),
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0x00, 0xff],
+                    protected,
+                },
+                previous_layer1: None,
+                previous_sprites: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+    fs::write(&edited_rom, project.save_snapshot()).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &reexported_mwl,
+        "105",
+    );
+    let actual = MwlNativeLevel::decode(
+        &MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap(),
+        &lengths,
+        32,
+        &[false; 256],
+    )
+    .unwrap();
+    let mut expected = written.sprites.clone();
+    expected
+        .relocate_expanded_record(1, 0x1f, late_fields.x, 2 * 32 + 0x0f, false, &lengths)
+        .unwrap();
+    assert_eq!(actual.sprites, expected);
+    fs::remove_dir_all(directory).unwrap();
+}
+
 /// Proves vertical expanded streams use Lunar Magic's orientation-specific coordinate key.
 #[test]
 #[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]

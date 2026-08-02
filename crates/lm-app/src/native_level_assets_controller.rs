@@ -9,9 +9,9 @@ use lm_graphics::{
     PaletteOwnership,
 };
 use lm_level::{
-    ExpandedLevelSettingsError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
-    NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit,
-    ObjectEditError, SpriteLengthTable, SpriteStreamError,
+    ExpandedLevelSettingsError, LevelEditError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
+    NativeLayer2Data, NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError,
+    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteStreamError,
 };
 use lm_project::{
     InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
@@ -134,6 +134,7 @@ pub enum NativeLevelAssetsControllerError {
         actual: usize,
     },
     MwlSpriteEncoding(NativeSpriteEncodingError),
+    MwlSpriteCanonicalization(LevelEditError),
     MwlSpriteParse(SpriteStreamError),
     MwlNonCanonicalSprites,
     MwlLfix3Unavailable,
@@ -482,7 +483,9 @@ impl NativeLevelAssetsController {
         }
 
         let mut sprites = source.sprites.clone();
-        sprites.canonicalize_framing();
+        sprites
+            .canonicalize_for_orientation(source.layer1.header.is_vertical())
+            .map_err(NativeLevelAssetsControllerError::MwlSpriteCanonicalization)?;
         let encoded = sprites
             .encode_for_table(&self.sprite_lengths)
             .map_err(NativeLevelAssetsControllerError::MwlSpriteEncoding)?;

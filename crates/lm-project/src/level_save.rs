@@ -3,8 +3,8 @@ use crate::{
     PayloadSaveRequest, PayloadSaveResult, Project,
 };
 use lm_level::{
-    LevelObjectData, NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError,
-    SpriteLengthTable, SpriteStreamError,
+    LevelEditError, LevelObjectData, NativeSpriteEncodingError, NativeSpriteStream,
+    ObjectStreamError, SpriteLengthTable, SpriteStreamError,
 };
 use lm_rats::{AllocationPolicy, RatsBlock};
 use lm_rom::{RomError, compute_snes_checksum};
@@ -34,6 +34,7 @@ pub enum LevelSaveError {
     NonCanonicalObjectEncoding,
     SpriteBankLimitExceeded(usize),
     SpriteEncoding(NativeSpriteEncodingError),
+    SpriteCanonicalization(LevelEditError),
     SpriteParse(SpriteStreamError),
     NonCanonicalSpriteEncoding,
     InPlaceSpritesRequireSharedBank,
@@ -68,6 +69,12 @@ impl From<ObjectStreamError> for LevelSaveError {
 impl From<NativeSpriteEncodingError> for LevelSaveError {
     fn from(value: NativeSpriteEncodingError) -> Self {
         Self::SpriteEncoding(value)
+    }
+}
+
+impl From<LevelEditError> for LevelSaveError {
+    fn from(value: LevelEditError) -> Self {
+        Self::SpriteCanonicalization(value)
     }
 }
 
@@ -158,15 +165,20 @@ impl Project {
                 aliases,
             });
         }
-        let original_bytes = original.sprites.encode_for_table(sprite_lengths)?;
-        let replacement_bytes = replacement.sprites.encode_for_table(sprite_lengths)?;
+        let mut original_sprites = original.sprites.clone();
+        original_sprites.canonicalize_for_orientation(original.layer1.header.is_vertical())?;
+        let original_bytes = original_sprites.encode_for_table(sprite_lengths)?;
+        let mut replacement_sprites = replacement.sprites.clone();
+        replacement_sprites
+            .canonicalize_for_orientation(replacement.layer1.header.is_vertical())?;
+        let replacement_bytes = replacement_sprites.encode_for_table(sprite_lengths)?;
         let reparsed = NativeSpriteStream::parse(
             &replacement_bytes,
-            replacement.sprites.expanded,
+            replacement_sprites.expanded,
             sprite_lengths,
         )
         .map_err(LevelSaveError::SpriteParse)?;
-        if reparsed != replacement.sprites {
+        if reparsed != replacement_sprites {
             return Err(LevelSaveError::NonCanonicalSpriteEncoding);
         }
         if replacement_bytes.len() > original_bytes.len() {
@@ -345,11 +357,13 @@ fn sprite_save_request(
     sprite_lengths: &SpriteLengthTable,
     options: &LevelSaveOptions,
 ) -> Result<PayloadSaveRequest, LevelSaveError> {
-    let sprites = level.sprites.encode_for_table(sprite_lengths)?;
+    let mut canonical_sprites = level.sprites.clone();
+    canonical_sprites.canonicalize_for_orientation(level.layer1.header.is_vertical())?;
+    let sprites = canonical_sprites.encode_for_table(sprite_lengths)?;
     let reparsed_sprites =
-        NativeSpriteStream::parse(&sprites, level.sprites.expanded, sprite_lengths)
+        NativeSpriteStream::parse(&sprites, canonical_sprites.expanded, sprite_lengths)
             .map_err(LevelSaveError::SpriteParse)?;
-    if reparsed_sprites != level.sprites {
+    if reparsed_sprites != canonical_sprites {
         return Err(LevelSaveError::NonCanonicalSpriteEncoding);
     }
     if sprites.len() > 0x8000 {
@@ -684,6 +698,54 @@ mod tests {
     }
 
     #[test]
+    fn level_save_canonicalizes_raw_expanded_order_for_the_level_orientation() {
+        let lengths = SpriteLengthTable::standard();
+        let mut replacement = level();
+        replacement.sprites = NativeSpriteStream {
+            header: NativeSpriteStream::EXPANDED_HEADER_FLAG,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Screen(2),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![2, 0x0f, 1],
+                }),
+                SpriteToken::Screen(1),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0, 0, 2],
+                }),
+            ],
+        };
+        let mut expected = replacement.sprites.clone();
+        expected
+            .canonicalize_for_orientation(replacement.layer1.header.is_vertical())
+            .unwrap();
+        assert_ne!(replacement.sprites, expected);
+        let options = LevelSaveOptions {
+            layer1_allocation: policy(),
+            sprite_allocation: policy(),
+            previous_layer1: None,
+            previous_sprites: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let mut expanded_layout = layout();
+        expanded_layout.expanded_sprites = true;
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+
+        project
+            .save_level_slot(expanded_layout, &replacement, &lengths, &options)
+            .unwrap();
+
+        assert_eq!(
+            project
+                .load_level_slot(0, expanded_layout, &lengths)
+                .unwrap()
+                .sprites,
+            expected
+        );
+    }
+
+    #[test]
     fn second_allocation_failure_leaves_everything_unchanged() {
         let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
         let original = project.save_snapshot();
@@ -776,8 +838,8 @@ mod tests {
         };
         assert!(matches!(
             project.save_level_slot(layout(), &invalid, &SpriteLengthTable::standard(), &options,),
-            Err(LevelSaveError::SpriteEncoding(
-                NativeSpriteEncodingError::LegacyControlToken { .. }
+            Err(LevelSaveError::SpriteCanonicalization(
+                LevelEditError::InvalidExpandedSpriteControl { value: 0xfe, .. }
             ))
         ));
         assert_eq!(project.save_snapshot(), original);

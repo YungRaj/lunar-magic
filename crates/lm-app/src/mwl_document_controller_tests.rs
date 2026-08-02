@@ -30,6 +30,15 @@ fn sprite_controller() -> MwlDocumentController {
     let mut source = file();
     source
         .set_payload_section(
+            MwlSectionKind::Layer1,
+            &MwlPayloadSection {
+                metadata: [0x1020_3040, 0x5060_7080],
+                payload: vec![1, 2, 3, 4, 5, 0x11, 0x22, 0x33, 0xff],
+            },
+        )
+        .unwrap();
+    source
+        .set_payload_section(
             MwlSectionKind::Sprites,
             &MwlPayloadSection {
                 metadata: [0x1122_3344, 0x5566_7788],
@@ -164,6 +173,32 @@ fn typed_legacy_sprite_replacement_stably_canonicalizes_screen_order() {
         controller.sprites(false, &lengths).unwrap().tokens,
         [record(0, 2), record(31, 1), record(31, 3)]
     );
+}
+
+#[test]
+fn typed_expanded_sprite_replacement_canonicalizes_orientation_aware_order() {
+    let lengths = SpriteLengthTable::standard();
+    let mut controller = sprite_controller();
+    let sprites = NativeSpriteStream {
+        header: NativeSpriteStream::EXPANDED_HEADER_FLAG,
+        expanded: true,
+        tokens: vec![
+            SpriteToken::Screen(2),
+            SpriteToken::Record(SpriteRecord {
+                encoded: vec![2, 0x0f, 1],
+            }),
+            SpriteToken::Screen(1),
+            SpriteToken::Record(SpriteRecord {
+                encoded: vec![0, 0, 2],
+            }),
+        ],
+    };
+    let mut expected = sprites.clone();
+    expected.canonicalize_for_orientation(false).unwrap();
+
+    controller.replace_sprites(0, &sprites, &lengths).unwrap();
+
+    assert_eq!(controller.sprites(true, &lengths).unwrap(), expected);
 }
 
 #[test]

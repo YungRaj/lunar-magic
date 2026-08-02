@@ -1,6 +1,6 @@
 use crate::{
-    LevelObjectData, NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError,
-    SpriteLengthTable, SpriteStreamError,
+    LevelEditError, LevelObjectData, NativeSpriteEncodingError, NativeSpriteStream,
+    ObjectStreamError, SpriteLengthTable, SpriteStreamError,
 };
 use std::fmt;
 
@@ -31,7 +31,7 @@ impl NativeLevelFile {
     pub fn encode(&self) -> Result<Vec<u8>, NativeLevelFileError> {
         let layer1 = self.layer1.encode_banked()?;
         let mut canonical_sprites = self.sprites.clone();
-        canonical_sprites.canonicalize_framing();
+        canonical_sprites.canonicalize_for_orientation(self.layer1.header.is_vertical())?;
         let sprites = canonical_sprites.encode_checked()?;
         validate_len(StreamKind::Sprites, sprites.len())?;
         let layer1_len = u32::try_from(layer1.len()).map_err(|_| NativeLevelFileError::Overflow)?;
@@ -152,6 +152,7 @@ pub enum NativeLevelFileError {
     Objects(ObjectStreamError),
     Sprites(SpriteStreamError),
     SpriteEncoding(NativeSpriteEncodingError),
+    SpriteCanonicalization(LevelEditError),
 }
 
 impl fmt::Display for NativeLevelFileError {
@@ -177,6 +178,12 @@ impl From<SpriteStreamError> for NativeLevelFileError {
 impl From<NativeSpriteEncodingError> for NativeLevelFileError {
     fn from(value: NativeSpriteEncodingError) -> Self {
         Self::SpriteEncoding(value)
+    }
+}
+
+impl From<LevelEditError> for NativeLevelFileError {
+    fn from(value: LevelEditError) -> Self {
+        Self::SpriteCanonicalization(value)
     }
 }
 
@@ -259,8 +266,8 @@ mod tests {
             .push(crate::SpriteToken::Control(0xfe));
         assert!(matches!(
             invalid.encode(),
-            Err(NativeLevelFileError::SpriteEncoding(
-                NativeSpriteEncodingError::InvalidControl { value: 0xfe, .. }
+            Err(NativeLevelFileError::SpriteCanonicalization(
+                LevelEditError::InvalidExpandedSpriteControl { value: 0xfe, .. }
             ))
         ));
     }

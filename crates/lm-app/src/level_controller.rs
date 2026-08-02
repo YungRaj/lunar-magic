@@ -75,6 +75,7 @@ pub enum LevelControllerError {
     InvalidSpriteSerialization(lm_level::NativeSpriteEncodingError),
     InvalidSpriteEncoding(lm_level::SpriteStreamError),
     NonCanonicalSpriteEncoding,
+    SpriteCanonicalization(LevelEditError),
     InvalidObjectEncoding(ObjectStreamError),
     NonCanonicalObjectEncoding,
     NonCanonicalLevelEncoding,
@@ -277,19 +278,26 @@ impl LevelController {
     ///
     /// # Errors
     ///
-    /// Returns the native sprite serializer error if either snapshot is not representable under
-    /// the controller's bound record-length interpretation.
-    pub fn sprite_encoded_lengths(
-        &self,
-    ) -> Result<(usize, usize), lm_level::NativeSpriteEncodingError> {
+    /// Returns a typed canonicalization or serializer error if either snapshot is not
+    /// representable under the controller's bound orientation and record-length interpretation.
+    pub fn sprite_encoded_lengths(&self) -> Result<(usize, usize), LevelControllerError> {
+        let vertical = self.level.layer1.header.is_vertical();
+        let mut baseline = self.baseline.sprites.clone();
+        baseline
+            .canonicalize_for_orientation(vertical)
+            .map_err(LevelControllerError::SpriteCanonicalization)?;
+        let mut staged = self.level.sprites.clone();
+        staged
+            .canonicalize_for_orientation(vertical)
+            .map_err(LevelControllerError::SpriteCanonicalization)?;
         Ok((
-            self.baseline
-                .sprites
-                .encode_for_table(&self.sprite_lengths)?
+            baseline
+                .encode_for_table(&self.sprite_lengths)
+                .map_err(LevelControllerError::InvalidSpriteSerialization)?
                 .len(),
-            self.level
-                .sprites
-                .encode_for_table(&self.sprite_lengths)?
+            staged
+                .encode_for_table(&self.sprite_lengths)
+                .map_err(LevelControllerError::InvalidSpriteSerialization)?
                 .len(),
         ))
     }

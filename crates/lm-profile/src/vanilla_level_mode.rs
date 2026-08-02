@@ -38,7 +38,7 @@ pub const fn smw_us_v1_level_mode(index: u8) -> VanillaLevelMode {
     let flags = LEVEL_MODE_FLAGS[bounded];
     VanillaLevelMode {
         index: index & 0x1f,
-        vertical: flags & 1 != 0,
+        vertical: lm_level::native_level_mode_is_vertical(index),
         alternate_layer_layout: flags & 2 != 0,
         high_flag: flags & 0x80 != 0,
         background_half_color: LEVEL_MODE_LAYER2_RENDER[bounded] & 0x40 != 0,

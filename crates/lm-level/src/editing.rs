@@ -56,6 +56,25 @@ impl ObjectStream {
 }
 
 impl NativeSpriteStream {
+    /// Canonicalizes framing and Lunar Magic's orientation-dependent record ordering atomically.
+    ///
+    /// Legacy records use their five-bit screen. Expanded records additionally use resolved
+    /// upper-Y state, and vertical modes use the record's low Y nibble as the final key. Raw
+    /// parsing and encoding remain lossless; semantic aggregate serializers call this method.
+    ///
+    /// # Errors
+    ///
+    /// Rejects malformed records or invalid expanded controls without changing the stream.
+    pub fn canonicalize_for_orientation(&mut self, vertical: bool) -> Result<(), LevelEditError> {
+        let mut staged = self.clone();
+        staged.canonicalize_framing();
+        if staged.expanded {
+            staged.sort_expanded_records_for_orientation(vertical)?;
+        }
+        *self = staged;
+        Ok(())
+    }
+
     /// Inserts a sprite record/control token before `index`; `len` appends.
     ///
     /// # Errors
@@ -133,6 +152,66 @@ impl NativeSpriteStream {
         };
         self.tokens = staged.into_iter().map(|(_, _, token)| token).collect();
         Ok(new_index)
+    }
+
+    /// Stably restores Lunar Magic's expanded sprite ordering and minimum upper-Y transitions.
+    ///
+    /// # Errors
+    ///
+    /// Rejects legacy streams, malformed records, and invalid control tokens without changing the
+    /// stream.
+    pub fn sort_expanded_records_for_orientation(
+        &mut self,
+        vertical: bool,
+    ) -> Result<(), LevelEditError> {
+        if !self.expanded {
+            return Err(LevelEditError::ExpandedSpriteRelocationRequiresExpanded);
+        }
+        let mut active_upper_y = 0_u8;
+        let mut records = Vec::with_capacity(self.tokens.len());
+        for (index, token) in self.tokens.iter().enumerate() {
+            match token {
+                SpriteToken::Screen(value) => active_upper_y = *value,
+                SpriteToken::Control(value) if (0x80..=0xfd).contains(value) => {}
+                SpriteToken::Control(value) => {
+                    return Err(LevelEditError::InvalidExpandedSpriteControl {
+                        index,
+                        value: *value,
+                    });
+                }
+                SpriteToken::Record(record) => {
+                    let fields =
+                        record
+                            .native_fields()
+                            .map_err(|_| LevelEditError::ShortSpriteRecord {
+                                index,
+                                len: record.encoded.len(),
+                            })?;
+                    let orientation_nibble = if vertical { fields.y_low & 0x0f } else { 0 };
+                    records.push((
+                        fields.screen,
+                        active_upper_y,
+                        orientation_nibble,
+                        record.clone(),
+                    ));
+                }
+            }
+        }
+        records.sort_by_key(|(screen, upper_y, orientation_nibble, _)| {
+            (*screen, *upper_y, *orientation_nibble)
+        });
+        let mut rebuilt = Vec::with_capacity(records.len().saturating_mul(2));
+        let mut emitted_upper_y = 0_u8;
+        for (_, record_upper_y, _, record) in records {
+            if record_upper_y != emitted_upper_y {
+                rebuilt.push(SpriteToken::Screen(record_upper_y));
+                emitted_upper_y = record_upper_y;
+            }
+            rebuilt.push(SpriteToken::Record(record));
+        }
+        self.tokens = rebuilt;
+        self.canonicalize_framing();
+        Ok(())
     }
 
     /// Relocates one expanded sprite record and canonically rebuilds shared upper-Y controls.
@@ -327,6 +406,18 @@ mod tests {
         })
     }
 
+    fn sprite_at(screen: u8, y_low: u8, id: u8) -> SpriteToken {
+        let SpriteToken::Record(mut record) = sprite_on_screen(screen, id) else {
+            unreachable!();
+        };
+        let mut fields = record.native_fields().unwrap();
+        fields.y_low = y_low;
+        record
+            .set_native_fields(fields, &SpriteLengthTable::standard())
+            .unwrap();
+        SpriteToken::Record(record)
+    }
+
     #[test]
     fn object_insert_remove_and_move_preserve_expected_order() {
         let mut stream = ObjectStream {
@@ -436,6 +527,61 @@ mod tests {
             assert!(stream.sort_legacy_records_by_screen(0).is_err());
             assert_eq!(stream, original);
         }
+    }
+
+    #[test]
+    fn expanded_semantic_canonicalization_uses_orientation_and_minimum_transitions() {
+        let source = NativeSpriteStream {
+            header: 0x20,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Screen(2),
+                sprite_at(1, 15, 0x10),
+                SpriteToken::Screen(1),
+                sprite_at(0, 9, 0x20),
+                sprite_at(0, 2, 0x30),
+                SpriteToken::Screen(2),
+                sprite_at(1, 1, 0x40),
+            ],
+        };
+        let ids = |stream: &NativeSpriteStream| {
+            stream
+                .tokens
+                .iter()
+                .filter_map(|token| match token {
+                    SpriteToken::Record(record) => Some(record.encoded[2]),
+                    SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let mut horizontal = source.clone();
+        horizontal.canonicalize_for_orientation(false).unwrap();
+        assert_eq!(ids(&horizontal), [0x20, 0x30, 0x10, 0x40]);
+        assert_eq!(
+            horizontal
+                .tokens
+                .iter()
+                .filter(|token| matches!(token, SpriteToken::Screen(_)))
+                .count(),
+            2
+        );
+
+        let mut vertical = source;
+        vertical.canonicalize_for_orientation(true).unwrap();
+        assert_eq!(ids(&vertical), [0x30, 0x20, 0x40, 0x10]);
+    }
+
+    #[test]
+    fn expanded_semantic_canonicalization_failure_is_atomic() {
+        let mut stream = NativeSpriteStream {
+            header: 0x20,
+            expanded: true,
+            tokens: vec![sprite(1), SpriteToken::Control(0xfe)],
+        };
+        let original = stream.clone();
+        assert!(stream.canonicalize_for_orientation(false).is_err());
+        assert_eq!(stream, original);
     }
 
     #[test]

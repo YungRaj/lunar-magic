@@ -3729,6 +3729,16 @@ The native raw-replace, insert, and clipboard-paste routes predict that stable o
 dispatch, then reload the same record at its canonical index; custom-width SSC records therefore
 retain both their extension bytes and active selection when insertion moves them earlier.
 
+The equivalent direct-ROM expanded oracle injects only two records in descending screen and
+upper-Y order into horizontal level `$105`, without calling either editor's movement path. Lunar
+Magic 3.63 exports the stable `(screen, resolved upper-Y)` order and minimum transitions. Expanded
+semantic publication therefore uses an atomic orientation-aware canonicalizer everywhere an
+aggregate supplies its Layer 1 header: vertical modes add the recovered low-Y-nibble tie-breaker.
+ROM saves, binary and legacy MWL exports, native-level files, document/controller replacements,
+imports, and encoded-size prediction all share this path. Invalid controls or short records leave
+the source value unchanged and return typed errors; the standalone raw stream codec remains
+byte-lossless for forensic use.
+
 Expanded graphics profiles with 129 through 4,096 entries expose installed ExGFX transfer in the
 native graphics editor. The standard/extended boundary is file `$080`; canonical names are
 `ExGFX80.bin` through `ExGFXFFF.bin`. ROM audit requires every standard `$000..$033` pointer and

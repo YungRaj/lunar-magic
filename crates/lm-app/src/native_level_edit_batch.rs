@@ -80,7 +80,9 @@ pub(crate) fn apply_native_level_edits(
             }
         }
     }
-    staged_sprites.canonicalize_framing();
+    staged_sprites
+        .canonicalize_for_orientation(staged_layer1.header.is_vertical())
+        .map_err(LevelControllerError::SpriteCanonicalization)?;
     let encoded_layer = staged_layer1
         .encode()
         .map_err(LevelControllerError::InvalidObjectEncoding)?;

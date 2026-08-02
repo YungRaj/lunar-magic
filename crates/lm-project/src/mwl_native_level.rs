@@ -3,11 +3,11 @@
 use crate::{MwlExAnimationSectionError, MwlOptionalLevelAssets, MwlOptionalLevelAssetsError};
 use lm_graphics::{CompactExAnimation, Palette};
 use lm_level::{
-    ExpandedLevelSettingsError, ExpandedLevelSettingsRecord, LevelObjectData, MwlError, MwlFile,
-    MwlLayer2Descriptor, MwlLayer2Section, MwlLevelHeaderSection, MwlPayloadSection,
-    MwlSecondaryExit, MwlSecondaryExitDecodeError, MwlSectionKind, NativeLayer2Data,
-    NativeLayer2Error, NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError,
-    SecondaryExitEncodingError, SpriteLengthTable, SpriteStreamError,
+    ExpandedLevelSettingsError, ExpandedLevelSettingsRecord, LevelEditError, LevelObjectData,
+    MwlError, MwlFile, MwlLayer2Descriptor, MwlLayer2Section, MwlLevelHeaderSection,
+    MwlPayloadSection, MwlSecondaryExit, MwlSecondaryExitDecodeError, MwlSectionKind,
+    NativeLayer2Data, NativeLayer2Error, NativeSpriteEncodingError, NativeSpriteStream,
+    ObjectStreamError, SecondaryExitEncodingError, SpriteLengthTable, SpriteStreamError,
 };
 use std::fmt;
 
@@ -127,7 +127,7 @@ impl MwlNativeLevel {
         double_size_modes: &[bool],
     ) -> Result<MwlFile, MwlNativeLevelError> {
         let mut canonical_sprites = self.sprites.clone();
-        canonical_sprites.canonicalize_framing();
+        canonical_sprites.canonicalize_for_orientation(self.layer1.header.is_vertical())?;
         let mut file = MwlFile {
             version: self.version,
             flags: self.flags,
@@ -197,6 +197,7 @@ pub enum MwlNativeLevelError {
     SecondaryExitDecode(MwlSecondaryExitDecodeError),
     SecondaryExitEncode(SecondaryExitEncodingError),
     ExpandedSettings(ExpandedLevelSettingsError),
+    SpriteCanonicalization(LevelEditError),
 }
 
 impl fmt::Display for MwlNativeLevelError {
@@ -227,6 +228,7 @@ from_error!(MwlExAnimationSectionError, ExAnimation);
 from_error!(MwlSecondaryExitDecodeError, SecondaryExitDecode);
 from_error!(SecondaryExitEncodingError, SecondaryExitEncode);
 from_error!(ExpandedLevelSettingsError, ExpandedSettings);
+from_error!(LevelEditError, SpriteCanonicalization);
 
 #[cfg(test)]
 mod tests {
