@@ -273,6 +273,31 @@ impl MwlEditor {
                     ui.end_row();
                 }
             });
+            ui.separator();
+            ui.checkbox(
+                &mut self.form.separate_layer2_scroll,
+                "Use separate Layer 2 scroll settings",
+            );
+            egui::Grid::new("mwl-layer2-scroll").show(ui, |ui| {
+                ui.label("Original paired preset");
+                ui.add_enabled(
+                    !self.form.separate_layer2_scroll,
+                    egui::DragValue::new(&mut self.form.layer2_original_scroll).range(0..=15),
+                );
+                ui.end_row();
+                ui.label("Horizontal selector");
+                ui.add_enabled(
+                    self.form.separate_layer2_scroll,
+                    egui::DragValue::new(&mut self.form.layer2_horizontal_scroll).range(0..=31),
+                );
+                ui.end_row();
+                ui.label("Vertical selector");
+                ui.add_enabled(
+                    self.form.separate_layer2_scroll,
+                    egui::DragValue::new(&mut self.form.layer2_vertical_scroll).range(0..=31),
+                );
+                ui.end_row();
+            });
         });
     }
 

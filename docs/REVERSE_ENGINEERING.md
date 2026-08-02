@@ -152,6 +152,17 @@ Most recent address-ordered batch (`004026f0`-`004039b0`) recovered dialog numer
 
 The `00403a50`-`00407a40` batches recovered the level-mode/property dialog: entrance and completion actions, FG/BG indices and offsets, horizontal/vertical scroll modes, Layer 3 choices, music and tileset names, manual object/sprite command parsing, and level-mode table editing.
 
+The Layer 1/2 settings dialog at `00413310` was subsequently recovered byte-for-byte. Layer 1's
+four-way vertical-scroll choice is legacy level-header byte 4 bits 4-5. Layer 2 normally uses the
+main-entrance position byte's high nibble as one of sixteen paired presets; SMW's effective
+horizontal selectors are `[2,2,1,0,1,2,1,0,0…]` and vertical selectors are
+`[3,1,1,0,0,2,2,1,0…]`. Lunar Magic's “separate settings” flag is MWL level-header byte `$11` bit
+7. In that mode, its low five bits hold the horizontal selector, the position high nibble holds
+vertical bits 0-3, and byte `$11` bit 6 holds vertical bit 4; bit 5 is unrelated and preserved.
+Dialog save code at `004136d6`-`004137b9` and a Rust MWL import/re-export through Lunar Magic 3.63
+both verify this packing. The nearby `$00600B36/$0060AC37` fields instead control extended BG
+initial position and must not be mistaken for camera scroll rates.
+
 The screen-exit object boundary is now independently recovered across
 `DeduplicateScreenExitObjectsByScreen` (`00437190`),
 `BuildPackedScreenExitArrayFromObjects` (`0043acd0`), and

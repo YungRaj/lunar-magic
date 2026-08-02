@@ -1,7 +1,8 @@
 use lm_app::{AppState, Command, LevelController, MwlDocumentController, NativeLevelEdit};
 use lm_level::{
-    CustomTimeSettings, LevelObjectData, MwlFile, MwlLevelHeaderSection, MwlSectionKind,
-    NativeSpriteStream, ObjectCoordinateNibbles, ObjectEdit, SpriteLengthTable, SpriteToken,
+    CustomTimeSettings, Layer1VerticalScrollMode, Layer2ScrollSettings, LevelObjectData, MwlFile,
+    MwlLevelHeaderSection, MwlSectionKind, NativeSpriteStream, ObjectCoordinateNibbles, ObjectEdit,
+    SpriteLengthTable, SpriteToken,
 };
 use lm_project::{LevelSaveOptions, MwlNativeLevel, Project, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -154,10 +155,25 @@ fn lunar_magic_imports_and_reexports_rust_packed_entrance_edits() {
         MwlLevelHeaderSection::decode(document.value().section(MwlSectionKind::LevelHeader))
             .unwrap();
     let mut main = source_header.main_entrance();
-    main.position ^= 0x10;
+    main.position = main.position & 0x0f | 0x20;
+    let layer2_scroll = Layer2ScrollSettings::Separate {
+        horizontal: 0x1b,
+        vertical: 0x12,
+    };
     document
-        .apply_edits(0, &[lm_app::MwlDocumentEdit::SetMainEntrance(main)])
+        .apply_edits(
+            0,
+            &[
+                lm_app::MwlDocumentEdit::SetMainEntrance(main),
+                lm_app::MwlDocumentEdit::SetLayer2Scroll(layer2_scroll),
+            ],
+        )
         .unwrap();
+    let mut layer1 = document.layer1().unwrap();
+    layer1
+        .header
+        .set_layer1_vertical_scroll(Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying);
+    document.replace_layer1(1, &layer1).unwrap();
     fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();
 
     run_lunar_magic_level_command(
@@ -178,9 +194,18 @@ fn lunar_magic_imports_and_reexports_rust_packed_entrance_edits() {
     let reopened =
         MwlLevelHeaderSection::decode(reexported.section(MwlSectionKind::LevelHeader)).unwrap();
     assert_eq!(reopened.main_entrance(), main);
+    assert_eq!(reopened.layer2_scroll_settings(), layer2_scroll);
+    let reopened_layer1 = reexported.payload_section(MwlSectionKind::Layer1).unwrap();
+    assert_eq!(
+        LevelObjectData::parse(&reopened_layer1.payload)
+            .unwrap()
+            .header
+            .layer1_vertical_scroll(),
+        Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying
+    );
     assert_eq!(reopened.midway_entrance(), source_header.midway_entrance());
     for (index, byte) in source_header.0.into_iter().enumerate() {
-        if ![2, 3, 4, 5, 6, 9, 10, 11, 12, 14, 15].contains(&index) {
+        if ![2, 3, 4, 5, 6, 9, 10, 11, 12, 14, 15, 17].contains(&index) {
             assert_eq!(reopened.0[index], byte);
         }
     }
@@ -234,11 +259,26 @@ fn rust_direct_rom_main_entrance_edit_is_exported_by_lunar_magic() {
     let exported = MwlFile::decode(&fs::read(&exported_mwl).unwrap()).unwrap();
     let actual =
         MwlLevelHeaderSection::decode(exported.section(MwlSectionKind::LevelHeader)).unwrap();
-    let actual = actual.main_entrance();
-    assert_eq!(actual.position, expected.position);
-    assert_eq!(actual.vertical_settings, expected.vertical_settings);
-    assert_eq!(actual.screen_and_method, expected.screen_and_method);
-    assert_eq!(actual.level_mode_and_screen, expected.level_mode_and_screen);
+    assert_eq!(
+        actual.layer2_scroll_settings(),
+        Layer2ScrollSettings::Original {
+            table_index: expected.position >> 4,
+        }
+    );
+    let actual_entrance = actual.main_entrance();
+    assert_eq!(actual_entrance.position, expected.position);
+    assert_eq!(
+        actual_entrance.vertical_settings,
+        expected.vertical_settings
+    );
+    assert_eq!(
+        actual_entrance.screen_and_method,
+        expected.screen_and_method
+    );
+    assert_eq!(
+        actual_entrance.level_mode_and_screen,
+        expected.level_mode_and_screen
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 

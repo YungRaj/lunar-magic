@@ -4,9 +4,9 @@ use lm_app::{
     VanillaEntranceController,
 };
 use lm_level::{
-    CustomTimeError, CustomTimeSettings, LegacyHeaderEdit, NativeSpriteRecordFields,
-    ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SeparateMidwayEntrance, SpriteLengthTable,
-    SpriteToken,
+    CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
+    NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
+    SeparateMidwayEntrance, SpriteLengthTable, SpriteToken,
 };
 use lm_project::LevelSaveOptions;
 use lm_project::VanillaMainEntrance;
@@ -58,6 +58,7 @@ struct HeaderForm {
     sprite_palette: u8,
     foreground_palette: u8,
     object_tileset: u8,
+    layer1_vertical_scroll: u8,
 }
 
 impl HeaderForm {
@@ -78,6 +79,7 @@ impl HeaderForm {
             sprite_palette: header.sprite_palette(),
             foreground_palette: header.foreground_palette(),
             object_tileset: header.object_tileset(),
+            layer1_vertical_scroll: header.layer1_vertical_scroll().raw(),
         }
     }
 
@@ -104,6 +106,9 @@ impl HeaderForm {
                 self.foreground_palette,
             )),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ObjectTileset(self.object_tileset)),
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::Layer1VerticalScroll(
+                Layer1VerticalScrollMode::from_raw(self.layer1_vertical_scroll),
+            )),
             NativeLevelEdit::SetCustomTime(custom_time),
         ])
     }
@@ -835,6 +840,12 @@ impl VanillaLevelEditor {
             );
             header_row(ui, "Sprite palette", &mut self.form.sprite_palette, 7);
             header_row(ui, "Object tileset", &mut self.form.object_tileset, 15);
+            header_row(
+                ui,
+                "Layer 1 vertical scroll",
+                &mut self.form.layer1_vertical_scroll,
+                3,
+            );
         });
         if let Some(error) = &self.error {
             ui.colored_label(egui::Color32::RED, error);
@@ -873,6 +884,16 @@ impl VanillaLevelEditor {
             ui.label("Exact four-plane vanilla SMW entrance record.");
             egui::Grid::new("vanilla-main-entrance").show(ui, |ui| {
                 header_row(ui, "Position", &mut self.entrance_form.position, u8::MAX);
+                let mut layer2_scroll_table = self.entrance_form.position >> 4;
+                ui.label("Layer 2 original scroll preset");
+                if ui
+                    .add(egui::DragValue::new(&mut layer2_scroll_table).range(0..=15))
+                    .changed()
+                {
+                    self.entrance_form.position =
+                        self.entrance_form.position & 0x0f | layer2_scroll_table << 4;
+                }
+                ui.end_row();
                 header_row(
                     ui,
                     "Vertical settings",

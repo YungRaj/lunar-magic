@@ -5,8 +5,9 @@ mod sections;
 
 pub use palette::{MwlPaletteSection, MwlPaletteSectionError};
 pub use sections::{
-    MwlLayer2Descriptor, MwlLayer2DescriptorError, MwlLayer2Section, MwlLevelHeaderSection,
-    MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlPayloadSection,
+    Layer2ScrollSettings, Layer2ScrollSettingsError, MwlLayer2Descriptor, MwlLayer2DescriptorError,
+    MwlLayer2Section, MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings,
+    MwlPayloadSection,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -295,6 +296,13 @@ pub enum MwlError {
     FileTooLarge(usize),
     Truncated { offset: usize, needed: usize },
     Overflow,
+    Layer2Scroll(Layer2ScrollSettingsError),
+}
+
+impl From<Layer2ScrollSettingsError> for MwlError {
+    fn from(value: Layer2ScrollSettingsError) -> Self {
+        Self::Layer2Scroll(value)
+    }
 }
 
 impl fmt::Display for MwlError {

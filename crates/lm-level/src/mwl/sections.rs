@@ -192,6 +192,38 @@ pub struct MwlMidwayEntranceSettings {
     pub additional_flags: u8,
 }
 
+/// Lunar Magic's Layer 2 camera-scroll selection.
+///
+/// Original settings select one of SMW's sixteen paired rate presets. Separate settings use the
+/// installed 5-bit horizontal and vertical selectors independently.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Layer2ScrollSettings {
+    Original { table_index: u8 },
+    Separate { horizontal: u8, vertical: u8 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Layer2ScrollSettingsError {
+    pub field: &'static str,
+    pub value: u8,
+    pub maximum: u8,
+}
+
+impl std::fmt::Display for Layer2ScrollSettingsError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Layer 2 {} scroll selector {} exceeds {}",
+            self.field, self.value, self.maximum
+        )
+    }
+}
+
+impl std::error::Error for Layer2ScrollSettingsError {}
+
+const VANILLA_LAYER2_VERTICAL_SCROLL: [u8; 16] = [3, 1, 1, 0, 0, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+const VANILLA_LAYER2_HORIZONTAL_SCROLL: [u8; 16] = [2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
 impl MwlLevelHeaderSection {
     pub const ENCODED_LEN: usize = 0x40;
 
@@ -261,6 +293,90 @@ impl MwlLevelHeaderSection {
         self.0[12] = entrance.high_position;
         self.0[11] = entrance.additional_flags;
     }
+
+    /// Decodes the exact original-preset or separate-rate selection used by Lunar Magic 3.63.
+    #[must_use]
+    pub const fn layer2_scroll_settings(&self) -> Layer2ScrollSettings {
+        let position = self.0[2];
+        let extension = self.0[17];
+        if extension & 0x80 == 0 {
+            Layer2ScrollSettings::Original {
+                table_index: position >> 4,
+            }
+        } else {
+            Layer2ScrollSettings::Separate {
+                horizontal: extension & 0x1f,
+                vertical: position >> 4 | (extension >> 2 & 0x10),
+            }
+        }
+    }
+
+    /// Applies Lunar Magic's canonical Layer 2 scroll encoding while preserving unowned bits.
+    ///
+    /// # Errors
+    ///
+    /// Rejects original indices above 15 and separate selectors above 31 without mutation.
+    pub fn set_layer2_scroll_settings(
+        &mut self,
+        settings: Layer2ScrollSettings,
+    ) -> Result<(), Layer2ScrollSettingsError> {
+        let (position_high, extension) = match settings {
+            Layer2ScrollSettings::Original { table_index } => {
+                if table_index > 0x0f {
+                    return Err(Layer2ScrollSettingsError {
+                        field: "original table",
+                        value: table_index,
+                        maximum: 0x0f,
+                    });
+                }
+                (
+                    table_index,
+                    self.0[17] & 0x20 | VANILLA_LAYER2_HORIZONTAL_SCROLL[usize::from(table_index)],
+                )
+            }
+            Layer2ScrollSettings::Separate {
+                horizontal,
+                vertical,
+            } => {
+                if horizontal > 0x1f {
+                    return Err(Layer2ScrollSettingsError {
+                        field: "horizontal",
+                        value: horizontal,
+                        maximum: 0x1f,
+                    });
+                }
+                if vertical > 0x1f {
+                    return Err(Layer2ScrollSettingsError {
+                        field: "vertical",
+                        value: vertical,
+                        maximum: 0x1f,
+                    });
+                }
+                (
+                    vertical & 0x0f,
+                    self.0[17] & 0x20 | 0x80 | (vertical & 0x10) << 2 | horizontal,
+                )
+            }
+        };
+        self.0[2] = self.0[2] & 0x0f | position_high << 4;
+        self.0[17] = extension;
+        Ok(())
+    }
+
+    /// Resolves the effective horizontal and vertical selector pair.
+    #[must_use]
+    pub const fn layer2_scroll_selectors(&self) -> (u8, u8) {
+        match self.layer2_scroll_settings() {
+            Layer2ScrollSettings::Original { table_index } => (
+                VANILLA_LAYER2_HORIZONTAL_SCROLL[table_index as usize],
+                VANILLA_LAYER2_VERTICAL_SCROLL[table_index as usize],
+            ),
+            Layer2ScrollSettings::Separate {
+                horizontal,
+                vertical,
+            } => (horizontal, vertical),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -304,6 +420,64 @@ mod tests {
             if ![9, 10, 11, 12].contains(&index) {
                 assert_eq!(header.0[index], original);
             }
+        }
+    }
+
+    #[test]
+    fn layer2_original_and_separate_scroll_encodings_match_lunar_magic() {
+        let source = std::array::from_fn(|index| u8::try_from(index).unwrap());
+        let mut header = MwlLevelHeaderSection(source);
+        header
+            .set_layer2_scroll_settings(Layer2ScrollSettings::Separate {
+                horizontal: 0x1b,
+                vertical: 0x12,
+            })
+            .unwrap();
+        assert_eq!(header.0[2], 0x22);
+        assert_eq!(header.0[17], 0xdb);
+        assert_eq!(
+            header.layer2_scroll_settings(),
+            Layer2ScrollSettings::Separate {
+                horizontal: 0x1b,
+                vertical: 0x12,
+            }
+        );
+        assert_eq!(header.layer2_scroll_selectors(), (0x1b, 0x12));
+        for (index, original) in source.into_iter().enumerate() {
+            if ![2, 17].contains(&index) {
+                assert_eq!(header.0[index], original);
+            }
+        }
+
+        header
+            .set_layer2_scroll_settings(Layer2ScrollSettings::Original { table_index: 5 })
+            .unwrap();
+        assert_eq!(header.0[2], 0x52);
+        assert_eq!(header.0[17], 0x02);
+        assert_eq!(
+            header.layer2_scroll_settings(),
+            Layer2ScrollSettings::Original { table_index: 5 }
+        );
+        assert_eq!(header.layer2_scroll_selectors(), (2, 2));
+    }
+
+    #[test]
+    fn layer2_scroll_rejects_out_of_range_selectors_atomically() {
+        for settings in [
+            Layer2ScrollSettings::Original { table_index: 16 },
+            Layer2ScrollSettings::Separate {
+                horizontal: 32,
+                vertical: 0,
+            },
+            Layer2ScrollSettings::Separate {
+                horizontal: 0,
+                vertical: 32,
+            },
+        ] {
+            let mut header = MwlLevelHeaderSection([0x5a; 0x40]);
+            let before = header.clone();
+            assert!(header.set_layer2_scroll_settings(settings).is_err());
+            assert_eq!(header, before);
         }
     }
 }

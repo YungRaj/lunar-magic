@@ -1,4 +1,6 @@
-use crate::{CompleteLevelFile, ExpandedLevelHeader, HeaderValueError, Level};
+use crate::{
+    CompleteLevelFile, ExpandedLevelHeader, HeaderValueError, Layer1VerticalScrollMode, Level,
+};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,6 +33,7 @@ pub enum LegacyHeaderEdit {
     SpritePalette(u8),
     ForegroundPalette(u8),
     ObjectTileset(u8),
+    Layer1VerticalScroll(Layer1VerticalScrollMode),
 }
 
 /// One ordered mutation in an atomic level-property batch.
@@ -206,6 +209,10 @@ fn apply_header_edit(level: &mut Level, edit: LegacyHeaderEdit) -> Result<(), He
             level.header.legacy.set_foreground_palette(value)
         }
         LegacyHeaderEdit::ObjectTileset(value) => level.header.legacy.set_object_tileset(value),
+        LegacyHeaderEdit::Layer1VerticalScroll(mode) => {
+            level.header.legacy.set_layer1_vertical_scroll(mode);
+            Ok(())
+        }
     }
 }
 

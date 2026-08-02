@@ -1,8 +1,8 @@
 use crate::level_editor_forms;
 use lm_app::MwlDocumentEdit;
 use lm_level::{
-    MwlFile, MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings,
-    MwlSectionKind,
+    Layer2ScrollSettings, MwlFile, MwlLevelHeaderSection, MwlMainEntranceSettings,
+    MwlMidwayEntranceSettings, MwlSectionKind,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -12,6 +12,11 @@ pub(crate) struct MwlForm {
     pub(crate) level_number: String,
     pub(crate) main_entrance: [String; 7],
     pub(crate) midway_entrance: [String; 4],
+    pub(crate) separate_layer2_scroll: bool,
+    pub(crate) layer2_original_scroll: u8,
+    pub(crate) layer2_horizontal_scroll: u8,
+    pub(crate) layer2_vertical_scroll: u8,
+    loaded_layer2_scroll: Option<Layer2ScrollSettings>,
     pub(crate) section_index: usize,
     pub(crate) section_bytes: String,
 }
@@ -41,7 +46,7 @@ impl MwlForm {
                 .map(|value| format!("{value:02X}"))
             },
         );
-        let midway_entrance = header.map_or_else(
+        let midway_entrance = header.as_ref().map_or_else(
             |_| std::array::from_fn(|_| String::new()),
             |header| {
                 let value = header.midway_entrance();
@@ -54,12 +59,34 @@ impl MwlForm {
                 .map(|value| format!("{value:02X}"))
             },
         );
+        let layer2_scroll = header
+            .as_ref()
+            .ok()
+            .map(MwlLevelHeaderSection::layer2_scroll_settings);
+        let (
+            separate_layer2_scroll,
+            layer2_original_scroll,
+            layer2_horizontal_scroll,
+            layer2_vertical_scroll,
+        ) = match layer2_scroll {
+            Some(Layer2ScrollSettings::Original { table_index }) => (false, table_index, 0, 0),
+            Some(Layer2ScrollSettings::Separate {
+                horizontal,
+                vertical,
+            }) => (true, 0, horizontal, vertical),
+            None => (false, 0, 0, 0),
+        };
         Self {
             flags: format!("{:08X}", file.flags),
             attribution: level_editor_forms::format_bytes(&file.attribution),
             level_number,
             main_entrance,
             midway_entrance,
+            separate_layer2_scroll,
+            layer2_original_scroll,
+            layer2_horizontal_scroll,
+            layer2_vertical_scroll,
+            loaded_layer2_scroll: layer2_scroll,
             ..Self::default()
         }
     }
@@ -120,6 +147,22 @@ impl MwlForm {
                     additional_flags: values[3],
                 },
             ));
+        }
+        let layer2_scroll = if self.separate_layer2_scroll {
+            Layer2ScrollSettings::Separate {
+                horizontal: self.layer2_horizontal_scroll,
+                vertical: self.layer2_vertical_scroll,
+            }
+        } else {
+            Layer2ScrollSettings::Original {
+                table_index: self.layer2_original_scroll,
+            }
+        };
+        if self
+            .loaded_layer2_scroll
+            .is_some_and(|loaded| loaded != layer2_scroll)
+        {
+            edits.push(MwlDocumentEdit::SetLayer2Scroll(layer2_scroll));
         }
         Ok(edits)
     }
@@ -192,6 +235,29 @@ mod tests {
             edits[1],
             MwlDocumentEdit::SetAttribution([0xa5; MwlFile::ATTRIBUTION_LEN])
         );
+    }
+
+    #[test]
+    fn scroll_form_emits_an_edit_only_after_semantic_change() {
+        let mut form = MwlForm::load_header(&file());
+        assert!(
+            form.header_edits()
+                .unwrap()
+                .iter()
+                .all(|edit| !matches!(edit, MwlDocumentEdit::SetLayer2Scroll(_)))
+        );
+        form.separate_layer2_scroll = true;
+        form.layer2_horizontal_scroll = 0x1b;
+        form.layer2_vertical_scroll = 0x12;
+        assert!(form.header_edits().unwrap().iter().any(|edit| {
+            matches!(
+                edit,
+                MwlDocumentEdit::SetLayer2Scroll(Layer2ScrollSettings::Separate {
+                    horizontal: 0x1b,
+                    vertical: 0x12
+                })
+            )
+        }));
     }
 
     #[test]

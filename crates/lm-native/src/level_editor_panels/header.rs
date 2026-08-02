@@ -1,6 +1,6 @@
 use eframe::egui;
 use lm_app::CompleteLevelDocumentEdit;
-use lm_level::{CompleteLevelFile, LegacyHeaderEdit, LevelPropertyEdit};
+use lm_level::{CompleteLevelFile, Layer1VerticalScrollMode, LegacyHeaderEdit, LevelPropertyEdit};
 
 pub(super) fn show_header(
     ui: &mut egui::Ui,
@@ -32,6 +32,7 @@ pub(super) fn show_header(
         "Object tileset",
     ];
     let mut changed = false;
+    let mut layer1_vertical_scroll = header.layer1_vertical_scroll().raw();
     changed |= ui
         .add(egui::Slider::new(&mut level_number, 0..=u16::MAX).text("Level number"))
         .changed();
@@ -49,6 +50,9 @@ pub(super) fn show_header(
             .add(egui::Slider::new(value, 0..=maximum).text(labels[index]))
             .changed();
     }
+    changed |= ui
+        .add(egui::Slider::new(&mut layer1_vertical_scroll, 0..=3).text("Layer 1 vertical scroll"))
+        .changed();
     changed.then(|| {
         let header_edits = [
             LegacyHeaderEdit::BackgroundPalette(values[0]),
@@ -60,6 +64,9 @@ pub(super) fn show_header(
             LegacyHeaderEdit::SpritePalette(values[6]),
             LegacyHeaderEdit::ForegroundPalette(values[7]),
             LegacyHeaderEdit::ObjectTileset(values[8]),
+            LegacyHeaderEdit::Layer1VerticalScroll(Layer1VerticalScrollMode::from_raw(
+                layer1_vertical_scroll,
+            )),
         ];
         let mut edits = vec![
             CompleteLevelDocumentEdit::Property(LevelPropertyEdit::SetLevelNumber(level_number)),

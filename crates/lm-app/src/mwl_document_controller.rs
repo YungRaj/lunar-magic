@@ -1,9 +1,9 @@
 use crate::portable_value_history::PortableValueHistory;
 use lm_level::{
-    ExpandedLevelSettingsError, Layer3TilemapGraphicsDescriptor, LevelObjectData, MwlError,
-    MwlFile, MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlSection,
-    MwlSectionKind, NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError,
-    SpriteLengthTable, SpriteStreamError,
+    ExpandedLevelSettingsError, Layer2ScrollSettings, Layer3TilemapGraphicsDescriptor,
+    LevelObjectData, MwlError, MwlFile, MwlLevelHeaderSection, MwlMainEntranceSettings,
+    MwlMidwayEntranceSettings, MwlSection, MwlSectionKind, NativeSpriteEncodingError,
+    NativeSpriteStream, ObjectStreamError, SpriteLengthTable, SpriteStreamError,
 };
 use lm_project::{
     MwlOptionalAssetsEdit, MwlOptionalAssetsEditError, MwlOptionalLevelAssets,
@@ -20,6 +20,7 @@ pub enum MwlDocumentEdit {
     SetLevelNumber(u16),
     SetMainEntrance(MwlMainEntranceSettings),
     SetMidwayEntrance(MwlMidwayEntranceSettings),
+    SetLayer2Scroll(Layer2ScrollSettings),
     ReplaceSection {
         section: MwlSectionKind,
         bytes: Vec<u8>,
@@ -533,6 +534,12 @@ fn apply_edit(file: &mut MwlFile, edit: &MwlDocumentEdit) -> Result<(), MwlError
             let section = &mut file.sections[MwlSectionKind::LevelHeader as usize];
             let mut header = MwlLevelHeaderSection::decode(&section.bytes)?;
             header.set_midway_entrance(*entrance);
+            section.bytes = header.0.to_vec();
+        }
+        MwlDocumentEdit::SetLayer2Scroll(settings) => {
+            let section = &mut file.sections[MwlSectionKind::LevelHeader as usize];
+            let mut header = MwlLevelHeaderSection::decode(&section.bytes)?;
+            header.set_layer2_scroll_settings(*settings)?;
             section.bytes = header.0.to_vec();
         }
         MwlDocumentEdit::ReplaceSection { section, bytes } => {

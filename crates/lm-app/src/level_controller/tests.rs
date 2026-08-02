@@ -1,6 +1,8 @@
 use super::*;
 use crate::{AppError, AppState, Command, FrontendEffect};
-use lm_level::{CustomTimeSettings, ObjectRecord, SpriteLengthTable, SpriteRecord};
+use lm_level::{
+    CustomTimeSettings, Layer1VerticalScrollMode, ObjectRecord, SpriteLengthTable, SpriteRecord,
+};
 use lm_project::{
     LevelLayer2RomLayout, LevelLayer2SaveOptions, LevelLayer2TilemapEncoding, LevelPointerTable,
     LevelSaveOptions, RatsOwnershipManifest,
@@ -172,6 +174,9 @@ fn decoded_edit_allocates_through_app_and_reloads_natively() {
     controller
         .apply_edits(&[
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(3)),
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::Layer1VerticalScroll(
+                Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying,
+            )),
             NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
                 index: 0,
                 record: ObjectRecord::new(vec![6, 5, 4]).unwrap(),
@@ -204,6 +209,10 @@ fn decoded_edit_allocates_through_app_and_reloads_natively() {
         .load_level_slot(0x105, layout(), &SpriteLengthTable::standard())
         .unwrap();
     assert_eq!(reloaded, *controller.level());
+    assert_eq!(
+        reloaded.layer1.header.layer1_vertical_scroll(),
+        Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying
+    );
     let logical = app.project().unwrap().rom.logical_bytes();
     let stored = lm_rom::SnesChecksum::decode(logical, 0x7fdc).unwrap();
     let computed = lm_rom::compute_snes_checksum(logical, 0x7fdc).unwrap();

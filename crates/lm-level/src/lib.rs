@@ -71,8 +71,8 @@ pub use expanded_settings_layer3::{
     Layer3TilemapGraphicsDescriptor, Layer3TilemapGraphicsDescriptorError,
 };
 pub use header::{
-    ExpandedLevelHeader, GraphicsFileValueError, HeaderValueError, LegacyLevelHeader, LevelHeader,
-    SuperGraphicsBypass,
+    ExpandedLevelHeader, GraphicsFileValueError, HeaderValueError, Layer1VerticalScrollMode,
+    LegacyLevelHeader, LevelHeader, SuperGraphicsBypass,
 };
 pub use layer3::{Layer3Data, Layer3Error, Layer3File, Layer3Settings};
 pub use layer3_editing::{Layer3Edit, Layer3EditError};
@@ -90,9 +90,10 @@ pub use map16_set::{ActsLikeResolution, Map16Set, Map16SetError};
 pub use map16_set_file::{Map16SetFile, Map16SetFileError};
 pub use model::{LayerData, Level};
 pub use mwl::{
-    MwlError, MwlFile, MwlLayer2Descriptor, MwlLayer2DescriptorError, MwlLayer2Section,
-    MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlPaletteSection,
-    MwlPaletteSectionError, MwlPayloadSection, MwlSection, MwlSectionKind,
+    Layer2ScrollSettings, Layer2ScrollSettingsError, MwlError, MwlFile, MwlLayer2Descriptor,
+    MwlLayer2DescriptorError, MwlLayer2Section, MwlLevelHeaderSection, MwlMainEntranceSettings,
+    MwlMidwayEntranceSettings, MwlPaletteSection, MwlPaletteSectionError, MwlPayloadSection,
+    MwlSection, MwlSectionKind,
 };
 pub use native_file::{NativeLevelFile, NativeLevelFileError, StreamKind};
 pub use native_layer2::{

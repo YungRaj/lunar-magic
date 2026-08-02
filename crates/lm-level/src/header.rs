@@ -5,6 +5,34 @@ pub struct LegacyLevelHeader {
     bytes: [u8; Self::ENCODED_LEN],
 }
 
+/// The original two-bit Layer 1 camera-scroll mode stored in level-header byte 4.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u8)]
+pub enum Layer1VerticalScrollMode {
+    #[default]
+    None = 0,
+    AtWill = 1,
+    NoScrollAtBottomUnlessFlying = 2,
+    NoneVerticalOrHorizontal = 3,
+}
+
+impl Layer1VerticalScrollMode {
+    #[must_use]
+    pub const fn from_raw(raw: u8) -> Self {
+        match raw & 3 {
+            0 => Self::None,
+            1 => Self::AtWill,
+            2 => Self::NoScrollAtBottomUnlessFlying,
+            _ => Self::NoneVerticalOrHorizontal,
+        }
+    }
+
+    #[must_use]
+    pub const fn raw(self) -> u8 {
+        self as u8
+    }
+}
+
 impl LegacyLevelHeader {
     pub const ENCODED_LEN: usize = 5;
 
@@ -85,6 +113,12 @@ impl LegacyLevelHeader {
         self.bytes[4] & 0x0f
     }
 
+    /// Returns Lunar Magic's four-way Layer 1 vertical-scroll selection.
+    #[must_use]
+    pub const fn layer1_vertical_scroll(self) -> Layer1VerticalScrollMode {
+        Layer1VerticalScrollMode::from_raw(self.bytes[4] >> 4)
+    }
+
     /// Preserves every bit except the proven three-bit background-palette field.
     ///
     /// # Errors
@@ -155,6 +189,11 @@ impl LegacyLevelHeader {
     /// Returns [`HeaderValueError`] for values greater than 15.
     pub fn set_object_tileset(&mut self, value: u8) -> Result<(), HeaderValueError> {
         set_bits(&mut self.bytes[4], value, 0x0f, 0)
+    }
+
+    /// Changes only bits 4-5, preserving the object tileset and both unrelated high bits.
+    pub fn set_layer1_vertical_scroll(&mut self, mode: Layer1VerticalScrollMode) {
+        self.bytes[4] = self.bytes[4] & !0x30 | mode.raw() << 4;
     }
 }
 
@@ -350,6 +389,20 @@ mod tests {
             })
         );
         assert_eq!(header, before);
+    }
+
+    #[test]
+    fn layer1_vertical_scroll_uses_only_header_byte_four_bits_four_and_five() {
+        for raw in 0..4 {
+            let original = [0x12, 0x34, 0x56, 0x78, 0xca];
+            let mut header = LegacyLevelHeader::decode(&original).unwrap();
+            let mode = Layer1VerticalScrollMode::from_raw(raw);
+            header.set_layer1_vertical_scroll(mode);
+            assert_eq!(header.layer1_vertical_scroll(), mode);
+            assert_eq!(header.encoded()[4] & 0x30, raw << 4);
+            assert_eq!(header.encoded()[4] & !0x30, original[4] & !0x30);
+            assert_eq!(&header.encoded()[..4], &original[..4]);
+        }
     }
 
     #[test]

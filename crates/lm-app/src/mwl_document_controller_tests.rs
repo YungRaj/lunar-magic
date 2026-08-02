@@ -472,6 +472,50 @@ fn packed_entrance_edits_preserve_every_unowned_header_byte() {
 }
 
 #[test]
+fn typed_layer2_scroll_edit_is_atomic_and_preserves_unowned_header_bytes() {
+    let mut controller = controller();
+    let original = MwlLevelHeaderSection::decode(
+        &controller.value().sections[MwlSectionKind::LevelHeader as usize].bytes,
+    )
+    .unwrap()
+    .0;
+    let settings = lm_level::Layer2ScrollSettings::Separate {
+        horizontal: 0x1b,
+        vertical: 0x12,
+    };
+    controller
+        .apply_edits(0, &[MwlDocumentEdit::SetLayer2Scroll(settings)])
+        .unwrap();
+    let header = MwlLevelHeaderSection::decode(
+        &controller.value().sections[MwlSectionKind::LevelHeader as usize].bytes,
+    )
+    .unwrap();
+    assert_eq!(header.layer2_scroll_settings(), settings);
+    for (index, byte) in original.into_iter().enumerate() {
+        if ![2, 17].contains(&index) {
+            assert_eq!(header.0[index], byte);
+        }
+    }
+
+    let before = controller.value().clone();
+    assert!(
+        controller
+            .apply_edits(
+                1,
+                &[MwlDocumentEdit::SetLayer2Scroll(
+                    lm_level::Layer2ScrollSettings::Separate {
+                        horizontal: 32,
+                        vertical: 0,
+                    },
+                )],
+            )
+            .is_err()
+    );
+    assert_eq!(controller.value(), &before);
+    assert_eq!(controller.revision(), 1);
+}
+
+#[test]
 fn late_bad_header_edit_rolls_back_the_whole_batch() {
     let mut controller = controller();
     let original = controller.value().clone();
