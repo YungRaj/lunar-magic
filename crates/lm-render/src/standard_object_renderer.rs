@@ -273,7 +273,7 @@ pub enum StandardObjectResizeModel {
     MinorNibble { fixed_major_tiles: u8 },
     /// The complete parameter byte encodes the minor count minus one.
     MinorByte { fixed_major_tiles: u8 },
-    /// Lunar Magic command `$27` mode `$C0` stores independent 1–128-tile X/Y sizes.
+    /// Lunar Magic Direct Map16 `$27`/`$29` mode `$C0` stores independent X/Y sizes.
     ExtendedCommand27Axes,
     /// The definition has no authenticated size parameter.
     Fixed,
@@ -680,6 +680,11 @@ pub fn render_mapped_standard_object_placement(
     layout: NativeLevelMap16Layout,
     blank_tile: u16,
 ) -> Result<Option<NativeLevelMap16Cache>, StandardObjectRenderError> {
+    if let Some(fields) = record.direct_map16_fields() {
+        let mut cache = NativeLevelMap16Cache::filled(blank_tile);
+        render_direct_map16_rectangle(&mut cache, layout, placement, fields)?;
+        return Ok(Some(cache));
+    }
     let command = record.command_id();
     let definition = if command == 0 {
         definitions.extended_definition(record.parameter())
@@ -720,33 +725,37 @@ fn render_standard_object_stream_with_map(
     for placement in stream.native_placements_for_orientation(layout.vertical) {
         let record = &stream.records[placement.record_index];
         let command = record.command_id();
-        let resolved_command = handler_map
-            .and_then(|map| map.get(usize::from(command)).copied())
-            .unwrap_or(command);
-        let definition = if command == 0 {
-            definitions.extended_definition(record.parameter())
-        } else if handler_map.is_some() {
-            definitions.handler_definition(resolved_command)
-        } else {
-            definitions.definition(resolved_command)
-        };
-        let Some(definition) = definition else {
-            if command == 0 {
-                missing_extended_objects.insert(record.parameter());
-            } else {
-                missing_commands.insert(command);
-            }
-            continue;
-        };
         let write_start = cache.writes().len();
-        render_definition(
-            &mut cache,
-            layout,
-            placement,
-            command,
-            record.parameter(),
-            definition,
-        )?;
+        if let Some(fields) = record.direct_map16_fields() {
+            render_direct_map16_rectangle(&mut cache, layout, placement, fields)?;
+        } else {
+            let resolved_command = handler_map
+                .and_then(|map| map.get(usize::from(command)).copied())
+                .unwrap_or(command);
+            let definition = if command == 0 {
+                definitions.extended_definition(record.parameter())
+            } else if handler_map.is_some() {
+                definitions.handler_definition(resolved_command)
+            } else {
+                definitions.definition(resolved_command)
+            };
+            let Some(definition) = definition else {
+                if command == 0 {
+                    missing_extended_objects.insert(record.parameter());
+                } else {
+                    missing_commands.insert(command);
+                }
+                continue;
+            };
+            render_definition(
+                &mut cache,
+                layout,
+                placement,
+                command,
+                record.parameter(),
+                definition,
+            )?;
+        }
         let mut final_writes = BTreeMap::new();
         for (sequence, write) in cache.writes()[write_start..].iter().enumerate() {
             final_writes.insert(write.index, (sequence, write.tile));
@@ -775,6 +784,40 @@ fn render_standard_object_stream_with_map(
         missing_commands,
         missing_extended_objects,
     })
+}
+
+fn render_direct_map16_rectangle(
+    cache: &mut NativeLevelMap16Cache,
+    layout: NativeLevelMap16Layout,
+    placement: lm_level::NativeObjectPlacement,
+    fields: lm_level::DirectMap16Rectangle,
+) -> Result<(), StandardObjectRenderError> {
+    let (origin_x, origin_y) = placement.tile_coordinates(layout.vertical);
+    for y_offset in 0..usize::from(fields.output_height) {
+        let pattern_y = y_offset % usize::from(fields.pattern_height);
+        for x_offset in 0..usize::from(fields.output_width) {
+            let pattern_x = x_offset % usize::from(fields.pattern_width);
+            let source_offset = pattern_y
+                .checked_mul(0x10)
+                .and_then(|offset| offset.checked_add(pattern_x))
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+            let tile = fields
+                .source_tile
+                .checked_add(
+                    u16::try_from(source_offset)
+                        .map_err(|_| StandardObjectRenderError::CoordinateOverflow)?,
+                )
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+            let x = usize::from(origin_x)
+                .checked_add(x_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+            let y = usize::from(origin_y)
+                .checked_add(y_offset)
+                .ok_or(StandardObjectRenderError::CoordinateOverflow)?;
+            set_rendered_cell(cache, layout, x, y, tile)?;
+        }
+    }
+    Ok(())
 }
 
 fn render_definition(
@@ -5073,6 +5116,83 @@ mod tests {
         assert_eq!(report.rendered_objects, 1);
         assert_eq!(report.cache.get(layout(), 0, 0).unwrap(), 0x133);
         assert_eq!(report.cache.get(layout(), 1, 0).unwrap(), 0x134);
+    }
+
+    #[test]
+    fn direct_map16_commands_render_physical_repeating_patterns_before_family_dispatch() {
+        let definitions = StandardObjectDefinitionSet::empty();
+        let handler_map = [0xff; 64];
+        let cases = [
+            (
+                ObjectRecord::new(vec![0x43, 0x74, 4, 0xc1, 0x20, 0x11, 2]).unwrap(),
+                false,
+                (4, 3),
+                0x0120,
+            ),
+            (
+                ObjectRecord::new(vec![0x43, 0x94, 4, 0xc0, 0x10, 0x11, 2]).unwrap(),
+                true,
+                (3, 4),
+                0x4010,
+            ),
+        ];
+        for (record, vertical, (origin_x, origin_y), source) in cases {
+            let layout = NativeLevelMap16Layout {
+                width: 32,
+                height: 32,
+                vertical,
+                ..layout()
+            };
+            let stream = ObjectStream {
+                records: vec![record.clone()],
+            };
+            let report = render_mapped_standard_object_stream(
+                &stream,
+                &definitions,
+                &handler_map,
+                layout,
+                0x25,
+            )
+            .unwrap();
+            assert_eq!(report.rendered_objects, 1);
+            assert!(report.missing_commands.is_empty());
+            assert_eq!(report.painted_cells.len(), 15);
+            let expected = [
+                [source, source + 1, source, source + 1, source],
+                [
+                    source + 0x10,
+                    source + 0x11,
+                    source + 0x10,
+                    source + 0x11,
+                    source + 0x10,
+                ],
+                [source, source + 1, source, source + 1, source],
+            ];
+            for (y_offset, row) in expected.into_iter().enumerate() {
+                for (x_offset, tile) in row.into_iter().enumerate() {
+                    assert_eq!(
+                        report
+                            .cache
+                            .get(layout, origin_x + x_offset, origin_y + y_offset)
+                            .unwrap(),
+                        tile,
+                    );
+                }
+            }
+
+            let placement = stream.native_placements_for_orientation(vertical)[0];
+            let isolated = render_mapped_standard_object_placement(
+                &record,
+                placement,
+                &definitions,
+                &handler_map,
+                layout,
+                0x25,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(isolated, report.cache);
+        }
     }
 
     #[test]

@@ -9348,6 +9348,55 @@ mod tests {
         assert_eq!(placed.direct_map16_fields(), staged.direct_map16_fields());
         assert_ne!(placed.coordinate_nibbles(), staged.coordinate_nibbles());
 
+        let placement = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements_for_orientation(vertical)
+            .into_iter()
+            .find(|placement| placement.record_index == editor.selected_object)
+            .unwrap();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let render_layout = lm_render::NativeLevelMap16Layout {
+            width: if vertical { 32 } else { 512 },
+            height: if vertical { 512 } else { 32 },
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical,
+        };
+        let preview = lm_render::render_mapped_standard_object_placement(
+            &placed,
+            placement,
+            &definitions,
+            editor.active_standard_object_handler_map().unwrap(),
+            render_layout,
+            VANILLA_EMPTY_MAP16_TILE,
+        )
+        .unwrap()
+        .unwrap();
+        let (placed_x, placed_y) = placement.tile_coordinates(vertical);
+        assert_eq!(
+            preview
+                .get(render_layout, usize::from(placed_x), usize::from(placed_y))
+                .unwrap(),
+            0x4000
+        );
+        assert_eq!(
+            preview
+                .get(
+                    render_layout,
+                    usize::from(placed_x) + 2,
+                    usize::from(placed_y) + 1,
+                )
+                .unwrap(),
+            0x4012
+        );
+
         app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
             .unwrap();
         let reopened = app
