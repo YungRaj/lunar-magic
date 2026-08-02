@@ -2,7 +2,7 @@ use lm_app::{AppState, Command, LevelController, MwlDocumentController, NativeLe
 use lm_level::{
     CustomTimeSettings, Layer1VerticalScrollMode, Layer2ScrollSettings, LevelObjectData, MwlFile,
     MwlLevelHeaderSection, MwlSectionKind, NativeSpriteStream, ObjectCoordinateNibbles, ObjectEdit,
-    SpriteLengthTable, SpriteToken,
+    ObjectRecord, ObjectStream, SpriteLengthTable, SpriteToken,
 };
 use lm_project::{LevelSaveOptions, MwlNativeLevel, Project, SpritePointerTable};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -624,6 +624,134 @@ fn lunar_magic_sorts_raw_expanded_sprite_records_on_export() {
         .relocate_expanded_record(1, 0x1f, late_fields.x, 2 * 32 + 0x0f, false, &lengths)
         .unwrap();
     assert_eq!(actual.sprites, expected);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+/// Proves MWL import recomputes screen extent without sorting backward Layer 1 jumps.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_recomputes_extent_but_preserves_raw_layer1_order() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = pristine_smw_us_rom_path(&root);
+    let directory = std::env::temp_dir().join(format!(
+        "lm-raw-layer1-order-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let edited_rom = directory.join("Lunar Magic raw Layer 1 import.sfc");
+    let control_rom = directory.join("Lunar Magic baseline Layer 1 import.sfc");
+    let baseline_mwl = directory.join("baseline level 105.mwl");
+    let control_mwl = directory.join("Lunar Magic baseline reexport.mwl");
+    let injected_mwl = directory.join("Rust backward Layer 1 order.mwl");
+    let reexported_mwl = directory.join("Lunar Magic preserved Layer 1 order.mwl");
+    fs::copy(&original_rom, &edited_rom).unwrap();
+    fs::copy(&original_rom, &control_rom).unwrap();
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &baseline_mwl,
+        "105",
+    );
+    let lengths = SpriteLengthTable::standard();
+    let modes = [false; 256];
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ImportLevel",
+        &control_rom,
+        &baseline_mwl,
+        "105",
+    );
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &control_rom,
+        &control_mwl,
+        "105",
+    );
+    let control = MwlNativeLevel::decode(
+        &MwlFile::decode(&fs::read(&control_mwl).unwrap()).unwrap(),
+        &lengths,
+        32,
+        &modes,
+    )
+    .unwrap();
+    let mut injected = MwlNativeLevel::decode(
+        &MwlFile::decode(&fs::read(&baseline_mwl).unwrap()).unwrap(),
+        &lengths,
+        32,
+        &modes,
+    )
+    .unwrap();
+    let objects = injected
+        .layer1
+        .objects
+        .records
+        .iter()
+        .filter(|record| record.is_positioned_object())
+        .take(2)
+        .cloned()
+        .collect::<Vec<_>>();
+    let [late, early] = objects.as_slice() else {
+        panic!("level 105 must contain at least two positioned objects");
+    };
+    let mut late = late.clone();
+    late.set_advances_screen(false).unwrap();
+    let mut early = early.clone();
+    early.set_advances_screen(false).unwrap();
+    injected.layer1.objects = ObjectStream {
+        records: vec![
+            ObjectRecord::new(vec![0x1f, 0, 1]).unwrap(),
+            late,
+            ObjectRecord::new(vec![0, 0, 1]).unwrap(),
+            early,
+        ],
+    };
+    let raw_layer1 = injected.layer1.clone();
+    let mut expected = raw_layer1.clone();
+    let coordinates = expected.objects.records[1].coordinate_nibbles();
+    expected
+        .objects
+        .relocate_ordinary_object(1, 0x1f, coordinates)
+        .unwrap();
+    assert_ne!(raw_layer1, expected);
+    fs::write(
+        &injected_mwl,
+        injected.encode(&lengths, &modes).unwrap().encode().unwrap(),
+    )
+    .unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ImportLevel",
+        &edited_rom,
+        &injected_mwl,
+        "105",
+    );
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &reexported_mwl,
+        "105",
+    );
+    let actual = MwlNativeLevel::decode(
+        &MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap(),
+        &lengths,
+        32,
+        &modes,
+    )
+    .unwrap();
+    assert_eq!(control.layer1.header.last_screen(), 0x13);
+    assert_eq!(actual.layer1.header.last_screen(), 0x1f);
+    assert_eq!(
+        actual.layer1.header.background_palette(),
+        control.layer1.header.background_palette()
+    );
+    assert_eq!(actual.layer1.objects, raw_layer1.objects);
+    assert_ne!(actual.layer1.objects, expected.objects);
     fs::remove_dir_all(directory).unwrap();
 }
 

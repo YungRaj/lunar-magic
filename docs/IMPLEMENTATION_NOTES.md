@@ -3239,6 +3239,16 @@ The shared View menu additionally owns independent Layer 1, Layer 2, Layer 3, an
 primary canvas and installed preview omit hidden artwork and its interaction targets; inspection
 and image export receive the same immutable visibility snapshot. Visible raster layers retain the
 native Layer 2-before-Layer 1 painter order instead of rebuilding a reordered filtered list.
+
+MWL import uses that same visible-extent calculation for the five-bit last-screen field stored in
+legacy-header byte zero. A live Lunar Magic 3.63 control/import oracle reduced a screen-`$13`
+source to `$12` when sprites were the highest remaining content, retained `$12`, and expanded
+exactly through `$13`, `$14`, and `$1F` as injected Layer 1 objects required. A deliberately
+backward `$1F`→`$00` object stream remained byte-for-byte ordered, proving that import updates the
+extent without globally sorting raw objects. Installed Rust MWL import now stages those two effects
+separately: canonical sprites participate in automatic extent, the header receives `count - 1`,
+and the source object sequence is retained exactly.
+
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and
 horizontal/vertical plane repetition, split the priority planes, and preserve normal or

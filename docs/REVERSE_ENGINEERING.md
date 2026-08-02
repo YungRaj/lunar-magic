@@ -1460,6 +1460,14 @@ exports is required here because 3.63 independently canonicalizes two legacy com
 records in the source ROM even when no Rust edit is present. Native undo restores every logical
 input byte.
 
+An MWL import/export control isolates Layer 1 ordering from its extent field. Importing objects
+whose highest visible screen was `$00`, `$12`, `$13`, `$14`, or `$1F` produced stored last-screen
+values `$12`, `$12`, `$13`, `$14`, and `$1F` respectively because the unchanged sprite stream
+still reached `$12`. Thus import writes the maximum visible object-or-sprite screen exactly.
+However, an injected `$1F` object followed by a jump back to `$00` was re-exported in that same raw
+order. Unlike sprites, Layer 1 objects are not globally sorted merely by loading or serializing;
+only positional edit operations own transition regeneration and sorting.
+
 Layer 1 growth is now reciprocal on the same authentic installed ROM. Lunar Magic's expansion is
 predominantly zero-filled after the installed RATS owners, so the expanded-ROM allocator accepts
 both `$00` and `$FF` runs while continuing to exclude every discovered owner and protected range;

@@ -63,6 +63,12 @@ impl LegacyLevelHeader {
         self.bytes[0] >> 5
     }
 
+    /// Returns the zero-based index of the last stored native level screen.
+    #[must_use]
+    pub const fn last_screen(self) -> u8 {
+        self.bytes[0] & 0x1f
+    }
+
     #[must_use]
     pub const fn level_mode(self) -> u8 {
         self.bytes[1] & 0x1f
@@ -146,6 +152,15 @@ impl LegacyLevelHeader {
     /// Returns [`HeaderValueError`] for values greater than seven.
     pub fn set_background_palette(&mut self, value: u8) -> Result<(), HeaderValueError> {
         set_bits(&mut self.bytes[0], value, 0xe0, 5)
+    }
+
+    /// Replaces the five-bit last-screen index while preserving the background palette.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HeaderValueError`] for values greater than 31.
+    pub fn set_last_screen(&mut self, value: u8) -> Result<(), HeaderValueError> {
+        set_bits(&mut self.bytes[0], value, 0x1f, 0)
     }
 
     /// Preserves the background-color field while replacing the five-bit level mode.
@@ -375,6 +390,7 @@ mod tests {
         let original = [0b1011_0011, 0b0111_1010, 0xaa, 0b1101_0110, 0x55];
         let mut header = LegacyLevelHeader::decode(&original).unwrap();
         header.set_background_palette(2).unwrap();
+        header.set_last_screen(0x1d).unwrap();
         header.set_level_mode(3).unwrap();
         header.set_background_color(7).unwrap();
         header.set_sprite_tileset(6).unwrap();
@@ -384,7 +400,8 @@ mod tests {
         header.set_foreground_palette(5).unwrap();
         header.set_object_tileset(9).unwrap();
         let encoded = header.encoded();
-        assert_eq!(encoded[0] & 0x1f, original[0] & 0x1f);
+        assert_eq!(header.last_screen(), 0x1d);
+        assert_eq!(encoded[0] >> 5, 2);
         assert_eq!(encoded[1] & 0x1f, 3);
         assert_eq!(encoded[1] >> 5, 7);
         assert_eq!(encoded[2] & 0x80, original[2] & 0x80);

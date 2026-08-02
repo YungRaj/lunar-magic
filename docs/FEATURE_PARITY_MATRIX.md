@@ -34,6 +34,13 @@ pixel planes reject before preview construction. This is covered by
 `map16_bitmap_import::tests::bmp_decoder_rejects_malformed_core_headers_palettes_and_pixels`, and
 `rom_map16_editor::bitmap_import::tests::core_header_bmp_reaches_the_native_preview_with_rgb_channels_intact`.
 
+Current Layer 1 import evidence also distinguishes extent from ordering. MWL import recomputes the
+five-bit stored last-screen field from the highest visible Layer 1 object or sprite, but preserves
+raw backward screen-jump order. `lunar_magic_recomputes_extent_but_preserves_raw_layer1_order`
+proves both rules against Lunar Magic 3.63, while
+`mwl_import_recomputes_last_screen_without_sorting_raw_layer1_order` covers the installed Rust
+import boundary.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

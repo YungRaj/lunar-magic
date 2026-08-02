@@ -9,9 +9,10 @@ use lm_graphics::{
     PaletteOwnership,
 };
 use lm_level::{
-    ExpandedLevelSettingsError, LevelEditError, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
-    NativeLayer2Data, NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError,
-    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteStreamError,
+    ExpandedLevelSettingsError, HeaderValueError, LevelEditError, LevelScreenExtentMode,
+    MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, NativeLayer2RemapError,
+    NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit, ObjectEditError,
+    SpriteLengthTable, SpriteStreamError, native_level_screen_count,
 };
 use lm_project::{
     InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
@@ -135,6 +136,7 @@ pub enum NativeLevelAssetsControllerError {
     },
     MwlSpriteEncoding(NativeSpriteEncodingError),
     MwlSpriteCanonicalization(LevelEditError),
+    MwlHeaderExtent(HeaderValueError),
     MwlSpriteParse(SpriteStreamError),
     MwlNonCanonicalSprites,
     MwlLfix3Unavailable,
@@ -527,8 +529,16 @@ impl NativeLevelAssetsController {
         // right by one word. Restore that exact native order before allocation.
         native_palette.colors.rotate_right(1);
 
+        let mut layer1 = source.layer1.clone();
+        let screen_count =
+            native_level_screen_count(&layer1.objects, &sprites, LevelScreenExtentMode::Auto);
+        layer1
+            .header
+            .set_last_screen(screen_count - 1)
+            .map_err(NativeLevelAssetsControllerError::MwlHeaderExtent)?;
+
         let mut staged = self.assets.clone();
-        staged.level.layer1 = source.layer1.clone();
+        staged.level.layer1 = layer1;
         staged.level.sprites = sprites;
         staged.palette = native_palette;
         staged.exanimation = exanimation;

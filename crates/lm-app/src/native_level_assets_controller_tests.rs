@@ -6,7 +6,8 @@ use lm_graphics::{
 };
 use lm_level::{
     LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection,
-    NATIVE_LAYER2_TILEMAP_LEN, SpriteRecord, SpriteToken, split_layer2_tilemap_planes,
+    NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteStream, ObjectRecord, ObjectStream, SpriteRecord,
+    SpriteToken, split_layer2_tilemap_planes,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -352,6 +353,72 @@ fn complete_mwl_modeled_assets_stage_commit_and_reopen_together() {
         .unwrap();
     assert_eq!(reopened.core, expected_core);
     assert_eq!(reopened.layer2, expected_layer2);
+}
+
+#[test]
+fn mwl_import_recomputes_last_screen_without_sorting_raw_layer1_order() {
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot(),
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let mut source = mwl_source(&controller);
+    source.sprites = NativeSpriteStream {
+        header: 0,
+        expanded: false,
+        tokens: Vec::new(),
+    };
+    source.layer1.header.set_last_screen(31).unwrap();
+    source.layer1.objects = ObjectStream {
+        records: vec![ObjectRecord::new(vec![1, 0x10, 0]).unwrap()],
+    };
+
+    controller.replace_modeled_assets_from_mwl(&source).unwrap();
+
+    assert_eq!(controller.assets().level.layer1.header.last_screen(), 0);
+
+    let mut backward = mwl_source(&controller);
+    backward.layer1.objects = ObjectStream {
+        records: vec![
+            ObjectRecord::new(vec![31, 0, 1]).unwrap(),
+            ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ObjectRecord::new(vec![0, 0, 1]).unwrap(),
+            ObjectRecord::new(vec![2, 0x11, 0]).unwrap(),
+        ],
+    };
+    let expected_order = backward.layer1.objects.clone();
+
+    controller
+        .replace_modeled_assets_from_mwl(&backward)
+        .unwrap();
+
+    assert_eq!(controller.assets().level.layer1.header.last_screen(), 31);
+    assert_eq!(controller.assets().level.layer1.objects, expected_order);
+
+    let expected_core = controller.assets().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2("import extent and raw order", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot().rom_bytes).unwrap());
+    project
+        .apply_mutation("import extent and raw order", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets_with_layer2(
+            0,
+            NativeLevelAssetsLayer2Layout {
+                core: layout(),
+                layer2: layer2_layout(),
+            },
+            &SpriteLengthTable::standard(),
+            &[false; 256],
+        )
+        .unwrap();
+    assert_eq!(reopened.core, expected_core);
 }
 
 #[test]
