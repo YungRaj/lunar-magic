@@ -113,11 +113,11 @@ standard catalog command intentionally clears the template. The OSC workflow add
 typed paste, duplicate materialization, and two-way reordering preserve the complete custom record.
 The SSC custom-sprite path now has an application-backed mixed-width catalog fixture rather than
 only model-level width checks. `vanilla_level_editor::tests::mixed_width_ssc_catalog_sprites_commit_reopen_and_undo_exactly`
-proves all four extra-bit tables independently select four-, five-, six-, and seven-byte records
-while retaining the current placement, zero-fill every declared extension, preserve each width and
-table selector through semantic coordinate editing, coexist in one grown native stream, reopen
-byte-exactly, and undo together to the expanded-ROM baseline. Additional historical widths,
-installed runtimes, and Wine dialog coverage remain.
+proves one sprite number (`$F0`) independently selects four-, five-, six-, and seven-byte records
+through extra-bit tables zero through three while retaining current placement, zero-fills every
+declared extension, preserves each width and table selector through semantic coordinate editing,
+coexists in one grown native stream, reopens byte-exactly, and undoes together to the expanded-ROM
+baseline. Additional historical widths, installed runtimes, and Wine dialog coverage remain.
 
 ## Current critical path
 
