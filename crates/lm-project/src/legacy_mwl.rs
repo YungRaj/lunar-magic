@@ -152,7 +152,9 @@ impl LegacyMwlBundle {
         );
         Ok(MwlNativeLevel {
             version: self.manifest.version,
-            flags: u32::from(expanded_sprites),
+            // The legacy manifest's sprite flag controls only its standalone `.mw2` stream.
+            // Binary MWL container flags are a separate opaque field and have no legacy source.
+            flags: MwlFile::default().flags,
             attribution: binary_attribution(&self.manifest.attribution),
             header,
             layer1_metadata: [

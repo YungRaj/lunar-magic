@@ -99,6 +99,104 @@ fn rust_semantic_mwl_round_trip_is_accepted_by_lunar_magic() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Proves Lunar Magic selects and preserves expanded framing written directly by Rust.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_exports_rust_installed_expanded_sprite_framing() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc");
+    assert!(original_rom.is_file(), "missing {}", original_rom.display());
+    let directory = std::env::temp_dir().join(format!(
+        "lm-expanded-sprite-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let edited_rom = directory.join("Rust expanded sprites.sfc");
+    let reexported_mwl = directory.join("Lunar Magic reexport.mwl");
+    let lengths = SpriteLengthTable::standard();
+    let image = RomImage::from_bytes(fs::read(&original_rom).unwrap()).unwrap();
+    let mut project = Project::new(image.clone());
+    let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+    let mut expected = project.load_level_slot(0x105, layout, &lengths).unwrap();
+    expected.sprites.expanded = true;
+    expected.sprites.header |= NativeSpriteStream::EXPANDED_HEADER_FLAG;
+    let SpriteToken::Record(first) = &mut expected.sprites.tokens[0] else {
+        panic!("level 105 must begin with an ordinary sprite record");
+    };
+    first.encoded[0] = 0xff;
+    layout.expanded_sprites = true;
+    let protected = vec![ProtectedRange(0x7fc0..0x8000)];
+    project
+        .relocate_level_sprites_with_checksum(
+            layout,
+            &expected,
+            &lengths,
+            0x7fdc,
+            &LevelSaveOptions {
+                layer1_allocation: AllocationPolicy {
+                    search: 0..0,
+                    bank_size: None,
+                    fill_bytes: vec![0xff],
+                    protected: protected.clone(),
+                },
+                sprite_allocation: AllocationPolicy {
+                    search: 0x80_000..image.logical_len(),
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0x00, 0xff],
+                    protected,
+                },
+                previous_layer1: None,
+                previous_sprites: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+    fs::write(&edited_rom, project.save_snapshot()).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &reexported_mwl,
+        "105",
+    );
+    let modes = [false; 256];
+    let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
+    let raw_sprites = reexported.payload_section(MwlSectionKind::Sprites).unwrap();
+    assert_eq!(reexported.flags, 0);
+    assert!(NativeSpriteStream::header_uses_expanded_framing(
+        raw_sprites.payload[0]
+    ));
+    let actual = MwlNativeLevel::decode(&reexported, &lengths, 32, &modes).unwrap();
+    assert!(actual.sprites.expanded);
+    assert!(NativeSpriteStream::header_uses_expanded_framing(
+        actual.sprites.header
+    ));
+    let mut expected_export = expected.sprites.clone();
+    expected_export.tokens.sort_by_key(|token| {
+        let SpriteToken::Record(record) = token else {
+            panic!("level 105 expanded fixture must contain only records");
+        };
+        u16::from(record.encoded[1] & 0x0f) | (u16::from(record.encoded[0] & 0x02 != 0) << 4)
+    });
+    assert_eq!(actual.sprites, expected_export);
+    let reopened_rom = RomImage::from_bytes(fs::read(&edited_rom).unwrap()).unwrap();
+    assert!(detect_identity(&reopened_rom).unwrap().checksum_matches());
+    let mut reopened_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    reopened_layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&reopened_rom).unwrap();
+    reopened_layout.expanded_sprites = true;
+    let reopened = Project::new(reopened_rom)
+        .load_level_slot(0x105, reopened_layout, &lengths)
+        .unwrap();
+    assert_eq!(reopened.layer1, expected.layer1);
+    assert_eq!(reopened.sprites, expected.sprites);
+    fs::remove_dir_all(directory).unwrap();
+}
+
 fn pristine_smw_us_rom_path(root: &Path) -> PathBuf {
     for path in [
         root.join("Super Mario World (USA).sfc"),

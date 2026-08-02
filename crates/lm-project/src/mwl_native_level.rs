@@ -59,8 +59,9 @@ impl MwlNativeLevel {
 
     /// Decodes and validates every MWL section before returning any semantic state.
     ///
-    /// Sprite parsing follows the container's recovered expanded-format flag, while Layer 2
-    /// parsing follows the level mode embedded in Layer 1 exactly as Lunar Magic does.
+    /// Sprite parsing follows bit `$20` in the sprite-stream header, while Layer 2 parsing follows
+    /// the level mode embedded in Layer 1 exactly as Lunar Magic does. The container flags remain
+    /// opaque: Lunar Magic exports expanded sprite streams while leaving those flags zero.
     ///
     /// # Errors
     ///
@@ -79,8 +80,12 @@ impl MwlNativeLevel {
         let layer2_data =
             NativeLayer2Data::decode_mwl(layer1_data.header.level_mode(), &layer2.payload)?;
         let sprites = file.payload_section(MwlSectionKind::Sprites)?;
+        let expanded_sprites = sprites
+            .payload
+            .first()
+            .is_some_and(|header| NativeSpriteStream::header_uses_expanded_framing(*header));
         let sprite_data =
-            NativeSpriteStream::parse(&sprites.payload, file.flags & 1 != 0, sprite_lengths)?;
+            NativeSpriteStream::parse(&sprites.payload, expanded_sprites, sprite_lengths)?;
         let optional =
             MwlOptionalLevelAssets::decode(file, maximum_animation_records, double_size_modes)?;
         let secondary = file.payload_section(MwlSectionKind::SecondaryExits)?;
@@ -123,7 +128,7 @@ impl MwlNativeLevel {
     ) -> Result<MwlFile, MwlNativeLevelError> {
         let mut file = MwlFile {
             version: self.version,
-            flags: (self.flags & !1) | u32::from(self.sprites.expanded),
+            flags: self.flags,
             attribution: self.attribution,
             sections: std::array::from_fn(|_| lm_level::MwlSection::default()),
         };
@@ -285,6 +290,36 @@ mod tests {
             file.sections
                 .iter()
                 .all(|section| !section.bytes.is_empty())
+        );
+    }
+
+    #[test]
+    fn sprite_header_is_the_framing_authority_and_container_flags_stay_opaque() {
+        let lengths = SpriteLengthTable::standard();
+        let modes = [false; 256];
+        let mut expected = semantic_level();
+        expected.flags = 1;
+        expected.sprites = NativeSpriteStream::parse(&[0x20, 0xff, 0xfe], true, &lengths).unwrap();
+
+        let file = expected.encode(&lengths, &modes).unwrap();
+        assert_eq!(file.flags, 1);
+        assert!(NativeSpriteStream::header_uses_expanded_framing(
+            file.payload_section(MwlSectionKind::Sprites)
+                .unwrap()
+                .payload[0]
+        ));
+        assert_eq!(
+            MwlNativeLevel::decode(&file, &lengths, 32, &modes).unwrap(),
+            expected
+        );
+
+        let mut legacy = semantic_level().encode(&lengths, &modes).unwrap();
+        legacy.flags = 1;
+        assert!(
+            !MwlNativeLevel::decode(&legacy, &lengths, 32, &modes)
+                .unwrap()
+                .sprites
+                .expanded
         );
     }
 

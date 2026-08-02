@@ -2723,6 +2723,14 @@ flag supplied from the serialized header. Consequently one Lunar Magic-installed
 table can legitimately address both legacy and expanded streams; neither the table hook nor a
 trial parse is a safe discriminator.
 
+The same authority applies inside binary MWL files. A live Lunar Magic 3.63 re-export of a
+Rust-installed escaped `$FF` sprite retained sprite header `$24` and expanded `$FF $FE` framing
+while the MWL container's 32-bit flags remained zero. Binary import must therefore select the
+sprite codec from payload byte 0 bit `$20`; the top-level flags are opaque provenance and must not
+be rewritten from sprite state. The legacy multi-file format is distinct: its `.mwl` manifest's
+sprite-section flag selects framing for the separate `.mw2` payload but supplies no binary
+container-flag value.
+
 Direct object dragging now covers all 32 native screens. The canvas reverses
 horizontal or vertical tile coordinates into an absolute screen plus the
 selected ordinary record's first/second nibbles. `relocate_ordinary_object`

@@ -71,7 +71,7 @@ impl NativeLevelAssetsController {
         let default = MwlFile::default();
         Ok(MwlNativeLevel {
             version: MwlFile::CURRENT_VERSION,
-            flags: u32::from(self.assets.level.sprites.expanded),
+            flags: default.flags,
             attribution: default.attribution,
             header,
             layer1_metadata: [

@@ -3122,6 +3122,13 @@ streams and sets it for expanded streams, keeping the header, control grammar, a
 one canonical state. `builtin_editor_detects_sprite_framing_from_each_stream_header` places legacy
 and expanded streams behind the same pointer-table generation and proves that both decode through
 their correct codec; the existing expanded canvas fixture covers commit, exact reopen, and undo.
+Binary MWL projection follows the same per-stream rule rather than treating the container's opaque
+32-bit flags as a sprite-format discriminator. Encoding now preserves those flags byte-for-byte;
+legacy bundle conversion and native exports initialize them independently of `.mw2` framing. The
+retained `lunar_magic_exports_rust_installed_expanded_sprite_framing` Wine oracle installs an
+escaped record in level `$105`, observes Lunar Magic export header `$24` with container flags zero,
+decodes the complete expanded stream, accounts for Lunar Magic's stable screen ordering, and
+reopens Rust's exact ROM payload with a valid checksum.
 
 The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
 pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at
