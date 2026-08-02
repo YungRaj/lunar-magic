@@ -1696,17 +1696,15 @@ fn load_installed_layer3(
     if !visible {
         return Ok(None);
     }
-    if workspace
+    let custom_tilemap = workspace
         .controller
         .assets()
         .expanded_settings
         .as_ref()
-        .is_some_and(lm_level::ExpandedLevelSettingsRecord::layer3_tilemap_enabled)
-    {
-        return Err(
-            "installed custom Layer 3 is enabled but its tilemap provider is not available".into(),
-        );
-    }
+        .filter(|settings| settings.layer3_tilemap_enabled())
+        .map(|settings| settings.layer3_tilemap_graphics_descriptor())
+        .transpose()
+        .map_err(|error| error.to_string())?;
     if !is_smw_us_v1_profile(&workspace.profile) {
         return Err(format!(
             "ordinary Layer 3 tables are not recovered for profile {}",
@@ -1719,12 +1717,30 @@ fn load_installed_layer3(
             lm_profile::smw_us_v1_vanilla_entrance_layout(),
         )
         .map_err(|error| error.to_string())?;
-    let Some(layer3) =
+    let Some(mut layer3) =
         lm_profile::load_smw_us_v1_level_layer3(project, entrance, header.object_tileset())
             .map_err(|error| error.to_string())?
     else {
         return Ok(None);
     };
+    if let Some(descriptor) = custom_tilemap {
+        let decoded = if descriptor.file() == 0x7f {
+            Vec::new()
+        } else {
+            project
+                .load_decompressed_graphics_file(
+                    usize::from(descriptor.file()),
+                    workspace.profile.graphics,
+                )
+                .map_err(|error| {
+                    format!(
+                        "cannot load custom Layer 3 tilemap GFX{:03X}: {error}",
+                        descriptor.file()
+                    )
+                })?
+        };
+        layer3.tilemap = materialize_custom_layer3_tilemap(descriptor, &decoded)?;
+    }
     let tiles = crate::vanilla_map16_preview::load_layer3_tiles(
         project,
         usize::from(workspace.source_slot),
@@ -1750,6 +1766,30 @@ fn load_installed_layer3(
             header.object_tileset(),
         ),
     }))
+}
+
+fn materialize_custom_layer3_tilemap(
+    descriptor: lm_level::Layer3TilemapGraphicsDescriptor,
+    decoded_file: &[u8],
+) -> Result<Vec<u16>, String> {
+    let mut workspace = lm_level::Layer3TilemapWorkspace::decode(
+        &0x38fc_u16
+            .to_le_bytes()
+            .repeat(lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE.pow(2)),
+    )
+    .map_err(|error| error.to_string())?;
+    // LoadLayer3TilemapGraphics @ $00465080 initializes every word to $38FC and treats file $07F
+    // as the no-file sentinel after decoding the descriptor, regardless of its length selector.
+    if descriptor.file() != 0x7f {
+        workspace
+            .apply_decoded_file(descriptor, decoded_file)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(workspace
+        .encoded()
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect())
 }
 
 fn animation_options_from_features(
@@ -2703,6 +2743,69 @@ mod tests {
         assert_eq!(canvas.get(0, 0), Some(expected));
         assert_eq!(canvas.get(512, 0), Some(expected));
         assert_eq!(canvas.get(0, 512), Some(expected));
+    }
+
+    #[test]
+    fn custom_layer3_tilemap_starts_blank_and_applies_the_exact_descriptor_range() {
+        let descriptor = lm_level::Layer3TilemapGraphicsDescriptor::new(0x123, 2, 3).unwrap();
+        let mut decoded = vec![0; usize::from(descriptor.effective_byte_length())];
+        decoded[..4].copy_from_slice(&[0x34, 0x12, 0x78, 0x56]);
+        let tilemap = materialize_custom_layer3_tilemap(descriptor, &decoded).unwrap();
+
+        assert_eq!(tilemap.len(), 64 * 64);
+        assert!(tilemap[..0x800].iter().all(|word| *word == 0x38fc));
+        assert_eq!(tilemap[0x800..0x802], [0x1234, 0x5678]);
+        assert!(tilemap[0x802..0xc00].iter().all(|word| *word == 0));
+        assert!(tilemap[0xc00..].iter().all(|word| *word == 0x38fc));
+    }
+
+    #[test]
+    fn custom_layer3_no_file_sentinel_retains_the_blank_workspace() {
+        let descriptor = lm_level::Layer3TilemapGraphicsDescriptor::new(0x7f, 0, 0).unwrap();
+        let tilemap = materialize_custom_layer3_tilemap(descriptor, &[]).unwrap();
+        assert!(tilemap.iter().all(|word| *word == 0x38fc));
+    }
+
+    #[test]
+    fn custom_layer3_short_graphics_file_rejects_before_materialization() {
+        let descriptor = lm_level::Layer3TilemapGraphicsDescriptor::new(0x123, 2, 0).unwrap();
+        assert!(materialize_custom_layer3_tilemap(descriptor, &[0; 0x7ff]).is_err());
+    }
+
+    #[test]
+    fn retained_lunar_magic_custom_layer3_descriptor_loads_its_rom_graphics_file() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let image = lm_rom::RomImage::from_bytes(
+            std::fs::read(
+                root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let project = lm_project::Project::new(image);
+        let settings = lm_profile::load_smw_us_v1_expanded_level_settings(&project, 0)
+            .unwrap()
+            .settings;
+        assert!(settings.layer3_tilemap_enabled());
+        let descriptor = settings.layer3_tilemap_graphics_descriptor().unwrap();
+        assert_eq!(descriptor.packed(), 0x2028);
+        let decoded = project
+            .load_decompressed_graphics_file(
+                usize::from(descriptor.file()),
+                lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            )
+            .unwrap();
+        assert_eq!(decoded.len(), 0x800);
+        let tilemap = materialize_custom_layer3_tilemap(descriptor, &decoded).unwrap();
+        let bytes = tilemap
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            lm_oracle::sha256_hex(&bytes),
+            "c27d65244b56078b4627798a525c979a024711f85359addb1cf745d0772c2ee0"
+        );
+        assert!(tilemap.iter().any(|word| *word != 0x38fc));
     }
 
     #[test]

@@ -1549,10 +1549,12 @@ The installed custom Layer 3 path is now independently recovered. `LoadLayer3Til
 low 12 bits, a requested-length selector in bits 12–13, and a destination-offset selector in bits
 14–15. The recovered constant tables map lengths to `$2000`, `$1000`, `$0800`, and zero bytes, and
 destination word offsets to zero, zero, zero, and `$0800`; decoding clips the request at the
-`$2000`-byte workspace boundary. `InsertLayer3TilemapGraphicsFile` (`004690E0`) consumes the same
-fields and tables. The main Layer 3 patch is an exact `$4C0` allocation, while the expanded-settings
-runtime/table is an exact `$6E00` allocation whose table payload is reached through descriptor entry
-`$70` at runtime offset `$1C0`.
+`$2000`-byte workspace boundary. The loader initializes all 4,096 words to `$38FC`, treats graphics
+file `$07F` as the no-file sentinel after decoding the descriptor, and otherwise loads the exact
+selected byte range at the decoded word offset. `InsertLayer3TilemapGraphicsFile` (`004690E0`)
+consumes the same fields and tables. The main Layer 3 patch is an exact `$4C0` allocation, while the
+expanded-settings runtime/table is an exact `$6E00` allocation whose table payload is reached
+through descriptor entry `$70` at runtime offset `$1C0`.
 
 The retained Wine ROM also proves four direct hooks into the `$4C0` main payload. The first three
 are now clean-room runtime contracts: logical `$00201F` replaces

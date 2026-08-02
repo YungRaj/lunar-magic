@@ -3042,9 +3042,11 @@ native Layer 2-before-Layer 1 painter order instead of rebuilding a reordered fi
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and
 horizontal/vertical plane repetition, split the priority planes, and preserve normal or
-background/Layer-3/foreground painter order plus additive pixels. An enabled custom installed
-Layer 3 tilemap fails closed until its provider is recovered; batch export skips that level rather
-than publishing an image with the plane silently missing.
+background/Layer-3/foreground painter order plus additive pixels. Enabled custom installed
+tilemaps use the recovered packed descriptor to load the active profile's GFX/ExGFX file into an
+all-`$38FC` 4,096-word workspace, including exact length/offset clipping and the `$07F` no-file
+sentinel. Short or inaccessible files still fail closed rather than publishing an image with a
+partially materialized plane.
 Encoding or destination failures still abort the grouped create-new publication, and cancellation
 before publication leaves no output files visible.
 
