@@ -2850,3 +2850,7 @@ conditionally copies the Layer 1/2 scroll nibbles from `$57/$59` into
 The apparent adjacent `$07EFA3..$07F08D` oracle difference is Lunar Magic's
 additive checksum-compensation run (`$80`, then zero fill), not another timer
 table. Rust now authenticates and installs the six fixed ranges atomically.
+Exhaustive single-byte corruption tests cover every hook operand and runtime
+byte in both recognized states; truncation and duplicate installation are
+typed, and a deliberately failed final runtime precondition proves that none
+of the five earlier staged hook writes or checksum/history effects escape.

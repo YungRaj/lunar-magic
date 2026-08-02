@@ -206,6 +206,77 @@ mod tests {
     }
 
     #[test]
+    fn every_authenticated_byte_rejects_corruption_in_both_states() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut installed_project = Project::new(RomImage::from_bytes(pristine.clone()).unwrap());
+        let plan =
+            smw_us_v1_support_patch_b_installation_plan(installed_project.rom.logical_bytes())
+                .unwrap();
+        installed_project.install_relocatable_patch(&plan).unwrap();
+        let installed = installed_project.rom.logical_bytes().to_vec();
+
+        for source in [&pristine, &installed] {
+            for offset in SMW_US_V1_SUPPORT_PATCH_B_HOOK_OFFSETS {
+                for index in 0..HOOK_EXPECTED.len() {
+                    let mut corrupt = source.to_vec();
+                    corrupt[offset + index] ^= 1;
+                    assert_eq!(
+                        detect_smw_us_v1_support_patch_b(&corrupt),
+                        Err(SmwUsV1SupportPatchBDetectError::InconsistentRuntime),
+                        "accepted hook corruption at {offset:#x}+{index}"
+                    );
+                    assert!(smw_us_v1_support_patch_b_installation_plan(&corrupt).is_err());
+                }
+            }
+            for index in 0..RUNTIME_EXPECTED.len() {
+                let mut corrupt = source.to_vec();
+                corrupt[SMW_US_V1_SUPPORT_PATCH_B_RUNTIME_OFFSET + index] ^= 1;
+                assert_eq!(
+                    detect_smw_us_v1_support_patch_b(&corrupt),
+                    Err(SmwUsV1SupportPatchBDetectError::InconsistentRuntime),
+                    "accepted runtime corruption at +{index:#x}"
+                );
+                assert!(smw_us_v1_support_patch_b_installation_plan(&corrupt).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn truncation_and_duplicate_installation_are_typed() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let truncated_len = SMW_US_V1_SUPPORT_PATCH_B_RUNTIME_OFFSET + RUNTIME_EXPECTED.len() - 1;
+        assert_eq!(
+            detect_smw_us_v1_support_patch_b(&pristine[..truncated_len]),
+            Err(SmwUsV1SupportPatchBDetectError::Truncated {
+                offset: SMW_US_V1_SUPPORT_PATCH_B_RUNTIME_OFFSET,
+                needed: RUNTIME_EXPECTED.len(),
+            })
+        );
+
+        let mut project = Project::new(RomImage::from_bytes(pristine).unwrap());
+        let plan =
+            smw_us_v1_support_patch_b_installation_plan(project.rom.logical_bytes()).unwrap();
+        project.install_relocatable_patch(&plan).unwrap();
+        assert_eq!(
+            smw_us_v1_support_patch_b_installation_plan(project.rom.logical_bytes()),
+            Err(SmwUsV1SupportPatchBInstallError::AlreadyInstalled)
+        );
+    }
+
+    #[test]
+    fn late_runtime_precondition_failure_rolls_back_all_staged_hooks() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+        let mut plan =
+            smw_us_v1_support_patch_b_installation_plan(project.rom.logical_bytes()).unwrap();
+        assert_eq!(plan.writes.len(), 6);
+        plan.writes.last_mut().unwrap().expected[0] = 0;
+        assert!(project.install_relocatable_patch(&plan).is_err());
+        assert_eq!(project.save_snapshot(), original);
+        assert_eq!(project.history.undo_len(), 0);
+    }
+
+    #[test]
     fn semantic_register_model_matches_every_branch_and_nibble() {
         assert_eq!(
             smw_us_v1_support_patch_b_scroll_registers(0xab, 0x4c, 0),
