@@ -150,7 +150,7 @@ Several renderer helpers use register-resident context parameters, but they do n
 
 Most recent address-ordered batch (`004026f0`-`004039b0`) recovered dialog numeric/hex formatting helpers, shared tooltip management, edit-control subclasses, and two randomized embedded-resource integrity checks.
 
-The `00403a50`-`00407a40` batches recovered the level-mode/property dialog: entrance and completion actions, FG/BG indices and offsets, horizontal/vertical scroll modes, Layer 3 choices, music and tileset names, manual object/sprite command parsing, and level-mode table editing.
+The `00403a50`-`00407a40` batches recovered the level-mode/property dialog: entrance and completion actions, FG/BG indices and offsets, horizontal/vertical scroll modes, Layer 3 choices, music and tileset names, manual object/sprite command parsing, and level-mode table editing. A retained Lunar Magic 3.63 command-line export additionally proves that its first open of a headerless pristine image adds the exact canonical 512-byte copier header beginning `40 00 00 00 00 00 00 00 AA BB 04 00`, while an image already carrying that canonical header retains it byte-for-byte. The Rust main-entrance transaction itself preserves either incoming physical shape before the oracle open, and the four logical entrance planes export identically from both forms.
 
 The Layer 1/2 settings dialog at `00413310` was subsequently recovered byte-for-byte. Layer 1's
 four-way vertical-scroll choice is legacy level-header byte 4 bits 4-5. Layer 2 normally uses the

@@ -212,73 +212,107 @@ fn lunar_magic_imports_and_reexports_rust_packed_entrance_edits() {
     fs::remove_dir_all(directory).unwrap();
 }
 
-/// Proves direct writes to the four pristine SMW entrance planes are interpreted by Lunar Magic.
+/// Proves direct writes to the four pristine SMW entrance planes are interpreted by Lunar Magic
+/// for both physical copier-header shapes.
 #[test]
 #[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
 fn rust_direct_rom_main_entrance_edit_is_exported_by_lunar_magic() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
     let original_rom = pristine_smw_us_rom_path(&root);
+    let logical_rom = RomImage::from_bytes(fs::read(&original_rom).unwrap())
+        .unwrap()
+        .logical_bytes()
+        .to_vec();
     let directory = std::env::temp_dir().join(format!(
         "lm-rom-entrance-wine-oracle-{}-{}",
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir(&directory).unwrap();
-    let edited_rom = directory.join("Rust entrance edit.sfc");
-    let exported_mwl = directory.join("exported.mwl");
 
-    let mut app = AppState::default();
-    app.load_rom(fs::read(&original_rom).unwrap()).unwrap();
-    app.dispatch(Command::SelectLevel(0x105)).unwrap();
-    let snapshot = app.controller_snapshot().unwrap();
-    let mut controller = lm_app::VanillaEntranceController::decode(
-        &snapshot,
-        lm_profile::smw_us_v1_vanilla_entrance_layout(),
-    )
-    .unwrap();
-    let mut expected = controller.entrance();
-    expected.position ^= 0x10;
-    controller.set_entrance(expected);
-    app.dispatch(
-        controller
-            .prepare_commit("Wine main entrance oracle")
-            .unwrap()
-            .into_command(),
-    )
-    .unwrap();
-    fs::write(&edited_rom, app.project().unwrap().save_snapshot()).unwrap();
+    let canonical_lunar_magic_header = || {
+        let mut canonical = vec![0; lm_rom::COPIER_HEADER_LEN];
+        canonical[..12].copy_from_slice(&[0x40, 0, 0, 0, 0, 0, 0, 0, 0xaa, 0xbb, 4, 0]);
+        canonical
+    };
+    for (name, copier_header) in [
+        ("headerless", None),
+        ("headered", Some(canonical_lunar_magic_header())),
+    ] {
+        let edited_rom = directory.join(format!("Rust entrance edit {name}.sfc"));
+        let exported_mwl = directory.join(format!("exported {name}.mwl"));
+        let mut source = copier_header.clone().unwrap_or_default();
+        source.extend_from_slice(&logical_rom);
 
-    run_lunar_magic_level_command(
-        &lunar_magic,
-        "-ExportLevel",
-        &edited_rom,
-        &exported_mwl,
-        "105",
-    );
-    let exported = MwlFile::decode(&fs::read(&exported_mwl).unwrap()).unwrap();
-    let actual =
-        MwlLevelHeaderSection::decode(exported.section(MwlSectionKind::LevelHeader)).unwrap();
-    assert_eq!(
-        actual.layer2_scroll_settings(),
-        Layer2ScrollSettings::Original {
-            table_index: expected.position >> 4,
-        }
-    );
-    let actual_entrance = actual.main_entrance();
-    assert_eq!(actual_entrance.position, expected.position);
-    assert_eq!(
-        actual_entrance.vertical_settings,
-        expected.vertical_settings
-    );
-    assert_eq!(
-        actual_entrance.screen_and_method,
-        expected.screen_and_method
-    );
-    assert_eq!(
-        actual_entrance.level_mode_and_screen,
-        expected.level_mode_and_screen
-    );
+        let mut app = AppState::default();
+        app.load_rom(source).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = lm_app::VanillaEntranceController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_entrance_layout(),
+        )
+        .unwrap();
+        let mut expected = controller.entrance();
+        expected.position ^= 0x10;
+        controller.set_entrance(expected);
+        app.dispatch(
+            controller
+                .prepare_commit("Wine main entrance oracle")
+                .unwrap()
+                .into_command(),
+        )
+        .unwrap();
+        fs::write(&edited_rom, app.project().unwrap().save_snapshot()).unwrap();
+
+        let rust_image = RomImage::from_bytes(fs::read(&edited_rom).unwrap()).unwrap();
+        assert_eq!(rust_image.copier_header_bytes(), copier_header.as_deref());
+        run_lunar_magic_level_command(
+            &lunar_magic,
+            "-ExportLevel",
+            &edited_rom,
+            &exported_mwl,
+            "105",
+        );
+        let after_lunar_magic = RomImage::from_bytes(fs::read(&edited_rom).unwrap()).unwrap();
+        let expected_lunar_magic_header = copier_header
+            .clone()
+            .unwrap_or_else(canonical_lunar_magic_header);
+        assert_eq!(
+            after_lunar_magic.copier_header_bytes(),
+            Some(expected_lunar_magic_header.as_slice())
+        );
+        assert!(
+            detect_identity(&after_lunar_magic)
+                .unwrap()
+                .checksum_matches()
+        );
+
+        let exported = MwlFile::decode(&fs::read(&exported_mwl).unwrap()).unwrap();
+        let actual =
+            MwlLevelHeaderSection::decode(exported.section(MwlSectionKind::LevelHeader)).unwrap();
+        assert_eq!(
+            actual.layer2_scroll_settings(),
+            Layer2ScrollSettings::Original {
+                table_index: expected.position >> 4,
+            }
+        );
+        let actual_entrance = actual.main_entrance();
+        assert_eq!(actual_entrance.position, expected.position);
+        assert_eq!(
+            actual_entrance.vertical_settings,
+            expected.vertical_settings
+        );
+        assert_eq!(
+            actual_entrance.screen_and_method,
+            expected.screen_and_method
+        );
+        assert_eq!(
+            actual_entrance.level_mode_and_screen,
+            expected.level_mode_and_screen
+        );
+    }
     fs::remove_dir_all(directory).unwrap();
 }
 
