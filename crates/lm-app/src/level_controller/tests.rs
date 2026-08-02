@@ -224,6 +224,62 @@ fn decoded_edit_allocates_through_app_and_reloads_natively() {
 }
 
 #[test]
+fn sprite_only_nonshared_commit_preserves_layer1_pointer_and_payload() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let baseline_image = RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap();
+    let layer_pointer_range = layout().layer1.pointer_offset(0x105).unwrap();
+    let baseline_layer_pointer = baseline_image
+        .read(layer_pointer_range, 3)
+        .unwrap()
+        .to_vec();
+    let baseline_layer_payload = baseline_image.read(0x1200, 9).unwrap().to_vec();
+    let baseline_sprite_pointer = layout()
+        .sprites
+        .read_snes_pointer(&baseline_image, 0x105)
+        .unwrap();
+    let mut controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    controller
+        .apply_edits(&[NativeLevelEdit::InsertSprite {
+            index: 1,
+            token: SpriteToken::Record(SpriteRecord {
+                encoded: vec![0x10, 0x01, 2],
+            }),
+        }])
+        .unwrap();
+
+    let prepared = controller
+        .prepare_commit("Grow only level 105 sprites", &options())
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+
+    let image = &app.project().unwrap().rom;
+    assert_eq!(
+        image.read(layer_pointer_range, 3).unwrap(),
+        baseline_layer_pointer
+    );
+    assert_eq!(image.read(0x1200, 9).unwrap(), baseline_layer_payload);
+    assert_ne!(
+        layout().sprites.read_snes_pointer(image, 0x105).unwrap(),
+        baseline_sprite_pointer
+    );
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_level_slot(0x105, layout(), &SpriteLengthTable::standard())
+            .unwrap(),
+        *controller.level()
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(
+        app.project().unwrap().rom.logical_bytes(),
+        baseline_image.logical_bytes()
+    );
+}
+
+#[test]
 fn custom_time_edit_uses_staged_level_orientation_and_reopens_from_rom() {
     let mut app = AppState::default();
     app.load_rom(test_rom()).unwrap();

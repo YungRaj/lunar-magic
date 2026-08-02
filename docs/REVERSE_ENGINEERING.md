@@ -1437,7 +1437,10 @@ The installed form is also verified as a Rust-to-Lunar-Magic write boundary. On 
 2 MiB modified ROM, the native level editor moves one sprite in level `$102` to the next screen,
 stably sorts all legacy records by screen, and inserts another sprite through the canvas. The
 grown payload relocates: `$102`'s split pointer changes to the newly allocated stream, `$101`'s
-resolved pointer remains exact, checksum repair passes, and Rust reopens the complete result.
+resolved pointer remains exact, and `$102`'s Layer 1 pointer and payload remain byte-exact. This
+last invariant comes from splitting nonshared controller commits by changed domain rather than
+running the aggregate two-stream allocator for a sprite-only edit. Checksum repair passes and Rust
+reopens the complete result.
 Lunar Magic 3.63 exports the result with the same Layer 1 aggregate as its export of the untouched
 baseline and with the exact same grown/sorted sprite aggregate as Rust. Comparing two Lunar Magic
 exports is required here because 3.63 independently canonicalizes two legacy compact screen-exit

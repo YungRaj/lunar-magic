@@ -154,15 +154,27 @@ impl LevelController {
                 Err(error) => return Err(LevelControllerError::Save(error)),
             }
         } else if level_changed {
-            project
-                .save_level_slot_with_checksum(
-                    self.layout,
-                    &self.level,
-                    &self.sprite_lengths,
-                    self.checksum_field_offset,
-                    options,
-                )
-                .map_err(LevelControllerError::Save)?;
+            if self.level.layer1 != self.baseline.layer1 {
+                project
+                    .save_level_layer1_with_checksum(
+                        self.layout,
+                        &self.level,
+                        self.checksum_field_offset,
+                        options,
+                    )
+                    .map_err(LevelControllerError::Save)?;
+            }
+            if sprites_changed {
+                project
+                    .relocate_level_sprites_with_checksum(
+                        self.layout,
+                        &self.level,
+                        &self.sprite_lengths,
+                        self.checksum_field_offset,
+                        options,
+                    )
+                    .map_err(LevelControllerError::Save)?;
+            }
         }
         Ok(())
     }

@@ -3043,8 +3043,12 @@ interaction. The ignored `external_lunar_magic_rom_sprite_edit_saves_reopens_and
 an authentic 2 MiB Lunar Magic-modified ROM, moves one level-$102 sprite to the next screen through
 that form, inserts another sprite through the canvas, and commits the grown stream through the
 installed per-entry bank layout. Growth must relocate level `$102` to a different SNES pointer,
-while level `$101`'s low word and bank still resolve to its exact baseline pointer. Rust reopens the
-complete grown/sorted aggregate. Lunar Magic 3.63 then exports both the untouched input and
+while level `$101`'s low word and bank still resolve to its exact baseline pointer. The controller
+now serializes changed streams independently for nonshared layouts, so this sprite-only operation
+also retains level `$102`'s exact Layer 1 pointer and payload instead of needlessly reallocating it.
+`level_controller::tests::sprite_only_nonshared_commit_preserves_layer1_pointer_and_payload`
+proves the same isolation on a compact synthetic ROM. Rust reopens the complete grown/sorted
+aggregate. Lunar Magic 3.63 then exports both the untouched input and
 Rust-written ROM: their complete Layer 1 aggregates agree after Lunar Magic's own legacy
 screen-exit canonicalization, the untouched sprite export equals Rust's baseline, and the edited
 sprite export equals Rust's complete grown stream. The physical output retains a valid checksum,

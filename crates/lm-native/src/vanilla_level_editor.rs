@@ -8767,6 +8767,10 @@ mod tests {
             .sprites
             .read_snes_pointer(&baseline_image, 0x102)
             .unwrap();
+        let baseline_layer1_pointer = baseline_layout
+            .layer1
+            .read_snes_pointer(&baseline_image, 0x102)
+            .unwrap();
         let neighboring_pointer = baseline_layout
             .sprites
             .read_snes_pointer(&baseline_image, 0x101)
@@ -8845,6 +8849,10 @@ mod tests {
         assert_ne!(
             layout.sprites.read_snes_pointer(&image, 0x102).unwrap(),
             baseline_pointer
+        );
+        assert_eq!(
+            layout.layer1.read_snes_pointer(&image, 0x102).unwrap(),
+            baseline_layer1_pointer
         );
         assert_eq!(
             layout.sprites.read_snes_pointer(&image, 0x101).unwrap(),
