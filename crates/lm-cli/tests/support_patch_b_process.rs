@@ -35,6 +35,37 @@ fn built_cli_installs_authenticates_and_preserves_the_input() {
         SmwUsV1SupportPatchBState::Installed
     );
 
+    let headerless_input = directory.join("pristine headerless.sfc");
+    let headerless_original = RomImage::from_bytes(original.clone())
+        .unwrap()
+        .logical_bytes()
+        .to_vec();
+    fs::write(&headerless_input, &headerless_original).unwrap();
+    let headerless_output = directory.join("support patch B headerless.sfc");
+    let headerless = Command::new(env!("CARGO_BIN_EXE_lm-cli"))
+        .arg("smw-support-patch-b-install")
+        .arg(&headerless_input)
+        .arg(&headerless_output)
+        .output()
+        .unwrap();
+    assert!(
+        headerless.status.success(),
+        "{}",
+        String::from_utf8_lossy(&headerless.stderr)
+    );
+    assert_eq!(fs::read(&headerless_input).unwrap(), headerless_original);
+    let headerless_image = RomImage::from_bytes(fs::read(&headerless_output).unwrap()).unwrap();
+    assert_eq!(headerless_image.copier_header(), CopierHeader::Absent);
+    assert!(
+        detect_identity(&headerless_image)
+            .unwrap()
+            .checksum_matches()
+    );
+    assert_eq!(
+        detect_smw_us_v1_support_patch_b(headerless_image.logical_bytes()).unwrap(),
+        SmwUsV1SupportPatchBState::Installed
+    );
+
     let duplicate = Command::new(env!("CARGO_BIN_EXE_lm-cli"))
         .arg("smw-support-patch-b-install")
         .arg(&output)

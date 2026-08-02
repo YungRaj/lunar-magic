@@ -170,6 +170,12 @@ mod tests {
     fn pristine_fixture_installs_exact_runtime_reopens_and_undoes() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         assert_eq!(
+            RomImage::from_bytes(original.clone())
+                .unwrap()
+                .copier_header(),
+            lm_rom::CopierHeader::Absent
+        );
+        assert_eq!(
             detect_smw_us_v1_support_patch_b(&original).unwrap(),
             SmwUsV1SupportPatchBState::Pristine
         );

@@ -561,4 +561,26 @@ mod tests {
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }
+
+    #[test]
+    fn support_patch_b_install_preserves_headered_container_and_undoes() {
+        let logical = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut image = lm_rom::RomImage::from_bytes(logical).unwrap();
+        assert!(image.set_copier_header(lm_rom::CopierHeader::Present, 0xa5));
+        let original = image.as_file_bytes().to_vec();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+
+        app.dispatch(Command::InstallSupportPatchB { rev: 0 })
+            .unwrap();
+        let project = app.project().unwrap();
+        assert_eq!(project.rom.copier_header(), lm_rom::CopierHeader::Present);
+        assert_eq!(project.rom.copier_header_bytes().unwrap(), &[0xa5; 0x200]);
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_support_patch_b(project.rom.logical_bytes()).unwrap(),
+            lm_profile::SmwUsV1SupportPatchBState::Installed
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
 }

@@ -2854,3 +2854,6 @@ Exhaustive single-byte corruption tests cover every hook operand and runtime
 byte in both recognized states; truncation and duplicate installation are
 typed, and a deliberately failed final runtime precondition proves that none
 of the five earlier staged hook writes or checksum/history effects escape.
+The logical-offset transaction is also container-transparent: headerless and
+512-byte copier-headered profile, native, and built-CLI gates retain the exact
+physical header shape and bytes while authenticating the same installed ROM.
