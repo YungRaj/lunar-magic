@@ -2709,10 +2709,13 @@ The installed canvas now dispatches by sprite framing at the same interaction bo
 records retain the stable screen sort above. Expanded drags call the upper-Y relocation model
 directly, while expanded placement atomically inserts the record and relocates it from the active
 shared state. The model removes redundant `$FF vv` transitions, emits only state changes,
-preserves extension bytes and record order, and returns the selected record's new token index when
-an earlier control disappears. A synthetic SMW-US ROM fixture commits, semantically reopens, and
-undoes both installed-canvas operations; opaque `$FF 80..FD` controls remain a hard atomic failure
-because their effect on upper-Y state is not yet proved.
+preserves extension bytes, stably sorts by screen and then resolved upper-Y band, retains priority
+within an identical screen/band pair, and returns the selected record's new token index across both
+sorting and removed controls. This matches the comparator at `004CBFA0`: its first two keys are the
+decoded screen byte and expanded upper-Y byte, followed by the original linked-list relation for
+ties (and an optional mode-specific coordinate nibble). A synthetic SMW-US ROM fixture commits,
+semantically reopens, and undoes both installed-canvas operations; opaque `$FF 80..FD` controls
+remain a hard atomic failure because their effect on upper-Y state is not yet proved.
 
 The framing discriminator is per stream rather than a property of the installed pointer-table
 generation. `SerializeLevelSpriteList` (`004CC2B0`) clears sprite-header bit `$20` before emitting
@@ -2724,8 +2727,10 @@ table can legitimately address both legacy and expanded streams; neither the tab
 trial parse is a safe discriminator.
 
 The same authority applies inside binary MWL files. A live Lunar Magic 3.63 re-export of a
-Rust-installed escaped `$FF` sprite retained sprite header `$24` and expanded `$FF $FE` framing
-while the MWL container's 32-bit flags remained zero. Binary import must therefore select the
+Rust-installed sprite moved to upper-Y band 2 with an escaped `$FF` first byte retained sprite
+header `$24`, `$FF 02`/`$FF FF` tokens, and expanded `$FF $FE` framing while the MWL container's
+32-bit flags remained zero. The re-export also matched Rust's complete comparator-derived
+screen/band order. Binary import must therefore select the
 sprite codec from payload byte 0 bit `$20`; the top-level flags are opaque provenance and must not
 be rewritten from sprite state. The legacy multi-file format is distinct: its `.mwl` manifest's
 sprite-section flag selects framing for the separate `.mw2` payload but supplies no binary

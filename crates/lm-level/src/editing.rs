@@ -137,9 +137,11 @@ impl NativeSpriteStream {
 
     /// Relocates one expanded sprite record and canonically rebuilds shared upper-Y controls.
     ///
-    /// Record order, base identity fields, and extension bytes remain unchanged. Redundant screen
-    /// controls are removed and the minimum state transitions needed by the record sequence are
-    /// emitted. Returns the selected record's new token index.
+    /// Records are stably sorted by their decoded five-bit screen and then upper-Y state, matching
+    /// Lunar Magic after a cross-screen or upper-band move. Base identity fields, extension bytes,
+    /// and priority within the same screen/band remain unchanged. Redundant upper-Y controls are
+    /// removed and the minimum state transitions needed by the sorted record sequence are emitted.
+    /// Returns the selected record's new token index.
     ///
     /// # Errors
     ///
@@ -192,17 +194,18 @@ impl NativeSpriteStream {
                     } else {
                         active_upper_y
                     };
-                    records.push((index, record_upper_y, record));
+                    records.push((fields.screen, record_upper_y, index, record));
                 }
             }
         }
-        if !records.iter().any(|(index, _, _)| *index == selected) {
+        if !records.iter().any(|(_, _, index, _)| *index == selected) {
             return Err(LevelEditError::LegacyIncompatibleSpriteToken { index: selected });
         }
+        records.sort_by_key(|(screen, upper_y, _, _)| (*screen, *upper_y));
         let mut rebuilt = Vec::with_capacity(records.len().saturating_mul(2));
         let mut emitted_upper_y = 0_u8;
         let mut new_selected = None;
-        for (original_index, record_upper_y, record) in records {
+        for (_, record_upper_y, original_index, record) in records {
             if record_upper_y != emitted_upper_y {
                 rebuilt.push(SpriteToken::Screen(record_upper_y));
                 emitted_upper_y = record_upper_y;
@@ -436,21 +439,62 @@ mod tests {
         let selected = stream
             .relocate_expanded_record(3, 7, 9, 6 * 32 + 29, &SpriteLengthTable::standard())
             .unwrap();
-        assert_eq!(selected, 3);
+        assert_eq!(selected, 5);
         assert_eq!(
             stream.tokens,
             [
                 SpriteToken::Screen(2),
                 sprite(1),
+                SpriteToken::Screen(5),
+                sprite(3),
                 SpriteToken::Screen(6),
                 SpriteToken::Record(crate::SpriteRecord {
                     encoded: vec![0xd1, 0x97, 2],
                 }),
-                SpriteToken::Screen(5),
-                sprite(3),
             ]
         );
         assert_eq!(stream.header, 0x5a);
+    }
+
+    #[test]
+    fn expanded_relocation_stably_sorts_screens_and_tracks_upper_y_state() {
+        let mut stream = NativeSpriteStream {
+            header: 0x20,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Screen(3),
+                sprite_on_screen(2, 0x10),
+                SpriteToken::Screen(1),
+                sprite_on_screen(0, 0x20),
+                sprite_on_screen(2, 0x30),
+                SpriteToken::Screen(4),
+                sprite_on_screen(1, 0x40),
+            ],
+        };
+
+        let selected = stream
+            .relocate_expanded_record(1, 1, 5, 2 * 32 + 31, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(selected, 3);
+        assert_eq!(
+            stream
+                .native_placements()
+                .into_iter()
+                .map(|placement| (placement.screen, placement.minor, placement.sprite_number))
+                .collect::<Vec<_>>(),
+            [(0, 32, 0x20), (1, 95, 0x10), (1, 128, 0x40), (2, 32, 0x30)]
+        );
+        assert_eq!(
+            stream
+                .tokens
+                .iter()
+                .filter_map(|token| match token {
+                    SpriteToken::Record(record) => Some(record.encoded[2]),
+                    SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+                })
+                .collect::<Vec<_>>(),
+            [0x20, 0x10, 0x40, 0x30]
+        );
     }
 
     #[test]

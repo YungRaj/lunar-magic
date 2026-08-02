@@ -123,10 +123,24 @@ fn lunar_magic_exports_rust_installed_expanded_sprite_framing() {
     let mut expected = project.load_level_slot(0x105, layout, &lengths).unwrap();
     expected.sprites.expanded = true;
     expected.sprites.header |= NativeSpriteStream::EXPANDED_HEADER_FLAG;
-    let SpriteToken::Record(first) = &mut expected.sprites.tokens[0] else {
-        panic!("level 105 must begin with an ordinary sprite record");
+    let (x, mut fields) = match &expected.sprites.tokens[0] {
+        SpriteToken::Record(first) => {
+            let fields = first.native_fields().unwrap();
+            (fields.x, fields)
+        }
+        SpriteToken::Screen(_) | SpriteToken::Control(_) => {
+            panic!("level 105 must begin with an ordinary sprite record");
+        }
     };
-    first.encoded[0] = 0xff;
+    fields.extra_bits = 3;
+    let SpriteToken::Record(first) = &mut expected.sprites.tokens[0] else {
+        unreachable!();
+    };
+    first.set_native_fields(fields, &lengths).unwrap();
+    expected
+        .sprites
+        .relocate_expanded_record(0, 16, x, 2 * 32 + 31, &lengths)
+        .unwrap();
     layout.expanded_sprites = true;
     let protected = vec![ProtectedRange(0x7fc0..0x8000)];
     project
@@ -171,19 +185,24 @@ fn lunar_magic_exports_rust_installed_expanded_sprite_framing() {
     assert!(NativeSpriteStream::header_uses_expanded_framing(
         raw_sprites.payload[0]
     ));
+    assert!(
+        raw_sprites
+            .payload
+            .windows(2)
+            .any(|bytes| bytes == [0xff, 2])
+    );
+    assert!(
+        raw_sprites
+            .payload
+            .windows(2)
+            .any(|bytes| bytes == [0xff, 0xff])
+    );
     let actual = MwlNativeLevel::decode(&reexported, &lengths, 32, &modes).unwrap();
     assert!(actual.sprites.expanded);
     assert!(NativeSpriteStream::header_uses_expanded_framing(
         actual.sprites.header
     ));
-    let mut expected_export = expected.sprites.clone();
-    expected_export.tokens.sort_by_key(|token| {
-        let SpriteToken::Record(record) = token else {
-            panic!("level 105 expanded fixture must contain only records");
-        };
-        u16::from(record.encoded[1] & 0x0f) | (u16::from(record.encoded[0] & 0x02 != 0) << 4)
-    });
-    assert_eq!(actual.sprites, expected_export);
+    assert_eq!(actual.sprites, expected.sprites);
     let reopened_rom = RomImage::from_bytes(fs::read(&edited_rom).unwrap()).unwrap();
     assert!(detect_identity(&reopened_rom).unwrap().checksum_matches());
     let mut reopened_layout = lm_profile::smw_us_v1_vanilla_level_layout();
