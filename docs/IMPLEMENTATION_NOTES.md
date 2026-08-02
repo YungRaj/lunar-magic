@@ -3034,14 +3034,19 @@ and from 2.175570 to 1.205272 mean absolute channel error. The audit comparator 
 observed 656×448 DIB as the same fixed `(870,338)` editor crop as the existing 656×464 capture,
 avoiding a false heuristic offset.
 
-That installed pointer generation is now covered in the write direction as well. The ignored
-`vanilla_level_editor::tests::external_lunar_magic_rom_sprite_edit_saves_reopens_and_undoes` gate
-opens an authentic 2 MiB Lunar Magic-modified ROM, changes one level-$102 sprite number through the
-native controller, commits through the installed per-entry bank layout, and reopens the exact
-edited token in Rust. Lunar Magic 3.63 then exports both the untouched input and Rust-written ROM:
-their complete Layer 1 aggregates agree after Lunar Magic's own legacy screen-exit canonicalization,
-and the sprite aggregates differ by exactly the requested token. The physical output retains a
-valid checksum, while one native undo restores the complete logical input byte-for-byte.
+That installed pointer generation is now covered in the write direction as well. The native
+semantic sprite form applies a legacy coordinate replacement and Lunar Magic's stable screen sort
+as one controller batch, tracks the selected record to its new index, and reloads its canonical
+fields; expanded streams retain their explicit token order. The focused
+`semantic_legacy_sprite_position_edit_sorts_and_tracks_the_selected_record` regression covers that
+interaction. The ignored `external_lunar_magic_rom_sprite_edit_saves_reopens_and_undoes` gate opens
+an authentic 2 MiB Lunar Magic-modified ROM, moves one level-$102 sprite to the next screen through
+that form, commits through the installed per-entry bank layout, and reopens the sorted token in
+Rust. Lunar Magic 3.63 then exports both the untouched input and Rust-written ROM: their complete
+Layer 1 aggregates agree after Lunar Magic's own legacy screen-exit canonicalization, while its
+sprite aggregate exactly matches Rust's stable screen ordering and requested coordinate. The
+physical output retains a valid checksum, while one native undo restores the complete logical
+input byte-for-byte.
 
 The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
 pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at

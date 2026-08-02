@@ -3997,7 +3997,54 @@ impl VanillaLevelEditor {
                 )
             },
         );
-        self.apply_sprite_result(edit);
+        let edit = match edit {
+            Ok(edit) => edit,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            self.error = Some("native level controller is unavailable".into());
+            return;
+        };
+        let selected = if controller.level().sprites.expanded {
+            self.selected_sprite
+        } else {
+            let NativeLevelEdit::ReplaceSprite { index, token } = &edit else {
+                unreachable!("semantic sprite edit is always a replacement");
+            };
+            let mut predicted = controller.level().sprites.clone();
+            predicted.tokens[*index] = token.clone();
+            match predicted.sort_legacy_records_by_screen(*index) {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            }
+        };
+        let edits = if controller.level().sprites.expanded {
+            vec![edit]
+        } else {
+            vec![
+                edit,
+                NativeLevelEdit::SortLegacySpritesByScreen {
+                    selected: self.selected_sprite,
+                },
+            ]
+        };
+        match controller.apply_edits(&edits) {
+            Ok(()) => {
+                self.selected_sprite = selected;
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.get(selected),
+                );
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
     }
 
     fn apply_sprite_result(&mut self, edit: Result<NativeLevelEdit, String>) {
@@ -8642,27 +8689,31 @@ mod tests {
             None,
         );
         assert!(editor.error.is_none(), "{:?}", editor.error);
-        let controller = editor.controller.as_mut().unwrap();
-        let (index, mut replacement) = controller
+        let controller = editor.controller.as_ref().unwrap();
+        let index = controller
             .level()
             .sprites
             .tokens
             .iter()
             .enumerate()
             .find_map(|(index, token)| match token {
-                lm_level::SpriteToken::Record(record) => Some((index, record.clone())),
+                lm_level::SpriteToken::Record(_) => Some(index),
                 _ => None,
             })
             .expect("level 102 must contain an ordinary sprite");
-        replacement.encoded[2] ^= 0x01;
-        let expected = lm_level::SpriteToken::Record(replacement.clone());
-        controller
-            .apply_edits(&[NativeLevelEdit::ReplaceSprite {
-                index,
-                token: expected.clone(),
-            }])
-            .unwrap();
-        app.dispatch(prepare_commit(controller, &snapshot).unwrap())
+        editor.selected_sprite = index;
+        editor.sprite_form = SpriteForm::from_token(
+            controller.level().sprites.header,
+            controller.level().sprites.tokens.get(index),
+        );
+        editor.sprite_form.screen = editor.sprite_form.screen.saturating_add(1).min(0x1f);
+        editor.apply_sprite_semantic_fields();
+        assert_eq!(editor.error, None);
+        let sorted_index = editor.selected_sprite;
+        let expected =
+            editor.controller.as_ref().unwrap().level().sprites.tokens[sorted_index].clone();
+        assert_ne!(sorted_index, index);
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
             .unwrap();
         let image = app.project().unwrap().rom.clone();
         let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
@@ -8672,7 +8723,7 @@ mod tests {
             .unwrap()
             .load_level_slot(0x102, layout, &SpriteLengthTable::standard())
             .unwrap();
-        assert_eq!(reopened.sprites.tokens[index], expected);
+        assert_eq!(reopened.sprites.tokens[sorted_index], expected);
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let executable = root.join("lm363/Lunar Magic.exe");
         assert!(executable.is_file(), "missing {}", executable.display());
@@ -8739,6 +8790,12 @@ mod tests {
         assert_eq!(exported.layer1, baseline_exported.layer1);
         let mut expected_exported_sprites = baseline_exported.sprites;
         expected_exported_sprites.tokens[index] = expected;
+        assert_eq!(
+            expected_exported_sprites
+                .sort_legacy_records_by_screen(index)
+                .unwrap(),
+            sorted_index
+        );
         assert_eq!(exported.sprites, expected_exported_sprites);
         assert!(
             lm_rom::detect_identity(
@@ -11586,11 +11643,10 @@ mod tests {
 
             let token_count = initial_token_count + case;
             editor.insert_sprite(token_count);
-            let inserted = editor.selected_sprite;
-            assert_eq!(inserted, token_count);
             editor.sprite_form.x = 5 + u8::try_from(case).unwrap();
             editor.sprite_form.y_low = 0x18 + u8::try_from(case).unwrap();
             editor.apply_sprite_semantic_fields();
+            let inserted = editor.selected_sprite;
             let SpriteToken::Record(staged) =
                 &editor.controller.as_ref().unwrap().level().sprites.tokens[inserted]
             else {
@@ -11602,7 +11658,7 @@ mod tests {
                 editor.sprite_form.encoded,
                 crate::level_editor_forms::format_bytes(&staged.encoded)
             );
-            expected.push((inserted, staged.encoded.clone()));
+            expected.push(staged.encoded.clone());
         }
 
         app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
@@ -11616,11 +11672,10 @@ mod tests {
                 &lengths,
             )
             .unwrap();
-        for (inserted, encoded) in expected {
-            let SpriteToken::Record(reopened_record) = &reopened.sprites.tokens[inserted] else {
-                panic!("reopened SSC insertion must remain an ordinary sprite record");
-            };
-            assert_eq!(reopened_record.encoded, encoded);
+        for encoded in expected {
+            assert!(reopened.sprites.tokens.iter().any(|token| {
+                matches!(token, SpriteToken::Record(record) if record.encoded == encoded)
+            }));
         }
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(
@@ -11680,6 +11735,74 @@ mod tests {
                 editor.sprite_form.semantic_record,
             ),
             (0x1d, 2, 0x1e, 3, 0x55, true)
+        );
+    }
+
+    #[test]
+    fn semantic_legacy_sprite_position_edit_sorts_and_tracks_the_selected_record() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let selected = controller
+            .level()
+            .sprites
+            .tokens
+            .iter()
+            .position(|token| matches!(token, SpriteToken::Record(_)))
+            .unwrap();
+        let mut editor = VanillaLevelEditor {
+            sprite_form: SpriteForm::from_token(
+                controller.level().sprites.header,
+                controller.level().sprites.tokens.get(selected),
+            ),
+            controller: Some(controller),
+            selected_sprite: selected,
+            ..VanillaLevelEditor::default()
+        };
+        editor.sprite_form.screen = 0x1f;
+        let edit = editor
+            .sprite_form
+            .semantic_edit(
+                selected,
+                editor
+                    .controller
+                    .as_ref()
+                    .unwrap()
+                    .level()
+                    .sprites
+                    .tokens
+                    .get(selected),
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let NativeLevelEdit::ReplaceSprite { token, .. } = &edit else {
+            unreachable!();
+        };
+        let mut expected = editor.controller.as_ref().unwrap().level().sprites.clone();
+        expected.tokens[selected] = token.clone();
+        let expected_selected = expected.sort_legacy_records_by_screen(selected).unwrap();
+
+        editor.apply_sprite_semantic_fields();
+
+        assert_eq!(editor.error, None);
+        assert_eq!(editor.selected_sprite, expected_selected);
+        assert_eq!(
+            editor.controller.as_ref().unwrap().level().sprites,
+            expected
+        );
+        assert_eq!(editor.sprite_form.screen, 0x1f);
+        assert_eq!(
+            crate::native_level_document_form::parse_sprite_token(&editor.sprite_form.encoded)
+                .unwrap(),
+            expected.tokens[expected_selected]
         );
     }
 
