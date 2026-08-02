@@ -3032,6 +3032,9 @@ optionally recomputes each screen count without changing the ROM, and skips leve
 rendered. Stored sizing retains the highest serialized Layer 1 transition, while automatic sizing
 ignores control-only tails such as the custom-time command. Horizontal and vertical canvases crop
 along their recovered major axis through the same stride-preserving bounded raster operation.
+Both paths snapshot the active animation phase and Special World state at dispatch, then carry
+those immutable view inputs through background rendering. This matches the documented current-view
+boundary without letting a long batch mix view states when the frontend clock or toggle advances.
 Encoding or destination failures still abort the grouped create-new publication, and cancellation
 before publication leaves no output files visible.
 

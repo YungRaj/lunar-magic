@@ -52,6 +52,8 @@ struct BatchImageSource {
     profile: RevisionProfile,
     image: lm_rom::RomImage,
     ownership: PaletteOwnership,
+    animation_phase: Option<usize>,
+    special_world_passed: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1135,6 +1137,9 @@ impl RomLevelAssetsEditor {
             }
         }
         ui.separator();
+        let image_animation_phase = Some(installed_preview_animation_phase(
+            ui.input(|input| input.time),
+        ));
         let modified = self
             .workspace
             .as_ref()
@@ -1146,7 +1151,7 @@ impl RomLevelAssetsEditor {
             )
             .clicked()
         {
-            match self.export_level_image() {
+            match self.export_level_image(image_animation_phase, special_world_passed) {
                 Ok(Some(path)) => {
                     self.level_image_status =
                         Some(format!("Exported full level image to {}.", path.display()));
@@ -1172,7 +1177,11 @@ impl RomLevelAssetsEditor {
                 ),
             ] {
                 if ui.add_enabled(enabled, egui::Button::new(label)).clicked()
-                    && let Err(error) = self.start_level_image_batch(format)
+                    && let Err(error) = self.start_level_image_batch(
+                        format,
+                        image_animation_phase,
+                        special_world_passed,
+                    )
                 {
                     self.error = Some(error);
                 }
@@ -1247,6 +1256,8 @@ impl RomLevelAssetsEditor {
     fn start_level_image_batch(
         &mut self,
         format: image_batch::LevelImageFormat,
+        animation_phase: Option<usize>,
+        special_world_passed: bool,
     ) -> Result<(), String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let Some(template) = crate::dialogs::choose_level_image_batch_template(format.extension())
@@ -1258,19 +1269,30 @@ impl RomLevelAssetsEditor {
             profile: workspace.profile.clone(),
             image: workspace.image.clone(),
             ownership: workspace.ownership.clone(),
+            animation_phase,
+            special_world_passed,
         };
         self.level_image_status = None;
         self.image_batch_worker
             .start(source, template, format, self.image_batch_options)
     }
 
-    fn export_level_image(&self) -> Result<Option<std::path::PathBuf>, String> {
+    fn export_level_image(
+        &self,
+        animation_phase: Option<usize>,
+        special_world_passed: bool,
+    ) -> Result<Option<std::path::PathBuf>, String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let Some(destination) = crate::dialogs::choose_level_image_save_path(workspace.source_slot)
         else {
             return Ok(None);
         };
-        let (canvas, _, _) = render_super_graphics_level_canvas(workspace, None, None, false)?;
+        let (canvas, _, _) = render_super_graphics_level_canvas(
+            workspace,
+            animation_phase,
+            None,
+            special_world_passed,
+        )?;
         let canvas = crop_level_image_canvas(
             &canvas,
             &workspace.controller.assets().level,
@@ -1301,7 +1323,12 @@ fn render_batch_level_canvas(
         image: source.image.clone(),
         ownership: source.ownership.clone(),
     };
-    let (canvas, _, _) = render_super_graphics_level_canvas(&workspace, None, None, false)?;
+    let (canvas, _, _) = render_super_graphics_level_canvas(
+        &workspace,
+        source.animation_phase,
+        None,
+        source.special_world_passed,
+    )?;
     crop_level_image_canvas(
         &canvas,
         &workspace.controller.assets().level,
@@ -2370,6 +2397,14 @@ mod tests {
             sprite_files: 4,
             source: "bypassed",
         };
+        apply_special_world_graphics(
+            &mut resolved,
+            &project,
+            lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            false,
+        )
+        .unwrap();
+        assert!(resolved.vram.sprites.iter().all(|tile| tile == &blank));
         apply_special_world_graphics(
             &mut resolved,
             &project,
