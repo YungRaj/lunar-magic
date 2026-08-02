@@ -17,6 +17,7 @@ mod layer3;
 mod layer3_editing;
 mod layer3_tilemap_workspace;
 mod legacy_mwl;
+mod level_layer_slots;
 mod lm16_map16_file;
 mod map16;
 mod map16_editing;
@@ -82,6 +83,10 @@ pub use layer3_tilemap_workspace::{
     LAYER3_TILEMAP_WORKSPACE_LEN, Layer3TilemapWorkspace, Layer3TilemapWorkspaceError,
 };
 pub use legacy_mwl::{LegacyMwlError, LegacyMwlManifest, LegacyMwlSecondaryExit, LegacyMwlSidecar};
+pub use level_layer_slots::{
+    Layer3PrioritySelection, LevelLayerPainterSlot, LevelLayerSlotAssignments,
+    LevelLayerSlotSource, lunar_magic_level_layer_slots,
+};
 pub use lm16_map16_file::{
     Lm16Map16File, Lm16Map16FileError, Lm16Map16Section, Lm16Map16SectionKind,
 };

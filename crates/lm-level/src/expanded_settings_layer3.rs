@@ -87,7 +87,7 @@ impl Layer3ExpandedModeFlags {
     ///
     /// `base_composition_mask` is Lunar Magic's byte from the active level-mode table. Packed bit
     /// 30 replaces its Layer 3 additive-input bit before the dispatcher evaluates sign and
-    /// half-color masks. The alternate source route's painter position remains separate.
+    /// half-color masks. Use `lunar_magic_level_layer_slots` when the painter position is needed.
     #[must_use]
     pub const fn layer3_composition(
         self,

@@ -82,6 +82,14 @@ impl LegacyLevelHeader {
         self.bytes[2] >> 4 & 7
     }
 
+    /// Whether Lunar Magic splits low- and high-priority Layer 3 tiles across painter slots.
+    ///
+    /// This is the high bit of legacy-header byte 2, adjacent to the default-music selector.
+    #[must_use]
+    pub const fn split_layer3_priority(self) -> bool {
+        self.bytes[2] & 0x80 != 0
+    }
+
     /// Replaces the three-bit default-music selector while preserving the sprite tileset and
     /// unrelated high bit.
     ///
@@ -368,6 +376,7 @@ mod tests {
         assert_eq!(encoded[1] & 0x1f, 3);
         assert_eq!(encoded[1] >> 5, 7);
         assert_eq!(encoded[2] & 0x80, original[2] & 0x80);
+        assert!(header.split_layer3_priority());
         assert_eq!(header.sprite_tileset(), 6);
         assert_eq!(header.default_music_selector(), 5);
         assert_eq!(header.time_limit_selector(), 2);

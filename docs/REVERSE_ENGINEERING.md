@@ -1577,9 +1577,13 @@ packed bit 30 replaces bit 2 of the active level-mode composition-table byte. Th
 byte—not the packed record's low byte—enables addition when bit 2 is set and bit 7 is clear, while
 mask `$44` enables half-color when addition remains active. The alternate route never enables
 addition and uses mask `$60` of that same adjusted level-mode byte for half-color. The pixel
-renderer halves each source RGB channel before either its opaque write or saturating addition. The
-level-mode table values and alternate route's exact painter slot remain unresolved rather than
-being inferred.
+renderer halves each source RGB channel before either its opaque write or saturating addition. A
+live Lunar Magic 3.63 process opened on the retained installed SMW-US ROM supplied the complete
+32-byte primary-source, alternate-source, and composition tables at `$0091F330`, `$0091F350`, and
+`$0091F370`. Mode `$00` independently reproduced the live source, enabled, additive, half-color,
+and priority arrays byte-for-byte. The dispatcher can place Layer 3 in slot 0, 2, or 4 and, when
+legacy-header byte 2 bit 7 requests a priority split, duplicates it across two slots with selectors
+1 (low-priority tiles) and 2 (high-priority tiles).
 
 The retained Wine ROM also proves four direct hooks into the `$4C0` main payload. The first three
 are now clean-room runtime contracts: logical `$00201F` replaces

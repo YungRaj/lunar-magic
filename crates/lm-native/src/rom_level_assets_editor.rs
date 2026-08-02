@@ -103,8 +103,7 @@ struct InstalledLayer3 {
     initial_y: i16,
     clamp_editor_row_at_30: bool,
     vertical: bool,
-    between_background_and_foreground: bool,
-    additive: bool,
+    painter_slots: lm_level::LevelLayerSlotAssignments,
 }
 
 struct SpecialGraphicsTiles {
@@ -1751,6 +1750,19 @@ fn load_installed_layer3(
         layer3.behavior,
         layer3.initial_y,
     );
+    let expanded_mode =
+        expanded_settings.map(lm_level::ExpandedLevelSettingsRecord::layer3_expanded_mode_flags);
+    let painter_slots = lm_level::lunar_magic_level_layer_slots(
+        header.level_mode(),
+        header.split_layer3_priority(),
+        expanded_mode,
+    )
+    .ok_or_else(|| {
+        format!(
+            "level mode {:02X} has no Lunar Magic painter-slot assignment",
+            header.level_mode()
+        )
+    })?;
     Ok(Some(InstalledLayer3 {
         tilemap: layer3.tilemap,
         tiles,
@@ -1758,15 +1770,7 @@ fn load_installed_layer3(
         initial_y,
         clamp_editor_row_at_30,
         vertical: lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical,
-        between_background_and_foreground:
-            crate::vanilla_map16_preview::vanilla_layer3_between_background_and_foreground(
-                layer3.behavior,
-            ),
-        additive: crate::vanilla_map16_preview::vanilla_layer3_additive(
-            header.level_mode(),
-            layer3.behavior,
-            header.object_tileset(),
-        ),
+        painter_slots,
     }))
 }
 
@@ -2267,34 +2271,53 @@ fn render_level_canvas_with_layer_palette_routing(
             vec![backdrop; pixel_count],
         )
         .map_err(|error| error.to_string())?;
-        let background = [layers[0]];
-        let foreground = [layers[1]];
-        let background_routing = [layer_palette_routing[0]];
-        let foreground_routing = [layer_palette_routing[1]];
-        if layer3.between_background_and_foreground {
-            lm_render::draw_native_level_layers_with_layer_palette_routing(
-                &mut canvas,
-                request(&background),
-                &background_routing,
-            )
-            .map_err(|error| error.to_string())?;
-            draw_installed_layer3_plane(&mut canvas, layer3, palette, false);
-            draw_installed_layer3_plane(&mut canvas, layer3, palette, true);
-            lm_render::draw_native_level_layers_with_layer_palette_routing(
-                &mut canvas,
-                request(&foreground),
-                &foreground_routing,
-            )
-            .map_err(|error| error.to_string())?;
-        } else {
-            draw_installed_layer3_plane(&mut canvas, layer3, palette, false);
-            lm_render::draw_native_level_layers_with_layer_palette_routing(
-                &mut canvas,
-                request(layers),
-                layer_palette_routing,
-            )
-            .map_err(|error| error.to_string())?;
-            draw_installed_layer3_plane(&mut canvas, layer3, palette, true);
+        let layer2 = [layers[0]];
+        let layer1 = [layers[1]];
+        let layer2_routing = [layer_palette_routing[0]];
+        let layer1_routing = [layer_palette_routing[1]];
+        for slot in layer3.painter_slots.slots {
+            if !slot.enabled {
+                continue;
+            }
+            match slot.source {
+                Some(lm_level::LevelLayerSlotSource::Layer2) => {
+                    lm_render::draw_native_level_layers_with_layer_palette_routing(
+                        &mut canvas,
+                        request(&layer2),
+                        &layer2_routing,
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+                Some(lm_level::LevelLayerSlotSource::Layer1) => {
+                    lm_render::draw_native_level_layers_with_layer_palette_routing(
+                        &mut canvas,
+                        request(&layer1),
+                        &layer1_routing,
+                    )
+                    .map_err(|error| error.to_string())?;
+                }
+                Some(lm_level::LevelLayerSlotSource::Layer3) => {
+                    let draw = |canvas: &mut lm_render::Canvas, high_priority| {
+                        draw_installed_layer3_plane(
+                            canvas,
+                            layer3,
+                            palette,
+                            high_priority,
+                            slot.additive,
+                            slot.half_color,
+                        );
+                    };
+                    match slot.layer3_priority {
+                        lm_level::Layer3PrioritySelection::Both => {
+                            draw(&mut canvas, false);
+                            draw(&mut canvas, true);
+                        }
+                        lm_level::Layer3PrioritySelection::Low => draw(&mut canvas, false),
+                        lm_level::Layer3PrioritySelection::High => draw(&mut canvas, true),
+                    }
+                }
+                None => {}
+            }
         }
         canvas
     } else {
@@ -2323,12 +2346,22 @@ fn draw_installed_layer3_plane(
     layer3: &InstalledLayer3,
     palette: &lm_graphics::Palette,
     high_priority: bool,
+    additive: bool,
+    half_color: bool,
 ) {
     const TILES_PER_SIDE: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
     const TILE_PIXELS: usize = lm_graphics::IndexedTile::WIDTH;
     let x_origins = repeating_layer3_plane_origins(layer3.initial_x, canvas.width());
     if layer3.clamp_editor_row_at_30 {
-        draw_clamped_installed_layer3_plane(canvas, layer3, palette, high_priority, &x_origins);
+        draw_clamped_installed_layer3_plane(
+            canvas,
+            layer3,
+            palette,
+            high_priority,
+            additive,
+            half_color,
+            &x_origins,
+        );
         return;
     }
     let y_origins = if layer3.vertical {
@@ -2384,12 +2417,24 @@ fn draw_installed_layer3_plane(
                             continue;
                         }
                         let source = Rgba {
-                            red: color.red,
-                            green: color.green,
-                            blue: color.blue,
+                            red: if half_color {
+                                color.red >> 1
+                            } else {
+                                color.red
+                            },
+                            green: if half_color {
+                                color.green >> 1
+                            } else {
+                                color.green
+                            },
+                            blue: if half_color {
+                                color.blue >> 1
+                            } else {
+                                color.blue
+                            },
                             alpha: 255,
                         };
-                        let output = if layer3.additive {
+                        let output = if additive {
                             let destination = canvas.get(target_x, target_y).unwrap_or_default();
                             Rgba {
                                 red: destination.red.saturating_add(source.red),
@@ -2413,6 +2458,8 @@ fn draw_clamped_installed_layer3_plane(
     layer3: &InstalledLayer3,
     palette: &lm_graphics::Palette,
     high_priority: bool,
+    additive: bool,
+    half_color: bool,
     x_origins: &[i32],
 ) {
     const TILES_PER_SIDE: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
@@ -2443,6 +2490,8 @@ fn draw_clamped_installed_layer3_plane(
                     layer3,
                     palette,
                     high_priority,
+                    additive,
+                    half_color,
                     word,
                     source_tile_column * TILE_PIXELS,
                     target_y,
@@ -2459,6 +2508,8 @@ fn draw_installed_layer3_tile_at_origins(
     layer3: &InstalledLayer3,
     palette: &lm_graphics::Palette,
     high_priority: bool,
+    additive: bool,
+    half_color: bool,
     word: u16,
     plane_x: usize,
     target_y: usize,
@@ -2505,12 +2556,24 @@ fn draw_installed_layer3_tile_at_origins(
                     continue;
                 }
                 let source = Rgba {
-                    red: color.red,
-                    green: color.green,
-                    blue: color.blue,
+                    red: if half_color {
+                        color.red >> 1
+                    } else {
+                        color.red
+                    },
+                    green: if half_color {
+                        color.green >> 1
+                    } else {
+                        color.green
+                    },
+                    blue: if half_color {
+                        color.blue >> 1
+                    } else {
+                        color.blue
+                    },
                     alpha: 255,
                 };
-                let output = if layer3.additive {
+                let output = if additive {
                     let destination = canvas.get(target_x, output_y).unwrap_or_default();
                     Rgba {
                         red: destination.red.saturating_add(source.red),
@@ -2852,6 +2915,12 @@ mod tests {
     fn test_installed_layer3(word: u16, additive: bool) -> InstalledLayer3 {
         let mut tilemap = vec![0x38fc; lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE.pow(2)];
         tilemap[0] = word;
+        let mut painter_slots = lm_level::lunar_magic_level_layer_slots(0, false, None).unwrap();
+        for slot in &mut painter_slots.slots {
+            if slot.source == Some(lm_level::LevelLayerSlotSource::Layer3) {
+                slot.additive = additive;
+            }
+        }
         InstalledLayer3 {
             tilemap,
             tiles: vec![IndexedTile::new([1; IndexedTile::PIXEL_COUNT])],
@@ -2859,8 +2928,7 @@ mod tests {
             initial_y: 0,
             clamp_editor_row_at_30: false,
             vertical: true,
-            between_background_and_foreground: false,
-            additive,
+            painter_slots,
         }
     }
 
@@ -2879,9 +2947,9 @@ mod tests {
             lm_render::Canvas::from_pixels(520, 520, vec![backdrop; 520 * 520]).unwrap();
         let layer3 = test_installed_layer3(0x2000, true);
 
-        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, false);
+        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, false, true, false);
         assert_eq!(canvas.get(0, 0), Some(backdrop));
-        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, true);
+        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, true, true, false);
         let expected = Rgba {
             red: 255,
             green: 20,
@@ -2891,6 +2959,32 @@ mod tests {
         assert_eq!(canvas.get(0, 0), Some(expected));
         assert_eq!(canvas.get(512, 0), Some(expected));
         assert_eq!(canvas.get(0, 512), Some(expected));
+    }
+
+    #[test]
+    fn installed_layer3_raster_halves_source_before_composition() {
+        let mut colors = vec![Bgr555(0); 128];
+        colors[1] = Bgr555(0x001f);
+        let palette = Palette { colors };
+        let backdrop = Rgba {
+            red: 10,
+            green: 20,
+            blue: 30,
+            alpha: 255,
+        };
+        let mut canvas = lm_render::Canvas::from_pixels(8, 8, vec![backdrop; 64]).unwrap();
+        let layer3 = test_installed_layer3(0, false);
+
+        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, false, true, true);
+        assert_eq!(
+            canvas.get(0, 0),
+            Some(Rgba {
+                red: 137,
+                green: 20,
+                blue: 30,
+                alpha: 255,
+            })
+        );
     }
 
     #[test]
@@ -2905,7 +2999,7 @@ mod tests {
         layer3.tilemap[61 * 64] = 0;
         layer3.clamp_editor_row_at_30 = true;
 
-        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, false);
+        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, false, false, false);
 
         assert_eq!(canvas.get(0, 479), Some(backdrop));
         assert_eq!(canvas.get(0, 480).unwrap().red, 255);
@@ -3020,7 +3114,7 @@ mod tests {
     }
 
     #[test]
-    fn installed_layer3_priority_order_matches_normal_and_between_layer_modes() {
+    fn installed_layer3_priority_split_uses_the_recovered_painter_slots() {
         let definition = |tile| Map16Tile {
             top_left: Subtile(tile),
             top_right: Subtile(tile),
@@ -3065,7 +3159,8 @@ mod tests {
         };
         let routing = [NativeMap16PaletteRouting::Direct; 2];
         let mut layer3 = test_installed_layer3(0x2000, false);
-        let normal = render_level_canvas_with_layer_palette_routing(
+        layer3.painter_slots = lm_level::lunar_magic_level_layer_slots(0, false, None).unwrap();
+        let unsplit = render_level_canvas_with_layer_palette_routing(
             &layer_stack,
             &[],
             layout,
@@ -3079,10 +3174,10 @@ mod tests {
             Some(&layer3),
         )
         .unwrap();
-        assert_eq!(normal.get(0, 0).unwrap().red, 255);
+        assert_eq!(unsplit.get(0, 0).unwrap().blue, 255);
 
-        layer3.between_background_and_foreground = true;
-        let between = render_level_canvas_with_layer_palette_routing(
+        layer3.painter_slots = lm_level::lunar_magic_level_layer_slots(0, true, None).unwrap();
+        let split = render_level_canvas_with_layer_palette_routing(
             &layer_stack,
             &[],
             layout,
@@ -3096,7 +3191,7 @@ mod tests {
             Some(&layer3),
         )
         .unwrap();
-        assert_eq!(between.get(0, 0).unwrap().blue, 255);
+        assert_eq!(split.get(0, 0).unwrap().red, 255);
     }
 
     fn level_for_image_crop(mode: u8, stored_screen: u8, sprite_screen: u8) -> LoadedLevelSlot {
