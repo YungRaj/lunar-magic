@@ -525,6 +525,10 @@ Object-backed Layer 2 list actions also reload exclusively from accepted staged 
 button insertion selects the actual new index, replacements decode the canonical record, deletion
 clamps to a survivor, and an empty stream clears both the form and extension-preserving placement
 template. Rejected batches retain the prior selection and form.
+The primary object list uses the same rule, and its list-button insertion consumes the retained
+placement template so OSC/custom extension bytes cannot collapse to the ordinary three-byte shape.
+An application-backed OSC workflow requires insertion, replacement, deletion, undo, save/reopen,
+and resolved custom artwork to retain the exact extended record.
 
 Auxiliary level editing stages entrances, screen exits, secondary exits, and Map16 overrides in one
 cross-domain transaction. The first three retain their explicit sequence ordering; Map16 overrides

@@ -2848,6 +2848,10 @@ The parallel object-backed Layer 2 list now has the same staged-state rule acros
 ordinary actions. Button insertion selects the computed new index before decoding it; raw and
 semantic replacement decode the accepted record; and deletion clamps to the surviving range or
 resets the form and extension-preserving placement template when no record remains.
+Layer 1 list insertion now uses `object_record_for_placement` as well, closing a native-only path
+that previously reconstructed three ordinary bytes and discarded the extension selected from an
+OSC catalog entry. Successful insertion selects the computed index; replacement and deletion
+reload the canonical staged record and its placement template, while failures restore selection.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The

@@ -3370,13 +3370,7 @@ impl VanillaLevelEditor {
     ) {
         ui.horizontal(|ui| {
             if ui.button("Insert after selection").clicked() {
-                let edit = self.object_form.ordinary_record().map(|record| {
-                    NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
-                        index: object_insertion_index(self.selected_object, record_count),
-                        record,
-                    }])
-                });
-                self.apply_object_result(edit);
+                self.insert_object_after_selection(record_count);
             }
             if ui
                 .add_enabled(
@@ -3401,13 +3395,7 @@ impl VanillaLevelEditor {
                 if let Some(controller) = self.controller.as_mut() {
                     match controller.apply_edits(&[NativeLevelEdit::Objects(edits)]) {
                         Ok(()) => {
-                            if let Some(form) = selected_object_form(
-                                &controller.level().layer1.objects.records,
-                                self.selected_object,
-                            ) {
-                                self.object_form = form;
-                                self.object_placement_template = None;
-                            }
+                            self.reload_object_form();
                             self.error = None;
                         }
                         Err(error) => self.error = Some(error.to_string()),
@@ -3429,30 +3417,10 @@ impl VanillaLevelEditor {
             if ui
                 .add_enabled(has_selection, egui::Button::new("Remove object"))
                 .clicked()
-                && let Some(controller) = self.controller.as_mut()
             {
-                match controller.apply_edits(&[NativeLevelEdit::Objects(vec![
-                    ObjectEdit::Remove {
-                        index: self.selected_object,
-                    },
-                ])]) {
-                    Ok(()) => {
-                        self.selected_object =
-                            self.selected_object.min(record_count.saturating_sub(2));
-                        if let Some(record) = controller
-                            .level()
-                            .layer1
-                            .objects
-                            .records
-                            .get(self.selected_object)
-                        {
-                            self.object_form = ObjectForm::from_record(record);
-                            self.object_placement_template = None;
-                        }
-                        self.error = None;
-                    }
-                    Err(error) => self.error = Some(error.to_string()),
-                }
+                self.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Remove {
+                    index: self.selected_object,
+                }])));
             }
             self.object_move_buttons(ui, record_count);
             if ui
@@ -3481,29 +3449,59 @@ impl VanillaLevelEditor {
         object_field_edits(&self.object_form, self.selected_object, current)
     }
 
+    fn insert_object_after_selection(&mut self, record_count: usize) {
+        let insertion = object_insertion_index(self.selected_object, record_count);
+        let edit = self.object_record_for_placement().map(|record| {
+            NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                index: insertion,
+                record,
+            }])
+        });
+        let previous_selection = self.selected_object;
+        self.selected_object = insertion;
+        self.apply_object_result(edit);
+        if self.error.is_some() {
+            self.selected_object = previous_selection;
+        }
+    }
+
     fn apply_object_result(&mut self, edit: Result<NativeLevelEdit, String>) {
         match edit {
             Ok(edit) => {
-                if let Some(controller) = self.controller.as_mut() {
-                    match controller.apply_edits(&[edit]) {
-                        Ok(()) => {
-                            if let Some(record) = controller
-                                .level()
-                                .layer1
-                                .objects
-                                .records
-                                .get(self.selected_object)
-                            {
-                                self.object_form = ObjectForm::from_record(record);
-                                self.object_placement_template = None;
-                            }
-                            self.error = None;
-                        }
-                        Err(error) => self.error = Some(error.to_string()),
+                let Some(controller) = self.controller.as_mut() else {
+                    self.error = Some("level controller is unavailable".into());
+                    return;
+                };
+                match controller.apply_edits(&[edit]) {
+                    Ok(()) => {
+                        self.reload_object_form();
+                        self.error = None;
                     }
+                    Err(error) => self.error = Some(error.to_string()),
                 }
             }
             Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn reload_object_form(&mut self) {
+        let records = self
+            .controller
+            .as_ref()
+            .map(|controller| &controller.level().layer1.objects.records);
+        let Some(records) = records else {
+            self.selected_object = 0;
+            self.object_form = ObjectForm::default();
+            self.object_placement_template = None;
+            return;
+        };
+        self.selected_object = self.selected_object.min(records.len().saturating_sub(1));
+        if let Some(record) = records.get(self.selected_object).cloned() {
+            self.object_form = ObjectForm::from_record(&record);
+            self.object_placement_template = Some(record);
+        } else {
+            self.object_form = ObjectForm::default();
+            self.object_placement_template = None;
         }
     }
 
@@ -7826,6 +7824,7 @@ fn object_field_edits(
     ])
 }
 
+#[cfg(test)]
 fn selected_object_form(records: &[ObjectRecord], selected: usize) -> Option<ObjectForm> {
     records.get(selected).map(ObjectForm::from_record)
 }
@@ -10782,16 +10781,92 @@ mod tests {
         app.dispatch(Command::SelectLevel(0x105)).unwrap();
         let snapshot = app.controller_snapshot().unwrap();
         let layout = lm_profile::smw_us_v1_vanilla_level_layout();
-        let mut controller =
-            LevelController::decode(&snapshot, layout, &SpriteLengthTable::standard()).unwrap();
-        let insertion = controller.level().layer1.objects.records.len();
-        controller
-            .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
-                index: insertion,
-                record: record.clone(),
-            }])])
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let record_count = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records
+            .len();
+        editor.selected_object = record_count.saturating_sub(1);
+        editor.object_form = ObjectForm::from_record(&record);
+        editor.object_placement_template = Some(record.clone());
+        editor.insert_object_after_selection(record_count);
+        let insertion = record_count;
+        assert_eq!(editor.selected_object, insertion);
+        assert_eq!(
+            editor.object_form.encoded,
+            crate::level_editor_forms::format_bytes(record.encoded())
+        );
+        assert_eq!(editor.object_placement_template.as_ref(), Some(&record));
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .records[insertion],
+            record
+        );
+
+        let mut replacement = record.clone();
+        replacement
+            .set_coordinate_nibbles(ObjectCoordinateNibbles {
+                first: 7,
+                second: 8,
+            })
             .unwrap();
-        app.dispatch(prepare_commit(&controller, &snapshot).unwrap())
+        editor.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
+            index: insertion,
+            record: replacement.clone(),
+        }])));
+        assert_eq!(
+            editor.object_form.encoded,
+            crate::level_editor_forms::format_bytes(replacement.encoded())
+        );
+        assert_eq!(
+            editor.object_placement_template.as_ref(),
+            Some(&replacement)
+        );
+        assert!(editor.controller.as_mut().unwrap().undo());
+        editor.reload_object_form();
+
+        editor.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Remove {
+            index: insertion,
+        }])));
+        assert_eq!(editor.selected_object, record_count.saturating_sub(1));
+        let selected_after_remove = &editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records[editor.selected_object];
+        assert_eq!(
+            editor.object_form.encoded,
+            crate::level_editor_forms::format_bytes(selected_after_remove.encoded())
+        );
+        assert!(editor.controller.as_mut().unwrap().undo());
+        editor.selected_object = insertion;
+        editor.reload_object_form();
+        assert_eq!(editor.object_placement_template.as_ref(), Some(&record));
+
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
             .unwrap();
         let reopened = app
             .project()

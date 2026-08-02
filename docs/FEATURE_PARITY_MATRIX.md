@@ -101,6 +101,11 @@ semantic replacements reload canonical fields, and deletion clamps to and reload
 record or clears the form/template when the stream becomes empty. The application-backed
 `vanilla_level_editor::tests::primary_canvas_places_and_drags_object_backed_layer2` workflow covers
 those actions together with reordering, typed paste, ROM reopen, and undo.
+The primary Layer 1 list now follows that same boundary and constructs list-button insertions from
+the extension-preserving placement template rather than rebuilding a three-byte ordinary record.
+The upgraded `vanilla_level_editor::tests::osc_custom_object_inserts_commits_reopens_and_retains_display`
+workflow proves exact OSC extension retention through native insertion, selection/form reload,
+replacement, deletion, undo, ROM commit/reopen, and authenticated custom display resolution.
 
 ## Current critical path
 
