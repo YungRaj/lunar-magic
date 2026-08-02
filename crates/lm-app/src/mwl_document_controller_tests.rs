@@ -2,7 +2,7 @@ use super::*;
 use lm_graphics::{Bgr555, CompactExAnimation, ExAnimationFrame, ExAnimationRecord, Palette};
 use lm_level::{
     ExpandedLevelSettingsRecord, Layer3TilemapGraphicsDescriptor, MwlPayloadSection, ObjectEdit,
-    ObjectRecord, SpriteLengthTable, SpriteToken,
+    ObjectRecord, SpriteLengthTable, SpriteRecord, SpriteToken,
 };
 use lm_project::MwlOptionalLevelAssets;
 
@@ -140,6 +140,29 @@ fn typed_sprite_replacement_preserves_metadata_and_unrelated_sections() {
             .unwrap()
             .payload,
         [4, 0x11, 0xd0, 0xbd, 0xff]
+    );
+}
+
+#[test]
+fn typed_legacy_sprite_replacement_stably_canonicalizes_screen_order() {
+    let lengths = SpriteLengthTable::standard();
+    let mut controller = sprite_controller();
+    let record = |screen: u8, id: u8| {
+        SpriteToken::Record(SpriteRecord {
+            encoded: vec![u8::from(screen & 0x10 != 0) << 1, screen & 0x0f, id],
+        })
+    };
+    let sprites = NativeSpriteStream {
+        header: 4,
+        expanded: false,
+        tokens: vec![record(31, 1), record(0, 2), record(31, 3)],
+    };
+
+    controller.replace_sprites(0, &sprites, &lengths).unwrap();
+
+    assert_eq!(
+        controller.sprites(false, &lengths).unwrap().tokens,
+        [record(0, 2), record(31, 1), record(31, 3)]
     );
 }
 

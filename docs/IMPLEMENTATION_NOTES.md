@@ -3718,6 +3718,17 @@ effective upper-Y state. A live Lunar Magic 3.63 export proved that a leading `$
 that minimum transition sequence for ROM, MWL, native-level, CLI, and graphical saves while the raw
 parser and checked encoder remain byte-lossless for forensic interchange.
 
+A direct-ROM Lunar Magic 3.63 oracle additionally writes level `$105`'s first two legacy sprite
+records in descending screen order without invoking an editor gesture. Lunar Magic's export
+stably restores complete screen order, proving this is a load/serialization invariant rather than
+only a coordinate-edit side effect. Semantic publication now applies that stable sort after
+framing canonicalization; malformed short records retain their original indexes for precise typed
+errors. Expanded ordering remains in the orientation-aware positional-edit path because its
+vertical comparator has a distinct low-Y-nibble tie-breaker.
+The native raw-replace, insert, and clipboard-paste routes predict that stable order before
+dispatch, then reload the same record at its canonical index; custom-width SSC records therefore
+retain both their extension bytes and active selection when insertion moves them earlier.
+
 Expanded graphics profiles with 129 through 4,096 entries expose installed ExGFX transfer in the
 native graphics editor. The standard/extended boundary is file `$080`; canonical names are
 `ExGFX80.bin` through `ExGFXFFF.bin`. ROM audit requires every standard `$000..$033` pointer and

@@ -967,6 +967,13 @@ The LMSW emulator-plugin integration block through `004c2ed0` is fully named and
 
 The following level-editor sprite rendering and manipulation subsystem through `004ce5e0` is now substantially annotated. Recovered the per-cell linked tile renderer, signed-offset and screen-wrapping logic, 256-entry standard-sprite render dispatch table, custom metadata rendering path, entrance rendering and packed entrance-table synchronization, sprite stream parser/serializer, list sorting and insertion, selection deletion, dirty-cell invalidation, and group movement/clamping.
 
+A direct-ROM load/export oracle now separates legacy ordering from edit gestures: level `$105`'s
+first record was changed to screen `$1F` and its second to screen `$00` without invoking Lunar
+Magic's editor. Lunar Magic 3.63 exported the complete list in stable screen order, including the
+original same-screen priority. This binds legacy semantic serialization to the recovered list-sort
+path; expanded sorting remains orientation-aware because vertical levels add the recovered low-Y
+nibble tie-breaker.
+
 The complete byte-sized standard-sprite preview domain is now classified against that dispatch
 table. IDs `$29`, `$30`, `$EE`, `$F0`, and `$F1` deliberately select Lunar Magic's native
 empty/default handler; IDs `$F6`–`$FF` are reserved for SSC custom-display bookkeeping; every other

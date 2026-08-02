@@ -4292,11 +4292,27 @@ impl VanillaLevelEditor {
         match edit {
             Ok(edit) => {
                 if let Some(controller) = self.controller.as_mut() {
+                    let selected = if !controller.level().sprites.expanded
+                        && let NativeLevelEdit::ReplaceSprite { index, token } = &edit
+                    {
+                        let mut predicted = controller.level().sprites.clone();
+                        predicted.tokens[*index] = token.clone();
+                        match predicted.sort_legacy_records_by_screen(*index) {
+                            Ok(selected) => selected,
+                            Err(error) => {
+                                self.error = Some(error.to_string());
+                                return;
+                            }
+                        }
+                    } else {
+                        self.selected_sprite
+                    };
                     match controller.apply_edits(&[edit]) {
                         Ok(()) => {
+                            self.selected_sprite = selected;
                             self.sprite_form = SpriteForm::from_token(
                                 controller.level().sprites.header,
-                                controller.level().sprites.tokens.get(self.selected_sprite),
+                                controller.level().sprites.tokens.get(selected),
                             );
                             self.error = None;
                         }
@@ -4322,12 +4338,28 @@ impl VanillaLevelEditor {
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
+        let selected = if controller.level().sprites.expanded {
+            index
+        } else {
+            let mut predicted = controller.level().sprites.clone();
+            if let Err(error) = predicted.insert(index, token.clone()) {
+                self.error = Some(error.to_string());
+                return;
+            }
+            match predicted.sort_legacy_records_by_screen(index) {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            }
+        };
         match controller.apply_edits(&[NativeLevelEdit::InsertSprite { index, token }]) {
             Ok(()) => {
-                self.selected_sprite = index;
+                self.selected_sprite = selected;
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
-                    controller.level().sprites.tokens.get(index),
+                    controller.level().sprites.tokens.get(selected),
                 );
                 self.error = None;
             }
@@ -4413,12 +4445,31 @@ impl VanillaLevelEditor {
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
+        let selected = if controller.level().sprites.expanded {
+            index
+        } else {
+            let NativeLevelEdit::InsertSprite { token, .. } = &edit else {
+                unreachable!("pasted sprite edit is always an insertion");
+            };
+            let mut predicted = controller.level().sprites.clone();
+            if let Err(error) = predicted.insert(index, token.clone()) {
+                self.error = Some(error.to_string());
+                return;
+            }
+            match predicted.sort_legacy_records_by_screen(index) {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            }
+        };
         match controller.apply_edits(&[edit]) {
             Ok(()) => {
-                self.selected_sprite = index;
+                self.selected_sprite = selected;
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
-                    controller.level().sprites.tokens.get(index),
+                    controller.level().sprites.tokens.get(selected),
                 );
                 self.error = None;
             }

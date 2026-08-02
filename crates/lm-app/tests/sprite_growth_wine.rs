@@ -436,6 +436,87 @@ fn lunar_magic_canonicalizes_expanded_sprite_controls() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Determines whether Lunar Magic sorts a valid but out-of-order legacy stream while loading it.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_sorts_raw_legacy_sprite_records_on_export() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = pristine_smw_us_rom_path(&root);
+    let directory = std::env::temp_dir().join(format!(
+        "lm-raw-legacy-sprite-order-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let edited_rom = directory.join("Rust out-of-order legacy sprites.sfc");
+    let reexported_mwl = directory.join("Lunar Magic legacy sprite order.mwl");
+    let lengths = SpriteLengthTable::standard();
+    let mut image = RomImage::from_bytes(fs::read(&original_rom).unwrap()).unwrap();
+    let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    let project = Project::new(image.clone());
+    let mut written = project.load_level_slot(0x105, layout, &lengths).unwrap();
+    assert!(!written.sprites.expanded);
+    let record_indexes = written
+        .sprites
+        .tokens
+        .iter()
+        .enumerate()
+        .filter_map(|(index, token)| matches!(token, SpriteToken::Record(_)).then_some(index))
+        .take(2)
+        .collect::<Vec<_>>();
+    let [first, second] = record_indexes.as_slice() else {
+        panic!("level 105 must contain at least two sprites");
+    };
+    for (index, screen) in [(*first, 0x1f), (*second, 0x00)] {
+        let SpriteToken::Record(record) = &mut written.sprites.tokens[index] else {
+            unreachable!();
+        };
+        let mut fields = record.native_fields().unwrap();
+        fields.screen = screen;
+        record.set_native_fields(fields, &lengths).unwrap();
+    }
+    let injected = written.sprites.encode_for_table(&lengths).unwrap();
+    let sprite_offset = layout
+        .sprites
+        .read_snes_pointer(&image, 0x105)
+        .unwrap()
+        .to_pc(layout.mapper)
+        .unwrap();
+    image.write(sprite_offset, &injected).unwrap();
+    image.update_snes_checksum(0x7fdc).unwrap();
+    assert_eq!(
+        NativeSpriteStream::parse(
+            image.read(sprite_offset, injected.len()).unwrap(),
+            false,
+            &lengths,
+        )
+        .unwrap(),
+        written.sprites
+    );
+    fs::write(&edited_rom, image.as_file_bytes()).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &reexported_mwl,
+        "105",
+    );
+    let modes = [false; 256];
+    let actual = MwlNativeLevel::decode(
+        &MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap(),
+        &lengths,
+        32,
+        &modes,
+    )
+    .unwrap();
+    let mut expected = written.sprites.clone();
+    expected.sort_legacy_records_by_screen(*first).unwrap();
+    assert_eq!(actual.sprites, expected);
+    fs::remove_dir_all(directory).unwrap();
+}
+
 /// Proves vertical expanded streams use Lunar Magic's orientation-specific coordinate key.
 #[test]
 #[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]

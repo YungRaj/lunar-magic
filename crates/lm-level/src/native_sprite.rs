@@ -72,6 +72,18 @@ impl NativeSpriteStream {
         }
         self.tokens = canonical;
         self.expanded = self.requires_expanded_framing();
+        if !self.expanded
+            && self.tokens.iter().all(
+                |token| matches!(token, SpriteToken::Record(record) if record.encoded.len() >= 2),
+            )
+        {
+            self.tokens.sort_by_key(|token| {
+                let SpriteToken::Record(record) = token else {
+                    unreachable!("legacy canonicalization admitted only records");
+                };
+                (record.encoded[1] & 0x0f) | (u8::from(record.encoded[0] & 0x02 != 0) << 4)
+            });
+        }
         if self.expanded {
             self.header |= Self::EXPANDED_HEADER_FLAG;
         } else {
@@ -236,6 +248,51 @@ mod tests {
         );
         assert!(stream.expanded);
         assert_eq!(stream.header, NativeSpriteStream::EXPANDED_HEADER_FLAG);
+    }
+
+    #[test]
+    fn semantic_canonicalization_stably_sorts_legacy_records_by_screen() {
+        let record = |screen: u8, id: u8| {
+            SpriteToken::Record(SpriteRecord {
+                encoded: vec![u8::from(screen & 0x10 != 0) << 1, screen & 0x0f, id],
+            })
+        };
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![record(31, 1), record(0, 2), record(31, 3), record(2, 4)],
+        };
+
+        stream.canonicalize_framing();
+
+        assert_eq!(
+            stream.tokens,
+            [record(0, 2), record(2, 4), record(31, 1), record(31, 3)]
+        );
+        assert!(!stream.expanded);
+    }
+
+    #[test]
+    fn malformed_legacy_records_are_not_reordered_before_typed_validation() {
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![
+                SpriteToken::Record(SpriteRecord { encoded: vec![1] }),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0, 0, 2],
+                }),
+            ],
+        };
+        let original = stream.tokens.clone();
+
+        stream.canonicalize_framing();
+
+        assert_eq!(stream.tokens, original);
+        assert!(matches!(
+            stream.encode_checked(),
+            Err(NativeSpriteEncodingError::RecordTooShort { token: 0, len: 1 })
+        ));
     }
 
     #[test]
