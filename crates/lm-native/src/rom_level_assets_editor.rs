@@ -101,6 +101,7 @@ struct InstalledLayer3 {
     tiles: Vec<lm_graphics::IndexedTile>,
     initial_x: i16,
     initial_y: i16,
+    clamp_editor_row_at_30: bool,
     vertical: bool,
     between_background_and_foreground: bool,
     additive: bool,
@@ -1696,13 +1697,10 @@ fn load_installed_layer3(
     if !visible {
         return Ok(None);
     }
-    let custom_tilemap = workspace
-        .controller
-        .assets()
-        .expanded_settings
-        .as_ref()
+    let expanded_settings = workspace.controller.assets().expanded_settings.as_ref();
+    let custom_tilemap = expanded_settings
         .filter(|settings| settings.layer3_tilemap_enabled())
-        .map(|settings| settings.layer3_tilemap_graphics_descriptor())
+        .map(lm_level::ExpandedLevelSettingsRecord::layer3_tilemap_graphics_descriptor)
         .transpose()
         .map_err(|error| error.to_string())?;
     if !is_smw_us_v1_profile(&workspace.profile) {
@@ -1746,15 +1744,19 @@ fn load_installed_layer3(
         usize::from(workspace.source_slot),
         workspace.profile.graphics,
     )?;
+    let (initial_y, clamp_editor_row_at_30) = installed_layer3_editor_position(
+        expanded_settings.map(lm_level::ExpandedLevelSettingsRecord::layer3_expanded_mode_flags),
+        layer3.setting,
+        header.object_tileset(),
+        layer3.behavior,
+        layer3.initial_y,
+    );
     Ok(Some(InstalledLayer3 {
         tilemap: layer3.tilemap,
         tiles,
         initial_x: layer3.initial_x,
-        initial_y: crate::vanilla_map16_preview::vanilla_layer3_editor_row_offset(
-            layer3.behavior,
-            header.object_tileset(),
-        )
-        .map_or(layer3.initial_y, |row| row * 16),
+        initial_y,
+        clamp_editor_row_at_30,
         vertical: lm_profile::smw_us_v1_level_mode(header.level_mode()).vertical,
         between_background_and_foreground:
             crate::vanilla_map16_preview::vanilla_layer3_between_background_and_foreground(
@@ -1766,6 +1768,28 @@ fn load_installed_layer3(
             header.object_tileset(),
         ),
     }))
+}
+
+fn installed_layer3_editor_position(
+    expanded_mode: Option<lm_level::Layer3ExpandedModeFlags>,
+    layer3_setting: u8,
+    object_tileset: u8,
+    vanilla_behavior: lm_profile::SmwUsV1Layer3Behavior,
+    vanilla_initial_y: i16,
+) -> (i16, bool) {
+    if let Some(row) =
+        expanded_mode.and_then(|flags| flags.editor_row(layer3_setting, object_tileset))
+    {
+        return (row.offset * 16, row.clamp_at_30);
+    }
+    (
+        crate::vanilla_map16_preview::vanilla_layer3_editor_row_offset(
+            vanilla_behavior,
+            object_tileset,
+        )
+        .map_or(vanilla_initial_y, |row| row * 16),
+        false,
+    )
 }
 
 fn materialize_custom_layer3_tilemap(
@@ -2303,6 +2327,10 @@ fn draw_installed_layer3_plane(
     const TILES_PER_SIDE: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
     const TILE_PIXELS: usize = lm_graphics::IndexedTile::WIDTH;
     let x_origins = repeating_layer3_plane_origins(layer3.initial_x, canvas.width());
+    if layer3.clamp_editor_row_at_30 {
+        draw_clamped_installed_layer3_plane(canvas, layer3, palette, high_priority, &x_origins);
+        return;
+    }
     let y_origins = if layer3.vertical {
         repeating_layer3_plane_origins(layer3.initial_y, canvas.height())
     } else {
@@ -2375,6 +2403,125 @@ fn draw_installed_layer3_plane(
                         canvas.set(target_x, target_y, output);
                     }
                 }
+            }
+        }
+    }
+}
+
+fn draw_clamped_installed_layer3_plane(
+    canvas: &mut lm_render::Canvas,
+    layer3: &InstalledLayer3,
+    palette: &lm_graphics::Palette,
+    high_priority: bool,
+    x_origins: &[i32],
+) {
+    const TILES_PER_SIDE: usize = lm_profile::SMW_US_V1_LAYER3_TILEMAP_SIDE;
+    const TILE_PIXELS: usize = lm_graphics::IndexedTile::WIDTH;
+    const CELL_PIXELS: usize = TILE_PIXELS * 2;
+    // The authenticated 64x64 8x8 plane contains 32 rows of 16-pixel editor cells.
+    const SOURCE_CELL_ROWS: i32 = 32;
+    const CLAMP_ROW: i32 = 30;
+
+    let row_offset = i32::from(layer3.initial_y) / i32::try_from(CELL_PIXELS).unwrap_or(16);
+    let target_cell_rows = canvas.height().div_ceil(CELL_PIXELS);
+    for target_cell_row in 0..target_cell_rows {
+        let Ok(target_cell_row_i32) = i32::try_from(target_cell_row) else {
+            break;
+        };
+        let source_cell_row = (target_cell_row_i32 + row_offset).min(CLAMP_ROW);
+        let source_cell_row = source_cell_row.rem_euclid(SOURCE_CELL_ROWS) as usize;
+        for tile_row_in_cell in 0..2 {
+            let source_tile_row = source_cell_row * 2 + tile_row_in_cell;
+            let target_y = target_cell_row * CELL_PIXELS + tile_row_in_cell * TILE_PIXELS;
+            for source_tile_column in 0..TILES_PER_SIDE {
+                let position = source_tile_row * TILES_PER_SIDE + source_tile_column;
+                let Some(&word) = layer3.tilemap.get(position) else {
+                    continue;
+                };
+                draw_installed_layer3_tile_at_origins(
+                    canvas,
+                    layer3,
+                    palette,
+                    high_priority,
+                    word,
+                    source_tile_column * TILE_PIXELS,
+                    target_y,
+                    x_origins,
+                );
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_installed_layer3_tile_at_origins(
+    canvas: &mut lm_render::Canvas,
+    layer3: &InstalledLayer3,
+    palette: &lm_graphics::Palette,
+    high_priority: bool,
+    word: u16,
+    plane_x: usize,
+    target_y: usize,
+    x_origins: &[i32],
+) {
+    const TILE_PIXELS: usize = lm_graphics::IndexedTile::WIDTH;
+    if word == 0x38fc || (word & 0x2000 != 0) != high_priority {
+        return;
+    }
+    let Some(tile) = layer3.tiles.get(usize::from(word & 0x03ff)) else {
+        return;
+    };
+    let palette_number = usize::from((word >> 10) & 7);
+    let x_flip = word & 0x4000 != 0;
+    let y_flip = word & 0x8000 != 0;
+    for &origin_x in x_origins {
+        for y in 0..TILE_PIXELS {
+            let output_y = target_y + y;
+            if output_y >= canvas.height() {
+                continue;
+            }
+            for x in 0..TILE_PIXELS {
+                let source_x = if x_flip { TILE_PIXELS - 1 - x } else { x };
+                let source_y = if y_flip { TILE_PIXELS - 1 - y } else { y };
+                let Some(index) = tile.pixel(source_x, source_y) else {
+                    continue;
+                };
+                if index == 0 {
+                    continue;
+                }
+                let Some(color) = palette
+                    .colors
+                    .get(palette_number * 4 + usize::from(index))
+                    .copied()
+                    .map(lm_graphics::Bgr555::to_rgb8)
+                else {
+                    continue;
+                };
+                let target_x = origin_x + i32::try_from(plane_x + x).unwrap_or(i32::MAX);
+                let Ok(target_x) = usize::try_from(target_x) else {
+                    continue;
+                };
+                if target_x >= canvas.width() {
+                    continue;
+                }
+                let source = Rgba {
+                    red: color.red,
+                    green: color.green,
+                    blue: color.blue,
+                    alpha: 255,
+                };
+                let output = if layer3.additive {
+                    let destination = canvas.get(target_x, output_y).unwrap_or_default();
+                    Rgba {
+                        red: destination.red.saturating_add(source.red),
+                        green: destination.green.saturating_add(source.green),
+                        blue: destination.blue.saturating_add(source.blue),
+                        alpha: 255,
+                    }
+                } else {
+                    source
+                };
+                canvas.set(target_x, output_y, output);
             }
         }
     }
@@ -2710,6 +2857,7 @@ mod tests {
             tiles: vec![IndexedTile::new([1; IndexedTile::PIXEL_COUNT])],
             initial_x: 0,
             initial_y: 0,
+            clamp_editor_row_at_30: false,
             vertical: true,
             between_background_and_foreground: false,
             additive,
@@ -2743,6 +2891,28 @@ mod tests {
         assert_eq!(canvas.get(0, 0), Some(expected));
         assert_eq!(canvas.get(512, 0), Some(expected));
         assert_eq!(canvas.get(0, 512), Some(expected));
+    }
+
+    #[test]
+    fn installed_layer3_clamp_repeats_editor_source_row_thirty() {
+        let mut colors = vec![Bgr555(0); 128];
+        colors[1] = Bgr555(0x001f);
+        let palette = Palette { colors };
+        let backdrop = Rgba::default();
+        let mut canvas = lm_render::Canvas::from_pixels(8, 520, vec![backdrop; 8 * 520]).unwrap();
+        let mut layer3 = test_installed_layer3(0x38fc, false);
+        layer3.tilemap[60 * 64] = 0;
+        layer3.tilemap[61 * 64] = 0;
+        layer3.clamp_editor_row_at_30 = true;
+
+        draw_installed_layer3_plane(&mut canvas, &layer3, &palette, false);
+
+        assert_eq!(canvas.get(0, 479), Some(backdrop));
+        assert_eq!(canvas.get(0, 480).unwrap().red, 255);
+        assert_eq!(canvas.get(0, 495).unwrap().red, 255);
+        assert_eq!(canvas.get(0, 496).unwrap().red, 255);
+        assert_eq!(canvas.get(0, 512).unwrap().red, 255);
+        assert_eq!(canvas.get(0, 519).unwrap().red, 255);
     }
 
     #[test]
@@ -2789,6 +2959,8 @@ mod tests {
         assert!(settings.layer3_tilemap_enabled());
         let descriptor = settings.layer3_tilemap_graphics_descriptor().unwrap();
         assert_eq!(descriptor.packed(), 0x2028);
+        assert_eq!(settings.layer3_expanded_mode_flags().packed(), 0x000f_0000);
+        assert!(!settings.layer3_expanded_mode_flags().enabled());
         let decoded = project
             .load_decompressed_graphics_file(
                 usize::from(descriptor.file()),
@@ -2806,6 +2978,45 @@ mod tests {
             "c27d65244b56078b4627798a525c979a024711f85359addb1cf745d0772c2ee0"
         );
         assert!(tilemap.iter().any(|word| *word != 0x38fc));
+    }
+
+    #[test]
+    fn installed_layer3_expanded_row_supersedes_vanilla_position_and_selects_clamp() {
+        let clamped = lm_level::Layer3ExpandedModeFlags::from_packed(0x0000_1021);
+        assert_eq!(
+            installed_layer3_editor_position(
+                Some(clamped),
+                1,
+                0,
+                lm_profile::SmwUsV1Layer3Behavior::HighTide,
+                64,
+            ),
+            (64, true)
+        );
+
+        // Encoded row 20 with ordinary type 2 receives Lunar Magic's twelve-row bias.
+        let ordinary = lm_level::Layer3ExpandedModeFlags::from_packed(0x0000_20a1);
+        assert_eq!(
+            installed_layer3_editor_position(
+                Some(ordinary),
+                1,
+                0,
+                lm_profile::SmwUsV1Layer3Behavior::HighTide,
+                64,
+            ),
+            (128, false)
+        );
+
+        assert_eq!(
+            installed_layer3_editor_position(
+                Some(clamped),
+                2,
+                1,
+                lm_profile::SmwUsV1Layer3Behavior::HighTide,
+                64,
+            ),
+            (-128, false)
+        );
     }
 
     #[test]

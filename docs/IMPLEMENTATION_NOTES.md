@@ -1228,7 +1228,11 @@ of words 12–15 and 8–11. Its typed row resolver reproduces the recovered ena
 gates, split 11-bit sign extension, type-specific twelve-row bias, and row-30 clamp selection.
 `observe-expanded-settings` publishes both the packed value and enable bit so retained ROM records
 can be compared without assigning meanings to the unresolved slot-assignment and painter flags.
-Those opaque flags are not yet applied by the installed renderer.
+The installed preview and image-export provider now resolve that row state against the active
+Layer 3 setting and object tileset. An enabled override supersedes the vanilla editor position;
+ordinary types translate the repeating plane, while clamped types perform target-cell-to-source
+lookup and repeat both 8x8 source rows belonging to editor row 30 for every later 16-pixel cell.
+The unresolved slot-assignment and painter flags remain opaque and are not applied.
 The legacy path's generic graphics-remap stream is separately modeled by
 `GraphicsRemapCommandStream`, based on the recovered `DecodeGraphicsRemapCommandStream` instruction
 sequence. Four-byte headers encode a 15-bit destination word, a 14-bit length field, literal versus

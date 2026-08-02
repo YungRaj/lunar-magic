@@ -13,12 +13,7 @@ const TILEMAP_WORD_CAPACITY: u16 = 0x1000;
 const MODE_LOW_NIBBLE_WORDS: [usize; 4] = [12, 13, 14, 15];
 const MODE_HIGH_NIBBLE_WORDS: [usize; 4] = [8, 9, 10, 11];
 const MODE_ENABLED_MASK: u32 = 1;
-const MODE_ROW_MASK: u32 = 0x07ff;
 const MODE_ROW_SIGN_BIT: u32 = 0x0400;
-const MODE_ROW_LOW_SHIFT: u32 = 3;
-const MODE_ROW_HIGH_SHIFT: u32 = 20;
-const MODE_TYPE_LOW_SHIFT: u32 = 12;
-const MODE_TYPE_HIGH_SHIFT: u32 = 22;
 const ORDINARY_EDITOR_ROW_BIAS: i16 = 12;
 
 /// The recovered Layer 3 editor-row adjustment derived from expanded level settings.
@@ -60,7 +55,7 @@ impl Layer3ExpandedModeFlags {
     /// Lunar Magic applies this state to Layer 3 setting 1, or setting 2 for every object tileset
     /// except tileset 1. Other settings ignore the packed row fields.
     #[must_use]
-    pub const fn editor_row(
+    pub fn editor_row(
         self,
         layer3_setting: u8,
         object_tileset: u8,
@@ -70,16 +65,14 @@ impl Layer3ExpandedModeFlags {
             return None;
         }
 
-        let mode_type = (((self.0 >> MODE_TYPE_HIGH_SHIFT) & 0x10)
-            | ((self.0 >> MODE_TYPE_LOW_SHIFT) & 0x0f)) as u8;
-        let encoded = (((self.0 >> MODE_ROW_HIGH_SHIFT) & 0x3f) << 5)
-            | ((self.0 >> MODE_ROW_LOW_SHIFT) & 0x1f);
-        let signed = if encoded & MODE_ROW_SIGN_BIT == 0 {
-            encoded as i16
-        } else {
-            (encoded | !MODE_ROW_MASK) as i32 as i16
-        };
-        let clamp_at_30 = mode_type == 1 || (mode_type >= 6 && mode_type <= 0x11);
+        let bytes = self.0.to_le_bytes();
+        let mode_type = (bytes[1] >> 4) | ((bytes[3] & 0x04) << 2);
+        let encoded =
+            u16::from(bytes[0] >> 3) | (u16::from((bytes[2] >> 4) | ((bytes[3] & 0x03) << 4)) << 5);
+        let negative = u32::from(encoded) & MODE_ROW_SIGN_BIT != 0;
+        let encoded = i16::from_le_bytes(encoded.to_le_bytes());
+        let signed = if negative { encoded - 0x0800 } else { encoded };
+        let clamp_at_30 = mode_type == 1 || (6..=0x11).contains(&mode_type);
         Some(Layer3ExpandedEditorRow {
             offset: if clamp_at_30 {
                 signed
@@ -339,10 +332,10 @@ mod tests {
     }
 
     fn packed_row(encoded_row: u16, mode_type: u8, enabled: bool) -> u32 {
-        let mut packed = (u32::from(encoded_row) & 0x1f) << MODE_ROW_LOW_SHIFT;
-        packed |= ((u32::from(encoded_row) >> 5) & 0x3f) << MODE_ROW_HIGH_SHIFT;
-        packed |= (u32::from(mode_type) & 0x0f) << MODE_TYPE_LOW_SHIFT;
-        packed |= (u32::from(mode_type) & 0x10) << MODE_TYPE_HIGH_SHIFT;
+        let mut packed = (u32::from(encoded_row) & 0x1f) << 3;
+        packed |= ((u32::from(encoded_row) >> 5) & 0x3f) << 20;
+        packed |= (u32::from(mode_type) & 0x0f) << 12;
+        packed |= (u32::from(mode_type) & 0x10) << 22;
         if enabled {
             packed |= MODE_ENABLED_MASK;
         }
