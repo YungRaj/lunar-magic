@@ -3043,6 +3043,20 @@ installed level rendering from those live operands. Synthetic relocation/corrupt
 the resolver, and a local 2 MiB Lunar Magic-created ROM now opens level `$102` without the former
 `InvalidBackReference` GFX33 rejection and produces a complete editor capture.
 
+The native **Extract/Insert GFX32/GFX33** directory actions now consume that resolver as well.
+Extraction maps each public filename to its independent live one-entry layout instead of treating
+the stale `$003882` bytes as a two-entry table. Insertion validates both exact decompressed sizes,
+searches only complete 32 KiB LoROM bank intersections, and uses one atomic multi-payload request:
+GFX33 publishes the new shared bank plus its low word, while GFX32 publishes its low word only after
+the allocator proves the same mapped bank. Pointer storage and checksum bytes remain protected;
+wrong code, insufficient same-bank space, late allocation failure, or reopen mismatch yields no
+commit. `graphics_io::tests::explicit_graphics_pointers_share_one_bank_and_commit_atomically`,
+`graphics_batch_import::tests::special_import_repoints_both_live_operands_into_one_bank_and_reopens`,
+`special_import_rejects_corrupt_code_and_missing_same_bank_space`, and
+`graphics_batch::tests::batch_uses_per_file_layouts_for_noncontiguous_special_sources` cover the
+portable boundary. The ignored `external_lunar_magic_rom_special_graphics_repoint_and_reopen` gate
+also passes against the local authentic 2 MiB Lunar Magic-created fixture.
+
 The retained eight-phase audit identifies phase 2 as Lunar Magic's captured animation state, with
 5,452 unmasked differences and 0.911269 mean absolute channel error. Every delta above one is
 confined to three measured Lunar Magic-only overlay rectangles: the screen-number labels and

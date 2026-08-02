@@ -17,6 +17,8 @@ pub(super) struct GraphicsBatchSource {
     pub(super) family: &'static str,
     pub(super) encoding: GraphicsBatchEncoding,
     pub(super) raw_4bpp_overrides: Vec<(usize, Vec<u8>)>,
+    /// Per-file `(slot, layout)` mappings for non-tabular sources; empty uses `slots` and `layout`.
+    pub(super) file_layouts: Vec<(usize, GraphicsRomLayout)>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,6 +94,9 @@ impl GraphicsBatchWorker {
         let total = source.file_numbers.len();
         if total != source.slots.len() {
             return Err("graphics slot and filename mappings have different lengths".into());
+        }
+        if !source.file_layouts.is_empty() && source.file_layouts.len() != total {
+            return Err("per-file graphics layouts have a different length".into());
         }
         if total == 0 || total > 0x1000 {
             return Err(format!("unsupported {} GFX count {total}", source.family));
@@ -191,6 +196,11 @@ fn export_batch(
         if cancelled.load(Ordering::Relaxed) {
             return Ok(None);
         }
+        let (load_slot, load_layout) = source
+            .file_layouts
+            .get(index)
+            .copied()
+            .unwrap_or((slot, source.layout));
         let bytes = if let Some((_, bytes)) = source
             .raw_4bpp_overrides
             .iter()
@@ -200,15 +210,17 @@ fn export_batch(
         } else {
             match source.encoding {
                 GraphicsBatchEncoding::Native => project
-                    .load_decompressed_graphics_file(slot, source.layout)
+                    .load_decompressed_graphics_file(load_slot, load_layout)
                     .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?,
                 GraphicsBatchEncoding::Decoded4Bpp => {
                     let loaded = project
                         .load_super_graphics_file(
-                            u16::try_from(slot).map_err(|_| {
-                                format!("graphics slot {slot:X} exceeds the supported file range")
+                            u16::try_from(load_slot).map_err(|_| {
+                                format!(
+                                    "graphics slot {load_slot:X} exceeds the supported file range"
+                                )
                             })?,
-                            source.layout,
+                            load_layout,
                         )
                         .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?;
                     lm_graphics::GraphicsFile4bpp {
@@ -346,6 +358,7 @@ mod tests {
                 family: "standard",
                 encoding: GraphicsBatchEncoding::Native,
                 raw_4bpp_overrides: Vec::new(),
+                file_layouts: Vec::new(),
             },
             expected,
         )
@@ -411,6 +424,33 @@ mod tests {
         assert_eq!(completed.load(Ordering::Relaxed), 2);
         assert_eq!(fs::read(directory.join("GFX00.bin")).unwrap(), expected[0]);
         assert_eq!(fs::read(directory.join("GFX01.bin")).unwrap(), expected[1]);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn batch_uses_per_file_layouts_for_noncontiguous_special_sources() {
+        let directory = temporary_directory();
+        fs::create_dir(&directory).unwrap();
+        let (mut source, expected) = fixture_source();
+        let mut gfx33 = source.layout;
+        gfx33.pointers.entries = 1;
+        let mut gfx32 = gfx33;
+        gfx32.pointers.offset += 3;
+        source.layout = gfx33;
+        source.file_numbers = vec![0x33, 0x32];
+        source.file_layouts = vec![(0, gfx33), (0, gfx32)];
+        assert_eq!(
+            export_batch(
+                source,
+                &GraphicsExportTarget::Directory(directory.clone()),
+                &AtomicUsize::new(0),
+                &AtomicBool::new(false),
+            )
+            .unwrap(),
+            Some(2)
+        );
+        assert_eq!(fs::read(directory.join("GFX33.bin")).unwrap(), expected[0]);
+        assert_eq!(fs::read(directory.join("GFX32.bin")).unwrap(), expected[1]);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -505,6 +545,7 @@ mod tests {
             family: "extended",
             encoding: GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
+            file_layouts: Vec::new(),
         };
         assert_eq!(
             export_batch(
@@ -570,6 +611,7 @@ mod tests {
             family: "level",
             encoding: GraphicsBatchEncoding::Decoded4Bpp,
             raw_4bpp_overrides: Vec::new(),
+            file_layouts: Vec::new(),
         };
         export_batch(
             source,

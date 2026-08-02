@@ -742,6 +742,7 @@ impl RomGraphicsEditor {
             family: "level",
             encoding: graphics_batch::GraphicsBatchEncoding::Decoded4Bpp,
             raw_4bpp_overrides,
+            file_layouts: Vec::new(),
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => {
@@ -1080,6 +1081,7 @@ impl RomGraphicsEditor {
             family: "standard",
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
+            file_layouts: Vec::new(),
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1112,6 +1114,7 @@ impl RomGraphicsEditor {
             file_numbers: slots,
             family: "standard",
             description: "Insert all standard GFX files",
+            smw_us_v1_special: false,
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1135,6 +1138,7 @@ impl RomGraphicsEditor {
             family: "standard",
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
+            file_layouts: Vec::new(),
         };
         match self.graphics_batch.start_joined(source, path) {
             Ok(()) => self.io_status = None,
@@ -1167,6 +1171,7 @@ impl RomGraphicsEditor {
             file_numbers: slots,
             family: "standard",
             description: "Insert AllGFX.bin",
+            smw_us_v1_special: false,
         };
         match self.graphics_import.start_joined(source, path) {
             Ok(()) => self.io_status = None,
@@ -1178,17 +1183,25 @@ impl RomGraphicsEditor {
         let Some(workspace) = &self.workspace else {
             return;
         };
+        let layouts = match lm_profile::smw_us_v1_special_graphics_layouts(&workspace.image) {
+            Ok(layouts) => layouts,
+            Err(error) => {
+                self.error = Some(format!("cannot resolve live GFX32/GFX33: {error}"));
+                return;
+            }
+        };
         let Some(directory) = crate::dialogs::choose_graphics_directory() else {
             return;
         };
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
-            layout: lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+            layout: layouts.gfx33,
             slots: vec![0, 1],
             file_numbers: vec![0x33, 0x32],
             family: "special",
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
+            file_layouts: vec![(0, layouts.gfx33), (0, layouts.gfx32)],
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1207,19 +1220,27 @@ impl RomGraphicsEditor {
                 return;
             }
         };
+        let layouts = match lm_profile::smw_us_v1_special_graphics_layouts(&workspace.image) {
+            Ok(layouts) => layouts,
+            Err(error) => {
+                self.error = Some(format!("cannot resolve live GFX32/GFX33: {error}"));
+                return;
+            }
+        };
         let Some(directory) = crate::dialogs::choose_graphics_import_directory() else {
             return;
         };
         let source = graphics_import::GraphicsImportSource {
             expected_revision: workspace.controller.revision(),
             image: workspace.image.clone(),
-            layout: lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+            layout: layouts.gfx33,
             checksum_field: workspace.internal_header + 0x1c,
             options,
             slots: vec![0, 1],
             file_numbers: vec![0x33, 0x32],
             family: "special",
             description: "Insert GFX32/GFX33 files",
+            smw_us_v1_special: true,
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1253,6 +1274,7 @@ impl RomGraphicsEditor {
             family: "extended",
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
+            file_layouts: Vec::new(),
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1294,6 +1316,7 @@ impl RomGraphicsEditor {
             file_numbers: slots,
             family: "extended",
             description: "Insert ExGFX files",
+            smw_us_v1_special: false,
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,

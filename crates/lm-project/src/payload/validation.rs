@@ -48,9 +48,15 @@ pub(super) fn checked_pointer_ranges(
                 PayloadPointer::Split {
                     low_word_offset,
                     bank_offset,
-                    ..
+                    shared_bank,
+                } => {
+                    let mut ranges = vec![range(low_word_offset, 2)?];
+                    if !shared_bank {
+                        ranges.push(range(bank_offset, 1)?);
+                    }
+                    Ok(ranges)
                 }
-                | PayloadPointer::DisplacedWordAndBank {
+                PayloadPointer::DisplacedWordAndBank {
                     low_word_offset,
                     bank_offset,
                     ..

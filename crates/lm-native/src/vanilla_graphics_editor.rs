@@ -621,6 +621,7 @@ fn pristine_level_graphics_batch_source(
         family: "level",
         encoding: graphics_batch::GraphicsBatchEncoding::Decoded4Bpp,
         raw_4bpp_overrides,
+        file_layouts: Vec::new(),
     })
 }
 

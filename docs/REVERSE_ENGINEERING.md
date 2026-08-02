@@ -1451,6 +1451,13 @@ Magic-created ROM retains `$08BFC0/$088000` at `$003882` while changing the live
 `$088000/$089C68`; decoding the stale GFX33 address fails immediately, while both operand-selected
 streams decode and render. Rust authenticates the surrounding `LDY/STA/LDA/STA` and
 `BRA/LDA/STA/SEP/REP` instruction skeletons before interpreting these mutable operands.
+Native special-file transfer now follows the same live operands. Extraction supplies two explicit
+one-entry sources while retaining public order `GFX33`, then `GFX32`. Insertion preserves the
+shared-bank runtime constraint: it tries bounded 32 KiB LoROM banks inside the selected allocation
+range, stages both compressed RATS payloads, writes GFX33's low word and the shared bank once, then
+writes GFX32's low word while requiring the same mapped bank. Both streams must reopen byte-exactly
+before the checksum-repaired mutation is published. The authentic 2 MiB modified ROM passes this
+repoint/reopen gate using its live inputs.
 
 This distinction is now the primary automatic-profile boundary for pristine
 SMW US revision 0. The Rust layout model must represent split three-plane

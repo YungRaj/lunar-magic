@@ -20,6 +20,7 @@ pub(super) struct GraphicsImportSource {
     pub(super) file_numbers: Vec<usize>,
     pub(super) family: &'static str,
     pub(super) description: &'static str,
+    pub(super) smw_us_v1_special: bool,
 }
 
 struct RunningImport {
@@ -195,22 +196,36 @@ fn prepare_import(
             if cancelled.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            lm_app::prepare_named_graphics_import(
-                source.expected_revision,
-                source.image,
-                source.layout,
-                source.checksum_field,
-                &files,
-                lm_app::NamedGraphicsImport {
-                    slots: &source.slots,
-                    file_numbers: &source.file_numbers,
-                    description: source.description,
-                },
-                &source.options,
-            )
-            .map(Some)
+            if source.smw_us_v1_special {
+                lm_app::prepare_smw_us_v1_special_graphics_import(
+                    source.expected_revision,
+                    source.image,
+                    source.checksum_field,
+                    &files,
+                    &source.options,
+                )
+                .map(Some)
+            } else {
+                lm_app::prepare_named_graphics_import(
+                    source.expected_revision,
+                    source.image,
+                    source.layout,
+                    source.checksum_field,
+                    &files,
+                    lm_app::NamedGraphicsImport {
+                        slots: &source.slots,
+                        file_numbers: &source.file_numbers,
+                        description: source.description,
+                    },
+                    &source.options,
+                )
+                .map(Some)
+            }
         }
         GraphicsImportTarget::JoinedFile(path) => {
+            if source.smw_us_v1_special {
+                return Err("special GFX32/GFX33 insertion requires a directory".into());
+            }
             if cancelled.load(Ordering::Relaxed) {
                 return Ok(None);
             }

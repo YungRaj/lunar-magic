@@ -1,6 +1,6 @@
 use crate::PreparedRomCommit;
 use lm_graphics::JoinedGraphics;
-use lm_project::{GraphicsRomLayout, GraphicsSaveOptions, Project, RomMutation};
+use lm_project::{GraphicsRomLayout, GraphicsSaveOptions, PayloadPointer, Project, RomMutation};
 use lm_rats::ProtectedRange;
 use lm_rom::RomImage;
 
@@ -124,6 +124,158 @@ pub fn prepare_named_graphics_import(
     })
 }
 
+/// Prepares an atomic SMW-US GFX33/GFX32 replacement through the live startup operands.
+///
+/// Both streams must reside in one LoROM bank because the original startup decoder has one shared
+/// bank operand. Candidate banks are tried within the caller's allocation range; a candidate is
+/// published only after both payloads decode byte-exactly through the rewritten live operands.
+///
+/// # Errors
+///
+/// Rejects unauthenticated startup code, wrong file counts or sizes, incompatible allocation
+/// policy, insufficient same-bank space, pointer/checksum failures, or semantic reopen mismatch.
+pub fn prepare_smw_us_v1_special_graphics_import(
+    expected_revision: u64,
+    image: RomImage,
+    checksum_field: usize,
+    raw_files: &[Vec<u8>],
+    options: &GraphicsSaveOptions,
+) -> Result<PreparedRomCommit, String> {
+    const FILE_NUMBERS: [usize; 2] = [0x33, 0x32];
+    if raw_files.len() != FILE_NUMBERS.len() {
+        return Err(format!(
+            "special graphics import requires GFX33 and GFX32; got {} files",
+            raw_files.len()
+        ));
+    }
+    let live = lm_profile::smw_us_v1_special_graphics_layouts(&image)
+        .map_err(|error| format!("special graphics startup layout: {error}"))?;
+    let original = Project::new(image.clone());
+    for ((file_number, bytes), layout) in FILE_NUMBERS
+        .into_iter()
+        .zip(raw_files)
+        .zip([live.gfx33, live.gfx32])
+    {
+        let current = original
+            .load_decompressed_graphics_file(0, layout)
+            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
+        if bytes.len() != current.len() {
+            return Err(format!(
+                "GFX{file_number:02X}: expected {} raw bytes, got {}",
+                current.len(),
+                bytes.len()
+            ));
+        }
+    }
+    let gfx33_planes = live
+        .gfx33
+        .split_pointer_planes
+        .ok_or("GFX33 startup layout lost its split operands")?;
+    let gfx32_planes = live
+        .gfx32
+        .split_pointer_planes
+        .ok_or("GFX32 startup layout lost its split operands")?;
+    if gfx33_planes.bank_offset != gfx32_planes.bank_offset {
+        return Err("special graphics startup layouts do not share one bank operand".into());
+    }
+    let pointers = [
+        PayloadPointer::Split {
+            low_word_offset: gfx33_planes.low_offset,
+            bank_offset: gfx33_planes.bank_offset,
+            shared_bank: false,
+        },
+        PayloadPointer::Split {
+            low_word_offset: gfx32_planes.low_offset,
+            bank_offset: gfx32_planes.bank_offset,
+            shared_bank: true,
+        },
+    ];
+    let bank_size = options
+        .allocation
+        .bank_size
+        .filter(|size| *size == 0x8000)
+        .ok_or("special graphics insertion requires 32 KiB LoROM bank allocation")?;
+    let search = options.allocation.search.clone();
+    if search.start >= search.end || search.end > image.logical_len() {
+        return Err("special graphics allocation search is outside the ROM".into());
+    }
+    let first_bank = search.start / bank_size;
+    let last_bank = (search.end - 1) / bank_size;
+    let checksum_end = checksum_field
+        .checked_add(4)
+        .filter(|end| *end <= image.logical_len())
+        .ok_or("special graphics checksum field is outside the ROM")?;
+    let mut last_error = None;
+    for bank in first_bank..=last_bank {
+        let bank_start = bank * bank_size;
+        let bank_end = bank_start + bank_size;
+        let candidate_start = search.start.max(bank_start);
+        let candidate_end = search.end.min(bank_end);
+        if candidate_start >= candidate_end {
+            continue;
+        }
+        let mut candidate_options = options.clone();
+        candidate_options.allocation.search = candidate_start..candidate_end;
+        for range in [
+            gfx33_planes.low_offset..gfx33_planes.low_offset + 2,
+            gfx32_planes.low_offset..gfx32_planes.low_offset + 2,
+            gfx33_planes.bank_offset..gfx33_planes.bank_offset + 1,
+            checksum_field..checksum_end,
+        ] {
+            let protected = ProtectedRange(range);
+            if !candidate_options.allocation.protected.contains(&protected) {
+                candidate_options.allocation.protected.push(protected);
+            }
+        }
+        let mut project = Project::new(image.clone());
+        match project.save_decompressed_graphics_pointers_with_checksum(
+            &FILE_NUMBERS,
+            &pointers,
+            raw_files,
+            live.gfx33,
+            checksum_field,
+            &candidate_options,
+        ) {
+            Ok(_) => {
+                let reopened = lm_profile::smw_us_v1_special_graphics_layouts(&project.rom)
+                    .map_err(|error| format!("reopen special graphics startup layout: {error}"))?;
+                for ((file_number, expected), layout) in FILE_NUMBERS
+                    .into_iter()
+                    .zip(raw_files)
+                    .zip([reopened.gfx33, reopened.gfx32])
+                {
+                    let actual = project
+                        .load_decompressed_graphics_file(0, layout)
+                        .map_err(|error| format!("reopen GFX{file_number:02X}: {error}"))?;
+                    if actual != *expected {
+                        return Err(format!(
+                            "reopen GFX{file_number:02X} differs after insertion"
+                        ));
+                    }
+                }
+                let mutation = RomMutation::between(
+                    live.gfx33.mapper,
+                    image.logical_bytes(),
+                    project.rom.logical_bytes(),
+                )
+                .map_err(|error| error.to_string())?;
+                return Ok(PreparedRomCommit {
+                    expected_revision,
+                    description: "Insert GFX32/GFX33 files".into(),
+                    mutation,
+                });
+            }
+            Err(error) => last_error = Some(error.to_string()),
+        }
+    }
+    Err(format!(
+        "no single LoROM bank in {:#x}..{:#x} can hold GFX33 and GFX32: {}",
+        search.start,
+        search.end,
+        last_error.unwrap_or_else(|| "no candidate bank".into())
+    ))
+}
+
 fn graphics_file_label(file_number: usize) -> String {
     let prefix = if file_number < 0x80 { "GFX" } else { "ExGFX" };
     format!("{prefix}{file_number:02X}")
@@ -222,6 +374,7 @@ pub fn prepare_joined_standard_graphics_import(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_codec::encode_lz2;
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{GraphicsCompression, LevelPointerTable};
     use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -270,6 +423,48 @@ mod tests {
             .save_graphics_files_with_checksum(&files, layout(), 0x7fdc, &options(0x1000..0x4000))
             .unwrap();
         project.rom
+    }
+
+    fn special_source_image() -> (RomImage, [Vec<u8>; 2]) {
+        let current = [vec![0x11; 0x1800], vec![0x22; 0x4000]];
+        let mut bytes = vec![0xff; 0x1_0000];
+        for (offset, value) in [
+            (0x3889, &[0x10, 0xa0][..]),
+            (0x388d, &[0x84, 0x8a, 0xa9][..]),
+            (0x3891, &[0x85, 0x8c][..]),
+            (0x38d5, &[0x80, 0xd6, 0xa9][..]),
+            (0x38da, &[0x85, 0x8a, 0xe2, 0x20, 0xc2, 0x10][..]),
+        ] {
+            bytes[offset..offset + value.len()].copy_from_slice(value);
+        }
+        let sources = [(0x4000, 0x00c000_u32), (0x5000, 0x00d000_u32)];
+        for ((pc, pointer), decoded) in sources.into_iter().zip(&current) {
+            let compressed = encode_lz2(decoded);
+            bytes[pc..pc + compressed.len()].copy_from_slice(&compressed);
+            let low = (pointer as u16).to_le_bytes();
+            let offset = if pc == 0x4000 {
+                lm_profile::SMW_US_V1_GFX33_STARTUP_POINTER_LOW_OFFSET
+            } else {
+                lm_profile::SMW_US_V1_GFX32_STARTUP_POINTER_LOW_OFFSET
+            };
+            bytes[offset..offset + 2].copy_from_slice(&low);
+        }
+        bytes[lm_profile::SMW_US_V1_SPECIAL_GRAPHICS_STARTUP_POINTER_BANK_OFFSET] = 0;
+        (RomImage::from_bytes(bytes).unwrap(), current)
+    }
+
+    fn special_options(search: std::ops::Range<usize>) -> GraphicsSaveOptions {
+        GraphicsSaveOptions {
+            allocation: AllocationPolicy {
+                search,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![ProtectedRange(0x7fdc..0x7fe0)],
+            },
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        }
     }
 
     fn apply(mut bytes: Vec<u8>, mutation: &RomMutation) -> Vec<u8> {
@@ -449,6 +644,112 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.starts_with("GFX33:"), "{error}");
+    }
+
+    #[test]
+    fn special_import_repoints_both_live_operands_into_one_bank_and_reopens() {
+        let (source, _) = special_source_image();
+        let before = source.logical_bytes().to_vec();
+        let expected = [vec![0x5a; 0x1800], vec![0xa5; 0x4000]];
+        let prepared = prepare_smw_us_v1_special_graphics_import(
+            41,
+            source,
+            0x7fdc,
+            &expected,
+            &special_options(0x8000..0x1_0000),
+        )
+        .unwrap();
+        assert_eq!(prepared.expected_revision, 41);
+        let reopened =
+            Project::new(RomImage::from_bytes(apply(before, &prepared.mutation)).unwrap());
+        let layouts = lm_profile::smw_us_v1_special_graphics_layouts(&reopened.rom).unwrap();
+        assert_eq!(
+            reopened
+                .load_decompressed_graphics_file(0, layouts.gfx33)
+                .unwrap(),
+            expected[0]
+        );
+        assert_eq!(
+            reopened
+                .load_decompressed_graphics_file(0, layouts.gfx32)
+                .unwrap(),
+            expected[1]
+        );
+        let gfx33 = layouts.gfx33.read_pointer(&reopened, 0).unwrap().get();
+        let gfx32 = layouts.gfx32.read_pointer(&reopened, 0).unwrap().get();
+        assert_eq!(gfx33 >> 16, gfx32 >> 16);
+        assert_ne!(gfx33 >> 16, 0);
+    }
+
+    #[test]
+    fn special_import_rejects_corrupt_code_and_missing_same_bank_space() {
+        let (source, current) = special_source_image();
+        let mut corrupt = source.clone();
+        corrupt.write(0x38da, &[0xea]).unwrap();
+        assert!(
+            prepare_smw_us_v1_special_graphics_import(
+                0,
+                corrupt,
+                0x7fdc,
+                &current,
+                &special_options(0x8000..0x1_0000),
+            )
+            .unwrap_err()
+            .contains("not authenticated")
+        );
+        assert!(
+            prepare_smw_us_v1_special_graphics_import(
+                0,
+                source,
+                0x7fdc,
+                &current,
+                &special_options(0x8000..0x8010),
+            )
+            .unwrap_err()
+            .contains("no single LoROM bank")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires a locally supplied Lunar Magic-modified SMW-US ROM"]
+    fn external_lunar_magic_rom_special_graphics_repoint_and_reopen() {
+        let path = std::env::var_os("LM_SPECIAL_GRAPHICS_ROM")
+            .expect("LM_SPECIAL_GRAPHICS_ROM must name the modified ROM");
+        let image = RomImage::from_bytes(std::fs::read(path).unwrap()).unwrap();
+        let layouts = lm_profile::smw_us_v1_special_graphics_layouts(&image).unwrap();
+        let project = Project::new(image.clone());
+        let files = [
+            project
+                .load_decompressed_graphics_file(0, layouts.gfx33)
+                .unwrap(),
+            project
+                .load_decompressed_graphics_file(0, layouts.gfx32)
+                .unwrap(),
+        ];
+        let before = image.logical_bytes().to_vec();
+        let mut options = special_options(0x80_000..image.logical_len());
+        options.allocation.fill_bytes = vec![0x00, 0xff];
+        let prepared =
+            prepare_smw_us_v1_special_graphics_import(0, image, 0x7fdc, &files, &options).unwrap();
+        let reopened =
+            Project::new(RomImage::from_bytes(apply(before, &prepared.mutation)).unwrap());
+        let relocated = lm_profile::smw_us_v1_special_graphics_layouts(&reopened.rom).unwrap();
+        assert_eq!(
+            reopened
+                .load_decompressed_graphics_file(0, relocated.gfx33)
+                .unwrap(),
+            files[0]
+        );
+        assert_eq!(
+            reopened
+                .load_decompressed_graphics_file(0, relocated.gfx32)
+                .unwrap(),
+            files[1]
+        );
+        assert_eq!(
+            relocated.gfx33.read_pointer(&reopened, 0).unwrap().get() >> 16,
+            relocated.gfx32.read_pointer(&reopened, 0).unwrap().get() >> 16
+        );
     }
 
     #[test]

@@ -364,6 +364,53 @@ impl Project {
             .map_err(GraphicsIoError::Save)
     }
 
+    /// Saves raw decompressed graphics through explicitly supplied pointer encodings atomically.
+    ///
+    /// This supports recovered layouts whose files cannot be represented by one regular pointer
+    /// table, including SMW's GFX33/GFX32 startup operands with one shared bank byte.
+    ///
+    /// # Errors
+    ///
+    /// Rejects empty or mismatched inputs, duplicate/overlapping pointer writes, size or
+    /// compression limits, allocation failures, shared-bank mismatches, or checksum failures.
+    pub fn save_decompressed_graphics_pointers_with_checksum(
+        &mut self,
+        file_numbers: &[usize],
+        pointers: &[PayloadPointer],
+        graphics: &[Vec<u8>],
+        layout: GraphicsRomLayout,
+        checksum_field: usize,
+        options: &GraphicsSaveOptions,
+    ) -> Result<Vec<PayloadSaveResult>, GraphicsIoError> {
+        if graphics.is_empty()
+            || graphics.len() != file_numbers.len()
+            || graphics.len() != pointers.len()
+            || graphics.len() > 0x1000
+        {
+            return Err(GraphicsIoError::Layout(LevelLoadError::LevelOutOfRange {
+                level: graphics.len(),
+                entries: file_numbers.len().min(pointers.len()),
+            }));
+        }
+        let requests = file_numbers
+            .iter()
+            .copied()
+            .zip(pointers.iter().copied())
+            .zip(graphics)
+            .map(|((file_number, pointer), bytes)| {
+                decompressed_graphics_save_request_with_pointer(
+                    file_number,
+                    bytes,
+                    layout,
+                    pointer,
+                    options,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.save_tagged_payloads_with_checksum("save graphics files", &requests, checksum_field)
+            .map_err(GraphicsIoError::Save)
+    }
+
     /// Saves, reclaims the exactly owned displaced block, and repairs checksum in one transaction.
     ///
     /// # Errors
@@ -408,6 +455,22 @@ fn decompressed_graphics_save_request(
     layout: GraphicsRomLayout,
     options: &GraphicsSaveOptions,
 ) -> Result<PayloadSaveRequest, GraphicsIoError> {
+    decompressed_graphics_save_request_with_pointer(
+        file_number,
+        decoded,
+        layout,
+        layout.payload_pointer(file_number)?,
+        options,
+    )
+}
+
+fn decompressed_graphics_save_request_with_pointer(
+    file_number: usize,
+    decoded: &[u8],
+    layout: GraphicsRomLayout,
+    pointer: PayloadPointer,
+    options: &GraphicsSaveOptions,
+) -> Result<PayloadSaveRequest, GraphicsIoError> {
     if decoded.len() > layout.maximum_decompressed_len {
         return Err(GraphicsIoError::DecompressedLimit {
             actual: decoded.len(),
@@ -427,7 +490,7 @@ fn decompressed_graphics_save_request(
     Ok(PayloadSaveRequest {
         description: format!("save graphics file {file_number:02x}"),
         payload,
-        pointer: layout.payload_pointer(file_number)?,
+        pointer,
         mapper: layout.mapper,
         allocation_policy: options.allocation.clone(),
         previous_block: options.previous_block.clone(),
@@ -692,6 +755,49 @@ mod tests {
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);
         assert!(!project.history.can_undo());
+    }
+
+    #[test]
+    fn explicit_graphics_pointers_share_one_bank_and_commit_atomically() {
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        project.rom.write(0x44, &[0x00]).unwrap();
+        let original = project.save_snapshot();
+        let files = vec![vec![0x11; 0x600], vec![0x22; 0x800]];
+        let pointers = [
+            PayloadPointer::Split {
+                low_word_offset: 0x40,
+                bank_offset: 0x44,
+                shared_bank: false,
+            },
+            PayloadPointer::Split {
+                low_word_offset: 0x42,
+                bank_offset: 0x44,
+                shared_bank: true,
+            },
+        ];
+        let mut batch_options = options();
+        batch_options
+            .allocation
+            .protected
+            .extend([ProtectedRange(0x40..0x45), ProtectedRange(0x7fdc..0x7fe0)]);
+        let results = project
+            .save_decompressed_graphics_pointers_with_checksum(
+                &[0x33, 0x32],
+                &pointers,
+                &files,
+                layout(),
+                0x7fdc,
+                &batch_options,
+            )
+            .unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].snes_pointer >> 16, results[1].snes_pointer >> 16);
+        assert_eq!(
+            project.rom.read(0x44, 1).unwrap()[0],
+            u8::try_from(results[0].snes_pointer >> 16).unwrap()
+        );
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
     }
 
     #[test]
