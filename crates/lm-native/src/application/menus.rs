@@ -1,6 +1,6 @@
 use super::NativeApplication;
 use eframe::egui;
-use lm_app::{Command, EditorMode, ProjectStatus};
+use lm_app::{Command, EditorMode, EmulatorTestRequest, ExternalTool, ProjectStatus};
 
 impl NativeApplication {
     pub(super) fn menu_bar(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
@@ -399,6 +399,44 @@ impl NativeApplication {
                 .iter()
                 .map(|tool| (tool.id.clone(), tool.name.clone()))
                 .collect::<Vec<_>>();
+            let emulator_tools = self
+                .app
+                .external_tools()
+                .iter()
+                .filter(|tool| tool.uses_argument_placeholder("rom"))
+                .map(|tool| (tool.id.clone(), tool.name.clone()))
+                .collect::<Vec<_>>();
+            if !emulator_tools.is_empty() {
+                ui.separator();
+                ui.menu_button("Test ROM in Emulator", |ui| {
+                    let enabled = matches!(self.app.mode, lm_app::EditorMode::Level(_))
+                        && self.app.project().is_some();
+                    for (id, name) in &emulator_tools {
+                        if ui.add_enabled(enabled, egui::Button::new(name)).clicked() {
+                            ui.close_menu();
+                            self.dispatch(context, Command::TestRomInEmulator(id.clone()));
+                        }
+                    }
+                    if ui
+                        .add_enabled(enabled, egui::Button::new("Choose Emulator…"))
+                        .clicked()
+                    {
+                        ui.close_menu();
+                        self.begin_direct_emulator_test();
+                    }
+                });
+            } else {
+                ui.separator();
+                let enabled =
+                    matches!(self.app.mode, EditorMode::Level(_)) && self.app.project().is_some();
+                if ui
+                    .add_enabled(enabled, egui::Button::new("Test ROM in Emulator…"))
+                    .clicked()
+                {
+                    ui.close_menu();
+                    self.begin_direct_emulator_test();
+                }
+            }
             if !tools.is_empty() {
                 ui.separator();
             }
@@ -409,5 +447,42 @@ impl NativeApplication {
                 }
             }
         });
+    }
+
+    fn begin_direct_emulator_test(&mut self) {
+        let Some(executable) = crate::dialogs::choose_emulator() else {
+            return;
+        };
+        let level = match self.app.mode {
+            EditorMode::Level(level) => level,
+            _ => return,
+        };
+        let snapshot = match self.app.controller_snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                self.effects.error = Some(error.to_string());
+                return;
+            }
+        };
+        let name = executable.file_name().map_or_else(
+            || "Emulator".into(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        let request = EmulatorTestRequest {
+            tool: ExternalTool {
+                id: "chosen-emulator".into(),
+                name,
+                executable,
+                arguments: vec!["{rom}".into()],
+                working_directory: None,
+                subscriptions: Vec::new(),
+            },
+            revision: snapshot.revision,
+            level,
+            rom_bytes: snapshot.rom_bytes,
+        };
+        if let Err(error) = self.effects.external_tools.enqueue_emulator_test(request) {
+            self.effects.error = Some(error);
+        }
     }
 }

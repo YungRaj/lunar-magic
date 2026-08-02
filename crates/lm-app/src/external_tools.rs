@@ -42,6 +42,15 @@ pub struct ToolInvocation {
     pub working_directory: Option<PathBuf>,
 }
 
+/// Immutable current-ROM input for a frontend-managed emulator test.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EmulatorTestRequest {
+    pub tool: ExternalTool,
+    pub revision: u64,
+    pub level: u16,
+    pub rom_bytes: Vec<u8>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExternalToolError {
     EmptyId,
@@ -56,6 +65,7 @@ pub enum ExternalToolError {
     UnexpectedClosingBrace,
     NulByte,
     EmptyWorkingDirectory,
+    EmulatorRequiresRomArgument,
 }
 
 impl std::fmt::Display for ExternalToolError {

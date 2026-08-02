@@ -162,7 +162,8 @@ pub use expanded_settings_document_controller::{
     ExpandedSettingsDocumentSaveSnapshot,
 };
 pub use external_tools::{
-    ExternalTool, ExternalToolError, ToolContext, ToolEvent, ToolInvocation, validate_tools,
+    EmulatorTestRequest, ExternalTool, ExternalToolError, ToolContext, ToolEvent, ToolInvocation,
+    validate_tools,
 };
 pub use frontend_config::{FrontendConfig, FrontendConfigError};
 pub use graphics_batch_import::{

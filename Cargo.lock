@@ -1632,6 +1632,7 @@ dependencies = [
  "lm-rom",
  "lm-title",
  "rfd",
+ "tempfile",
 ]
 
 [[package]]

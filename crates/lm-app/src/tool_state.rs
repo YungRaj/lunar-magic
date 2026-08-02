@@ -1,6 +1,6 @@
 use crate::{
-    AppError, AppState, EditorMode, ExternalTool, ExternalToolError, FrontendEffect, ToolContext,
-    ToolEvent, validate_tools,
+    AppError, AppState, EditorMode, EmulatorTestRequest, ExternalTool, ExternalToolError,
+    FrontendEffect, ToolContext, ToolEvent, validate_tools,
 };
 
 impl AppState {
@@ -77,6 +77,29 @@ impl AppState {
             .ok_or_else(|| ExternalToolError::UnknownTool(id.into()))?;
         Ok(vec![FrontendEffect::LaunchExternalTool(
             tool.expand(self.tool_context())?,
+        )])
+    }
+
+    pub(crate) fn test_rom_in_emulator(&self, id: &str) -> Result<Vec<FrontendEffect>, AppError> {
+        let EditorMode::Level(level) = self.mode else {
+            return Err(AppError::NoLevelView);
+        };
+        let tool = self
+            .external_tools
+            .iter()
+            .find(|tool| tool.id == id)
+            .ok_or_else(|| ExternalToolError::UnknownTool(id.into()))?;
+        if !tool.uses_argument_placeholder("rom") {
+            return Err(ExternalToolError::EmulatorRequiresRomArgument.into());
+        }
+        let snapshot = self.controller_snapshot()?;
+        Ok(vec![FrontendEffect::StageEmulatorTest(
+            EmulatorTestRequest {
+                tool: tool.clone(),
+                revision: snapshot.revision,
+                level,
+                rom_bytes: snapshot.rom_bytes,
+            },
         )])
     }
 }

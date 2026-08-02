@@ -2082,6 +2082,15 @@ Tool identifiers and per-tool event subscriptions must be unique, so configurati
 encoding is canonical and cannot silently collapse duplicate subscriptions. It emits a
 `LaunchExternalTool` effect for an explicit command or subscribed project event,
 leaving permission prompts, process lifetime, and platform sandbox policy to the native frontend.
+The graphical **Test ROM in Emulator** route instead captures the exact current in-memory physical
+ROM and revision in the application effect. The native frontend writes that immutable snapshot to a
+private create-new temporary directory before showing the ordinary direct-argument approval prompt.
+A selected executable receives the ROM path as its sole argument; configured tools must reference
+`{rom}` directly and may additionally consume `{level_hex}` or `{level_dec}`. The worker polls the
+child without blocking the UI. Stop or frontend teardown terminates and reaps the owned process,
+and every denial, launch failure, exit, or stop drops the private directory. This provides safe
+whole-ROM emulator testing but does not claim LMSW's direct selected-level injection, live reload,
+pause/step, or synchronized viewport behavior.
 The runnable frontend accepts `tools-config FILE`, lists configured identifiers with `tools-status`,
 and resolves typed requests with `tool-run ID` or `tool-event opened|saved|level`. Those preview
 commands print the executable, working directory, and every argument on separate lines. Explicit

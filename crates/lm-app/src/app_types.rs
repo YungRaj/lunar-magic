@@ -1,4 +1,7 @@
-use crate::{ClipboardPayload, EditorSelection, ExternalToolError, LevelViewport, ToolInvocation};
+use crate::{
+    ClipboardPayload, EditorSelection, EmulatorTestRequest, ExternalToolError, LevelViewport,
+    ToolInvocation,
+};
 use std::path::PathBuf;
 
 /// The toolkit-independent editor surface currently selected by a frontend.
@@ -54,6 +57,7 @@ pub enum FrontendEffect {
         clipboard: Vec<u8>,
     },
     LaunchExternalTool(ToolInvocation),
+    StageEmulatorTest(EmulatorTestRequest),
     ExternalToolFailed {
         tool_id: String,
         error: ExternalToolError,

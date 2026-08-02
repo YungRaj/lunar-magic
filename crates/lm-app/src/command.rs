@@ -221,6 +221,8 @@ pub enum Command {
         keys: LevelAccessRestrictionKeys,
     },
     RunExternalTool(String),
+    /// Stages the current in-memory ROM revision and launches a configured emulator tool.
+    TestRomInEmulator(String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

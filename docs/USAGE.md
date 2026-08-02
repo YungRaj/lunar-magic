@@ -59,6 +59,20 @@ After saving:
 2. Test it in an emulator.
 3. Retain the source and output hashes when reporting a discrepancy.
 
+## Test the current ROM in an emulator
+
+While a level is open, choose **Tools → Test ROM in Emulator…** and select an emulator executable
+or macOS application. The editor creates a private snapshot of the current in-memory ROM, including
+committed edits that have not been saved to the project path. Review the executable and exact
+argument shown in the confirmation window, then choose **Run**. Use **Stop** to terminate the
+process; the editor waits for and reaps the process before removing the private ROM.
+
+Installed external-tool configurations whose direct arguments contain `{rom}` appear in a
+**Test ROM in Emulator** submenu. Such tools may also use `{level_hex}` or `{level_dec}` to pass
+the selected level to an emulator wrapper. A directly chosen emulator receives only the staged ROM
+and follows its normal boot path. Direct selected-level injection, live ROM reload, pause, and
+single-frame stepping are not implemented yet.
+
 ## Rendering validation
 
 The project compares its deterministic renderer with the authenticated Lunar Magic 3.63 editor

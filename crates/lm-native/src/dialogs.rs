@@ -219,6 +219,12 @@ pub(crate) fn choose_external_graphics_editor() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_emulator() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Choose Emulator Executable or Application")
+        .pick_file()
+}
+
 pub(crate) fn choose_graphics_directory() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .set_title("Extract All Standard GFX Files")

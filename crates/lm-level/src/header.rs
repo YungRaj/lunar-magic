@@ -434,8 +434,8 @@ mod tests {
         assert_eq!(header.fields[2] & 0x0fff, 0x606);
         assert_eq!(header.fields[11] & 0x0fff, 0x707);
         assert_eq!(header.fields[8] & 0x0fff, 0xa0a);
-        for index in 0..ExpandedLevelHeader::FIELD_COUNT {
-            assert_eq!(header.fields[index] & 0x7000, before[index] & 0x7000);
+        for (after, before) in header.fields.iter().zip(before) {
+            assert_eq!(*after & 0x7000, before & 0x7000);
         }
         assert_eq!(header.fields[1], before[1]);
         assert_eq!(header.fields[12..], before[12..]);

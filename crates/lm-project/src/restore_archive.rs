@@ -2024,6 +2024,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // One archive lineage keeps every link assertion contiguous.
     fn appends_linked_delta_records_and_inherits_sidecars() {
         let original = [1, 2, 3, 4];
         let first = [1, 8, 3, 4];

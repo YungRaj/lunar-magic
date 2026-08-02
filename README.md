@@ -126,6 +126,8 @@ The project currently has tested support for substantial parts of the SMW editin
   does not publish a partial edit.
 - A differential oracle framework with retained Lunar Magic 3.63 fixtures and semantic comparison
   that ignores irrelevant allocation placement.
+- A permission-gated external-emulator workflow that runs the current in-memory ROM snapshot,
+  supports configured level-context arguments, and owns stop/reap/temporary-file cleanup.
 
 The detailed inventory, usage guides, and recovery evidence live in `docs/`:
 

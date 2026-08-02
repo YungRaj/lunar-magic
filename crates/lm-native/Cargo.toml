@@ -23,6 +23,7 @@ lm-title = { path = "../lm-title" }
 rfd = "0.15"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 arboard = "3.6.1"
+tempfile = "3"
 
 [dev-dependencies]
 lm-oracle = { path = "../lm-oracle" }

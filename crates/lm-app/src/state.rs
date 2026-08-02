@@ -872,6 +872,7 @@ impl AppState {
                 self.restrict_level_access(rev, &title, keys)?
             }
             Command::RunExternalTool(id) => self.run_external_tool(&id)?,
+            Command::TestRomInEmulator(id) => self.test_rom_in_emulator(&id)?,
         })
     }
 

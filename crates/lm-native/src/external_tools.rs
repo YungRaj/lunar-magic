@@ -2,6 +2,14 @@ use lm_app::ToolInvocation;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::time::Duration;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProcessCompletion {
+    Exited,
+    Stopped,
+}
 
 pub(crate) fn execute(invocation: &ToolInvocation) -> Result<(), String> {
     let launch = process_launch(invocation);
@@ -24,6 +32,59 @@ pub(crate) fn execute(invocation: &ToolInvocation) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+pub(crate) fn execute_cancellable(
+    invocation: &ToolInvocation,
+    cancel: &Receiver<()>,
+) -> Result<ProcessCompletion, String> {
+    let launch = process_launch(invocation);
+    let mut command = ProcessCommand::new(&launch.executable);
+    command.args(&launch.arguments);
+    if let Some(directory) = &invocation.working_directory {
+        command.current_dir(directory);
+    }
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "could not start external tool {:?}: {error}",
+            invocation.tool_id
+        )
+    })?;
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| {
+            format!(
+                "could not query external tool {:?}: {error}",
+                invocation.tool_id
+            )
+        })? {
+            if status.success() {
+                return Ok(ProcessCompletion::Exited);
+            }
+            return Err(format!(
+                "external tool {:?} exited unsuccessfully ({})",
+                invocation.tool_id,
+                exit_description(status.code())
+            ));
+        }
+        match cancel.recv_timeout(Duration::from_millis(100)) {
+            Ok(()) | Err(RecvTimeoutError::Disconnected) => {
+                child.kill().map_err(|error| {
+                    format!(
+                        "could not stop external tool {:?}: {error}",
+                        invocation.tool_id
+                    )
+                })?;
+                child.wait().map_err(|error| {
+                    format!(
+                        "could not reap external tool {:?}: {error}",
+                        invocation.tool_id
+                    )
+                })?;
+                return Ok(ProcessCompletion::Stopped);
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]

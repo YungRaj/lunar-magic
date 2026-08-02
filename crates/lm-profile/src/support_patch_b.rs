@@ -224,7 +224,7 @@ mod tests {
         for source in [&pristine, &installed] {
             for offset in SMW_US_V1_SUPPORT_PATCH_B_HOOK_OFFSETS {
                 for index in 0..HOOK_EXPECTED.len() {
-                    let mut corrupt = source.to_vec();
+                    let mut corrupt = source.clone();
                     corrupt[offset + index] ^= 1;
                     assert_eq!(
                         detect_smw_us_v1_support_patch_b(&corrupt),
@@ -235,7 +235,7 @@ mod tests {
                 }
             }
             for index in 0..RUNTIME_EXPECTED.len() {
-                let mut corrupt = source.to_vec();
+                let mut corrupt = source.clone();
                 corrupt[SMW_US_V1_SUPPORT_PATCH_B_RUNTIME_OFFSET + index] ^= 1;
                 assert_eq!(
                     detect_smw_us_v1_support_patch_b(&corrupt),

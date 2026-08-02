@@ -73,6 +73,11 @@ impl EffectState {
                     self.error = Some(error);
                 }
             }
+            FrontendEffect::StageEmulatorTest(request) => {
+                if let Err(error) = self.external_tools.enqueue_emulator_test(request) {
+                    self.error = Some(error);
+                }
+            }
             FrontendEffect::ExternalToolFailed { error, .. } => {
                 self.error = Some(error.to_string());
             }

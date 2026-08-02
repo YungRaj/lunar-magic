@@ -41,6 +41,63 @@ fn external_tool_commands_expand_to_frontend_effects_without_spawning() {
 }
 
 #[test]
+fn emulator_test_captures_current_revision_level_context_and_physical_rom() {
+    let mut app = AppState::default();
+    let mut bytes = test_rom();
+    app.load_rom_at(bytes.clone(), Some("/tmp/older-save.smc".into()))
+        .unwrap();
+    app.set_external_tools(vec![emulator_tool("emu")]).unwrap();
+    app.dispatch(Command::SelectLevel(0x1ab)).unwrap();
+    app.dispatch(Command::CommitRomWrites {
+        expected_revision: 0,
+        description: "Unsaved emulator test edit".into(),
+        writes: vec![lm_project::RomWrite {
+            offset: 1,
+            bytes: vec![0x44, 0x55],
+        }],
+    })
+    .unwrap();
+    bytes[1..3].copy_from_slice(&[0x44, 0x55]);
+
+    let effects = app
+        .dispatch(Command::TestRomInEmulator("emu".into()))
+        .unwrap();
+    let [FrontendEffect::StageEmulatorTest(request)] = effects.as_slice() else {
+        panic!("unexpected emulator effects: {effects:?}");
+    };
+    assert_eq!(request.tool, emulator_tool("emu"));
+    assert_eq!(request.level, 0x1ab);
+    assert_eq!(
+        request.revision,
+        app.controller_snapshot().unwrap().revision
+    );
+    assert_eq!(request.rom_bytes, bytes);
+}
+
+#[test]
+fn emulator_test_requires_a_level_and_explicit_rom_argument() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.set_external_tools(vec![emulator_tool("emu")]).unwrap();
+    app.mode = EditorMode::Map16;
+    assert!(matches!(
+        app.dispatch(Command::TestRomInEmulator("emu".into())),
+        Err(AppError::NoLevelView)
+    ));
+
+    let mut tool = emulator_tool("no-rom");
+    tool.arguments = vec!["--level={level_hex}".into()];
+    app.set_external_tools(vec![tool]).unwrap();
+    app.mode = EditorMode::Level(0x105);
+    assert!(matches!(
+        app.dispatch(Command::TestRomInEmulator("no-rom".into())),
+        Err(AppError::ExternalTool(
+            ExternalToolError::EmulatorRequiresRomArgument
+        ))
+    ));
+}
+
+#[test]
 fn invalid_tool_replacement_is_atomic_and_unknown_ids_are_structured() {
     let mut app = AppState::default();
     app.set_external_tools(vec![emulator_tool("emu")]).unwrap();
