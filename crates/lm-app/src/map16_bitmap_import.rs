@@ -398,8 +398,8 @@ pub fn decode_map16_bitmap_png_image(
 ///
 /// BMP input accepts the 12-byte core header, the 64-byte OS/2 2.x header, and common Windows
 /// 40-byte-or-larger DIB headers. Supported pixels include indexed 1-/4-/8-bit, 16-bit RGB,
-/// 24-bit BGR, 32-bit BGRX, validated 16-/32-bit RGB/alpha bitfields, RLE4/RLE8, and embedded
-/// JPEG/PNG payloads. The unused 32-bit `BI_RGB` byte remains opaque.
+/// 24-bit BGR, 32-bit BGRX, validated 16-/32-bit RGB/alpha bitfields, RLE4/RLE8, OS/2 RLE24,
+/// and embedded JPEG/PNG payloads. The unused 32-bit `BI_RGB` byte remains opaque.
 ///
 /// # Errors
 ///
@@ -817,6 +817,7 @@ fn decode_os2_v2_bmp_image(
         0 => true,
         1 => bits == 8,
         2 => bits == 4,
+        4 => bits == 24,
         _ => false,
     };
     if !compression_supported {
@@ -848,6 +849,25 @@ fn decode_os2_v2_bmp_image(
     let pixel_count = width
         .checked_mul(height)
         .ok_or(Map16BmpDecodeError::PixelData)?;
+    if compression == 4 {
+        let declared_size =
+            usize::try_from(bmp_u32(bytes, 34)?).map_err(|_| Map16BmpDecodeError::Rle)?;
+        let stream_end = if declared_size == 0 {
+            bytes.len()
+        } else {
+            pixel_offset
+                .checked_add(declared_size)
+                .ok_or(Map16BmpDecodeError::Rle)?
+        };
+        let stream = bytes
+            .get(pixel_offset..stream_end)
+            .ok_or(Map16BmpDecodeError::Rle)?;
+        return Ok(DecodedMap16Bitmap {
+            width,
+            height,
+            pixels: decode_os2_bmp_rle24(stream, width, height)?,
+        });
+    }
     if matches!(compression, 1 | 2) {
         let (palette_start, palette_entries) = palette.ok_or(Map16BmpDecodeError::Palette)?;
         let declared_size =
@@ -1233,6 +1253,129 @@ fn decode_bmp_rle(
         return Err(Map16BmpDecodeError::Rle);
     }
     Ok(indices)
+}
+
+fn decode_os2_bmp_rle24(
+    stream: &[u8],
+    width: usize,
+    height: usize,
+) -> Result<Vec<Rgba8>, Map16BmpDecodeError> {
+    let pixel_count = width.checked_mul(height).ok_or(Map16BmpDecodeError::Rle)?;
+    let mut pixels = vec![
+        Rgba8 {
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        };
+        pixel_count
+    ];
+    let mut cursor = 0_usize;
+    let mut x = 0_usize;
+    let mut y = 0_usize;
+    let mut ended = false;
+    while cursor < stream.len() {
+        let count = usize::from(*stream.get(cursor).ok_or(Map16BmpDecodeError::Rle)?);
+        cursor += 1;
+        if count != 0 {
+            let color = stream
+                .get(cursor..cursor + 3)
+                .ok_or(Map16BmpDecodeError::Rle)?;
+            cursor += 3;
+            bmp_rle_extent(x, y, count, width, height)?;
+            let pixel = Rgba8 {
+                red: color[2],
+                green: color[1],
+                blue: color[0],
+                alpha: 255,
+            };
+            for column in x..x + count {
+                bmp_write_rle24_pixel(&mut pixels, width, height, column, y, pixel)?;
+            }
+            x += count;
+            continue;
+        }
+        let command = *stream.get(cursor).ok_or(Map16BmpDecodeError::Rle)?;
+        cursor += 1;
+        match command {
+            0 => {
+                x = 0;
+                y = y.checked_add(1).ok_or(Map16BmpDecodeError::Rle)?;
+                if y > height {
+                    return Err(Map16BmpDecodeError::Rle);
+                }
+            }
+            1 => {
+                ended = true;
+                break;
+            }
+            2 => {
+                let delta = stream
+                    .get(cursor..cursor + 2)
+                    .ok_or(Map16BmpDecodeError::Rle)?;
+                cursor += 2;
+                x = x
+                    .checked_add(usize::from(delta[0]))
+                    .ok_or(Map16BmpDecodeError::Rle)?;
+                y = y
+                    .checked_add(usize::from(delta[1]))
+                    .ok_or(Map16BmpDecodeError::Rle)?;
+                if x > width || y >= height {
+                    return Err(Map16BmpDecodeError::Rle);
+                }
+            }
+            absolute => {
+                let count = usize::from(absolute);
+                bmp_rle_extent(x, y, count, width, height)?;
+                let packed_len = count.checked_mul(3).ok_or(Map16BmpDecodeError::Rle)?;
+                let stored_len = packed_len
+                    .checked_add(1)
+                    .map(|length| length & !1)
+                    .ok_or(Map16BmpDecodeError::Rle)?;
+                let packed = stream
+                    .get(cursor..cursor + stored_len)
+                    .ok_or(Map16BmpDecodeError::Rle)?;
+                for offset in 0..count {
+                    let at = offset * 3;
+                    bmp_write_rle24_pixel(
+                        &mut pixels,
+                        width,
+                        height,
+                        x + offset,
+                        y,
+                        Rgba8 {
+                            red: packed[at + 2],
+                            green: packed[at + 1],
+                            blue: packed[at],
+                            alpha: 255,
+                        },
+                    )?;
+                }
+                cursor += stored_len;
+                x += count;
+            }
+        }
+    }
+    if !ended {
+        return Err(Map16BmpDecodeError::Rle);
+    }
+    Ok(pixels)
+}
+
+fn bmp_write_rle24_pixel(
+    pixels: &mut [Rgba8],
+    width: usize,
+    height: usize,
+    x: usize,
+    y: usize,
+    pixel: Rgba8,
+) -> Result<(), Map16BmpDecodeError> {
+    if x >= width || y >= height {
+        return Err(Map16BmpDecodeError::Rle);
+    }
+    let target_y = height - 1 - y;
+    pixels[target_y * width + x] = pixel;
+    Ok(())
 }
 
 fn bmp_rle_extent(
@@ -2217,6 +2360,76 @@ mod tests {
     }
 
     #[test]
+    fn bmp_decoder_handles_os2_v2_rle24_runs_absolute_delta_and_padding() {
+        let stream = [
+            2, 0, 0, 255, // two red pixels
+            0, 3, 0, 255, 0, 255, 0, 0, 255, 255, 255, 0, // three literal pixels + pad
+            0, 0, // end bottom row
+            0, 2, 1, 0, // skip one pixel on the top row
+            2, 0, 255, 255, // two yellow pixels
+            0, 1, // end bitmap
+        ];
+        let decoded =
+            decode_map16_bitmap_bmp_image(&test_os2_v2_bmp(5, 2, 24, 4, &[], &stream)).unwrap();
+        let black = Rgba8 {
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        };
+        assert_eq!(
+            decoded.pixels,
+            vec![
+                black,
+                Rgba8 {
+                    red: 255,
+                    green: 255,
+                    blue: 0,
+                    alpha: 255,
+                },
+                Rgba8 {
+                    red: 255,
+                    green: 255,
+                    blue: 0,
+                    alpha: 255,
+                },
+                black,
+                black,
+                Rgba8 {
+                    red: 255,
+                    green: 0,
+                    blue: 0,
+                    alpha: 255,
+                },
+                Rgba8 {
+                    red: 255,
+                    green: 0,
+                    blue: 0,
+                    alpha: 255,
+                },
+                Rgba8 {
+                    red: 0,
+                    green: 255,
+                    blue: 0,
+                    alpha: 255,
+                },
+                Rgba8 {
+                    red: 0,
+                    green: 0,
+                    blue: 255,
+                    alpha: 255,
+                },
+                Rgba8 {
+                    red: 255,
+                    green: 255,
+                    blue: 255,
+                    alpha: 255,
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn bmp_decoder_rejects_malformed_and_incompatible_os2_v2_images() {
         let palette = vec![Rgba8 {
             red: 1,
@@ -2251,10 +2464,10 @@ mod tests {
             decode_map16_bitmap_bmp_image(&huffman),
             Err(Map16BmpDecodeError::Compression(3))
         );
-        let rle24 = test_os2_v2_bmp(1, 1, 24, 4, &[], &[1, 2, 3, 4, 0, 1]);
+        let rle24 = test_os2_v2_bmp(1, 1, 24, 4, &[], &[1, 2, 3]);
         assert_eq!(
             decode_map16_bitmap_bmp_image(&rle24),
-            Err(Map16BmpDecodeError::Compression(4))
+            Err(Map16BmpDecodeError::Rle)
         );
         let mut palette_overlap = valid.clone();
         palette_overlap[10..14].copy_from_slice(&78_u32.to_le_bytes());
@@ -2268,6 +2481,19 @@ mod tests {
             decode_map16_bitmap_bmp_image(&truncated_pixels),
             Err(Map16BmpDecodeError::PixelData)
         );
+
+        for malformed in [
+            vec![0, 3, 1, 2, 3, 0, 1],
+            vec![0, 3, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0],
+            vec![2, 1, 2, 3, 0, 1],
+            vec![0, 2, 2, 0, 0, 1],
+            vec![1, 1, 2, 3],
+        ] {
+            assert_eq!(
+                decode_map16_bitmap_bmp_image(&test_os2_v2_bmp(1, 1, 24, 4, &[], &malformed,)),
+                Err(Map16BmpDecodeError::Rle)
+            );
+        }
     }
 
     #[test]
