@@ -11,10 +11,12 @@ use lm_rats::parse_at;
 use lm_rom::Mapper;
 
 use crate::{
+    ExpandedSettingsEntryContinuation, ExpandedSettingsRuntimeLayout,
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN,
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START, SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN,
     SMW_US_V1_EXPANDED_SETTINGS_RECORD_COUNT, SmwUsV1ExpandedSettingsAllocation,
     SmwUsV1ExpandedSettingsAllocationError, smw_us_v1_default_special_expanded_settings_record,
+    smw_us_v1_expanded_settings_fixed_writes,
 };
 
 pub const SMW_US_V1_OVERWORLD_SETTINGS_FIRST_SLOT: usize = 0x200;
@@ -127,6 +129,14 @@ pub fn load_smw_us_v1_overworld_settings(
     let block = parse_at(bytes, header)
         .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidOwnedBlock)?;
     if block.payload.len() != SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN {
+        // `$087FF8` is Lunar Magic's first-fit search start, not an ownership marker. Other
+        // Lunar Magic subsystems can legitimately place a different RATS block there before the
+        // expanded-settings family is installed (the retained ordinary level-save oracle does
+        // exactly that). Only treat the wrong-sized block as damaged expanded-settings storage
+        // when the family's fixed runtime destinations are no longer pristine.
+        if expanded_settings_runtime_destinations_are_pristine(project) {
+            return Ok(default_overworld_settings());
+        }
         return Err(SmwUsV1OverworldSettingsLoadError::WrongOwnedLength(
             block.payload.len(),
         ));
@@ -162,6 +172,12 @@ pub fn load_smw_us_v1_expanded_level_settings(
     let block = parse_at(bytes, header)
         .map_err(|_| SmwUsV1OverworldSettingsLoadError::InvalidOwnedBlock)?;
     if block.payload.len() != SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN {
+        if expanded_settings_runtime_destinations_are_pristine(project) {
+            return Ok(LoadedSmwUsV1ExpandedLevelSettings {
+                settings: crate::smw_us_v1_default_expanded_settings_record(),
+                installed: false,
+            });
+        }
         return Err(SmwUsV1OverworldSettingsLoadError::WrongOwnedLength(
             block.payload.len(),
         ));
@@ -170,6 +186,30 @@ pub fn load_smw_us_v1_expanded_level_settings(
     Ok(LoadedSmwUsV1ExpandedLevelSettings {
         settings: allocation.record(level)?.clone(),
         installed: true,
+    })
+}
+
+fn default_overworld_settings() -> LoadedSmwUsV1OverworldSettings {
+    LoadedSmwUsV1OverworldSettings {
+        settings: ExpandedOverworldSettings {
+            records: std::array::from_fn(|_| smw_us_v1_default_special_expanded_settings_record()),
+        },
+        installed: false,
+    }
+}
+
+fn expanded_settings_runtime_destinations_are_pristine(project: &Project) -> bool {
+    let layout = ExpandedSettingsRuntimeLayout::smw_us_v1(
+        0x11_8000,
+        ExpandedSettingsEntryContinuation::Continue,
+    );
+    smw_us_v1_expanded_settings_fixed_writes(layout).is_ok_and(|writes| {
+        writes.iter().all(|write| {
+            project
+                .rom
+                .read(write.offset, write.expected.len())
+                .is_ok_and(|bytes| bytes == write.expected)
+        })
     })
 }
 
@@ -263,6 +303,53 @@ mod tests {
             level.settings,
             crate::smw_us_v1_default_expanded_settings_record()
         );
+    }
+
+    #[test]
+    fn unrelated_first_fit_rats_block_does_not_claim_expanded_settings_ownership() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes =
+            fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc")).unwrap();
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let block = parse_at(
+            project.rom.logical_bytes(),
+            SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START,
+        )
+        .unwrap();
+        assert_eq!(block.payload.len(), 0x8000);
+
+        let overworld = load_smw_us_v1_overworld_settings(&project).unwrap();
+        assert!(!overworld.installed);
+        let level = load_smw_us_v1_expanded_level_settings(&project, 0x102).unwrap();
+        assert!(!level.installed);
+        assert_eq!(
+            level.settings,
+            crate::smw_us_v1_default_expanded_settings_record()
+        );
+    }
+
+    #[test]
+    fn wrong_length_owner_still_rejects_when_expanded_runtime_is_installed() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = fs::read(
+            root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
+        )
+        .unwrap();
+        let image = RomImage::from_bytes(bytes).unwrap();
+        let mut logical = image.logical_bytes().to_vec();
+        let header = SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START;
+        logical[header + 4..header + 6].copy_from_slice(&0x7fff_u16.to_le_bytes());
+        logical[header + 6..header + 8].copy_from_slice(&0x8000_u16.to_le_bytes());
+        let project = Project::new(RomImage::from_bytes(logical).unwrap());
+
+        assert!(matches!(
+            load_smw_us_v1_overworld_settings(&project),
+            Err(SmwUsV1OverworldSettingsLoadError::WrongOwnedLength(0x8000))
+        ));
+        assert!(matches!(
+            load_smw_us_v1_expanded_level_settings(&project, 0),
+            Err(SmwUsV1OverworldSettingsLoadError::WrongOwnedLength(0x8000))
+        ));
     }
 
     #[test]

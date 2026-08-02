@@ -1498,6 +1498,13 @@ revision hooks, pointer publications, typed allocation fixups, checksum repair, 
 installation are complete. `layer3-install` groups that separately aligned plan with the five
 runtime allocations, preserving the `$087FF8` RATS header / `$088000` payload boundary while
 committing all six allocations as one undoable project operation.
+`$087FF8` is an allocation search start rather than an ownership signature. Lunar Magic's retained
+ordinary level-save ROM places an unrelated `$8000`-byte RATS payload there before the expanded
+settings runtime exists. Detection therefore treats a valid wrong-sized block as unrelated only
+when every fixed expanded-settings runtime destination still equals its authenticated pristine
+precondition. Once any member of that runtime family is installed or modified, a wrong-sized owner
+continues to reject. This distinction lets modified level-save ROMs use pristine expanded-setting
+defaults without weakening the damaged-installed-runtime gate.
 The cross-platform GUI exposes five recovered installation paths through a revision-bound
 **Install Built-in Runtime** dialog. It can install the expanded-settings family alone, the
 complete Layer 3 family (which includes expanded settings), or the expanded shared/custom-palette
