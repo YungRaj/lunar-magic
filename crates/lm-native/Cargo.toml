@@ -25,6 +25,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 arboard = "3.6.1"
 tempfile = "3"
 directories = "6"
+fs2 = "0.4"
 
 [dev-dependencies]
 lm-oracle = { path = "../lm-oracle" }

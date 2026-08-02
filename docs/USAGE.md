@@ -61,15 +61,17 @@ After saving:
 
 ## Recover after an interrupted session
 
-While the ROM has committed changes that have not been saved, the native editor maintains a
-checksummed recovery record in the platform application-data directory. If the process or machine
-stops unexpectedly, the next ordinary launch offers **Recover** or **Discard Recovery**. Recovery
-opens the exact unsaved ROM as an unnamed dirty project and restores the active level; use
-**File → Save As** to publish it without silently replacing the source ROM.
+While a ROM has committed changes that have not been saved, each native-editor process maintains
+its own checksummed recovery record in the platform application-data directory. Concurrent editors
+hold independent session locks and cannot overwrite or claim each other's live records. If one or
+more processes or the machine stop unexpectedly, the next ordinary launch offers each stale record
+in turn through **Recover** or **Discard Recovery**. Recovery opens the exact unsaved ROM as an
+unnamed dirty project and restores the active level; use **File → Save As** to publish it without
+silently replacing the source ROM.
 
 A normal save or clean close removes the record. This milestone protects changes already committed
-to the project ROM. Values still staged inside an open editor form, multi-document recovery, and
-undo-history restoration are not yet included.
+to the project ROM. Values still staged inside an open editor form and undo-history restoration are
+not yet included. At most 16 stale sessions are accepted in one startup scan.
 
 ## Collect compatibility diagnostics
 

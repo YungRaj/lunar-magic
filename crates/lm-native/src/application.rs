@@ -193,11 +193,12 @@ impl NativeApplication {
     }
 
     fn show_crash_recovery(&mut self, context: &egui::Context) {
-        let Some(snapshot) = self.recovery_store.pending.as_ref() else {
+        let Some(snapshot) = self.recovery_store.pending_snapshot() else {
             return;
         };
         let revision = snapshot.revision;
         let level = snapshot.level;
+        let pending_count = self.recovery_store.pending_count();
         let project_open = self.app.controller_snapshot().is_ok();
         egui::Window::new("Recover unsaved ROM")
             .collapsible(false)
@@ -205,6 +206,11 @@ impl NativeApplication {
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
                 ui.label("An unsaved ROM snapshot from an interrupted session is available.");
+                if pending_count > 1 {
+                    ui.label(format!(
+                        "Recovery 1 of {pending_count}; remaining snapshots will follow."
+                    ));
+                }
                 ui.label(format!("Revision: {revision}"));
                 if let Some(level) = level {
                     ui.label(format!("Last active level: {level:03X}"));
@@ -220,11 +226,12 @@ impl NativeApplication {
                     {
                         let snapshot = self
                             .recovery_store
-                            .take_pending()
+                            .pending_snapshot()
+                            .cloned()
                             .expect("the recovery prompt owns a pending record");
                         match self.app.load_recovery(snapshot) {
                             Ok(()) => {
-                                self.recovery_store.clear_current();
+                                self.recovery_store.complete_pending_recovery();
                                 self.renderer.invalidate();
                             }
                             Err(error) => self.effects.error = Some(error.to_string()),

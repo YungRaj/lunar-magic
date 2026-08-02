@@ -128,8 +128,8 @@ The project currently has tested support for substantial parts of the SMW editin
   that ignores irrelevant allocation placement.
 - A permission-gated external-emulator workflow that runs the current in-memory ROM snapshot,
   supports configured level-context arguments, and owns stop/reap/temporary-file cleanup.
-- Checksummed native crash recovery for committed unsaved ROM revisions, restored as an unnamed
-  dirty project so the recovered result must be published explicitly with Save As.
+- Checksummed, multi-session native crash recovery for committed unsaved ROM revisions, restored as
+  unnamed dirty projects so recovered results must be published explicitly with Save As.
 - Path-free compatibility diagnostics covering mapper/header/size/checksum health, changed ranges,
   RATS usage, revision-profile audits, classified Layer 2 formats, and authenticated Map16/Lfix3
   generations.

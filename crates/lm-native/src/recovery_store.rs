@@ -1,22 +1,35 @@
+use fs2::FileExt;
 use lm_app::RecoverySnapshot;
 use std::{
+    collections::VecDeque,
     fs::{self, File},
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
     sync::mpsc::{self, Receiver, SyncSender, TrySendError},
     thread::{self, JoinHandle},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const MAGIC: &[u8; 8] = b"LMRECOV1";
 const MAX_ROM_LEN: usize = 0x20_00000 + 512;
 const MAX_RECORD_LEN: usize = 8 + 8 + 2 + 4 + 4 + MAX_ROM_LEN * 2 + 4;
+const MAX_PENDING_RECORDS: usize = 16;
+static SESSION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 enum RecoveryCommand {
     Write(RecoverySnapshot),
-    Clear,
+    ClearCurrent(PathBuf),
+    RemovePending(PathBuf),
 }
 
 type RecoveryResult = (Option<u64>, Result<(), String>);
+
+#[derive(Debug, Eq, PartialEq)]
+struct PendingRecovery {
+    path: PathBuf,
+    snapshot: RecoverySnapshot,
+}
 
 #[derive(Default)]
 pub(crate) struct RecoveryStore {
@@ -24,7 +37,8 @@ pub(crate) struct RecoveryStore {
     sender: Option<SyncSender<RecoveryCommand>>,
     results: Option<Receiver<RecoveryResult>>,
     worker: Option<JoinHandle<()>>,
-    pub pending: Option<RecoverySnapshot>,
+    session_lock: Option<(PathBuf, File)>,
+    pending: VecDeque<PendingRecovery>,
     queued_revision: Option<u64>,
     clear_queued: bool,
     pub error: Option<String>,
@@ -38,12 +52,43 @@ impl RecoveryStore {
             self.error = Some("cannot determine the crash-recovery directory".into());
             return;
         };
-        self.enable_at(project_dirs.data_local_dir().join("session.recovery"));
+        let data_directory = project_dirs.data_local_dir();
+        let directory = data_directory.join("recovery");
+        let (path, lock_path, lock) = match reserve_session(&directory) {
+            Ok(reservation) => reservation,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let discovered = discover_records(&directory).map(|mut records| {
+            let legacy = data_directory.join("session.recovery");
+            if legacy.exists() {
+                records.insert(0, legacy);
+            }
+            records
+        });
+        self.session_lock = Some((lock_path, lock));
+        self.enable_paths(path, discovered);
     }
 
+    #[cfg(test)]
     fn enable_at(&mut self, path: PathBuf) {
-        match read_record(&path) {
-            Ok(record) => self.pending = record,
+        let records = if path.exists() {
+            vec![path.clone()]
+        } else {
+            Vec::new()
+        };
+        self.enable_paths(path, Ok(records));
+    }
+
+    fn enable_paths(&mut self, path: PathBuf, discovered: Result<Vec<PathBuf>, String>) {
+        match discovered {
+            Ok(paths) => {
+                let (records, error) = read_pending_records(paths);
+                self.pending = records.into();
+                self.error = error;
+            }
             Err(error) => self.error = Some(error),
         }
         let worker_path = path.clone();
@@ -56,7 +101,8 @@ impl RecoveryStore {
                         let revision = snapshot.revision;
                         (Some(revision), write_record(&worker_path, &snapshot))
                     }
-                    RecoveryCommand::Clear => (None, remove_record(&worker_path)),
+                    RecoveryCommand::ClearCurrent(path) => (None, remove_record(&path)),
+                    RecoveryCommand::RemovePending(path) => (None, remove_pending_record(&path)),
                 };
                 let _ignored = result_sender.send((revision, result));
             }
@@ -72,7 +118,7 @@ impl RecoveryStore {
         snapshot: impl FnOnce() -> Option<RecoverySnapshot>,
     ) {
         self.poll_results();
-        if self.pending.is_some() || self.path.is_none() {
+        if !self.pending.is_empty() || self.path.is_none() {
             return;
         }
         let Some(sender) = &self.sender else { return };
@@ -86,7 +132,7 @@ impl RecoveryStore {
             if self.clear_queued {
                 return;
             }
-            RecoveryCommand::Clear
+            RecoveryCommand::ClearCurrent(self.path.clone().expect("enabled store has a path"))
         };
         match sender.try_send(command) {
             Ok(()) => {
@@ -121,17 +167,42 @@ impl RecoveryStore {
     }
 
     pub fn discard_pending(&mut self) {
-        self.pending = None;
-        self.clear_queued = false;
-        self.synchronize_project(None, || None);
+        if let Some(pending) = self.pending.pop_front() {
+            self.queue_clear(pending.path);
+        }
     }
 
-    pub fn clear_current(&mut self) {
-        self.synchronize_project(None, || None);
+    pub fn pending_snapshot(&self) -> Option<&RecoverySnapshot> {
+        self.pending.front().map(|pending| &pending.snapshot)
     }
 
-    pub fn take_pending(&mut self) -> Option<RecoverySnapshot> {
-        self.pending.take()
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub fn complete_pending_recovery(&mut self) {
+        if let Some(pending) = self.pending.pop_front() {
+            self.queue_clear(pending.path);
+        }
+    }
+
+    fn queue_clear(&mut self, path: PathBuf) {
+        self.poll_results();
+        let Some(sender) = &self.sender else { return };
+        match sender.try_send(RecoveryCommand::RemovePending(path)) {
+            Ok(()) => {}
+            Err(TrySendError::Full(command)) => {
+                if let RecoveryCommand::RemovePending(path) = command
+                    && let Err(error) = remove_pending_record(&path)
+                {
+                    self.error = Some(error);
+                }
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                self.error = Some("crash-recovery worker stopped unexpectedly".into());
+                self.sender = None;
+            }
+        }
     }
 }
 
@@ -140,6 +211,10 @@ impl Drop for RecoveryStore {
         self.sender.take();
         if let Some(worker) = self.worker.take() {
             let _result = worker.join();
+        }
+        if let Some((path, lock)) = self.session_lock.take() {
+            let _result = FileExt::unlock(&lock);
+            let _result = fs::remove_file(path);
         }
     }
 }
@@ -169,6 +244,109 @@ fn remove_record(path: &Path) -> Result<(), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(format!("cannot remove recovery record: {error}")),
     }
+}
+
+fn remove_pending_record(record: &Path) -> Result<(), String> {
+    remove_record(record)?;
+    let lock = record.with_extension("lock");
+    match fs::remove_file(lock) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("cannot remove recovery session lock: {error}")),
+    }
+}
+
+fn unique_session_name() -> String {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let sequence = SESSION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "session-{}-{timestamp:032x}-{sequence:016x}.recovery",
+        std::process::id()
+    )
+}
+
+fn reserve_session(directory: &Path) -> Result<(PathBuf, PathBuf, File), String> {
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("cannot create recovery directory: {error}"))?;
+    for _attempt in 0..16 {
+        let record_path = directory.join(unique_session_name());
+        let lock_path = record_path.with_extension("lock");
+        match File::options()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(lock) => {
+                lock.try_lock_exclusive()
+                    .map_err(|error| format!("cannot lock recovery session: {error}"))?;
+                return Ok((record_path, lock_path, lock));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(format!("cannot reserve recovery session: {error}")),
+        }
+    }
+    Err("cannot allocate a unique recovery session".into())
+}
+
+fn discover_records(directory: &Path) -> Result<Vec<PathBuf>, String> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("cannot inspect recovery directory: {error}")),
+    };
+    let mut paths = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("cannot inspect recovery directory: {error}"))?;
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) == Some("recovery") {
+            let lock_path = path.with_extension("lock");
+            match File::options().read(true).write(true).open(&lock_path) {
+                Ok(lock) => match lock.try_lock_exclusive() {
+                    Ok(()) => {
+                        FileExt::unlock(&lock).map_err(|error| {
+                            format!("cannot release stale recovery session lock: {error}")
+                        })?;
+                        paths.push(path);
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(error) => {
+                        return Err(format!("cannot inspect recovery session lock: {error}"));
+                    }
+                },
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => paths.push(path),
+                Err(error) => {
+                    return Err(format!("cannot inspect recovery session lock: {error}"));
+                }
+            }
+        }
+    }
+    paths.sort();
+    if paths.len() > MAX_PENDING_RECORDS {
+        return Err(format!(
+            "recovery directory contains more than {MAX_PENDING_RECORDS} records"
+        ));
+    }
+    Ok(paths)
+}
+
+fn read_pending_records(paths: Vec<PathBuf>) -> (Vec<PendingRecovery>, Option<String>) {
+    let mut records = Vec::new();
+    let mut first_error = None;
+    for path in paths {
+        match read_record(&path) {
+            Ok(Some(snapshot)) => records.push(PendingRecovery { path, snapshot }),
+            Ok(None) => {
+                first_error.get_or_insert_with(|| "discovered recovery record disappeared".into());
+            }
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
+        }
+    }
+    (records, first_error)
 }
 
 fn read_record(path: &Path) -> Result<Option<RecoverySnapshot>, String> {
@@ -328,9 +506,105 @@ mod tests {
         {
             let mut store = RecoveryStore::default();
             store.enable_at(path.clone());
-            assert_eq!(store.pending, Some(snapshot()));
+            assert_eq!(store.pending_snapshot(), Some(&snapshot()));
+            assert_eq!(store.pending_count(), 1);
             store.discard_pending();
         }
         assert_eq!(read_record(&path).unwrap(), None);
+    }
+
+    #[test]
+    fn pending_record_is_retained_until_success_or_explicit_discard() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.recovery");
+        write_record(&path, &snapshot()).unwrap();
+
+        {
+            let mut store = RecoveryStore::default();
+            store.enable_at(path.clone());
+            assert_eq!(store.pending_snapshot(), Some(&snapshot()));
+            // Merely reading/cloning the candidate for a recovery attempt cannot remove it.
+            let attempted = store.pending_snapshot().cloned().unwrap();
+            assert_eq!(attempted, snapshot());
+        }
+
+        assert_eq!(read_record(&path).unwrap(), Some(snapshot()));
+    }
+
+    #[test]
+    fn multiple_session_records_are_queued_and_removed_independently() {
+        let directory = tempfile::tempdir().unwrap();
+        let first_path = directory.path().join("session-1.recovery");
+        let second_path = directory.path().join("session-2.recovery");
+        let corrupt_path = directory.path().join("session-3.recovery");
+        let current_path = directory.path().join("session-current.recovery");
+        let first = snapshot();
+        let mut second = snapshot();
+        second.revision = 77;
+        second.level = Some(0x105);
+        second.current_rom[8] = 3;
+        write_record(&first_path, &first).unwrap();
+        write_record(&second_path, &second).unwrap();
+        fs::write(&corrupt_path, b"corrupt").unwrap();
+
+        {
+            let mut store = RecoveryStore::default();
+            store.enable_paths(current_path, discover_records(directory.path()));
+            assert_eq!(store.pending_count(), 2);
+            assert!(
+                store
+                    .error
+                    .as_ref()
+                    .is_some_and(|error| error.contains("header"))
+            );
+            assert_eq!(store.pending_snapshot(), Some(&first));
+            store.complete_pending_recovery();
+            assert_eq!(store.pending_snapshot(), Some(&second));
+            store.discard_pending();
+            assert_eq!(store.pending_count(), 0);
+        }
+
+        assert_eq!(read_record(&first_path).unwrap(), None);
+        assert_eq!(read_record(&second_path).unwrap(), None);
+        assert!(
+            corrupt_path.exists(),
+            "invalid records are not deleted implicitly"
+        );
+    }
+
+    #[test]
+    fn session_names_are_unique_and_discovery_is_bounded() {
+        assert_ne!(unique_session_name(), unique_session_name());
+        let directory = tempfile::tempdir().unwrap();
+        for index in 0..=MAX_PENDING_RECORDS {
+            File::create(directory.path().join(format!("session-{index}.recovery"))).unwrap();
+        }
+        assert!(
+            discover_records(directory.path())
+                .unwrap_err()
+                .contains(&MAX_PENDING_RECORDS.to_string())
+        );
+    }
+
+    #[test]
+    fn discovery_skips_records_owned_by_a_live_session() {
+        let directory = tempfile::tempdir().unwrap();
+        let record_path = directory.path().join("session-live.recovery");
+        let lock_path = record_path.with_extension("lock");
+        write_record(&record_path, &snapshot()).unwrap();
+        let lock = File::options()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(lock_path)
+            .unwrap();
+        lock.try_lock_exclusive().unwrap();
+
+        assert!(discover_records(directory.path()).unwrap().is_empty());
+        FileExt::unlock(&lock).unwrap();
+        assert_eq!(
+            discover_records(directory.path()).unwrap(),
+            vec![record_path]
+        );
     }
 }
