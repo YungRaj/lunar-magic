@@ -397,9 +397,8 @@ pub fn decode_map16_bitmap_png_image(
 /// Decodes a bounded PNG or Windows BMP while retaining its source dimensions.
 ///
 /// BMP input accepts the common 40-byte-or-larger DIB header with indexed 1-, 4-, or 8-bit pixels,
-/// 16-bit RGB, 24-bit BGR, 32-bit BGRX, validated 16-/32-bit bitfield pixels, RLE4/RLE8, or an
-/// embedded JPEG/PNG payload. The unused 32-bit BMP byte is deliberately treated as opaque,
-/// matching Windows `BI_RGB` bitmap semantics.
+/// 16-bit RGB, 24-bit BGR, 32-bit BGRX, validated 16-/32-bit RGB/alpha-bitfield pixels,
+/// RLE4/RLE8, or an embedded JPEG/PNG payload. The unused 32-bit `BI_RGB` byte remains opaque.
 ///
 /// # Errors
 ///
@@ -480,6 +479,7 @@ pub fn decode_map16_bitmap_bmp_image(
         2 => bits == 4,
         3 => matches!(bits, 16 | 32),
         4 | 5 => bits == 0,
+        6 => matches!(bits, 16 | 32),
         _ => false,
     };
     if !compression_supported {
@@ -627,10 +627,12 @@ pub fn decode_map16_bitmap_bmp_image(
                     bmp_u32(bytes, at).map_err(|_| Map16BmpDecodeError::PixelData)?
                 };
                 Rgba8 {
-                    red: bmp_masked_channel(packed, masks[0]),
-                    green: bmp_masked_channel(packed, masks[1]),
-                    blue: bmp_masked_channel(packed, masks[2]),
-                    alpha: 255,
+                    red: bmp_masked_channel(packed, masks.rgb[0]),
+                    green: bmp_masked_channel(packed, masks.rgb[1]),
+                    blue: bmp_masked_channel(packed, masks.rgb[2]),
+                    alpha: masks
+                        .alpha
+                        .map_or(255, |mask| bmp_masked_channel(packed, mask)),
                 }
             } else {
                 let bytes_per_pixel = usize::from(bits / 8);
@@ -768,41 +770,72 @@ fn decode_map16_bitmap_jpeg_image(bytes: &[u8]) -> Result<DecodedMap16Bitmap, Ma
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BmpChannelMasks {
+    rgb: [u32; 3],
+    alpha: Option<u32>,
+}
+
 fn bmp_channel_masks(
     bytes: &[u8],
     dib_size: usize,
     pixel_offset: usize,
     bits: u16,
     compression: u32,
-) -> Result<Option<[u32; 3]>, Map16BmpDecodeError> {
-    if compression != 3 {
-        return Ok((bits == 16).then_some([0x7c00, 0x03e0, 0x001f]));
+) -> Result<Option<BmpChannelMasks>, Map16BmpDecodeError> {
+    if !matches!(compression, 3 | 6) {
+        return Ok((bits == 16).then_some(BmpChannelMasks {
+            rgb: [0x7c00, 0x03e0, 0x001f],
+            alpha: None,
+        }));
     }
     if dib_size != 40 && dib_size < 52 {
         return Err(Map16BmpDecodeError::BitMasks);
     }
-    let masks = [
+    let rgb = [
         bmp_u32(bytes, 54).map_err(|_| Map16BmpDecodeError::BitMasks)?,
         bmp_u32(bytes, 58).map_err(|_| Map16BmpDecodeError::BitMasks)?,
         bmp_u32(bytes, 62).map_err(|_| Map16BmpDecodeError::BitMasks)?,
     ];
-    let mask_end = if dib_size == 40 { 66 } else { 14 + dib_size };
+    let alpha_raw = if dib_size == 40 {
+        (compression == 6)
+            .then(|| bmp_u32(bytes, 66).map_err(|_| Map16BmpDecodeError::BitMasks))
+            .transpose()?
+    } else if dib_size >= 56 {
+        Some(bmp_u32(bytes, 66).map_err(|_| Map16BmpDecodeError::BitMasks)?)
+    } else {
+        None
+    };
+    let alpha = alpha_raw.filter(|mask| *mask != 0);
+    if compression == 6 && alpha.is_none() {
+        return Err(Map16BmpDecodeError::BitMasks);
+    }
+    let mask_end = if dib_size == 40 {
+        if compression == 6 { 70 } else { 66 }
+    } else {
+        14 + dib_size
+    };
     let pixel_bits = if bits == 32 {
         u32::MAX
     } else {
         (1_u32 << bits) - 1
     };
     if pixel_offset < mask_end
-        || masks
+        || rgb
             .iter()
             .any(|mask| *mask == 0 || *mask & !pixel_bits != 0 || !bmp_mask_is_contiguous(*mask))
-        || masks[0] & masks[1] != 0
-        || masks[0] & masks[2] != 0
-        || masks[1] & masks[2] != 0
+        || rgb[0] & rgb[1] != 0
+        || rgb[0] & rgb[2] != 0
+        || rgb[1] & rgb[2] != 0
+        || alpha.is_some_and(|mask| {
+            mask & !pixel_bits != 0
+                || !bmp_mask_is_contiguous(mask)
+                || rgb.iter().any(|rgb_mask| mask & rgb_mask != 0)
+        })
     {
         return Err(Map16BmpDecodeError::BitMasks);
     }
-    Ok(Some(masks))
+    Ok(Some(BmpChannelMasks { rgb, alpha }))
 }
 
 fn decode_bmp_rle(
@@ -1549,6 +1582,43 @@ mod tests {
         bytes
     }
 
+    fn test_alpha_bitfield_bmp(
+        dib_size: usize,
+        bits: u16,
+        compression: u32,
+        masks: [u32; 4],
+        packed_pixels: &[u32],
+    ) -> Vec<u8> {
+        assert!(matches!(dib_size, 40 | 56 | 108 | 124));
+        assert!(matches!(bits, 16 | 32));
+        let mask_bytes = if dib_size == 40 { 16 } else { 0 };
+        let pixel_offset = 14 + dib_size + mask_bytes;
+        let bytes_per_pixel = usize::from(bits / 8);
+        let stride = (packed_pixels.len() * bytes_per_pixel + 3) & !3;
+        let mut bytes = vec![0; pixel_offset + stride];
+        let file_len = u32::try_from(bytes.len()).unwrap();
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&u32::try_from(pixel_offset).unwrap().to_le_bytes());
+        bytes[14..18].copy_from_slice(&u32::try_from(dib_size).unwrap().to_le_bytes());
+        bytes[18..22].copy_from_slice(&i32::try_from(packed_pixels.len()).unwrap().to_le_bytes());
+        bytes[22..26].copy_from_slice(&1_i32.to_le_bytes());
+        bytes[26..28].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[28..30].copy_from_slice(&bits.to_le_bytes());
+        bytes[30..34].copy_from_slice(&compression.to_le_bytes());
+        bytes[34..38].copy_from_slice(&u32::try_from(stride).unwrap().to_le_bytes());
+        for (index, mask) in masks.iter().enumerate() {
+            let at = 54 + index * 4;
+            bytes[at..at + 4].copy_from_slice(&mask.to_le_bytes());
+        }
+        for (column, pixel) in packed_pixels.iter().enumerate() {
+            let at = pixel_offset + column * bytes_per_pixel;
+            bytes[at..at + bytes_per_pixel]
+                .copy_from_slice(&pixel.to_le_bytes()[..bytes_per_pixel]);
+        }
+        bytes
+    }
+
     fn test_rle_bmp(
         width: usize,
         height: usize,
@@ -1756,6 +1826,101 @@ mod tests {
                 blue: 0x33,
                 alpha: 255,
             }]
+        );
+    }
+
+    #[test]
+    fn bmp_decoder_preserves_valid_v3_v4_v5_and_external_alpha_bitfields() {
+        let masks = [0x00ff_0000, 0x0000_ff00, 0x0000_00ff, 0xff00_0000];
+        let packed = [0x0012_3456, 0x8078_9abc, 0xffde_f012];
+        let expected = vec![
+            Rgba8 {
+                red: 0x12,
+                green: 0x34,
+                blue: 0x56,
+                alpha: 0,
+            },
+            Rgba8 {
+                red: 0x78,
+                green: 0x9a,
+                blue: 0xbc,
+                alpha: 0x80,
+            },
+            Rgba8 {
+                red: 0xde,
+                green: 0xf0,
+                blue: 0x12,
+                alpha: 0xff,
+            },
+        ];
+        for (dib_size, compression) in [(40, 6), (56, 3), (108, 3), (124, 3)] {
+            assert_eq!(
+                decode_map16_bitmap_bmp_image(&test_alpha_bitfield_bmp(
+                    dib_size,
+                    32,
+                    compression,
+                    masks,
+                    &packed,
+                ))
+                .unwrap()
+                .pixels,
+                expected,
+            );
+        }
+
+        let without_alpha =
+            test_alpha_bitfield_bmp(56, 32, 3, [masks[0], masks[1], masks[2], 0], &packed);
+        assert!(
+            decode_map16_bitmap_bmp_image(&without_alpha)
+                .unwrap()
+                .pixels
+                .iter()
+                .all(|pixel| pixel.alpha == 255)
+        );
+
+        let rgba_1555 = test_alpha_bitfield_bmp(
+            40,
+            16,
+            6,
+            [0x7c00, 0x03e0, 0x001f, 0x8000],
+            &[0x7c00, 0x83e0],
+        );
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&rgba_1555).unwrap().pixels,
+            [
+                Rgba8 {
+                    red: 255,
+                    green: 0,
+                    blue: 0,
+                    alpha: 0,
+                },
+                Rgba8 {
+                    red: 0,
+                    green: 255,
+                    blue: 0,
+                    alpha: 255,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn bmp_decoder_rejects_missing_overlapping_and_noncontiguous_alpha_masks() {
+        let rgb = [0x00ff_0000, 0x0000_ff00, 0x0000_00ff];
+        for alpha in [0, rgb[0], 0xa000_0000] {
+            let bytes = test_alpha_bitfield_bmp(40, 32, 6, [rgb[0], rgb[1], rgb[2], alpha], &[0]);
+            assert_eq!(
+                decode_map16_bitmap_bmp_image(&bytes),
+                Err(Map16BmpDecodeError::BitMasks)
+            );
+        }
+        let invalid_depth = test_bitfield_bmp(16, 0, [0; 3], &[0]);
+        let mut invalid_depth = invalid_depth;
+        invalid_depth[28..30].copy_from_slice(&24_u16.to_le_bytes());
+        invalid_depth[30..34].copy_from_slice(&6_u32.to_le_bytes());
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&invalid_depth),
+            Err(Map16BmpDecodeError::Compression(6))
         );
     }
 
