@@ -2844,6 +2844,10 @@ Raw and semantic sprite replacements now share one post-apply refresh boundary. 
 controller accepts a replacement, the selected token is decoded back into the raw text and packed
 semantic controls, including whether the result remains an ordinary editable record. This prevents
 a raw token-shape change from leaving stale coordinates or an incorrectly enabled semantic action.
+The parallel object-backed Layer 2 list now has the same staged-state rule across all of its
+ordinary actions. Button insertion selects the computed new index before decoding it; raw and
+semantic replacement decode the accepted record; and deletion clamps to the surviving range or
+resets the form and extension-preserving placement template when no record remains.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The

@@ -674,41 +674,7 @@ impl VanillaLevelEditor {
                 self.error = None;
             }
             if ui.button("Insert after selection").clicked() {
-                let result = self
-                    .layer2_object_record_for_placement()
-                    .and_then(|record| {
-                        self.controller
-                            .as_mut()
-                            .ok_or_else(|| "level controller is unavailable".to_owned())?
-                            .apply_layer2_object_edits(&[ObjectEdit::Insert {
-                                index: object_insertion_index(
-                                    self.selected_layer2_object,
-                                    records.len(),
-                                ),
-                                record,
-                            }])
-                            .map_err(|error| error.to_string())
-                    });
-                match result {
-                    Ok(()) => {
-                        if let Some(record) = self.controller.as_ref().and_then(|controller| {
-                            controller
-                                .layer2()
-                                .and_then(|layer2| match layer2 {
-                                    lm_level::NativeLayer2Data::Objects(objects) => Some(objects),
-                                    lm_level::NativeLayer2Data::Tilemap(_) => None,
-                                })
-                                .and_then(|objects| {
-                                    objects.objects.records.get(self.selected_layer2_object)
-                                })
-                        }) {
-                            self.layer2_object_form = ObjectForm::from_record(record);
-                            self.layer2_object_placement_template = Some(record.clone());
-                        }
-                        self.error = None;
-                    }
-                    Err(error) => self.error = Some(error),
-                }
+                self.insert_layer2_object_after_selection(records.len());
             }
             let has_selection = self.selected_layer2_object < records.len();
             if ui
@@ -741,9 +707,6 @@ impl VanillaLevelEditor {
                 self.apply_layer2_object_result(Ok(vec![ObjectEdit::Remove {
                     index: self.selected_layer2_object,
                 }]));
-                self.selected_layer2_object = self
-                    .selected_layer2_object
-                    .min(records.len().saturating_sub(2));
             }
             self.layer2_object_move_buttons(ui, records.len());
             if ui
@@ -783,11 +746,63 @@ impl VanillaLevelEditor {
                             .map_err(|error| error.to_string())
                     });
                 match result {
-                    Ok(()) => self.error = None,
+                    Ok(()) => {
+                        self.reload_layer2_object_form();
+                        self.error = None;
+                    }
                     Err(error) => self.error = Some(error),
                 }
             }
             Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn insert_layer2_object_after_selection(&mut self, record_count: usize) {
+        let insertion = object_insertion_index(self.selected_layer2_object, record_count);
+        let result = self
+            .layer2_object_record_for_placement()
+            .and_then(|record| {
+                self.controller
+                    .as_mut()
+                    .ok_or_else(|| "level controller is unavailable".to_owned())?
+                    .apply_layer2_object_edits(&[ObjectEdit::Insert {
+                        index: insertion,
+                        record,
+                    }])
+                    .map_err(|error| error.to_string())
+            });
+        match result {
+            Ok(()) => {
+                self.selected_layer2_object = insertion;
+                self.reload_layer2_object_form();
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    fn reload_layer2_object_form(&mut self) {
+        let records = self.controller.as_ref().and_then(|controller| {
+            controller.layer2().and_then(|layer2| match layer2 {
+                lm_level::NativeLayer2Data::Objects(objects) => Some(&objects.objects.records),
+                lm_level::NativeLayer2Data::Tilemap(_) => None,
+            })
+        });
+        let Some(records) = records else {
+            self.selected_layer2_object = 0;
+            self.layer2_object_form = ObjectForm::default();
+            self.layer2_object_placement_template = None;
+            return;
+        };
+        self.selected_layer2_object = self
+            .selected_layer2_object
+            .min(records.len().saturating_sub(1));
+        if let Some(record) = records.get(self.selected_layer2_object).cloned() {
+            self.layer2_object_form = ObjectForm::from_record(&record);
+            self.layer2_object_placement_template = Some(record);
+        } else {
+            self.layer2_object_form = ObjectForm::default();
+            self.layer2_object_placement_template = None;
         }
     }
 
@@ -8533,8 +8548,24 @@ mod tests {
             None,
         );
         editor.layer2_object_form = ObjectForm::from_record(&template);
-        let before = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+        editor.layer2_object_placement_template = Some(template.clone());
+        let before_button_insert = match editor.controller.as_ref().unwrap().layer2().unwrap() {
             lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        let expected_button_selection =
+            object_insertion_index(editor.selected_layer2_object, before_button_insert);
+        editor.insert_layer2_object_after_selection(before_button_insert);
+        assert_eq!(editor.selected_layer2_object, expected_button_selection);
+        assert_eq!(
+            editor.layer2_object_form.encoded,
+            crate::level_editor_forms::format_bytes(template.encoded())
+        );
+        let before = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => {
+                assert_eq!(objects.objects.records.len(), before_button_insert + 1);
+                objects.objects.records.len()
+            }
             lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
         };
         let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(6144.0, 384.0));
@@ -8592,7 +8623,37 @@ mod tests {
             lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
         };
         assert_eq!(reordered, template);
-        let count_before_invalid = before_paste + 1;
+        let mut replacement = reordered.clone();
+        replacement
+            .set_parameter(replacement.parameter().wrapping_add(1))
+            .unwrap();
+        editor.apply_layer2_object_result(Ok(vec![ObjectEdit::Replace {
+            index: editor.selected_layer2_object,
+            record: replacement.clone(),
+        }]));
+        assert_eq!(
+            editor.layer2_object_form.encoded,
+            crate::level_editor_forms::format_bytes(replacement.encoded())
+        );
+        assert_eq!(
+            editor.layer2_object_placement_template.as_ref(),
+            Some(&replacement)
+        );
+
+        let removed = editor.selected_layer2_object;
+        editor.apply_layer2_object_result(Ok(vec![ObjectEdit::Remove { index: removed }]));
+        let records_after_remove = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => &objects.objects.records,
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(records_after_remove.len(), before_paste);
+        assert_eq!(
+            editor.layer2_object_form.encoded,
+            crate::level_editor_forms::format_bytes(
+                records_after_remove[editor.selected_layer2_object].encoded()
+            )
+        );
+        let count_before_invalid = records_after_remove.len();
         editor.paste_layer2_object("not a typed object", count_before_invalid);
         let count_after_invalid = match editor.controller.as_ref().unwrap().layer2().unwrap() {
             lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),

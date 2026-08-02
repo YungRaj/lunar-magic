@@ -95,6 +95,13 @@ interactive level import workflow, and a CLI transaction does not prove its nati
 | Help | Help topics, diagnostics, version/about | ~ | N/A | ~ | - | - | Partial | Native Help → About exposes the Rust build version, clean-room identity, Lunar Magic 3.63 compatibility target, license, source link, and a source-URL clipboard action. Help → Build diagnostics presents and copies a bounded non-sensitive report containing build identity plus project dirty state, active editor, profile/save state, undo/redo availability, and current level; it excludes paths and project content. Original CHM topic launching, deeper ROM/runtime diagnostics, About layout equivalence, and Wine evidence remain missing |
 | Release | Installer, portable packaging, updates, crash recovery | - | - | - | - | - | Missing | Required for mature drop-in replacement; not represented by format tests |
 
+The native object-backed Layer 2 list now uses one staged-state synchronization boundary for its
+ordinary controls: list-button insertion selects and reloads the inserted record, accepted raw or
+semantic replacements reload canonical fields, and deletion clamps to and reloads a surviving
+record or clears the form/template when the stream becomes empty. The application-backed
+`vanilla_level_editor::tests::primary_canvas_places_and_drags_object_backed_layer2` workflow covers
+those actions together with reordering, typed paste, ROM reopen, and undo.
+
 ## Current critical path
 
 The fastest route to a broadly usable editor is:

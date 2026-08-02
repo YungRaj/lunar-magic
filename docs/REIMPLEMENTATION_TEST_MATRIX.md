@@ -521,6 +521,10 @@ compact and parameter-2 extended shapes, preserve the unrelated new-screen bit, 
 records/out-of-range screens atomically, reload the visible semantic and raw forms from the staged
 canonical record after every accepted edit, and round-trip all source-screen and representation
 boundaries through real Lunar Magic 3.63 MWL import/re-export cycles.
+Object-backed Layer 2 list actions also reload exclusively from accepted staged controller state:
+button insertion selects the actual new index, replacements decode the canonical record, deletion
+clamps to a survivor, and an empty stream clears both the form and extension-preserving placement
+template. Rejected batches retain the prior selection and form.
 
 Auxiliary level editing stages entrances, screen exits, secondary exits, and Map16 overrides in one
 cross-domain transaction. The first three retain their explicit sequence ordering; Map16 overrides
