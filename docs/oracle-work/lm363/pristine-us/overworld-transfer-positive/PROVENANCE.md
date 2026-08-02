@@ -35,8 +35,11 @@ recovered native domains. The transfer preserves all 8,192 Map16 definition word
 normalized acts-like entries, 14 path links, two player starts, seven overworld
 settings records, 194 ordinary messages, and seven boss-sequence messages. It materializes 54
 warp links from the pristine 27-link representation and 96 direct level names from the pristine
-93-name representation. All three manifests intentionally retain the same 124 changed ranges and
-23 newly owned RATS blocks while differing only in their semantic observation scope.
+93-name representation. Each expanded-settings record additionally retains the recovered Layer 3
+mode-enabled flag, packed mode, alternate-source route, and primary additive input. Refreshing the
+two full observations for these four typed fields per record leaves every pre-existing semantic
+entry unchanged. All three manifests intentionally retain the same 124 changed ranges and 23 newly
+owned RATS blocks while differing only in their semantic observation scope.
 
 Replay with:
 

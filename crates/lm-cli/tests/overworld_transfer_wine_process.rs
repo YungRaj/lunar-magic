@@ -119,11 +119,22 @@ fn verify_full_observation(fixture: &Path, output: &Path) {
         .output()
         .unwrap();
     assert_success(&observe);
-    assert_eq!(
-        fs::read_to_string(output).unwrap(),
-        fs::read_to_string(fixture.join("after-full.obs")).unwrap()
+    let actual_text = fs::read_to_string(output).unwrap();
+    let expected_text = fs::read_to_string(fixture.join("after-full.obs")).unwrap();
+    let full = Observation::from_text(&actual_text).unwrap();
+    let expected = Observation::from_text(&expected_text).unwrap();
+    let differences = expected.differences(&full);
+    assert!(
+        differences.is_empty(),
+        "full overworld observation differs at up to the first 16 paths: {:?}",
+        &differences[..differences.len().min(16)]
     );
-    let full = Observation::from_text(&fs::read_to_string(output).unwrap()).unwrap();
+    assert_eq!(actual_text, full.to_text(), "generated observation is not canonical");
+    assert_eq!(
+        expected_text,
+        expected.to_text(),
+        "retained observation is not canonical"
+    );
     for (path, expected) in [
         ("map16/transferred/definition-words", "8192"),
         ("map16/transferred/acts-like-count", "2884"),
@@ -134,6 +145,19 @@ fn verify_full_observation(fixture: &Path, output: &Path) {
         ("overworld/expanded-settings/count", "7"),
         ("overworld/messages/count", "194"),
         ("overworld/boss-sequence/message-count", "7"),
+        (
+            "overworld/expanded-settings/00/layer3/mode-enabled",
+            "false",
+        ),
+        ("overworld/expanded-settings/00/layer3/mode-packed", "0"),
+        (
+            "overworld/expanded-settings/00/layer3/alternate-source-route",
+            "none",
+        ),
+        (
+            "overworld/expanded-settings/00/layer3/primary-additive-input",
+            "none",
+        ),
     ] {
         assert_eq!(full.get(path), Some(expected), "{path}");
     }

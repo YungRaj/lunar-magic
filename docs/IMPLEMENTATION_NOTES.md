@@ -3157,7 +3157,14 @@ snapshot to thirteen recovered domains. The real pristine transfer preserves all
 links, both player starts, seven expanded-settings records, 194 messages, and seven boss-sequence
 messages; it materializes 54 warp links from the stock 27-link representation and 96 direct level
 names from the stock 93-name representation. `oracle-full.manifest` binds these decoded meanings
-to the same 124 changed ranges and 23 exact RATS owners.
+to the same 124 changed ranges and 23 exact RATS owners. The full observer now also retains four
+typed Layer 3 composition fields for each of the seven expanded-settings records: mode enabled,
+packed mode, alternate-source route, and primary additive input. Regenerating both observations
+from the unchanged authentic ROM pair adds exactly 28 paths without changing any existing value,
+ROM digest, changed range, argument, or owner. The built-process gate compares parsed observations,
+prints at most the first sixteen semantic differences on failure, separately requires canonical
+text, and explicitly checks the four slot-zero values; this replaces an unusable multi-megabyte
+string assertion while preserving complete equality.
 The same transaction's Map16 installation is independently decoded by
 `smw-transferred-map16-observe ROM OBSERVATION`. It follows the exact split operands in the
 revision-0 runtime, validates all three RATS owners, decodes the back-to-back even/odd definition
