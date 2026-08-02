@@ -934,6 +934,41 @@ mod tests {
     }
 
     #[test]
+    fn os2_huffman1d_bmp_reaches_native_preview_with_palette_and_orientation_intact() {
+        let pixel_offset = 86_usize;
+        let stream = [0, 25, 128, 13, 176, 1, 0, 16, 1, 0, 16, 1, 0, 16];
+        let mut bytes = vec![0; pixel_offset];
+        bytes.extend_from_slice(&stream);
+        let file_len = u32::try_from(bytes.len()).unwrap();
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&u32::try_from(pixel_offset).unwrap().to_le_bytes());
+        bytes[14..18].copy_from_slice(&64_u32.to_le_bytes());
+        bytes[18..22].copy_from_slice(&8_u32.to_le_bytes());
+        bytes[22..26].copy_from_slice(&2_u32.to_le_bytes());
+        bytes[26..28].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[28..30].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[30..34].copy_from_slice(&3_u32.to_le_bytes());
+        bytes[34..38].copy_from_slice(&u32::try_from(stream.len()).unwrap().to_le_bytes());
+        bytes[46..50].copy_from_slice(&2_u32.to_le_bytes());
+        bytes[78..82].copy_from_slice(&[0x56, 0x34, 0x12, 0]);
+        bytes[82..86].copy_from_slice(&[0xbc, 0x9a, 0x78, 0]);
+
+        let decoded = decode_map16_bitmap_image(&bytes).unwrap();
+        let preview = rgba_image(&decoded.pixels, decoded.width, decoded.height);
+        assert_eq!(preview.size, [8, 2]);
+        assert_eq!(
+            preview.pixels[0],
+            egui::Color32::from_rgba_unmultiplied(0x12, 0x34, 0x56, 0xff)
+        );
+        assert_eq!(
+            preview.pixels[4],
+            egui::Color32::from_rgba_unmultiplied(0x78, 0x9a, 0xbc, 0xff)
+        );
+        assert_eq!(preview.pixels[8], preview.pixels[0]);
+    }
+
+    #[test]
     fn preview_size_preserves_source_aspect_ratio_and_integer_zoom() {
         assert_eq!(preview_size(32, 16, 1), egui::vec2(32.0, 16.0));
         assert_eq!(preview_size(32, 16, 4), egui::vec2(128.0, 64.0));

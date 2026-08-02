@@ -819,6 +819,7 @@ fn decode_os2_v2_bmp_image(
         0 => true,
         1 => bits == 8,
         2 => bits == 4,
+        3 => bits == 1,
         4 => bits == 24,
         _ => false,
     };
@@ -851,6 +852,43 @@ fn decode_os2_v2_bmp_image(
     let pixel_count = width
         .checked_mul(height)
         .ok_or(Map16BmpDecodeError::PixelData)?;
+    if compression == 3 {
+        let (palette_start, palette_entries) = palette.ok_or(Map16BmpDecodeError::Palette)?;
+        if palette_entries != 2 {
+            return Err(Map16BmpDecodeError::Palette);
+        }
+        let declared_size =
+            usize::try_from(bmp_u32(bytes, 34)?).map_err(|_| Map16BmpDecodeError::Rle)?;
+        let stream_end = if declared_size == 0 {
+            bytes.len()
+        } else {
+            pixel_offset
+                .checked_add(declared_size)
+                .ok_or(Map16BmpDecodeError::Rle)?
+        };
+        let stream = bytes
+            .get(pixel_offset..stream_end)
+            .ok_or(Map16BmpDecodeError::Rle)?;
+        let palette = [
+            Rgba8 {
+                red: bytes[palette_start + 2],
+                green: bytes[palette_start + 1],
+                blue: bytes[palette_start],
+                alpha: 255,
+            },
+            Rgba8 {
+                red: bytes[palette_start + 6],
+                green: bytes[palette_start + 5],
+                blue: bytes[palette_start + 4],
+                alpha: 255,
+            },
+        ];
+        return Ok(DecodedMap16Bitmap {
+            width,
+            height,
+            pixels: decode_os2_bmp_huffman1d(stream, width, height, palette)?,
+        });
+    }
     if compression == 4 {
         let declared_size =
             usize::try_from(bmp_u32(bytes, 34)?).map_err(|_| Map16BmpDecodeError::Rle)?;
@@ -1361,6 +1399,46 @@ fn decode_os2_bmp_rle24(
     }
     if !ended {
         return Err(Map16BmpDecodeError::Rle);
+    }
+    Ok(pixels)
+}
+
+fn decode_os2_bmp_huffman1d(
+    stream: &[u8],
+    width: usize,
+    height: usize,
+    palette: [Rgba8; 2],
+) -> Result<Vec<Rgba8>, Map16BmpDecodeError> {
+    let width_u16 = u16::try_from(width).map_err(|_| Map16BmpDecodeError::Rle)?;
+    let mut rows = Vec::with_capacity(height);
+    let mut valid = true;
+    let decoded = fax::decoder::decode_g3(stream.iter().copied(), |transitions| {
+        if rows.len() >= height
+            || transitions.iter().enumerate().any(|(index, position)| {
+                *position > width_u16 || index > 0 && transitions[index - 1] >= *position
+            })
+        {
+            valid = false;
+            return;
+        }
+        rows.push(
+            fax::decoder::pels(transitions, width_u16)
+                .map(|color| match color {
+                    fax::Color::White => palette[0],
+                    fax::Color::Black => palette[1],
+                })
+                .collect::<Vec<_>>(),
+        );
+    });
+    if decoded.is_none() || !valid || rows.len() != height {
+        return Err(Map16BmpDecodeError::Rle);
+    }
+    let mut pixels = Vec::with_capacity(width.checked_mul(height).ok_or(Map16BmpDecodeError::Rle)?);
+    for row in rows.into_iter().rev() {
+        if row.len() != width {
+            return Err(Map16BmpDecodeError::Rle);
+        }
+        pixels.extend(row);
     }
     Ok(pixels)
 }
@@ -1932,6 +2010,32 @@ mod tests {
         bytes
     }
 
+    fn test_group3_bits(bits: &[u8]) -> Vec<u8> {
+        bits.chunks(8)
+            .map(|chunk| {
+                chunk
+                    .iter()
+                    .enumerate()
+                    .fold(0_u8, |byte, (index, bit)| byte | (*bit << (7 - index)))
+            })
+            .collect()
+    }
+
+    fn test_group3_two_rows() -> Vec<u8> {
+        const EOL: [u8; 12] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        let mut bits = Vec::new();
+        bits.extend_from_slice(&EOL);
+        bits.extend_from_slice(&[1, 0, 0, 1, 1]); // stored bottom: white run 8
+        bits.extend_from_slice(&EOL);
+        bits.extend_from_slice(&[1, 0, 1, 1]); // stored top: white run 4
+        bits.extend_from_slice(&[0, 1, 1]); // then black run 4
+        bits.extend_from_slice(&EOL);
+        for _ in 0..5 {
+            bits.extend_from_slice(&EOL);
+        }
+        test_group3_bits(&bits)
+    }
+
     fn test_embedded_bmp(width: usize, height: usize, compression: u32, payload: &[u8]) -> Vec<u8> {
         let pixel_offset = 54_usize;
         let mut bytes = vec![0; pixel_offset];
@@ -2454,6 +2558,41 @@ mod tests {
     }
 
     #[test]
+    fn bmp_decoder_handles_os2_v2_huffman1d_rows_palette_and_orientation() {
+        let palette = [
+            Rgba8 {
+                red: 1,
+                green: 2,
+                blue: 3,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 0x12,
+                green: 0x34,
+                blue: 0x56,
+                alpha: 255,
+            },
+        ];
+        let decoded = decode_map16_bitmap_bmp_image(&test_os2_v2_bmp(
+            8,
+            2,
+            1,
+            3,
+            &palette,
+            &test_group3_two_rows(),
+        ))
+        .unwrap();
+        assert_eq!(
+            decoded.pixels,
+            [palette[0]; 4]
+                .into_iter()
+                .chain([palette[1]; 4])
+                .chain([palette[0]; 8])
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn bmp_decoder_rejects_malformed_and_incompatible_os2_v2_images() {
         let palette = vec![Rgba8 {
             red: 1,
@@ -2481,12 +2620,36 @@ mod tests {
             decode_map16_bitmap_bmp_image(&bad_planes),
             Err(Map16BmpDecodeError::Planes(2))
         );
-        let mut huffman = valid.clone();
-        huffman[28..30].copy_from_slice(&1_u16.to_le_bytes());
-        huffman[30..34].copy_from_slice(&3_u32.to_le_bytes());
+        let huffman_palette = [palette[0], palette[0]];
+        let huffman = test_os2_v2_bmp(8, 2, 1, 3, &huffman_palette, &test_group3_two_rows());
+        let mut wrong_rows = huffman.clone();
+        wrong_rows[22..26].copy_from_slice(&1_u32.to_le_bytes());
         assert_eq!(
-            decode_map16_bitmap_bmp_image(&huffman),
-            Err(Map16BmpDecodeError::Compression(3))
+            decode_map16_bitmap_bmp_image(&wrong_rows),
+            Err(Map16BmpDecodeError::Rle)
+        );
+        let mut overwide = huffman.clone();
+        overwide[18..22].copy_from_slice(&4_u32.to_le_bytes());
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&overwide),
+            Err(Map16BmpDecodeError::Rle)
+        );
+        let mut truncated_huffman = huffman;
+        truncated_huffman.truncate(truncated_huffman.len() - 2);
+        truncated_huffman[34..38].copy_from_slice(
+            &u32::try_from(test_group3_two_rows().len() - 2)
+                .unwrap()
+                .to_le_bytes(),
+        );
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&truncated_huffman),
+            Err(Map16BmpDecodeError::Rle)
+        );
+        let huffman_short_palette =
+            test_os2_v2_bmp(8, 2, 1, 3, &huffman_palette[..1], &test_group3_two_rows());
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&huffman_short_palette),
+            Err(Map16BmpDecodeError::Palette)
         );
         let rle24 = test_os2_v2_bmp(1, 1, 24, 4, &[], &[1, 2, 3]);
         assert_eq!(
