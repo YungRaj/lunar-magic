@@ -312,10 +312,10 @@ fn lunar_magic_downgrades_unneeded_expanded_sprite_framing() {
     fs::remove_dir_all(directory).unwrap();
 }
 
-/// Proves Lunar Magic ignores and strips expanded `$80..FD` control pairs on serialization.
+/// Proves Lunar Magic strips ignored controls and redundant upper-Y transitions on serialization.
 #[test]
 #[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
-fn lunar_magic_strips_ignored_expanded_sprite_controls() {
+fn lunar_magic_canonicalizes_expanded_sprite_controls() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
     let original_rom = root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc");
@@ -337,16 +337,35 @@ fn lunar_magic_strips_ignored_expanded_sprite_controls() {
     assert!(written.sprites.tokens.len() >= 2);
     written.sprites.expanded = true;
     written.sprites.header |= NativeSpriteStream::EXPANDED_HEADER_FLAG;
-    written.sprites.tokens.insert(0, SpriteToken::Control(0x80));
-    written.sprites.tokens.insert(1, SpriteToken::Screen(2));
-    written.sprites.tokens.insert(3, SpriteToken::Control(0xfd));
+    written.sprites.tokens.insert(0, SpriteToken::Screen(0));
+    written.sprites.tokens.insert(1, SpriteToken::Control(0x80));
+    written.sprites.tokens.insert(2, SpriteToken::Screen(2));
+    written.sprites.tokens.insert(3, SpriteToken::Screen(2));
+    written.sprites.tokens.insert(5, SpriteToken::Control(0xfd));
+    written.sprites.tokens.push(SpriteToken::Screen(2));
+    let mut allocation_level = written.clone();
+    let reserve = written
+        .sprites
+        .tokens
+        .iter()
+        .find_map(|token| match token {
+            SpriteToken::Record(record) => Some(SpriteToken::Record(record.clone())),
+            SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+        })
+        .unwrap();
+    allocation_level.sprites.tokens.extend([
+        reserve.clone(),
+        reserve.clone(),
+        reserve.clone(),
+        reserve,
+    ]);
 
     layout.expanded_sprites = true;
     let protected = vec![ProtectedRange(0x7fc0..0x8000)];
     project
         .relocate_level_sprites_with_checksum(
             layout,
-            &written,
+            &allocation_level,
             &lengths,
             0x7fdc,
             &LevelSaveOptions {
@@ -369,6 +388,24 @@ fn lunar_magic_strips_ignored_expanded_sprite_controls() {
             },
         )
         .unwrap();
+    let sprite_offset = layout
+        .sprites
+        .read_snes_pointer(&project.rom, 0x105)
+        .unwrap()
+        .to_pc(layout.mapper)
+        .unwrap();
+    let injected = written.sprites.encode_for_table(&lengths).unwrap();
+    assert!(injected.windows(2).any(|bytes| bytes == [0xff, 0x80]));
+    assert!(injected.windows(4).any(|bytes| bytes == [0xff, 2, 0xff, 2]));
+    project.rom.write(sprite_offset, &injected).unwrap();
+    project.rom.update_snes_checksum(0x7fdc).unwrap();
+    assert_eq!(
+        project
+            .load_level_slot(0x105, layout, &lengths)
+            .unwrap()
+            .sprites,
+        written.sprites
+    );
     fs::write(&edited_rom, project.save_snapshot()).unwrap();
 
     run_lunar_magic_level_command(
@@ -392,9 +429,7 @@ fn lunar_magic_strips_ignored_expanded_sprite_controls() {
     );
     let actual = MwlNativeLevel::decode(&reexported, &lengths, 32, &modes).unwrap();
     let mut expected = written.sprites.clone();
-    expected
-        .tokens
-        .retain(|token| !matches!(token, SpriteToken::Control(_)));
+    expected.canonicalize_framing();
     assert_eq!(actual.sprites, expected);
     let reopened_rom = RomImage::from_bytes(fs::read(&edited_rom).unwrap()).unwrap();
     assert!(detect_identity(&reopened_rom).unwrap().checksum_matches());

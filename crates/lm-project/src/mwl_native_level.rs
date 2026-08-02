@@ -301,8 +301,12 @@ mod tests {
         let modes = [false; 256];
         let mut expected = semantic_level();
         expected.flags = 1;
-        expected.sprites =
-            NativeSpriteStream::parse(&[0x20, 0xff, 1, 0xff, 0xfe], true, &lengths).unwrap();
+        expected.sprites = NativeSpriteStream::parse(
+            &[0x20, 0xff, 1, 0x00, 0x00, 0x01, 0xff, 0xfe],
+            true,
+            &lengths,
+        )
+        .unwrap();
 
         let file = expected.encode(&lengths, &modes).unwrap();
         assert_eq!(file.flags, 1);

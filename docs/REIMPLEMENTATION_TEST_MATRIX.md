@@ -26,7 +26,9 @@ On macOS, Windows, and Linux, the opt-in `snes9x_smoke` gates find Snes9x throug
 the platform default, or `PATH`; expand the supplied pristine fixture; insert/repoint a
 standard Layer 1 object, install support patch B plus a forced `$ABC` custom-time command, update a
 fixed-width standard sprite placement in place, and independently edit/repoint installed level
-`$105` Layer 2 through the Rust project API. Another gate starts from
+`$105` Layer 2 through the Rust project API. A separate installed-ROM gate publishes and
+semantically reopens an expanded upper-Y sprite transition before booting that exact output.
+Another gate starts from
 the pristine fixture, uses the snapshot-bound application controller to change a Map16 quadrant,
 expands and installs all native split tables, and reopens the exact definition before launch. Every
 path repairs the checksum, semantically reopens the generated state, launches only the temporary

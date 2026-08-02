@@ -47,11 +47,30 @@ impl NativeSpriteStream {
         })
     }
 
-    /// Drops Lunar Magic-ignored controls, selects canonical framing, and synchronizes bit `$20`.
+    /// Rebuilds Lunar Magic's minimum upper-Y transitions, drops ignored controls, selects
+    /// canonical framing, and synchronizes bit `$20`.
+    ///
+    /// Raw parsing and encoding remain byte-lossless. Semantic save paths call this operation to
+    /// discard leading/repeated/trailing state commands that do not change any record placement.
     pub fn canonicalize_framing(&mut self) {
-        self.tokens.retain(
-            |token| !matches!(token, SpriteToken::Control(value) if (0x80..=0xfd).contains(value)),
-        );
+        let mut active_upper_y = 0_u8;
+        let mut emitted_upper_y = 0_u8;
+        let mut canonical = Vec::with_capacity(self.tokens.len());
+        for token in self.tokens.drain(..) {
+            match token {
+                SpriteToken::Screen(value) => active_upper_y = value,
+                SpriteToken::Control(value) if (0x80..=0xfd).contains(&value) => {}
+                SpriteToken::Record(record) => {
+                    if active_upper_y != emitted_upper_y {
+                        canonical.push(SpriteToken::Screen(active_upper_y));
+                        emitted_upper_y = active_upper_y;
+                    }
+                    canonical.push(SpriteToken::Record(record));
+                }
+                invalid @ SpriteToken::Control(_) => canonical.push(invalid),
+            }
+        }
+        self.tokens = canonical;
         self.expanded = self.requires_expanded_framing();
         if self.expanded {
             self.header |= Self::EXPANDED_HEADER_FLAG;
@@ -176,6 +195,47 @@ mod tests {
                 })],
             }
         );
+    }
+
+    #[test]
+    fn semantic_canonicalization_emits_only_record_effective_upper_y_transitions() {
+        let record = |id| {
+            SpriteToken::Record(SpriteRecord {
+                encoded: vec![0, 0, id],
+            })
+        };
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Screen(0),
+                SpriteToken::Control(0x80),
+                SpriteToken::Screen(2),
+                SpriteToken::Screen(2),
+                record(1),
+                SpriteToken::Control(0xfd),
+                record(2),
+                SpriteToken::Screen(0),
+                record(3),
+                SpriteToken::Screen(0),
+                SpriteToken::Screen(7),
+            ],
+        };
+
+        stream.canonicalize_framing();
+
+        assert_eq!(
+            stream.tokens,
+            vec![
+                SpriteToken::Screen(2),
+                record(1),
+                record(2),
+                SpriteToken::Screen(0),
+                record(3),
+            ]
+        );
+        assert!(stream.expanded);
+        assert_eq!(stream.header, NativeSpriteStream::EXPANDED_HEADER_FLAG);
     }
 
     #[test]

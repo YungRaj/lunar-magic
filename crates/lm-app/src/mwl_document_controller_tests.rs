@@ -144,6 +144,36 @@ fn typed_sprite_replacement_preserves_metadata_and_unrelated_sections() {
 }
 
 #[test]
+fn typed_sprite_replacement_canonicalizes_record_effective_upper_y_state() {
+    let lengths = SpriteLengthTable::standard();
+    let mut controller = sprite_controller();
+    let record = controller.sprites(false, &lengths).unwrap().tokens[0].clone();
+    let sprites = NativeSpriteStream {
+        header: 4,
+        expanded: true,
+        tokens: vec![
+            SpriteToken::Screen(0),
+            SpriteToken::Screen(3),
+            SpriteToken::Control(0x80),
+            SpriteToken::Screen(3),
+            record.clone(),
+            SpriteToken::Screen(3),
+        ],
+    };
+
+    controller.replace_sprites(0, &sprites, &lengths).unwrap();
+
+    assert_eq!(
+        controller.sprites(true, &lengths).unwrap(),
+        NativeSpriteStream {
+            header: 4 | NativeSpriteStream::EXPANDED_HEADER_FLAG,
+            expanded: true,
+            tokens: vec![SpriteToken::Screen(3), record],
+        }
+    );
+}
+
+#[test]
 fn typed_sprite_replacement_rejects_stale_and_invalid_streams_atomically() {
     let lengths = SpriteLengthTable::standard();
     let mut controller = sprite_controller();

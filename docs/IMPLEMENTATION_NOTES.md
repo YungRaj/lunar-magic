@@ -3711,6 +3711,13 @@ painter-ordered set of signed tile instances, an explicit placement behind Layer
 CLI refuses stale planes whose digest does not match the level bundle. Oracle-backed tools can thus
 materialize native remap behavior without duplicating or guessing that interpreter in the renderer.
 
+Expanded sprite semantic publication now reconstructs the control stream from each record's
+effective upper-Y state. A live Lunar Magic 3.63 export proved that a leading `$FF 00`, repeated
+`$FF 02`, ignored `$FF 80`/`$FF FD`, and a trailing `$FF 02` are all discarded while one required
+`$FF 02` is retained immediately before the affected records. The shared canonicalizer reproduces
+that minimum transition sequence for ROM, MWL, native-level, CLI, and graphical saves while the raw
+parser and checked encoder remain byte-lossless for forensic interchange.
+
 Expanded graphics profiles with 129 through 4,096 entries expose installed ExGFX transfer in the
 native graphics editor. The standard/extended boundary is file `$080`; canonical names are
 `ExGFX80.bin` through `ExGFXFFF.bin`. ROM audit requires every standard `$000..$033` pointer and

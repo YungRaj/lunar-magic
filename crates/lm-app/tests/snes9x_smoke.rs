@@ -1,7 +1,7 @@
 use lm_app::{AppState, Command as AppCommand, Map16ControllerEdit, SmwMap16Controller};
 use lm_level::{
-    CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, ObjectEdit,
-    SpriteLengthTable, SpriteToken, Subtile,
+    CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, NativeSpriteStream,
+    ObjectEdit, SpriteLengthTable, SpriteToken, Subtile,
 };
 use lm_profile::{SmwUsV1CompleteMap16SaveOptions, load_smw_us_v1_transferred_map16};
 use lm_project::Project;
@@ -467,5 +467,85 @@ fn rust_standard_sprite_edit_survives_snes9x_initialization() {
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-standard-sprite-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write sprite-edited ROM");
+    require_snes9x_initialization(&snes9x, &output);
+}
+
+#[test]
+#[ignore = "requires local Snes9x plus retained Lunar Magic 3.63 installed-ROM fixture"]
+fn rust_expanded_sprite_transition_edit_survives_snes9x_initialization() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = require_snes9x_binary();
+    let installed = root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc");
+    let image = RomImage::from_bytes(fs::read(installed).expect("read installed SMW fixture"))
+        .expect("decode installed SMW fixture");
+    let mut project = Project::new(image.clone());
+    let lengths = SpriteLengthTable::standard();
+    let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image)
+        .expect("detect installed sprite pointers");
+    let sprite_offset = layout
+        .sprites
+        .read_snes_pointer(&image, 0x105)
+        .expect("read installed sprite pointer")
+        .to_pc(layout.mapper)
+        .expect("map installed sprite pointer");
+    layout.expanded_sprites = NativeSpriteStream::header_uses_expanded_framing(
+        image.read(sprite_offset, 1).expect("read sprite header")[0],
+    );
+    let mut level = project
+        .load_level_slot(0x105, layout, &lengths)
+        .expect("load installed level 105");
+    let first_record = level
+        .sprites
+        .tokens
+        .iter()
+        .position(|token| matches!(token, SpriteToken::Record(_)))
+        .expect("level 105 must contain a sprite");
+    level
+        .sprites
+        .tokens
+        .insert(first_record, SpriteToken::Screen(2));
+    level.sprites.canonicalize_framing();
+    layout.expanded_sprites = true;
+
+    project
+        .relocate_level_sprites_with_checksum(
+            layout,
+            &level,
+            &lengths,
+            0x7fdc,
+            &LevelSaveOptions {
+                layer1_allocation: AllocationPolicy {
+                    search: 0..0,
+                    bank_size: None,
+                    fill_bytes: vec![0xff],
+                    protected: vec![ProtectedRange(0x7fc0..0x8000)],
+                },
+                sprite_allocation: AllocationPolicy {
+                    search: 0x80_000..image.logical_len(),
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0x00, 0xff],
+                    protected: vec![ProtectedRange(0x7fc0..0x8000)],
+                },
+                previous_layer1: None,
+                previous_sprites: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .expect("save expanded sprite transition edit");
+    assert_eq!(
+        project
+            .load_level_slot(0x105, layout, &lengths)
+            .expect("reopen expanded sprite transition edit")
+            .sprites,
+        level.sprites
+    );
+
+    let directory = SmokeDirectory::create();
+    let output = directory
+        .0
+        .join("Rust-expanded-sprite-transition-edited-SMW.smc");
+    fs::write(&output, project.save_snapshot()).expect("write expanded-sprite-edited ROM");
     require_snes9x_initialization(&snes9x, &output);
 }
