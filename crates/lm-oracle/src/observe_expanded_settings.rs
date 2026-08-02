@@ -30,6 +30,7 @@ pub fn observe_expanded_settings(record: &ExpandedLevelSettingsRecord) -> Observ
     let layer3 = record
         .layer3_tilemap_graphics_descriptor()
         .expect("fixed Layer 3 descriptor word is in range");
+    let mode = record.layer3_expanded_mode_flags();
     for (path, value) in [
         (
             "expanded-settings/layer3/tilemap-enabled",
@@ -51,6 +52,14 @@ pub fn observe_expanded_settings(record: &ExpandedLevelSettingsRecord) -> Observ
         (
             "expanded-settings/layer3/effective-byte-length",
             layer3.effective_byte_length().to_string(),
+        ),
+        (
+            "expanded-settings/layer3/mode-packed",
+            mode.packed().to_string(),
+        ),
+        (
+            "expanded-settings/layer3/mode-enabled",
+            mode.enabled().to_string(),
         ),
     ] {
         observation
@@ -82,5 +91,13 @@ mod tests {
         assert_eq!(observed.get("expanded-settings/words/0f"), Some("7966"));
         assert_eq!(observed.get("expanded-settings/raw").unwrap().len(), 64);
         assert_eq!(observed.get("expanded-settings/layer3/file"), Some("770"));
+        assert_eq!(
+            observed.get("expanded-settings/layer3/mode-packed"),
+            Some("286331153")
+        );
+        assert_eq!(
+            observed.get("expanded-settings/layer3/mode-enabled"),
+            Some("true")
+        );
     }
 }

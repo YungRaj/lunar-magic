@@ -10,6 +10,86 @@ const SELECTOR_MASK: u16 = 3;
 const DESTINATION_WORD_OFFSETS: [u16; 4] = [0, 0, 0, 0x0800];
 const REQUESTED_BYTE_LENGTHS: [u16; 4] = [0x2000, 0x1000, 0x0800, 0];
 const TILEMAP_WORD_CAPACITY: u16 = 0x1000;
+const MODE_LOW_NIBBLE_WORDS: [usize; 4] = [12, 13, 14, 15];
+const MODE_HIGH_NIBBLE_WORDS: [usize; 4] = [8, 9, 10, 11];
+const MODE_ENABLED_MASK: u32 = 1;
+const MODE_ROW_MASK: u32 = 0x07ff;
+const MODE_ROW_SIGN_BIT: u32 = 0x0400;
+const MODE_ROW_LOW_SHIFT: u32 = 3;
+const MODE_ROW_HIGH_SHIFT: u32 = 20;
+const MODE_TYPE_LOW_SHIFT: u32 = 12;
+const MODE_TYPE_HIGH_SHIFT: u32 = 22;
+const ORDINARY_EDITOR_ROW_BIAS: i16 = 12;
+
+/// The recovered Layer 3 editor-row adjustment derived from expanded level settings.
+///
+/// `offset` is measured in Lunar Magic's 16-pixel editor rows. Some packed mode types clamp
+/// source rows beyond row 30 instead of applying the ordinary mode's twelve-row bias.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Layer3ExpandedEditorRow {
+    pub offset: i16,
+    pub clamp_at_30: bool,
+}
+
+/// Lunar Magic's exact packed high nibbles from expanded-settings words 8–15.
+///
+/// Only the enable bit and editor-row behavior have authenticated meanings here. The remaining
+/// bits are retained in `packed()` because they also feed a larger unresolved slot-assignment and
+/// painter dispatcher.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Layer3ExpandedModeFlags(u32);
+
+impl Layer3ExpandedModeFlags {
+    #[must_use]
+    pub const fn from_packed(packed: u32) -> Self {
+        Self(packed)
+    }
+
+    #[must_use]
+    pub const fn packed(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn enabled(self) -> bool {
+        self.0 & MODE_ENABLED_MASK != 0
+    }
+
+    /// Resolves the proven editor-row behavior for the active level configuration.
+    ///
+    /// Lunar Magic applies this state to Layer 3 setting 1, or setting 2 for every object tileset
+    /// except tileset 1. Other settings ignore the packed row fields.
+    #[must_use]
+    pub const fn editor_row(
+        self,
+        layer3_setting: u8,
+        object_tileset: u8,
+    ) -> Option<Layer3ExpandedEditorRow> {
+        if !self.enabled() || !(layer3_setting == 1 || (layer3_setting == 2 && object_tileset != 1))
+        {
+            return None;
+        }
+
+        let mode_type = (((self.0 >> MODE_TYPE_HIGH_SHIFT) & 0x10)
+            | ((self.0 >> MODE_TYPE_LOW_SHIFT) & 0x0f)) as u8;
+        let encoded = (((self.0 >> MODE_ROW_HIGH_SHIFT) & 0x3f) << 5)
+            | ((self.0 >> MODE_ROW_LOW_SHIFT) & 0x1f);
+        let signed = if encoded & MODE_ROW_SIGN_BIT == 0 {
+            encoded as i16
+        } else {
+            (encoded | !MODE_ROW_MASK) as i32 as i16
+        };
+        let clamp_at_30 = mode_type == 1 || (mode_type >= 6 && mode_type <= 0x11);
+        Some(Layer3ExpandedEditorRow {
+            offset: if clamp_at_30 {
+                signed
+            } else {
+                signed - ORDINARY_EDITOR_ROW_BIAS
+            },
+            clamp_at_30,
+        })
+    }
+}
 
 /// Lunar Magic's packed per-level Layer 3 tilemap graphics descriptor.
 ///
@@ -117,6 +197,24 @@ impl Layer3TilemapGraphicsDescriptor {
 }
 
 impl ExpandedLevelSettingsRecord {
+    /// Packs the high nibbles of words 12–15 followed by words 8–11 exactly as Lunar Magic does.
+    #[must_use]
+    pub fn layer3_expanded_mode_flags(&self) -> Layer3ExpandedModeFlags {
+        let encoded = self.encoded();
+        let mut packed = 0_u32;
+        let mut nibble = 0_u32;
+        while nibble < 4 {
+            let low_word = MODE_LOW_NIBBLE_WORDS[nibble as usize];
+            let high_word = MODE_HIGH_NIBBLE_WORDS[nibble as usize];
+            let low = u16::from_le_bytes([encoded[low_word * 2], encoded[low_word * 2 + 1]]);
+            let high = u16::from_le_bytes([encoded[high_word * 2], encoded[high_word * 2 + 1]]);
+            packed |= u32::from(low >> 12) << (nibble * 4);
+            packed |= u32::from(high >> 12) << ((nibble + 4) * 4);
+            nibble += 1;
+        }
+        Layer3ExpandedModeFlags::from_packed(packed)
+    }
+
     #[must_use]
     pub fn layer3_tilemap_enabled(&self) -> bool {
         u16::from_le_bytes([self.encoded()[0], self.encoded()[1]]) & LAYER3_ENABLE_MASK != 0
@@ -223,5 +321,103 @@ mod tests {
             descriptor
         );
         assert_eq!(&record.encoded()[4..], &source[4..]);
+    }
+
+    fn record_with_mode_flags(packed: u32) -> ExpandedLevelSettingsRecord {
+        let mut record = ExpandedLevelSettingsRecord::decode(&[0; 32]).unwrap();
+        for (nibble, word) in MODE_LOW_NIBBLE_WORDS.into_iter().enumerate() {
+            record
+                .set_word(word, (((packed >> (nibble * 4)) & 0x0f) as u16) << 12)
+                .unwrap();
+        }
+        for (nibble, word) in MODE_HIGH_NIBBLE_WORDS.into_iter().enumerate() {
+            record
+                .set_word(word, (((packed >> ((nibble + 4) * 4)) & 0x0f) as u16) << 12)
+                .unwrap();
+        }
+        record
+    }
+
+    fn packed_row(encoded_row: u16, mode_type: u8, enabled: bool) -> u32 {
+        let mut packed = (u32::from(encoded_row) & 0x1f) << MODE_ROW_LOW_SHIFT;
+        packed |= ((u32::from(encoded_row) >> 5) & 0x3f) << MODE_ROW_HIGH_SHIFT;
+        packed |= (u32::from(mode_type) & 0x0f) << MODE_TYPE_LOW_SHIFT;
+        packed |= (u32::from(mode_type) & 0x10) << MODE_TYPE_HIGH_SHIFT;
+        if enabled {
+            packed |= MODE_ENABLED_MASK;
+        }
+        packed
+    }
+
+    #[test]
+    fn expanded_mode_pack_uses_exact_word_nibbles_and_preserves_low_bits() {
+        let expected = 0x89ab_cdef;
+        let mut record = record_with_mode_flags(expected);
+        for word in MODE_LOW_NIBBLE_WORDS
+            .into_iter()
+            .chain(MODE_HIGH_NIBBLE_WORDS)
+        {
+            record
+                .set_word(word, record.word(word).unwrap() | 0x0a5b)
+                .unwrap();
+        }
+        assert_eq!(record.layer3_expanded_mode_flags().packed(), expected);
+    }
+
+    #[test]
+    fn expanded_editor_row_obeys_enable_and_level_configuration_gates() {
+        let flags = Layer3ExpandedModeFlags::from_packed(packed_row(20, 1, true));
+        assert_eq!(
+            flags.editor_row(1, 1),
+            Some(Layer3ExpandedEditorRow {
+                offset: 20,
+                clamp_at_30: true,
+            })
+        );
+        assert_eq!(flags.editor_row(2, 0), flags.editor_row(1, 1));
+        assert_eq!(flags.editor_row(2, 1), None);
+        assert_eq!(flags.editor_row(0, 0), None);
+        assert_eq!(flags.editor_row(3, 0), None);
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(packed_row(20, 1, false)).editor_row(1, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn expanded_editor_row_sign_extends_and_applies_type_specific_bias() {
+        let negative_five = 0x07fb;
+        let clamped = Layer3ExpandedModeFlags::from_packed(packed_row(negative_five, 0x11, true));
+        assert_eq!(
+            clamped.editor_row(1, 0),
+            Some(Layer3ExpandedEditorRow {
+                offset: -5,
+                clamp_at_30: true,
+            })
+        );
+        let ordinary = Layer3ExpandedModeFlags::from_packed(packed_row(negative_five, 2, true));
+        assert_eq!(
+            ordinary.editor_row(1, 0),
+            Some(Layer3ExpandedEditorRow {
+                offset: -17,
+                clamp_at_30: false,
+            })
+        );
+        for mode_type in [0, 2, 3, 4, 5, 0x12, 0x1f] {
+            assert!(
+                !Layer3ExpandedModeFlags::from_packed(packed_row(0, mode_type, true))
+                    .editor_row(1, 0)
+                    .unwrap()
+                    .clamp_at_30
+            );
+        }
+        for mode_type in 6..=0x11 {
+            assert!(
+                Layer3ExpandedModeFlags::from_packed(packed_row(0, mode_type, true))
+                    .editor_row(1, 0)
+                    .unwrap()
+                    .clamp_at_30
+            );
+        }
     }
 }

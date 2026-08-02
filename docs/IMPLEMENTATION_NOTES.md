@@ -1223,6 +1223,12 @@ outside the selected range, rejects short decoded inputs without mutation, and e
 selected range for save-time encoding. `layer3-workspace-apply PACKED WORKSPACE DECODED_GFX OUTPUT
 [OBSERVATION]` exposes this component through bounded, create-new batch I/O and emits exact
 descriptor fields plus before/source/selected/after SHA-256 digests for differential fixtures.
+`Layer3ExpandedModeFlags` additionally retains the exact 32-bit value packed from the high nibbles
+of words 12–15 and 8–11. Its typed row resolver reproduces the recovered enable and level/tileset
+gates, split 11-bit sign extension, type-specific twelve-row bias, and row-30 clamp selection.
+`observe-expanded-settings` publishes both the packed value and enable bit so retained ROM records
+can be compared without assigning meanings to the unresolved slot-assignment and painter flags.
+Those opaque flags are not yet applied by the installed renderer.
 The legacy path's generic graphics-remap stream is separately modeled by
 `GraphicsRemapCommandStream`, based on the recovered `DecodeGraphicsRemapCommandStream` instruction
 sequence. Four-byte headers encode a 15-bit destination word, a 14-bit length field, literal versus

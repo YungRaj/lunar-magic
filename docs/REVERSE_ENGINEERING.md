@@ -1556,6 +1556,18 @@ consumes the same fields and tables. The main Layer 3 patch is an exact `$4C0` a
 expanded-settings runtime/table is an exact `$6E00` allocation whose table payload is reached
 through descriptor entry `$70` at runtime offset `$1C0`.
 
+The adjacent expanded mode state is also packed exactly. `GetPackedSpriteGraphicsSlotHighNibbles`
+(`00464B00`) concatenates the high nibbles of expanded-settings words 12, 13, 14, and 15 into bits
+0–15, then words 8, 9, 10, and 11 into bits 16–31; its reciprocal setter proves the ordering while
+leaving every low twelve-bit graphics identifier independent. `ApplyPackedExpandedLevelModeFlags`
+(`00464DF0`) gives one subset of those otherwise opaque flags a verified editor-row meaning when
+packed bit 0 is set and the active Layer 3 setting is 1, or is 2 with object tileset other than 1.
+It assembles an 11-bit signed row from packed bits 3–7 and 20–25. A type code assembled from bits
+12–15 plus bit 26 clamps source rows beyond 30 for type 1 and types 6–17; all other types subtract
+the ordinary twelve-row bias. `RenderLayer3TilemapCellAtCoordinates` (`004502C0`) independently
+proves the row-30 clamp. The remaining packed flags feed the larger slot-assignment/painter
+dispatcher and intentionally remain opaque until that dispatcher is authenticated.
+
 The retained Wine ROM also proves four direct hooks into the `$4C0` main payload. The first three
 are now clean-room runtime contracts: logical `$00201F` replaces
 `LDA $1BE3; BEQ +$20; DEC A` with `JSL entry; BEQ +$1F`; that entry begins at payload offset zero
