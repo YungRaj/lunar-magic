@@ -26,6 +26,14 @@ no corresponding gate, with the reason recorded in evidence.
 Broad format support does not promote a row. For example, decoding MWL files does not prove the
 interactive level import workflow, and a CLI transaction does not prove its native dialog.
 
+Current Map16 bitmap variant evidence additionally covers the 12-byte `BITMAPCOREHEADER`: its
+unsigned dimensions, bottom-up DWORD-padded rows, RGBTRIPLE palettes, indexed 1-/4-/8-bit pixels,
+and 24-bit BGR pixels reach the installed native preview. Malformed core headers, palettes, and
+pixel planes reject before preview construction. This is covered by
+`map16_bitmap_import::tests::bmp_decoder_handles_core_header_rgb_triples_and_bottom_up_rows`,
+`map16_bitmap_import::tests::bmp_decoder_rejects_malformed_core_headers_palettes_and_pixels`, and
+`rom_map16_editor::bitmap_import::tests::core_header_bmp_reaches_the_native_preview_with_rgb_channels_intact`.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

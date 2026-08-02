@@ -829,6 +829,29 @@ mod tests {
     }
 
     #[test]
+    fn core_header_bmp_reaches_the_native_preview_with_rgb_channels_intact() {
+        let pixel_offset = 26_usize;
+        let mut bytes = vec![0; pixel_offset + 4];
+        let file_len = u32::try_from(bytes.len()).unwrap();
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&u32::try_from(pixel_offset).unwrap().to_le_bytes());
+        bytes[14..18].copy_from_slice(&12_u32.to_le_bytes());
+        bytes[18..20].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[20..22].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[22..24].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[24..26].copy_from_slice(&24_u16.to_le_bytes());
+        bytes[pixel_offset..pixel_offset + 3].copy_from_slice(&[0x56, 0x34, 0x12]);
+
+        let decoded = decode_map16_bitmap_image(&bytes).unwrap();
+        let preview = rgba_image(&decoded.pixels, decoded.width, decoded.height);
+        assert_eq!(
+            preview.pixels[0],
+            egui::Color32::from_rgba_unmultiplied(0x12, 0x34, 0x56, 0xff)
+        );
+    }
+
+    #[test]
     fn preview_size_preserves_source_aspect_ratio_and_integer_zoom() {
         assert_eq!(preview_size(32, 16, 1), egui::vec2(32.0, 16.0));
         assert_eq!(preview_size(32, 16, 4), egui::vec2(128.0, 64.0));

@@ -396,9 +396,10 @@ pub fn decode_map16_bitmap_png_image(
 
 /// Decodes a bounded PNG or Windows BMP while retaining its source dimensions.
 ///
-/// BMP input accepts the common 40-byte-or-larger DIB header with indexed 1-, 4-, or 8-bit pixels,
-/// 16-bit RGB, 24-bit BGR, 32-bit BGRX, validated 16-/32-bit RGB/alpha-bitfield pixels,
-/// RLE4/RLE8, or an embedded JPEG/PNG payload. The unused 32-bit `BI_RGB` byte remains opaque.
+/// BMP input accepts the 12-byte core header and common 40-byte-or-larger DIB headers. Supported
+/// pixels include indexed 1-/4-/8-bit, 16-bit RGB, 24-bit BGR, 32-bit BGRX, validated 16-/32-bit
+/// RGB/alpha bitfields, RLE4/RLE8, and embedded JPEG/PNG payloads. The unused 32-bit `BI_RGB`
+/// byte remains opaque.
 ///
 /// # Errors
 ///
@@ -427,12 +428,18 @@ pub fn decode_map16_bitmap_bmp_image(
     if bytes.len() > MAP16_BITMAP_MAX_PNG_BYTES {
         return Err(Map16BmpDecodeError::InputTooLarge(bytes.len()));
     }
-    if !bytes.starts_with(b"BM") || bytes.len() < 54 {
+    if !bytes.starts_with(b"BM") || bytes.len() < 18 {
         return Err(Map16BmpDecodeError::Header);
     }
     let pixel_offset =
         usize::try_from(bmp_u32(bytes, 10)?).map_err(|_| Map16BmpDecodeError::Header)?;
     let dib_size = usize::try_from(bmp_u32(bytes, 14)?).map_err(|_| Map16BmpDecodeError::Header)?;
+    if dib_size == 12 {
+        return decode_core_bmp_image(bytes, pixel_offset);
+    }
+    if bytes.len() < 54 {
+        return Err(Map16BmpDecodeError::Header);
+    }
     if dib_size < 40
         || 14_usize
             .checked_add(dib_size)
@@ -645,6 +652,119 @@ pub fn decode_map16_bitmap_bmp_image(
                 }
             };
             pixels[target_row * width + column] = pixel;
+        }
+    }
+    Ok(DecodedMap16Bitmap {
+        width,
+        height,
+        pixels,
+    })
+}
+
+fn decode_core_bmp_image(
+    bytes: &[u8],
+    pixel_offset: usize,
+) -> Result<DecodedMap16Bitmap, Map16BmpDecodeError> {
+    if bytes.len() < 26 {
+        return Err(Map16BmpDecodeError::Header);
+    }
+    let width = usize::from(bmp_u16(bytes, 18)?);
+    let height = usize::from(bmp_u16(bytes, 20)?);
+    if width == 0
+        || height == 0
+        || width > MAP16_BITMAP_MAX_DIMENSION
+        || height > MAP16_BITMAP_MAX_DIMENSION
+    {
+        return Err(Map16BmpDecodeError::Dimensions {
+            width: i32::try_from(width).unwrap_or(i32::MAX),
+            height: i32::try_from(height).unwrap_or(i32::MAX),
+        });
+    }
+    let planes = bmp_u16(bytes, 22)?;
+    let bits = bmp_u16(bytes, 24)?;
+    if planes != 1 {
+        return Err(Map16BmpDecodeError::Planes(planes));
+    }
+    if !matches!(bits, 1 | 4 | 8 | 24) {
+        return Err(Map16BmpDecodeError::BitDepth(bits));
+    }
+    let palette = if bits <= 8 {
+        let entries = 1_usize << bits;
+        let start = 26_usize;
+        let end = entries
+            .checked_mul(3)
+            .and_then(|length| start.checked_add(length))
+            .ok_or(Map16BmpDecodeError::Palette)?;
+        if end > pixel_offset || end > bytes.len() {
+            return Err(Map16BmpDecodeError::Palette);
+        }
+        Some((start, entries))
+    } else {
+        if pixel_offset < 26 {
+            return Err(Map16BmpDecodeError::PixelData);
+        }
+        None
+    };
+    let row_bits = width
+        .checked_mul(usize::from(bits))
+        .ok_or(Map16BmpDecodeError::PixelData)?;
+    let row_bytes = row_bits
+        .checked_add(7)
+        .map(|value| value / 8)
+        .ok_or(Map16BmpDecodeError::PixelData)?;
+    let stride = row_bytes
+        .checked_add(3)
+        .map(|value| value & !3)
+        .ok_or(Map16BmpDecodeError::PixelData)?;
+    let pixel_end = stride
+        .checked_mul(height)
+        .and_then(|length| pixel_offset.checked_add(length))
+        .ok_or(Map16BmpDecodeError::PixelData)?;
+    if pixel_end > bytes.len() {
+        return Err(Map16BmpDecodeError::PixelData);
+    }
+    let pixel_count = width
+        .checked_mul(height)
+        .ok_or(Map16BmpDecodeError::PixelData)?;
+    let mut pixels = Vec::with_capacity(pixel_count);
+    for target_row in 0..height {
+        let source = pixel_offset + (height - 1 - target_row) * stride;
+        for column in 0..width {
+            let pixel = if let Some((palette_start, palette_entries)) = palette {
+                let index = match bits {
+                    1 => (bytes[source + column / 8] >> (7 - column % 8)) & 1,
+                    4 => {
+                        let packed = bytes[source + column / 2];
+                        if column % 2 == 0 {
+                            packed >> 4
+                        } else {
+                            packed & 0x0f
+                        }
+                    }
+                    8 => bytes[source + column],
+                    _ => unreachable!("core palette exists only for indexed depths"),
+                };
+                let index = usize::from(index);
+                if index >= palette_entries {
+                    return Err(Map16BmpDecodeError::Palette);
+                }
+                let at = palette_start + index * 3;
+                Rgba8 {
+                    red: bytes[at + 2],
+                    green: bytes[at + 1],
+                    blue: bytes[at],
+                    alpha: 255,
+                }
+            } else {
+                let at = source + column * 3;
+                Rgba8 {
+                    red: bytes[at + 2],
+                    green: bytes[at + 1],
+                    blue: bytes[at],
+                    alpha: 255,
+                }
+            };
+            pixels.push(pixel);
         }
     }
     Ok(DecodedMap16Bitmap {
@@ -1392,6 +1512,77 @@ mod tests {
         bytes
     }
 
+    fn test_core_indexed_bmp(
+        width: usize,
+        height: usize,
+        bits: u16,
+        palette: &[Rgba8],
+        indices: &[u8],
+    ) -> Vec<u8> {
+        assert!(matches!(bits, 1 | 4 | 8));
+        assert_eq!(palette.len(), 1_usize << bits);
+        assert_eq!(indices.len(), width * height);
+        let row_bytes = (width * usize::from(bits) + 7) / 8;
+        let stride = (row_bytes + 3) & !3;
+        let pixel_offset = 26 + palette.len() * 3;
+        let mut bytes = vec![0; pixel_offset + stride * height];
+        let file_len = u32::try_from(bytes.len()).unwrap();
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&u32::try_from(pixel_offset).unwrap().to_le_bytes());
+        bytes[14..18].copy_from_slice(&12_u32.to_le_bytes());
+        bytes[18..20].copy_from_slice(&u16::try_from(width).unwrap().to_le_bytes());
+        bytes[20..22].copy_from_slice(&u16::try_from(height).unwrap().to_le_bytes());
+        bytes[22..24].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[24..26].copy_from_slice(&bits.to_le_bytes());
+        for (index, color) in palette.iter().enumerate() {
+            let at = 26 + index * 3;
+            bytes[at..at + 3].copy_from_slice(&[color.blue, color.green, color.red]);
+        }
+        for stored_row in 0..height {
+            let source_row = height - 1 - stored_row;
+            let target = pixel_offset + stored_row * stride;
+            for column in 0..width {
+                let index = indices[source_row * width + column];
+                match bits {
+                    1 => bytes[target + column / 8] |= index << (7 - column % 8),
+                    4 => {
+                        bytes[target + column / 2] |=
+                            if column % 2 == 0 { index << 4 } else { index }
+                    }
+                    8 => bytes[target + column] = index,
+                    _ => unreachable!(),
+                }
+            }
+        }
+        bytes
+    }
+
+    fn test_core_24_bmp(width: usize, height: usize, pixels: &[Rgba8]) -> Vec<u8> {
+        assert_eq!(pixels.len(), width * height);
+        let stride = (width * 3 + 3) & !3;
+        let pixel_offset = 26_usize;
+        let mut bytes = vec![0; pixel_offset + stride * height];
+        let file_len = u32::try_from(bytes.len()).unwrap();
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&u32::try_from(pixel_offset).unwrap().to_le_bytes());
+        bytes[14..18].copy_from_slice(&12_u32.to_le_bytes());
+        bytes[18..20].copy_from_slice(&u16::try_from(width).unwrap().to_le_bytes());
+        bytes[20..22].copy_from_slice(&u16::try_from(height).unwrap().to_le_bytes());
+        bytes[22..24].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[24..26].copy_from_slice(&24_u16.to_le_bytes());
+        for stored_row in 0..height {
+            let source_row = height - 1 - stored_row;
+            for column in 0..width {
+                let pixel = pixels[source_row * width + column];
+                let at = pixel_offset + stored_row * stride + column * 3;
+                bytes[at..at + 3].copy_from_slice(&[pixel.blue, pixel.green, pixel.red]);
+            }
+        }
+        bytes
+    }
+
     fn test_embedded_bmp(width: usize, height: usize, compression: u32, payload: &[u8]) -> Vec<u8> {
         let pixel_offset = 54_usize;
         let mut bytes = vec![0; pixel_offset];
@@ -1696,6 +1887,116 @@ mod tests {
             assert_eq!(decoded.pixels, pixels);
             assert_eq!(decode_map16_bitmap_image(&bytes).unwrap(), decoded);
         }
+    }
+
+    #[test]
+    fn bmp_decoder_handles_core_header_rgb_triples_and_bottom_up_rows() {
+        for bits in [1, 4, 8] {
+            let palette = (0..1_usize << bits)
+                .map(|index| Rgba8 {
+                    red: u8::try_from(index).unwrap(),
+                    green: u8::try_from(index * 3 % 256).unwrap(),
+                    blue: u8::try_from(index * 7 % 256).unwrap(),
+                    alpha: 255,
+                })
+                .collect::<Vec<_>>();
+            let indices = if bits == 1 {
+                vec![0, 1, 0, 1, 0, 1]
+            } else {
+                vec![0, 1, 2, 3, 4, 5]
+            };
+            let decoded = decode_map16_bitmap_bmp_image(&test_core_indexed_bmp(
+                3, 2, bits, &palette, &indices,
+            ))
+            .unwrap();
+            assert_eq!((decoded.width, decoded.height), (3, 2));
+            assert_eq!(
+                decoded.pixels,
+                indices
+                    .into_iter()
+                    .map(|index| palette[usize::from(index)])
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        let pixels = vec![
+            Rgba8 {
+                red: 1,
+                green: 2,
+                blue: 3,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 4,
+                green: 5,
+                blue: 6,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 7,
+                green: 8,
+                blue: 9,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 10,
+                green: 11,
+                blue: 12,
+                alpha: 255,
+            },
+        ];
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&test_core_24_bmp(2, 2, &pixels))
+                .unwrap()
+                .pixels,
+            pixels
+        );
+    }
+
+    #[test]
+    fn bmp_decoder_rejects_malformed_core_headers_palettes_and_pixels() {
+        let palette = vec![
+            Rgba8 {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 255,
+            };
+            2
+        ];
+        let valid = test_core_indexed_bmp(1, 1, 1, &palette, &[0]);
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&valid[..25]),
+            Err(Map16BmpDecodeError::Header)
+        );
+        for (offset, value, expected) in [
+            (
+                18,
+                0_u16,
+                Map16BmpDecodeError::Dimensions {
+                    width: 0,
+                    height: 1,
+                },
+            ),
+            (22, 2, Map16BmpDecodeError::Planes(2)),
+            (24, 16, Map16BmpDecodeError::BitDepth(16)),
+        ] {
+            let mut malformed = valid.clone();
+            malformed[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+            assert_eq!(decode_map16_bitmap_bmp_image(&malformed), Err(expected));
+        }
+        let mut overlapping_palette = valid.clone();
+        overlapping_palette[10..14].copy_from_slice(&26_u32.to_le_bytes());
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&overlapping_palette),
+            Err(Map16BmpDecodeError::Palette)
+        );
+        let mut truncated_pixels = valid;
+        truncated_pixels.pop();
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&truncated_pixels),
+            Err(Map16BmpDecodeError::PixelData)
+        );
     }
 
     #[test]
