@@ -2968,12 +2968,15 @@ to both Layer 1 and object-backed Layer 2. The authentic modified-ROM insertion 
 standard object, places a command-zero extended object, edits that extended selector through the
 semantic form, and requires Lunar Magic 3.63 to reproduce both changes exactly.
 
-The primary object tools now expose those positioned extended records through a visual catalog
-rather than requiring raw-byte entry. The catalog enumerates only recovered definitions for the
-active object tileset, supports hexadecimal filtering, renders each Map16 pattern through the same
-tileset-aware definition set as the canvas, and stages the selected `$00 00 xx` record as the
-extension-preserving placement template. Selector `$17` has a retained test proving its tileset-0
-substitution differs from the shared preview before placement into a real decoded level.
+The Layer 1 and object-backed Layer 2 tools now expose positioned standard and extended records
+through visual catalogs rather than requiring raw-byte entry or duplication of an existing Layer 2
+record. The extended catalog enumerates only recovered definitions for the active object tileset,
+supports hexadecimal filtering, renders each Map16 pattern through the same tileset-aware
+definition set as the canvas, and stages the selected `$00 00 xx` record as the
+extension-preserving placement template. Standard selection intentionally creates a fresh
+three-byte template. Selector `$17` has a retained test proving its tileset-0 substitution differs
+from the shared preview before placement into a real decoded level; the Layer 2 workflow commits,
+reopens, and undoes one record from each catalog.
 Selecting a new standard catalog command remains the explicit boundary that creates a fresh
 ordinary record and clears prior extension provenance.
 The parallel SSC catalog now has a complete application-backed mixed-table save fixture. One `$F0`

@@ -1949,11 +1949,13 @@ incorrect `command != 0` test; the stream model and both Layer 1/Layer 2 canvas 
 recovered boundary. A modified-ROM Lunar Magic 3.63 re-export proves placement plus a subsequent
 extended-selector edit remains canonical.
 
-The recovered extended-definition table is now also the native selection authority. The visual
-catalog enumerates only installed `$04+` definitions, layers the active object-tileset
-substitutions over the shared table, and uses the resulting pattern for preview. In particular,
-object tilesets 0/8 replace selector `$17` with Map16 `$12D`, matching
-`install_lunar_magic_tileset_extended_objects`; other tilesets retain the shared definition.
+The recovered standard/extended definition tables are now also the native selection authority for
+Layer 1 and object-backed Layer 2. The extended catalog enumerates only installed `$04+`
+definitions, layers the active object-tileset substitutions over the shared table, and uses the
+resulting pattern for preview. In particular, object tilesets 0/8 replace selector `$17` with
+Map16 `$12D`, matching `install_lunar_magic_tileset_extended_objects`; other tilesets retain the
+shared definition. Both layers dispatch their chosen standard or extended record through the same
+positioned-stream insertion algorithm.
 
 The structure allocator consistently accounts for the 8-byte RATS header. `FindDuplicateRatsPayload` reads and compares only validated candidates and rejects sizes over `0x8000` for level payloads.
 

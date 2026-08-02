@@ -459,7 +459,7 @@ impl VanillaLevelEditor {
                                             pending_command = self.show_entrance_editor(ui, level);
                                         }
                                     });
-                                self.show_layer2_editor(ui, custom_objects);
+                                self.show_layer2_editor(ui, custom_objects, custom_map16);
                                 self.show_map16_preview(ui, object_tileset);
                                 egui::CollapsingHeader::new("Layer 1 objects")
                                     .id_salt("vanilla-layer1-tools")
@@ -572,6 +572,7 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         custom_objects: Option<&lm_level::OscResolvedTable>,
+        custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
         let Some(layer2) = self
             .controller
@@ -627,6 +628,8 @@ impl VanillaLevelEditor {
                     "{} native Layer 2 object records are decoded and rendered.",
                     objects.objects.records.len()
                 ));
+                self.object_catalog(ui, custom_map16, true);
+                self.extended_object_catalog(ui, custom_map16, true);
                 self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
             }
         });
@@ -3301,8 +3304,8 @@ impl VanillaLevelEditor {
         } else {
             ui.label("No selected object.");
         }
-        self.object_catalog(ui, custom_map16);
-        self.extended_object_catalog(ui, custom_map16);
+        self.object_catalog(ui, custom_map16, false);
+        self.extended_object_catalog(ui, custom_map16, false);
         self.custom_object_catalog(ui, custom_objects, custom_map16);
         if let Some((screen, destination_and_flags)) = &mut self.object_form.screen_exit {
             ui.label("Native screen-exit object");
@@ -3399,9 +3402,14 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        layer2: bool,
     ) {
         egui::CollapsingHeader::new("Add standard object visually")
-            .id_salt("vanilla-standard-object-catalog")
+            .id_salt(if layer2 {
+                "vanilla-layer2-standard-object-catalog"
+            } else {
+                "vanilla-standard-object-catalog"
+            })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Hex filter");
@@ -3423,9 +3431,18 @@ impl VanillaLevelEditor {
                     ui.label("The recovered standard-object definitions are unavailable.");
                     return;
                 };
+                let selected_command = if layer2 {
+                    self.layer2_object_form.command_id
+                } else {
+                    self.object_form.command_id
+                };
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
-                    .id_salt("vanilla-standard-object-catalog-scroll")
+                    .id_salt(if layer2 {
+                        "vanilla-layer2-standard-object-catalog-scroll"
+                    } else {
+                        "vanilla-standard-object-catalog-scroll"
+                    })
                     .max_height(280.0)
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -3438,7 +3455,7 @@ impl VanillaLevelEditor {
                                     command,
                                     &handler_map,
                                     &definitions,
-                                    command == self.object_form.command_id,
+                                    command == selected_command,
                                 );
                                 if response.clicked() {
                                     chosen = Some(command);
@@ -3447,14 +3464,28 @@ impl VanillaLevelEditor {
                         });
                     });
                 if let Some(command) = chosen {
-                    self.object_form.command_id = command;
-                    self.object_form.parameter = 0;
-                    self.object_form.advances_screen = false;
-                    self.object_placement_template = None;
-                    self.placement_mode = Some(CanvasPlacementMode::Object);
-                    self.error = None;
+                    self.select_standard_object_from_catalog(command, layer2);
                 }
             });
+    }
+
+    fn select_standard_object_from_catalog(&mut self, command: u8, layer2: bool) {
+        let form = if layer2 {
+            &mut self.layer2_object_form
+        } else {
+            &mut self.object_form
+        };
+        form.command_id = command;
+        form.parameter = 0;
+        form.advances_screen = false;
+        if layer2 {
+            self.layer2_object_placement_template = None;
+            self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
+        } else {
+            self.object_placement_template = None;
+            self.placement_mode = Some(CanvasPlacementMode::Object);
+        }
+        self.error = None;
     }
 
     fn custom_object_catalog(
@@ -3522,9 +3553,14 @@ impl VanillaLevelEditor {
         &mut self,
         ui: &mut egui::Ui,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        layer2: bool,
     ) {
         egui::CollapsingHeader::new("Add extended object visually")
-            .id_salt("vanilla-extended-object-catalog")
+            .id_salt(if layer2 {
+                "vanilla-layer2-extended-object-catalog"
+            } else {
+                "vanilla-extended-object-catalog"
+            })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Hex filter");
@@ -3555,9 +3591,19 @@ impl VanillaLevelEditor {
                     ui.label("The active standard-object handler map is unavailable.");
                     return;
                 };
+                let selected = if layer2 {
+                    &self.layer2_object_form
+                } else {
+                    &self.object_form
+                };
+                let selected = (selected.command_id, selected.parameter);
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
-                    .id_salt("vanilla-extended-object-catalog-scroll")
+                    .id_salt(if layer2 {
+                        "vanilla-layer2-extended-object-catalog-scroll"
+                    } else {
+                        "vanilla-extended-object-catalog-scroll"
+                    })
                     .max_height(280.0)
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -3570,8 +3616,7 @@ impl VanillaLevelEditor {
                                     selector,
                                     &handler_map,
                                     &definitions,
-                                    self.object_form.command_id == 0
-                                        && self.object_form.parameter == selector,
+                                    selected == (0, selector),
                                 );
                                 if response.clicked() {
                                     chosen = Some(selector);
@@ -3580,17 +3625,23 @@ impl VanillaLevelEditor {
                         });
                     });
                 if let Some(selector) = chosen {
-                    self.select_extended_object_from_catalog(selector);
+                    self.select_extended_object_from_catalog(selector, layer2);
                 }
             });
     }
 
-    fn select_extended_object_from_catalog(&mut self, selector: u8) {
+    fn select_extended_object_from_catalog(&mut self, selector: u8, layer2: bool) {
         let record = ObjectRecord::new(vec![0, 0, selector])
             .expect("extended catalog selectors always encode three-byte objects");
-        self.object_form = ObjectForm::from_record(&record);
-        self.object_placement_template = Some(record);
-        self.placement_mode = Some(CanvasPlacementMode::Object);
+        if layer2 {
+            self.layer2_object_form = ObjectForm::from_record(&record);
+            self.layer2_object_placement_template = Some(record);
+            self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
+        } else {
+            self.object_form = ObjectForm::from_record(&record);
+            self.object_placement_template = Some(record);
+            self.placement_mode = Some(CanvasPlacementMode::Object);
+        }
         self.error = None;
     }
 
@@ -9924,7 +9975,7 @@ mod tests {
             .objects
             .native_placements()
             .len();
-        editor.select_extended_object_from_catalog(0x17);
+        editor.select_extended_object_from_catalog(0x17, false);
         assert_eq!(editor.object_form.command_id, 0);
         assert_eq!(editor.object_form.parameter, 0x17);
         assert_eq!(editor.placement_mode, Some(CanvasPlacementMode::Object));
@@ -10134,10 +10185,13 @@ mod tests {
         assert_eq!(count_after_invalid, count_before_invalid);
         assert!(editor.error.is_some());
 
-        let extended = ObjectRecord::new(vec![0, 0, 0x10]).unwrap();
-        editor.layer2_object_form = ObjectForm::from_record(&extended);
-        editor.layer2_object_placement_template = Some(extended);
-        editor.placement_mode = Some(CanvasPlacementMode::Layer2Object);
+        editor.select_extended_object_from_catalog(0x10, true);
+        assert_eq!(editor.layer2_object_form.command_id, 0);
+        assert_eq!(editor.layer2_object_form.parameter, 0x10);
+        assert_eq!(
+            editor.placement_mode,
+            Some(CanvasPlacementMode::Layer2Object)
+        );
         editor.place_layer2_object_at_canvas(
             egui::pos2(ROM_LEVEL_CANVAS_CELL * 34.5, ROM_LEVEL_CANVAS_CELL * 5.5),
             canvas,
@@ -10157,6 +10211,42 @@ mod tests {
         assert_eq!(
             records_after_extended[editor.selected_layer2_object].parameter(),
             0x10
+        );
+
+        let count_after_extended = records_after_extended
+            .iter()
+            .filter(|record| record.is_positioned_object())
+            .count();
+        editor.select_standard_object_from_catalog(1, true);
+        assert_eq!(editor.layer2_object_form.command_id, 1);
+        assert_eq!(editor.layer2_object_form.parameter, 0);
+        assert!(editor.layer2_object_placement_template.is_none());
+        assert_eq!(
+            editor.placement_mode,
+            Some(CanvasPlacementMode::Layer2Object)
+        );
+        editor.place_layer2_object_at_canvas(
+            egui::pos2(ROM_LEVEL_CANVAS_CELL * 50.5, ROM_LEVEL_CANVAS_CELL * 6.5),
+            canvas,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        );
+        assert_eq!(editor.error, None);
+        let records_after_standard = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => &objects.objects.records,
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(
+            records_after_standard
+                .iter()
+                .filter(|record| record.is_positioned_object())
+                .count(),
+            count_after_extended + 1,
+            "catalog placement adds one positioned standard object even if transition controls canonicalize"
+        );
+        assert_eq!(
+            records_after_standard[editor.selected_layer2_object].command_id(),
+            1
         );
 
         let staged_layer2 = editor
