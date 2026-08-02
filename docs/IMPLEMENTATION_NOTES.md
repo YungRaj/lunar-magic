@@ -2943,6 +2943,15 @@ reload the canonical staged record and its placement template, while failures re
 That template invariant now applies to every real-record selection route rather than only action
 buttons: load/history refresh, list and canvas clicks, typed paste, reorder, drag/resize selection
 and completion, and canvas insertion retain the selected Layer 1 or object-backed Layer 2 record.
+
+Authentic modified-ROM coverage now reaches object-backed Layer 2 allocation as well as Layer 1
+and sprites. `external_lunar_magic_rom_layer2_object_insertion_is_isolated_and_undoes` discovers a
+compatible level through the installed runtime, inserts an ordinary object through the native
+canvas, and requires the save to repoint only that level's Layer 2 stream. The selected level's
+Layer 1 and sprite pointers and a neighboring Layer 2 pointer remain byte-exact. Rust reopens the
+complete staged Layer 2 value, Lunar Magic 3.63 re-exports the baseline-canonicalized stream plus
+the same insertion, the repaired checksum validates, and one application undo restores the exact
+logical ROM.
 Selecting a new standard catalog command remains the explicit boundary that creates a fresh
 ordinary record and clears prior extension provenance.
 The parallel SSC catalog now has a complete application-backed mixed-table save fixture. One `$F0`

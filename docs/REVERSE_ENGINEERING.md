@@ -1927,6 +1927,14 @@ RATS allocations. The original supplied ROM remains byte-identical at SHA-256
 
 `SaveLevelToRom` serializes multiple independently allocated payloads. Layer 1 and Layer 2 object streams are limited to a single `0x8000`-byte LoROM bank and are terminated by `0xFF`. Optional payloads include palette, ExAnimation, and sprite data. Existing RATS blocks can be reused when byte-identical deduplication is enabled. PC offsets are converted into mapper-specific 24-bit SNES pointers for LoROM, ExLoROM, and SA-1 variants before level tables are updated.
 
+The installed format-`$103` Layer 2 path is now also verified against an authentic Lunar
+Magic-modified ROM rather than only imported MWL and pristine expansion fixtures. A native canvas
+insertion allocates and RATS-tags a grown object stream in the modified ROM's zero-filled expanded
+space, changes only the selected Layer 2 pointer, and leaves the selected Layer 1/sprite pointers
+and a neighboring Layer 2 pointer exact. Lunar Magic 3.63 reopens and exports the expected semantic
+stream, confirming that the recovered descriptor/pointer interpretation and allocation boundary
+agree with the original editor.
+
 The structure allocator consistently accounts for the 8-byte RATS header. `FindDuplicateRatsPayload` reads and compares only validated candidates and rejects sizes over `0x8000` for level payloads.
 
 ## Native overworld path-link tables

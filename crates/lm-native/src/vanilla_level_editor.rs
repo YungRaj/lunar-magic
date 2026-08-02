@@ -9172,6 +9172,215 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a locally supplied Lunar Magic-modified SMW-US ROM"]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one external gate retains the complete Layer 2 save and Lunar Magic oracle boundary"
+    )]
+    fn external_lunar_magic_rom_layer2_object_insertion_is_isolated_and_undoes() {
+        let path = std::env::var_os("LM_MODIFIED_LEVEL_ROM")
+            .expect("LM_MODIFIED_LEVEL_ROM must name the modified ROM");
+        let source = std::fs::read(path).unwrap();
+        let source_image = RomImage::from_bytes(source.clone()).unwrap();
+        let source_project = lm_project::Project::new(source_image.clone());
+        let level_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let source_layer2_layout = lm_profile::smw_us_v1_layer2_layout(&source_image).unwrap();
+        let lengths = SpriteLengthTable::standard();
+        let (level, template) = (0..0x200)
+            .find_map(|level| {
+                let slot = source_project
+                    .load_level_slot(level, level_layout, &lengths)
+                    .ok()?;
+                let layer2 = source_project
+                    .load_level_layer2(level, slot.layer1.header.level_mode(), source_layer2_layout)
+                    .ok()?;
+                let lm_level::NativeLayer2Data::Objects(objects) = layer2 else {
+                    return None;
+                };
+                let template = objects
+                    .objects
+                    .records
+                    .iter()
+                    .find(|record| record.command_id() != 0)?
+                    .clone();
+                Some((u16::try_from(level).ok()?, template))
+            })
+            .expect("modified ROM must retain an object-backed Layer 2 level");
+        let level_index = usize::from(level);
+        let baseline_layer2_pointer = source_layer2_layout
+            .pointers
+            .read_snes_pointer(&source_image, level_index)
+            .unwrap();
+        let neighboring_level = if level_index == 0 { 1 } else { level_index - 1 };
+        let neighboring_layer2_pointer = source_layer2_layout
+            .pointers
+            .read_snes_pointer(&source_image, neighboring_level)
+            .unwrap();
+        let baseline_layer1_pointer = level_layout
+            .layer1
+            .read_snes_pointer(&source_image, level_index)
+            .unwrap();
+        let baseline_sprite_pointer = level_layout
+            .sprites
+            .read_snes_pointer(&source_image, level_index)
+            .unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(source.clone()).unwrap();
+        app.dispatch(Command::SelectLevel(level)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let baseline = RomImage::from_bytes(snapshot.rom_bytes.clone())
+            .unwrap()
+            .logical_bytes()
+            .to_vec();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        assert_eq!(editor.error, None);
+        editor.layer2_object_form = ObjectForm::from_record(&template);
+        editor.layer2_object_placement_template = Some(template.clone());
+        let vertical = editor.controller.as_ref().is_some_and(|controller| {
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
+        });
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+        );
+        let (inserted_screen, inserted_coordinates, inserted_perpendicular_high) =
+            object_placement_at_canvas_position(egui::pos2(36.5, 8.5), canvas, 1.0, vertical)
+                .unwrap();
+        editor.placement_mode = Some(CanvasPlacementMode::Layer2Object);
+        editor.place_layer2_object_at_canvas(egui::pos2(36.5, 8.5), canvas, 1.0, vertical);
+        assert_eq!(editor.error, None);
+        let expected_layer2 = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .layer2()
+            .unwrap()
+            .clone();
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
+            .unwrap();
+
+        let image = app.project().unwrap().rom.clone();
+        let layer2_layout = lm_profile::smw_us_v1_layer2_layout(&image).unwrap();
+        let relocated_layer2_pointer = layer2_layout
+            .pointers
+            .read_snes_pointer(&image, level_index)
+            .unwrap();
+        assert_ne!(relocated_layer2_pointer, baseline_layer2_pointer);
+        let relocated_layer2_offset = relocated_layer2_pointer
+            .to_pc(layer2_layout.mapper)
+            .unwrap();
+        assert_eq!(
+            lm_rats::parse_at(
+                image.logical_bytes(),
+                relocated_layer2_offset - lm_rats::HEADER_LEN
+            )
+            .unwrap()
+            .payload
+            .start,
+            relocated_layer2_offset
+        );
+        assert_eq!(
+            layer2_layout
+                .pointers
+                .read_snes_pointer(&image, neighboring_level)
+                .unwrap(),
+            neighboring_layer2_pointer
+        );
+        assert_eq!(
+            level_layout
+                .layer1
+                .read_snes_pointer(&image, level_index)
+                .unwrap(),
+            baseline_layer1_pointer
+        );
+        assert_eq!(
+            level_layout
+                .sprites
+                .read_snes_pointer(&image, level_index)
+                .unwrap(),
+            baseline_sprite_pointer
+        );
+        let reopened_slot = app
+            .project()
+            .unwrap()
+            .load_level_slot(level_index, level_layout, &lengths)
+            .unwrap();
+        let reopened_layer2 = app
+            .project()
+            .unwrap()
+            .load_level_layer2(
+                level_index,
+                reopened_slot.layer1.header.level_mode(),
+                layer2_layout,
+            )
+            .unwrap();
+        assert_eq!(reopened_layer2, expected_layer2);
+
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let temporary = tempfile::Builder::new()
+            .prefix("lm-modified-level-layer2-growth-wine-")
+            .tempdir()
+            .unwrap();
+        let directory = temporary.path();
+        let baseline_rom_path = directory.join("baseline modified ROM.smc");
+        let baseline_mwl_path = directory.join("baseline object Layer 2.mwl");
+        let rom_path = directory.join("rust object Layer 2 ROM.smc");
+        let mwl_path = directory.join("rust object Layer 2.mwl");
+        std::fs::write(&baseline_rom_path, &source).unwrap();
+        std::fs::write(&rom_path, app.project().unwrap().rom.as_file_bytes()).unwrap();
+        prepare_lunar_magic_restore_files(&root, directory);
+        export_level_with_lunar_magic(&root, &baseline_rom_path, &baseline_mwl_path, level);
+        export_level_with_lunar_magic(&root, &rom_path, &mwl_path, level);
+        let decode_export = |path: &std::path::Path| {
+            lm_project::MwlNativeLevel::decode(
+                &lm_level::MwlFile::decode(&std::fs::read(path).unwrap()).unwrap(),
+                &lengths,
+                32,
+                &[false; 256],
+            )
+            .unwrap()
+        };
+        let baseline_exported = decode_export(&baseline_mwl_path);
+        let exported = decode_export(&mwl_path);
+        let mut expected_exported_layer2 = baseline_exported.layer2.clone();
+        let lm_level::NativeLayer2Data::Objects(expected_objects) = &mut expected_exported_layer2
+        else {
+            panic!("selected oracle level must export object-backed Layer 2");
+        };
+        expected_objects
+            .objects
+            .insert_ordinary_object_at_position(
+                template,
+                inserted_screen,
+                inserted_coordinates,
+                inserted_perpendicular_high,
+            )
+            .unwrap();
+        assert_eq!(exported.layer1, baseline_exported.layer1);
+        assert_eq!(exported.sprites, baseline_exported.sprites);
+        assert_eq!(exported.layer2, expected_exported_layer2);
+        assert!(
+            lm_rom::detect_identity(
+                &RomImage::from_bytes(std::fs::read(&rom_path).unwrap()).unwrap()
+            )
+            .unwrap()
+            .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.logical_bytes(), baseline);
+    }
+
+    #[test]
     fn every_pristine_level_materializes_its_builtin_render_assets() {
         let bytes = std::sync::Arc::new(crate::test_support::pristine_smw_us_rom_bytes());
         std::thread::scope(|scope| {
