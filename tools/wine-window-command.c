@@ -455,6 +455,8 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE read ADDRESS,LENGTH\n"
             "       wine-window-command.exe EXECUTABLE find-u32 VALUE\n"
             "       wine-window-command.exe EXECUTABLE write-byte ADDRESS,VALUE\n"
+            "       wine-window-command.exe EXECUTABLE slot-oracle PRIMARY,ALTERNATE,COMPOSITION,SPLIT\n"
+            "       wine-window-command.exe EXECUTABLE slot-oracle-expanded PRIMARY,ALTERNATE,COMPOSITION,SPLIT,ROUTE,ADDITIVE\n"
             "       wine-window-command.exe EXECUTABLE key VIRTUAL_KEY\n"
             "       wine-window-command.exe EXECUTABLE save WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE level HEX_LEVEL\n"
@@ -482,6 +484,8 @@ int main(int argc, char **argv) {
     BOOL read = _stricmp(argv[2], "read") == 0;
     BOOL find_u32 = _stricmp(argv[2], "find-u32") == 0;
     BOOL write_byte = _stricmp(argv[2], "write-byte") == 0;
+    BOOL slot_oracle = _stricmp(argv[2], "slot-oracle") == 0;
+    BOOL slot_oracle_expanded = _stricmp(argv[2], "slot-oracle-expanded") == 0;
     BOOL key = _stricmp(argv[2], "key") == 0;
     if (open_level_command) {
         if (argc != 4) {
@@ -681,6 +685,144 @@ int main(int argc, char **argv) {
             fprintf(stderr, "cannot write requested byte\n");
             return 1;
         }
+        return 0;
+    }
+    if (slot_oracle || slot_oracle_expanded) {
+        if (argc != 4) {
+            fprintf(stderr, "%s requires one comma-separated value list\n", argv[2]);
+            return 2;
+        }
+        const unsigned value_count = slot_oracle_expanded ? 6 : 4;
+        unsigned long values[6] = {0};
+        char *cursor = argv[3];
+        for (unsigned index = 0; index < value_count; index++) {
+            char *end = NULL;
+            values[index] = strtoul(cursor, &end, 0);
+            if (
+                end == cursor ||
+                values[index] > 0xff ||
+                (index + 1 < value_count && *end != ',') ||
+                (index + 1 == value_count && *end != '\0')
+            ) {
+                fprintf(stderr, "invalid slot-oracle values\n");
+                return 2;
+            }
+            cursor = end + (index + 1 < value_count ? 1 : 0);
+        }
+        if (
+            values[3] > 1 ||
+            (slot_oracle_expanded && (values[4] > 1 || values[5] > 1))
+        ) {
+            fprintf(stderr, "slot-oracle flags must be zero or one\n");
+            return 2;
+        }
+        HANDLE process = OpenProcess(
+            PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
+                PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE,
+            FALSE,
+            process_id
+        );
+        if (process == NULL) {
+            fprintf(stderr, "cannot open target process for slot oracle\n");
+            return 1;
+        }
+        const uintptr_t input_addresses[3] = {0x00857ba8, 0x009203bc, 0x00816658};
+        BOOL ok = TRUE;
+        for (unsigned index = 0; index < 3; index++) {
+            uint32_t value = (uint32_t)values[index];
+            SIZE_T written = 0;
+            ok = ok && WriteProcessMemory(
+                process,
+                (void *)input_addresses[index],
+                &value,
+                sizeof(value),
+                &written
+            ) && written == sizeof(value);
+        }
+        const uintptr_t override_addresses[4] = {
+            0x005f1aca, 0x0060adaf, 0x00600902, 0x00609703
+        };
+        const unsigned char override_values[4] = {
+            slot_oracle_expanded && values[4] != 0 ? 4 : 0,
+            slot_oracle_expanded && values[4] != 0 ? 4 : 0,
+            slot_oracle_expanded && values[5] == 0 ? 4 : 0,
+            slot_oracle_expanded && values[5] != 0 ? 4 : 0
+        };
+        for (unsigned index = 0; index < 4; index++) {
+            SIZE_T written = 0;
+            ok = ok && WriteProcessMemory(
+                process,
+                (void *)override_addresses[index],
+                &override_values[index],
+                sizeof(override_values[index]),
+                &written
+            ) && written == sizeof(override_values[index]);
+        }
+        unsigned char header_byte = 0;
+        SIZE_T transferred = 0;
+        ok = ok && ReadProcessMemory(
+            process,
+            (void *)0x0060b6ba,
+            &header_byte,
+            sizeof(header_byte),
+            &transferred
+        ) && transferred == sizeof(header_byte);
+        header_byte = (unsigned char)((header_byte & 0x7f) | (values[3] != 0 ? 0x80 : 0));
+        transferred = 0;
+        ok = ok && WriteProcessMemory(
+            process,
+            (void *)0x0060b6ba,
+            &header_byte,
+            sizeof(header_byte),
+            &transferred
+        ) && transferred == sizeof(header_byte);
+        if (!ok) {
+            CloseHandle(process);
+            fprintf(stderr, "cannot stage slot-oracle inputs\n");
+            return 1;
+        }
+        HANDLE thread = CreateRemoteThread(
+            process,
+            NULL,
+            0,
+            (LPTHREAD_START_ROUTINE)(uintptr_t)0x004692b0,
+            NULL,
+            0,
+            NULL
+        );
+        if (thread == NULL || WaitForSingleObject(thread, 5000) != WAIT_OBJECT_0) {
+            if (thread != NULL) {
+                CloseHandle(thread);
+            }
+            CloseHandle(process);
+            fprintf(stderr, "slot-oracle dispatcher call failed\n");
+            return 1;
+        }
+        CloseHandle(thread);
+        const uintptr_t output_addresses[5] = {
+            0x0061fc40, 0x008f3910, 0x0084a988, 0x00852a2c, 0x0091c558
+        };
+        for (unsigned output = 0; output < 5; output++) {
+            unsigned char bytes[5] = {0};
+            transferred = 0;
+            ok = ReadProcessMemory(
+                process,
+                (void *)output_addresses[output],
+                bytes,
+                sizeof(bytes),
+                &transferred
+            ) && transferred == sizeof(bytes);
+            if (!ok) {
+                CloseHandle(process);
+                fprintf(stderr, "cannot read slot-oracle outputs\n");
+                return 1;
+            }
+            for (unsigned index = 0; index < sizeof(bytes); index++) {
+                printf("%02x", bytes[index]);
+            }
+        }
+        putchar('\n');
+        CloseHandle(process);
         return 0;
     }
     if (command_at) {

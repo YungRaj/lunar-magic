@@ -1592,6 +1592,12 @@ cells first shift each source channel right once and then saturating-add instead
 the destination. The cache renderer visits each final Map16 coordinate once, so overwritten object
 paints do not contribute multiple times.
 
+`tools/lunar-magic-layer-slot-audit.sh` now makes this dispatcher evidence reproducible. Its helper
+stages the three active table values and four packed-mode modifier globals atomically, invokes
+`ConfigureLevelLayerSlotAssignments` inside the live 32-bit process, and captures all five output
+arrays before the editor loop can restore the selected level. The retained matrix covers 20 valid
+modes × two legacy priority states × the base plus four expanded bit-30/31 states = 200 cases.
+
 The retained Wine ROM also proves four direct hooks into the `$4C0` main payload. The first three
 are now clean-room runtime contracts: logical `$00201F` replaces
 `LDA $1BE3; BEQ +$20; DEC A` with `JSL entry; BEQ +$1F`; that entry begins at payload offset zero

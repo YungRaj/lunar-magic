@@ -1246,6 +1246,9 @@ composition. The same slot flags now drive Layer 1/2 whole-layer addition throug
 rasterizer. It renders only the final placement for each Map16 cache coordinate, saturating-adds
 ordinary source channels, and halves averaged/half-color source channels before addition exactly as
 `RenderMap16TileToPixelBuffer` does while `DAT_0060028D` is active.
+The retained `level-layer-slots/slot-arrays.tsv` oracle invokes the real dispatcher for every valid
+mode, both legacy priority states, the unmodified table state, and all four packed bit-30/31
+combinations. Its 200 rows compare every byte of all five slot arrays against the Rust model.
 The legacy path's generic graphics-remap stream is separately modeled by
 `GraphicsRemapCommandStream`, based on the recovered `DecodeGraphicsRemapCommandStream` instruction
 sequence. Four-byte headers encode a 15-bit destination word, a 14-bit length field, literal versus

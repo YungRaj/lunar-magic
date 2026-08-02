@@ -179,6 +179,15 @@ const fn layer3_slot_state(
 mod tests {
     use super::*;
 
+    fn decode_five_bytes(hex: &str) -> [u8; 5] {
+        assert_eq!(hex.len(), 10);
+        let mut bytes = [0; 5];
+        for (index, byte) in bytes.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).unwrap();
+        }
+        bytes
+    }
+
     #[test]
     fn mode_zero_matches_live_lunar_magic_slot_capture() {
         let assignments = lunar_magic_level_layer_slots(0, false, None).unwrap();
@@ -286,5 +295,66 @@ mod tests {
         }
         assert!(lunar_magic_level_layer_slots(0x1e, false, None).is_some());
         assert!(lunar_magic_level_layer_slots(0x1f, false, None).is_some());
+    }
+
+    #[test]
+    fn every_valid_mode_and_expanded_route_matches_the_retained_live_slot_arrays() {
+        let fixture = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/level-layer-slots/slot-arrays.tsv"
+        );
+        let mut cases = 0;
+        for line in fixture.lines().skip(1) {
+            let fields = line.split('\t').collect::<Vec<_>>();
+            assert_eq!(fields.len(), 13, "malformed retained row: {line}");
+            let mode = u8::from_str_radix(fields[0], 16).unwrap();
+            let split = match fields[1] {
+                "0" => false,
+                "1" => true,
+                value => panic!("invalid split value {value}"),
+            };
+            let expanded_mode = match fields[2] {
+                "0" => None,
+                "1" => {
+                    let route = u32::from(fields[3] == "1");
+                    let additive = u32::from(fields[4] == "1");
+                    Some(Layer3ExpandedModeFlags::from_packed(
+                        1 | route << 31 | additive << 30,
+                    ))
+                }
+                value => panic!("invalid expanded value {value}"),
+            };
+            let source = decode_five_bytes(fields[8]);
+            let enabled = decode_five_bytes(fields[9]);
+            let additive = decode_five_bytes(fields[10]);
+            let half_color = decode_five_bytes(fields[11]);
+            let priority = decode_five_bytes(fields[12]);
+            let expected = std::array::from_fn(|index| LevelLayerPainterSlot {
+                source: match source[index] {
+                    0xff => None,
+                    0 => Some(LevelLayerSlotSource::Layer2),
+                    1 => Some(LevelLayerSlotSource::Layer1),
+                    2 => Some(LevelLayerSlotSource::Layer3),
+                    value => panic!("invalid retained source {value}"),
+                },
+                enabled: enabled[index] != 0,
+                additive: additive[index] != 0,
+                half_color: half_color[index] != 0,
+                layer3_priority: match priority[index] {
+                    0 => Layer3PrioritySelection::Both,
+                    1 => Layer3PrioritySelection::Low,
+                    2 => Layer3PrioritySelection::High,
+                    value => panic!("invalid retained priority {value}"),
+                },
+            });
+            assert_eq!(
+                lunar_magic_level_layer_slots(mode, split, expanded_mode)
+                    .unwrap()
+                    .slots,
+                expected,
+                "mode {mode:02X} split {split}"
+            );
+            cases += 1;
+        }
+        assert_eq!(cases, 200);
     }
 }
