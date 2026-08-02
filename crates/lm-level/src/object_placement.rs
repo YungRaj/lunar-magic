@@ -40,7 +40,7 @@ impl ObjectStream {
                 screen = jump.packed_target;
                 continue;
             }
-            if record.command_id() == 0 && record.parameter() <= 3 {
+            if !record.is_positioned_object() {
                 continue;
             }
             if record.advances_screen() {

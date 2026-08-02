@@ -2511,10 +2511,12 @@ impl VanillaLevelEditor {
             return;
         };
         let record = match self.object_record_for_placement() {
-            Ok(record) if record.command_id() != 0 => record,
+            Ok(record) if record.is_positioned_object() => record,
             Ok(_) => {
-                self.error =
-                    Some("canvas placement requires an ordinary nonzero object command".into());
+                self.error = Some(
+                    "canvas placement requires a standard or extended object, not a command-zero control"
+                        .into(),
+                );
                 return;
             }
             Err(error) => {
@@ -2571,10 +2573,12 @@ impl VanillaLevelEditor {
             return;
         };
         let record = match self.layer2_object_record_for_placement() {
-            Ok(record) if record.command_id() != 0 => record,
+            Ok(record) if record.is_positioned_object() => record,
             Ok(_) => {
-                self.error =
-                    Some("canvas placement requires an ordinary nonzero Layer 2 command".into());
+                self.error = Some(
+                    "canvas placement requires a standard or extended Layer 2 object, not a command-zero control"
+                        .into(),
+                );
                 return;
             }
             Err(error) => {
@@ -9067,16 +9071,12 @@ mod tests {
             .objects
             .records
             .len();
-        editor.placement_mode = Some(CanvasPlacementMode::Object);
-        editor.place_object_at_canvas(
-            egui::pos2(36.5, 8.5),
-            egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
-            ),
-            1.0,
-            false,
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
         );
+        editor.placement_mode = Some(CanvasPlacementMode::Object);
+        editor.place_object_at_canvas(egui::pos2(36.5, 8.5), canvas, 1.0, false);
         assert_eq!(editor.error, None);
         assert_eq!(
             editor
@@ -9089,6 +9089,39 @@ mod tests {
                 .records
                 .len(),
             original_record_count + 1
+        );
+        let extended_template = ObjectRecord::new(vec![0, 0, 0x10]).unwrap();
+        editor.object_form = ObjectForm::from_record(&extended_template);
+        editor.object_placement_template = Some(extended_template.clone());
+        let extended_position = egui::pos2(52.5, 10.5);
+        let (extended_screen, extended_coordinates, extended_perpendicular_high) =
+            object_placement_at_canvas_position(extended_position, canvas, 1.0, false).unwrap();
+        editor.placement_mode = Some(CanvasPlacementMode::Object);
+        editor.place_object_at_canvas(extended_position, canvas, 1.0, false);
+        assert_eq!(editor.error, None);
+        assert_eq!(editor.object_form.command_id, 0);
+        assert_eq!(editor.object_form.parameter, 0x10);
+        editor.object_form.parameter = 0x11;
+        let extended_edits = editor.selected_object_field_edits().unwrap();
+        editor
+            .controller
+            .as_mut()
+            .unwrap()
+            .apply_edits(&[NativeLevelEdit::Objects(extended_edits)])
+            .unwrap();
+        editor.reload_object_form();
+        assert_eq!(editor.object_form.parameter, 0x11);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .records
+                .len(),
+            original_record_count + 2
         );
         let expected_rust_layer1 = editor.controller.as_ref().unwrap().level().layer1.clone();
         app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
@@ -9156,6 +9189,17 @@ mod tests {
                     second: 4,
                 },
                 false,
+            )
+            .unwrap();
+        let mut expected_extended = extended_template;
+        expected_extended.set_parameter(0x11).unwrap();
+        expected_exported_layer1
+            .objects
+            .insert_ordinary_object_at_position(
+                expected_extended,
+                extended_screen,
+                extended_coordinates,
+                extended_perpendicular_high,
             )
             .unwrap();
         assert_eq!(exported.layer1, expected_exported_layer1);
@@ -9667,6 +9711,21 @@ mod tests {
     }
 
     #[test]
+    fn canvas_accepts_positioned_extended_objects_but_rejects_command_zero_controls() {
+        assert!(ObjectRecord::is_positioned_object(
+            &ObjectRecord::new(vec![0, 0, 4]).unwrap()
+        ));
+        assert!(ObjectRecord::is_positioned_object(
+            &ObjectRecord::new(vec![0, 0x10, 0]).unwrap()
+        ));
+        for parameter in 0..=3 {
+            assert!(!ObjectRecord::is_positioned_object(
+                &ObjectRecord::new(vec![0, 0, parameter]).unwrap()
+            ));
+        }
+    }
+
+    #[test]
     #[allow(
         clippy::too_many_lines,
         reason = "one real-ROM workflow proves placement, drag, typed paste, ordering, and rejection"
@@ -9837,6 +9896,31 @@ mod tests {
         };
         assert_eq!(count_after_invalid, count_before_invalid);
         assert!(editor.error.is_some());
+
+        let extended = ObjectRecord::new(vec![0, 0, 0x10]).unwrap();
+        editor.layer2_object_form = ObjectForm::from_record(&extended);
+        editor.layer2_object_placement_template = Some(extended);
+        editor.placement_mode = Some(CanvasPlacementMode::Layer2Object);
+        editor.place_layer2_object_at_canvas(
+            egui::pos2(ROM_LEVEL_CANVAS_CELL * 34.5, ROM_LEVEL_CANVAS_CELL * 5.5),
+            canvas,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        );
+        assert_eq!(editor.error, None);
+        let records_after_extended = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => &objects.objects.records,
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(records_after_extended.len(), count_before_invalid + 1);
+        assert_eq!(
+            records_after_extended[editor.selected_layer2_object].command_id(),
+            0
+        );
+        assert_eq!(
+            records_after_extended[editor.selected_layer2_object].parameter(),
+            0x10
+        );
 
         let staged_layer2 = editor
             .controller

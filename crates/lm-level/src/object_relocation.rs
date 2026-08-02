@@ -26,7 +26,8 @@ struct PositionedObject {
 }
 
 impl ObjectStream {
-    /// Inserts an ordinary object at an absolute native screen and coordinate pair.
+    /// Inserts a positioned standard or extended object at an absolute native screen and
+    /// coordinate pair.
     ///
     /// Existing owned screen transitions are regenerated canonically. The new object is placed
     /// after existing objects on the target screen, while trailing opaque controls are preserved.
@@ -50,7 +51,8 @@ impl ObjectStream {
         )
     }
 
-    /// Inserts an ordinary object and explicitly sets its perpendicular coordinate bit 4.
+    /// Inserts a positioned standard or extended object and explicitly sets its perpendicular
+    /// coordinate bit 4.
     ///
     /// # Errors
     ///
@@ -66,7 +68,7 @@ impl ObjectStream {
         if target_screen > 0x1f {
             return Err(ObjectRelocationError::TargetScreenOutOfRange(target_screen));
         }
-        if record.command_id() == 0 {
+        if !record.is_positioned_object() {
             return Err(ObjectRelocationError::NotOrdinaryObject(self.records.len()));
         }
         record
@@ -187,7 +189,7 @@ fn decode_positioned_objects(
             screen = jump.packed_target;
             continue;
         }
-        if record.command_id() == 0 && record.parameter() <= 3 {
+        if !record.is_positioned_object() {
             trailing_controls.push(record.clone());
             continue;
         }
@@ -390,6 +392,43 @@ mod tests {
                 .is_err()
         );
         assert_eq!(stream, original);
+    }
+
+    #[test]
+    fn positioned_command_zero_extended_objects_insert_and_relocate() {
+        let extended = ObjectRecord::new(vec![0, 0, 4]).unwrap();
+        let mut stream = ObjectStream::default();
+        let inserted = stream
+            .insert_ordinary_object_at_position(
+                extended,
+                3,
+                ObjectCoordinateNibbles {
+                    first: 5,
+                    second: 6,
+                },
+                true,
+            )
+            .unwrap();
+        assert_eq!(stream.records[inserted].command_id(), 0);
+        assert_eq!(stream.records[inserted].parameter(), 4);
+        assert_eq!(stream.native_placements()[0].screen, 3);
+        assert_eq!(stream.native_placements()[0].minor, 0x15);
+
+        let relocated = stream
+            .relocate_ordinary_object_position(
+                inserted,
+                5,
+                ObjectCoordinateNibbles {
+                    first: 7,
+                    second: 8,
+                },
+                false,
+            )
+            .unwrap();
+        assert_eq!(stream.records[relocated].command_id(), 0);
+        assert_eq!(stream.records[relocated].parameter(), 4);
+        assert_eq!(stream.native_placements()[0].screen, 5);
+        assert_eq!(stream.native_placements()[0].minor, 7);
     }
 
     #[test]

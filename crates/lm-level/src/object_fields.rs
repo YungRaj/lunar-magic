@@ -30,6 +30,16 @@ impl std::fmt::Display for ObjectFieldError {
 impl std::error::Error for ObjectFieldError {}
 
 impl ObjectRecord {
+    /// Returns whether this record participates in the positioned object stream.
+    ///
+    /// Command zero parameters `$00`–`$03` are editor controls. Parameters `$04+` are extended
+    /// objects and therefore have coordinates and screen placement just like nonzero standard
+    /// commands.
+    #[must_use]
+    pub fn is_positioned_object(&self) -> bool {
+        self.command_id() != 0 || self.parameter() > 3
+    }
+
     /// Returns the six-bit command ID recovered from the native object decoder.
     #[must_use]
     pub fn command_id(&self) -> u8 {

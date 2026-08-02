@@ -2960,6 +2960,13 @@ path. The resulting RATS-owned publication changes only level `$102`'s Layer 1 p
 the complete staged Rust value, and exports from Lunar Magic 3.63 as the baseline-canonicalized
 stream with the identical relocation and removal. Layer 2, sprites, the neighboring Layer 1
 pointer, checksum repair, and exact application undo are independently asserted.
+
+Command-zero records are no longer conflated at the canvas boundary. Parameters `$00–$03` retain
+their control meanings and reject placement, while `$04+` are positioned extended objects and now
+flow through the same canonical insertion/relocation machinery as standard commands. This applies
+to both Layer 1 and object-backed Layer 2. The authentic modified-ROM insertion gate now places a
+standard object, places a command-zero extended object, edits that extended selector through the
+semantic form, and requires Lunar Magic 3.63 to reproduce both changes exactly.
 Selecting a new standard catalog command remains the explicit boundary that creates a fresh
 ordinary record and clears prior extension provenance.
 The parallel SSC catalog now has a complete application-backed mixed-table save fixture. One `$F0`

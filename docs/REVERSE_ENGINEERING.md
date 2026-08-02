@@ -1942,6 +1942,13 @@ exactly, and deleting a second ordinary record preserves that resulting control-
 Only the selected Layer 1 pointer changes; Layer 2, sprites, and the neighboring level remain
 untouched.
 
+The recovered object walker distinguishes command-zero controls by parameter, not command ID
+alone. Parameters `$00–$03` are screen-exit/jump/control forms, while `$04+` participate in normal
+position walking as extended objects. Native canvas insertion previously imposed the broader and
+incorrect `command != 0` test; the stream model and both Layer 1/Layer 2 canvas paths now share the
+recovered boundary. A modified-ROM Lunar Magic 3.63 re-export proves placement plus a subsequent
+extended-selector edit remains canonical.
+
 The structure allocator consistently accounts for the 8-byte RATS header. `FindDuplicateRatsPayload` reads and compares only validated candidates and rejects sizes over `0x8000` for level payloads.
 
 ## Native overworld path-link tables
