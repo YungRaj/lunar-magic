@@ -344,13 +344,10 @@ fn terminal_level_edit_script_covers_objects_and_native_sprite_tokens_atomically
         [0x8e, 0x1d, 0x7f]
     );
     assert_eq!(loaded.layer1.objects.records[1].encoded(), [0x1b, 0x0a, 1]);
-    assert_eq!(loaded.sprites.header, 0x20);
+    assert_eq!(loaded.sprites.header, 0);
     assert!(matches!(
         loaded.sprites.tokens.as_slice(),
-        [
-            lm_level::SpriteToken::Record(_),
-            lm_level::SpriteToken::Control(0x90)
-        ]
+        [lm_level::SpriteToken::Record(_)]
     ));
     app.dispatch(Command::Undo).unwrap();
     let restored = app

@@ -110,6 +110,12 @@ through the selected grammar. The live
 an unnecessary expanded stream to the identical legacy-framed record sequence; focused tests cover
 both directions, installed-canvas commit/reopen, and exact undo.
 
+Expanded sprite controls `$FF 80..FD` are no longer an unresolved editing rejection. The executable
+parser proves they are ignored two-byte padding with no upper-Y effect, and the live
+`lunar_magic_strips_ignored_expanded_sprite_controls` oracle proves Lunar Magic removes `$80` and
+`$FD` while preserving a neighboring real upper-Y transition and all records. Raw codecs remain
+lossless; semantic edits and exports strip the ignored pairs canonically.
+
 The standard/extended/custom-object rows now have native visual choosers for standard, recovered
 command-zero extended, and resolved OSC custom objects in Layer 1 and object-backed Layer 2. The active-tileset
 definition set drives selector availability and Map16 preview, including selector `$17`'s

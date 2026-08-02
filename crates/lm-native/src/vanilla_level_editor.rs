@@ -13220,23 +13220,17 @@ mod tests {
                 token: SpriteToken::Control(0x90),
             }])
             .unwrap();
-        let opaque = editor.controller.as_ref().unwrap().level().sprites.clone();
-        editor.move_sprite_to_canvas(2, egui::pos2(52.5 * cell, 6.5 * cell), canvas, cell, false);
         assert!(
             editor
-                .error
-                .as_deref()
+                .controller
+                .as_ref()
                 .unwrap()
-                .contains("OpaqueExpandedSpriteControl")
+                .level()
+                .sprites
+                .tokens
+                .iter()
+                .all(|token| !matches!(token, SpriteToken::Control(_)))
         );
-        assert_eq!(editor.controller.as_ref().unwrap().level().sprites, opaque);
-        editor
-            .controller
-            .as_mut()
-            .unwrap()
-            .apply_edits(&[NativeLevelEdit::RemoveSprite { index: 1 }])
-            .unwrap();
-        editor.error = None;
         editor.move_sprite_to_canvas(1, egui::pos2(52.5 * cell, 6.5 * cell), canvas, cell, false);
 
         assert_eq!(editor.error, None);

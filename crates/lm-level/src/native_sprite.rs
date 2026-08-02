@@ -41,13 +41,17 @@ impl NativeSpriteStream {
     #[must_use]
     pub fn requires_expanded_framing(&self) -> bool {
         self.tokens.iter().any(|token| match token {
-            SpriteToken::Screen(_) | SpriteToken::Control(_) => true,
+            SpriteToken::Screen(_) => true,
+            SpriteToken::Control(value) => !(0x80..=0xfd).contains(value),
             SpriteToken::Record(record) => record.encoded.first() == Some(&0xff),
         })
     }
 
-    /// Selects Lunar Magic's canonical framing from the tokens and synchronizes header bit `$20`.
+    /// Drops Lunar Magic-ignored controls, selects canonical framing, and synchronizes bit `$20`.
     pub fn canonicalize_framing(&mut self) {
+        self.tokens.retain(
+            |token| !matches!(token, SpriteToken::Control(value) if (0x80..=0xfd).contains(value)),
+        );
         self.expanded = self.requires_expanded_framing();
         if self.expanded {
             self.header |= Self::EXPANDED_HEADER_FLAG;
@@ -145,6 +149,33 @@ mod tests {
         assert!(matches!(stream.tokens[0], SpriteToken::Screen(0x12)));
         assert!(matches!(stream.tokens[3], SpriteToken::Control(0x90)));
         assert_eq!(stream.encode_checked().unwrap(), bytes);
+    }
+
+    #[test]
+    fn semantic_canonicalization_strips_ignored_controls_and_reselects_framing() {
+        let mut stream = NativeSpriteStream {
+            header: 0x7a,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Control(0x80),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0, 0, 1],
+                }),
+                SpriteToken::Control(0xfd),
+            ],
+        };
+        assert!(!stream.requires_expanded_framing());
+        stream.canonicalize_framing();
+        assert_eq!(
+            stream,
+            NativeSpriteStream {
+                header: 0x5a,
+                expanded: false,
+                tokens: vec![SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0, 0, 1],
+                })],
+            }
+        );
     }
 
     #[test]

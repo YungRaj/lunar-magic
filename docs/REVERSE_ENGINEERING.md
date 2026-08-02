@@ -2717,8 +2717,15 @@ ties. When the vertical-level global at `$00E27909` is set, it first compares th
 the parser's orientation-swapped second record byte—equivalent to the original low four Y bits.
 The live `lunar_magic_matches_vertical_expanded_sprite_ordering` oracle isolates that third key in
 an authentic vertical installed level. A synthetic SMW-US ROM fixture commits,
-semantically reopens, and undoes both installed-canvas operations; opaque `$FF 80..FD` controls
-remain a hard atomic failure because their effect on upper-Y state is not yet proved.
+semantically reopens, and undoes both installed-canvas operations.
+
+The parser at `004CC185–004CC218` resolves the remaining `$FF 80..FD` range: values at most `$7F`
+replace the active upper-Y byte, `$FF` escapes a record, `$FE` terminates, and every `$80..FD`
+value advances the input by two bytes without changing state or allocating a sprite node. The live
+`lunar_magic_strips_ignored_expanded_sprite_controls` oracle injects `$80` and `$FD` around a real
+upper-Y transition; Lunar Magic strips both ignored pairs while preserving the transition and
+complete record sequence. Semantic serializers must therefore remove these pairs, while raw
+fixture codecs may retain them losslessly.
 
 The framing discriminator is per stream rather than a property of the installed pointer-table
 generation. `SerializeLevelSpriteList` (`004CC2B0`) clears sprite-header bit `$20` before emitting

@@ -3110,8 +3110,9 @@ the complete selected record and performs that relocation in the same atomic edi
 routes stably sort by five-bit screen and resolved upper-Y band, plus Lunar Magic's low-four-Y-bit
 tie-breaker in vertical modes, rebuild only the minimal `$FF vv` transitions, retain record
 identity/extensions and same-key priority, track the selected token across sorting and removed
-controls, and reload the canonical form. Opaque expanded
-controls still reject atomically. The application-backed
+controls, and reload the canonical form. Expanded `$FF 80..FD` pairs are retained by raw codecs
+but stripped at semantic edit/export boundaries, matching Lunar Magic's ignored-control behavior.
+The application-backed
 `expanded_sprite_canvas_edits_rebuild_controls_commit_reopen_and_undo` fixture starts with a shared
 upper-Y token, drags the record into the visible base band, inserts a second expanded record,
 commits the canonical stream to ROM, reopens it exactly, and undoes to every baseline logical byte.
@@ -3146,6 +3147,13 @@ transition. Low-level parsing and raw encoding remain lossless for fixture inspe
 expanded level-$105 stream directly to ROM and proves Lunar Magic 3.63 exports the same records
 with `$20` clear and legacy termination. Focused level-save and installed-canvas tests cover both
 framing transitions, semantic reopen, and exact undo.
+
+The previously opaque expanded-control range is now executable- and oracle-bound.
+`ParseSerializedLevelSpriteStream` advances past `$FF 80..FD` without changing the active upper-Y
+value or creating a sprite node. The live
+`lunar_magic_strips_ignored_expanded_sprite_controls` oracle injects `$80` and `$FD` around a real
+upper-Y transition and proves Lunar Magic removes both while retaining the transition and every
+record. Rust semantic normalization now does the same; low-level raw parse/encode remains exact.
 
 The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
 pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at

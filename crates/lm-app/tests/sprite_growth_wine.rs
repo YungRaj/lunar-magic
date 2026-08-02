@@ -312,6 +312,95 @@ fn lunar_magic_downgrades_unneeded_expanded_sprite_framing() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Proves Lunar Magic ignores and strips expanded `$80..FD` control pairs on serialization.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_strips_ignored_expanded_sprite_controls() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc");
+    assert!(original_rom.is_file(), "missing {}", original_rom.display());
+    let directory = std::env::temp_dir().join(format!(
+        "lm-ignored-expanded-sprite-controls-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let edited_rom = directory.join("Rust ignored expanded controls.sfc");
+    let reexported_mwl = directory.join("Lunar Magic stripped controls.mwl");
+    let lengths = SpriteLengthTable::standard();
+    let image = RomImage::from_bytes(fs::read(&original_rom).unwrap()).unwrap();
+    let mut project = Project::new(image.clone());
+    let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+    let mut written = project.load_level_slot(0x105, layout, &lengths).unwrap();
+    assert!(written.sprites.tokens.len() >= 2);
+    written.sprites.expanded = true;
+    written.sprites.header |= NativeSpriteStream::EXPANDED_HEADER_FLAG;
+    written.sprites.tokens.insert(0, SpriteToken::Control(0x80));
+    written.sprites.tokens.insert(1, SpriteToken::Screen(2));
+    written.sprites.tokens.insert(3, SpriteToken::Control(0xfd));
+
+    layout.expanded_sprites = true;
+    let protected = vec![ProtectedRange(0x7fc0..0x8000)];
+    project
+        .relocate_level_sprites_with_checksum(
+            layout,
+            &written,
+            &lengths,
+            0x7fdc,
+            &LevelSaveOptions {
+                layer1_allocation: AllocationPolicy {
+                    search: 0..0,
+                    bank_size: None,
+                    fill_bytes: vec![0xff],
+                    protected: protected.clone(),
+                },
+                sprite_allocation: AllocationPolicy {
+                    search: 0x80_000..image.logical_len(),
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0x00, 0xff],
+                    protected,
+                },
+                previous_layer1: None,
+                previous_sprites: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+    fs::write(&edited_rom, project.save_snapshot()).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &reexported_mwl,
+        "105",
+    );
+    let modes = [false; 256];
+    let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
+    let raw_sprites = reexported.payload_section(MwlSectionKind::Sprites).unwrap();
+    assert!(NativeSpriteStream::header_uses_expanded_framing(
+        raw_sprites.payload[0]
+    ));
+    assert!(
+        !raw_sprites
+            .payload
+            .windows(2)
+            .any(|bytes| bytes == [0xff, 0x80] || bytes == [0xff, 0xfd])
+    );
+    let actual = MwlNativeLevel::decode(&reexported, &lengths, 32, &modes).unwrap();
+    let mut expected = written.sprites.clone();
+    expected
+        .tokens
+        .retain(|token| !matches!(token, SpriteToken::Control(_)));
+    assert_eq!(actual.sprites, expected);
+    let reopened_rom = RomImage::from_bytes(fs::read(&edited_rom).unwrap()).unwrap();
+    assert!(detect_identity(&reopened_rom).unwrap().checksum_matches());
+    fs::remove_dir_all(directory).unwrap();
+}
+
 /// Proves vertical expanded streams use Lunar Magic's orientation-specific coordinate key.
 #[test]
 #[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]

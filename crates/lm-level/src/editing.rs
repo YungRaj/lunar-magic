@@ -12,7 +12,7 @@ pub enum LevelEditError {
     ExpandedSpritePositionSort,
     ExpandedSpriteRelocationRequiresExpanded,
     ExpandedSpriteYOutOfRange(u16),
-    OpaqueExpandedSpriteControl { index: usize },
+    InvalidExpandedSpriteControl { index: usize, value: u8 },
     ShortSpriteRecord { index: usize, len: usize },
     SpriteField(NativeSpriteFieldError),
     ObjectRelocation(crate::ObjectRelocationError),
@@ -142,12 +142,12 @@ impl NativeSpriteStream {
     /// or upper-band move. Base identity fields, extension bytes, and priority within the complete
     /// key remain unchanged. Redundant upper-Y controls are removed and the minimum state
     /// transitions needed by the sorted record sequence are emitted. Returns the selected record's
-    /// new token index.
+    /// new token index. Lunar Magic-ignored `$80..FD` control pairs are stripped.
     ///
     /// # Errors
     ///
-    /// Rejects legacy streams, invalid/non-record selections, out-of-range coordinates, opaque
-    /// control tokens, and revision-table width changes without mutating the stream.
+    /// Rejects legacy streams, invalid/non-record selections, out-of-range coordinates, and
+    /// revision-table width changes without mutating the stream.
     pub fn relocate_expanded_record(
         &mut self,
         selected: usize,
@@ -177,8 +177,12 @@ impl NativeSpriteStream {
         for (index, token) in self.tokens.iter().enumerate() {
             match token {
                 SpriteToken::Screen(value) => active_upper_y = *value,
-                SpriteToken::Control(_) => {
-                    return Err(LevelEditError::OpaqueExpandedSpriteControl { index });
+                SpriteToken::Control(value) if (0x80..=0xfd).contains(value) => {}
+                SpriteToken::Control(value) => {
+                    return Err(LevelEditError::InvalidExpandedSpriteControl {
+                        index,
+                        value: *value,
+                    });
                 }
                 SpriteToken::Record(record) => {
                     let mut record = record.clone();
@@ -597,6 +601,46 @@ mod tests {
     }
 
     #[test]
+    fn expanded_relocation_strips_ignored_controls_without_changing_upper_y_state() {
+        let mut stream = NativeSpriteStream {
+            header: 0x20,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Control(0x80),
+                SpriteToken::Screen(2),
+                SpriteToken::Control(0xfd),
+                sprite(1),
+                SpriteToken::Control(0x90),
+                sprite(2),
+            ],
+        };
+
+        assert_eq!(
+            stream
+                .relocate_expanded_record(
+                    5,
+                    1,
+                    3,
+                    2 * 32 + 7,
+                    false,
+                    &SpriteLengthTable::standard()
+                )
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            stream.tokens,
+            [
+                SpriteToken::Screen(2),
+                sprite(1),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0x70, 0x31, 2],
+                }),
+            ]
+        );
+    }
+
+    #[test]
     fn expanded_relocation_failures_are_atomic() {
         for (mut stream, index, y) in [
             (
@@ -612,7 +656,7 @@ mod tests {
                 NativeSpriteStream {
                     header: 0,
                     expanded: true,
-                    tokens: vec![SpriteToken::Control(0x80), sprite(1)],
+                    tokens: vec![SpriteToken::Control(0xfe), sprite(1)],
                 },
                 1,
                 0,
