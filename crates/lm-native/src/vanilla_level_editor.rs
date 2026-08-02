@@ -630,6 +630,7 @@ impl VanillaLevelEditor {
                 ));
                 self.object_catalog(ui, custom_map16, true);
                 self.extended_object_catalog(ui, custom_map16, true);
+                self.custom_object_catalog(ui, custom_objects, custom_map16, true);
                 self.show_layer2_object_editor(ui, &objects.objects.records, custom_objects);
             }
         });
@@ -3306,7 +3307,7 @@ impl VanillaLevelEditor {
         }
         self.object_catalog(ui, custom_map16, false);
         self.extended_object_catalog(ui, custom_map16, false);
-        self.custom_object_catalog(ui, custom_objects, custom_map16);
+        self.custom_object_catalog(ui, custom_objects, custom_map16, false);
         if let Some((screen, destination_and_flags)) = &mut self.object_form.screen_exit {
             ui.label("Native screen-exit object");
             egui::Grid::new("vanilla-screen-exit-fields").show(ui, |ui| {
@@ -3493,12 +3494,17 @@ impl VanillaLevelEditor {
         ui: &mut egui::Ui,
         custom_objects: Option<&lm_level::OscResolvedTable>,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+        layer2: bool,
     ) {
         let Some(custom_objects) = custom_objects else {
             return;
         };
         egui::CollapsingHeader::new("Add custom OSC object visually")
-            .id_salt("vanilla-custom-object-catalog")
+            .id_salt(if layer2 {
+                "vanilla-layer2-custom-object-catalog"
+            } else {
+                "vanilla-custom-object-catalog"
+            })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Hex/name filter");
@@ -3517,7 +3523,11 @@ impl VanillaLevelEditor {
                 let foreground_texture = self.foreground_texture.clone();
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
-                    .id_salt("vanilla-custom-object-catalog-scroll")
+                    .id_salt(if layer2 {
+                        "vanilla-layer2-custom-object-catalog-scroll"
+                    } else {
+                        "vanilla-custom-object-catalog-scroll"
+                    })
                     .max_height(280.0)
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -3536,17 +3546,31 @@ impl VanillaLevelEditor {
                         });
                     });
                 if let Some(selector) = chosen {
-                    match custom_object_native_record(selector) {
-                        Ok(record) => {
-                            self.object_form = ObjectForm::from_record(&record);
-                            self.object_placement_template = Some(record);
-                            self.placement_mode = Some(CanvasPlacementMode::Object);
-                            self.error = None;
-                        }
-                        Err(error) => self.error = Some(error),
-                    }
+                    self.select_custom_object_from_catalog(selector, layer2);
                 }
             });
+    }
+
+    fn select_custom_object_from_catalog(
+        &mut self,
+        selector: lm_level::OscObjectSelector,
+        layer2: bool,
+    ) {
+        match custom_object_native_record(selector) {
+            Ok(record) if layer2 => {
+                self.layer2_object_form = ObjectForm::from_record(&record);
+                self.layer2_object_placement_template = Some(record);
+                self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
+                self.error = None;
+            }
+            Ok(record) => {
+                self.object_form = ObjectForm::from_record(&record);
+                self.object_placement_template = Some(record);
+                self.placement_mode = Some(CanvasPlacementMode::Object);
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error),
+        }
     }
 
     fn extended_object_catalog(
@@ -10248,6 +10272,45 @@ mod tests {
             records_after_standard[editor.selected_layer2_object].command_id(),
             1
         );
+
+        let count_after_standard = records_after_standard
+            .iter()
+            .filter(|record| record.is_positioned_object())
+            .count();
+        let custom_sidecar = lm_level::OscSidecar::decode(b"22\t2\t13\t0,0,10\n").unwrap();
+        let custom_selector =
+            lm_level::OscResolvedTable::from_sidecar(&custom_sidecar).objects()[0].selector;
+        editor.select_custom_object_from_catalog(custom_selector, true);
+        let custom_template = editor.layer2_object_placement_template.as_ref().unwrap();
+        assert_eq!(custom_template.command_id(), 0x22);
+        assert_eq!(custom_template.parameter(), 2);
+        assert_eq!(custom_template.encoded(), &[0x40, 0x20, 2, 0]);
+        assert_eq!(
+            editor.placement_mode,
+            Some(CanvasPlacementMode::Layer2Object)
+        );
+        editor.place_layer2_object_at_canvas(
+            egui::pos2(ROM_LEVEL_CANVAS_CELL * 66.5, ROM_LEVEL_CANVAS_CELL * 7.5),
+            canvas,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        );
+        assert_eq!(editor.error, None);
+        let records_after_custom = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => &objects.objects.records,
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        assert_eq!(
+            records_after_custom
+                .iter()
+                .filter(|record| record.is_positioned_object())
+                .count(),
+            count_after_standard + 1
+        );
+        let placed_custom = &records_after_custom[editor.selected_layer2_object];
+        assert_eq!(placed_custom.command_id(), 0x22);
+        assert_eq!(placed_custom.parameter(), 2);
+        assert_eq!(placed_custom.encoded()[3], 0);
 
         let staged_layer2 = editor
             .controller
