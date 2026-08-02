@@ -2857,12 +2857,12 @@ buttons: load/history refresh, list and canvas clicks, typed paste, reorder, dra
 and completion, and canvas insertion retain the selected Layer 1 or object-backed Layer 2 record.
 Selecting a new standard catalog command remains the explicit boundary that creates a fresh
 ordinary record and clears prior extension provenance.
-The parallel SSC catalog now has a complete application-backed mixed-width save fixture. Four-,
-five-, and six-byte selections each preserve the current packed placement, apply the resolved
-selector's extra-bit table, and materialize zero-filled extension bytes at the declared width.
-Semantic coordinate edits retain all three widths in one stream, native allocation and checksum
-repair reopen every record byte-exactly, and one application undo restores the expanded pre-edit
-image.
+The parallel SSC catalog now has a complete application-backed mixed-table save fixture. Four-,
+five-, six-, and seven-byte selections span extra-bit tables zero through three; each preserves the
+current packed placement and materializes zero-filled extension bytes at the declared width.
+Semantic coordinate edits retain all four selectors and widths in one stream, native allocation
+and checksum repair reopen every record byte-exactly, and one application undo restores the
+expanded pre-edit image.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The

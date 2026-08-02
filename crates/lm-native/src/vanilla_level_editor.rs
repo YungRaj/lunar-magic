@@ -11010,7 +11010,7 @@ mod tests {
     fn mixed_width_ssc_catalog_sprites_commit_reopen_and_undo_exactly() {
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let sidecar = lm_level::SscSidecar::decode(
-            b"F0\t40002\t0,0,10\nF1\t50002\t0,0,11\nF2\t60002\t0,0,12\n",
+            b"F0\t40002\t0,0,10\nF1\t50012\t0,0,11\nF2\t60022\t0,0,12\nF3\t70032\t0,0,13\n",
         )
         .unwrap();
         let resolved = lm_level::SscResolvedTable::from_sidecar(&sidecar);
@@ -11063,6 +11063,10 @@ mod tests {
             assert_eq!(
                 chosen.native_fields().unwrap().sprite_number,
                 0xf0 + u8::try_from(case).unwrap()
+            );
+            assert_eq!(
+                chosen.native_fields().unwrap().extra_bits,
+                u8::try_from(case).unwrap()
             );
             assert!(chosen.encoded[3..].iter().all(|byte| *byte == 0));
 
