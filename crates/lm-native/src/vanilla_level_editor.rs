@@ -3874,14 +3874,6 @@ impl VanillaLevelEditor {
             },
         );
         self.apply_sprite_result(edit);
-        if self.error.is_none()
-            && let Some(controller) = self.controller.as_ref()
-        {
-            self.sprite_form = SpriteForm::from_token(
-                controller.level().sprites.header,
-                controller.level().sprites.tokens.get(self.selected_sprite),
-            );
-        }
     }
 
     fn apply_sprite_result(&mut self, edit: Result<NativeLevelEdit, String>) {
@@ -3889,7 +3881,13 @@ impl VanillaLevelEditor {
             Ok(edit) => {
                 if let Some(controller) = self.controller.as_mut() {
                     match controller.apply_edits(&[edit]) {
-                        Ok(()) => self.error = None,
+                        Ok(()) => {
+                            self.sprite_form = SpriteForm::from_token(
+                                controller.level().sprites.header,
+                                controller.level().sprites.tokens.get(self.selected_sprite),
+                            );
+                            self.error = None;
+                        }
                         Err(error) => self.error = Some(error.to_string()),
                     }
                 }
@@ -10850,6 +10848,60 @@ mod tests {
         };
         assert_eq!(&record.encoded[3..], &[0xaa, 0xbb]);
         assert_eq!(record.native_fields().unwrap().x, 7);
+    }
+
+    #[test]
+    fn raw_sprite_replacement_reloads_committed_semantic_fields() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let selected = controller
+            .level()
+            .sprites
+            .tokens
+            .iter()
+            .position(|token| matches!(token, SpriteToken::Record(_)))
+            .unwrap();
+        let replacement = SpriteToken::Record(lm_level::SpriteRecord {
+            encoded: vec![0xdb, 0x3e, 0x55],
+        });
+        let mut editor = VanillaLevelEditor {
+            controller: Some(controller),
+            selected_sprite: selected,
+            sprite_form: SpriteForm {
+                encoded: "stale raw text".into(),
+                semantic_record: false,
+                ..SpriteForm::default()
+            },
+            ..VanillaLevelEditor::default()
+        };
+
+        editor.apply_sprite_result(Ok(NativeLevelEdit::ReplaceSprite {
+            index: selected,
+            token: replacement,
+        }));
+
+        assert_eq!(editor.error, None);
+        assert_eq!(editor.sprite_form.encoded, "DB 3E 55");
+        assert_eq!(
+            (
+                editor.sprite_form.y_low,
+                editor.sprite_form.extra_bits,
+                editor.sprite_form.screen,
+                editor.sprite_form.x,
+                editor.sprite_form.sprite_number,
+                editor.sprite_form.semantic_record,
+            ),
+            (0x1d, 2, 0x1e, 3, 0x55, true)
+        );
     }
 
     #[test]

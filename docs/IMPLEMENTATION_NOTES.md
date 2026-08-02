@@ -2840,6 +2840,10 @@ graphics payload before constructing an editor controller. A modified pointer or
 compressed payload is rejected with an explicit audited-profile requirement instead of partially
 rendering through vanilla addresses. An exhaustive eight-worker gate decodes the level model,
 Layer 2 layout, and complete built-in render assets for all 512 pristine level slots.
+Raw and semantic sprite replacements now share one post-apply refresh boundary. After the staged
+controller accepts a replacement, the selected token is decoded back into the raw text and packed
+semantic controls, including whether the result remains an ordinary editable record. This prevents
+a raw token-shape change from leaving stale coordinates or an incorrectly enabled semantic action.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The
