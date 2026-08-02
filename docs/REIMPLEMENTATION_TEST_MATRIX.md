@@ -512,10 +512,11 @@ operation so an exit cannot be accidentally rewritten as an ordinary object. The
 derives original/staged serialized lengths with the active SSC table and identifies the exact
 in-place or shared-bank copy-on-write save path; a live Lunar Magic 3.63 Wine oracle reopens the
 grown RATS-owned stream and exports the identical canonical decoded sprite sequence.
-An application-backed SSC catalog fixture also selects a five-byte custom record, preserves its
-current placement while applying the selector's extra-bit table, verifies zero-filled extension
-bytes, semantically edits packed coordinates without changing width, commits/reopens the exact
-record through the native ROM allocator, and undoes to the pre-edit expanded image. Native
+An application-backed SSC catalog fixture also selects independent four-, five-, and six-byte
+custom records, preserves current placement while applying each selector's extra-bit table,
+verifies every zero-filled extension, semantically edits packed coordinates without changing any
+width, commits/reopens the mixed stream exactly through the native ROM allocator, and undoes all
+three records to the pre-edit expanded image. Native
 screen-jump controls expose their encoding-order first component as five bits and second component
 as four bits, reconstruct only the respective `$0F1F`/`$1F0F` packed domains, preserve low-first or
 high-first ordering, and reload the accepted staged target into semantic and raw controls. Native

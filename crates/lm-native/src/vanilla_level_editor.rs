@@ -11007,11 +11007,13 @@ mod tests {
     }
 
     #[test]
-    fn ssc_catalog_sprite_inserts_edits_commits_reopens_and_undoes() {
+    fn mixed_width_ssc_catalog_sprites_commit_reopen_and_undo_exactly() {
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
-        let sidecar = lm_level::SscSidecar::decode(b"F0\t50002\t0,0,10\n").unwrap();
+        let sidecar = lm_level::SscSidecar::decode(
+            b"F0\t40002\t0,0,10\nF1\t50002\t0,0,11\nF2\t60002\t0,0,12\n",
+        )
+        .unwrap();
         let resolved = lm_level::SscResolvedTable::from_sidecar(&sidecar);
-        let selector = resolved.sprites().first().unwrap().selector;
         let lengths = sprite_lengths_from_ssc(Some(&resolved)).unwrap();
 
         let mut app = AppState::default();
@@ -11038,7 +11040,7 @@ mod tests {
             Some(&resolved),
         );
         assert!(editor.error.is_none(), "{:?}", editor.error);
-        let token_count = editor
+        let initial_token_count = editor
             .controller
             .as_ref()
             .unwrap()
@@ -11046,30 +11048,44 @@ mod tests {
             .sprites
             .tokens
             .len();
-        editor.selected_sprite = token_count.saturating_sub(1);
-        editor.choose_custom_sprite(selector);
-        let SpriteToken::Record(chosen) =
-            crate::native_level_document_form::parse_sprite_token(&editor.sprite_form.encoded)
-                .unwrap()
-        else {
-            panic!("SSC catalog selection must construct an ordinary sprite record");
-        };
-        assert_eq!(chosen.encoded.len(), 5);
-        assert_eq!(chosen.native_fields().unwrap().sprite_number, 0xf0);
-        assert_eq!(&chosen.encoded[3..], &[0, 0]);
-        editor.insert_sprite(token_count);
-        let inserted = editor.selected_sprite;
-        assert_eq!(inserted, token_count);
-        editor.sprite_form.x = 7;
-        editor.sprite_form.y_low = 0x1d;
-        editor.apply_sprite_semantic_fields();
-        let SpriteToken::Record(staged) =
-            &editor.controller.as_ref().unwrap().level().sprites.tokens[inserted]
-        else {
-            panic!("SSC insertion must remain an ordinary sprite record");
-        };
-        assert_eq!(staged.encoded, vec![0xd1, 0x70, 0xf0, 0, 0]);
-        assert_eq!(editor.sprite_form.encoded, "D1 70 F0 00 00");
+        editor.selected_sprite = initial_token_count.saturating_sub(1);
+        let mut expected = Vec::new();
+        for (case, sprite) in resolved.sprites().iter().enumerate() {
+            let declared_length = case + 4;
+            editor.choose_custom_sprite(sprite.selector);
+            let SpriteToken::Record(chosen) =
+                crate::native_level_document_form::parse_sprite_token(&editor.sprite_form.encoded)
+                    .unwrap()
+            else {
+                panic!("SSC catalog selection must construct an ordinary sprite record");
+            };
+            assert_eq!(chosen.encoded.len(), declared_length);
+            assert_eq!(
+                chosen.native_fields().unwrap().sprite_number,
+                0xf0 + u8::try_from(case).unwrap()
+            );
+            assert!(chosen.encoded[3..].iter().all(|byte| *byte == 0));
+
+            let token_count = initial_token_count + case;
+            editor.insert_sprite(token_count);
+            let inserted = editor.selected_sprite;
+            assert_eq!(inserted, token_count);
+            editor.sprite_form.x = 5 + u8::try_from(case).unwrap();
+            editor.sprite_form.y_low = 0x18 + u8::try_from(case).unwrap();
+            editor.apply_sprite_semantic_fields();
+            let SpriteToken::Record(staged) =
+                &editor.controller.as_ref().unwrap().level().sprites.tokens[inserted]
+            else {
+                panic!("SSC insertion must remain an ordinary sprite record");
+            };
+            assert_eq!(staged.encoded.len(), declared_length);
+            assert!(staged.encoded[3..].iter().all(|byte| *byte == 0));
+            assert_eq!(
+                editor.sprite_form.encoded,
+                crate::level_editor_forms::format_bytes(&staged.encoded)
+            );
+            expected.push((inserted, staged.encoded.clone()));
+        }
 
         app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
             .unwrap();
@@ -11082,10 +11098,12 @@ mod tests {
                 &lengths,
             )
             .unwrap();
-        let SpriteToken::Record(reopened_record) = &reopened.sprites.tokens[inserted] else {
-            panic!("reopened SSC insertion must remain an ordinary sprite record");
-        };
-        assert_eq!(reopened_record.encoded, vec![0xd1, 0x70, 0xf0, 0, 0]);
+        for (inserted, encoded) in expected {
+            let SpriteToken::Record(reopened_record) = &reopened.sprites.tokens[inserted] else {
+                panic!("reopened SSC insertion must remain an ordinary sprite record");
+            };
+            assert_eq!(reopened_record.encoded, encoded);
+        }
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(
             app.project().unwrap().rom.logical_bytes(),
