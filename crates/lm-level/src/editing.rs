@@ -137,11 +137,12 @@ impl NativeSpriteStream {
 
     /// Relocates one expanded sprite record and canonically rebuilds shared upper-Y controls.
     ///
-    /// Records are stably sorted by their decoded five-bit screen and then upper-Y state, matching
-    /// Lunar Magic after a cross-screen or upper-band move. Base identity fields, extension bytes,
-    /// and priority within the same screen/band remain unchanged. Redundant upper-Y controls are
-    /// removed and the minimum state transitions needed by the sorted record sequence are emitted.
-    /// Returns the selected record's new token index.
+    /// Records are stably sorted by their decoded five-bit screen and then upper-Y state; vertical
+    /// levels additionally compare the low four Y bits, matching Lunar Magic after a cross-screen
+    /// or upper-band move. Base identity fields, extension bytes, and priority within the complete
+    /// key remain unchanged. Redundant upper-Y controls are removed and the minimum state
+    /// transitions needed by the sorted record sequence are emitted. Returns the selected record's
+    /// new token index.
     ///
     /// # Errors
     ///
@@ -153,6 +154,7 @@ impl NativeSpriteStream {
         screen: u8,
         x: u8,
         y: u16,
+        vertical: bool,
         lengths: &SpriteLengthTable,
     ) -> Result<usize, LevelEditError> {
         if !self.expanded {
@@ -194,18 +196,27 @@ impl NativeSpriteStream {
                     } else {
                         active_upper_y
                     };
-                    records.push((fields.screen, record_upper_y, index, record));
+                    let orientation_nibble = if vertical { fields.y_low & 0x0f } else { 0 };
+                    records.push((
+                        fields.screen,
+                        record_upper_y,
+                        orientation_nibble,
+                        index,
+                        record,
+                    ));
                 }
             }
         }
-        if !records.iter().any(|(_, _, index, _)| *index == selected) {
+        if !records.iter().any(|(_, _, _, index, _)| *index == selected) {
             return Err(LevelEditError::LegacyIncompatibleSpriteToken { index: selected });
         }
-        records.sort_by_key(|(screen, upper_y, _, _)| (*screen, *upper_y));
+        records.sort_by_key(|(screen, upper_y, orientation_nibble, _, _)| {
+            (*screen, *upper_y, *orientation_nibble)
+        });
         let mut rebuilt = Vec::with_capacity(records.len().saturating_mul(2));
         let mut emitted_upper_y = 0_u8;
         let mut new_selected = None;
-        for (_, record_upper_y, original_index, record) in records {
+        for (_, record_upper_y, _, original_index, record) in records {
             if record_upper_y != emitted_upper_y {
                 rebuilt.push(SpriteToken::Screen(record_upper_y));
                 emitted_upper_y = record_upper_y;
@@ -437,7 +448,7 @@ mod tests {
             ],
         };
         let selected = stream
-            .relocate_expanded_record(3, 7, 9, 6 * 32 + 29, &SpriteLengthTable::standard())
+            .relocate_expanded_record(3, 7, 9, 6 * 32 + 29, false, &SpriteLengthTable::standard())
             .unwrap();
         assert_eq!(selected, 5);
         assert_eq!(
@@ -473,7 +484,7 @@ mod tests {
         };
 
         let selected = stream
-            .relocate_expanded_record(1, 1, 5, 2 * 32 + 31, &SpriteLengthTable::standard())
+            .relocate_expanded_record(1, 1, 5, 2 * 32 + 31, false, &SpriteLengthTable::standard())
             .unwrap();
         assert_eq!(selected, 3);
         assert_eq!(
@@ -498,6 +509,42 @@ mod tests {
     }
 
     #[test]
+    fn vertical_expanded_relocation_uses_the_recovered_coordinate_nibble_tiebreaker() {
+        let mut stream = NativeSpriteStream {
+            header: 0x20,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Screen(2),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0xa0, 0x05, 0x10],
+                }),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0x20, 0x05, 0x20],
+                }),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0x80, 0x05, 0x30],
+                }),
+            ],
+        };
+
+        let selected = stream
+            .relocate_expanded_record(1, 5, 0, 2 * 32 + 10, true, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(selected, 3);
+        assert_eq!(
+            stream
+                .tokens
+                .iter()
+                .filter_map(|token| match token {
+                    SpriteToken::Record(record) => Some(record.encoded[2]),
+                    SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+                })
+                .collect::<Vec<_>>(),
+            [0x20, 0x30, 0x10]
+        );
+    }
+
+    #[test]
     fn expanded_relocation_preserves_custom_extension_bytes() {
         let mut lengths = SpriteLengthTable::standard();
         lengths.set(2, 0x42, 5).unwrap();
@@ -510,7 +557,7 @@ mod tests {
         };
         assert_eq!(
             stream
-                .relocate_expanded_record(0, 0x1e, 3, 0x7f, &lengths)
+                .relocate_expanded_record(0, 0x1e, 3, 0x7f, false, &lengths)
                 .unwrap(),
             1
         );
@@ -557,7 +604,14 @@ mod tests {
             let original = stream.clone();
             assert!(
                 stream
-                    .relocate_expanded_record(index, 0, 0, y, &SpriteLengthTable::standard())
+                    .relocate_expanded_record(
+                        index,
+                        0,
+                        0,
+                        y,
+                        false,
+                        &SpriteLengthTable::standard(),
+                    )
                     .is_err()
             );
             assert_eq!(stream, original);

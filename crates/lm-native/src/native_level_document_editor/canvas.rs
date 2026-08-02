@@ -91,6 +91,7 @@ impl NativeLevelDocumentEditor {
                                         NativeLevelCanvasTool::MoveSprite => sprite_move_edit(
                                             value,
                                             &sprite_lengths,
+                                            vertical,
                                             self.sprite_index,
                                             major,
                                             minor,
@@ -181,6 +182,7 @@ fn object_move_edit(
 fn sprite_move_edit(
     value: &NativeLevelFile,
     lengths: &SpriteLengthTable,
+    vertical: bool,
     index: usize,
     major: u16,
     minor: u16,
@@ -202,6 +204,7 @@ fn sprite_move_edit(
                 u8::try_from(screen).expect("screen was bounded to 31"),
                 u8::try_from(major % 16).expect("major remainder is at most 15"),
                 minor,
+                vertical,
                 lengths,
             )
             .map_err(|error| error.to_string())?;
@@ -583,6 +586,7 @@ mod tests {
         let (edit, selected) = sprite_move_edit(
             &value,
             &SpriteLengthTable::standard(),
+            false,
             0,
             50,
             12,
@@ -608,6 +612,7 @@ mod tests {
             sprite_move_edit(
                 &value,
                 &SpriteLengthTable::standard(),
+                false,
                 0,
                 50,
                 32,
@@ -626,6 +631,7 @@ mod tests {
         let (edit, selected) = sprite_move_edit(
             &value,
             &SpriteLengthTable::standard(),
+            false,
             1,
             4 * 16 + 3,
             5 * 32 + 7,

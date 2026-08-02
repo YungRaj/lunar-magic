@@ -2713,7 +2713,10 @@ preserves extension bytes, stably sorts by screen and then resolved upper-Y band
 within an identical screen/band pair, and returns the selected record's new token index across both
 sorting and removed controls. This matches the comparator at `004CBFA0`: its first two keys are the
 decoded screen byte and expanded upper-Y byte, followed by the original linked-list relation for
-ties (and an optional mode-specific coordinate nibble). A synthetic SMW-US ROM fixture commits,
+ties. When the vertical-level global at `$00E27909` is set, it first compares the high nibble of
+the parser's orientation-swapped second record byte—equivalent to the original low four Y bits.
+The live `lunar_magic_matches_vertical_expanded_sprite_ordering` oracle isolates that third key in
+an authentic vertical installed level. A synthetic SMW-US ROM fixture commits,
 semantically reopens, and undoes both installed-canvas operations; opaque `$FF 80..FD` controls
 remain a hard atomic failure because their effect on upper-Y state is not yet proved.
 

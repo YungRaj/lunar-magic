@@ -72,8 +72,10 @@ pub(crate) fn apply_native_level_edits(
                 x,
                 y,
             } => {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(staged_layer1.header.level_mode()).vertical;
                 staged_sprites
-                    .relocate_expanded_record(*selected, *screen, *x, *y, sprite_lengths)
+                    .relocate_expanded_record(*selected, *screen, *x, *y, vertical, sprite_lengths)
                     .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
             }
         }

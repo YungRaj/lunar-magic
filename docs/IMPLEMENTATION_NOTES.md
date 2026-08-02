@@ -3107,9 +3107,10 @@ The installed level canvas now shares the portable editor's expanded-sprite relo
 instead of sending every drag or placement through the legacy screen sorter. Dragging an expanded
 record resolves its effective upper-Y state and submits `RelocateExpandedSprite`; placement inserts
 the complete selected record and performs that relocation in the same atomic edit batch. Both
-routes stably sort by five-bit screen and resolved upper-Y band, rebuild only the minimal `$FF vv`
-transitions, retain record identity/extensions and same-screen/band priority, track the selected
-token across sorting and removed controls, and reload the canonical form. Opaque expanded
+routes stably sort by five-bit screen and resolved upper-Y band, plus Lunar Magic's low-four-Y-bit
+tie-breaker in vertical modes, rebuild only the minimal `$FF vv` transitions, retain record
+identity/extensions and same-key priority, track the selected token across sorting and removed
+controls, and reload the canonical form. Opaque expanded
 controls still reject atomically. The application-backed
 `expanded_sprite_canvas_edits_rebuild_controls_commit_reopen_and_undo` fixture starts with a shared
 upper-Y token, drags the record into the visible base band, inserts a second expanded record,
@@ -3130,6 +3131,11 @@ retained `lunar_magic_exports_rust_installed_expanded_sprite_framing` Wine oracl
 `$105` record to screen `$10`, upper-Y band 2, and an escaped `$FF` first byte; observes Lunar Magic
 export header `$24`, `$FF 02`/`$FF FF` tokens, and container flags zero; matches the complete
 screen/band-sorted stream; and reopens Rust's exact ROM payload with a valid checksum.
+`lunar_magic_matches_vertical_expanded_sprite_ordering` independently discovers a real vertical
+level in that installed ROM, moves two same-screen records into upper band 2, forces an otherwise
+ambiguous low-Y-nibble reorder, and requires Lunar Magic's complete export to equal the
+orientation-aware Rust stream. The native edit batch derives orientation from the staged level
+mode, including a mode change earlier in the same atomic batch.
 
 The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
 pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at

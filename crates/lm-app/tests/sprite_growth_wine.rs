@@ -139,7 +139,7 @@ fn lunar_magic_exports_rust_installed_expanded_sprite_framing() {
     first.set_native_fields(fields, &lengths).unwrap();
     expected
         .sprites
-        .relocate_expanded_record(0, 16, x, 2 * 32 + 31, &lengths)
+        .relocate_expanded_record(0, 16, x, 2 * 32 + 31, false, &lengths)
         .unwrap();
     layout.expanded_sprites = true;
     let protected = vec![ProtectedRange(0x7fc0..0x8000)];
@@ -212,6 +212,138 @@ fn lunar_magic_exports_rust_installed_expanded_sprite_framing() {
         .load_level_slot(0x105, reopened_layout, &lengths)
         .unwrap();
     assert_eq!(reopened.layer1, expected.layer1);
+    assert_eq!(reopened.sprites, expected.sprites);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+/// Proves vertical expanded streams use Lunar Magic's orientation-specific coordinate key.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_matches_vertical_expanded_sprite_ordering() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc");
+    assert!(original_rom.is_file(), "missing {}", original_rom.display());
+    let directory = std::env::temp_dir().join(format!(
+        "lm-vertical-expanded-sprite-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let edited_rom = directory.join("Rust vertical expanded sprites.sfc");
+    let reexported_mwl = directory.join("Lunar Magic vertical reexport.mwl");
+    let lengths = SpriteLengthTable::standard();
+    let image = RomImage::from_bytes(fs::read(&original_rom).unwrap()).unwrap();
+    let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+    let mut project = Project::new(image.clone());
+
+    let (level, selected, partner, screen, x, mut expected) = (0_usize..=0x01ff)
+        .find_map(|level| {
+            let loaded = project.load_level_slot(level, layout, &lengths).ok()?;
+            if !lm_profile::smw_us_v1_level_mode(loaded.layer1.header.level_mode()).vertical {
+                return None;
+            }
+            let placements = loaded.sprites.native_placements();
+            let (candidate, partner) = placements.iter().find_map(|candidate| {
+                let partner = placements.iter().find(|later| {
+                    later.token_index > candidate.token_index
+                        && later.screen == candidate.screen
+                        && later.minor & 0x0f < 0x0f
+                })?;
+                Some((candidate, partner))
+            })?;
+            Some((
+                level,
+                candidate.token_index,
+                partner.token_index,
+                u8::try_from(candidate.screen).ok()?,
+                u8::try_from(candidate.major % 16).ok()?,
+                loaded,
+            ))
+        })
+        .expect("installed fixture must contain a sortable vertical sprite pair");
+    expected.sprites.expanded = true;
+    expected.sprites.header |= NativeSpriteStream::EXPANDED_HEADER_FLAG;
+    let mut selected_with_controls = None;
+    let mut expanded_tokens = Vec::with_capacity(expected.sprites.tokens.len() + 4);
+    for (index, token) in std::mem::take(&mut expected.sprites.tokens)
+        .into_iter()
+        .enumerate()
+    {
+        if index == selected || index == partner {
+            expanded_tokens.push(SpriteToken::Screen(2));
+            if index == selected {
+                selected_with_controls = Some(expanded_tokens.len());
+            }
+            expanded_tokens.push(token);
+            expanded_tokens.push(SpriteToken::Screen(0));
+        } else {
+            expanded_tokens.push(token);
+        }
+    }
+    expected.sprites.tokens = expanded_tokens;
+    let selected_with_controls = selected_with_controls.unwrap();
+    let reordered = expected
+        .sprites
+        .relocate_expanded_record(
+            selected_with_controls,
+            screen,
+            x,
+            2 * 32 + 0x0f,
+            true,
+            &lengths,
+        )
+        .unwrap();
+    assert_ne!(reordered, selected_with_controls);
+    layout.expanded_sprites = true;
+    let protected = vec![ProtectedRange(0x7fc0..0x8000)];
+    project
+        .relocate_level_sprites_with_checksum(
+            layout,
+            &expected,
+            &lengths,
+            0x7fdc,
+            &LevelSaveOptions {
+                layer1_allocation: AllocationPolicy {
+                    search: 0..0,
+                    bank_size: None,
+                    fill_bytes: vec![0xff],
+                    protected: protected.clone(),
+                },
+                sprite_allocation: AllocationPolicy {
+                    search: 0x80_000..image.logical_len(),
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0x00, 0xff],
+                    protected,
+                },
+                previous_layer1: None,
+                previous_sprites: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .unwrap();
+    fs::write(&edited_rom, project.save_snapshot()).unwrap();
+
+    let level_text = format!("{level:03X}");
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &reexported_mwl,
+        &level_text,
+    );
+    let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
+    let actual = MwlNativeLevel::decode(&reexported, &lengths, 32, &[false; 256]).unwrap();
+    assert_eq!(reexported.flags, 0);
+    assert_eq!(actual.sprites, expected.sprites);
+    let reopened_rom = RomImage::from_bytes(fs::read(&edited_rom).unwrap()).unwrap();
+    assert!(detect_identity(&reopened_rom).unwrap().checksum_matches());
+    layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&reopened_rom).unwrap();
+    let reopened = Project::new(reopened_rom)
+        .load_level_slot(level, layout, &lengths)
+        .unwrap();
     assert_eq!(reopened.sprites, expected.sprites);
     fs::remove_dir_all(directory).unwrap();
 }

@@ -66,6 +66,62 @@ fn expanded_sprite_relocation_is_one_revision_and_reopens_canonically() {
 }
 
 #[test]
+fn vertical_expanded_relocation_uses_level_mode_for_canonical_ordering() {
+    let mut value = file();
+    value.sprites = NativeSpriteStream {
+        header: NativeSpriteStream::EXPANDED_HEADER_FLAG,
+        expanded: true,
+        tokens: vec![
+            SpriteToken::Screen(2),
+            SpriteToken::Record(lm_level::SpriteRecord {
+                encoded: vec![0xa0, 0x05, 0x10],
+            }),
+            SpriteToken::Record(lm_level::SpriteRecord {
+                encoded: vec![0x20, 0x05, 0x20],
+            }),
+            SpriteToken::Record(lm_level::SpriteRecord {
+                encoded: vec![0x80, 0x05, 0x30],
+            }),
+        ],
+    };
+    let mut controller = NativeLevelDocumentController::decode(
+        "vertical-expanded.lmlvl".into(),
+        &value.encode().unwrap(),
+        SpriteLengthTable::standard(),
+    )
+    .unwrap();
+
+    controller
+        .apply_edits(
+            0,
+            &[
+                NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(3)),
+                NativeLevelEdit::RelocateExpandedSprite {
+                    selected: 1,
+                    screen: 5,
+                    x: 0,
+                    y: 2 * 32 + 10,
+                },
+            ],
+        )
+        .unwrap();
+    assert_eq!(controller.value().layer1.header.level_mode(), 3);
+    assert_eq!(
+        controller
+            .value()
+            .sprites
+            .tokens
+            .iter()
+            .filter_map(|token| match token {
+                SpriteToken::Record(record) => Some(record.encoded[2]),
+                SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+            })
+            .collect::<Vec<_>>(),
+        [0x20, 0x30, 0x10]
+    );
+}
+
+#[test]
 fn mixed_native_edits_are_shared_atomic_and_canonical() {
     let mut controller = controller();
     controller

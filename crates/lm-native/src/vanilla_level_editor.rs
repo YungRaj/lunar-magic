@@ -2733,6 +2733,7 @@ impl VanillaLevelEditor {
                 fields.screen,
                 fields.x,
                 u16::from(fields.y_low),
+                vertical,
                 controller.sprite_lengths(),
             ) {
                 Ok(selected) => selected,
@@ -3061,6 +3062,8 @@ impl VanillaLevelEditor {
                 fields.screen,
                 fields.x,
                 u16::from(fields.y_low),
+                lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                    .vertical,
                 controller.sprite_lengths(),
             ) {
                 Ok(selected) => selected,
