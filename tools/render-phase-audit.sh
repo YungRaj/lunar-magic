@@ -3,6 +3,7 @@ set -eu
 
 if [ "$#" -lt 4 ] || [ "$#" -gt 6 ]; then
     echo "usage: tools/render-phase-audit.sh OUTPUT_DIR LIVE_REFERENCE_DIR ROM LEVELS [SCREENS] [STYLES]" >&2
+    echo "  LM_COMPARE_IGNORE_LIVE_RECTS: semicolon-separated x,y,width,height reference-only overlays" >&2
     exit 2
 fi
 
@@ -28,6 +29,7 @@ for phase in 0 1 2 3 4 5 6 7; do
         LM_LUNAR_MAGIC_REFERENCE_MANIFEST=${LM_LUNAR_MAGIC_REFERENCE_MANIFEST:-"$live_dir/manifest.tsv"} \
         "$workspace/tools/render-audit.sh" "$phase_dir" "$rom" "$levels" "$screens" "$styles"
     LM_COMPARE_LEVELS=$levels \
+        LM_COMPARE_IGNORE_LIVE_RECTS=${LM_COMPARE_IGNORE_LIVE_RECTS:-} \
         node "$workspace/tools/compare-level-render-audit.mjs" "$phase_dir" "$live_dir" "$diff"
     phase_dirs="${phase_dirs:+$phase_dirs,}$phase_dir"
     diffs="${diffs:+$diffs,}$diff"

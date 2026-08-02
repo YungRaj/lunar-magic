@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
 
 function usage() {
@@ -11,8 +12,26 @@ function usage() {
   process.exit(2);
 }
 
-if (process.argv.length !== 5) usage();
-const [, , rustAuditDir, liveReferenceDir, outputPath] = process.argv;
+export function parseIgnoredLiveRects(value) {
+  if (!value) return [];
+  return value.split(";").map((encoded) => {
+    const fields = encoded.split(",").map(Number);
+    if (
+      fields.length !== 4 ||
+      !fields.every(Number.isInteger) ||
+      fields[0] < 0 ||
+      fields[1] < 0 ||
+      fields[2] <= 0 ||
+      fields[3] <= 0
+    ) {
+      throw new Error(`invalid LM_COMPARE_IGNORE_LIVE_RECTS rectangle: ${encoded}`);
+    }
+    return fields;
+  });
+}
+
+let rustAuditDir;
+let liveReferenceDir;
 
 function decodePng(filePath) {
   const bytes = fs.readFileSync(filePath);
@@ -230,6 +249,7 @@ function compareLevel(level, rustPath, livePath) {
   let maxX = -1;
   let maxY = -1;
   let comparedPixels = 0;
+  let ignoredPixels = 0;
   const differenceImage = process.env.LM_COMPARE_DIFF_DIR
     ? Buffer.alloc(live.width * live.height * 3)
     : undefined;
@@ -245,6 +265,15 @@ function compareLevel(level, rustPath, livePath) {
   const ignoredLiveRgb = process.env.LM_COMPARE_IGNORE_LIVE_RGB
     ?.split(",")
     .map(Number);
+  const ignoredLiveRects = parseIgnoredLiveRects(process.env.LM_COMPARE_IGNORE_LIVE_RECTS);
+  for (const [x, y, width, height] of ignoredLiveRects) {
+    if (x + width > live.width || y + height > live.height) {
+      throw new Error(
+        `LM_COMPARE_IGNORE_LIVE_RECTS rectangle ${x},${y},${width},${height} ` +
+          `exceeds level ${level} image ${live.width}x${live.height}`,
+      );
+    }
+  }
   for (let y = 0; y < live.height; y += 1) {
     for (let x = 0; x < live.width; x += 1) {
       const expected = rgbAt(live, x, y);
@@ -252,6 +281,16 @@ function compareLevel(level, rustPath, livePath) {
         ignoredLiveRgb?.length === 3 &&
         expected.every((value, channel) => value === ignoredLiveRgb[channel])
       ) {
+        ignoredPixels += 1;
+        continue;
+      }
+      if (
+        ignoredLiveRects.some(
+          ([left, top, width, height]) =>
+            x >= left && x < left + width && y >= top && y < top + height,
+        )
+      ) {
+        ignoredPixels += 1;
         continue;
       }
       comparedPixels += 1;
@@ -362,6 +401,7 @@ function compareLevel(level, rustPath, livePath) {
     live.width,
     live.height,
     pixels,
+    ignoredPixels,
     exactDifferences,
     overOne,
     overEight,
@@ -374,47 +414,57 @@ function compareLevel(level, rustPath, livePath) {
   ];
 }
 
-const liveManifestPath = path.join(liveReferenceDir, "manifest.tsv");
-const requestedLevels = new Set(
-  (process.env.LM_COMPARE_LEVELS ?? "")
-    .split(",")
-    .map((level) => level.trim().toUpperCase())
-    .filter(Boolean),
-);
-const records = fs
-  .readFileSync(liveManifestPath, "utf8")
-  .trimEnd()
-  .split("\n")
-  .slice(1)
-  .map((line) => line.split("\t"))
-  .filter(([level]) => requestedLevels.size === 0 || requestedLevels.has(level));
-const output = [
-  [
-    "level",
-    "width",
-    "height",
-    "pixels",
-    "different_pixels",
-    "pixels_delta_gt_1",
-    "pixels_delta_gt_8",
-    "mean_absolute_channel_error",
-    "max_channel_delta",
-    "delta_gt_8_bounds",
-    "dominant_live_rgb/rust_rgb:count",
-    "rust_crop_x",
-    "rust_crop_y",
-  ].join("\t"),
-];
-for (const [level, , liveImage] of records) {
-  const rustImage = path.join(
-    rustAuditDir,
-    "images",
-    `level-${level}-editor-screen-0.png`,
+function main() {
+  if (process.argv.length !== 5) usage();
+  const outputPath = process.argv[4];
+  [, , rustAuditDir, liveReferenceDir] = process.argv;
+  const liveManifestPath = path.join(liveReferenceDir, "manifest.tsv");
+  const requestedLevels = new Set(
+    (process.env.LM_COMPARE_LEVELS ?? "")
+      .split(",")
+      .map((level) => level.trim().toUpperCase())
+      .filter(Boolean),
   );
-  if (!fs.existsSync(rustImage)) {
-    throw new Error(`missing Rust editor framebuffer: ${rustImage}`);
+  const records = fs
+    .readFileSync(liveManifestPath, "utf8")
+    .trimEnd()
+    .split("\n")
+    .slice(1)
+    .map((line) => line.split("\t"))
+    .filter(([level]) => requestedLevels.size === 0 || requestedLevels.has(level));
+  const output = [
+    [
+      "level",
+      "width",
+      "height",
+      "pixels",
+      "ignored_pixels",
+      "different_pixels",
+      "pixels_delta_gt_1",
+      "pixels_delta_gt_8",
+      "mean_absolute_channel_error",
+      "max_channel_delta",
+      "delta_gt_8_bounds",
+      "dominant_live_rgb/rust_rgb:count",
+      "rust_crop_x",
+      "rust_crop_y",
+    ].join("\t"),
+  ];
+  for (const [level, , liveImage] of records) {
+    const rustImage = path.join(
+      rustAuditDir,
+      "images",
+      `level-${level}-editor-screen-0.png`,
+    );
+    if (!fs.existsSync(rustImage)) {
+      throw new Error(`missing Rust editor framebuffer: ${rustImage}`);
+    }
+    output.push(compareLevel(level, rustImage, liveImage).join("\t"));
   }
-  output.push(compareLevel(level, rustImage, liveImage).join("\t"));
+  fs.writeFileSync(outputPath, `${output.join("\n")}\n`);
+  console.log(`pixel comparison: ${outputPath}`);
 }
-fs.writeFileSync(outputPath, `${output.join("\n")}\n`);
-console.log(`pixel comparison: ${outputPath}`);
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

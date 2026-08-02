@@ -3029,10 +3029,21 @@ the `$102` canvas therefore combined the requested level with `$001`'s shared-ba
 `vanilla_level_editor::tests::builtin_editor_resolves_lunar_magic_per_level_sprite_banks` installs
 a synthetic bank table and proves the canvas decodes its unique `$47` placement. An authenticated
 Lunar Magic 3.63 level-$102 capture now shows all three jumping-fish previews at their exact native
-coordinates. The aligned 656×448 comparison improves from 9,273 to 6,096 differing pixels and from
-2.175570 to 1.205272 mean absolute channel error. The audit comparator also treats the observed
-656×448 DIB as the same fixed `(870,338)` editor crop as the existing 656×464 capture, avoiding a
-false heuristic offset.
+coordinates. The aligned 656×448 phase-0 comparison improves from 9,273 to 6,096 differing pixels
+and from 2.175570 to 1.205272 mean absolute channel error. The audit comparator also treats the
+observed 656×448 DIB as the same fixed `(870,338)` editor crop as the existing 656×464 capture,
+avoiding a false heuristic offset.
+
+The retained eight-phase audit identifies phase 2 as Lunar Magic's captured animation state, with
+5,452 unmasked differences and 0.911269 mean absolute channel error. Every delta above one is
+confined to three measured Lunar Magic-only overlay rectangles: the screen-number labels and
+entrance annotation. `LM_COMPARE_IGNORE_LIVE_RECTS` accepts explicit, bounded
+`x,y,width,height` rectangles, reports the ignored-pixel count in the TSV, and rejects malformed,
+empty, negative, or out-of-image masks. It is deliberately forwarded only to comparison, never to
+capture or rendering. Excluding exactly those 3,824 reference-only pixels leaves 290,064 artwork
+pixels: 2,011 differ by one channel step, zero differ by more than one, the maximum channel delta
+is one, and mean absolute channel error is 0.002311. `compare-level-render-audit.test.mjs` covers
+lossless multi-rectangle parsing and unsafe shapes.
 
 The adjacent Layer 2 runtime migration now accepts all three legacy table generations. Ghidra's
 `DetectLayer2DataTableFormat` selects `$100`, `$101`, and `$102` from hook byte 9, while
