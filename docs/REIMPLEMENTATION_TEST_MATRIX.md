@@ -529,6 +529,10 @@ The primary object list uses the same rule, and its list-button insertion consum
 placement template so OSC/custom extension bytes cannot collapse to the ordinary three-byte shape.
 An application-backed OSC workflow requires insertion, replacement, deletion, undo, save/reopen,
 and resolved custom artwork to retain the exact extended record.
+Initial and history reload, list/canvas selection, typed paste, two-way reorder, drag/resize, and
+canvas insertion all bind placement to the exact selected Layer 1 or object-backed Layer 2 record;
+only a deliberate new standard-catalog choice drops that binding. Subsequent duplication must
+retain the full custom width and opaque extension bytes.
 
 Auxiliary level editing stages entrances, screen exits, secondary exits, and Map16 overrides in one
 cross-domain transaction. The first three retain their explicit sequence ordering; Map16 overrides

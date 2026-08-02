@@ -106,6 +106,11 @@ the extension-preserving placement template rather than rebuilding a three-byte 
 The upgraded `vanilla_level_editor::tests::osc_custom_object_inserts_commits_reopens_and_retains_display`
 workflow proves exact OSC extension retention through native insertion, selection/form reload,
 replacement, deletion, undo, ROM commit/reopen, and authenticated custom display resolution.
+Every path that selects a real Layer 1 or object-backed Layer 2 record now retains that exact record
+as its extension-preserving placement template: initial/undo reload, list and canvas selection,
+typed paste, reorder, drag/resize start and completion, and canvas insertion. Only choosing a new
+standard catalog command intentionally clears the template. The OSC workflow additionally proves
+typed paste, duplicate materialization, and two-way reordering preserve the complete custom record.
 
 ## Current critical path
 

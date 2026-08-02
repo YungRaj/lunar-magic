@@ -1100,7 +1100,13 @@ impl VanillaLevelEditor {
                 .get(self.selected_layer2_object)
                 .cloned();
         }
-        self.object_placement_template = None;
+        self.object_placement_template = controller
+            .level()
+            .layer1
+            .objects
+            .records
+            .get(self.selected_object)
+            .cloned();
         self.dragging_object = None;
         self.dragging_layer2_object = None;
         self.resizing_object = None;
@@ -1235,7 +1241,8 @@ impl VanillaLevelEditor {
                     .records
                     .first()
                     .map_or_else(ObjectForm::default, ObjectForm::from_record);
-                self.object_placement_template = None;
+                self.object_placement_template =
+                    controller.level().layer1.objects.records.first().cloned();
                 self.selected_sprite = 0;
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
@@ -1586,7 +1593,7 @@ impl VanillaLevelEditor {
                     {
                         self.selected_object = index;
                         self.object_form = ObjectForm::from_record(record);
-                        self.object_placement_template = None;
+                        self.object_placement_template = Some(record.clone());
                     }
                 }
             });
@@ -2315,7 +2322,7 @@ impl VanillaLevelEditor {
         {
             self.selected_object = index;
             self.object_form = ObjectForm::from_record(record);
-            self.object_placement_template = None;
+            self.object_placement_template = Some(record.clone());
         }
         if response.clicked()
             && hit_object.is_none()
@@ -2324,6 +2331,7 @@ impl VanillaLevelEditor {
         {
             self.selected_layer2_object = index;
             self.layer2_object_form = ObjectForm::from_record(record);
+            self.layer2_object_placement_template = Some(record.clone());
         }
         if response.clicked()
             && hit_object.is_none()
@@ -2359,7 +2367,7 @@ impl VanillaLevelEditor {
             self.selected_object = index;
             if let Some(record) = records.get(index) {
                 self.object_form = ObjectForm::from_record(record);
-                self.object_placement_template = None;
+                self.object_placement_template = Some(record.clone());
             }
         } else if response.drag_started()
             && hit_sprite.is_none()
@@ -2369,7 +2377,7 @@ impl VanillaLevelEditor {
             self.dragging_object = Some(index);
             self.selected_object = index;
             self.object_form = ObjectForm::from_record(record);
-            self.object_placement_template = None;
+            self.object_placement_template = Some(record.clone());
         }
         if response.drag_started()
             && hit_sprite.is_none()
@@ -2380,6 +2388,7 @@ impl VanillaLevelEditor {
             self.selected_layer2_object = index;
             if let Some(record) = layer2_records.get(index) {
                 self.layer2_object_form = ObjectForm::from_record(record);
+                self.layer2_object_placement_template = Some(record.clone());
             }
         } else if response.drag_started()
             && hit_sprite.is_none()
@@ -2390,6 +2399,7 @@ impl VanillaLevelEditor {
             self.dragging_layer2_object = Some(index);
             self.selected_layer2_object = index;
             self.layer2_object_form = ObjectForm::from_record(record);
+            self.layer2_object_placement_template = Some(record.clone());
         }
         if response.drag_stopped() {
             let position = response.interact_pointer_pos();
@@ -2486,9 +2496,7 @@ impl VanillaLevelEditor {
         ])]) {
             Ok(()) => {
                 self.selected_object = selected;
-                self.object_form =
-                    ObjectForm::from_record(&controller.level().layer1.objects.records[selected]);
-                self.object_placement_template = None;
+                self.reload_object_form();
                 self.placement_mode = None;
                 self.error = None;
             }
@@ -2732,9 +2740,7 @@ impl VanillaLevelEditor {
         ])]) {
             Ok(()) => {
                 self.selected_object = new_index;
-                self.object_form =
-                    ObjectForm::from_record(&controller.level().layer1.objects.records[new_index]);
-                self.object_placement_template = None;
+                self.reload_object_form();
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -2783,9 +2789,7 @@ impl VanillaLevelEditor {
         }])]) {
             Ok(()) => {
                 self.selected_object = index;
-                self.object_form =
-                    ObjectForm::from_record(&controller.level().layer1.objects.records[index]);
-                self.object_placement_template = None;
+                self.reload_object_form();
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -3968,10 +3972,7 @@ impl VanillaLevelEditor {
         match controller.apply_edits(&[edit]) {
             Ok(()) => {
                 self.selected_object = index;
-                if let Some(record) = controller.level().layer1.objects.records.get(index) {
-                    self.object_form = ObjectForm::from_record(record);
-                    self.object_placement_template = None;
-                }
+                self.reload_object_form();
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -4045,6 +4046,7 @@ impl VanillaLevelEditor {
         }])]) {
             Ok(()) => {
                 self.selected_object = selected;
+                self.reload_object_form();
                 self.error = None;
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -10822,6 +10824,24 @@ mod tests {
                 .records[insertion],
             record
         );
+
+        let clipboard = crate::native_clipboard::encode_level_object(&record).unwrap();
+        editor.paste_object(&clipboard, record_count + 1);
+        let pasted = editor.selected_object;
+        assert_eq!(pasted, insertion + 1);
+        assert_eq!(editor.object_placement_template.as_ref(), Some(&record));
+        assert_eq!(editor.object_record_for_placement().unwrap(), record);
+        editor.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Remove {
+            index: pasted,
+        }])));
+        assert_eq!(editor.selected_object, insertion);
+        assert_eq!(editor.object_placement_template.as_ref(), Some(&record));
+        editor.move_object(record_count + 1, false);
+        assert_eq!(editor.selected_object, insertion - 1);
+        assert_eq!(editor.object_placement_template.as_ref(), Some(&record));
+        editor.move_object(record_count + 1, true);
+        assert_eq!(editor.selected_object, insertion);
+        assert_eq!(editor.object_placement_template.as_ref(), Some(&record));
 
         let mut replacement = record.clone();
         replacement

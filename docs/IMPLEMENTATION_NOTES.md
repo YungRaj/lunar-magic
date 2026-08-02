@@ -2852,6 +2852,11 @@ Layer 1 list insertion now uses `object_record_for_placement` as well, closing a
 that previously reconstructed three ordinary bytes and discarded the extension selected from an
 OSC catalog entry. Successful insertion selects the computed index; replacement and deletion
 reload the canonical staged record and its placement template, while failures restore selection.
+That template invariant now applies to every real-record selection route rather than only action
+buttons: load/history refresh, list and canvas clicks, typed paste, reorder, drag/resize selection
+and completion, and canvas insertion retain the selected Layer 1 or object-backed Layer 2 record.
+Selecting a new standard catalog command remains the explicit boundary that creates a fresh
+ordinary record and clears prior extension provenance.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The
