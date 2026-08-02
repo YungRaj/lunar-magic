@@ -2857,6 +2857,11 @@ buttons: load/history refresh, list and canvas clicks, typed paste, reorder, dra
 and completion, and canvas insertion retain the selected Layer 1 or object-backed Layer 2 record.
 Selecting a new standard catalog command remains the explicit boundary that creates a fresh
 ordinary record and clears prior extension provenance.
+The parallel SSC catalog now has a complete application-backed five-byte save fixture. Selection
+preserves the current packed placement, applies the resolved selector's extra-bit table, and
+materializes zero-filled extension bytes at the declared width. Semantic coordinate edits retain
+that width, native allocation and checksum repair reopen the exact record, and one application undo
+restores the expanded pre-edit image byte-for-byte.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The

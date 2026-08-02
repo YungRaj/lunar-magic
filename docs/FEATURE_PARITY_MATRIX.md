@@ -111,6 +111,12 @@ as its extension-preserving placement template: initial/undo reload, list and ca
 typed paste, reorder, drag/resize start and completion, and canvas insertion. Only choosing a new
 standard catalog command intentionally clears the template. The OSC workflow additionally proves
 typed paste, duplicate materialization, and two-way reordering preserve the complete custom record.
+The SSC custom-sprite path now has an application-backed five-byte catalog fixture rather than only
+model-level width checks. `vanilla_level_editor::tests::ssc_catalog_sprite_inserts_edits_commits_reopens_and_undoes`
+proves catalog selection uses the selector's extra-bit table while retaining the current placement,
+zero-fills the declared extension, preserves that width through semantic coordinate editing,
+allocates and commits the grown native stream, reopens the exact five bytes, and undoes to the
+expanded-ROM baseline. Broader SSC widths, installed runtimes, and Wine dialog coverage remain.
 
 ## Current critical path
 

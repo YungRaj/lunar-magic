@@ -11007,6 +11007,93 @@ mod tests {
     }
 
     #[test]
+    fn ssc_catalog_sprite_inserts_edits_commits_reopens_and_undoes() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let sidecar = lm_level::SscSidecar::decode(b"F0\t50002\t0,0,10\n").unwrap();
+        let resolved = lm_level::SscResolvedTable::from_sidecar(&sidecar);
+        let selector = resolved.sprites().first().unwrap().selector;
+        let lengths = sprite_lengths_from_ssc(Some(&resolved)).unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::ExpandRom(lm_app::RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        let expanded_baseline = app.project().unwrap().rom.logical_bytes().to_vec();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(Some(&resolved)),
+            },
+            Some(&resolved),
+        );
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let token_count = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .tokens
+            .len();
+        editor.selected_sprite = token_count.saturating_sub(1);
+        editor.choose_custom_sprite(selector);
+        let SpriteToken::Record(chosen) =
+            crate::native_level_document_form::parse_sprite_token(&editor.sprite_form.encoded)
+                .unwrap()
+        else {
+            panic!("SSC catalog selection must construct an ordinary sprite record");
+        };
+        assert_eq!(chosen.encoded.len(), 5);
+        assert_eq!(chosen.native_fields().unwrap().sprite_number, 0xf0);
+        assert_eq!(&chosen.encoded[3..], &[0, 0]);
+        editor.insert_sprite(token_count);
+        let inserted = editor.selected_sprite;
+        assert_eq!(inserted, token_count);
+        editor.sprite_form.x = 7;
+        editor.sprite_form.y_low = 0x1d;
+        editor.apply_sprite_semantic_fields();
+        let SpriteToken::Record(staged) =
+            &editor.controller.as_ref().unwrap().level().sprites.tokens[inserted]
+        else {
+            panic!("SSC insertion must remain an ordinary sprite record");
+        };
+        assert_eq!(staged.encoded, vec![0xd1, 0x70, 0xf0, 0, 0]);
+        assert_eq!(editor.sprite_form.encoded, "D1 70 F0 00 00");
+
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
+            .unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lengths,
+            )
+            .unwrap();
+        let SpriteToken::Record(reopened_record) = &reopened.sprites.tokens[inserted] else {
+            panic!("reopened SSC insertion must remain an ordinary sprite record");
+        };
+        assert_eq!(reopened_record.encoded, vec![0xd1, 0x70, 0xf0, 0, 0]);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_bytes(),
+            expanded_baseline
+        );
+    }
+
+    #[test]
     fn raw_sprite_replacement_reloads_committed_semantic_fields() {
         let bytes = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
