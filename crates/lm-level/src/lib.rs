@@ -39,6 +39,7 @@ mod osc_sidecar;
 mod osc_sidecar_resolved;
 mod overworld_settings;
 mod property_editing;
+mod screen_extent;
 mod sprite;
 mod sprite_editing;
 mod sprite_placement;
@@ -133,6 +134,7 @@ pub use property_editing::{
     LayerDimensions, LegacyHeaderEdit, LevelLayer, LevelPropertyEdit, LevelPropertyEditError,
     TileCoordinate,
 };
+pub use screen_extent::{LevelScreenExtentMode, native_level_screen_count};
 pub use sprite::{SpriteRecord, SpriteStream, SpriteStreamError};
 pub use sprite_editing::{SpriteEdit, SpriteEditError, SpriteEditLimits};
 pub use sprite_placement::NativeSpritePlacement;

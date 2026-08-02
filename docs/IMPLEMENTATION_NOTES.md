@@ -3024,6 +3024,17 @@ prepares one revision-bound transaction at a time from the current ROM snapshot,
 after dispatch acknowledgement, continues after read/decode/save rejection, reports progress, and
 supports button or Escape cancellation. Broader installed-runtime and ROM-revision fixtures remain.
 
+The adjacent native level-image exporter follows the bundled Lunar Magic 3.63 help boundary for
+both single and multiple PNG/24-bit-BMP output. Single-level export recomputes the major-axis screen
+count from the final visible Layer 1 object or sprite. Multiple export accepts a Unicode filename
+template and appends ` %03X`, defaults to levels whose Layer 1 pointer is in expanded ROM space,
+optionally recomputes each screen count without changing the ROM, and skips levels that cannot be
+rendered. Stored sizing retains the highest serialized Layer 1 transition, while automatic sizing
+ignores control-only tails such as the custom-time command. Horizontal and vertical canvases crop
+along their recovered major axis through the same stride-preserving bounded raster operation.
+Encoding or destination failures still abort the grouped create-new publication, and cancellation
+before publication leaves no output files visible.
+
 Native IPS creation now mirrors the recovered `CreateIpsPatch` (`0041F0B0`) selection order:
 original ROM, modified ROM, then output patch. A background worker performs bounded regular-file
 reads, compares logical ROM bytes after copier-header normalization, uses the shared deterministic

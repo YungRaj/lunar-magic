@@ -439,10 +439,12 @@ pub(crate) fn choose_level_image_save_path(level: u16) -> Option<PathBuf> {
         .save_file()
 }
 
-pub(crate) fn choose_level_image_directory() -> Option<PathBuf> {
+pub(crate) fn choose_level_image_batch_template(extension: &str) -> Option<PathBuf> {
     rfd::FileDialog::new()
-        .set_title("Export All Level Images")
-        .pick_folder()
+        .set_title("Export Multiple Level Images")
+        .add_filter("Level image", &[extension])
+        .set_file_name(format!("Levels.{extension}"))
+        .save_file()
 }
 
 pub(crate) fn choose_mwl_directory() -> Option<PathBuf> {

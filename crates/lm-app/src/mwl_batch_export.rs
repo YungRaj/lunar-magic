@@ -65,7 +65,7 @@ pub fn export_smw_us_v1_installed_mwl_batch_until(
             return Ok(None);
         }
         if mode == MwlBatchExportMode::Modified
-            && !mwl_level_is_modified(
+            && !native_level_is_in_expanded_area(
                 &image,
                 profiled.profile.mapper,
                 profiled.profile.level.layer1,
@@ -139,7 +139,14 @@ pub fn mwl_batch_output_path(template: &Path, level: u16) -> Result<PathBuf, Str
     Ok(template.with_file_name(name))
 }
 
-fn mwl_level_is_modified(
+/// Reports whether a level's Layer 1 payload is stored beyond the original 512-KiB ROM area.
+///
+/// Lunar Magic 3.63 uses this definition for its “modified levels only” batch exporters.
+///
+/// # Errors
+///
+/// Returns a diagnostic for an invalid table entry, SNES pointer, or mapper conversion.
+pub fn native_level_is_in_expanded_area(
     image: &RomImage,
     mapper: Mapper,
     layer1: LevelPointerTable,
@@ -155,7 +162,8 @@ fn mwl_level_is_modified(
 #[cfg(test)]
 mod tests {
     use super::{
-        MwlBatchExportDocument, mwl_batch_output_path, mwl_level_is_modified, publish_mwl_batch_new,
+        MwlBatchExportDocument, mwl_batch_output_path, native_level_is_in_expanded_area,
+        publish_mwl_batch_new,
     };
     use lm_rom::RomImage;
     use std::fs;
@@ -247,12 +255,14 @@ mod tests {
         let layout = lm_profile::smw_us_v1_vanilla_level_layout();
         let pristine = (0..layout.layer1.entries)
             .filter(|level| {
-                mwl_level_is_modified(&before, layout.mapper, layout.layer1, *level).unwrap()
+                native_level_is_in_expanded_area(&before, layout.mapper, layout.layer1, *level)
+                    .unwrap()
             })
             .collect::<Vec<_>>();
         let installed = (0..layout.layer1.entries)
             .filter(|level| {
-                mwl_level_is_modified(&after, layout.mapper, layout.layer1, *level).unwrap()
+                native_level_is_in_expanded_area(&after, layout.mapper, layout.layer1, *level)
+                    .unwrap()
             })
             .collect::<Vec<_>>();
         assert!(pristine.is_empty());

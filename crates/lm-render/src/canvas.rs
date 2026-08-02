@@ -17,7 +17,16 @@ pub struct Canvas {
 pub enum CanvasError {
     DimensionOverflow,
     TooManyPixels(usize),
-    WrongPixelCount { expected: usize, actual: usize },
+    WrongPixelCount {
+        expected: usize,
+        actual: usize,
+    },
+    CropOutOfBounds {
+        source_width: usize,
+        source_height: usize,
+        requested_width: usize,
+        requested_height: usize,
+    },
 }
 
 impl std::fmt::Display for CanvasError {
@@ -99,6 +108,32 @@ impl Canvas {
     pub fn pixels(&self) -> &[Rgba] {
         &self.pixels
     }
+
+    /// Copies a bounded rectangle anchored at the canvas origin.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CanvasError::CropOutOfBounds`] when either requested dimension exceeds the
+    /// source canvas, or the normal constructor errors for an unrepresentable output shape.
+    pub fn crop_origin(&self, width: usize, height: usize) -> Result<Self, CanvasError> {
+        if width > self.width || height > self.height {
+            return Err(CanvasError::CropOutOfBounds {
+                source_width: self.width,
+                source_height: self.height,
+                requested_width: width,
+                requested_height: height,
+            });
+        }
+        let capacity = checked_pixel_count(width, height)?;
+        if capacity == 0 {
+            return Self::from_pixels(width, height, Vec::new());
+        }
+        let mut pixels = Vec::with_capacity(capacity);
+        for row in self.pixels.chunks_exact(self.width).take(height) {
+            pixels.extend_from_slice(&row[..width]);
+        }
+        Self::from_pixels(width, height, pixels)
+    }
 }
 
 fn checked_pixel_count(width: usize, height: usize) -> Result<usize, CanvasError> {
@@ -148,6 +183,39 @@ mod tests {
                 expected: 4,
                 actual: 3
             })
+        );
+    }
+
+    #[test]
+    fn origin_crop_preserves_row_stride_and_rejects_growth() {
+        let pixels = (0..12)
+            .map(|red| Rgba {
+                red,
+                alpha: u8::MAX,
+                ..Rgba::default()
+            })
+            .collect();
+        let canvas = Canvas::from_pixels(4, 3, pixels).unwrap();
+        let cropped = canvas.crop_origin(2, 2).unwrap();
+        assert_eq!((cropped.width(), cropped.height()), (2, 2));
+        assert_eq!(
+            cropped
+                .pixels()
+                .iter()
+                .map(|pixel| pixel.red)
+                .collect::<Vec<_>>(),
+            [0, 1, 4, 5]
+        );
+        assert!(canvas.crop_origin(5, 2).is_err());
+        assert!(canvas.crop_origin(2, 4).is_err());
+        assert_eq!(canvas.crop_origin(0, 2).unwrap().pixels(), []);
+        assert_eq!(
+            Canvas::try_new(0, 2)
+                .unwrap()
+                .crop_origin(0, 1)
+                .unwrap()
+                .pixels(),
+            []
         );
     }
 }

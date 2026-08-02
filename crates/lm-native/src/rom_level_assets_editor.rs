@@ -575,6 +575,7 @@ pub(crate) struct RomLevelAssetsEditor {
     mwl_batch_status: Option<String>,
     level_image_status: Option<String>,
     image_batch_worker: image_batch::LevelImageBatchWorker,
+    image_batch_options: image_batch::LevelImageBatchOptions,
     pending_load: Option<PendingLoad>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     bypass_validation: Option<String>,
@@ -612,9 +613,11 @@ impl RomLevelAssetsEditor {
         }
         if let Some(result) = self.image_batch_worker.show(context) {
             match result {
-                Ok(Some(count)) => {
-                    self.level_image_status =
-                        Some(format!("{count} level images were exported successfully."));
+                Ok(Some(report)) => {
+                    self.level_image_status = Some(format!(
+                        "{} level images exported; {} unrenderable levels skipped.",
+                        report.exported, report.skipped_unrenderable
+                    ));
                 }
                 Ok(None) => self.level_image_status = Some("Level image export cancelled.".into()),
                 Err(error) => self.error = Some(error),
@@ -1159,8 +1162,14 @@ impl RomLevelAssetsEditor {
                 && !self.mwl_batch_worker.is_running()
                 && !palette_busy;
             for (label, format) in [
-                ("Export all level PNGs…", image_batch::LevelImageFormat::Png),
-                ("Export all level BMPs…", image_batch::LevelImageFormat::Bmp),
+                (
+                    "Export multiple level PNGs…",
+                    image_batch::LevelImageFormat::Png,
+                ),
+                (
+                    "Export multiple level BMPs…",
+                    image_batch::LevelImageFormat::Bmp,
+                ),
             ] {
                 if ui.add_enabled(enabled, egui::Button::new(label)).clicked()
                     && let Err(error) = self.start_level_image_batch(format)
@@ -1168,6 +1177,22 @@ impl RomLevelAssetsEditor {
                     self.error = Some(error);
                 }
             }
+        });
+        ui.horizontal(|ui| {
+            ui.add_enabled(
+                !self.image_batch_worker.is_running(),
+                egui::Checkbox::new(
+                    &mut self.image_batch_options.modified_only,
+                    "Only levels stored in expanded ROM space",
+                ),
+            );
+            ui.add_enabled(
+                !self.image_batch_worker.is_running(),
+                egui::Checkbox::new(
+                    &mut self.image_batch_options.auto_set_screens,
+                    "Auto-set image screen count",
+                ),
+            );
         });
         if let Some(status) = &self.level_image_status {
             ui.label(status);
@@ -1224,7 +1249,8 @@ impl RomLevelAssetsEditor {
         format: image_batch::LevelImageFormat,
     ) -> Result<(), String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
-        let Some(directory) = crate::dialogs::choose_level_image_directory() else {
+        let Some(template) = crate::dialogs::choose_level_image_batch_template(format.extension())
+        else {
             return Ok(());
         };
         let source = BatchImageSource {
@@ -1234,7 +1260,8 @@ impl RomLevelAssetsEditor {
             ownership: workspace.ownership.clone(),
         };
         self.level_image_status = None;
-        self.image_batch_worker.start(source, directory, format)
+        self.image_batch_worker
+            .start(source, template, format, self.image_batch_options)
     }
 
     fn export_level_image(&self) -> Result<Option<std::path::PathBuf>, String> {
@@ -1244,6 +1271,11 @@ impl RomLevelAssetsEditor {
             return Ok(None);
         };
         let (canvas, _, _) = render_super_graphics_level_canvas(workspace, None, None, false)?;
+        let canvas = crop_level_image_canvas(
+            &canvas,
+            &workspace.controller.assets().level,
+            lm_level::LevelScreenExtentMode::Auto,
+        )?;
         publish_level_image(&destination, &canvas)?;
         Ok(Some(destination))
     }
@@ -1252,6 +1284,7 @@ impl RomLevelAssetsEditor {
 fn render_batch_level_canvas(
     source: &BatchImageSource,
     level: u16,
+    auto_set_screens: bool,
 ) -> Result<lm_render::Canvas, String> {
     let mut snapshot = source.snapshot.clone();
     snapshot.mode = lm_app::EditorMode::Level(level);
@@ -1268,7 +1301,41 @@ fn render_batch_level_canvas(
         image: source.image.clone(),
         ownership: source.ownership.clone(),
     };
-    render_super_graphics_level_canvas(&workspace, None, None, false).map(|(canvas, _, _)| canvas)
+    let (canvas, _, _) = render_super_graphics_level_canvas(&workspace, None, None, false)?;
+    crop_level_image_canvas(
+        &canvas,
+        &workspace.controller.assets().level,
+        if auto_set_screens {
+            lm_level::LevelScreenExtentMode::Auto
+        } else {
+            lm_level::LevelScreenExtentMode::Stored
+        },
+    )
+}
+
+fn crop_level_image_canvas(
+    canvas: &lm_render::Canvas,
+    level: &lm_project::LoadedLevelSlot,
+    extent_mode: lm_level::LevelScreenExtentMode,
+) -> Result<lm_render::Canvas, String> {
+    let mode = lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode());
+    if mode.editor_major_screens == 0 {
+        return Err(format!(
+            "level mode {:02X} has no editor canvas",
+            mode.index
+        ));
+    }
+    let screens =
+        lm_level::native_level_screen_count(&level.layer1.objects, &level.sprites, extent_mode)
+            .min(mode.editor_major_screens);
+    let (width, height) = if mode.vertical {
+        (canvas.width(), usize::from(screens) * 16 * 16)
+    } else {
+        (usize::from(screens) * 16 * 16, canvas.height())
+    };
+    canvas
+        .crop_origin(width, height)
+        .map_err(|error| error.to_string())
 }
 
 fn publish_level_image(
@@ -2234,10 +2301,59 @@ fn layer2_placements(
 mod tests {
     use super::*;
     use lm_graphics::{Bgr555, IndexedTile, Palette};
-    use lm_level::{Map16Page, Map16Tile, Subtile};
+    use lm_level::{
+        LegacyLevelHeader, LevelObjectData, Map16Page, Map16Tile, NativeSpriteStream, ObjectRecord,
+        ObjectStream, SpriteLengthTable, Subtile,
+    };
+    use lm_project::LoadedLevelSlot;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    fn level_for_image_crop(mode: u8, stored_screen: u8, sprite_screen: u8) -> LoadedLevelSlot {
+        LoadedLevelSlot {
+            number: 0,
+            layer1: LevelObjectData {
+                header: LegacyLevelHeader::decode(&[0, mode, 0, 0, 0]).unwrap(),
+                objects: ObjectStream {
+                    records: vec![
+                        ObjectRecord::new(vec![0x01, 0x12, 0x10]).unwrap(),
+                        ObjectRecord::new(vec![stored_screen, 0, 1]).unwrap(),
+                    ],
+                },
+            },
+            sprites: NativeSpriteStream::parse(
+                &[0, 0, sprite_screen, 1, 0xff],
+                false,
+                &SpriteLengthTable::standard(),
+            )
+            .unwrap(),
+        }
+    }
+
+    #[test]
+    fn level_image_crop_uses_stored_or_automatic_horizontal_extent() {
+        let canvas = lm_render::Canvas::try_new(32 * 256, 27 * 16).unwrap();
+        let level = level_for_image_crop(0, 8, 5);
+        let stored =
+            crop_level_image_canvas(&canvas, &level, lm_level::LevelScreenExtentMode::Stored)
+                .unwrap();
+        let automatic =
+            crop_level_image_canvas(&canvas, &level, lm_level::LevelScreenExtentMode::Auto)
+                .unwrap();
+        assert_eq!((stored.width(), stored.height()), (9 * 256, 27 * 16));
+        assert_eq!((automatic.width(), automatic.height()), (6 * 256, 27 * 16));
+    }
+
+    #[test]
+    fn level_image_crop_applies_automatic_extent_to_the_vertical_axis() {
+        let canvas = lm_render::Canvas::try_new(32 * 16, 28 * 256).unwrap();
+        let level = level_for_image_crop(0x0a, 7, 2);
+        let automatic =
+            crop_level_image_canvas(&canvas, &level, lm_level::LevelScreenExtentMode::Auto)
+                .unwrap();
+        assert_eq!((automatic.width(), automatic.height()), (32 * 16, 3 * 256));
+    }
 
     #[test]
     fn special_world_view_replaces_only_the_materialized_sp2_slot() {
