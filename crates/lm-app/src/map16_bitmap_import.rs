@@ -397,7 +397,7 @@ pub fn decode_map16_bitmap_png_image(
 /// Decodes a bounded PNG or Windows BMP while retaining its source dimensions.
 ///
 /// BMP input accepts the 12-byte core header, the 64-byte OS/2 2.x header, and common Windows
-/// 40-byte-or-larger DIB headers. Supported pixels include indexed 1-/4-/8-bit, 16-bit RGB,
+/// 40-byte-or-larger DIB headers. Supported pixels include indexed 1-/2-/4-/8-bit, 16-bit RGB,
 /// 24-bit BGR, 32-bit BGRX, validated 16-/32-bit RGB/alpha bitfields, RLE4/RLE8, OS/2 RLE24,
 /// and embedded JPEG/PNG payloads. The unused 32-bit `BI_RGB` byte remains opaque.
 ///
@@ -480,7 +480,8 @@ pub fn decode_map16_bitmap_bmp_image(
     if planes != 1 {
         return Err(Map16BmpDecodeError::Planes(planes));
     }
-    if !(matches!(bits, 1 | 4 | 8 | 16 | 24 | 32) || matches!(compression, 4 | 5) && bits == 0) {
+    if !(matches!(bits, 1 | 2 | 4 | 8 | 16 | 24 | 32) || matches!(compression, 4 | 5) && bits == 0)
+    {
         return Err(Map16BmpDecodeError::BitDepth(bits));
     }
     let compression_supported = match compression {
@@ -606,6 +607,7 @@ pub fn decode_map16_bitmap_bmp_image(
             let pixel = if let Some((palette_start, palette_entries)) = palette {
                 let index = match bits {
                     1 => (bytes[source + column / 8] >> (7 - column % 8)) & 1,
+                    2 => (bytes[source + column / 4] >> (6 - (column % 4) * 2)) & 3,
                     4 => {
                         let packed = bytes[source + column / 2];
                         if column % 2 == 0 {
@@ -810,7 +812,7 @@ fn decode_os2_v2_bmp_image(
     if planes != 1 {
         return Err(Map16BmpDecodeError::Planes(planes));
     }
-    if !matches!(bits, 1 | 4 | 8 | 24) {
+    if !matches!(bits, 1 | 2 | 4 | 8 | 24) {
         return Err(Map16BmpDecodeError::BitDepth(bits));
     }
     let compression_supported = match compression {
@@ -926,6 +928,7 @@ fn decode_os2_v2_bmp_image(
             let pixel = if let Some((palette_start, palette_entries)) = palette {
                 let index = match bits {
                     1 => (bytes[source + column / 8] >> (7 - column % 8)) & 1,
+                    2 => (bytes[source + column / 4] >> (6 - (column % 4) * 2)) & 3,
                     4 => {
                         let packed = bytes[source + column / 2];
                         if column % 2 == 0 {
@@ -2033,7 +2036,7 @@ mod tests {
         palette: &[Rgba8],
         indices: &[u8],
     ) -> Vec<u8> {
-        assert!(matches!(bits, 1 | 4 | 8));
+        assert!(matches!(bits, 1 | 2 | 4 | 8));
         assert_eq!(indices.len(), width * height);
         let row_bytes = (width * usize::from(bits) + 7) / 8;
         let stride = (row_bytes + 3) & !3;
@@ -2070,6 +2073,7 @@ mod tests {
                 let index = indices[source_row * width + column];
                 match bits {
                     1 => bytes[target + column / 8] |= index << (7 - column % 8),
+                    2 => bytes[target + column / 4] |= index << (6 - (column % 4) * 2),
                     4 => {
                         bytes[target + column / 2] |=
                             if column % 2 == 0 { index << 4 } else { index }
@@ -2314,11 +2318,31 @@ mod tests {
                 blue: 0x56,
                 alpha: 255,
             },
+            Rgba8 {
+                red: 0x78,
+                green: 0x9a,
+                blue: 0xbc,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 0xde,
+                green: 0xf0,
+                blue: 0x12,
+                alpha: 255,
+            },
         ];
         let indexed = test_os2_v2_bmp(2, 2, 8, 0, &palette, &[1, 0, 0, 0, 0, 1, 0, 0]);
         assert_eq!(
             decode_map16_bitmap_bmp_image(&indexed).unwrap().pixels,
             vec![palette[0], palette[1], palette[1], palette[0]]
+        );
+        let packed_2bpp = test_os2_v2_bmp(5, 2, 2, 0, &palette, &[0xe4, 0xc0, 0, 0, 0x1b, 0, 0, 0]);
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&packed_2bpp).unwrap().pixels,
+            vec![
+                palette[0], palette[1], palette[2], palette[3], palette[0], palette[3], palette[2],
+                palette[1], palette[0], palette[3],
+            ]
         );
 
         let direct = test_os2_v2_bmp(
@@ -2522,6 +2546,7 @@ mod tests {
                 },
             ),
             (22, 2, Map16BmpDecodeError::Planes(2)),
+            (24, 2, Map16BmpDecodeError::BitDepth(2)),
             (24, 16, Map16BmpDecodeError::BitDepth(16)),
         ] {
             let mut malformed = valid.clone();
@@ -2572,6 +2597,7 @@ mod tests {
         ];
         for (bits, width, top_down, indices) in [
             (1, 9, false, vec![0, 1, 0, 1, 1, 0, 1, 0, 1]),
+            (2, 7, false, vec![0, 1, 2, 3, 3, 2, 1]),
             (4, 5, true, vec![0, 1, 2, 3, 1]),
             (8, 3, false, vec![3, 2, 1]),
         ] {
@@ -2619,6 +2645,11 @@ mod tests {
         let out_of_range = test_indexed_bmp(1, 1, 4, false, &palette, &[3]);
         assert_eq!(
             decode_map16_bitmap_bmp_image(&out_of_range),
+            Err(Map16BmpDecodeError::Palette)
+        );
+        let out_of_range_2bpp = test_indexed_bmp(1, 1, 2, false, &palette, &[3]);
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&out_of_range_2bpp),
             Err(Map16BmpDecodeError::Palette)
         );
     }

@@ -902,6 +902,38 @@ mod tests {
     }
 
     #[test]
+    fn packed_2bpp_bmp_reaches_the_native_preview_with_palette_rgb_intact() {
+        let pixel_offset = 70_usize;
+        let mut bytes = vec![0; pixel_offset + 4];
+        let file_len = u32::try_from(bytes.len()).unwrap();
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&u32::try_from(pixel_offset).unwrap().to_le_bytes());
+        bytes[14..18].copy_from_slice(&40_u32.to_le_bytes());
+        bytes[18..22].copy_from_slice(&1_i32.to_le_bytes());
+        bytes[22..26].copy_from_slice(&1_i32.to_le_bytes());
+        bytes[26..28].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[28..30].copy_from_slice(&2_u16.to_le_bytes());
+        bytes[34..38].copy_from_slice(&4_u32.to_le_bytes());
+        bytes[46..50].copy_from_slice(&4_u32.to_le_bytes());
+        for (index, color) in [[0, 0, 0], [3, 2, 1], [0x56, 0x34, 0x12], [9, 8, 7]]
+            .into_iter()
+            .enumerate()
+        {
+            let at = 54 + index * 4;
+            bytes[at..at + 3].copy_from_slice(&color);
+        }
+        bytes[pixel_offset] = 2 << 6;
+
+        let decoded = decode_map16_bitmap_image(&bytes).unwrap();
+        let preview = rgba_image(&decoded.pixels, decoded.width, decoded.height);
+        assert_eq!(
+            preview.pixels[0],
+            egui::Color32::from_rgba_unmultiplied(0x12, 0x34, 0x56, 0xff)
+        );
+    }
+
+    #[test]
     fn preview_size_preserves_source_aspect_ratio_and_integer_zoom() {
         assert_eq!(preview_size(32, 16, 1), egui::vec2(32.0, 16.0));
         assert_eq!(preview_size(32, 16, 4), egui::vec2(128.0, 64.0));
