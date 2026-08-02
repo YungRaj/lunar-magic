@@ -51,6 +51,7 @@ impl NativeApplication {
             context,
             self.app.project_revision(),
             self.special_world_passed,
+            self.level_view_visibility,
         );
         if let Some(command) = command
             && self.try_dispatch(context, command)

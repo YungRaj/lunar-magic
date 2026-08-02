@@ -79,6 +79,23 @@ mod shutdown;
 mod toolbar;
 mod windows;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LevelViewVisibility {
+    pub layer1: bool,
+    pub layer2: bool,
+    pub sprites: bool,
+}
+
+impl Default for LevelViewVisibility {
+    fn default() -> Self {
+        Self {
+            layer1: true,
+            layer2: true,
+            sprites: true,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct NativeApplication {
     app: AppState,
@@ -89,6 +106,7 @@ pub(crate) struct NativeApplication {
     toolbar_editor: ToolbarEditor,
     level_text: String,
     special_world_passed: bool,
+    level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
     vanilla_level_editor: VanillaLevelEditor,
@@ -523,6 +541,7 @@ impl eframe::App for NativeApplication {
                     ui,
                     &self.app,
                     self.special_world_passed,
+                    self.level_view_visibility,
                     self.ssc_sidecar_editor.resolved(),
                     self.ssc_sidecar_editor.external_assets(),
                     self.ssc_sidecar_editor.asset_revision(),

@@ -158,6 +158,17 @@ enum CanvasPlacementMode {
     Layer2Tile,
 }
 
+const fn placement_mode_visible(
+    mode: CanvasPlacementMode,
+    visibility: crate::application::LevelViewVisibility,
+) -> bool {
+    match mode {
+        CanvasPlacementMode::Object => visibility.layer1,
+        CanvasPlacementMode::Sprite => visibility.sprites,
+        CanvasPlacementMode::Layer2Object | CanvasPlacementMode::Layer2Tile => visibility.layer2,
+    }
+}
+
 impl SpriteForm {
     fn from_token(header: u8, token: Option<&SpriteToken>) -> Self {
         let encoded = match token {
@@ -364,6 +375,7 @@ impl VanillaLevelEditor {
         ui: &mut egui::Ui,
         app: &AppState,
         special_world_passed: bool,
+        visibility: crate::application::LevelViewVisibility,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         external_assets: &lm_graphics::ExternalSpriteAssets,
         external_asset_revision: u64,
@@ -479,6 +491,7 @@ impl VanillaLevelEditor {
                 |ui| {
                     self.object_canvas(
                         ui,
+                        visibility,
                         custom_sprites,
                         external_assets,
                         custom_objects,
@@ -1607,6 +1620,7 @@ impl VanillaLevelEditor {
     fn object_canvas(
         &mut self,
         ui: &mut egui::Ui,
+        visibility: crate::application::LevelViewVisibility,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
         external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_objects: Option<&lm_level::OscResolvedTable>,
@@ -1767,6 +1781,7 @@ impl VanillaLevelEditor {
                     object_tileset,
                     map16_animation_phase,
                     animation_phase,
+                    visibility,
                     &layer2_records,
                     &layer2_placements,
                     &layer2_tilemap,
@@ -1947,6 +1962,7 @@ impl VanillaLevelEditor {
         object_tileset: u8,
         map16_animation_phase: u8,
         animation_phase: u8,
+        visibility: crate::application::LevelViewVisibility,
         layer2_records: &[ObjectRecord],
         layer2_placements: &[lm_level::NativeObjectPlacement],
         layer2_tilemap: &[u16],
@@ -2034,7 +2050,7 @@ impl VanillaLevelEditor {
                 game_camera.is_some(),
             );
         }
-        if visual_smoke_editor_layer2() {
+        if visibility.layer2 && visual_smoke_editor_layer2() {
             draw_layer2_tilemap(
                 painter,
                 if self.shared_vanilla_background {
@@ -2087,23 +2103,27 @@ impl VanillaLevelEditor {
         // The object cache uses SMW's 0x1B0-byte 16×27 screen pages. The 32×32 Layer 2 plane may
         // enlarge the visible canvas, but its final five rows are not object-cache coordinates.
         let object_minor_tiles = native_object_cache_minor_tiles(minor_tiles, vertical);
-        let layer2_artwork_bounds = self.draw_object_artwork(
-            painter,
-            layer2_target,
-            cell,
-            major_tiles,
-            object_minor_tiles,
-            vertical,
-            layer2_records,
-            layer2_placements,
-            custom_objects,
-            custom_map16,
-            layer2_map16_texture,
-            layer2_map16_texture_variants,
-        );
+        let layer2_artwork_bounds = if visibility.layer2 {
+            self.draw_object_artwork(
+                painter,
+                layer2_target,
+                cell,
+                major_tiles,
+                object_minor_tiles,
+                vertical,
+                layer2_records,
+                layer2_placements,
+                custom_objects,
+                custom_map16,
+                layer2_map16_texture,
+                layer2_map16_texture_variants,
+            )
+        } else {
+            HashMap::new()
+        };
         let game_preview = self.game_preview();
         let editor_overlays = !game_preview && visual_smoke_editor_overlays();
-        let layer1_artwork_bounds = if visual_smoke_editor_layer1() {
+        let layer1_artwork_bounds = if visibility.layer1 && visual_smoke_editor_layer1() {
             self.draw_object_artwork(
                 painter,
                 rect,
@@ -2156,38 +2176,48 @@ impl VanillaLevelEditor {
                 self.active_object_resize_models(layer2_records, custom_objects);
             let layer1_resize_models = self.active_object_resize_models(records, custom_objects);
             (
-                draw_object_placement_markers(
-                    painter,
-                    response,
-                    rect,
-                    vertical,
-                    layer2_records,
-                    layer2_placements,
-                    self.selected_layer2_object,
-                    map16_texture,
-                    &layer2_artwork_bounds,
-                    &layer2_resize_models,
-                    cell,
-                ),
-                draw_object_placement_markers(
-                    painter,
-                    response,
-                    rect,
-                    vertical,
-                    records,
-                    placements,
-                    self.selected_object,
-                    map16_texture,
-                    &layer1_artwork_bounds,
-                    &layer1_resize_models,
-                    cell,
-                ),
+                visibility
+                    .layer2
+                    .then(|| {
+                        draw_object_placement_markers(
+                            painter,
+                            response,
+                            rect,
+                            vertical,
+                            layer2_records,
+                            layer2_placements,
+                            self.selected_layer2_object,
+                            map16_texture,
+                            &layer2_artwork_bounds,
+                            &layer2_resize_models,
+                            cell,
+                        )
+                    })
+                    .unwrap_or_default(),
+                visibility
+                    .layer1
+                    .then(|| {
+                        draw_object_placement_markers(
+                            painter,
+                            response,
+                            rect,
+                            vertical,
+                            records,
+                            placements,
+                            self.selected_object,
+                            map16_texture,
+                            &layer1_artwork_bounds,
+                            &layer1_resize_models,
+                            cell,
+                        )
+                    })
+                    .unwrap_or_default(),
             )
         };
         let sprite_limit = visual_smoke_editor_sprite_limit()
             .unwrap_or(sprite_placements.len())
             .min(sprite_placements.len());
-        let hit_sprite = visual_smoke_editor_sprites()
+        let hit_sprite = (visibility.sprites && visual_smoke_editor_sprites())
             .then(|| {
                 draw_sprite_placements(SpritePlacementDraw {
                     painter,
@@ -2281,6 +2311,7 @@ impl VanillaLevelEditor {
                 rect,
                 cell,
                 vertical,
+                visibility,
             );
         }
     }
@@ -2299,9 +2330,11 @@ impl VanillaLevelEditor {
         rect: egui::Rect,
         cell: f32,
         vertical: bool,
+        visibility: crate::application::LevelViewVisibility,
     ) {
         if response.clicked()
             && let Some(mode) = self.placement_mode
+            && placement_mode_visible(mode, visibility)
             && let Some(position) = response.interact_pointer_pos()
         {
             match mode {
@@ -2341,6 +2374,7 @@ impl VanillaLevelEditor {
             && hit_object.is_none()
             && hit_layer2_object.is_none()
             && hit_sprite.is_none()
+            && visibility.layer2
             && let Some(position) = response.interact_pointer_pos()
             && let Some(index) = layer2_tile_at_canvas_position(position, rect, cell)
             && let Some(lm_level::NativeLayer2Data::Tilemap(bytes)) =
@@ -8074,6 +8108,31 @@ mod tests {
             major_span: 2,
             minor_span: 2,
         }
+    }
+
+    #[test]
+    fn hidden_canvas_domains_reject_their_placement_tools() {
+        let visibility = crate::application::LevelViewVisibility {
+            layer1: false,
+            layer2: true,
+            sprites: false,
+        };
+        assert!(!placement_mode_visible(
+            CanvasPlacementMode::Object,
+            visibility
+        ));
+        assert!(!placement_mode_visible(
+            CanvasPlacementMode::Sprite,
+            visibility
+        ));
+        assert!(placement_mode_visible(
+            CanvasPlacementMode::Layer2Object,
+            visibility
+        ));
+        assert!(placement_mode_visible(
+            CanvasPlacementMode::Layer2Tile,
+            visibility
+        ));
     }
 
     #[test]

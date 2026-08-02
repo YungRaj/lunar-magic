@@ -54,6 +54,7 @@ struct BatchImageSource {
     ownership: PaletteOwnership,
     animation_phase: Option<usize>,
     special_world_passed: bool,
+    visibility: crate::application::LevelViewVisibility,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,6 +67,26 @@ struct NativeSpritePreviewPlacement {
     subtiles: [u16; 4],
     x: i32,
     y: i32,
+}
+
+struct VisibleLevelParts<'a> {
+    layers: [&'a [NativeMap16Placement]; 2],
+    sprites: &'a [NativeSpritePreviewPlacement],
+}
+
+fn visible_level_parts<'a>(
+    visibility: crate::application::LevelViewVisibility,
+    layer2: &'a [NativeMap16Placement],
+    layer1: &'a [NativeMap16Placement],
+    sprites: &'a [NativeSpritePreviewPlacement],
+) -> VisibleLevelParts<'a> {
+    VisibleLevelParts {
+        layers: [
+            visibility.layer2.then_some(layer2).unwrap_or(&[]),
+            visibility.layer1.then_some(layer1).unwrap_or(&[]),
+        ],
+        sprites: visibility.sprites.then_some(sprites).unwrap_or(&[]),
+    }
 }
 
 struct ResolvedLevelGraphics {
@@ -601,6 +622,7 @@ impl RomLevelAssetsEditor {
         context: &egui::Context,
         project_revision: u64,
         special_world_passed: bool,
+        visibility: crate::application::LevelViewVisibility,
     ) -> (bool, Option<Command>) {
         self.poll_palette_file_io(context, project_revision);
         if let Some(result) = self.mwl_batch_worker.show(context) {
@@ -667,7 +689,7 @@ impl RomLevelAssetsEditor {
                 .vscroll(true)
                 .show(context, |ui| {
                     if let Some(ui_command) =
-                        self.contents(ui, project_revision, special_world_passed)
+                        self.contents(ui, project_revision, special_world_passed, visibility)
                     {
                         command = Some(ui_command);
                     }
@@ -683,6 +705,7 @@ impl RomLevelAssetsEditor {
         ui: &mut egui::Ui,
         project_revision: u64,
         special_world_passed: bool,
+        visibility: crate::application::LevelViewVisibility,
     ) -> Option<Command> {
         let stale = self.workspace.as_ref()?.controller.revision() != project_revision;
         let palette_busy =
@@ -891,6 +914,7 @@ impl RomLevelAssetsEditor {
                         self.bypass_selection,
                         phases.selection,
                         special_world_passed,
+                        visibility,
                     )
                 });
             self.bypass_preview.finish_refresh(result.is_ok());
@@ -1151,7 +1175,7 @@ impl RomLevelAssetsEditor {
             )
             .clicked()
         {
-            match self.export_level_image(image_animation_phase, special_world_passed) {
+            match self.export_level_image(image_animation_phase, special_world_passed, visibility) {
                 Ok(Some(path)) => {
                     self.level_image_status =
                         Some(format!("Exported full level image to {}.", path.display()));
@@ -1181,6 +1205,7 @@ impl RomLevelAssetsEditor {
                         format,
                         image_animation_phase,
                         special_world_passed,
+                        visibility,
                     )
                 {
                     self.error = Some(error);
@@ -1258,6 +1283,7 @@ impl RomLevelAssetsEditor {
         format: image_batch::LevelImageFormat,
         animation_phase: Option<usize>,
         special_world_passed: bool,
+        visibility: crate::application::LevelViewVisibility,
     ) -> Result<(), String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let Some(template) = crate::dialogs::choose_level_image_batch_template(format.extension())
@@ -1271,6 +1297,7 @@ impl RomLevelAssetsEditor {
             ownership: workspace.ownership.clone(),
             animation_phase,
             special_world_passed,
+            visibility,
         };
         self.level_image_status = None;
         self.image_batch_worker
@@ -1281,6 +1308,7 @@ impl RomLevelAssetsEditor {
         &self,
         animation_phase: Option<usize>,
         special_world_passed: bool,
+        visibility: crate::application::LevelViewVisibility,
     ) -> Result<Option<std::path::PathBuf>, String> {
         let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
         let Some(destination) = crate::dialogs::choose_level_image_save_path(workspace.source_slot)
@@ -1292,6 +1320,7 @@ impl RomLevelAssetsEditor {
             animation_phase,
             None,
             special_world_passed,
+            visibility,
         )?;
         let canvas = crop_level_image_canvas(
             &canvas,
@@ -1328,6 +1357,7 @@ fn render_batch_level_canvas(
         source.animation_phase,
         None,
         source.special_world_passed,
+        source.visibility,
     )?;
     crop_level_image_canvas(
         &canvas,
@@ -1407,6 +1437,7 @@ fn render_super_graphics_level_preview(
     selection: Option<PreviewMap16Selection>,
     selection_phase: Option<u32>,
     special_world_passed: bool,
+    visibility: crate::application::LevelViewVisibility,
 ) -> Result<
     (
         egui::ColorImage,
@@ -1420,6 +1451,7 @@ fn render_super_graphics_level_preview(
         animation_phase,
         selection,
         special_world_passed,
+        visibility,
     )?;
     render_level_viewport_canvas(
         &canvas,
@@ -1437,6 +1469,7 @@ fn render_super_graphics_level_canvas(
     animation_phase: Option<usize>,
     selection: Option<PreviewMap16Selection>,
     special_world_passed: bool,
+    visibility: crate::application::LevelViewVisibility,
 ) -> Result<
     (
         lm_render::Canvas,
@@ -1492,6 +1525,9 @@ fn render_super_graphics_level_canvas(
         header.level_mode(),
         header.object_tileset(),
     )?;
+    if !visibility.layer1 {
+        diagnostics.clear();
+    }
     let layer2_data = workspace.controller.layer2();
     let background_definitions = if matches!(layer2_data, Some(NativeLayer2Data::Tilemap(_))) {
         if !is_smw_us_v1_profile(&workspace.profile) {
@@ -1525,11 +1561,13 @@ fn render_super_graphics_level_canvas(
                 header.level_mode(),
                 header.object_tileset(),
             )?;
-            diagnostics.extend(
-                layer2_diagnostics
-                    .into_iter()
-                    .map(|diagnostic| format!("Layer 2 {diagnostic}")),
-            );
+            if visibility.layer2 {
+                diagnostics.extend(
+                    layer2_diagnostics
+                        .into_iter()
+                        .map(|diagnostic| format!("Layer 2 {diagnostic}")),
+                );
+            }
             placements
         }
         None => Vec::new(),
@@ -1539,13 +1577,16 @@ fn render_super_graphics_level_canvas(
         header.level_mode(),
         header.sprite_tileset(),
     );
-    diagnostics.extend(sprite_diagnostics);
+    if visibility.sprites {
+        diagnostics.extend(sprite_diagnostics);
+    }
+    let visible = visible_level_parts(visibility, &layer2, &layer1, &sprites);
     let inspection = selection.map(|selection| {
         inspect_preview_map16_selection(
             selection,
-            &layer2,
-            &layer1,
-            &sprites,
+            visible.layers[0],
+            visible.layers[1],
+            visible.sprites,
             &map16,
             &background_definitions,
             layer2_palette_routing,
@@ -1554,8 +1595,8 @@ fn render_super_graphics_level_canvas(
     let animated_sprite_tiles =
         crate::vanilla_map16_preview::materialize_sprite_display_tiles(special_graphics.gfx33);
     render_level_canvas_with_layer_palette_routing(
-        &[&layer2, &layer1],
-        &sprites,
+        &visible.layers,
+        visible.sprites,
         layout,
         &map16,
         &background_definitions,
@@ -2336,6 +2377,55 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn level_visibility_filters_each_domain_without_reordering_painter_layers() {
+        let placement = |word| NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word,
+            definition_index: word,
+            outer_x_flip: false,
+            outer_y_flip: false,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
+            composition: NativeMap16Composition::Opaque,
+        };
+        let layer2 = [placement(2)];
+        let layer1 = [placement(1)];
+        let sprites = [NativeSpritePreviewPlacement {
+            token_index: 0,
+            part_index: 0,
+            sprite_number: 0,
+            source: StandardSpritePreviewSource::BuiltIn,
+            definition_index: 0,
+            subtiles: [0; 4],
+            x: 0,
+            y: 0,
+        }];
+        let all = visible_level_parts(
+            crate::application::LevelViewVisibility::default(),
+            &layer2,
+            &layer1,
+            &sprites,
+        );
+        assert_eq!(all.layers[0][0].word, 2);
+        assert_eq!(all.layers[1][0].word, 1);
+        assert_eq!(all.sprites.len(), 1);
+
+        let hidden = visible_level_parts(
+            crate::application::LevelViewVisibility {
+                layer1: false,
+                layer2: true,
+                sprites: false,
+            },
+            &layer2,
+            &layer1,
+            &sprites,
+        );
+        assert_eq!(hidden.layers[0][0].word, 2);
+        assert!(hidden.layers[1].is_empty());
+        assert!(hidden.sprites.is_empty());
+    }
 
     fn level_for_image_crop(mode: u8, stored_screen: u8, sprite_screen: u8) -> LoadedLevelSlot {
         LoadedLevelSlot {

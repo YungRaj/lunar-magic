@@ -34,6 +34,18 @@ impl NativeApplication {
         ui.menu_button("View", |ui| {
             let enabled =
                 !matches!(status, ProjectStatus::Closed) && self.app.current_level().is_some();
+            let mut visibility_changed = false;
+            ui.add_enabled_ui(enabled, |ui| {
+                visibility_changed |= ui
+                    .checkbox(&mut self.level_view_visibility.layer1, "Layer 1")
+                    .changed();
+                visibility_changed |= ui
+                    .checkbox(&mut self.level_view_visibility.layer2, "Layer 2")
+                    .changed();
+                visibility_changed |= ui
+                    .checkbox(&mut self.level_view_visibility.sprites, "Sprites")
+                    .changed();
+            });
             if ui
                 .add_enabled(
                     enabled,
@@ -43,6 +55,10 @@ impl NativeApplication {
                 .clicked()
             {
                 self.special_world_passed = !self.special_world_passed;
+                self.vanilla_level_editor.invalidate_graphics_preview();
+                self.rom_level_assets_editor.invalidate_graphics_preview();
+            }
+            if visibility_changed {
                 self.vanilla_level_editor.invalidate_graphics_preview();
                 self.rom_level_assets_editor.invalidate_graphics_preview();
             }
