@@ -682,16 +682,18 @@ interactive frontends cannot bypass confirmation and request correlation through
   cartridge identity, and commits growth or shrinkage as one undoable revision. Stale, malformed,
   identity-changing, and exact no-op patches leave history and bytes untouched; success clears the
   installed revision profile because arbitrary patching invalidates its audit evidence.
-  `copier-header-add INPUT OUTPUT FILL` and `copier-header-remove INPUT OUTPUT` provide the same
+  `copier-header-add` and `copier-header-remove` provide the same
   bounded create-new conversion from the CLI. The application equivalents consume `LMHDRAD1`
-  (`input`, `output`, decimal `fill`) and `LMHDRRM1` (`input`, `output`) specifications, retaining
-  Unicode/space-containing relative paths and refusing no-op or colliding conversions.
+  (`input`, `output`, and either decimal `fill` or `mode lunar-magic-smw-us-v1`) and `LMHDRRM1`
+  (`input`, `output`) specifications. Canonical mode identity-checks SMW-US revision 0 and emits
+  the complete recovered structured header; both modes retain Unicode/space-containing relative
+  paths and refuse no-op, ambiguous, or colliding conversions.
   The graphical **Convert Copier Header…** workflow operates on the open project instead. It
   displays the current physical state and unchanged logical size, adds a caller-selected exact
-  fill or removes and retains all 512 existing bytes, and enters that physical-prefix conversion
-  into ordinary revisioned history. Undo restores nonuniform removed headers byte-for-byte, redo is
-  compare-guarded, dirty/save state includes header-only changes, and pending saves or stale dialogs
-  cannot mutate the document.
+  fill, installs Lunar Magic 3.63's canonical SMW-US prefix, or removes and retains all 512 existing
+  bytes, and enters that physical-prefix conversion into ordinary revisioned history. Undo restores
+  nonuniform removed headers byte-for-byte, redo is compare-guarded, dirty/save state includes
+  header-only changes, and pending saves or stale dialogs cannot mutate the document.
 
 Complex crates are deliberately divided into focused modules; raw ROM offsets do not cross into the
 application shell. The aggregate native level-assets surface follows the same rule: its coordinator

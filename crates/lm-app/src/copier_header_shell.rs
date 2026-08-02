@@ -7,7 +7,12 @@ const MAX_ROM_BYTES: usize = 32 * 1024 * 1024;
 struct ConversionSpec {
     input: PathBuf,
     output: PathBuf,
-    fill: u8,
+    contents: HeaderContents,
+}
+
+enum HeaderContents {
+    Fill(u8),
+    LunarMagicSmwUsV1,
 }
 
 pub(crate) fn add(spec_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -37,7 +42,28 @@ fn convert(spec: &ConversionSpec, target: CopierHeader) -> Result<(), Box<dyn st
     {
         return Err("headered ROM would exceed the bounded ROM file limit".into());
     }
-    image.set_copier_header(target, spec.fill);
+    match (target, &spec.contents) {
+        (CopierHeader::Present, HeaderContents::Fill(fill)) => {
+            image.set_copier_header(CopierHeader::Present, *fill);
+        }
+        (CopierHeader::Present, HeaderContents::LunarMagicSmwUsV1) => {
+            let identity = lm_rom::detect_identity(&image)?;
+            if identity.game != lm_rom::SupportedGame::SuperMarioWorld
+                || identity.region != lm_rom::Region::NorthAmerica
+                || identity.revision != 0
+            {
+                return Err(
+                    "Lunar Magic canonical copier-header creation requires SMW-US revision 0"
+                        .into(),
+                );
+            }
+            let header = lm_profile::smw_us_v1_lunar_magic_copier_header();
+            image.replace_copier_header_exact(None, Some(&header))?;
+        }
+        (CopierHeader::Absent, _) => {
+            image.set_copier_header(CopierHeader::Absent, 0);
+        }
+    }
     file_persistence::write_new(&spec.output, image.as_file_bytes())?;
     println!(
         "copier header converted to {target:?}: {}",
@@ -56,17 +82,30 @@ fn parse_spec(path: &Path, adding: bool) -> Result<ConversionSpec, Box<dyn std::
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let input = spec_text::take_path(&mut fields, "input", base)?;
     let output = spec_text::take_path(&mut fields, "output", base)?;
-    let fill = if adding {
-        u8::try_from(spec_text::take_usize(&mut fields, "fill")?)
-            .map_err(|_| "copier-header fill must be in 0..=255")?
+    let contents = if adding {
+        match fields.remove("mode") {
+            Some(mode) if mode == "lunar-magic-smw-us-v1" => {
+                if fields.contains_key("fill") {
+                    return Err("canonical copier-header mode cannot also specify fill".into());
+                }
+                HeaderContents::LunarMagicSmwUsV1
+            }
+            Some(mode) => {
+                return Err(format!("unsupported copier-header mode {mode:?}").into());
+            }
+            None => HeaderContents::Fill(
+                u8::try_from(spec_text::take_usize(&mut fields, "fill")?)
+                    .map_err(|_| "copier-header fill must be in 0..=255")?,
+            ),
+        }
     } else {
-        0
+        HeaderContents::Fill(0)
     };
     spec_text::reject_unknown(&fields)?;
     Ok(ConversionSpec {
         input,
         output,
-        fill,
+        contents,
     })
 }
 
@@ -102,6 +141,49 @@ mod tests {
             logical
         );
         assert!(remove(&remove_spec).is_err());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn canonical_mode_is_exact_identity_checked_and_mutually_exclusive_with_fill() {
+        let directory = std::env::temp_dir().join(format!(
+            "lm-app-canonical-copier-header-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("plain.sfc"), vec![0x42; 0x8000]).unwrap();
+        let canonical_spec = directory.join("canonical.txt");
+        fs::write(
+            &canonical_spec,
+            "LMHDRAD1\ninput plain.sfc\noutput canonical.smc\nmode lunar-magic-smw-us-v1\n",
+        )
+        .unwrap();
+        let parsed = parse_spec(&canonical_spec, true).unwrap();
+        assert!(matches!(parsed.contents, HeaderContents::LunarMagicSmwUsV1));
+
+        fs::write(
+            &canonical_spec,
+            "LMHDRAD1\ninput plain.sfc\noutput rejected.smc\nmode lunar-magic-smw-us-v1\nfill 0\n",
+        )
+        .unwrap();
+        assert!(add(&canonical_spec).is_err());
+        assert!(!directory.join("rejected.smc").exists());
+        fs::write(
+            &canonical_spec,
+            "LMHDRAD1\ninput plain.sfc\noutput rejected.smc\nmode unknown\n",
+        )
+        .unwrap();
+        assert!(add(&canonical_spec).is_err());
+        assert!(!directory.join("rejected.smc").exists());
+
+        fs::write(
+            &canonical_spec,
+            "LMHDRAD1\ninput plain.sfc\noutput rejected.smc\nmode lunar-magic-smw-us-v1\n",
+        )
+        .unwrap();
+        assert!(add(&canonical_spec).is_err());
+        assert!(!directory.join("rejected.smc").exists());
         fs::remove_dir_all(directory).unwrap();
     }
 }
