@@ -1568,6 +1568,19 @@ the ordinary twelve-row bias. `RenderLayer3TilemapCellAtCoordinates` (`004502C0`
 proves the row-30 clamp. The remaining packed flags feed the larger slot-assignment/painter
 dispatcher and intentionally remain opaque until that dispatcher is authenticated.
 
+`ConfigureLevelLayerSlotAssignments` (`004692B0`) now authenticates the color-composition subset of
+that dispatcher. Its five entries each carry a source type, enabled flag, additive flag, half-color
+flag, and Layer 3 priority selector; `RenderLevelEditorViewportRegion` (`004530A0`) copies those
+flags into `RenderLayer3TilemapRegionToPixelBuffer`. With expanded mode enabled, packed bit 31
+moves Layer 3 from the primary mode mask into the alternate source mask. On the primary route,
+packed bit 30 replaces bit 2 of the active level-mode composition-table byte. The resulting table
+byte—not the packed record's low byte—enables addition when bit 2 is set and bit 7 is clear, while
+mask `$44` enables half-color when addition remains active. The alternate route never enables
+addition and uses mask `$60` of that same adjusted level-mode byte for half-color. The pixel
+renderer halves each source RGB channel before either its opaque write or saturating addition. The
+level-mode table values and alternate route's exact painter slot remain unresolved rather than
+being inferred.
+
 The retained Wine ROM also proves four direct hooks into the `$4C0` main payload. The first three
 are now clean-room runtime contracts: logical `$00201F` replaces
 `LDA $1BE3; BEQ +$20; DEC A` with `JSL entry; BEQ +$1F`; that entry begins at payload offset zero

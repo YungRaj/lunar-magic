@@ -26,11 +26,22 @@ pub struct Layer3ExpandedEditorRow {
     pub clamp_at_30: bool,
 }
 
+/// Proven Layer 3 composition state derived by Lunar Magic's slot dispatcher.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Layer3ExpandedComposition {
+    /// Packed bit 31 moves Layer 3 from the primary mode mask to the alternate source mask.
+    pub alternate_source_route: bool,
+    /// Whether nontransparent Layer 3 pixels add to the current destination.
+    pub additive: bool,
+    /// Whether each Layer 3 source channel is halved before opaque or additive composition.
+    pub half_color: bool,
+}
+
 /// Lunar Magic's exact packed high nibbles from expanded-settings words 8–15.
 ///
-/// Only the enable bit and editor-row behavior have authenticated meanings here. The remaining
-/// bits are retained in `packed()` because they also feed a larger unresolved slot-assignment and
-/// painter dispatcher.
+/// The enable bit, editor-row behavior, source route, and composition-mask transformation have
+/// authenticated meanings here. The remaining bits are retained in `packed()` because they also
+/// feed a larger unresolved slot-assignment and painter dispatcher.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Layer3ExpandedModeFlags(u32);
 
@@ -48,6 +59,61 @@ impl Layer3ExpandedModeFlags {
     #[must_use]
     pub const fn enabled(self) -> bool {
         self.0 & MODE_ENABLED_MASK != 0
+    }
+
+    /// Returns packed bit 31's recovered source-mask route while expanded mode is enabled.
+    #[must_use]
+    pub const fn alternate_layer3_source_route(self) -> Option<bool> {
+        if self.enabled() {
+            Some(self.0 & 0x8000_0000 != 0)
+        } else {
+            None
+        }
+    }
+
+    /// Returns packed bit 30's primary-route Layer 3 additive input.
+    ///
+    /// The input is not consumed on the alternate source route, so that state returns `None`.
+    #[must_use]
+    pub const fn primary_layer3_additive_input(self) -> Option<bool> {
+        if !self.enabled() || self.0 & 0x8000_0000 != 0 {
+            None
+        } else {
+            Some(self.0 & 0x4000_0000 != 0)
+        }
+    }
+
+    /// Resolves the exact Layer 3 color-composition fields consumed by the slot dispatcher.
+    ///
+    /// `base_composition_mask` is Lunar Magic's byte from the active level-mode table. Packed bit
+    /// 30 replaces its Layer 3 additive-input bit before the dispatcher evaluates sign and
+    /// half-color masks. The alternate source route's painter position remains separate.
+    #[must_use]
+    pub const fn layer3_composition(
+        self,
+        base_composition_mask: u8,
+    ) -> Option<Layer3ExpandedComposition> {
+        if !self.enabled() {
+            return None;
+        }
+        let alternate_source_route = self.0 & 0x8000_0000 != 0;
+        let composition_mask = if self.0 & 0x4000_0000 == 0 {
+            base_composition_mask & !4
+        } else {
+            base_composition_mask | 4
+        };
+        let additive =
+            !alternate_source_route && composition_mask & 4 != 0 && composition_mask & 0x80 == 0;
+        let half_color = if alternate_source_route {
+            composition_mask & 0x60 == 0x60
+        } else {
+            additive && composition_mask & 0x44 == 0x44
+        };
+        Some(Layer3ExpandedComposition {
+            alternate_source_route,
+            additive,
+            half_color,
+        })
     }
 
     /// Resolves the proven editor-row behavior for the active level configuration.
@@ -412,5 +478,57 @@ mod tests {
                     .clamp_at_30
             );
         }
+    }
+
+    #[test]
+    fn expanded_composition_matches_primary_and_alternate_dispatch_routes() {
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(0x4000_0001).layer3_composition(0x40),
+            Some(Layer3ExpandedComposition {
+                alternate_source_route: false,
+                additive: true,
+                half_color: true,
+            })
+        );
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(0x4000_0001).layer3_composition(0xc0),
+            Some(Layer3ExpandedComposition {
+                alternate_source_route: false,
+                additive: false,
+                half_color: false,
+            })
+        );
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(1).layer3_composition(0x44),
+            Some(Layer3ExpandedComposition {
+                alternate_source_route: false,
+                additive: false,
+                half_color: false,
+            })
+        );
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(0xc000_0001).layer3_composition(0x60),
+            Some(Layer3ExpandedComposition {
+                alternate_source_route: true,
+                additive: false,
+                half_color: true,
+            })
+        );
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(0).layer3_composition(0xff),
+            None
+        );
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(0x4000_0001).primary_layer3_additive_input(),
+            Some(true)
+        );
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(0x8000_0001).primary_layer3_additive_input(),
+            None
+        );
+        assert_eq!(
+            Layer3ExpandedModeFlags::from_packed(0).alternate_layer3_source_route(),
+            None
+        );
     }
 }

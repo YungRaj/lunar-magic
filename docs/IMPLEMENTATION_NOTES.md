@@ -1232,7 +1232,13 @@ The installed preview and image-export provider now resolve that row state again
 Layer 3 setting and object tileset. An enabled override supersedes the vanilla editor position;
 ordinary types translate the repeating plane, while clamped types perform target-cell-to-source
 lookup and repeat both 8x8 source rows belonging to editor row 30 for every later 16-pixel cell.
-The unresolved slot-assignment and painter flags remain opaque and are not applied.
+`Layer3ExpandedComposition` additionally exposes the authenticated dispatcher subset when supplied
+with Lunar Magic's active level-mode composition byte: primary versus alternate source route,
+additive composition, and source half-color. It first applies packed bit 30 as an exact replacement
+for that byte's Layer 3 input bit, then evaluates the recovered sign and `$44`/`$60` masks.
+`observe-expanded-settings` exposes bit 31's alternate route and bit 30's primary additive input
+without inventing the missing base table. Installed rendering remains unchanged until those
+level-mode table values and the alternate route's painter slot are authenticated.
 The legacy path's generic graphics-remap stream is separately modeled by
 `GraphicsRemapCommandStream`, based on the recovered `DecodeGraphicsRemapCommandStream` instruction
 sequence. Four-byte headers encode a 15-bit destination word, a 14-bit length field, literal versus

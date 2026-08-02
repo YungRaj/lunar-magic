@@ -61,6 +61,18 @@ pub fn observe_expanded_settings(record: &ExpandedLevelSettingsRecord) -> Observ
             "expanded-settings/layer3/mode-enabled",
             mode.enabled().to_string(),
         ),
+        (
+            "expanded-settings/layer3/alternate-source-route",
+            mode.alternate_layer3_source_route()
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_owned()),
+        ),
+        (
+            "expanded-settings/layer3/primary-additive-input",
+            mode.primary_layer3_additive_input()
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_owned()),
+        ),
     ] {
         observation
             .insert(path, value)
@@ -98,6 +110,14 @@ mod tests {
         assert_eq!(
             observed.get("expanded-settings/layer3/mode-enabled"),
             Some("true")
+        );
+        assert_eq!(
+            observed.get("expanded-settings/layer3/alternate-source-route"),
+            Some("false")
+        );
+        assert_eq!(
+            observed.get("expanded-settings/layer3/primary-additive-input"),
+            Some("false")
         );
     }
 }

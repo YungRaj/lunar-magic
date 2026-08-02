@@ -69,8 +69,8 @@ pub use entrance::{
 };
 pub use expanded_settings::{ExpandedLevelSettingsError, ExpandedLevelSettingsRecord};
 pub use expanded_settings_layer3::{
-    Layer3ExpandedEditorRow, Layer3ExpandedModeFlags, Layer3TilemapGraphicsDescriptor,
-    Layer3TilemapGraphicsDescriptorError,
+    Layer3ExpandedComposition, Layer3ExpandedEditorRow, Layer3ExpandedModeFlags,
+    Layer3TilemapGraphicsDescriptor, Layer3TilemapGraphicsDescriptorError,
 };
 pub use header::{
     ExpandedLevelHeader, GraphicsFileValueError, HeaderValueError, Layer1VerticalScrollMode,
