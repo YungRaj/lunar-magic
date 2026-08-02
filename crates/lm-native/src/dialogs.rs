@@ -12,9 +12,11 @@ pub(crate) fn choose_rom() -> Option<PathBuf> {
         .pick_file()
 }
 
-pub(crate) fn choose_map16_bitmap_png() -> Option<PathBuf> {
+pub(crate) fn choose_map16_bitmap() -> Option<PathBuf> {
     rfd::FileDialog::new()
+        .add_filter("Bitmap image", &["png", "bmp"])
         .add_filter("PNG bitmap", &["png"])
+        .add_filter("Windows bitmap", &["bmp"])
         .pick_file()
 }
 

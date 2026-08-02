@@ -3,7 +3,7 @@ use crate::{dialogs, document_loader::BoundedRead, rom_allocation::parse_search_
 use lm_app::{
     DecodedMap16Bitmap, MAP16_BITMAP_MAX_DIMENSION, MAP16_BITMAP_MAX_PIXELS,
     MAP16_BITMAP_MAX_PNG_BYTES, NativeMap16BitmapImportSession,
-    NativeMap16BitmapImportSessionRequest, decode_map16_bitmap_png_image,
+    NativeMap16BitmapImportSessionRequest, decode_map16_bitmap_image,
 };
 use lm_graphics::{
     BitmapPaletteColorOptions, BitmapPaletteEntryState, BitmapPaletteReduction, Palette,
@@ -117,7 +117,7 @@ impl RomMap16Editor {
         bytes: &[u8],
         pending: PendingBitmapImport,
     ) -> Result<(), String> {
-        let bitmap = decode_map16_bitmap_png_image(bytes).map_err(|error| error.to_string())?;
+        let bitmap = decode_map16_bitmap_image(bytes).map_err(|error| error.to_string())?;
         self.open_decoded_bitmap_session(bitmap, pending)
     }
 
@@ -441,10 +441,10 @@ impl RomMap16Editor {
         if ui
             .add_enabled(
                 supported && !stale && !busy,
-                egui::Button::new("Choose PNG…"),
+                egui::Button::new("Choose PNG/BMP…"),
             )
             .clicked()
-            && let Some(path) = dialogs::choose_map16_bitmap_png()
+            && let Some(path) = dialogs::choose_map16_bitmap()
         {
             let result = self
                 .capture_bitmap_import(project_revision)
@@ -452,7 +452,7 @@ impl RomMap16Editor {
                     self.bitmap_loader.start(vec![BoundedRead::new(
                         path,
                         u64::try_from(MAP16_BITMAP_MAX_PNG_BYTES).unwrap_or(u64::MAX),
-                        "Map16 bitmap PNG",
+                        "Map16 bitmap image",
                     )])?;
                     self.pending_bitmap_import = Some(pending);
                     Ok(())

@@ -199,9 +199,11 @@ pub use map16_bitmap_allocation::{
 };
 pub use map16_bitmap_import::{
     DecodedMap16Bitmap, MAP16_BITMAP_HEIGHT, MAP16_BITMAP_MAX_DIMENSION, MAP16_BITMAP_MAX_PIXELS,
-    MAP16_BITMAP_MAX_PNG_BYTES, MAP16_BITMAP_PIXELS, MAP16_BITMAP_WIDTH, Map16BitmapImportError,
-    Map16BitmapImportOptions, Map16BitmapImportPlan, Map16BitmapImportRequest, Map16PngDecodeError,
-    decode_map16_bitmap_png, decode_map16_bitmap_png_image, pad_map16_bitmap,
+    MAP16_BITMAP_MAX_PNG_BYTES, MAP16_BITMAP_PIXELS, MAP16_BITMAP_WIDTH, Map16BitmapDecodeError,
+    Map16BitmapImportError, Map16BitmapImportOptions, Map16BitmapImportPlan,
+    Map16BitmapImportRequest, Map16BmpDecodeError, Map16PngDecodeError,
+    decode_map16_bitmap_bmp_image, decode_map16_bitmap_image, decode_map16_bitmap_png,
+    decode_map16_bitmap_png_image, pad_map16_bitmap,
 };
 pub use map16_bitmap_import_preview::{Map16BitmapImportInputs, Map16BitmapImportPreviewState};
 pub use map16_bitmap_rom_commit::{Map16BitmapCommitError, prepare_map16_bitmap_rom_commit};
