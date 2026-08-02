@@ -68,6 +68,7 @@ fn lunar_magic_exports_every_rust_legacy_level_header_field() {
     controller
         .apply_edits(&[
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(5)),
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LastScreen(0x1d)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(2)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundColor(6)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpriteTileset(9)),

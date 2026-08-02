@@ -1019,7 +1019,7 @@ through the authoritative revision check. It is therefore undoable and cannot by
 dirty-state/save handling.
 
 For complete native level-controller batches, `level-edit SCRIPT SEARCH_START SEARCH_END` reads a
-bounded UTF-8 `LMLEDIT1` script. It supports all nine recovered header fields; object
+bounded UTF-8 `LMLEDIT1` script. It supports all ten recovered header fields; object
 insert/replace/remove/move plus typed command-ID, parameter, coordinate-nibble, and screen-advance
 edits and exact packed screen-jump targets; sprite-header replacement;
 and native sprite-token
