@@ -139,9 +139,6 @@ fn import_image(
     if policy.search.start >= policy.search.end || policy.search.end > project.rom.logical_len() {
         return Err("allocation search range must be nonempty and inside the logical ROM".into());
     }
-    if file.sprites.expanded != target.layout.expanded_sprites {
-        return Err("level file sprite format does not match the target ROM layout".into());
-    }
     let layer1_pointer = target.layout.layer1.pointer_offset(target.level)?;
     let sprite_pointer = target
         .layout
@@ -159,17 +156,11 @@ fn import_image(
             },
         )?
         .block;
-    let sprite_terminator = if target.layout.expanded_sprites {
-        vec![0xff, 0xfe]
-    } else {
-        vec![0xff]
-    };
     let previous_sprites = project
         .load_payload(
             sprite_pointer,
             target.layout.mapper,
-            &PayloadReadPolicy::TaggedOrTerminated {
-                terminator: sprite_terminator,
+            &PayloadReadPolicy::TaggedOrBounded {
                 maximum_len: 0x8000,
                 bank_size: Some(0x8000),
             },

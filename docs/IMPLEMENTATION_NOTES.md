@@ -3137,6 +3137,16 @@ ambiguous low-Y-nibble reorder, and requires Lunar Magic's complete export to eq
 orientation-aware Rust stream. The native edit batch derives orientation from the staged level
 mode, including a mode change earlier in the same atomic batch.
 
+Sprite framing is now canonicalized after semantic edits and at native/MWL export boundaries.
+If no upper-Y/control token or escaped `$FF` record remains, Rust clears header bit `$20`, switches
+to the one-byte legacy `$FF` terminator, and permits the saved level to reopen through the newly
+selected grammar; inserting a token that requires expanded grammar performs the reciprocal
+transition. Low-level parsing and raw encoding remain lossless for fixture inspection. The live
+`lunar_magic_downgrades_unneeded_expanded_sprite_framing` oracle writes a deliberately unnecessary
+expanded level-$105 stream directly to ROM and proves Lunar Magic 3.63 exports the same records
+with `$20` clear and legacy termination. Focused level-save and installed-canvas tests cover both
+framing transitions, semantic reopen, and exact undo.
+
 The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
 pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at
 `$00388B`, GFX32's at `$0038D8`, and their shared bank operand at `$003890`. The SMW-US resolver

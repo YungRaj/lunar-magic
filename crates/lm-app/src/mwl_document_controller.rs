@@ -299,12 +299,14 @@ impl MwlDocumentController {
                 actual: self.revision,
             });
         }
-        let encoded = sprites
+        let mut canonical = sprites.clone();
+        canonical.canonicalize_framing();
+        let encoded = canonical
             .encode_for_table(lengths)
             .map_err(MwlDocumentControllerError::SpriteEncoding)?;
-        let reparsed = NativeSpriteStream::parse(&encoded, sprites.expanded, lengths)
+        let reparsed = NativeSpriteStream::parse(&encoded, canonical.expanded, lengths)
             .map_err(MwlDocumentControllerError::SpriteParse)?;
-        if reparsed != *sprites {
+        if reparsed != canonical {
             return Err(MwlDocumentControllerError::NonCanonicalSprites);
         }
         let mut staged = self.value.clone();

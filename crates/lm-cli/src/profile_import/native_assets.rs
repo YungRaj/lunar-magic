@@ -17,9 +17,6 @@ pub(super) fn import(
         context.profile.exanimation.maximum_records,
         &modes,
     )?;
-    if file.assets.level.sprites.expanded != context.profile.level.expanded_sprites {
-        return Err("native-assets sprite format does not match the profile".into());
-    }
     if file.assets.palette.colors.len() != context.profile.palette.colors_per_palette {
         return Err("native-assets palette size does not match the profile".into());
     }

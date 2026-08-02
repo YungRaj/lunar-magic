@@ -231,6 +231,7 @@ impl NativeSpriteStream {
             len: rebuilt.len(),
         })?;
         self.tokens = rebuilt;
+        self.canonicalize_framing();
         Ok(new_selected)
     }
 
@@ -464,7 +465,7 @@ mod tests {
                 }),
             ]
         );
-        assert_eq!(stream.header, 0x5a);
+        assert_eq!(stream.header, 0x7a);
     }
 
     #[test]
@@ -568,6 +569,31 @@ mod tests {
         assert_eq!(record.native_fields().unwrap().screen, 0x1e);
         assert_eq!(record.native_fields().unwrap().x, 3);
         assert_eq!(record.native_fields().unwrap().y_low, 0x1f);
+    }
+
+    #[test]
+    fn expanded_relocation_downgrades_when_no_token_requires_expanded_framing() {
+        let mut stream = NativeSpriteStream {
+            header: 0x6a,
+            expanded: true,
+            tokens: vec![SpriteToken::Screen(2), sprite(1)],
+        };
+
+        assert_eq!(
+            stream
+                .relocate_expanded_record(1, 0, 0, 7, false, &SpriteLengthTable::standard())
+                .unwrap(),
+            0
+        );
+        assert!(!stream.expanded);
+        assert_eq!(stream.header, 0x4a);
+        assert_eq!(
+            stream.tokens,
+            [SpriteToken::Record(SpriteRecord {
+                encoded: vec![0x70, 0, 1],
+            })]
+        );
+        assert_eq!(stream.encode_checked().unwrap(), [0x4a, 0x70, 0, 1, 0xff]);
     }
 
     #[test]

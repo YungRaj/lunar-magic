@@ -482,16 +482,13 @@ impl NativeLevelAssetsController {
         }
 
         let mut sprites = source.sprites.clone();
-        sprites.expanded = self.layout.level.expanded_sprites;
+        sprites.canonicalize_framing();
         let encoded = sprites
             .encode_for_table(&self.sprite_lengths)
             .map_err(NativeLevelAssetsControllerError::MwlSpriteEncoding)?;
-        let sprites = lm_level::NativeSpriteStream::parse(
-            &encoded,
-            self.layout.level.expanded_sprites,
-            &self.sprite_lengths,
-        )
-        .map_err(NativeLevelAssetsControllerError::MwlSpriteParse)?;
+        let sprites =
+            lm_level::NativeSpriteStream::parse(&encoded, sprites.expanded, &self.sprite_lengths)
+                .map_err(NativeLevelAssetsControllerError::MwlSpriteParse)?;
         if sprites
             .encode_for_table(&self.sprite_lengths)
             .map_err(NativeLevelAssetsControllerError::MwlSpriteEncoding)?

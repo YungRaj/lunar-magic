@@ -309,6 +309,8 @@ mod tests {
                 project.identity.as_ref().unwrap().internal_header_offset,
             )
             .unwrap();
+        let mut expected_assets = assets;
+        expected_assets.level.sprites.canonicalize_framing();
         assert_eq!(
             project
                 .load_native_level_assets(
@@ -318,7 +320,7 @@ mod tests {
                     &profile.exanimation_double_size_modes,
                 )
                 .unwrap(),
-            assets
+            expected_assets
         );
         assert!(project.identity.unwrap().checksum_matches());
 

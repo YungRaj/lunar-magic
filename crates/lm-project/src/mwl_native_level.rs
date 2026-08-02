@@ -126,6 +126,8 @@ impl MwlNativeLevel {
         sprite_lengths: &SpriteLengthTable,
         double_size_modes: &[bool],
     ) -> Result<MwlFile, MwlNativeLevelError> {
+        let mut canonical_sprites = self.sprites.clone();
+        canonical_sprites.canonicalize_framing();
         let mut file = MwlFile {
             version: self.version,
             flags: self.flags,
@@ -150,7 +152,7 @@ impl MwlNativeLevel {
             MwlSectionKind::Sprites,
             &MwlPayloadSection {
                 metadata: self.sprite_metadata,
-                payload: self.sprites.encode_for_table(sprite_lengths)?,
+                payload: canonical_sprites.encode_for_table(sprite_lengths)?,
             },
         )?;
         MwlOptionalLevelAssets {
@@ -299,7 +301,8 @@ mod tests {
         let modes = [false; 256];
         let mut expected = semantic_level();
         expected.flags = 1;
-        expected.sprites = NativeSpriteStream::parse(&[0x20, 0xff, 0xfe], true, &lengths).unwrap();
+        expected.sprites =
+            NativeSpriteStream::parse(&[0x20, 0xff, 1, 0xff, 0xfe], true, &lengths).unwrap();
 
         let file = expected.encode(&lengths, &modes).unwrap();
         assert_eq!(file.flags, 1);

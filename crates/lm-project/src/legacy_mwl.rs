@@ -45,7 +45,9 @@ impl LegacyMwlBundle {
         validate_source_address("sprites", source.sprite_metadata[1])?;
         let layer1 = source.layer1.encode()?;
         let layer2 = source.layer2.encode_mwl()?;
-        let sprites = source.sprites.encode_for_table(sprite_lengths)?;
+        let mut canonical_sprites = source.sprites.clone();
+        canonical_sprites.canonicalize_framing();
+        let sprites = canonical_sprites.encode_for_table(sprite_lengths)?;
         validate_payloads(&layer1, &layer2, &sprites)?;
         let palette = if source.layer1_metadata[0] & 1 != 0 {
             let bytes = source.palette.encode_snes()?;
@@ -78,7 +80,8 @@ impl LegacyMwlBundle {
                 file_name: format!("{base_name}.mw1"),
             },
             sprites: LegacyMwlSidecar {
-                flags: low_byte(source.sprite_metadata[0]),
+                flags: (low_byte(source.sprite_metadata[0]) & !1)
+                    | u8::from(canonical_sprites.expanded),
                 source_address: source.sprite_metadata[1],
                 file_name: format!("{base_name}.mw2"),
             },

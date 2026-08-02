@@ -13266,6 +13266,10 @@ mod tests {
         assert_eq!(editor.sprite_form.screen, 3);
         assert_eq!(editor.sprite_form.x, 4);
         assert_eq!(editor.sprite_form.y_low, 6);
+        assert!(!editor.controller.as_ref().unwrap().level().sprites.expanded);
+        assert!(!lm_level::NativeSpriteStream::header_uses_expanded_framing(
+            editor.controller.as_ref().unwrap().level().sprites.header
+        ));
         editor.placement_mode = Some(CanvasPlacementMode::Sprite);
         editor.place_sprite_at_canvas(egui::pos2(69.5 * cell, 7.5 * cell), canvas, cell, false);
         assert_eq!(editor.error, None);
@@ -13279,6 +13283,7 @@ mod tests {
             .sprites
             .native_placements();
         assert_eq!(placements.len(), 2);
+        assert!(!editor.controller.as_ref().unwrap().level().sprites.expanded);
         assert_eq!(
             (
                 placements[1].screen,
@@ -13318,6 +13323,7 @@ mod tests {
             .unwrap()
             .into_command();
         app.dispatch(command).unwrap();
+        layout.expanded_sprites = editor.controller.as_ref().unwrap().level().sprites.expanded;
         let reopened = app
             .project()
             .unwrap()

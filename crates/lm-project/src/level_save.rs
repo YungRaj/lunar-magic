@@ -32,27 +32,14 @@ pub enum LevelSaveError {
     Layout(LevelLoadError),
     Objects(ObjectStreamError),
     NonCanonicalObjectEncoding,
-    SpriteVariantMismatch {
-        layout_expanded: bool,
-        stream_expanded: bool,
-    },
     SpriteBankLimitExceeded(usize),
     SpriteEncoding(NativeSpriteEncodingError),
     SpriteParse(SpriteStreamError),
     NonCanonicalSpriteEncoding,
     InPlaceSpritesRequireSharedBank,
-    InPlaceLevelNumberMismatch {
-        original: usize,
-        replacement: usize,
-    },
-    AliasedSpriteStream {
-        level: usize,
-        aliases: Vec<usize>,
-    },
-    InPlaceSpriteGrowth {
-        original: usize,
-        replacement: usize,
-    },
+    InPlaceLevelNumberMismatch { original: usize, replacement: usize },
+    AliasedSpriteStream { level: usize, aliases: Vec<usize> },
+    InPlaceSpriteGrowth { original: usize, replacement: usize },
     Mapping(RomError),
     Transaction(crate::TransactionError),
     Payload(PayloadSaveError),
@@ -153,12 +140,6 @@ impl Project {
         let crate::SpritePointerTable::SplitSharedBank { low_words, .. } = layout.sprites else {
             return Err(LevelSaveError::InPlaceSpritesRequireSharedBank);
         };
-        if layout.expanded_sprites != replacement.sprites.expanded {
-            return Err(LevelSaveError::SpriteVariantMismatch {
-                layout_expanded: layout.expanded_sprites,
-                stream_expanded: replacement.sprites.expanded,
-            });
-        }
         let pointer = layout
             .sprites
             .read_snes_pointer(&self.rom, replacement.number)?;
@@ -179,9 +160,12 @@ impl Project {
         }
         let original_bytes = original.sprites.encode_for_table(sprite_lengths)?;
         let replacement_bytes = replacement.sprites.encode_for_table(sprite_lengths)?;
-        let reparsed =
-            NativeSpriteStream::parse(&replacement_bytes, layout.expanded_sprites, sprite_lengths)
-                .map_err(LevelSaveError::SpriteParse)?;
+        let reparsed = NativeSpriteStream::parse(
+            &replacement_bytes,
+            replacement.sprites.expanded,
+            sprite_lengths,
+        )
+        .map_err(LevelSaveError::SpriteParse)?;
         if reparsed != replacement.sprites {
             return Err(LevelSaveError::NonCanonicalSpriteEncoding);
         }
@@ -361,12 +345,6 @@ fn sprite_save_request(
     sprite_lengths: &SpriteLengthTable,
     options: &LevelSaveOptions,
 ) -> Result<PayloadSaveRequest, LevelSaveError> {
-    if layout.expanded_sprites != level.sprites.expanded {
-        return Err(LevelSaveError::SpriteVariantMismatch {
-            layout_expanded: layout.expanded_sprites,
-            stream_expanded: level.sprites.expanded,
-        });
-    }
     let sprites = level.sprites.encode_for_table(sprite_lengths)?;
     let reparsed_sprites =
         NativeSpriteStream::parse(&sprites, level.sprites.expanded, sprite_lengths)
@@ -659,6 +637,50 @@ mod tests {
         assert!(project.history.undo(&mut project.rom).unwrap());
         assert_eq!(project.save_snapshot(), original);
         assert!(!project.history.can_undo());
+    }
+
+    #[test]
+    fn level_save_supports_sprite_framing_transitions() {
+        let lengths = SpriteLengthTable::standard();
+        let options = LevelSaveOptions {
+            layer1_allocation: policy(),
+            sprite_allocation: policy(),
+            previous_layer1: None,
+            previous_sprites: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+
+        let mut expanded = level();
+        expanded.sprites.header |= NativeSpriteStream::EXPANDED_HEADER_FLAG;
+        expanded.sprites.expanded = true;
+        expanded.sprites.tokens.insert(0, SpriteToken::Screen(1));
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        project
+            .save_level_slot(layout(), &expanded, &lengths, &options)
+            .unwrap();
+        let mut expanded_layout = layout();
+        expanded_layout.expanded_sprites = true;
+        assert_eq!(
+            project
+                .load_level_slot(0, expanded_layout, &lengths)
+                .unwrap()
+                .sprites,
+            expanded.sprites
+        );
+
+        let legacy = level();
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        project
+            .save_level_slot(expanded_layout, &legacy, &lengths, &options)
+            .unwrap();
+        assert_eq!(
+            project
+                .load_level_slot(0, layout(), &lengths)
+                .unwrap()
+                .sprites,
+            legacy.sprites
+        );
     }
 
     #[test]

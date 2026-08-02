@@ -80,6 +80,7 @@ pub(crate) fn apply_native_level_edits(
             }
         }
     }
+    staged_sprites.canonicalize_framing();
     let encoded_layer = staged_layer1
         .encode()
         .map_err(LevelControllerError::InvalidObjectEncoding)?;

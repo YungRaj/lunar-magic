@@ -262,14 +262,16 @@ impl Project {
                 bank_size: Some(0x8000),
             },
         )?;
+        let expanded_sprites = sprites
+            .bytes
+            .first()
+            .map_or(layout.expanded_sprites, |header| {
+                NativeSpriteStream::header_uses_expanded_framing(*header)
+            });
         Ok(LoadedLevelSlot {
             number,
             layer1: LevelObjectData::parse(&layer1.bytes)?,
-            sprites: NativeSpriteStream::parse(
-                &sprites.bytes,
-                layout.expanded_sprites,
-                sprite_lengths,
-            )?,
+            sprites: NativeSpriteStream::parse(&sprites.bytes, expanded_sprites, sprite_lengths)?,
         })
     }
 }
@@ -378,5 +380,45 @@ mod tests {
             loaded.sprites.encode_checked().unwrap(),
             [0x10, 0x00, 0x20, 0x01, 0xff]
         );
+    }
+
+    #[test]
+    fn sprite_header_selects_framing_despite_stale_layout_metadata() {
+        let mut bytes = vec![0; 0x8000];
+        bytes[0x20..0x23].copy_from_slice(&[0x00, 0x81, 0x80]);
+        bytes[0x30..0x33].copy_from_slice(&[0x20, 0x81, 0x80]);
+        bytes[0x100..0x109].copy_from_slice(&[1, 2, 3, 4, 5, 9, 8, 7, 0xff]);
+        bytes[0x120..0x128].copy_from_slice(&[0x30, 0xff, 1, 0x00, 0x20, 0x01, 0xff, 0xfe]);
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let table = LevelRomLayout {
+            mapper: Mapper::LoRom,
+            layer1: LevelPointerTable {
+                offset: 0x20,
+                entries: 1,
+                stride: 3,
+            },
+            sprites: LevelPointerTable {
+                offset: 0x30,
+                entries: 1,
+                stride: 3,
+            }
+            .into(),
+            expanded_sprites: false,
+        };
+        let expanded = project
+            .load_level_slot(0, table, &SpriteLengthTable::standard())
+            .unwrap();
+        assert!(expanded.sprites.expanded);
+        assert_eq!(expanded.sprites.tokens[0], lm_level::SpriteToken::Screen(1));
+
+        let mut bytes = project.rom.logical_bytes().to_vec();
+        bytes[0x120..0x125].copy_from_slice(&[0x10, 0x00, 0x20, 0x01, 0xff]);
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let mut stale_expanded = table;
+        stale_expanded.expanded_sprites = true;
+        let legacy = project
+            .load_level_slot(0, stale_expanded, &SpriteLengthTable::standard())
+            .unwrap();
+        assert!(!legacy.sprites.expanded);
     }
 }

@@ -216,8 +216,10 @@ impl LevelController {
         level_changed: bool,
     ) -> Result<(), LevelControllerError> {
         if level_changed {
+            let mut reopen_layout = self.layout;
+            reopen_layout.expanded_sprites = self.level.sprites.expanded;
             let reopened = project
-                .load_level_slot(self.level.number, self.layout, &self.sprite_lengths)
+                .load_level_slot(self.level.number, reopen_layout, &self.sprite_lengths)
                 .map_err(LevelControllerError::Load)?;
             if reopened != self.level {
                 return Err(LevelControllerError::NonCanonicalLevelEncoding);

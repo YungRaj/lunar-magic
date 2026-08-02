@@ -19,9 +19,6 @@ pub(super) fn level(
         &read_bounded(asset, NativeLevelFile::MAX_FILE_LEN)?,
         &context.profile.sprite_lengths,
     )?;
-    if file.sprites.expanded != layout.expanded_sprites {
-        return Err("level file sprite format does not match the profile".into());
-    }
     let layer_pointer = layout.layer1.pointer_offset(slot)?;
     let sprite_pointer = layout
         .sprites
@@ -43,12 +40,7 @@ pub(super) fn level(
         .load_payload_from_pointer(
             sprite_pointer,
             layout.mapper,
-            &PayloadReadPolicy::TaggedOrTerminated {
-                terminator: if layout.expanded_sprites {
-                    vec![0xff, 0xfe]
-                } else {
-                    vec![0xff]
-                },
+            &PayloadReadPolicy::TaggedOrBounded {
                 maximum_len: 0x8000,
                 bank_size: Some(0x8000),
             },

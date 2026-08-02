@@ -30,7 +30,9 @@ impl NativeLevelFile {
     /// Returns [`NativeLevelFileError`] if either stream exceeds its native single-bank limit.
     pub fn encode(&self) -> Result<Vec<u8>, NativeLevelFileError> {
         let layer1 = self.layer1.encode_banked()?;
-        let sprites = self.sprites.encode_checked()?;
+        let mut canonical_sprites = self.sprites.clone();
+        canonical_sprites.canonicalize_framing();
+        let sprites = canonical_sprites.encode_checked()?;
         validate_len(StreamKind::Sprites, sprites.len())?;
         let layer1_len = u32::try_from(layer1.len()).map_err(|_| NativeLevelFileError::Overflow)?;
         let sprite_len =
@@ -39,7 +41,7 @@ impl NativeLevelFile {
         let mut bytes = Vec::with_capacity(Self::HEADER_LEN + layer1.len() + sprites.len());
         bytes.extend_from_slice(&Self::MAGIC);
         bytes.extend_from_slice(&Self::VERSION.to_le_bytes());
-        bytes.extend_from_slice(&u16::from(self.sprites.expanded).to_le_bytes());
+        bytes.extend_from_slice(&u16::from(canonical_sprites.expanded).to_le_bytes());
         bytes.extend_from_slice(&self.source_level.to_le_bytes());
         bytes.extend_from_slice(&0_u16.to_le_bytes());
         bytes.extend_from_slice(&layer1_len.to_le_bytes());
@@ -184,7 +186,7 @@ mod tests {
 
     fn file(expanded: bool) -> NativeLevelFile {
         let sprite_bytes: &[u8] = if expanded {
-            &[0x30, 0x00, 0x20, 0x01, 0xff, 0xfe]
+            &[0x30, 0xff, 1, 0x00, 0x20, 0x01, 0xff, 0xfe]
         } else {
             &[0x10, 0x00, 0x20, 0x01, 0xff]
         };

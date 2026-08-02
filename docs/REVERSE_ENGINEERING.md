@@ -2739,6 +2739,13 @@ be rewritten from sprite state. The legacy multi-file format is distinct: its `.
 sprite-section flag selects framing for the separate `.mw2` payload but supplies no binary
 container-flag value.
 
+`SerializeLevelSpriteList` also canonicalizes in the opposite direction. A live oracle supplied
+an expanded `$20` header and `$FF $FE` terminator around only ordinary records, with no upper-Y
+transition, opaque control, or escaped `$FF` record. Lunar Magic 3.63 re-exported the identical
+record sequence with `$20` clear and a single `$FF` terminator. Expanded framing is therefore a
+serializer-derived capability requirement, not sticky level metadata: save paths must downgrade
+when the last expanded-only token disappears and upgrade when one is introduced.
+
 Direct object dragging now covers all 32 native screens. The canvas reverses
 horizontal or vertical tile coordinates into an absolute screen plus the
 selected ordinary record's first/second nibbles. `relocate_ordinary_object`

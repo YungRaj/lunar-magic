@@ -36,6 +36,25 @@ impl NativeSpriteStream {
     pub const fn header_uses_expanded_framing(header: u8) -> bool {
         header & Self::EXPANDED_HEADER_FLAG != 0
     }
+
+    /// Reports whether any token requires Lunar Magic's expanded control/escape grammar.
+    #[must_use]
+    pub fn requires_expanded_framing(&self) -> bool {
+        self.tokens.iter().any(|token| match token {
+            SpriteToken::Screen(_) | SpriteToken::Control(_) => true,
+            SpriteToken::Record(record) => record.encoded.first() == Some(&0xff),
+        })
+    }
+
+    /// Selects Lunar Magic's canonical framing from the tokens and synchronizes header bit `$20`.
+    pub fn canonicalize_framing(&mut self) {
+        self.expanded = self.requires_expanded_framing();
+        if self.expanded {
+            self.header |= Self::EXPANDED_HEADER_FLAG;
+        } else {
+            self.header &= !Self::EXPANDED_HEADER_FLAG;
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
