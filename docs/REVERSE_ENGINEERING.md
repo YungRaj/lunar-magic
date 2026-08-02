@@ -1444,6 +1444,14 @@ low, high, and bank bytes from three parallel 50-byte planes at logical
 packed-pointer operands at descriptor entries `$2C`, `$2D`, and `$2B`.
 Expanded GFX/ExGFX ranges use still other descriptor-selected tables.
 
+The three special-file descriptor entries resolve to live startup-code operands rather than the
+unchanged six-byte data pair at logical `$003882`: GFX33's low word is at `$00388B`, GFX32's low
+word is at `$0038D8`, and both share the bank byte at `$003890`. An authentic 2 MiB Lunar
+Magic-created ROM retains `$08BFC0/$088000` at `$003882` while changing the live operands to
+`$088000/$089C68`; decoding the stale GFX33 address fails immediately, while both operand-selected
+streams decode and render. Rust authenticates the surrounding `LDY/STA/LDA/STA` and
+`BRA/LDA/STA/SEP/REP` instruction skeletons before interpreting these mutable operands.
+
 This distinction is now the primary automatic-profile boundary for pristine
 SMW US revision 0. The Rust layout model must represent split three-plane
 graphics pointers explicitly; treating `$003992` as a contiguous table would

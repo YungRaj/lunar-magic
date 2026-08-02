@@ -22,6 +22,45 @@ pub const SMW_US_V1_GRAPHICS_POINTER_BANK_OFFSET: usize = 0x39f6;
 /// Contiguous pointers for GFX33 animated tiles followed by GFX32 player graphics.
 pub const SMW_US_V1_SPECIAL_GRAPHICS_POINTER_OFFSET: usize = 0x3882;
 pub const SMW_US_V1_SPECIAL_GRAPHICS_FILES: usize = 2;
+/// Low-word operand used by SMW's startup decoder for GFX33.
+pub const SMW_US_V1_GFX33_STARTUP_POINTER_LOW_OFFSET: usize = 0x388b;
+/// Shared bank-byte operand used by SMW's startup decoders for GFX33 and GFX32.
+pub const SMW_US_V1_SPECIAL_GRAPHICS_STARTUP_POINTER_BANK_OFFSET: usize = 0x3890;
+/// Low-word operand used by SMW's startup decoder for GFX32.
+pub const SMW_US_V1_GFX32_STARTUP_POINTER_LOW_OFFSET: usize = 0x38d8;
+
+/// Authenticated one-entry layouts for the two startup graphics streams.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SmwUsV1SpecialGraphicsLayouts {
+    pub gfx33: GraphicsRomLayout,
+    pub gfx32: GraphicsRomLayout,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SmwUsV1SpecialGraphicsLayoutError {
+    Rom(RomError),
+    UnsupportedStartupCode { offset: usize },
+}
+
+impl fmt::Display for SmwUsV1SpecialGraphicsLayoutError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rom(error) => error.fmt(formatter),
+            Self::UnsupportedStartupCode { offset } => write!(
+                formatter,
+                "SMW special-graphics startup code at {offset:#x} is not authenticated"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SmwUsV1SpecialGraphicsLayoutError {}
+
+impl From<RomError> for SmwUsV1SpecialGraphicsLayoutError {
+    fn from(error: RomError) -> Self {
+        Self::Rom(error)
+    }
+}
 
 /// Number of native level slots in SMW's primary and secondary level ranges.
 pub const SMW_US_V1_VANILLA_LEVEL_SLOTS: usize = 0x200;
@@ -414,6 +453,56 @@ pub const fn smw_us_v1_vanilla_special_graphics_layout() -> GraphicsRomLayout {
     }
 }
 
+/// Resolves the live GFX33/GFX32 sources used by SMW's startup decoder.
+///
+/// Lunar Magic can relocate these streams while leaving the pristine packed pointers at `$3882`
+/// untouched. Its SMW-US descriptor instead identifies the two 16-bit instruction operands and
+/// their shared bank operand. The surrounding opcodes are authenticated before those mutable
+/// bytes are interpreted, so unrelated patches cannot be mistaken for this recovered layout.
+///
+/// # Errors
+///
+/// Rejects truncated ROMs and startup code whose immutable instruction skeleton is not the
+/// recovered SMW-US revision-0 form.
+pub fn smw_us_v1_special_graphics_layouts(
+    rom: &RomImage,
+) -> Result<SmwUsV1SpecialGraphicsLayouts, SmwUsV1SpecialGraphicsLayoutError> {
+    const GUARDED_BYTES: &[(usize, &[u8])] = &[
+        (0x3889, &[0x10, 0xa0]),
+        (0x388d, &[0x84, 0x8a, 0xa9]),
+        (0x3891, &[0x85, 0x8c]),
+        (0x38d5, &[0x80, 0xd6, 0xa9]),
+        (0x38da, &[0x85, 0x8a, 0xe2, 0x20, 0xc2, 0x10]),
+    ];
+    for &(offset, expected) in GUARDED_BYTES {
+        if rom.read(offset, expected.len())? != expected {
+            return Err(SmwUsV1SpecialGraphicsLayoutError::UnsupportedStartupCode { offset });
+        }
+    }
+    let layout = |low_offset| GraphicsRomLayout {
+        mapper: Mapper::LoRom,
+        pointers: LevelPointerTable {
+            offset: low_offset,
+            entries: 1,
+            stride: 1,
+        },
+        split_pointer_planes: Some(GraphicsPointerPlanes {
+            low_offset,
+            high_offset: low_offset + 1,
+            bank_offset: SMW_US_V1_SPECIAL_GRAPHICS_STARTUP_POINTER_BANK_OFFSET,
+            entries: 1,
+            stride: 1,
+        }),
+        compression: GraphicsCompression::Lz2,
+        maximum_compressed_len: 0x8000,
+        maximum_decompressed_len: 0x10000,
+    };
+    Ok(SmwUsV1SpecialGraphicsLayouts {
+        gfx33: layout(SMW_US_V1_GFX33_STARTUP_POINTER_LOW_OFFSET),
+        gfx32: layout(SMW_US_V1_GFX32_STARTUP_POINTER_LOW_OFFSET),
+    })
+}
+
 /// Returns the native level layout used by an unmodified SMW-US revision 0 ROM.
 #[must_use]
 pub const fn smw_us_v1_vanilla_level_layout() -> LevelRomLayout {
@@ -532,6 +621,57 @@ mod tests {
     use lm_level::{MwlFile, MwlLevelHeaderSection, MwlSectionKind, SpriteLengthTable};
     use lm_project::Project;
     use std::{fs, path::PathBuf};
+
+    fn special_graphics_startup_fixture(gfx33: [u8; 2], gfx32: [u8; 2], bank: u8) -> RomImage {
+        let mut bytes = vec![0xff; 0x80_000];
+        for (offset, value) in [
+            (0x3889, &[0x10, 0xa0][..]),
+            (0x388d, &[0x84, 0x8a, 0xa9][..]),
+            (0x3891, &[0x85, 0x8c][..]),
+            (0x38d5, &[0x80, 0xd6, 0xa9][..]),
+            (0x38da, &[0x85, 0x8a, 0xe2, 0x20, 0xc2, 0x10][..]),
+        ] {
+            bytes[offset..offset + value.len()].copy_from_slice(value);
+        }
+        bytes[SMW_US_V1_GFX33_STARTUP_POINTER_LOW_OFFSET
+            ..SMW_US_V1_GFX33_STARTUP_POINTER_LOW_OFFSET + 2]
+            .copy_from_slice(&gfx33);
+        bytes[SMW_US_V1_GFX32_STARTUP_POINTER_LOW_OFFSET
+            ..SMW_US_V1_GFX32_STARTUP_POINTER_LOW_OFFSET + 2]
+            .copy_from_slice(&gfx32);
+        bytes[SMW_US_V1_SPECIAL_GRAPHICS_STARTUP_POINTER_BANK_OFFSET] = bank;
+        RomImage::from_bytes(bytes).unwrap()
+    }
+
+    #[test]
+    fn special_graphics_layouts_resolve_relocated_startup_operands() {
+        let project = Project::new(special_graphics_startup_fixture(
+            0x8000_u16.to_le_bytes(),
+            0x9c68_u16.to_le_bytes(),
+            0x08,
+        ));
+        let layouts = smw_us_v1_special_graphics_layouts(&project.rom).unwrap();
+        assert_eq!(
+            layouts.gfx33.read_pointer(&project, 0).unwrap().get(),
+            0x08_8000
+        );
+        assert_eq!(
+            layouts.gfx32.read_pointer(&project, 0).unwrap().get(),
+            0x08_9c68
+        );
+        assert_eq!(layouts.gfx33.pointers.entries, 1);
+        assert_eq!(layouts.gfx32.pointers.entries, 1);
+    }
+
+    #[test]
+    fn special_graphics_layouts_reject_unrelated_startup_code() {
+        let mut image = special_graphics_startup_fixture([0, 0x80], [0x68, 0x9c], 0x08);
+        image.write(0x38da, &[0xea]).unwrap();
+        assert_eq!(
+            smw_us_v1_special_graphics_layouts(&image),
+            Err(SmwUsV1SpecialGraphicsLayoutError::UnsupportedStartupCode { offset: 0x38da })
+        );
+    }
 
     #[test]
     fn layer2_layout_detects_only_the_exact_format_103_marker() {

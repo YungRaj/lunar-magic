@@ -3034,6 +3034,15 @@ and from 2.175570 to 1.205272 mean absolute channel error. The audit comparator 
 observed 656×448 DIB as the same fixed `(870,338)` editor crop as the existing 656×464 capture,
 avoiding a false heuristic offset.
 
+The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
+pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at
+`$00388B`, GFX32's at `$0038D8`, and their shared bank operand at `$003890`. The SMW-US resolver
+authenticates the surrounding startup opcodes, exposes the two non-contiguous sources as bounded
+one-entry layouts, and feeds validation, entrance graphics, common animation, sprite-display, and
+installed level rendering from those live operands. Synthetic relocation/corruption tests cover
+the resolver, and a local 2 MiB Lunar Magic-created ROM now opens level `$102` without the former
+`InvalidBackReference` GFX33 rejection and produces a complete editor capture.
+
 The retained eight-phase audit identifies phase 2 as Lunar Magic's captured animation state, with
 5,452 unmasked differences and 0.911269 mean absolute channel error. Every delta above one is
 confined to three measured Lunar Magic-only overlay rectangles: the screen-number labels and

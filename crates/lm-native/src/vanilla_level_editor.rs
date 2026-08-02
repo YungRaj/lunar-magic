@@ -8009,18 +8009,24 @@ fn validate_builtin_graphics_layout(snapshot: &lm_app::ControllerSnapshot) -> Re
                 )
             })?;
     }
-    for file in 0..2 {
-        project
-            .load_decompressed_graphics_file(
-                file,
-                lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
+    let special_layouts =
+        lm_profile::smw_us_v1_special_graphics_layouts(&project.rom).map_err(|error| {
+            format!(
+                "the built-in editor could not authenticate the SMW-US special-graphics startup \
+                 layout: {error}. Install a matching audited revision profile for this modified ROM"
             )
+        })?;
+    for (name, layout) in [
+        ("GFX33", special_layouts.gfx33),
+        ("GFX32", special_layouts.gfx32),
+    ] {
+        project
+            .load_decompressed_graphics_file(0, layout)
             .map_err(|error| {
                 format!(
-                    "the built-in editor requires the pristine SMW-US special-graphics pointer \
-                     layout, but GFX{:02X} could not be decoded: {error}. Install a matching \
-                     audited revision profile for this modified ROM",
-                    0x33_usize.saturating_sub(file)
+                    "the built-in editor resolved the SMW-US special-graphics startup layout, but \
+                     {name} could not be decoded: {error}. Install a matching audited revision \
+                     profile for this modified ROM"
                 )
             })?;
     }

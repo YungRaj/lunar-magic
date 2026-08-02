@@ -377,9 +377,7 @@ fn render_default_entrance_marker(
         ([0x40e1, 0x40f1, 0x40e0, 0x40f0], 0),
         ([0x4005, 0x4015, 0x4004, 0x4014], 16),
     ];
-    let player_bytes = project
-        .load_decompressed_graphics_file(1, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
-        .map_err(|error| error.to_string())?;
+    let player_bytes = load_smw_us_v1_special_graphics_file(project, false)?;
     let player_tiles = lm_graphics::decode_planar_tiles(&player_bytes, 4)
         .map_err(|error| format!("cannot decode pristine entrance GFX32: {error}"))?;
     let mut rgba = vec![0; WIDTH * HEIGHT * 4];
@@ -598,17 +596,13 @@ fn apply_vanilla_common_animation_phases(
 fn load_vanilla_special_animation_tiles(
     project: &Project,
 ) -> Result<(Vec<IndexedTile>, Vec<IndexedTile>), String> {
-    let decoded_gfx33 = project
-        .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
-        .map_err(|error| error.to_string())?;
+    let decoded_gfx33 = load_smw_us_v1_special_graphics_file(project, true)?;
     let mut gfx33_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx33, 3)
         .map_err(|error| format!("cannot decode pristine animated GFX33: {error}"))?;
     gfx33_tiles.resize_with(gfx33_tiles.len() + GFX33_DECODED_TILE_PADDING, || {
         IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
     });
-    let decoded_gfx32 = project
-        .load_decompressed_graphics_file(1, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
-        .map_err(|error| error.to_string())?;
+    let decoded_gfx32 = load_smw_us_v1_special_graphics_file(project, false)?;
     let gfx32_tiles = lm_graphics::decode_planar_tiles(&decoded_gfx32, 4)
         .map_err(|error| format!("cannot decode pristine player/animation GFX32: {error}"))?;
     Ok((gfx33_tiles, gfx32_tiles))
@@ -1051,9 +1045,7 @@ fn materialize_layer1_sprite_vram(slots: &[Vec<IndexedTile>]) -> Vec<IndexedTile
 }
 
 fn load_vanilla_sprite_display_page(project: &Project) -> Result<Vec<Vec<IndexedTile>>, String> {
-    let decoded = project
-        .load_decompressed_graphics_file(0, lm_profile::smw_us_v1_vanilla_special_graphics_layout())
-        .map_err(|error| error.to_string())?;
+    let decoded = load_smw_us_v1_special_graphics_file(project, true)?;
     let mut tiles = lm_graphics::decode_planar_tiles(&decoded, 3)
         .map_err(|error| format!("cannot decode pristine sprite-display GFX33: {error}"))?;
     let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
@@ -1063,6 +1055,14 @@ fn load_vanilla_sprite_display_page(project: &Project) -> Result<Vec<Vec<Indexed
         .take(4)
         .map(<[IndexedTile]>::to_vec)
         .collect())
+}
+
+fn load_smw_us_v1_special_graphics_file(project: &Project, gfx33: bool) -> Result<Vec<u8>, String> {
+    let layouts = lm_profile::smw_us_v1_special_graphics_layouts(&project.rom)
+        .map_err(|error| error.to_string())?;
+    project
+        .load_decompressed_graphics_file(0, if gfx33 { layouts.gfx33 } else { layouts.gfx32 })
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn materialize_sprite_display_tiles(

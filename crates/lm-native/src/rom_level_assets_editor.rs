@@ -1649,17 +1649,15 @@ fn load_profiled_special_graphics(
     let entries = layout
         .split_pointer_planes
         .map_or(layout.pointers.entries, |planes| planes.entries);
-    let (gfx33_file, gfx32_file, source_layout) = if entries > 0x33 {
-        (0x33, 0x32, layout)
+    let (gfx33_file, gfx32_file, gfx33_layout, gfx32_layout) = if entries > 0x33 {
+        (0x33, 0x32, layout, layout)
     } else {
-        (
-            0,
-            1,
-            lm_profile::smw_us_v1_vanilla_special_graphics_layout(),
-        )
+        let special = lm_profile::smw_us_v1_special_graphics_layouts(&project.rom)
+            .map_err(|error| format!("cannot resolve profiled special graphics: {error}"))?;
+        (0, 0, special.gfx33, special.gfx32)
     };
     let decoded_gfx33 = project
-        .load_decompressed_graphics_file(gfx33_file, source_layout)
+        .load_decompressed_graphics_file(gfx33_file, gfx33_layout)
         .map_err(|error| format!("cannot load profiled GFX33: {error}"))?;
     let mut gfx33 = lm_graphics::decode_planar_tiles(&decoded_gfx33, 3)
         .map_err(|error| format!("cannot decode profiled GFX33 as 3bpp: {error}"))?;
@@ -1669,7 +1667,7 @@ fn load_profiled_special_graphics(
     let gfx32 = include_gfx32
         .then(|| {
             let decoded = project
-                .load_decompressed_graphics_file(gfx32_file, source_layout)
+                .load_decompressed_graphics_file(gfx32_file, gfx32_layout)
                 .map_err(|error| format!("cannot load profiled GFX32: {error}"))?;
             lm_graphics::decode_planar_tiles(&decoded, 4)
                 .map_err(|error| format!("cannot decode profiled GFX32 as 4bpp: {error}"))
