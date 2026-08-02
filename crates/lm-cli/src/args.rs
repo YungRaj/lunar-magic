@@ -273,6 +273,9 @@ fn parse_profile_command(
     if let Some(command) = crate::arg_shared_palette_native::parse(args, text) {
         return Ok(Some(command));
     }
+    if let Some(command) = parse_fixed_patch_install(args, text) {
+        return Ok(Some(command));
+    }
     Ok(match text {
         [command, _] if command == "profile" => Some(Command::Profile {
             profile: PathBuf::from(&args[1]),
@@ -326,12 +329,6 @@ fn parse_profile_command(
                 output_rom: PathBuf::from(&args[2]),
             })
         }
-        [command, _, _] if command == "smw-sprite19-fix-install" => {
-            Some(Command::Sprite19FixInstall {
-                input_rom: PathBuf::from(&args[1]),
-                output_rom: PathBuf::from(&args[2]),
-            })
-        }
         [command, _, _] if command == "smw-map16-complete-export" => {
             Some(Command::SmwMap16CompleteExport {
                 rom: PathBuf::from(&args[1]),
@@ -359,6 +356,27 @@ fn parse_profile_command(
         }),
         _ => None,
     })
+}
+
+fn parse_fixed_patch_install(
+    args: &[OsString],
+    text: &[std::borrow::Cow<'_, str>],
+) -> Option<Command> {
+    match text {
+        [command, _, _] if command == "smw-sprite19-fix-install" => {
+            Some(Command::Sprite19FixInstall {
+                input_rom: PathBuf::from(&args[1]),
+                output_rom: PathBuf::from(&args[2]),
+            })
+        }
+        [command, _, _] if command == "smw-support-patch-b-install" => {
+            Some(Command::SupportPatchBInstall {
+                input_rom: PathBuf::from(&args[1]),
+                output_rom: PathBuf::from(&args[2]),
+            })
+        }
+        _ => None,
+    }
 }
 
 fn parse_native_overworld_command(

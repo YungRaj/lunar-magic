@@ -74,6 +74,10 @@ pub enum Command {
         input_rom: PathBuf,
         output_rom: PathBuf,
     },
+    SupportPatchBInstall {
+        input_rom: PathBuf,
+        output_rom: PathBuf,
+    },
     SmwMap16CompleteExport {
         rom: PathBuf,
         template: Option<PathBuf>,

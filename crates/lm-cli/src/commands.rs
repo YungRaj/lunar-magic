@@ -295,6 +295,10 @@ fn execute_profile(command: &Command) -> Result<bool, Box<dyn std::error::Error>
             input_rom,
             output_rom,
         } => crate::sprite19_fix_install::execute(input_rom, output_rom)?,
+        Command::SupportPatchBInstall {
+            input_rom,
+            output_rom,
+        } => crate::support_patch_b_install::execute(input_rom, output_rom)?,
         Command::SmwMap16CompleteExport {
             rom,
             template,

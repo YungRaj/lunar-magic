@@ -151,6 +151,7 @@ mod size_mode_file;
 mod smw_palette_file;
 mod sprite19_fix_install;
 mod sprite_length_file;
+mod support_patch_b_install;
 mod title_recording_native;
 mod title_tilemap_native;
 mod tpl_palette_file;
