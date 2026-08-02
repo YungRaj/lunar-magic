@@ -8171,13 +8171,18 @@ fn prepare_commit(
     if logical_len <= 0x80_000 && controller.layer1_is_modified() {
         return Err("expand the ROM before committing level changes".into());
     }
+    let fill_bytes = if logical_len > 0x80_000 {
+        vec![0x00, 0xff]
+    } else {
+        vec![0xff]
+    };
     let layout = lm_profile::smw_us_v1_vanilla_level_layout();
     let layer2_layout =
         lm_profile::smw_us_v1_layer2_layout(&image).map_err(|error| error.to_string())?;
     let allocation = AllocationPolicy {
         search: logical_len.min(0x80_000)..logical_len,
         bank_size: Some(0x8000),
-        fill_bytes: vec![0xff],
+        fill_bytes: fill_bytes.clone(),
         protected: vec![
             ProtectedRange(
                 layout.layer1.offset
@@ -8200,7 +8205,7 @@ fn prepare_commit(
         sprite_allocation: AllocationPolicy {
             search: sprite_bank,
             bank_size: Some(0x8000),
-            fill_bytes: vec![0xff],
+            fill_bytes,
             protected: allocation.protected.clone(),
         },
         previous_layer1: None,
@@ -8257,6 +8262,50 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn prepare_lunar_magic_restore_files(root: &std::path::Path, directory: &std::path::Path) {
+        let restore = directory.join("sysLMRestore");
+        std::fs::create_dir(&restore).unwrap();
+        std::fs::copy(
+            root.join("sysLMRestore/smwOrig.smc"),
+            restore.join("smwOrig.smc"),
+        )
+        .unwrap();
+        std::fs::copy(
+            root.join("sysLMRestore/Super Mario World (USA).lrp"),
+            restore.join("Super Mario World (USA).lrp"),
+        )
+        .unwrap();
+    }
+
+    fn export_level_with_lunar_magic(
+        root: &std::path::Path,
+        rom_path: &std::path::Path,
+        mwl_path: &std::path::Path,
+        level: u16,
+    ) {
+        let wine_path = |path: &std::path::Path| {
+            let rendered = path.display().to_string().replace('/', r"\");
+            format!(r"Z:\{}", rendered.trim_start_matches('\\'))
+        };
+        let executable = root.join("lm363/Lunar Magic.exe");
+        assert!(executable.is_file(), "missing {}", executable.display());
+        let output = std::process::Command::new("wine")
+            .env("WINEDEBUG", "-all")
+            .arg(executable)
+            .arg("-ExportLevel")
+            .arg(wine_path(rom_path))
+            .arg(wine_path(mwl_path))
+            .arg(format!("{level:03X}"))
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "Lunar Magic export stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 
     fn resize_test_placement() -> lm_level::NativeObjectPlacement {
         lm_level::NativeObjectPlacement {
@@ -8746,6 +8795,43 @@ mod tests {
     }
 
     #[test]
+    fn expanded_zero_fill_is_available_for_layer1_growth() {
+        let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        bytes.resize(0x10_0000, 0x00);
+        let checksum = lm_rom::compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+        bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let mut controller =
+            LevelController::decode(&snapshot, layout, &SpriteLengthTable::standard()).unwrap();
+        let index = controller.level().layer1.objects.records.len();
+        controller
+            .apply_edits(&[NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                index,
+                record: ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            }])])
+            .unwrap();
+        app.dispatch(prepare_commit(&controller, &snapshot).unwrap())
+            .unwrap();
+        let pointer = layout
+            .layer1
+            .read_snes_pointer(&app.project().unwrap().rom, 0x105)
+            .unwrap();
+        let offset = pointer.to_pc(Mapper::LoRom).unwrap();
+        assert!(offset >= 0x80_008);
+        assert_eq!(
+            lm_rats::parse_at(app.project().unwrap().rom.logical_bytes(), offset - 8)
+                .unwrap()
+                .payload
+                .start,
+            offset
+        );
+    }
+
+    #[test]
     #[ignore = "requires a locally supplied Lunar Magic-modified SMW-US ROM"]
     fn external_lunar_magic_rom_sprite_edit_saves_reopens_and_undoes() {
         let path = std::env::var_os("LM_MODIFIED_LEVEL_ROM")
@@ -8865,8 +8951,6 @@ mod tests {
             .unwrap();
         assert_eq!(reopened.sprites, expected_sprites);
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let executable = root.join("lm363/Lunar Magic.exe");
-        assert!(executable.is_file(), "missing {}", executable.display());
         let temporary = tempfile::Builder::new()
             .prefix("lm-modified-level-save-wine-")
             .tempdir()
@@ -8878,41 +8962,9 @@ mod tests {
         let mwl_path = directory.join("rust saved level 102.mwl");
         std::fs::write(&baseline_rom_path, &source).unwrap();
         std::fs::write(&rom_path, app.project().unwrap().rom.as_file_bytes()).unwrap();
-        let restore = directory.join("sysLMRestore");
-        std::fs::create_dir(&restore).unwrap();
-        std::fs::copy(
-            root.join("sysLMRestore/smwOrig.smc"),
-            restore.join("smwOrig.smc"),
-        )
-        .unwrap();
-        std::fs::copy(
-            root.join("sysLMRestore/Super Mario World (USA).lrp"),
-            restore.join("Super Mario World (USA).lrp"),
-        )
-        .unwrap();
-        let wine_path = |path: &std::path::Path| {
-            let rendered = path.display().to_string().replace('/', r"\");
-            format!(r"Z:\{}", rendered.trim_start_matches('\\'))
-        };
-        let export = |rom_path: &std::path::Path, mwl_path: &std::path::Path| {
-            let output = std::process::Command::new("wine")
-                .env("WINEDEBUG", "-all")
-                .arg(&executable)
-                .arg("-ExportLevel")
-                .arg(wine_path(rom_path))
-                .arg(wine_path(mwl_path))
-                .arg("102")
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "Lunar Magic export stdout:\n{}\nstderr:\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        };
-        export(&baseline_rom_path, &baseline_mwl_path);
-        export(&rom_path, &mwl_path);
+        prepare_lunar_magic_restore_files(&root, directory);
+        export_level_with_lunar_magic(&root, &baseline_rom_path, &baseline_mwl_path, 0x102);
+        export_level_with_lunar_magic(&root, &rom_path, &mwl_path, 0x102);
         let baseline_exported = lm_project::MwlNativeLevel::decode(
             &lm_level::MwlFile::decode(&std::fs::read(&baseline_mwl_path).unwrap()).unwrap(),
             &SpriteLengthTable::standard(),
@@ -8930,6 +8982,184 @@ mod tests {
         assert_eq!(exported.layer1, baseline_exported.layer1);
         assert_eq!(baseline_exported.sprites, baseline_sprites);
         assert_eq!(exported.sprites, expected_sprites);
+        assert!(
+            lm_rom::detect_identity(
+                &RomImage::from_bytes(std::fs::read(&rom_path).unwrap()).unwrap()
+            )
+            .unwrap()
+            .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.logical_bytes(), baseline);
+    }
+
+    #[test]
+    #[ignore = "requires a locally supplied Lunar Magic-modified SMW-US ROM"]
+    fn external_lunar_magic_rom_object_insertion_grows_only_layer1_and_undoes() {
+        let path = std::env::var_os("LM_MODIFIED_LEVEL_ROM")
+            .expect("LM_MODIFIED_LEVEL_ROM must name the modified ROM");
+        let source = std::fs::read(path).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(source.clone()).unwrap();
+        app.dispatch(Command::SelectLevel(0x102)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let baseline = RomImage::from_bytes(snapshot.rom_bytes.clone())
+            .unwrap()
+            .logical_bytes()
+            .to_vec();
+        let baseline_image = RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap();
+        let mut baseline_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        baseline_layout.sprites =
+            lm_profile::smw_us_v1_sprite_pointer_table(&baseline_image).unwrap();
+        let baseline_layer1_pointer = baseline_layout
+            .layer1
+            .read_snes_pointer(&baseline_image, 0x102)
+            .unwrap();
+        let neighboring_layer1_pointer = baseline_layout
+            .layer1
+            .read_snes_pointer(&baseline_image, 0x101)
+            .unwrap();
+        let baseline_sprite_pointer = baseline_layout
+            .sprites
+            .read_snes_pointer(&baseline_image, 0x102)
+            .unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x102,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        assert_eq!(editor.error, None);
+        let placement = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .native_placements()
+            .into_iter()
+            .next()
+            .expect("level 102 must contain an ordinary object");
+        let record = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records[placement.record_index]
+            .clone();
+        editor.selected_object = placement.record_index;
+        editor.object_form = ObjectForm::from_record(&record);
+        editor.object_placement_template = Some(record);
+        let inserted_template = editor.object_record_for_placement().unwrap();
+        let original_record_count = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .records
+            .len();
+        editor.placement_mode = Some(CanvasPlacementMode::Object);
+        editor.place_object_at_canvas(
+            egui::pos2(36.5, 8.5),
+            egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+            ),
+            1.0,
+            false,
+        );
+        assert_eq!(editor.error, None);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .records
+                .len(),
+            original_record_count + 1
+        );
+        let expected_rust_layer1 = editor.controller.as_ref().unwrap().level().layer1.clone();
+        app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
+            .unwrap();
+
+        let image = app.project().unwrap().rom.clone();
+        let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        assert_ne!(
+            layout.layer1.read_snes_pointer(&image, 0x102).unwrap(),
+            baseline_layer1_pointer
+        );
+        assert_eq!(
+            layout.layer1.read_snes_pointer(&image, 0x101).unwrap(),
+            neighboring_layer1_pointer
+        );
+        assert_eq!(
+            layout.sprites.read_snes_pointer(&image, 0x102).unwrap(),
+            baseline_sprite_pointer
+        );
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(0x102, layout, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(reopened.layer1, expected_rust_layer1);
+
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let temporary = tempfile::Builder::new()
+            .prefix("lm-modified-level-object-growth-wine-")
+            .tempdir()
+            .unwrap();
+        let directory = temporary.path();
+        let baseline_rom_path = directory.join("baseline modified ROM.smc");
+        let baseline_mwl_path = directory.join("baseline level 102.mwl");
+        let rom_path = directory.join("rust object-grown modified ROM.smc");
+        let mwl_path = directory.join("rust object-grown level 102.mwl");
+        std::fs::write(&baseline_rom_path, &source).unwrap();
+        std::fs::write(&rom_path, app.project().unwrap().rom.as_file_bytes()).unwrap();
+        prepare_lunar_magic_restore_files(&root, directory);
+        export_level_with_lunar_magic(&root, &baseline_rom_path, &baseline_mwl_path, 0x102);
+        export_level_with_lunar_magic(&root, &rom_path, &mwl_path, 0x102);
+        let baseline_exported = lm_project::MwlNativeLevel::decode(
+            &lm_level::MwlFile::decode(&std::fs::read(&baseline_mwl_path).unwrap()).unwrap(),
+            &SpriteLengthTable::standard(),
+            32,
+            &[false; 256],
+        )
+        .unwrap();
+        let exported = lm_project::MwlNativeLevel::decode(
+            &lm_level::MwlFile::decode(&std::fs::read(&mwl_path).unwrap()).unwrap(),
+            &SpriteLengthTable::standard(),
+            32,
+            &[false; 256],
+        )
+        .unwrap();
+        let mut expected_exported_layer1 = baseline_exported.layer1.clone();
+        expected_exported_layer1
+            .objects
+            .insert_ordinary_object_at_position(
+                inserted_template,
+                2,
+                ObjectCoordinateNibbles {
+                    first: 8,
+                    second: 4,
+                },
+                false,
+            )
+            .unwrap();
+        assert_eq!(exported.layer1, expected_exported_layer1);
+        assert_eq!(exported.sprites, baseline_exported.sprites);
         assert!(
             lm_rom::detect_identity(
                 &RomImage::from_bytes(std::fs::read(&rom_path).unwrap()).unwrap()

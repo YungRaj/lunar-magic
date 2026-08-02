@@ -3054,6 +3054,18 @@ screen-exit canonicalization, the untouched sprite export equals Rust's baseline
 sprite export equals Rust's complete grown stream. The physical output retains a valid checksum,
 while one native undo restores the complete logical input byte-for-byte.
 
+The reciprocal Layer 1 growth boundary now passes on that same authentic ROM. Expanded SMW ROMs
+use long zero-filled free-space runs, so the built-in level allocation policy now accepts Lunar
+Magic's `$00` expansion fill as well as `$FF`; pristine 512 KiB ROMs retain their stricter
+`$FF`-only policy. `expanded_zero_fill_is_available_for_layer1_growth` requires a grown payload to
+land behind a valid RATS tag in a synthetic zero-filled expansion. The ignored
+`external_lunar_magic_rom_object_insertion_grows_only_layer1_and_undoes` gate inserts an ordinary
+object through the level-$102 canvas, requires only `$102`'s Layer 1 pointer to relocate, preserves
+its sprite pointer and level `$101`'s Layer 1 pointer exactly, and semantically reopens the Rust
+stream. Lunar Magic's before/after exports differ by exactly the canonically positioned inserted
+object after applying its baseline screen-exit normalization; sprites remain identical, checksum
+passes, and undo restores every logical input byte.
+
 The installed level canvas now shares the portable editor's expanded-sprite relocation semantics
 instead of sending every drag or placement through the legacy screen sorter. Dragging an expanded
 record resolves its effective upper-Y state and submits `RelocateExpandedSprite`; placement inserts

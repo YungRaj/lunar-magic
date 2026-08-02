@@ -1447,6 +1447,14 @@ exports is required here because 3.63 independently canonicalizes two legacy com
 records in the source ROM even when no Rust edit is present. Native undo restores every logical
 input byte.
 
+Layer 1 growth is now reciprocal on the same authentic installed ROM. Lunar Magic's expansion is
+predominantly zero-filled after the installed RATS owners, so the expanded-ROM allocator accepts
+both `$00` and `$FF` runs while continuing to exclude every discovered owner and protected range;
+the pristine path remains `$FF`-only. A native canvas insertion relocates only level `$102`'s
+Layer 1 pointer, retains its sprite pointer and level `$101`'s Layer 1 pointer, reopens in Rust,
+and exports through Lunar Magic as exactly the baseline-canonicalized stream plus the inserted
+ordinary object. Checksum and exact undo gates pass.
+
 ### Pristine graphics pointer planes
 
 `ReadGraphicsFileRomPointer` (`00463A90`) proves that pristine GFX files
