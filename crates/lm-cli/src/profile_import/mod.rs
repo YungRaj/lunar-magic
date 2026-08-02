@@ -253,7 +253,7 @@ mod tests {
                 layer1: LevelObjectData::parse(&[1, 2, 3, 4, 5, 6, 7, 8, 0xff]).unwrap(),
                 sprites: NativeSpriteStream::parse(
                     if profile.level.expanded_sprites {
-                        &[0x10, 0, 1, 2, 0xff, 0xfe]
+                        &[0x30, 0, 1, 2, 0xff, 0xfe]
                     } else {
                         &[0x10, 0, 1, 2, 0xff]
                     },

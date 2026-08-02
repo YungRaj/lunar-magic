@@ -30,6 +30,7 @@ fn controller() -> NativeLevelDocumentController {
 fn expanded_sprite_relocation_is_one_revision_and_reopens_canonically() {
     let mut value = file();
     value.sprites.expanded = true;
+    value.sprites.header |= 0x20;
     value.sprites.tokens.insert(0, SpriteToken::Screen(2));
     let mut controller = NativeLevelDocumentController::decode(
         "expanded.lmlvl".into(),

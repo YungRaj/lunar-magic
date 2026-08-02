@@ -2714,6 +2714,15 @@ an earlier control disappears. A synthetic SMW-US ROM fixture commits, semantica
 undoes both installed-canvas operations; opaque `$FF 80..FD` controls remain a hard atomic failure
 because their effect on upper-Y state is not yet proved.
 
+The framing discriminator is per stream rather than a property of the installed pointer-table
+generation. `SerializeLevelSpriteList` (`004CC2B0`) clears sprite-header bit `$20` before emitting
+the legacy one-byte `$FF` terminator. If it emits an upper-Y control, an escaped `$FF` record, or
+another expanded token, it sets header bit `$20` and appends `$FE` after the terminator.
+`ParseSerializedLevelSpriteStream` (`004CC130`) selects that same expanded grammar from the format
+flag supplied from the serialized header. Consequently one Lunar Magic-installed per-level-bank
+table can legitimately address both legacy and expanded streams; neither the table hook nor a
+trial parse is a safe discriminator.
+
 Direct object dragging now covers all 32 native screens. The canvas reverses
 horizontal or vertical tile coordinates into an absolute screen plus the
 selected ordinary record's first/second nibbles. `relocate_ordinary_object`

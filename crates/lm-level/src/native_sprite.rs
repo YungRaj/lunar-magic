@@ -27,6 +27,17 @@ pub struct NativeSpriteStream {
     pub tokens: Vec<SpriteToken>,
 }
 
+impl NativeSpriteStream {
+    /// Per-stream discriminator written by Lunar Magic's native sprite serializer.
+    pub const EXPANDED_HEADER_FLAG: u8 = 0x20;
+
+    /// Reports whether a serialized header selects expanded control/escape framing.
+    #[must_use]
+    pub const fn header_uses_expanded_framing(header: u8) -> bool {
+        header & Self::EXPANDED_HEADER_FLAG != 0
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NativeSpriteEncodingError {
     RecordTooShort {
@@ -108,13 +119,27 @@ mod tests {
     #[test]
     fn expanded_controls_and_escaped_record_are_lossless() {
         let bytes = [
-            0x10, 0xff, 0x12, 0x00, 0x20, 0x01, 0xff, 0xff, 0x30, 0x02, 0xff, 0x90, 0xff, 0xfe,
+            0x30, 0xff, 0x12, 0x00, 0x20, 0x01, 0xff, 0xff, 0x30, 0x02, 0xff, 0x90, 0xff, 0xfe,
         ];
         let stream =
             NativeSpriteStream::parse(&bytes, true, &SpriteLengthTable::standard()).unwrap();
         assert!(matches!(stream.tokens[0], SpriteToken::Screen(0x12)));
         assert!(matches!(stream.tokens[3], SpriteToken::Control(0x90)));
         assert_eq!(stream.encode_checked().unwrap(), bytes);
+    }
+
+    #[test]
+    fn encoding_canonicalizes_the_header_framing_bit() {
+        let mut stream = NativeSpriteStream {
+            header: 0xff,
+            expanded: false,
+            tokens: Vec::new(),
+        };
+        assert_eq!(stream.encode_checked().unwrap(), [0xdf, 0xff]);
+
+        stream.expanded = true;
+        stream.header = 0;
+        assert_eq!(stream.encode_checked().unwrap(), [0x20, 0xff, 0xfe]);
     }
 
     #[test]

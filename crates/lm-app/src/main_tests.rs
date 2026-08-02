@@ -129,7 +129,7 @@ fn profiled_rom(profile: &RevisionProfile) -> Vec<u8> {
     bytes[layer_pointer..layer_pointer + 3].copy_from_slice(&layer_target[..3]);
     bytes[sprite_pointer..sprite_pointer + 3].copy_from_slice(&sprite_target[..3]);
     bytes[0x6000..0x6009].copy_from_slice(&[1, 2, 3, 4, 5, 9, 8, 7, 0xff]);
-    bytes[0x6100..0x6107].copy_from_slice(&[0x10, 0, 0, 1, 0xff, 0xfe, 0xff]);
+    bytes[0x6100..0x6107].copy_from_slice(&[0x30, 0, 0, 1, 0xff, 0xfe, 0xff]);
     let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
     project
         .save_graphics_file(

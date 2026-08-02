@@ -3114,6 +3114,15 @@ controls still reject atomically. The application-backed
 upper-Y token, drags the record into the visible base band, inserts a second expanded record,
 commits the canonical stream to ROM, reopens it exactly, and undoes to every baseline logical byte.
 
+The built-in editor now derives that framing independently for each selected level from the
+serialized sprite header's Lunar Magic-owned `$20` bit after resolving the active shared-bank or
+per-level-bank pointer. It no longer leaves `expanded_sprites` at the pristine default merely
+because an installed bank table was detected. Encoding reciprocally clears `$20` for legacy
+streams and sets it for expanded streams, keeping the header, control grammar, and terminator in
+one canonical state. `builtin_editor_detects_sprite_framing_from_each_stream_header` places legacy
+and expanded streams behind the same pointer-table generation and proves that both decode through
+their correct codec; the existing expanded canvas fixture covers commit, exact reopen, and undo.
+
 The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
 pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at
 `$00388B`, GFX32's at `$0038D8`, and their shared bank operand at `$003890`. The SMW-US resolver

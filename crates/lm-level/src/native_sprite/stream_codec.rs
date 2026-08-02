@@ -71,7 +71,17 @@ impl NativeSpriteStream {
 
     fn encode_validated(&self) -> Result<Vec<u8>, NativeSpriteEncodingError> {
         let mut bytes = Vec::with_capacity(self.encoded_len()?);
-        bytes.push(self.header);
+        // Lunar Magic stores the framing discriminator in bit $20 of the stream header. Its
+        // serializer clears the bit for the one-byte legacy terminator and sets it whenever the
+        // expanded control/escape grammar and `$FF $FE` terminator are emitted.
+        bytes.push(
+            (self.header & !Self::EXPANDED_HEADER_FLAG)
+                | if self.expanded {
+                    Self::EXPANDED_HEADER_FLAG
+                } else {
+                    0
+                },
+        );
         for token in &self.tokens {
             match token {
                 SpriteToken::Record(record) => {

@@ -1172,7 +1172,7 @@ impl VanillaLevelEditor {
                 return;
             }
         };
-        let level_layout = match editor_level_layout(snapshot) {
+        let level_layout = match editor_level_layout(snapshot, key.level) {
             Ok(layout) => layout,
             Err(error) => {
                 self.controller = None;
@@ -8032,12 +8032,24 @@ fn editor_layer2_layout(
 
 fn editor_level_layout(
     snapshot: &lm_app::ControllerSnapshot,
+    level: u16,
 ) -> Result<lm_project::LevelRomLayout, String> {
     let rom =
         RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
     let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
     layout.sprites =
         lm_profile::smw_us_v1_sprite_pointer_table(&rom).map_err(|error| error.to_string())?;
+    let sprite_pointer = layout
+        .sprites
+        .read_snes_pointer(&rom, usize::from(level))
+        .map_err(|error| error.to_string())?;
+    let sprite_offset = sprite_pointer
+        .to_pc(layout.mapper)
+        .map_err(|error| error.to_string())?;
+    let header = rom
+        .read(sprite_offset, 1)
+        .map_err(|error| error.to_string())?[0];
+    layout.expanded_sprites = lm_level::NativeSpriteStream::header_uses_expanded_framing(header);
     Ok(layout)
 }
 
@@ -9004,7 +9016,7 @@ mod tests {
         app.load_rom(bytes).unwrap();
         app.dispatch(Command::SelectLevel(0)).unwrap();
         let snapshot = app.controller_snapshot().unwrap();
-        let resolved = editor_level_layout(&snapshot).unwrap();
+        let resolved = editor_level_layout(&snapshot, 0).unwrap();
         assert!(matches!(
             resolved.sprites,
             lm_project::SpritePointerTable::SplitBankTable { .. }
@@ -9024,6 +9036,86 @@ mod tests {
         assert_eq!(placements.len(), 1);
         assert_eq!(placements[0].sprite_number, 0x47);
         assert_eq!((placements[0].major, placements[0].minor), (0, 6));
+    }
+
+    #[test]
+    fn builtin_editor_detects_sprite_framing_from_each_stream_header() {
+        let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let legacy_offset = layout
+            .sprites
+            .read_snes_pointer(&image, 0)
+            .unwrap()
+            .to_pc(Mapper::LoRom)
+            .unwrap();
+        let expanded_offset = layout
+            .sprites
+            .read_snes_pointer(&image, 1)
+            .unwrap()
+            .to_pc(Mapper::LoRom)
+            .unwrap();
+        assert_ne!(legacy_offset, expanded_offset);
+
+        bytes[legacy_offset..legacy_offset + 5].copy_from_slice(&[0x00, 0x60, 0x00, 0x47, 0xff]);
+        bytes[expanded_offset..expanded_offset + 8]
+            .copy_from_slice(&[0x20, 0xff, 0x02, 0x60, 0x00, 0x47, 0xff, 0xfe]);
+
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+
+        app.dispatch(Command::SelectLevel(0)).unwrap();
+        let legacy_snapshot = app.controller_snapshot().unwrap();
+        let legacy_layout = editor_level_layout(&legacy_snapshot, 0).unwrap();
+        assert!(!legacy_layout.expanded_sprites);
+        let legacy = LevelController::decode(
+            &legacy_snapshot,
+            legacy_layout,
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        assert!(!legacy.level().sprites.expanded);
+
+        app.dispatch(Command::SelectLevel(1)).unwrap();
+        let expanded_snapshot = app.controller_snapshot().unwrap();
+        let expanded_layout = editor_level_layout(&expanded_snapshot, 1).unwrap();
+        assert!(expanded_layout.expanded_sprites);
+        let baseline = expanded_snapshot.rom_bytes.clone();
+        let mut expanded = LevelController::decode(
+            &expanded_snapshot,
+            expanded_layout,
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        assert!(expanded.level().sprites.expanded);
+        assert!(matches!(
+            expanded.level().sprites.tokens[0],
+            SpriteToken::Screen(2)
+        ));
+        expanded
+            .apply_edits(&[NativeLevelEdit::RelocateExpandedSprite {
+                selected: 1,
+                screen: 0,
+                x: 6,
+                y: 3 * 32 + 5,
+            }])
+            .unwrap();
+        app.dispatch(prepare_commit(&expanded, &expanded_snapshot).unwrap())
+            .unwrap();
+
+        let reopened_snapshot = app.controller_snapshot().unwrap();
+        let reopened_layout = editor_level_layout(&reopened_snapshot, 1).unwrap();
+        assert!(reopened_layout.expanded_sprites);
+        let reopened = LevelController::decode(
+            &reopened_snapshot,
+            reopened_layout,
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let placement = reopened.level().sprites.native_placements()[0];
+        assert_eq!((placement.major, placement.minor), (6, 101));
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.controller_snapshot().unwrap().rom_bytes, baseline);
     }
 
     #[test]
