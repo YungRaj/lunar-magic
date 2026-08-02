@@ -816,12 +816,10 @@ fn lunar_magic_imports_and_reexports_a_rust_mwl_object_edit() {
     fs::remove_dir_all(directory).unwrap();
 }
 
-/// Proves Lunar Magic's recovered command-zero screen-exit forms reciprocally: Rust changes a real
-/// pristine exit across the compact/extended representation boundary, Lunar Magic imports it, and
-/// its own exporter emits the identical decoded Layer 1 stream.
+/// Proves every boundary of Lunar Magic's recovered command-zero screen-exit forms reciprocally.
 #[test]
 #[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
-fn lunar_magic_imports_and_reexports_a_rust_screen_exit_edit() {
+fn lunar_magic_imports_and_reexports_all_rust_screen_exit_boundaries() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
     let original_rom = pristine_smw_us_rom_path(&root);
@@ -850,8 +848,6 @@ fn lunar_magic_imports_and_reexports_a_rust_screen_exit_edit() {
     fs::create_dir(&directory).unwrap();
     let imported_rom = directory.join("Lunar Magic screen exit import.sfc");
     let source_mwl = directory.join("source screen exit.mwl");
-    let edited_mwl = directory.join("Rust edited screen exit.mwl");
-    let reexported_mwl = directory.join("reexported screen exit.mwl");
     fs::copy(&original_rom, &imported_rom).unwrap();
 
     let level = format!("{level_number:X}");
@@ -863,48 +859,67 @@ fn lunar_magic_imports_and_reexports_a_rust_screen_exit_edit() {
         &level,
     );
 
-    let mut document =
-        MwlDocumentController::decode(edited_mwl.clone(), &fs::read(&source_mwl).unwrap()).unwrap();
-    let mut expected = document.layer1().unwrap();
-    let exit = expected.objects.records[record_index]
-        .screen_exit()
-        .expect("Rust and Lunar Magic object ordering must identify the same exit");
-    let replacement_destination = match exit.encoding {
-        lm_level::ScreenExitObjectEncoding::Compact => exit.destination_and_flags | 0x1000,
-        lm_level::ScreenExitObjectEncoding::Extended => exit.destination_and_flags & 0x0fff,
-    };
-    let mut replacement = expected.objects.records[record_index].clone();
-    replacement
-        .set_screen_exit(exit.screen, replacement_destination)
-        .unwrap();
-    expected
-        .objects
-        .apply_edits(&[ObjectEdit::Replace {
-            index: record_index,
-            record: replacement,
-        }])
-        .unwrap();
-    document.replace_layer1(0, &expected).unwrap();
-    fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();
+    let mut current_mwl = source_mwl;
+    for (case, (screen, destination_and_flags)) in
+        [(0, 0), (0x1f, 0x0fff), (0, 0x1000), (0x1f, 0xffff)]
+            .into_iter()
+            .enumerate()
+    {
+        let edited_mwl = directory.join(format!("Rust screen exit case {case}.mwl"));
+        let reexported_mwl = directory.join(format!("reexported screen exit case {case}.mwl"));
+        let mut document =
+            MwlDocumentController::decode(edited_mwl.clone(), &fs::read(&current_mwl).unwrap())
+                .unwrap();
+        let mut expected = document.layer1().unwrap();
+        let previous = expected.objects.records[record_index].clone();
+        let advance = previous.encoded()[0] & 0x80;
+        let mut replacement = previous;
+        replacement
+            .set_screen_exit(screen, destination_and_flags)
+            .unwrap();
+        assert_eq!(replacement.encoded()[0] & 0x80, advance);
+        let decoded = replacement.screen_exit().unwrap();
+        assert_eq!(decoded.screen, screen);
+        let canonical_destination = destination_and_flags | lm_level::SCREEN_EXIT_REQUIRED_FLAG;
+        assert_eq!(decoded.destination_and_flags, canonical_destination);
+        assert_eq!(
+            decoded.encoding,
+            if canonical_destination & 0xf000 == 0 {
+                lm_level::ScreenExitObjectEncoding::Compact
+            } else {
+                lm_level::ScreenExitObjectEncoding::Extended
+            }
+        );
+        expected
+            .objects
+            .apply_edits(&[ObjectEdit::Replace {
+                index: record_index,
+                record: replacement,
+            }])
+            .unwrap();
+        document.replace_layer1(0, &expected).unwrap();
+        fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();
 
-    run_lunar_magic_level_command(
-        &lunar_magic,
-        "-ImportLevel",
-        &imported_rom,
-        &edited_mwl,
-        &level,
-    );
-    run_lunar_magic_level_command(
-        &lunar_magic,
-        "-ExportLevel",
-        &imported_rom,
-        &reexported_mwl,
-        &level,
-    );
+        run_lunar_magic_level_command(
+            &lunar_magic,
+            "-ImportLevel",
+            &imported_rom,
+            &edited_mwl,
+            &level,
+        );
+        run_lunar_magic_level_command(
+            &lunar_magic,
+            "-ExportLevel",
+            &imported_rom,
+            &reexported_mwl,
+            &level,
+        );
 
-    let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
-    let payload = reexported.payload_section(MwlSectionKind::Layer1).unwrap();
-    assert_eq!(LevelObjectData::parse(&payload.payload).unwrap(), expected);
+        let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
+        let payload = reexported.payload_section(MwlSectionKind::Layer1).unwrap();
+        assert_eq!(LevelObjectData::parse(&payload.payload).unwrap(), expected);
+        current_mwl = reexported_mwl;
+    }
     assert!(
         detect_identity(&RomImage::from_bytes(fs::read(&imported_rom).unwrap()).unwrap())
             .unwrap()

@@ -1,5 +1,8 @@
 use crate::{ObjectRecord, encoded_record_length};
 
+/// Flag Lunar Magic canonically sets on every persisted screen-exit destination.
+pub const SCREEN_EXIT_REQUIRED_FLAG: u16 = 0x0400;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ObjectFieldError {
     InvalidCommandId(u8),
@@ -281,7 +284,9 @@ impl ObjectRecord {
     ///
     /// Destinations whose high byte fits in four bits use parameter `0`; all others use parameter
     /// `2` and the five-byte representation. This deliberately permits the record shape to change,
-    /// matching Lunar Magic's recovered `SetScreenExitObjectForScreen` routine.
+    /// matching Lunar Magic's recovered `SetScreenExitObjectForScreen` routine. Lunar Magic also
+    /// unconditionally sets [`SCREEN_EXIT_REQUIRED_FLAG`], so inputs lacking that bit are
+    /// canonicalized instead of being emitted as a nonpersistent raw form.
     ///
     /// # Errors
     ///
@@ -297,6 +302,7 @@ impl ObjectRecord {
         if screen > 0x1f {
             return Err(ObjectFieldError::InvalidScreenExitScreen(screen));
         }
+        let destination_and_flags = destination_and_flags | SCREEN_EXIT_REQUIRED_FLAG;
         let [low, high] = destination_and_flags.to_le_bytes();
         let advance = self.encoded[0] & 0x80;
         let candidate = if destination_and_flags & 0xf000 == 0 {
@@ -424,7 +430,10 @@ mod tests {
             })
         );
         compact.set_screen_exit(2, 0x0123).unwrap();
-        assert_eq!(compact.encoded(), &[0x82, 1, 0, 0x23]);
+        assert_eq!(compact.encoded(), &[0x82, 5, 0, 0x23]);
+        assert_eq!(compact.screen_exit().unwrap().destination_and_flags, 0x0523);
+        compact.set_screen_exit(0, 0).unwrap();
+        assert_eq!(compact.encoded(), &[0x80, 4, 0, 0]);
     }
 
     #[test]

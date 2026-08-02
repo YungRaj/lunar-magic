@@ -170,10 +170,11 @@ The screen-exit object boundary is now independently recovered across
 four-byte compact exit and parameter `2` for a five-byte extended exit. Byte 0's low five bits are
 the source screen. The compact form stores the destination/flag high nibble in byte 1 and its low
 byte in the first extension; the extended form stores the complete high byte in a second extension.
-Lunar Magic keeps at most one exit per screen, selects the compact form when the destination's top
-nibble is clear, upgrades to the extended form otherwise, and preserves byte 0's unrelated
-new-screen bit. A reciprocal Wine import/re-export now confirms this interpretation on an actual
-pristine-ROM screen-exit record.
+Lunar Magic keeps at most one exit per screen, unconditionally sets packed destination flag
+`$0400`, selects the compact form when the resulting destination's top nibble is clear, upgrades
+to the extended form otherwise, and preserves byte 0's unrelated new-screen bit. A four-cycle
+Wine import/re-export over a real pristine-ROM record confirms screens `$00/$1F`, requested values
+`$0000/$0FFF/$1000/$FFFF`, both representation shapes, and the `$0400` canonicalization.
 
 ## Confirmed subsystem map
 
