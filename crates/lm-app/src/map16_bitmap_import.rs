@@ -396,9 +396,9 @@ pub fn decode_map16_bitmap_png_image(
 
 /// Decodes a bounded PNG or uncompressed Windows BMP while retaining its source dimensions.
 ///
-/// BMP input accepts the common 40-byte-or-larger DIB header with 24-bit BGR or 32-bit BGRX
-/// pixels, padded rows, and either bottom-up or top-down storage. The unused 32-bit BMP byte is
-/// deliberately treated as opaque, matching Windows `BI_RGB` bitmap semantics.
+/// BMP input accepts the common 40-byte-or-larger DIB header with indexed 1-, 4-, or 8-bit pixels,
+/// 24-bit BGR, or 32-bit BGRX pixels, padded rows, and either bottom-up or top-down storage. The
+/// unused 32-bit BMP byte is deliberately treated as opaque, matching Windows `BI_RGB` semantics.
 ///
 /// # Errors
 ///
@@ -415,7 +415,7 @@ pub fn decode_map16_bitmap_image(
     Err(Map16BitmapDecodeError::UnknownFormat)
 }
 
-/// Decodes a bounded uncompressed 24-bit or 32-bit Windows BMP.
+/// Decodes a bounded uncompressed indexed, 24-bit, or 32-bit Windows BMP.
 ///
 /// # Errors
 ///
@@ -470,15 +470,18 @@ pub fn decode_map16_bitmap_bmp_image(
     if planes != 1 {
         return Err(Map16BmpDecodeError::Planes(planes));
     }
-    if !matches!(bits, 24 | 32) {
+    if !matches!(bits, 1 | 4 | 8 | 24 | 32) {
         return Err(Map16BmpDecodeError::BitDepth(bits));
     }
     if compression != 0 {
         return Err(Map16BmpDecodeError::Compression(compression));
     }
-    let bytes_per_pixel = usize::from(bits / 8);
-    let row_bytes = width
-        .checked_mul(bytes_per_pixel)
+    let row_bits = width
+        .checked_mul(usize::from(bits))
+        .ok_or(Map16BmpDecodeError::PixelData)?;
+    let row_bytes = row_bits
+        .checked_add(7)
+        .map(|value| value / 8)
         .ok_or(Map16BmpDecodeError::PixelData)?;
     let stride = row_bytes
         .checked_add(3)
@@ -490,6 +493,28 @@ pub fn decode_map16_bitmap_bmp_image(
     let pixel_end = pixel_offset
         .checked_add(data_len)
         .ok_or(Map16BmpDecodeError::PixelData)?;
+    let palette = if bits <= 8 {
+        let declared =
+            usize::try_from(bmp_u32(bytes, 46)?).map_err(|_| Map16BmpDecodeError::Palette)?;
+        let maximum = 1_usize << bits;
+        let entries = if declared == 0 { maximum } else { declared };
+        if entries == 0 || entries > maximum {
+            return Err(Map16BmpDecodeError::Palette);
+        }
+        let palette_start = 14_usize
+            .checked_add(dib_size)
+            .ok_or(Map16BmpDecodeError::Palette)?;
+        let palette_end = entries
+            .checked_mul(4)
+            .and_then(|length| palette_start.checked_add(length))
+            .ok_or(Map16BmpDecodeError::Palette)?;
+        if palette_end > pixel_offset || palette_end > bytes.len() {
+            return Err(Map16BmpDecodeError::Palette);
+        }
+        Some((palette_start, entries))
+    } else {
+        None
+    };
     if pixel_offset < 14 + dib_size || pixel_end > bytes.len() {
         return Err(Map16BmpDecodeError::PixelData);
     }
@@ -513,13 +538,42 @@ pub fn decode_map16_bitmap_bmp_image(
         };
         let source = pixel_offset + source_row * stride;
         for column in 0..width {
-            let at = source + column * bytes_per_pixel;
-            pixels[target_row * width + column] = Rgba8 {
-                red: bytes[at + 2],
-                green: bytes[at + 1],
-                blue: bytes[at],
-                alpha: 255,
+            let pixel = if let Some((palette_start, palette_entries)) = palette {
+                let index = match bits {
+                    1 => (bytes[source + column / 8] >> (7 - column % 8)) & 1,
+                    4 => {
+                        let packed = bytes[source + column / 2];
+                        if column % 2 == 0 {
+                            packed >> 4
+                        } else {
+                            packed & 0x0f
+                        }
+                    }
+                    8 => bytes[source + column],
+                    _ => unreachable!("palette exists only for indexed BMP depths"),
+                };
+                let index = usize::from(index);
+                if index >= palette_entries {
+                    return Err(Map16BmpDecodeError::Palette);
+                }
+                let at = palette_start + index * 4;
+                Rgba8 {
+                    red: bytes[at + 2],
+                    green: bytes[at + 1],
+                    blue: bytes[at],
+                    alpha: 255,
+                }
+            } else {
+                let bytes_per_pixel = usize::from(bits / 8);
+                let at = source + column * bytes_per_pixel;
+                Rgba8 {
+                    red: bytes[at + 2],
+                    green: bytes[at + 1],
+                    blue: bytes[at],
+                    alpha: 255,
+                }
             };
+            pixels[target_row * width + column] = pixel;
         }
     }
     Ok(DecodedMap16Bitmap {
@@ -627,6 +681,7 @@ pub enum Map16BmpDecodeError {
     Planes(u16),
     BitDepth(u16),
     Compression(u32),
+    Palette,
     PixelData,
 }
 
@@ -923,6 +978,63 @@ mod tests {
         bytes
     }
 
+    fn test_indexed_bmp(
+        width: usize,
+        height: usize,
+        bits: u16,
+        top_down: bool,
+        palette: &[Rgba8],
+        indices: &[u8],
+    ) -> Vec<u8> {
+        assert!(matches!(bits, 1 | 4 | 8));
+        assert_eq!(indices.len(), width * height);
+        let row_bytes = (width * usize::from(bits) + 7) / 8;
+        let stride = (row_bytes + 3) & !3;
+        let pixel_offset = 54 + palette.len() * 4;
+        let mut bytes = vec![0; pixel_offset + stride * height];
+        let file_len = u32::try_from(bytes.len()).unwrap();
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&u32::try_from(pixel_offset).unwrap().to_le_bytes());
+        bytes[14..18].copy_from_slice(&40_u32.to_le_bytes());
+        bytes[18..22].copy_from_slice(&i32::try_from(width).unwrap().to_le_bytes());
+        let signed_height = if top_down {
+            -i32::try_from(height).unwrap()
+        } else {
+            i32::try_from(height).unwrap()
+        };
+        bytes[22..26].copy_from_slice(&signed_height.to_le_bytes());
+        bytes[26..28].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[28..30].copy_from_slice(&bits.to_le_bytes());
+        bytes[34..38].copy_from_slice(&u32::try_from(stride * height).unwrap().to_le_bytes());
+        bytes[46..50].copy_from_slice(&u32::try_from(palette.len()).unwrap().to_le_bytes());
+        for (index, color) in palette.iter().enumerate() {
+            let at = 54 + index * 4;
+            bytes[at..at + 4].copy_from_slice(&[color.blue, color.green, color.red, 0x55]);
+        }
+        for stored_row in 0..height {
+            let source_row = if top_down {
+                stored_row
+            } else {
+                height - 1 - stored_row
+            };
+            let target = pixel_offset + stored_row * stride;
+            for column in 0..width {
+                let index = indices[source_row * width + column];
+                match bits {
+                    1 => bytes[target + column / 8] |= index << (7 - column % 8),
+                    4 => {
+                        bytes[target + column / 2] |=
+                            if column % 2 == 0 { index << 4 } else { index }
+                    }
+                    8 => bytes[target + column] = index,
+                    _ => unreachable!(),
+                }
+            }
+        }
+        bytes
+    }
+
     #[test]
     fn bmp_decoder_handles_padded_bottom_up_and_top_down_bgrx() {
         let pixels = vec![
@@ -973,6 +1085,87 @@ mod tests {
     }
 
     #[test]
+    fn bmp_decoder_handles_packed_indexed_depths_and_palette_padding() {
+        let palette = [
+            Rgba8 {
+                red: 3,
+                green: 2,
+                blue: 1,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 6,
+                green: 5,
+                blue: 4,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 9,
+                green: 8,
+                blue: 7,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 12,
+                green: 11,
+                blue: 10,
+                alpha: 255,
+            },
+        ];
+        for (bits, width, top_down, indices) in [
+            (1, 9, false, vec![0, 1, 0, 1, 1, 0, 1, 0, 1]),
+            (4, 5, true, vec![0, 1, 2, 3, 1]),
+            (8, 3, false, vec![3, 2, 1]),
+        ] {
+            let palette_len = if bits == 1 { 2 } else { palette.len() };
+            let mut bytes =
+                test_indexed_bmp(width, 1, bits, top_down, &palette[..palette_len], &indices);
+            if bits == 1 {
+                bytes[46..50].copy_from_slice(&0_u32.to_le_bytes());
+            }
+            let decoded = decode_map16_bitmap_bmp_image(&bytes).unwrap();
+            assert_eq!((decoded.width, decoded.height), (width, 1));
+            assert_eq!(
+                decoded.pixels,
+                indices
+                    .iter()
+                    .map(|index| palette[usize::from(*index)])
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn bmp_decoder_rejects_invalid_palette_shape_and_indices() {
+        let palette = [
+            Rgba8 {
+                red: 1,
+                green: 2,
+                blue: 3,
+                alpha: 255,
+            },
+            Rgba8 {
+                red: 4,
+                green: 5,
+                blue: 6,
+                alpha: 255,
+            },
+        ];
+        let mut excessive = test_indexed_bmp(1, 1, 4, false, &palette, &[0]);
+        excessive[46..50].copy_from_slice(&17_u32.to_le_bytes());
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&excessive),
+            Err(Map16BmpDecodeError::Palette)
+        );
+
+        let out_of_range = test_indexed_bmp(1, 1, 4, false, &palette, &[3]);
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&out_of_range),
+            Err(Map16BmpDecodeError::Palette)
+        );
+    }
+
+    #[test]
     fn bmp_decoder_rejects_unsupported_and_truncated_forms() {
         let pixel = Rgba8 {
             red: 1,
@@ -988,11 +1181,11 @@ mod tests {
             decode_map16_bitmap_bmp_image(&compressed),
             Err(Map16BmpDecodeError::Compression(1))
         );
-        let mut indexed = valid.clone();
-        indexed[28..30].copy_from_slice(&8_u16.to_le_bytes());
+        let mut unsupported_depth = valid.clone();
+        unsupported_depth[28..30].copy_from_slice(&16_u16.to_le_bytes());
         assert_eq!(
-            decode_map16_bitmap_bmp_image(&indexed),
-            Err(Map16BmpDecodeError::BitDepth(8))
+            decode_map16_bitmap_bmp_image(&unsupported_depth),
+            Err(Map16BmpDecodeError::BitDepth(16))
         );
         assert_eq!(
             decode_map16_bitmap_bmp_image(&valid[..valid.len() - 1]),

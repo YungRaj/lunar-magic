@@ -2864,10 +2864,12 @@ the declared width. Semantic coordinate edits retain all four selectors and widt
 native allocation and checksum repair reopen every record byte-exactly, and one application undo
 restores the expanded pre-edit image.
 The native bitmap-to-Map16 chooser now accepts PNG and BMP through one signature-detected decoder.
-Its Windows path implements bounded uncompressed 24-bit BGR and 32-bit BGRX DIB images, including
-four-byte row padding and signed-height top-down versus bottom-up storage. The unused BGRX byte is
-opaque rather than interpreted as alpha. Unsupported planes, depths, compression, dimensions,
-offsets, truncated data, and unknown signatures reject before constructing the existing preview.
+Its Windows path implements bounded uncompressed indexed 1-/4-/8-bit, 24-bit BGR, and 32-bit BGRX
+DIB images, including packed indexed pixels, bounded BGRA palette tables, four-byte row padding,
+and signed-height top-down versus bottom-up storage. Reserved palette and BGRX bytes are opaque
+rather than interpreted as alpha. Unsupported planes, depths, compression, dimensions, palette
+shapes or indexes, offsets, truncated data, and unknown signatures reject before constructing the
+existing preview.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The
