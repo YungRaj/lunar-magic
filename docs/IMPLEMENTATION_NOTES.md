@@ -2865,12 +2865,15 @@ native allocation and checksum repair reopen every record byte-exactly, and one 
 restores the expanded pre-edit image.
 The native bitmap-to-Map16 chooser now accepts PNG and BMP through one signature-detected decoder.
 Its Windows path implements bounded indexed 1-/4-/8-bit, default 16-bit RGB555, 24-bit BGR, 32-bit
-BGRX, and 16-/32-bit `BI_BITFIELDS` DIB images. This includes packed indexed pixels, bounded BGRA
-palette tables, validated nonoverlapping contiguous channel masks with rounded eight-bit scaling,
-four-byte row padding, and signed-height top-down versus bottom-up storage. Reserved palette and
-BGRX bytes are opaque rather than interpreted as alpha. Unsupported planes, depths, compression,
-dimensions, palette shapes or indexes, bit masks, offsets, truncated data, and unknown signatures
-reject before constructing the existing preview.
+BGRX, 16-/32-bit `BI_BITFIELDS`, `BI_RLE4`, and `BI_RLE8` DIB images. This includes packed indexed
+pixels, bounded BGRA palette tables, validated nonoverlapping contiguous channel masks with rounded
+eight-bit scaling, four-byte raw-row padding, and signed-height top-down versus bottom-up storage.
+The RLE state machine bounds encoded and absolute runs, word padding, delta movement, row endings,
+and mandatory bitmap termination before writing any target coordinate; compressed top-down DIBs
+reject as invalid. Reserved palette and BGRX bytes are opaque rather than interpreted as alpha.
+Unsupported planes, depths or compression, dimensions, palette shapes or indexes, bit masks, RLE
+coordinates or termination, offsets, truncated data, and unknown signatures reject before
+constructing the existing preview.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The
