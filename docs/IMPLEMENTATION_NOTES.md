@@ -2885,6 +2885,11 @@ reject as invalid. Reserved palette and BGRX bytes are opaque rather than interp
 Unsupported planes, depths or compression, dimensions, palette shapes or indexes, bit masks, RLE
 coordinates or termination, offsets, truncated data, and unknown signatures reject before
 constructing the existing preview.
+The BMP boundary also accepts the Windows `BI_JPEG` and `BI_PNG` embedded-image modes. Both require
+bit depth zero, a nonzero exact `biSizeImage` payload, and decoded dimensions matching the DIB
+header. PNG retains RGBA semantics; bounded JPEG grayscale, RGB, 16-bit luminance, and CMYK output
+is normalized into the same RGBA model. Truncated payloads, malformed codecs, dimension mismatch,
+and decoder output beyond the existing memory limit fail before preview construction.
 
 This repository now provides a tested implementation foundation and useful headless workflows; it
 is not yet honest to call it complete feature parity with the mature Lunar Magic application. The

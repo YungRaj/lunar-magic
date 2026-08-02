@@ -394,12 +394,12 @@ pub fn decode_map16_bitmap_png_image(
     })
 }
 
-/// Decodes a bounded PNG or uncompressed Windows BMP while retaining its source dimensions.
+/// Decodes a bounded PNG or Windows BMP while retaining its source dimensions.
 ///
 /// BMP input accepts the common 40-byte-or-larger DIB header with indexed 1-, 4-, or 8-bit pixels,
-/// 16-bit RGB, 24-bit BGR, 32-bit BGRX, or validated 16-/32-bit bitfield pixels, padded rows, and
-/// either bottom-up or top-down storage. The unused 32-bit BMP byte is deliberately treated as
-/// opaque, matching Windows `BI_RGB` bitmap semantics.
+/// 16-bit RGB, 24-bit BGR, 32-bit BGRX, validated 16-/32-bit bitfield pixels, RLE4/RLE8, or an
+/// embedded JPEG/PNG payload. The unused 32-bit BMP byte is deliberately treated as opaque,
+/// matching Windows `BI_RGB` bitmap semantics.
 ///
 /// # Errors
 ///
@@ -416,12 +416,12 @@ pub fn decode_map16_bitmap_image(
     Err(Map16BitmapDecodeError::UnknownFormat)
 }
 
-/// Decodes a bounded uncompressed indexed, RGB, or bitfield Windows BMP.
+/// Decodes a bounded indexed, RGB, bitfield, RLE, or embedded-image Windows BMP.
 ///
 /// # Errors
 ///
 /// Rejects oversized/truncated headers and pixel planes, invalid dimensions, non-single-plane
-/// images, compressed data, unsupported bit depths, and arithmetic overflow.
+/// images, unsupported compression/depth combinations, and arithmetic overflow.
 pub fn decode_map16_bitmap_bmp_image(
     bytes: &[u8],
 ) -> Result<DecodedMap16Bitmap, Map16BmpDecodeError> {
@@ -471,7 +471,7 @@ pub fn decode_map16_bitmap_bmp_image(
     if planes != 1 {
         return Err(Map16BmpDecodeError::Planes(planes));
     }
-    if !matches!(bits, 1 | 4 | 8 | 16 | 24 | 32) {
+    if !(matches!(bits, 1 | 4 | 8 | 16 | 24 | 32) || matches!(compression, 4 | 5) && bits == 0) {
         return Err(Map16BmpDecodeError::BitDepth(bits));
     }
     let compression_supported = match compression {
@@ -479,6 +479,7 @@ pub fn decode_map16_bitmap_bmp_image(
         1 => bits == 8,
         2 => bits == 4,
         3 => matches!(bits, 16 | 32),
+        4 | 5 => bits == 0,
         _ => false,
     };
     if !compression_supported {
@@ -486,6 +487,12 @@ pub fn decode_map16_bitmap_bmp_image(
     }
     if matches!(compression, 1 | 2) && height_raw < 0 {
         return Err(Map16BmpDecodeError::Rle);
+    }
+    if matches!(compression, 4 | 5) && height_raw < 0 {
+        return Err(Map16BmpDecodeError::Compression(compression));
+    }
+    if matches!(compression, 4 | 5) {
+        return decode_embedded_bmp_image(bytes, pixel_offset, compression, width, height);
     }
     let channel_masks = bmp_channel_masks(bytes, dib_size, pixel_offset, bits, compression)?;
     let row_bits = width
@@ -637,6 +644,122 @@ pub fn decode_map16_bitmap_bmp_image(
             };
             pixels[target_row * width + column] = pixel;
         }
+    }
+    Ok(DecodedMap16Bitmap {
+        width,
+        height,
+        pixels,
+    })
+}
+
+fn decode_embedded_bmp_image(
+    bytes: &[u8],
+    pixel_offset: usize,
+    compression: u32,
+    expected_width: usize,
+    expected_height: usize,
+) -> Result<DecodedMap16Bitmap, Map16BmpDecodeError> {
+    let declared_size =
+        usize::try_from(bmp_u32(bytes, 34)?).map_err(|_| Map16BmpDecodeError::PixelData)?;
+    if declared_size == 0 {
+        return Err(Map16BmpDecodeError::PixelData);
+    }
+    let payload_end = pixel_offset
+        .checked_add(declared_size)
+        .ok_or(Map16BmpDecodeError::PixelData)?;
+    let payload = bytes
+        .get(pixel_offset..payload_end)
+        .ok_or(Map16BmpDecodeError::PixelData)?;
+    let decoded = if compression == 5 {
+        decode_map16_bitmap_png_image(payload)
+            .map_err(|error| Map16BmpDecodeError::Embedded(error.to_string()))?
+    } else {
+        decode_map16_bitmap_jpeg_image(payload)?
+    };
+    if decoded.width != expected_width || decoded.height != expected_height {
+        return Err(Map16BmpDecodeError::EmbeddedDimensions {
+            header_width: expected_width,
+            header_height: expected_height,
+            image_width: decoded.width,
+            image_height: decoded.height,
+        });
+    }
+    Ok(decoded)
+}
+
+fn decode_map16_bitmap_jpeg_image(bytes: &[u8]) -> Result<DecodedMap16Bitmap, Map16BmpDecodeError> {
+    let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(bytes));
+    decoder.set_max_decoding_buffer_size(MAX_PNG_DECODE_BYTES);
+    let decoded_bytes = decoder
+        .decode()
+        .map_err(|error| Map16BmpDecodeError::Embedded(error.to_string()))?;
+    let info = decoder
+        .info()
+        .ok_or_else(|| Map16BmpDecodeError::Embedded("JPEG metadata is missing".into()))?;
+    let width = usize::from(info.width);
+    let height = usize::from(info.height);
+    if width == 0
+        || height == 0
+        || width > MAP16_BITMAP_MAX_DIMENSION
+        || height > MAP16_BITMAP_MAX_DIMENSION
+    {
+        return Err(Map16BmpDecodeError::EmbeddedDimensions {
+            header_width: width,
+            header_height: height,
+            image_width: width,
+            image_height: height,
+        });
+    }
+    let pixels: Vec<Rgba8> = match info.pixel_format {
+        jpeg_decoder::PixelFormat::L8 => decoded_bytes
+            .into_iter()
+            .map(|value| Rgba8 {
+                red: value,
+                green: value,
+                blue: value,
+                alpha: 255,
+            })
+            .collect(),
+        jpeg_decoder::PixelFormat::RGB24 => decoded_bytes
+            .chunks_exact(3)
+            .map(|pixel| Rgba8 {
+                red: pixel[0],
+                green: pixel[1],
+                blue: pixel[2],
+                alpha: 255,
+            })
+            .collect(),
+        jpeg_decoder::PixelFormat::L16 => decoded_bytes
+            .chunks_exact(2)
+            .map(|pixel| {
+                let value = pixel[0];
+                Rgba8 {
+                    red: value,
+                    green: value,
+                    blue: value,
+                    alpha: 255,
+                }
+            })
+            .collect(),
+        jpeg_decoder::PixelFormat::CMYK32 => decoded_bytes
+            .chunks_exact(4)
+            .map(|pixel| {
+                let black = u16::from(pixel[3]);
+                let convert = |channel: u8| {
+                    u8::try_from((u16::from(255 - channel) * (255 - black) + 127) / 255)
+                        .expect("a converted CMYK channel is at most 255")
+                };
+                Rgba8 {
+                    red: convert(pixel[0]),
+                    green: convert(pixel[1]),
+                    blue: convert(pixel[2]),
+                    alpha: 255,
+                }
+            })
+            .collect(),
+    };
+    if pixels.len() != width * height {
+        return Err(Map16BmpDecodeError::PixelData);
     }
     Ok(DecodedMap16Bitmap {
         width,
@@ -923,13 +1046,23 @@ impl std::error::Error for Map16PngDecodeError {}
 pub enum Map16BmpDecodeError {
     InputTooLarge(usize),
     Header,
-    Dimensions { width: i32, height: i32 },
+    Dimensions {
+        width: i32,
+        height: i32,
+    },
     Planes(u16),
     BitDepth(u16),
     Compression(u32),
     Palette,
     BitMasks,
     Rle,
+    Embedded(String),
+    EmbeddedDimensions {
+        header_width: usize,
+        header_height: usize,
+        image_width: usize,
+        image_height: usize,
+    },
     PixelData,
 }
 
@@ -1224,6 +1357,102 @@ mod tests {
             }
         }
         bytes
+    }
+
+    fn test_embedded_bmp(width: usize, height: usize, compression: u32, payload: &[u8]) -> Vec<u8> {
+        let pixel_offset = 54_usize;
+        let mut bytes = vec![0; pixel_offset];
+        bytes.extend_from_slice(payload);
+        let file_len = u32::try_from(bytes.len()).unwrap();
+        bytes[0..2].copy_from_slice(b"BM");
+        bytes[2..6].copy_from_slice(&file_len.to_le_bytes());
+        bytes[10..14].copy_from_slice(&u32::try_from(pixel_offset).unwrap().to_le_bytes());
+        bytes[14..18].copy_from_slice(&40_u32.to_le_bytes());
+        bytes[18..22].copy_from_slice(&i32::try_from(width).unwrap().to_le_bytes());
+        bytes[22..26].copy_from_slice(&i32::try_from(height).unwrap().to_le_bytes());
+        bytes[26..28].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[28..30].copy_from_slice(&0_u16.to_le_bytes());
+        bytes[30..34].copy_from_slice(&compression.to_le_bytes());
+        bytes[34..38].copy_from_slice(&u32::try_from(payload.len()).unwrap().to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn bmp_decoder_handles_embedded_png_and_jpeg_payloads() {
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, 2, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
+        }
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&test_embedded_bmp(2, 1, 5, &png)).unwrap(),
+            DecodedMap16Bitmap {
+                width: 2,
+                height: 1,
+                pixels: vec![
+                    Rgba8 {
+                        red: 1,
+                        green: 2,
+                        blue: 3,
+                        alpha: 4,
+                    },
+                    Rgba8 {
+                        red: 5,
+                        green: 6,
+                        blue: 7,
+                        alpha: 8,
+                    },
+                ],
+            }
+        );
+
+        let mut jpeg = Vec::new();
+        jpeg_encoder::Encoder::new(&mut jpeg, 100)
+            .encode(&[12, 34, 56], 1, 1, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+        let decoded = decode_map16_bitmap_bmp_image(&test_embedded_bmp(1, 1, 4, &jpeg)).unwrap();
+        assert_eq!((decoded.width, decoded.height), (1, 1));
+        assert_eq!(decoded.pixels[0].alpha, 255);
+        assert!(decoded.pixels[0].red.abs_diff(12) <= 2);
+        assert!(decoded.pixels[0].green.abs_diff(34) <= 2);
+        assert!(decoded.pixels[0].blue.abs_diff(56) <= 2);
+    }
+
+    #[test]
+    fn bmp_decoder_rejects_embedded_shape_and_payload_framing_errors() {
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, 1, 1);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[1, 2, 3]).unwrap();
+        }
+        assert!(matches!(
+            decode_map16_bitmap_bmp_image(&test_embedded_bmp(2, 1, 5, &png)),
+            Err(Map16BmpDecodeError::EmbeddedDimensions { .. })
+        ));
+        let mut truncated = test_embedded_bmp(1, 1, 5, &png);
+        truncated.pop();
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&truncated),
+            Err(Map16BmpDecodeError::PixelData)
+        );
+        let mut zero_size = test_embedded_bmp(1, 1, 5, &png);
+        zero_size[34..38].copy_from_slice(&0_u32.to_le_bytes());
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&zero_size),
+            Err(Map16BmpDecodeError::PixelData)
+        );
+        let mut top_down = test_embedded_bmp(1, 1, 5, &png);
+        top_down[22..26].copy_from_slice(&(-1_i32).to_le_bytes());
+        assert_eq!(
+            decode_map16_bitmap_bmp_image(&top_down),
+            Err(Map16BmpDecodeError::Compression(5))
+        );
     }
 
     fn test_indexed_bmp(
