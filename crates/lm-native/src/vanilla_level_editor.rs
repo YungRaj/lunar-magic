@@ -1167,9 +1167,19 @@ impl VanillaLevelEditor {
                 return;
             }
         };
+        let level_layout = match editor_level_layout(snapshot) {
+            Ok(layout) => layout,
+            Err(error) => {
+                self.controller = None;
+                self.entrance_controller = None;
+                self.error = Some(error);
+                self.key = Some(key);
+                return;
+            }
+        };
         match LevelController::decode_with_layer2(
             snapshot,
-            lm_profile::smw_us_v1_vanilla_level_layout(),
+            level_layout,
             layer2_layout,
             &sprite_lengths,
         ) {
@@ -7660,6 +7670,17 @@ fn editor_layer2_layout(
         .map_err(|error| error.to_string())
 }
 
+fn editor_level_layout(
+    snapshot: &lm_app::ControllerSnapshot,
+) -> Result<lm_project::LevelRomLayout, String> {
+    let rom =
+        RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
+    let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    layout.sprites =
+        lm_profile::smw_us_v1_sprite_pointer_table(&rom).map_err(|error| error.to_string())?;
+    Ok(layout)
+}
+
 fn workspace_tool_width(available_width: f32) -> f32 {
     ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.42).max(280.0))
 }
@@ -8545,6 +8566,49 @@ mod tests {
         let error = validate_builtin_graphics_layout(&modified).unwrap_err();
         assert!(error.contains("pristine SMW-US graphics pointer layout"));
         assert!(error.contains("audited revision profile"));
+    }
+
+    #[test]
+    fn builtin_editor_resolves_lunar_magic_per_level_sprite_banks() {
+        let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let pristine_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let low_offset = pristine_layout.sprites.low_or_contiguous_table().offset;
+        let low_word = u16::from_le_bytes([bytes[low_offset], bytes[low_offset + 1]]);
+        let installed_bank = 0x10_u8;
+        let installed_pointer =
+            SnesPointer24::new((u32::from(installed_bank) << 16) | u32::from(low_word)).unwrap();
+        let installed_offset = installed_pointer.to_pc(Mapper::LoRom).unwrap();
+        bytes.resize(0x10_0000, 0xff);
+        assert!(installed_offset + 5 <= bytes.len());
+        bytes[lm_profile::SMW_US_V1_LEVEL_SPRITE_POINTER_HOOK_OFFSET] = 0x22;
+        bytes[lm_profile::SMW_US_V1_LEVEL_SPRITE_POINTER_BANK_TABLE_OFFSET] = installed_bank;
+        bytes[installed_offset..installed_offset + 5]
+            .copy_from_slice(&[0x00, 0x60, 0x00, 0x47, 0xff]);
+
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let resolved = editor_level_layout(&snapshot).unwrap();
+        assert!(matches!(
+            resolved.sprites,
+            lm_project::SpritePointerTable::SplitBankTable { .. }
+        ));
+
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let placements = editor.canvas_model().sprite_placements;
+        assert_eq!(placements.len(), 1);
+        assert_eq!(placements[0].sprite_number, 0x47);
+        assert_eq!((placements[0].major, placements[0].minor), (0, 6));
     }
 
     #[test]

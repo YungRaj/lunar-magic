@@ -157,7 +157,7 @@ function sampledError(rust, live, cropX, cropY, sampleStep = 8) {
 
 function selectCrop(rust, live) {
   if (
-    (live.width === 656 && live.height === 464) ||
+    (live.width === 656 && (live.height === 448 || live.height === 464)) ||
     (live.width === 624 && live.height === 480)
   ) {
     return [870, 338];
