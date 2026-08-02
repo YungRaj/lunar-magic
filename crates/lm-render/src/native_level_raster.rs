@@ -1,6 +1,7 @@
 use crate::{Canvas, CanvasError, Rgba};
 use lm_graphics::{IndexedTile, Palette};
 use lm_level::{Map16Tile, Subtile};
+use std::collections::HashSet;
 
 /// One Map16 cell in world tile coordinates.
 ///
@@ -66,6 +67,24 @@ impl NativeMap16Composition {
             },
         }
     }
+
+    fn compose_with_layer_addition(self, source: Rgba, destination: Rgba) -> Rgba {
+        let source = match self {
+            Self::Opaque => source,
+            Self::Average | Self::HalfColor => Rgba {
+                red: source.red >> 1,
+                green: source.green >> 1,
+                blue: source.blue >> 1,
+                alpha: 255,
+            },
+        };
+        Rgba {
+            red: destination.red.saturating_add(source.red),
+            green: destination.green.saturating_add(source.green),
+            blue: destination.blue.saturating_add(source.blue),
+            alpha: 255,
+        }
+    }
 }
 
 /// Deterministic native-level framebuffer input.
@@ -125,6 +144,10 @@ pub enum NativeLevelRasterError {
     InvalidLayerPaletteRoutingLength {
         layers: usize,
         routing: usize,
+    },
+    InvalidLayerAdditiveLength {
+        layers: usize,
+        additive: usize,
     },
 }
 
@@ -193,7 +216,7 @@ fn render_native_level_framebuffer_impl(
         request.height,
         vec![request.backdrop; pixel_count],
     )?;
-    draw_native_level_layers_impl(&mut canvas, request, layer_palette_routing)?;
+    draw_native_level_layers_impl(&mut canvas, request, layer_palette_routing, None)?;
     Ok(canvas)
 }
 
@@ -217,13 +240,51 @@ pub fn draw_native_level_layers_with_layer_palette_routing(
             routing: layer_palette_routing.len(),
         });
     }
-    draw_native_level_layers_impl(canvas, request, Some(layer_palette_routing))
+    draw_native_level_layers_impl(canvas, request, Some(layer_palette_routing), None)
+}
+
+/// Draws native Map16 layers with explicit palette routing and Lunar Magic's whole-layer
+/// additive flag for every layer.
+///
+/// Additive layers saturating-add each nontransparent source pixel to the existing framebuffer.
+/// A placement on the averaged/half-color path first halves its source channels, matching
+/// `RenderMap16TileToPixelBuffer` when the slot additive global is active.
+///
+/// # Errors
+///
+/// Rejects palette-routing or additive slices whose lengths differ from `request.layers`, plus
+/// the ordinary canvas, palette, and dimension errors.
+pub fn draw_native_level_layers_with_layer_palette_routing_and_addition(
+    canvas: &mut Canvas,
+    request: NativeLevelRasterRequest<'_>,
+    layer_palette_routing: &[NativeMap16PaletteRouting],
+    layer_additive: &[bool],
+) -> Result<(), NativeLevelRasterError> {
+    if layer_palette_routing.len() != request.layers.len() {
+        return Err(NativeLevelRasterError::InvalidLayerPaletteRoutingLength {
+            layers: request.layers.len(),
+            routing: layer_palette_routing.len(),
+        });
+    }
+    if layer_additive.len() != request.layers.len() {
+        return Err(NativeLevelRasterError::InvalidLayerAdditiveLength {
+            layers: request.layers.len(),
+            additive: layer_additive.len(),
+        });
+    }
+    draw_native_level_layers_impl(
+        canvas,
+        request,
+        Some(layer_palette_routing),
+        Some(layer_additive),
+    )
 }
 
 fn draw_native_level_layers_impl(
     canvas: &mut Canvas,
     request: NativeLevelRasterRequest<'_>,
     layer_palette_routing: Option<&[NativeMap16PaletteRouting]>,
+    layer_additive: Option<&[bool]>,
 ) -> Result<(), NativeLevelRasterError> {
     if canvas.width() != request.width || canvas.height() != request.height {
         return Err(NativeLevelRasterError::CanvasDimensionsMismatch {
@@ -243,7 +304,18 @@ fn draw_native_level_layers_impl(
             .and_then(|routing| routing.get(layer_index))
             .copied()
             .unwrap_or_default();
-        for placement in *layer {
+        let additive = layer_additive
+            .and_then(|flags| flags.get(layer_index))
+            .copied()
+            .unwrap_or(false);
+        // Lunar Magic rasterizes the final Map16 cache cell once. Walking the placement stream in
+        // reverse and retaining the first coordinate preserves later-object overwrite semantics
+        // without applying destination-dependent composition repeatedly to an overwritten cell.
+        let mut rendered_cells = HashSet::with_capacity(layer.len());
+        for placement in layer.iter().rev() {
+            if !rendered_cells.insert((placement.x, placement.y)) {
+                continue;
+            }
             let definition_index = usize::from(placement.definition_index);
             let definitions = match placement.definition_bank {
                 NativeMap16DefinitionBank::Foreground => request.definitions,
@@ -270,6 +342,7 @@ fn draw_native_level_layers_impl(
                 (placement.outer_x_flip, placement.outer_y_flip),
                 palette_routing,
                 placement.composition,
+                additive,
             );
         }
     }
@@ -333,6 +406,7 @@ fn draw_map16_clipped(
     outer_flips: (bool, bool),
     palette_routing: NativeMap16PaletteRouting,
     composition: NativeMap16Composition,
+    additive: bool,
 ) {
     let (target_x, target_y) = target;
     let (horizontal_flip, vertical_flip) = outer_flips;
@@ -368,6 +442,7 @@ fn draw_map16_clipped(
                 outer_flips,
                 palette_routing,
                 composition,
+                additive,
             );
         }
     }
@@ -382,6 +457,7 @@ fn draw_subtile_clipped(
     outer_flips: (bool, bool),
     palette_routing: NativeMap16PaletteRouting,
     composition: NativeMap16Composition,
+    additive: bool,
 ) {
     let (target_x, target_y) = target;
     let (horizontal_flip, vertical_flip) = outer_flips;
@@ -427,7 +503,15 @@ fn draw_subtile_clipped(
                 alpha: 255,
             };
             let destination = canvas.get(output_x, output_y).unwrap_or_default();
-            canvas.set(output_x, output_y, composition.compose(source, destination));
+            canvas.set(
+                output_x,
+                output_y,
+                if additive {
+                    composition.compose_with_layer_addition(source, destination)
+                } else {
+                    composition.compose(source, destination)
+                },
+            );
         }
     }
 }
@@ -786,6 +870,144 @@ mod tests {
 
         assert_eq!(canvas.get(0, 0).unwrap().green, 255);
         assert_eq!(canvas.get(20, 0), Some(prior));
+    }
+
+    #[test]
+    fn whole_layer_addition_saturates_and_halves_the_averaged_source() {
+        let definitions = [definition([0, 0, 0, 0])];
+        let tiles = [solid(1)];
+        let mut placement = NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: 0,
+            definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
+            composition: NativeMap16Composition::Opaque,
+        };
+        let palette = palette();
+        let backdrop = Rgba {
+            red: 10,
+            green: 20,
+            blue: 30,
+            alpha: 255,
+        };
+        let routing = [NativeMap16PaletteRouting::Direct];
+        let additive = [true];
+
+        let draw = |placement: &NativeMap16Placement| {
+            let layer = [*placement];
+            let layers: [&[NativeMap16Placement]; 1] = [&layer];
+            let mut canvas = Canvas::from_pixels(16, 16, vec![backdrop; 256]).unwrap();
+            draw_native_level_layers_with_layer_palette_routing_and_addition(
+                &mut canvas,
+                NativeLevelRasterRequest {
+                    width: 16,
+                    height: 16,
+                    camera_x: 0,
+                    camera_y: 0,
+                    backdrop,
+                    layers: &layers,
+                    definitions: &definitions,
+                    background_definitions: &[],
+                    tiles: &tiles,
+                    palette: &palette,
+                },
+                &routing,
+                &additive,
+            )
+            .unwrap();
+            canvas.get(0, 0).unwrap()
+        };
+
+        assert_eq!(draw(&placement).red, 255);
+        placement.composition = NativeMap16Composition::Average;
+        assert_eq!(draw(&placement).red, 137);
+    }
+
+    #[test]
+    fn whole_layer_addition_requires_one_flag_per_layer() {
+        let mut canvas = Canvas::try_new(1, 1).unwrap();
+        let layers: [&[NativeMap16Placement]; 0] = [];
+        let palette = palette();
+        let error = draw_native_level_layers_with_layer_palette_routing_and_addition(
+            &mut canvas,
+            NativeLevelRasterRequest {
+                width: 1,
+                height: 1,
+                camera_x: 0,
+                camera_y: 0,
+                backdrop: Rgba::default(),
+                layers: &layers,
+                definitions: &[],
+                background_definitions: &[],
+                tiles: &[],
+                palette: &palette,
+            },
+            &[],
+            &[true],
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            NativeLevelRasterError::InvalidLayerAdditiveLength {
+                layers: 0,
+                additive: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn whole_layer_addition_composes_only_the_final_overwriting_cell() {
+        let definitions = [definition([0, 0, 0, 0]), definition([1, 1, 1, 1])];
+        let tiles = [solid(1), solid(2)];
+        let first = NativeMap16Placement {
+            x: 0,
+            y: 0,
+            word: 0,
+            definition_index: 0,
+            outer_x_flip: false,
+            outer_y_flip: false,
+            definition_bank: NativeMap16DefinitionBank::Foreground,
+            composition: NativeMap16Composition::Opaque,
+        };
+        let last = NativeMap16Placement {
+            definition_index: 1,
+            word: 1,
+            ..first
+        };
+        let layer = [first, last];
+        let layers: [&[NativeMap16Placement]; 1] = [&layer];
+        let palette = palette();
+        let backdrop = Rgba {
+            red: 10,
+            green: 20,
+            blue: 30,
+            alpha: 255,
+        };
+        let mut canvas = Canvas::from_pixels(16, 16, vec![backdrop; 256]).unwrap();
+        draw_native_level_layers_with_layer_palette_routing_and_addition(
+            &mut canvas,
+            NativeLevelRasterRequest {
+                width: 16,
+                height: 16,
+                camera_x: 0,
+                camera_y: 0,
+                backdrop,
+                layers: &layers,
+                definitions: &definitions,
+                background_definitions: &[],
+                tiles: &tiles,
+                palette: &palette,
+            },
+            &[NativeMap16PaletteRouting::Direct],
+            &[true],
+        )
+        .unwrap();
+
+        let pixel = canvas.get(0, 0).unwrap();
+        assert_eq!((pixel.red, pixel.green, pixel.blue), (10, 255, 30));
     }
 
     #[test]

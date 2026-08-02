@@ -249,6 +249,37 @@ mod tests {
     }
 
     #[test]
+    fn special_modes_assign_addition_to_layer_one_or_layer_two() {
+        let mode_1e = lunar_magic_level_layer_slots(0x1e, false, None).unwrap();
+        let layer1 = mode_1e
+            .slots
+            .into_iter()
+            .find(|slot| slot.source == Some(LevelLayerSlotSource::Layer1))
+            .unwrap();
+        let layer2 = mode_1e
+            .slots
+            .into_iter()
+            .find(|slot| slot.source == Some(LevelLayerSlotSource::Layer2))
+            .unwrap();
+        assert!(layer1.additive);
+        assert!(!layer2.additive);
+
+        let mode_1f = lunar_magic_level_layer_slots(0x1f, false, None).unwrap();
+        let layer1 = mode_1f
+            .slots
+            .into_iter()
+            .find(|slot| slot.source == Some(LevelLayerSlotSource::Layer1))
+            .unwrap();
+        let layer2 = mode_1f
+            .slots
+            .into_iter()
+            .find(|slot| slot.source == Some(LevelLayerSlotSource::Layer2))
+            .unwrap();
+        assert!(!layer1.additive);
+        assert!(layer2.additive);
+    }
+
+    #[test]
     fn invalid_editor_modes_are_not_silently_indexed() {
         for mode in 0x12..=0x1d {
             assert_eq!(lunar_magic_level_layer_slots(mode, false, None), None);

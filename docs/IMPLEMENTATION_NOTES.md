@@ -1242,7 +1242,10 @@ Lunar Magic 3.63 process and reproduces `ConfigureLevelLayerSlotAssignments` as 
 including low/high Layer 3 priority splitting from legacy-header byte 2 bit 7. Installed rendering
 now walks those slots in painter order and applies the slot's exact Layer 3 additive and half-color
 state; half-color is applied to the source channels before either opaque or saturating-additive
-composition. Layer 1/2 whole-layer additive composition remains a separate renderer boundary.
+composition. The same slot flags now drive Layer 1/2 whole-layer addition through the shared native
+rasterizer. It renders only the final placement for each Map16 cache coordinate, saturating-adds
+ordinary source channels, and halves averaged/half-color source channels before addition exactly as
+`RenderMap16TileToPixelBuffer` does while `DAT_0060028D` is active.
 The legacy path's generic graphics-remap stream is separately modeled by
 `GraphicsRemapCommandStream`, based on the recovered `DecodeGraphicsRemapCommandStream` instruction
 sequence. Four-byte headers encode a 15-bit destination word, a 14-bit length field, literal versus

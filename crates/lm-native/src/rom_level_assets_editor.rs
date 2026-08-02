@@ -2281,18 +2281,20 @@ fn render_level_canvas_with_layer_palette_routing(
             }
             match slot.source {
                 Some(lm_level::LevelLayerSlotSource::Layer2) => {
-                    lm_render::draw_native_level_layers_with_layer_palette_routing(
+                    lm_render::draw_native_level_layers_with_layer_palette_routing_and_addition(
                         &mut canvas,
                         request(&layer2),
                         &layer2_routing,
+                        &[slot.additive],
                     )
                     .map_err(|error| error.to_string())?;
                 }
                 Some(lm_level::LevelLayerSlotSource::Layer1) => {
-                    lm_render::draw_native_level_layers_with_layer_palette_routing(
+                    lm_render::draw_native_level_layers_with_layer_palette_routing_and_addition(
                         &mut canvas,
                         request(&layer1),
                         &layer1_routing,
+                        &[slot.additive],
                     )
                     .map_err(|error| error.to_string())?;
                 }
@@ -3192,6 +3194,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(split.get(0, 0).unwrap().red, 255);
+
+        layer3.painter_slots = lm_level::lunar_magic_level_layer_slots(0x1e, false, None).unwrap();
+        let layer1_additive = render_level_canvas_with_layer_palette_routing(
+            &layer_stack,
+            &[],
+            layout,
+            &map16,
+            &definitions,
+            &tiles,
+            &[],
+            &[],
+            &palette,
+            &routing,
+            Some(&layer3),
+        )
+        .unwrap();
+        let pixel = layer1_additive.get(0, 0).unwrap();
+        assert_eq!((pixel.red, pixel.green, pixel.blue), (0, 255, 255));
     }
 
     fn level_for_image_crop(mode: u8, stored_screen: u8, sprite_screen: u8) -> LoadedLevelSlot {

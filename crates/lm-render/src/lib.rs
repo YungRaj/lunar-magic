@@ -62,9 +62,10 @@ pub use map16::draw_map16_tile;
 pub use native_level_raster::{
     NativeLevelRasterError, NativeLevelRasterRequest, NativeMap16Composition,
     NativeMap16DefinitionBank, NativeMap16PaletteRouting, NativeMap16Placement,
-    draw_native_level_layers_with_layer_palette_routing, draw_native_sprite_preview_definition,
-    draw_native_sprite_preview_definition_pages, render_native_level_framebuffer,
-    render_native_level_framebuffer_with_layer_palette_routing,
+    draw_native_level_layers_with_layer_palette_routing,
+    draw_native_level_layers_with_layer_palette_routing_and_addition,
+    draw_native_sprite_preview_definition, draw_native_sprite_preview_definition_pages,
+    render_native_level_framebuffer, render_native_level_framebuffer_with_layer_palette_routing,
 };
 pub use observe_editor_overlays::observe_editor_overlays;
 pub use observe_layer3_plane::observe_materialized_layer3_plane;

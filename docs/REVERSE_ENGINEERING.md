@@ -1585,6 +1585,13 @@ and priority arrays byte-for-byte. The dispatcher can place Layer 3 in slot 0, 2
 legacy-header byte 2 bit 7 requests a priority split, duplicates it across two slots with selectors
 1 (low-priority tiles) and 2 (high-priority tiles).
 
+`RenderLevelEditorViewportRegion` copies every active slot's additive byte to `DAT_0060028D` before
+dispatching Layer 1, Layer 2, or Layer 3. `RenderMap16TileToPixelBuffer` proves the Layer 1/2 path:
+ordinary nontransparent source pixels saturating-add per RGB channel, while its averaged-display
+cells first shift each source channel right once and then saturating-add instead of averaging with
+the destination. The cache renderer visits each final Map16 coordinate once, so overwritten object
+paints do not contribute multiple times.
+
 The retained Wine ROM also proves four direct hooks into the `$4C0` main payload. The first three
 are now clean-room runtime contracts: logical `$00201F` replaces
 `LDA $1BE3; BEQ +$20; DEC A` with `JSL entry; BEQ +$1F`; that entry begins at payload offset zero
