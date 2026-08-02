@@ -231,22 +231,20 @@ fn rust_direct_rom_main_entrance_edit_is_exported_by_lunar_magic() {
     ));
     fs::create_dir(&directory).unwrap();
 
-    let canonical_lunar_magic_header = || {
-        let mut canonical = vec![0; lm_rom::COPIER_HEADER_LEN];
-        canonical[..12].copy_from_slice(&[0x40, 0, 0, 0, 0, 0, 0, 0, 0xaa, 0xbb, 4, 0]);
-        canonical
-    };
+    let canonical_lunar_magic_header =
+        || lm_profile::smw_us_v1_lunar_magic_copier_header().to_vec();
     for (name, copier_header) in [
         ("headerless", None),
         ("headered", Some(canonical_lunar_magic_header())),
     ] {
         let edited_rom = directory.join(format!("Rust entrance edit {name}.sfc"));
         let exported_mwl = directory.join(format!("exported {name}.mwl"));
-        let mut source = copier_header.clone().unwrap_or_default();
-        source.extend_from_slice(&logical_rom);
-
         let mut app = AppState::default();
-        app.load_rom(source).unwrap();
+        app.load_rom(logical_rom.clone()).unwrap();
+        if copier_header.is_some() {
+            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 0 })
+                .unwrap();
+        }
         app.dispatch(Command::SelectLevel(0x105)).unwrap();
         let snapshot = app.controller_snapshot().unwrap();
         let mut controller = lm_app::VanillaEntranceController::decode(

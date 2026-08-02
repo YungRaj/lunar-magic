@@ -107,9 +107,11 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   identity requalification, revision and save-conflict checks, history publication, and exact
   undo/redo; malformed, stale, identity-changing, or partially banked results never mutate state.
 - The native copier-header dialog snapshots the current physical state, defaults to its inverse,
-  and owns only target/fill presentation. Application revision and pending-save checks precede the
-  project-layer exact-prefix edit; cancellation, no-op targets, stale workspaces, and rejected
-  dispatch retain document bytes and history.
+  and owns only target/fill presentation. It also exposes the identity-bound Lunar Magic 3.63
+  SMW-US canonical header as a typed action rather than approximating its structured bytes with a
+  fill value. Application revision, identity, and pending-save checks precede the project-layer
+  exact-prefix edit; cancellation, no-op targets, stale workspaces, and rejected dispatch retain
+  document bytes and history.
 - Unknown tagged blocks and unknown bits survive load/save unless an operation explicitly owns them.
 - Models store semantic values and retain the original encoded representation when round-trip preservation requires it.
 - Mapper conversion is centralized in `lm-rom`; feature crates never duplicate LoROM, ExLoROM, SA-1, or copier-header arithmetic.

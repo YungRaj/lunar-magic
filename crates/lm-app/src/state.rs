@@ -77,6 +77,7 @@ pub enum AppError {
     Identity(IdentityError),
     Ips(lm_rom::IpsError),
     IpsIdentityMismatch,
+    CopierHeaderIdentityMismatch,
     Clipboard(ClipboardError),
     ExternalTool(ExternalToolError),
     Localization(LocalizationError),
@@ -808,6 +809,9 @@ impl AppState {
             Command::ApplyIpsPatch { rev, patch } => self.apply_ips_patch(rev, &patch)?,
             Command::SetCopierHeader { rev, target, fill } => {
                 self.set_copier_header(rev, target, fill)?
+            }
+            Command::SetLunarMagicSmwUsCopierHeader { rev } => {
+                self.set_lunar_magic_smw_us_copier_header(rev)?
             }
             Command::ReplaceNativeOverworldPathLinks { rev, table } => {
                 self.replace_native_path_links(rev, &table)?

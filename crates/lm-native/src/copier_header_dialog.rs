@@ -66,6 +66,14 @@ impl CopierHeaderDialog {
                         "Only the physical file prefix changes; mapper addresses and logical ROM \
                          contents remain identical.",
                     );
+                    ui.add_enabled_ui(!workspace.canonical_lunar_magic(), |ui| {
+                        if ui.button("Use Lunar Magic canonical SMW header").clicked() {
+                            match workspace.prepare_lunar_magic_canonical(app.project_revision()) {
+                                Ok(value) => command = Some(value),
+                                Err(error) => self.error = Some(error),
+                            }
+                        }
+                    });
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
                             cancel = true;
@@ -137,6 +145,18 @@ mod tests {
         let command = workspace.prepare(0, 0x7e).unwrap();
         app.dispatch(command).unwrap();
         assert!(workspace.prepare(1, 0).is_err());
+    }
+
+    #[test]
+    fn workspace_routes_the_canonical_lunar_magic_header_and_then_rejects_a_no_op() {
+        let mut app = app();
+        let workspace = CopierHeaderWorkspace::load(&app).unwrap();
+        assert!(!workspace.canonical_lunar_magic());
+        app.dispatch(workspace.prepare_lunar_magic_canonical(0).unwrap())
+            .unwrap();
+        let reopened = CopierHeaderWorkspace::load(&app).unwrap();
+        assert!(reopened.canonical_lunar_magic());
+        assert!(reopened.prepare_lunar_magic_canonical(1).is_err());
     }
 
     #[test]

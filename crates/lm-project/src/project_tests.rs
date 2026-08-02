@@ -188,6 +188,57 @@ fn copier_header_conversion_is_dirty_reversible_and_retains_removed_bytes() {
 }
 
 #[test]
+fn exact_copier_header_install_adds_replaces_rejects_bad_shapes_and_undoes() {
+    let logical = supported_project().rom.logical_bytes().to_vec();
+    let mut project = supported_project();
+    let mut canonical = vec![0; lm_rom::COPIER_HEADER_LEN];
+    canonical[..4].copy_from_slice(&[0x40, 0xaa, 0xbb, 4]);
+    assert!(
+        project
+            .set_copier_header_exact("canonical header", &canonical)
+            .unwrap()
+    );
+    assert_eq!(
+        project.rom.copier_header_bytes(),
+        Some(canonical.as_slice())
+    );
+    assert_eq!(project.rom.logical_bytes(), logical);
+    assert!(
+        !project
+            .set_copier_header_exact("no op", &canonical)
+            .unwrap()
+    );
+    assert_eq!(project.history.undo_len(), 1);
+
+    let replacement = vec![0x7e; lm_rom::COPIER_HEADER_LEN];
+    assert!(
+        project
+            .set_copier_header_exact("replace header", &replacement)
+            .unwrap()
+    );
+    assert_eq!(
+        project.rom.copier_header_bytes(),
+        Some(replacement.as_slice())
+    );
+    assert!(project.undo().unwrap());
+    assert_eq!(
+        project.rom.copier_header_bytes(),
+        Some(canonical.as_slice())
+    );
+    assert!(project.undo().unwrap());
+    assert_eq!(project.rom.copier_header(), lm_rom::CopierHeader::Absent);
+    assert_eq!(project.rom.logical_bytes(), logical);
+
+    assert!(
+        project
+            .set_copier_header_exact("bad", &[0; lm_rom::COPIER_HEADER_LEN - 1])
+            .is_err()
+    );
+    assert_eq!(project.history.undo_len(), 0);
+    assert_eq!(project.rom.logical_bytes(), logical);
+}
+
+#[test]
 fn checksum_update_participates_in_history() {
     let mut bytes = vec![0x11; 0x8000];
     bytes[0x7fdc..0x7fe0].fill(0);

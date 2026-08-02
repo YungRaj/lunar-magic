@@ -6,6 +6,7 @@ pub(super) struct CopierHeaderWorkspace {
     current: CopierHeader,
     target: CopierHeader,
     logical_len: usize,
+    canonical_lunar_magic: bool,
 }
 
 impl CopierHeaderWorkspace {
@@ -23,6 +24,8 @@ impl CopierHeaderWorkspace {
                 CopierHeader::Present => CopierHeader::Absent,
             },
             logical_len: image.logical_len(),
+            canonical_lunar_magic: image.copier_header_bytes()
+                == Some(lm_profile::smw_us_v1_lunar_magic_copier_header().as_slice()),
         })
     }
 
@@ -40,6 +43,26 @@ impl CopierHeaderWorkspace {
 
     pub(super) const fn logical_len(&self) -> usize {
         self.logical_len
+    }
+
+    pub(super) const fn canonical_lunar_magic(&self) -> bool {
+        self.canonical_lunar_magic
+    }
+
+    pub(super) fn prepare_lunar_magic_canonical(
+        &self,
+        current_revision: u64,
+    ) -> Result<Command, String> {
+        if current_revision != self.revision {
+            return Err(format!(
+                "ROM changed while this dialog was open (expected revision {}, current {})",
+                self.revision, current_revision
+            ));
+        }
+        if self.canonical_lunar_magic {
+            return Err("the open ROM already has Lunar Magic's canonical SMW header".into());
+        }
+        Ok(Command::SetLunarMagicSmwUsCopierHeader { rev: self.revision })
     }
 
     pub(super) fn prepare(&self, current_revision: u64, fill: u8) -> Result<Command, String> {

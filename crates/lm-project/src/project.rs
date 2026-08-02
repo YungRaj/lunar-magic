@@ -174,6 +174,44 @@ impl Project {
         Ok(true)
     }
 
+    /// Compare-replaces the complete physical copier header as one reversible operation.
+    ///
+    /// Logical ROM bytes and cached cartridge identity remain unchanged. Unlike
+    /// [`Self::set_copier_header`], this retains the caller's complete structured header rather
+    /// than synthesizing a uniform fill.
+    ///
+    /// # Errors
+    ///
+    /// Returns a ROM mismatch error when `replacement` is not exactly 512 bytes.
+    pub fn set_copier_header_exact(
+        &mut self,
+        description: impl Into<String>,
+        replacement: &[u8],
+    ) -> Result<bool, lm_rom::RomError> {
+        if self.rom.copier_header_bytes() == Some(replacement) {
+            return Ok(false);
+        }
+        if replacement.len() != COPIER_HEADER_LEN {
+            return Err(lm_rom::RomError::RangeOutOfBounds {
+                offset: 0,
+                len: replacement.len(),
+                image_len: COPIER_HEADER_LEN,
+            });
+        }
+        let header = CopierHeaderEdit {
+            before: self.rom.copier_header_bytes().map(<[u8]>::to_vec),
+            after: Some(replacement.to_vec()),
+        };
+        header.apply(&mut self.rom)?;
+        self.history.push_batch(EditBatch {
+            description: description.into(),
+            edits: Vec::new(),
+            kind: EditKind::Ordinary,
+            copier_header: Some(header),
+        });
+        Ok(true)
+    }
+
     /// Applies a prepared append-plus-write mutation as one atomic undoable operation.
     ///
     /// The expected logical length prevents a mutation prepared from a differently sized image

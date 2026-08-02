@@ -2,6 +2,46 @@ use crate::{AppError, AppState, FrontendEffect};
 use lm_rom::CopierHeader;
 
 impl AppState {
+    pub(crate) fn set_lunar_magic_smw_us_copier_header(
+        &mut self,
+        expected_revision: u64,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if expected_revision != self.project_revision {
+            return Err(AppError::StaleProjectRevision {
+                expected: expected_revision,
+                actual: self.project_revision,
+            });
+        }
+        self.require_no_pending_save()?;
+        let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        let identity = project
+            .identity
+            .as_ref()
+            .ok_or(AppError::CopierHeaderIdentityMismatch)?;
+        if identity.game != lm_rom::SupportedGame::SuperMarioWorld
+            || identity.region != lm_rom::Region::NorthAmerica
+            || identity.revision != 0
+        {
+            return Err(AppError::CopierHeaderIdentityMismatch);
+        }
+        let header = lm_profile::smw_us_v1_lunar_magic_copier_header();
+        if project.rom.copier_header_bytes() == Some(header.as_slice()) {
+            return Ok(Vec::new());
+        }
+        self.ensure_project_revision_capacity()?;
+        let description = "Add Lunar Magic canonical SMW-US copier header".to_owned();
+        let project = self.project.as_mut().ok_or(AppError::NoProject)?;
+        let changed = project.set_copier_header_exact(description.clone(), &header)?;
+        debug_assert!(changed);
+        self.advance_project_revision()?;
+        self.status.clone_from(&description);
+        Ok(vec![FrontendEffect::ProjectChanged {
+            description,
+            mode: self.mode,
+            revision: self.project_revision,
+        }])
+    }
+
     pub(crate) fn set_copier_header(
         &mut self,
         expected_revision: u64,
@@ -79,6 +119,79 @@ mod tests {
         assert_eq!(app.project().unwrap().save_snapshot(), source);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), headered);
+    }
+
+    #[test]
+    fn lunar_magic_canonical_header_adds_replaces_and_round_trips_history_exactly() {
+        let source = original();
+        let logical = lm_rom::RomImage::from_bytes(source.clone())
+            .unwrap()
+            .logical_bytes()
+            .to_vec();
+        let mut noncanonical = vec![0x7e; COPIER_HEADER_LEN];
+        noncanonical.extend_from_slice(&logical);
+        let mut app = AppState::default();
+        app.load_rom(noncanonical.clone()).unwrap();
+        app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 0 })
+            .unwrap();
+        let canonical = lm_profile::smw_us_v1_lunar_magic_copier_header();
+        let installed = app.project().unwrap().save_snapshot();
+        assert_eq!(&installed[..COPIER_HEADER_LEN], &canonical);
+        assert_eq!(&installed[COPIER_HEADER_LEN..], logical);
+        assert_eq!(app.project_revision(), 1);
+
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), noncanonical);
+        app.dispatch(Command::Redo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), installed);
+        assert!(
+            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 3 })
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(app.project_revision(), 3);
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+    }
+
+    #[test]
+    fn lunar_magic_canonical_header_rejections_leave_bytes_revision_and_history_unchanged() {
+        let source = original();
+        let mut app = AppState::default();
+        app.load_rom(source.clone()).unwrap();
+        app.project
+            .as_mut()
+            .unwrap()
+            .identity
+            .as_mut()
+            .unwrap()
+            .region = lm_rom::Region::Japan;
+        assert!(matches!(
+            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 0 }),
+            Err(AppError::CopierHeaderIdentityMismatch)
+        ));
+        assert_eq!(app.project().unwrap().save_snapshot(), source);
+        assert_eq!(app.project_revision(), 0);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+        app.project
+            .as_mut()
+            .unwrap()
+            .identity
+            .as_mut()
+            .unwrap()
+            .region = lm_rom::Region::NorthAmerica;
+        assert!(matches!(
+            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 1 }),
+            Err(AppError::StaleProjectRevision { .. })
+        ));
+        app.dispatch(Command::Save).unwrap();
+        assert!(matches!(
+            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 0 }),
+            Err(AppError::SaveInProgress)
+        ));
+        assert_eq!(app.project().unwrap().save_snapshot(), source);
+        assert_eq!(app.project_revision(), 0);
+        assert_eq!(app.project().unwrap().history.undo_len(), 0);
     }
 
     #[test]
