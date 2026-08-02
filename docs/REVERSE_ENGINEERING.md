@@ -1435,13 +1435,14 @@ profile-wide protection/auditing of every component.
 
 The installed form is also verified as a Rust-to-Lunar-Magic write boundary. On an authentic
 2 MiB modified ROM, the native level editor moves one sprite in level `$102` to the next screen,
-stably sorts all legacy records by screen while preserving within-screen priority, writes the
-stream through that level's resolved `$077100` bank entry, repairs the checksum, and reopens the
-selected token at its new index. Lunar Magic 3.63 exports the result with the same Layer 1
-aggregate as its export of the untouched baseline and with the exact same sorted sprite aggregate
-as Rust. Comparing two Lunar Magic exports is required here because 3.63 independently
-canonicalizes two legacy compact screen-exit records in the source ROM even when no Rust edit is
-present. Native undo restores every logical input byte.
+stably sorts all legacy records by screen, and inserts another sprite through the canvas. The
+grown payload relocates: `$102`'s split pointer changes to the newly allocated stream, `$101`'s
+resolved pointer remains exact, checksum repair passes, and Rust reopens the complete result.
+Lunar Magic 3.63 exports the result with the same Layer 1 aggregate as its export of the untouched
+baseline and with the exact same grown/sorted sprite aggregate as Rust. Comparing two Lunar Magic
+exports is required here because 3.63 independently canonicalizes two legacy compact screen-exit
+records in the source ROM even when no Rust edit is present. Native undo restores every logical
+input byte.
 
 ### Pristine graphics pointer planes
 

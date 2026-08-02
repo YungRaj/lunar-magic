@@ -3041,12 +3041,14 @@ fields; expanded streams retain their explicit token order. The focused
 `semantic_legacy_sprite_position_edit_sorts_and_tracks_the_selected_record` regression covers that
 interaction. The ignored `external_lunar_magic_rom_sprite_edit_saves_reopens_and_undoes` gate opens
 an authentic 2 MiB Lunar Magic-modified ROM, moves one level-$102 sprite to the next screen through
-that form, commits through the installed per-entry bank layout, and reopens the sorted token in
-Rust. Lunar Magic 3.63 then exports both the untouched input and Rust-written ROM: their complete
-Layer 1 aggregates agree after Lunar Magic's own legacy screen-exit canonicalization, while its
-sprite aggregate exactly matches Rust's stable screen ordering and requested coordinate. The
-physical output retains a valid checksum, while one native undo restores the complete logical
-input byte-for-byte.
+that form, inserts another sprite through the canvas, and commits the grown stream through the
+installed per-entry bank layout. Growth must relocate level `$102` to a different SNES pointer,
+while level `$101`'s low word and bank still resolve to its exact baseline pointer. Rust reopens the
+complete grown/sorted aggregate. Lunar Magic 3.63 then exports both the untouched input and
+Rust-written ROM: their complete Layer 1 aggregates agree after Lunar Magic's own legacy
+screen-exit canonicalization, the untouched sprite export equals Rust's baseline, and the edited
+sprite export equals Rust's complete grown stream. The physical output retains a valid checksum,
+while one native undo restores the complete logical input byte-for-byte.
 
 The installed level canvas now shares the portable editor's expanded-sprite relocation semantics
 instead of sending every drag or placement through the legacy screen sorter. Dragging an expanded

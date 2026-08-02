@@ -8759,6 +8759,18 @@ mod tests {
             .unwrap()
             .logical_bytes()
             .to_vec();
+        let baseline_image = RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap();
+        let mut baseline_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        baseline_layout.sprites =
+            lm_profile::smw_us_v1_sprite_pointer_table(&baseline_image).unwrap();
+        let baseline_pointer = baseline_layout
+            .sprites
+            .read_snes_pointer(&baseline_image, 0x102)
+            .unwrap();
+        let neighboring_pointer = baseline_layout
+            .sprites
+            .read_snes_pointer(&baseline_image, 0x101)
+            .unwrap();
         let mut editor = VanillaLevelEditor::default();
         editor.load(
             &snapshot,
@@ -8771,6 +8783,7 @@ mod tests {
         );
         assert!(editor.error.is_none(), "{:?}", editor.error);
         let controller = editor.controller.as_ref().unwrap();
+        let baseline_sprites = controller.level().sprites.clone();
         let index = controller
             .level()
             .sprites
@@ -8791,20 +8804,58 @@ mod tests {
         editor.apply_sprite_semantic_fields();
         assert_eq!(editor.error, None);
         let sorted_index = editor.selected_sprite;
-        let expected =
-            editor.controller.as_ref().unwrap().level().sprites.tokens[sorted_index].clone();
         assert_ne!(sorted_index, index);
+        let original_token_count = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .tokens
+            .len();
+        editor.sprite_form.sprite_number ^= 0x01;
+        editor.placement_mode = Some(CanvasPlacementMode::Sprite);
+        editor.place_sprite_at_canvas(
+            egui::pos2(36.5, 8.5),
+            egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+            ),
+            1.0,
+            false,
+        );
+        assert_eq!(editor.error, None);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .sprites
+                .tokens
+                .len(),
+            original_token_count + 1
+        );
+        let expected_sprites = editor.controller.as_ref().unwrap().level().sprites.clone();
         app.dispatch(prepare_commit(editor.controller.as_ref().unwrap(), &snapshot).unwrap())
             .unwrap();
         let image = app.project().unwrap().rom.clone();
         let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
         layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        assert_ne!(
+            layout.sprites.read_snes_pointer(&image, 0x102).unwrap(),
+            baseline_pointer
+        );
+        assert_eq!(
+            layout.sprites.read_snes_pointer(&image, 0x101).unwrap(),
+            neighboring_pointer
+        );
         let reopened = app
             .project()
             .unwrap()
             .load_level_slot(0x102, layout, &SpriteLengthTable::standard())
             .unwrap();
-        assert_eq!(reopened.sprites.tokens[sorted_index], expected);
+        assert_eq!(reopened.sprites, expected_sprites);
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let executable = root.join("lm363/Lunar Magic.exe");
         assert!(executable.is_file(), "missing {}", executable.display());
@@ -8869,15 +8920,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(exported.layer1, baseline_exported.layer1);
-        let mut expected_exported_sprites = baseline_exported.sprites;
-        expected_exported_sprites.tokens[index] = expected;
-        assert_eq!(
-            expected_exported_sprites
-                .sort_legacy_records_by_screen(index)
-                .unwrap(),
-            sorted_index
-        );
-        assert_eq!(exported.sprites, expected_exported_sprites);
+        assert_eq!(baseline_exported.sprites, baseline_sprites);
+        assert_eq!(exported.sprites, expected_sprites);
         assert!(
             lm_rom::detect_identity(
                 &RomImage::from_bytes(std::fs::read(&rom_path).unwrap()).unwrap()
