@@ -3048,6 +3048,17 @@ sprite aggregate exactly matches Rust's stable screen ordering and requested coo
 physical output retains a valid checksum, while one native undo restores the complete logical
 input byte-for-byte.
 
+The installed level canvas now shares the portable editor's expanded-sprite relocation semantics
+instead of sending every drag or placement through the legacy screen sorter. Dragging an expanded
+record resolves its effective upper-Y state and submits `RelocateExpandedSprite`; placement inserts
+the complete selected record and performs that relocation in the same atomic edit batch. Both
+routes rebuild only the minimal `$FF vv` upper-Y transitions, retain record identity/extensions,
+track the selected token across removed controls, and reload the canonical form. Opaque expanded
+controls still reject atomically. The application-backed
+`expanded_sprite_canvas_edits_rebuild_controls_commit_reopen_and_undo` fixture starts with a shared
+upper-Y token, drags the record into the visible base band, inserts a second expanded record,
+commits the canonical stream to ROM, reopens it exactly, and undoes to every baseline logical byte.
+
 The same modified-ROM boundary now covers startup GFX32/GFX33 relocation. Lunar Magic can leave the
 pristine packed pointer data at `$003882` untouched while rewriting GFX33's low-word operand at
 `$00388B`, GFX32's at `$0038D8`, and their shared bank operand at `$003890`. The SMW-US resolver

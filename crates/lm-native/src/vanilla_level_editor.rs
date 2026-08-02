@@ -2713,6 +2713,47 @@ impl VanillaLevelEditor {
             return;
         };
         let index = controller.level().sprites.tokens.len();
+        if controller.level().sprites.expanded {
+            let mut predicted = controller.level().sprites.clone();
+            if let Err(error) = predicted.insert(index, token.clone()) {
+                self.error = Some(error.to_string());
+                return;
+            }
+            let selected = match predicted.relocate_expanded_record(
+                index,
+                fields.screen,
+                fields.x,
+                u16::from(fields.y_low),
+                controller.sprite_lengths(),
+            ) {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            };
+            match controller.apply_edits(&[
+                NativeLevelEdit::InsertSprite { index, token },
+                NativeLevelEdit::RelocateExpandedSprite {
+                    selected: index,
+                    screen: fields.screen,
+                    x: fields.x,
+                    y: u16::from(fields.y_low),
+                },
+            ]) {
+                Ok(()) => {
+                    self.selected_sprite = selected;
+                    self.sprite_form = SpriteForm::from_token(
+                        controller.level().sprites.header,
+                        controller.level().sprites.tokens.get(selected),
+                    );
+                    self.placement_mode = None;
+                    self.error = None;
+                }
+                Err(error) => self.error = Some(error.to_string()),
+            }
+            return;
+        }
         let mut predicted = controller.level().sprites.clone();
         predicted.tokens.push(token.clone());
         let selected = match predicted.sort_legacy_records_by_screen(index) {
@@ -2997,6 +3038,46 @@ impl VanillaLevelEditor {
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
+        if controller.level().sprites.expanded {
+            let fields = NativeSpriteRecordFields {
+                y_low: self.sprite_form.y_low,
+                extra_bits: self.sprite_form.extra_bits,
+                screen: self.sprite_form.screen,
+                x: self.sprite_form.x,
+                sprite_number: self.sprite_form.sprite_number,
+            };
+            let mut predicted = controller.level().sprites.clone();
+            let selected = match predicted.relocate_expanded_record(
+                index,
+                fields.screen,
+                fields.x,
+                u16::from(fields.y_low),
+                controller.sprite_lengths(),
+            ) {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            };
+            match controller.apply_edits(&[NativeLevelEdit::RelocateExpandedSprite {
+                selected: index,
+                screen: fields.screen,
+                x: fields.x,
+                y: u16::from(fields.y_low),
+            }]) {
+                Ok(()) => {
+                    self.selected_sprite = selected;
+                    self.sprite_form = SpriteForm::from_token(
+                        controller.level().sprites.header,
+                        controller.level().sprites.tokens.get(selected),
+                    );
+                    self.error = None;
+                }
+                Err(error) => self.error = Some(error.to_string()),
+            }
+            return;
+        }
         let token = controller.level().sprites.tokens.get(index);
         let Ok(replacement) =
             self.sprite_form
@@ -11804,6 +11885,185 @@ mod tests {
                 .unwrap(),
             expected.tokens[expected_selected]
         );
+    }
+
+    #[test]
+    fn expanded_sprite_canvas_edits_rebuild_controls_commit_reopen_and_undo() {
+        let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let original = lm_project::Project::new(image)
+            .load_level_slot(0x105, layout, &SpriteLengthTable::standard())
+            .unwrap();
+        let record = original
+            .sprites
+            .tokens
+            .iter()
+            .find_map(|token| match token {
+                SpriteToken::Record(record) => Some(record.clone()),
+                SpriteToken::Screen(_) | SpriteToken::Control(_) => None,
+            })
+            .unwrap();
+        let expanded = lm_level::NativeSpriteStream {
+            header: original.sprites.header,
+            expanded: true,
+            tokens: vec![SpriteToken::Screen(2), SpriteToken::Record(record)],
+        };
+        let encoded = expanded
+            .encode_for_table(&SpriteLengthTable::standard())
+            .unwrap();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let sprite_offset = layout
+            .sprites
+            .read_snes_pointer(&image, 0x105)
+            .unwrap()
+            .to_pc(Mapper::LoRom)
+            .unwrap();
+        bytes[sprite_offset..sprite_offset + encoded.len()].copy_from_slice(&encoded);
+        let checksum = lm_rom::compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+        bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        layout.expanded_sprites = true;
+
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let baseline = RomImage::from_bytes(snapshot.rom_bytes.clone())
+            .unwrap()
+            .logical_bytes()
+            .to_vec();
+        let controller =
+            LevelController::decode(&snapshot, layout, &SpriteLengthTable::standard()).unwrap();
+        assert_eq!(controller.level().sprites.tokens, expanded.tokens);
+        let mut editor = VanillaLevelEditor {
+            controller: Some(controller),
+            selected_sprite: 1,
+            sprite_form: SpriteForm::from_token(expanded.header, expanded.tokens.get(1)),
+            ..VanillaLevelEditor::default()
+        };
+        let cell = 8.0;
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0 * cell, f32::from(NATIVE_LEVEL_MINOR_TILES) * cell),
+        );
+        editor
+            .controller
+            .as_mut()
+            .unwrap()
+            .apply_edits(&[NativeLevelEdit::InsertSprite {
+                index: 1,
+                token: SpriteToken::Control(0x90),
+            }])
+            .unwrap();
+        let opaque = editor.controller.as_ref().unwrap().level().sprites.clone();
+        editor.move_sprite_to_canvas(2, egui::pos2(52.5 * cell, 6.5 * cell), canvas, cell, false);
+        assert!(
+            editor
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("OpaqueExpandedSpriteControl")
+        );
+        assert_eq!(editor.controller.as_ref().unwrap().level().sprites, opaque);
+        editor
+            .controller
+            .as_mut()
+            .unwrap()
+            .apply_edits(&[NativeLevelEdit::RemoveSprite { index: 1 }])
+            .unwrap();
+        editor.error = None;
+        editor.move_sprite_to_canvas(1, egui::pos2(52.5 * cell, 6.5 * cell), canvas, cell, false);
+
+        assert_eq!(editor.error, None);
+        assert_eq!(editor.selected_sprite, 0);
+        assert!(matches!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .sprites
+                .tokens
+                .as_slice(),
+            [SpriteToken::Record(_)]
+        ));
+        let placement = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements()[0];
+        assert_eq!(
+            (placement.screen, placement.major, placement.minor),
+            (3, 52, 6)
+        );
+        assert_eq!(editor.sprite_form.screen, 3);
+        assert_eq!(editor.sprite_form.x, 4);
+        assert_eq!(editor.sprite_form.y_low, 6);
+        editor.placement_mode = Some(CanvasPlacementMode::Sprite);
+        editor.place_sprite_at_canvas(egui::pos2(69.5 * cell, 7.5 * cell), canvas, cell, false);
+        assert_eq!(editor.error, None);
+        assert_eq!(editor.selected_sprite, 1);
+        assert_eq!(editor.placement_mode, None);
+        let placements = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements();
+        assert_eq!(placements.len(), 2);
+        assert_eq!(
+            (
+                placements[1].screen,
+                placements[1].major,
+                placements[1].minor
+            ),
+            (4, 69, 7)
+        );
+
+        let options = LevelSaveOptions {
+            layer1_allocation: AllocationPolicy {
+                search: 0x40_000..0x80_000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![],
+            },
+            sprite_allocation: AllocationPolicy {
+                search: pristine_sprite_bank_range(
+                    &RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap(),
+                    layout,
+                )
+                .unwrap(),
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![],
+            },
+            previous_layer1: None,
+            previous_sprites: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let command = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .prepare_commit_with_shared_bank_sprite_relocation("Move expanded sprite", &options)
+            .unwrap()
+            .into_command();
+        app.dispatch(command).unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_level_slot(0x105, layout, &SpriteLengthTable::standard())
+            .unwrap();
+        assert_eq!(
+            reopened.sprites,
+            editor.controller.as_ref().unwrap().level().sprites
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.logical_bytes(), baseline);
     }
 
     #[test]

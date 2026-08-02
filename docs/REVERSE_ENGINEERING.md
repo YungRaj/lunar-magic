@@ -2662,6 +2662,15 @@ test grows and relocates level `$105`'s stream, changes screen/X/Y, invokes the
 stable ordering rule, and receives the exact same sprite stream from Lunar
 Magic 3.63's subsequent MWL export.
 
+The installed canvas now dispatches by sprite framing at the same interaction boundary. Legacy
+records retain the stable screen sort above. Expanded drags call the upper-Y relocation model
+directly, while expanded placement atomically inserts the record and relocates it from the active
+shared state. The model removes redundant `$FF vv` transitions, emits only state changes,
+preserves extension bytes and record order, and returns the selected record's new token index when
+an earlier control disappears. A synthetic SMW-US ROM fixture commits, semantically reopens, and
+undoes both installed-canvas operations; opaque `$FF 80..FD` controls remain a hard atomic failure
+because their effect on upper-Y state is not yet proved.
+
 Direct object dragging now covers all 32 native screens. The canvas reverses
 horizontal or vertical tile coordinates into an absolute screen plus the
 selected ordinary record's first/second nibbles. `relocate_ordinary_object`
