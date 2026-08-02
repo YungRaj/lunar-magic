@@ -1,9 +1,10 @@
-use lm_app::ClipboardPayload;
+use lm_app::{ClipboardPayload, NativeMap16Clipboard};
 use lm_graphics::{Bgr555, ExAnimationFrame, ExAnimationRecord, IndexedTile};
 use lm_level::{Map16Tile, ObjectRecord, SpriteRecord};
 use lm_overworld::{OverworldMessage, OverworldSprite};
 
 const PREFIX: &str = "LMCLIP1:";
+const NATIVE_MAP16_PREFIX: &str = "LM16TILES1:";
 
 pub(crate) fn encode(payload: &ClipboardPayload) -> Result<String, String> {
     let bytes = payload.encode().map_err(|error| error.to_string())?;
@@ -109,6 +110,57 @@ pub(crate) fn decode_map16_tile(text: &str) -> Result<Map16Tile, String> {
         return Err("Map16 paste requires exactly one tile".into());
     };
     Ok(*tile)
+}
+
+pub(crate) fn encode_native_map16_rectangle(
+    rectangle: &NativeMap16Clipboard,
+) -> Result<String, String> {
+    let bytes = rectangle.encode().map_err(|error| error.to_string())?;
+    encode_hex(NATIVE_MAP16_PREFIX, &bytes)
+}
+
+pub(crate) fn decode_native_map16_rectangle(text: &str) -> Result<NativeMap16Clipboard, String> {
+    let bytes = decode_hex(NATIVE_MAP16_PREFIX, text, ClipboardPayload::MAX_ENCODED_LEN)?;
+    NativeMap16Clipboard::decode(&bytes).map_err(|error| error.to_string())
+}
+
+fn encode_hex(prefix: &str, bytes: &[u8]) -> Result<String, String> {
+    let hex_len = bytes
+        .len()
+        .checked_mul(2)
+        .and_then(|length| length.checked_add(prefix.len()))
+        .ok_or_else(|| "clipboard text length overflow".to_string())?;
+    let mut text = String::with_capacity(hex_len);
+    text.push_str(prefix);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(&mut text, "{byte:02X}").expect("writing to a String cannot fail");
+    }
+    Ok(text)
+}
+
+fn decode_hex(prefix: &str, text: &str, maximum_bytes: usize) -> Result<Vec<u8>, String> {
+    let hex = text.strip_prefix(prefix).ok_or_else(|| {
+        "clipboard does not contain the requested Lunar Magic payload".to_string()
+    })?;
+    let maximum_hex = maximum_bytes
+        .checked_mul(2)
+        .ok_or_else(|| "clipboard length bound overflow".to_string())?;
+    if hex.len() > maximum_hex {
+        return Err("clipboard payload exceeds its encoded length bound".into());
+    }
+    if hex.len() % 2 != 0 {
+        return Err("clipboard payload contains a partial hexadecimal byte".into());
+    }
+    hex.as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let text = std::str::from_utf8(pair)
+                .map_err(|_| "clipboard payload contains non-ASCII hexadecimal data".to_string())?;
+            u8::from_str_radix(text, 16)
+                .map_err(|_| "clipboard payload contains invalid hexadecimal data".to_string())
+        })
+        .collect()
 }
 
 pub(crate) fn encode_level_object(object: &ObjectRecord) -> Result<String, String> {
@@ -328,6 +380,27 @@ mod tests {
             decode_map16_tile(&encode_map16_tile(tile).unwrap()).unwrap(),
             tile
         );
+    }
+
+    #[test]
+    fn native_map16_rectangle_adapter_retains_exact_shape_origin_and_sections() {
+        let tiles = vec![
+            Map16Tile {
+                acts_like: 0x1234,
+                ..Map16Tile::default()
+            },
+            Map16Tile {
+                acts_like: 0xabcd,
+                ..Map16Tile::default()
+            },
+        ];
+        let rectangle = NativeMap16Clipboard::from_rectangle(0x2e, 2, 1, tiles).unwrap();
+        let text = encode_native_map16_rectangle(&rectangle).unwrap();
+        assert!(text.starts_with(NATIVE_MAP16_PREFIX));
+        assert_eq!(decode_native_map16_rectangle(&text).unwrap(), rectangle);
+        assert!(decode_map16_tile(&text).is_err());
+        assert!(decode_native_map16_rectangle("LM16TILES1:0").is_err());
+        assert!(decode_native_map16_rectangle("LM16TILES1:GG").is_err());
     }
 
     #[test]

@@ -113,7 +113,10 @@ pub use app_types::{
     AppCapabilities, EditorMode, FrontendEffect, HistoryCapabilities, NavigationCapabilities,
     ProfileStatus, ProjectStatus, SaveStatus, SelectionCapabilities,
 };
-pub use clipboard::{ClipboardError, ClipboardKind, ClipboardPayload};
+pub use clipboard::{
+    ClipboardError, ClipboardKind, ClipboardPayload, NativeMap16Clipboard,
+    NativeMap16ClipboardError,
+};
 pub use command::{Command, RomExpansionCommand};
 pub use complete_level_document_controller::{
     CompleteLevelDocumentController, CompleteLevelDocumentControllerError,

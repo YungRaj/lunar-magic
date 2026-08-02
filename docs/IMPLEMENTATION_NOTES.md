@@ -1701,6 +1701,17 @@ portable page and complete-set editors store their monotonic document revision p
 full address. Selection changes cannot retarget delivery, stale portable revisions reject without
 mutation, unsolicited paste events are ignored, and opening or clearing a workspace drops a pending
 target. Successful delivery still uses each surface's existing complete-tile controller edit.
+The installed Map16 surface additionally implements Lunar Magic's rectangular `Lunar Magic 16x16
+Tiles` clipboard boundary. Its exact 0xA0-byte header records three canonical section offsets,
+selected count, width, height, source Map16 index, and the legacy alternate-word-order flag;
+row-major sections carry eight-byte definitions, two-byte Acts-Like values, and four-byte source
+indexes generated with the native 16-column stride. Native copy snapshots the configured rectangle
+at the selected tile. Paste captures the destination, ROM revision, and monotonic staged revision
+before requesting clipboard delivery, then submits the complete rectangle through one existing
+validated replacement edit. Page-row wrapping, workspace overflow, malformed or noncanonical
+headers, stale delivery, protected built-in graphics, and background behavior all reject or
+canonicalize at the same established boundaries. Direct Map16 level-object creation from these
+dimensions remains a distinct unfinished interaction.
 The installed ROM Map16 workspace additionally wraps every successful staged controller mutation in
 a bounded 100-entry complete-set history. Manual subtile/Acts-Like edits, clipboard replacement,
 legacy page-pair import, and complete structured import each produce at most one predecessor

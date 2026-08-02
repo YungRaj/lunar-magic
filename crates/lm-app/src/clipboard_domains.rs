@@ -12,6 +12,7 @@ mod layer3;
 mod level;
 #[path = "clipboard_domains/map16.rs"]
 mod map16;
+pub use map16::{NativeMap16Clipboard, NativeMap16ClipboardError};
 #[path = "clipboard_domains/overworld.rs"]
 mod overworld;
 #[path = "clipboard_domains/palette.rs"]

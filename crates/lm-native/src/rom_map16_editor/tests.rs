@@ -227,6 +227,49 @@ fn rom_clipboard_delivery_uses_the_requested_map16_address() {
 }
 
 #[test]
+fn rom_rectangle_clipboard_targets_captured_origin_and_rejects_stale_delivery() {
+    let mut app = AppState::default();
+    app.load_rom(pristine_fixture()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut editor = RomMap16Editor::default();
+    editor.open(&app);
+    let revision = editor.workspace.as_ref().unwrap().controller.revision();
+    let staged_revision = editor.staged_revision;
+    let destination = 0x020e;
+    let tiles: Vec<_> = (0_u16..4)
+        .map(|index| lm_level::Map16Tile {
+            top_left: Subtile(0x100 + index),
+            top_right: Subtile(2),
+            bottom_left: Subtile(3),
+            bottom_right: Subtile(4),
+            acts_like: 0x0200 + index,
+        })
+        .collect();
+    let rectangle =
+        lm_app::NativeMap16Clipboard::from_rectangle(0x0300, 2, 2, tiles.clone()).unwrap();
+    let text = native_clipboard::encode_native_map16_rectangle(&rectangle).unwrap();
+
+    editor.page = 9;
+    editor.tile = 9;
+    editor
+        .paste_rectangle_at(&text, revision, staged_revision, destination)
+        .unwrap();
+    let set = editor.workspace.as_ref().unwrap().controller.set();
+    for (global, expected) in [0x020e, 0x020f, 0x021e, 0x021f].into_iter().zip(tiles) {
+        assert_eq!(
+            set.pages[global / Map16Page::TILE_COUNT].tiles[global % Map16Page::TILE_COUNT],
+            expected
+        );
+    }
+    assert!(
+        editor
+            .paste_rectangle_at(&text, revision, staged_revision, 0x0400)
+            .unwrap_err()
+            .contains("changed")
+    );
+}
+
+#[test]
 fn staged_map16_history_restores_exact_sets_and_invalidates_divergent_redo() {
     let mut app = AppState::default();
     app.load_rom(pristine_fixture()).unwrap();

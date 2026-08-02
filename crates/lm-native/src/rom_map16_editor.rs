@@ -122,6 +122,7 @@ pub(crate) struct RomMap16Editor {
     error: Option<String>,
     pending_close: Option<PendingClose>,
     clipboard_paste_target: Option<(u64, u64, Map16Address)>,
+    rectangle_clipboard_paste_target: Option<(u64, u64, usize)>,
     staged_revision: u64,
     undo_history: Vec<lm_level::Map16Set>,
     redo_history: Vec<lm_level::Map16Set>,
@@ -250,7 +251,7 @@ impl RomMap16Editor {
                 || self.bitmap_session.is_some(),
             project_revision,
         );
-        self.selected_file_controls(ui, edit_blocked, project_revision);
+        self.selected_file_controls(ui, edit_blocked, project_revision, pasted.as_deref());
         self.legacy_page_controls(
             ui,
             stale
@@ -405,6 +406,7 @@ impl RomMap16Editor {
                 .add_enabled(!stale, egui::Button::new("Paste tile"))
                 .clicked()
             {
+                self.rectangle_clipboard_paste_target = None;
                 let revision = self
                     .workspace
                     .as_ref()
@@ -507,6 +509,7 @@ impl RomMap16Editor {
         }
         self.staged_revision = next_revision;
         self.clipboard_paste_target = None;
+        self.rectangle_clipboard_paste_target = None;
         self.page_texture = None;
         self.page_texture_key = None;
         self.invalidate();
@@ -654,6 +657,7 @@ impl RomMap16Editor {
         self.redo_history.clear();
         self.staged_revision = next_revision;
         self.clipboard_paste_target = None;
+        self.rectangle_clipboard_paste_target = None;
         self.page_texture = None;
         self.page_texture_key = None;
         self.invalidate();

@@ -2,6 +2,7 @@ use std::fmt;
 
 #[path = "clipboard_domains.rs"]
 mod domains;
+pub use domains::{NativeMap16Clipboard, NativeMap16ClipboardError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]

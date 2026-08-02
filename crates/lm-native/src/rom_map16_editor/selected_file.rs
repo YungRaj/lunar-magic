@@ -53,6 +53,7 @@ impl RomMap16Editor {
         ui: &mut egui::Ui,
         blocked: bool,
         project_revision: u64,
+        pasted: Option<&str>,
     ) {
         let busy = self.complete_loader.is_running()
             || self.complete_persistence.is_running()
@@ -126,7 +127,99 @@ impl RomMap16Editor {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!blocked && !busy, egui::Button::new("Copy rectangle"))
+                .clicked()
+            {
+                let result = parse_dimensions(&self.selected_width, &self.selected_height)
+                    .and_then(|(width, height)| {
+                        let origin = self.page * Map16Page::TILE_COUNT + self.tile;
+                        let workspace =
+                            self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+                        let tiles =
+                            rectangle_tiles(workspace.controller.set(), origin, width, height)?;
+                        lm_app::NativeMap16Clipboard::from_rectangle(
+                            u32::try_from(origin)
+                                .map_err(|_| "Map16 clipboard origin overflow".to_owned())?,
+                            u32::try_from(width)
+                                .map_err(|_| "Map16 clipboard width overflow".to_owned())?,
+                            u32::try_from(height)
+                                .map_err(|_| "Map16 clipboard height overflow".to_owned())?,
+                            tiles,
+                        )
+                        .map_err(|error| error.to_string())
+                    })
+                    .and_then(|rectangle| {
+                        crate::native_clipboard::encode_native_map16_rectangle(&rectangle)
+                    });
+                match result {
+                    Ok(text) => ui.ctx().copy_text(text),
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            if ui
+                .add_enabled(!blocked && !busy, egui::Button::new("Paste rectangle"))
+                .clicked()
+            {
+                self.clipboard_paste_target = None;
+                self.rectangle_clipboard_paste_target = self.workspace.as_ref().map(|workspace| {
+                    (
+                        workspace.controller.revision(),
+                        self.staged_revision,
+                        self.page * Map16Page::TILE_COUNT + self.tile,
+                    )
+                });
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+        });
+        if let Some(text) = pasted
+            && let Some((revision, staged_revision, destination)) =
+                self.rectangle_clipboard_paste_target.take()
+        {
+            if blocked || busy {
+                self.error = Some(
+                    "the ROM or Map16 editor changed while waiting for rectangle clipboard data"
+                        .into(),
+                );
+            } else if let Err(error) =
+                self.paste_rectangle_at(text, revision, staged_revision, destination)
+            {
+                self.error = Some(error);
+            }
+        }
         ui.small("Selected .map16 ranges use Lunar Magic's compact LM16 width, height, origin, band flags, definitions, and Acts Like sections. Width and height are hexadecimal; disable file-origin import to place at the selected tile.");
+    }
+
+    pub(super) fn paste_rectangle_at(
+        &mut self,
+        text: &str,
+        revision: u64,
+        staged_revision: u64,
+        destination: usize,
+    ) -> Result<(), String> {
+        let rectangle = crate::native_clipboard::decode_native_map16_rectangle(text)?;
+        let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+        if workspace.controller.revision() != revision || self.staged_revision != staged_revision {
+            return Err(
+                "the ROM Map16 state changed while waiting for rectangle clipboard data".into(),
+            );
+        }
+        let replacements = rectangle_replacements(
+            &rectangle.tiles,
+            destination,
+            usize::try_from(rectangle.width)
+                .map_err(|_| "Map16 clipboard width overflow".to_owned())?,
+            usize::try_from(rectangle.height)
+                .map_err(|_| "Map16 clipboard height overflow".to_owned())?,
+            workspace.controller.set(),
+        )?;
+        let resolution_limit = workspace.controller.set().pages.len() * Map16Page::TILE_COUNT;
+        self.apply_staged_edits(&[Map16ControllerEdit::ReplaceTiles {
+            replacements,
+            resolution_limit,
+        }])
     }
 }
 
@@ -166,14 +259,29 @@ pub(super) fn import_replacements(
 ) -> Result<Vec<(Map16Address, Map16Tile)>, String> {
     let (file_origin, imported) = file.selected_tiles().map_err(|error| error.to_string())?;
     let origin = destination.unwrap_or(file_origin);
-    let targets =
-        rectangle_addresses(current, origin, file.selection_width, file.selection_height)?;
+    rectangle_replacements(
+        &imported,
+        origin,
+        file.selection_width,
+        file.selection_height,
+        current,
+    )
+}
+
+fn rectangle_replacements(
+    imported: &[Map16Tile],
+    origin: usize,
+    width: usize,
+    height: usize,
+    current: &Map16Set,
+) -> Result<Vec<(Map16Address, Map16Tile)>, String> {
+    let targets = rectangle_addresses(current, origin, width, height)?;
     if targets.len() != imported.len() {
         return Err("selected Map16 semantic section count changed unexpectedly".into());
     }
     Ok(targets
         .into_iter()
-        .zip(imported)
+        .zip(imported.iter().copied())
         .map(|(address, mut tile)| {
             let global = address.page * Map16Page::TILE_COUNT + address.tile;
             if global < PROTECTED_FOREGROUND_TILES {

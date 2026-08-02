@@ -296,6 +296,14 @@ snapshots the staged rectangle and publishes create-new. Tests cover cross-page 
 protected built-in graphics, background behavior canonicalization, malformed shapes, and stale
 completion.
 
+Native Map16 rectangle clipboard tests bind the recovered `Lunar Magic 16x16 Tiles` format to its
+0xA0-byte header and three exact row-major sections. They verify canonical offsets, selected count,
+dimensions, source origin, 16-column source-index stride, semantic Acts-Like values, and reversible
+legacy alternate subtile word order. Malformed offsets, reserved header bytes, flags, counts,
+truncation, page-row wrap, and namespace overflow reject. The installed-ROM test then pastes a 2×2
+rectangle across a page boundary at the request-captured destination, proves later selection
+movement cannot retarget it, and rejects reuse of the stale revision token.
+
 Map16 bitmap decoding additionally covers BMP `BI_JPEG` and `BI_PNG` embedded payloads. Hermetic
 fixtures wrap generated JPEG and PNG images in exact DIB framing and verify decoded dimensions,
 RGB/RGBA output, PNG alpha retention, JPEG normalization, declared-size truncation, zero-length
