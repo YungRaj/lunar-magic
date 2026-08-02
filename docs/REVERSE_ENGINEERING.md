@@ -2842,6 +2842,11 @@ now expose this exact representation, including forced zero for infinite time,
 and a live Lunar Magic 3.63 import/re-export preserves `$ABC` plus force reset
 in both semantic models. `SaveLevelToRom` separately calls
 `CheckLevelSaveSupportPatchB`/`InstallLevelSaveSupportPatchB` at
-`00463950`/`00463990` when the global is nonzero; reproducing that gameplay
-runtime installation remains tracked patch work rather than being inferred
-from successful editor interoperability.
+`00463950`/`00463990` when the global is nonzero. A matched, equal-length
+control differential proves that installer replaces five `JSR $B3E3` operands
+with `JSR $F160` and writes the fixed 48-byte `$0D:F160` runtime. The runtime
+conditionally copies the Layer 1/2 scroll nibbles from `$57/$59` into
+`$0F31..$0F33`; it returns without writes when `$59` bit 7 or `$141A` is set.
+The apparent adjacent `$07EFA3..$07F08D` oracle difference is Lunar Magic's
+additive checksum-compensation run (`$80`, then zero fill), not another timer
+table. Rust now authenticates and installs the six fixed ranges atomically.

@@ -54,6 +54,7 @@ mod separate_midway_install;
 mod shared_palette;
 mod shared_palette_install;
 mod sprite19_fix;
+mod support_patch_b;
 mod text;
 mod text_encode;
 mod text_schema;
@@ -404,6 +405,12 @@ pub use sprite19_fix::{
     SMW_US_V1_SPRITE19_FIX_RUNTIME_OFFSET, SmwUsV1Sprite19FixDetectError,
     SmwUsV1Sprite19FixInstallError, SmwUsV1Sprite19FixState, detect_smw_us_v1_sprite19_fix,
     smw_us_v1_sprite19_fix_installation_plan,
+};
+pub use support_patch_b::{
+    SMW_US_V1_SUPPORT_PATCH_B_HOOK_OFFSETS, SMW_US_V1_SUPPORT_PATCH_B_RUNTIME_OFFSET,
+    SmwUsV1SupportPatchBDetectError, SmwUsV1SupportPatchBInstallError, SmwUsV1SupportPatchBState,
+    detect_smw_us_v1_support_patch_b, smw_us_v1_support_patch_b_installation_plan,
+    smw_us_v1_support_patch_b_scroll_registers,
 };
 pub use text::RevisionProfileError;
 pub use title_recording::{

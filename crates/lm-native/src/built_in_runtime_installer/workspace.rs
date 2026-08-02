@@ -10,6 +10,7 @@ pub(super) enum BuiltInRuntime {
     Map16Runtime,
     Layer2Runtime,
     Sprite19Fix,
+    SupportPatchB,
     ExpandedSharedPalettes,
 }
 
@@ -22,6 +23,7 @@ impl BuiltInRuntime {
             Self::Map16Runtime => "Complete Map16 runtime and auxiliary table",
             Self::Layer2Runtime => "Layer 2 object-data runtime format $103",
             Self::Sprite19Fix => "Sprite 19 ASM fix",
+            Self::SupportPatchB => "Level support patch B (custom time / scroll)",
             Self::ExpandedSharedPalettes => "Expanded shared/custom palettes",
         }
     }
@@ -48,6 +50,9 @@ impl BuiltInRuntime {
             Self::Sprite19Fix => {
                 "Install the recovered shared helper and branch patch that make sprite $19 safe on any level."
             }
+            Self::SupportPatchB => {
+                "Install the recovered fixed runtime used by custom level time and separate scroll settings."
+            }
             Self::ExpandedSharedPalettes => {
                 "Install the recovered shared-palette hooks, helpers, expanded table, and the \
                  512-entry per-level custom-palette pointer table."
@@ -63,6 +68,7 @@ pub(super) struct BuiltInRuntimeWorkspace {
     map16_generation: lm_profile::SmwUsV1Map16RuntimeGeneration,
     layer2_generation: lm_profile::SmwUsV1Layer2RuntimeGeneration,
     sprite19_fix_installed: bool,
+    support_patch_b_installed: bool,
 }
 
 impl BuiltInRuntimeWorkspace {
@@ -96,6 +102,10 @@ impl BuiltInRuntimeWorkspace {
             lm_profile::detect_smw_us_v1_sprite19_fix(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?
                 == lm_profile::SmwUsV1Sprite19FixState::Installed;
+        let support_patch_b_installed =
+            lm_profile::detect_smw_us_v1_support_patch_b(project.rom.logical_bytes())
+                .map_err(|error| error.to_string())?
+                == lm_profile::SmwUsV1SupportPatchBState::Installed;
         Ok(Self {
             revision: snapshot.revision,
             runtime: BuiltInRuntime::default(),
@@ -103,6 +113,7 @@ impl BuiltInRuntimeWorkspace {
             map16_generation,
             layer2_generation,
             sprite19_fix_installed,
+            support_patch_b_installed,
         })
     }
 
@@ -123,6 +134,7 @@ impl BuiltInRuntimeWorkspace {
                     == lm_profile::SmwUsV1Layer2RuntimeGeneration::Format103Current
             }
             BuiltInRuntime::Sprite19Fix => self.sprite19_fix_installed,
+            BuiltInRuntime::SupportPatchB => self.support_patch_b_installed,
             _ => false,
         }
     }
@@ -181,6 +193,7 @@ impl BuiltInRuntimeWorkspace {
                 Command::InstallLayer2Runtime { rev: self.revision }
             }
             BuiltInRuntime::Sprite19Fix => Command::InstallSprite19Fix { rev: self.revision },
+            BuiltInRuntime::SupportPatchB => Command::InstallSupportPatchB { rev: self.revision },
             BuiltInRuntime::ExpandedSharedPalettes => {
                 Command::InstallExpandedSharedPalettes { rev: self.revision }
             }
@@ -233,6 +246,11 @@ mod tests {
         assert!(matches!(
             workspace.prepare(app.project_revision()).unwrap(),
             Command::InstallSprite19Fix { rev: 0 }
+        ));
+        workspace.runtime = BuiltInRuntime::SupportPatchB;
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallSupportPatchB { rev: 0 }
         ));
         assert!(workspace.prepare(app.project_revision() + 1).is_err());
 

@@ -84,6 +84,11 @@ impl BuiltInRuntimeInstaller {
                 );
                 ui.selectable_value(
                     &mut workspace.runtime,
+                    BuiltInRuntime::SupportPatchB,
+                    BuiltInRuntime::SupportPatchB.label(),
+                );
+                ui.selectable_value(
+                    &mut workspace.runtime,
                     BuiltInRuntime::ExpandedSharedPalettes,
                     BuiltInRuntime::ExpandedSharedPalettes.label(),
                 );
@@ -501,6 +506,51 @@ mod tests {
 
         installer.open(&app);
         installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Sprite19Fix;
+        assert!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .selection_is_installed()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn support_patch_b_selection_installs_exact_runtime_and_undoes() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::SupportPatchB;
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        app.dispatch(command).unwrap();
+        installer.commit_succeeded();
+
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_support_patch_b(
+                app.project().unwrap().rom.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1SupportPatchBState::Installed
+        );
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        let revision = app.project_revision();
+        assert!(matches!(
+            app.dispatch(Command::InstallSupportPatchB { rev: revision }),
+            Err(lm_app::AppError::SupportPatchBAlreadyInstalled)
+        ));
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::SupportPatchB;
         assert!(
             installer
                 .workspace

@@ -104,6 +104,7 @@ pub enum AppError {
     Layer2RuntimeMigration(lm_profile::SmwUsV1Layer2Format102MigrationError),
     Layer2RuntimeProbe(lm_profile::SmwUsV1Layer2LayoutError),
     Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError),
+    SupportPatchBPlan(lm_profile::SmwUsV1SupportPatchBInstallError),
     SecondaryExitInstallPlan(lm_profile::SecondaryExitInstallBuildError),
     SecondaryExitLfix3AuthenticationMissing,
     RevisionPatch(lm_project::RelocatablePatchError),
@@ -122,6 +123,8 @@ pub enum AppError {
     Layer2RuntimeLegacyMigrationRequired(lm_profile::SmwUsV1Layer2RuntimeGeneration),
     Sprite19FixIdentityMismatch,
     Sprite19FixAlreadyInstalled,
+    SupportPatchBIdentityMismatch,
+    SupportPatchBAlreadyInstalled,
     NativeOverworldPathIdentityMismatch,
     NativeOverworldPathReopenMismatch,
     NativeOverworldPath(lm_project::OverworldPathLinkIoError),
@@ -381,6 +384,18 @@ impl From<lm_profile::SmwUsV1Sprite19FixInstallError> for AppError {
 impl From<lm_profile::SmwUsV1Sprite19FixDetectError> for AppError {
     fn from(value: lm_profile::SmwUsV1Sprite19FixDetectError) -> Self {
         Self::Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError::Detect(value))
+    }
+}
+
+impl From<lm_profile::SmwUsV1SupportPatchBInstallError> for AppError {
+    fn from(value: lm_profile::SmwUsV1SupportPatchBInstallError) -> Self {
+        Self::SupportPatchBPlan(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1SupportPatchBDetectError> for AppError {
+    fn from(value: lm_profile::SmwUsV1SupportPatchBDetectError) -> Self {
+        Self::SupportPatchBPlan(lm_profile::SmwUsV1SupportPatchBInstallError::Detect(value))
     }
 }
 
@@ -781,6 +796,7 @@ impl AppState {
             Command::InstallMap16Runtime { rev } => self.install_map16_runtime(rev)?,
             Command::InstallLayer2Runtime { rev } => self.install_layer2_runtime(rev)?,
             Command::InstallSprite19Fix { rev } => self.install_sprite19_fix(rev)?,
+            Command::InstallSupportPatchB { rev } => self.install_support_patch_b(rev)?,
             Command::InstallExpandedSharedPalettes { rev } => {
                 self.install_native_expanded_shared_palettes(rev)?
             }

@@ -94,6 +94,10 @@ pub enum Command {
     InstallSprite19Fix {
         rev: u64,
     },
+    /// Installs Lunar Magic's recovered fixed-location level support patch B.
+    InstallSupportPatchB {
+        rev: u64,
+    },
     InstallExpandedSharedPalettes {
         rev: u64,
     },
