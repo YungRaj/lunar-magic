@@ -32,8 +32,18 @@ Another gate starts from
 the pristine fixture, uses the snapshot-bound application controller to change a Map16 quadrant,
 expands and installs all native split tables, and reopens the exact definition before launch. A
 gameplay path-link gate changes both the destination endpoint and engine target of a fixed native
-route through the application transaction, reopens the detected runtime table, verifies the
-checksum, and boots that exact output. A
+route through the application transaction, reopens the detected runtime table, and verifies the
+checksum. Unlike the initialization-only gates, it then invokes the explicitly configured
+`SNES9X_GAMEPLAY_DRIVER` without a command shell. The platform driver receives the exact emulator,
+ROM, source, expected destination, snapshot, and screenshot paths. Unix drivers can use Snes9x's
+official `.smv` playback and target-frame switches; GUI ports can provide equivalent native input
+automation. Success requires a new regular bounded Snes9x snapshot and PNG. Rust decodes plain or
+gzip tagged snapshots, requires game mode `$0E`, and verifies Mario's runtime submap, X/Y, and
+grid-aligned X/Y at WRAM `$1F11`, `$1F17-$1F1A`, and `$1F1F-$1F22` exactly equal the edited
+destination. The PNG must decode within Snes9x's supported game dimensions and contain more than
+one color. Thus an idle boot, stale state, fabricated text report, blank screenshot, or traversal
+of the unedited destination cannot pass. `gameplay_evidence_requires_exact_overworld_runtime_destination_and_image`
+and its negative companion test the evidence boundary without a copyrighted fixture. A
 complete-overworld transaction gate additionally expands a pristine
 ROM, installs nine independent tagged payloads and their pointer tables in an otherwise unused
 extension region, semantically reopens every layer/event/endpoint/message/sprite/palette/animation
@@ -56,6 +66,15 @@ SNES9X_BIN=/absolute/path/to/snes9x cargo test -p lm-app --test snes9x_smoke -- 
 `snes9x-gtk`, `snes9x.exe`, or `snes9x-x64.exe` is on `PATH`. CI compiles this same test target on
 all three operating systems without requiring the copyrighted ROM fixture; emulator execution is a
 fixture-owning, opt-in release gate.
+
+The route-traversal gate additionally requires `SNES9X_GAMEPLAY_DRIVER` to name an executable
+platform adapter. Its argument contract is printed directly by the test source and uses only
+separate process arguments: `--emulator`, `--rom`, `--scenario smw-overworld-path-link`, source and
+expected X/Y/submap fields, `--snapshot`, and `--screenshot`. The adapter owns input delivery and
+must return only after Snes9x has written both requested evidence files; Rust, not the adapter,
+decides whether they prove traversal. The test bounds execution to 120 seconds and its child guard
+kills and reaps the driver during timeout, failure, or panic; each adapter remains responsible for
+reaping the emulator process it launches.
 
 The `lm-native` crate also has an opt-in `visual-smoke` feature. With
 `LM_NATIVE_SCREENSHOT_TO` set, it waits eight rendered frames, requests a screenshot through the

@@ -37,10 +37,8 @@ impl From<std::io::Error> for Snes9xTitleRecordingError {
 /// # Errors
 ///
 /// Rejects unsupported snapshot signatures, malformed decimal block lengths, truncation,
-/// missing/short RAM blocks, decompression failures, and malformed recording metadata.
-pub fn decode_snes9x_title_recording(
-    bytes: &[u8],
-) -> Result<TitleScreenRecording, Snes9xTitleRecordingError> {
+/// missing/short RAM blocks, and decompression failures.
+pub fn decode_snes9x_wram(bytes: &[u8]) -> Result<Vec<u8>, Snes9xTitleRecordingError> {
     let decoded;
     let bytes = if bytes.starts_with(&[0x1f, 0x8b, 8]) {
         let mut reader = GzDecoder::new(bytes).take(MAX_INFLATED_LEN + 1);
@@ -81,13 +79,28 @@ pub fn decode_snes9x_title_recording(
         if end > bytes.len() {
             return Err(Snes9xTitleRecordingError::TruncatedBlock { offset });
         }
-        if &header[..3] == b"RAM" && length >= RAM_LEN {
-            return decode_sram(&bytes[payload..payload + RAM_LEN])
-                .map_err(Snes9xTitleRecordingError::Recording);
+        if &header[..3] == b"RAM" {
+            if length < RAM_LEN {
+                return Err(Snes9xTitleRecordingError::TruncatedBlock { offset });
+            }
+            return Ok(bytes[payload..payload + RAM_LEN].to_vec());
         }
         offset = end;
     }
     Err(Snes9xTitleRecordingError::MissingRam)
+}
+
+/// Reads an uncompressed or gzip Snes9x snapshot and extracts its title movement recording.
+///
+/// # Errors
+///
+/// Rejects unsupported snapshot signatures, malformed decimal block lengths, truncation,
+/// missing/short RAM blocks, decompression failures, and malformed recording metadata.
+pub fn decode_snes9x_title_recording(
+    bytes: &[u8],
+) -> Result<TitleScreenRecording, Snes9xTitleRecordingError> {
+    decode_snes9x_wram(bytes)
+        .and_then(|wram| decode_sram(&wram).map_err(Snes9xTitleRecordingError::Recording))
 }
 
 #[cfg(test)]
@@ -112,10 +125,29 @@ mod tests {
     fn tagged_and_gzip_snapshots_match_the_recovered_ram_walk() {
         let recording = TitleScreenRecording::from_bytes(vec![0x12, 0x34, 0x56, 0xff]).unwrap();
         let plain = snapshot(&recording);
+        assert_eq!(decode_snes9x_wram(&plain).unwrap().len(), RAM_LEN);
         assert_eq!(decode_snes9x_title_recording(&plain).unwrap(), recording);
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(&plain).unwrap();
         let gzip = encoder.finish().unwrap();
         assert_eq!(decode_snes9x_title_recording(&gzip).unwrap(), recording);
+    }
+
+    #[test]
+    fn wram_extraction_rejects_short_and_truncated_tagged_blocks() {
+        let mut short = b"#!s9xsnp:0007\nRAM:000003:abc".to_vec();
+        assert!(matches!(
+            decode_snes9x_wram(&short),
+            Err(Snes9xTitleRecordingError::TruncatedBlock { .. })
+        ));
+        short[..3].copy_from_slice(b"bad");
+        assert!(matches!(
+            decode_snes9x_wram(&short),
+            Err(Snes9xTitleRecordingError::Header)
+        ));
+        assert!(matches!(
+            decode_snes9x_wram(b"#!s9xsnp:0007\nCPU:000010:short"),
+            Err(Snes9xTitleRecordingError::TruncatedBlock { .. })
+        ));
     }
 }

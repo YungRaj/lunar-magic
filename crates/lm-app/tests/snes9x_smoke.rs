@@ -1,6 +1,7 @@
 use lm_app::{
     AppState, Command as AppCommand, Map16ControllerEdit, OverworldControllerEdit,
     OverworldLayerId, SmwMainOverworldLayer2Controller, SmwMap16Controller,
+    decode_map16_bitmap_png_image,
 };
 use lm_graphics::{Bgr555, CompactExAnimation, Palette};
 use lm_level::{
@@ -22,6 +23,7 @@ use lm_project::{
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage};
+use lm_title::decode_snes9x_wram;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -142,6 +144,204 @@ fn require_snes9x_initialization(snes9x: &Path, output: &Path) {
     }
     child.0.kill().expect("stop Snes9x smoke process");
     child.0.wait().expect("reap Snes9x smoke process");
+}
+
+const SMW_GAME_MODE: usize = 0x0100;
+const SMW_OVERWORLD_MODE: u8 = 0x0e;
+const SMW_MARIO_SUBMAP: usize = 0x1f11;
+const SMW_MARIO_POSITION: usize = 0x1f17;
+const SMW_MARIO_GRID_POSITION: usize = 0x1f1f;
+const MAX_GAMEPLAY_STATE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_GAMEPLAY_SCREENSHOT_BYTES: u64 = 16 * 1024 * 1024;
+const GAMEPLAY_DRIVER_TIMEOUT: Duration = Duration::from_secs(120);
+
+fn read_regular_bounded(path: &Path, limit: u64, label: &str) -> Vec<u8> {
+    let metadata = fs::symlink_metadata(path)
+        .unwrap_or_else(|error| panic!("read {label} metadata at {}: {error}", path.display()));
+    assert!(
+        metadata.file_type().is_file(),
+        "{label} is not a regular nonsymlink file: {}",
+        path.display()
+    );
+    assert!(
+        metadata.len() <= limit,
+        "{label} exceeds {limit} bytes: {}",
+        path.display()
+    );
+    fs::read(path).unwrap_or_else(|error| panic!("read {label} at {}: {error}", path.display()))
+}
+
+fn validate_overworld_path_gameplay_evidence(
+    snapshot: &[u8],
+    screenshot: &[u8],
+    expected: OverworldEndpoint,
+) {
+    let wram = decode_snes9x_wram(snapshot).expect("decode post-traversal Snes9x WRAM");
+    assert_eq!(wram[SMW_GAME_MODE], SMW_OVERWORLD_MODE);
+    assert_eq!(wram[SMW_MARIO_SUBMAP], expected.submap);
+    assert_eq!(
+        u16::from_le_bytes([wram[SMW_MARIO_POSITION], wram[SMW_MARIO_POSITION + 1],]),
+        expected.x
+    );
+    assert_eq!(
+        u16::from_le_bytes([wram[SMW_MARIO_POSITION + 2], wram[SMW_MARIO_POSITION + 3],]),
+        expected.y
+    );
+    assert_eq!(
+        u16::from_le_bytes([
+            wram[SMW_MARIO_GRID_POSITION],
+            wram[SMW_MARIO_GRID_POSITION + 1],
+        ]),
+        expected.x >> 4
+    );
+    assert_eq!(
+        u16::from_le_bytes([
+            wram[SMW_MARIO_GRID_POSITION + 2],
+            wram[SMW_MARIO_GRID_POSITION + 3],
+        ]),
+        expected.y >> 4
+    );
+
+    let image =
+        decode_map16_bitmap_png_image(screenshot).expect("decode post-traversal Snes9x screenshot");
+    assert!(
+        (256..=512).contains(&image.width) && (224..=478).contains(&image.height),
+        "unexpected Snes9x screenshot dimensions {}x{}",
+        image.width,
+        image.height
+    );
+    let first = image.pixels.first().expect("nonempty Snes9x screenshot");
+    assert!(
+        image.pixels.iter().any(|pixel| pixel != first),
+        "Snes9x screenshot contains only one color"
+    );
+}
+
+fn require_overworld_path_gameplay_evidence(
+    snes9x: &Path,
+    rom: &Path,
+    source: OverworldEndpoint,
+    expected: OverworldEndpoint,
+) {
+    let driver = std::env::var_os("SNES9X_GAMEPLAY_DRIVER")
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| {
+            panic!(
+                "SNES9X_GAMEPLAY_DRIVER must name the platform driver that traverses the route, saves a Snes9x snapshot, and captures a game screenshot"
+            )
+        });
+    let directory = rom.parent().expect("temporary gameplay ROM parent");
+    let snapshot = directory.join("overworld-path-after.frz");
+    let screenshot = directory.join("overworld-path-after.png");
+    let child = Command::new(&driver)
+        .arg("--emulator")
+        .arg(snes9x)
+        .arg("--rom")
+        .arg(rom)
+        .arg("--scenario")
+        .arg("smw-overworld-path-link")
+        .arg("--source-x")
+        .arg(format!("{:04X}", source.x))
+        .arg("--source-y")
+        .arg(format!("{:04X}", source.y))
+        .arg("--source-submap")
+        .arg(format!("{:02X}", source.submap))
+        .arg("--expected-x")
+        .arg(format!("{:04X}", expected.x))
+        .arg("--expected-y")
+        .arg(format!("{:04X}", expected.y))
+        .arg("--expected-submap")
+        .arg(format!("{:02X}", expected.submap))
+        .arg("--snapshot")
+        .arg(&snapshot)
+        .arg("--screenshot")
+        .arg(&screenshot)
+        .stdin(Stdio::null())
+        .spawn()
+        .expect("launch Snes9x gameplay driver");
+    let mut child = ChildGuard(child);
+    let deadline = Instant::now() + GAMEPLAY_DRIVER_TIMEOUT;
+    let status = loop {
+        if let Some(status) = child.0.try_wait().expect("query Snes9x gameplay driver") {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Snes9x gameplay driver exceeded {GAMEPLAY_DRIVER_TIMEOUT:?}"
+        );
+        thread::sleep(Duration::from_millis(100));
+    };
+    assert!(status.success(), "Snes9x gameplay driver failed: {status}");
+    let snapshot = read_regular_bounded(
+        &snapshot,
+        MAX_GAMEPLAY_STATE_BYTES,
+        "Snes9x gameplay snapshot",
+    );
+    let screenshot = read_regular_bounded(
+        &screenshot,
+        MAX_GAMEPLAY_SCREENSHOT_BYTES,
+        "Snes9x gameplay screenshot",
+    );
+    validate_overworld_path_gameplay_evidence(&snapshot, &screenshot, expected);
+}
+
+fn synthetic_overworld_path_evidence(expected: OverworldEndpoint) -> (Vec<u8>, Vec<u8>) {
+    let mut wram = vec![0; 0x2_0000];
+    wram[SMW_GAME_MODE] = SMW_OVERWORLD_MODE;
+    wram[SMW_MARIO_SUBMAP] = expected.submap;
+    wram[SMW_MARIO_POSITION..SMW_MARIO_POSITION + 2].copy_from_slice(&expected.x.to_le_bytes());
+    wram[SMW_MARIO_POSITION + 2..SMW_MARIO_POSITION + 4].copy_from_slice(&expected.y.to_le_bytes());
+    wram[SMW_MARIO_GRID_POSITION..SMW_MARIO_GRID_POSITION + 2]
+        .copy_from_slice(&(expected.x >> 4).to_le_bytes());
+    wram[SMW_MARIO_GRID_POSITION + 2..SMW_MARIO_GRID_POSITION + 4]
+        .copy_from_slice(&(expected.y >> 4).to_le_bytes());
+    let mut snapshot = b"#!s9xsnp:0007\nRAM:131072:".to_vec();
+    snapshot.extend_from_slice(&wram);
+
+    let mut pixels = vec![0; 256 * 224 * 3];
+    pixels[3..6].copy_from_slice(&[0xff, 0x80, 0x40]);
+    let mut screenshot = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut screenshot, 256, 224);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("encode test PNG header");
+        writer
+            .write_image_data(&pixels)
+            .expect("encode test PNG pixels");
+    }
+    (snapshot, screenshot)
+}
+
+#[test]
+fn gameplay_evidence_requires_exact_overworld_runtime_destination_and_image() {
+    let expected = OverworldEndpoint {
+        x: 0x0058,
+        y: 0x0150,
+        submap: 2,
+    };
+    let (snapshot, screenshot) = synthetic_overworld_path_evidence(expected);
+    validate_overworld_path_gameplay_evidence(&snapshot, &screenshot, expected);
+}
+
+#[test]
+#[should_panic]
+fn gameplay_evidence_rejects_a_boot_snapshot_that_did_not_reach_the_destination() {
+    let actual = OverworldEndpoint {
+        x: 0x0058,
+        y: 0x0150,
+        submap: 2,
+    };
+    let (snapshot, screenshot) = synthetic_overworld_path_evidence(actual);
+    validate_overworld_path_gameplay_evidence(
+        &snapshot,
+        &screenshot,
+        OverworldEndpoint {
+            x: actual.x + 0x10,
+            ..actual
+        },
+    );
 }
 
 #[test]
@@ -307,8 +507,8 @@ fn native_main_overworld_layer2_paint_survives_snes9x_initialization() {
 }
 
 #[test]
-#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
-fn native_overworld_path_link_edit_survives_snes9x_initialization() {
+#[ignore = "requires local Snes9x, a platform gameplay driver, and the supplied legally obtained SMW ROM fixture"]
+fn native_overworld_path_link_edit_is_traversed_in_snes9x() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let snes9x = require_snes9x_binary();
     let mut app = AppState::default();
@@ -326,8 +526,15 @@ fn native_overworld_path_link_edit_survives_snes9x_initialization() {
         .links
         .first_mut()
         .expect("native path-link table must not be empty");
-    link.destination.x ^= 1;
-    link.target.x_tile ^= 1;
+    let source = link.source;
+    link.destination = OverworldEndpoint {
+        x: 0x0058,
+        y: 0x0150,
+        submap: 2,
+    };
+    link.target.x_tile = 0x05;
+    link.target.y_tile = 0x15;
+    let destination = link.destination;
     app.dispatch(AppCommand::ReplaceNativeOverworldPathLinks {
         rev: app.project_revision(),
         table: Box::new(expected.clone()),
@@ -361,7 +568,7 @@ fn native_overworld_path_link_edit_survives_snes9x_initialization() {
         .0
         .join("Rust-native-overworld-path-link-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write native-path-edited ROM");
-    require_snes9x_initialization(&snes9x, &output);
+    require_overworld_path_gameplay_evidence(&snes9x, &output, source, destination);
 }
 
 fn smoke_overworld_layout() -> CompleteOverworldRomLayout {

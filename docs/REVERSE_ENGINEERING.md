@@ -2370,10 +2370,15 @@ drives that same application controller over a four-cell paint, commits the ROM,
 ROM alive in the platform-discovered Snes9x executable for eight seconds. Its child guard kills and
 reaps the emulator on success, failure, or panic. This proves editor-to-emulator initialization for
 the authentic runtime storage, but not yet that gameplay navigated to and rendered the four cells.
-The companion `native_overworld_path_link_edit_survives_snes9x_initialization` gate changes a
-destination endpoint and engine target in the fixed gameplay path table through the same
-revision-checked application boundary, semantically reopens the detected table, verifies the
-checksum, and boots that route-edited ROM in Snes9x. Input-driven traversal remains a later gate.
+The companion `native_overworld_path_link_edit_is_traversed_in_snes9x` gate changes a
+destination endpoint and matching engine target in the fixed gameplay path table through the same
+revision-checked application boundary, semantically reopens the detected table, and verifies the
+checksum. It no longer accepts an eight-second idle boot as gameplay evidence. An explicitly
+configured platform driver must traverse the named source route in Snes9x and publish a tagged
+snapshot plus PNG. The shared bounded snapshot decoder then requires overworld game mode `$0E` and
+the exact edited destination in Mario's submap, position, and grid-position WRAM fields; the PNG
+must be a decoded, nonblank Snes9x-sized game image. The driver remains to be supplied per platform,
+so this opt-in gate is structurally strict but is not yet passing on all three release hosts.
 
 Accordingly, `CompleteOverworldRomLayout` remains a profile-described editor/container boundary.
 The ignored Snes9x complete-overworld smoke gate proves allocation, transaction, checksum,
