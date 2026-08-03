@@ -544,6 +544,9 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   bit-preserving typed command-ID/parameter/coordinate/screen-advance changes, with
   shape-changing or terminator-colliding typed edits rejected. Existing screen-jump controls also
   accept exact packed-target edits without changing their recovered encoding variant.
+  Both `LMLEDIT1` and the focused `level-header` command expose the typed four-way Layer 1
+  vertical-scroll mode, reject raw values above 3, and preserve the object tileset plus both
+  unrelated high bits in the shared header byte.
 - A separate bounded `LMM16ED1` parser drives the complete Map16 controller without coupling its
   grammar to level records. Tile, quadrant, and Acts Like changes all pass through whole-workspace
   graph validation and the same profile-wide allocation protection before one prepared commit.

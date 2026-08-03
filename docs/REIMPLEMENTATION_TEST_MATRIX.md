@@ -650,7 +650,7 @@ the complete `$8000` auxiliary payload. Marker-only and modified fixed/payload f
 an authenticated installation must be recognized by the application, native dialog, and built CLI
 without recording a duplicate history entry.
 
-Level property batches edit only the nine proven legacy-header bitfields while preserving every
+Level property batches edit only the eleven proven legacy-header bitfields while preserving every
 unowned bit, and treat expanded-header fields as opaque 16-bit values. Raw Layer 1/2 tile changes
 require explicit caller-provided dimensions because shape is level-mode and revision dependent;
 coordinate edits first prove the existing vector has that exact shape, while whole-map replacement
@@ -660,8 +660,12 @@ dimensions, malformed shapes, and out-of-range coordinates roll back the entire 
 The three-bit default-music selector is independently writable while preserving byte 2's sprite
 tileset and unrelated high bit, and is reachable through both native level editors and terminal
 scripts. The two-bit original time-limit selector is independently writable while preserving both
-palette fields in byte 3 and has the same native and terminal routes. An opt-in Wine gate changes
-all nine fields plus the native sprite header in one revision-bound,
+palette fields in byte 3 and has the same native and terminal routes. The four-way Layer 1
+vertical-scroll selector is reachable through both `level-header layer1-scroll` and `LMLEDIT1`
+`header layer1-scroll`, rejects values above 3 before mutation, and preserves the object tileset
+plus both unrelated high bits in byte 4. Focused shell tests cover checksum-valid reopen, exact
+adjacent-bit preservation, and whole-ROM undo. An opt-in Wine gate changes all recovered fields
+plus the native sprite header in one revision-bound,
 checksum-repaired ROM transaction, reopens the exact Rust result, and requires Lunar Magic 3.63 to
 export the same complete legacy header and sprite stream. Lunar Magic may canonically regenerate
 mode-dependent screen-exit controls, so this header oracle deliberately does not claim byte-exact

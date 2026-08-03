@@ -2,7 +2,8 @@
 
 use lm_app::NativeLevelEdit;
 use lm_level::{
-    LegacyHeaderEdit, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteRecord, SpriteToken,
+    Layer1VerticalScrollMode, LegacyHeaderEdit, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
+    SpriteRecord, SpriteToken,
 };
 use std::fmt;
 
@@ -239,6 +240,15 @@ fn parse_header(
         "sprite-palette" => LegacyHeaderEdit::SpritePalette(value),
         "foreground-palette" => LegacyHeaderEdit::ForegroundPalette(value),
         "object-tileset" => LegacyHeaderEdit::ObjectTileset(value),
+        "layer1-scroll" if value <= 3 => {
+            LegacyHeaderEdit::Layer1VerticalScroll(Layer1VerticalScrollMode::from_raw(value))
+        }
+        "layer1-scroll" => {
+            return Err(LevelEditScriptError::InvalidNumber {
+                line,
+                value: value.to_string(),
+            });
+        }
         _ => {
             return Err(LevelEditScriptError::InvalidField {
                 line,
@@ -355,6 +365,7 @@ mod tests {
     fn parses_every_native_controller_edit_shape() {
         let script = "LMLEDIT1\n\
             header mode 03\n\
+            header layer1-scroll 02\n\
             object insert 0 010001\n\
             object replace 0 020001\n\
             object move 0 1\n\
@@ -375,21 +386,27 @@ mod tests {
             sprite relocate-expanded 0 04 03 00A7\n\
             sprite remove 1\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 20);
+        assert_eq!(edits.len(), 21);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
-        assert!(matches!(edits[4], NativeLevelEdit::Objects(_)));
+        assert_eq!(
+            edits[1],
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::Layer1VerticalScroll(
+                Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying,
+            ))
+        );
+        assert!(matches!(edits[5], NativeLevelEdit::Objects(_)));
         assert!(matches!(
-            edits[5],
+            edits[6],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetCommandId { index: 0, command_id: 0x22 }]
         ));
         assert!(matches!(
-            edits[6],
+            edits[7],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetParameter { index: 0, parameter: 0x7f }]
         ));
         assert!(matches!(
-            edits[7],
+            edits[8],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetCoordinateNibbles {
                     index: 0,
@@ -397,17 +414,17 @@ mod tests {
                 }]
         ));
         assert!(matches!(
-            edits[8],
+            edits[9],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetAdvancesScreen { index: 0, advances: true }]
         ));
         assert!(matches!(
-            edits[9],
+            edits[10],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetScreenJumpTarget { index: 0, packed_target: 0x0f1e }]
         ));
         assert!(matches!(
-            edits[10],
+            edits[11],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::RelocateOrdinary {
                     index: 0,
@@ -415,13 +432,13 @@ mod tests {
                     coordinates: ObjectCoordinateNibbles { first: 0x0c, second: 0x0b }
                 }]
         ));
-        assert!(matches!(edits[11], NativeLevelEdit::SetSpriteHeader(0x10)));
+        assert!(matches!(edits[12], NativeLevelEdit::SetSpriteHeader(0x10)));
         assert!(matches!(
-            edits[17],
+            edits[18],
             NativeLevelEdit::SortLegacySpritesByScreen { selected: 0 }
         ));
         assert!(matches!(
-            edits[18],
+            edits[19],
             NativeLevelEdit::RelocateExpandedSprite {
                 selected: 0,
                 screen: 4,
@@ -430,7 +447,7 @@ mod tests {
             }
         ));
         assert!(matches!(
-            edits[14],
+            edits[15],
             NativeLevelEdit::InsertSprite {
                 token: SpriteToken::Control(0x90),
                 ..
@@ -449,6 +466,7 @@ mod tests {
             "LMLEDIT1\nsprite insert 0 control 7f\n",
             "LMLEDIT1\nsprite insert 0 mystery 00\n",
             "LMLEDIT1\nunknown x\n",
+            "LMLEDIT1\nheader layer1-scroll 04\n",
         ] {
             assert!(parse(script).is_err(), "accepted {script:?}");
         }
@@ -472,7 +490,7 @@ mod tests {
     #[test]
     fn parses_recovered_extent_tileset_music_and_time_header_fields() {
         let edits = parse(
-            "LMLEDIT1\nheader last-screen 1f\nheader sprite-tileset 0f\nheader music 06\nheader time 02\nheader object-tileset 0a\n",
+            "LMLEDIT1\nheader last-screen 1f\nheader sprite-tileset 0f\nheader music 06\nheader time 02\nheader object-tileset 0a\nheader layer1-scroll 03\n",
         )
         .unwrap();
         assert_eq!(
@@ -483,6 +501,9 @@ mod tests {
                 NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::DefaultMusicSelector(6)),
                 NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::TimeLimitSelector(2)),
                 NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ObjectTileset(0x0a)),
+                NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::Layer1VerticalScroll(
+                    Layer1VerticalScrollMode::NoneVerticalOrHorizontal,
+                )),
             ]
         );
     }

@@ -306,6 +306,71 @@ fn terminal_level_header_edit_commits_reloads_and_undoes() {
 }
 
 #[test]
+fn terminal_layer1_scroll_header_edit_preserves_adjacent_bits_reopens_and_undoes() {
+    let profile = lm_profile::test_support::profile();
+    let mut app = AppState::default();
+    app.load_rom(profiled_rom(&profile)).unwrap();
+    app.dispatch(Command::InstallRevisionProfile(Box::new(profile.clone())))
+        .unwrap();
+    let original = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    let original_byte = original.layer1.header.encoded()[4];
+
+    edit_level_header(
+        &mut app,
+        shell_command::LevelHeaderField::Layer1VerticalScroll,
+        2,
+        0x1_0000..0x1_8000,
+    )
+    .unwrap();
+    let loaded = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    assert_eq!(
+        loaded.layer1.header.layer1_vertical_scroll(),
+        lm_level::Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying
+    );
+    assert_eq!(
+        loaded.layer1.header.encoded()[4] & !0x30,
+        original_byte & !0x30
+    );
+    assert!(app
+        .project()
+        .unwrap()
+        .identity
+        .as_ref()
+        .unwrap()
+        .checksum_matches());
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+            .unwrap(),
+        original
+    );
+    assert!(edit_level_header(
+        &mut app,
+        shell_command::LevelHeaderField::Layer1VerticalScroll,
+        4,
+        0x1_0000..0x1_8000,
+    )
+    .is_err());
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+            .unwrap(),
+        original
+    );
+}
+
+#[test]
 fn terminal_expanded_settings_batch_is_atomic_checksum_valid_and_undoable() {
     let profile = lm_profile::test_support::profile();
     let layout = profile.expanded_settings.unwrap();
@@ -410,6 +475,7 @@ fn terminal_level_edit_script_covers_objects_and_native_sprite_tokens_atomically
         &script,
         "LMLEDIT1\n\
          header background-palette 05\n\
+         header layer1-scroll 02\n\
          object replace 0 020001\n\
          object insert 1 030001\n\
          object move 1 0\n\
@@ -436,6 +502,10 @@ fn terminal_level_edit_script_covers_objects_and_native_sprite_tokens_atomically
         .unwrap();
     assert_eq!(loaded.layer1.header.background_palette(), 5);
     assert_eq!(
+        loaded.layer1.header.layer1_vertical_scroll(),
+        lm_level::Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying
+    );
+    assert_eq!(
         loaded.layer1.objects.records[0].encoded(),
         [0x8e, 0x1d, 0x7f]
     );
@@ -452,6 +522,10 @@ fn terminal_level_edit_script_covers_objects_and_native_sprite_tokens_atomically
         .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
         .unwrap();
     assert_eq!(restored.layer1.header.background_palette(), 0);
+    assert_eq!(
+        restored.layer1.header.layer1_vertical_scroll(),
+        lm_level::Layer1VerticalScrollMode::None
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 

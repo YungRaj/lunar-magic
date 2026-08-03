@@ -51,6 +51,14 @@ pub(crate) fn edit_level_header(
             LegacyHeaderEdit::ForegroundPalette(value)
         }
         shell_command::LevelHeaderField::ObjectTileset => LegacyHeaderEdit::ObjectTileset(value),
+        shell_command::LevelHeaderField::Layer1VerticalScroll => {
+            if value > 3 {
+                return Err(format!("Layer 1 vertical-scroll mode {value} exceeds 3").into());
+            }
+            LegacyHeaderEdit::Layer1VerticalScroll(lm_level::Layer1VerticalScrollMode::from_raw(
+                value,
+            ))
+        }
     };
     commit_level_edits(
         app,

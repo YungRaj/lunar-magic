@@ -30,6 +30,7 @@ pub enum LevelHeaderField {
     SpritePalette,
     ForegroundPalette,
     ObjectTileset,
+    Layer1VerticalScroll,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -374,6 +374,7 @@ pub(super) fn parse_level_header_edit(argument: &str) -> Result<ShellCommand, Sh
         "sprite-palette" => LevelHeaderField::SpritePalette,
         "foreground-palette" => LevelHeaderField::ForegroundPalette,
         "object-tileset" => LevelHeaderField::ObjectTileset,
+        "layer1-scroll" => LevelHeaderField::Layer1VerticalScroll,
         unknown => return Err(ShellCommandError::InvalidLevelHeaderField(unknown.into())),
     };
     let value = u8::try_from(hex_value(value, "level-header")?).map_err(|_| {
@@ -382,6 +383,12 @@ pub(super) fn parse_level_header_edit(argument: &str) -> Result<ShellCommand, Sh
             value: (*value).into(),
         }
     })?;
+    if field == LevelHeaderField::Layer1VerticalScroll && value > 3 {
+        return Err(ShellCommandError::InvalidRange {
+            command: "level-header",
+            value: value.to_string(),
+        });
+    }
     Ok(ShellCommand::EditLevelHeader {
         field,
         value,
