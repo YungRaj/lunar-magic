@@ -14,7 +14,7 @@ const LEVEL_MODE_LAYER2_RENDER: [u8; 32] = [
 ];
 
 /// Editor screen counts returned by `ConfigureLevelLayoutDimensions` at Lunar Magic 3.63
-/// address `$00421D00` for the ordinary (non-reduced Layer 2) configuration.
+/// address `$00421690` for the ordinary (non-reduced Layer 2) configuration.
 const LEVEL_MODE_EDITOR_MAJOR_SCREENS: [u8; 32] = [
     32, 16, 16, 13, 13, 14, 14, 14, 14, 0, 28, 0, 32, 28, 32, 16, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 32, 16,
@@ -46,6 +46,19 @@ pub const fn smw_us_v1_level_mode(index: u8) -> VanillaLevelMode {
     }
 }
 
+/// Returns the physical Map16-cache base used for the secondary level layer.
+///
+/// `ConfigureLevelLayoutDimensions` partitions the shared `$3800`-word cache at screen 16 for
+/// ordinary `$1B0`-stride layouts and at screen 14 for the mixed/vertical `$200`-stride layouts.
+/// The latter family comprises modes `$05`-`$08`, `$0A`, and `$0D`.
+#[must_use]
+pub const fn smw_us_v1_secondary_layer_cache_base_cell(index: u8) -> usize {
+    match index & 0x1f {
+        0x05..=0x08 | 0x0a | 0x0d => 14 * 0x200,
+        _ => 16 * 0x1b0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -66,5 +79,24 @@ mod tests {
         assert_eq!(smw_us_v1_level_mode(0x0a).editor_major_screens, 28);
         assert_eq!(smw_us_v1_level_mode(0x0d).editor_major_screens, 28);
         assert_eq!(smw_us_v1_level_mode(0x23), smw_us_v1_level_mode(3));
+
+        for mode in [0x05, 0x06, 0x07, 0x08, 0x0a, 0x0d] {
+            assert_eq!(
+                smw_us_v1_secondary_layer_cache_base_cell(mode),
+                0x1c00,
+                "mode {mode:02X}"
+            );
+        }
+        for mode in [0x00, 0x01, 0x02, 0x03, 0x04, 0x0c, 0x0e, 0x0f, 0x1e, 0x1f] {
+            assert_eq!(
+                smw_us_v1_secondary_layer_cache_base_cell(mode),
+                0x1b00,
+                "mode {mode:02X}"
+            );
+        }
+        assert_eq!(
+            smw_us_v1_secondary_layer_cache_base_cell(0x25),
+            smw_us_v1_secondary_layer_cache_base_cell(0x05)
+        );
     }
 }

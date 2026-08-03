@@ -11629,6 +11629,8 @@ mod tests {
             )
             .unwrap();
         let vertical = lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode()).vertical;
+        let secondary_base_cell =
+            lm_profile::smw_us_v1_secondary_layer_cache_base_cell(level.layer1.header.level_mode());
         if std::env::var_os("LM_DUMP_OBJECTS").is_some() {
             eprintln!(
                 "header={:02X?} mode={:02X} background-palette={} foreground-palette={} sprite-palette={} background-color={} object-tileset={}",
@@ -11750,10 +11752,6 @@ mod tests {
             )
             .ok()
             .and_then(|layer2| {
-                if vertical {
-                    // The secondary vertical-plane base has not yet been authenticated.
-                    return None;
-                }
                 let lm_level::NativeLayer2Data::Objects(layer2) = layer2 else {
                     return None;
                 };
@@ -11779,7 +11777,7 @@ mod tests {
                     }
                 }
                 let layer2_layout = lm_render::NativeLevelMap16Layout {
-                    base_cell: 16 * 0x1b0,
+                    base_cell: secondary_base_cell,
                     ..layout
                 };
                 Some((
@@ -11797,7 +11795,7 @@ mod tests {
             });
         if let Some((layer2, _)) = layer2_rendered.as_ref() {
             let layer2_layout = lm_render::NativeLevelMap16Layout {
-                base_cell: 16 * 0x1b0,
+                base_cell: secondary_base_cell,
                 ..layout
             };
             let layer2_mismatches = (0..layout.width)
@@ -11828,7 +11826,16 @@ mod tests {
                     layer2_rendered
                         .as_ref()
                         .map_or(VANILLA_EMPTY_MAP16_TILE, |(layer2, _)| {
-                            layer2.get(layout, x, y).unwrap()
+                            layer2
+                                .get(
+                                    lm_render::NativeLevelMap16Layout {
+                                        base_cell: secondary_base_cell,
+                                        ..layout
+                                    },
+                                    x,
+                                    y,
+                                )
+                                .unwrap()
                         })
                 };
                 let expected = live.get(layout, x, y).unwrap();
@@ -11871,7 +11878,7 @@ mod tests {
             let mut layer2_owners = vec![None; layout.width * layout.height];
             if let Some((_, layer2_objects)) = layer2_rendered.as_ref() {
                 let layer2_layout = lm_render::NativeLevelMap16Layout {
-                    base_cell: 16 * 0x1b0,
+                    base_cell: secondary_base_cell,
                     ..layout
                 };
                 let mut previous =

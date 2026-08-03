@@ -268,6 +268,13 @@ The `0041e3d0`–`00422260` range identifies filename/common-dialog helpers, in-
 
 The `00422330`–`00424210` range consists of fixed and lookup-driven standard-object renderers. Names currently describe proven geometry and tile-selection behavior (single cells, horizontal/vertical pairs, 2x2, 3x3, 4x4, and composite patterns); comments explicitly mark exact in-game object identities as unproven where dispatcher evidence is still pending. The `0x3800`-cell Map16 tile/flag/source arrays and `0x4080`-entry modified-cell list are typed and named.
 
+`ConfigureLevelLayoutDimensions` at `00421690` also proves the physical split of that shared
+Map16 cache. Ordinary `$1B0`-stride secondary layers start at screen 16 (`$1B00`). Modes `$05`–
+`$08`, `$0A`, and `$0D` instead start at screen 14 with a `$200` stride (`$1C00`); this includes
+the vertical layouts previously omitted from the Rust live-cache comparison. The function writes
+those bases into both its rendering offset tables and the later cache traversal table, so they are
+layout state rather than a per-object adjustment.
+
 The `00424310`–`00427cc0` range continues the standard-object renderer family. It now identifies packed/conditional lookup patterns, boundary-aware 2x2 and 2x3 patterns, command-mapped and rectangular fills, and five variable-height edge/column renderers. The latter are named from proven geometry and tile families; exact vanilla SMW object identities remain explicitly marked medium-confidence pending dispatcher-table recovery.
 
 The `00427f50`–`0042fbf0` range covers additional adaptive standard-object geometry: four-column and tapered objects, top-row/remaining-row fills, capped columns, repeated 16x6 pattern strips, alternating columns and pairs, expanding edge-bounded shapes, page-1 bordered rectangles and wedges, cyclic two-column objects, and complementary ascending/descending diagonal line and edge-pair renderers. Names and comments distinguish directly proven geometry/tile behavior from still-unproven vanilla object identities.
