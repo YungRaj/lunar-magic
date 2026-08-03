@@ -561,6 +561,12 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   controller layout is rebound to the detected LoROM/ExLoROM mapper before native GUI or terminal
   decode because the recovered physical entrance planes remain at the same PC offsets after ROM
   expansion.
+- Global native secondary exits use their own bounded `LMSEXED1` automation grammar over the
+  detected 8,192-entry table. Ordered set, clear-current, and clear-all operations stage on a
+  private clone and validate the complete six-plane encoding before the existing application
+  replacement command can install or update the authenticated runtime. This keeps global table
+  ownership out of per-level stream controllers while sharing their revision, checksum, history,
+  and dirty-state policy.
 - A separate bounded `LMM16ED1` parser drives the complete Map16 controller without coupling its
   grammar to level records. Tile, quadrant, and Acts Like changes all pass through whole-workspace
   graph validation and the same profile-wide allocation protection before one prepared commit.

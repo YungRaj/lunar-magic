@@ -1167,6 +1167,15 @@ fn entrance_edit_preserves_script_path_spaces() {
 }
 
 #[test]
+fn secondary_exit_edit_preserves_script_path_spaces() {
+    assert_eq!(
+        parse("secondary-exit-edit scripts/My secondary exits.lmsexed").unwrap(),
+        ShellCommand::EditSecondaryExits("scripts/My secondary exits.lmsexed".into())
+    );
+    assert!(parse("secondary-exit-edit").is_err());
+}
+
+#[test]
 fn graphics_recompression_parses_a_typed_codec_and_hex_range() {
     assert_eq!(
         parse("graphics-recompress lz3 10000 20000").unwrap(),

@@ -171,6 +171,12 @@ failure-atomic controller batch. The scroll edit preserves the main-position low
 `$10+` presets and unavailable midway tables roll back earlier commands, LoROM/ExLoROM layouts bind
 to the detected mapper, and the shell test proves checksum-valid reopen plus byte-exact ROM undo.
 
+The secondary-exit row now also has strict `LMSEXED1` automation for semantic set, clear-current,
+and clear-all operations. Commands stage in order on the complete detected 8,192-entry table,
+validate all six native planes before dispatch, update an authentic installed runtime with a valid
+checksum, reopen the exact result, and undo to the original ROM byte-for-byte. A late invalid
+destination proves earlier staged clearing cannot escape.
+
 ## Current critical path
 
 The fastest route to a broadly usable editor is:

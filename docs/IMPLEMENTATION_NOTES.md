@@ -1068,6 +1068,16 @@ midway command requires strict installed-hook/table authentication. The physical
 uses the detected LoROM or ExLoROM mapper so expanded projects do not fail the native editor's
 entrance controller on a stale pristine-layout mapper tag.
 
+The complete 8,192-entry native secondary-exit table has a separate `secondary-exit-edit SCRIPT`
+route with bounded `LMSEXED1` input. Ordered `set INDEX DESTINATION POSITION SCREEN X Y
+DESTINATION_FLAGS X_FLAGS ADDITIONAL`, `clear INDEX`, and `clear-all` commands operate on one
+private detected-table clone. Indexes are limited to `$0000..=$1FFF`; the complete staged table is
+then passed through native six-plane validation, which enforces destination `$0000..=$1FFF`,
+screen `$00..=$1F`, X/Y `$00..=$0F`, and the recovered flag-bit ownership. Only after that check
+does the existing application command install or update the authenticated runtime in one
+revision-bound checksum-repaired transaction. Thus a late malformed entry cannot publish an
+earlier clear or edit, and `clear-all` can be followed by selected replacements in one operation.
+
 The whole script stages on a cloned controller. Both object and revision-sized sprite streams are
 encoded and reparsed for exact equality before commit, closing the gap where universally bounded
 raw records could still disagree with their native command/length tables. A late command,

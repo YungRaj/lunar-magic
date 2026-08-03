@@ -1,6 +1,7 @@
 use super::*;
 use crate::editor_shell::{
     execute_entrance_script, execute_native_assets_script, execute_owned_editor_script,
+    execute_secondary_exit_script,
 };
 use lm_project::{
     PaletteSaveOptions, PayloadReadPolicy, RatsOwnershipManifest, RatsOwnershipManifestFile,
@@ -736,6 +737,64 @@ fn terminal_entrance_batch_preserves_scroll_nibble_reopens_checksum_and_undoes()
     .unwrap();
     assert!(execute_entrance_script(&mut app, &script).is_err());
     assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn terminal_secondary_exit_set_clear_all_reopens_checksum_and_undoes() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let original =
+        fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc")).unwrap();
+    let mut app = AppState::default();
+    app.load_rom(original.clone()).unwrap();
+    let directory =
+        std::env::temp_dir().join(format!("lm-app-secondary-exit-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    let script = directory.join("secondary exit edits.lmsexed");
+    fs::write(
+        &script,
+        "LMSEXED1\nclear-all\nset 0400 0105 02 03 04 05 20 80 07\nclear 0400\nset 0401 0106 02 03 04 05 20 80 07\n",
+    )
+    .unwrap();
+    execute_secondary_exit_script(&mut app, &script).unwrap();
+    let loaded = app
+        .project()
+        .unwrap()
+        .load_secondary_exit_table_detected(lm_profile::smw_us_v1_secondary_exit_locator())
+        .unwrap();
+    assert_eq!(loaded.table.entries[0], lm_level::SecondaryExit::default());
+    assert_eq!(loaded.table.entries[0x400], lm_level::SecondaryExit::default());
+    assert_eq!(
+        loaded.table.entries[0x401],
+        lm_level::SecondaryExit {
+            destination_level: 0x106,
+            position_and_method: 2,
+            screen: 3,
+            x: 4,
+            y: 5,
+            destination_flags: 0x20,
+            x_and_overworld_flags: 0x80,
+            additional_flags: 7,
+        }
+    );
+    assert!(app
+        .project()
+        .unwrap()
+        .identity
+        .as_ref()
+        .unwrap()
+        .checksum_matches());
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), original);
+
+    fs::write(
+        &script,
+        "LMSEXED1\nclear-all\nset 0401 2000 02 03 04 05 20 80 07\n",
+    )
+    .unwrap();
+    assert!(execute_secondary_exit_script(&mut app, &script).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), original);
     fs::remove_dir_all(directory).unwrap();
 }
 

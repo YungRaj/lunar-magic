@@ -102,6 +102,7 @@ pub enum ShellCommand {
     LunarMagicMetadataImport(PathBuf),
     NativeSecondaryExitExport(PathBuf),
     NativeSecondaryExitImport(PathBuf),
+    EditSecondaryExits(PathBuf),
     NativeOverworldWarpExport(PathBuf),
     NativeOverworldWarpImport(PathBuf),
     NativeOverworldLevelNameExport(PathBuf),
@@ -340,6 +341,10 @@ pub fn parse(line: &str) -> Result<ShellCommand, ShellCommandError> {
         "entrance-edit" => Ok(ShellCommand::EditEntrances(path_argument(
             argument,
             "entrance-edit",
+        )?)),
+        "secondary-exit-edit" => Ok(ShellCommand::EditSecondaryExits(path_argument(
+            argument,
+            "secondary-exit-edit",
         )?)),
         "expanded-settings-word" => parse_expanded_settings_word(argument),
         "expanded-settings-edit" => Ok(ShellCommand::EditExpandedSettings(path_argument(

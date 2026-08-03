@@ -1,6 +1,7 @@
 use crate::{
     entrance_edit_script, exanimation_edit_script, graphics_edit_script, level_edit_script,
-    map16_edit_script, overworld_edit_script, palette_edit_script, shell_command,
+    map16_edit_script, overworld_edit_script, palette_edit_script, secondary_exit_edit_script,
+    shell_command,
 };
 use lm_app::{
     AppState, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit, RevisionProfileControllers,
@@ -125,6 +126,35 @@ pub(crate) fn execute_entrance_script(
     controller.apply_edits(&edits)?;
     let prepared = controller.prepare_commit("Apply semantic entrance-edit script")?;
     app.dispatch(prepared.into_command())?;
+    println!("{}", app.status);
+    Ok(())
+}
+
+pub(crate) fn execute_secondary_exit_script(
+    app: &mut AppState,
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let text = read_bounded_utf8(
+        path,
+        secondary_exit_edit_script::MAX_SCRIPT_LEN,
+        "secondary-exit-edit",
+    )?;
+    let edits = secondary_exit_edit_script::parse(&text)?;
+    if edits.is_empty() {
+        return Err("secondary-exit edit script contains no commands".into());
+    }
+    let revision = app.project_revision();
+    let mut table = app
+        .project()
+        .ok_or("no ROM project is open")?
+        .load_secondary_exit_table_detected(lm_profile::smw_us_v1_secondary_exit_locator())?
+        .table;
+    secondary_exit_edit_script::apply(&mut table, &edits)?;
+    table.encode()?;
+    app.dispatch(lm_app::Command::ReplaceNativeSecondaryExits {
+        rev: revision,
+        table: Box::new(table),
+    })?;
     println!("{}", app.status);
     Ok(())
 }
