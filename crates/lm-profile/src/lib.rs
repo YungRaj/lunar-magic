@@ -38,6 +38,7 @@ mod overworld_event;
 mod overworld_event_number;
 mod overworld_event_tilemap;
 mod overworld_level_name;
+mod overworld_main_layer2;
 mod overworld_message_patch;
 mod overworld_path;
 mod overworld_path_patch;
@@ -310,6 +311,15 @@ pub use overworld_level_name::{
     SMW_US_V1_OVERWORLD_NAME_TEXT_OFFSET, smw_us_v1_overworld_level_name_allocation_policy,
     smw_us_v1_overworld_level_name_installation_plan, smw_us_v1_overworld_level_name_locator,
     smw_us_v1_overworld_level_name_runtime,
+};
+pub use overworld_main_layer2::{
+    LoadedSmwUsV1MainOverworldLayer2, SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK,
+    SMW_US_V1_MAIN_OVERWORLD_LAYER2_BYTES, SMW_US_V1_MAIN_OVERWORLD_LAYER2_HEIGHT,
+    SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD, SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD,
+    SMW_US_V1_MAIN_OVERWORLD_LAYER2_PRISTINE_HIGH, SMW_US_V1_MAIN_OVERWORLD_LAYER2_PRISTINE_LOW,
+    SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH, SmwUsV1MainOverworldLayer2Error,
+    SmwUsV1MainOverworldLayer2SaveOptions, SmwUsV1MainOverworldLayer2Storage,
+    load_smw_us_v1_main_overworld_layer2, save_smw_us_v1_main_overworld_layer2,
 };
 pub use overworld_message_patch::{
     LoadedSmwUsV1OverworldMessages, OverworldMessagePatchBuildError,

@@ -2317,12 +2317,24 @@ commits those same subsystems transactionally. `SaveActiveOverworldEditorDataSet
 only selects the active editor backing set; its name does not establish a standalone ROM format.
 
 `LoadInterleavedByteTableStreams` (`004B5CF0`) and `CommitInterleavedByteTableStreams`
-(`004B5E00`) split a `$4000`-byte editor table into even and odd `$2000`-byte streams, compress them
-independently, allocate them together, and publish two packed pointers. Those routines also
-participate in the already-authenticated special-event runtime family, so their shape alone is
-insufficient to identify the main Layer 2 map. A game-facing main-map implementation must also
-prove the caller's working-buffer identity, the active SMW-US descriptor operands, the installed
-loader bytes, and a gameplay read of edited cells.
+(`004B5E00`) split the `$4000`-byte Layer 2 table into even and odd `$2000`-byte streams, compress
+them independently, allocate them together, and publish two packed pointers. The call-site
+assembly removes the prior ambiguity: `LoadAllOverworldEditorData` preserves its EAX argument in
+EDI before calling the loader, and `InitializeOverworldEditorModel` supplies `00D94D98`; the save
+entry passes that same address back to the paired commit routine. On SMW US revision 0 the
+descriptor fields resolve to the game loader operands at logical offsets `$025C72`, `$025C79`, and
+`$025C8D`. They initially address the two LC_RLE2 streams at `$022533` and `$02402B`, which the
+game's `$04DC6A` loader materializes at WRAM `$7F4000-$7F7FFF`. Lunar Magic's authentic transfer
+oracle relocates the pair together under one exact RATS owner while retaining identical decoded
+tile words.
+
+Rust now exposes this boundary as `load_smw_us_v1_main_overworld_layer2` and
+`save_smw_us_v1_main_overworld_layer2`. The typed loader accepts only the exact pristine pair or a
+single exact RATS owner, validates the encoded plane boundary and complete owner extent, and
+materializes exactly 128x64 little-endian tile words. The saver rejects every other shape, keeps
+both streams in one LoROM bank, updates both runtime operands in one transaction, repairs the SNES
+checksum, and semantically reopens the edited cell. This authenticates playable Layer 2 storage;
+Layer 1 and an emulator trace that observes the edited Layer 2 cell remain separate gates.
 
 Accordingly, `CompleteOverworldRomLayout` remains a profile-described editor/container boundary.
 The ignored Snes9x complete-overworld smoke gate proves allocation, transaction, checksum,
@@ -2524,18 +2536,19 @@ models it as `ExAnimationSlotOptionTable`, validates the exact seven-byte
 shape, preserves low nibbles, relocates it transactionally, and observes all
 35 semantic/preserved fields independently.
 
-## Native `-TransferOverworld` Map16 allocations
+## Native `-TransferOverworld` Layer 2 and Map16 allocations
 
 Tracing `SaveAllOverworldEditorData` (`004BF550`) through the live 3.63
 decompilation resolves the first allocations in the pristine-US Wine oracle.
 They precede the overworld-specific event/text allocations because the native
-operation saves Map16 support tables in the same transaction:
+operation saves the playable Layer 2 base and Map16 support tables in the same transaction:
 
-- Payload `0x80008`, length `0x2F28`: the 16 KiB Map16 definition table. Lunar
+- Payload `0x80008`, length `0x2F28`: the 16 KiB playable overworld Layer 2 table. Lunar
   Magic splits even and odd bytes into two 8 KiB planes, sized-RLE encodes the
   planes back-to-back, and interleaves them on load. The fixture's planes
   consume 6514 and 5558 encoded bytes. Rust exposes this as
-  `decode_interleaved_sized_rle_prefix`.
+  `decode_interleaved_sized_rle_prefix`; the installed game loader operands point directly at
+  these two streams.
 - Payload `0x82F38`, length `0x0B44`: 2884 raw low bytes of the trimmed expanded
   Map16 acts-like table.
 - Payload `0x83A84`, length `0x0604`: the corresponding compressed high-byte
@@ -2551,10 +2564,9 @@ operation saves Map16 support tables in the same transaction:
 - Payloads `0x8483A` and `0x8489A`, length `0x0058` each: the corresponding
   44 little-endian source and destination tile words.
 
-This corrects the provisional hypothesis that these four large owners held
-overworld layer, palette, sprite, or ExAnimation data. They are Map16
-definitions, acts-like data, and remap metadata installed by the top-level
-overworld save. `LoadMap16RemapRangeGroups` (`004B6750`) validates both words
+This corrects the provisional hypothesis that all four large owners were Map16-only data. The
+first is the playable Layer 2 base; the following owners are acts-like and remap metadata installed
+by the top-level overworld save. `LoadMap16RemapRangeGroups` (`004B6750`) validates both words
 of every four-byte pair against the 16K Map16 bound. The current-format
 `LoadGroupedMap16RemapRecords` (`004B74E0`) reconstructs linked editor records
 from the three parallel planes; flag bit 0 selects the 16K-to-16K form,
