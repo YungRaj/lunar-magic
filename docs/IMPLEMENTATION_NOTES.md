@@ -3260,7 +3260,9 @@ bit. Multiple exits populate a 32-slot table in source order, so duplicate scree
 record and the surviving tail is emitted in ascending absolute-screen order. The shared placement
 walker applies control advances before later ordinary objects, while installed MWL import performs
 the same stream-state rewrite without sorting ordinary object order or treating the editor-only
-marker itself as artwork.
+marker itself as artwork. Two additional live probes establish that consecutive exit advances
+accumulate before the next visible object and that an earlier duplicate's advance remains part of
+the stream state even when a later same-screen record wins the keyed exit slot.
 Raw MWL screen-exit shape is also semantic at this boundary. Any record lacking required flag
 `$0400` gains both default flag `$0100` and `$0400`, so a live zero-high-byte case becomes `$0534`.
 Its original compact or extended representation is retained, while already-flagged records keep

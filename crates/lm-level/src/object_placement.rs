@@ -260,6 +260,36 @@ mod tests {
     }
 
     #[test]
+    fn imported_exit_advances_accumulate_independently_of_keyed_deduplication() {
+        let mut stream = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0x82, 0, 2, 2, 4]).unwrap(),
+                ObjectRecord::new(vec![2, 0, 2, 1, 4]).unwrap(),
+                ObjectRecord::new(vec![0x83, 0, 2, 3, 4]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+        };
+
+        stream.canonicalize_import_controls(false);
+
+        assert_eq!(stream.records.len(), 4);
+        assert_eq!(stream.records[0].screen_jump().unwrap().packed_target, 2);
+        assert!(stream.records[1].is_positioned_object());
+        assert!(!stream.records[1].advances_screen());
+        assert_eq!(
+            stream.records[2..]
+                .iter()
+                .map(|record| {
+                    let exit = record.screen_exit().unwrap();
+                    (exit.screen, exit.destination_and_flags)
+                })
+                .collect::<Vec<_>>(),
+            [(2, 0x0401), (3, 0x0403)]
+        );
+        assert_eq!(stream.native_placements()[0].screen, 2);
+    }
+
+    #[test]
     fn imported_custom_time_is_canonicalized_after_the_screen_exit_tail() {
         let mut stream = ObjectStream {
             records: vec![

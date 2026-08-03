@@ -833,6 +833,15 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
             1,
         ),
         (
+            "two-advancing-exits-followed-by-object",
+            vec![
+                ObjectRecord::new(vec![0x80, 0, 2, 0, 4]).unwrap(),
+                ObjectRecord::new(vec![0x81, 0, 2, 1, 4]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+            2,
+        ),
+        (
             "out-of-order-exits",
             vec![
                 ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
@@ -849,6 +858,15 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
                 ObjectRecord::new(vec![0, 0, 2, 1, 4]).unwrap(),
             ],
             0,
+        ),
+        (
+            "duplicate-exit-retains-earlier-advance",
+            vec![
+                ObjectRecord::new(vec![0x82, 0, 2, 2, 4]).unwrap(),
+                ObjectRecord::new(vec![2, 0, 2, 1, 4]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+            1,
         ),
         (
             "noncanonical-exit-flags",
