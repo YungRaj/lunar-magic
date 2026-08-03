@@ -801,15 +801,21 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
     combined_control_tail
         .set_custom_time(false, Some(CustomTimeSettings::new(0x0abc, true).unwrap()))
         .unwrap();
-    let custom_time_record = |settings| {
+    let custom_time_record = |vertical, settings| {
         let mut stream = ObjectStream::default();
-        stream.set_custom_time(false, Some(settings)).unwrap();
+        stream.set_custom_time(vertical, Some(settings)).unwrap();
         stream.records.pop().unwrap()
     };
     let duplicate_custom_times = vec![
-        custom_time_record(CustomTimeSettings::new(0x0123, false).unwrap()),
+        custom_time_record(false, CustomTimeSettings::new(0x0123, false).unwrap()),
         ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
-        custom_time_record(CustomTimeSettings::new(0x0456, true).unwrap()),
+        custom_time_record(false, CustomTimeSettings::new(0x0456, true).unwrap()),
+        ObjectRecord::new(vec![0, 4, 0, 0x34]).unwrap(),
+    ];
+    let vertical_duplicate_custom_times = vec![
+        custom_time_record(true, CustomTimeSettings::new(0x0123, false).unwrap()),
+        ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+        custom_time_record(true, CustomTimeSettings::new(0x0456, true).unwrap()),
         ObjectRecord::new(vec![0, 4, 0, 0x34]).unwrap(),
     ];
     for (case, records, expected_last_screen) in [
@@ -866,12 +872,21 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
             0,
         ),
         ("duplicate-custom-times", duplicate_custom_times, 0),
+        (
+            "vertical-duplicate-custom-times",
+            vertical_duplicate_custom_times,
+            0,
+        ),
     ] {
         let imported_rom = directory.join(format!("{case}.sfc"));
         let injected_mwl = directory.join(format!("{case}.mwl"));
         let reexported_mwl = directory.join(format!("{case} reexported.mwl"));
         fs::copy(&original_rom, &imported_rom).unwrap();
         let mut injected = baseline.clone();
+        let vertical = case.starts_with("vertical-");
+        if vertical {
+            injected.layer1.header.set_level_mode(3).unwrap();
+        }
         injected.layer1.header.set_last_screen(0).unwrap();
         injected.layer1.objects = ObjectStream { records };
         injected.sprites.tokens.clear();
@@ -903,7 +918,7 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
         )
         .unwrap();
         let mut expected_objects = injected.layer1.objects.clone();
-        expected_objects.canonicalize_import_controls(false);
+        expected_objects.canonicalize_import_controls(vertical);
         assert_eq!(actual.layer1.header.last_screen(), expected_last_screen);
         assert_eq!(actual.layer1.objects, expected_objects);
         assert!(actual.sprites.tokens.is_empty());
