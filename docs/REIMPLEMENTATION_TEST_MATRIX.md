@@ -388,7 +388,10 @@ reject any overflowing member without partial movement; preview tests prove bloc
 history-neutral. Ctrl/Command chords remain unconsumed. Focused X/Y shortcuts toggle only the
 selected part's horizontal/vertical flip fields. Page Up/Page Down move it one step forward/backward
 in painter order and carry selection to the resulting index; first/last boundary requests and every
-modified shortcut remain unconsumed and history-neutral. Typed
+modified shortcut remain unconsumed and history-neutral. Insert duplicates the complete selected
+part immediately after itself and follows the new painter index. Delete removes the selected part,
+chooses the surviving part at that index or its predecessor, and leaves the required singleton
+composition untouched. Typed
 appearance-part clipboard tests round-trip tile, palette, signed offsets, and flips; reject invalid
 widths, palettes, flags, domains, and multi-part delivery; and prove request-captured replace/insert
 targets each advance exactly one revision while stale delivery preserves the current document.

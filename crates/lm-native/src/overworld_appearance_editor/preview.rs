@@ -38,6 +38,8 @@ enum PreviewShortcut {
     FlipVertical,
     BringForward,
     SendBackward,
+    Duplicate,
+    Remove,
 }
 
 impl PreviewBounds {
@@ -83,7 +85,7 @@ impl OverworldAppearanceEditor {
         }
         ui.heading("Composition preview");
         ui.label(
-            "Click to select; arrows move one part, Alt+arrows move all parts. Shift uses eight pixels; X/Y flip; Page Up/Down changes painter order.",
+            "Click to select; arrows move one part, Alt+arrows move all parts. Shift uses eight pixels; X/Y flip; Page Up/Down changes painter order; Insert duplicates; Delete removes.",
         );
         let (rect, response) = ui.allocate_exact_size(PREVIEW_SIZE, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
@@ -336,6 +338,8 @@ fn preview_shortcut(ui: &mut egui::Ui) -> Option<PreviewShortcut> {
             (egui::Key::Y, PreviewShortcut::FlipVertical),
             (egui::Key::PageUp, PreviewShortcut::BringForward),
             (egui::Key::PageDown, PreviewShortcut::SendBackward),
+            (egui::Key::Insert, PreviewShortcut::Duplicate),
+            (egui::Key::Delete, PreviewShortcut::Remove),
         ]
         .into_iter()
         .find_map(|(key, shortcut)| input.consume_key(modifiers, key).then_some(shortcut))
@@ -395,6 +399,29 @@ fn shortcut_edit(
                     before: Some(selected),
                 },
                 selected,
+            ))
+        }
+        PreviewShortcut::Duplicate => {
+            let selected = part_index.checked_add(1)?;
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::InsertPart {
+                    sprite_id,
+                    index: selected,
+                    value: part,
+                },
+                selected,
+            ))
+        }
+        PreviewShortcut::Remove => {
+            if definition.parts.len() <= 1 {
+                return None;
+            }
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::RemovePart {
+                    sprite_id,
+                    index: part_index,
+                },
+                part_index.min(definition.parts.len() - 2),
             ))
         }
     }
@@ -658,6 +685,57 @@ mod tests {
             shortcut_edit(&definition, 3, PreviewShortcut::FlipHorizontal),
             None
         );
+    }
+
+    #[test]
+    fn insert_and_delete_shortcuts_preserve_value_order_and_valid_selection() {
+        let mut selected = part(8, -4);
+        selected.tile_index = 0x4567;
+        selected.palette_index = 5;
+        selected.x_flip = true;
+        let definition = SpriteAppearanceDefinition {
+            sprite_id: 0x1234,
+            parts: vec![part(0, 0), selected, part(16, 0)],
+        };
+
+        assert_eq!(
+            shortcut_edit(&definition, 1, PreviewShortcut::Duplicate),
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::InsertPart {
+                    sprite_id: 0x1234,
+                    index: 2,
+                    value: selected,
+                },
+                2,
+            ))
+        );
+        assert_eq!(
+            shortcut_edit(&definition, 1, PreviewShortcut::Remove),
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::RemovePart {
+                    sprite_id: 0x1234,
+                    index: 1,
+                },
+                1,
+            ))
+        );
+        assert_eq!(
+            shortcut_edit(&definition, 2, PreviewShortcut::Remove),
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::RemovePart {
+                    sprite_id: 0x1234,
+                    index: 2,
+                },
+                1,
+            ))
+        );
+
+        let singleton = SpriteAppearanceDefinition {
+            sprite_id: 7,
+            parts: vec![selected],
+        };
+        assert_eq!(shortcut_edit(&singleton, 0, PreviewShortcut::Remove), None);
+        assert_eq!(shortcut_edit(&definition, 3, PreviewShortcut::Duplicate), None);
     }
 
     #[test]
