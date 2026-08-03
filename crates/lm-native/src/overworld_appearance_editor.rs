@@ -26,6 +26,7 @@ pub(crate) struct OverworldAppearanceEditor {
     part_index: usize,
     part: PartForm,
     part_key: Option<(u64, u16, usize)>,
+    preview_drag: Option<preview::PreviewDrag>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     persistence: DocumentPersistence,
@@ -118,8 +119,9 @@ impl OverworldAppearanceEditor {
         let mut edit = self.definition_fields(ui, &definitions);
         ui.separator();
         if let Some(definition) = selected {
-            self.appearance_preview(ui, definition);
-            edit = edit.or_else(|| self.part_fields(ui, revision, definition));
+            let preview_edit = self.appearance_preview(ui, revision, definition);
+            let part_edit = self.part_fields(ui, revision, definition);
+            edit = edit.or(preview_edit.map(Ok)).or(part_edit);
         } else {
             ui.label("Insert a sprite definition before adding tile parts.");
         }
@@ -216,6 +218,7 @@ impl OverworldAppearanceEditor {
     fn invalidate(&mut self) {
         self.definition_key = None;
         self.part_key = None;
+        self.preview_drag = None;
     }
 
     fn show_close_confirmation(&mut self, context: &egui::Context) -> bool {

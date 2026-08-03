@@ -2585,7 +2585,9 @@ by stable 16-bit sprite ID and insert, replace, remove, or directly reorder thei
 tile parts. The native form exposes the same move-before/end operation without reconstructing part
 records. Its composition preview uses the renderer's exact 8×8 signed-offset geometry and painter
 order, retains the sprite origin, identifies tile/palette/flip fields, and selects the topmost
-overlapping part on click. Revision checks,
+overlapping part on click. Dragging previews pixel-snapped signed offsets without changing the
+document, clamps both axes to the encoded `i16` range, and publishes one typed replacement only
+when the pointer is released after actual motion. Revision checks,
 atomic batches, canonical reopen, immutable saves, and dirty shutdown protect the keyed document;
 the built application exercises the workflow through paths containing spaces and Unicode.
 Output publication is create-new and cannot replace an existing file.

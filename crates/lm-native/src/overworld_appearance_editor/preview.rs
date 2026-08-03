@@ -7,6 +7,16 @@ const PREVIEW_SIZE: egui::Vec2 = egui::vec2(420.0, 260.0);
 const PREVIEW_PADDING: f32 = 18.0;
 const MAX_SCALE: f32 = 12.0;
 
+#[derive(Clone, Copy, Debug)]
+pub(super) struct PreviewDrag {
+    revision: u64,
+    sprite_id: u16,
+    part_index: usize,
+    pointer: egui::Pos2,
+    original: SpriteAppearancePart,
+    current: SpriteAppearancePart,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PreviewBounds {
     min_x: i32,
@@ -47,13 +57,20 @@ impl OverworldAppearanceEditor {
     pub(super) fn appearance_preview(
         &mut self,
         ui: &mut egui::Ui,
+        revision: u64,
         definition: &SpriteAppearanceDefinition,
-    ) {
+    ) -> Option<lm_app::OverworldAppearanceDocumentEdit> {
+        if self
+            .preview_drag
+            .is_some_and(|drag| drag.revision != revision || drag.sprite_id != definition.sprite_id)
+        {
+            self.preview_drag = None;
+        }
         ui.heading("Composition preview");
         ui.label(
-            "Click the topmost visible part to select it. Later parts paint above earlier parts.",
+            "Click to select; drag to move one pixel at a time. Later parts paint above earlier parts.",
         );
-        let (rect, response) = ui.allocate_exact_size(PREVIEW_SIZE, egui::Sense::click());
+        let (rect, response) = ui.allocate_exact_size(PREVIEW_SIZE, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 2.0, egui::Color32::from_gray(22));
 
@@ -91,15 +108,20 @@ impl OverworldAppearanceEditor {
             egui::Stroke::new(1.0_f32, egui::Color32::from_gray(70)),
         );
 
-        let part_rects: Vec<_> = definition
-            .parts
+        let mut displayed_parts = definition.parts.clone();
+        if let Some(drag) = self.preview_drag
+            && let Some(part) = displayed_parts.get_mut(drag.part_index)
+        {
+            *part = drag.current;
+        }
+        let part_rects: Vec<_> = displayed_parts
             .iter()
             .map(|part| {
                 let min = to_screen(i32::from(part.x_offset), i32::from(part.y_offset));
                 egui::Rect::from_min_size(min, egui::Vec2::splat(TILE_SIDE as f32 * scale))
             })
             .collect();
-        if response.clicked()
+        if (response.clicked() || response.drag_started())
             && let Some(pointer) = response.interact_pointer_pos()
             && content.contains(pointer)
             && let Some(index) = topmost_part_at(
@@ -110,9 +132,32 @@ impl OverworldAppearanceEditor {
         {
             self.part_index = index;
             self.part_key = None;
+            if response.drag_started()
+                && let Some(original) = definition.parts.get(index).copied()
+            {
+                self.preview_drag = Some(PreviewDrag {
+                    revision,
+                    sprite_id: definition.sprite_id,
+                    part_index: index,
+                    pointer,
+                    original,
+                    current: original,
+                });
+            }
+        }
+        if response.dragged()
+            && let (Some(drag), Some(pointer)) =
+                (self.preview_drag.as_mut(), response.interact_pointer_pos())
+        {
+            drag.current = dragged_part(
+                drag.original,
+                pointer.x - drag.pointer.x,
+                pointer.y - drag.pointer.y,
+                scale,
+            );
         }
 
-        for (index, (part, part_rect)) in definition.parts.iter().zip(&part_rects).enumerate() {
+        for (index, (part, part_rect)) in displayed_parts.iter().zip(&part_rects).enumerate() {
             painter.rect_filled(*part_rect, 1.0, palette_color(part.palette_index));
             let selected = index == self.part_index;
             painter.rect_stroke(
@@ -148,7 +193,33 @@ impl OverworldAppearanceEditor {
             }
         }
         painter.circle_filled(origin, 3.0, egui::Color32::LIGHT_RED);
-        response.on_hover_text("Red dot: sprite origin; X/Y suffixes: tile flips");
+        if let Some(drag) = self.preview_drag {
+            painter.text(
+                egui::pos2(rect.left() + 8.0, rect.bottom() - 8.0),
+                egui::Align2::LEFT_BOTTOM,
+                format!(
+                    "Offset: {}, {}",
+                    drag.current.x_offset, drag.current.y_offset
+                ),
+                egui::FontId::monospace(11.0),
+                egui::Color32::WHITE,
+            );
+        }
+        let drag_stopped = response.drag_stopped();
+        response
+            .on_hover_cursor(if self.preview_drag.is_some() {
+                egui::CursorIcon::Grabbing
+            } else {
+                egui::CursorIcon::Grab
+            })
+            .on_hover_text("Red dot: sprite origin; X/Y suffixes: tile flips");
+        if drag_stopped
+            && let Some(drag) = self.preview_drag.take()
+            && let Some(edit) = completed_drag_edit(drag)
+        {
+            return Some(edit);
+        }
+        None
     }
 }
 
@@ -172,6 +243,33 @@ fn topmost_part_at(parts: &[SpriteAppearancePart], x: i32, y: i32) -> Option<usi
         let top = i32::from(part.y_offset);
         (left..left + TILE_SIDE).contains(&x) && (top..top + TILE_SIDE).contains(&y)
     })
+}
+
+fn dragged_part(
+    mut part: SpriteAppearancePart,
+    screen_delta_x: f32,
+    screen_delta_y: f32,
+    scale: f32,
+) -> SpriteAppearancePart {
+    let delta_x = (screen_delta_x / scale).round() as i32;
+    let delta_y = (screen_delta_y / scale).round() as i32;
+    part.x_offset = i32::from(part.x_offset)
+        .saturating_add(delta_x)
+        .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    part.y_offset = i32::from(part.y_offset)
+        .saturating_add(delta_y)
+        .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    part
+}
+
+fn completed_drag_edit(drag: PreviewDrag) -> Option<lm_app::OverworldAppearanceDocumentEdit> {
+    (drag.current != drag.original).then_some(
+        lm_app::OverworldAppearanceDocumentEdit::ReplacePart {
+            sprite_id: drag.sprite_id,
+            index: drag.part_index,
+            value: drag.current,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -218,5 +316,50 @@ mod tests {
         assert_eq!(topmost_part_at(&parts, 1, 1), Some(0));
         assert_eq!(topmost_part_at(&parts, 8, 0), None);
         assert_eq!(topmost_part_at(&parts, 19, 20), None);
+    }
+
+    #[test]
+    fn dragging_snaps_to_world_pixels_clamps_and_preserves_other_fields() {
+        let mut original = part(i16::MAX - 1, i16::MIN + 1);
+        original.tile_index = 0x123;
+        original.palette_index = 7;
+        original.x_flip = true;
+        let moved = dragged_part(original, 18.0, -18.0, 4.0);
+        assert_eq!(moved.x_offset, i16::MAX);
+        assert_eq!(moved.y_offset, i16::MIN);
+        assert_eq!(moved.tile_index, 0x123);
+        assert_eq!(moved.palette_index, 7);
+        assert!(moved.x_flip);
+        assert!(!moved.y_flip);
+
+        let extreme = dragged_part(original, f32::MAX, f32::MIN, 1.0);
+        assert_eq!(extreme.x_offset, i16::MAX);
+        assert_eq!(extreme.y_offset, i16::MIN);
+
+        let snapped = dragged_part(part(10, 20), 5.9, -6.1, 4.0);
+        assert_eq!((snapped.x_offset, snapped.y_offset), (11, 18));
+    }
+
+    #[test]
+    fn completed_drag_emits_exactly_one_replacement_only_after_motion() {
+        let original = part(1, 2);
+        let mut drag = PreviewDrag {
+            revision: 7,
+            sprite_id: 0x1234,
+            part_index: 9,
+            pointer: egui::pos2(10.0, 20.0),
+            original,
+            current: original,
+        };
+        assert_eq!(completed_drag_edit(drag), None);
+        drag.current.x_offset = 3;
+        assert_eq!(
+            completed_drag_edit(drag),
+            Some(lm_app::OverworldAppearanceDocumentEdit::ReplacePart {
+                sprite_id: 0x1234,
+                index: 9,
+                value: drag.current,
+            })
+        );
     }
 }
