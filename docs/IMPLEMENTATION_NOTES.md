@@ -474,6 +474,10 @@ interactive frontends cannot bypass confirmation and request correlation through
   optional reciprocal-edge validation policy explicit; node forms edit stable IDs, coordinates,
   submaps, optional level links, and raw flags, while edge forms edit stable source/direction
   keys, destinations, optional exit links, deliberate one-way state, and all unowned flag bits.
+  Reciprocal mode loads the exact reverse edge into separate exit/flag fields and atomically
+  upserts or removes both directional keys, so strict validation never requires an impossible
+  one-edge intermediate state. Toggling deliberate one-way and reciprocal modes is mutually
+  exclusive and preserves every flag outside the owned one-way bit.
   Node and edge mutation, forms, and shell lifecycle are separate modules. Changes use
   `OverworldPathController` canonical validation and history, recoverable replacement, and the
   same dirty-close and sequential quit protection as the other portable document windows.
@@ -2941,12 +2945,13 @@ retaining an independent saved baseline. `LMOPEDT1` batches stable-key node and
 LMOPEDT1
 node upsert 1 123 456 0 105 81
 node upsert 3 7 8 6 none 20
-edge upsert 2 3 down none 00
-edge upsert 3 2 up fe 00
+edge reciprocal 2 3 down none 80 fe c0
 ```
 
 Final reciprocity validation permits explicitly one-way edges and lets one batch repair both halves
-of a route. Removing a node removes incident edges atomically. The revisioned controller refuses
+of a route. `edge reciprocal` owns only the one-way bit and carries independent forward/reverse
+exit links and raw flags; `edge remove-reciprocal` removes both stable keys or neither. Removing a
+node removes incident edges atomically. The revisioned controller refuses
 dirty close and acknowledges a save only after recoverable file replacement; failed writes remain
 dirty and retryable.
 

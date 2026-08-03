@@ -146,7 +146,7 @@ impl PathEditor {
         };
         if let Some(edit) = edit {
             match edit {
-                Ok(edit) => self.apply_edit(edit),
+                Ok(edits) => self.apply_edits(&edits),
                 Err(error) => self.error = Some(error),
             }
         }
@@ -207,7 +207,7 @@ impl PathEditor {
         }
     }
 
-    fn show_nodes(&mut self, ui: &mut egui::Ui) -> Option<Result<PathGraphEdit, String>> {
+    fn show_nodes(&mut self, ui: &mut egui::Ui) -> Option<Result<Vec<PathGraphEdit>, String>> {
         let controller = self.controller.as_ref()?;
         let nodes = &controller.graph().nodes;
         if !nodes.is_empty() {
@@ -233,15 +233,21 @@ impl PathEditor {
                 .clicked();
         });
         if upsert {
-            Some(self.node.parse().map(PathGraphEdit::UpsertNode))
+            Some(
+                self.node
+                    .parse()
+                    .map(|node| vec![PathGraphEdit::UpsertNode(node)]),
+            )
         } else if remove {
-            Some(Ok(PathGraphEdit::RemoveNode(nodes[self.node_index].id)))
+            Some(Ok(vec![PathGraphEdit::RemoveNode(
+                nodes[self.node_index].id,
+            )]))
         } else {
             None
         }
     }
 
-    fn show_edges(&mut self, ui: &mut egui::Ui) -> Option<Result<PathGraphEdit, String>> {
+    fn show_edges(&mut self, ui: &mut egui::Ui) -> Option<Result<Vec<PathGraphEdit>, String>> {
         let controller = self.controller.as_ref()?;
         let edges = &controller.graph().edges;
         if !edges.is_empty() {
@@ -254,7 +260,9 @@ impl PathEditor {
             self.edge = edges
                 .get(self.edge_index)
                 .copied()
-                .map_or_else(EdgeForm::default, EdgeForm::load);
+                .map_or_else(EdgeForm::default, |edge| {
+                    EdgeForm::load_with_edges(edge, edges)
+                });
             self.edge_key = Some((controller.revision(), self.edge_index));
         }
         edge_fields(ui, &mut self.edge);
@@ -267,25 +275,34 @@ impl PathEditor {
                 .clicked();
         });
         if upsert {
-            Some(self.edge.parse().map(PathGraphEdit::UpsertEdge))
+            Some(
+                self.edge
+                    .parse_pair()
+                    .map(|edges| edges.into_iter().map(PathGraphEdit::UpsertEdge).collect()),
+            )
         } else if remove {
             let edge = edges[self.edge_index];
-            Some(Ok(PathGraphEdit::RemoveEdge {
+            let mut edits = vec![PathGraphEdit::RemoveEdge {
                 from: edge.from,
                 direction: edge.direction,
-            }))
+            }];
+            if self.edge.reciprocal {
+                edits.push(PathGraphEdit::RemoveEdge {
+                    from: edge.to,
+                    direction: edge.direction.opposite(),
+                });
+            }
+            Some(Ok(edits))
         } else {
             None
         }
     }
 
-    fn apply_edit(&mut self, edit: PathGraphEdit) {
+    fn apply_edits(&mut self, edits: &[PathGraphEdit]) {
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
-        if let Err(error) =
-            controller.apply_edits(controller.revision(), std::slice::from_ref(&edit))
-        {
+        if let Err(error) = controller.apply_edits(controller.revision(), edits) {
             self.error = Some(error.to_string());
         } else {
             self.invalidate();

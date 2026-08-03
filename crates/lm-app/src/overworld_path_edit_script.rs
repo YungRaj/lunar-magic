@@ -88,7 +88,7 @@ pub fn parse(input: &str) -> Result<Vec<PathGraphEdit>, OverworldPathEditScriptE
         }
         let content = raw.split('#').next().unwrap_or_default().trim();
         if !content.is_empty() {
-            edits.push(parse_line(line, content)?);
+            edits.extend(parse_line(line, content)?);
             if edits.len() > MAX_COMMANDS {
                 return Err(OverworldPathEditScriptError::TooManyCommands {
                     maximum: MAX_COMMANDS,
@@ -99,33 +99,83 @@ pub fn parse(input: &str) -> Result<Vec<PathGraphEdit>, OverworldPathEditScriptE
     Ok(edits)
 }
 
-fn parse_line(line: usize, content: &str) -> Result<PathGraphEdit, OverworldPathEditScriptError> {
+fn parse_line(
+    line: usize,
+    content: &str,
+) -> Result<Vec<PathGraphEdit>, OverworldPathEditScriptError> {
     let words: Vec<_> = content.split_whitespace().collect();
     match words.as_slice() {
         ["node", "upsert", id, x, y, submap, level, flags] => {
-            Ok(PathGraphEdit::UpsertNode(PathNode {
+            Ok(vec![PathGraphEdit::UpsertNode(PathNode {
                 id: hex(line, id)?,
                 x: hex(line, x)?,
                 y: hex(line, y)?,
                 submap: parse_submap(line, submap)?,
                 level: optional_hex(line, level)?,
                 raw_flags: hex(line, flags)?,
-            }))
+            })])
         }
-        ["node", "remove", id] => Ok(PathGraphEdit::RemoveNode(hex(line, id)?)),
+        ["node", "remove", id] => Ok(vec![PathGraphEdit::RemoveNode(hex(line, id)?)]),
         ["edge", "upsert", from, to, direction, exit, flags] => {
-            Ok(PathGraphEdit::UpsertEdge(PathEdge {
+            Ok(vec![PathGraphEdit::UpsertEdge(PathEdge {
                 from: hex(line, from)?,
                 to: hex(line, to)?,
                 direction: parse_direction(line, direction)?,
                 exit_index: optional_hex(line, exit)?,
                 raw_flags: hex(line, flags)?,
-            }))
+            })])
         }
-        ["edge", "remove", from, direction] => Ok(PathGraphEdit::RemoveEdge {
+        [
+            "edge",
+            "reciprocal",
+            from,
+            to,
+            direction,
+            forward_exit,
+            forward_flags,
+            reverse_exit,
+            reverse_flags,
+        ] => {
+            let from = hex(line, from)?;
+            let to = hex(line, to)?;
+            let direction = parse_direction(line, direction)?;
+            let mut forward = PathEdge {
+                from,
+                to,
+                direction,
+                exit_index: optional_hex(line, forward_exit)?,
+                raw_flags: hex(line, forward_flags)?,
+            };
+            let mut reverse = PathEdge {
+                from: to,
+                to: from,
+                direction: direction.opposite(),
+                exit_index: optional_hex(line, reverse_exit)?,
+                raw_flags: hex(line, reverse_flags)?,
+            };
+            forward.set_one_way(false);
+            reverse.set_one_way(false);
+            Ok(vec![
+                PathGraphEdit::UpsertEdge(forward),
+                PathGraphEdit::UpsertEdge(reverse),
+            ])
+        }
+        ["edge", "remove", from, direction] => Ok(vec![PathGraphEdit::RemoveEdge {
             from: hex(line, from)?,
             direction: parse_direction(line, direction)?,
-        }),
+        }]),
+        ["edge", "remove-reciprocal", from, to, direction] => {
+            let from = hex(line, from)?;
+            let to = hex(line, to)?;
+            let direction = parse_direction(line, direction)?;
+            Ok(vec![
+                PathGraphEdit::RemoveEdge { from, direction },
+                PathGraphEdit::RemoveEdge {
+                    from: to,
+                    direction: direction.opposite(),
+                },
+            ])
+        }
         [command, ..] if !matches!(*command, "node" | "edge") => {
             Err(OverworldPathEditScriptError::UnknownCommand {
                 line,
@@ -197,6 +247,35 @@ mod tests {
             panic!()
         };
         assert_eq!(node.level, Some(0x105));
+    }
+
+    #[test]
+    fn reciprocal_commands_expand_to_field_complete_atomic_pairs() {
+        let edits = parse(
+            "LMOPEDT1\nedge reciprocal 1 2 right aa 81 bb c1\nedge remove-reciprocal 1 2 right\n",
+        )
+        .unwrap();
+        assert_eq!(edits.len(), 4);
+        let PathGraphEdit::UpsertEdge(forward) = edits[0] else {
+            panic!();
+        };
+        let PathGraphEdit::UpsertEdge(reverse) = edits[1] else {
+            panic!();
+        };
+        assert_eq!(forward.exit_index, Some(0xaa));
+        assert_eq!(forward.raw_flags, 0x80);
+        assert_eq!(reverse.from, 2);
+        assert_eq!(reverse.to, 1);
+        assert_eq!(reverse.direction, PathDirection::Left);
+        assert_eq!(reverse.exit_index, Some(0xbb));
+        assert_eq!(reverse.raw_flags, 0xc0);
+        assert_eq!(
+            edits[3],
+            PathGraphEdit::RemoveEdge {
+                from: 2,
+                direction: PathDirection::Left,
+            }
+        );
     }
 
     #[test]

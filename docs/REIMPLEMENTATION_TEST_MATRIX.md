@@ -461,6 +461,11 @@ tests cover exact round trips, raw-flag preservation, one-way
 and reciprocal links, stale destinations, duplicate/self edges, malformed enums, truncation, and
 node deletion without dangling edges. Controller and built-application tests additionally cover
 canonical saved-baseline undo/redo, stale tokens, divergent redo invalidation, and Unicode paths.
+Strict `LMOPEDT1 edge reciprocal` and `edge remove-reciprocal` coverage carries independent
+forward/reverse exit links and unowned flags, clears only the semantic one-way bit, expands both
+stable keys in order, saves/reopens canonically, and undoes/redoes as one history revision. A late
+missing reverse removal proves the already-staged forward removal rolls back. Native-form tests
+load the exact counterpart and parse both directions without collapsing their fields.
 Oracle observations expose every node and edge field. Separately, the confirmed SMW US revision-0
 native special path-link table round-trips its fourteen five-byte source records, fourteen
 five-byte destination records, and fourteen two-byte target records at the exact pristine offsets.

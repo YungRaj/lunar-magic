@@ -197,7 +197,7 @@ fn path_shell_edits_nodes_edges_saves_round_trips_and_closes() {
     fs::write(&document, path_fixture().encode_file().unwrap()).unwrap();
     fs::write(
         &script,
-        "LMOPEDT1\nnode upsert 1 123 456 0 105 81\nnode upsert 3 7 8 6 none 20\nedge upsert 2 3 down none 00\nedge upsert 3 2 up fe 00\n",
+        "LMOPEDT1\nnode upsert 1 123 456 0 105 81\nnode upsert 3 7 8 6 none 20\nedge reciprocal 2 3 down none 80 fe c0\n",
     )
     .unwrap();
     let mut session = None;
@@ -214,6 +214,10 @@ fn path_shell_edits_nodes_edges_saves_round_trips_and_closes() {
     assert_eq!(decoded.nodes[0].x, 0x123);
     assert_eq!(decoded.nodes[2].submap, Submap::StarWorld);
     assert_eq!(decoded.edges.len(), 3);
+    assert_eq!(decoded.edges[1].exit_index, None);
+    assert_eq!(decoded.edges[1].raw_flags, 0x80);
+    assert_eq!(decoded.edges[2].exit_index, Some(0xfe));
+    assert_eq!(decoded.edges[2].raw_flags, 0xc0);
     decoded.validate_reciprocal().unwrap();
     close_path_document(&mut session, false).unwrap();
     fs::remove_dir_all(directory).unwrap();

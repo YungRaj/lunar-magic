@@ -46,6 +46,9 @@ pub(crate) struct EdgeForm {
     pub(crate) exit: String,
     pub(crate) raw_flags: String,
     pub(crate) one_way: bool,
+    pub(crate) reciprocal: bool,
+    pub(crate) reverse_exit: String,
+    pub(crate) reverse_raw_flags: String,
 }
 
 impl EdgeForm {
@@ -59,7 +62,29 @@ impl EdgeForm {
                 .map_or_else(String::new, |exit| format!("{exit:02X}")),
             raw_flags: format!("{:02X}", value.raw_flags),
             one_way: value.is_one_way(),
+            reciprocal: false,
+            reverse_exit: String::new(),
+            reverse_raw_flags: "00".into(),
         }
+    }
+
+    pub(crate) fn load_with_edges(value: PathEdge, edges: &[PathEdge]) -> Self {
+        let mut form = Self::load(value);
+        if !value.is_one_way()
+            && let Some(reverse) = edges.iter().find(|candidate| {
+                candidate.from == value.to
+                    && candidate.to == value.from
+                    && candidate.direction == value.direction.opposite()
+                    && !candidate.is_one_way()
+            })
+        {
+            form.reciprocal = true;
+            form.reverse_exit = reverse
+                .exit_index
+                .map_or_else(String::new, |exit| format!("{exit:02X}"));
+            form.reverse_raw_flags = format!("{:02X}", reverse.raw_flags);
+        }
+        form
     }
 
     pub(crate) fn parse(&self) -> Result<PathEdge, String> {
@@ -72,6 +97,26 @@ impl EdgeForm {
         };
         edge.set_one_way(self.one_way);
         Ok(edge)
+    }
+
+    pub(crate) fn parse_pair(&self) -> Result<Vec<PathEdge>, String> {
+        let mut forward = self.parse()?;
+        if !self.reciprocal {
+            return Ok(vec![forward]);
+        }
+        forward.set_one_way(false);
+        let mut reverse = PathEdge {
+            from: forward.to,
+            to: forward.from,
+            direction: forward.direction.opposite(),
+            exit_index: optional_u8(&self.reverse_exit, "reverse path edge exit")?,
+            raw_flags: level_editor_forms::parse_hex_u8(
+                &self.reverse_raw_flags,
+                "reverse path edge flags",
+            )?,
+        };
+        reverse.set_one_way(false);
+        Ok(vec![forward, reverse])
     }
 }
 
@@ -129,5 +174,27 @@ mod tests {
         assert_eq!(parsed.raw_flags, 0x81);
         assert!(parsed.is_one_way());
         assert_eq!(parsed.exit_index, Some(0xaa));
+    }
+
+    #[test]
+    fn reciprocal_form_loads_and_parses_both_field_complete_directions() {
+        let forward = PathEdge {
+            from: 1,
+            to: 2,
+            direction: PathDirection::Right,
+            exit_index: Some(0xaa),
+            raw_flags: 0x80,
+        };
+        let reverse = PathEdge {
+            from: 2,
+            to: 1,
+            direction: PathDirection::Left,
+            exit_index: Some(0xbb),
+            raw_flags: 0xc0,
+        };
+        let form = EdgeForm::load_with_edges(forward, &[forward, reverse]);
+        assert!(form.reciprocal);
+        assert_eq!(form.reverse_exit, "BB");
+        assert_eq!(form.parse_pair().unwrap(), [forward, reverse]);
     }
 }

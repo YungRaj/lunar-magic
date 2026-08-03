@@ -36,7 +36,37 @@ pub(super) fn edge_fields(ui: &mut egui::Ui, form: &mut EdgeForm) {
                 ui.selectable_value(&mut form.direction, index, name);
             }
         });
-    ui.checkbox(&mut form.one_way, "Deliberately one-way");
+    if ui
+        .checkbox(&mut form.one_way, "Deliberately one-way")
+        .changed()
+        && form.one_way
+    {
+        form.reciprocal = false;
+    }
+    if ui
+        .checkbox(
+            &mut form.reciprocal,
+            "Apply/remove reciprocal pair atomically",
+        )
+        .changed()
+        && form.reciprocal
+    {
+        form.one_way = false;
+        if form.reverse_raw_flags.trim().is_empty() {
+            form.reverse_raw_flags = "00".into();
+        }
+    }
+    if form.reciprocal {
+        for (label, field) in [
+            ("Reverse exit (hex, blank = none)", &mut form.reverse_exit),
+            ("Reverse raw flags (hex)", &mut form.reverse_raw_flags),
+        ] {
+            ui.horizontal(|ui| {
+                ui.label(label);
+                ui.text_edit_singleline(field);
+            });
+        }
+    }
 }
 
 fn submap_combo(ui: &mut egui::Ui, value: &mut usize, id: &str) {

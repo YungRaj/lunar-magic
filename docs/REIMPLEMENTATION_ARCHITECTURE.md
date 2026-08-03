@@ -650,6 +650,9 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
 - Portable overworld paths now have a failure-atomic stable-key edit layer and revisioned document
   controller. Bounded `LMOPEDT1` scripts upsert/remove nodes and directional edges, cascade incident
   edge removal, and require a valid reciprocal or explicitly one-way final graph before persistence.
+  Field-complete reciprocal-pair commands expand to two stable-key edits in one controller batch;
+  the native form loads independent reverse exit/flag fields and never publishes an invalid
+  one-edge intermediate graph under strict reciprocity policy.
   Path and metadata controllers both own bounded canonical histories whose navigation restores the
   entire stable-key domain without moving the saved baseline.
 - Standalone overworld path and metadata workflows can atomically publish canonical normalization

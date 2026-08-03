@@ -409,4 +409,77 @@ mod tests {
             Err(OverworldPathControllerError::StaleRevision { .. })
         ));
     }
+
+    #[test]
+    fn reciprocal_pair_upsert_remove_and_missing_reverse_are_atomic_and_undoable() {
+        let source = graph().encode_file().unwrap();
+        let mut controller =
+            OverworldPathController::decode("paths.lmowpath".into(), &source, true).unwrap();
+        let forward = PathEdge {
+            from: 1,
+            to: 2,
+            direction: PathDirection::Right,
+            exit_index: Some(0xaa),
+            raw_flags: 0x80,
+        };
+        let reverse = PathEdge {
+            from: 2,
+            to: 1,
+            direction: PathDirection::Left,
+            exit_index: Some(0xbb),
+            raw_flags: 0xc0,
+        };
+        controller
+            .apply_edits(
+                0,
+                &[
+                    PathGraphEdit::UpsertEdge(forward),
+                    PathGraphEdit::UpsertEdge(reverse),
+                ],
+            )
+            .unwrap();
+        assert_eq!(controller.graph().edges, [forward, reverse]);
+        assert!(controller.undo(1).unwrap());
+        assert_eq!(controller.graph(), &graph());
+        assert!(controller.redo(2).unwrap());
+        controller
+            .apply_edits(
+                3,
+                &[
+                    PathGraphEdit::RemoveEdge {
+                        from: 1,
+                        direction: PathDirection::Right,
+                    },
+                    PathGraphEdit::RemoveEdge {
+                        from: 2,
+                        direction: PathDirection::Left,
+                    },
+                ],
+            )
+            .unwrap();
+        assert!(controller.graph().edges.is_empty());
+
+        let mut missing_reverse =
+            OverworldPathController::decode("paths.lmowpath".into(), &source, false).unwrap();
+        let before = missing_reverse.graph().clone();
+        assert!(
+            missing_reverse
+                .apply_edits(
+                    0,
+                    &[
+                        PathGraphEdit::RemoveEdge {
+                            from: 1,
+                            direction: PathDirection::Right,
+                        },
+                        PathGraphEdit::RemoveEdge {
+                            from: 2,
+                            direction: PathDirection::Left,
+                        },
+                    ],
+                )
+                .is_err()
+        );
+        assert_eq!(missing_reverse.graph(), &before);
+        assert_eq!(missing_reverse.revision(), 0);
+    }
 }
