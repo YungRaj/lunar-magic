@@ -1,4 +1,7 @@
-use lm_app::{AppState, Command as AppCommand, Map16ControllerEdit, SmwMap16Controller};
+use lm_app::{
+    AppState, Command as AppCommand, Map16ControllerEdit, OverworldControllerEdit,
+    OverworldLayerId, SmwMainOverworldLayer2Controller, SmwMap16Controller,
+};
 use lm_graphics::{Bgr555, CompactExAnimation, Palette};
 use lm_level::{
     CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, NativeSpriteStream,
@@ -212,6 +215,94 @@ fn rust_map16_edit_survives_snes9x_initialization() {
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-Map16-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write Map16-edited ROM");
+    require_snes9x_initialization(&snes9x, &output);
+}
+
+#[test]
+#[ignore = "requires local Snes9x plus retained Lunar Magic 3.63 installed-ROM fixture"]
+fn native_main_overworld_layer2_paint_survives_snes9x_initialization() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = require_snes9x_binary();
+    let installed =
+        root.join("oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc");
+    let mut app = AppState::default();
+    app.load_rom(fs::read(installed).expect("read installed overworld fixture"))
+        .expect("open installed overworld fixture");
+    app.dispatch(AppCommand::ShowOverworld)
+        .expect("enter overworld mode");
+    let snapshot = app.controller_snapshot().expect("capture ROM snapshot");
+    let mut controller = SmwMainOverworldLayer2Controller::decode(&snapshot)
+        .expect("decode gameplay-consumed main-overworld Layer 2");
+    let cells = [(12, 9), (13, 9), (12, 10), (13, 10)];
+    let edits = cells
+        .into_iter()
+        .map(|(x, y)| OverworldControllerEdit::SetLayerTile {
+            layer: OverworldLayerId::Layer2,
+            x,
+            y,
+            tile: controller
+                .layer()
+                .tile(x, y)
+                .expect("read original playable tile")
+                ^ 1,
+        })
+        .collect::<Vec<_>>();
+    controller
+        .apply_edits(&edits)
+        .expect("paint four native overworld tiles");
+    let expected = controller.layer().clone();
+    let prepared = controller
+        .prepare_commit(
+            "Snes9x native main-overworld Layer 2 paint",
+            AllocationPolicy {
+                search: 0x0e_0000..0x0f_0000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff, 0],
+                protected: vec![
+                    ProtectedRange(
+                        lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD
+                            ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD + 2,
+                    ),
+                    ProtectedRange(
+                        lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK
+                            ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK + 1,
+                    ),
+                    ProtectedRange(
+                        lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD
+                            ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD + 2,
+                    ),
+                    ProtectedRange(lm_profile::SMW_US_V1_CHECKSUM_FIELD..0x7fe0),
+                ],
+            },
+        )
+        .expect("prepare native overworld commit");
+    app.dispatch(prepared.into_command())
+        .expect("commit native overworld paint");
+    let project = app.project().expect("retain edited project");
+    assert_eq!(
+        lm_profile::load_smw_us_v1_main_overworld_layer2(project)
+            .expect("reopen gameplay-consumed main-overworld Layer 2")
+            .layer,
+        expected
+    );
+    assert_eq!(
+        lm_rom::SnesChecksum::decode(
+            project.rom.logical_bytes(),
+            lm_profile::SMW_US_V1_CHECKSUM_FIELD,
+        )
+        .expect("decode edited ROM checksum"),
+        lm_rom::compute_snes_checksum(
+            project.rom.logical_bytes(),
+            lm_profile::SMW_US_V1_CHECKSUM_FIELD,
+        )
+        .expect("compute edited ROM checksum")
+    );
+
+    let directory = SmokeDirectory::create();
+    let output = directory
+        .0
+        .join("Rust-native-overworld-Layer2-painted-SMW.smc");
+    fs::write(&output, project.save_snapshot()).expect("write native-overworld-edited ROM");
     require_snes9x_initialization(&snes9x, &output);
 }
 

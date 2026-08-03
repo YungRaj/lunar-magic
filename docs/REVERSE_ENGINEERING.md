@@ -2343,6 +2343,13 @@ vanilla overworld graphics slots `$1C-$1F`, and the shared working palette. The 
 flood-fill, visual Map16 picker, revision-bound commit, semantic reopen, and application Undo paths
 operate directly on the gameplay-consumed streams.
 
+The ignored `native_main_overworld_layer2_paint_survives_snes9x_initialization` integration gate
+drives that same application controller over a four-cell paint, commits the ROM, reopens the entire
+128x64 gameplay layer byte-for-byte, verifies the repaired SNES checksum, and keeps the generated
+ROM alive in the platform-discovered Snes9x executable for eight seconds. Its child guard kills and
+reaps the emulator on success, failure, or panic. This proves editor-to-emulator initialization for
+the authentic runtime storage, but not yet that gameplay navigated to and rendered the four cells.
+
 Accordingly, `CompleteOverworldRomLayout` remains a profile-described editor/container boundary.
 The ignored Snes9x complete-overworld smoke gate proves allocation, transaction, checksum,
 reopening, and emulator initialization only; its extension pointer tables are deliberately outside
