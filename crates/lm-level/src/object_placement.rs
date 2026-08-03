@@ -95,6 +95,9 @@ impl ObjectStream {
                     source_screen = source_screen.saturating_add(1).min(31);
                 }
                 record
+                    .canonicalize_imported_screen_exit()
+                    .expect("a decoded screen exit remains canonicalizable");
+                record
                     .set_advances_screen(false)
                     .expect("clearing an advance bit cannot collide with the terminator");
                 exits[usize::from(exit.screen)] = Some(record);

@@ -824,6 +824,22 @@ fn lunar_magic_ignores_screen_exits_in_imported_extent() {
             ],
             0,
         ),
+        (
+            "noncanonical-exit-flags",
+            vec![
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+                ObjectRecord::new(vec![0, 0, 2, 0x34, 0]).unwrap(),
+            ],
+            0,
+        ),
+        (
+            "noncanonical-compact-exit-flags",
+            vec![
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+                ObjectRecord::new(vec![0, 0, 0, 0x34]).unwrap(),
+            ],
+            0,
+        ),
     ] {
         let imported_rom = directory.join(format!("{case}.sfc"));
         let injected_mwl = directory.join(format!("{case}.mwl"));

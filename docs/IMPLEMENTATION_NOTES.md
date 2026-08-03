@@ -3261,6 +3261,11 @@ record and the surviving tail is emitted in ascending absolute-screen order. The
 walker applies control advances before later ordinary objects, while installed MWL import performs
 the same stream-state rewrite without sorting ordinary object order or treating the editor-only
 marker itself as artwork.
+Raw MWL screen-exit shape is also semantic at this boundary. Any record lacking required flag
+`$0400` gains both default flag `$0100` and `$0400`, so a live zero-high-byte case becomes `$0534`.
+Its original compact or extended representation is retained, while already-flagged records keep
+their other bits. The separate typed setter continues to select compact versus extended shape from
+an explicitly edited destination.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and

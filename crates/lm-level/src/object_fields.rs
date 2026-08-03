@@ -388,6 +388,36 @@ impl ObjectRecord {
         self.encoded = candidate;
         Ok(())
     }
+
+    /// Canonicalizes a raw MWL screen exit without changing its compact/extended provenance.
+    ///
+    /// When the required flag is absent, Lunar Magic adds default flag `$0100` and then common flag
+    /// `$0400`. Already-flagged records retain their remaining bits. Unlike
+    /// [`Self::set_screen_exit`], this import boundary preserves the source representation instead
+    /// of selecting a new one from the resulting destination.
+    ///
+    /// # Errors
+    ///
+    /// Rejects records that are not a recognized screen-exit form without changing them.
+    pub fn canonicalize_imported_screen_exit(&mut self) -> Result<(), ObjectFieldError> {
+        let exit = self.screen_exit().ok_or(ObjectFieldError::NotScreenExit)?;
+        let mut destination_and_flags = exit.destination_and_flags;
+        if destination_and_flags & SCREEN_EXIT_REQUIRED_FLAG == 0 {
+            destination_and_flags |= 0x0100;
+        }
+        destination_and_flags |= SCREEN_EXIT_REQUIRED_FLAG;
+        let [low, high] = destination_and_flags.to_le_bytes();
+        let advance = self.encoded[0] & 0x80;
+        self.encoded = match exit.encoding {
+            ScreenExitObjectEncoding::Compact => {
+                vec![advance | exit.screen, high & 0x0f, 0, low]
+            }
+            ScreenExitObjectEncoding::Extended => {
+                vec![advance | exit.screen, 0, 2, low, high]
+            }
+        };
+        Ok(())
+    }
 }
 
 /// The two raw coordinate nibbles whose X/Y interpretation depends on level orientation.
@@ -545,6 +575,23 @@ mod tests {
         assert_eq!(compact.screen_exit().unwrap().destination_and_flags, 0x0523);
         compact.set_screen_exit(0, 0).unwrap();
         assert_eq!(compact.encoded(), &[0x80, 4, 0, 0]);
+    }
+
+    #[test]
+    fn imported_screen_exit_flags_preserve_source_shape() {
+        let mut compact = ObjectRecord::new(vec![0, 0, 0, 0x34]).unwrap();
+        compact.canonicalize_imported_screen_exit().unwrap();
+        assert_eq!(compact.encoded(), &[0, 5, 0, 0x34]);
+
+        let mut extended = ObjectRecord::new(vec![0, 0, 2, 0x34, 0]).unwrap();
+        extended.canonicalize_imported_screen_exit().unwrap();
+        assert_eq!(extended.encoded(), &[0, 0, 2, 0x34, 5]);
+
+        let mut flagged_extended = ObjectRecord::new(vec![0, 0, 2, 0x34, 4]).unwrap();
+        flagged_extended
+            .canonicalize_imported_screen_exit()
+            .unwrap();
+        assert_eq!(flagged_extended.encoded(), &[0, 0, 2, 0x34, 4]);
     }
 
     #[test]
