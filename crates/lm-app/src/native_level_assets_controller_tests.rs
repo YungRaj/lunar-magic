@@ -767,6 +767,149 @@ fn complete_installed_header_batch_resets_layer2_and_reopens_losslessly() {
 }
 
 #[test]
+fn installed_aggregate_history_restores_every_domain_and_layer2_transition_state() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let baseline_assets = controller.assets().clone();
+    let baseline_layer2 = controller.layer2().unwrap().clone();
+    let NativeLayer2Data::Objects(objects) = &baseline_layer2 else {
+        panic!("fixture must begin with object-backed Layer 2");
+    };
+    let duplicate = objects.objects.records[0].clone();
+    assert!(!controller.can_undo());
+    assert!(!controller.can_redo());
+
+    controller
+        .apply_edits(&[
+            NativeLevelAssetsControllerEdit::Level(vec![NativeLevelEdit::LegacyHeader(
+                LegacyHeaderEdit::BackgroundColor(3),
+            )]),
+            NativeLevelAssetsControllerEdit::Layer2Objects(vec![ObjectEdit::Insert {
+                index: 1,
+                record: duplicate,
+            }]),
+            NativeLevelAssetsControllerEdit::Palette(vec![PaletteControllerEdit::ApplyChanges(
+                vec![PaletteChange {
+                    index: 0,
+                    color: Bgr555(0x1234),
+                }],
+            )]),
+            NativeLevelAssetsControllerEdit::ExpandedSettingsWords(vec![(1, 0x4567)]),
+        ])
+        .unwrap();
+    let mixed_assets = controller.assets().clone();
+    let mixed_layer2 = controller.layer2().unwrap().clone();
+    assert!(controller.can_undo());
+    assert!(!controller.can_redo());
+
+    controller
+        .apply_edits_with_layer2_reset(
+            &[NativeLevelAssetsControllerEdit::Level(vec![
+                NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(0)),
+            ])],
+            true,
+        )
+        .unwrap();
+    assert!(matches!(
+        controller.layer2(),
+        Some(NativeLayer2Data::Tilemap(bytes)) if bytes == &vec![0; NATIVE_LAYER2_TILEMAP_LEN]
+    ));
+
+    assert!(controller.undo());
+    assert_eq!(controller.assets(), &mixed_assets);
+    assert_eq!(controller.layer2(), Some(&mixed_layer2));
+    assert!(controller.undo());
+    assert_eq!(controller.assets(), &baseline_assets);
+    assert_eq!(controller.layer2(), Some(&baseline_layer2));
+    assert!(!controller.undo());
+
+    assert!(controller.redo());
+    assert_eq!(controller.assets(), &mixed_assets);
+    assert_eq!(controller.layer2(), Some(&mixed_layer2));
+    assert!(controller.redo());
+    assert!(matches!(
+        controller.layer2(),
+        Some(NativeLayer2Data::Tilemap(_))
+    ));
+    assert!(!controller.redo());
+
+    assert!(controller.undo());
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::Level(vec![
+            NativeLevelEdit::SetSpriteHeader(0x44),
+        ])])
+        .unwrap();
+    assert!(!controller.can_redo());
+    assert!(controller.undo());
+    assert_eq!(controller.assets(), &mixed_assets);
+    assert_eq!(controller.layer2(), Some(&mixed_layer2));
+
+    let prepared = controller
+        .prepare_commit_with_layer2("history-selected aggregate", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("history-selected aggregate", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets_with_layer2(
+            0,
+            NativeLevelAssetsLayer2Layout {
+                core: layout(),
+                layer2: layer2_layout(),
+            },
+            &SpriteLengthTable::standard(),
+            &[false; 256],
+        )
+        .unwrap();
+    assert_eq!(reopened.core, mixed_assets);
+    assert_eq!(reopened.layer2, mixed_layer2);
+}
+
+#[test]
+fn installed_aggregate_history_is_bounded() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    controller.apply_edits(&[]).unwrap();
+    assert!(!controller.can_undo());
+    assert!(
+        controller
+            .apply_edits(&[NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
+                vec![(1, 2), (1, 3)],
+            )])
+            .is_err()
+    );
+    assert!(!controller.can_undo());
+    for value in 0..=NativeLevelAssetsController::HISTORY_LIMIT {
+        controller
+            .apply_edits(&[NativeLevelAssetsControllerEdit::Level(vec![
+                NativeLevelEdit::SetSpriteHeader(u8::try_from(value + 0x40).unwrap()),
+            ])])
+            .unwrap();
+    }
+    let mut count = 0;
+    while controller.undo() {
+        count += 1;
+    }
+    assert_eq!(count, NativeLevelAssetsController::HISTORY_LIMIT);
+}
+
+#[test]
 fn owned_aggregate_reclaims_four_payloads_keeps_direct_write_atomic_and_undoes() {
     let (snapshot, manifest) = tagged_snapshot();
     let mut controller = NativeLevelAssetsController::decode(

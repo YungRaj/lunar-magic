@@ -749,6 +749,50 @@ impl RomLevelAssetsEditor {
                 ),
             );
         }
+        let history = self.workspace.as_ref().map(|workspace| {
+            (
+                workspace.controller.can_undo(),
+                workspace.controller.can_redo(),
+                workspace.controller.is_modified(),
+            )
+        });
+        let mut history_action = None;
+        if let Some((can_undo, can_redo, modified)) = history {
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        !stale && !palette_busy && can_undo,
+                        egui::Button::new("Undo"),
+                    )
+                    .clicked()
+                {
+                    history_action = Some(true);
+                }
+                if ui
+                    .add_enabled(
+                        !stale && !palette_busy && can_redo,
+                        egui::Button::new("Redo"),
+                    )
+                    .clicked()
+                {
+                    history_action = Some(false);
+                }
+                ui.label(if modified { "Modified" } else { "Unmodified" });
+            });
+        }
+        if let Some(undo) = history_action {
+            let changed = self.workspace.as_mut().is_some_and(|workspace| {
+                if undo {
+                    workspace.controller.undo()
+                } else {
+                    workspace.controller.redo()
+                }
+            });
+            if changed {
+                self.pending_layer2_mode_reset = None;
+                self.invalidate_after_asset_edit();
+            }
+        }
         ui.horizontal(|ui| {
             ui.label("Allocation search (logical PC hex, end-exclusive)");
             ui.text_edit_singleline(&mut self.search_start);

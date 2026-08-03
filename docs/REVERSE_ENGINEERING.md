@@ -3084,3 +3084,16 @@ offers a revision-checked reset confirmation; approval alone replays the same
 batch through the explicit reset route. A mixed-field commit/reopen regression
 proves the header, custom-time control record, and reset Layer 2 representation
 all survive installed-ROM persistence together.
+
+Installed native-assets staging now keeps a bounded 100-step history of the
+entire aggregate rather than domain-local fragments. Each accepted level,
+Layer 2, palette, ExAnimation, feature, or expanded-settings batch records one
+predecessor; failed and no-op batches record none, while divergent edits clear
+redo. History snapshots include the active Layer 2 representation, dormant
+object workspace, installed descriptor, and reserved-mode compatibility state,
+so undoing and redoing a confirmed storage-class transition cannot silently
+lose the object data needed by a later switch back. The native ROM workspace
+exposes Undo/Redo before commit, disables them for stale or file-busy sessions,
+and clears pending destructive confirmations whenever history moves. A
+cross-domain regression commits the history-selected state and reopens the
+same core and Layer 2 aggregate from ROM.

@@ -169,6 +169,16 @@ impl fmt::Display for NativeLevelAssetsControllerError {
 impl std::error::Error for NativeLevelAssetsControllerError {}
 
 /// One coherent native level snapshot tied to an immutable application revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct NativeLevelAssetsControllerState {
+    assets: LoadedNativeLevelAssets,
+    features: Option<LoadedExAnimationFeatures>,
+    layer2: Option<NativeLayer2Data>,
+    dormant_layer2_objects: Option<LevelObjectData>,
+    layer2_descriptor: Option<MwlLayer2Descriptor>,
+    normalized_reserved_level_mode: Option<u8>,
+}
+
 #[derive(Clone, Debug)]
 pub struct NativeLevelAssetsController {
     revision: u64,
@@ -190,10 +200,14 @@ pub struct NativeLevelAssetsController {
     baseline_layer2_descriptor: Option<MwlLayer2Descriptor>,
     layer2_descriptor: Option<MwlLayer2Descriptor>,
     normalized_reserved_level_mode: Option<u8>,
+    undo: Vec<NativeLevelAssetsControllerState>,
+    redo: Vec<NativeLevelAssetsControllerState>,
     previous_blocks: [Option<RatsBlock>; 5],
 }
 
 impl NativeLevelAssetsController {
+    pub const HISTORY_LIMIT: usize = 100;
+
     /// Decodes all profile-modeled native assets for the selected level.
     ///
     /// # Errors
@@ -359,6 +373,8 @@ impl NativeLevelAssetsController {
             baseline_layer2_descriptor: layer2_descriptor,
             layer2_descriptor,
             normalized_reserved_level_mode,
+            undo: Vec::new(),
+            redo: Vec::new(),
             previous_blocks,
         })
     }
@@ -402,6 +418,38 @@ impl NativeLevelAssetsController {
             || self.layer2_descriptor != self.baseline_layer2_descriptor
     }
 
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    /// Restores the previous staged cross-domain aggregate without touching the ROM snapshot.
+    pub fn undo(&mut self) -> bool {
+        let Some(previous) = self.undo.pop() else {
+            return false;
+        };
+        let current = self.state();
+        self.restore(previous);
+        push_bounded_aggregate_history(&mut self.redo, current);
+        true
+    }
+
+    /// Reapplies the next staged cross-domain aggregate without touching the ROM snapshot.
+    pub fn redo(&mut self) -> bool {
+        let Some(next) = self.redo.pop() else {
+            return false;
+        };
+        let current = self.state();
+        self.restore(next);
+        push_bounded_aggregate_history(&mut self.undo, current);
+        true
+    }
+
     /// Applies a mixed cross-domain edit batch to one staged aggregate.
     ///
     /// # Errors
@@ -427,11 +475,12 @@ impl NativeLevelAssetsController {
         edits: &[NativeLevelAssetsControllerEdit],
         reset_layer2: bool,
     ) -> Result<(), NativeLevelAssetsControllerError> {
-        let mut staged = self.assets.clone();
-        let mut staged_layer2 = self.layer2.clone();
-        let mut staged_dormant_layer2_objects = self.dormant_layer2_objects.clone();
-        let mut staged_layer2_descriptor = self.layer2_descriptor;
-        let mut staged_features = self.features;
+        let previous = self.state();
+        let mut staged = previous.assets.clone();
+        let mut staged_layer2 = previous.layer2.clone();
+        let mut staged_dormant_layer2_objects = previous.dormant_layer2_objects.clone();
+        let mut staged_layer2_descriptor = previous.layer2_descriptor;
+        let mut staged_features = previous.features;
         let source_level_mode = staged.level.layer1.header.level_mode();
         apply_native_level_assets_edits(
             &mut staged,
@@ -454,18 +503,21 @@ impl NativeLevelAssetsController {
             reset_layer2,
             edits,
         )?;
-        self.assets = staged;
-        self.layer2 = staged_layer2;
-        self.dormant_layer2_objects = staged_dormant_layer2_objects;
-        self.layer2_descriptor = staged_layer2_descriptor;
-        self.features = staged_features;
+        let mut next = previous.clone();
+        next.assets = staged;
+        next.layer2 = staged_layer2;
+        next.dormant_layer2_objects = staged_dormant_layer2_objects;
+        next.layer2_descriptor = staged_layer2_descriptor;
+        next.features = staged_features;
         if let Some(mode) = edits
             .iter()
             .rev()
             .find_map(normalized_mode_from_aggregate_edit)
         {
-            self.normalized_reserved_level_mode = Some(mode);
+            next.normalized_reserved_level_mode = Some(mode);
         }
+        self.restore(next);
+        self.finish_edit(previous);
         Ok(())
     }
 
@@ -521,6 +573,7 @@ impl NativeLevelAssetsController {
         &mut self,
         source: &MwlNativeLevel,
     ) -> Result<(), NativeLevelAssetsControllerError> {
+        let previous = self.state();
         let expected = self.assets.level.number;
         let actual = source.header.level_number();
         if usize::from(actual) != expected {
@@ -625,8 +678,46 @@ impl NativeLevelAssetsController {
         if let Some(mode) = normalized_reserved_level_mode {
             self.normalized_reserved_level_mode = Some(mode);
         }
+        self.finish_edit(previous);
         Ok(())
     }
+
+    fn state(&self) -> NativeLevelAssetsControllerState {
+        NativeLevelAssetsControllerState {
+            assets: self.assets.clone(),
+            features: self.features,
+            layer2: self.layer2.clone(),
+            dormant_layer2_objects: self.dormant_layer2_objects.clone(),
+            layer2_descriptor: self.layer2_descriptor,
+            normalized_reserved_level_mode: self.normalized_reserved_level_mode,
+        }
+    }
+
+    fn restore(&mut self, state: NativeLevelAssetsControllerState) {
+        self.assets = state.assets;
+        self.features = state.features;
+        self.layer2 = state.layer2;
+        self.dormant_layer2_objects = state.dormant_layer2_objects;
+        self.layer2_descriptor = state.layer2_descriptor;
+        self.normalized_reserved_level_mode = state.normalized_reserved_level_mode;
+    }
+
+    fn finish_edit(&mut self, previous: NativeLevelAssetsControllerState) {
+        if self.state() != previous {
+            push_bounded_aggregate_history(&mut self.undo, previous);
+            self.redo.clear();
+        }
+    }
+}
+
+fn push_bounded_aggregate_history(
+    history: &mut Vec<NativeLevelAssetsControllerState>,
+    value: NativeLevelAssetsControllerState,
+) {
+    if history.len() == NativeLevelAssetsController::HISTORY_LIMIT {
+        history.remove(0);
+    }
+    history.push(value);
 }
 
 fn reset_aggregate_layer2_after_mode_change(
