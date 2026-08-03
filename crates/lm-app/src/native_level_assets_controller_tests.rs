@@ -14,8 +14,9 @@ use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
     LevelLayer2DescriptorTable, LevelLayer2RomLayout, LevelLayer2SaveOptions,
     LevelLayer2TilemapEncoding, LevelPointerTable, LevelRomLayout, LevelSaveOptions,
-    NativeLevelAssetsLayer2Layout, NativeLevelAssetsLayer2SaveOptions,
-    NativeLevelAssetsSaveOptions, PaletteRomLayout, PaletteSaveOptions, RatsOwnershipManifest,
+    Lfix3LevelFields, Lfix3LevelFieldsRomLayout, NativeLevelAssetsLayer2Layout,
+    NativeLevelAssetsLayer2SaveOptions, NativeLevelAssetsSaveOptions, PaletteRomLayout,
+    PaletteSaveOptions, RatsOwnershipManifest,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{SnesChecksum, compute_snes_checksum, detect_identity, pc_to_snes};
@@ -65,6 +66,17 @@ fn layer2_layout() -> LevelLayer2RomLayout {
         descriptor_table: None,
         maximum_compressed_len: 0x100,
         tilemap_encoding: LevelLayer2TilemapEncoding::SplitPlanes,
+    }
+}
+
+fn lfix3_layout() -> Lfix3LevelFieldsRomLayout {
+    Lfix3LevelFieldsRomLayout {
+        mapper: Mapper::LoRom,
+        flags_offset: 0x80,
+        high_position_offset: 0x81,
+        additional_flags_offset: 0x82,
+        runtime_flags_offset: 0x83,
+        entries: 1,
     }
 }
 
@@ -716,6 +728,92 @@ fn sprite_boundary_air_setting_preserves_gfx_selector_history_and_rom_reopen() {
     );
     assert!(project.undo().unwrap());
     assert_eq!(project.rom.logical_bytes(), original);
+}
+
+#[test]
+fn installed_spawn_settings_share_history_commit_reopen_checksum_and_rom_undo() {
+    let mut snapshot = snapshot();
+    snapshot.rom_bytes[0x80..0x84].copy_from_slice(&[0xe1, 0x22, 0x33, 0x44]);
+    let checksum = compute_snes_checksum(&snapshot.rom_bytes, 0x7fdc).unwrap();
+    snapshot.rom_bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    snapshot.identity =
+        detect_identity(&RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap()).unwrap();
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    controller.attach_lfix3_level_fields(
+        Lfix3LevelFields {
+            flags: 0xe1,
+            high_position: 0x22,
+            additional_flags: 0x33,
+            runtime_flags: 0x44,
+        },
+        lfix3_layout(),
+    );
+    let settings = controller
+        .lfix3_level_fields()
+        .unwrap()
+        .sprite_spawn_settings()
+        .with_properties(3, true)
+        .unwrap();
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::SpriteSpawnSettings(
+            settings,
+        )])
+        .unwrap();
+    assert_eq!(controller.lfix3_level_fields().unwrap().flags, 0xe7);
+    assert!(controller.undo());
+    assert_eq!(controller.lfix3_level_fields().unwrap().flags, 0xe1);
+    assert!(controller.redo());
+    assert_eq!(controller.lfix3_level_fields().unwrap().flags, 0xe7);
+
+    let prepared = controller
+        .prepare_commit("installed spawn settings", &options())
+        .unwrap();
+    let original = snapshot.rom_bytes;
+    let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+    project
+        .apply_mutation("installed spawn settings", &prepared.mutation)
+        .unwrap();
+    let reopened = project.load_lfix3_level_fields(0, lfix3_layout()).unwrap();
+    assert_eq!(reopened.flags, 0xe7);
+    assert_eq!(reopened.high_position, 0x22);
+    assert_eq!(reopened.additional_flags, 0x33);
+    assert_eq!(reopened.runtime_flags, 0x44);
+    assert_eq!(
+        SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
+        compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
+    );
+    assert!(project.undo().unwrap());
+    assert_eq!(project.rom.logical_bytes(), original);
+}
+
+#[test]
+fn installed_spawn_edit_rejects_unavailable_lfix3_without_history() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let before = controller.assets().clone();
+    assert!(matches!(
+        controller.apply_edits(&[NativeLevelAssetsControllerEdit::SpriteSpawnSettings(
+            lm_level::SpriteSpawnSettings::from_raw(0),
+        )]),
+        Err(NativeLevelAssetsControllerError::SpriteSpawnSettingsUnavailable { command: 0 })
+    ));
+    assert_eq!(controller.assets(), &before);
+    assert!(!controller.can_undo());
+    assert!(!controller.is_modified());
 }
 
 #[test]

@@ -193,6 +193,7 @@ impl NativeLevelAssetsEditor {
                 document.controller.value(),
                 (None, None),
                 None,
+                None,
                 &document.modes,
                 &document.ownership,
                 document.controller.sprite_lengths(),

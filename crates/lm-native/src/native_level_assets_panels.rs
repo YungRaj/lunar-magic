@@ -57,6 +57,10 @@ pub(crate) struct AggregatePanels {
     sprite_index: usize,
     loaded_sprite_index: Option<usize>,
     sprite_header: native_level_document_form::NativeSpriteHeaderForm,
+    sprite_vertical_spawn_range: u8,
+    sprite_smart_spawn: bool,
+    sprite_spawn_raw: u8,
+    sprite_spawn_available: bool,
     selected_color: usize,
     global: exanimation_form::GlobalForm,
     trigger_index: usize,
@@ -102,12 +106,13 @@ impl AggregatePanels {
             Option<lm_level::MwlLayer2Descriptor>,
         ),
         features: Option<LoadedExAnimationFeatures>,
+        lfix3_fields: Option<lm_project::Lfix3LevelFields>,
         modes: &[bool; 256],
         ownership: &PaletteOwnership,
         sprite_lengths: &lm_level::SpriteLengthTable,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let (layer2, layer2_descriptor) = layer2;
-        self.load(revision, file, layer2, features, modes);
+        self.load(revision, file, layer2, features, lfix3_fields, modes);
         ui.horizontal(|ui| {
             let tabs = if layer2.is_some() {
                 &["Level", "Layer 2", "Palette", "ExAnimation", "Settings"][..]
@@ -134,6 +139,7 @@ impl AggregatePanels {
         file: &NativeLevelAssetsFile,
         layer2: Option<&lm_level::NativeLayer2Data>,
         features: Option<LoadedExAnimationFeatures>,
+        lfix3_fields: Option<lm_project::Lfix3LevelFields>,
         modes: &[bool; 256],
     ) {
         if self.loaded_revision == Some(revision) {
@@ -159,6 +165,13 @@ impl AggregatePanels {
         self.exanimation_features = features.map(|features| features.options);
         self.sprite_header =
             native_level_document_form::NativeSpriteHeaderForm::load(assets.level.sprites.header);
+        self.sprite_spawn_available = lfix3_fields.is_some();
+        if let Some(fields) = lfix3_fields {
+            let spawn = fields.sprite_spawn_settings();
+            self.sprite_spawn_raw = spawn.raw();
+            self.sprite_vertical_spawn_range = spawn.vertical_range();
+            self.sprite_smart_spawn = spawn.smart_spawn();
+        }
         self.global = exanimation_form::GlobalForm::load(
             assets.exanimation.setting,
             assets.exanimation.header_value,

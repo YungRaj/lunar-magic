@@ -1,6 +1,7 @@
 //! Transactional I/O for Lunar Magic's four additional Lfix3 per-level fields.
 
 use crate::{Project, RomWrite, TransactionError};
+use lm_level::SpriteSpawnSettings;
 use lm_rom::{Mapper, RomError, compute_snes_checksum, mapper_supports_image_len};
 
 /// The four MWL level-header bytes stored outside vanilla SMW's entrance planes.
@@ -10,6 +11,19 @@ pub struct Lfix3LevelFields {
     pub high_position: u8,
     pub additional_flags: u8,
     pub runtime_flags: u8,
+}
+
+impl Lfix3LevelFields {
+    /// Returns the typed spawn-range/Smart Spawn view of the shared flags plane.
+    #[must_use]
+    pub const fn sprite_spawn_settings(self) -> SpriteSpawnSettings {
+        SpriteSpawnSettings::from_raw(self.flags)
+    }
+
+    /// Replaces the shared flags byte with a losslessly prepared spawn-settings value.
+    pub fn set_sprite_spawn_settings(&mut self, settings: SpriteSpawnSettings) {
+        self.flags = settings.raw();
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -183,6 +197,40 @@ mod tests {
         );
         assert!(project.undo().unwrap());
         assert_eq!(project.save_snapshot(), bytes);
+    }
+
+    #[test]
+    fn spawn_settings_preserve_shared_lfix3_flags_through_rom_reopen_and_undo() {
+        let mut bytes = vec![0; 0x8000];
+        bytes[0x105] = 0xe1;
+        let checksum = compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+        bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        let original = bytes.clone();
+        let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let layout = Lfix3LevelFieldsRomLayout {
+            mapper: Mapper::LoRom,
+            flags_offset: 0x100,
+            high_position_offset: 0x200,
+            additional_flags_offset: 0x300,
+            runtime_flags_offset: 0x400,
+            entries: 0x20,
+        };
+        let mut fields = project.load_lfix3_level_fields(5, layout).unwrap();
+        let settings = fields
+            .sprite_spawn_settings()
+            .with_properties(3, true)
+            .unwrap();
+        fields.set_sprite_spawn_settings(settings);
+        project
+            .save_lfix3_level_fields(5, fields, layout, 0x7fdc)
+            .unwrap();
+
+        let reopened = project.load_lfix3_level_fields(5, layout).unwrap();
+        assert_eq!(reopened.flags, 0xe7);
+        assert_eq!(reopened.sprite_spawn_settings().vertical_range(), 3);
+        assert!(reopened.sprite_spawn_settings().smart_spawn());
+        assert!(project.undo().unwrap());
+        assert_eq!(project.rom.logical_bytes(), original);
     }
 
     #[test]

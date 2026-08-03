@@ -29,6 +29,8 @@ pub enum ProfileControllerError {
     Rom(RomError),
     PaletteUnavailable,
     ExAnimationUnavailable,
+    Lfix3Detect(lm_profile::SmwUsV1Lfix3DetectError),
+    Lfix3Fields(lm_project::Lfix3LevelFieldsIoError),
 }
 
 impl fmt::Display for ProfileControllerError {
@@ -189,7 +191,7 @@ impl RevisionProfileControllers for RevisionProfile {
             .resolve(&image)?
             .payload;
         let level = self.level_layout_for_rom(&image)?;
-        NativeLevelAssetsController::decode_with_layer2_and_features(
+        let mut controller = NativeLevelAssetsController::decode_with_layer2_and_features(
             snapshot,
             lm_project::NativeLevelAssetsLayout {
                 level,
@@ -203,7 +205,24 @@ impl RevisionProfileControllers for RevisionProfile {
             &self.exanimation_double_size_modes,
             palette_ownership,
         )
-        .map_err(ProfileControllerError::NativeAssets)
+        .map_err(ProfileControllerError::NativeAssets)?;
+        if self.game == lm_rom::SupportedGame::SuperMarioWorld
+            && self.region == lm_rom::Region::NorthAmerica
+            && self.revision == 0
+            && lm_profile::detect_smw_us_v1_current_lfix3_runtime(image.logical_bytes())
+                .map_err(ProfileControllerError::Lfix3Detect)?
+                .is_some()
+        {
+            let crate::EditorMode::Level(slot) = snapshot.mode else {
+                unreachable!("validated native level snapshot")
+            };
+            let layout = lm_profile::smw_us_v1_lfix3_level_fields_layout();
+            let fields = lm_project::Project::new(image)
+                .load_lfix3_level_fields(usize::from(slot), layout)
+                .map_err(ProfileControllerError::Lfix3Fields)?;
+            controller.attach_lfix3_level_fields(fields, layout);
+        }
+        Ok(controller)
     }
 
     fn decode_expanded_settings(

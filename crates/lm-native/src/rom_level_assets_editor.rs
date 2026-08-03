@@ -816,6 +816,7 @@ impl RomLevelAssetsEditor {
                         workspace.controller.layer2_descriptor(),
                     ),
                     workspace.controller.exanimation_features(),
+                    workspace.controller.lfix3_level_fields(),
                     &workspace.profile.exanimation_double_size_modes,
                     &workspace.ownership,
                     workspace.controller.sprite_lengths(),

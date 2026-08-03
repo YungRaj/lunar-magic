@@ -284,6 +284,16 @@ impl NativeLevelAssetsController {
                 )
                 .map_err(NativeLevelAssetsControllerError::ExAnimationFeatures)?;
         }
+        if let (Some(fields), Some(layout)) = (self.lfix3_fields, self.lfix3_layout) {
+            project
+                .save_lfix3_level_fields(
+                    self.assets.level.number,
+                    fields,
+                    layout,
+                    self.checksum_field,
+                )
+                .map_err(NativeLevelAssetsControllerError::Lfix3Fields)?;
+        }
         Ok(())
     }
 }

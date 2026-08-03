@@ -12,15 +12,15 @@ use lm_level::{
     ExpandedLevelSettingsError, HeaderValueError, Layer2Storage, LegacyHeaderEdit, LevelEditError,
     LevelObjectData, LevelScreenExtentMode, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
     NativeLayer2Data, NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError,
-    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteStreamError, level_mode_layer2_storage,
-    native_level_screen_count,
+    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteSpawnSettings, SpriteStreamError,
+    level_mode_layer2_storage, native_level_screen_count,
 };
 use lm_project::{
     InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
-    LevelLayer2RomLayout, LevelLoadError, LevelPointerTable, LoadedExAnimationFeatures,
-    LoadedNativeLevelAssets, MwlNativeLevel, NativeLevelAssetsLayout, NativeLevelAssetsLoadError,
-    NativeLevelAssetsSaveError, PayloadLoadError, PayloadReadPolicy, Project, SpritePointerTable,
-    TransactionError,
+    LevelLayer2RomLayout, LevelLoadError, LevelPointerTable, Lfix3LevelFields,
+    Lfix3LevelFieldsRomLayout, LoadedExAnimationFeatures, LoadedNativeLevelAssets, MwlNativeLevel,
+    NativeLevelAssetsLayout, NativeLevelAssetsLoadError, NativeLevelAssetsSaveError,
+    PayloadLoadError, PayloadReadPolicy, Project, SpritePointerTable, TransactionError,
 };
 use lm_rats::RatsBlock;
 use lm_rom::{Mapper, RomError, RomImage};
@@ -43,6 +43,7 @@ pub enum NativeLevelAssetsControllerEdit {
     ExAnimation(Vec<ExAnimationControllerEdit>),
     ExAnimationFeatures(ExAnimationFeatureOptions),
     ExpandedSettingsWords(Vec<(usize, u16)>),
+    SpriteSpawnSettings(SpriteSpawnSettings),
 }
 
 #[derive(Debug)]
@@ -122,6 +123,10 @@ pub enum NativeLevelAssetsControllerError {
         command: usize,
         error: ExpandedLevelSettingsError,
     },
+    SpriteSpawnSettingsUnavailable {
+        command: usize,
+    },
+    Lfix3Fields(lm_project::Lfix3LevelFieldsIoError),
     MwlTargetMismatch {
         expected: usize,
         actual: u16,
@@ -177,6 +182,7 @@ struct NativeLevelAssetsControllerState {
     dormant_layer2_objects: Option<LevelObjectData>,
     layer2_descriptor: Option<MwlLayer2Descriptor>,
     normalized_reserved_level_mode: Option<u8>,
+    lfix3_fields: Option<Lfix3LevelFields>,
 }
 
 #[derive(Clone, Debug)]
@@ -200,6 +206,9 @@ pub struct NativeLevelAssetsController {
     baseline_layer2_descriptor: Option<MwlLayer2Descriptor>,
     layer2_descriptor: Option<MwlLayer2Descriptor>,
     normalized_reserved_level_mode: Option<u8>,
+    baseline_lfix3_fields: Option<Lfix3LevelFields>,
+    lfix3_fields: Option<Lfix3LevelFields>,
+    lfix3_layout: Option<Lfix3LevelFieldsRomLayout>,
     undo: Vec<NativeLevelAssetsControllerState>,
     redo: Vec<NativeLevelAssetsControllerState>,
     previous_blocks: [Option<RatsBlock>; 5],
@@ -373,6 +382,9 @@ impl NativeLevelAssetsController {
             baseline_layer2_descriptor: layer2_descriptor,
             layer2_descriptor,
             normalized_reserved_level_mode,
+            baseline_lfix3_fields: None,
+            lfix3_fields: None,
+            lfix3_layout: None,
             undo: Vec::new(),
             redo: Vec::new(),
             previous_blocks,
@@ -415,12 +427,29 @@ impl NativeLevelAssetsController {
         self.features
     }
 
+    /// Attaches the authenticated current-Lfix3 fields loaded from the same immutable snapshot.
+    pub(crate) fn attach_lfix3_level_fields(
+        &mut self,
+        fields: Lfix3LevelFields,
+        layout: Lfix3LevelFieldsRomLayout,
+    ) {
+        self.baseline_lfix3_fields = Some(fields);
+        self.lfix3_fields = Some(fields);
+        self.lfix3_layout = Some(layout);
+    }
+
+    #[must_use]
+    pub const fn lfix3_level_fields(&self) -> Option<Lfix3LevelFields> {
+        self.lfix3_fields
+    }
+
     #[must_use]
     pub fn is_modified(&self) -> bool {
         self.assets != self.baseline
             || self.features != self.baseline_features
             || self.layer2 != self.baseline_layer2
             || self.layer2_descriptor != self.baseline_layer2_descriptor
+            || self.lfix3_fields != self.baseline_lfix3_fields
     }
 
     #[must_use]
@@ -486,6 +515,7 @@ impl NativeLevelAssetsController {
         let mut staged_dormant_layer2_objects = previous.dormant_layer2_objects.clone();
         let mut staged_layer2_descriptor = previous.layer2_descriptor;
         let mut staged_features = previous.features;
+        let mut staged_lfix3_fields = previous.lfix3_fields;
         let source_level_mode = staged.level.layer1.header.level_mode();
         apply_native_level_assets_edits(
             &mut staged,
@@ -493,6 +523,7 @@ impl NativeLevelAssetsController {
                 (&mut staged_layer2, &mut staged_layer2_descriptor),
                 &mut staged_features,
             ),
+            &mut staged_lfix3_fields,
             edits,
             &self.sprite_lengths,
             self.layout.exanimation.maximum_records,
@@ -514,6 +545,7 @@ impl NativeLevelAssetsController {
         next.dormant_layer2_objects = staged_dormant_layer2_objects;
         next.layer2_descriptor = staged_layer2_descriptor;
         next.features = staged_features;
+        next.lfix3_fields = staged_lfix3_fields;
         if let Some(mode) = edits
             .iter()
             .rev()
@@ -695,6 +727,7 @@ impl NativeLevelAssetsController {
             dormant_layer2_objects: self.dormant_layer2_objects.clone(),
             layer2_descriptor: self.layer2_descriptor,
             normalized_reserved_level_mode: self.normalized_reserved_level_mode,
+            lfix3_fields: self.lfix3_fields,
         }
     }
 
@@ -705,6 +738,7 @@ impl NativeLevelAssetsController {
         self.dormant_layer2_objects = state.dormant_layer2_objects;
         self.layer2_descriptor = state.layer2_descriptor;
         self.normalized_reserved_level_mode = state.normalized_reserved_level_mode;
+        self.lfix3_fields = state.lfix3_fields;
     }
 
     fn finish_edit(&mut self, previous: NativeLevelAssetsControllerState) {
@@ -831,6 +865,7 @@ pub(crate) fn apply_native_level_assets_edits(
         ),
         &mut Option<LoadedExAnimationFeatures>,
     ),
+    staged_lfix3_fields: &mut Option<Lfix3LevelFields>,
     edits: &[NativeLevelAssetsControllerEdit],
     sprite_lengths: &SpriteLengthTable,
     maximum_animation_records: usize,
@@ -923,6 +958,12 @@ pub(crate) fn apply_native_level_assets_edits(
                         NativeLevelAssetsControllerError::ExpandedSettingsEdit { command, error }
                     })?;
                 }
+            }
+            NativeLevelAssetsControllerEdit::SpriteSpawnSettings(settings) => {
+                let fields = staged_lfix3_fields.as_mut().ok_or(
+                    NativeLevelAssetsControllerError::SpriteSpawnSettingsUnavailable { command },
+                )?;
+                fields.set_sprite_spawn_settings(*settings);
             }
         }
     }

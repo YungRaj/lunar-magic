@@ -3175,7 +3175,12 @@ edit, undo/redo, checksum repair, exact ROM reopen, and ROM-history undo.
 The adjacent recovered properties remain in their actual independent storage domains. Binary MWL
 header byte 6 now has a lossless typed view whose low two bits select the horizontal-level vertical
 spawn range and whose bit 2 enables Smart Spawn; its five shared Lfix3 flags survive semantic edits,
-canonical reopen, and whole-document history. The beyond-boundary air/water choice is expanded
+canonical reopen, and whole-document history. An authenticated current-Lfix3 ROM attaches the same
+four external fields to the installed aggregate controller. The Level panel exposes both spawn
+properties only in that state; edits preserve the flags byte's high five bits and share aggregate
+dirty state, bounded undo/redo, private-project serialization, checksum repair, exact ROM reopen,
+and application ROM undo. Absent and unauthenticated Lfix3 states keep the controls disabled and
+reject programmatic edits before history. The beyond-boundary air/water choice is expanded
 settings word 8 bit `$4000`, as proved by Lunar Magic's packed-high-nibble helper. Its installed
 aggregate control preserves the low 12-bit GFX selector and all other high flags, commits through
 the ordinary checksum-repaired aggregate mutation, reopens semantically, and undoes exactly.

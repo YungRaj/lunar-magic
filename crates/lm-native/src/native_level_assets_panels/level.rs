@@ -246,6 +246,28 @@ impl AggregatePanels {
             "installed-native-sprite-header",
             &mut self.sprite_header,
         );
+        let mut apply_spawn_settings = false;
+        ui.add_enabled_ui(self.sprite_spawn_available, |ui| {
+            ui.add(
+                egui::Slider::new(&mut self.sprite_vertical_spawn_range, 0..=3)
+                    .text("Vertical spawn range for horizontal levels"),
+            );
+            ui.checkbox(
+                &mut self.sprite_smart_spawn,
+                "Enable Smart Spawn (spawn on scroll)",
+            );
+            apply_spawn_settings = ui.button("Apply spawn settings").clicked();
+        });
+        if !self.sprite_spawn_available {
+            ui.small("Spawn settings require an authenticated current Lfix3 runtime.");
+        }
+        if apply_spawn_settings {
+            return Some(spawn_settings_edit(
+                self.sprite_spawn_raw,
+                self.sprite_vertical_spawn_range,
+                self.sprite_smart_spawn,
+            ));
+        }
         ui.text_edit_singleline(&mut self.level_record.sprite);
         sprite_semantic_fields(ui, &mut self.level_record);
         let mut action = None;
@@ -371,6 +393,34 @@ impl AggregatePanels {
             };
             edit.map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit]))
         })
+    }
+}
+
+fn spawn_settings_edit(
+    raw: u8,
+    vertical_range: u8,
+    smart_spawn: bool,
+) -> Result<NativeLevelAssetsControllerEdit, String> {
+    lm_level::SpriteSpawnSettings::from_raw(raw)
+        .with_properties(vertical_range, smart_spawn)
+        .map(NativeLevelAssetsControllerEdit::SpriteSpawnSettings)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installed_spawn_form_preserves_shared_lfix3_flags() {
+        assert!(matches!(
+            spawn_settings_edit(0xe1, 3, true).unwrap(),
+            NativeLevelAssetsControllerEdit::SpriteSpawnSettings(value) if value.raw() == 0xe7
+        ));
+        assert_eq!(
+            spawn_settings_edit(0xe1, 4, false).unwrap_err(),
+            "sprite vertical spawn range must be in 0..=3, got 4"
+        );
     }
 }
 
