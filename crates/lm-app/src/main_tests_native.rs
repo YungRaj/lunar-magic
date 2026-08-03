@@ -263,7 +263,11 @@ fn terminal_expanded_settings_batch_is_atomic_checksum_valid_and_undoable() {
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).unwrap();
     let script = directory.join("expanded settings 日本語.lmedit");
-    fs::write(&script, "LMXSETED1\nword 0 1234\nword f a55a\n").unwrap();
+    fs::write(
+        &script,
+        "LMXSETED1\nlayer3-tilemap true abc 2 3\nboundary-air false\nword f a55a\n",
+    )
+    .unwrap();
 
     edit_expanded_settings(&mut app, &script).unwrap();
     let record = app
@@ -271,7 +275,9 @@ fn terminal_expanded_settings_batch_is_atomic_checksum_valid_and_undoable() {
         .unwrap()
         .load_expanded_level_settings(0x105, layout)
         .unwrap();
-    assert_eq!(record.word(0).unwrap(), 0x1234);
+    assert_eq!(record.word(0).unwrap(), baseline.word(0).unwrap() | 0x2000);
+    assert_eq!(record.word(1).unwrap(), 0xeabc);
+    assert_eq!(record.word(8).unwrap(), baseline.word(8).unwrap() & !0x4000);
     assert_eq!(record.word(15).unwrap(), 0xa55a);
     assert!(
         app.project()
@@ -292,7 +298,11 @@ fn terminal_expanded_settings_batch_is_atomic_checksum_valid_and_undoable() {
         baseline.word(0).unwrap()
     );
 
-    fs::write(&script, "LMXSETED1\nword 1 1111\nword 1 2222\n").unwrap();
+    fs::write(
+        &script,
+        "LMXSETED1\nword 0 1111\nlayer3-tilemap true abc 2 3\n",
+    )
+    .unwrap();
     assert!(edit_expanded_settings(&mut app, &script).is_err());
     assert_eq!(
         app.project()

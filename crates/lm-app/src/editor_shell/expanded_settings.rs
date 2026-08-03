@@ -30,11 +30,12 @@ pub(crate) fn edit_expanded_settings(
         expanded_settings_edit_script::MAX_SCRIPT_LEN,
         "expanded-settings edit",
     )?;
-    let edits = expanded_settings_edit_script::parse(&text)?;
+    let script = expanded_settings_edit_script::parse(&text)?;
     let profiled = app.profiled_controller_snapshot()?;
     let mut controller = profiled
         .profile
         .decode_expanded_settings(&profiled.snapshot)?;
+    let edits = script.resolve(controller.record())?;
     controller.apply_word_edits(&edits)?;
     app.dispatch(
         controller

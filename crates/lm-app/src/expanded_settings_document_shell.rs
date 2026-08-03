@@ -76,10 +76,11 @@ fn edit(
         expanded_settings_edit_script::MAX_SCRIPT_LEN,
         "expanded-settings edit",
     )?;
-    let edits = expanded_settings_edit_script::parse(&script)?;
+    let script = expanded_settings_edit_script::parse(&script)?;
     let controller = session
         .as_mut()
         .ok_or("no expanded-settings document is open")?;
+    let edits = script.resolve(controller.value())?;
     controller.apply_word_edits(controller.revision(), &edits)?;
     status(session.as_ref());
     Ok(())

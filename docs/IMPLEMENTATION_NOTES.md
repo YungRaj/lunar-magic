@@ -1306,9 +1306,15 @@ The application shell can also edit an exported exact record without opening a R
 `expanded-settings-redo`, `expanded-settings-status`, `expanded-settings-save`,
 `expanded-settings-close`, and `expanded-settings-discard`. Its bounded exact-record history uses
 monotonic revision tokens, preserves the saved baseline, and invalidates divergent redo. A bounded
-script uses the `LMXSETED1` header followed by `word INDEX VALUE` commands; indexes and values are
-hexadecimal, and duplicate indexes are rejected atomically. This workflow deliberately preserves
-unknown words and does not claim to discover or install Lunar Magic runtime patches.
+script uses the `LMXSETED1` header followed by raw or semantic commands. `word INDEX VALUE` retains
+the original hexadecimal exact-word route. `layer3-tilemap ENABLED FILE LENGTH DESTINATION`
+accepts a canonical boolean, twelve-bit hexadecimal GFX/ExGFX file, and selectors `0..=3`;
+`boundary-air ENABLED` changes the recovered interaction bit. Commands declare their owned words:
+Layer 3 owns words 0–1, boundary interaction owns word 8, and raw writes own their selected word.
+Any overlap, out-of-range word, invalid boolean, file, or selector rejects during parsing before an
+edit escapes. Resolution starts from the current record, preserves every unowned bit/word, and is
+shared by installed shell editing, portable-document history, and aggregate ROM automation. This
+workflow does not claim to discover or install Lunar Magic runtime patches.
 The installed-record type and the complete-level `ExpandedLevelHeader` have explicit lossless
 conversions over the same sixteen-word shape, allowing portable and native workflows to exchange
 the recovered record without assigning meanings or normalizing unknown values.
@@ -1327,9 +1333,9 @@ With a qualified profile installed and a level selected, the application command
 the open ROM. The profile-driven controller decodes from an immutable application snapshot,
 preserves every other byte, repairs the checksum in the same transaction, and commits through the
 normal revision/undo/redo boundary. Profiles without the optional table capability fail explicitly.
-`expanded-settings-edit SCRIPT` applies the same bounded `LMXSETED1` format used by standalone
-documents as one duplicate-free native transaction; a bad late command leaves every word and the
-application history unchanged.
+`expanded-settings-edit SCRIPT` applies the same bounded semantic `LMXSETED1` format used by
+standalone documents as one duplicate-free native transaction; a bad late command leaves every
+word and the application history unchanged.
 
 `expanded-settings-file INPUT [NORMALIZED_OUTPUT [OBSERVATION]]` provides the corresponding
 oracle boundary. It requires exactly 32 input bytes and atomically publishes an exact normalized

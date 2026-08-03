@@ -349,6 +349,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   custom Layer 3 form. The aggregate path carries a typed enable/descriptor edit; the focused path
   stages the corresponding two-word batch and immediately reloads the form. Both preserve word 0
   outside `$2000`, every field after word 1, and the exact descriptor selectors.
+- `LMXSETED1` is the corresponding deterministic automation boundary. Typed raw-word, Layer 3
+  tilemap, and boundary-interaction commands declare disjoint owned words before mutation. The
+  standalone ROM shell and portable document resolve them against their current exact record;
+  aggregate loading maps the semantic commands directly to the same controller edits as the GUI.
 - Complete `LMOWFULL` documents similarly retain their exact size-mode table and animation bound
   for their entire lifetime. Native-ROM and portable-document controllers call one staged
   nine-domain edit engine, while `LMOWDOC1` and `LMOWDRN1` keep open interpretation and preview

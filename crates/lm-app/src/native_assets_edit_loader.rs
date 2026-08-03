@@ -49,9 +49,29 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
             expanded_settings_edit_script::MAX_SCRIPT_LEN,
             "expanded-settings edit",
         )?;
-        edits.push(NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
-            expanded_settings_edit_script::parse(&text)?,
-        ));
+        let script = expanded_settings_edit_script::parse(&text)?;
+        for edit in script.edits {
+            match edit {
+                expanded_settings_edit_script::ExpandedSettingsScriptEdit::Word {
+                    index,
+                    value,
+                } => edits.push(NativeLevelAssetsControllerEdit::ExpandedSettingsWords(vec![(
+                    index, value,
+                )])),
+                expanded_settings_edit_script::ExpandedSettingsScriptEdit::Layer3Tilemap {
+                    enabled,
+                    descriptor,
+                } => edits.push(NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
+                    enabled,
+                    descriptor,
+                }),
+                expanded_settings_edit_script::ExpandedSettingsScriptEdit::SpriteBoundaryInteractionAir(
+                    enabled,
+                ) => edits.push(
+                    NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(enabled),
+                ),
+            }
+        }
     }
     if let Some(path) = spec.sprite_spawn {
         let text = read_bounded_utf8(
@@ -99,20 +119,34 @@ mod tests {
         ));
         fs::create_dir(&directory).unwrap();
         let spawn = directory.join("Spawn settings.txt");
-        fs::write(&spawn, "LMSPAWN1\nsettings 3 true\nboundary-air false\n").unwrap();
+        fs::write(&spawn, "LMSPAWN1\nsettings 3 true\n").unwrap();
+        let expanded = directory.join("Expanded settings.txt");
+        fs::write(
+            &expanded,
+            "LMXSETED1\nlayer3-tilemap true abc 2 3\nboundary-air true\n",
+        )
+        .unwrap();
         let spec = directory.join("Aggregate.lmnat");
-        fs::write(&spec, "LMNATED1\nsprite-spawn=Spawn settings.txt\n").unwrap();
+        fs::write(
+            &spec,
+            "LMNATED1\nexpanded-settings=Expanded settings.txt\nsprite-spawn=Spawn settings.txt\n",
+        )
+        .unwrap();
 
         let loaded = load(&spec).unwrap();
         assert!(matches!(
             loaded.edits.as_slice(),
             [
+                NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
+                    enabled: true,
+                    descriptor,
+                },
+                NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(true),
                 NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
                     vertical_range: 3,
                     smart_spawn: true,
                 },
-                NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(false),
-            ]
+            ] if descriptor.packed() == 0xeabc
         ));
         fs::remove_dir_all(directory).unwrap();
     }

@@ -1291,7 +1291,11 @@ fn command_script_drives_expanded_settings_history_and_save() {
     let edits = directory.join("Expanded Settings edits.txt");
     let commands = directory.join("Commands.txt");
     fs::write(&document, [0; ExpandedLevelSettingsRecord::ENCODED_LEN]).unwrap();
-    fs::write(&edits, "LMXSETED1\nword 2 1234\nword f abcd\n").unwrap();
+    fs::write(
+        &edits,
+        "LMXSETED1\nlayer3-tilemap true abc 2 3\nboundary-air false\nword 2 1234\nword f abcd\n",
+    )
+    .unwrap();
     fs::write(
         &commands,
         format!(
@@ -1316,6 +1320,8 @@ fn command_script_drives_expanded_settings_history_and_save() {
     assert!(stdout.contains("expanded-settings redo: applied"));
     assert!(stdout.contains("expanded-settings document saved"));
     let saved = ExpandedLevelSettingsRecord::decode(&fs::read(&document).unwrap()).unwrap();
+    assert_eq!(saved.word(0).unwrap(), 0x2000);
+    assert_eq!(saved.word(1).unwrap(), 0xeabc);
     assert_eq!(saved.word(2).unwrap(), 0x1234);
     assert_eq!(saved.word(0xf).unwrap(), 0xabcd);
     fs::remove_dir_all(directory).unwrap();
