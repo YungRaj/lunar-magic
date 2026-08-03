@@ -2349,6 +2349,10 @@ drives that same application controller over a four-cell paint, commits the ROM,
 ROM alive in the platform-discovered Snes9x executable for eight seconds. Its child guard kills and
 reaps the emulator on success, failure, or panic. This proves editor-to-emulator initialization for
 the authentic runtime storage, but not yet that gameplay navigated to and rendered the four cells.
+The companion `native_overworld_path_link_edit_survives_snes9x_initialization` gate changes a
+destination endpoint and engine target in the fixed gameplay path table through the same
+revision-checked application boundary, semantically reopens the detected table, verifies the
+checksum, and boots that route-edited ROM in Snes9x. Input-driven traversal remains a later gate.
 
 Accordingly, `CompleteOverworldRomLayout` remains a profile-described editor/container boundary.
 The ignored Snes9x complete-overworld smoke gate proves allocation, transaction, checksum,

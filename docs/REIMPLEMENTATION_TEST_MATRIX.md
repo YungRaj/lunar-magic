@@ -31,6 +31,9 @@ semantically reopens an expanded upper-Y sprite transition before booting that e
 Another gate starts from
 the pristine fixture, uses the snapshot-bound application controller to change a Map16 quadrant,
 expands and installs all native split tables, and reopens the exact definition before launch. A
+gameplay path-link gate changes both the destination endpoint and engine target of a fixed native
+route through the application transaction, reopens the detected runtime table, verifies the
+checksum, and boots that exact output. A
 complete-overworld transaction gate additionally expands a pristine
 ROM, installs nine independent tagged payloads and their pointer tables in an otherwise unused
 extension region, semantically reopens every layer/event/endpoint/message/sprite/palette/animation

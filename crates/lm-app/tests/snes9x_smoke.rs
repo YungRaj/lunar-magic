@@ -306,6 +306,64 @@ fn native_main_overworld_layer2_paint_survives_snes9x_initialization() {
     require_snes9x_initialization(&snes9x, &output);
 }
 
+#[test]
+#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
+fn native_overworld_path_link_edit_survives_snes9x_initialization() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = require_snes9x_binary();
+    let mut app = AppState::default();
+    app.load_rom(fs::read(source_rom(&root)).expect("read source SMW ROM"))
+        .expect("open source SMW ROM");
+    app.dispatch(AppCommand::ShowOverworld)
+        .expect("enter overworld mode");
+    let mut expected = app
+        .project()
+        .expect("retain source project")
+        .load_overworld_path_links_detected(lm_profile::smw_us_v1_overworld_path_patch_locator())
+        .expect("load gameplay-consumed path-link table")
+        .table;
+    let link = expected
+        .links
+        .first_mut()
+        .expect("native path-link table must not be empty");
+    link.destination.x ^= 1;
+    link.target.x_tile ^= 1;
+    app.dispatch(AppCommand::ReplaceNativeOverworldPathLinks {
+        rev: app.project_revision(),
+        table: Box::new(expected.clone()),
+    })
+    .expect("commit native path-link edit");
+    let project = app.project().expect("retain path-edited project");
+    assert_eq!(
+        project
+            .load_overworld_path_links_detected(
+                lm_profile::smw_us_v1_overworld_path_patch_locator(),
+            )
+            .expect("reopen gameplay-consumed path-link table")
+            .table,
+        expected
+    );
+    assert_eq!(
+        lm_rom::SnesChecksum::decode(
+            project.rom.logical_bytes(),
+            lm_profile::SMW_US_V1_CHECKSUM_FIELD,
+        )
+        .expect("decode path-edited ROM checksum"),
+        lm_rom::compute_snes_checksum(
+            project.rom.logical_bytes(),
+            lm_profile::SMW_US_V1_CHECKSUM_FIELD,
+        )
+        .expect("compute path-edited ROM checksum")
+    );
+
+    let directory = SmokeDirectory::create();
+    let output = directory
+        .0
+        .join("Rust-native-overworld-path-link-edited-SMW.sfc");
+    fs::write(&output, project.save_snapshot()).expect("write native-path-edited ROM");
+    require_snes9x_initialization(&snes9x, &output);
+}
+
 fn smoke_overworld_layout() -> CompleteOverworldRomLayout {
     let table = |offset| LevelPointerTable {
         offset,
