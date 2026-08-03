@@ -33,7 +33,10 @@ the pristine fixture, uses the snapshot-bound application controller to change a
 expands and installs all native split tables, and reopens the exact definition before launch. A
 gameplay path-link gate changes both the destination endpoint and engine target of a fixed native
 route through the application transaction, reopens the detected runtime table, and verifies the
-checksum. Unlike the initialization-only gates, it then invokes the explicitly configured
+checksum. The fixed SMW `OwExits` planes are decoded and encoded in their actual Y-word,
+X-word, submap-byte order while every public/editor coordinate remains semantic X/Y; raw-plane,
+pristine-ROM, direct-save, and emulator-evidence tests prevent a byte-preserving but visually and
+runtime-transposed interpretation. Unlike the initialization-only gates, it then invokes the explicitly configured
 `SNES9X_GAMEPLAY_DRIVER` without a command shell. The platform driver receives the exact emulator,
 ROM, source, expected destination, snapshot, and screenshot paths. Unix drivers can use Snes9x's
 official `.smv` playback and target-frame switches; GUI ports can provide equivalent native input

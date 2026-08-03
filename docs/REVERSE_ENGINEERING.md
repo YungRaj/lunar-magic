@@ -2370,6 +2370,12 @@ drives that same application controller over a four-cell paint, commits the ROM,
 ROM alive in the platform-discovered Snes9x executable for eight seconds. Its child guard kills and
 reaps the emulator on success, failure, or panic. This proves editor-to-emulator initialization for
 the authentic runtime storage, but not yet that gameplay navigated to and rendered the four cells.
+SMW's fixed `OwExits` source and destination records physically store the Y word before the X
+word. The native path-link codec now transposes only at that engine boundary, so editor,
+automation, canvas, and runtime-evidence coordinates remain semantic X/Y while byte-for-byte
+re-encoding preserves the original planes. A focused pristine-ROM oracle requires the first raw
+`0140,0028,00` record to decode as X `$0028`, Y `$0140`, not the previously transposed view.
+
 The companion `native_overworld_path_link_edit_is_traversed_in_snes9x` gate changes a
 destination endpoint and matching engine target in the fixed gameplay path table through the same
 revision-checked application boundary, semantically reopens the detected table, and verifies the

@@ -317,8 +317,8 @@ fn synthetic_overworld_path_evidence(expected: OverworldEndpoint) -> (Vec<u8>, V
 #[test]
 fn gameplay_evidence_requires_exact_overworld_runtime_destination_and_image() {
     let expected = OverworldEndpoint {
-        x: 0x0058,
-        y: 0x0150,
+        x: 0x0150,
+        y: 0x0058,
         submap: 2,
     };
     let (snapshot, screenshot) = synthetic_overworld_path_evidence(expected);
@@ -329,8 +329,8 @@ fn gameplay_evidence_requires_exact_overworld_runtime_destination_and_image() {
 #[should_panic]
 fn gameplay_evidence_rejects_a_boot_snapshot_that_did_not_reach_the_destination() {
     let actual = OverworldEndpoint {
-        x: 0x0058,
-        y: 0x0150,
+        x: 0x0150,
+        y: 0x0058,
         submap: 2,
     };
     let (snapshot, screenshot) = synthetic_overworld_path_evidence(actual);
@@ -528,12 +528,12 @@ fn native_overworld_path_link_edit_is_traversed_in_snes9x() {
         .expect("native path-link table must not be empty");
     let source = link.source;
     link.destination = OverworldEndpoint {
-        x: 0x0058,
-        y: 0x0150,
+        x: 0x0150,
+        y: 0x0058,
         submap: 2,
     };
-    link.target.x_tile = 0x05;
-    link.target.y_tile = 0x15;
+    link.target.x_tile = 0x15;
+    link.target.y_tile = 0x05;
     let destination = link.destination;
     app.dispatch(AppCommand::ReplaceNativeOverworldPathLinks {
         rev: app.project_revision(),

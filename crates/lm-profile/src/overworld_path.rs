@@ -35,10 +35,10 @@ mod tests {
             .load_overworld_path_links(smw_us_v1_overworld_path_link_layout())
             .unwrap();
         assert_eq!(table.links.len(), SMW_US_V1_OVERWORLD_PATH_LINK_COUNT);
-        assert_eq!(table.links[0].source.x, 0x0140);
-        assert_eq!(table.links[0].source.y, 0x0028);
-        assert_eq!(table.links[0].destination.x, 0);
-        assert_eq!(table.links[0].destination.y, 0x0048);
+        assert_eq!(table.links[0].source.x, 0x0028);
+        assert_eq!(table.links[0].source.y, 0x0140);
+        assert_eq!(table.links[0].destination.x, 0x0048);
+        assert_eq!(table.links[0].destination.y, 0);
         assert_eq!(table.links[0].target.y_tile, 0);
         assert_eq!(table.links[0].target.x_tile, 4);
 

@@ -238,6 +238,18 @@ mod tests {
             table()
         );
         assert_eq!(
+            project.rom.read(layout().source_offset, 5).unwrap(),
+            &[1, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            project.rom.read(layout().destination_offset, 5).unwrap(),
+            &[3, 0, 2, 0, 4]
+        );
+        assert_eq!(
+            project.rom.read(layout().target_offset, 2).unwrap(),
+            &[5, 6]
+        );
+        assert_eq!(
             SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
             compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
         );
