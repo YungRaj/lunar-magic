@@ -744,6 +744,11 @@ booleans/descriptors, or word 16 before mutation. Model tests prove the mode set
 eight high nibbles. The real installed shell test commits the semantic descriptor and mode with
 checksum repair, semantic reopen, low-field preservation, and whole-ROM undo; the built
 portable-document process exercises edit, undo, redo, save, and exact reopen through Unicode paths.
+The standalone native exact-record editor additionally exposes semantic Super GFX Bypass and
+sprite-boundary controls beside Layer 3 tilemap and expanded mode. Shared-form tests prove each
+projection's unowned words and bitfields remain exact; the native editor integration test composes
+all three shared-word edits through monotonic history, snapshots the exact saved record, marks the
+acknowledged baseline clean, and restores a modified state through undo.
 Its ownership-backed route reads a file-backed `LMRATS01` manifest through the real shell
 dispatcher, reclaims the exact palette and ExAnimation snapshot blocks, preserves semantic reopen,
 rejects reuse of the now-stale evidence for a later edit without changing a byte, and restores the

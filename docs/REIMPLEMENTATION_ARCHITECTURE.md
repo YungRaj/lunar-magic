@@ -356,6 +356,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   preserves every adjacent low 12-bit field. The
   standalone ROM shell and portable document resolve them against their current exact record;
   aggregate loading maps the semantic commands directly to the same controller edits as the GUI.
+- The standalone exact-record native editor uses the shared semantic form for Layer 3 tilemap and
+  expanded mode, Super GFX Bypass, and sprite boundary interaction. Each projection produces only
+  its owned word batch and rejoins the ordinary revisioned document controller, so native buttons,
+  raw-word editing, terminal automation, history, and persistence cannot diverge.
 - Complete `LMOWFULL` documents similarly retain their exact size-mode table and animation bound
   for their entire lifetime. Native-ROM and portable-document controllers call one staged
   nine-domain edit engine, while `LMOWDOC1` and `LMOWDRN1` keep open interpretation and preview

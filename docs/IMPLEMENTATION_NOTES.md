@@ -1321,6 +1321,12 @@ Any overlap, out-of-range word, invalid boolean, file, or selector rejects durin
 edit escapes. Resolution starts from the current record, preserves every unowned bit/word, and is
 shared by installed shell editing, portable-document history, and aggregate ROM automation. This
 workflow does not claim to discover or install Lunar Magic runtime patches.
+The standalone native editor now exposes every proven projection over that exact record: custom
+Layer 3 tilemap enable/descriptor, exact 32-bit expanded mode, all ten Super GFX Bypass files, and
+sprite boundary interaction. Each button derives its bounded word batch from the currently loaded
+exact form, commits through the same document controller, and immediately reloads canonical state.
+Mode changes preserve the eight adjacent low 12-bit fields, bypass changes preserve word 1 and
+words 12–15, and boundary changes preserve every bit except word 8's `$4000` flag.
 The installed-record type and the complete-level `ExpandedLevelHeader` have explicit lossless
 conversions over the same sixteen-word shape, allowing portable and native workflows to exchange
 the recovered record without assigning meanings or normalizing unknown values.

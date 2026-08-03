@@ -138,6 +138,70 @@ impl ExpandedSettingsEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+        ui.horizontal(|ui| {
+            ui.label("Expanded mode");
+            ui.text_edit_singleline(&mut self.form.layer3_expanded_mode);
+        });
+        ui.small("Exact 32-bit mode packed from the high nibbles of words 8–F.");
+        if ui.button("Apply Layer 3 expanded mode").clicked() {
+            match self.form.layer3_expanded_mode_edits() {
+                Ok(edits) => self.apply_edits(&edits),
+                Err(error) => self.error = Some(error),
+            }
+        }
+        ui.separator();
+        ui.label("Super GFX Bypass");
+        ui.checkbox(
+            &mut self.form.bypass_enabled,
+            "Use per-level GFX/ExGFX files",
+        );
+        egui::Grid::new("expanded-settings-super-gfx")
+            .num_columns(4)
+            .show(ui, |ui| {
+                for (slot, label) in ["FG1", "FG2", "FG3", "BG1", "BG2", "BG3"]
+                    .into_iter()
+                    .enumerate()
+                {
+                    ui.label(label);
+                    ui.add(
+                        egui::DragValue::new(&mut self.form.bypass_foreground_background[slot])
+                            .hexadecimal(3, false, true)
+                            .range(0..=0x0fff),
+                    );
+                    if slot % 2 == 1 {
+                        ui.end_row();
+                    }
+                }
+                for (slot, label) in ["SP1", "SP2", "SP3", "SP4"].into_iter().enumerate() {
+                    ui.label(label);
+                    ui.add(
+                        egui::DragValue::new(&mut self.form.bypass_sprites[slot])
+                            .hexadecimal(3, false, true)
+                            .range(0..=0x0fff),
+                    );
+                    if slot % 2 == 1 {
+                        ui.end_row();
+                    }
+                }
+            });
+        if ui.button("Apply Super GFX bypass").clicked() {
+            match self.form.super_graphics_bypass_edits() {
+                Ok(edits) => self.apply_edits(&edits),
+                Err(error) => self.error = Some(error),
+            }
+        }
+        ui.separator();
+        ui.label("Sprite boundary interaction");
+        ui.checkbox(
+            &mut self.form.sprites_beyond_boundaries_use_air,
+            "Sprites beyond level boundaries interact with air instead of water",
+        );
+        if ui.button("Apply sprite boundary interaction").clicked() {
+            match self.form.sprite_boundary_edits() {
+                Ok(edits) => self.apply_edits(&edits),
+                Err(error) => self.error = Some(error),
+            }
+        }
         ui.separator();
         ui.label("All values below are exact native 16-bit words; unknown meanings are preserved.");
         egui::Grid::new("expanded-settings-words")
@@ -266,5 +330,71 @@ impl ExpandedSettingsEditor {
         self.controller = None;
         self.loaded_revision = None;
         self.pending_close = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_level::{ExpandedLevelHeader, ExpandedLevelSettingsRecord, SuperGraphicsBypass};
+
+    #[test]
+    fn standalone_semantic_controls_share_history_and_save_exact_state() {
+        let source = ExpandedLevelSettingsRecord::decode(&[0x5a; 32]).unwrap();
+        let mut controller =
+            ExpandedSettingsDocumentController::decode("settings.bin".into(), source.encoded())
+                .unwrap();
+
+        let mut form = ExpandedSettingsForm::load(controller.value());
+        form.bypass_enabled = true;
+        form.bypass_foreground_background = [1, 2, 3, 4, 5, 6];
+        form.bypass_sprites = [0x101, 0x202, 0x303, 0x404];
+        controller
+            .apply_word_edits(
+                controller.revision(),
+                &form.super_graphics_bypass_edits().unwrap(),
+            )
+            .unwrap();
+
+        form = ExpandedSettingsForm::load(controller.value());
+        form.layer3_expanded_mode = "89AFCDEF".into();
+        controller
+            .apply_word_edits(
+                controller.revision(),
+                &form.layer3_expanded_mode_edits().unwrap(),
+            )
+            .unwrap();
+
+        form = ExpandedSettingsForm::load(controller.value());
+        form.sprites_beyond_boundaries_use_air = false;
+        controller
+            .apply_word_edits(
+                controller.revision(),
+                &form.sprite_boundary_edits().unwrap(),
+            )
+            .unwrap();
+
+        let value = controller.value().clone();
+        assert_eq!(
+            ExpandedLevelHeader::from(&value).super_graphics_bypass(),
+            SuperGraphicsBypass {
+                enabled: true,
+                foreground_background: [1, 2, 3, 4, 5, 6],
+                sprites: [0x101, 0x202, 0x303, 0x404],
+            }
+        );
+        assert_eq!(value.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
+        assert!(!ExpandedLevelHeader::from(&value).sprites_beyond_boundaries_use_air());
+        assert_eq!(controller.revision(), 3);
+
+        let snapshot = controller.begin_save().unwrap();
+        assert_eq!(
+            ExpandedLevelSettingsRecord::decode(&snapshot.bytes).unwrap(),
+            value
+        );
+        controller.acknowledge_save(snapshot.request_id).unwrap();
+        assert!(!controller.is_modified());
+        assert!(controller.undo(controller.revision()).unwrap());
+        assert!(controller.is_modified());
     }
 }
