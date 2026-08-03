@@ -165,6 +165,12 @@ The level-header row now also has strict semantic sprite-property automation. `L
 independently, reopens checksum-valid, and undoes the complete ROM byte-exactly. Raw
 `sprite-header` replacement remains available for lossless diagnostic and interchange workflows.
 
+The primary/midway entrance row now has strict automation through `LMENTR1`. Exact main fields,
+the original Layer 2 scroll preset, and an authenticated installed midway record share one ordered
+failure-atomic controller batch. The scroll edit preserves the main-position low nibble, invalid
+`$10+` presets and unavailable midway tables roll back earlier commands, LoROM/ExLoROM layouts bind
+to the detected mapper, and the shell test proves checksum-valid reopen plus byte-exact ROM undo.
+
 ## Current critical path
 
 The fastest route to a broadly usable editor is:

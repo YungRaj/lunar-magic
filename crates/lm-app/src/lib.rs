@@ -309,7 +309,9 @@ pub use ssc_sidecar_controller::{
 pub use state::{AppError, AppState};
 pub use tool_config::{ToolConfig, ToolConfigError};
 pub use toolbar::{ToolbarAction, ToolbarActivation, ToolbarConfig, ToolbarError, ToolbarItem};
-pub use vanilla_entrance_controller::{VanillaEntranceController, VanillaEntranceControllerError};
+pub use vanilla_entrance_controller::{
+    VanillaEntranceController, VanillaEntranceControllerError, VanillaEntranceEdit,
+};
 pub use viewport_rendering::{
     EditorPreviewError, render_editor_preview, render_editor_viewport, render_level_viewport,
 };

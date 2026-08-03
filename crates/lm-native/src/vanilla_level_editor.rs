@@ -1298,9 +1298,11 @@ impl VanillaLevelEditor {
             &sprite_lengths,
         ) {
             Ok(controller) => {
+                let mut entrance_layout = lm_profile::smw_us_v1_vanilla_entrance_layout();
+                entrance_layout.mapper = snapshot.identity.mapper;
                 let entrance_error = match VanillaEntranceController::decode_with_midway(
                     snapshot,
-                    lm_profile::smw_us_v1_vanilla_entrance_layout(),
+                    entrance_layout,
                     lm_profile::smw_us_v1_separate_midway_locator(),
                 ) {
                     Ok(entrance) => {

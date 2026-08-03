@@ -1158,6 +1158,15 @@ fn level_edit_script_preserves_path_spaces_and_parses_hex_range_from_the_right()
 }
 
 #[test]
+fn entrance_edit_preserves_script_path_spaces() {
+    assert_eq!(
+        parse("entrance-edit scripts/My entrance edits.lmentr").unwrap(),
+        ShellCommand::EditEntrances("scripts/My entrance edits.lmentr".into())
+    );
+    assert!(parse("entrance-edit").is_err());
+}
+
+#[test]
 fn graphics_recompression_parses_a_typed_codec_and_hex_range() {
     assert_eq!(
         parse("graphics-recompress lz3 10000 20000").unwrap(),

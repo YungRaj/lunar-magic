@@ -19,6 +19,8 @@ pub enum VanillaEntranceControllerError {
     MidwayState,
     Rom(RomError),
     Mutation(TransactionError),
+    InvalidLayer2ScrollTable { command: usize, value: u8 },
+    MidwayUnavailable { command: usize },
 }
 
 impl std::fmt::Display for VanillaEntranceControllerError {
@@ -41,6 +43,13 @@ pub struct VanillaEntranceController {
     midway_locator: Option<SeparateMidwayPatchLocator>,
     midway_baseline: Option<SeparateMidwayEntranceTable>,
     midway: Option<SeparateMidwayEntranceTable>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VanillaEntranceEdit {
+    SetMain(VanillaMainEntrance),
+    SetLayer2ScrollTable(u8),
+    SetMidway(SeparateMidwayEntrance),
 }
 
 impl VanillaEntranceController {
@@ -147,6 +156,41 @@ impl VanillaEntranceController {
         if let Some(table) = &mut self.midway {
             table.entries[self.slot] = entrance;
         }
+    }
+
+    /// Applies an ordered entrance batch without exposing partial state on a late failure.
+    ///
+    /// The original Layer 2 scroll selector owns only the high nibble of the main entrance's
+    /// position byte. Separate midway edits require the authenticated installed table.
+    pub fn apply_edits(
+        &mut self,
+        edits: &[VanillaEntranceEdit],
+    ) -> Result<(), VanillaEntranceControllerError> {
+        let mut entrance = self.entrance;
+        let mut midway = self.midway.clone();
+        for (command, edit) in edits.iter().enumerate() {
+            match edit {
+                VanillaEntranceEdit::SetMain(value) => entrance = *value,
+                VanillaEntranceEdit::SetLayer2ScrollTable(value) => {
+                    if *value > 0x0f {
+                        return Err(VanillaEntranceControllerError::InvalidLayer2ScrollTable {
+                            command,
+                            value: *value,
+                        });
+                    }
+                    entrance.position = entrance.position & 0x0f | *value << 4;
+                }
+                VanillaEntranceEdit::SetMidway(value) => {
+                    let table = midway
+                        .as_mut()
+                        .ok_or(VanillaEntranceControllerError::MidwayUnavailable { command })?;
+                    table.entries[self.slot] = *value;
+                }
+            }
+        }
+        self.entrance = entrance;
+        self.midway = midway;
+        Ok(())
     }
 
     /// Prepares first-time installation of the complete Lfix3 and separate-midway runtimes.

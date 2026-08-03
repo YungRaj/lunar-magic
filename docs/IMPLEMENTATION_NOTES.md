@@ -1056,6 +1056,18 @@ sprite insert 1 screen 12
 sprite insert 2 control 90
 ```
 
+The selected level's pristine-table main entrance and optional installed separate-midway record
+have a distinct bounded `entrance-edit SCRIPT` route because they are owned by the entrance
+transaction rather than the relocatable Layer 1/sprite streams. `LMENTR1` accepts exact four-byte
+`main POSITION VERTICAL SCREEN_METHOD MODE_SCREEN`, semantic `layer2-scroll TABLE`, and installed
+`midway FLAGS POSITION ADDITIONAL_FLAGS HIGH_POSITION` commands. Ordered controller batches stage
+privately: a late scroll index above `$0F` or a midway command without an authenticated installed
+table preserves every earlier entrance edit. The Layer 2 preset changes only the high nibble of
+the staged main-position byte. Main-only scripts do not probe the optional midway runtime, while a
+midway command requires strict installed-hook/table authentication. The physical four-plane layout
+uses the detected LoROM or ExLoROM mapper so expanded projects do not fail the native editor's
+entrance controller on a stale pristine-layout mapper tag.
+
 The whole script stages on a cloned controller. Both object and revision-sized sprite streams are
 encoded and reparsed for exact equality before commit, closing the gap where universally bounded
 raw records could still disagree with their native command/length tables. A late command,

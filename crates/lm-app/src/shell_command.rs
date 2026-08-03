@@ -182,6 +182,7 @@ pub enum ShellCommand {
         search_start: usize,
         search_end: usize,
     },
+    EditEntrances(PathBuf),
     EditExpandedSettingsWord {
         index: usize,
         value: u16,
@@ -336,6 +337,10 @@ pub fn parse(line: &str) -> Result<ShellCommand, ShellCommandError> {
         "level-forward" => no_argument(argument, "level-forward", ShellCommand::LevelForward),
         "level-view" => parse_level_view(argument),
         "level-header" => parse_level_header_edit(argument),
+        "entrance-edit" => Ok(ShellCommand::EditEntrances(path_argument(
+            argument,
+            "entrance-edit",
+        )?)),
         "expanded-settings-word" => parse_expanded_settings_word(argument),
         "expanded-settings-edit" => Ok(ShellCommand::EditExpandedSettings(path_argument(
             argument,

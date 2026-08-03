@@ -1,5 +1,7 @@
 use super::*;
-use crate::editor_shell::{execute_native_assets_script, execute_owned_editor_script};
+use crate::editor_shell::{
+    execute_entrance_script, execute_native_assets_script, execute_owned_editor_script,
+};
 use lm_project::{
     PaletteSaveOptions, PayloadReadPolicy, RatsOwnershipManifest, RatsOwnershipManifestFile,
 };
@@ -643,6 +645,96 @@ fn terminal_sprite_properties_preserve_expanded_framing_reopen_and_undo() {
 
     fs::write(&script, "LMLEDIT1\nsprite-properties 13 false false\n").unwrap();
     assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn terminal_entrance_batch_preserves_scroll_nibble_reopens_checksum_and_undoes() {
+    let profile = lm_profile::test_support::profile();
+    let mut app = AppState::default();
+    app.load_rom(profiled_rom(&profile)).unwrap();
+    app.dispatch(Command::InstallRevisionProfile(Box::new(profile)))
+        .unwrap();
+    let before = app.project().unwrap().save_snapshot();
+    let mut layout = lm_profile::smw_us_v1_vanilla_entrance_layout();
+    layout.mapper = app.project().unwrap().identity.as_ref().unwrap().mapper;
+
+    let profiled = app.profiled_controller_snapshot().unwrap();
+    let mut controller =
+        lm_app::VanillaEntranceController::decode(&profiled.snapshot, layout).unwrap();
+    let controller_before = controller.entrance();
+    assert!(matches!(
+        controller.apply_edits(&[
+            lm_app::VanillaEntranceEdit::SetMain(lm_project::VanillaMainEntrance {
+                position: 0x12,
+                vertical_settings: 0x34,
+                screen_and_method: 0x56,
+                level_mode_and_screen: 0x78,
+            }),
+            lm_app::VanillaEntranceEdit::SetMidway(lm_level::SeparateMidwayEntrance {
+                flags: 0x9a,
+                position: 0xbc,
+                additional_flags: 0xde,
+                high_position: 0xf0,
+            }),
+        ]),
+        Err(lm_app::VanillaEntranceControllerError::MidwayUnavailable { command: 1 })
+    ));
+    assert_eq!(controller.entrance(), controller_before);
+    assert!(matches!(
+        controller.apply_edits(&[
+            lm_app::VanillaEntranceEdit::SetMain(lm_project::VanillaMainEntrance {
+                position: 0x12,
+                vertical_settings: 0x34,
+                screen_and_method: 0x56,
+                level_mode_and_screen: 0x78,
+            }),
+            lm_app::VanillaEntranceEdit::SetLayer2ScrollTable(0x10),
+        ]),
+        Err(lm_app::VanillaEntranceControllerError::InvalidLayer2ScrollTable {
+            command: 1,
+            value: 0x10,
+        })
+    ));
+    assert_eq!(controller.entrance(), controller_before);
+
+    let directory =
+        std::env::temp_dir().join(format!("lm-app-entrance-script-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    let script = directory.join("entrance edits.lmentr");
+    fs::write(
+        &script,
+        "LMENTR1\nmain 12 34 56 78\nlayer2-scroll 0a\n",
+    )
+    .unwrap();
+    execute_entrance_script(&mut app, &script).unwrap();
+    let loaded = app
+        .project()
+        .unwrap()
+        .load_vanilla_main_entrance(0x105, layout)
+        .unwrap();
+    assert_eq!(loaded.position, 0xa2);
+    assert_eq!(loaded.vertical_settings, 0x34);
+    assert_eq!(loaded.screen_and_method, 0x56);
+    assert_eq!(loaded.level_mode_and_screen, 0x78);
+    assert!(app
+        .project()
+        .unwrap()
+        .identity
+        .as_ref()
+        .unwrap()
+        .checksum_matches());
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(
+        &script,
+        "LMENTR1\nmain 12 34 56 78\nmidway 9a bc de f0\n",
+    )
+    .unwrap();
+    assert!(execute_entrance_script(&mut app, &script).is_err());
     assert_eq!(app.project().unwrap().save_snapshot(), before);
     fs::remove_dir_all(directory).unwrap();
 }

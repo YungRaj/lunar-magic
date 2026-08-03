@@ -554,6 +554,13 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   memory to `$00..=$12`, preserving the serializer-owned expanded-framing bit `$20`, and changing
   the two recovered buoyancy bits independently. The raw `sprite-header` command remains available
   for lossless diagnostic and interchange work.
+- Main and separate-midway entrances remain in their dedicated `VanillaEntranceController`, with a
+  bounded `LMENTR1` automation grammar rather than being folded into relocatable level streams.
+  Ordered main, original Layer 2 scroll-preset, and midway edits stage atomically; the preset owns
+  only the high position nibble, and midway edits require an authenticated installed table. The
+  controller layout is rebound to the detected LoROM/ExLoROM mapper before native GUI or terminal
+  decode because the recovered physical entrance planes remain at the same PC offsets after ROM
+  expansion.
 - A separate bounded `LMM16ED1` parser drives the complete Map16 controller without coupling its
   grammar to level records. Tile, quadrant, and Acts Like changes all pass through whole-workspace
   graph validation and the same profile-wide allocation protection before one prepared commit.

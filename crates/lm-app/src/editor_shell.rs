@@ -1,11 +1,11 @@
 use crate::{
-    exanimation_edit_script, graphics_edit_script, level_edit_script, map16_edit_script,
-    overworld_edit_script, palette_edit_script, shell_command,
+    entrance_edit_script, exanimation_edit_script, graphics_edit_script, level_edit_script,
+    map16_edit_script, overworld_edit_script, palette_edit_script, shell_command,
 };
 use lm_app::{
     AppState, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit, RevisionProfileControllers,
-    discover_mwl_directory, export_smw_us_v1_installed_mwl_batch, prepare_declared_mwl_import,
-    publish_mwl_batch_new,
+    VanillaEntranceController, VanillaEntranceEdit, discover_mwl_directory,
+    export_smw_us_v1_installed_mwl_batch, prepare_declared_mwl_import, publish_mwl_batch_new,
 };
 use lm_level::{LegacyHeaderEdit, MwlFile};
 use lm_project::{
@@ -94,6 +94,37 @@ pub(crate) fn execute_native_assets_script(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let loaded = crate::native_assets_edit_loader::load(path)?;
     commit_native_assets_edits(app, &loaded.edits, loaded.palette_ownership, search)?;
+    println!("{}", app.status);
+    Ok(())
+}
+
+pub(crate) fn execute_entrance_script(
+    app: &mut AppState,
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let text = read_bounded_utf8(path, entrance_edit_script::MAX_SCRIPT_LEN, "entrance-edit")?;
+    let edits = entrance_edit_script::parse(&text)?;
+    if edits.is_empty() {
+        return Err("entrance-edit script contains no commands".into());
+    }
+    let profiled = app.profiled_controller_snapshot()?;
+    let mut layout = lm_profile::smw_us_v1_vanilla_entrance_layout();
+    layout.mapper = profiled.snapshot.identity.mapper;
+    let mut controller = if edits
+        .iter()
+        .any(|edit| matches!(edit, VanillaEntranceEdit::SetMidway(_)))
+    {
+        VanillaEntranceController::decode_with_midway(
+            &profiled.snapshot,
+            layout,
+            lm_profile::smw_us_v1_separate_midway_locator(),
+        )?
+    } else {
+        VanillaEntranceController::decode(&profiled.snapshot, layout)?
+    };
+    controller.apply_edits(&edits)?;
+    let prepared = controller.prepare_commit("Apply semantic entrance-edit script")?;
+    app.dispatch(prepared.into_command())?;
     println!("{}", app.status);
     Ok(())
 }
