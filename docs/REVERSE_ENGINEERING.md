@@ -3110,3 +3110,13 @@ tokens and objects without an ordinary placement keep semantic actions
 disabled, and revision reloads invalidate previously loaded field forms. A ROM
 commit/reopen regression proves combined semantic object relocation and sprite
 field replacement survive installed persistence exactly.
+
+Object-backed Layer 2 now uses the same semantic form contract in the installed
+native-assets panel. Loading a positioned record resolves its native screen and
+exposes command, parameter, coordinate nibbles, and screen; applying the form
+emits one `Layer2Objects` batch containing the field edits and relocation.
+Command-zero controls without a positioned placement remain ineligible, raw
+editing remains available for opaque encodings, and revision/history movement
+invalidates loaded semantic fields. The aggregate history regression now
+undoes and redoes a semantic Layer 2 relocation before committing an additional
+cross-domain edit, then reopens the exact object stream from ROM.

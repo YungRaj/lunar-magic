@@ -1064,7 +1064,30 @@ fn layer2_object_edit_commits_with_every_core_domain_and_reopens() {
     let NativeLayer2Data::Objects(layer2) = controller.layer2().unwrap() else {
         panic!("fixture level mode must use Layer 2 objects");
     };
+    let baseline_layer2 = NativeLayer2Data::Objects(layer2.clone());
     let duplicate = layer2.objects.records[0].clone();
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::Layer2Objects(vec![
+            ObjectEdit::SetParameter {
+                index: 0,
+                parameter: 0x66,
+            },
+            ObjectEdit::RelocateOrdinary {
+                index: 0,
+                screen: 3,
+                coordinates: ObjectCoordinateNibbles {
+                    first: 0x0c,
+                    second: 0x0d,
+                },
+            },
+        ])])
+        .unwrap();
+    let semantic_layer2 = controller.layer2().unwrap().clone();
+    assert_ne!(semantic_layer2, baseline_layer2);
+    assert!(controller.undo());
+    assert_eq!(controller.layer2(), Some(&baseline_layer2));
+    assert!(controller.redo());
+    assert_eq!(controller.layer2(), Some(&semantic_layer2));
     controller
         .apply_edits(&[
             NativeLevelAssetsControllerEdit::Layer2Objects(vec![ObjectEdit::Insert {

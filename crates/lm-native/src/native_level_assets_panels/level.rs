@@ -105,7 +105,7 @@ impl AggregatePanels {
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load").clicked() {
-                let screen = object_screen(level, self.object_index);
+                let screen = object_stream_screen(&level.layer1.objects, self.object_index);
                 self.level_record
                     .load_object(level.layer1.objects.records.get(self.object_index), screen);
             }
@@ -319,7 +319,7 @@ fn semantic_field_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u
     ui.end_row();
 }
 
-fn object_semantic_fields(
+pub(super) fn object_semantic_fields(
     ui: &mut egui::Ui,
     form: &mut native_level_document_form::NativeLevelRecordForm,
 ) {
@@ -334,10 +334,8 @@ fn object_semantic_fields(
     });
 }
 
-fn object_screen(level: &LoadedLevelSlot, index: usize) -> Option<u16> {
-    level
-        .layer1
-        .objects
+pub(super) fn object_stream_screen(objects: &lm_level::ObjectStream, index: usize) -> Option<u16> {
+    objects
         .native_placements()
         .into_iter()
         .find(|placement| placement.record_index == index)

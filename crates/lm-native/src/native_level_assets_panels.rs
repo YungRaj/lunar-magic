@@ -36,7 +36,7 @@ pub(crate) struct AggregatePanels {
     level_record: native_level_document_form::NativeLevelRecordForm,
     header: native_level_document_form::NativeLevelHeaderForm,
     layer2_object_index: usize,
-    layer2_object: String,
+    layer2_record: native_level_document_form::NativeLevelRecordForm,
     layer2_tile_index: usize,
     layer2_tile: String,
     layer2_tile_anchor: Option<(usize, usize)>,
@@ -118,6 +118,7 @@ impl AggregatePanels {
         let assets = &file.assets;
         self.level_record.object_fields_loaded = false;
         self.level_record.sprite_fields_loaded = false;
+        self.layer2_record.object_fields_loaded = false;
         self.header = native_level_document_form::NativeLevelHeaderForm::load(&assets.level);
         self.exanimation_features = features.map(|features| features.options);
         self.sprite_header = format!("{:02X}", assets.level.sprites.header);

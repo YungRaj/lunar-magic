@@ -1,3 +1,4 @@
+use super::level::{object_semantic_fields, object_stream_screen};
 use super::{AggregatePanels, Layer2FillPattern, PasteTarget, index, pasted_text};
 use crate::{level_editor_forms, native_clipboard};
 use eframe::egui;
@@ -323,23 +324,33 @@ impl AggregatePanels {
             &mut self.layer2_object_index,
             objects.objects.records.len(),
         );
-        ui.text_edit_singleline(&mut self.layer2_object);
+        ui.text_edit_singleline(&mut self.layer2_record.object);
+        object_semantic_fields(ui, &mut self.layer2_record);
         let mut action = None;
+        let mut apply_object_fields = false;
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load").clicked() {
-                self.layer2_object = objects
-                    .objects
-                    .records
-                    .get(self.layer2_object_index)
-                    .map_or_else(String::new, |record| {
-                        level_editor_forms::format_bytes(record.encoded())
-                    });
+                let screen = object_stream_screen(&objects.objects, self.layer2_object_index);
+                self.layer2_record.load_object(
+                    objects.objects.records.get(self.layer2_object_index),
+                    screen,
+                );
             }
             for (label, value) in [("Insert", 0), ("Replace", 1), ("Remove", 2)] {
                 if ui.button(label).clicked() {
                     action = Some(value);
                 }
+            }
+            if ui
+                .add_enabled(
+                    self.layer2_record.object_fields_loaded
+                        && self.layer2_object_index < objects.objects.records.len(),
+                    egui::Button::new("Apply object fields"),
+                )
+                .clicked()
+            {
+                apply_object_fields = true;
             }
             if ui
                 .add_enabled(
@@ -363,6 +374,18 @@ impl AggregatePanels {
         if let Some(error) = copy_error {
             return Some(Err(error));
         }
+        if apply_object_fields {
+            return Some(
+                self.layer2_record
+                    .object_field_edit(self.layer2_object_index)
+                    .and_then(|edit| match edit {
+                        lm_app::NativeLevelEdit::Objects(edits) => {
+                            Ok(NativeLevelAssetsControllerEdit::Layer2Objects(edits))
+                        }
+                        _ => Err("Layer 2 semantic form produced a non-object edit".into()),
+                    }),
+            );
+        }
         if self.paste_target == Some(PasteTarget::Layer2Object)
             && let Some(text) = pasted_text(ui)
         {
@@ -379,7 +402,7 @@ impl AggregatePanels {
                 2 => Ok(ObjectEdit::Remove {
                     index: self.layer2_object_index,
                 }),
-                _ => level_editor_forms::parse_object(&self.layer2_object).map(|record| {
+                _ => level_editor_forms::parse_object(&self.layer2_record.object).map(|record| {
                     if action == 0 {
                         ObjectEdit::Insert {
                             index: self.layer2_object_index,
