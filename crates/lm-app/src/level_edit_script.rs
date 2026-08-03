@@ -125,6 +125,25 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
                 record: object_record(line, bytes)?,
             }]))
         }
+        [
+            "object",
+            "place",
+            bytes,
+            screen,
+            first,
+            second,
+            perpendicular_high,
+        ] => Ok(NativeLevelEdit::Objects(vec![
+            ObjectEdit::InsertOrdinaryAtPosition {
+                record: object_record(line, bytes)?,
+                screen: native_screen(line, screen)?,
+                coordinates: ObjectCoordinateNibbles {
+                    first: coordinate_nibble(line, first)?,
+                    second: coordinate_nibble(line, second)?,
+                },
+                perpendicular_high: boolean(line, perpendicular_high)?,
+            },
+        ])),
         ["object", "replace", index, bytes] => {
             Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Replace {
                 index: decimal(line, index)?,
@@ -205,6 +224,19 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
                 },
             },
         ])),
+        ["object", "relocate-position", index, screen, first, second, perpendicular_high] => {
+            Ok(NativeLevelEdit::Objects(vec![
+                ObjectEdit::RelocateOrdinaryPosition {
+                    index: decimal(line, index)?,
+                    screen: native_screen(line, screen)?,
+                    coordinates: ObjectCoordinateNibbles {
+                        first: coordinate_nibble(line, first)?,
+                        second: coordinate_nibble(line, second)?,
+                    },
+                    perpendicular_high: boolean(line, perpendicular_high)?,
+                },
+            ]))
+        }
         ["sprite-header", value] => Ok(NativeLevelEdit::SetSpriteHeader(hex_byte(line, value)?)),
         ["sprite-properties", memory, buoyancy_1, buoyancy_2] => {
             let memory = hex_byte(line, memory)?;
@@ -315,6 +347,28 @@ fn parse_header(
 fn object_record(line: usize, value: &str) -> Result<ObjectRecord, LevelEditScriptError> {
     ObjectRecord::new(hex_bytes(line, value)?)
         .map_err(|_| LevelEditScriptError::InvalidObjectRecord { line })
+}
+
+fn native_screen(line: usize, value: &str) -> Result<u16, LevelEditScriptError> {
+    let screen = hex_word(line, value)?;
+    if screen > 0x1f {
+        return Err(LevelEditScriptError::InvalidNumber {
+            line,
+            value: value.into(),
+        });
+    }
+    Ok(screen)
+}
+
+fn coordinate_nibble(line: usize, value: &str) -> Result<u8, LevelEditScriptError> {
+    let coordinate = hex_byte(line, value)?;
+    if coordinate > 0x0f {
+        return Err(LevelEditScriptError::InvalidNumber {
+            line,
+            value: value.into(),
+        });
+    }
+    Ok(coordinate)
 }
 
 fn sprite_token(line: usize, kind: &str, value: &str) -> Result<SpriteToken, LevelEditScriptError> {
@@ -440,9 +494,11 @@ mod tests {
             sprite sort-screen 0\n\
             sprite relocate-expanded 0 04 03 00A7\n\
             sprite remove 1\n\
-            custom-time abc true\n";
+            custom-time abc true\n\
+            object place 090855 001f 0c 0b true\n\
+            object relocate-position 0 001e 0a 09 false\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 24);
+        assert_eq!(edits.len(), 26);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert_eq!(
             edits[1],
@@ -530,6 +586,30 @@ mod tests {
             edits[23],
             NativeLevelEdit::SetCustomTime(Some(CustomTimeSettings::new(0xabc, true).unwrap()))
         );
+        assert_eq!(
+            edits[24],
+            NativeLevelEdit::Objects(vec![ObjectEdit::InsertOrdinaryAtPosition {
+                record: ObjectRecord::new(vec![0x09, 0x08, 0x55]).unwrap(),
+                screen: 0x1f,
+                coordinates: ObjectCoordinateNibbles {
+                    first: 0x0c,
+                    second: 0x0b,
+                },
+                perpendicular_high: true,
+            }])
+        );
+        assert_eq!(
+            edits[25],
+            NativeLevelEdit::Objects(vec![ObjectEdit::RelocateOrdinaryPosition {
+                index: 0,
+                screen: 0x1e,
+                coordinates: ObjectCoordinateNibbles {
+                    first: 0x0a,
+                    second: 9,
+                },
+                perpendicular_high: false,
+            }])
+        );
     }
 
     #[test]
@@ -540,6 +620,9 @@ mod tests {
             "LMLEDIT1\nobject command 0 xyz\n",
             "LMLEDIT1\nobject screen-advance 0 yes\n",
             "LMLEDIT1\nobject screen-exit 0 20 0000\n",
+            "LMLEDIT1\nobject place 090855 20 00 00 false\n",
+            "LMLEDIT1\nobject place 090855 00 10 00 false\n",
+            "LMLEDIT1\nobject relocate-position 0 00 00 00 yes\n",
             "LMLEDIT1\nsprite insert 0 screen 80\n",
             "LMLEDIT1\nsprite insert 0 control 7f\n",
             "LMLEDIT1\nsprite insert 0 mystery 00\n",

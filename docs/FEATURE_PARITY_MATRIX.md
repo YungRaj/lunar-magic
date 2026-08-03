@@ -182,6 +182,12 @@ DESTINATION_AND_FLAGS` automation through the same canonical setter as the nativ
 compact/extended shape changes, required flag `$0400`, advance-bit preservation, checksum-valid
 ROM reopen, exact undo, out-of-range screen rejection, and late wrong-record rollback.
 
+The standard/extended-object row now also has canvas-grade `LMLEDIT1 object place` and
+`object relocate-position` automation. Both share native drag/drop's absolute screen, coordinate
+nibbles, and perpendicular-high bit model; regenerate minimal transitions; preserve extensions and
+opaque tails; reopen checksum-valid at screens `$1E/$1F`; and undo the complete ROM byte-exactly.
+Strict bounds and late-index rollback are covered.
+
 ## Current critical path
 
 The fastest route to a broadly usable editor is:

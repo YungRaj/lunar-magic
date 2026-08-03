@@ -1038,6 +1038,14 @@ when this explicit semantic edit is applied.
 Semantic sprite properties accept memory `$00..=$12` plus canonical booleans and preserve the
 serializer-owned expanded-framing bit `$20` from the staged stream. Invalid memory and boolean
 values reject before application, while controller-side validation keeps direct callers atomic.
+Canvas-grade absolute object edits are available as `object place RECORD SCREEN FIRST SECOND
+PERPENDICULAR_HIGH` and `object relocate-position INDEX SCREEN FIRST SECOND PERPENDICULAR_HIGH`.
+The record/screen/coordinates are hexadecimal, indexes are decimal, and the high-coordinate flag
+is a canonical boolean. Scripts reject screens above `$1F` and coordinate components above `$0F`
+before controller mutation. The shared relocation model rejects command-zero controls, preserves
+ordinary extension bytes, sets the perpendicular bit explicitly, stably orders objects by absolute
+screen, and regenerates the minimum owned advance/jump transitions while retaining trailing opaque
+controls.
 Existing screen-exit objects can be edited semantically with `object screen-exit INDEX SCREEN
 DESTINATION_AND_FLAGS`. The decimal record index selects a recognized command-zero exit, while the
 source screen and 16-bit destination/flags value are hexadecimal. The shared typed object edit
@@ -1057,6 +1065,8 @@ object coordinates 0 0e 0d
 object screen-advance 0 true
 object screen-jump-target 1 0a1b
 object screen-exit 2 1f bcde
+object place 090855 1f 0c 0b true
+object relocate-position 0 1e 0a 09 true
 sprite-header 10
 sprite-properties 12 true false
 sprite insert 1 screen 12

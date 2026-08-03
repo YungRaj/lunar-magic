@@ -591,6 +591,110 @@ fn terminal_screen_exit_script_canonicalizes_both_shapes_reopens_and_undoes() {
 }
 
 #[test]
+fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
+    let profile = lm_profile::test_support::profile();
+    let mut app = AppState::default();
+    app.load_rom(profiled_rom(&profile)).unwrap();
+    app.dispatch(Command::InstallRevisionProfile(Box::new(profile.clone())))
+        .unwrap();
+    let before = app.project().unwrap().save_snapshot();
+    let directory =
+        std::env::temp_dir().join(format!("lm-app-object-position-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    let script = directory.join("absolute object edits.lmedit");
+
+    fs::write(
+        &script,
+        "LMLEDIT1\nobject place 090855 1f 0c 0b true\n",
+    )
+    .unwrap();
+    execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
+    let loaded = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    let placed = loaded
+        .layer1
+        .objects
+        .native_placements()
+        .into_iter()
+        .find(|placement| {
+            placement.screen == 0x1f && placement.major == 0x1fb && placement.minor == 0x1c
+        })
+        .unwrap();
+    assert!(loaded.layer1.objects.records[placed.record_index].perpendicular_high_coordinate());
+    assert!(loaded
+        .layer1
+        .objects
+        .records
+        .iter()
+        .any(|record| record.screen_jump().is_some()));
+    assert!(app
+        .project()
+        .unwrap()
+        .identity
+        .as_ref()
+        .unwrap()
+        .checksum_matches());
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(
+        &script,
+        "LMLEDIT1\nobject relocate-position 0 1e 0a 09 true\n",
+    )
+    .unwrap();
+    execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
+    let relocated = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    assert!(relocated
+        .layer1
+        .objects
+        .native_placements()
+        .iter()
+        .any(|placement| {
+            placement.screen == 0x1e && placement.major == 0x1e9 && placement.minor == 0x1a
+        }));
+    assert!(app
+        .project()
+        .unwrap()
+        .identity
+        .as_ref()
+        .unwrap()
+        .checksum_matches());
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(
+        &script,
+        "LMLEDIT1\nheader background-palette 05\nobject relocate-position 999 00 00 00 false\n",
+    )
+    .unwrap();
+    assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::write(
+        &script,
+        "LMLEDIT1\nobject place 090855 20 00 00 false\n",
+    )
+    .unwrap();
+    assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::write(
+        &script,
+        "LMLEDIT1\nheader background-palette 05\nobject place 020001 00 00 00 false\n",
+    )
+    .unwrap();
+    assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn terminal_custom_time_script_is_orientation_aware_checksum_valid_and_undoable() {
     let profile = lm_profile::test_support::profile();
     let mut app = AppState::default();

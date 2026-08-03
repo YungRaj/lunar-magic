@@ -548,6 +548,11 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   shared object transaction delegates to Lunar Magic's canonical setter, preserves the unrelated
   advance bit, adds required flag `$0400`, and permits the recovered compact/extended shape change
   while keeping late wrong-record or out-of-range failures atomic.
+  Canvas-grade `object place` and `object relocate-position` commands expose the same absolute
+  screen, coordinate-nibble, and perpendicular-high model used by native drag/drop. Their bounded
+  typed inputs feed `InsertOrdinaryAtPosition` and `RelocateOrdinaryPosition`, so canonical screen
+  transitions, stable ordering, extension preservation, opaque-tail retention, and transaction
+  rollback remain centralized rather than being reimplemented by the shell.
   Both `LMLEDIT1` and the focused `level-header` command expose the typed four-way Layer 1
   vertical-scroll mode, reject raw values above 3, and preserve the object tileset plus both
   unrelated high bits in the shared header byte.
