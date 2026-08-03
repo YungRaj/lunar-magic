@@ -3,7 +3,7 @@ use crate::level_editor_forms;
 use eframe::egui;
 use lm_app::NativeLevelAssetsControllerEdit;
 use lm_graphics::ExAnimationFeature;
-use lm_level::{ExpandedLevelHeader, ExpandedLevelSettingsRecord, SuperGraphicsBypass};
+use lm_level::{ExpandedLevelHeader, SuperGraphicsBypass};
 use lm_project::NativeLevelAssetsFile;
 
 impl AggregatePanels {
@@ -81,20 +81,11 @@ impl AggregatePanels {
                 }
             });
         if ui.button("Apply Super GFX bypass").clicked() {
-            let settings = file
-                .assets
-                .expanded_settings
-                .as_ref()
-                .expect("presence checked above");
-            let result = super_graphics_edits(
-                settings,
-                SuperGraphicsBypass {
-                    enabled: self.bypass_enabled,
-                    foreground_background: self.bypass_foreground_background,
-                    sprites: self.bypass_sprites,
-                },
-            )
-            .map(NativeLevelAssetsControllerEdit::ExpandedSettingsWords);
+            let result = super_graphics_edit(SuperGraphicsBypass {
+                enabled: self.bypass_enabled,
+                foreground_background: self.bypass_foreground_background,
+                sprites: self.bypass_sprites,
+            });
             return Some(result);
         }
         ui.separator();
@@ -172,19 +163,14 @@ impl AggregatePanels {
     }
 }
 
-fn super_graphics_edits(
-    settings: &ExpandedLevelSettingsRecord,
+fn super_graphics_edit(
     bypass: SuperGraphicsBypass,
-) -> Result<Vec<(usize, u16)>, String> {
-    let mut header = ExpandedLevelHeader::from(settings);
+) -> Result<NativeLevelAssetsControllerEdit, String> {
+    let mut header = ExpandedLevelHeader::default();
     header
         .set_super_graphics_bypass(bypass)
         .map_err(|error| error.to_string())?;
-    Ok([0]
-        .into_iter()
-        .chain(2..=11)
-        .map(|index| (index, header.fields[index]))
-        .collect())
+    Ok(NativeLevelAssetsControllerEdit::SuperGraphicsBypass(bypass))
 }
 
 fn sprite_boundary_air_edit(enabled: bool) -> NativeLevelAssetsControllerEdit {
@@ -212,30 +198,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn installed_bypass_edits_touch_only_recovered_words() {
-        let source =
-            std::array::from_fn::<_, 32, _>(|index| u8::try_from(index).unwrap().wrapping_mul(7));
-        let settings = ExpandedLevelSettingsRecord::decode(&source).unwrap();
+    fn installed_bypass_form_emits_validated_semantic_intent() {
         let bypass = SuperGraphicsBypass {
             enabled: true,
             foreground_background: [1, 2, 3, 4, 5, 6],
             sprites: [0x101, 0x202, 0x303, 0x404],
         };
-        let edits = super_graphics_edits(&settings, bypass).unwrap();
-        assert_eq!(
-            edits.iter().map(|(word, _)| *word).collect::<Vec<_>>(),
-            [0].into_iter().chain(2..=11).collect::<Vec<_>>()
-        );
-        let mut rebuilt = settings.clone();
-        for (word, value) in edits {
-            rebuilt.set_word(word, value).unwrap();
-        }
-        let header = ExpandedLevelHeader::from(&rebuilt);
-        assert_eq!(header.super_graphics_bypass(), bypass);
-        assert_eq!(rebuilt.word(1).unwrap(), settings.word(1).unwrap());
-        for word in 12..16 {
-            assert_eq!(rebuilt.word(word).unwrap(), settings.word(word).unwrap());
-        }
+        assert!(matches!(
+            super_graphics_edit(bypass).unwrap(),
+            NativeLevelAssetsControllerEdit::SuperGraphicsBypass(value) if value == bypass
+        ));
+        let mut invalid = bypass;
+        invalid.sprites[3] = 0x1000;
+        assert!(super_graphics_edit(invalid).is_err());
     }
 
     #[test]

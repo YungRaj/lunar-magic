@@ -737,12 +737,13 @@ packed graphics descriptor. Installed tests preserve all unowned bytes, exercise
 undo/redo, commit, checksum, semantic reopen, and exact ROM undo; portable aggregate history proves
 the same typed edit composes atomically with boundary interaction. Native form tests reject files
 above twelve bits and prove the exact `$EABC` descriptor for file `$ABC`, length 2, destination 3.
-`LMXSETED1` now carries that same Layer 3 edit, exact `layer3-mode PACKED`, and semantic boundary
-interaction while retaining raw `word` compatibility. Parser tests cover exact resolution from
-nonzero shared words and reject overlaps (including mode versus boundary interaction), invalid
-booleans/descriptors, or word 16 before mutation. Model tests prove the mode setter changes only the
-eight high nibbles. The real installed shell test commits the semantic descriptor and mode with
-checksum repair, semantic reopen, low-field preservation, and whole-ROM undo; the built
+`LMXSETED1` now carries that same Layer 3 edit, exact `layer3-mode PACKED`, semantic
+`super-gfx`, and boundary interaction while retaining raw `word` compatibility. Parser tests use
+exact ownership masks to compose tilemap, bypass, and mode across shared words, while rejecting
+mode versus boundary, intersecting raw writes, invalid booleans/files/descriptors, or word 16 before
+mutation. Model tests prove each setter preserves its adjacent fields. The real installed shell test
+commits the semantic descriptor, bypass, and mode with checksum repair, semantic reopen,
+low/high-field preservation, and whole-ROM undo; the built
 portable-document process exercises edit, undo, redo, save, and exact reopen through Unicode paths.
 The standalone native exact-record editor additionally exposes semantic Super GFX Bypass and
 sprite-boundary controls beside Layer 3 tilemap and expanded mode. Shared-form tests prove each

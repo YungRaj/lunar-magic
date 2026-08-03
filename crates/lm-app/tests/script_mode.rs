@@ -10,21 +10,21 @@ use lm_level::{
     NativeSpriteStream, S16Sidecar, SpriteLengthTable,
 };
 use lm_overworld::{
-    EventNumberMap, EventReveal, EventRevealTable, EventTilemapBuffers, OverworldLevelName,
-    OverworldMessage, OverworldMetadata, OverworldPathGraph, PathDirection, PathEdge, PathNode,
+    decode_native_overworld_message_file, encode_native_overworld_message_file, EventNumberMap,
+    EventReveal, EventRevealTable, EventTilemapBuffers, OverworldLevelName, OverworldMessage,
+    OverworldMetadata, OverworldPathGraph, PathDirection, PathEdge, PathNode,
     SpecialEventRevealTable, SpriteAppearanceDefinition, SpriteAppearanceFile,
-    SpriteAppearancePart, Submap, decode_native_overworld_message_file,
-    encode_native_overworld_message_file,
+    SpriteAppearancePart, Submap,
 };
 use lm_profile::{
-    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN,
-    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START, smw_us_v1_event_tilemap_locator,
-    smw_us_v1_overworld_event_number_map_locator, smw_us_v1_overworld_event_reveal_locator,
-    smw_us_v1_overworld_message_patch_locator, smw_us_v1_special_event_reveal_locator,
+    smw_us_v1_event_tilemap_locator, smw_us_v1_overworld_event_number_map_locator,
+    smw_us_v1_overworld_event_reveal_locator, smw_us_v1_overworld_message_patch_locator,
+    smw_us_v1_special_event_reveal_locator, SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN,
+    SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START,
 };
 use lm_project::{EventTilemapCompression, MwlOptionalLevelAssets, Project};
 use lm_rats::{parse_at, scan};
-use lm_rom::{RomImage, detect_identity};
+use lm_rom::{detect_identity, RomImage};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -142,10 +142,8 @@ fn command_script_drives_the_real_binary_and_propagates_errors() {
         .output()
         .unwrap();
     assert!(elevated.status.success());
-    assert!(
-        String::from_utf8_lossy(&elevated.stdout)
-            .contains("in-place ROM replacement is explicitly enabled")
-    );
+    assert!(String::from_utf8_lossy(&elevated.stdout)
+        .contains("in-place ROM replacement is explicitly enabled"));
     let duplicate = Command::new(env!("CARGO_BIN_EXE_lm-app"))
         .arg("--allow-in-place-rom-write")
         .arg("--allow-in-place-rom-write")
@@ -1316,7 +1314,7 @@ fn command_script_drives_expanded_settings_history_and_save() {
     fs::write(&document, [0; ExpandedLevelSettingsRecord::ENCODED_LEN]).unwrap();
     fs::write(
         &edits,
-        "LMXSETED1\nlayer3-tilemap true abc 2 3\nlayer3-mode 89abcdef\nword 2 1234\n",
+        "LMXSETED1\nlayer3-tilemap true abc 2 3\nsuper-gfx true 1 2 3 4 5 6 101 202 303 404\nlayer3-mode 89abcdef\n",
     )
     .unwrap();
     fs::write(
@@ -1343,10 +1341,17 @@ fn command_script_drives_expanded_settings_history_and_save() {
     assert!(stdout.contains("expanded-settings redo: applied"));
     assert!(stdout.contains("expanded-settings document saved"));
     let saved = ExpandedLevelSettingsRecord::decode(&fs::read(&document).unwrap()).unwrap();
-    assert_eq!(saved.word(0).unwrap(), 0x2000);
+    assert_eq!(saved.word(0).unwrap(), 0xa000);
     assert_eq!(saved.word(1).unwrap(), 0xeabc);
-    assert_eq!(saved.word(2).unwrap(), 0x1234);
     assert_eq!(saved.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
+    assert_eq!(
+        lm_level::ExpandedLevelHeader::from(&saved).super_graphics_bypass(),
+        lm_level::SuperGraphicsBypass {
+            enabled: true,
+            foreground_background: [1, 2, 3, 4, 5, 6],
+            sprites: [0x101, 0x202, 0x303, 0x404],
+        }
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 

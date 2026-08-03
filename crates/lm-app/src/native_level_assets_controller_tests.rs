@@ -5,10 +5,10 @@ use lm_graphics::{
     Bgr555, ExAnimationFeature, Palette, PaletteChange, PaletteEntryOwner, PaletteInterchangeFile,
 };
 use lm_level::{
-    CustomTimeSettings, ExpandedLevelHeader, Layer1VerticalScrollMode, LegacyHeaderEdit, MwlFile,
-    MwlLayer2Descriptor, MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteHeader,
+    split_layer2_tilemap_planes, CustomTimeSettings, ExpandedLevelHeader, Layer1VerticalScrollMode,
+    LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection, NativeSpriteHeader,
     NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord,
-    ObjectStream, SpriteRecord, SpriteToken, split_layer2_tilemap_planes,
+    ObjectStream, SpriteRecord, SpriteToken, NATIVE_LAYER2_TILEMAP_LEN,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -19,7 +19,7 @@ use lm_project::{
     PaletteSaveOptions, RatsOwnershipManifest,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
-use lm_rom::{SnesChecksum, compute_snes_checksum, detect_identity, pc_to_snes};
+use lm_rom::{compute_snes_checksum, detect_identity, pc_to_snes, SnesChecksum};
 
 fn table(offset: usize) -> LevelPointerTable {
     LevelPointerTable {
@@ -747,6 +747,11 @@ fn layer3_settings_preserve_unowned_fields_history_and_rom_reopen() {
     let baseline_word_zero = baseline.word(0).unwrap();
     let descriptor = lm_level::Layer3TilemapGraphicsDescriptor::new(0xabc, 2, 3).unwrap();
     let mode = lm_level::Layer3ExpandedModeFlags::from_packed(0x89ab_cdef);
+    let bypass = lm_level::SuperGraphicsBypass {
+        enabled: true,
+        foreground_background: [1, 2, 3, 4, 5, 6],
+        sprites: [0x101, 0x202, 0x303, 0x404],
+    };
     controller
         .apply_edits(&[
             NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
@@ -754,14 +759,28 @@ fn layer3_settings_preserve_unowned_fields_history_and_rom_reopen() {
                 descriptor,
             },
             NativeLevelAssetsControllerEdit::Layer3ExpandedMode(mode),
+            NativeLevelAssetsControllerEdit::SuperGraphicsBypass(bypass),
         ])
         .unwrap();
     let edited = controller.assets().expanded_settings.as_ref().unwrap();
-    assert_eq!(edited.word(0).unwrap(), baseline_word_zero | 0x2000);
+    assert_eq!(
+        edited.word(0).unwrap() & !0xa000,
+        baseline_word_zero & !0xa000
+    );
+    assert_eq!(edited.word(0).unwrap() & 0xa000, 0xa000);
     assert_eq!(edited.word(1).unwrap(), 0xeabc);
-    assert_eq!(&edited.encoded()[4..16], &baseline.encoded()[4..16]);
     assert_eq!(edited.layer3_expanded_mode_flags(), mode);
-    for word in 8..16 {
+    assert_eq!(
+        lm_level::ExpandedLevelHeader::from(edited).super_graphics_bypass(),
+        bypass
+    );
+    for word in 2..8 {
+        assert_eq!(
+            edited.word(word).unwrap() & 0xf000,
+            baseline.word(word).unwrap() & 0xf000
+        );
+    }
+    for word in 12..16 {
         assert_eq!(
             edited.word(word).unwrap() & 0x0fff,
             baseline.word(word).unwrap() & 0x0fff
@@ -792,7 +811,17 @@ fn layer3_settings_preserve_unowned_fields_history_and_rom_reopen() {
         descriptor
     );
     assert_eq!(settings.layer3_expanded_mode_flags(), mode);
-    for word in 8..16 {
+    assert_eq!(
+        lm_level::ExpandedLevelHeader::from(settings).super_graphics_bypass(),
+        bypass
+    );
+    for word in 2..8 {
+        assert_eq!(
+            settings.word(word).unwrap() & 0xf000,
+            baseline.word(word).unwrap() & 0xf000
+        );
+    }
+    for word in 12..16 {
         assert_eq!(
             settings.word(word).unwrap() & 0x0fff,
             baseline.word(word).unwrap() & 0x0fff
@@ -1249,13 +1278,11 @@ fn installed_aggregate_history_is_bounded() {
     .unwrap();
     controller.apply_edits(&[]).unwrap();
     assert!(!controller.can_undo());
-    assert!(
-        controller
-            .apply_edits(&[NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
-                vec![(1, 2), (1, 3)],
-            )])
-            .is_err()
-    );
+    assert!(controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
+            vec![(1, 2), (1, 3)],
+        )])
+        .is_err());
     assert!(!controller.can_undo());
     for value in 0..=NativeLevelAssetsController::HISTORY_LIMIT {
         controller
@@ -1493,11 +1520,9 @@ fn owned_aggregate_reclaims_four_payloads_keeps_direct_write_atomic_and_undoes()
         .apply_mutation("commit", &prepared.mutation)
         .unwrap();
     for block in &manifest.owned {
-        assert!(
-            project.rom.logical_bytes()[block.full_range()]
-                .iter()
-                .all(|byte| *byte == 0xff)
-        );
+        assert!(project.rom.logical_bytes()[block.full_range()]
+            .iter()
+            .all(|byte| *byte == 0xff));
     }
     assert_eq!(
         project
@@ -1837,11 +1862,9 @@ fn owned_layer2_aggregate_reclaims_all_five_payloads_atomically() {
         .apply_mutation("owned Layer 2 aggregate", &prepared.mutation)
         .unwrap();
     for block in &manifest.owned {
-        assert!(
-            project.rom.logical_bytes()[block.full_range()]
-                .iter()
-                .all(|byte| *byte == 0xff)
-        );
+        assert!(project.rom.logical_bytes()[block.full_range()]
+            .iter()
+            .all(|byte| *byte == 0xff));
     }
     assert_eq!(
         project.load_level_layer2(0, 2, layer2_layout()).unwrap(),
@@ -1860,16 +1883,14 @@ fn late_cross_domain_failure_rolls_back_the_complete_aggregate() {
     )
     .unwrap();
     let before = controller.assets().clone();
-    assert!(
-        controller
-            .apply_edits(&[
-                NativeLevelAssetsControllerEdit::ExAnimation(vec![
-                    ExAnimationControllerEdit::SetSetting(9),
-                ]),
-                NativeLevelAssetsControllerEdit::ExpandedSettingsWords(vec![(16, 1)]),
-            ])
-            .is_err()
-    );
+    assert!(controller
+        .apply_edits(&[
+            NativeLevelAssetsControllerEdit::ExAnimation(vec![
+                ExAnimationControllerEdit::SetSetting(9),
+            ]),
+            NativeLevelAssetsControllerEdit::ExpandedSettingsWords(vec![(16, 1)]),
+        ])
+        .is_err());
     assert_eq!(controller.assets(), &before);
     assert!(!controller.is_modified());
 }

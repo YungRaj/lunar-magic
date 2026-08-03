@@ -9,11 +9,11 @@ use lm_graphics::{
     PaletteOwnership,
 };
 use lm_level::{
-    ExpandedLevelSettingsError, HeaderValueError, Layer2Storage, LegacyHeaderEdit, LevelEditError,
-    LevelObjectData, LevelScreenExtentMode, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
-    NativeLayer2Data, NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError,
-    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteStreamError, level_mode_layer2_storage,
-    native_level_screen_count,
+    level_mode_layer2_storage, native_level_screen_count, ExpandedLevelSettingsError,
+    HeaderValueError, Layer2Storage, LegacyHeaderEdit, LevelEditError, LevelObjectData,
+    LevelScreenExtentMode, MwlLayer2Descriptor, NativeLayer2Data, NativeLayer2RemapError,
+    NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit, ObjectEditError,
+    SpriteLengthTable, SpriteStreamError, NATIVE_LAYER2_TILEMAP_LEN,
 };
 use lm_project::{
     InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
@@ -53,6 +53,7 @@ pub enum NativeLevelAssetsControllerEdit {
         descriptor: lm_level::Layer3TilemapGraphicsDescriptor,
     },
     Layer3ExpandedMode(lm_level::Layer3ExpandedModeFlags),
+    SuperGraphicsBypass(lm_level::SuperGraphicsBypass),
 }
 
 #[derive(Debug)]
@@ -131,6 +132,10 @@ pub enum NativeLevelAssetsControllerError {
     ExpandedSettingsEdit {
         command: usize,
         error: ExpandedLevelSettingsError,
+    },
+    SuperGraphicsBypass {
+        command: usize,
+        error: lm_level::GraphicsFileValueError,
     },
     SpriteSpawnSettingsUnavailable {
         command: usize,
@@ -1032,6 +1037,16 @@ pub(crate) fn apply_native_level_assets_edits(
                             error,
                         },
                     )?;
+            }
+            NativeLevelAssetsControllerEdit::SuperGraphicsBypass(bypass) => {
+                let record = next.expanded_settings.as_mut().ok_or(
+                    NativeLevelAssetsControllerError::ExpandedSettingsUnavailable { command },
+                )?;
+                let mut header = lm_level::ExpandedLevelHeader::from(&*record);
+                header.set_super_graphics_bypass(*bypass).map_err(|error| {
+                    NativeLevelAssetsControllerError::SuperGraphicsBypass { command, error }
+                })?;
+                *record = header.into();
             }
         }
     }

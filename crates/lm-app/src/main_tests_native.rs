@@ -183,16 +183,14 @@ fn owned_native_assets_shell_reclaims_exact_blocks_and_rejects_stale_evidence() 
     }
     let after = app.project().unwrap().save_snapshot();
     fs::write(&palette, "LMPALED1\nowners 100 editable\nset 1 4321\n").unwrap();
-    assert!(
-        execute_owned_editor_script(
-            &mut app,
-            shell_command::ScriptEditor::NativeAssets,
-            &spec,
-            &manifest,
-            0x1_8000..0x2_0000,
-        )
-        .is_err()
-    );
+    assert!(execute_owned_editor_script(
+        &mut app,
+        shell_command::ScriptEditor::NativeAssets,
+        &spec,
+        &manifest,
+        0x1_8000..0x2_0000,
+    )
+    .is_err());
     assert_eq!(app.project().unwrap().save_snapshot(), after);
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
@@ -265,7 +263,7 @@ fn terminal_expanded_settings_batch_is_atomic_checksum_valid_and_undoable() {
     let script = directory.join("expanded settings 日本語.lmedit");
     fs::write(
         &script,
-        "LMXSETED1\nlayer3-tilemap true abc 2 3\nlayer3-mode 89abcdef\nword 2 a55a\n",
+        "LMXSETED1\nlayer3-tilemap true abc 2 3\nsuper-gfx true 1 2 3 4 5 6 101 202 303 404\nlayer3-mode 89abcdef\n",
     )
     .unwrap();
 
@@ -275,24 +273,34 @@ fn terminal_expanded_settings_batch_is_atomic_checksum_valid_and_undoable() {
         .unwrap()
         .load_expanded_level_settings(0x105, layout)
         .unwrap();
-    assert_eq!(record.word(0).unwrap(), baseline.word(0).unwrap() | 0x2000);
+    assert_eq!(record.word(0).unwrap() & 0xa000, 0xa000);
+    assert_eq!(
+        record.word(0).unwrap() & !0xa000,
+        baseline.word(0).unwrap() & !0xa000
+    );
     assert_eq!(record.word(1).unwrap(), 0xeabc);
-    assert_eq!(record.word(2).unwrap(), 0xa55a);
     assert_eq!(record.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
-    for word in 8..16 {
+    assert_eq!(
+        lm_level::ExpandedLevelHeader::from(&record).super_graphics_bypass(),
+        lm_level::SuperGraphicsBypass {
+            enabled: true,
+            foreground_background: [1, 2, 3, 4, 5, 6],
+            sprites: [0x101, 0x202, 0x303, 0x404],
+        }
+    );
+    for word in 12..16 {
         assert_eq!(
             record.word(word).unwrap() & 0x0fff,
             baseline.word(word).unwrap() & 0x0fff
         );
     }
-    assert!(
-        app.project()
-            .unwrap()
-            .identity
-            .as_ref()
-            .unwrap()
-            .checksum_matches()
-    );
+    assert!(app
+        .project()
+        .unwrap()
+        .identity
+        .as_ref()
+        .unwrap()
+        .checksum_matches());
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(
         app.project()

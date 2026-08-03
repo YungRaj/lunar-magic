@@ -1312,12 +1312,15 @@ monotonic revision tokens, preserves the saved baseline, and invalidates diverge
 script uses the `LMXSETED1` header followed by raw or semantic commands. `word INDEX VALUE` retains
 the original hexadecimal exact-word route. `layer3-tilemap ENABLED FILE LENGTH DESTINATION`
 accepts a canonical boolean, twelve-bit hexadecimal GFX/ExGFX file, and selectors `0..=3`;
-`layer3-mode PACKED` accepts the exact 32-bit hexadecimal expanded mode, and `boundary-air ENABLED`
-changes the recovered interaction bit. Commands declare their owned words: Layer 3 tilemap owns
-words 0–1, expanded mode owns words 8–15, boundary interaction owns word 8, and raw writes own
-their selected word. The expanded-mode setter replaces only those words' high nibbles and preserves
-all eight adjacent low 12-bit fields.
-Any overlap, out-of-range word, invalid boolean, file, or selector rejects during parsing before an
+`layer3-mode PACKED` accepts the exact 32-bit hexadecimal expanded mode,
+`super-gfx ENABLED FG1 FG2 FG3 BG1 BG2 BG3 SP1 SP2 SP3 SP4` accepts all ten twelve-bit bypass
+files, and `boundary-air ENABLED` changes the recovered interaction bit. Commands declare exact bit
+masks rather than whole shared words: tilemap owns word 0 `$2000` plus word 1, bypass owns word 0
+`$8000` plus the low twelve bits of words 2–11, expanded mode owns the high nibbles of words 8–15,
+boundary interaction owns word 8 `$4000`, and raw writes own all bits of their selected word. This
+allows tilemap, bypass, and mode to compose while mode versus boundary and any intersecting raw
+write reject before mutation.
+Any true overlap, out-of-range word, invalid boolean, file, or selector rejects during parsing before an
 edit escapes. Resolution starts from the current record, preserves every unowned bit/word, and is
 shared by installed shell editing, portable-document history, and aggregate ROM automation. This
 workflow does not claim to discover or install Lunar Magic runtime patches.
