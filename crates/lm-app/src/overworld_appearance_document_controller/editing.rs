@@ -68,6 +68,9 @@ pub(super) fn apply_edit(
                 .get_mut(*index)
                 .ok_or_else(|| index_error(*index, len))? = *value;
         }
+        OverworldAppearanceDocumentEdit::ReplaceParts { sprite_id, values } => {
+            *parts_mut(definitions, *sprite_id)? = values.clone();
+        }
         OverworldAppearanceDocumentEdit::MovePartBefore {
             sprite_id,
             index,

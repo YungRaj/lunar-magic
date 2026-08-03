@@ -2595,9 +2595,15 @@ tile, palette, both signed offsets, and both flips. Paste-over and paste-after b
 requested sprite ID, part index, mode, and document revision; selection changes cannot redirect the
 operation, while stale, malformed, multi-part, or cross-domain delivery leaves the document unchanged.
 Duplicate and both paste forms submit exactly one controller edit and therefore create one undoable
-revision. Revision checks, atomic batches, canonical reopen, immutable saves, and dirty shutdown
-protect the keyed document; the built application exercises the workflow through paths containing
-spaces and Unicode.
+revision. The same typed domain carries a nonempty complete painter-ordered composition: the native
+panel can copy every part, replace or append a composition on an existing stable sprite ID, or
+insert a new definition at the requested index using the form's target ID. `ReplaceParts` is a
+first-class controller command, while new-definition paste submits insertion and complete-part
+replacement as one staged batch. Delivery retains the requested revision, stable ID, operation,
+and insertion index; stale revisions, duplicate IDs, invalid palettes, excessive aggregate counts,
+empty payloads, and wrong clipboard domains preserve every definition. Revision checks, atomic
+batches, canonical reopen, immutable saves, and dirty shutdown protect the keyed document; the
+built application exercises the workflow through paths containing spaces and Unicode.
 Output publication is create-new and cannot replace an existing file.
 The shell keeps custom-object, overworld-metadata, overworld-path, Layer 3, and complete-level
 sessions in one portable-document registry. End-of-input refuses to abandon any modified session;

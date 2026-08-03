@@ -19,17 +19,19 @@ enum PendingClose {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PartPasteMode {
-    Replace,
-    InsertAfter,
+enum AppearancePasteMode {
+    ReplacePart { index: usize },
+    InsertPartAfter { index: usize },
+    ReplaceComposition,
+    AppendComposition,
+    InsertDefinition { index: usize },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct PartPasteTarget {
+struct AppearancePasteTarget {
     revision: u64,
     sprite_id: u16,
-    index: usize,
-    mode: PartPasteMode,
+    mode: AppearancePasteMode,
 }
 
 #[derive(Default)]
@@ -42,7 +44,7 @@ pub(crate) struct OverworldAppearanceEditor {
     part: PartForm,
     part_key: Option<(u64, u16, usize)>,
     preview_drag: Option<preview::PreviewDrag>,
-    clipboard_paste_target: Option<PartPasteTarget>,
+    clipboard_paste_target: Option<AppearancePasteTarget>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     persistence: DocumentPersistence,
@@ -117,7 +119,7 @@ impl OverworldAppearanceEditor {
         if let Some(text) = pasted
             && let Some(target) = self.clipboard_paste_target.take()
         {
-            self.paste_part_at(&text, target);
+            self.paste_appearance_at(&text, target);
         }
         ui.separator();
         let (revision, definitions) = {
@@ -227,45 +229,108 @@ impl OverworldAppearanceEditor {
         }
     }
 
-    fn paste_part_at(&mut self, text: &str, target: PartPasteTarget) {
-        let part = match native_clipboard::decode_overworld_appearance_part(text) {
-            Ok(part) => part,
+    fn paste_appearance_at(&mut self, text: &str, target: AppearancePasteTarget) {
+        let parts = match target.mode {
+            AppearancePasteMode::ReplacePart { .. }
+            | AppearancePasteMode::InsertPartAfter { .. } => {
+                native_clipboard::decode_overworld_appearance_part(text).map(|part| vec![part])
+            }
+            AppearancePasteMode::ReplaceComposition
+            | AppearancePasteMode::AppendComposition
+            | AppearancePasteMode::InsertDefinition { .. } => {
+                native_clipboard::decode_overworld_appearance_parts(text)
+            }
+        };
+        let parts = match parts {
+            Ok(parts) => parts,
             Err(error) => {
                 self.error = Some(error);
                 return;
             }
         };
-        let (edit, selected_index) = match target.mode {
-            PartPasteMode::Replace => (
-                OverworldAppearanceDocumentEdit::ReplacePart {
+        let (edits, definition_index, part_index) = match target.mode {
+            AppearancePasteMode::ReplacePart { index } => (
+                vec![OverworldAppearanceDocumentEdit::ReplacePart {
                     sprite_id: target.sprite_id,
-                    index: target.index,
-                    value: part,
-                },
-                target.index,
+                    index,
+                    value: parts[0],
+                }],
+                None,
+                index,
             ),
-            PartPasteMode::InsertAfter => {
-                let Some(index) = target.index.checked_add(1) else {
+            AppearancePasteMode::InsertPartAfter { index } => {
+                let Some(index) = index.checked_add(1) else {
                     self.error = Some("overworld appearance paste index overflow".into());
                     return;
                 };
                 (
-                    OverworldAppearanceDocumentEdit::InsertPart {
+                    vec![OverworldAppearanceDocumentEdit::InsertPart {
                         sprite_id: target.sprite_id,
                         index,
-                        value: part,
-                    },
+                        value: parts[0],
+                    }],
+                    None,
                     index,
                 )
             }
+            AppearancePasteMode::ReplaceComposition => (
+                vec![OverworldAppearanceDocumentEdit::ReplaceParts {
+                    sprite_id: target.sprite_id,
+                    values: parts,
+                }],
+                None,
+                0,
+            ),
+            AppearancePasteMode::AppendComposition => {
+                let Some(controller) = self.controller.as_ref() else {
+                    self.error =
+                        Some("overworld appearance document closed before paste delivery".into());
+                    return;
+                };
+                let Some(definition) = controller.value().definition(target.sprite_id) else {
+                    self.error = Some(format!(
+                        "overworld appearance sprite {:04X} no longer exists",
+                        target.sprite_id
+                    ));
+                    return;
+                };
+                let selected = definition.parts.len();
+                let mut values = definition.parts.clone();
+                values.extend(parts);
+                (
+                    vec![OverworldAppearanceDocumentEdit::ReplaceParts {
+                        sprite_id: target.sprite_id,
+                        values,
+                    }],
+                    None,
+                    selected,
+                )
+            }
+            AppearancePasteMode::InsertDefinition { index } => (
+                vec![
+                    OverworldAppearanceDocumentEdit::InsertDefinition {
+                        index,
+                        sprite_id: target.sprite_id,
+                    },
+                    OverworldAppearanceDocumentEdit::ReplaceParts {
+                        sprite_id: target.sprite_id,
+                        values: parts,
+                    },
+                ],
+                Some(index),
+                0,
+            ),
         };
         let Some(controller) = self.controller.as_mut() else {
             self.error = Some("overworld appearance document closed before paste delivery".into());
             return;
         };
-        match controller.apply_edits(target.revision, &[edit]) {
+        match controller.apply_edits(target.revision, &edits) {
             Ok(()) => {
-                self.part_index = selected_index;
+                if let Some(index) = definition_index {
+                    self.definition_index = index;
+                }
+                self.part_index = part_index;
                 self.invalidate();
             }
             Err(error) => self.error = Some(error.to_string()),
@@ -384,13 +449,12 @@ mod tests {
         let replacement = part(0xabcd);
         let text = native_clipboard::encode_overworld_appearance_part(replacement).unwrap();
         let mut editor = editor();
-        editor.paste_part_at(
+        editor.paste_appearance_at(
             &text,
-            PartPasteTarget {
+            AppearancePasteTarget {
                 revision: 0,
                 sprite_id: 0x1234,
-                index: 0,
-                mode: PartPasteMode::Replace,
+                mode: AppearancePasteMode::ReplacePart { index: 0 },
             },
         );
         let controller = editor.controller.as_ref().unwrap();
@@ -398,13 +462,12 @@ mod tests {
         assert_eq!(controller.value().definitions[0].parts[0], replacement);
         assert_eq!(editor.part_index, 0);
 
-        editor.paste_part_at(
+        editor.paste_appearance_at(
             &text,
-            PartPasteTarget {
+            AppearancePasteTarget {
                 revision: 1,
                 sprite_id: 0x1234,
-                index: 0,
-                mode: PartPasteMode::InsertAfter,
+                mode: AppearancePasteMode::InsertPartAfter { index: 0 },
             },
         );
         let controller = editor.controller.as_ref().unwrap();
@@ -417,29 +480,105 @@ mod tests {
     #[test]
     fn part_paste_rejects_stale_targets_and_other_domains_without_mutation() {
         let mut editor = editor();
-        let target = PartPasteTarget {
+        let target = AppearancePasteTarget {
             revision: 0,
             sprite_id: 0x1234,
-            index: 0,
-            mode: PartPasteMode::Replace,
+            mode: AppearancePasteMode::ReplacePart { index: 0 },
         };
         let text = native_clipboard::encode_overworld_appearance_part(part(3)).unwrap();
-        editor.paste_part_at(&text, target);
+        editor.paste_appearance_at(&text, target);
         editor.error = None;
-        editor.paste_part_at(&text, target);
+        editor.paste_appearance_at(&text, target);
         assert!(editor.error.is_some());
         assert_eq!(editor.controller.as_ref().unwrap().revision(), 1);
 
         editor.error = None;
         let wrong_domain = native_clipboard::encode_palette_color(lm_graphics::Bgr555(1)).unwrap();
-        editor.paste_part_at(
+        editor.paste_appearance_at(
             &wrong_domain,
-            PartPasteTarget {
+            AppearancePasteTarget {
                 revision: 1,
                 ..target
             },
         );
         assert!(editor.error.is_some());
         assert_eq!(editor.controller.as_ref().unwrap().revision(), 1);
+    }
+
+    #[test]
+    fn composition_paste_replaces_appends_and_inserts_a_definition_atomically() {
+        let composition = vec![part(7), part(8), part(9)];
+        let text = native_clipboard::encode_overworld_appearance_parts(&composition).unwrap();
+        let mut editor = editor();
+        editor.paste_appearance_at(
+            &text,
+            AppearancePasteTarget {
+                revision: 0,
+                sprite_id: 0x1234,
+                mode: AppearancePasteMode::ReplaceComposition,
+            },
+        );
+        assert_eq!(editor.controller.as_ref().unwrap().revision(), 1);
+        assert_eq!(
+            editor.controller.as_ref().unwrap().value().definitions[0].parts,
+            composition
+        );
+
+        editor.paste_appearance_at(
+            &text,
+            AppearancePasteTarget {
+                revision: 1,
+                sprite_id: 0x1234,
+                mode: AppearancePasteMode::AppendComposition,
+            },
+        );
+        assert_eq!(editor.controller.as_ref().unwrap().revision(), 2);
+        assert_eq!(
+            editor.controller.as_ref().unwrap().value().definitions[0].parts,
+            [composition.clone(), composition.clone()].concat()
+        );
+        assert_eq!(editor.part_index, 3);
+
+        editor.paste_appearance_at(
+            &text,
+            AppearancePasteTarget {
+                revision: 2,
+                sprite_id: 0x5678,
+                mode: AppearancePasteMode::InsertDefinition { index: 1 },
+            },
+        );
+        let controller = editor.controller.as_ref().unwrap();
+        assert_eq!(controller.revision(), 3);
+        assert_eq!(controller.value().definitions[1].sprite_id, 0x5678);
+        assert_eq!(controller.value().definitions[1].parts, composition);
+        assert_eq!(editor.definition_index, 1);
+        assert_eq!(editor.part_index, 0);
+
+        let before = controller.value().clone();
+        editor.error = None;
+        editor.paste_appearance_at(
+            &text,
+            AppearancePasteTarget {
+                revision: 2,
+                sprite_id: 0x1234,
+                mode: AppearancePasteMode::AppendComposition,
+            },
+        );
+        assert!(editor.error.is_some());
+        assert_eq!(editor.controller.as_ref().unwrap().revision(), 3);
+        assert_eq!(editor.controller.as_ref().unwrap().value(), &before);
+
+        editor.error = None;
+        editor.paste_appearance_at(
+            &text,
+            AppearancePasteTarget {
+                revision: 3,
+                sprite_id: 0x1234,
+                mode: AppearancePasteMode::InsertDefinition { index: 0 },
+            },
+        );
+        assert!(editor.error.is_some());
+        assert_eq!(editor.controller.as_ref().unwrap().revision(), 3);
+        assert_eq!(editor.controller.as_ref().unwrap().value(), &before);
     }
 }

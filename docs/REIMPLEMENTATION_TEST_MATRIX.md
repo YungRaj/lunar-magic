@@ -386,6 +386,9 @@ eight-pixel steps, field preservation, and history-neutral movement against both
 appearance-part clipboard tests round-trip tile, palette, signed offsets, and flips; reject invalid
 widths, palettes, flags, domains, and multi-part delivery; and prove request-captured replace/insert
 targets each advance exactly one revision while stale delivery preserves the current document.
+Composition tests retain nonempty multi-part painter order, atomically replace or append a complete
+part set, insert a new definition and its parts in one revision, and reject empty, stale,
+cross-domain, duplicate-ID, and invalid-palette operations without partial insertion.
 
 The native standard-object canvas now keeps Lunar Magic's semantic Map16 `$0025` initial cell
 value separate from a transient per-cell write mask. Neighbor-sensitive object handlers therefore

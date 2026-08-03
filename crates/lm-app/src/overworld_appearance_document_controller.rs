@@ -32,6 +32,10 @@ pub enum OverworldAppearanceDocumentEdit {
         index: usize,
         value: SpriteAppearancePart,
     },
+    ReplaceParts {
+        sprite_id: u16,
+        values: Vec<SpriteAppearancePart>,
+    },
     MovePartBefore {
         sprite_id: u16,
         index: usize,

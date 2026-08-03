@@ -158,6 +158,45 @@ fn painter_order_move_is_atomic_canonical_and_undoable() {
 }
 
 #[test]
+fn complete_part_replacement_is_one_revision_and_failure_atomic() {
+    let mut controller = controller();
+    let replacement = vec![part(7, -24), part(8, 32), part(9, 0)];
+    controller
+        .apply_edits(
+            0,
+            &[OverworldAppearanceDocumentEdit::ReplaceParts {
+                sprite_id: 1,
+                values: replacement.clone(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(controller.revision(), 1);
+    assert_eq!(controller.value().definition(1).unwrap().parts, replacement);
+    assert!(controller.undo(1).unwrap());
+    assert_eq!(
+        controller.value().definition(1).unwrap().parts,
+        [part(1, 10)]
+    );
+
+    let before = controller.value().clone();
+    let mut invalid = part(10, 0);
+    invalid.palette_index = 8;
+    assert!(
+        controller
+            .apply_edits(
+                2,
+                &[OverworldAppearanceDocumentEdit::ReplaceParts {
+                    sprite_id: 1,
+                    values: vec![part(11, 0), invalid],
+                }],
+            )
+            .is_err()
+    );
+    assert_eq!(controller.value(), &before);
+    assert_eq!(controller.revision(), 2);
+}
+
+#[test]
 fn duplicate_missing_late_index_and_palette_failures_are_atomic() {
     let mut controller = controller();
     let original = controller.value().clone();

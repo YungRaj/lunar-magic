@@ -1,5 +1,5 @@
 use super::form_fields::{part_value_fields, text_field};
-use super::{OverworldAppearanceEditor, PartPasteMode, PartPasteTarget};
+use super::{AppearancePasteMode, AppearancePasteTarget, OverworldAppearanceEditor};
 use crate::{native_clipboard, overworld_appearance_editor_forms::PartForm};
 use eframe::egui;
 use lm_app::OverworldAppearanceDocumentEdit;
@@ -143,11 +143,12 @@ impl OverworldAppearanceEditor {
                 .add_enabled(selected.is_some(), egui::Button::new("Paste over part"))
                 .clicked()
             {
-                self.clipboard_paste_target = Some(PartPasteTarget {
+                self.clipboard_paste_target = Some(AppearancePasteTarget {
                     revision,
                     sprite_id: definition.sprite_id,
-                    index: self.part_index,
-                    mode: PartPasteMode::Replace,
+                    mode: AppearancePasteMode::ReplacePart {
+                        index: self.part_index,
+                    },
                 });
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -156,11 +157,12 @@ impl OverworldAppearanceEditor {
                 .add_enabled(selected.is_some(), egui::Button::new("Paste after part"))
                 .clicked()
             {
-                self.clipboard_paste_target = Some(PartPasteTarget {
+                self.clipboard_paste_target = Some(AppearancePasteTarget {
                     revision,
                     sprite_id: definition.sprite_id,
-                    index: self.part_index,
-                    mode: PartPasteMode::InsertAfter,
+                    mode: AppearancePasteMode::InsertPartAfter {
+                        index: self.part_index,
+                    },
                 });
                 ui.ctx()
                     .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -177,6 +179,51 @@ impl OverworldAppearanceEditor {
                     index,
                     value,
                 }));
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            let has_parts = !definition.parts.is_empty();
+            if ui
+                .add_enabled(has_parts, egui::Button::new("Copy composition"))
+                .clicked()
+            {
+                match native_clipboard::encode_overworld_appearance_parts(&definition.parts) {
+                    Ok(text) => ui.ctx().copy_text(text),
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            for (label, mode) in [
+                (
+                    "Replace composition",
+                    AppearancePasteMode::ReplaceComposition,
+                ),
+                ("Append composition", AppearancePasteMode::AppendComposition),
+            ] {
+                if ui.button(label).clicked() {
+                    self.clipboard_paste_target = Some(AppearancePasteTarget {
+                        revision,
+                        sprite_id: definition.sprite_id,
+                        mode,
+                    });
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                }
+            }
+            if ui.button("Paste as new definition").clicked() {
+                match self.definition.sprite_id() {
+                    Ok(sprite_id) => {
+                        self.clipboard_paste_target = Some(AppearancePasteTarget {
+                            revision,
+                            sprite_id,
+                            mode: AppearancePasteMode::InsertDefinition {
+                                index: self.definition.insert_index,
+                            },
+                        });
+                        ui.ctx()
+                            .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                    }
+                    Err(error) => self.error = Some(error),
+                }
             }
         });
         ui.horizontal(|ui| {

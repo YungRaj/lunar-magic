@@ -304,19 +304,38 @@ pub(crate) fn decode_overworld_message(text: &str) -> Result<OverworldMessage, S
 pub(crate) fn encode_overworld_appearance_part(
     part: SpriteAppearancePart,
 ) -> Result<String, String> {
-    let payload = ClipboardPayload::from_overworld_appearance_parts(&[part])
+    encode_overworld_appearance_parts(&[part])
+}
+
+pub(crate) fn encode_overworld_appearance_parts(
+    parts: &[SpriteAppearancePart],
+) -> Result<String, String> {
+    if parts.is_empty() {
+        return Err("overworld appearance copy requires at least one part".into());
+    }
+    let payload = ClipboardPayload::from_overworld_appearance_parts(parts)
         .map_err(|error| error.to_string())?;
     encode(&payload)
 }
 
 pub(crate) fn decode_overworld_appearance_part(text: &str) -> Result<SpriteAppearancePart, String> {
-    let parts = decode(text)?
-        .to_overworld_appearance_parts()
-        .map_err(|error| error.to_string())?;
+    let parts = decode_overworld_appearance_parts(text)?;
     let [part] = parts.as_slice() else {
         return Err("overworld appearance paste requires exactly one part".into());
     };
     Ok(*part)
+}
+
+pub(crate) fn decode_overworld_appearance_parts(
+    text: &str,
+) -> Result<Vec<SpriteAppearancePart>, String> {
+    let parts = decode(text)?
+        .to_overworld_appearance_parts()
+        .map_err(|error| error.to_string())?;
+    if parts.is_empty() {
+        return Err("overworld appearance paste requires at least one part".into());
+    }
+    Ok(parts)
 }
 
 #[cfg(test)]
@@ -548,5 +567,36 @@ mod tests {
 
         let payload = ClipboardPayload::from_overworld_appearance_parts(&[part, part]).unwrap();
         assert!(decode_overworld_appearance_part(&encode(&payload).unwrap()).is_err());
+    }
+
+    #[test]
+    fn overworld_appearance_composition_adapter_retains_painter_order() {
+        let parts = [
+            SpriteAppearancePart {
+                tile_index: 1,
+                palette_index: 2,
+                x_offset: -8,
+                y_offset: 0,
+                x_flip: false,
+                y_flip: true,
+            },
+            SpriteAppearancePart {
+                tile_index: 3,
+                palette_index: 4,
+                x_offset: 16,
+                y_offset: -24,
+                x_flip: true,
+                y_flip: false,
+            },
+        ];
+        let text = encode_overworld_appearance_parts(&parts).unwrap();
+        assert_eq!(decode_overworld_appearance_parts(&text).unwrap(), parts);
+        assert!(decode_overworld_appearance_part(&text).is_err());
+        assert!(encode_overworld_appearance_parts(&[]).is_err());
+        let empty = ClipboardPayload::from_overworld_appearance_parts(&[]).unwrap();
+        assert!(decode_overworld_appearance_parts(&encode(&empty).unwrap()).is_err());
+        assert!(
+            decode_overworld_appearance_parts(&encode_palette_color(Bgr555(1)).unwrap()).is_err()
+        );
     }
 }
