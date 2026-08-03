@@ -4,7 +4,7 @@ use super::{
 use crate::{level_editor_forms, native_clipboard, native_level_document_form};
 use eframe::egui;
 use lm_app::{NativeLevelAssetsControllerEdit, NativeLevelEdit};
-use lm_level::{ObjectEdit, SpriteLengthTable, SpriteToken};
+use lm_level::{NativeSpriteHeader, ObjectEdit, SpriteLengthTable, SpriteToken};
 use lm_project::{LoadedLevelSlot, NativeLevelAssetsFile};
 
 impl AggregatePanels {
@@ -241,9 +241,22 @@ impl AggregatePanels {
         ui.heading(format!("Sprite tokens ({})", level.sprites.tokens.len()));
         index(ui, &mut self.sprite_index, level.sprites.tokens.len());
         self.sync_sprite_form(level, false);
-        ui.horizontal(|ui| {
-            ui.label("Header");
-            ui.text_edit_singleline(&mut self.sprite_header);
+        egui::Grid::new("installed-native-sprite-header").show(ui, |ui| {
+            header_row(
+                ui,
+                "Sprite memory",
+                &mut self.sprite_memory,
+                NativeSpriteHeader::MAX_MEMORY,
+            );
+            ui.label("Sprite buoyancy 1");
+            ui.checkbox(&mut self.sprite_buoyancy_1, "Water/lava interaction");
+            ui.end_row();
+            ui.label("Sprite buoyancy 2");
+            ui.checkbox(
+                &mut self.sprite_buoyancy_2,
+                "Water/lava; disable Layer 2/3 interaction",
+            );
+            ui.end_row();
         });
         ui.text_edit_singleline(&mut self.level_record.sprite);
         sprite_semantic_fields(ui, &mut self.level_record);
@@ -348,8 +361,14 @@ impl AggregatePanels {
         }
         action.map(|action| {
             let edit = match action {
-                0 => level_editor_forms::parse_hex_u8(&self.sprite_header, "sprite header")
-                    .map(NativeLevelEdit::SetSpriteHeader),
+                0 => NativeSpriteHeader::from_raw(level.sprites.header)
+                    .with_properties(
+                        self.sprite_memory,
+                        self.sprite_buoyancy_1,
+                        self.sprite_buoyancy_2,
+                    )
+                    .map(|header| NativeLevelEdit::SetSpriteHeader(header.raw()))
+                    .map_err(|error| error.to_string()),
                 3 => Ok(NativeLevelEdit::RemoveSprite {
                     index: self.sprite_index,
                 }),

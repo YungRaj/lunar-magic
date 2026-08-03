@@ -6,9 +6,9 @@ use lm_graphics::{
 };
 use lm_level::{
     CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor,
-    MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteRecordFields, NativeSpriteStream,
-    ObjectCoordinateNibbles, ObjectRecord, ObjectStream, SpriteRecord, SpriteToken,
-    split_layer2_tilemap_planes,
+    MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteHeader, NativeSpriteRecordFields,
+    NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord, ObjectStream, SpriteRecord,
+    SpriteToken, split_layer2_tilemap_planes,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -599,6 +599,54 @@ fn mixed_edits_prepare_one_checksum_valid_semantically_reopenable_commit() {
         SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
         compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
     );
+}
+
+#[test]
+fn semantic_sprite_header_properties_preserve_framing_history_and_rom_reopen() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let baseline = controller.assets().level.sprites.header;
+    assert_eq!(baseline, 0x10);
+    let edited = NativeSpriteHeader::from_raw(baseline)
+        .with_properties(0x12, true, true)
+        .unwrap()
+        .raw();
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::Level(vec![
+            NativeLevelEdit::SetSpriteHeader(edited),
+        ])])
+        .unwrap();
+    assert_eq!(controller.assets().level.sprites.header, 0xd2);
+    assert!(controller.undo());
+    assert_eq!(controller.assets().level.sprites.header, baseline);
+    assert!(controller.redo());
+    assert_eq!(controller.assets().level.sprites.header, 0xd2);
+
+    let prepared = controller
+        .prepare_commit("semantic sprite header", &options())
+        .unwrap();
+    let original = snapshot.rom_bytes;
+    let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+    project
+        .apply_mutation("semantic sprite header", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets(0, layout(), &SpriteLengthTable::standard(), &[false; 256])
+        .unwrap();
+    assert_eq!(reopened.level.sprites.header, 0xd2);
+    assert_eq!(
+        SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
+        compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
+    );
+    assert!(project.undo().unwrap());
+    assert_eq!(project.rom.logical_bytes(), original);
 }
 
 #[test]

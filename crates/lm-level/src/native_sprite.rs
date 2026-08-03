@@ -7,6 +7,82 @@ mod stream_codec;
 pub use length_table::{SpriteLengthTable, SpriteLengthTableError};
 pub use record_fields::{NativeSpriteFieldError, NativeSpriteRecordFields};
 
+/// Lossless view of the original one-byte sprite-data header.
+///
+/// Lunar Magic exposes the low five bits as sprite-memory settings `$00..=$12` and the top two
+/// bits as its two buoyancy choices. Bit `$20` is deliberately not part of those properties: the
+/// native serializer owns it as the expanded-sprite framing discriminator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeSpriteHeader(u8);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeSpriteMemoryError(pub u8);
+
+impl std::fmt::Display for NativeSpriteMemoryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "sprite memory setting must be in 00..=12, got {:02X}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for NativeSpriteMemoryError {}
+
+impl NativeSpriteHeader {
+    pub const MEMORY_MASK: u8 = 0x1f;
+    pub const BUOYANCY_1_FLAG: u8 = 0x40;
+    pub const BUOYANCY_2_FLAG: u8 = 0x80;
+    pub const MAX_MEMORY: u8 = 0x12;
+
+    #[must_use]
+    pub const fn from_raw(raw: u8) -> Self {
+        Self(raw)
+    }
+
+    #[must_use]
+    pub const fn raw(self) -> u8 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn memory(self) -> u8 {
+        self.0 & Self::MEMORY_MASK
+    }
+
+    #[must_use]
+    pub const fn buoyancy_1(self) -> bool {
+        self.0 & Self::BUOYANCY_1_FLAG != 0
+    }
+
+    #[must_use]
+    pub const fn buoyancy_2(self) -> bool {
+        self.0 & Self::BUOYANCY_2_FLAG != 0
+    }
+
+    /// Replaces the three user-facing properties without changing the serializer-owned `$20` bit.
+    pub fn with_properties(
+        self,
+        memory: u8,
+        buoyancy_1: bool,
+        buoyancy_2: bool,
+    ) -> Result<Self, NativeSpriteMemoryError> {
+        if memory > Self::MAX_MEMORY {
+            return Err(NativeSpriteMemoryError(memory));
+        }
+        let mut raw = self.0 & !(Self::MEMORY_MASK | Self::BUOYANCY_1_FLAG | Self::BUOYANCY_2_FLAG);
+        raw |= memory;
+        if buoyancy_1 {
+            raw |= Self::BUOYANCY_1_FLAG;
+        }
+        if buoyancy_2 {
+            raw |= Self::BUOYANCY_2_FLAG;
+        }
+        Ok(Self(raw))
+    }
+}
+
 #[cfg(test)]
 use stream_codec::checked_native_stream_len;
 
@@ -134,6 +210,23 @@ impl std::error::Error for NativeSpriteEncodingError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semantic_header_properties_preserve_expanded_framing_bit() {
+        let header = NativeSpriteHeader::from_raw(0x20)
+            .with_properties(0x12, true, false)
+            .unwrap();
+        assert_eq!(header.raw(), 0x72);
+        assert_eq!(header.memory(), 0x12);
+        assert!(header.buoyancy_1());
+        assert!(!header.buoyancy_2());
+
+        assert_eq!(
+            header.with_properties(0x13, false, false),
+            Err(NativeSpriteMemoryError(0x13))
+        );
+        assert_eq!(header.raw(), 0x72);
+    }
 
     #[test]
     fn standard_table_matches_recovered_initializer() {

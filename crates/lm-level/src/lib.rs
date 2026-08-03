@@ -117,8 +117,9 @@ pub use native_layer2_remap::{
 };
 pub use native_map16_sidecar::{M16Sidecar, NativeMap16SidecarError, S16Sidecar};
 pub use native_sprite::{
-    NativeSpriteEncodingError, NativeSpriteFieldError, NativeSpriteRecordFields,
-    NativeSpriteStream, SpriteLengthTable, SpriteLengthTableError, SpriteToken,
+    NativeSpriteEncodingError, NativeSpriteFieldError, NativeSpriteHeader, NativeSpriteMemoryError,
+    NativeSpriteRecordFields, NativeSpriteStream, SpriteLengthTable, SpriteLengthTableError,
+    SpriteToken,
 };
 pub use object::{
     CustomTimeError, CustomTimeSettings, LevelObjectData, ObjectRecord, ObjectStream,
