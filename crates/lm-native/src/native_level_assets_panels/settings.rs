@@ -156,9 +156,12 @@ impl AggregatePanels {
             features.preserved_low_nibble
         ));
         ui.button("Apply animation options").clicked().then(|| {
-            Ok(NativeLevelAssetsControllerEdit::ExAnimationFeatures(
-                *features,
-            ))
+            Ok(NativeLevelAssetsControllerEdit::ExAnimationFeatureStates {
+                palette: features.enabled(ExAnimationFeature::PaletteAnimation),
+                vanilla: features.enabled(ExAnimationFeature::VanillaAnimation),
+                global: features.enabled(ExAnimationFeature::GlobalExAnimation),
+                level: features.enabled(ExAnimationFeature::LevelExAnimation),
+            })
         })
     }
 }

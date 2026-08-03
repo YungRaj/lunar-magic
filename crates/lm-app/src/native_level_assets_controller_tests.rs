@@ -1,9 +1,7 @@
 use super::*;
 use crate::PaletteControllerEdit;
 use lm_codec::encode_terminated_rle;
-use lm_graphics::{
-    Bgr555, ExAnimationFeature, Palette, PaletteChange, PaletteEntryOwner, PaletteInterchangeFile,
-};
+use lm_graphics::{Bgr555, Palette, PaletteChange, PaletteEntryOwner, PaletteInterchangeFile};
 use lm_level::{
     split_layer2_tilemap_planes, CustomTimeSettings, ExpandedLevelHeader, Layer1VerticalScrollMode,
     LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection, NativeSpriteHeader,
@@ -1896,6 +1894,35 @@ fn late_cross_domain_failure_rolls_back_the_complete_aggregate() {
 }
 
 #[test]
+fn unavailable_semantic_animation_features_roll_back_an_earlier_aggregate_edit() {
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot(),
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let before = controller.assets().clone();
+    assert!(matches!(
+        controller.apply_edits(&[
+            NativeLevelAssetsControllerEdit::ExAnimation(vec![
+                ExAnimationControllerEdit::SetSetting(9),
+            ]),
+            NativeLevelAssetsControllerEdit::ExAnimationFeatureStates {
+                palette: true,
+                vanilla: false,
+                global: true,
+                level: false,
+            },
+        ]),
+        Err(NativeLevelAssetsControllerError::ExAnimationFeaturesUnavailable { command: 1 })
+    ));
+    assert_eq!(controller.assets(), &before);
+    assert!(!controller.is_modified());
+}
+
+#[test]
 fn complete_palette_replacement_is_slot_agnostic_shape_checked_and_atomic() {
     let ownership =
         PaletteOwnership::from_owners(vec![PaletteEntryOwner::Editable, PaletteEntryOwner::Fixed]);
@@ -1950,14 +1977,28 @@ fn installed_animation_features_load_edit_commit_and_reopen_with_the_aggregate()
     let loaded = controller.exanimation_features().unwrap();
     assert_eq!(loaded.options.encode(), 0xa5);
 
-    let mut edited = loaded.options;
-    edited.set_enabled(ExAnimationFeature::PaletteAnimation, true);
-    edited.set_enabled(ExAnimationFeature::VanillaAnimation, false);
-    edited.set_enabled(ExAnimationFeature::GlobalExAnimation, true);
-    edited.set_enabled(ExAnimationFeature::LevelExAnimation, false);
     controller
-        .apply_edits(&[NativeLevelAssetsControllerEdit::ExAnimationFeatures(edited)])
+        .apply_edits(
+            &[NativeLevelAssetsControllerEdit::ExAnimationFeatureStates {
+                palette: true,
+                vanilla: false,
+                global: true,
+                level: false,
+            }],
+        )
         .unwrap();
+    assert_eq!(
+        controller.exanimation_features().unwrap().options.encode(),
+        0x55
+    );
+    assert_eq!(
+        controller
+            .exanimation_features()
+            .unwrap()
+            .options
+            .preserved_low_nibble,
+        5
+    );
     assert!(controller.is_modified());
 
     let prepared = controller

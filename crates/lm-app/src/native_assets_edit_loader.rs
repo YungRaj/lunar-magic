@@ -1,8 +1,9 @@
 //! Shared loading of bounded aggregate composition scripts.
 
 use crate::{
-    editor_shell::read_bounded_utf8, exanimation_edit_script, expanded_settings_edit_script,
-    level_edit_script, native_assets_edit_spec, palette_edit_script, sprite_spawn_edit_script,
+    editor_shell::read_bounded_utf8, exanimation_edit_script, exanimation_feature_edit_script,
+    expanded_settings_edit_script, level_edit_script, native_assets_edit_spec, palette_edit_script,
+    sprite_spawn_edit_script,
 };
 use lm_app::NativeLevelAssetsControllerEdit;
 use lm_graphics::PaletteOwnership;
@@ -42,6 +43,20 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
         edits.push(NativeLevelAssetsControllerEdit::ExAnimation(
             exanimation_edit_script::parse(&text)?,
         ));
+    }
+    if let Some(path) = spec.exanimation_features {
+        let text = read_bounded_utf8(
+            &path,
+            exanimation_feature_edit_script::MAX_SCRIPT_LEN,
+            "animation-feature edit",
+        )?;
+        let edit = exanimation_feature_edit_script::parse(&text)?;
+        edits.push(NativeLevelAssetsControllerEdit::ExAnimationFeatureStates {
+            palette: edit.palette,
+            vanilla: edit.vanilla,
+            global: edit.global,
+            level: edit.level,
+        });
     }
     if let Some(path) = spec.expanded_settings {
         let text = read_bounded_utf8(
@@ -132,10 +147,12 @@ mod tests {
             "LMXSETED1\nlayer3-tilemap true abc 2 3\nsuper-gfx true 1 2 3 4 5 6 101 202 303 404\nlayer3-mode 89abcdef\n",
         )
         .unwrap();
+        let features = directory.join("Animation features.txt");
+        fs::write(&features, "LMEXFT1\nfeatures true false true false\n").unwrap();
         let spec = directory.join("Aggregate.lmnat");
         fs::write(
             &spec,
-            "LMNATED1\nexpanded-settings=Expanded settings.txt\nsprite-spawn=Spawn settings.txt\n",
+            "LMNATED1\nexanimation-features=Animation features.txt\nexpanded-settings=Expanded settings.txt\nsprite-spawn=Spawn settings.txt\n",
         )
         .unwrap();
 
@@ -143,6 +160,12 @@ mod tests {
         assert!(matches!(
             loaded.edits.as_slice(),
             [
+                NativeLevelAssetsControllerEdit::ExAnimationFeatureStates {
+                    palette: true,
+                    vanilla: false,
+                    global: true,
+                    level: false,
+                },
                 NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
                     enabled: true,
                     descriptor,

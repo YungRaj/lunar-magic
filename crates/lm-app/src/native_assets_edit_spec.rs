@@ -13,6 +13,7 @@ pub struct NativeAssetsEditSpec {
     pub level: Option<PathBuf>,
     pub palette: Option<PathBuf>,
     pub exanimation: Option<PathBuf>,
+    pub exanimation_features: Option<PathBuf>,
     pub expanded_settings: Option<PathBuf>,
     pub sprite_spawn: Option<PathBuf>,
 }
@@ -94,7 +95,12 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
         let key = key.trim();
         if !matches!(
             key,
-            "level" | "palette" | "exanimation" | "expanded-settings" | "sprite-spawn"
+            "level"
+                | "palette"
+                | "exanimation"
+                | "exanimation-features"
+                | "expanded-settings"
+                | "sprite-spawn"
         ) {
             return Err(NativeAssetsEditSpecError::UnknownField(line, key.into()));
         }
@@ -119,6 +125,7 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
         level: fields.remove("level"),
         palette: fields.remove("palette"),
         exanimation: fields.remove("exanimation"),
+        exanimation_features: fields.remove("exanimation-features"),
         expanded_settings: fields.remove("expanded-settings"),
         sprite_spawn: fields.remove("sprite-spawn"),
     })
@@ -131,13 +138,17 @@ mod tests {
     #[test]
     fn resolves_relative_unicode_paths_and_rejects_duplicates() {
         let spec = parse(
-            "LMNATED1\nlevel=Scripts/Level edits.txt\nexpanded-settings=設定.txt\nsprite-spawn=Spawn.txt\n",
+            "LMNATED1\nlevel=Scripts/Level edits.txt\nexanimation-features=Animation.txt\nexpanded-settings=設定.txt\nsprite-spawn=Spawn.txt\n",
             Path::new("project"),
         )
         .unwrap();
         assert_eq!(
             spec.level,
             Some(PathBuf::from("project/Scripts/Level edits.txt"))
+        );
+        assert_eq!(
+            spec.exanimation_features,
+            Some(PathBuf::from("project/Animation.txt"))
         );
         assert_eq!(
             spec.expanded_settings,

@@ -346,6 +346,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   Lfix3/expanded-settings bits, so GUI, scripts, and future automation use the same semantic
   transaction. The former requires authenticated installed Lfix3 storage; the latter also works
   in a portable aggregate that contains its expanded-settings record.
+  Its `exanimation-features` child uses the strict `LMEXFT1` grammar to carry four positive
+  semantic states. The controller applies those states to the currently loaded feature byte, so
+  automation and the installed Settings panel preserve its unrelated low nibble instead of
+  manufacturing an opaque replacement value; unavailable installed storage rejects atomically.
 - The installed aggregate Settings panel and focused ROM expanded-settings window reuse the same
   custom Layer 3 form. The aggregate path carries a typed enable/descriptor edit; the focused path
   stages the corresponding two-word batch and immediately reloads the form. Both preserve word 0

@@ -3507,6 +3507,12 @@ reopen, checksum validity, and exact undo. An ignored live-oracle test writes by
 that installed Rust path in the retained Lunar Magic-created ROM, asks Lunar Magic 3.63 under Wine
 to export level `$000`, and recovers `$5B` from MWL ExAnimation metadata word 0. This verifies all
 four inverted high bits plus preservation of the unrelated low nibble through the actual executable.
+Aggregate automation exposes the same intent without an opaque byte. An `LMNATED1`
+`exanimation-features=PATH` child points to a bounded `LMEXFT1` script containing exactly
+`features PALETTE VANILLA GLOBAL LEVEL`, with canonical `true`/`false` values. Parsing rejects a
+missing, duplicate, malformed, or oversized command before mutation. The aggregate controller
+sets only those four named states on the currently loaded record, preserving the unrelated low
+nibble; absent profile storage is a typed late failure that rolls back earlier child edits.
 The installed-assets Super GFX preview is a live staged view rather than a one-shot diagnostic:
 enabling it renders the current aggregate, and every accepted settings, level, Layer 2, palette, or
 ExAnimation-feature edit invalidates and regenerates the texture from the controller's new staged

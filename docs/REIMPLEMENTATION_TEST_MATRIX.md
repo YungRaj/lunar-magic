@@ -732,6 +732,12 @@ shared high flags and GFX selector, checksum-valid reopen, history undo/redo, ex
 failure atomicity for unavailable storage, duplicate commands, invalid booleans, range 4, or a late
 boundary command after a valid spawn command. Portable aggregate coverage independently proves
 boundary-air word preservation and undo, while rejecting the external-Lfix3-only settings command.
+The separately bounded `LMEXFT1` child covers all four positive per-level animation switches.
+Parser tests reject missing, duplicate, malformed, and oversized scripts; composition-loader tests
+prove exact semantic routing; aggregate-controller tests start from byte `$A5`, request
+`true false true false`, retain low nibble `$5`, commit/reopen byte `$55` with a valid checksum,
+undo the complete ROM exactly, and roll back an earlier child when installed feature storage is
+unavailable.
 Custom Layer 3 tilemap settings have a shared semantic aggregate edit covering the enable bit and
 packed graphics descriptor. Installed tests preserve all unowned bytes, exercise controller
 undo/redo, commit, checksum, semantic reopen, and exact ROM undo; portable aggregate history proves

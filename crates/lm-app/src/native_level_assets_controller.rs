@@ -5,8 +5,8 @@ use crate::{
     NativeLevelEdit, PaletteControllerEdit,
 };
 use lm_graphics::{
-    ExAnimationFeatureOptions, PaletteBatchEditError, PaletteChange, PaletteInterchangeFile,
-    PaletteOwnership,
+    ExAnimationFeature, ExAnimationFeatureOptions, PaletteBatchEditError, PaletteChange,
+    PaletteInterchangeFile, PaletteOwnership,
 };
 use lm_level::{
     level_mode_layer2_storage, native_level_screen_count, ExpandedLevelSettingsError,
@@ -42,6 +42,12 @@ pub enum NativeLevelAssetsControllerEdit {
     Palette(Vec<PaletteControllerEdit>),
     ExAnimation(Vec<ExAnimationControllerEdit>),
     ExAnimationFeatures(ExAnimationFeatureOptions),
+    ExAnimationFeatureStates {
+        palette: bool,
+        vanilla: bool,
+        global: bool,
+        level: bool,
+    },
     ExpandedSettingsWords(Vec<(usize, u16)>),
     SpriteSpawnProperties {
         vertical_range: u8,
@@ -957,6 +963,24 @@ pub(crate) fn apply_native_level_assets_edits(
                     NativeLevelAssetsControllerError::ExAnimationFeaturesUnavailable { command },
                 )?;
                 features.options = *options;
+            }
+            NativeLevelAssetsControllerEdit::ExAnimationFeatureStates {
+                palette,
+                vanilla,
+                global,
+                level,
+            } => {
+                let features = staged_features.as_mut().ok_or(
+                    NativeLevelAssetsControllerError::ExAnimationFeaturesUnavailable { command },
+                )?;
+                for (feature, enabled) in [
+                    (ExAnimationFeature::PaletteAnimation, *palette),
+                    (ExAnimationFeature::VanillaAnimation, *vanilla),
+                    (ExAnimationFeature::GlobalExAnimation, *global),
+                    (ExAnimationFeature::LevelExAnimation, *level),
+                ] {
+                    features.options.set_enabled(feature, enabled);
+                }
             }
             NativeLevelAssetsControllerEdit::ExpandedSettingsWords(edits) => {
                 let record = next.expanded_settings.as_mut().ok_or(

@@ -17,6 +17,7 @@ mod entity_appearance_document_shell;
 mod entity_appearance_edit_script;
 mod exanimation_document_shell;
 mod exanimation_document_spec;
+mod exanimation_feature_edit_script;
 mod exanimation_edit_script;
 mod expanded_settings_document_shell;
 mod expanded_settings_edit_script;
