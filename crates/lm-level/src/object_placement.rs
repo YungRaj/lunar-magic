@@ -37,7 +37,7 @@ impl ObjectStream {
         let mut placements = Vec::with_capacity(self.records.len());
         for (record_index, record) in self.records.iter().enumerate() {
             if let Some(jump) = record.screen_jump() {
-                screen = jump.packed_target;
+                screen = jump.resolved_screen();
                 continue;
             }
             if record.advances_screen() {
@@ -90,7 +90,7 @@ impl ObjectStream {
                 continue;
             }
             if let Some(jump) = record.screen_jump() {
-                source_screen = jump.packed_target.min(31);
+                source_screen = jump.resolved_screen().min(31);
                 output_screen = source_screen;
                 output.push(record);
                 continue;
@@ -358,6 +358,21 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn screen_jump_components_resolve_additively_in_both_storage_orders() {
+        for (vertical, jump) in [
+            (false, ObjectRecord::new(vec![5, 3, 1]).unwrap()),
+            (true, ObjectRecord::new(vec![5, 3, 3]).unwrap()),
+        ] {
+            let stream = ObjectStream {
+                records: vec![jump, ObjectRecord::new(vec![1, 0x10, 0]).unwrap()],
+            };
+            let placement = stream.native_placements_for_orientation(vertical)[0];
+            assert_eq!(placement.screen, 8);
+            assert_eq!(placement.major, 8 * 16);
+        }
     }
 
     #[test]

@@ -478,6 +478,22 @@ pub struct ObjectScreenJump {
     pub packed_target: u16,
 }
 
+impl ObjectScreenJump {
+    /// Resolves the absolute major-axis screen selected by the two packed components.
+    ///
+    /// Lunar Magic adds the five-bit and four-bit components for both storage orders. The packed
+    /// target remains available separately so lossless editors can preserve and edit the exact
+    /// representation.
+    #[must_use]
+    pub fn resolved_screen(self) -> u16 {
+        let [low, high] = self.packed_target.to_le_bytes();
+        match self.encoding {
+            ScreenJumpEncoding::FirstLow => u16::from(low & 0x1f) + u16::from(high & 0x0f),
+            ScreenJumpEncoding::FirstHigh => u16::from(high & 0x1f) + u16::from(low & 0x0f),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScreenExitObjectEncoding {
     Compact,
@@ -794,6 +810,15 @@ mod tests {
         );
         first_high.set_screen_jump_target(0x1c0d).unwrap();
         assert_eq!(first_high.encoded(), &[0x1c, 0x0d, 3]);
+    }
+
+    #[test]
+    fn both_screen_jump_encodings_add_their_packed_components() {
+        let first_low = ObjectRecord::new(vec![5, 3, 1]).unwrap();
+        assert_eq!(first_low.screen_jump().unwrap().resolved_screen(), 8);
+
+        let first_high = ObjectRecord::new(vec![5, 3, 3]).unwrap();
+        assert_eq!(first_high.screen_jump().unwrap().resolved_screen(), 8);
     }
 
     #[test]

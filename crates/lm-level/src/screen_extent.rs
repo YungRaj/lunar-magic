@@ -25,7 +25,7 @@ pub fn native_level_screen_count(
     let mut visible_highest = 0_u16;
     for record in &objects.records {
         if let Some(jump) = record.screen_jump() {
-            screen = jump.packed_target;
+            screen = jump.resolved_screen();
             stored_highest = stored_highest.max(screen);
             continue;
         }
@@ -90,6 +90,22 @@ mod tests {
         assert_eq!(
             native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Auto),
             1
+        );
+    }
+
+    #[test]
+    fn extent_uses_the_additive_screen_jump_target() {
+        let objects = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![5, 3, 1]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+        };
+        let sprites =
+            NativeSpriteStream::parse(&[0, 0xff], false, &SpriteLengthTable::standard()).unwrap();
+        assert_eq!(
+            native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Auto),
+            9
         );
     }
 

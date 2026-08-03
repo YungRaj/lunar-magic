@@ -186,7 +186,7 @@ fn decode_positioned_objects(
             if !trailing_controls.is_empty() {
                 return Err(ObjectRelocationError::UnsupportedControl(index));
             }
-            screen = jump.packed_target;
+            screen = jump.resolved_screen();
             continue;
         }
         if !record.is_positioned_object() {
@@ -245,6 +245,9 @@ fn encode_positioned_objects(
 }
 
 fn canonical_screen_jump(screen: u16) -> Result<ObjectRecord, ObjectRelocationError> {
+    if screen > 31 {
+        return Err(ObjectRelocationError::TargetScreenOutOfRange(screen));
+    }
     let target =
         u8::try_from(screen).map_err(|_| ObjectRelocationError::TargetScreenOutOfRange(screen))?;
     ObjectRecord::new(vec![target, 0, 1])
@@ -464,6 +467,27 @@ mod tests {
                 )
                 .is_err()
         );
+
+        let mut out_of_range_jump = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0x1f, 1, 1]).unwrap(),
+                object(false, 1, 2, 0x10),
+                object(false, 3, 4, 0x10),
+            ],
+        };
+        let out_of_range_original = out_of_range_jump.clone();
+        assert_eq!(
+            out_of_range_jump.relocate_ordinary_object(
+                1,
+                0,
+                ObjectCoordinateNibbles {
+                    first: 1,
+                    second: 2,
+                },
+            ),
+            Err(ObjectRelocationError::TargetScreenOutOfRange(32))
+        );
+        assert_eq!(out_of_range_jump, out_of_range_original);
         assert_eq!(stream, original);
     }
 

@@ -842,6 +842,30 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
             2,
         ),
         (
+            "horizontal-first-low-jump-with-secondary-component",
+            vec![
+                ObjectRecord::new(vec![5, 3, 1]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+            8,
+        ),
+        (
+            "horizontal-first-low-jump-component-split-a",
+            vec![
+                ObjectRecord::new(vec![5, 1, 1]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+            6,
+        ),
+        (
+            "horizontal-first-low-jump-component-split-b",
+            vec![
+                ObjectRecord::new(vec![2, 3, 1]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+            5,
+        ),
+        (
             "out-of-order-exits",
             vec![
                 ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
@@ -894,6 +918,14 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
             "vertical-duplicate-custom-times",
             vertical_duplicate_custom_times,
             0,
+        ),
+        (
+            "vertical-first-high-jump-with-secondary-component",
+            vec![
+                ObjectRecord::new(vec![5, 3, 3]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+            8,
         ),
     ] {
         let imported_rom = directory.join(format!("{case}.sfc"));

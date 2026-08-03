@@ -4754,7 +4754,7 @@ fn object_stream_major_tiles(records: &[ObjectRecord]) -> u16 {
             records
                 .iter()
                 .filter_map(ObjectRecord::screen_jump)
-                .map(|jump| jump.packed_target),
+                .map(lm_level::ObjectScreenJump::resolved_screen),
         )
         .max()
         .unwrap_or(0)

@@ -1050,7 +1050,11 @@ with the stream terminator; callers must explicitly replace the whole raw record
 The coordinate pair remains orientation-neutral at the record boundary: absolute X/Y requires the
 level layout and preceding screen-transition stream, so it is not guessed from an isolated record.
 Command-zero records with parameter `01` or `03` are classified as Lunar Magic's two recovered
-screen-jump encodings and expose their exact packed target without assigning it an unsupported axis.
+screen-jump encodings and expose their exact packed target. Live horizontal and vertical imports
+with nonzero five-bit and four-bit components prove that Lunar Magic adds the two values to resolve
+the absolute major-axis screen regardless of their low-first or high-first storage order. Placement,
+extent, relocation, import normalization, rendering, and canvas sizing share that interpretation
+while the raw packed target remains lossless and independently editable.
 The same table-aware serializer is shared by controller validation and ROM persistence; exhaustive
 tests cover all four selectors and all 256 sprite IDs.
 
