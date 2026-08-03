@@ -38,9 +38,14 @@ X-word, submap-byte order while every public/editor coordinate remains semantic 
 pristine-ROM, direct-save, and emulator-evidence tests prevent a byte-preserving but visually and
 runtime-transposed interpretation. Unlike the initialization-only gates, it then invokes the explicitly configured
 `SNES9X_GAMEPLAY_DRIVER` without a command shell. The platform driver receives the exact emulator,
-ROM, source, expected destination, snapshot, and screenshot paths. Unix drivers can use Snes9x's
-official `.smv` playback and target-frame switches; GUI ports can provide equivalent native input
-automation. Success requires a new regular bounded Snes9x snapshot and PNG. Rust decodes plain or
+ROM, source, expected destination, snapshot, and screenshot paths. The repository now supplies a
+dependency-free macOS/Linux C adapter for an official Snes9x libretro core. It boots the exact ROM
+from reset, advances the genuine title/file/intro flow with controller input, snapshots the first
+overworld state, then tests bounded adjacent approaches to the supplied source. Each attempt starts
+from that same serialized baseline; the adapter places Mario immediately beside the route because
+the gate is testing the exit-table runtime rather than replaying an entire save file, and the real
+SMW movement/exit/submap code must produce the edited destination. Success requires a new regular
+bounded authentic Snes9x serialized snapshot and a PNG made from the core's video callback. Rust decodes plain or
 gzip tagged snapshots, requires game mode `$0E`, and verifies Mario's runtime submap, X/Y, and
 grid-aligned X/Y at WRAM `$1F11`, `$1F17-$1F1A`, and `$1F1F-$1F22` exactly equal the edited
 destination. The PNG must decode within Snes9x's supported game dimensions and contain more than
@@ -78,6 +83,24 @@ must return only after Snes9x has written both requested evidence files; Rust, n
 decides whether they prove traversal. The test bounds execution to 120 seconds and its child guard
 kills and reaps the driver during timeout, failure, or panic; each adapter remains responsible for
 reaping the emulator process it launches.
+
+Build the supplied adapter into a new path, then point both variables at the adapter and an
+official Snes9x libretro core respectively:
+
+```text
+tools/build-snes9x-gameplay-driver.sh /tmp/lm-snes9x-gameplay-driver
+SNES9X_BIN=/absolute/path/to/snes9x_libretro.dylib \
+SNES9X_GAMEPLAY_DRIVER=/tmp/lm-snes9x-gameplay-driver \
+cargo test -p lm-app --test snes9x_smoke \
+  native_overworld_path_link_edit_is_traversed_in_snes9x -- --ignored --exact
+```
+
+Use `.so` for a Linux core. The adapter dynamically authenticates the libretro API and Snes9x
+library name, accepts only the named scenario and complete separate-argument contract, refuses
+pre-existing evidence paths, caps core state/video allocation, tries at most four approaches of
+900 frames each, and never invokes a command shell. A local macOS arm64 run with official Snes9x
+1.63 passed the complete ignored gate in 1.58 seconds. A Windows adapter and release-host run remain
+open.
 
 The `lm-native` crate also has an opt-in `visual-smoke` feature. With
 `LM_NATIVE_SCREENSHOT_TO` set, it waits eight rendered frames, requests a screenshot through the

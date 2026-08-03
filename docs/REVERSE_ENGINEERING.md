@@ -2383,8 +2383,12 @@ checksum. It no longer accepts an eight-second idle boot as gameplay evidence. A
 configured platform driver must traverse the named source route in Snes9x and publish a tagged
 snapshot plus PNG. The shared bounded snapshot decoder then requires overworld game mode `$0E` and
 the exact edited destination in Mario's submap, position, and grid-position WRAM fields; the PNG
-must be a decoded, nonblank Snes9x-sized game image. The driver remains to be supplied per platform,
-so this opt-in gate is structurally strict but is not yet passing on all three release hosts.
+must be a decoded, nonblank Snes9x-sized game image. The supplied macOS/Linux libretro adapter boots
+the exact generated ROM from reset, reaches the overworld through real controller input, restores
+one baseline for each bounded adjacent source approach, and leaves movement, exit lookup,
+destination assignment, and submap transition to SMW. An official Snes9x 1.63 arm64 core produced
+an authentic tagged state plus 256×224 frame and passed the complete ignored gate in 1.58 seconds.
+Windows and independent Linux release-host execution remain open.
 
 Accordingly, `CompleteOverworldRomLayout` remains a profile-described editor/container boundary.
 The ignored Snes9x complete-overworld smoke gate proves allocation, transaction, checksum,

@@ -40,6 +40,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile complete test suite
         run: cargo test --workspace --all-targets --no-run
+      - name: Compile Snes9x gameplay driver
+        if: runner.os != 'Windows'
+        shell: bash
+        run: tools/build-snes9x-gameplay-driver.sh "$RUNNER_TEMP/lm-snes9x-gameplay-driver"
       - name: Run self-contained core tests
         run: cargo test -p lm-rom -p lm-codec -p lm-rats -p lm-snes
 
