@@ -3256,7 +3256,8 @@ screen-`$1F` marker in an otherwise empty imported level leaves Lunar Magic's fi
 Its byte-zero high bit still advances stream state for following visible content, so the same exit
 followed by an ordinary object produces `$01`. Lunar Magic transfers that transition onto the
 ordinary object, moves the exit behind the positional stream, and clears the exit's now-redundant
-bit. Multiple exits are then stably ordered by their absolute five-bit screen. The shared placement
+bit. Multiple exits populate a 32-slot table in source order, so duplicate screens use the last
+record and the surviving tail is emitted in ascending absolute-screen order. The shared placement
 walker applies control advances before later ordinary objects, while installed MWL import performs
 the same stream-state rewrite without sorting ordinary object order or treating the editor-only
 marker itself as artwork.

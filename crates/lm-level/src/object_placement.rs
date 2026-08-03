@@ -76,12 +76,13 @@ impl ObjectStream {
     ///
     /// Lunar Magic applies an exit's advance to subsequent visible content, transfers that state
     /// into the ordinary object's transition encoding, and stores the exit itself at the tail with
-    /// its advance cleared. Existing object and explicit-jump order remains stable.
+    /// its advance cleared. The last exit for each screen wins and the 32 keyed slots are emitted
+    /// in screen order. Existing ordinary-object and explicit-jump order remains stable.
     pub fn canonicalize_screen_exits(&mut self) {
         let mut source_screen = 0_u16;
         let mut output_screen = 0_u16;
         let mut output = Vec::with_capacity(self.records.len());
-        let mut exits = Vec::new();
+        let mut exits: [Option<crate::ObjectRecord>; 32] = std::array::from_fn(|_| None);
         for mut record in self.records.drain(..) {
             if let Some(jump) = record.screen_jump() {
                 source_screen = jump.packed_target.min(31);
@@ -89,14 +90,14 @@ impl ObjectStream {
                 output.push(record);
                 continue;
             }
-            if record.screen_exit().is_some() {
+            if let Some(exit) = record.screen_exit() {
                 if record.advances_screen() {
                     source_screen = source_screen.saturating_add(1).min(31);
                 }
                 record
                     .set_advances_screen(false)
                     .expect("clearing an advance bit cannot collide with the terminator");
-                exits.push(record);
+                exits[usize::from(exit.screen)] = Some(record);
                 continue;
             }
             if record.is_positioned_object() {
@@ -121,13 +122,7 @@ impl ObjectStream {
             }
             output.push(record);
         }
-        exits.sort_by_key(|record| {
-            record
-                .screen_exit()
-                .expect("the exit tail contains only screen exits")
-                .screen
-        });
-        output.extend(exits);
+        output.extend(exits.into_iter().flatten());
         self.records = output;
     }
 }
@@ -207,6 +202,7 @@ mod tests {
                 jump,
                 object,
                 ObjectRecord::new(vec![0x8f, 0, 2, 2, 4]).unwrap(),
+                ObjectRecord::new(vec![0, 0, 2, 3, 4]).unwrap(),
             ],
         };
         assert_eq!(
@@ -235,6 +231,13 @@ mod tests {
                 .map(|record| record.screen_exit().unwrap().screen)
                 .collect::<Vec<_>>(),
             [0, 15, 31]
+        );
+        assert_eq!(
+            stream.records[3]
+                .screen_exit()
+                .unwrap()
+                .destination_and_flags,
+            0x0403
         );
         assert_eq!(
             stream
