@@ -1,10 +1,10 @@
 use super::*;
-use crate::PaletteControllerEdit;
+use crate::{LevelControllerError, PaletteControllerEdit};
 use lm_codec::encode_terminated_rle;
 use lm_graphics::{Bgr555, Palette, PaletteChange, PaletteEntryOwner, PaletteInterchangeFile};
 use lm_level::{
     split_layer2_tilemap_planes, CustomTimeSettings, ExpandedLevelHeader, Layer1VerticalScrollMode,
-    LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection, NativeSpriteHeader,
+    LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection,
     NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord,
     ObjectStream, SpriteRecord, SpriteToken, NATIVE_LAYER2_TILEMAP_LEN,
 };
@@ -624,13 +624,28 @@ fn semantic_sprite_header_properties_preserve_framing_history_and_rom_reopen() {
     .unwrap();
     let baseline = controller.assets().level.sprites.header;
     assert_eq!(baseline, 0x10);
-    let edited = NativeSpriteHeader::from_raw(baseline)
-        .with_properties(0x12, true, true)
-        .unwrap()
-        .raw();
+    let before = controller.assets().clone();
+    assert!(matches!(
+        controller.apply_edits(&[NativeLevelAssetsControllerEdit::Level(vec![
+            NativeLevelEdit::SetSpriteHeaderProperties {
+                memory: 0x13,
+                buoyancy_1: true,
+                buoyancy_2: true,
+            },
+        ])]),
+        Err(NativeLevelAssetsControllerError::LevelEdit {
+            error: LevelControllerError::SpriteHeaderEdit { command: 0, .. },
+            ..
+        })
+    ));
+    assert_eq!(controller.assets(), &before);
     controller
         .apply_edits(&[NativeLevelAssetsControllerEdit::Level(vec![
-            NativeLevelEdit::SetSpriteHeader(edited),
+            NativeLevelEdit::SetSpriteHeaderProperties {
+                memory: 0x12,
+                buoyancy_1: true,
+                buoyancy_2: true,
+            },
         ])])
         .unwrap();
     assert_eq!(controller.assets().level.sprites.header, 0xd2);

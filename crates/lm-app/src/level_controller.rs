@@ -21,6 +21,11 @@ pub enum NativeLevelEdit {
     SetCustomTime(Option<CustomTimeSettings>),
     Objects(Vec<ObjectEdit>),
     SetSpriteHeader(u8),
+    SetSpriteHeaderProperties {
+        memory: u8,
+        buoyancy_1: bool,
+        buoyancy_2: bool,
+    },
     InsertSprite {
         index: usize,
         token: SpriteToken,
@@ -71,6 +76,10 @@ pub enum LevelControllerError {
     CustomTimeEdit {
         command: usize,
         error: CustomTimeError,
+    },
+    SpriteHeaderEdit {
+        command: usize,
+        error: lm_level::NativeSpriteMemoryError,
     },
     InvalidSpriteSerialization(lm_level::NativeSpriteEncodingError),
     InvalidSpriteEncoding(lm_level::SpriteStreamError),

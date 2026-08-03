@@ -1,7 +1,7 @@
 use crate::{LevelControllerError, NativeLevelEdit};
 use lm_level::{
-    HeaderValueError, LegacyHeaderEdit, LevelEditError, LevelObjectData, NativeSpriteStream,
-    SpriteLengthTable, SpriteToken,
+    HeaderValueError, LegacyHeaderEdit, LevelEditError, LevelObjectData, NativeSpriteHeader,
+    NativeSpriteStream, SpriteLengthTable, SpriteToken,
 };
 use lm_project::LoadedLevelSlot;
 
@@ -46,6 +46,16 @@ pub(crate) fn apply_native_level_edits(
                 .apply_edits(edits)
                 .map_err(|error| LevelControllerError::ObjectEdit { command, error })?,
             NativeLevelEdit::SetSpriteHeader(header) => staged_sprites.header = *header,
+            NativeLevelEdit::SetSpriteHeaderProperties {
+                memory,
+                buoyancy_1,
+                buoyancy_2,
+            } => {
+                staged_sprites.header = NativeSpriteHeader::from_raw(staged_sprites.header)
+                    .with_properties(*memory, *buoyancy_1, *buoyancy_2)
+                    .map(NativeSpriteHeader::raw)
+                    .map_err(|error| LevelControllerError::SpriteHeaderEdit { command, error })?;
+            }
             NativeLevelEdit::InsertSprite { index, token } => staged_sprites
                 .insert(*index, token.clone())
                 .map_err(|error| LevelControllerError::SpriteEdit { command, error })?,

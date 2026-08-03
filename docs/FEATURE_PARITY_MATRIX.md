@@ -159,6 +159,12 @@ declared extension, preserves each width and table selector through semantic coo
 coexists in one grown native stream, reopens byte-exactly, and undoes together to the expanded-ROM
 baseline. Additional historical widths, installed runtimes, and Wine dialog coverage remain.
 
+The level-header row now also has strict semantic sprite-property automation. `LMLEDIT1`
+`sprite-properties MEMORY BUOYANCY_1 BUOYANCY_2` shares the typed UI setter, rejects memory above
+`$12`, preserves serializer-owned expanded framing bit `$20`, changes both recovered buoyancy flags
+independently, reopens checksum-valid, and undoes the complete ROM byte-exactly. Raw
+`sprite-header` replacement remains available for lossless diagnostic and interchange workflows.
+
 ## Current critical path
 
 The fastest route to a broadly usable editor is:

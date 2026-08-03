@@ -550,6 +550,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   `LMLEDIT1` also exposes custom time as a semantic enable/disable operation. It delegates to the
   orientation-aware command-`$28` setter, so scripts cannot manufacture malformed raw control
   bytes and a preceding mode edit in the same batch determines the canonical nibble order.
+  Its semantic `sprite-properties` command similarly delegates to `NativeSpriteHeader`, limiting
+  memory to `$00..=$12`, preserving the serializer-owned expanded-framing bit `$20`, and changing
+  the two recovered buoyancy bits independently. The raw `sprite-header` command remains available
+  for lossless diagnostic and interchange work.
 - A separate bounded `LMM16ED1` parser drives the complete Map16 controller without coupling its
   grammar to level records. Tile, quadrant, and Acts Like changes all pass through whole-workspace
   graph validation and the same profile-wide allocation protection before one prepared commit.

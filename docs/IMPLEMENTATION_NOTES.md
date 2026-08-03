@@ -1026,7 +1026,8 @@ For complete native level-controller batches, `level-edit SCRIPT SEARCH_START SE
 bounded UTF-8 `LMLEDIT1` script. It supports all eleven recovered header fields, including strict
 `header layer1-scroll VALUE`; object
 insert/replace/remove/move plus typed command-ID, parameter, coordinate-nibble, and screen-advance
-edits and exact packed screen-jump targets; sprite-header replacement;
+edits and exact packed screen-jump targets; raw sprite-header replacement plus semantic
+`sprite-properties MEMORY BUOYANCY_1 BUOYANCY_2` editing;
 and native sprite-token
 insert/replace/remove/move for raw records, expanded screen changes, and expanded control tokens.
 `custom-time VALUE FORCE_RESET` accepts a hexadecimal 12-bit timer plus canonical boolean and
@@ -1034,6 +1035,9 @@ insert/replace/remove/move for raw records, expanded screen changes, and expande
 non-persistable zero-without-force form before an edit escapes; serialization uses the staged
 header's horizontal or vertical nibble order and collapses existing command-`$28` duplicates only
 when this explicit semantic edit is applied.
+Semantic sprite properties accept memory `$00..=$12` plus canonical booleans and preserve the
+serializer-owned expanded-framing bit `$20` from the staged stream. Invalid memory and boolean
+values reject before application, while controller-side validation keeps direct callers atomic.
 Indexes are decimal, field and token values are hexadecimal, and raw records use contiguous hex.
 For example:
 
@@ -1047,6 +1051,7 @@ object coordinates 0 0e 0d
 object screen-advance 0 true
 object screen-jump-target 1 0a1b
 sprite-header 10
+sprite-properties 12 true false
 sprite insert 1 screen 12
 sprite insert 2 control 90
 ```

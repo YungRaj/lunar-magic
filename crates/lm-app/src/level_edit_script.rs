@@ -186,11 +186,30 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
             },
         ])),
         ["sprite-header", value] => Ok(NativeLevelEdit::SetSpriteHeader(hex_byte(line, value)?)),
+        ["sprite-properties", memory, buoyancy_1, buoyancy_2] => {
+            let memory = hex_byte(line, memory)?;
+            if memory > lm_level::NativeSpriteHeader::MAX_MEMORY {
+                return Err(LevelEditScriptError::InvalidNumber {
+                    line,
+                    value: memory.to_string(),
+                });
+            }
+            Ok(NativeLevelEdit::SetSpriteHeaderProperties {
+                memory,
+                buoyancy_1: boolean(line, buoyancy_1)?,
+                buoyancy_2: boolean(line, buoyancy_2)?,
+            })
+        }
         ["sprite", command @ ..] => parse_sprite_command(line, command),
         [command, ..]
             if !matches!(
                 *command,
-                "header" | "custom-time" | "object" | "sprite-header" | "sprite"
+                "header"
+                    | "custom-time"
+                    | "object"
+                    | "sprite-header"
+                    | "sprite-properties"
+                    | "sprite"
             ) =>
         {
             Err(LevelEditScriptError::UnknownCommand {
@@ -391,6 +410,7 @@ mod tests {
             object screen-jump-target 0 0f1e\n\
             object relocate 0 001f 0c 0b\n\
             sprite-header 10\n\
+            sprite-properties 12 true false\n\
             sprite insert 0 record 000001\n\
             sprite insert 1 screen 12\n\
             sprite insert 2 control 90\n\
@@ -401,7 +421,7 @@ mod tests {
             sprite remove 1\n\
             custom-time abc true\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 22);
+        assert_eq!(edits.len(), 23);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert_eq!(
             edits[1],
@@ -448,12 +468,20 @@ mod tests {
                 }]
         ));
         assert!(matches!(edits[12], NativeLevelEdit::SetSpriteHeader(0x10)));
+        assert_eq!(
+            edits[13],
+            NativeLevelEdit::SetSpriteHeaderProperties {
+                memory: 0x12,
+                buoyancy_1: true,
+                buoyancy_2: false,
+            }
+        );
         assert!(matches!(
-            edits[18],
+            edits[19],
             NativeLevelEdit::SortLegacySpritesByScreen { selected: 0 }
         ));
         assert!(matches!(
-            edits[19],
+            edits[20],
             NativeLevelEdit::RelocateExpandedSprite {
                 selected: 0,
                 screen: 4,
@@ -462,14 +490,14 @@ mod tests {
             }
         ));
         assert!(matches!(
-            edits[15],
+            edits[16],
             NativeLevelEdit::InsertSprite {
                 token: SpriteToken::Control(0x90),
                 ..
             }
         ));
         assert_eq!(
-            edits[21],
+            edits[22],
             NativeLevelEdit::SetCustomTime(Some(CustomTimeSettings::new(0xabc, true).unwrap()))
         );
     }
@@ -486,6 +514,8 @@ mod tests {
             "LMLEDIT1\nsprite insert 0 mystery 00\n",
             "LMLEDIT1\nunknown x\n",
             "LMLEDIT1\nheader layer1-scroll 04\n",
+            "LMLEDIT1\nsprite-properties 13 true false\n",
+            "LMLEDIT1\nsprite-properties 12 yes false\n",
             "LMLEDIT1\ncustom-time 000 false\n",
             "LMLEDIT1\ncustom-time 1000 true\n",
         ] {
@@ -539,6 +569,18 @@ mod tests {
                 ),
                 NativeLevelEdit::SetCustomTime(None),
             ]
+        );
+    }
+
+    #[test]
+    fn parses_semantic_sprite_header_properties() {
+        assert_eq!(
+            parse("LMLEDIT1\nsprite-properties 0f false true\n").unwrap(),
+            [NativeLevelEdit::SetSpriteHeaderProperties {
+                memory: 0x0f,
+                buoyancy_1: false,
+                buoyancy_2: true,
+            }]
         );
     }
 }
