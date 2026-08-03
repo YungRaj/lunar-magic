@@ -68,7 +68,7 @@ impl OverworldAppearanceEditor {
         }
         ui.heading("Composition preview");
         ui.label(
-            "Click to select; drag to move one pixel at a time. Later parts paint above earlier parts.",
+            "Click to select; drag or use arrows to move one pixel. Shift+arrow moves eight pixels.",
         );
         let (rect, response) = ui.allocate_exact_size(PREVIEW_SIZE, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
@@ -130,6 +130,7 @@ impl OverworldAppearanceEditor {
                 bounds.min_y + ((pointer.y - content.top()) / scale).floor() as i32,
             )
         {
+            response.request_focus();
             self.part_index = index;
             self.part_key = None;
             if response.drag_started()
@@ -206,6 +207,11 @@ impl OverworldAppearanceEditor {
             );
         }
         let drag_stopped = response.drag_stopped();
+        let nudge = if self.preview_drag.is_none() && response.has_focus() {
+            preview_nudge(ui)
+        } else {
+            None
+        };
         response
             .on_hover_cursor(if self.preview_drag.is_some() {
                 egui::CursorIcon::Grabbing
@@ -218,6 +224,16 @@ impl OverworldAppearanceEditor {
             && let Some(edit) = completed_drag_edit(drag)
         {
             return Some(edit);
+        }
+        if let Some((delta_x, delta_y)) = nudge
+            && let Some(part) = definition.parts.get(self.part_index).copied()
+            && let Some(value) = nudged_part(part, delta_x, delta_y)
+        {
+            return Some(lm_app::OverworldAppearanceDocumentEdit::ReplacePart {
+                sprite_id: definition.sprite_id,
+                index: self.part_index,
+                value,
+            });
         }
         None
     }
@@ -270,6 +286,42 @@ fn completed_drag_edit(drag: PreviewDrag) -> Option<lm_app::OverworldAppearanceD
             value: drag.current,
         },
     )
+}
+
+fn preview_nudge(ui: &mut egui::Ui) -> Option<(i32, i32)> {
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        if modifiers.alt || modifiers.ctrl || modifiers.command || modifiers.mac_cmd {
+            return None;
+        }
+        let step = if modifiers.shift { 8 } else { 1 };
+        let left = input.consume_key(modifiers, egui::Key::ArrowLeft);
+        let right = input.consume_key(modifiers, egui::Key::ArrowRight);
+        let up = input.consume_key(modifiers, egui::Key::ArrowUp);
+        let down = input.consume_key(modifiers, egui::Key::ArrowDown);
+        let x = i32::from(right) * step - i32::from(left) * step;
+        let y = i32::from(down) * step - i32::from(up) * step;
+        (x != 0 || y != 0).then_some((x, y))
+    })
+}
+
+fn nudged_part(
+    mut part: SpriteAppearancePart,
+    delta_x: i32,
+    delta_y: i32,
+) -> Option<SpriteAppearancePart> {
+    let x = i32::from(part.x_offset)
+        .saturating_add(delta_x)
+        .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    let y = i32::from(part.y_offset)
+        .saturating_add(delta_y)
+        .clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    if (x, y) == (part.x_offset, part.y_offset) {
+        return None;
+    }
+    part.x_offset = x;
+    part.y_offset = y;
+    Some(part)
 }
 
 #[cfg(test)]
@@ -361,5 +413,23 @@ mod tests {
                 value: drag.current,
             })
         );
+    }
+
+    #[test]
+    fn keyboard_nudges_preserve_fields_and_are_boundary_neutral() {
+        let mut original = part(10, 20);
+        original.tile_index = 0xabcd;
+        original.palette_index = 6;
+        original.y_flip = true;
+        let pixel = nudged_part(original, -1, 1).unwrap();
+        assert_eq!((pixel.x_offset, pixel.y_offset), (9, 21));
+        assert_eq!(pixel.tile_index, 0xabcd);
+        assert_eq!(pixel.palette_index, 6);
+        assert!(pixel.y_flip);
+
+        let tile = nudged_part(original, 8, -8).unwrap();
+        assert_eq!((tile.x_offset, tile.y_offset), (18, 12));
+        assert_eq!(nudged_part(part(i16::MIN, 0), -1, 0), None);
+        assert_eq!(nudged_part(part(0, i16::MAX), 0, 8), None);
     }
 }

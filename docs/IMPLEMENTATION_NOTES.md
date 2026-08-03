@@ -2587,7 +2587,9 @@ records. Its composition preview uses the renderer's exact 8×8 signed-offset ge
 order, retains the sprite origin, identifies tile/palette/flip fields, and selects the topmost
 overlapping part on click. Dragging previews pixel-snapped signed offsets without changing the
 document, clamps both axes to the encoded `i16` range, and publishes one typed replacement only
-when the pointer is released after actual motion. Revision checks,
+when the pointer is released after actual motion. A focused preview additionally consumes unmodified
+arrows as one-pixel nudges and Shift+arrow as exact eight-pixel tile steps; blocked edge movement is
+history-neutral and every accepted nudge uses the same field-preserving replacement. Revision checks,
 atomic batches, canonical reopen, immutable saves, and dirty shutdown protect the keyed document;
 the built application exercises the workflow through paths containing spaces and Unicode.
 Output publication is create-new and cannot replace an existing file.
