@@ -54,6 +54,11 @@ impl SmwMainOverworldLayer2Controller {
     }
 
     #[must_use]
+    pub const fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    #[must_use]
     pub const fn layer(&self) -> &OverworldLayer {
         &self.layer
     }

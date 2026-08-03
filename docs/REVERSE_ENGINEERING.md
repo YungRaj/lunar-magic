@@ -2336,6 +2336,13 @@ both streams in one LoROM bank, updates both runtime operands in one transaction
 checksum, and semantically reopens the edited cell. This authenticates playable Layer 2 storage;
 Layer 1 and an emulator trace that observes the edited Layer 2 cell remain separate gates.
 
+The native egui overworld window now has a profile-free SMW-US fallback backed by this controller.
+It loads the authentic 128x64 Layer 2 map together with the complete native Map16 definitions,
+vanilla overworld graphics slots `$1C-$1F`, and the shared working palette. The canvas renders Layer
+2 alone instead of fabricating unauthenticated Layer 1 data, and the existing brush, rectangle,
+flood-fill, visual Map16 picker, revision-bound commit, semantic reopen, and application Undo paths
+operate directly on the gameplay-consumed streams.
+
 Accordingly, `CompleteOverworldRomLayout` remains a profile-described editor/container boundary.
 The ignored Snes9x complete-overworld smoke gate proves allocation, transaction, checksum,
 reopening, and emulator initialization only; its extension pointer tables are deliberately outside

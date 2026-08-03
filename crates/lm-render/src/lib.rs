@@ -71,7 +71,7 @@ pub use observe_editor_overlays::observe_editor_overlays;
 pub use observe_layer3_plane::observe_materialized_layer3_plane;
 pub use overworld::{
     OverworldRenderError, SpriteAppearance, apply_event_changes, apply_event_reveals,
-    build_overworld_scene, resolve_sprite_appearances,
+    build_overworld_layer_scene, build_overworld_scene, resolve_sprite_appearances,
 };
 pub use png::{PngError, encode_png};
 pub use portable_graphics::{PortableGraphicsRenderError, render_portable_graphics};
@@ -83,7 +83,9 @@ pub use portable_level_dsc::{
 };
 pub use portable_map16::{PortableMap16RenderError, render_portable_map16_page};
 pub use portable_map16_dsc::{PortableDscMap16RenderError, render_portable_map16_page_with_dsc};
-pub use portable_overworld::{PortableOverworldRenderError, render_portable_overworld};
+pub use portable_overworld::{
+    PortableOverworldRenderError, render_portable_overworld, render_portable_overworld_layer,
+};
 pub use portable_palette::{PortablePaletteRenderError, render_portable_palette};
 pub use scene::{Scene, TileInstance, draw_scene};
 pub use standard_object_renderer::{

@@ -54,6 +54,29 @@ pub fn build_overworld_scene(
     Ok(scene)
 }
 
+/// Builds one painter-ordered overworld layer without fabricating another layer or sprites.
+///
+/// # Errors
+///
+/// Returns [`OverworldRenderError`] for a malformed layer or unrepresentable coordinates.
+pub fn build_overworld_layer_scene(
+    layer_number: u8,
+    layer: &OverworldLayer,
+    map16: &[Map16Tile],
+) -> Result<Scene, OverworldRenderError> {
+    validate_layer(layer_number, layer)?;
+    let capacity = layer
+        .tiles
+        .len()
+        .checked_mul(4)
+        .ok_or(OverworldRenderError::CoordinateOverflow)?;
+    let mut scene = Scene {
+        instances: Vec::with_capacity(capacity),
+    };
+    append_layer(&mut scene, layer, map16)?;
+    Ok(scene)
+}
+
 fn append_layer(
     scene: &mut Scene,
     layer: &OverworldLayer,

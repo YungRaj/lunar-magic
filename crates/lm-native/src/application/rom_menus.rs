@@ -1,4 +1,5 @@
 use super::NativeApplication;
+use crate::rom_overworld_editor::RomOverworldEditor;
 use eframe::egui;
 use lm_app::EditorMode;
 
@@ -99,7 +100,9 @@ impl NativeApplication {
         ui.separator();
         rom_editor_pair!(
             ui,
-            enabled && profile && matches!(self.app.mode, EditorMode::Overworld),
+            enabled
+                && matches!(self.app.mode, EditorMode::Overworld)
+                && (profile || RomOverworldEditor::handles(&self.app)),
             self.rom_overworld_editor,
             &self.app,
             "Edit Native Overworld…",

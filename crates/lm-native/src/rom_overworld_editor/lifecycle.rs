@@ -1,5 +1,6 @@
 use super::{
-    AppState, PendingClose, PendingLoad, PendingOpen, RomOverworldEditor, Workspace, egui,
+    AppState, MainLayer2Workspace, PendingClose, PendingLoad, PendingOpen, RomOverworldEditor,
+    Workspace, egui,
 };
 use crate::{
     document_loader::{BoundedRead, LoadedDocument},
@@ -15,8 +16,22 @@ const OVERWORLD_GRAPHICS_FILES: [usize; 4] = [0x1c, 0x1d, 0x1e, 0x1f];
 const TILES_PER_NATIVE_GRAPHICS_SLOT: usize = 0x80;
 
 impl RomOverworldEditor {
+    pub(crate) fn handles(app: &AppState) -> bool {
+        let Some(identity) = app.project().and_then(|project| project.identity.as_ref()) else {
+            return false;
+        };
+        matches!(app.mode, lm_app::EditorMode::Overworld)
+            && identity.game == lm_rom::SupportedGame::SuperMarioWorld
+            && identity.region == lm_rom::Region::NorthAmerica
+            && identity.revision == 0
+            && identity.mapper == lm_rom::Mapper::LoRom
+    }
+
     pub(crate) fn is_open(&self) -> bool {
-        self.workspace.is_some() || self.pending_open.is_some() || self.loader.is_running()
+        self.workspace.is_some()
+            || self.main_layer2_workspace.is_some()
+            || self.pending_open.is_some()
+            || self.loader.is_running()
     }
 
     pub(crate) fn open(&mut self, app: &AppState) {
@@ -31,7 +46,28 @@ impl RomOverworldEditor {
                 });
             }
             Ok(_) => self.error = Some("switch to overworld mode before opening the editor".into()),
-            Err(error) => self.error = Some(error.to_string()),
+            Err(profile_error) => match app
+                .controller_snapshot()
+                .map_err(|error| error.to_string())
+                .and_then(decode_main_layer2_workspace)
+            {
+                Ok(workspace) => {
+                    self.main_layer2_workspace = Some(workspace);
+                    self.search_start.clear();
+                    self.search_end.clear();
+                    self.layer = 1;
+                    self.x = 0;
+                    self.y = 0;
+                    self.paint_anchor = None;
+                    self.map16_page = 0;
+                    self.invalidate();
+                }
+                Err(native_error) => {
+                    self.error = Some(format!(
+                        "{profile_error}; built-in playable Layer 2 open also failed: {native_error}"
+                    ));
+                }
+            },
         }
     }
 
@@ -48,10 +84,15 @@ impl RomOverworldEditor {
             self.pending_open = None;
             return true;
         }
-        let Some(workspace) = &self.workspace else {
-            return true;
-        };
-        if !workspace.controller.is_modified() {
+        let modified = self
+            .workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.controller.is_modified())
+            || self
+                .main_layer2_workspace
+                .as_ref()
+                .is_some_and(|workspace| workspace.controller.is_modified());
+        if !modified {
             self.clear();
             return true;
         }
@@ -157,7 +198,11 @@ impl RomOverworldEditor {
             .collapsible(false)
             .resizable(false)
             .show(context, |ui| {
-                ui.label("Changes across the nine payloads have not been committed.");
+                ui.label(if self.main_layer2_workspace.is_some() {
+                    "Playable Layer 2 map changes have not been committed."
+                } else {
+                    "Changes across the nine payloads have not been committed."
+                });
                 ui.horizontal(|ui| {
                     if ui.button("Cancel").clicked() {
                         self.pending_close = None;
@@ -184,6 +229,7 @@ impl RomOverworldEditor {
 
     fn clear(&mut self) {
         self.workspace = None;
+        self.main_layer2_workspace = None;
         self.pending_open = None;
         self.pending_load = None;
         self.pending_close = None;
@@ -196,6 +242,55 @@ impl RomOverworldEditor {
     pub(crate) fn commit_succeeded(&mut self) {
         self.clear();
     }
+}
+
+fn decode_main_layer2_workspace(
+    snapshot: lm_app::ControllerSnapshot,
+) -> Result<MainLayer2Workspace, String> {
+    if snapshot.mode != lm_app::EditorMode::Overworld {
+        return Err("switch to overworld mode before opening the editor".into());
+    }
+    let controller = lm_app::SmwMainOverworldLayer2Controller::decode(&snapshot)
+        .map_err(|error| error.to_string())?;
+    let image =
+        RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
+    let project = Project::new(image.clone());
+    let mut map16_snapshot = snapshot.clone();
+    map16_snapshot.mode = lm_app::EditorMode::Map16;
+    let map16 =
+        lm_app::SmwMap16Controller::decode(&map16_snapshot).map_err(|error| error.to_string())?;
+    let mut tiles =
+        Vec::with_capacity(OVERWORLD_GRAPHICS_FILES.len() * TILES_PER_NATIVE_GRAPHICS_SLOT);
+    for file_number in OVERWORLD_GRAPHICS_FILES {
+        let slot = project
+            .load_graphics_file(file_number, lm_profile::smw_us_v1_vanilla_graphics_layout())
+            .map_err(|error| format!("could not load overworld GFX{file_number:02X}: {error}"))?
+            .tiles;
+        append_overworld_graphics_slot(&mut tiles, file_number, slot)?;
+    }
+    let mut palette = project
+        .load_shared_palette(lm_profile::smw_us_v1_shared_palette_layout())
+        .map_err(|error| error.to_string())?
+        .palette()
+        .map_err(|error| error.to_string())?;
+    // The legacy `.smwpal` backend retains one non-row tail color. Rendering consumes complete
+    // 16-color SNES CGRAM rows, so keep every complete row and leave that auxiliary tail intact in
+    // the ROM rather than inventing a palette entry.
+    let complete_colors = palette.colors.len() / 16 * 16;
+    palette.colors.truncate(complete_colors);
+    Ok(MainLayer2Workspace {
+        controller,
+        palette,
+        assets: crate::overworld_editor_render::OverworldAssets {
+            map16: Map16SetFile {
+                set: map16.set().clone(),
+            },
+            graphics: GraphicsInterchangeFile {
+                source_slot: u16::try_from(OVERWORLD_GRAPHICS_FILES[0]).unwrap_or_default(),
+                graphics: GraphicsFile4bpp { tiles },
+            },
+        },
+    })
 }
 
 fn parse_slot(value: &str) -> Result<u16, String> {
@@ -288,8 +383,12 @@ fn append_overworld_graphics_slot(
 
 #[cfg(test)]
 mod tests {
-    use super::{TILES_PER_NATIVE_GRAPHICS_SLOT, append_overworld_graphics_slot, parse_slot};
+    use super::{
+        TILES_PER_NATIVE_GRAPHICS_SLOT, append_overworld_graphics_slot,
+        decode_main_layer2_workspace, parse_slot,
+    };
     use lm_graphics::IndexedTile;
+    use std::{fs, path::Path};
 
     #[test]
     fn configured_overworld_slot_is_bound_as_hexadecimal() {
@@ -324,5 +423,92 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn authentic_lunar_magic_rom_opens_and_renders_profile_free_playable_layer2_workspace() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc");
+        let mut app = lm_app::AppState::default();
+        app.load_rom(fs::read(fixture).unwrap()).unwrap();
+        app.dispatch(lm_app::Command::ShowOverworld).unwrap();
+        let mut workspace =
+            decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
+        assert_eq!(
+            (
+                workspace.controller.layer().width,
+                workspace.controller.layer().height,
+            ),
+            (128, 64)
+        );
+        assert_eq!(workspace.assets.map16.set.pages.len(), 0x100);
+        assert_eq!(workspace.assets.graphics.graphics.tiles.len(), 0x200);
+        let canvas = lm_render::render_portable_overworld_layer(
+            2,
+            workspace.controller.layer(),
+            &workspace.assets.map16,
+            &workspace.assets.graphics,
+            &workspace.palette,
+        )
+        .unwrap();
+        assert_eq!((canvas.width(), canvas.height()), (2048, 1024));
+        assert!(
+            canvas
+                .pixels()
+                .iter()
+                .any(|pixel| { pixel.red != 0 || pixel.green != 0 || pixel.blue != 0 })
+        );
+
+        let original = workspace.controller.layer().tile(12, 9).unwrap();
+        let replacement = original ^ 1;
+        let cells = [(12, 9), (13, 9), (12, 10), (13, 10)];
+        let edits = cells
+            .into_iter()
+            .map(|(x, y)| lm_app::OverworldControllerEdit::SetLayerTile {
+                layer: lm_app::OverworldLayerId::Layer2,
+                x,
+                y,
+                tile: replacement,
+            })
+            .collect::<Vec<_>>();
+        workspace.controller.apply_edits(&edits).unwrap();
+        let command = workspace
+            .controller
+            .prepare_commit(
+                "visual Layer 2 paint regression",
+                lm_rats::AllocationPolicy {
+                    search: 0x0e_0000..0x0f_0000,
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0xff, 0],
+                    protected: vec![
+                        lm_rats::ProtectedRange(
+                            lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD
+                                ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD + 2,
+                        ),
+                        lm_rats::ProtectedRange(
+                            lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK
+                                ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK + 1,
+                        ),
+                        lm_rats::ProtectedRange(
+                            lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD
+                                ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD + 2,
+                        ),
+                        lm_rats::ProtectedRange(0x7fdc..0x7fe0),
+                    ],
+                },
+            )
+            .unwrap()
+            .into_command();
+        app.dispatch(command).unwrap();
+        let reopened =
+            lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap()).unwrap();
+        for (x, y) in cells {
+            assert_eq!(reopened.layer.tile(x, y).unwrap(), replacement);
+        }
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        let restored =
+            lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap()).unwrap();
+        assert_eq!(restored.layer.tile(12, 9).unwrap(), original);
     }
 }

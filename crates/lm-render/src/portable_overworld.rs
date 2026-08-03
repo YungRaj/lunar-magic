@@ -1,6 +1,6 @@
 use crate::{
-    Canvas, CanvasError, OverworldRenderError, apply_event_reveals, build_overworld_scene,
-    draw_scene, resolve_sprite_appearances,
+    Canvas, CanvasError, OverworldRenderError, apply_event_reveals, build_overworld_layer_scene,
+    build_overworld_scene, draw_scene, resolve_sprite_appearances,
 };
 use lm_graphics::{
     GraphicsInterchangeFile, MaterializedAnimationFrame, MaterializedFrameError, Palette,
@@ -106,6 +106,48 @@ pub fn render_portable_overworld(
     Ok(canvas)
 }
 
+/// Renders one authentic overworld layer without requiring or fabricating another layer.
+///
+/// # Errors
+///
+/// Rejects malformed layer dimensions, missing Map16/graphics/palette references, invalid palette
+/// shapes, or excessive output dimensions.
+pub fn render_portable_overworld_layer(
+    layer_number: u8,
+    layer: &lm_overworld::OverworldLayer,
+    map16: &Map16SetFile,
+    graphics: &GraphicsInterchangeFile,
+    palette: &Palette,
+) -> Result<Canvas, PortableOverworldRenderError> {
+    let definitions: Vec<Map16Tile> = map16
+        .set
+        .pages
+        .iter()
+        .flat_map(|page| page.tiles.iter().copied())
+        .collect();
+    validate_map16_references(layer_number, &layer.tiles, definitions.len())?;
+    let scene = build_overworld_layer_scene(layer_number, layer, &definitions)
+        .map_err(PortableOverworldRenderError::Scene)?;
+    let palettes = palette_rows(palette)?;
+    validate_scene_assets(
+        &scene.instances,
+        graphics.graphics.tiles.len(),
+        palettes.len(),
+    )?;
+    let width = layer
+        .width
+        .checked_mul(16)
+        .ok_or(PortableOverworldRenderError::DimensionOverflow)?;
+    let height = layer
+        .height
+        .checked_mul(16)
+        .ok_or(PortableOverworldRenderError::DimensionOverflow)?;
+    let mut canvas =
+        Canvas::try_new(width, height).map_err(PortableOverworldRenderError::Canvas)?;
+    draw_scene(&mut canvas, &scene, &graphics.graphics.tiles, &palettes);
+    Ok(canvas)
+}
+
 fn validate_map16_references(
     layer: u8,
     tiles: &[u16],
@@ -159,4 +201,68 @@ fn validate_scene_assets(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_graphics::{Bgr555, GraphicsFile4bpp, IndexedTile};
+    use lm_level::{Map16Page, Map16Set, Map16Tile, Subtile};
+    use lm_overworld::OverworldLayer;
+
+    fn assets() -> (Map16SetFile, GraphicsInterchangeFile, Palette) {
+        (
+            Map16SetFile {
+                set: Map16Set {
+                    pages: vec![Map16Page {
+                        tiles: vec![Map16Tile {
+                            top_left: Subtile(0),
+                            top_right: Subtile(0),
+                            bottom_left: Subtile(0),
+                            bottom_right: Subtile(0),
+                            acts_like: 0,
+                        }],
+                    }],
+                },
+            },
+            GraphicsInterchangeFile {
+                source_slot: 0,
+                graphics: GraphicsFile4bpp {
+                    tiles: vec![IndexedTile::new([1; IndexedTile::PIXEL_COUNT])],
+                },
+            },
+            Palette {
+                colors: (0..16)
+                    .map(|index| {
+                        if index == 1 {
+                            Bgr555(0x001f)
+                        } else {
+                            Bgr555(0)
+                        }
+                    })
+                    .collect(),
+            },
+        )
+    }
+
+    #[test]
+    fn single_layer_render_does_not_require_a_fabricated_companion_layer() {
+        let layer = OverworldLayer::new(2, 1, vec![0, 0]).unwrap();
+        let (map16, graphics, palette) = assets();
+        let canvas =
+            render_portable_overworld_layer(2, &layer, &map16, &graphics, &palette).unwrap();
+        assert_eq!((canvas.width(), canvas.height()), (32, 16));
+        assert_eq!(canvas.get(0, 0).unwrap().red, 255);
+        assert_eq!(canvas.get(31, 15).unwrap().red, 255);
+    }
+
+    #[test]
+    fn single_layer_render_retains_strict_map16_reference_validation() {
+        let layer = OverworldLayer::new(1, 1, vec![1]).unwrap();
+        let (map16, graphics, palette) = assets();
+        assert!(matches!(
+            render_portable_overworld_layer(2, &layer, &map16, &graphics, &palette),
+            Err(PortableOverworldRenderError::MissingMap16Tile { layer: 2, tile: 1 })
+        ));
+    }
 }

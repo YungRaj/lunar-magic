@@ -8,6 +8,41 @@ pub(crate) struct OverworldAssets {
     pub(crate) graphics: GraphicsInterchangeFile,
 }
 
+pub(crate) fn render_layer_texture(
+    context: &egui::Context,
+    layer: &lm_overworld::OverworldLayer,
+    palette: &lm_graphics::Palette,
+    assets: &OverworldAssets,
+) -> Result<egui::TextureHandle, String> {
+    let canvas = lm_render::render_portable_overworld_layer(
+        2,
+        layer,
+        &assets.map16,
+        &assets.graphics,
+        palette,
+    )
+    .map_err(|error| error.to_string())?;
+    texture_from_canvas(context, "native-main-overworld-layer2", &canvas)
+}
+
+fn texture_from_canvas(
+    context: &egui::Context,
+    name: &str,
+    canvas: &lm_render::Canvas,
+) -> Result<egui::TextureHandle, String> {
+    let capacity = canvas
+        .pixels()
+        .len()
+        .checked_mul(4)
+        .ok_or("overworld texture byte count overflow")?;
+    let mut rgba = Vec::with_capacity(capacity);
+    for pixel in canvas.pixels() {
+        rgba.extend_from_slice(&[pixel.red, pixel.green, pixel.blue, pixel.alpha]);
+    }
+    let image = egui::ColorImage::from_rgba_unmultiplied([canvas.width(), canvas.height()], &rgba);
+    Ok(context.load_texture(name, image, egui::TextureOptions::NEAREST))
+}
+
 pub(crate) fn render_texture(
     context: &egui::Context,
     overworld: &CompleteOverworldFile,

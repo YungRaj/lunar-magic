@@ -5,7 +5,7 @@ mod scene_builder;
 pub use events::{apply_event_changes, apply_event_reveals};
 use model::validate_layer;
 pub use model::{OverworldRenderError, SpriteAppearance, resolve_sprite_appearances};
-pub use scene_builder::build_overworld_scene;
+pub use scene_builder::{build_overworld_layer_scene, build_overworld_scene};
 
 #[cfg(test)]
 mod tests {
