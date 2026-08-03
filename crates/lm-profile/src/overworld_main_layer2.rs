@@ -12,6 +12,8 @@ use std::fmt;
 pub const SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH: usize = 128;
 pub const SMW_US_V1_MAIN_OVERWORLD_LAYER2_HEIGHT: usize = 64;
 pub const SMW_US_V1_MAIN_OVERWORLD_LAYER2_BYTES: usize = 0x4000;
+pub const SMW_US_V1_OVERWORLD_LAYER2_PLANE_WIDTH: usize = 64;
+pub const SMW_US_V1_OVERWORLD_LAYER2_PLANE_HEIGHT: usize = 64;
 pub const SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD: usize = 0x02_5c72;
 pub const SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK: usize = 0x02_5c79;
 pub const SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD: usize = 0x02_5c8d;
@@ -162,7 +164,7 @@ pub fn load_smw_us_v1_main_overworld_layer2(
         decoded.push(low);
         decoded.push(high);
     }
-    let layer = OverworldLayer::decode_le(
+    let storage_layer = OverworldLayer::decode_le(
         SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH,
         SMW_US_V1_MAIN_OVERWORLD_LAYER2_HEIGHT,
         &decoded,
@@ -171,6 +173,16 @@ pub fn load_smw_us_v1_main_overworld_layer2(
         width: SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH,
         height: SMW_US_V1_MAIN_OVERWORLD_LAYER2_HEIGHT,
         tiles: decoded.len() / 2,
+    })?;
+    let layer = OverworldLayer::new(
+        SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH,
+        SMW_US_V1_MAIN_OVERWORLD_LAYER2_HEIGHT,
+        storage_to_canvas_tiles(&storage_layer.tiles),
+    )
+    .map_err(|tiles| SmwUsV1MainOverworldLayer2Error::Shape {
+        width: SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH,
+        height: SMW_US_V1_MAIN_OVERWORLD_LAYER2_HEIGHT,
+        tiles: tiles.len(),
     })?;
     Ok(LoadedSmwUsV1MainOverworldLayer2 {
         layer,
@@ -199,7 +211,17 @@ pub fn save_smw_us_v1_main_overworld_layer2(
         });
     }
     let loaded = load_smw_us_v1_main_overworld_layer2(project)?;
-    let bytes = layer.encode_le()?;
+    let storage = OverworldLayer::new(
+        SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH,
+        SMW_US_V1_MAIN_OVERWORLD_LAYER2_HEIGHT,
+        canvas_to_storage_tiles(&layer.tiles),
+    )
+    .map_err(|tiles| SmwUsV1MainOverworldLayer2Error::Shape {
+        width: SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH,
+        height: SMW_US_V1_MAIN_OVERWORLD_LAYER2_HEIGHT,
+        tiles: tiles.len(),
+    })?;
+    let bytes = storage.encode_le()?;
     let payload = encode_interleaved_sized_rle(&bytes)?;
     let low_stream_len = lm_codec::decode_sized_rle_prefix(&payload, 0x2000)?.consumed;
     let previous_block = match loaded.storage {
@@ -258,6 +280,44 @@ pub fn save_smw_us_v1_main_overworld_layer2(
     }
     *project = staged;
     Ok(saved)
+}
+
+fn storage_to_canvas_tiles(storage: &[u16]) -> Vec<u16> {
+    let plane_len =
+        SMW_US_V1_OVERWORLD_LAYER2_PLANE_WIDTH * SMW_US_V1_OVERWORLD_LAYER2_PLANE_HEIGHT;
+    let mut canvas = vec![0; storage.len()];
+    for plane in 0..2 {
+        for y in 0..SMW_US_V1_OVERWORLD_LAYER2_PLANE_HEIGHT {
+            for x in 0..SMW_US_V1_OVERWORLD_LAYER2_PLANE_WIDTH {
+                let screen = y / 32 * 2 + x / 32;
+                let storage_index = plane * plane_len + screen * 0x400 + y % 32 * 32 + x % 32;
+                let canvas_index = y * SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH
+                    + plane * SMW_US_V1_OVERWORLD_LAYER2_PLANE_WIDTH
+                    + x;
+                canvas[canvas_index] = storage[storage_index];
+            }
+        }
+    }
+    canvas
+}
+
+fn canvas_to_storage_tiles(canvas: &[u16]) -> Vec<u16> {
+    let plane_len =
+        SMW_US_V1_OVERWORLD_LAYER2_PLANE_WIDTH * SMW_US_V1_OVERWORLD_LAYER2_PLANE_HEIGHT;
+    let mut storage = vec![0; canvas.len()];
+    for plane in 0..2 {
+        for y in 0..SMW_US_V1_OVERWORLD_LAYER2_PLANE_HEIGHT {
+            for x in 0..SMW_US_V1_OVERWORLD_LAYER2_PLANE_WIDTH {
+                let screen = y / 32 * 2 + x / 32;
+                let storage_index = plane * plane_len + screen * 0x400 + y % 32 * 32 + x % 32;
+                let canvas_index = y * SMW_US_V1_MAIN_OVERWORLD_LAYER2_WIDTH
+                    + plane * SMW_US_V1_OVERWORLD_LAYER2_PLANE_WIDTH
+                    + x;
+                storage[storage_index] = canvas[canvas_index];
+            }
+        }
+    }
+    storage
 }
 
 fn split_pointer(
@@ -352,6 +412,20 @@ mod tests {
             reuse_identical: true,
             erase_fill: 0xff,
         }
+    }
+
+    #[test]
+    fn runtime_planes_are_presented_side_by_side_without_row_interleaving() {
+        let storage = (0_u16..0x2000).collect::<Vec<_>>();
+        let canvas = storage_to_canvas_tiles(&storage);
+        assert_eq!(canvas.len(), storage.len());
+        assert_eq!(&canvas[..32], &storage[..32]);
+        assert_eq!(&canvas[32..64], &storage[0x400..0x420]);
+        assert_eq!(&canvas[64..96], &storage[0x1000..0x1020]);
+        assert_eq!(&canvas[96..128], &storage[0x1400..0x1420]);
+        assert_eq!(&canvas[128..160], &storage[32..64]);
+        assert_eq!(&canvas[32 * 128..32 * 128 + 32], &storage[0x800..0x820]);
+        assert_eq!(canvas_to_storage_tiles(&canvas), storage);
     }
 
     #[test]

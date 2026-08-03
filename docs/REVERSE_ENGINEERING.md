@@ -2331,22 +2331,28 @@ tile words.
 Rust now exposes this boundary as `load_smw_us_v1_main_overworld_layer2` and
 `save_smw_us_v1_main_overworld_layer2`. The typed loader accepts only the exact pristine pair or a
 single exact RATS owner, validates the encoded plane boundary and complete owner extent, and
-materializes exactly 128x64 little-endian tile words. The saver rejects every other shape, keeps
+materializes exactly 128x64 little-endian tile words. The canvas codec places the `$7F4000` main
+map and `$7F6000` submap sheet side by side, and converts each plane's four 32x32 SNES screen blocks
+to visual row-major order. Its exact inverse preserves runtime byte order on save. The saver rejects every other shape, keeps
 both streams in one LoROM bank, updates both runtime operands in one transaction, repairs the SNES
 checksum, and semantically reopens the edited cell. This authenticates playable Layer 2 storage;
 Layer 1 and an emulator trace that observes the edited Layer 2 cell remain separate gates.
 
 The native egui overworld window now has a profile-free SMW-US fallback backed by this controller.
-It loads the authentic 128x64 Layer 2 map together with the complete native Map16 definitions,
-vanilla overworld graphics slots `$1C-$1F`, and the shared working palette. The canvas renders Layer
-2 alone instead of fabricating unauthenticated Layer 1 data, and the existing brush, rectangle,
-flood-fill, visual Map16 picker, revision-bound commit, semantic reopen, and application Undo paths
-operate directly on the gameplay-consumed streams.
+It loads the authentic 128x64 Layer 2 map, vanilla overworld graphics slots `$1C-$1F`, and the
+shared working palette. Each runtime word is decoded directly as one packed SNES 8x8 tilemap entry
+(ten-bit tile number, palette, priority, and flips); it is not incorrectly expanded as Map16. The
+canvas renders Layer 2 alone instead of fabricating unauthenticated Layer 1 data, and the brush,
+rectangle, flood-fill, visual 8x8 picker, revision-bound commit, semantic reopen, and application
+Undo paths operate directly on the gameplay-consumed streams.
 The same profile-free window now loads the engine-detected native path-link table and exposes every
 source endpoint, destination endpoint, submap byte, and engine target coordinate beside the map.
 Route commits use the existing revision-checked application command, semantic reopen, checksum,
 and Undo path. Terrain and route batches are deliberately staged one at a time so committing one
 domain cannot silently discard an uncommitted edit in the other.
+Selected main-map route endpoints are drawn over the real 512x512 left plane, and dedicated source
+and destination tools snap canvas clicks to the runtime's eight-pixel coordinate grid. Nonzero
+submaps remain form-editable but are not placed using an invented atlas transform.
 
 The ignored `native_main_overworld_layer2_paint_survives_snes9x_initialization` integration gate
 drives that same application controller over a four-cell paint, commits the ROM, reopens the entire

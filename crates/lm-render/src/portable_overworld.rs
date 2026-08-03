@@ -148,6 +148,73 @@ pub fn render_portable_overworld_layer(
     Ok(canvas)
 }
 
+/// Renders SMW's gameplay-consumed `$7F4000-$7F7FFF` Layer 2 tilemap directly as packed SNES
+/// 8x8 tilemap words. This storage is not Map16 and must not pass through Map16 definitions.
+///
+/// # Errors
+///
+/// Rejects malformed layer dimensions, missing graphics/palette references, malformed palettes,
+/// or excessive output dimensions.
+pub fn render_smw_overworld_layer2_tilemap(
+    layer: &lm_overworld::OverworldLayer,
+    graphics: &GraphicsInterchangeFile,
+    palette: &Palette,
+) -> Result<Canvas, PortableOverworldRenderError> {
+    let expected = layer
+        .width
+        .checked_mul(layer.height)
+        .ok_or(PortableOverworldRenderError::DimensionOverflow)?;
+    if layer.tiles.len() != expected {
+        return Err(PortableOverworldRenderError::Scene(
+            OverworldRenderError::InvalidLayerShape {
+                layer: 2,
+                width: layer.width,
+                height: layer.height,
+                tiles: layer.tiles.len(),
+            },
+        ));
+    }
+    let palettes = palette_rows(palette)?;
+    let mut scene = crate::Scene::default();
+    for high_priority in [false, true] {
+        for (index, &word) in layer.tiles.iter().enumerate() {
+            let subtile = lm_level::Subtile(word);
+            if subtile.priority() != high_priority {
+                continue;
+            }
+            scene.instances.push(crate::TileInstance {
+                tile_index: usize::from(subtile.tile_number()),
+                palette_index: usize::from(subtile.palette()),
+                x: i32::try_from(index % layer.width)
+                    .map_err(|_| PortableOverworldRenderError::DimensionOverflow)?
+                    * 8,
+                y: i32::try_from(index / layer.width)
+                    .map_err(|_| PortableOverworldRenderError::DimensionOverflow)?
+                    * 8,
+                x_flip: subtile.x_flip(),
+                y_flip: subtile.y_flip(),
+            });
+        }
+    }
+    validate_scene_assets(
+        &scene.instances,
+        graphics.graphics.tiles.len(),
+        palettes.len(),
+    )?;
+    let width = layer
+        .width
+        .checked_mul(8)
+        .ok_or(PortableOverworldRenderError::DimensionOverflow)?;
+    let height = layer
+        .height
+        .checked_mul(8)
+        .ok_or(PortableOverworldRenderError::DimensionOverflow)?;
+    let mut canvas =
+        Canvas::try_new(width, height).map_err(PortableOverworldRenderError::Canvas)?;
+    draw_scene(&mut canvas, &scene, &graphics.graphics.tiles, &palettes);
+    Ok(canvas)
+}
+
 fn validate_map16_references(
     layer: u8,
     tiles: &[u16],
@@ -263,6 +330,38 @@ mod tests {
         assert!(matches!(
             render_portable_overworld_layer(2, &layer, &map16, &graphics, &palette),
             Err(PortableOverworldRenderError::MissingMap16Tile { layer: 2, tile: 1 })
+        ));
+    }
+
+    #[test]
+    fn gameplay_layer2_renderer_decodes_packed_8x8_words_without_map16() {
+        let layer = OverworldLayer::new(2, 1, vec![0, 1 | (1 << 10) | 0xc000]).unwrap();
+        let graphics = GraphicsInterchangeFile {
+            source_slot: 0,
+            graphics: GraphicsFile4bpp {
+                tiles: vec![
+                    IndexedTile::new([1; IndexedTile::PIXEL_COUNT]),
+                    IndexedTile::new([2; IndexedTile::PIXEL_COUNT]),
+                ],
+            },
+        };
+        let mut colors = vec![Bgr555(0); 32];
+        colors[1] = Bgr555(0x001f);
+        colors[16 + 2] = Bgr555(0x03e0);
+        let canvas =
+            render_smw_overworld_layer2_tilemap(&layer, &graphics, &Palette { colors }).unwrap();
+        assert_eq!((canvas.width(), canvas.height()), (16, 8));
+        assert_eq!(canvas.get(0, 0).unwrap().red, 255);
+        assert_eq!(canvas.get(15, 7).unwrap().green, 255);
+    }
+
+    #[test]
+    fn gameplay_layer2_renderer_rejects_missing_direct_tile_reference() {
+        let layer = OverworldLayer::new(1, 1, vec![1]).unwrap();
+        let (_, graphics, palette) = assets();
+        assert!(matches!(
+            render_smw_overworld_layer2_tilemap(&layer, &graphics, &palette),
+            Err(PortableOverworldRenderError::MissingGraphicsTile { tile: 1, .. })
         ));
     }
 }

@@ -85,6 +85,7 @@ pub use portable_map16::{PortableMap16RenderError, render_portable_map16_page};
 pub use portable_map16_dsc::{PortableDscMap16RenderError, render_portable_map16_page_with_dsc};
 pub use portable_overworld::{
     PortableOverworldRenderError, render_portable_overworld, render_portable_overworld_layer,
+    render_smw_overworld_layer2_tilemap,
 };
 pub use portable_palette::{PortablePaletteRenderError, render_portable_palette};
 pub use scene::{Scene, TileInstance, draw_scene};

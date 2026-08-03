@@ -14,15 +14,28 @@ pub(crate) fn render_layer_texture(
     palette: &lm_graphics::Palette,
     assets: &OverworldAssets,
 ) -> Result<egui::TextureHandle, String> {
-    let canvas = lm_render::render_portable_overworld_layer(
-        2,
-        layer,
-        &assets.map16,
-        &assets.graphics,
-        palette,
+    let canvas = lm_render::render_smw_overworld_layer2_tilemap(layer, &assets.graphics, palette)
+        .map_err(|error| error.to_string())?;
+    texture_from_canvas(context, "native-main-overworld-layer2", &canvas)
+}
+
+pub(crate) fn render_layer2_graphics_texture(
+    context: &egui::Context,
+    graphics: &GraphicsInterchangeFile,
+    palette: &lm_graphics::Palette,
+    palette_row: usize,
+) -> Result<egui::TextureHandle, String> {
+    let canvas = lm_render::render_portable_graphics(
+        graphics,
+        &lm_graphics::PaletteInterchangeFile {
+            source_palette: 0,
+            palette: palette.clone(),
+        },
+        palette_row,
+        16,
     )
     .map_err(|error| error.to_string())?;
-    texture_from_canvas(context, "native-main-overworld-layer2", &canvas)
+    texture_from_canvas(context, "native-overworld-layer2-8x8", &canvas)
 }
 
 fn texture_from_canvas(

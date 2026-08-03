@@ -36,6 +36,8 @@ enum MapPaintTool {
     Brush,
     Rectangle,
     Fill,
+    RouteSource,
+    RouteDestination,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -107,6 +109,9 @@ pub(crate) struct RomOverworldEditor {
     map16_page: usize,
     map16_rendered_key: Option<(u64, usize)>,
     map16_texture: Option<egui::TextureHandle>,
+    direct_tile_palette: usize,
+    direct_tile_rendered_palette: Option<usize>,
+    direct_tile_texture: Option<egui::TextureHandle>,
     main_path: MainPathLinkForm,
     search_start: String,
     search_end: String,
@@ -300,7 +305,7 @@ impl RomOverworldEditor {
         stale: bool,
     ) {
         let old_selection = (self.x, self.y);
-        ui.label("Layer 2 terrain");
+        ui.label("Layer 2 packed 8x8 tilemap");
         ui.add(egui::Slider::new(&mut self.x, 0..=shape.width.saturating_sub(1)).text("X"));
         ui.add(egui::Slider::new(&mut self.y, 0..=shape.height.saturating_sub(1)).text("Y"));
         if old_selection != (self.x, self.y) {
@@ -309,10 +314,10 @@ impl RomOverworldEditor {
             self.load_main_layer2_tile();
         }
         ui.horizontal(|ui| {
-            ui.label("Map16 tile");
+            ui.label("SNES tilemap word");
             ui.text_edit_singleline(&mut self.tile);
         });
-        self.map16_picker(ui);
+        self.direct_tile_picker(ui);
         if ui
             .add_enabled(!stale, egui::Button::new("Apply layer tile"))
             .clicked()
@@ -327,6 +332,60 @@ impl RomOverworldEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+    }
+
+    fn direct_tile_picker(&mut self, ui: &mut egui::Ui) {
+        ui.collapsing("Visual 8x8 tile picker", |ui| {
+            let previous_palette = self.direct_tile_palette;
+            ui.add(egui::Slider::new(&mut self.direct_tile_palette, 0..=7).text("Palette row"));
+            if previous_palette != self.direct_tile_palette {
+                self.direct_tile_rendered_palette = None;
+            }
+            if self.direct_tile_rendered_palette != Some(self.direct_tile_palette) {
+                self.direct_tile_texture =
+                    self.main_layer2_workspace.as_ref().and_then(|workspace| {
+                        overworld_editor_render::render_layer2_graphics_texture(
+                            ui.ctx(),
+                            &workspace.assets.graphics,
+                            &workspace.palette,
+                            self.direct_tile_palette,
+                        )
+                        .map_err(|error| self.error = Some(error))
+                        .ok()
+                    });
+                self.direct_tile_rendered_palette = Some(self.direct_tile_palette);
+            }
+            let Some(texture) = self.direct_tile_texture.clone() else {
+                ui.label("The current overworld graphics cannot be previewed.");
+                return;
+            };
+            let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click()));
+            let columns = 16;
+            let rows = self.main_layer2_workspace.as_ref().map_or(0, |workspace| {
+                workspace
+                    .assets
+                    .graphics
+                    .graphics
+                    .tiles
+                    .len()
+                    .div_ceil(columns)
+            });
+            if response.clicked()
+                && let Some(position) = response.interact_pointer_pos()
+                && let Some((x, y)) =
+                    overworld_editor_render::selected_tile(response.rect, position, columns, rows)
+                && let Some(index) = y.checked_mul(columns).and_then(|base| base.checked_add(x))
+                && index
+                    < self.main_layer2_workspace.as_ref().map_or(0, |workspace| {
+                        workspace.assets.graphics.graphics.tiles.len()
+                    })
+                && let Ok(word) = level_editor_forms::parse_hex_u16(&self.tile, "SNES tilemap word")
+                && let Ok(tile_number) = u16::try_from(index)
+            {
+                let word = (word & !0x1fff) | tile_number | (self.direct_tile_palette as u16) << 10;
+                self.tile = format!("{word:04X}");
+            }
+        });
     }
 
     pub(crate) fn show(
@@ -592,6 +651,18 @@ impl RomOverworldEditor {
             ui.selectable_value(&mut self.paint_tool, MapPaintTool::Brush, "Brush");
             ui.selectable_value(&mut self.paint_tool, MapPaintTool::Rectangle, "Rectangle");
             ui.selectable_value(&mut self.paint_tool, MapPaintTool::Fill, "Fill");
+            if self.main_layer2_workspace.is_some() {
+                ui.selectable_value(
+                    &mut self.paint_tool,
+                    MapPaintTool::RouteSource,
+                    "Set route source",
+                );
+                ui.selectable_value(
+                    &mut self.paint_tool,
+                    MapPaintTool::RouteDestination,
+                    "Set route destination",
+                );
+            }
         });
         let mut action = None;
         egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
@@ -638,6 +709,20 @@ impl RomOverworldEditor {
                             action = Some((MapPaintTool::Rectangle, (x, y)));
                         }
                     }
+                    MapPaintTool::RouteSource if !stale && response.clicked() => {
+                        if let Some((x, y)) = main_map_pixel(response.rect, position) {
+                            self.main_path.source_x = format!("{x:04X}");
+                            self.main_path.source_y = format!("{y:04X}");
+                            self.main_path.source_submap = "00".into();
+                        }
+                    }
+                    MapPaintTool::RouteDestination if !stale && response.clicked() => {
+                        if let Some((x, y)) = main_map_pixel(response.rect, position) {
+                            self.main_path.destination_x = format!("{x:04X}");
+                            self.main_path.destination_y = format!("{y:04X}");
+                            self.main_path.destination_submap = "00".into();
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -657,18 +742,60 @@ impl RomOverworldEditor {
                     egui::StrokeKind::Inside,
                 );
             }
+            self.paint_main_route_overlay(ui, response.rect);
         });
         if let Some((tool, position)) = action {
             match tool {
                 MapPaintTool::Brush => self.paint_to(position),
                 MapPaintTool::Rectangle => self.paint_rectangle_to(position),
                 MapPaintTool::Fill => self.fill_at(position),
-                MapPaintTool::Select => {}
+                MapPaintTool::Select
+                | MapPaintTool::RouteSource
+                | MapPaintTool::RouteDestination => {}
             }
         }
         if self.paint_tool == MapPaintTool::Brush && !ui.input(|input| input.pointer.primary_down())
         {
             self.paint_anchor = None;
+        }
+    }
+
+    fn paint_main_route_overlay(&self, ui: &egui::Ui, rect: egui::Rect) {
+        if self.main_layer2_workspace.is_none() {
+            return;
+        }
+        let Ok(link) = self.main_path.parse() else {
+            return;
+        };
+        let point = |endpoint: OverworldEndpoint| {
+            main_endpoint_pixel(endpoint).map(|(x, y)| {
+                rect.min
+                    + egui::vec2(
+                        f32::from(x) / 1024.0 * rect.width(),
+                        f32::from(y) / 512.0 * rect.height(),
+                    )
+            })
+        };
+        let source = point(link.source);
+        let destination = point(link.destination);
+        if let (Some(source), Some(destination)) = (source, destination) {
+            ui.painter().line_segment(
+                [source, destination],
+                egui::Stroke::new(2.0_f32, egui::Color32::WHITE),
+            );
+        }
+        for (position, color) in [
+            (source, egui::Color32::CYAN),
+            (destination, egui::Color32::MAGENTA),
+        ] {
+            if let Some(position) = position {
+                ui.painter().circle_filled(position, 5.0, color);
+                ui.painter().circle_stroke(
+                    position,
+                    6.0,
+                    egui::Stroke::new(2.0_f32, egui::Color32::BLACK),
+                );
+            }
         }
     }
 
@@ -985,6 +1112,7 @@ impl RomOverworldEditor {
         self.y = self.y.min(layer.height.saturating_sub(1));
         if let Ok(tile) = layer.tile(self.x, self.y) {
             self.tile = format!("{tile:04X}");
+            self.direct_tile_palette = usize::from(lm_level::Subtile(tile).palette());
             let page = usize::from(tile) / lm_level::Map16Page::TILE_COUNT;
             if page != self.map16_page {
                 self.map16_page = page;
@@ -1047,6 +1175,22 @@ fn grid_line(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> 
         }
     }
     cells
+}
+
+fn main_endpoint_pixel(endpoint: OverworldEndpoint) -> Option<(u16, u16)> {
+    (endpoint.submap == 0 && endpoint.x < 512 && endpoint.y < 512)
+        .then_some((endpoint.x, endpoint.y))
+}
+
+fn main_map_pixel(rect: egui::Rect, position: egui::Pos2) -> Option<(u16, u16)> {
+    let (x, y) = overworld_editor_render::selected_tile(rect, position, 128, 64)?;
+    if x >= 64 {
+        return None;
+    }
+    Some((
+        u16::try_from(x.checked_mul(8)?).ok()?,
+        u16::try_from(y.checked_mul(8)?).ok()?,
+    ))
 }
 
 fn stroke_edits(
@@ -1129,9 +1273,10 @@ fn flood_fill_cells(
 mod canvas_tests {
     use super::{
         MainPathLinkForm, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
-        OverworldPathLink, OverworldPathTarget, flood_fill_cells, grid_line, rectangle_cells,
-        stroke_edits,
+        OverworldPathLink, OverworldPathTarget, flood_fill_cells, grid_line, main_endpoint_pixel,
+        main_map_pixel, rectangle_cells, stroke_edits,
     };
+    use eframe::egui;
 
     #[test]
     fn drag_strokes_cover_skipped_grid_cells_in_both_directions() {
@@ -1220,5 +1365,35 @@ mod canvas_tests {
         assert_eq!(form.parse().unwrap(), link);
         form.target_x = "100".into();
         assert!(form.parse().is_err());
+    }
+
+    #[test]
+    fn main_map_route_points_use_only_the_left_runtime_plane() {
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1024.0, 512.0));
+        assert_eq!(
+            main_map_pixel(rect, egui::pos2(320.0, 40.0)),
+            Some((320, 40))
+        );
+        assert_eq!(
+            main_map_pixel(rect, egui::pos2(511.0, 511.0)),
+            Some((504, 504))
+        );
+        assert_eq!(main_map_pixel(rect, egui::pos2(512.0, 40.0)), None);
+        assert_eq!(
+            main_endpoint_pixel(OverworldEndpoint {
+                x: 0x140,
+                y: 0x28,
+                submap: 0,
+            }),
+            Some((0x140, 0x28))
+        );
+        assert_eq!(
+            main_endpoint_pixel(OverworldEndpoint {
+                x: 0,
+                y: 0,
+                submap: 1,
+            }),
+            None
+        );
     }
 }

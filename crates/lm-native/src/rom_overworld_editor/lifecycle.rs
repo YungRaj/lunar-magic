@@ -241,6 +241,8 @@ impl RomOverworldEditor {
         self.paint_anchor = None;
         self.texture = None;
         self.map16_texture = None;
+        self.direct_tile_texture = None;
+        self.direct_tile_rendered_palette = None;
         self.invalidate();
     }
 
@@ -460,15 +462,16 @@ mod tests {
             workspace.original_paths.links.len()
         );
         assert!(!workspace.paths.links.is_empty());
-        let canvas = lm_render::render_portable_overworld_layer(
-            2,
+        let canvas = lm_render::render_smw_overworld_layer2_tilemap(
             workspace.controller.layer(),
-            &workspace.assets.map16,
             &workspace.assets.graphics,
             &workspace.palette,
         )
         .unwrap();
-        assert_eq!((canvas.width(), canvas.height()), (2048, 1024));
+        assert_eq!((canvas.width(), canvas.height()), (1024, 512));
+        if let Some(path) = std::env::var_os("LM_OVERWORLD_LAYER2_SCREENSHOT_TO") {
+            fs::write(path, lm_render::encode_png(&canvas).unwrap()).unwrap();
+        }
         assert!(
             canvas
                 .pixels()
