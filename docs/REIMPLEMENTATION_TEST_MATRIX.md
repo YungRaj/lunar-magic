@@ -382,7 +382,10 @@ reopen; dirty close/discard; and a built-binary Unicode-and-space-path lifecycle
 reverse painter-order hit testing used to select the topmost overlapping part. Drag tests cover
 world-pixel snapping at scale, both signed limits, preservation of tile/palette/flip fields, no-op
 release, and exactly one typed replacement after motion. Keyboard tests cover one-pixel and
-eight-pixel steps, field preservation, and history-neutral movement against both signed edges.
+eight-pixel steps, field preservation, and history-neutral movement against both signed edges. Typed
+appearance-part clipboard tests round-trip tile, palette, signed offsets, and flips; reject invalid
+widths, palettes, flags, domains, and multi-part delivery; and prove request-captured replace/insert
+targets each advance exactly one revision while stale delivery preserves the current document.
 
 The native standard-object canvas now keeps Lunar Magic's semantic Map16 `$0025` initial cell
 value separate from a transient per-cell write mask. Neighbor-sensitive object handlers therefore

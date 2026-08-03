@@ -1,7 +1,7 @@
 use super::*;
 use lm_graphics::{Bgr555, ExAnimationFrame};
 use lm_level::{Map16Tile, Subtile};
-use lm_overworld::{OverworldSprite, Submap};
+use lm_overworld::{OverworldSprite, SpriteAppearancePart, Submap};
 
 #[test]
 fn framing_round_trips_and_rejects_trailing_bytes() {
@@ -102,6 +102,69 @@ fn variable_extension_sprites_round_trip() {
         ClipboardPayload::decode(&payload.encode().unwrap()).unwrap(),
         payload
     );
+}
+
+#[test]
+fn overworld_appearance_parts_round_trip_every_semantic_field() {
+    let parts = [
+        SpriteAppearancePart {
+            tile_index: 0x1234,
+            palette_index: 7,
+            x_offset: i16::MIN,
+            y_offset: i16::MAX,
+            x_flip: true,
+            y_flip: false,
+        },
+        SpriteAppearancePart {
+            tile_index: 0xabcd,
+            palette_index: 0,
+            x_offset: -17,
+            y_offset: 29,
+            x_flip: false,
+            y_flip: true,
+        },
+    ];
+    let payload = ClipboardPayload::from_overworld_appearance_parts(&parts).unwrap();
+    assert_eq!(payload.to_overworld_appearance_parts().unwrap(), parts);
+    assert_eq!(
+        ClipboardPayload::decode(&payload.encode().unwrap())
+            .unwrap()
+            .to_overworld_appearance_parts()
+            .unwrap(),
+        parts
+    );
+    assert!(matches!(
+        payload.to_overworld_sprites(),
+        Err(ClipboardError::WrongKind { .. })
+    ));
+}
+
+#[test]
+fn malformed_overworld_appearance_parts_are_rejected() {
+    let invalid_palette = SpriteAppearancePart {
+        tile_index: 0,
+        palette_index: 8,
+        x_offset: 0,
+        y_offset: 0,
+        x_flip: false,
+        y_flip: false,
+    };
+    assert!(matches!(
+        ClipboardPayload::from_overworld_appearance_parts(&[invalid_palette]),
+        Err(ClipboardError::InvalidRecord { index: 0, .. })
+    ));
+    for record in [
+        vec![0; 7],
+        vec![0, 0, 8, 0, 0, 0, 0, 0],
+        vec![0, 0, 0, 0, 0, 0, 0, 4],
+    ] {
+        let payload =
+            ClipboardPayload::new(ClipboardKind::OverworldAppearanceParts, vec![record]).unwrap();
+        assert!(matches!(
+            payload.to_overworld_appearance_parts(),
+            Err(ClipboardError::InvalidRecord { index: 0, .. })
+        ));
+    }
 }
 
 #[test]

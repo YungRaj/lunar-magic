@@ -1,6 +1,7 @@
 use crate::{
     document_loader::DocumentLoader,
     document_persistence::DocumentPersistence,
+    native_clipboard,
     overworld_appearance_editor_forms::{DefinitionForm, PartForm},
 };
 use eframe::egui;
@@ -17,6 +18,20 @@ enum PendingClose {
     Application,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PartPasteMode {
+    Replace,
+    InsertAfter,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PartPasteTarget {
+    revision: u64,
+    sprite_id: u16,
+    index: usize,
+    mode: PartPasteMode,
+}
+
 #[derive(Default)]
 pub(crate) struct OverworldAppearanceEditor {
     controller: Option<OverworldAppearanceDocumentController>,
@@ -27,6 +42,7 @@ pub(crate) struct OverworldAppearanceEditor {
     part: PartForm,
     part_key: Option<(u64, u16, usize)>,
     preview_drag: Option<preview::PreviewDrag>,
+    clipboard_paste_target: Option<PartPasteTarget>,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     persistence: DocumentPersistence,
@@ -67,6 +83,7 @@ impl OverworldAppearanceEditor {
             match result.and_then(document_io::decode) {
                 Ok(controller) => {
                     self.controller = Some(controller);
+                    self.clipboard_paste_target = None;
                     self.invalidate();
                 }
                 Err(error) => self.error = Some(error),
@@ -90,7 +107,18 @@ impl OverworldAppearanceEditor {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui) {
+        let pasted = ui.input(|input| {
+            input.events.iter().find_map(|event| match event {
+                egui::Event::Paste(text) => Some(text.clone()),
+                _ => None,
+            })
+        });
         self.toolbar(ui);
+        if let Some(text) = pasted
+            && let Some(target) = self.clipboard_paste_target.take()
+        {
+            self.paste_part_at(&text, target);
+        }
         ui.separator();
         let (revision, definitions) = {
             let Some(controller) = self.controller.as_ref() else {
@@ -199,6 +227,51 @@ impl OverworldAppearanceEditor {
         }
     }
 
+    fn paste_part_at(&mut self, text: &str, target: PartPasteTarget) {
+        let part = match native_clipboard::decode_overworld_appearance_part(text) {
+            Ok(part) => part,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let (edit, selected_index) = match target.mode {
+            PartPasteMode::Replace => (
+                OverworldAppearanceDocumentEdit::ReplacePart {
+                    sprite_id: target.sprite_id,
+                    index: target.index,
+                    value: part,
+                },
+                target.index,
+            ),
+            PartPasteMode::InsertAfter => {
+                let Some(index) = target.index.checked_add(1) else {
+                    self.error = Some("overworld appearance paste index overflow".into());
+                    return;
+                };
+                (
+                    OverworldAppearanceDocumentEdit::InsertPart {
+                        sprite_id: target.sprite_id,
+                        index,
+                        value: part,
+                    },
+                    index,
+                )
+            }
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            self.error = Some("overworld appearance document closed before paste delivery".into());
+            return;
+        };
+        match controller.apply_edits(target.revision, &[edit]) {
+            Ok(()) => {
+                self.part_index = selected_index;
+                self.invalidate();
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
     fn clamp_indices(&mut self) {
         let Some(controller) = self.controller.as_ref() else {
             return;
@@ -261,6 +334,7 @@ impl OverworldAppearanceEditor {
 
     fn clear(&mut self) {
         self.controller = None;
+        self.clipboard_paste_target = None;
         self.pending_close = None;
         self.invalidate();
     }
@@ -268,4 +342,104 @@ impl OverworldAppearanceEditor {
 
 fn clamp(index: usize, len: usize) -> usize {
     if len == 0 { 0 } else { index.min(len - 1) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_overworld::{SpriteAppearanceDefinition, SpriteAppearanceFile, SpriteAppearancePart};
+
+    fn part(tile_index: u16) -> SpriteAppearancePart {
+        SpriteAppearancePart {
+            tile_index,
+            palette_index: 3,
+            x_offset: -4,
+            y_offset: 5,
+            x_flip: true,
+            y_flip: false,
+        }
+    }
+
+    fn editor() -> OverworldAppearanceEditor {
+        let file = SpriteAppearanceFile {
+            definitions: vec![SpriteAppearanceDefinition {
+                sprite_id: 0x1234,
+                parts: vec![part(1), part(2)],
+            }],
+        };
+        OverworldAppearanceEditor {
+            controller: Some(
+                OverworldAppearanceDocumentController::decode(
+                    "appearance.lmowapp".into(),
+                    &file.encode().unwrap(),
+                )
+                .unwrap(),
+            ),
+            ..OverworldAppearanceEditor::default()
+        }
+    }
+
+    #[test]
+    fn typed_part_paste_replaces_or_inserts_as_one_revision() {
+        let replacement = part(0xabcd);
+        let text = native_clipboard::encode_overworld_appearance_part(replacement).unwrap();
+        let mut editor = editor();
+        editor.paste_part_at(
+            &text,
+            PartPasteTarget {
+                revision: 0,
+                sprite_id: 0x1234,
+                index: 0,
+                mode: PartPasteMode::Replace,
+            },
+        );
+        let controller = editor.controller.as_ref().unwrap();
+        assert_eq!(controller.revision(), 1);
+        assert_eq!(controller.value().definitions[0].parts[0], replacement);
+        assert_eq!(editor.part_index, 0);
+
+        editor.paste_part_at(
+            &text,
+            PartPasteTarget {
+                revision: 1,
+                sprite_id: 0x1234,
+                index: 0,
+                mode: PartPasteMode::InsertAfter,
+            },
+        );
+        let controller = editor.controller.as_ref().unwrap();
+        assert_eq!(controller.revision(), 2);
+        assert_eq!(controller.value().definitions[0].parts.len(), 3);
+        assert_eq!(controller.value().definitions[0].parts[1], replacement);
+        assert_eq!(editor.part_index, 1);
+    }
+
+    #[test]
+    fn part_paste_rejects_stale_targets_and_other_domains_without_mutation() {
+        let mut editor = editor();
+        let target = PartPasteTarget {
+            revision: 0,
+            sprite_id: 0x1234,
+            index: 0,
+            mode: PartPasteMode::Replace,
+        };
+        let text = native_clipboard::encode_overworld_appearance_part(part(3)).unwrap();
+        editor.paste_part_at(&text, target);
+        editor.error = None;
+        editor.paste_part_at(&text, target);
+        assert!(editor.error.is_some());
+        assert_eq!(editor.controller.as_ref().unwrap().revision(), 1);
+
+        editor.error = None;
+        let wrong_domain = native_clipboard::encode_palette_color(lm_graphics::Bgr555(1)).unwrap();
+        editor.paste_part_at(
+            &wrong_domain,
+            PartPasteTarget {
+                revision: 1,
+                ..target
+            },
+        );
+        assert!(editor.error.is_some());
+        assert_eq!(editor.controller.as_ref().unwrap().revision(), 1);
+    }
 }

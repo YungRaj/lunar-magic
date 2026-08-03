@@ -1,7 +1,7 @@
 use lm_app::{ClipboardPayload, NativeMap16Clipboard};
 use lm_graphics::{Bgr555, ExAnimationFrame, ExAnimationRecord, IndexedTile};
 use lm_level::{Map16Tile, ObjectRecord, SpriteRecord};
-use lm_overworld::{OverworldMessage, OverworldSprite};
+use lm_overworld::{OverworldMessage, OverworldSprite, SpriteAppearancePart};
 
 const PREFIX: &str = "LMCLIP1:";
 const NATIVE_MAP16_PREFIX: &str = "LM16TILES1:";
@@ -301,6 +301,24 @@ pub(crate) fn decode_overworld_message(text: &str) -> Result<OverworldMessage, S
     Ok(message.clone())
 }
 
+pub(crate) fn encode_overworld_appearance_part(
+    part: SpriteAppearancePart,
+) -> Result<String, String> {
+    let payload = ClipboardPayload::from_overworld_appearance_parts(&[part])
+        .map_err(|error| error.to_string())?;
+    encode(&payload)
+}
+
+pub(crate) fn decode_overworld_appearance_part(text: &str) -> Result<SpriteAppearancePart, String> {
+    let parts = decode(text)?
+        .to_overworld_appearance_parts()
+        .map_err(|error| error.to_string())?;
+    let [part] = parts.as_slice() else {
+        return Err("overworld appearance paste requires exactly one part".into());
+    };
+    Ok(*part)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -512,5 +530,23 @@ mod tests {
             decode_overworld_message(&encode_overworld_message(&message).unwrap()).unwrap(),
             message
         );
+    }
+
+    #[test]
+    fn overworld_appearance_adapter_retains_one_complete_part() {
+        let part = SpriteAppearancePart {
+            tile_index: 0xabcd,
+            palette_index: 7,
+            x_offset: -1234,
+            y_offset: 2345,
+            x_flip: true,
+            y_flip: false,
+        };
+        let text = encode_overworld_appearance_part(part).unwrap();
+        assert_eq!(decode_overworld_appearance_part(&text).unwrap(), part);
+        assert!(decode_overworld_sprite(&text).is_err());
+
+        let payload = ClipboardPayload::from_overworld_appearance_parts(&[part, part]).unwrap();
+        assert!(decode_overworld_appearance_part(&encode(&payload).unwrap()).is_err());
     }
 }

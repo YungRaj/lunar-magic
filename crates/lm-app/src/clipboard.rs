@@ -19,6 +19,7 @@ pub enum ClipboardKind {
     Layer3RemapBytes = 10,
     ExAnimationFrames = 11,
     Layer2TilemapSelection = 12,
+    OverworldAppearanceParts = 13,
 }
 
 impl ClipboardKind {
@@ -36,6 +37,7 @@ impl ClipboardKind {
             10 => Some(Self::Layer3RemapBytes),
             11 => Some(Self::ExAnimationFrames),
             12 => Some(Self::Layer2TilemapSelection),
+            13 => Some(Self::OverworldAppearanceParts),
             _ => None,
         }
     }

@@ -2589,9 +2589,15 @@ overlapping part on click. Dragging previews pixel-snapped signed offsets withou
 document, clamps both axes to the encoded `i16` range, and publishes one typed replacement only
 when the pointer is released after actual motion. A focused preview additionally consumes unmodified
 arrows as one-pixel nudges and Shift+arrow as exact eight-pixel tile steps; blocked edge movement is
-history-neutral and every accepted nudge uses the same field-preserving replacement. Revision checks,
-atomic batches, canonical reopen, immutable saves, and dirty shutdown protect the keyed document;
-the built application exercises the workflow through paths containing spaces and Unicode.
+history-neutral and every accepted nudge uses the same field-preserving replacement. The native part
+panel also copies one complete part through a distinct fixed-width typed clipboard domain, capturing
+tile, palette, both signed offsets, and both flips. Paste-over and paste-after bind delivery to the
+requested sprite ID, part index, mode, and document revision; selection changes cannot redirect the
+operation, while stale, malformed, multi-part, or cross-domain delivery leaves the document unchanged.
+Duplicate and both paste forms submit exactly one controller edit and therefore create one undoable
+revision. Revision checks, atomic batches, canonical reopen, immutable saves, and dirty shutdown
+protect the keyed document; the built application exercises the workflow through paths containing
+spaces and Unicode.
 Output publication is create-new and cannot replace an existing file.
 The shell keeps custom-object, overworld-metadata, overworld-path, Layer 3, and complete-level
 sessions in one portable-document registry. End-of-input refuses to abandon any modified session;

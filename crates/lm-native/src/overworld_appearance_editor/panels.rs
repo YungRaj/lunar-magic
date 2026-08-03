@@ -1,6 +1,6 @@
-use super::OverworldAppearanceEditor;
 use super::form_fields::{part_value_fields, text_field};
-use crate::overworld_appearance_editor_forms::PartForm;
+use super::{OverworldAppearanceEditor, PartPasteMode, PartPasteTarget};
+use crate::{native_clipboard, overworld_appearance_editor_forms::PartForm};
 use eframe::egui;
 use lm_app::OverworldAppearanceDocumentEdit;
 use lm_overworld::SpriteAppearanceDefinition;
@@ -124,6 +124,58 @@ impl OverworldAppearanceEditor {
                 edit = Some(Ok(OverworldAppearanceDocumentEdit::RemovePart {
                     sprite_id: definition.sprite_id,
                     index: self.part_index,
+                }));
+            }
+        });
+        ui.horizontal(|ui| {
+            let selected = definition.parts.get(self.part_index).copied();
+            if ui
+                .add_enabled(selected.is_some(), egui::Button::new("Copy part"))
+                .clicked()
+                && let Some(part) = selected
+            {
+                match native_clipboard::encode_overworld_appearance_part(part) {
+                    Ok(text) => ui.ctx().copy_text(text),
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            if ui
+                .add_enabled(selected.is_some(), egui::Button::new("Paste over part"))
+                .clicked()
+            {
+                self.clipboard_paste_target = Some(PartPasteTarget {
+                    revision,
+                    sprite_id: definition.sprite_id,
+                    index: self.part_index,
+                    mode: PartPasteMode::Replace,
+                });
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+            if ui
+                .add_enabled(selected.is_some(), egui::Button::new("Paste after part"))
+                .clicked()
+            {
+                self.clipboard_paste_target = Some(PartPasteTarget {
+                    revision,
+                    sprite_id: definition.sprite_id,
+                    index: self.part_index,
+                    mode: PartPasteMode::InsertAfter,
+                });
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            }
+            if ui
+                .add_enabled(selected.is_some(), egui::Button::new("Duplicate part"))
+                .clicked()
+                && let Some(value) = selected
+            {
+                let index = self.part_index.saturating_add(1);
+                self.part_index = index;
+                edit = Some(Ok(OverworldAppearanceDocumentEdit::InsertPart {
+                    sprite_id: definition.sprite_id,
+                    index,
+                    value,
                 }));
             }
         });
