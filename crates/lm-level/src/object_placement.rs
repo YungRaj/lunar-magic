@@ -72,18 +72,23 @@ impl ObjectStream {
         placements
     }
 
-    /// Moves screen-exit controls behind the positional stream while preserving object screens.
+    /// Canonicalizes screen-exit and custom-time controls for native MWL import.
     ///
     /// Lunar Magic applies an exit's advance to subsequent visible content, transfers that state
     /// into the ordinary object's transition encoding, and stores the exit itself at the tail with
     /// its advance cleared. The last exit for each screen wins and the 32 keyed slots are emitted
-    /// in screen order. Existing ordinary-object and explicit-jump order remains stable.
-    pub fn canonicalize_screen_exits(&mut self) {
+    /// in screen order. The last custom-time value is re-encoded after that exit tail. Existing
+    /// ordinary-object and explicit-jump order remains stable.
+    pub fn canonicalize_import_controls(&mut self, vertical: bool) {
+        let custom_time = self.custom_time(vertical);
         let mut source_screen = 0_u16;
         let mut output_screen = 0_u16;
         let mut output = Vec::with_capacity(self.records.len());
         let mut exits: [Option<crate::ObjectRecord>; 32] = std::array::from_fn(|_| None);
         for mut record in self.records.drain(..) {
+            if record.command_id() == 0x28 {
+                continue;
+            }
             if let Some(jump) = record.screen_jump() {
                 source_screen = jump.packed_target.min(31);
                 output_screen = source_screen;
@@ -127,6 +132,8 @@ impl ObjectStream {
         }
         output.extend(exits.into_iter().flatten());
         self.records = output;
+        self.set_custom_time(vertical, custom_time)
+            .expect("control normalization cannot grow the source stream");
     }
 }
 
@@ -217,7 +224,7 @@ mod tests {
             [1, 4]
         );
 
-        stream.canonicalize_screen_exits();
+        stream.canonicalize_import_controls(false);
 
         assert!(stream.records[0].is_positioned_object());
         assert!(stream.records[0].advances_screen());
@@ -249,6 +256,32 @@ mod tests {
                 .map(|placement| placement.screen)
                 .collect::<Vec<_>>(),
             [1, 4]
+        );
+    }
+
+    #[test]
+    fn imported_custom_time_is_canonicalized_after_the_screen_exit_tail() {
+        let mut stream = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+                ObjectRecord::new(vec![0, 4, 0, 0x34]).unwrap(),
+            ],
+        };
+        stream
+            .set_custom_time(
+                false,
+                Some(crate::CustomTimeSettings::new(0x0abc, true).unwrap()),
+            )
+            .unwrap();
+        stream.records.swap(1, 2);
+
+        stream.canonicalize_import_controls(false);
+
+        assert!(stream.records[1].screen_exit().is_some());
+        assert_eq!(stream.records[2].command_id(), 0x28);
+        assert_eq!(
+            stream.custom_time(false),
+            Some(crate::CustomTimeSettings::new(0x0abc, true).unwrap())
         );
     }
 

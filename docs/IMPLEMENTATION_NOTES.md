@@ -3266,6 +3266,10 @@ Raw MWL screen-exit shape is also semantic at this boundary. Any record lacking 
 Its original compact or extended representation is retained, while already-flagged records keep
 their other bits. The separate typed setter continues to select compact versus extended shape from
 an explicitly edited destination.
+The same orientation-aware import pass removes every raw command `$28`, decodes the last custom-time
+value, and appends its canonical encoding after the keyed screen-exit tail. Lunar Magic's live
+combined-control export therefore orders ordinary objects, screen exits, then custom time; duplicate
+or non-trailing custom-time records collapse without disturbing ordinary object order.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and

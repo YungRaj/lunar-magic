@@ -792,6 +792,15 @@ fn lunar_magic_ignores_screen_exits_in_imported_extent() {
         &modes,
     )
     .unwrap();
+    let mut combined_control_tail = ObjectStream {
+        records: vec![
+            ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ObjectRecord::new(vec![0, 4, 0, 0x34]).unwrap(),
+        ],
+    };
+    combined_control_tail
+        .set_custom_time(false, Some(CustomTimeSettings::new(0x0abc, true).unwrap()))
+        .unwrap();
     for (case, records, expected_last_screen) in [
         (
             "exit-only",
@@ -840,6 +849,11 @@ fn lunar_magic_ignores_screen_exits_in_imported_extent() {
             ],
             0,
         ),
+        (
+            "screen-exit-and-custom-time",
+            combined_control_tail.records,
+            0,
+        ),
     ] {
         let imported_rom = directory.join(format!("{case}.sfc"));
         let injected_mwl = directory.join(format!("{case}.mwl"));
@@ -877,7 +891,7 @@ fn lunar_magic_ignores_screen_exits_in_imported_extent() {
         )
         .unwrap();
         let mut expected_objects = injected.layer1.objects.clone();
-        expected_objects.canonicalize_screen_exits();
+        expected_objects.canonicalize_import_controls(false);
         assert_eq!(actual.layer1.header.last_screen(), expected_last_screen);
         assert_eq!(actual.layer1.objects, expected_objects);
         assert!(actual.sprites.tokens.is_empty());
