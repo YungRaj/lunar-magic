@@ -79,6 +79,85 @@ fn stable_definition_and_nested_part_edits_preserve_both_orders() {
 }
 
 #[test]
+fn painter_order_move_is_atomic_canonical_and_undoable() {
+    let mut controller = controller();
+    controller
+        .apply_edits(
+            0,
+            &[
+                OverworldAppearanceDocumentEdit::InsertPart {
+                    sprite_id: 1,
+                    index: 1,
+                    value: part(2, 20),
+                },
+                OverworldAppearanceDocumentEdit::InsertPart {
+                    sprite_id: 1,
+                    index: 2,
+                    value: part(3, 30),
+                },
+            ],
+        )
+        .unwrap();
+    let before_move = controller.value().clone();
+    controller
+        .apply_edits(
+            1,
+            &[OverworldAppearanceDocumentEdit::MovePartBefore {
+                sprite_id: 1,
+                index: 0,
+                before: None,
+            }],
+        )
+        .unwrap();
+    assert_eq!(
+        controller
+            .value()
+            .definition(1)
+            .unwrap()
+            .parts
+            .iter()
+            .map(|value| value.tile_index)
+            .collect::<Vec<_>>(),
+        [2, 3, 1]
+    );
+    let saved = controller.begin_save().unwrap();
+    assert_eq!(
+        SpriteAppearanceFile::decode(&saved.bytes).unwrap(),
+        *controller.value()
+    );
+    controller.cancel_save(saved.request_id).unwrap();
+    assert!(controller.undo(2).unwrap());
+    assert_eq!(controller.value(), &before_move);
+    assert!(controller.redo(3).unwrap());
+    assert_eq!(
+        controller.value().definition(1).unwrap().parts[2].tile_index,
+        1
+    );
+
+    let before_error = controller.value().clone();
+    assert!(
+        controller
+            .apply_edits(
+                4,
+                &[
+                    OverworldAppearanceDocumentEdit::RemovePart {
+                        sprite_id: 2,
+                        index: 0,
+                    },
+                    OverworldAppearanceDocumentEdit::MovePartBefore {
+                        sprite_id: 1,
+                        index: 0,
+                        before: Some(99),
+                    },
+                ],
+            )
+            .is_err()
+    );
+    assert_eq!(controller.value(), &before_error);
+    assert_eq!(controller.revision(), 4);
+}
+
+#[test]
 fn duplicate_missing_late_index_and_palette_failures_are_atomic() {
     let mut controller = controller();
     let original = controller.value().clone();

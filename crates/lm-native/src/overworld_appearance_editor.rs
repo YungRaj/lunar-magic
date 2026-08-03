@@ -207,6 +207,7 @@ impl OverworldAppearanceEditor {
         self.definition.insert_index = self.definition.insert_index.min(definitions.len());
         self.definition.move_before = clamp(self.definition.move_before, definitions.len());
         self.part.insert_index = self.part.insert_index.min(part_len);
+        self.part.move_before = clamp(self.part.move_before, part_len);
     }
 
     fn invalidate(&mut self) {

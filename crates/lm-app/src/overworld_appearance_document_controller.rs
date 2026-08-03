@@ -32,6 +32,11 @@ pub enum OverworldAppearanceDocumentEdit {
         index: usize,
         value: SpriteAppearancePart,
     },
+    MovePartBefore {
+        sprite_id: u16,
+        index: usize,
+        before: Option<usize>,
+    },
     RemovePart {
         sprite_id: u16,
         index: usize,

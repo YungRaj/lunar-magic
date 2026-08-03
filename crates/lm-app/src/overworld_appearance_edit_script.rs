@@ -126,6 +126,17 @@ fn parse_command(
             sprite_id: hex(line, id)?,
             index: decimal(line, index)?,
         }),
+        ["part", "move", id, index, before] => {
+            Ok(OverworldAppearanceDocumentEdit::MovePartBefore {
+                sprite_id: hex(line, id)?,
+                index: decimal(line, index)?,
+                before: if *before == "end" {
+                    None
+                } else {
+                    Some(decimal(line, before)?)
+                },
+            })
+        }
         [command, ..] if !matches!(*command, "definition" | "part") => {
             Err(OverworldAppearanceEditScriptError::UnknownCommand {
                 line,
@@ -175,8 +186,8 @@ mod tests {
     use super::*;
     #[test]
     fn parses_definition_and_part_operations() {
-        let edits = parse("LMOWAED1\ndefinition insert 0 10\npart insert 10 0 123 4 -8 16 1 0\npart replace 10 0 124 5 9 -10 0 1\ndefinition move 10 end\npart remove 10 0\ndefinition remove 10\n").unwrap();
-        assert_eq!(edits.len(), 6);
+        let edits = parse("LMOWAED1\ndefinition insert 0 10\npart insert 10 0 123 4 -8 16 1 0\npart replace 10 0 124 5 9 -10 0 1\ndefinition move 10 end\npart move 10 0 end\npart remove 10 0\ndefinition remove 10\n").unwrap();
+        assert_eq!(edits.len(), 7);
         assert!(matches!(
             edits[0],
             OverworldAppearanceDocumentEdit::InsertDefinition {
@@ -198,6 +209,10 @@ mod tests {
         assert!(matches!(
             edits[3],
             OverworldAppearanceDocumentEdit::MoveDefinitionBefore { before: None, .. }
+        ));
+        assert!(matches!(
+            edits[4],
+            OverworldAppearanceDocumentEdit::MovePartBefore { before: None, .. }
         ));
     }
     #[test]

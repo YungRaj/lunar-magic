@@ -68,6 +68,33 @@ pub(super) fn apply_edit(
                 .get_mut(*index)
                 .ok_or_else(|| index_error(*index, len))? = *value;
         }
+        OverworldAppearanceDocumentEdit::MovePartBefore {
+            sprite_id,
+            index,
+            before,
+        } => {
+            let parts = parts_mut(definitions, *sprite_id)?;
+            let len = parts.len();
+            if *index >= len {
+                return Err(index_error(*index, len));
+            }
+            let destination = before.unwrap_or(len);
+            if destination > len {
+                return Err(index_error(destination, len));
+            }
+            if *index == destination || index.checked_add(1) == Some(destination) {
+                return Ok(());
+            }
+            let value = parts.remove(*index);
+            parts.insert(
+                if *index < destination {
+                    destination - 1
+                } else {
+                    destination
+                },
+                value,
+            );
+        }
         OverworldAppearanceDocumentEdit::RemovePart { sprite_id, index } => {
             let parts = parts_mut(definitions, *sprite_id)?;
             if *index >= parts.len() {

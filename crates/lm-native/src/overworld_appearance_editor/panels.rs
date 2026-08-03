@@ -129,6 +129,30 @@ impl OverworldAppearanceEditor {
         });
         ui.horizontal(|ui| {
             ui.add(
+                egui::DragValue::new(&mut self.part.move_before)
+                    .range(0..=definition.parts.len().saturating_sub(1)),
+            );
+            ui.checkbox(&mut self.part.move_to_end, "Move to end");
+            if ui
+                .add_enabled(
+                    definition.parts.len() > 1,
+                    egui::Button::new("Move selected part"),
+                )
+                .clicked()
+            {
+                edit = Some(Ok(OverworldAppearanceDocumentEdit::MovePartBefore {
+                    sprite_id: definition.sprite_id,
+                    index: self.part_index,
+                    before: if self.part.move_to_end {
+                        None
+                    } else {
+                        Some(self.part.move_before)
+                    },
+                }));
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.add(
                 egui::DragValue::new(&mut self.part.insert_index).range(0..=definition.parts.len()),
             );
             if ui.button("Insert part at index").clicked() {

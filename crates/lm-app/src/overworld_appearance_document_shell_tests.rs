@@ -31,7 +31,7 @@ fn real_file_lifecycle_preserves_keyed_definitions_and_part_order() {
     let document = path("Sprites 日本語.lmowapp");
     let script = path("edits.txt");
     fs::write(&document, file().encode().unwrap()).unwrap();
-    fs::write(&script, "LMOWAED1\ndefinition insert 1 10\npart insert 10 0 123 4 -8 16 1 0\npart insert 10 1 124 5 9 -10 0 1\ndefinition move 10 1\n").unwrap();
+    fs::write(&script, "LMOWAED1\ndefinition insert 1 10\npart insert 10 0 123 4 -8 16 1 0\npart insert 10 1 124 5 9 -10 0 1\npart move 10 0 end\ndefinition move 10 1\n").unwrap();
     let mut session = None;
     open(&mut session, &document).unwrap();
     edit(&mut session, &script).unwrap();
@@ -41,7 +41,8 @@ fn real_file_lifecycle_preserves_keyed_definitions_and_part_order() {
     let saved = SpriteAppearanceFile::decode(&fs::read(&document).unwrap()).unwrap();
     assert_eq!(saved.definitions[0].sprite_id, 0x10);
     assert_eq!(saved.definitions[0].parts.len(), 2);
-    assert_eq!(saved.definitions[0].parts[0].x_offset, -8);
+    assert_eq!(saved.definitions[0].parts[0].x_offset, 9);
+    assert_eq!(saved.definitions[0].parts[1].x_offset, -8);
     fs::remove_file(document).unwrap();
     fs::remove_file(script).unwrap();
 }

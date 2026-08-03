@@ -32,6 +32,8 @@ pub(crate) struct PartForm {
     pub(crate) x_flip: bool,
     pub(crate) y_flip: bool,
     pub(crate) insert_index: usize,
+    pub(crate) move_before: usize,
+    pub(crate) move_to_end: bool,
 }
 
 impl PartForm {
@@ -44,6 +46,8 @@ impl PartForm {
             x_flip: value.x_flip,
             y_flip: value.y_flip,
             insert_index: index,
+            move_before: index,
+            move_to_end: false,
         }
     }
 

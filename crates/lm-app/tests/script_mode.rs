@@ -1432,7 +1432,7 @@ fn command_script_drives_overworld_appearance_document() {
     fs::write(&document, value.encode().unwrap()).unwrap();
     fs::write(
         &edits,
-        "LMOWAED1\ndefinition insert 1 10\npart insert 10 0 123 4 -8 16 1 0\npart insert 10 1 124 5 9 -10 0 1\ndefinition move 10 1\n",
+        "LMOWAED1\ndefinition insert 1 10\npart insert 10 0 123 4 -8 16 1 0\npart insert 10 1 124 5 9 -10 0 1\npart move 10 0 end\ndefinition move 10 1\n",
     )
     .unwrap();
     fs::write(
@@ -1462,8 +1462,8 @@ fn command_script_drives_overworld_appearance_document() {
     assert_eq!(saved.definitions.len(), 2);
     assert_eq!(saved.definitions[0].sprite_id, 0x10);
     assert_eq!(saved.definitions[0].parts.len(), 2);
-    assert_eq!(saved.definitions[0].parts[0].x_offset, -8);
-    assert_eq!(saved.definitions[0].parts[1].y_offset, -10);
+    assert_eq!(saved.definitions[0].parts[0].y_offset, -10);
+    assert_eq!(saved.definitions[0].parts[1].x_offset, -8);
     fs::remove_dir_all(directory).unwrap();
 }
 

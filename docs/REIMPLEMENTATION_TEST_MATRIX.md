@@ -374,7 +374,8 @@ definitions and nested painter-ordered parts, including a built-binary Unicode-p
 edit/undo/redo/save workflow through bounded `LMOWAED1` scripts.
 
 The `LMOWAPP1` application controller likewise proves atomic definition insertion, removal, and
-movement by stable sprite ID; ordered nested-part insertion, replacement, and removal; duplicate
+movement by stable sprite ID; ordered nested-part insertion, replacement, removal, and direct
+painter-order movement through both move-before and move-to-end forms; duplicate
 identity, index, palette, and count failures; stale revisions and save acknowledgements; canonical
 reopen; dirty close/discard; and a built-binary Unicode-and-space-path lifecycle through bounded
 `LMOWAED1` scripts.
