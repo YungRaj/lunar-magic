@@ -8,7 +8,8 @@ pub(super) fn show_header(
 ) -> Option<Result<Vec<CompleteLevelDocumentEdit>, String>> {
     let header = level.0.header.legacy;
     let mut level_number = level.0.number;
-    let mut sprite_header = level.0.sprites.header;
+    let mut sprite_header =
+        crate::native_level_document_form::NativeSpriteHeaderForm::load(level.0.sprites.header);
     let mut values = [
         header.background_palette(),
         header.last_screen(),
@@ -38,9 +39,11 @@ pub(super) fn show_header(
     changed |= ui
         .add(egui::Slider::new(&mut level_number, 0..=u16::MAX).text("Level number"))
         .changed();
-    changed |= ui
-        .add(egui::Slider::new(&mut sprite_header, 0..=u8::MAX).text("Sprite header"))
-        .changed();
+    changed |= crate::native_level_document_form::show_sprite_header_form(
+        ui,
+        "complete-level-sprite-header",
+        &mut sprite_header,
+    );
     for (index, value) in values.iter_mut().enumerate() {
         let maximum = match index {
             1 | 2 => 31,
@@ -56,6 +59,7 @@ pub(super) fn show_header(
         .add(egui::Slider::new(&mut layer1_vertical_scroll, 0..=3).text("Layer 1 vertical scroll"))
         .changed();
     changed.then(|| {
+        let sprite_header = sprite_header.header().map_err(|error| error.to_string())?;
         let header_edits = [
             LegacyHeaderEdit::BackgroundPalette(values[0]),
             LegacyHeaderEdit::LastScreen(values[1]),

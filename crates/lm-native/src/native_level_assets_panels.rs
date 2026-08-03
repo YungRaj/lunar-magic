@@ -56,9 +56,7 @@ pub(crate) struct AggregatePanels {
     layer2_remap_selection_only: bool,
     sprite_index: usize,
     loaded_sprite_index: Option<usize>,
-    sprite_memory: u8,
-    sprite_buoyancy_1: bool,
-    sprite_buoyancy_2: bool,
+    sprite_header: native_level_document_form::NativeSpriteHeaderForm,
     selected_color: usize,
     global: exanimation_form::GlobalForm,
     trigger_index: usize,
@@ -158,10 +156,8 @@ impl AggregatePanels {
         }
         self.header = native_level_document_form::NativeLevelHeaderForm::load(&assets.level);
         self.exanimation_features = features.map(|features| features.options);
-        let sprite_header = lm_level::NativeSpriteHeader::from_raw(assets.level.sprites.header);
-        self.sprite_memory = sprite_header.memory();
-        self.sprite_buoyancy_1 = sprite_header.buoyancy_1();
-        self.sprite_buoyancy_2 = sprite_header.buoyancy_2();
+        self.sprite_header =
+            native_level_document_form::NativeSpriteHeaderForm::load(assets.level.sprites.header);
         self.global = exanimation_form::GlobalForm::load(
             assets.exanimation.setting,
             assets.exanimation.header_value,

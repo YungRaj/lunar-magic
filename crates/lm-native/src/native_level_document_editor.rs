@@ -2,7 +2,7 @@ use crate::{
     dialogs,
     document_loader::{BoundedRead, DocumentLoader, LoadedDocument},
     document_persistence::DocumentPersistence,
-    native_level_document_form::NativeLevelRecordForm,
+    native_level_document_form::{NativeLevelRecordForm, NativeSpriteHeaderForm},
 };
 use eframe::egui;
 use lm_app::{NativeLevelDocumentController, NativeLevelEdit};
@@ -37,7 +37,7 @@ pub(crate) struct NativeLevelDocumentEditor {
     form: NativeLevelRecordForm,
     object_index: usize,
     sprite_index: usize,
-    sprite_header: String,
+    sprite_header: NativeSpriteHeaderForm,
     error: Option<String>,
     pending_close: Option<PendingClose>,
     paste_target: Option<PasteTarget>,
@@ -101,7 +101,8 @@ impl NativeLevelDocumentEditor {
         if let Some(result) = self.loader.show(context) {
             match result.and_then(decode_loaded) {
                 Ok(controller) => {
-                    self.sprite_header = format!("{:02X}", controller.value().sprites.header);
+                    self.sprite_header =
+                        NativeSpriteHeaderForm::load(controller.value().sprites.header);
                     self.controller = Some(controller);
                 }
                 Err(error) => self.error = Some(error),
@@ -147,6 +148,11 @@ impl NativeLevelDocumentEditor {
         ui.separator();
         self.object_panel(ui, &value);
         ui.separator();
+        crate::native_level_document_form::show_sprite_header_form(
+            ui,
+            "portable-native-sprite-header",
+            &mut self.sprite_header,
+        );
         self.sprite_panel(ui, &value);
     }
 
@@ -184,16 +190,15 @@ impl NativeLevelDocumentEditor {
             };
             if let Err(e) = result {
                 self.error = Some(e.to_string());
+            } else {
+                self.reload_sprite_header();
             }
         }
         if save_requested {
             self.save();
         }
         if header_requested {
-            let parsed =
-                crate::level_editor_forms::parse_hex_u8(&self.sprite_header, "sprite header")
-                    .map(NativeLevelEdit::SetSpriteHeader);
-            self.apply_result(parsed);
+            self.apply_result(self.sprite_header.edit());
         }
     }
 
@@ -213,7 +218,14 @@ impl NativeLevelDocumentEditor {
                 return false;
             }
         }
+        self.reload_sprite_header();
         true
+    }
+
+    fn reload_sprite_header(&mut self) {
+        if let Some(controller) = &self.controller {
+            self.sprite_header = NativeSpriteHeaderForm::load(controller.value().sprites.header);
+        }
     }
     fn save(&mut self) {
         let Some(c) = self.controller.as_mut() else {

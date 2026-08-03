@@ -133,6 +133,9 @@ struct ObjectForm {
 #[derive(Clone, Debug, Default)]
 struct SpriteForm {
     header: u8,
+    sprite_memory: u8,
+    sprite_buoyancy_1: bool,
+    sprite_buoyancy_2: bool,
     encoded: String,
     y_low: u8,
     extra_bits: u8,
@@ -174,6 +177,7 @@ const fn placement_mode_visible(
 
 impl SpriteForm {
     fn from_token(header: u8, token: Option<&SpriteToken>) -> Self {
+        let semantic_header = lm_level::NativeSpriteHeader::from_raw(header);
         let encoded = match token {
             Some(SpriteToken::Record(record)) => record
                 .encoded
@@ -199,6 +203,9 @@ impl SpriteForm {
             });
         Self {
             header,
+            sprite_memory: semantic_header.memory(),
+            sprite_buoyancy_1: semantic_header.buoyancy_1(),
+            sprite_buoyancy_2: semantic_header.buoyancy_2(),
             encoded,
             y_low: fields.y_low,
             extra_bits: fields.extra_bits,
@@ -207,6 +214,17 @@ impl SpriteForm {
             sprite_number: fields.sprite_number,
             semantic_record: token.is_some_and(|token| matches!(token, SpriteToken::Record(_))),
         }
+    }
+
+    fn semantic_header(&self) -> Result<u8, String> {
+        lm_level::NativeSpriteHeader::from_raw(self.header)
+            .with_properties(
+                self.sprite_memory,
+                self.sprite_buoyancy_1,
+                self.sprite_buoyancy_2,
+            )
+            .map(lm_level::NativeSpriteHeader::raw)
+            .map_err(|error| error.to_string())
     }
 
     fn semantic_edit(
@@ -4017,11 +4035,21 @@ impl VanillaLevelEditor {
             if ui.button("Stage sprite header").clicked()
                 && let Some(controller) = self.controller.as_mut()
             {
-                match controller
-                    .apply_edits(&[NativeLevelEdit::SetSpriteHeader(self.sprite_form.header)])
-                {
-                    Ok(()) => self.error = None,
-                    Err(error) => self.error = Some(error.to_string()),
+                let result = self.sprite_form.semantic_header().and_then(|header| {
+                    controller
+                        .apply_edits(&[NativeLevelEdit::SetSpriteHeader(header)])
+                        .map_err(|error| error.to_string())
+                });
+                match result {
+                    Ok(()) => {
+                        let level = controller.level();
+                        self.sprite_form = SpriteForm::from_token(
+                            level.sprites.header,
+                            level.sprites.tokens.get(self.selected_sprite),
+                        );
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error),
                 }
             }
             if ui.button("Insert after selection").clicked() {
@@ -4300,7 +4328,24 @@ impl VanillaLevelEditor {
 
     fn sprite_form_controls(&mut self, ui: &mut egui::Ui) {
         egui::Grid::new("vanilla-sprite-fields").show(ui, |ui| {
-            header_row(ui, "Sprite memory", &mut self.sprite_form.header, 0xff);
+            header_row(
+                ui,
+                "Sprite memory",
+                &mut self.sprite_form.sprite_memory,
+                lm_level::NativeSpriteHeader::MAX_MEMORY,
+            );
+            ui.label("Sprite buoyancy 1");
+            ui.checkbox(
+                &mut self.sprite_form.sprite_buoyancy_1,
+                "Water/lava interaction",
+            );
+            ui.end_row();
+            ui.label("Sprite buoyancy 2");
+            ui.checkbox(
+                &mut self.sprite_form.sprite_buoyancy_2,
+                "Water/lava; disable Layer 2/3 interaction",
+            );
+            ui.end_row();
             ui.label("Record bytes");
             ui.text_edit_singleline(&mut self.sprite_form.encoded);
             ui.end_row();
@@ -13596,6 +13641,20 @@ mod tests {
         assert_eq!(
             mode.level_orientation,
             lm_render::StandardLevelOrientation::Vertical
+        );
+    }
+
+    #[test]
+    fn pristine_sprite_header_form_preserves_expanded_framing() {
+        let mut form = SpriteForm::from_token(0x20, None);
+        form.sprite_memory = 0x12;
+        form.sprite_buoyancy_1 = true;
+        assert_eq!(form.semantic_header().unwrap(), 0x72);
+
+        form.sprite_memory = 0x13;
+        assert_eq!(
+            form.semantic_header().unwrap_err(),
+            "sprite memory setting must be in 00..=12, got 13"
         );
     }
 

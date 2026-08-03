@@ -2,10 +2,84 @@ use crate::level_editor_forms;
 use lm_app::NativeLevelEdit;
 use lm_level::{
     CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
-    NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteLengthTable,
-    SpriteToken,
+    NativeSpriteHeader, NativeSpriteMemoryError, NativeSpriteRecordFields, ObjectCoordinateNibbles,
+    ObjectEdit, ObjectRecord, SpriteLengthTable, SpriteToken,
 };
 use lm_project::LoadedLevelSlot;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct NativeSpriteHeaderForm {
+    raw: u8,
+    pub(crate) memory: u8,
+    pub(crate) buoyancy_1: bool,
+    pub(crate) buoyancy_2: bool,
+}
+
+impl NativeSpriteHeaderForm {
+    pub(crate) fn load(raw: u8) -> Self {
+        let header = NativeSpriteHeader::from_raw(raw);
+        Self {
+            raw,
+            memory: header.memory(),
+            buoyancy_1: header.buoyancy_1(),
+            buoyancy_2: header.buoyancy_2(),
+        }
+    }
+
+    pub(crate) fn header(self) -> Result<u8, NativeSpriteMemoryError> {
+        let original = NativeSpriteHeader::from_raw(self.raw);
+        if self.memory == original.memory()
+            && self.buoyancy_1 == original.buoyancy_1()
+            && self.buoyancy_2 == original.buoyancy_2()
+        {
+            return Ok(self.raw);
+        }
+        original
+            .with_properties(self.memory, self.buoyancy_1, self.buoyancy_2)
+            .map(NativeSpriteHeader::raw)
+    }
+
+    pub(crate) fn edit(self) -> Result<NativeLevelEdit, String> {
+        self.header()
+            .map(NativeLevelEdit::SetSpriteHeader)
+            .map_err(|error| error.to_string())
+    }
+}
+
+pub(crate) fn show_sprite_header_form(
+    ui: &mut eframe::egui::Ui,
+    id: &'static str,
+    form: &mut NativeSpriteHeaderForm,
+) -> bool {
+    eframe::egui::Grid::new(id)
+        .show(ui, |ui| {
+            let mut changed = false;
+            ui.label("Sprite memory");
+            changed |= ui
+                .add(
+                    eframe::egui::DragValue::new(&mut form.memory)
+                        .range(0..=NativeSpriteHeader::MAX_MEMORY)
+                        .hexadecimal(2, false, true),
+                )
+                .changed();
+            ui.end_row();
+            ui.label("Sprite buoyancy 1");
+            changed |= ui
+                .checkbox(&mut form.buoyancy_1, "Water/lava interaction")
+                .changed();
+            ui.end_row();
+            ui.label("Sprite buoyancy 2");
+            changed |= ui
+                .checkbox(
+                    &mut form.buoyancy_2,
+                    "Water/lava; disable Layer 2/3 interaction",
+                )
+                .changed();
+            ui.end_row();
+            changed
+        })
+        .inner
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct NativeLevelHeaderForm {
@@ -243,6 +317,20 @@ pub(crate) fn parse_sprite_token(text: &str) -> Result<SpriteToken, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sprite_header_form_is_lossless_and_rejects_unpublished_memory_settings() {
+        let mut form = NativeSpriteHeaderForm::load(0x20);
+        form.memory = 0x12;
+        form.buoyancy_1 = true;
+        assert_eq!(form.header().unwrap(), 0x72);
+
+        form.memory = 0x13;
+        assert_eq!(form.header(), Err(NativeSpriteMemoryError(0x13)));
+
+        let untouched_opaque = NativeSpriteHeaderForm::load(0x3f);
+        assert_eq!(untouched_opaque.header().unwrap(), 0x3f);
+    }
 
     #[test]
     fn native_header_form_emits_every_legacy_field_and_custom_timer_atomically() {

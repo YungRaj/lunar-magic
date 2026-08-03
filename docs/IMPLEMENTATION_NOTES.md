@@ -3161,12 +3161,14 @@ orientation-aware Rust stream. The native edit batch derives orientation from th
 mode, including a mode change earlier in the same atomic batch.
 
 Sprite framing is now canonicalized after semantic edits and at native/MWL export boundaries.
-The installed aggregate editor also exposes the original sprite-memory settings `$00..=$12` and
-both buoyancy modes as typed controls. `NativeSpriteHeader` partitions those user-facing fields
-from the serializer-owned expanded-framing bit `$20`, so changing gameplay properties cannot
-silently change the stream grammar. Focused model coverage rejects memory setting `$13`, while an
-application-backed regression exercises edit, undo/redo, checksum repair, exact ROM reopen, and
-ROM-history undo.
+The installed aggregate, pristine-ROM, portable native-level, binary MWL, and complete-level
+editors all expose the original sprite-memory settings `$00..=$12` and both buoyancy modes as typed
+controls. `NativeSpriteHeader` partitions those user-facing fields from the serializer-owned
+expanded-framing bit `$20`, so changing gameplay properties cannot silently change the stream
+grammar. A shared native form keeps all document workspaces on that interpretation and reloads
+canonical controller state after edits and history navigation. Focused model/workspace coverage
+rejects memory setting `$13` and preserves `$20`, while an application-backed regression exercises
+edit, undo/redo, checksum repair, exact ROM reopen, and ROM-history undo.
 If no upper-Y/control token or escaped `$FF` record remains, Rust clears header bit `$20`, switches
 to the one-byte legacy `$FF` terminator, and permits the saved level to reopen through the newly
 selected grammar; inserting a token that requires expanded grammar performs the reciprocal

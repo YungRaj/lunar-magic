@@ -1,4 +1,7 @@
-use crate::level_editor_forms;
+use crate::{
+    level_editor_forms,
+    native_level_document_form::{NativeSpriteHeaderForm, show_sprite_header_form},
+};
 use eframe::egui;
 use lm_app::MwlDocumentController;
 use lm_level::{
@@ -17,7 +20,7 @@ pub(super) struct MwlSpritePanel {
     loaded: Option<(u64, bool)>,
     stream: Option<NativeSpriteStream>,
     selected: usize,
-    header: String,
+    header: NativeSpriteHeaderForm,
     kind: TokenKind,
     value: String,
     lengths: SpriteLengthTable,
@@ -38,7 +41,7 @@ impl Default for MwlSpritePanel {
             loaded: None,
             stream: None,
             selected: 0,
-            header: String::new(),
+            header: NativeSpriteHeaderForm::default(),
             kind: TokenKind::Record,
             value: String::new(),
             lengths: SpriteLengthTable::standard(),
@@ -106,13 +109,10 @@ impl MwlSpritePanel {
             "{} tokens; revision length-table interpretation",
             stream.tokens.len()
         ));
-        ui.horizontal(|ui| {
-            ui.label("Header (hex)");
-            ui.text_edit_singleline(&mut self.header);
-        });
+        show_sprite_header_form(ui, "mwl-sprite-header", &mut self.header);
         if ui.button("Stage header").clicked() {
             self.stream.as_mut().expect("loaded sprite stream").header =
-                level_editor_forms::parse_hex_u8(&self.header, "sprite header")?;
+                self.header.header().map_err(|error| error.to_string())?;
         }
 
         let mut new_selection = None;
@@ -333,7 +333,7 @@ impl MwlSpritePanel {
         let Some(stream) = self.stream.as_ref() else {
             return;
         };
-        self.header = format!("{:02X}", stream.header);
+        self.header = NativeSpriteHeaderForm::load(stream.header);
         let Some(token) = stream.tokens.get(self.selected) else {
             self.kind = TokenKind::Record;
             self.value.clear();
@@ -479,6 +479,23 @@ mod tests {
         panel.length_table = "4".into();
         assert!(panel.apply_length_form().is_err());
         assert_eq!(panel.lengths.record_len(&[0x08, 0x20, 0x42]), Some(5));
+    }
+
+    #[test]
+    fn mwl_header_form_preserves_the_stream_framing_discriminator() {
+        let mut panel = MwlSpritePanel {
+            stream: Some(NativeSpriteStream {
+                header: 0x20,
+                expanded: true,
+                tokens: Vec::new(),
+            }),
+            ..MwlSpritePanel::default()
+        };
+        panel.load_form();
+        panel.header.memory = 0x12;
+        panel.header.buoyancy_2 = true;
+        panel.stream.as_mut().unwrap().header = panel.header.header().unwrap();
+        assert_eq!(panel.stream.unwrap().header, 0xb2);
     }
 
     #[test]

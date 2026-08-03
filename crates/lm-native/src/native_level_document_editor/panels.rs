@@ -99,10 +99,6 @@ impl NativeLevelDocumentEditor {
         let lengths = self.current_sprite_lengths();
         ui.heading(format!("Sprite tokens ({})", value.sprites.tokens.len()));
         index_row(ui, &mut self.sprite_index, value.sprites.tokens.len());
-        ui.horizontal(|ui| {
-            ui.label("Header");
-            ui.text_edit_singleline(&mut self.sprite_header);
-        });
         ui.text_edit_singleline(&mut self.form.sprite);
         sprite_semantic_fields(ui, &mut self.form);
         let mut sprite_action = None;
