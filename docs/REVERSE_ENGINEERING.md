@@ -2350,9 +2350,19 @@ source endpoint, destination endpoint, submap byte, and engine target coordinate
 Route commits use the existing revision-checked application command, semantic reopen, checksum,
 and Undo path. Terrain and route batches are deliberately staged one at a time so committing one
 domain cannot silently discard an uncommitted edit in the other.
-Selected main-map route endpoints are drawn over the real 512x512 left plane, and dedicated source
-and destination tools snap canvas clicks to the runtime's eight-pixel coordinate grid. Nonzero
-submaps remain form-editable but are not placed using an invented atlas transform.
+Selected route endpoints are drawn over the matching runtime plane, and dedicated source and
+destination tools snap canvas clicks to the runtime's eight-pixel coordinate grid. The nonzero
+mapping is now proved from the SMW runtime rather than inferred from the editor image:
+`InitializeOverworldTilemaps` at `$04D6E9` uploads one shared `$7F6000-$7F7FFF` submap sheet;
+`CalculateOverworldPlayerPosition` at `$049885` selects that shared submap plane whenever the
+player's submap byte is nonzero; and `HandleOverworldPathExits` at `$049A24` compares the stored
+X/Y words directly before separately publishing the destination submap byte. The six nonzero IDs
+therefore share sheet coordinates and distinguish camera, palette, and gameplay state rather than
+selecting six independent tilemap planes. The native overlay places IDs `$01-$06` on the right
+512x512 sheet, applies the SNES background's nine-bit coordinate wrap (including vanilla endpoint
+X/Y `$0200`), and retains the form's explicit nonzero ID when a right-sheet click sets an endpoint.
+Left-plane clicks select main map `$00`; a right-sheet click with `$00` or an unsupported ID is
+rejected instead of guessing which submap the user intended.
 
 The ignored `native_main_overworld_layer2_paint_survives_snes9x_initialization` integration gate
 drives that same application controller over a four-cell paint, commits the ROM, reopens the entire

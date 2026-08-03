@@ -207,6 +207,9 @@ impl RomOverworldEditor {
         let mut command = None;
         ui.collapsing("Gameplay route links", |ui| {
             ui.label("Native source/destination endpoints and engine target bytes (hexadecimal).");
+            ui.small(
+                "Route tools use the left plane for submap 00. On the right shared submap sheet, \n+                 enter submap 01-06 first; a click retains that endpoint's submap ID.",
+            );
             if path_count == 0 {
                 ui.label("No gameplay route links are installed.");
                 return;
@@ -710,17 +713,31 @@ impl RomOverworldEditor {
                         }
                     }
                     MapPaintTool::RouteSource if !stale && response.clicked() => {
-                        if let Some((x, y)) = main_map_pixel(response.rect, position) {
-                            self.main_path.source_x = format!("{x:04X}");
-                            self.main_path.source_y = format!("{y:04X}");
-                            self.main_path.source_submap = "00".into();
+                        let submap = level_editor_forms::parse_hex_u8(
+                            &self.main_path.source_submap,
+                            "route source submap",
+                        );
+                        if let Ok(submap) = submap
+                            && let Some(endpoint) =
+                                route_canvas_endpoint(response.rect, position, submap)
+                        {
+                            self.main_path.source_x = format!("{:04X}", endpoint.x);
+                            self.main_path.source_y = format!("{:04X}", endpoint.y);
+                            self.main_path.source_submap = format!("{:02X}", endpoint.submap);
                         }
                     }
                     MapPaintTool::RouteDestination if !stale && response.clicked() => {
-                        if let Some((x, y)) = main_map_pixel(response.rect, position) {
-                            self.main_path.destination_x = format!("{x:04X}");
-                            self.main_path.destination_y = format!("{y:04X}");
-                            self.main_path.destination_submap = "00".into();
+                        let submap = level_editor_forms::parse_hex_u8(
+                            &self.main_path.destination_submap,
+                            "route destination submap",
+                        );
+                        if let Ok(submap) = submap
+                            && let Some(endpoint) =
+                                route_canvas_endpoint(response.rect, position, submap)
+                        {
+                            self.main_path.destination_x = format!("{:04X}", endpoint.x);
+                            self.main_path.destination_y = format!("{:04X}", endpoint.y);
+                            self.main_path.destination_submap = format!("{:02X}", endpoint.submap);
                         }
                     }
                     _ => {}
@@ -768,7 +785,7 @@ impl RomOverworldEditor {
             return;
         };
         let point = |endpoint: OverworldEndpoint| {
-            main_endpoint_pixel(endpoint).map(|(x, y)| {
+            route_endpoint_canvas_pixel(endpoint).map(|(x, y)| {
                 rect.min
                     + egui::vec2(
                         f32::from(x) / 1024.0 * rect.width(),
@@ -1177,20 +1194,33 @@ fn grid_line(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> 
     cells
 }
 
-fn main_endpoint_pixel(endpoint: OverworldEndpoint) -> Option<(u16, u16)> {
-    (endpoint.submap == 0 && endpoint.x < 512 && endpoint.y < 512)
-        .then_some((endpoint.x, endpoint.y))
+fn route_endpoint_canvas_pixel(endpoint: OverworldEndpoint) -> Option<(u16, u16)> {
+    let plane_x = match endpoint.submap {
+        0 => 0,
+        1..=6 => 512,
+        _ => return None,
+    };
+    Some((plane_x + (endpoint.x & 0x01ff), endpoint.y & 0x01ff))
 }
 
-fn main_map_pixel(rect: egui::Rect, position: egui::Pos2) -> Option<(u16, u16)> {
+fn route_canvas_endpoint(
+    rect: egui::Rect,
+    position: egui::Pos2,
+    selected_submap: u8,
+) -> Option<OverworldEndpoint> {
     let (x, y) = overworld_editor_render::selected_tile(rect, position, 128, 64)?;
-    if x >= 64 {
+    let (x, submap) = if x < 64 {
+        (x, 0)
+    } else if (1..=6).contains(&selected_submap) {
+        (x - 64, selected_submap)
+    } else {
         return None;
-    }
-    Some((
-        u16::try_from(x.checked_mul(8)?).ok()?,
-        u16::try_from(y.checked_mul(8)?).ok()?,
-    ))
+    };
+    Some(OverworldEndpoint {
+        x: u16::try_from(x.checked_mul(8)?).ok()?,
+        y: u16::try_from(y.checked_mul(8)?).ok()?,
+        submap,
+    })
 }
 
 fn stroke_edits(
@@ -1273,8 +1303,8 @@ fn flood_fill_cells(
 mod canvas_tests {
     use super::{
         MainPathLinkForm, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
-        OverworldPathLink, OverworldPathTarget, flood_fill_cells, grid_line, main_endpoint_pixel,
-        main_map_pixel, rectangle_cells, stroke_edits,
+        OverworldPathLink, OverworldPathTarget, flood_fill_cells, grid_line, rectangle_cells,
+        route_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
     };
     use eframe::egui;
 
@@ -1368,19 +1398,38 @@ mod canvas_tests {
     }
 
     #[test]
-    fn main_map_route_points_use_only_the_left_runtime_plane() {
+    fn route_points_map_main_and_shared_submap_runtime_planes() {
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1024.0, 512.0));
         assert_eq!(
-            main_map_pixel(rect, egui::pos2(320.0, 40.0)),
-            Some((320, 40))
+            route_canvas_endpoint(rect, egui::pos2(320.0, 40.0), 6),
+            Some(OverworldEndpoint {
+                x: 320,
+                y: 40,
+                submap: 0,
+            })
         );
         assert_eq!(
-            main_map_pixel(rect, egui::pos2(511.0, 511.0)),
-            Some((504, 504))
+            route_canvas_endpoint(rect, egui::pos2(511.0, 511.0), 6),
+            Some(OverworldEndpoint {
+                x: 504,
+                y: 504,
+                submap: 0,
+            })
         );
-        assert_eq!(main_map_pixel(rect, egui::pos2(512.0, 40.0)), None);
         assert_eq!(
-            main_endpoint_pixel(OverworldEndpoint {
+            route_canvas_endpoint(rect, egui::pos2(512.0, 40.0), 4),
+            Some(OverworldEndpoint {
+                x: 0,
+                y: 40,
+                submap: 4,
+            })
+        );
+        assert_eq!(
+            route_canvas_endpoint(rect, egui::pos2(512.0, 40.0), 0),
+            None
+        );
+        assert_eq!(
+            route_endpoint_canvas_pixel(OverworldEndpoint {
                 x: 0x140,
                 y: 0x28,
                 submap: 0,
@@ -1388,10 +1437,26 @@ mod canvas_tests {
             Some((0x140, 0x28))
         );
         assert_eq!(
-            main_endpoint_pixel(OverworldEndpoint {
+            route_endpoint_canvas_pixel(OverworldEndpoint {
+                x: 0x48,
+                y: 0x10,
+                submap: 1,
+            }),
+            Some((0x248, 0x10))
+        );
+        assert_eq!(
+            route_endpoint_canvas_pixel(OverworldEndpoint {
+                x: 0x200,
+                y: 0x200,
+                submap: 3,
+            }),
+            Some((0x200, 0))
+        );
+        assert_eq!(
+            route_endpoint_canvas_pixel(OverworldEndpoint {
                 x: 0,
                 y: 0,
-                submap: 1,
+                submap: 7,
             }),
             None
         );
