@@ -188,6 +188,12 @@ nibbles, and perpendicular-high bit model; regenerate minimal transitions; prese
 opaque tails; reopen checksum-valid at screens `$1E/$1F`; and undo the complete ROM byte-exactly.
 Strict bounds and late-index rollback are covered.
 
+The sprite row now has canvas-grade `LMLEDIT1 sprite place` and `sprite relocate-position`
+automation for both legacy and expanded streams. Installed GUI, portable GUI, automation, and
+controller edits share one absolute-position model that preserves record identity/extensions,
+stably sorts legacy screens, rebuilds minimum orientation-aware expanded upper-Y controls, enforces
+native bounds, reopens checksum-valid, rolls back late failures, and undoes the ROM byte-exactly.
+
 ## Current critical path
 
 The fastest route to a broadly usable editor is:

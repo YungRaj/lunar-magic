@@ -2804,22 +2804,10 @@ impl VanillaLevelEditor {
             self.error = Some("sprite placement is outside the native 32×512-tile space".into());
             return;
         };
-        let lengths = self
-            .controller
-            .as_ref()
-            .map_or_else(SpriteLengthTable::standard, |controller| {
-                controller.sprite_lengths().clone()
-            });
-        let token = match crate::native_level_document_form::parse_sprite_token(
+        let record = match crate::native_level_document_form::parse_sprite_token(
             &self.sprite_form.encoded,
         ) {
-            Ok(SpriteToken::Record(mut record)) => {
-                if let Err(error) = record.set_native_fields(fields, &lengths) {
-                    self.error = Some(error.to_string());
-                    return;
-                }
-                SpriteToken::Record(record)
-            }
+            Ok(SpriteToken::Record(record)) => record,
             Ok(_) => {
                 self.error =
                     Some("canvas placement requires a sprite record, not a control".into());
@@ -2833,62 +2821,27 @@ impl VanillaLevelEditor {
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
-        let index = controller.level().sprites.tokens.len();
-        if controller.level().sprites.expanded {
-            let mut predicted = controller.level().sprites.clone();
-            if let Err(error) = predicted.insert(index, token.clone()) {
-                self.error = Some(error.to_string());
-                return;
-            }
-            let selected = match predicted.relocate_expanded_record(
-                index,
-                fields.screen,
-                fields.x,
-                u16::from(fields.y_low),
-                vertical,
-                controller.sprite_lengths(),
-            ) {
-                Ok(selected) => selected,
-                Err(error) => {
-                    self.error = Some(error.to_string());
-                    return;
-                }
-            };
-            match controller.apply_edits(&[
-                NativeLevelEdit::InsertSprite { index, token },
-                NativeLevelEdit::RelocateExpandedSprite {
-                    selected: index,
-                    screen: fields.screen,
-                    x: fields.x,
-                    y: u16::from(fields.y_low),
-                },
-            ]) {
-                Ok(()) => {
-                    self.selected_sprite = selected;
-                    self.sprite_form = SpriteForm::from_token(
-                        controller.level().sprites.header,
-                        controller.level().sprites.tokens.get(selected),
-                    );
-                    self.placement_mode = None;
-                    self.error = None;
-                }
-                Err(error) => self.error = Some(error.to_string()),
-            }
-            return;
-        }
         let mut predicted = controller.level().sprites.clone();
-        predicted.tokens.push(token.clone());
-        let selected = match predicted.sort_legacy_records_by_screen(index) {
+        let selected = match predicted.place_record_at_position(
+            record.clone(),
+            fields.screen,
+            fields.x,
+            u16::from(fields.y_low),
+            vertical,
+            controller.sprite_lengths(),
+        ) {
             Ok(selected) => selected,
             Err(error) => {
                 self.error = Some(error.to_string());
                 return;
             }
         };
-        match controller.apply_edits(&[
-            NativeLevelEdit::InsertSprite { index, token },
-            NativeLevelEdit::SortLegacySpritesByScreen { selected: index },
-        ]) {
+        match controller.apply_edits(&[NativeLevelEdit::PlaceSpriteAtPosition {
+            record,
+            screen: fields.screen,
+            x: fields.x,
+            y: u16::from(fields.y_low),
+        }]) {
             Ok(()) => {
                 self.selected_sprite = selected;
                 self.sprite_form = SpriteForm::from_token(
@@ -3160,77 +3113,38 @@ impl VanillaLevelEditor {
         let Some(controller) = self.controller.as_mut() else {
             return;
         };
-        if controller.level().sprites.expanded {
-            let fields = NativeSpriteRecordFields {
-                y_low: self.sprite_form.y_low,
-                extra_bits: self.sprite_form.extra_bits,
-                screen: self.sprite_form.screen,
-                x: self.sprite_form.x,
-                sprite_number: self.sprite_form.sprite_number,
-            };
-            let mut predicted = controller.level().sprites.clone();
-            let selected = match predicted.relocate_expanded_record(
-                index,
-                fields.screen,
-                fields.x,
-                u16::from(fields.y_low),
-                lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
-                    .vertical,
-                controller.sprite_lengths(),
-            ) {
-                Ok(selected) => selected,
-                Err(error) => {
-                    self.error = Some(error.to_string());
-                    return;
-                }
-            };
-            match controller.apply_edits(&[NativeLevelEdit::RelocateExpandedSprite {
-                selected: index,
-                screen: fields.screen,
-                x: fields.x,
-                y: u16::from(fields.y_low),
-            }]) {
-                Ok(()) => {
-                    self.selected_sprite = selected;
-                    self.sprite_form = SpriteForm::from_token(
-                        controller.level().sprites.header,
-                        controller.level().sprites.tokens.get(selected),
-                    );
-                    self.error = None;
-                }
-                Err(error) => self.error = Some(error.to_string()),
-            }
-            return;
-        }
-        let token = controller.level().sprites.tokens.get(index);
-        let Ok(replacement) =
-            self.sprite_form
-                .semantic_edit(index, token, controller.sprite_lengths())
-        else {
-            self.error = Some("selected sprite cannot be moved semantically".into());
-            return;
-        };
-        let NativeLevelEdit::ReplaceSprite { token, .. } = &replacement else {
-            unreachable!("semantic sprite edit is always a replacement");
-        };
+        let screen = self.sprite_form.screen;
+        let x = self.sprite_form.x;
+        let y = u16::from(self.sprite_form.y_low);
+        let vertical =
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                .vertical;
         let mut predicted = controller.level().sprites.clone();
-        predicted.tokens[index] = token.clone();
-        let new_index = match predicted.sort_legacy_records_by_screen(index) {
-            Ok(index) => index,
+        let selected = match predicted.relocate_record_position(
+            index,
+            screen,
+            x,
+            y,
+            vertical,
+            controller.sprite_lengths(),
+        ) {
+            Ok(selected) => selected,
             Err(error) => {
                 self.error = Some(error.to_string());
                 return;
             }
         };
-        match controller.apply_edits(&[
-            replacement,
-            NativeLevelEdit::SortLegacySpritesByScreen { selected: index },
-        ]) {
+        match controller.apply_edits(&[NativeLevelEdit::RelocateSpritePosition {
+            selected: index,
+            screen,
+            x,
+            y,
+        }]) {
             Ok(()) => {
-                self.selected_sprite = new_index;
+                self.selected_sprite = selected;
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
-                    controller.level().sprites.tokens.get(new_index),
+                    controller.level().sprites.tokens.get(selected),
                 );
                 self.error = None;
             }

@@ -2,7 +2,7 @@ use crate::{ControllerSnapshot, EditorMode};
 use lm_level::{
     CustomTimeError, CustomTimeSettings, HeaderValueError, LegacyHeaderEdit, LevelEditError,
     MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, ObjectEdit, ObjectEditError,
-    ObjectStreamError, SpriteToken,
+    ObjectStreamError, SpriteRecord, SpriteToken,
 };
 use lm_project::{
     LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelRomLayout, LevelSaveError,
@@ -43,6 +43,18 @@ pub enum NativeLevelEdit {
     },
     SortLegacySpritesByScreen {
         selected: usize,
+    },
+    PlaceSpriteAtPosition {
+        record: SpriteRecord,
+        screen: u8,
+        x: u8,
+        y: u16,
+    },
+    RelocateSpritePosition {
+        selected: usize,
+        screen: u8,
+        x: u8,
+        y: u16,
     },
     RelocateExpandedSprite {
         selected: usize,

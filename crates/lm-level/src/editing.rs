@@ -12,6 +12,7 @@ pub enum LevelEditError {
     ExpandedSpritePositionSort,
     ExpandedSpriteRelocationRequiresExpanded,
     ExpandedSpriteYOutOfRange(u16),
+    LegacySpriteYOutOfRange(u16),
     InvalidExpandedSpriteControl { index: usize, value: u8 },
     ShortSpriteRecord { index: usize, len: usize },
     SpriteField(NativeSpriteFieldError),
@@ -152,6 +153,106 @@ impl NativeSpriteStream {
         };
         self.tokens = staged.into_iter().map(|(_, _, token)| token).collect();
         Ok(new_index)
+    }
+
+    /// Places one native sprite record at an absolute canvas position and restores Lunar Magic's
+    /// canonical ordering. Legacy streams sort by screen; expanded streams also rebuild the
+    /// minimum upper-Y controls for the requested orientation. The record's sprite number, extra
+    /// bits, and extension bytes are preserved. Returns the placed record's resulting token index.
+    ///
+    /// # Errors
+    ///
+    /// Rejects malformed records, revision-table width changes, coordinates outside the native
+    /// space, or malformed existing controls without mutating the stream.
+    pub fn place_record_at_position(
+        &mut self,
+        mut record: crate::SpriteRecord,
+        screen: u8,
+        x: u8,
+        y: u16,
+        vertical: bool,
+        lengths: &SpriteLengthTable,
+    ) -> Result<usize, LevelEditError> {
+        let mut staged = self.clone();
+        let mut fields = record
+            .native_fields()
+            .map_err(LevelEditError::SpriteField)?;
+        let y_low = if staged.expanded {
+            u8::try_from(y % 32).map_err(|_| LevelEditError::ExpandedSpriteYOutOfRange(y))?
+        } else {
+            u8::try_from(y)
+                .ok()
+                .filter(|value| *value <= 0x1f)
+                .ok_or(LevelEditError::LegacySpriteYOutOfRange(y))?
+        };
+        fields.screen = screen;
+        fields.x = x;
+        fields.y_low = y_low;
+        record
+            .set_native_fields(fields, lengths)
+            .map_err(LevelEditError::SpriteField)?;
+        let selected = staged.tokens.len();
+        staged.insert(selected, SpriteToken::Record(record))?;
+        let selected = if staged.expanded {
+            staged.relocate_expanded_record(selected, screen, x, y, vertical, lengths)?
+        } else {
+            staged.sort_legacy_records_by_screen(selected)?
+        };
+        *self = staged;
+        Ok(selected)
+    }
+
+    /// Relocates one native sprite record through the same absolute-position model used by canvas
+    /// drag/drop. Identity fields and extension bytes remain unchanged, while record ordering and
+    /// expanded upper-Y controls are rebuilt canonically. Returns the record's resulting index.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a non-record selection, invalid coordinates, revision-table width changes, or
+    /// malformed stream state without mutating the stream.
+    pub fn relocate_record_position(
+        &mut self,
+        selected: usize,
+        screen: u8,
+        x: u8,
+        y: u16,
+        vertical: bool,
+        lengths: &SpriteLengthTable,
+    ) -> Result<usize, LevelEditError> {
+        let mut staged = self.clone();
+        if staged.expanded {
+            let selected =
+                staged.relocate_expanded_record(selected, screen, x, y, vertical, lengths)?;
+            *self = staged;
+            return Ok(selected);
+        }
+        let y_low = u8::try_from(y)
+            .ok()
+            .filter(|value| *value <= 0x1f)
+            .ok_or(LevelEditError::LegacySpriteYOutOfRange(y))?;
+        let len = staged.tokens.len();
+        let Some(SpriteToken::Record(record)) = staged.tokens.get_mut(selected) else {
+            return Err(if selected >= len {
+                LevelEditError::IndexOutOfBounds {
+                    index: selected,
+                    len,
+                }
+            } else {
+                LevelEditError::LegacyIncompatibleSpriteToken { index: selected }
+            });
+        };
+        let mut fields = record
+            .native_fields()
+            .map_err(LevelEditError::SpriteField)?;
+        fields.screen = screen;
+        fields.x = x;
+        fields.y_low = y_low;
+        record
+            .set_native_fields(fields, lengths)
+            .map_err(LevelEditError::SpriteField)?;
+        let selected = staged.sort_legacy_records_by_screen(selected)?;
+        *self = staged;
+        Ok(selected)
     }
 
     /// Stably restores Lunar Magic's expanded sprite ordering and minimum upper-Y transitions.
@@ -507,6 +608,92 @@ mod tests {
                 .collect::<Vec<_>>(),
             [0x20, 0x40, 0x10, 0x30]
         );
+    }
+
+    #[test]
+    fn absolute_legacy_sprite_place_and_relocate_sort_and_reject_high_y_atomically() {
+        let lengths = SpriteLengthTable::standard();
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![sprite_on_screen(2, 0x10), sprite_on_screen(1, 0x20)],
+        };
+        let selected = stream
+            .place_record_at_position(
+                SpriteRecord {
+                    encoded: vec![0x08, 0x00, 0x47],
+                },
+                0x1f,
+                0x0c,
+                0x1a,
+                false,
+                &lengths,
+            )
+            .unwrap();
+        assert_eq!(selected, 2);
+        let fields = match &stream.tokens[selected] {
+            SpriteToken::Record(record) => record.native_fields().unwrap(),
+            SpriteToken::Screen(_) | SpriteToken::Control(_) => unreachable!(),
+        };
+        assert_eq!((fields.screen, fields.x, fields.y_low), (0x1f, 0x0c, 0x1a));
+        assert_eq!((fields.extra_bits, fields.sprite_number), (2, 0x47));
+
+        let selected = stream
+            .relocate_record_position(selected, 0, 3, 9, false, &lengths)
+            .unwrap();
+        assert_eq!(selected, 0);
+        assert_eq!(stream.native_placements()[0].sprite_number, 0x47);
+        let original = stream.clone();
+        assert!(matches!(
+            stream.relocate_record_position(0, 0, 0, 0x20, false, &lengths),
+            Err(LevelEditError::LegacySpriteYOutOfRange(0x20))
+        ));
+        assert_eq!(stream, original);
+    }
+
+    #[test]
+    fn absolute_expanded_sprite_place_and_relocate_rebuild_upper_y_controls() {
+        let lengths = SpriteLengthTable::standard();
+        let mut stream = NativeSpriteStream {
+            header: 0x20,
+            expanded: true,
+            tokens: vec![sprite_on_screen(1, 0x10)],
+        };
+        let selected = stream
+            .place_record_at_position(
+                SpriteRecord {
+                    encoded: vec![0x04, 0x00, 0x47],
+                },
+                0x1e,
+                0x0a,
+                4 * 32 + 0x1d,
+                false,
+                &lengths,
+            )
+            .unwrap();
+        assert_eq!(stream.native_placements()[1].sprite_number, 0x47);
+        assert_eq!(stream.native_placements()[1].minor, 4 * 32 + 0x1d);
+        assert!(matches!(
+            stream.tokens[selected - 1],
+            SpriteToken::Screen(4)
+        ));
+
+        let selected = stream
+            .relocate_record_position(selected, 0, 2, 2 * 32 + 7, true, &lengths)
+            .unwrap();
+        let placement = stream
+            .native_placements()
+            .into_iter()
+            .find(|placement| placement.sprite_number == 0x47)
+            .unwrap();
+        assert_eq!(
+            (placement.screen, placement.major, placement.minor),
+            (0, 2, 71)
+        );
+        assert!(matches!(
+            stream.tokens[selected - 1],
+            SpriteToken::Screen(2)
+        ));
     }
 
     #[test]

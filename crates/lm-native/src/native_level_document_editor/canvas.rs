@@ -2,8 +2,8 @@ use super::{NativeLevelCanvasTool, NativeLevelDocumentEditor};
 use eframe::egui;
 use lm_app::NativeLevelEdit;
 use lm_level::{
-    NativeLevelFile, NativeObjectPlacement, NativeSpritePlacement, NativeSpriteRecordFields,
-    ObjectCoordinateNibbles, ObjectEdit, SpriteLengthTable, SpriteToken,
+    NativeLevelFile, NativeObjectPlacement, NativeSpritePlacement, ObjectCoordinateNibbles,
+    ObjectEdit, SpriteLengthTable,
 };
 
 const MIN_MAJOR_TILES: u16 = 16;
@@ -188,7 +188,7 @@ fn sprite_move_edit(
     minor: u16,
     placements: &[NativeSpritePlacement],
 ) -> Result<(NativeLevelEdit, Option<usize>), String> {
-    let placement = placements
+    placements
         .iter()
         .find(|placement| placement.token_index == index)
         .ok_or_else(|| "select a sprite record before moving it on the canvas".to_owned())?;
@@ -196,53 +196,20 @@ fn sprite_move_edit(
     if screen > 0x1f {
         return Err("sprite canvas destination is outside the native screen range".into());
     }
-    if value.sprites.expanded {
-        let mut relocated = value.sprites.clone();
-        let selected = relocated
-            .relocate_expanded_record(
-                index,
-                u8::try_from(screen).expect("screen was bounded to 31"),
-                u8::try_from(major % 16).expect("major remainder is at most 15"),
-                minor,
-                vertical,
-                lengths,
-            )
-            .map_err(|error| error.to_string())?;
-        return Ok((
-            NativeLevelEdit::RelocateExpandedSprite {
-                selected: index,
-                screen: u8::try_from(screen).expect("screen was bounded to 31"),
-                x: u8::try_from(major % 16).expect("major remainder is at most 15"),
-                y: minor,
-            },
-            Some(selected),
-        ));
-    }
-    if (minor / 32) != (placement.minor / 32) {
-        return Err("legacy sprite destination is outside its coordinate band".into());
-    }
-    let Some(SpriteToken::Record(record)) = value.sprites.tokens.get(index) else {
-        return Err("select a sprite record before moving it on the canvas".into());
-    };
-    let mut moved = record.clone();
-    let fields = moved.native_fields().map_err(|error| error.to_string())?;
-    moved
-        .set_native_fields(
-            NativeSpriteRecordFields {
-                screen: u8::try_from(screen).expect("screen was bounded to 31"),
-                x: u8::try_from(major % 16).expect("major remainder is at most 15"),
-                y_low: u8::try_from(minor % 32).expect("minor remainder is at most 31"),
-                ..fields
-            },
-            lengths,
-        )
+    let screen = u8::try_from(screen).expect("screen was bounded to 31");
+    let x = u8::try_from(major % 16).expect("major remainder is at most 15");
+    let mut relocated = value.sprites.clone();
+    let selected = relocated
+        .relocate_record_position(index, screen, x, minor, vertical, lengths)
         .map_err(|error| error.to_string())?;
     Ok((
-        NativeLevelEdit::ReplaceSprite {
-            index,
-            token: SpriteToken::Record(moved),
+        NativeLevelEdit::RelocateSpritePosition {
+            selected: index,
+            screen,
+            x,
+            y: minor,
         },
-        None,
+        Some(selected),
     ))
 }
 
@@ -474,7 +441,7 @@ fn draw_sprites(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_level::{LevelObjectData, NativeSpriteStream};
+    use lm_level::{LevelObjectData, NativeSpriteStream, SpriteToken};
 
     fn native_file() -> NativeLevelFile {
         NativeLevelFile {
@@ -593,15 +560,23 @@ mod tests {
             &placements,
         )
         .unwrap();
-        assert_eq!(selected, None);
-        let NativeLevelEdit::ReplaceSprite {
-            index,
-            token: SpriteToken::Record(record),
-        } = edit
-        else {
-            panic!("expected one sprite replacement");
+        assert_eq!(selected, Some(0));
+        assert_eq!(
+            edit,
+            NativeLevelEdit::RelocateSpritePosition {
+                selected: 0,
+                screen: 3,
+                x: 2,
+                y: 12,
+            }
+        );
+        let mut relocated = value.sprites.clone();
+        relocated
+            .relocate_record_position(0, 3, 2, 12, false, &SpriteLengthTable::standard())
+            .unwrap();
+        let SpriteToken::Record(record) = &relocated.tokens[0] else {
+            unreachable!();
         };
-        assert_eq!(index, 0);
         let fields = record.native_fields().unwrap();
         assert_eq!(fields.screen, 3);
         assert_eq!(fields.x, 2);
@@ -641,7 +616,7 @@ mod tests {
         assert_eq!(selected, Some(1));
         assert_eq!(
             edit,
-            NativeLevelEdit::RelocateExpandedSprite {
+            NativeLevelEdit::RelocateSpritePosition {
                 selected: 1,
                 screen: 4,
                 x: 3,

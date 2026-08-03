@@ -695,6 +695,109 @@ fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
 }
 
 #[test]
+fn terminal_semantic_sprite_place_and_relocate_reopen_and_undo() {
+    let profile = lm_profile::test_support::profile();
+    let mut app = AppState::default();
+    app.load_rom(profiled_rom(&profile)).unwrap();
+    app.dispatch(Command::InstallRevisionProfile(Box::new(profile.clone())))
+        .unwrap();
+    let before = app.project().unwrap().save_snapshot();
+    let baseline_level = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    assert!(baseline_level.sprites.expanded);
+    let baseline_sprite = baseline_level.sprites.native_placements()[0].token_index;
+    let directory =
+        std::env::temp_dir().join(format!("lm-app-sprite-position-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    let script = directory.join("semantic sprite positions.lmedit");
+
+    fs::write(&script, "LMLEDIT1\nsprite place 080047 1f 0c 009d\n").unwrap();
+    execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
+    let placed = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    let placement = placed
+        .sprites
+        .native_placements()
+        .into_iter()
+        .find(|placement| {
+            placement.sprite_number == 0x47
+                && placement.screen == 0x1f
+                && placement.major == 0x1fc
+                && placement.minor == 0x9d
+        })
+        .unwrap();
+    let record = match &placed.sprites.tokens[placement.token_index] {
+        lm_level::SpriteToken::Record(record) => record,
+        lm_level::SpriteToken::Screen(_) | lm_level::SpriteToken::Control(_) => unreachable!(),
+    };
+    assert_eq!(record.native_fields().unwrap().extra_bits, 2);
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(
+        &script,
+        format!("LMLEDIT1\nsprite relocate-position {baseline_sprite} 1e 0a 008f\n"),
+    )
+    .unwrap();
+    execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
+    let relocated = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    assert!(
+        relocated
+            .sprites
+            .native_placements()
+            .iter()
+            .any(|placement| {
+                placement.screen == 0x1e && placement.major == 0x1ea && placement.minor == 0x8f
+            })
+    );
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(
+        &script,
+        "LMLEDIT1\nheader background-palette 05\nsprite relocate-position 999 00 00 0000\n",
+    )
+    .unwrap();
+    assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::write(
+        &script,
+        "LMLEDIT1\nheader background-palette 05\nsprite place 080047 00 00 1000\n",
+    )
+    .unwrap();
+    assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn terminal_custom_time_script_is_orientation_aware_checksum_valid_and_undoable() {
     let profile = lm_profile::test_support::profile();
     let mut app = AppState::default();

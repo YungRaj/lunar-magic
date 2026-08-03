@@ -76,6 +76,37 @@ pub(crate) fn apply_native_level_edits(
                     .sort_legacy_records_by_screen(*selected)
                     .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
             }
+            NativeLevelEdit::PlaceSpriteAtPosition {
+                record,
+                screen,
+                x,
+                y,
+            } => {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(staged_layer1.header.level_mode()).vertical;
+                staged_sprites
+                    .place_record_at_position(
+                        record.clone(),
+                        *screen,
+                        *x,
+                        *y,
+                        vertical,
+                        sprite_lengths,
+                    )
+                    .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
+            }
+            NativeLevelEdit::RelocateSpritePosition {
+                selected,
+                screen,
+                x,
+                y,
+            } => {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(staged_layer1.header.level_mode()).vertical;
+                staged_sprites
+                    .relocate_record_position(*selected, *screen, *x, *y, vertical, sprite_lengths)
+                    .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
+            }
             NativeLevelEdit::RelocateExpandedSprite {
                 selected,
                 screen,

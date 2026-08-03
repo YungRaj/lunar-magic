@@ -1046,6 +1046,13 @@ before controller mutation. The shared relocation model rejects command-zero con
 ordinary extension bytes, sets the perpendicular bit explicitly, stably orders objects by absolute
 screen, and regenerates the minimum owned advance/jump transitions while retaining trailing opaque
 controls.
+Canvas-grade sprite edits use `sprite place RECORD SCREEN X Y` and `sprite relocate-position INDEX
+SCREEN X Y`. Records, screens, X, and Y are hexadecimal; indexes are decimal. Both commands route
+through the same absolute-position model as installed and portable canvas drag/drop. Screens are
+limited to `$1F`, X to `$0F`, legacy Y to `$1F`, and expanded Y to `$0FFF`. The model preserves the
+sprite number, extra bits, and extension bytes, stably sorts legacy records by screen, and rebuilds
+expanded upper-Y transitions with the orientation-aware comparator. Invalid records, coordinates,
+indexes, controls, or revision-table width changes reject the complete edit batch atomically.
 Existing screen-exit objects can be edited semantically with `object screen-exit INDEX SCREEN
 DESTINATION_AND_FLAGS`. The decimal record index selects a recognized command-zero exit, while the
 source screen and 16-bit destination/flags value are hexadecimal. The shared typed object edit
@@ -1067,6 +1074,8 @@ object screen-jump-target 1 0a1b
 object screen-exit 2 1f bcde
 object place 090855 1f 0c 0b true
 object relocate-position 0 1e 0a 09 true
+sprite place 080047 1f 0c 009d
+sprite relocate-position 0 1e 0a 008f
 sprite-header 10
 sprite-properties 12 true false
 sprite insert 1 screen 12

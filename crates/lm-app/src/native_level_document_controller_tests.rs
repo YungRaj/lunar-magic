@@ -1,6 +1,7 @@
 use super::*;
 use lm_level::{
-    LegacyHeaderEdit, LevelObjectData, NativeSpriteStream, ObjectEdit, ObjectRecord, SpriteToken,
+    LegacyHeaderEdit, LevelObjectData, NativeSpriteStream, ObjectEdit, ObjectRecord, SpriteRecord,
+    SpriteToken,
 };
 
 fn file() -> NativeLevelFile {
@@ -63,6 +64,99 @@ fn expanded_sprite_relocation_is_one_revision_and_reopens_canonically() {
     controller.cancel_save(snapshot.request_id).unwrap();
     assert!(controller.undo(1).unwrap());
     assert_eq!(controller.value(), &value);
+}
+
+#[test]
+fn semantic_sprite_position_edits_cover_legacy_and_expanded_documents() {
+    let mut legacy = controller();
+    legacy
+        .apply_edits(
+            0,
+            &[NativeLevelEdit::PlaceSpriteAtPosition {
+                record: SpriteRecord {
+                    encoded: vec![0x08, 0x00, 0x47],
+                },
+                screen: 0x1f,
+                x: 0x0c,
+                y: 0x1a,
+            }],
+        )
+        .unwrap();
+    let placed = legacy
+        .value()
+        .sprites
+        .native_placements()
+        .into_iter()
+        .find(|placement| placement.sprite_number == 0x47)
+        .unwrap();
+    assert_eq!(
+        (placed.screen, placed.major, placed.minor),
+        (0x1f, 0x1fc, 0x1a)
+    );
+    legacy
+        .apply_edits(
+            1,
+            &[NativeLevelEdit::RelocateSpritePosition {
+                selected: placed.token_index,
+                screen: 0,
+                x: 3,
+                y: 9,
+            }],
+        )
+        .unwrap();
+    let relocated = legacy
+        .value()
+        .sprites
+        .native_placements()
+        .into_iter()
+        .find(|placement| placement.sprite_number == 0x47)
+        .unwrap();
+    assert_eq!(
+        (relocated.screen, relocated.major, relocated.minor),
+        (0, 3, 9)
+    );
+
+    let mut value = file();
+    value.sprites.expanded = true;
+    value.sprites.header |= NativeSpriteStream::EXPANDED_HEADER_FLAG;
+    value.sprites.tokens.insert(0, SpriteToken::Screen(2));
+    let mut expanded = NativeLevelDocumentController::decode(
+        "semantic-expanded.lmlvl".into(),
+        &value.encode().unwrap(),
+        SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    assert!(expanded.value().sprites.expanded);
+    expanded
+        .apply_edits(
+            0,
+            &[NativeLevelEdit::PlaceSpriteAtPosition {
+                record: SpriteRecord {
+                    encoded: vec![0x04, 0x00, 0x47],
+                },
+                screen: 0x1e,
+                x: 0x0a,
+                y: 4 * 32 + 0x1d,
+            }],
+        )
+        .unwrap();
+    let placed = expanded
+        .value()
+        .sprites
+        .native_placements()
+        .into_iter()
+        .find(|placement| placement.sprite_number == 0x47)
+        .unwrap();
+    assert_eq!(
+        (placed.screen, placed.major, placed.minor),
+        (0x1e, 0x1ea, 0x9d)
+    );
+    assert!(expanded
+        .value()
+        .sprites
+        .tokens
+        .iter()
+        .any(|token| matches!(token, SpriteToken::Screen(4))));
 }
 
 #[test]

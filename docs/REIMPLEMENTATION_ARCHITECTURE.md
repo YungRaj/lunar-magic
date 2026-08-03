@@ -553,6 +553,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   typed inputs feed `InsertOrdinaryAtPosition` and `RelocateOrdinaryPosition`, so canonical screen
   transitions, stable ordering, extension preservation, opaque-tail retention, and transaction
   rollback remain centralized rather than being reimplemented by the shell.
+  `sprite place` and `sprite relocate-position` likewise call the shared
+  `place_record_at_position`/`relocate_record_position` boundary now used by both installed and
+  portable canvases. That boundary selects legacy screen sorting or expanded orientation-aware
+  upper-Y reconstruction while preserving sprite identity, extra bits, and extension bytes.
   Both `LMLEDIT1` and the focused `level-header` command expose the typed four-way Layer 1
   vertical-scroll mode, reject raw values above 3, and preserve the object tileset plus both
   unrelated high bits in the shared header byte.

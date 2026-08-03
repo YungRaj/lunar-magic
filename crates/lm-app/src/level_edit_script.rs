@@ -278,6 +278,12 @@ fn parse_sprite_command(
     command: &[&str],
 ) -> Result<NativeLevelEdit, LevelEditScriptError> {
     match command {
+        ["place", bytes, screen, x, y] => Ok(NativeLevelEdit::PlaceSpriteAtPosition {
+            record: sprite_record(line, bytes)?,
+            screen: sprite_screen(line, screen)?,
+            x: coordinate_nibble(line, x)?,
+            y: hex_word(line, y)?,
+        }),
         ["insert", index, kind, value] => Ok(NativeLevelEdit::InsertSprite {
             index: decimal(line, index)?,
             token: sprite_token(line, kind, value)?,
@@ -296,6 +302,14 @@ fn parse_sprite_command(
         ["sort-screen", selected] => Ok(NativeLevelEdit::SortLegacySpritesByScreen {
             selected: decimal(line, selected)?,
         }),
+        ["relocate-position", selected, screen, x, y] => {
+            Ok(NativeLevelEdit::RelocateSpritePosition {
+                selected: decimal(line, selected)?,
+                screen: sprite_screen(line, screen)?,
+                x: coordinate_nibble(line, x)?,
+                y: hex_word(line, y)?,
+            })
+        }
         ["relocate-expanded", selected, screen, x, y] => {
             Ok(NativeLevelEdit::RelocateExpandedSprite {
                 selected: decimal(line, selected)?,
@@ -371,11 +385,23 @@ fn coordinate_nibble(line: usize, value: &str) -> Result<u8, LevelEditScriptErro
     Ok(coordinate)
 }
 
+fn sprite_screen(line: usize, value: &str) -> Result<u8, LevelEditScriptError> {
+    let screen = native_screen(line, value)?;
+    u8::try_from(screen).map_err(|_| LevelEditScriptError::InvalidNumber {
+        line,
+        value: value.into(),
+    })
+}
+
+fn sprite_record(line: usize, value: &str) -> Result<SpriteRecord, LevelEditScriptError> {
+    Ok(SpriteRecord {
+        encoded: hex_bytes(line, value)?,
+    })
+}
+
 fn sprite_token(line: usize, kind: &str, value: &str) -> Result<SpriteToken, LevelEditScriptError> {
     match kind {
-        "record" => Ok(SpriteToken::Record(SpriteRecord {
-            encoded: hex_bytes(line, value)?,
-        })),
+        "record" => Ok(SpriteToken::Record(sprite_record(line, value)?)),
         "screen" => {
             let value = hex_byte(line, value)?;
             if value > 0x7f {
@@ -496,9 +522,11 @@ mod tests {
             sprite remove 1\n\
             custom-time abc true\n\
             object place 090855 001f 0c 0b true\n\
-            object relocate-position 0 001e 0a 09 false\n";
+            object relocate-position 0 001e 0a 09 false\n\
+            sprite place 080047 001f 0c 001a\n\
+            sprite relocate-position 0 001e 0a 008f\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 26);
+        assert_eq!(edits.len(), 28);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert_eq!(
             edits[1],
@@ -610,6 +638,26 @@ mod tests {
                 perpendicular_high: false,
             }])
         );
+        assert_eq!(
+            edits[26],
+            NativeLevelEdit::PlaceSpriteAtPosition {
+                record: SpriteRecord {
+                    encoded: vec![0x08, 0x00, 0x47],
+                },
+                screen: 0x1f,
+                x: 0x0c,
+                y: 0x1a,
+            }
+        );
+        assert_eq!(
+            edits[27],
+            NativeLevelEdit::RelocateSpritePosition {
+                selected: 0,
+                screen: 0x1e,
+                x: 0x0a,
+                y: 0x8f,
+            }
+        );
     }
 
     #[test]
@@ -623,6 +671,9 @@ mod tests {
             "LMLEDIT1\nobject place 090855 20 00 00 false\n",
             "LMLEDIT1\nobject place 090855 00 10 00 false\n",
             "LMLEDIT1\nobject relocate-position 0 00 00 00 yes\n",
+            "LMLEDIT1\nsprite place 080047 20 00 0000\n",
+            "LMLEDIT1\nsprite place 080047 00 10 0000\n",
+            "LMLEDIT1\nsprite relocate-position 0 20 00 0000\n",
             "LMLEDIT1\nsprite insert 0 screen 80\n",
             "LMLEDIT1\nsprite insert 0 control 7f\n",
             "LMLEDIT1\nsprite insert 0 mystery 00\n",
