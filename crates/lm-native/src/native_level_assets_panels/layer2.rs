@@ -1,5 +1,8 @@
 use super::level::object_semantic_fields;
-use super::{AggregatePanels, Layer2FillPattern, PasteTarget, index, pasted_text};
+use super::{
+    AggregatePanels, Layer2FillPattern, PasteTarget, PendingSelectionMove, index,
+    move_before_indexes, pasted_text,
+};
 use crate::{level_editor_forms, native_clipboard};
 use eframe::egui;
 use lm_app::NativeLevelAssetsControllerEdit;
@@ -329,6 +332,7 @@ impl AggregatePanels {
         object_semantic_fields(ui, &mut self.layer2_record);
         let mut action = None;
         let mut apply_object_fields = false;
+        let mut move_object = None;
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load").clicked() {
@@ -348,6 +352,29 @@ impl AggregatePanels {
                 .clicked()
             {
                 apply_object_fields = true;
+            }
+            if ui
+                .add_enabled(self.layer2_object_index > 0, egui::Button::new("Move up"))
+                .clicked()
+            {
+                move_object = move_before_indexes(
+                    self.layer2_object_index,
+                    objects.objects.records.len(),
+                    false,
+                );
+            }
+            if ui
+                .add_enabled(
+                    self.layer2_object_index.saturating_add(1) < objects.objects.records.len(),
+                    egui::Button::new("Move down"),
+                )
+                .clicked()
+            {
+                move_object = move_before_indexes(
+                    self.layer2_object_index,
+                    objects.objects.records.len(),
+                    true,
+                );
             }
             if ui
                 .add_enabled(
@@ -382,6 +409,15 @@ impl AggregatePanels {
                         _ => Err("Layer 2 semantic form produced a non-object edit".into()),
                     }),
             );
+        }
+        if let Some((before, selected)) = move_object {
+            self.pending_selection_move = Some(PendingSelectionMove::Layer2Object(selected));
+            return Some(Ok(NativeLevelAssetsControllerEdit::Layer2Objects(vec![
+                ObjectEdit::MoveBefore {
+                    from: self.layer2_object_index,
+                    before,
+                },
+            ])));
         }
         if self.paste_target == Some(PasteTarget::Layer2Object)
             && let Some(text) = pasted_text(ui)

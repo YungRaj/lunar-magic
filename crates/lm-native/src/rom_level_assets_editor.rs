@@ -844,14 +844,21 @@ impl RomLevelAssetsEditor {
                                     to,
                                 });
                             }
-                            Err(error) => self.error = Some(error.to_string()),
+                            Err(error) => {
+                                self.panels.reject_pending_edit();
+                                self.error = Some(error.to_string());
+                            }
                             Ok(()) => self.invalidate_after_asset_edit(),
                         }
                     } else {
+                        self.panels.reject_pending_edit();
                         self.error = Some("level-assets workspace is closed".into());
                     }
                 }
-                Ok(_) => self.error = Some("stale ROM workspace cannot accept more edits".into()),
+                Ok(_) => {
+                    self.panels.reject_pending_edit();
+                    self.error = Some("stale ROM workspace cannot accept more edits".into());
+                }
                 Err(error) => self.error = Some(error),
             }
         }

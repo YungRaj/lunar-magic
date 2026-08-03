@@ -263,6 +263,7 @@ impl NativeLevelAssetsEditor {
             &document.ownership,
         ) {
             self.error = Some(error.to_string());
+            self.panels.reject_pending_edit();
         } else {
             self.panels.invalidate();
         }

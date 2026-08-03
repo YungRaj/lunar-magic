@@ -1,4 +1,6 @@
-use super::{AggregatePanels, PasteTarget, index, pasted_text};
+use super::{
+    AggregatePanels, PasteTarget, PendingSelectionMove, index, move_before_indexes, pasted_text,
+};
 use crate::{level_editor_forms, native_clipboard, native_level_document_form};
 use eframe::egui;
 use lm_app::{NativeLevelAssetsControllerEdit, NativeLevelEdit};
@@ -103,6 +105,7 @@ impl AggregatePanels {
         object_semantic_fields(ui, &mut self.level_record);
         let mut action = None;
         let mut apply_object_fields = false;
+        let mut move_object = None;
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load").clicked() {
@@ -122,6 +125,29 @@ impl AggregatePanels {
                 .clicked()
             {
                 apply_object_fields = true;
+            }
+            if ui
+                .add_enabled(self.object_index > 0, egui::Button::new("Move up"))
+                .clicked()
+            {
+                move_object = move_before_indexes(
+                    self.object_index,
+                    level.layer1.objects.records.len(),
+                    false,
+                );
+            }
+            if ui
+                .add_enabled(
+                    self.object_index.saturating_add(1) < level.layer1.objects.records.len(),
+                    egui::Button::new("Move down"),
+                )
+                .clicked()
+            {
+                move_object = move_before_indexes(
+                    self.object_index,
+                    level.layer1.objects.records.len(),
+                    true,
+                );
             }
             if ui
                 .add_enabled(
@@ -156,6 +182,15 @@ impl AggregatePanels {
                     .object_field_edit(self.object_index)
                     .map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit])),
             );
+        }
+        if let Some((before, selected)) = move_object {
+            self.pending_selection_move = Some(PendingSelectionMove::Object(selected));
+            return Some(Ok(NativeLevelAssetsControllerEdit::Level(vec![
+                NativeLevelEdit::Objects(vec![ObjectEdit::MoveBefore {
+                    from: self.object_index,
+                    before,
+                }]),
+            ])));
         }
         if self.paste_target == Some(PasteTarget::Object)
             && let Some(text) = pasted_text(ui)
@@ -214,6 +249,7 @@ impl AggregatePanels {
         sprite_semantic_fields(ui, &mut self.level_record);
         let mut action = None;
         let mut apply_sprite_fields = false;
+        let mut move_sprite = None;
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load record").clicked() {
@@ -238,6 +274,23 @@ impl AggregatePanels {
                 .clicked()
             {
                 apply_sprite_fields = true;
+            }
+            if ui
+                .add_enabled(self.sprite_index > 0, egui::Button::new("Move up"))
+                .clicked()
+            {
+                move_sprite =
+                    move_before_indexes(self.sprite_index, level.sprites.tokens.len(), false);
+            }
+            if ui
+                .add_enabled(
+                    self.sprite_index.saturating_add(1) < level.sprites.tokens.len(),
+                    egui::Button::new("Move down"),
+                )
+                .clicked()
+            {
+                move_sprite =
+                    move_before_indexes(self.sprite_index, level.sprites.tokens.len(), true);
             }
             let selected = level.sprites.tokens.get(self.sprite_index);
             if ui
@@ -272,6 +325,15 @@ impl AggregatePanels {
                     )
                     .map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit])),
             );
+        }
+        if let Some((before, selected)) = move_sprite {
+            self.pending_selection_move = Some(PendingSelectionMove::Sprite(selected));
+            return Some(Ok(NativeLevelAssetsControllerEdit::Level(vec![
+                NativeLevelEdit::MoveSpriteBefore {
+                    from: self.sprite_index,
+                    before,
+                },
+            ])));
         }
         if self.paste_target == Some(PasteTarget::Sprite)
             && let Some(text) = pasted_text(ui)

@@ -3130,3 +3130,14 @@ forces a canonical reload, clamps selections to the new stream endpoint, and
 disables semantic fields when the selected value is absent or a control token.
 Focused lifecycle tests cover selection changes, preservation of unapplied
 values, control-token rejection, and canonical Layer 1/Layer 2 revision reloads.
+
+The aggregate Level and object-backed Layer 2 panels now expose bounded Move
+Up/Move Down priority actions for Layer 1 objects, Layer 2 objects, and native
+sprite tokens. They translate the selected row through the same pre-move
+`MoveBefore` indexing used by the pristine editor, so moving down skips the
+element's old slot and moving up inserts before the preceding element. The UI
+defers its selected-index change until the controller accepts the edit and
+clears the pending move on rejection, preventing failed batches from drifting
+selection. One aggregate regression reorders all three streams atomically,
+undoes/redoes the complete state, commits it, and reopens the exact priority
+order from ROM.

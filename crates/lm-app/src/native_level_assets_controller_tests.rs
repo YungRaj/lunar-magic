@@ -975,6 +975,111 @@ fn semantic_aggregate_object_and_sprite_fields_commit_and_reopen() {
 }
 
 #[test]
+fn aggregate_priority_moves_track_all_three_streams_and_reopen() {
+    let snapshot = snapshot();
+    let lengths = SpriteLengthTable::standard();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &lengths,
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let mut layer1_second = controller.assets().level.layer1.objects.records[0].clone();
+    layer1_second.set_parameter(0x77).unwrap();
+    let mut sprite_second = match &controller.assets().level.sprites.tokens[0] {
+        SpriteToken::Record(record) => record.clone(),
+        token => panic!("fixture requires a sprite record, got {token:?}"),
+    };
+    let mut sprite_fields = sprite_second.native_fields().unwrap();
+    sprite_fields.x = 0x0f;
+    sprite_second
+        .set_native_fields(sprite_fields, &lengths)
+        .unwrap();
+    let mut layer2_second = match controller.layer2().unwrap() {
+        NativeLayer2Data::Objects(objects) => objects.objects.records[0].clone(),
+        NativeLayer2Data::Tilemap(_) => panic!("fixture requires object-backed Layer 2"),
+    };
+    layer2_second.set_parameter(0x78).unwrap();
+    controller
+        .apply_edits(&[
+            NativeLevelAssetsControllerEdit::Level(vec![
+                NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                    index: 1,
+                    record: layer1_second.clone(),
+                }]),
+                NativeLevelEdit::InsertSprite {
+                    index: 1,
+                    token: SpriteToken::Record(sprite_second.clone()),
+                },
+            ]),
+            NativeLevelAssetsControllerEdit::Layer2Objects(vec![ObjectEdit::Insert {
+                index: 1,
+                record: layer2_second.clone(),
+            }]),
+        ])
+        .unwrap();
+    let before_moves_core = controller.assets().clone();
+    let before_moves_layer2 = controller.layer2().unwrap().clone();
+    controller
+        .apply_edits(&[
+            NativeLevelAssetsControllerEdit::Level(vec![
+                NativeLevelEdit::Objects(vec![ObjectEdit::MoveBefore { from: 1, before: 0 }]),
+                NativeLevelEdit::MoveSpriteBefore { from: 1, before: 0 },
+            ]),
+            NativeLevelAssetsControllerEdit::Layer2Objects(vec![ObjectEdit::MoveBefore {
+                from: 1,
+                before: 0,
+            }]),
+        ])
+        .unwrap();
+    assert_eq!(
+        controller.assets().level.layer1.objects.records[0],
+        layer1_second
+    );
+    assert_eq!(
+        controller.assets().level.sprites.tokens[0],
+        SpriteToken::Record(sprite_second)
+    );
+    let NativeLayer2Data::Objects(moved_objects) = controller.layer2().unwrap() else {
+        panic!("fixture requires object-backed Layer 2");
+    };
+    assert_eq!(moved_objects.objects.records[0], layer2_second);
+    assert_ne!(controller.layer2(), Some(&before_moves_layer2));
+    let moved_core = controller.assets().clone();
+    let moved_layer2 = controller.layer2().unwrap().clone();
+    assert!(controller.undo());
+    assert_eq!(controller.assets(), &before_moves_core);
+    assert_eq!(controller.layer2(), Some(&before_moves_layer2));
+    assert!(controller.redo());
+    assert_eq!(controller.assets(), &moved_core);
+    assert_eq!(controller.layer2(), Some(&moved_layer2));
+
+    let prepared = controller
+        .prepare_commit_with_layer2("aggregate priority moves", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("aggregate priority moves", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets_with_layer2(
+            0,
+            NativeLevelAssetsLayer2Layout {
+                core: layout(),
+                layer2: layer2_layout(),
+            },
+            &lengths,
+            &[false; 256],
+        )
+        .unwrap();
+    assert_eq!(reopened.core, moved_core);
+    assert_eq!(reopened.layer2, moved_layer2);
+}
+
+#[test]
 fn owned_aggregate_reclaims_four_payloads_keeps_direct_write_atomic_and_undoes() {
     let (snapshot, manifest) = tagged_snapshot();
     let mut controller = NativeLevelAssetsController::decode(

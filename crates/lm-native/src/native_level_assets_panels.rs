@@ -18,6 +18,13 @@ struct Layer2FillPattern {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingSelectionMove {
+    Object(usize),
+    Layer2Object(usize),
+    Sprite(usize),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PasteTarget {
     Object,
     Layer2Object,
@@ -65,11 +72,23 @@ pub(crate) struct AggregatePanels {
     exanimation_features: Option<ExAnimationFeatureOptions>,
     loaded_revision: Option<u64>,
     paste_target: Option<PasteTarget>,
+    pending_selection_move: Option<PendingSelectionMove>,
 }
 
 impl AggregatePanels {
     pub(crate) fn invalidate(&mut self) {
+        if let Some(pending) = self.pending_selection_move.take() {
+            match pending {
+                PendingSelectionMove::Object(index) => self.object_index = index,
+                PendingSelectionMove::Layer2Object(index) => self.layer2_object_index = index,
+                PendingSelectionMove::Sprite(index) => self.sprite_index = index,
+            }
+        }
         self.loaded_revision = None;
+    }
+
+    pub(crate) fn reject_pending_edit(&mut self) {
+        self.pending_selection_move = None;
     }
 
     pub(crate) fn show(
@@ -214,6 +233,24 @@ pub(super) fn index(ui: &mut egui::Ui, value: &mut usize, len: usize) {
     });
 }
 
+pub(super) const fn move_before_indexes(
+    selected: usize,
+    count: usize,
+    down: bool,
+) -> Option<(usize, usize)> {
+    if down {
+        if selected.saturating_add(1) < count {
+            Some((selected + 2, selected + 1))
+        } else {
+            None
+        }
+    } else if selected > 0 && selected < count {
+        Some((selected - 1, selected - 1))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,5 +329,25 @@ mod tests {
         layer2.objects.records[0] = object([0x0d, 0x0e, 0x0f]);
         panels.sync_layer2_object_form(&layer2, true);
         assert_eq!(panels.layer2_record.object, "0D 0E 0F");
+    }
+
+    #[test]
+    fn move_indexes_and_pending_selection_follow_native_before_semantics() {
+        assert_eq!(move_before_indexes(1, 4, false), Some((0, 0)));
+        assert_eq!(move_before_indexes(1, 4, true), Some((3, 2)));
+        assert_eq!(move_before_indexes(0, 4, false), None);
+        assert_eq!(move_before_indexes(3, 4, true), None);
+
+        let mut panels = AggregatePanels {
+            object_index: 1,
+            pending_selection_move: Some(PendingSelectionMove::Object(0)),
+            ..AggregatePanels::default()
+        };
+        panels.invalidate();
+        assert_eq!(panels.object_index, 0);
+        assert_eq!(panels.pending_selection_move, None);
+        panels.pending_selection_move = Some(PendingSelectionMove::Sprite(2));
+        panels.reject_pending_edit();
+        assert_eq!(panels.pending_selection_move, None);
     }
 }
