@@ -32,6 +32,14 @@ struct PreviewNudge {
     composition: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PreviewShortcut {
+    FlipHorizontal,
+    FlipVertical,
+    BringForward,
+    SendBackward,
+}
+
 impl PreviewBounds {
     fn for_parts(parts: &[SpriteAppearancePart]) -> Self {
         let mut bounds = Self {
@@ -75,7 +83,7 @@ impl OverworldAppearanceEditor {
         }
         ui.heading("Composition preview");
         ui.label(
-            "Click to select; arrows move one part, Alt+arrows move all parts. Shift changes either step to eight pixels.",
+            "Click to select; arrows move one part, Alt+arrows move all parts. Shift uses eight pixels; X/Y flip; Page Up/Down changes painter order.",
         );
         let (rect, response) = ui.allocate_exact_size(PREVIEW_SIZE, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
@@ -219,6 +227,11 @@ impl OverworldAppearanceEditor {
         } else {
             None
         };
+        let shortcut = if self.preview_drag.is_none() && response.has_focus() {
+            preview_shortcut(ui)
+        } else {
+            None
+        };
         response
             .on_hover_cursor(if self.preview_drag.is_some() {
                 egui::CursorIcon::Grabbing
@@ -235,6 +248,13 @@ impl OverworldAppearanceEditor {
         if let Some(nudge) = nudge
             && let Some(edit) = nudge_edit(definition, self.part_index, nudge)
         {
+            return Some(edit);
+        }
+        if let Some(shortcut) = shortcut
+            && let Some((edit, selected)) = shortcut_edit(definition, self.part_index, shortcut)
+        {
+            self.part_index = selected;
+            self.part_key = None;
             return Some(edit);
         }
         None
@@ -303,6 +323,81 @@ fn preview_nudge(ui: &mut egui::Ui) -> Option<PreviewNudge> {
         let down = input.consume_key(modifiers, egui::Key::ArrowDown);
         preview_nudge_value(modifiers.alt, step, left, right, up, down)
     })
+}
+
+fn preview_shortcut(ui: &mut egui::Ui) -> Option<PreviewShortcut> {
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        if modifiers.any() {
+            return None;
+        }
+        [
+            (egui::Key::X, PreviewShortcut::FlipHorizontal),
+            (egui::Key::Y, PreviewShortcut::FlipVertical),
+            (egui::Key::PageUp, PreviewShortcut::BringForward),
+            (egui::Key::PageDown, PreviewShortcut::SendBackward),
+        ]
+        .into_iter()
+        .find_map(|(key, shortcut)| input.consume_key(modifiers, key).then_some(shortcut))
+    })
+}
+
+fn shortcut_edit(
+    definition: &SpriteAppearanceDefinition,
+    part_index: usize,
+    shortcut: PreviewShortcut,
+) -> Option<(lm_app::OverworldAppearanceDocumentEdit, usize)> {
+    let mut part = definition.parts.get(part_index).copied()?;
+    let sprite_id = definition.sprite_id;
+    match shortcut {
+        PreviewShortcut::FlipHorizontal => {
+            part.x_flip = !part.x_flip;
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::ReplacePart {
+                    sprite_id,
+                    index: part_index,
+                    value: part,
+                },
+                part_index,
+            ))
+        }
+        PreviewShortcut::FlipVertical => {
+            part.y_flip = !part.y_flip;
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::ReplacePart {
+                    sprite_id,
+                    index: part_index,
+                    value: part,
+                },
+                part_index,
+            ))
+        }
+        PreviewShortcut::BringForward => {
+            let selected = part_index.checked_add(1)?;
+            if selected >= definition.parts.len() {
+                return None;
+            }
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::MovePartBefore {
+                    sprite_id,
+                    index: part_index,
+                    before: part_index.checked_add(2),
+                },
+                selected,
+            ))
+        }
+        PreviewShortcut::SendBackward => {
+            let selected = part_index.checked_sub(1)?;
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::MovePartBefore {
+                    sprite_id,
+                    index: part_index,
+                    before: Some(selected),
+                },
+                selected,
+            ))
+        }
+    }
 }
 
 fn preview_nudge_value(
@@ -484,6 +579,85 @@ mod tests {
         assert_eq!((tile.x_offset, tile.y_offset), (18, 12));
         assert_eq!(nudged_part(part(i16::MIN, 0), -1, 0), None);
         assert_eq!(nudged_part(part(0, i16::MAX), 0, 8), None);
+    }
+
+    #[test]
+    fn keyboard_flip_shortcuts_toggle_only_the_selected_attribute() {
+        let mut selected = part(10, 20);
+        selected.tile_index = 0xabcd;
+        selected.palette_index = 6;
+        selected.y_flip = true;
+        let definition = SpriteAppearanceDefinition {
+            sprite_id: 0x1234,
+            parts: vec![part(0, 0), selected],
+        };
+
+        let (horizontal, index) =
+            shortcut_edit(&definition, 1, PreviewShortcut::FlipHorizontal).unwrap();
+        let lm_app::OverworldAppearanceDocumentEdit::ReplacePart {
+            sprite_id,
+            index: replaced,
+            value,
+        } = horizontal
+        else {
+            panic!("horizontal flip must replace one part");
+        };
+        assert_eq!((sprite_id, replaced, index), (0x1234, 1, 1));
+        assert!(value.x_flip);
+        assert!(value.y_flip);
+        assert_eq!((value.tile_index, value.palette_index), (0xabcd, 6));
+        assert_eq!((value.x_offset, value.y_offset), (10, 20));
+
+        let (vertical, index) =
+            shortcut_edit(&definition, 1, PreviewShortcut::FlipVertical).unwrap();
+        let lm_app::OverworldAppearanceDocumentEdit::ReplacePart { value, .. } = vertical else {
+            panic!("vertical flip must replace one part");
+        };
+        assert_eq!(index, 1);
+        assert!(!value.x_flip);
+        assert!(!value.y_flip);
+    }
+
+    #[test]
+    fn painter_order_shortcuts_move_one_step_and_follow_selection() {
+        let definition = SpriteAppearanceDefinition {
+            sprite_id: 0x1234,
+            parts: vec![part(0, 0), part(8, 0), part(16, 0)],
+        };
+        assert_eq!(
+            shortcut_edit(&definition, 1, PreviewShortcut::BringForward),
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::MovePartBefore {
+                    sprite_id: 0x1234,
+                    index: 1,
+                    before: Some(3),
+                },
+                2,
+            ))
+        );
+        assert_eq!(
+            shortcut_edit(&definition, 1, PreviewShortcut::SendBackward),
+            Some((
+                lm_app::OverworldAppearanceDocumentEdit::MovePartBefore {
+                    sprite_id: 0x1234,
+                    index: 1,
+                    before: Some(0),
+                },
+                0,
+            ))
+        );
+        assert_eq!(
+            shortcut_edit(&definition, 2, PreviewShortcut::BringForward),
+            None
+        );
+        assert_eq!(
+            shortcut_edit(&definition, 0, PreviewShortcut::SendBackward),
+            None
+        );
+        assert_eq!(
+            shortcut_edit(&definition, 3, PreviewShortcut::FlipHorizontal),
+            None
+        );
     }
 
     #[test]
