@@ -6,7 +6,13 @@ use crate::{
     level_editor_forms,
 };
 use lm_app::{PaletteOwnershipFile, RevisionProfileControllers};
+use lm_graphics::{GraphicsFile4bpp, GraphicsInterchangeFile, IndexedTile};
+use lm_level::Map16SetFile;
+use lm_project::Project;
 use lm_rom::RomImage;
+
+const OVERWORLD_GRAPHICS_FILES: [usize; 4] = [0x1c, 0x1d, 0x1e, 0x1f];
+const TILES_PER_NATIVE_GRAPHICS_SLOT: usize = 0x80;
 
 impl RomOverworldEditor {
     pub(crate) fn is_open(&self) -> bool {
@@ -216,18 +222,69 @@ fn decode_loaded(
         .map_err(|error| error.to_string())?;
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
+    let assets = decode_overworld_assets(&profiled)?;
     Ok(Workspace {
         controller,
         profiled,
         slot: pending.slot,
         image,
         ownership,
+        assets,
     })
+}
+
+fn decode_overworld_assets(
+    profiled: &lm_app::ProfiledControllerSnapshot,
+) -> Result<crate::overworld_editor_render::OverworldAssets, String> {
+    let map16 = profiled
+        .profile
+        .decode_map16(&profiled.snapshot)
+        .map_err(|error| error.to_string())?;
+    let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
+        .map_err(|error| error.to_string())?;
+    let project = Project::new(image);
+    let mut tiles =
+        Vec::with_capacity(OVERWORLD_GRAPHICS_FILES.len() * TILES_PER_NATIVE_GRAPHICS_SLOT);
+    for file_number in OVERWORLD_GRAPHICS_FILES {
+        let slot = project
+            .load_graphics_file(file_number, profiled.profile.graphics)
+            .map_err(|error| format!("could not load overworld GFX{file_number:02X}: {error}"))?
+            .tiles;
+        append_overworld_graphics_slot(&mut tiles, file_number, slot)?;
+    }
+    Ok(crate::overworld_editor_render::OverworldAssets {
+        map16: Map16SetFile {
+            set: map16.set().clone(),
+        },
+        graphics: GraphicsInterchangeFile {
+            source_slot: u16::try_from(OVERWORLD_GRAPHICS_FILES[0]).unwrap_or_default(),
+            graphics: GraphicsFile4bpp { tiles },
+        },
+    })
+}
+
+fn append_overworld_graphics_slot(
+    destination: &mut Vec<IndexedTile>,
+    file_number: usize,
+    mut slot: Vec<IndexedTile>,
+) -> Result<(), String> {
+    if slot.len() > TILES_PER_NATIVE_GRAPHICS_SLOT {
+        return Err(format!(
+            "overworld GFX{file_number:02X} has {} tiles; expected at most {TILES_PER_NATIVE_GRAPHICS_SLOT}",
+            slot.len()
+        ));
+    }
+    slot.resize_with(TILES_PER_NATIVE_GRAPHICS_SLOT, || {
+        IndexedTile::new([0; IndexedTile::PIXEL_COUNT])
+    });
+    destination.extend(slot);
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_slot;
+    use super::{TILES_PER_NATIVE_GRAPHICS_SLOT, append_overworld_graphics_slot, parse_slot};
+    use lm_graphics::IndexedTile;
 
     #[test]
     fn configured_overworld_slot_is_bound_as_hexadecimal() {
@@ -236,5 +293,31 @@ mod tests {
         assert!(parse_slot("").is_err());
         assert!(parse_slot("10000").is_err());
         assert!(parse_slot("not-a-slot").is_err());
+    }
+
+    #[test]
+    fn native_overworld_graphics_slots_keep_vram_boundaries() {
+        let marked = IndexedTile::new([7; IndexedTile::PIXEL_COUNT]);
+        let mut tiles = Vec::new();
+        append_overworld_graphics_slot(&mut tiles, 0x1c, vec![marked.clone()]).unwrap();
+        append_overworld_graphics_slot(&mut tiles, 0x1d, vec![marked.clone(); 2]).unwrap();
+        assert_eq!(tiles.len(), TILES_PER_NATIVE_GRAPHICS_SLOT * 2);
+        assert_eq!(tiles[0], marked);
+        assert_eq!(
+            tiles[TILES_PER_NATIVE_GRAPHICS_SLOT],
+            IndexedTile::new([7; IndexedTile::PIXEL_COUNT])
+        );
+        assert!(tiles[1].pixels().iter().all(|pixel| *pixel == 0));
+        assert!(
+            append_overworld_graphics_slot(
+                &mut tiles,
+                0x1e,
+                vec![
+                    IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+                    TILES_PER_NATIVE_GRAPHICS_SLOT + 1
+                ],
+            )
+            .is_err()
+        );
     }
 }

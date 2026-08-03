@@ -994,6 +994,12 @@ revision to still match the live project before ownership is decoded or a ROM-ba
 exposed, preventing a delayed file read from binding to a newer ROM state. The overworld workflow
 additionally retains its validated hexadecimal profile slot across loading and restores the
 configuration request after a read or decode failure.
+The installed complete-overworld workspace also materializes the native SMW overworld graphics
+slots `GFX1C` through `GFX1F` in their four consecutive `$80`-tile VRAM regions and pairs them
+with the profile-decoded complete Map16 set. Its exact staged nine-domain aggregate is rendered as
+a nearest-neighbor map canvas; clicking a rendered tile updates the same Layer 1/Layer 2 coordinate
+and hexadecimal Map16 form used by the typed edit transaction. Event-reveal preview count and every
+successful edit invalidate the raster key, while render failure leaves the property editor usable.
 Every ownership-backed reclamation commit—native level assets, Map16, graphics, palette,
 ExAnimation, and overworld—uses a separate asynchronous `LMRATS01` loader. The loader binds the
 manifest request to the current project revision, rejects stale completion before canonical

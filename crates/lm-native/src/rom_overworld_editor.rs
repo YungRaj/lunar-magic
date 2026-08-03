@@ -1,8 +1,10 @@
 use crate::{
-    document_loader::DocumentLoader, level_editor_forms,
+    document_loader::DocumentLoader,
+    level_editor_forms,
     overworld_editor_animation::OverworldAnimationPanel,
     overworld_editor_palette::OverworldPalettePanel,
     overworld_editor_records::OverworldRecordPanels,
+    overworld_editor_render::{self, OverworldAssets},
 };
 use eframe::egui;
 use lm_app::{
@@ -46,6 +48,7 @@ struct Workspace {
     slot: u16,
     image: lm_rom::RomImage,
     ownership: PaletteOwnership,
+    assets: OverworldAssets,
 }
 
 #[derive(Default)]
@@ -61,6 +64,9 @@ pub(crate) struct RomOverworldEditor {
     y: usize,
     tile: String,
     loaded: Option<(u64, usize, usize, usize)>,
+    completed_reveals: usize,
+    rendered_key: Option<(u64, usize)>,
+    texture: Option<egui::TextureHandle>,
     search_start: String,
     search_end: String,
     error: Option<String>,
@@ -99,6 +105,7 @@ impl RomOverworldEditor {
         };
         if self.workspace.is_some() {
             self.load_tile();
+            self.refresh_texture(context);
             egui::Window::new("ROM Complete Overworld Editor")
                 .default_size([820.0, 720.0])
                 .vscroll(true)
@@ -135,6 +142,7 @@ impl RomOverworldEditor {
             );
         }
         self.complete_file_controls(ui, stale, revision);
+        self.world_canvas(ui, shape);
         self.layer_tile_controls(ui, shape, stale);
         ui.separator();
         ui.horizontal(|ui| {
@@ -198,6 +206,73 @@ impl RomOverworldEditor {
                     tile,
                 }),
                 Err(error) => self.error = Some(error),
+            }
+        }
+    }
+
+    fn world_canvas(&mut self, ui: &mut egui::Ui, shape: CompleteOverworldShape) {
+        let reveal_count = self.workspace.as_ref().map_or(0, |workspace| {
+            workspace.controller.data().event_reveals.entries.len()
+        });
+        if ui
+            .add(
+                egui::Slider::new(&mut self.completed_reveals, 0..=reveal_count)
+                    .text("Completed event reveals"),
+            )
+            .changed()
+        {
+            self.rendered_key = None;
+        }
+        let Some(texture) = self.texture.clone() else {
+            ui.label("Overworld preview unavailable; property editing remains available.");
+            return;
+        };
+        egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
+            let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click()));
+            if response.clicked()
+                && let Some(position) = response.interact_pointer_pos()
+                && let Some((x, y)) = overworld_editor_render::selected_tile(
+                    response.rect,
+                    position,
+                    shape.width,
+                    shape.height,
+                )
+            {
+                self.x = x;
+                self.y = y;
+                self.loaded = None;
+                self.load_tile();
+            }
+        });
+    }
+
+    fn refresh_texture(&mut self, context: &egui::Context) {
+        let Some(workspace) = self.workspace.as_ref() else {
+            return;
+        };
+        let key = (workspace.controller.revision(), self.completed_reveals);
+        if self.rendered_key == Some(key) {
+            return;
+        }
+        let file = CompleteOverworldFile {
+            source_slot: workspace.slot,
+            shape: workspace.profiled.profile.overworld_shape,
+            data: workspace.controller.data().clone(),
+        };
+        match overworld_editor_render::render_texture(
+            context,
+            &file,
+            &workspace.assets,
+            self.completed_reveals,
+        ) {
+            Ok(texture) => {
+                self.texture = Some(texture);
+                self.rendered_key = Some(key);
+            }
+            Err(error) => {
+                self.texture = None;
+                self.rendered_key = Some(key);
+                self.error = Some(format!("could not render native overworld: {error}"));
             }
         }
     }
@@ -298,6 +373,7 @@ impl RomOverworldEditor {
 
     fn invalidate(&mut self) {
         self.loaded = None;
+        self.rendered_key = None;
         self.records.invalidate();
         self.animation.invalidate();
     }
