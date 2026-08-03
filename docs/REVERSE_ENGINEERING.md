@@ -2302,6 +2302,36 @@ RATS owner, repairs the checksum, and performs a semantic reopen. The
 one-plane-to-two-plane update, allocation-independent oracle comparison, and input-ROM
 immutability; the application command exposes the same undoable operation.
 
+#### Main overworld Layer 1/2 runtime boundary
+
+The `$740`-byte records above are not the main playable overworld map. They belong to the shared
+title/overworld-style scratch tilemap path and must not be used as evidence that an edited main map
+is consumed by SMW gameplay.
+
+The main overworld editor entry point `InitializeOverworldEditorModel` at `00544570` initializes a
+`$4000`-byte working plane at `00D94D98` and a separate `$9000`-byte working region at `00D98D98`,
+then calls `LoadAllOverworldEditorData` at `004BF360`. The latter opens the ROM and dispatches the
+Map16, event, ExAnimation, metadata, name, message, sprite, and expansion-state loaders. Its paired
+`SaveAllOverworldEditorData` at `004BF550` validates the aggregate, releases each proven owner, and
+commits those same subsystems transactionally. `SaveActiveOverworldEditorDataSet` at `00544800`
+only selects the active editor backing set; its name does not establish a standalone ROM format.
+
+`LoadInterleavedByteTableStreams` (`004B5CF0`) and `CommitInterleavedByteTableStreams`
+(`004B5E00`) split a `$4000`-byte editor table into even and odd `$2000`-byte streams, compress them
+independently, allocate them together, and publish two packed pointers. Those routines also
+participate in the already-authenticated special-event runtime family, so their shape alone is
+insufficient to identify the main Layer 2 map. A game-facing main-map implementation must also
+prove the caller's working-buffer identity, the active SMW-US descriptor operands, the installed
+loader bytes, and a gameplay read of edited cells.
+
+Accordingly, `CompleteOverworldRomLayout` remains a profile-described editor/container boundary.
+The ignored Snes9x complete-overworld smoke gate proves allocation, transaction, checksum,
+reopening, and emulator initialization only; its extension pointer tables are deliberately outside
+the stock gameplay call graph. Do not cite that gate as proof of rendered Layer 1/2 behavior. The
+next runtime milestone is complete only when a typed SMW-US locator rejects unknown or partial
+installations, an edited cell semantically reopens through that locator, and Snes9x reaches the map
+code that reads the replacement data.
+
 ### Title-screen recording and playback
 
 `ExtractTitleScreenRecordingFromSramBuffer` at `0048F340` reads a 128-KiB SRAM image. The movement
