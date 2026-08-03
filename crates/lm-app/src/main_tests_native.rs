@@ -530,6 +530,76 @@ fn terminal_level_edit_script_covers_objects_and_native_sprite_tokens_atomically
 }
 
 #[test]
+fn terminal_custom_time_script_is_orientation_aware_checksum_valid_and_undoable() {
+    let profile = lm_profile::test_support::profile();
+    let mut app = AppState::default();
+    app.load_rom(profiled_rom(&profile)).unwrap();
+    app.dispatch(Command::InstallRevisionProfile(Box::new(profile.clone())))
+        .unwrap();
+    let before = app.project().unwrap().save_snapshot();
+    let directory = std::env::temp_dir().join(format!("lm-app-custom-time-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    let script = directory.join("custom time edits.lmedit");
+
+    fs::write(&script, "LMLEDIT1\ncustom-time abc true\n").unwrap();
+    execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
+    let horizontal = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    let settings = lm_level::CustomTimeSettings::new(0xabc, true).unwrap();
+    assert_eq!(horizontal.layer1.objects.custom_time(false), Some(settings));
+    let horizontal_record = horizontal.layer1.objects.records.last().unwrap().encoded();
+    assert_eq!(
+        horizontal
+            .layer1
+            .objects
+            .records
+            .last()
+            .unwrap()
+            .command_id(),
+        0x28
+    );
+    assert!(app
+        .project()
+        .unwrap()
+        .identity
+        .as_ref()
+        .unwrap()
+        .checksum_matches());
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(&script, "LMLEDIT1\nheader mode 03\ncustom-time abc true\n").unwrap();
+    execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
+    let vertical = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    assert!(vertical.layer1.header.is_vertical());
+    assert_eq!(vertical.layer1.objects.custom_time(true), Some(settings));
+    let vertical_record = vertical.layer1.objects.records.last().unwrap().encoded();
+    assert_ne!(vertical_record, horizontal_record);
+    assert!(app
+        .project()
+        .unwrap()
+        .identity
+        .as_ref()
+        .unwrap()
+        .checksum_matches());
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(&script, "LMLEDIT1\ncustom-time 000 false\n").unwrap();
+    assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn late_script_edit_failure_preserves_revision_and_native_level() {
     let profile = lm_profile::test_support::profile();
     let mut app = AppState::default();

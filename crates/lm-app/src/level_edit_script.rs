@@ -2,8 +2,8 @@
 
 use lm_app::NativeLevelEdit;
 use lm_level::{
-    Layer1VerticalScrollMode, LegacyHeaderEdit, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
-    SpriteRecord, SpriteToken,
+    CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
+    ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteRecord, SpriteToken,
 };
 use std::fmt;
 
@@ -56,6 +56,10 @@ pub enum LevelEditScriptError {
     InvalidSpriteKind {
         line: usize,
         kind: String,
+    },
+    CustomTime {
+        line: usize,
+        error: CustomTimeError,
     },
 }
 
@@ -110,6 +114,11 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
     let words: Vec<_> = content.split_whitespace().collect();
     match words.as_slice() {
         ["header", field, value] => parse_header(line, field, value),
+        ["custom-time", "disabled"] => Ok(NativeLevelEdit::SetCustomTime(None)),
+        ["custom-time", value, force_reset] => Ok(NativeLevelEdit::SetCustomTime(Some(
+            CustomTimeSettings::new(hex_word(line, value)?, boolean(line, force_reset)?)
+                .map_err(|error| LevelEditScriptError::CustomTime { line, error })?,
+        ))),
         ["object", "insert", index, bytes] => {
             Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
                 index: decimal(line, index)?,
@@ -178,7 +187,12 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
         ])),
         ["sprite-header", value] => Ok(NativeLevelEdit::SetSpriteHeader(hex_byte(line, value)?)),
         ["sprite", command @ ..] => parse_sprite_command(line, command),
-        [command, ..] if !matches!(*command, "header" | "object" | "sprite-header" | "sprite") => {
+        [command, ..]
+            if !matches!(
+                *command,
+                "header" | "custom-time" | "object" | "sprite-header" | "sprite"
+            ) =>
+        {
             Err(LevelEditScriptError::UnknownCommand {
                 line,
                 command: (*command).into(),
@@ -384,9 +398,10 @@ mod tests {
             sprite move 2 0\n\
             sprite sort-screen 0\n\
             sprite relocate-expanded 0 04 03 00A7\n\
-            sprite remove 1\n";
+            sprite remove 1\n\
+            custom-time abc true\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 21);
+        assert_eq!(edits.len(), 22);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert_eq!(
             edits[1],
@@ -453,6 +468,10 @@ mod tests {
                 ..
             }
         ));
+        assert_eq!(
+            edits[21],
+            NativeLevelEdit::SetCustomTime(Some(CustomTimeSettings::new(0xabc, true).unwrap()))
+        );
     }
 
     #[test]
@@ -467,6 +486,8 @@ mod tests {
             "LMLEDIT1\nsprite insert 0 mystery 00\n",
             "LMLEDIT1\nunknown x\n",
             "LMLEDIT1\nheader layer1-scroll 04\n",
+            "LMLEDIT1\ncustom-time 000 false\n",
+            "LMLEDIT1\ncustom-time 1000 true\n",
         ] {
             assert!(parse(script).is_err(), "accepted {script:?}");
         }
@@ -504,6 +525,19 @@ mod tests {
                 NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::Layer1VerticalScroll(
                     Layer1VerticalScrollMode::NoneVerticalOrHorizontal,
                 )),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_semantic_custom_time_enable_and_disable() {
+        assert_eq!(
+            parse("LMLEDIT1\ncustom-time abc true\ncustom-time disabled\n").unwrap(),
+            [
+                NativeLevelEdit::SetCustomTime(
+                    Some(CustomTimeSettings::new(0xabc, true).unwrap(),)
+                ),
+                NativeLevelEdit::SetCustomTime(None),
             ]
         );
     }

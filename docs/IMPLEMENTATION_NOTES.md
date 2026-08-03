@@ -1029,6 +1029,11 @@ insert/replace/remove/move plus typed command-ID, parameter, coordinate-nibble, 
 edits and exact packed screen-jump targets; sprite-header replacement;
 and native sprite-token
 insert/replace/remove/move for raw records, expanded screen changes, and expanded control tokens.
+`custom-time VALUE FORCE_RESET` accepts a hexadecimal 12-bit timer plus canonical boolean and
+`custom-time disabled` removes the bypass. The typed constructor rejects `$1000+` and the
+non-persistable zero-without-force form before an edit escapes; serialization uses the staged
+header's horizontal or vertical nibble order and collapses existing command-`$28` duplicates only
+when this explicit semantic edit is applied.
 Indexes are decimal, field and token values are hexadecimal, and raw records use contiguous hex.
 For example:
 
@@ -3370,6 +3375,10 @@ its force-reset bit are the single surviving terminal record. Repeating the same
 after changing the imported header to vertical mode `$03` produces Lunar Magic's swapped-nibble
 vertical `$28` bytes exactly, proving orientation comes from the imported level rather than the
 destination's previous mode.
+The `LMLEDIT1` semantic `custom-time` command shares this exact setter. A shell integration test
+creates `$ABC` horizontal and vertical forms, requires their raw records to differ while both
+decode to the same typed value, verifies checksum-valid reopen and byte-exact undo for each, and
+proves zero-without-force rejection leaves the complete ROM unchanged.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and

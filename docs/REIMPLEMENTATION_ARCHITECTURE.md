@@ -547,6 +547,9 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   Both `LMLEDIT1` and the focused `level-header` command expose the typed four-way Layer 1
   vertical-scroll mode, reject raw values above 3, and preserve the object tileset plus both
   unrelated high bits in the shared header byte.
+  `LMLEDIT1` also exposes custom time as a semantic enable/disable operation. It delegates to the
+  orientation-aware command-`$28` setter, so scripts cannot manufacture malformed raw control
+  bytes and a preceding mode edit in the same batch determines the canonical nibble order.
 - A separate bounded `LMM16ED1` parser drives the complete Map16 controller without coupling its
   grammar to level records. Tile, quadrant, and Acts Like changes all pass through whole-workspace
   graph validation and the same profile-wide allocation protection before one prepared commit.
