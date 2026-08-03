@@ -294,6 +294,19 @@ impl ObjectForm {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CanvasEntitySelection {
+    Layer1Object,
+    Layer2Object,
+    Sprite,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CanvasEntityShortcut {
+    Duplicate,
+    Remove,
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
@@ -326,6 +339,7 @@ pub(crate) struct VanillaLevelEditor {
     preview_camera_minor_offset: i16,
     initial_vertical_scroll_tiles: Option<u16>,
     placement_mode: Option<CanvasPlacementMode>,
+    canvas_entity_selection: Option<CanvasEntitySelection>,
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
@@ -1249,6 +1263,7 @@ impl VanillaLevelEditor {
         custom_sprites: Option<&lm_level::SscResolvedTable>,
     ) {
         self.pending_layer2_mode_reset = None;
+        self.canvas_entity_selection = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
             self.controller = None;
             self.entrance_controller = None;
@@ -1441,6 +1456,7 @@ impl VanillaLevelEditor {
         self.dragging_layer2_object = None;
         self.resizing_object = None;
         self.resizing_layer2_object = None;
+        self.canvas_entity_selection = None;
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1849,6 +1865,8 @@ impl VanillaLevelEditor {
         };
         if self.placement_mode.is_some() {
             ui.label("Click a canvas tile to place the values from the matching editor below.");
+        } else {
+            ui.label("Select or drag an object/enemy; Insert duplicates the selection and Delete removes it.");
         }
         let audit_scroll = visual_smoke_editor_scroll_column().is_some()
             || visual_smoke_editor_scroll_row().is_some();
@@ -2456,6 +2474,9 @@ impl VanillaLevelEditor {
         vertical: bool,
         visibility: crate::application::LevelViewVisibility,
     ) {
+        if response.clicked() || response.drag_started() {
+            response.request_focus();
+        }
         if response.clicked()
             && let Some(mode) = self.placement_mode
             && placement_mode_visible(mode, visibility)
@@ -2482,6 +2503,7 @@ impl VanillaLevelEditor {
             && let Some(record) = records.get(index)
         {
             self.selected_object = index;
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
             self.object_form = ObjectForm::from_record(record);
             self.object_placement_template = Some(record.clone());
         }
@@ -2491,6 +2513,7 @@ impl VanillaLevelEditor {
             && let Some(record) = layer2_records.get(index)
         {
             self.selected_layer2_object = index;
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
             self.layer2_object_form = ObjectForm::from_record(record);
             self.layer2_object_placement_template = Some(record.clone());
         }
@@ -2513,6 +2536,7 @@ impl VanillaLevelEditor {
             && let Some(controller) = &self.controller
         {
             self.selected_sprite = index;
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
             self.sprite_form = SpriteForm::from_token(
                 controller.level().sprites.header,
                 controller.level().sprites.tokens.get(index),
@@ -2527,6 +2551,7 @@ impl VanillaLevelEditor {
         {
             self.resizing_object = Some(index);
             self.selected_object = index;
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
             if let Some(record) = records.get(index) {
                 self.object_form = ObjectForm::from_record(record);
                 self.object_placement_template = Some(record.clone());
@@ -2538,6 +2563,7 @@ impl VanillaLevelEditor {
         {
             self.dragging_object = Some(index);
             self.selected_object = index;
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
             self.object_form = ObjectForm::from_record(record);
             self.object_placement_template = Some(record.clone());
         }
@@ -2548,6 +2574,7 @@ impl VanillaLevelEditor {
         {
             self.resizing_layer2_object = Some(index);
             self.selected_layer2_object = index;
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
             if let Some(record) = layer2_records.get(index) {
                 self.layer2_object_form = ObjectForm::from_record(record);
                 self.layer2_object_placement_template = Some(record.clone());
@@ -2560,6 +2587,7 @@ impl VanillaLevelEditor {
         {
             self.dragging_layer2_object = Some(index);
             self.selected_layer2_object = index;
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
             self.layer2_object_form = ObjectForm::from_record(record);
             self.layer2_object_placement_template = Some(record.clone());
         }
@@ -2580,6 +2608,158 @@ impl VanillaLevelEditor {
             {
                 self.move_layer2_object_to_canvas(index, position, rect, cell, vertical);
             }
+        }
+        if self.dragging_object.is_none()
+            && self.dragging_layer2_object.is_none()
+            && self.dragging_sprite.is_none()
+            && self.resizing_object.is_none()
+            && self.resizing_layer2_object.is_none()
+            && let Some(shortcut) = canvas_entity_shortcut(response)
+        {
+            self.apply_canvas_entity_shortcut(shortcut);
+        }
+    }
+
+    fn apply_canvas_entity_shortcut(&mut self, shortcut: CanvasEntityShortcut) {
+        let Some(selection) = self.canvas_entity_selection else {
+            return;
+        };
+        match (selection, shortcut) {
+            (CanvasEntitySelection::Layer1Object, CanvasEntityShortcut::Duplicate) => {
+                let Some(record) = self.controller.as_ref().and_then(|controller| {
+                    controller
+                        .level()
+                        .layer1
+                        .objects
+                        .records
+                        .get(self.selected_object)
+                        .cloned()
+                }) else {
+                    return;
+                };
+                let index = self.selected_object.saturating_add(1);
+                let previous = self.selected_object;
+                self.selected_object = index;
+                self.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                    index,
+                    record,
+                }])));
+                if self.error.is_some() {
+                    self.selected_object = previous;
+                    self.reload_object_form();
+                }
+            }
+            (CanvasEntitySelection::Layer1Object, CanvasEntityShortcut::Remove) => {
+                self.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Remove {
+                    index: self.selected_object,
+                }])));
+            }
+            (CanvasEntitySelection::Layer2Object, CanvasEntityShortcut::Duplicate) => {
+                let Some(record) = self.controller.as_ref().and_then(|controller| {
+                    let lm_level::NativeLayer2Data::Objects(layer2) = controller.layer2()? else {
+                        return None;
+                    };
+                    layer2
+                        .objects
+                        .records
+                        .get(self.selected_layer2_object)
+                        .cloned()
+                }) else {
+                    return;
+                };
+                let index = self.selected_layer2_object.saturating_add(1);
+                let Some(controller) = self.controller.as_mut() else {
+                    return;
+                };
+                match controller.apply_layer2_object_edits(&[ObjectEdit::Insert { index, record }])
+                {
+                    Ok(()) => {
+                        self.selected_layer2_object = index;
+                        self.reload_layer2_object_form();
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            (CanvasEntitySelection::Layer2Object, CanvasEntityShortcut::Remove) => {
+                let index = self.selected_layer2_object;
+                let Some(controller) = self.controller.as_mut() else {
+                    return;
+                };
+                match controller.apply_layer2_object_edits(&[ObjectEdit::Remove { index }]) {
+                    Ok(()) => {
+                        self.reload_layer2_object_form();
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+            (CanvasEntitySelection::Sprite, CanvasEntityShortcut::Duplicate) => {
+                let Some(token) = self.controller.as_ref().and_then(|controller| {
+                    controller
+                        .level()
+                        .sprites
+                        .tokens
+                        .get(self.selected_sprite)
+                        .cloned()
+                }) else {
+                    return;
+                };
+                self.insert_canvas_sprite_token(token);
+            }
+            (CanvasEntitySelection::Sprite, CanvasEntityShortcut::Remove) => {
+                let index = self.selected_sprite;
+                let Some(controller) = self.controller.as_mut() else {
+                    return;
+                };
+                match controller.apply_edits(&[NativeLevelEdit::RemoveSprite { index }]) {
+                    Ok(()) => {
+                        self.selected_sprite = self
+                            .selected_sprite
+                            .min(controller.level().sprites.tokens.len().saturating_sub(1));
+                        self.sprite_form = SpriteForm::from_token(
+                            controller.level().sprites.header,
+                            controller.level().sprites.tokens.get(self.selected_sprite),
+                        );
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+            }
+        }
+    }
+
+    fn insert_canvas_sprite_token(&mut self, token: SpriteToken) {
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let index = self.selected_sprite.saturating_add(1);
+        let selected = if controller.level().sprites.expanded {
+            index
+        } else {
+            let mut predicted = controller.level().sprites.clone();
+            if let Err(error) = predicted.insert(index, token.clone()) {
+                self.error = Some(error.to_string());
+                return;
+            }
+            match predicted.sort_legacy_records_by_screen(index) {
+                Ok(selected) => selected,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            }
+        };
+        match controller.apply_edits(&[NativeLevelEdit::InsertSprite { index, token }]) {
+            Ok(()) => {
+                self.selected_sprite = selected;
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.get(selected),
+                );
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
         }
     }
 
@@ -4636,6 +4816,25 @@ impl VanillaLevelEditor {
             self.move_sprite(token_count, true);
         }
     }
+}
+
+fn canvas_entity_shortcut(response: &egui::Response) -> Option<CanvasEntityShortcut> {
+    if !response.has_focus() {
+        return None;
+    }
+    response.ctx.input_mut(|input| {
+        let modifiers = input.modifiers;
+        if modifiers.any() {
+            return None;
+        }
+        if input.consume_key(modifiers, egui::Key::Insert) {
+            Some(CanvasEntityShortcut::Duplicate)
+        } else if input.consume_key(modifiers, egui::Key::Delete) {
+            Some(CanvasEntityShortcut::Remove)
+        } else {
+            None
+        }
+    })
 }
 
 fn mode_change_resets_layer2(source_mode: u8, target_mode: u8, layer2_loaded: bool) -> bool {
@@ -10311,6 +10510,29 @@ mod tests {
         );
         editor.layer2_object_form = ObjectForm::from_record(&template);
         editor.layer2_object_placement_template = Some(template.clone());
+        let shortcut_baseline = match editor.controller.as_ref().unwrap().layer2().unwrap() {
+            lm_level::NativeLayer2Data::Objects(objects) => objects.objects.clone(),
+            lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+        };
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Duplicate);
+        assert_eq!(
+            match editor.controller.as_ref().unwrap().layer2().unwrap() {
+                lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
+                lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+            },
+            shortcut_baseline.records.len() + 1
+        );
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Remove);
+        assert_eq!(
+            match editor.controller.as_ref().unwrap().layer2().unwrap() {
+                lm_level::NativeLayer2Data::Objects(objects) => &objects.objects,
+                lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
+            },
+            &shortcut_baseline
+        );
+        editor.layer2_object_form = ObjectForm::from_record(&template);
+        editor.layer2_object_placement_template = Some(template.clone());
         let before_button_insert = match editor.controller.as_ref().unwrap().layer2().unwrap() {
             lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
             lm_level::NativeLayer2Data::Tilemap(_) => unreachable!(),
@@ -13015,6 +13237,80 @@ mod tests {
         };
         assert_eq!(record.encoded, vec![0xdb, 0x3e, 0xa6]);
         assert_eq!(record.native_fields().unwrap(), fields);
+    }
+
+    #[test]
+    fn canvas_entity_shortcuts_duplicate_and_remove_objects_and_sprites_exactly() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+
+        let original_objects = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .clone();
+        editor.selected_object = 1;
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Duplicate);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .layer1
+                .objects
+                .records
+                .len(),
+            original_objects.records.len() + 1
+        );
+        assert_eq!(editor.selected_object, 2);
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Remove);
+        assert_eq!(
+            editor.controller.as_ref().unwrap().level().layer1.objects,
+            original_objects
+        );
+
+        let original_sprites = editor.controller.as_ref().unwrap().level().sprites.clone();
+        editor.selected_sprite = original_sprites
+            .tokens
+            .iter()
+            .position(|token| matches!(token, SpriteToken::Record(_)))
+            .unwrap();
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Duplicate);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .sprites
+                .tokens
+                .len(),
+            original_sprites.tokens.len() + 1
+        );
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Remove);
+        assert_eq!(
+            editor.controller.as_ref().unwrap().level().sprites,
+            original_sprites
+        );
     }
 
     #[test]
