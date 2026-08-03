@@ -298,6 +298,16 @@ impl MwlEditor {
                 );
                 ui.end_row();
             });
+            ui.separator();
+            ui.heading("Sprite spawning");
+            ui.add(
+                egui::Slider::new(&mut self.form.sprite_vertical_spawn_range, 0..=3)
+                    .text("Vertical spawn range for horizontal levels"),
+            );
+            ui.checkbox(
+                &mut self.form.sprite_smart_spawn,
+                "Enable Smart Spawn (spawn on scroll)",
+            );
         });
     }
 

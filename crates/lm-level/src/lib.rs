@@ -101,7 +101,7 @@ pub use mwl::{
     Layer2ScrollSettings, Layer2ScrollSettingsError, MwlError, MwlFile, MwlLayer2Descriptor,
     MwlLayer2DescriptorError, MwlLayer2Section, MwlLevelHeaderSection, MwlMainEntranceSettings,
     MwlMidwayEntranceSettings, MwlPaletteSection, MwlPaletteSectionError, MwlPayloadSection,
-    MwlSection, MwlSectionKind,
+    MwlSection, MwlSectionKind, SpriteSpawnRangeError, SpriteSpawnSettings,
 };
 pub use native_file::{NativeLevelFile, NativeLevelFileError, StreamKind};
 pub use native_layer2::{

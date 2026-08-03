@@ -3172,6 +3172,13 @@ native form keeps all document workspaces on that interpretation and reloads
 canonical controller state after edits and history navigation. Focused model/workspace coverage
 rejects memory setting `$13` and preserves `$20`, while an application-backed regression exercises
 edit, undo/redo, checksum repair, exact ROM reopen, and ROM-history undo.
+The adjacent recovered properties remain in their actual independent storage domains. Binary MWL
+header byte 6 now has a lossless typed view whose low two bits select the horizontal-level vertical
+spawn range and whose bit 2 enables Smart Spawn; its five shared Lfix3 flags survive semantic edits,
+canonical reopen, and whole-document history. The beyond-boundary air/water choice is expanded
+settings word 8 bit `$4000`, as proved by Lunar Magic's packed-high-nibble helper. Its installed
+aggregate control preserves the low 12-bit GFX selector and all other high flags, commits through
+the ordinary checksum-repaired aggregate mutation, reopens semantically, and undoes exactly.
 If no upper-Y/control token or escaped `$FF` record remains, Rust clears header bit `$20`, switches
 to the one-byte legacy `$FF` terminator, and permits the saved level to reopen through the newly
 selected grammar; inserting a token that requires expanded grammar performs the reciprocal

@@ -2,7 +2,7 @@ use crate::level_editor_forms;
 use lm_app::MwlDocumentEdit;
 use lm_level::{
     Layer2ScrollSettings, MwlFile, MwlLevelHeaderSection, MwlMainEntranceSettings,
-    MwlMidwayEntranceSettings, MwlSectionKind,
+    MwlMidwayEntranceSettings, MwlSectionKind, SpriteSpawnSettings,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -17,6 +17,9 @@ pub(crate) struct MwlForm {
     pub(crate) layer2_horizontal_scroll: u8,
     pub(crate) layer2_vertical_scroll: u8,
     loaded_layer2_scroll: Option<Layer2ScrollSettings>,
+    pub(crate) sprite_vertical_spawn_range: u8,
+    pub(crate) sprite_smart_spawn: bool,
+    loaded_sprite_spawn: Option<SpriteSpawnSettings>,
     pub(crate) section_index: usize,
     pub(crate) section_bytes: String,
 }
@@ -76,6 +79,10 @@ impl MwlForm {
             }) => (true, 0, horizontal, vertical),
             None => (false, 0, 0, 0),
         };
+        let sprite_spawn = header
+            .as_ref()
+            .ok()
+            .map(MwlLevelHeaderSection::sprite_spawn_settings);
         Self {
             flags: format!("{:08X}", file.flags),
             attribution: level_editor_forms::format_bytes(&file.attribution),
@@ -87,6 +94,10 @@ impl MwlForm {
             layer2_horizontal_scroll,
             layer2_vertical_scroll,
             loaded_layer2_scroll: layer2_scroll,
+            sprite_vertical_spawn_range: sprite_spawn
+                .map_or(0, SpriteSpawnSettings::vertical_range),
+            sprite_smart_spawn: sprite_spawn.is_some_and(SpriteSpawnSettings::smart_spawn),
+            loaded_sprite_spawn: sprite_spawn,
             ..Self::default()
         }
     }
@@ -163,6 +174,14 @@ impl MwlForm {
             .is_some_and(|loaded| loaded != layer2_scroll)
         {
             edits.push(MwlDocumentEdit::SetLayer2Scroll(layer2_scroll));
+        }
+        if let Some(loaded) = self.loaded_sprite_spawn {
+            let sprite_spawn = loaded
+                .with_properties(self.sprite_vertical_spawn_range, self.sprite_smart_spawn)
+                .map_err(|error| error.to_string())?;
+            if sprite_spawn != loaded {
+                edits.push(MwlDocumentEdit::SetSpriteSpawnSettings(sprite_spawn));
+            }
         }
         Ok(edits)
     }
@@ -257,6 +276,19 @@ mod tests {
                     vertical: 0x12
                 })
             )
+        }));
+    }
+
+    #[test]
+    fn spawn_form_preserves_shared_header_flags_and_emits_one_semantic_edit() {
+        let mut file = file();
+        file.sections[0].bytes[6] = 0xe1;
+        let mut form = MwlForm::load_header(&file);
+        form.sprite_vertical_spawn_range = 3;
+        form.sprite_smart_spawn = true;
+        let edits = form.header_edits().unwrap();
+        assert!(edits.iter().any(|edit| {
+            matches!(edit, MwlDocumentEdit::SetSpriteSpawnSettings(value) if value.raw() == 0xe7)
         }));
     }
 

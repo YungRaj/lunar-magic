@@ -69,6 +69,7 @@ pub(crate) struct AggregatePanels {
     bypass_enabled: bool,
     bypass_foreground_background: [u16; 6],
     bypass_sprites: [u16; 4],
+    sprites_beyond_boundaries_use_air: bool,
     exanimation_features: Option<ExAnimationFeatureOptions>,
     loaded_revision: Option<u64>,
     paste_target: Option<PasteTarget>,
@@ -179,6 +180,8 @@ impl AggregatePanels {
             self.bypass_enabled = bypass.enabled;
             self.bypass_foreground_background = bypass.foreground_background;
             self.bypass_sprites = bypass.sprites;
+            self.sprites_beyond_boundaries_use_air =
+                lm_level::ExpandedLevelHeader::from(settings).sprites_beyond_boundaries_use_air();
             for (index, field) in self.settings.iter_mut().enumerate() {
                 *field = format!("{:04X}", settings.word(index).expect("bounded word"));
             }

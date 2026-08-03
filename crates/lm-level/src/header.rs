@@ -326,6 +326,8 @@ impl std::error::Error for GraphicsFileValueError {}
 impl ExpandedLevelHeader {
     pub const FIELD_COUNT: usize = 16;
     pub const ENCODED_LEN: usize = Self::FIELD_COUNT * 2;
+    /// Word 8 bit 14 is packed value bit 2 in Lunar Magic's `$00464B00` dialog helper.
+    pub const SPRITES_BEYOND_BOUNDARIES_USE_AIR_FLAG: u16 = 0x4000;
 
     /// Decodes the exact 0x20-byte expanded per-level record.
     ///
@@ -395,6 +397,18 @@ impl ExpandedLevelHeader {
             *field = *field & 0xf000 | file;
         }
         Ok(())
+    }
+
+    /// Reports whether sprites beyond level boundaries interact with air rather than water.
+    #[must_use]
+    pub const fn sprites_beyond_boundaries_use_air(self) -> bool {
+        self.fields[8] & Self::SPRITES_BEYOND_BOUNDARIES_USE_AIR_FLAG != 0
+    }
+
+    /// Changes only the recovered boundary-interaction bit in expanded-settings word 8.
+    pub fn set_sprites_beyond_boundaries_use_air(&mut self, enabled: bool) {
+        self.fields[8] = self.fields[8] & !Self::SPRITES_BEYOND_BOUNDARIES_USE_AIR_FLAG
+            | u16::from(enabled) * Self::SPRITES_BEYOND_BOUNDARIES_USE_AIR_FLAG;
     }
 }
 
@@ -550,5 +564,17 @@ mod tests {
         bypass.sprites[2] = 0x1000;
         assert!(header.set_super_graphics_bypass(bypass).is_err());
         assert_eq!(header, before);
+    }
+
+    #[test]
+    fn sprite_boundary_air_setting_preserves_graphics_file_and_other_high_flags() {
+        let mut header = ExpandedLevelHeader::decode(&[0x5a; 32]).unwrap();
+        header.fields[8] = 0xb123;
+        header.set_sprites_beyond_boundaries_use_air(true);
+        assert_eq!(header.fields[8], 0xf123);
+        assert!(header.sprites_beyond_boundaries_use_air());
+        header.set_sprites_beyond_boundaries_use_air(false);
+        assert_eq!(header.fields[8], 0xb123);
+        assert!(!header.sprites_beyond_boundaries_use_air());
     }
 }

@@ -212,6 +212,68 @@ pub struct MwlMidwayEntranceSettings {
     pub additional_flags: u8,
 }
 
+/// Lunar Magic's horizontal-level sprite spawning controls stored in MWL header byte 6.
+///
+/// Bits 0–1 select one of four vertical spawn ranges and bit 2 enables Smart Spawn. The upper
+/// five bits share the byte with other Lfix3/main-entrance flags and are preserved losslessly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SpriteSpawnSettings(u8);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SpriteSpawnRangeError(pub u8);
+
+impl std::fmt::Display for SpriteSpawnRangeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "sprite vertical spawn range must be in 0..=3, got {}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for SpriteSpawnRangeError {}
+
+impl SpriteSpawnSettings {
+    pub const RANGE_MASK: u8 = 0x03;
+    pub const SMART_SPAWN_FLAG: u8 = 0x04;
+
+    #[must_use]
+    pub const fn from_raw(raw: u8) -> Self {
+        Self(raw)
+    }
+
+    #[must_use]
+    pub const fn raw(self) -> u8 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn vertical_range(self) -> u8 {
+        self.0 & Self::RANGE_MASK
+    }
+
+    #[must_use]
+    pub const fn smart_spawn(self) -> bool {
+        self.0 & Self::SMART_SPAWN_FLAG != 0
+    }
+
+    /// Replaces the two dialog properties while retaining all shared high flags.
+    pub fn with_properties(
+        self,
+        vertical_range: u8,
+        smart_spawn: bool,
+    ) -> Result<Self, SpriteSpawnRangeError> {
+        if vertical_range > Self::RANGE_MASK {
+            return Err(SpriteSpawnRangeError(vertical_range));
+        }
+        let raw = self.0 & !(Self::RANGE_MASK | Self::SMART_SPAWN_FLAG)
+            | vertical_range
+            | u8::from(smart_spawn) * Self::SMART_SPAWN_FLAG;
+        Ok(Self(raw))
+    }
+}
+
 /// Lunar Magic's Layer 2 camera-scroll selection.
 ///
 /// Original settings select one of SMW's sixteen paired rate presets. Separate settings use the
@@ -291,6 +353,17 @@ impl MwlLevelHeaderSection {
         self.0[6] = entrance.flags;
         self.0[14] = entrance.high_position;
         self.0[15] = entrance.additional_flags;
+    }
+
+    /// Returns the typed spawn-range/Smart Spawn view of shared header byte 6.
+    #[must_use]
+    pub const fn sprite_spawn_settings(&self) -> SpriteSpawnSettings {
+        SpriteSpawnSettings::from_raw(self.0[6])
+    }
+
+    /// Replaces header byte 6 with a losslessly prepared spawn-settings value.
+    pub fn set_sprite_spawn_settings(&mut self, settings: SpriteSpawnSettings) {
+        self.0[6] = settings.raw();
     }
 
     /// Returns the exact seven packed midway-entrance bytes emitted by Lunar Magic 3.63.
@@ -454,6 +527,25 @@ mod tests {
                 assert_eq!(header.0[index], original);
             }
         }
+    }
+
+    #[test]
+    fn sprite_spawn_settings_preserve_shared_lfix3_flags() {
+        let mut header = MwlLevelHeaderSection([0; MwlLevelHeaderSection::ENCODED_LEN]);
+        header.0[6] = 0xe1;
+        let settings = header
+            .sprite_spawn_settings()
+            .with_properties(3, true)
+            .unwrap();
+        header.set_sprite_spawn_settings(settings);
+
+        assert_eq!(header.0[6], 0xe7);
+        assert_eq!(header.sprite_spawn_settings().vertical_range(), 3);
+        assert!(header.sprite_spawn_settings().smart_spawn());
+        assert_eq!(
+            settings.with_properties(4, false),
+            Err(SpriteSpawnRangeError(4))
+        );
     }
 
     #[test]

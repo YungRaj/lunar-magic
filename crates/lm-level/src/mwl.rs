@@ -7,7 +7,7 @@ pub use palette::{MwlPaletteSection, MwlPaletteSectionError};
 pub use sections::{
     Layer2ScrollSettings, Layer2ScrollSettingsError, MwlLayer2Descriptor, MwlLayer2DescriptorError,
     MwlLayer2Section, MwlLevelHeaderSection, MwlMainEntranceSettings, MwlMidwayEntranceSettings,
-    MwlPayloadSection,
+    MwlPayloadSection, SpriteSpawnRangeError, SpriteSpawnSettings,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

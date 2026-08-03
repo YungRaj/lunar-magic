@@ -5,10 +5,10 @@ use lm_graphics::{
     Bgr555, ExAnimationFeature, Palette, PaletteChange, PaletteEntryOwner, PaletteInterchangeFile,
 };
 use lm_level::{
-    CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor,
-    MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteHeader, NativeSpriteRecordFields,
-    NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord, ObjectStream, SpriteRecord,
-    SpriteToken, split_layer2_tilemap_planes,
+    CustomTimeSettings, ExpandedLevelHeader, Layer1VerticalScrollMode, LegacyHeaderEdit, MwlFile,
+    MwlLayer2Descriptor, MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteHeader,
+    NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord,
+    ObjectStream, SpriteRecord, SpriteToken, split_layer2_tilemap_planes,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -644,6 +644,75 @@ fn semantic_sprite_header_properties_preserve_framing_history_and_rom_reopen() {
     assert_eq!(
         SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
         compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
+    );
+    assert!(project.undo().unwrap());
+    assert_eq!(project.rom.logical_bytes(), original);
+}
+
+#[test]
+fn sprite_boundary_air_setting_preserves_gfx_selector_history_and_rom_reopen() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let baseline = controller
+        .assets()
+        .expanded_settings
+        .as_ref()
+        .unwrap()
+        .clone();
+    let mut header = ExpandedLevelHeader::from(&baseline);
+    let baseline_word = header.fields[8];
+    let enabled = !header.sprites_beyond_boundaries_use_air();
+    header.set_sprites_beyond_boundaries_use_air(enabled);
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
+            vec![(8, header.fields[8])],
+        )])
+        .unwrap();
+    let edited = controller.assets().expanded_settings.as_ref().unwrap();
+    assert_eq!(edited.word(8).unwrap() & 0x0fff, baseline_word & 0x0fff);
+    assert_eq!(
+        ExpandedLevelHeader::from(edited).sprites_beyond_boundaries_use_air(),
+        enabled
+    );
+    assert!(controller.undo());
+    assert_eq!(
+        controller.assets().expanded_settings.as_ref(),
+        Some(&baseline)
+    );
+    assert!(controller.redo());
+
+    let prepared = controller
+        .prepare_commit("sprite boundary air", &options())
+        .unwrap();
+    let original = snapshot.rom_bytes;
+    let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+    project
+        .apply_mutation("sprite boundary air", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets(0, layout(), &SpriteLengthTable::standard(), &[false; 256])
+        .unwrap();
+    assert_eq!(
+        ExpandedLevelHeader::from(reopened.expanded_settings.as_ref().unwrap())
+            .sprites_beyond_boundaries_use_air(),
+        enabled
+    );
+    assert_eq!(
+        reopened
+            .expanded_settings
+            .as_ref()
+            .unwrap()
+            .word(8)
+            .unwrap()
+            & 0x0fff,
+        baseline_word & 0x0fff
     );
     assert!(project.undo().unwrap());
     assert_eq!(project.rom.logical_bytes(), original);

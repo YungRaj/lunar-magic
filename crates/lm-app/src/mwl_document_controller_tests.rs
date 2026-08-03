@@ -604,6 +604,48 @@ fn typed_layer2_scroll_edit_is_atomic_and_preserves_unowned_header_bytes() {
 }
 
 #[test]
+fn typed_sprite_spawn_edit_preserves_shared_flags_and_is_undoable() {
+    let mut controller = controller();
+    let original = MwlLevelHeaderSection::decode(
+        &controller.value().sections[MwlSectionKind::LevelHeader as usize].bytes,
+    )
+    .unwrap();
+    let settings = original
+        .sprite_spawn_settings()
+        .with_properties(3, true)
+        .unwrap();
+
+    controller
+        .apply_edits(0, &[MwlDocumentEdit::SetSpriteSpawnSettings(settings)])
+        .unwrap();
+    let changed = MwlLevelHeaderSection::decode(
+        &controller.value().sections[MwlSectionKind::LevelHeader as usize].bytes,
+    )
+    .unwrap();
+    assert_eq!(changed.0[6] & 0xf8, original.0[6] & 0xf8);
+    assert_eq!(changed.sprite_spawn_settings().vertical_range(), 3);
+    assert!(changed.sprite_spawn_settings().smart_spawn());
+    for (index, byte) in original.0.into_iter().enumerate() {
+        if index != 6 {
+            assert_eq!(changed.0[index], byte);
+        }
+    }
+
+    assert!(controller.undo(1).unwrap());
+    let restored = MwlLevelHeaderSection::decode(
+        &controller.value().sections[MwlSectionKind::LevelHeader as usize].bytes,
+    )
+    .unwrap();
+    assert_eq!(restored, original);
+    assert!(controller.redo(2).unwrap());
+    let redone = MwlLevelHeaderSection::decode(
+        &controller.value().sections[MwlSectionKind::LevelHeader as usize].bytes,
+    )
+    .unwrap();
+    assert_eq!(redone, changed);
+}
+
+#[test]
 fn late_bad_header_edit_rolls_back_the_whole_batch() {
     let mut controller = controller();
     let original = controller.value().clone();

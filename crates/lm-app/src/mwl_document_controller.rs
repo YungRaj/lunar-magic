@@ -4,7 +4,7 @@ use lm_level::{
     LevelEditError, LevelObjectData, MwlError, MwlFile, MwlLevelHeaderSection,
     MwlMainEntranceSettings, MwlMidwayEntranceSettings, MwlSection, MwlSectionKind,
     NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError, SpriteLengthTable,
-    SpriteStreamError,
+    SpriteSpawnSettings, SpriteStreamError,
 };
 use lm_project::{
     MwlOptionalAssetsEdit, MwlOptionalAssetsEditError, MwlOptionalLevelAssets,
@@ -22,6 +22,7 @@ pub enum MwlDocumentEdit {
     SetMainEntrance(MwlMainEntranceSettings),
     SetMidwayEntrance(MwlMidwayEntranceSettings),
     SetLayer2Scroll(Layer2ScrollSettings),
+    SetSpriteSpawnSettings(SpriteSpawnSettings),
     ReplaceSection {
         section: MwlSectionKind,
         bytes: Vec<u8>,
@@ -546,6 +547,12 @@ fn apply_edit(file: &mut MwlFile, edit: &MwlDocumentEdit) -> Result<(), MwlError
             let section = &mut file.sections[MwlSectionKind::LevelHeader as usize];
             let mut header = MwlLevelHeaderSection::decode(&section.bytes)?;
             header.set_layer2_scroll_settings(*settings)?;
+            section.bytes = header.0.to_vec();
+        }
+        MwlDocumentEdit::SetSpriteSpawnSettings(settings) => {
+            let section = &mut file.sections[MwlSectionKind::LevelHeader as usize];
+            let mut header = MwlLevelHeaderSection::decode(&section.bytes)?;
+            header.set_sprite_spawn_settings(*settings);
             section.bytes = header.0.to_vec();
         }
         MwlDocumentEdit::ReplaceSection { section, bytes } => {

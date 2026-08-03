@@ -64,6 +64,24 @@ impl AggregatePanels {
             .map(NativeLevelAssetsControllerEdit::ExpandedSettingsWords);
             return Some(result);
         }
+        ui.separator();
+        ui.heading("Sprite boundary interaction");
+        ui.checkbox(
+            &mut self.sprites_beyond_boundaries_use_air,
+            "Sprites beyond level boundaries interact with air instead of water",
+        );
+        ui.small("Lunar Magic recommends enabling this for tide levels.");
+        if ui.button("Apply sprite boundary interaction").clicked() {
+            let settings = file
+                .assets
+                .expanded_settings
+                .as_ref()
+                .expect("presence checked above");
+            let value = sprite_boundary_air_edit(settings, self.sprites_beyond_boundaries_use_air);
+            return Some(Ok(NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
+                vec![value],
+            )));
+        }
         if let Some(edit) = self.exanimation_feature_panel(ui) {
             return Some(edit);
         }
@@ -142,6 +160,12 @@ fn super_graphics_edits(
         .collect())
 }
 
+fn sprite_boundary_air_edit(settings: &ExpandedLevelSettingsRecord, enabled: bool) -> (usize, u16) {
+    let mut header = ExpandedLevelHeader::from(settings);
+    header.set_sprites_beyond_boundaries_use_air(enabled);
+    (8, header.fields[8])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +195,14 @@ mod tests {
         for word in 12..16 {
             assert_eq!(rebuilt.word(word).unwrap(), settings.word(word).unwrap());
         }
+    }
+
+    #[test]
+    fn installed_sprite_boundary_air_edit_preserves_word_eight_unowned_bits() {
+        let mut source = [0; 32];
+        source[16..18].copy_from_slice(&0xb123_u16.to_le_bytes());
+        let settings = ExpandedLevelSettingsRecord::decode(&source).unwrap();
+        assert_eq!(sprite_boundary_air_edit(&settings, true), (8, 0xf123));
+        assert_eq!(sprite_boundary_air_edit(&settings, false), (8, 0xb123));
     }
 }
