@@ -3269,7 +3269,9 @@ an explicitly edited destination.
 The same orientation-aware import pass removes every raw command `$28`, decodes the last custom-time
 value, and appends its canonical encoding after the keyed screen-exit tail. Lunar Magic's live
 combined-control export therefore orders ordinary objects, screen exits, then custom time; duplicate
-or non-trailing custom-time records collapse without disturbing ordinary object order.
+or non-trailing custom-time records collapse without disturbing ordinary object order. A live raw
+duplicate probe with distinct `$0123` and `$0456` settings confirms that the later `$0456` value and
+its force-reset bit are the single surviving terminal record.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and

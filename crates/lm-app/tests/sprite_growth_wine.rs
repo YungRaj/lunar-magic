@@ -762,7 +762,7 @@ fn lunar_magic_recomputes_extent_but_preserves_raw_layer1_order() {
 /// Proves MWL import excludes absolute screen-exit markers from automatic artwork extent.
 #[test]
 #[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
-fn lunar_magic_ignores_screen_exits_in_imported_extent() {
+fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let lunar_magic = root.join("lm363/Lunar Magic.exe");
     let original_rom = pristine_smw_us_rom_path(&root);
@@ -801,6 +801,17 @@ fn lunar_magic_ignores_screen_exits_in_imported_extent() {
     combined_control_tail
         .set_custom_time(false, Some(CustomTimeSettings::new(0x0abc, true).unwrap()))
         .unwrap();
+    let custom_time_record = |settings| {
+        let mut stream = ObjectStream::default();
+        stream.set_custom_time(false, Some(settings)).unwrap();
+        stream.records.pop().unwrap()
+    };
+    let duplicate_custom_times = vec![
+        custom_time_record(CustomTimeSettings::new(0x0123, false).unwrap()),
+        ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+        custom_time_record(CustomTimeSettings::new(0x0456, true).unwrap()),
+        ObjectRecord::new(vec![0, 4, 0, 0x34]).unwrap(),
+    ];
     for (case, records, expected_last_screen) in [
         (
             "exit-only",
@@ -854,6 +865,7 @@ fn lunar_magic_ignores_screen_exits_in_imported_extent() {
             combined_control_tail.records,
             0,
         ),
+        ("duplicate-custom-times", duplicate_custom_times, 0),
     ] {
         let imported_rom = directory.join(format!("{case}.sfc"));
         let injected_mwl = directory.join(format!("{case}.mwl"));
