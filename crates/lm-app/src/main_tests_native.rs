@@ -599,6 +599,23 @@ fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
     app.dispatch(Command::InstallRevisionProfile(Box::new(profile.clone())))
         .unwrap();
     let before = app.project().unwrap().save_snapshot();
+    let baseline_level = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    let field_object = baseline_level
+        .layer1
+        .objects
+        .native_placements()
+        .into_iter()
+        .find(|placement| {
+            let record = &baseline_level.layer1.objects.records[placement.record_index];
+            record.encoded().len() == 3 && record.command_id() != 0x27
+        })
+        .unwrap();
+    let field_command =
+        baseline_level.layer1.objects.records[field_object.record_index].command_id();
     let directory =
         std::env::temp_dir().join(format!("lm-app-object-position-{}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
@@ -644,6 +661,48 @@ fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
 
     fs::write(
         &script,
+        format!(
+            "LMLEDIT1\nobject fields {} {field_command:02x} 55 1d 0c 0b true\n",
+            field_object.record_index
+        ),
+    )
+    .unwrap();
+    execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
+    let field_edited = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    let placement = field_edited
+        .layer1
+        .objects
+        .native_placements()
+        .into_iter()
+        .find(|placement| {
+            let record = &field_edited.layer1.objects.records[placement.record_index];
+            record.command_id() == field_command
+                && record.parameter() == 0x55
+                && placement.screen == 0x1d
+                && placement.major == 0x1db
+                && placement.minor == 0x1c
+        })
+        .unwrap();
+    assert!(
+        field_edited.layer1.objects.records[placement.record_index].perpendicular_high_coordinate()
+    );
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(
+        &script,
         "LMLEDIT1\nobject relocate-position 0 1e 0a 09 true\n",
     )
     .unwrap();
@@ -674,6 +733,13 @@ fn terminal_absolute_object_place_and_full_relocate_reopen_and_undo() {
     fs::write(
         &script,
         "LMLEDIT1\nheader background-palette 05\nobject relocate-position 999 00 00 00 false\n",
+    )
+    .unwrap();
+    assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::write(
+        &script,
+        "LMLEDIT1\nheader background-palette 05\nobject fields 999 01 00 00 00 00 false\n",
     )
     .unwrap();
     assert!(execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).is_err());

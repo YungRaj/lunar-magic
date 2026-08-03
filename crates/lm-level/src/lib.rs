@@ -125,7 +125,7 @@ pub use object::{
     CustomTimeError, CustomTimeSettings, LevelObjectData, ObjectRecord, ObjectStream,
     ObjectStreamError, encoded_record_length,
 };
-pub use object_editing::{ObjectEdit, ObjectEditError};
+pub use object_editing::{NativeObjectRecordFields, ObjectEdit, ObjectEditError};
 pub use object_fields::{
     DirectMap16Rectangle, ObjectCoordinateNibbles, ObjectFieldError, ObjectScreenExit,
     ObjectScreenJump, SCREEN_EXIT_REQUIRED_FLAG, ScreenExitObjectEncoding, ScreenJumpEncoding,

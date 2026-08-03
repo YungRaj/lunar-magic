@@ -213,7 +213,23 @@ impl NativeLevelDocumentEditor {
     }
     fn apply(&mut self, edit: NativeLevelEdit) -> bool {
         if let Some(c) = self.controller.as_mut() {
-            let selected = if let NativeLevelEdit::SetSpriteFields { index, fields } = &edit {
+            let object_selected = if let NativeLevelEdit::Objects(edits) = &edit
+                && let [lm_level::ObjectEdit::SetOrdinaryFields { index, fields }] =
+                    edits.as_slice()
+            {
+                let mut predicted = c.value().layer1.objects.clone();
+                match predicted.set_ordinary_fields(*index, *fields) {
+                    Ok(selected) => Some(selected),
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return false;
+                    }
+                }
+            } else {
+                None
+            };
+            let sprite_selected = if let NativeLevelEdit::SetSpriteFields { index, fields } = &edit
+            {
                 let vertical =
                     lm_profile::smw_us_v1_level_mode(c.value().layer1.header.level_mode()).vertical;
                 let mut predicted = c.value().sprites.clone();
@@ -231,7 +247,13 @@ impl NativeLevelDocumentEditor {
                 self.error = Some(e.to_string());
                 return false;
             }
-            if let Some(selected) = selected {
+            if let Some(selected) = object_selected {
+                self.object_index = selected;
+                let screen = panels::object_screen(c.value(), selected);
+                self.form
+                    .load_object(c.value().layer1.objects.records.get(selected), screen);
+            }
+            if let Some(selected) = sprite_selected {
                 self.sprite_index = selected;
                 self.form
                     .load_sprite(c.value().sprites.tokens.get(selected));

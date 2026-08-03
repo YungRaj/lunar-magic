@@ -3,8 +3,8 @@
 use lm_app::NativeLevelEdit;
 use lm_level::{
     CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
-    NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteRecord,
-    SpriteToken,
+    NativeObjectRecordFields, NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit,
+    ObjectRecord, SpriteRecord, SpriteToken,
 };
 use std::fmt;
 
@@ -172,6 +172,31 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
                 parameter: hex_byte(line, parameter)?,
             }]))
         }
+        [
+            "object",
+            "fields",
+            index,
+            command_id,
+            parameter,
+            screen,
+            first,
+            second,
+            perpendicular_high,
+        ] => Ok(NativeLevelEdit::Objects(vec![
+            ObjectEdit::SetOrdinaryFields {
+                index: decimal(line, index)?,
+                fields: NativeObjectRecordFields {
+                    command_id: bounded_hex_byte(line, command_id, 0x3f)?,
+                    parameter: hex_byte(line, parameter)?,
+                    screen: native_screen(line, screen)?,
+                    coordinates: ObjectCoordinateNibbles {
+                        first: coordinate_nibble(line, first)?,
+                        second: coordinate_nibble(line, second)?,
+                    },
+                    perpendicular_high: boolean(line, perpendicular_high)?,
+                },
+            },
+        ])),
         ["object", "coordinates", index, first, second] => Ok(NativeLevelEdit::Objects(vec![
             ObjectEdit::SetCoordinateNibbles {
                 index: decimal(line, index)?,
@@ -522,6 +547,7 @@ mod tests {
             object remove 0\n\
             object command 0 22\n\
             object parameter 0 7f\n\
+            object fields 0 22 7f 001d 0c 0b true\n\
             object coordinates 0 0e 0d\n\
             object screen-advance 0 true\n\
             object screen-jump-target 0 0f1e\n\
@@ -544,7 +570,7 @@ mod tests {
             sprite relocate-position 0 001e 0a 008f\n\
             sprite fields 0 1d 02 001f 0c 47\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 29);
+        assert_eq!(edits.len(), 30);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert_eq!(
             edits[1],
@@ -566,23 +592,37 @@ mod tests {
         assert!(matches!(
             edits[8],
             NativeLevelEdit::Objects(ref edits)
+                if edits == &[ObjectEdit::SetOrdinaryFields {
+                    index: 0,
+                    fields: NativeObjectRecordFields {
+                        command_id: 0x22,
+                        parameter: 0x7f,
+                        screen: 0x1d,
+                        coordinates: ObjectCoordinateNibbles { first: 0x0c, second: 0x0b },
+                        perpendicular_high: true,
+                    },
+                }]
+        ));
+        assert!(matches!(
+            edits[9],
+            NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetCoordinateNibbles {
                     index: 0,
                     coordinates: ObjectCoordinateNibbles { first: 0x0e, second: 0x0d }
                 }]
         ));
         assert!(matches!(
-            edits[9],
+            edits[10],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetAdvancesScreen { index: 0, advances: true }]
         ));
         assert!(matches!(
-            edits[10],
+            edits[11],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetScreenJumpTarget { index: 0, packed_target: 0x0f1e }]
         ));
         assert!(matches!(
-            edits[11],
+            edits[12],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::SetScreenExit {
                     index: 0,
@@ -591,7 +631,7 @@ mod tests {
                 }]
         ));
         assert!(matches!(
-            edits[12],
+            edits[13],
             NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::RelocateOrdinary {
                     index: 0,
@@ -599,9 +639,9 @@ mod tests {
                     coordinates: ObjectCoordinateNibbles { first: 0x0c, second: 0x0b }
                 }]
         ));
-        assert!(matches!(edits[13], NativeLevelEdit::SetSpriteHeader(0x10)));
+        assert!(matches!(edits[14], NativeLevelEdit::SetSpriteHeader(0x10)));
         assert_eq!(
-            edits[14],
+            edits[15],
             NativeLevelEdit::SetSpriteHeaderProperties {
                 memory: 0x12,
                 buoyancy_1: true,
@@ -609,11 +649,11 @@ mod tests {
             }
         );
         assert!(matches!(
-            edits[20],
+            edits[21],
             NativeLevelEdit::SortLegacySpritesByScreen { selected: 0 }
         ));
         assert!(matches!(
-            edits[21],
+            edits[22],
             NativeLevelEdit::RelocateExpandedSprite {
                 selected: 0,
                 screen: 4,
@@ -622,18 +662,18 @@ mod tests {
             }
         ));
         assert!(matches!(
-            edits[17],
+            edits[18],
             NativeLevelEdit::InsertSprite {
                 token: SpriteToken::Control(0x90),
                 ..
             }
         ));
         assert_eq!(
-            edits[23],
+            edits[24],
             NativeLevelEdit::SetCustomTime(Some(CustomTimeSettings::new(0xabc, true).unwrap()))
         );
         assert_eq!(
-            edits[24],
+            edits[25],
             NativeLevelEdit::Objects(vec![ObjectEdit::InsertOrdinaryAtPosition {
                 record: ObjectRecord::new(vec![0x09, 0x08, 0x55]).unwrap(),
                 screen: 0x1f,
@@ -645,7 +685,7 @@ mod tests {
             }])
         );
         assert_eq!(
-            edits[25],
+            edits[26],
             NativeLevelEdit::Objects(vec![ObjectEdit::RelocateOrdinaryPosition {
                 index: 0,
                 screen: 0x1e,
@@ -657,7 +697,7 @@ mod tests {
             }])
         );
         assert_eq!(
-            edits[26],
+            edits[27],
             NativeLevelEdit::PlaceSpriteAtPosition {
                 record: SpriteRecord {
                     encoded: vec![0x08, 0x00, 0x47],
@@ -668,7 +708,7 @@ mod tests {
             }
         );
         assert_eq!(
-            edits[27],
+            edits[28],
             NativeLevelEdit::RelocateSpritePosition {
                 selected: 0,
                 screen: 0x1e,
@@ -677,7 +717,7 @@ mod tests {
             }
         );
         assert_eq!(
-            edits[28],
+            edits[29],
             NativeLevelEdit::SetSpriteFields {
                 index: 0,
                 fields: NativeSpriteRecordFields {
@@ -702,6 +742,8 @@ mod tests {
             "LMLEDIT1\nobject place 090855 20 00 00 false\n",
             "LMLEDIT1\nobject place 090855 00 10 00 false\n",
             "LMLEDIT1\nobject relocate-position 0 00 00 00 yes\n",
+            "LMLEDIT1\nobject fields 0 40 00 00 00 00 false\n",
+            "LMLEDIT1\nobject fields 0 01 00 20 00 00 false\n",
             "LMLEDIT1\nsprite place 080047 20 00 0000\n",
             "LMLEDIT1\nsprite place 080047 00 10 0000\n",
             "LMLEDIT1\nsprite relocate-position 0 20 00 0000\n",

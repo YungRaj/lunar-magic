@@ -56,6 +56,11 @@ pub enum ObjectEdit {
         index: usize,
         advances: bool,
     },
+    /// Replaces every proven field of an ordinary object at an absolute position.
+    SetOrdinaryFields {
+        index: usize,
+        fields: NativeObjectRecordFields,
+    },
     /// Changes the exact packed target of an existing screen-jump control record.
     SetScreenJumpTarget {
         index: usize,
@@ -80,6 +85,16 @@ pub enum ObjectEdit {
         coordinates: ObjectCoordinateNibbles,
         perpendicular_high: bool,
     },
+}
+
+/// Proven semantic fields of one positioned native object record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeObjectRecordFields {
+    pub command_id: u8,
+    pub parameter: u8,
+    pub screen: u16,
+    pub coordinates: ObjectCoordinateNibbles,
+    pub perpendicular_high: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -188,6 +203,9 @@ impl ObjectStream {
                         .map_err(|error| ObjectEditError::Field { command, error })?;
                     Ok(())
                 }
+                ObjectEdit::SetOrdinaryFields { index, fields } => {
+                    staged.set_ordinary_fields(*index, *fields).map(drop)
+                }
                 ObjectEdit::SetScreenJumpTarget {
                     index,
                     packed_target,
@@ -242,6 +260,50 @@ impl ObjectStream {
         })?;
         *self = staged;
         Ok(())
+    }
+}
+
+impl ObjectStream {
+    /// Replaces all proven semantic fields of one ordinary object, preserves extension bytes, and
+    /// tracks it through canonical absolute-screen ordering. Returns its resulting record index.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid indexes, shape-changing fields, controls, and unrepresentable positions
+    /// without mutating the stream.
+    pub fn set_ordinary_fields(
+        &mut self,
+        selected: usize,
+        fields: NativeObjectRecordFields,
+    ) -> Result<usize, LevelEditError> {
+        let mut staged = self.clone();
+        let len = staged.records.len();
+        let record = staged
+            .records
+            .get_mut(selected)
+            .ok_or(LevelEditError::IndexOutOfBounds {
+                index: selected,
+                len,
+            })?;
+        if !record.is_positioned_object() {
+            return Err(LevelEditError::ObjectRelocation(
+                crate::ObjectRelocationError::NotOrdinaryObject(selected),
+            ));
+        }
+        record
+            .set_command_id(fields.command_id)
+            .and_then(|()| record.set_parameter(fields.parameter))
+            .map_err(LevelEditError::ObjectField)?;
+        let selected = staged
+            .relocate_ordinary_object_position(
+                selected,
+                fields.screen,
+                fields.coordinates,
+                fields.perpendicular_high,
+            )
+            .map_err(LevelEditError::ObjectRelocation)?;
+        *self = staged;
+        Ok(selected)
     }
 }
 
@@ -368,6 +430,53 @@ mod tests {
         );
         assert!(record.advances_screen());
         assert_eq!(record.encoded()[3], 0xaa);
+    }
+
+    #[test]
+    fn semantic_ordinary_fields_preserve_extensions_reorder_and_roll_back() {
+        let mut custom = ObjectRecord::new(vec![0x9f, 0x0a, 1, 0xaa]).unwrap();
+        custom.set_command_id(0x22).unwrap();
+        custom.set_parameter(0x0f).unwrap();
+        let command_id = 0x22;
+        let mut stream = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0x00, 0x10, 2]).unwrap(),
+                ObjectRecord::new(vec![0x02, 0x00, 1]).unwrap(),
+                custom,
+            ],
+        };
+        let fields = NativeObjectRecordFields {
+            command_id,
+            parameter: 0x0f,
+            screen: 0,
+            coordinates: ObjectCoordinateNibbles {
+                first: 3,
+                second: 4,
+            },
+            perpendicular_high: true,
+        };
+        let selected = stream.set_ordinary_fields(2, fields).unwrap();
+        assert_eq!(selected, 1);
+        let record = &stream.records[selected];
+        assert_eq!(record.command_id(), command_id);
+        assert_eq!(record.parameter(), 0x0f);
+        assert_eq!(record.encoded()[3], 0xaa);
+        assert!(record.perpendicular_high_coordinate());
+        assert_eq!(stream.native_placements()[selected].screen, 0);
+
+        let original = stream.clone();
+        let mut invalid = fields;
+        invalid.command_id = 0;
+        invalid.parameter = 1;
+        assert!(stream.set_ordinary_fields(selected, invalid).is_err());
+        assert_eq!(stream, original);
+
+        let mut control = ObjectStream {
+            records: vec![ObjectRecord::new(vec![2, 0, 1]).unwrap()],
+        };
+        let original = control.clone();
+        assert!(control.set_ordinary_fields(0, fields).is_err());
+        assert_eq!(control, original);
     }
 
     #[test]

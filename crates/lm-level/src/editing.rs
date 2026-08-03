@@ -16,6 +16,7 @@ pub enum LevelEditError {
     InvalidExpandedSpriteControl { index: usize, value: u8 },
     ShortSpriteRecord { index: usize, len: usize },
     SpriteField(NativeSpriteFieldError),
+    ObjectField(crate::ObjectFieldError),
     ObjectRelocation(crate::ObjectRelocationError),
 }
 

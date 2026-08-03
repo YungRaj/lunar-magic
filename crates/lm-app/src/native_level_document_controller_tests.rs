@@ -1,7 +1,7 @@
 use super::*;
 use lm_level::{
-    LegacyHeaderEdit, LevelObjectData, NativeSpriteRecordFields, NativeSpriteStream, ObjectEdit,
-    ObjectRecord, SpriteRecord, SpriteToken,
+    LegacyHeaderEdit, LevelObjectData, NativeObjectRecordFields, NativeSpriteRecordFields,
+    NativeSpriteStream, ObjectEdit, ObjectRecord, SpriteRecord, SpriteToken,
 };
 
 fn file() -> NativeLevelFile {
@@ -220,6 +220,55 @@ fn semantic_sprite_position_edits_cover_legacy_and_expanded_documents() {
             .tokens
             .iter()
             .any(|token| matches!(token, SpriteToken::Screen(4)))
+    );
+}
+
+#[test]
+fn semantic_ordinary_fields_reorder_and_reopen_through_the_document_controller() {
+    let mut controller = controller();
+    let placement = controller.value().layer1.objects.native_placements()[0];
+    let record = &controller.value().layer1.objects.records[placement.record_index];
+    let fields = NativeObjectRecordFields {
+        command_id: record.command_id(),
+        parameter: record.parameter(),
+        screen: 0x1f,
+        coordinates: lm_level::ObjectCoordinateNibbles {
+            first: 0x0c,
+            second: 0x0b,
+        },
+        perpendicular_high: true,
+    };
+    controller
+        .apply_edits(
+            0,
+            &[NativeLevelEdit::Objects(vec![
+                ObjectEdit::SetOrdinaryFields {
+                    index: placement.record_index,
+                    fields,
+                },
+            ])],
+        )
+        .unwrap();
+    let edited = controller
+        .value()
+        .layer1
+        .objects
+        .native_placements()
+        .into_iter()
+        .find(|placement| {
+            placement.screen == 0x1f && placement.major == 0x1fb && placement.minor == 0x1c
+        })
+        .unwrap();
+    let record = &controller.value().layer1.objects.records[edited.record_index];
+    assert_eq!(
+        (record.command_id(), record.parameter()),
+        (fields.command_id, fields.parameter)
+    );
+    assert!(record.perpendicular_high_coordinate());
+    let snapshot = controller.begin_save().unwrap();
+    assert_eq!(
+        NativeLevelFile::decode(&snapshot.bytes, controller.sprite_lengths()).unwrap(),
+        *controller.value()
     );
 }
 

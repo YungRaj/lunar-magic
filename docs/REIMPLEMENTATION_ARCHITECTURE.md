@@ -553,6 +553,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   typed inputs feed `InsertOrdinaryAtPosition` and `RelocateOrdinaryPosition`, so canonical screen
   transitions, stable ordering, extension preservation, opaque-tail retention, and transaction
   rollback remain centralized rather than being reimplemented by the shell.
+  `object fields` delegates command, parameter, absolute screen, both coordinate nibbles, and the
+  perpendicular-high bit to `set_ordinary_fields`, the same single typed transaction used by the
+  portable and installed aggregate forms. The model owns native-width validation, extension
+  preservation, transition regeneration, canonical ordering, and the resulting selection index.
   `sprite place` and `sprite relocate-position` likewise call the shared
   `place_record_at_position`/`relocate_record_position` boundary now used by both installed and
   portable canvases. That boundary selects legacy screen sorting or expanded orientation-aware

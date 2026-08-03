@@ -177,11 +177,19 @@ impl AggregatePanels {
             return Some(Err(error));
         }
         if apply_object_fields {
-            return Some(
-                self.level_record
-                    .object_field_edit(self.object_index)
-                    .map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit])),
-            );
+            let edit = self.level_record.object_field_edit(self.object_index);
+            if let Ok(NativeLevelEdit::Objects(edits)) = &edit
+                && let [ObjectEdit::SetOrdinaryFields { index, fields }] = edits.as_slice()
+            {
+                let mut predicted = level.layer1.objects.clone();
+                match predicted.set_ordinary_fields(*index, *fields) {
+                    Ok(selected) => {
+                        self.pending_selection_move = Some(PendingSelectionMove::Object(selected));
+                    }
+                    Err(error) => return Some(Err(error.to_string())),
+                }
+            }
+            return Some(edit.map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit])));
         }
         if let Some((before, selected)) = move_object {
             self.pending_selection_move = Some(PendingSelectionMove::Object(selected));
@@ -453,6 +461,9 @@ pub(super) fn object_semantic_fields(
         semantic_field_row(ui, "Second coordinate", &mut form.object_second, 0x0f);
         ui.label("Screen");
         ui.add(egui::DragValue::new(&mut form.object_screen).range(0..=0x1f));
+        ui.end_row();
+        ui.label("Perpendicular coordinate high bit");
+        ui.checkbox(&mut form.object_perpendicular_high, "");
         ui.end_row();
     });
 }

@@ -187,6 +187,11 @@ The standard/extended-object row now also has canvas-grade `LMLEDIT1 object plac
 nibbles, and perpendicular-high bit model; regenerate minimal transitions; preserve extensions and
 opaque tails; reopen checksum-valid at screens `$1E/$1F`; and undo the complete ROM byte-exactly.
 Strict bounds and late-index rollback are covered.
+Strict `object fields` automation now combines command, parameter, absolute screen, coordinate
+nibbles, and perpendicular-high state in the same typed transaction as portable and installed
+aggregate forms. It preserves custom extensions, rejects native-width changes atomically,
+regenerates transitions, tracks selection across reordering, reopens checksum-valid, and undoes
+the ROM byte-exactly.
 
 The sprite row now has canvas-grade `LMLEDIT1 sprite place` and `sprite relocate-position`
 automation for both legacy and expanded streams. Installed GUI, portable GUI, automation, and

@@ -717,6 +717,15 @@ minor `$1A`. Both paths repair the checksum and undo the whole ROM byte-exactly;
 after a header edit proves aggregate rollback, while a command-zero template is rejected by the
 shared positioned-object model.
 
+Semantic ordinary-object automation adds `LMLEDIT1 object fields INDEX COMMAND PARAMETER SCREEN
+FIRST SECOND PERPENDICULAR_HIGH`. Model tests prove custom extension preservation, canonical
+cross-screen reordering, returned selection tracking, and atomic rollback when command/parameter
+selectors would change native width. Portable and installed aggregate forms emit the same single
+typed edit and expose the perpendicular-high field; their editor paths predict the canonical
+resulting index before commit. Controller save/reopen coverage proves the typed transaction remains
+canonical, while the application-shell gate edits a real ROM record, verifies every named field,
+checksum, exact reopen, late-batch rollback, and byte-exact undo.
+
 Absolute sprite automation adds `LMLEDIT1 sprite place` and `sprite relocate-position`. Shared
 model tests place and relocate legacy records across stable screen ordering, reject legacy Y `$20`
 without mutation, and prove expanded placement/relocation rebuild upper-Y transitions while

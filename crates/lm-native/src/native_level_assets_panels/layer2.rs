@@ -399,16 +399,27 @@ impl AggregatePanels {
             return Some(Err(error));
         }
         if apply_object_fields {
-            return Some(
-                self.layer2_record
-                    .object_field_edit(self.layer2_object_index)
-                    .and_then(|edit| match edit {
-                        lm_app::NativeLevelEdit::Objects(edits) => {
-                            Ok(NativeLevelAssetsControllerEdit::Layer2Objects(edits))
-                        }
-                        _ => Err("Layer 2 semantic form produced a non-object edit".into()),
-                    }),
-            );
+            let edit = self
+                .layer2_record
+                .object_field_edit(self.layer2_object_index);
+            if let Ok(lm_app::NativeLevelEdit::Objects(edits)) = &edit
+                && let [ObjectEdit::SetOrdinaryFields { index, fields }] = edits.as_slice()
+            {
+                let mut predicted = objects.objects.clone();
+                match predicted.set_ordinary_fields(*index, *fields) {
+                    Ok(selected) => {
+                        self.pending_selection_move =
+                            Some(PendingSelectionMove::Layer2Object(selected));
+                    }
+                    Err(error) => return Some(Err(error.to_string())),
+                }
+            }
+            return Some(edit.and_then(|edit| match edit {
+                lm_app::NativeLevelEdit::Objects(edits) => {
+                    Ok(NativeLevelAssetsControllerEdit::Layer2Objects(edits))
+                }
+                _ => Err("Layer 2 semantic form produced a non-object edit".into()),
+            }));
         }
         if let Some((before, selected)) = move_object {
             self.pending_selection_move = Some(PendingSelectionMove::Layer2Object(selected));

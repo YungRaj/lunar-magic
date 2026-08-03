@@ -217,10 +217,13 @@ fn object_semantic_fields(
         ui.label("Screen");
         ui.add(egui::DragValue::new(&mut form.object_screen).range(0..=0x1f));
         ui.end_row();
+        ui.label("Perpendicular coordinate high bit");
+        ui.checkbox(&mut form.object_perpendicular_high, "");
+        ui.end_row();
     });
 }
 
-fn object_screen(value: &NativeLevelFile, index: usize) -> Option<u16> {
+pub(super) fn object_screen(value: &NativeLevelFile, index: usize) -> Option<u16> {
     value
         .layer1
         .objects

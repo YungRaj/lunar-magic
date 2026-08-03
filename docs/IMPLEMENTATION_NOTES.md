@@ -1046,6 +1046,14 @@ before controller mutation. The shared relocation model rejects command-zero con
 ordinary extension bytes, sets the perpendicular bit explicitly, stably orders objects by absolute
 screen, and regenerates the minimum owned advance/jump transitions while retaining trailing opaque
 controls.
+Named ordinary-object fields use `object fields INDEX COMMAND PARAMETER SCREEN FIRST SECOND
+PERPENDICULAR_HIGH`. The index is decimal; command, parameter, screen, and coordinate fields are
+hexadecimal; and the final value is a canonical boolean. Command `$00..=$3F`, screen `$00..=$1F`,
+and coordinate-nibble bounds are enforced by the parser and again by the shared
+`set_ordinary_fields` transaction. That transaction preserves extension bytes, rejects
+command/parameter changes that alter native record width, applies the absolute position and
+perpendicular high bit together, canonically regenerates transitions, and returns the reordered
+record index so installed and portable forms retain selection.
 Canvas-grade sprite edits use `sprite place RECORD SCREEN X Y` and `sprite relocate-position INDEX
 SCREEN X Y`. Records, screens, X, and Y are hexadecimal; indexes are decimal. Both commands route
 through the same absolute-position model as installed and portable canvas drag/drop. Screens are
@@ -1081,6 +1089,7 @@ object screen-jump-target 1 0a1b
 object screen-exit 2 1f bcde
 object place 090855 1f 0c 0b true
 object relocate-position 0 1e 0a 09 true
+object fields 0 22 55 1d 0c 0b true
 sprite place 080047 1f 0c 009d
 sprite relocate-position 0 1e 0a 008f
 sprite fields 0 1c 02 1d 0b 47

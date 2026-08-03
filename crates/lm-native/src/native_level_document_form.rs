@@ -2,8 +2,9 @@ use crate::level_editor_forms;
 use lm_app::NativeLevelEdit;
 use lm_level::{
     CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
-    NativeSpriteHeader, NativeSpriteMemoryError, NativeSpriteRecordFields, ObjectCoordinateNibbles,
-    ObjectEdit, ObjectRecord, SpriteLengthTable, SpriteToken,
+    NativeObjectRecordFields, NativeSpriteHeader, NativeSpriteMemoryError,
+    NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteLengthTable,
+    SpriteToken,
 };
 use lm_project::LoadedLevelSlot;
 
@@ -162,6 +163,7 @@ pub(crate) struct NativeLevelRecordForm {
     pub(crate) object_first: u8,
     pub(crate) object_second: u8,
     pub(crate) object_screen: u16,
+    pub(crate) object_perpendicular_high: bool,
     pub(crate) object_fields_loaded: bool,
     pub(crate) sprite: String,
     pub(crate) sprite_y_low: u8,
@@ -199,6 +201,7 @@ impl NativeLevelRecordForm {
         self.object_first = coordinates.first;
         self.object_second = coordinates.second;
         self.object_screen = screen.unwrap_or_default();
+        self.object_perpendicular_high = record.perpendicular_high_coordinate();
         self.object_fields_loaded = screen.is_some();
     }
 
@@ -207,20 +210,17 @@ impl NativeLevelRecordForm {
             return Err("select an ordinary object before applying semantic fields".into());
         }
         Ok(NativeLevelEdit::Objects(vec![
-            ObjectEdit::SetCommandId {
+            ObjectEdit::SetOrdinaryFields {
                 index,
-                command_id: self.object_command,
-            },
-            ObjectEdit::SetParameter {
-                index,
-                parameter: self.object_parameter,
-            },
-            ObjectEdit::RelocateOrdinary {
-                index,
-                screen: self.object_screen,
-                coordinates: ObjectCoordinateNibbles {
-                    first: self.object_first,
-                    second: self.object_second,
+                fields: NativeObjectRecordFields {
+                    command_id: self.object_command,
+                    parameter: self.object_parameter,
+                    screen: self.object_screen,
+                    coordinates: ObjectCoordinateNibbles {
+                        first: self.object_first,
+                        second: self.object_second,
+                    },
+                    perpendicular_high: self.object_perpendicular_high,
                 },
             },
         ]))
@@ -472,19 +472,25 @@ mod tests {
         assert_eq!((form.object_first, form.object_second), (5, 6));
         form.object_screen = 9;
         form.object_first = 3;
+        form.object_perpendicular_high = true;
         let NativeLevelEdit::Objects(edits) = form.object_field_edit(4).unwrap() else {
             panic!("expected object batch");
         };
         assert_eq!(
-            edits.last(),
-            Some(&ObjectEdit::RelocateOrdinary {
+            edits,
+            [ObjectEdit::SetOrdinaryFields {
                 index: 4,
-                screen: 9,
-                coordinates: ObjectCoordinateNibbles {
-                    first: 3,
-                    second: 6,
+                fields: NativeObjectRecordFields {
+                    command_id: 0x22,
+                    parameter: 0x42,
+                    screen: 9,
+                    coordinates: ObjectCoordinateNibbles {
+                        first: 3,
+                        second: 6,
+                    },
+                    perpendicular_high: true,
                 },
-            })
+            }]
         );
         form.load_object(Some(&record), None);
         assert!(form.object_field_edit(4).is_err());
