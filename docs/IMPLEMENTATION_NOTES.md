@@ -3256,9 +3256,10 @@ screen-`$1F` marker in an otherwise empty imported level leaves Lunar Magic's fi
 Its byte-zero high bit still advances stream state for following visible content, so the same exit
 followed by an ordinary object produces `$01`. Lunar Magic transfers that transition onto the
 ordinary object, moves the exit behind the positional stream, and clears the exit's now-redundant
-bit. The shared placement walker applies control advances before later ordinary objects, while
-installed MWL import performs the same stable stream-state rewrite without sorting ordinary object
-order or treating the editor-only marker itself as artwork.
+bit. Multiple exits are then stably ordered by their absolute five-bit screen. The shared placement
+walker applies control advances before later ordinary objects, while installed MWL import performs
+the same stream-state rewrite without sorting ordinary object order or treating the editor-only
+marker itself as artwork.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and

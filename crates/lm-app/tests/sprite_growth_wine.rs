@@ -792,19 +792,36 @@ fn lunar_magic_ignores_screen_exits_in_imported_extent() {
         &modes,
     )
     .unwrap();
-    for (case, include_visible_object, expected_last_screen) in
-        [("exit-only", false, 0), ("followed-by-object", true, 1)]
-    {
+    for (case, records, expected_last_screen) in [
+        (
+            "exit-only",
+            vec![ObjectRecord::new(vec![0x9f, 0, 2, 0, 4]).unwrap()],
+            0,
+        ),
+        (
+            "followed-by-object",
+            vec![
+                ObjectRecord::new(vec![0x9f, 0, 2, 0, 4]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+            1,
+        ),
+        (
+            "out-of-order-exits",
+            vec![
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+                ObjectRecord::new(vec![0x1f, 0, 2, 0, 4]).unwrap(),
+                ObjectRecord::new(vec![0, 0, 2, 1, 4]).unwrap(),
+            ],
+            0,
+        ),
+    ] {
         let imported_rom = directory.join(format!("{case}.sfc"));
         let injected_mwl = directory.join(format!("{case}.mwl"));
         let reexported_mwl = directory.join(format!("{case} reexported.mwl"));
         fs::copy(&original_rom, &imported_rom).unwrap();
         let mut injected = baseline.clone();
         injected.layer1.header.set_last_screen(0).unwrap();
-        let mut records = vec![ObjectRecord::new(vec![0x9f, 0, 2, 0, 4]).unwrap()];
-        if include_visible_object {
-            records.push(ObjectRecord::new(vec![1, 0x10, 0]).unwrap());
-        }
         injected.layer1.objects = ObjectStream { records };
         injected.sprites.tokens.clear();
         fs::write(

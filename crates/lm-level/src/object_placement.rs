@@ -121,6 +121,12 @@ impl ObjectStream {
             }
             output.push(record);
         }
+        exits.sort_by_key(|record| {
+            record
+                .screen_exit()
+                .expect("the exit tail contains only screen exits")
+                .screen
+        });
         output.extend(exits);
         self.records = output;
     }
@@ -197,10 +203,10 @@ mod tests {
             records: vec![
                 exit.clone(),
                 object.clone(),
-                exit.clone(),
+                ObjectRecord::new(vec![0x80, 0, 2, 1, 4]).unwrap(),
                 jump,
                 object,
-                exit,
+                ObjectRecord::new(vec![0x8f, 0, 2, 2, 4]).unwrap(),
             ],
         };
         assert_eq!(
@@ -222,6 +228,13 @@ mod tests {
             stream.records[3..]
                 .iter()
                 .all(|record| record.screen_exit().is_some() && !record.advances_screen())
+        );
+        assert_eq!(
+            stream.records[3..]
+                .iter()
+                .map(|record| record.screen_exit().unwrap().screen)
+                .collect::<Vec<_>>(),
+            [0, 15, 31]
         );
         assert_eq!(
             stream
