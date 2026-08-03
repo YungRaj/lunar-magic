@@ -4,7 +4,8 @@ use crate::{
     shell_command,
 };
 use lm_app::{
-    AppState, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit, RevisionProfileControllers,
+    AppState, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit, OverworldControllerEdit,
+    OverworldLayerId, RevisionProfileControllers, SmwMainOverworldLayer2Controller,
     VanillaEntranceController, VanillaEntranceEdit, discover_mwl_directory,
     export_smw_us_v1_installed_mwl_batch, prepare_declared_mwl_import, publish_mwl_batch_new,
 };
@@ -13,6 +14,7 @@ use lm_project::{
     CompleteOverworldSaveOptions, ExAnimationSaveOptions, GraphicsSaveOptions, LevelSaveOptions,
     Map16SetSaveOptions, MwlNativeLevel, PaletteSaveOptions,
 };
+use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::RomImage;
 use std::ops::Range;
 use std::path::Path;
@@ -583,6 +585,49 @@ pub(crate) fn commit_overworld_edits(
     script: &overworld_edit_script::OverworldEditScript,
     search: Range<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if !script.edits.is_empty()
+        && script.edits.iter().all(|edit| {
+            matches!(
+                edit,
+                OverworldControllerEdit::SetLayerTile {
+                    layer: OverworldLayerId::Layer2,
+                    ..
+                }
+            )
+        })
+    {
+        let snapshot = app.controller_snapshot()?;
+        let mut controller = SmwMainOverworldLayer2Controller::decode(&snapshot)?;
+        controller.apply_edits(&script.edits)?;
+        let prepared = controller.prepare_commit(
+            "Apply playable SMW main-overworld Layer 2 edit script",
+            AllocationPolicy {
+                search,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff, 0x00],
+                protected: vec![
+                    ProtectedRange(
+                        lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD
+                            ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD + 2,
+                    ),
+                    ProtectedRange(
+                        lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK
+                            ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK + 1,
+                    ),
+                    ProtectedRange(
+                        lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD
+                            ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD + 2,
+                    ),
+                    ProtectedRange(
+                        lm_profile::SMW_US_V1_CHECKSUM_FIELD
+                            ..lm_profile::SMW_US_V1_CHECKSUM_FIELD + 4,
+                    ),
+                ],
+            },
+        )?;
+        app.dispatch(prepared.into_command())?;
+        return Ok(());
+    }
     let profiled = app.profiled_controller_snapshot()?;
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())?;
     let policy = profiled.profile.allocation_policy_for_rom(

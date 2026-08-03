@@ -96,6 +96,7 @@ mod selection;
 mod selection_state;
 mod shared_palette_state;
 mod shortcut;
+mod smw_main_overworld_layer2_controller;
 mod smw_map16_controller;
 mod snapshot;
 mod ssc_sidecar_controller;
@@ -297,6 +298,9 @@ pub use revision_profile::{
 pub use selection::{EditorSelection, SelectionError};
 pub use shortcut::{
     ShortcutBinding, ShortcutConfig, ShortcutError, ShortcutGesture, ShortcutKey, ShortcutModifiers,
+};
+pub use smw_main_overworld_layer2_controller::{
+    SmwMainOverworldLayer2Controller, SmwMainOverworldLayer2ControllerError,
 };
 pub use smw_map16_controller::{
     SMW_COMPLETE_MAP16_FOREGROUND_PAGES, SMW_COMPLETE_MAP16_PAGES, SmwMap16Controller,

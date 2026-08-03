@@ -1696,6 +1696,48 @@ fn terminal_overworld_script_commits_all_domains_reloads_and_undoes() {
 }
 
 #[test]
+fn terminal_layer2_only_script_edits_authentic_playable_main_overworld_and_undoes() {
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc");
+    let mut app = AppState::default();
+    app.load_rom(fs::read(fixture).unwrap()).unwrap();
+    app.dispatch(Command::ShowOverworld).unwrap();
+    let before = app.project().unwrap().save_snapshot();
+    let original = lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap())
+        .unwrap()
+        .layer
+        .tile(12, 9)
+        .unwrap();
+    let replacement = original ^ 1;
+    let script = overworld_edit_script::parse(&format!(
+        "LMOWEDT1\nslot 0\npalette-owners 100 editable\nlayer 2 0c 09 {replacement:04x}\n"
+    ))
+    .unwrap();
+
+    commit_overworld_edits(&mut app, &script, 0x0e_0000..0x0f_0000).unwrap();
+
+    let reopened = lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap())
+        .unwrap();
+    assert_eq!(reopened.layer.tile(12, 9).unwrap(), replacement);
+    let logical = app.project().unwrap().rom.logical_bytes();
+    assert_eq!(
+        lm_rom::SnesChecksum::decode(logical, lm_profile::SMW_US_V1_CHECKSUM_FIELD).unwrap(),
+        compute_snes_checksum(logical, lm_profile::SMW_US_V1_CHECKSUM_FIELD).unwrap()
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    assert_eq!(
+        lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap())
+            .unwrap()
+            .layer
+            .tile(12, 9)
+            .unwrap(),
+        original
+    );
+}
+
+#[test]
 fn late_protected_overworld_palette_edit_preserves_application() {
     let profile = lm_profile::test_support::profile();
     let mut app = AppState::default();
