@@ -193,6 +193,10 @@ automation for both legacy and expanded streams. Installed GUI, portable GUI, au
 controller edits share one absolute-position model that preserves record identity/extensions,
 stably sorts legacy screens, rebuilds minimum orientation-aware expanded upper-Y controls, enforces
 native bounds, reopens checksum-valid, rolls back late failures, and undoes the ROM byte-exactly.
+Strict `sprite fields` automation now exposes Y-low, extra bits, screen, X, and sprite number as
+typed packed fields. It shares the two GUI workspaces' transaction, preserves custom extensions and
+expanded upper-Y, guards revision-selected record width, follows selection across canonical
+reordering, and has checksum/reopen plus byte-exact ROM-undo evidence.
 
 ## Current critical path
 

@@ -1,6 +1,6 @@
 use crate::{
-    NativeSpriteFieldError, NativeSpriteStream, ObjectRecord, ObjectStream, SpriteLengthTable,
-    SpriteToken,
+    NativeSpriteFieldError, NativeSpriteRecordFields, NativeSpriteStream, ObjectRecord,
+    ObjectStream, SpriteLengthTable, SpriteToken,
 };
 use std::fmt;
 
@@ -251,6 +251,60 @@ impl NativeSpriteStream {
             .set_native_fields(fields, lengths)
             .map_err(LevelEditError::SpriteField)?;
         let selected = staged.sort_legacy_records_by_screen(selected)?;
+        *self = staged;
+        Ok(selected)
+    }
+
+    /// Replaces every proven native base field of one sprite record while preserving its extension
+    /// bytes and current expanded upper-Y band. The record is then tracked through Lunar Magic's
+    /// legacy or orientation-aware expanded ordering. Returns its resulting token index.
+    ///
+    /// # Errors
+    ///
+    /// Rejects a non-record selection, out-of-range fields, revision-table width changes, or
+    /// malformed stream controls without mutating the stream.
+    pub fn set_record_fields(
+        &mut self,
+        selected: usize,
+        fields: NativeSpriteRecordFields,
+        vertical: bool,
+        lengths: &SpriteLengthTable,
+    ) -> Result<usize, LevelEditError> {
+        let mut staged = self.clone();
+        if selected >= staged.tokens.len() {
+            return Err(LevelEditError::IndexOutOfBounds {
+                index: selected,
+                len: staged.tokens.len(),
+            });
+        }
+        let mut active_upper_y = 0_u8;
+        for token in staged.tokens.iter().take(selected) {
+            if let SpriteToken::Screen(value) = token {
+                active_upper_y = *value;
+            }
+        }
+        let Some(SpriteToken::Record(record)) = staged.tokens.get_mut(selected) else {
+            return Err(LevelEditError::LegacyIncompatibleSpriteToken { index: selected });
+        };
+        record
+            .set_native_fields(fields, lengths)
+            .map_err(LevelEditError::SpriteField)?;
+        let selected = if staged.expanded {
+            let y = u16::from(active_upper_y)
+                .checked_mul(32)
+                .and_then(|value| value.checked_add(u16::from(fields.y_low)))
+                .ok_or(LevelEditError::ExpandedSpriteYOutOfRange(u16::MAX))?;
+            staged.relocate_expanded_record(
+                selected,
+                fields.screen,
+                fields.x,
+                y,
+                vertical,
+                lengths,
+            )?
+        } else {
+            staged.sort_legacy_records_by_screen(selected)?
+        };
         *self = staged;
         Ok(selected)
     }
@@ -694,6 +748,69 @@ mod tests {
             stream.tokens[selected - 1],
             SpriteToken::Screen(2)
         ));
+    }
+
+    #[test]
+    fn semantic_record_fields_preserve_extensions_upper_y_and_track_reordering() {
+        let mut lengths = SpriteLengthTable::standard();
+        lengths.set(2, 0x42, 5).unwrap();
+        let custom = SpriteToken::Record(SpriteRecord {
+            encoded: vec![0x08, 0x00, 0x42, 0xaa, 0xbb],
+        });
+        let fields = NativeSpriteRecordFields {
+            y_low: 0x1d,
+            extra_bits: 2,
+            screen: 0x1f,
+            x: 0x0c,
+            sprite_number: 0x42,
+        };
+
+        let mut legacy = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![sprite_on_screen(2, 1), custom.clone()],
+        };
+        let selected = legacy
+            .set_record_fields(1, fields, false, &lengths)
+            .unwrap();
+        assert_eq!(selected, 1);
+        let SpriteToken::Record(record) = &legacy.tokens[selected] else {
+            unreachable!();
+        };
+        assert_eq!(&record.encoded[3..], [0xaa, 0xbb]);
+        assert_eq!(record.native_fields().unwrap(), fields);
+
+        let mut expanded = NativeSpriteStream {
+            header: NativeSpriteStream::EXPANDED_HEADER_FLAG,
+            expanded: true,
+            tokens: vec![SpriteToken::Screen(4), custom],
+        };
+        let selected = expanded
+            .set_record_fields(1, fields, true, &lengths)
+            .unwrap();
+        let placement = expanded.native_placements()[0];
+        assert_eq!(
+            (placement.screen, placement.major, placement.minor),
+            (0x1f, 0x1fc, 0x9d)
+        );
+        assert!(matches!(
+            expanded.tokens[selected - 1],
+            SpriteToken::Screen(4)
+        ));
+        let SpriteToken::Record(record) = &expanded.tokens[selected] else {
+            unreachable!();
+        };
+        assert_eq!(&record.encoded[3..], [0xaa, 0xbb]);
+
+        let original = expanded.clone();
+        let mut invalid = fields;
+        invalid.extra_bits = 4;
+        assert!(
+            expanded
+                .set_record_fields(selected, invalid, true, &lengths)
+                .is_err()
+        );
+        assert_eq!(expanded, original);
     }
 
     #[test]

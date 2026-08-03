@@ -56,6 +56,13 @@ pub(crate) fn apply_native_level_edits(
                     .map(NativeSpriteHeader::raw)
                     .map_err(|error| LevelControllerError::SpriteHeaderEdit { command, error })?;
             }
+            NativeLevelEdit::SetSpriteFields { index, fields } => {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(staged_layer1.header.level_mode()).vertical;
+                staged_sprites
+                    .set_record_fields(*index, *fields, vertical, sprite_lengths)
+                    .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
+            }
             NativeLevelEdit::InsertSprite { index, token } => staged_sprites
                 .insert(*index, token.clone())
                 .map_err(|error| LevelControllerError::SpriteEdit { command, error })?,

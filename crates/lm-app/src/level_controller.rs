@@ -1,8 +1,8 @@
 use crate::{ControllerSnapshot, EditorMode};
 use lm_level::{
     CustomTimeError, CustomTimeSettings, HeaderValueError, LegacyHeaderEdit, LevelEditError,
-    MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, ObjectEdit, ObjectEditError,
-    ObjectStreamError, SpriteRecord, SpriteToken,
+    MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, NativeSpriteRecordFields,
+    ObjectEdit, ObjectEditError, ObjectStreamError, SpriteRecord, SpriteToken,
 };
 use lm_project::{
     LevelLayer2IoError, LevelLayer2RomLayout, LevelLoadError, LevelRomLayout, LevelSaveError,
@@ -25,6 +25,10 @@ pub enum NativeLevelEdit {
         memory: u8,
         buoyancy_1: bool,
         buoyancy_2: bool,
+    },
+    SetSpriteFields {
+        index: usize,
+        fields: NativeSpriteRecordFields,
     },
     InsertSprite {
         index: usize,

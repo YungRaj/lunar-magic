@@ -213,9 +213,28 @@ impl NativeLevelDocumentEditor {
     }
     fn apply(&mut self, edit: NativeLevelEdit) -> bool {
         if let Some(c) = self.controller.as_mut() {
+            let selected = if let NativeLevelEdit::SetSpriteFields { index, fields } = &edit {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(c.value().layer1.header.level_mode()).vertical;
+                let mut predicted = c.value().sprites.clone();
+                match predicted.set_record_fields(*index, *fields, vertical, c.sprite_lengths()) {
+                    Ok(selected) => Some(selected),
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return false;
+                    }
+                }
+            } else {
+                None
+            };
             if let Err(e) = c.apply_edits(c.revision(), &[edit]) {
                 self.error = Some(e.to_string());
                 return false;
+            }
+            if let Some(selected) = selected {
+                self.sprite_index = selected;
+                self.form
+                    .load_sprite(c.value().sprites.tokens.get(selected));
             }
         }
         self.reload_sprite_header();

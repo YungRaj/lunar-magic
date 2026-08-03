@@ -338,15 +338,23 @@ impl AggregatePanels {
             return Some(Err(error));
         }
         if apply_sprite_fields {
-            return Some(
-                self.level_record
-                    .sprite_field_edit(
-                        self.sprite_index,
-                        level.sprites.tokens.get(self.sprite_index),
-                        sprite_lengths,
-                    )
-                    .map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit])),
+            let edit = self.level_record.sprite_field_edit(
+                self.sprite_index,
+                level.sprites.tokens.get(self.sprite_index),
+                sprite_lengths,
             );
+            if let Ok(NativeLevelEdit::SetSpriteFields { index, fields }) = &edit {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(level.layer1.header.level_mode()).vertical;
+                let mut predicted = level.sprites.clone();
+                match predicted.set_record_fields(*index, *fields, vertical, sprite_lengths) {
+                    Ok(selected) => {
+                        self.pending_selection_move = Some(PendingSelectionMove::Sprite(selected));
+                    }
+                    Err(error) => return Some(Err(error.to_string())),
+                }
+            }
+            return Some(edit.map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit])));
         }
         if let Some((before, selected)) = move_sprite {
             self.pending_selection_move = Some(PendingSelectionMove::Sprite(selected));

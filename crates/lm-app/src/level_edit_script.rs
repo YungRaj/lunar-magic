@@ -3,7 +3,8 @@
 use lm_app::NativeLevelEdit;
 use lm_level::{
     CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
-    ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteRecord, SpriteToken,
+    NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord, SpriteRecord,
+    SpriteToken,
 };
 use std::fmt;
 
@@ -278,6 +279,18 @@ fn parse_sprite_command(
     command: &[&str],
 ) -> Result<NativeLevelEdit, LevelEditScriptError> {
     match command {
+        ["fields", index, y_low, extra_bits, screen, x, sprite_number] => {
+            Ok(NativeLevelEdit::SetSpriteFields {
+                index: decimal(line, index)?,
+                fields: NativeSpriteRecordFields {
+                    y_low: bounded_hex_byte(line, y_low, 0x1f)?,
+                    extra_bits: bounded_hex_byte(line, extra_bits, 3)?,
+                    screen: sprite_screen(line, screen)?,
+                    x: coordinate_nibble(line, x)?,
+                    sprite_number: hex_byte(line, sprite_number)?,
+                },
+            })
+        }
         ["place", bytes, screen, x, y] => Ok(NativeLevelEdit::PlaceSpriteAtPosition {
             record: sprite_record(line, bytes)?,
             screen: sprite_screen(line, screen)?,
@@ -375,14 +388,18 @@ fn native_screen(line: usize, value: &str) -> Result<u16, LevelEditScriptError> 
 }
 
 fn coordinate_nibble(line: usize, value: &str) -> Result<u8, LevelEditScriptError> {
-    let coordinate = hex_byte(line, value)?;
-    if coordinate > 0x0f {
+    bounded_hex_byte(line, value, 0x0f)
+}
+
+fn bounded_hex_byte(line: usize, value: &str, maximum: u8) -> Result<u8, LevelEditScriptError> {
+    let parsed = hex_byte(line, value)?;
+    if parsed > maximum {
         return Err(LevelEditScriptError::InvalidNumber {
             line,
             value: value.into(),
         });
     }
-    Ok(coordinate)
+    Ok(parsed)
 }
 
 fn sprite_screen(line: usize, value: &str) -> Result<u8, LevelEditScriptError> {
@@ -524,9 +541,10 @@ mod tests {
             object place 090855 001f 0c 0b true\n\
             object relocate-position 0 001e 0a 09 false\n\
             sprite place 080047 001f 0c 001a\n\
-            sprite relocate-position 0 001e 0a 008f\n";
+            sprite relocate-position 0 001e 0a 008f\n\
+            sprite fields 0 1d 02 001f 0c 47\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 28);
+        assert_eq!(edits.len(), 29);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert_eq!(
             edits[1],
@@ -658,6 +676,19 @@ mod tests {
                 y: 0x8f,
             }
         );
+        assert_eq!(
+            edits[28],
+            NativeLevelEdit::SetSpriteFields {
+                index: 0,
+                fields: NativeSpriteRecordFields {
+                    y_low: 0x1d,
+                    extra_bits: 2,
+                    screen: 0x1f,
+                    x: 0x0c,
+                    sprite_number: 0x47,
+                },
+            }
+        );
     }
 
     #[test]
@@ -674,6 +705,8 @@ mod tests {
             "LMLEDIT1\nsprite place 080047 20 00 0000\n",
             "LMLEDIT1\nsprite place 080047 00 10 0000\n",
             "LMLEDIT1\nsprite relocate-position 0 20 00 0000\n",
+            "LMLEDIT1\nsprite fields 0 20 00 00 00 47\n",
+            "LMLEDIT1\nsprite fields 0 00 04 00 00 47\n",
             "LMLEDIT1\nsprite insert 0 screen 80\n",
             "LMLEDIT1\nsprite insert 0 control 7f\n",
             "LMLEDIT1\nsprite insert 0 mystery 00\n",

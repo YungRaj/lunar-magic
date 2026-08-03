@@ -557,6 +557,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   `place_record_at_position`/`relocate_record_position` boundary now used by both installed and
   portable canvases. That boundary selects legacy screen sorting or expanded orientation-aware
   upper-Y reconstruction while preserving sprite identity, extra bits, and extension bytes.
+  `sprite fields` feeds the shared `set_record_fields` transaction used by the installed and
+  portable semantic forms. That transaction owns packed-field validation, custom-extension and
+  expanded upper-Y preservation, revision-width checks, canonical reordering, and the resulting
+  selected token index; the shell therefore cannot drift from either GUI implementation.
   Both `LMLEDIT1` and the focused `level-header` command expose the typed four-way Layer 1
   vertical-scroll mode, reject raw values above 3, and preserve the object tileset plus both
   unrelated high bits in the shared header byte.

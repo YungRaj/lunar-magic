@@ -273,27 +273,20 @@ impl NativeLevelRecordForm {
         &self,
         index: usize,
         token: Option<&SpriteToken>,
-        lengths: &SpriteLengthTable,
+        _lengths: &SpriteLengthTable,
     ) -> Result<NativeLevelEdit, String> {
-        let Some(SpriteToken::Record(record)) = token else {
+        let Some(SpriteToken::Record(_)) = token else {
             return Err("select a sprite record before applying semantic fields".into());
         };
-        let mut record = record.clone();
-        record
-            .set_native_fields(
-                NativeSpriteRecordFields {
-                    y_low: self.sprite_y_low,
-                    extra_bits: self.sprite_extra_bits,
-                    screen: self.sprite_screen,
-                    x: self.sprite_x,
-                    sprite_number: self.sprite_number,
-                },
-                lengths,
-            )
-            .map_err(|error| error.to_string())?;
-        Ok(NativeLevelEdit::ReplaceSprite {
+        Ok(NativeLevelEdit::SetSpriteFields {
             index,
-            token: SpriteToken::Record(record),
+            fields: NativeSpriteRecordFields {
+                y_low: self.sprite_y_low,
+                extra_bits: self.sprite_extra_bits,
+                screen: self.sprite_screen,
+                x: self.sprite_x,
+                sprite_number: self.sprite_number,
+            },
         })
     }
 }
@@ -430,19 +423,42 @@ mod tests {
         form.sprite_x = 3;
         form.sprite_y_low = 0x1d;
         let edit = form.sprite_field_edit(4, Some(&token), &lengths).unwrap();
-        let NativeLevelEdit::ReplaceSprite {
-            token: SpriteToken::Record(record),
-            ..
-        } = edit
-        else {
-            panic!("expected sprite replacement");
+        let NativeLevelEdit::SetSpriteFields { index, fields } = edit else {
+            panic!("expected typed sprite fields");
+        };
+        assert_eq!(index, 4);
+        let mut stream = lm_level::NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![
+                token.clone(),
+                token.clone(),
+                token.clone(),
+                token.clone(),
+                token.clone(),
+            ],
+        };
+        let selected = stream
+            .set_record_fields(index, fields, false, &lengths)
+            .unwrap();
+        let SpriteToken::Record(record) = &stream.tokens[selected] else {
+            unreachable!();
         };
         assert_eq!(&record.encoded[3..], [0xaa, 0xbb]);
         assert_eq!(record.native_fields().unwrap().x, 3);
         assert_eq!(record.native_fields().unwrap().y_low, 0x1d);
 
         form.sprite_number = 0x43;
-        assert!(form.sprite_field_edit(4, Some(&token), &lengths).is_err());
+        let NativeLevelEdit::SetSpriteFields { fields, .. } =
+            form.sprite_field_edit(4, Some(&token), &lengths).unwrap()
+        else {
+            unreachable!();
+        };
+        assert!(
+            stream
+                .set_record_fields(selected, fields, false, &lengths)
+                .is_err()
+        );
     }
 
     #[test]

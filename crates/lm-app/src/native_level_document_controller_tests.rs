@@ -1,7 +1,7 @@
 use super::*;
 use lm_level::{
-    LegacyHeaderEdit, LevelObjectData, NativeSpriteStream, ObjectEdit, ObjectRecord, SpriteRecord,
-    SpriteToken,
+    LegacyHeaderEdit, LevelObjectData, NativeSpriteRecordFields, NativeSpriteStream, ObjectEdit,
+    ObjectRecord, SpriteRecord, SpriteToken,
 };
 
 fn file() -> NativeLevelFile {
@@ -115,6 +115,37 @@ fn semantic_sprite_position_edits_cover_legacy_and_expanded_documents() {
         (relocated.screen, relocated.major, relocated.minor),
         (0, 3, 9)
     );
+    legacy
+        .apply_edits(
+            2,
+            &[NativeLevelEdit::SetSpriteFields {
+                index: relocated.token_index,
+                fields: NativeSpriteRecordFields {
+                    y_low: 0x1c,
+                    extra_bits: 2,
+                    screen: 0x1d,
+                    x: 0x0b,
+                    sprite_number: 0x47,
+                },
+            }],
+        )
+        .unwrap();
+    let field_edited = legacy
+        .value()
+        .sprites
+        .native_placements()
+        .into_iter()
+        .find(|placement| placement.sprite_number == 0x47)
+        .unwrap();
+    assert_eq!(
+        (
+            field_edited.screen,
+            field_edited.major,
+            field_edited.minor,
+            field_edited.extra_bits,
+        ),
+        (0x1d, 0x1db, 0x1c, 2)
+    );
 
     let mut value = file();
     value.sprites.expanded = true;
@@ -151,12 +182,45 @@ fn semantic_sprite_position_edits_cover_legacy_and_expanded_documents() {
         (placed.screen, placed.major, placed.minor),
         (0x1e, 0x1ea, 0x9d)
     );
-    assert!(expanded
+    expanded
+        .apply_edits(
+            1,
+            &[NativeLevelEdit::SetSpriteFields {
+                index: placed.token_index,
+                fields: NativeSpriteRecordFields {
+                    y_low: 0x1b,
+                    extra_bits: 2,
+                    screen: 1,
+                    x: 2,
+                    sprite_number: 0x47,
+                },
+            }],
+        )
+        .unwrap();
+    let field_edited = expanded
         .value()
         .sprites
-        .tokens
-        .iter()
-        .any(|token| matches!(token, SpriteToken::Screen(4))));
+        .native_placements()
+        .into_iter()
+        .find(|placement| placement.sprite_number == 0x47)
+        .unwrap();
+    assert_eq!(
+        (
+            field_edited.screen,
+            field_edited.major,
+            field_edited.minor,
+            field_edited.extra_bits,
+        ),
+        (1, 0x12, 0x9b, 2)
+    );
+    assert!(
+        expanded
+            .value()
+            .sprites
+            .tokens
+            .iter()
+            .any(|token| matches!(token, SpriteToken::Screen(4)))
+    );
 }
 
 #[test]

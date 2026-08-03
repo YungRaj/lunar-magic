@@ -1323,22 +1323,6 @@ fn semantic_aggregate_object_and_sprite_fields_commit_and_reopen() {
         PaletteOwnership::editable(2),
     )
     .unwrap();
-    let mut sprite = match &controller.assets().level.sprites.tokens[0] {
-        SpriteToken::Record(record) => record.clone(),
-        token => panic!("fixture requires a sprite record, got {token:?}"),
-    };
-    sprite
-        .set_native_fields(
-            NativeSpriteRecordFields {
-                y_low: 0x1d,
-                extra_bits: 0,
-                screen: 3,
-                x: 0x0e,
-                sprite_number: 2,
-            },
-            &lengths,
-        )
-        .unwrap();
     controller
         .apply_edits(&[NativeLevelAssetsControllerEdit::Level(vec![
             NativeLevelEdit::Objects(vec![
@@ -1355,9 +1339,15 @@ fn semantic_aggregate_object_and_sprite_fields_commit_and_reopen() {
                     },
                 },
             ]),
-            NativeLevelEdit::ReplaceSprite {
+            NativeLevelEdit::SetSpriteFields {
                 index: 0,
-                token: SpriteToken::Record(sprite),
+                fields: NativeSpriteRecordFields {
+                    y_low: 0x1d,
+                    extra_bits: 0,
+                    screen: 3,
+                    x: 0x0e,
+                    sprite_number: 2,
+                },
             },
         ])])
         .unwrap();

@@ -231,27 +231,20 @@ impl SpriteForm {
         &self,
         index: usize,
         token: Option<&SpriteToken>,
-        lengths: &SpriteLengthTable,
+        _lengths: &SpriteLengthTable,
     ) -> Result<NativeLevelEdit, String> {
-        let Some(SpriteToken::Record(record)) = token else {
+        let Some(SpriteToken::Record(_)) = token else {
             return Err("select a sprite record before applying semantic fields".into());
         };
-        let mut record = record.clone();
-        record
-            .set_native_fields(
-                NativeSpriteRecordFields {
-                    y_low: self.y_low,
-                    extra_bits: self.extra_bits,
-                    screen: self.screen,
-                    x: self.x,
-                    sprite_number: self.sprite_number,
-                },
-                lengths,
-            )
-            .map_err(|error| error.to_string())?;
-        Ok(NativeLevelEdit::ReplaceSprite {
+        Ok(NativeLevelEdit::SetSpriteFields {
             index,
-            token: SpriteToken::Record(record),
+            fields: NativeSpriteRecordFields {
+                y_low: self.y_low,
+                extra_bits: self.extra_bits,
+                screen: self.screen,
+                x: self.x,
+                sprite_number: self.sprite_number,
+            },
         })
     }
 }
@@ -4300,33 +4293,23 @@ impl VanillaLevelEditor {
             self.error = Some("native level controller is unavailable".into());
             return;
         };
-        let selected = if controller.level().sprites.expanded {
-            self.selected_sprite
-        } else {
-            let NativeLevelEdit::ReplaceSprite { index, token } = &edit else {
-                unreachable!("semantic sprite edit is always a replacement");
-            };
-            let mut predicted = controller.level().sprites.clone();
-            predicted.tokens[*index] = token.clone();
-            match predicted.sort_legacy_records_by_screen(*index) {
+        let NativeLevelEdit::SetSpriteFields { index, fields } = edit else {
+            unreachable!("semantic sprite edit is always typed fields");
+        };
+        let vertical =
+            lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode())
+                .vertical;
+        let mut predicted = controller.level().sprites.clone();
+        let selected =
+            match predicted.set_record_fields(index, fields, vertical, controller.sprite_lengths())
+            {
                 Ok(selected) => selected,
                 Err(error) => {
                     self.error = Some(error.to_string());
                     return;
                 }
-            }
-        };
-        let edits = if controller.level().sprites.expanded {
-            vec![edit]
-        } else {
-            vec![
-                edit,
-                NativeLevelEdit::SortLegacySpritesByScreen {
-                    selected: self.selected_sprite,
-                },
-            ]
-        };
-        match controller.apply_edits(&edits) {
+            };
+        match controller.apply_edits(&[NativeLevelEdit::SetSpriteFields { index, fields }]) {
             Ok(()) => {
                 self.selected_sprite = selected;
                 self.sprite_form = SpriteForm::from_token(
@@ -13068,13 +13051,21 @@ mod tests {
         });
         let mut form = SpriteForm::from_token(0, Some(&token));
         form.x = 7;
-        let NativeLevelEdit::ReplaceSprite { token, .. } =
+        let NativeLevelEdit::SetSpriteFields { index, fields } =
             form.semantic_edit(0, Some(&token), &lengths).unwrap()
         else {
-            panic!("semantic edit must replace the selected record");
+            panic!("semantic edit must emit typed fields");
         };
-        let SpriteToken::Record(record) = token else {
-            panic!("semantic edit must retain an ordinary record");
+        let mut stream = lm_level::NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![token],
+        };
+        let selected = stream
+            .set_record_fields(index, fields, false, &lengths)
+            .unwrap();
+        let SpriteToken::Record(record) = &stream.tokens[selected] else {
+            unreachable!();
         };
         assert_eq!(&record.encoded[3..], &[0xaa, 0xbb]);
         assert_eq!(record.native_fields().unwrap().x, 7);
@@ -13283,12 +13274,13 @@ mod tests {
                 &SpriteLengthTable::standard(),
             )
             .unwrap();
-        let NativeLevelEdit::ReplaceSprite { token, .. } = &edit else {
+        let NativeLevelEdit::SetSpriteFields { index, fields } = edit else {
             unreachable!();
         };
         let mut expected = editor.controller.as_ref().unwrap().level().sprites.clone();
-        expected.tokens[selected] = token.clone();
-        let expected_selected = expected.sort_legacy_records_by_screen(selected).unwrap();
+        let expected_selected = expected
+            .set_record_fields(index, fields, false, &SpriteLengthTable::standard())
+            .unwrap();
 
         editor.apply_sprite_semantic_fields();
 
@@ -13597,11 +13589,15 @@ mod tests {
         assert_eq!(
             form.semantic_edit(4, Some(&token), &SpriteLengthTable::standard())
                 .unwrap(),
-            NativeLevelEdit::ReplaceSprite {
+            NativeLevelEdit::SetSpriteFields {
                 index: 4,
-                token: SpriteToken::Record(lm_level::SpriteRecord {
-                    encoded: vec![0xdb, 0x3e, 0x55],
-                }),
+                fields: NativeSpriteRecordFields {
+                    y_low: 0x1d,
+                    extra_bits: 2,
+                    screen: 0x1e,
+                    x: 3,
+                    sprite_number: 0x55,
+                },
             }
         );
     }

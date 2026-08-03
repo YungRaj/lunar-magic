@@ -342,13 +342,14 @@ fn terminal_layer1_scroll_header_edit_preserves_adjacent_bits_reopens_and_undoes
         loaded.layer1.header.encoded()[4] & !0x30,
         original_byte & !0x30
     );
-    assert!(app
-        .project()
-        .unwrap()
-        .identity
-        .as_ref()
-        .unwrap()
-        .checksum_matches());
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(
         app.project()
@@ -709,6 +710,14 @@ fn terminal_semantic_sprite_place_and_relocate_reopen_and_undo() {
         .unwrap();
     assert!(baseline_level.sprites.expanded);
     let baseline_sprite = baseline_level.sprites.native_placements()[0].token_index;
+    let field_sprite = baseline_level
+        .sprites
+        .tokens
+        .iter()
+        .position(|token| {
+            matches!(token, lm_level::SpriteToken::Record(record) if record.encoded.len() == 3)
+        })
+        .unwrap();
     let directory =
         std::env::temp_dir().join(format!("lm-app-sprite-position-{}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
@@ -738,6 +747,44 @@ fn terminal_semantic_sprite_place_and_relocate_reopen_and_undo() {
         lm_level::SpriteToken::Screen(_) | lm_level::SpriteToken::Control(_) => unreachable!(),
     };
     assert_eq!(record.native_fields().unwrap().extra_bits, 2);
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(
+        &script,
+        format!("LMLEDIT1\nsprite fields {field_sprite} 1c 02 1d 0b 47\n"),
+    )
+    .unwrap();
+    execute_level_script(&mut app, &script, 0x1_0000..0x1_8000).unwrap();
+    let edited = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    let placement = edited
+        .sprites
+        .native_placements()
+        .into_iter()
+        .find(|placement| {
+            placement.sprite_number == 0x47
+                && placement.screen == 0x1d
+                && placement.major == 0x1db
+                && placement.minor & 0x1f == 0x1c
+        })
+        .unwrap();
+    let fields = match &edited.sprites.tokens[placement.token_index] {
+        lm_level::SpriteToken::Record(record) => record.native_fields().unwrap(),
+        lm_level::SpriteToken::Screen(_) | lm_level::SpriteToken::Control(_) => unreachable!(),
+    };
+    assert_eq!(fields.extra_bits, 2);
     assert!(
         app.project()
             .unwrap()

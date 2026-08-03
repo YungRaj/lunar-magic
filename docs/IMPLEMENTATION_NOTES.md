@@ -1053,6 +1053,13 @@ limited to `$1F`, X to `$0F`, legacy Y to `$1F`, and expanded Y to `$0FFF`. The 
 sprite number, extra bits, and extension bytes, stably sorts legacy records by screen, and rebuilds
 expanded upper-Y transitions with the orientation-aware comparator. Invalid records, coordinates,
 indexes, controls, or revision-table width changes reject the complete edit batch atomically.
+Named record-field edits use `sprite fields INDEX Y_LOW EXTRA_BITS SCREEN X SPRITE_NUMBER`.
+The index is decimal and all five fields are hexadecimal, bounded to their native packed widths
+(`$1F`, `$03`, `$1F`, `$0F`, and `$FF`). This command shares `set_record_fields` with both native
+GUI workspaces: it preserves custom extension bytes and an expanded record's current upper-Y band,
+rejects revision-table width changes before mutation, then performs the same stable legacy or
+orientation-aware expanded reorder as canvas relocation. GUI selection follows the edited record
+when that reorder changes its token index.
 Existing screen-exit objects can be edited semantically with `object screen-exit INDEX SCREEN
 DESTINATION_AND_FLAGS`. The decimal record index selects a recognized command-zero exit, while the
 source screen and 16-bit destination/flags value are hexadecimal. The shared typed object edit
@@ -1076,6 +1083,7 @@ object place 090855 1f 0c 0b true
 object relocate-position 0 1e 0a 09 true
 sprite place 080047 1f 0c 009d
 sprite relocate-position 0 1e 0a 008f
+sprite fields 0 1c 02 1d 0b 47
 sprite-header 10
 sprite-properties 12 true false
 sprite insert 1 screen 12
