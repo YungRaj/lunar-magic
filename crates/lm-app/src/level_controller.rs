@@ -86,6 +86,10 @@ pub enum LevelControllerError {
     Layer2StorageMismatch {
         expected: &'static str,
     },
+    Layer2ModeChangeRequiresReset {
+        from: u8,
+        to: u8,
+    },
     Layer2ObjectEdit(ObjectEditError),
     Layer2TileIndex(usize),
     Layer2TileDuplicate(usize),
@@ -113,6 +117,8 @@ pub struct LevelController {
     layer2_layout: Option<LevelLayer2RomLayout>,
     baseline_layer2: Option<NativeLayer2Data>,
     layer2: Option<NativeLayer2Data>,
+    dormant_layer2_objects: Option<lm_level::LevelObjectData>,
+    baseline_layer2_descriptor: Option<MwlLayer2Descriptor>,
     layer2_descriptor: Option<MwlLayer2Descriptor>,
     normalized_reserved_level_mode: Option<u8>,
     undo: Vec<LevelControllerState>,
@@ -125,6 +131,8 @@ pub struct LevelController {
 struct LevelControllerState {
     level: LoadedLevelSlot,
     layer2: Option<NativeLayer2Data>,
+    dormant_layer2_objects: Option<lm_level::LevelObjectData>,
+    layer2_descriptor: Option<MwlLayer2Descriptor>,
 }
 
 impl LevelController {
@@ -219,6 +227,10 @@ impl LevelController {
             .map_err(LevelControllerError::Layer2Load)?;
         let layer2 = loaded_layer2.as_ref().map(|loaded| loaded.data.clone());
         let layer2_descriptor = loaded_layer2.and_then(|loaded| loaded.descriptor);
+        let dormant_layer2_objects = layer2.as_ref().map(|layer2| match layer2 {
+            NativeLayer2Data::Objects(objects) => objects.clone(),
+            NativeLayer2Data::Tilemap(_) => lm_level::LevelObjectData::default(),
+        });
         Ok(Self {
             revision: snapshot.revision,
             layout,
@@ -230,6 +242,8 @@ impl LevelController {
             layer2_layout,
             baseline_layer2: layer2.clone(),
             layer2,
+            dormant_layer2_objects,
+            baseline_layer2_descriptor: layer2_descriptor,
             layer2_descriptor,
             normalized_reserved_level_mode,
             undo: Vec::new(),
@@ -267,7 +281,9 @@ impl LevelController {
 
     #[must_use]
     pub fn is_modified(&self) -> bool {
-        self.level != self.baseline || self.layer2 != self.baseline_layer2
+        self.level != self.baseline
+            || self.layer2 != self.baseline_layer2
+            || self.layer2_descriptor != self.baseline_layer2_descriptor
     }
 
     #[must_use]
@@ -356,12 +372,37 @@ impl LevelController {
     /// Returns [`LevelControllerError`] with the failing command index. A failure leaves both the
     /// decoded model and its source snapshot unchanged.
     pub fn apply_edits(&mut self, edits: &[NativeLevelEdit]) -> Result<(), LevelControllerError> {
+        self.apply_edits_with_layer2_reset(edits, false)
+    }
+
+    /// Applies ordered native edits and explicitly authorizes Lunar Magic's destructive Layer 2
+    /// reset when the final level mode crosses its object/tilemap storage boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::apply_edits`]. Without `reset_layer2`, a storage-class
+    /// transition is rejected atomically instead of leaving a payload that can only fail at save.
+    pub fn apply_edits_with_layer2_reset(
+        &mut self,
+        edits: &[NativeLevelEdit],
+        reset_layer2: bool,
+    ) -> Result<(), LevelControllerError> {
         let previous = self.state();
+        let mut next = previous.clone();
         crate::native_level_edit_batch::apply_loaded_level_edits(
-            &mut self.level,
+            &mut next.level,
             edits,
             &self.sprite_lengths,
         )?;
+        reset_layer2_after_mode_change(
+            &mut next.layer2,
+            &mut next.dormant_layer2_objects,
+            &mut next.layer2_descriptor,
+            previous.level.layer1.header.level_mode(),
+            next.level.layer1.header.level_mode(),
+            reset_layer2,
+        )?;
+        self.restore(next);
         if let Some(mode) = last_normalized_mode_edit(edits) {
             self.normalized_reserved_level_mode = Some(mode);
         }
@@ -441,12 +482,16 @@ impl LevelController {
         LevelControllerState {
             level: self.level.clone(),
             layer2: self.layer2.clone(),
+            dormant_layer2_objects: self.dormant_layer2_objects.clone(),
+            layer2_descriptor: self.layer2_descriptor,
         }
     }
 
     fn restore(&mut self, state: LevelControllerState) {
         self.level = state.level;
         self.layer2 = state.layer2;
+        self.dormant_layer2_objects = state.dormant_layer2_objects;
+        self.layer2_descriptor = state.layer2_descriptor;
     }
 
     fn finish_edit(&mut self, previous: LevelControllerState) {
@@ -455,6 +500,44 @@ impl LevelController {
             self.redo.clear();
         }
     }
+}
+
+fn reset_layer2_after_mode_change(
+    layer2: &mut Option<NativeLayer2Data>,
+    dormant_objects: &mut Option<lm_level::LevelObjectData>,
+    descriptor: &mut Option<MwlLayer2Descriptor>,
+    from: u8,
+    to: u8,
+    approved: bool,
+) -> Result<(), LevelControllerError> {
+    use lm_level::{Layer2Storage, level_mode_layer2_storage};
+
+    let from_storage = level_mode_layer2_storage(from);
+    let to_storage = level_mode_layer2_storage(to);
+    if layer2.is_none() || from_storage == to_storage {
+        return Ok(());
+    }
+    if !approved {
+        return Err(LevelControllerError::Layer2ModeChangeRequiresReset { from, to });
+    }
+    *layer2 = Some(match to_storage {
+        Layer2Storage::Objects => {
+            NativeLayer2Data::Objects(dormant_objects.clone().unwrap_or_default())
+        }
+        Layer2Storage::CompressedTilemap => {
+            if let Some(NativeLayer2Data::Objects(objects)) = layer2.as_ref() {
+                *dormant_objects = Some(objects.clone());
+            }
+            NativeLayer2Data::Tilemap(vec![0; NATIVE_LAYER2_TILEMAP_LEN])
+        }
+    });
+    if let Some(value) = descriptor {
+        *value = match to_storage {
+            Layer2Storage::Objects => value.after_tilemap_to_object_mode_change(),
+            Layer2Storage::CompressedTilemap => value.after_object_to_tilemap_mode_change(),
+        };
+    }
+    Ok(())
 }
 
 fn last_normalized_mode_edit(edits: &[NativeLevelEdit]) -> Option<u8> {

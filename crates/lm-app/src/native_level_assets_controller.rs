@@ -9,10 +9,11 @@ use lm_graphics::{
     PaletteOwnership,
 };
 use lm_level::{
-    ExpandedLevelSettingsError, HeaderValueError, LegacyHeaderEdit, LevelEditError,
-    LevelScreenExtentMode, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
-    NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit,
-    ObjectEditError, SpriteLengthTable, SpriteStreamError, native_level_screen_count,
+    ExpandedLevelSettingsError, HeaderValueError, Layer2Storage, LegacyHeaderEdit, LevelEditError,
+    LevelObjectData, LevelScreenExtentMode, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
+    NativeLayer2Data, NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError,
+    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteStreamError, level_mode_layer2_storage,
+    native_level_screen_count,
 };
 use lm_project::{
     InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
@@ -66,6 +67,11 @@ pub enum NativeLevelAssetsControllerError {
     Layer2StorageMismatch {
         command: usize,
         expected: &'static str,
+    },
+    Layer2ModeChangeRequiresReset {
+        command: usize,
+        from: u8,
+        to: u8,
     },
     Layer2ObjectEdit {
         command: usize,
@@ -180,6 +186,7 @@ pub struct NativeLevelAssetsController {
     features: Option<LoadedExAnimationFeatures>,
     baseline_layer2: Option<NativeLayer2Data>,
     layer2: Option<NativeLayer2Data>,
+    dormant_layer2_objects: Option<LevelObjectData>,
     baseline_layer2_descriptor: Option<MwlLayer2Descriptor>,
     layer2_descriptor: Option<MwlLayer2Descriptor>,
     normalized_reserved_level_mode: Option<u8>,
@@ -296,6 +303,10 @@ impl NativeLevelAssetsController {
             .map_err(NativeLevelAssetsControllerError::Layer2Load)?;
         let layer2 = loaded_layer2.as_ref().map(|loaded| loaded.data.clone());
         let layer2_descriptor = loaded_layer2.and_then(|loaded| loaded.descriptor);
+        let dormant_layer2_objects = layer2.as_ref().map(|layer2| match layer2 {
+            NativeLayer2Data::Objects(objects) => objects.clone(),
+            NativeLayer2Data::Tilemap(_) => LevelObjectData::default(),
+        });
         let slot = usize::from(slot);
         let previous_blocks = [
             snapshot_block(&project, layout.level.layer1, slot, layout.level.mapper)?,
@@ -344,6 +355,7 @@ impl NativeLevelAssetsController {
             features,
             baseline_layer2: layer2.clone(),
             layer2,
+            dormant_layer2_objects,
             baseline_layer2_descriptor: layer2_descriptor,
             layer2_descriptor,
             normalized_reserved_level_mode,
@@ -400,10 +412,27 @@ impl NativeLevelAssetsController {
         &mut self,
         edits: &[NativeLevelAssetsControllerEdit],
     ) -> Result<(), NativeLevelAssetsControllerError> {
+        self.apply_edits_with_layer2_reset(edits, false)
+    }
+
+    /// Applies a mixed aggregate batch and explicitly authorizes Lunar Magic's destructive Layer
+    /// 2 reset when the final level mode crosses the object/tilemap storage boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::apply_edits`]. Without authorization, a mode transition
+    /// that would invalidate the staged Layer 2 payload is rejected atomically.
+    pub fn apply_edits_with_layer2_reset(
+        &mut self,
+        edits: &[NativeLevelAssetsControllerEdit],
+        reset_layer2: bool,
+    ) -> Result<(), NativeLevelAssetsControllerError> {
         let mut staged = self.assets.clone();
         let mut staged_layer2 = self.layer2.clone();
+        let mut staged_dormant_layer2_objects = self.dormant_layer2_objects.clone();
         let mut staged_layer2_descriptor = self.layer2_descriptor;
         let mut staged_features = self.features;
+        let source_level_mode = staged.level.layer1.header.level_mode();
         apply_native_level_assets_edits(
             &mut staged,
             (
@@ -416,8 +445,18 @@ impl NativeLevelAssetsController {
             &self.double_size_modes,
             &self.palette_ownership,
         )?;
+        reset_aggregate_layer2_after_mode_change(
+            &mut staged_layer2,
+            &mut staged_dormant_layer2_objects,
+            &mut staged_layer2_descriptor,
+            source_level_mode,
+            staged.level.layer1.header.level_mode(),
+            reset_layer2,
+            edits,
+        )?;
         self.assets = staged;
         self.layer2 = staged_layer2;
+        self.dormant_layer2_objects = staged_dormant_layer2_objects;
         self.layer2_descriptor = staged_layer2_descriptor;
         self.features = staged_features;
         if let Some(mode) = edits
@@ -578,12 +617,59 @@ impl NativeLevelAssetsController {
 
         self.assets = staged;
         self.layer2 = Some(source.layer2.clone());
+        self.dormant_layer2_objects = Some(match &source.layer2 {
+            NativeLayer2Data::Objects(objects) => objects.clone(),
+            NativeLayer2Data::Tilemap(_) => LevelObjectData::default(),
+        });
         self.layer2_descriptor = self.layer2_descriptor.map(|_| source.layer2_descriptor);
         if let Some(mode) = normalized_reserved_level_mode {
             self.normalized_reserved_level_mode = Some(mode);
         }
         Ok(())
     }
+}
+
+fn reset_aggregate_layer2_after_mode_change(
+    layer2: &mut Option<NativeLayer2Data>,
+    dormant_objects: &mut Option<LevelObjectData>,
+    descriptor: &mut Option<MwlLayer2Descriptor>,
+    from: u8,
+    to: u8,
+    approved: bool,
+    edits: &[NativeLevelAssetsControllerEdit],
+) -> Result<(), NativeLevelAssetsControllerError> {
+    let from_storage = level_mode_layer2_storage(from);
+    let to_storage = level_mode_layer2_storage(to);
+    if layer2.is_none() || from_storage == to_storage {
+        return Ok(());
+    }
+    let command = edits
+        .iter()
+        .rposition(|edit| matches!(edit, NativeLevelAssetsControllerEdit::Level(level) if level.iter().any(|edit| matches!(edit, NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(_))))))
+        .unwrap_or(0);
+    if !approved {
+        return Err(
+            NativeLevelAssetsControllerError::Layer2ModeChangeRequiresReset { command, from, to },
+        );
+    }
+    *layer2 = Some(match to_storage {
+        Layer2Storage::Objects => {
+            NativeLayer2Data::Objects(dormant_objects.clone().unwrap_or_default())
+        }
+        Layer2Storage::CompressedTilemap => {
+            if let Some(NativeLayer2Data::Objects(objects)) = layer2.as_ref() {
+                *dormant_objects = Some(objects.clone());
+            }
+            NativeLayer2Data::Tilemap(vec![0; NATIVE_LAYER2_TILEMAP_LEN])
+        }
+    });
+    if let Some(value) = descriptor {
+        *value = match to_storage {
+            Layer2Storage::Objects => value.after_tilemap_to_object_mode_change(),
+            Layer2Storage::CompressedTilemap => value.after_object_to_tilemap_mode_change(),
+        };
+    }
+    Ok(())
 }
 
 fn normalized_mode_from_aggregate_edit(edit: &NativeLevelAssetsControllerEdit) -> Option<u8> {

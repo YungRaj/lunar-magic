@@ -627,6 +627,91 @@ fn aggregate_decode_stages_reserved_level_mode_fallback_without_losing_backgroun
 }
 
 #[test]
+fn aggregate_level_mode_storage_change_is_explicit_failure_atomic_and_resettable() {
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot(),
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let original_assets = controller.assets().clone();
+    let original_layer2 = controller.layer2().cloned();
+    let edits = [NativeLevelAssetsControllerEdit::Level(vec![
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(0)),
+    ])];
+
+    assert!(matches!(
+        controller.apply_edits(&edits),
+        Err(
+            NativeLevelAssetsControllerError::Layer2ModeChangeRequiresReset {
+                command: 0,
+                from: 2,
+                to: 0,
+            }
+        )
+    ));
+    assert_eq!(controller.assets(), &original_assets);
+    assert_eq!(controller.layer2().cloned(), original_layer2);
+
+    controller
+        .apply_edits_with_layer2_reset(&edits, true)
+        .unwrap();
+    assert_eq!(controller.assets().level.layer1.header.level_mode(), 0);
+    assert!(matches!(
+        controller.layer2(),
+        Some(NativeLayer2Data::Tilemap(bytes)) if bytes == &vec![0; NATIVE_LAYER2_TILEMAP_LEN]
+    ));
+    controller
+        .apply_edits_with_layer2_reset(
+            &[NativeLevelAssetsControllerEdit::Level(vec![
+                NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(2)),
+            ])],
+            true,
+        )
+        .unwrap();
+    assert_eq!(controller.layer2().cloned(), original_layer2);
+}
+
+#[test]
+fn aggregate_mode_storage_changes_apply_recovered_installed_descriptor_masks() {
+    let mut snapshot = snapshot();
+    snapshot.rom_bytes[0xb0] = 0xd5;
+    let checksum = compute_snes_checksum(&snapshot.rom_bytes, 0x7fdc).unwrap();
+    snapshot.rom_bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    let mut installed_layout = layer2_layout();
+    installed_layout.descriptor_table = Some(LevelLayer2DescriptorTable {
+        offset: 0xb0,
+        entries: 1,
+        stride: 1,
+    });
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(installed_layout),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    assert_eq!(controller.layer2_descriptor().unwrap().raw(), 0xd5);
+
+    for (mode, descriptor) in [(0, 0xda), (2, 0xc0)] {
+        controller
+            .apply_edits_with_layer2_reset(
+                &[NativeLevelAssetsControllerEdit::Level(vec![
+                    NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(mode)),
+                ])],
+                true,
+            )
+            .unwrap();
+        assert_eq!(controller.layer2_descriptor().unwrap().raw(), descriptor);
+    }
+}
+
+#[test]
 fn owned_aggregate_reclaims_four_payloads_keeps_direct_write_atomic_and_undoes() {
     let (snapshot, manifest) = tagged_snapshot();
     let mut controller = NativeLevelAssetsController::decode(

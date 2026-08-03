@@ -76,6 +76,26 @@ impl MwlLayer2Descriptor {
             (self.0 & 0x05) | Self::COMPRESSED_TILEMAP | ((bank as u32) << 4),
         ))
     }
+
+    /// Applies Lunar Magic's descriptor-byte transition when a level mode changes from an
+    /// object-backed Layer 2 mode to a compressed-tilemap mode.
+    ///
+    /// `ChangeLevelModeDialogProc` clears bits 0 and 2, then sets bits 1, 3, and 4. Higher bits
+    /// and the remaining opaque bytes are retained exactly.
+    #[must_use]
+    pub const fn after_object_to_tilemap_mode_change(self) -> Self {
+        Self((self.0 & !0xff) | (((self.0 as u8) & 0xfa | 0x1a) as u32))
+    }
+
+    /// Applies Lunar Magic's descriptor-byte transition when a level mode changes from a
+    /// compressed-tilemap mode to an object-backed Layer 2 mode.
+    ///
+    /// The recovered dialog clears low-byte bits 0–4 while preserving bits 5–7 and every higher
+    /// opaque byte.
+    #[must_use]
+    pub const fn after_tilemap_to_object_mode_change(self) -> Self {
+        Self((self.0 & !0xff) | (((self.0 as u8) & 0xe0) as u32))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -382,6 +402,19 @@ impl MwlLevelHeaderSection {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn level_mode_storage_transitions_preserve_only_the_recovered_descriptor_bits() {
+        let source = MwlLayer2Descriptor::from_raw(0xa1b2_c3d5);
+        assert_eq!(
+            source.after_object_to_tilemap_mode_change().raw(),
+            0xa1b2_c3da
+        );
+        assert_eq!(
+            source.after_tilemap_to_object_mode_change().raw(),
+            0xa1b2_c3c0
+        );
+    }
 
     #[test]
     fn entrance_accessors_touch_only_recovered_header_offsets() {

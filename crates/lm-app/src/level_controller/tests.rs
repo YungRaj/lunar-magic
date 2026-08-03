@@ -486,6 +486,114 @@ fn layer2_object_edits_share_history_and_commit_with_the_level() {
 }
 
 #[test]
+fn level_mode_storage_change_requires_approval_resets_and_reopens_atomically() {
+    let mut app = AppState::default();
+    app.load_rom(layer2_object_test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller = LevelController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    let original_level = controller.level().clone();
+    let original_layer2 = controller.layer2().cloned();
+    let edits = [NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(
+        0,
+    ))];
+
+    assert!(matches!(
+        controller.apply_edits(&edits),
+        Err(LevelControllerError::Layer2ModeChangeRequiresReset { from: 2, to: 0 })
+    ));
+    assert_eq!(controller.level(), &original_level);
+    assert_eq!(controller.layer2().cloned(), original_layer2);
+    assert!(!controller.can_undo());
+
+    controller
+        .apply_edits_with_layer2_reset(&edits, true)
+        .unwrap();
+    assert_eq!(controller.level().layer1.header.level_mode(), 0);
+    assert!(matches!(
+        controller.layer2(),
+        Some(NativeLayer2Data::Tilemap(bytes)) if bytes == &vec![0; NATIVE_LAYER2_TILEMAP_LEN]
+    ));
+    controller
+        .apply_edits_with_layer2_reset(
+            &[NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(
+                2,
+            ))],
+            true,
+        )
+        .unwrap();
+    assert_eq!(controller.layer2().cloned(), original_layer2);
+    assert!(controller.undo());
+    assert!(matches!(
+        controller.layer2(),
+        Some(NativeLayer2Data::Tilemap(bytes)) if bytes == &vec![0; NATIVE_LAYER2_TILEMAP_LEN]
+    ));
+    assert!(controller.undo());
+    assert_eq!(controller.level(), &original_level);
+    assert_eq!(controller.layer2().cloned(), original_layer2);
+    assert!(controller.redo());
+
+    let layer2_options = LevelLayer2SaveOptions {
+        allocation: options().layer1_allocation,
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let prepared = controller
+        .prepare_commit_with_layer2(
+            "Change level mode and reset Layer 2",
+            &options(),
+            &layer2_options,
+            false,
+        )
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    let reopened = LevelController::decode_with_layer2(
+        &app.controller_snapshot().unwrap(),
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    assert_eq!(reopened.level().layer1.header.level_mode(), 0);
+    assert!(matches!(
+        reopened.layer2(),
+        Some(NativeLayer2Data::Tilemap(bytes)) if bytes == &vec![0; NATIVE_LAYER2_TILEMAP_LEN]
+    ));
+}
+
+#[test]
+fn tilemap_to_object_mode_change_creates_lunar_magics_empty_object_workspace() {
+    let mut app = AppState::default();
+    app.load_rom(layer2_test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller = LevelController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+    )
+    .unwrap();
+    controller
+        .apply_edits_with_layer2_reset(
+            &[NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(
+                1,
+            ))],
+            true,
+        )
+        .unwrap();
+    let Some(NativeLayer2Data::Objects(objects)) = controller.layer2() else {
+        panic!("mode 1 must create object-backed Layer 2");
+    };
+    assert_eq!(objects, &lm_level::LevelObjectData::default());
+}
+
+#[test]
 fn staged_history_restores_baseline_and_invalidates_divergent_redo() {
     let mut app = AppState::default();
     app.load_rom(test_rom()).unwrap();

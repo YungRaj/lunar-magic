@@ -316,6 +316,7 @@ pub(crate) struct VanillaLevelEditor {
     initial_vertical_scroll_tiles: Option<u16>,
     placement_mode: Option<CanvasPlacementMode>,
     paste_target: Option<EntityPasteTarget>,
+    pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
     map16_key: Option<(u64, u16, u8, u8, bool, bool)>,
     map16_texture: Option<egui::TextureHandle>,
@@ -407,6 +408,8 @@ impl VanillaLevelEditor {
             self.external_asset_revision = external_asset_revision;
             self.external_sprite_textures.clear();
         }
+
+        self.show_layer2_mode_reset_confirmation(ui.ctx());
 
         ui.heading(format!("Level {level:03X} — built-in SMW editor"));
         let Some(controller) = self.controller.as_ref() else {
@@ -901,6 +904,21 @@ impl VanillaLevelEditor {
         }
         ui.horizontal(|ui| {
             if ui.button("Stage header changes").clicked() {
+                let controller = self
+                    .controller
+                    .as_ref()
+                    .expect("controller presence checked above");
+                let source_mode = controller.level().layer1.header.level_mode();
+                let target_mode = lm_level::lunar_magic_canonical_level_mode(self.form.level_mode);
+                let resets_layer2 = mode_change_resets_layer2(
+                    source_mode,
+                    target_mode,
+                    controller.layer2().is_some(),
+                );
+                if resets_layer2 {
+                    self.pending_layer2_mode_reset = Some(self.form);
+                    return;
+                }
                 let result = self
                     .form
                     .edits()
@@ -926,6 +944,66 @@ impl VanillaLevelEditor {
                 self.error = None;
             }
         });
+    }
+
+    fn show_layer2_mode_reset_confirmation(&mut self, context: &egui::Context) {
+        let Some(form) = self.pending_layer2_mode_reset else {
+            return;
+        };
+        let source_mode = self.controller.as_ref().map_or(0, |controller| {
+            controller.level().layer1.header.level_mode()
+        });
+        let target_mode = lm_level::lunar_magic_canonical_level_mode(form.level_mode);
+        egui::Window::new("Reset Layer 2 for level mode change?")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(format!(
+                    "Changing level mode ${source_mode:02X} to ${target_mode:02X} switches Layer 2 storage formats."
+                ));
+                ui.label(
+                    "Lunar Magic clears the tilemap workspace when entering a tilemap-backed mode. Object-backed data remains available if you switch back before saving.",
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.pending_layer2_mode_reset = None;
+                    }
+                    if ui.button("Reset Layer 2 and stage changes").clicked() {
+                        let result = form.edits().map_err(|error| error.to_string()).and_then(
+                            |edits| {
+                                self.controller
+                                    .as_mut()
+                                    .ok_or_else(|| "level workspace is closed".to_owned())?
+                                    .apply_edits_with_layer2_reset(&edits, true)
+                                    .map_err(|error| error.to_string())
+                            },
+                        );
+                        self.pending_layer2_mode_reset = None;
+                        match result {
+                            Ok(()) => {
+                                self.error = None;
+                                if let Some(controller) = &self.controller {
+                                    self.form = HeaderForm::from_controller(controller);
+                                }
+                                self.selected_layer2_tile = 0;
+                                self.layer2_word = self
+                                    .controller
+                                    .as_ref()
+                                    .and_then(LevelController::layer2)
+                                    .and_then(|layer2| match layer2 {
+                                        lm_level::NativeLayer2Data::Tilemap(bytes) => bytes
+                                            .get(..2)
+                                            .map(|word| u16::from_le_bytes([word[0], word[1]])),
+                                        lm_level::NativeLayer2Data::Objects(_) => None,
+                                    })
+                                    .unwrap_or_default();
+                                self.reload_layer2_object_form();
+                            }
+                            Err(error) => self.error = Some(error),
+                        }
+                    }
+                });
+            });
     }
 
     fn show_entrance_editor(&mut self, ui: &mut egui::Ui, level: u16) -> Option<Command> {
@@ -1159,6 +1237,7 @@ impl VanillaLevelEditor {
         key: EditorKey,
         custom_sprites: Option<&lm_level::SscResolvedTable>,
     ) {
+        self.pending_layer2_mode_reset = None;
         if let Err(error) = validate_builtin_graphics_layout(snapshot) {
             self.controller = None;
             self.entrance_controller = None;
@@ -1313,6 +1392,7 @@ impl VanillaLevelEditor {
         self.midway_install_form = SeparateMidwayEntrance::default();
         self.preview_camera_major_offset = 0;
         self.preview_camera_minor_offset = 0;
+        self.pending_layer2_mode_reset = None;
         self.error = None;
         self.map16_key = None;
         self.map16_texture = None;
@@ -4612,6 +4692,12 @@ impl VanillaLevelEditor {
             self.move_sprite(token_count, true);
         }
     }
+}
+
+fn mode_change_resets_layer2(source_mode: u8, target_mode: u8, layer2_loaded: bool) -> bool {
+    layer2_loaded
+        && lm_level::level_mode_layer2_storage(source_mode)
+            != lm_level::level_mode_layer2_storage(target_mode)
 }
 
 const fn layer2_tilemap_editable(shared_vanilla_background: bool) -> bool {
@@ -8590,6 +8676,15 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn level_mode_confirmation_is_required_only_across_loaded_layer2_storage_classes() {
+        assert!(mode_change_resets_layer2(2, 0, true));
+        assert!(mode_change_resets_layer2(0, 1, true));
+        assert!(!mode_change_resets_layer2(0, 10, true));
+        assert!(!mode_change_resets_layer2(2, 3, true));
+        assert!(!mode_change_resets_layer2(2, 0, false));
+    }
 
     fn prepare_lunar_magic_restore_files(root: &std::path::Path, directory: &std::path::Path) {
         let restore = directory.join("sysLMRestore");

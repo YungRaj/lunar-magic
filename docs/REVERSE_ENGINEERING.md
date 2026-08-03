@@ -258,6 +258,14 @@ The subsequent editor block through `0040bd30` is also named. `ExAnimationDialog
 
 The `0040f250`–`00414950` range now identifies the Layer 3 scroll selectors, screen-exit and secondary-exit editors, Change Level Mode dialog, music selector, and General Options dialog. Win32 callback prototypes are applied to `ChangeLevelModeDialogProc` and `GeneralOptionsDialogProc`; packed-exit decoding/encoding behavior is documented at the relevant functions.
 
+`ChangeLevelModeDialogProc` (`00412250`) compares `ClassifyLevelModeLayer2Storage` for the selected
+and stored modes before publishing the header. An object-to-tilemap transition requires approval,
+zeroes the complete `$800`-byte tilemap workspace, applies descriptor byte
+`(old & $FA) | $1A`, and marks the relevant domains dirty. The reverse transition has its own
+approval, retains the dormant object workspace, and applies `old & $E0`; no reset occurs while both
+modes remain in the same storage class. Rust mirrors that active/dormant boundary in both native
+controllers and refuses an unapproved transition before staged state changes.
+
 The `00414bb0`–`004178b0` range identifies interface/VRAM-patch option tooltips, the About dialog and URL clipboard path, and the beginning of the overworld ExAnimation subsystem. `AboutDialogProc` has a recovered Win32 callback prototype. Overworld animation address/frame conversions, remapping, submap selection, slot display, and duplicate-trigger checks are named separately from their level-editor counterparts.
 
 The overworld ExAnimation editor is now named through `OverworldAnimatedTilesDialogProc` at `004188d0`, including its frame-edit subclass, record commit, shift/rotate behavior, and tooltips. The following functions through `0041ab70` identify overworld submap options and both combo-based and edit-field variants of the Layer 3 graphics settings editor.
