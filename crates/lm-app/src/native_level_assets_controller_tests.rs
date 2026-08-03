@@ -356,7 +356,7 @@ fn complete_mwl_modeled_assets_stage_commit_and_reopen_together() {
 }
 
 #[test]
-fn mwl_import_recomputes_last_screen_without_sorting_raw_layer1_order() {
+fn mwl_import_ignores_screen_exits_and_preserves_raw_layer1_order() {
     let mut controller = NativeLevelAssetsController::decode_with_layer2(
         &snapshot(),
         layout(),
@@ -374,7 +374,7 @@ fn mwl_import_recomputes_last_screen_without_sorting_raw_layer1_order() {
     };
     source.layer1.header.set_last_screen(31).unwrap();
     source.layer1.objects = ObjectStream {
-        records: vec![ObjectRecord::new(vec![1, 0x10, 0]).unwrap()],
+        records: vec![ObjectRecord::new(vec![0x9f, 0, 2, 0, 4]).unwrap()],
     };
 
     controller.replace_modeled_assets_from_mwl(&source).unwrap();

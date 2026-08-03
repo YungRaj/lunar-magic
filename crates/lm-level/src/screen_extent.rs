@@ -33,7 +33,9 @@ pub fn native_level_screen_count(
             screen = screen.saturating_add(1).min(31);
         }
         stored_highest = stored_highest.max(screen);
-        if record.command_id() != 0x28 {
+        // Screen exits are editor-only markers and do not themselves extend automatic artwork
+        // bounds. Their high bit still advances stream state for a following positioned object.
+        if record.screen_exit().is_none() && record.command_id() != 0x28 {
             visible_highest = visible_highest.max(screen);
         }
     }
@@ -88,6 +90,36 @@ mod tests {
         assert_eq!(
             native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Auto),
             1
+        );
+    }
+
+    #[test]
+    fn screen_exit_marker_is_invisible_but_its_high_bit_advances_following_artwork() {
+        let objects = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x9f, 0, 2, 0, 4]).unwrap()],
+        };
+        let sprites =
+            NativeSpriteStream::parse(&[0, 0xff], false, &SpriteLengthTable::standard()).unwrap();
+        assert_eq!(objects.records[0].screen_exit().unwrap().screen, 0x1f);
+        assert!(objects.records[0].advances_screen());
+        assert_eq!(
+            native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Stored),
+            2
+        );
+        assert_eq!(
+            native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Auto),
+            1
+        );
+
+        let with_visible_object = ObjectStream {
+            records: vec![
+                objects.records[0].clone(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+        };
+        assert_eq!(
+            native_level_screen_count(&with_visible_object, &sprites, LevelScreenExtentMode::Auto),
+            2
         );
     }
 }

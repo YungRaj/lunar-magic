@@ -759,6 +759,95 @@ fn lunar_magic_recomputes_extent_but_preserves_raw_layer1_order() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Proves MWL import excludes absolute screen-exit markers from automatic artwork extent.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_ignores_screen_exits_in_imported_extent() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = pristine_smw_us_rom_path(&root);
+    let directory = std::env::temp_dir().join(format!(
+        "lm-screen-exit-extent-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let baseline_rom = directory.join("Lunar Magic screen exit baseline.sfc");
+    let baseline_mwl = directory.join("baseline level 105.mwl");
+    fs::copy(&original_rom, &baseline_rom).unwrap();
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &baseline_rom,
+        &baseline_mwl,
+        "105",
+    );
+
+    let lengths = SpriteLengthTable::standard();
+    let modes = [false; 256];
+    let baseline = MwlNativeLevel::decode(
+        &MwlFile::decode(&fs::read(&baseline_mwl).unwrap()).unwrap(),
+        &lengths,
+        32,
+        &modes,
+    )
+    .unwrap();
+    for (case, include_visible_object, expected_last_screen) in
+        [("exit-only", false, 0), ("followed-by-object", true, 1)]
+    {
+        let imported_rom = directory.join(format!("{case}.sfc"));
+        let injected_mwl = directory.join(format!("{case}.mwl"));
+        let reexported_mwl = directory.join(format!("{case} reexported.mwl"));
+        fs::copy(&original_rom, &imported_rom).unwrap();
+        let mut injected = baseline.clone();
+        injected.layer1.header.set_last_screen(0).unwrap();
+        let mut records = vec![ObjectRecord::new(vec![0x9f, 0, 2, 0, 4]).unwrap()];
+        if include_visible_object {
+            records.push(ObjectRecord::new(vec![1, 0x10, 0]).unwrap());
+        }
+        injected.layer1.objects = ObjectStream { records };
+        injected.sprites.tokens.clear();
+        fs::write(
+            &injected_mwl,
+            injected.encode(&lengths, &modes).unwrap().encode().unwrap(),
+        )
+        .unwrap();
+
+        run_lunar_magic_level_command(
+            &lunar_magic,
+            "-ImportLevel",
+            &imported_rom,
+            &injected_mwl,
+            "105",
+        );
+        run_lunar_magic_level_command(
+            &lunar_magic,
+            "-ExportLevel",
+            &imported_rom,
+            &reexported_mwl,
+            "105",
+        );
+        let actual = MwlNativeLevel::decode(
+            &MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap(),
+            &lengths,
+            32,
+            &modes,
+        )
+        .unwrap();
+        assert_eq!(actual.layer1.header.last_screen(), expected_last_screen);
+        assert_eq!(
+            actual.layer1.objects.records.len(),
+            injected.layer1.objects.records.len()
+        );
+        assert_eq!(
+            actual.layer1.objects.records[0].advances_screen(),
+            include_visible_object
+        );
+        assert!(actual.sprites.tokens.is_empty());
+    }
+    fs::remove_dir_all(directory).unwrap();
+}
+
 /// Proves vertical expanded streams use Lunar Magic's orientation-specific coordinate key.
 #[test]
 #[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
