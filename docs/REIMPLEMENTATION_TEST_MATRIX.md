@@ -30,8 +30,14 @@ fixed-width standard sprite placement in place, and independently edit/repoint i
 semantically reopens an expanded upper-Y sprite transition before booting that exact output.
 Another gate starts from
 the pristine fixture, uses the snapshot-bound application controller to change a Map16 quadrant,
-expands and installs all native split tables, and reopens the exact definition before launch. Every
-path repairs the checksum, semantically reopens the generated state, launches only the temporary
+expands and installs all native split tables, and reopens the exact definition before launch. A
+complete-overworld transaction gate additionally expands a pristine
+ROM, installs nine independent tagged payloads and their pointer tables in an otherwise unused
+extension region, semantically reopens every layer/event/endpoint/message/sprite/palette/animation
+value, and boots that exact output. This proves allocator, repointing, checksum, container, and
+emulator initialization safety for the aggregate save path; because the smoke-only pointer tables
+are not patched into SMW's gameplay runtime, it does not claim that Snes9x rendered those staged
+map cells. Every path repairs the checksum, semantically reopens the generated state, launches only the temporary
 output in Snes9x, requires the emulator process to survive eight seconds of initialization, and
 then terminates and reaps it and removes the temporary copy, including during test failure. This is
 launch-time runtime evidence, not a substitute for

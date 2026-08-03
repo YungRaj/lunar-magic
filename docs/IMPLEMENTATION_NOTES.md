@@ -1011,6 +1011,13 @@ orders the bounded result deterministically before the same atomic edit boundary
 native graphics atlas, and complete decoded Map16 set; selecting a cell updates the exact 16-bit
 brush value, while pages that reference graphics outside the overworld VRAM remain unavailable
 without disabling hexadecimal selection or property editing.
+The opt-in cross-platform Snes9x suite now exercises the same nine-payload project serializer as an
+aggregate launch-safety gate. It expands a verified pristine ROM, writes private extension pointer
+tables, allocates all nine tagged payloads, repairs the checksum, semantically reopens the complete
+aggregate, writes a temporary ROM, and requires Snes9x to remain alive for eight seconds before the
+guard terminates and reaps it. Those smoke-only pointer tables intentionally remain outside the
+gameplay runtime, so this is evidence for transaction/container/emulator initialization safety and
+not yet input-driven proof that the game rendered the edited map.
 Every ownership-backed reclamation commit—native level assets, Map16, graphics, palette,
 ExAnimation, and overworld—uses a separate asynchronous `LMRATS01` loader. The loader binds the
 manifest request to the current project revision, rejects stale completion before canonical

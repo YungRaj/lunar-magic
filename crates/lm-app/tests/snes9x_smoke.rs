@@ -1,11 +1,22 @@
 use lm_app::{AppState, Command as AppCommand, Map16ControllerEdit, SmwMap16Controller};
+use lm_graphics::{Bgr555, CompactExAnimation, Palette};
 use lm_level::{
     CustomTimeSettings, Map16Address, Map16Quadrant, NativeLayer2Data, NativeSpriteStream,
     ObjectEdit, SpriteLengthTable, SpriteToken, Subtile,
 };
+use lm_overworld::{
+    EventReveal, EventRevealTable, OverworldEndpoint, OverworldLayer, OverworldMessage,
+    OverworldSprite, Submap,
+};
 use lm_profile::{SmwUsV1CompleteMap16SaveOptions, load_smw_us_v1_transferred_map16};
-use lm_project::Project;
-use lm_project::{LevelLayer2SaveOptions, LevelSaveOptions};
+use lm_project::{
+    CompleteOverworldData, CompleteOverworldRomLayout, CompleteOverworldSaveOptions,
+    EndpointRomLayout, EndpointSaveOptions, EventRevealRomLayout, EventRevealSaveOptions,
+    ExAnimationRomLayout, ExAnimationSaveOptions, LevelLayer2SaveOptions, LevelPointerTable,
+    LevelSaveOptions, MessageRomLayout, MessageSaveOptions, OverworldLayers,
+    OverworldLayersRomLayout, OverworldSaveOptions, PaletteRomLayout, PaletteSaveOptions, Project,
+    SpriteRomLayout, SpriteSaveOptions,
+};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, RomImage};
 use std::fs;
@@ -201,6 +212,213 @@ fn rust_map16_edit_survives_snes9x_initialization() {
     let directory = SmokeDirectory::create();
     let output = directory.0.join("Rust-Map16-edited-SMW.sfc");
     fs::write(&output, project.save_snapshot()).expect("write Map16-edited ROM");
+    require_snes9x_initialization(&snes9x, &output);
+}
+
+fn smoke_overworld_layout() -> CompleteOverworldRomLayout {
+    let table = |offset| LevelPointerTable {
+        offset,
+        entries: 1,
+        stride: 3,
+    };
+    CompleteOverworldRomLayout {
+        layers: OverworldLayersRomLayout {
+            mapper: Mapper::LoRom,
+            layer1: table(0x10_0000),
+            layer2: table(0x10_0003),
+            width: 4,
+            height: 4,
+        },
+        event_reveals: EventRevealRomLayout {
+            mapper: Mapper::LoRom,
+            sources: table(0x10_0006),
+            destinations: table(0x10_0009),
+            entries_per_slot: 2,
+        },
+        endpoints: EndpointRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: table(0x10_000c),
+            endpoints_per_slot: 2,
+        },
+        messages: MessageRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: table(0x10_000f),
+            messages_per_slot: 1,
+        },
+        sprites: SpriteRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: table(0x10_0012),
+            sprites_per_slot: 1,
+            record_len: 9,
+        },
+        palette: PaletteRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: table(0x10_0015),
+            colors_per_palette: 16,
+        },
+        animation: ExAnimationRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: table(0x10_0018),
+            maximum_records: 32,
+            maximum_encoded_len: 0x4000,
+        },
+    }
+}
+
+fn smoke_overworld_data() -> CompleteOverworldData {
+    CompleteOverworldData {
+        layers: OverworldLayers {
+            layer1: OverworldLayer::new(
+                4,
+                4,
+                vec![
+                    0x0100, 0x0101, 0x0102, 0x0103, 0x0110, 0x0111, 0x0112, 0x0113, 0x0120, 0x0121,
+                    0x0122, 0x0123, 0x0130, 0x0131, 0x0132, 0x0133,
+                ],
+            )
+            .unwrap(),
+            layer2: OverworldLayer::new(4, 4, vec![0x0200; 16]).unwrap(),
+        },
+        event_reveals: EventRevealTable {
+            entries: vec![
+                EventReveal {
+                    source_tile: 0x10,
+                    destination_tile: 0x20,
+                },
+                EventReveal {
+                    source_tile: 0x11,
+                    destination_tile: 0x21,
+                },
+            ],
+        },
+        endpoints: vec![
+            OverworldEndpoint {
+                x: 1,
+                y: 2,
+                submap: 0,
+            },
+            OverworldEndpoint {
+                x: 3,
+                y: 1,
+                submap: 1,
+            },
+        ],
+        messages: vec![OverworldMessage::decode(&[0x11; OverworldMessage::ENCODED_LEN]).unwrap()],
+        sprites: vec![OverworldSprite {
+            id: 7,
+            x: 2,
+            y: 3,
+            submap: Submap::Main,
+            extra: vec![0xaa, 0xbb],
+        }],
+        palette: Palette {
+            colors: (0_u16..16).map(Bgr555).collect(),
+        },
+        animation: CompactExAnimation {
+            setting: 0,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: Vec::new(),
+        },
+    }
+}
+
+fn smoke_overworld_options() -> CompleteOverworldSaveOptions {
+    let allocation = AllocationPolicy {
+        search: 0x10_8000..0x12_0000,
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0xff],
+        protected: vec![
+            ProtectedRange(0x7fc0..0x8000),
+            ProtectedRange(0x10_0000..0x10_001b),
+        ],
+    };
+    CompleteOverworldSaveOptions {
+        layers: OverworldSaveOptions {
+            layer1_allocation: allocation.clone(),
+            layer2_allocation: allocation.clone(),
+            previous_layer1: None,
+            previous_layer2: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        },
+        event_reveals: EventRevealSaveOptions {
+            source_allocation: allocation.clone(),
+            destination_allocation: allocation.clone(),
+            previous_sources: None,
+            previous_destinations: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        },
+        endpoints: EndpointSaveOptions {
+            allocation: allocation.clone(),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        },
+        messages: MessageSaveOptions {
+            allocation: allocation.clone(),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        },
+        sprites: SpriteSaveOptions {
+            allocation: allocation.clone(),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        },
+        palette: PaletteSaveOptions {
+            allocation: allocation.clone(),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        },
+        animation: ExAnimationSaveOptions {
+            allocation,
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        },
+    }
+}
+
+#[test]
+#[ignore = "requires local Snes9x plus the supplied legally obtained SMW ROM fixture"]
+fn rust_complete_overworld_transaction_survives_snes9x_initialization() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let snes9x = require_snes9x_binary();
+    let mut project = Project::new(
+        RomImage::from_bytes(fs::read(source_rom(&root)).expect("read source SMW ROM"))
+            .expect("decode source SMW ROM"),
+    );
+    project
+        .expand_rom(Mapper::LoRom, 0x12_0000, 0xff, 0x7fdc)
+        .expect("expand complete-overworld smoke ROM");
+    let layout = smoke_overworld_layout();
+    let data = smoke_overworld_data();
+    let modes = [false; 256];
+    project
+        .save_complete_overworld_with_checksum(
+            0,
+            &data,
+            layout,
+            &smoke_overworld_options(),
+            &modes,
+            0x7fdc,
+        )
+        .expect("save all nine complete-overworld payloads");
+    assert_eq!(
+        project
+            .load_complete_overworld(0, layout, &modes)
+            .expect("semantically reopen complete overworld"),
+        data
+    );
+
+    let directory = SmokeDirectory::create();
+    let output = directory.0.join("Rust-complete-overworld-edited-SMW.sfc");
+    fs::write(&output, project.save_snapshot()).expect("write complete-overworld-edited ROM");
     require_snes9x_initialization(&snes9x, &output);
 }
 
