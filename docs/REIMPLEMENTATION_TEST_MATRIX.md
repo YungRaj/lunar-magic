@@ -734,6 +734,14 @@ profile gate changes command, parameter, absolute position, and perpendicular-hi
 the checksum, reopens semantically, undoes byte-exactly, and proves a late invalid removal leaves
 the entire ROM unchanged.
 
+Compressed Layer 2 automation uses the mutually exclusive `LML2TIL1` child for exact little-endian
+word paints plus Lunar Magic-native remap programs with signed offsets and `all` or explicit
+selection indexes. Parser/loader tests cover ordering, both selection forms, the two native
+boundaries, duplicate indexes, malformed programs, noncanonical words, and out-of-range offsets.
+The runnable ExLoROM profile gate paints the first and last words, remaps only the first selection,
+reopens the compressed payload and checksum, undoes byte-exactly, and proves a descriptor-less
+cross-bank remap rolls back an earlier staged paint and the complete ROM.
+
 Absolute sprite automation adds `LMLEDIT1 sprite place` and `sprite relocate-position`. Shared
 model tests place and relocate legacy records across stable screen ordering, reject legacy Y `$20`
 without mutation, and prove expanded placement/relocation rebuild upper-Y transitions while

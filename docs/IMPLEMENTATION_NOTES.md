@@ -2183,7 +2183,8 @@ the palette from the exact current aggregate revision, including unsaved edits. 
 viewport/overlay adapter and deterministic PNG encoder and publishes only to a new output path.
 The runnable shell exposes it as
 `native-assets-edit SPEC SEARCH_START SEARCH_END`. A bounded `LMNATED1` specification resolves
-optional `level`, `layer2-objects`, `palette`, `exanimation`, `expanded-settings`, and semantic `sprite-spawn`
+optional `level`, one of `layer2-objects` or `layer2-tilemap`, `palette`, `exanimation`,
+`expanded-settings`, and semantic `sprite-spawn`
 child scripts relative to the
 specification file, for example:
 
@@ -2206,6 +2207,14 @@ screen-exit, and complete ordinary-field edits without duplicating or drifting f
 typed model. The installed profile must resolve the selected level to object-backed Layer 2;
 tilemap-backed or portable aggregates reject the child atomically. The aggregate save plan carries
 Layer 2's independent copy-on-write allocation policy through checksum repair and application undo.
+The mutually exclusive `layer2-tilemap` child uses strict `LML2TIL1` framing. `word INDEX WORD`
+paints one of the 1,024 native little-endian words, while `remap OFFSET SELECTION PROGRAM` runs the
+recovered Lunar Magic remapper with a signed decimal global offset and either `all` or a canonical
+comma-separated decimal selection. The remap program retains Lunar Magic's displayed
+`$8000`–`$FFFF` source/destination syntax. Bounds, duplicate selection indexes, malformed native
+programs, object-backed storage, and unrepresentable bank changes reject the complete aggregate;
+word paints, selection-scoped remaps, descriptor changes, allocation, checksum, and undo otherwise
+commit together.
 `sprite-spawn` uses `LMSPAWN1` followed by one or both unique semantic commands. `settings RANGE
 SMART` accepts decimal range `0..=3` and canonical boolean `SMART`; `boundary-air ENABLED` accepts
 another canonical boolean. Neither carries a raw shared word. The aggregate controller reads the

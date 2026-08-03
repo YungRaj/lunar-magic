@@ -196,6 +196,11 @@ Object-backed Layer 2 now has the parallel strict `LML2OBJ1` aggregate child. It
 typed object grammar, rejects Layer 1 headers/sprites and tilemap-backed levels, carries Layer 2's
 separate allocation plan, and has checksum-valid semantic reopen, late-failure rollback, and exact
 ROM-undo evidence.
+Tilemap-backed Layer 2 has the mutually exclusive strict `LML2TIL1` child for exact native-word
+painting and the recovered Lunar Magic remap language, including signed global offsets and
+selection-scoped execution. It rejects object storage, malformed/bounds-invalid input, and
+descriptor-less bank changes atomically, and carries checksum-valid compressed reopen, late
+rollback, and exact ROM-undo evidence.
 
 The sprite row now has canvas-grade `LMLEDIT1 sprite place` and `sprite relocate-position`
 automation for both legacy and expanded streams. Installed GUI, portable GUI, automation, and

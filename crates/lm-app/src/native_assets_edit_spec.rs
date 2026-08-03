@@ -12,6 +12,7 @@ const MAX_LINES: usize = 16;
 pub struct NativeAssetsEditSpec {
     pub level: Option<PathBuf>,
     pub layer2_objects: Option<PathBuf>,
+    pub layer2_tilemap: Option<PathBuf>,
     pub palette: Option<PathBuf>,
     pub exanimation: Option<PathBuf>,
     pub exanimation_features: Option<PathBuf>,
@@ -31,6 +32,7 @@ pub enum NativeAssetsEditSpecError {
     UnknownField(usize, String),
     DuplicateField(usize, String),
     EmptyPath(usize),
+    ConflictingLayer2Domains,
     NoDomains,
 }
 
@@ -56,6 +58,9 @@ impl fmt::Display for NativeAssetsEditSpecError {
                 write!(formatter, "duplicate field {field:?} on line {line}")
             }
             Self::EmptyPath(line) => write!(formatter, "empty path on line {line}"),
+            Self::ConflictingLayer2Domains => {
+                formatter.write_str("layer2-objects and layer2-tilemap are mutually exclusive")
+            }
             Self::NoDomains => formatter.write_str("no edit domains were declared"),
         }
     }
@@ -98,6 +103,7 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
             key,
             "level"
                 | "layer2-objects"
+                | "layer2-tilemap"
                 | "palette"
                 | "exanimation"
                 | "exanimation-features"
@@ -123,9 +129,13 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
     if fields.is_empty() {
         return Err(NativeAssetsEditSpecError::NoDomains);
     }
+    if fields.contains_key("layer2-objects") && fields.contains_key("layer2-tilemap") {
+        return Err(NativeAssetsEditSpecError::ConflictingLayer2Domains);
+    }
     Ok(NativeAssetsEditSpec {
         level: fields.remove("level"),
         layer2_objects: fields.remove("layer2-objects"),
+        layer2_tilemap: fields.remove("layer2-tilemap"),
         palette: fields.remove("palette"),
         exanimation: fields.remove("exanimation"),
         exanimation_features: fields.remove("exanimation-features"),
@@ -162,6 +172,19 @@ mod tests {
             Some(PathBuf::from("project/設定.txt"))
         );
         assert_eq!(spec.sprite_spawn, Some(PathBuf::from("project/Spawn.txt")));
+        assert_eq!(
+            parse("LMNATED1\nlayer2-tilemap=tiles.txt\n", Path::new("project"))
+                .unwrap()
+                .layer2_tilemap,
+            Some(PathBuf::from("project/tiles.txt"))
+        );
+        assert!(matches!(
+            parse(
+                "LMNATED1\nlayer2-objects=objects.txt\nlayer2-tilemap=tiles.txt\n",
+                Path::new(".")
+            ),
+            Err(NativeAssetsEditSpecError::ConflictingLayer2Domains)
+        ));
         assert!(parse("LMNATED1\nlevel=a\nlevel=b\n", Path::new(".")).is_err());
         assert!(parse("LMNATED1\n", Path::new(".")).is_err());
     }

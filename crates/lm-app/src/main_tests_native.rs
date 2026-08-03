@@ -307,6 +307,82 @@ fn terminal_layer2_object_script_reopens_checksum_valid_and_rolls_back_atomicall
 }
 
 #[test]
+fn terminal_layer2_tilemap_script_paints_remaps_reopens_and_rolls_back_atomically() {
+    let mut profile = lm_profile::test_support::profile();
+    profile.layer2 = Some(lm_project::LevelLayer2RomLayout {
+        mapper: profile.mapper,
+        pointers: lm_project::LevelPointerTable {
+            offset: 0x3_0000,
+            entries: 0x200,
+            stride: 3,
+        },
+        background_bank_substitution: None,
+        legacy_pointer_redirect: None,
+        descriptor_table: None,
+        maximum_compressed_len: 0x8000,
+        tilemap_encoding: lm_project::LevelLayer2TilemapEncoding::SplitPlanes,
+    });
+    let mut rom = profiled_rom(&profile);
+    rom[0x6001] &= 0xe0;
+    let tilemap = vec![0; lm_level::NATIVE_LAYER2_TILEMAP_LEN];
+    let planes = lm_level::split_layer2_tilemap_planes(&tilemap).unwrap();
+    let encoded = lm_codec::encode_terminated_rle(&planes);
+    rom[0x5c00..0x5c00 + encoded.len()].copy_from_slice(&encoded);
+    let checksum = compute_snes_checksum(&rom, 0x7fdc).unwrap();
+    rom[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    let mut app = native_assets_test_app_from_rom(&profile, rom);
+    let before = app.project().unwrap().save_snapshot();
+    let baseline_level = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    assert_eq!(baseline_level.layer1.header.level_mode(), 0);
+
+    let directory =
+        std::env::temp_dir().join(format!("lm-app-layer2-tilemap-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    let script = directory.join("Layer 2 tilemap.txt");
+    let spec = directory.join("Layer 2 aggregate.lmnat");
+    fs::write(&spec, "LMNATED1\nlayer2-tilemap=Layer 2 tilemap.txt\n").unwrap();
+    fs::write(
+        &script,
+        "LML2TIL1\nword 0 1234\nword 1023 abcd\nremap 0 0 8234,8235\n",
+    )
+    .unwrap();
+    execute_native_assets_script(&mut app, &spec, 0x1_0000..0x1_8000).unwrap();
+    let reopened = app
+        .project()
+        .unwrap()
+        .load_level_layer2(0x105, 0, profile.layer2.unwrap())
+        .unwrap();
+    let lm_level::NativeLayer2Data::Tilemap(bytes) = reopened else {
+        panic!("mode zero must reopen compressed Layer 2");
+    };
+    assert_eq!(u16::from_le_bytes(bytes[0..2].try_into().unwrap()), 0x0235);
+    assert_eq!(
+        u16::from_le_bytes(bytes[0x7fe..0x800].try_into().unwrap()),
+        0xabcd
+    );
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(&script, "LML2TIL1\nword 0 2222\nremap 0 all 8000,9000\n").unwrap();
+    assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn owned_native_assets_shell_reclaims_exact_blocks_and_rejects_stale_evidence() {
     let profile = lm_profile::test_support::profile();
     let mut app = native_assets_test_app(&profile);

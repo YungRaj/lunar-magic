@@ -2,8 +2,8 @@
 
 use crate::{
     editor_shell::read_bounded_utf8, exanimation_edit_script, exanimation_feature_edit_script,
-    expanded_settings_edit_script, layer2_object_edit_script, level_edit_script,
-    native_assets_edit_spec, palette_edit_script, sprite_spawn_edit_script,
+    expanded_settings_edit_script, layer2_object_edit_script, layer2_tilemap_edit_script,
+    level_edit_script, native_assets_edit_spec, palette_edit_script, sprite_spawn_edit_script,
 };
 use lm_app::NativeLevelAssetsControllerEdit;
 use lm_graphics::PaletteOwnership;
@@ -32,6 +32,14 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
         edits.push(NativeLevelAssetsControllerEdit::Layer2Objects(
             layer2_object_edit_script::parse(&text)?,
         ));
+    }
+    if let Some(path) = spec.layer2_tilemap {
+        let text = read_bounded_utf8(
+            &path,
+            layer2_tilemap_edit_script::MAX_SCRIPT_LEN,
+            "Layer 2 tilemap edit",
+        )?;
+        edits.extend(layer2_tilemap_edit_script::parse(&text)?);
     }
     let palette_script = if let Some(path) = spec.palette {
         let text = read_bounded_utf8(&path, palette_edit_script::MAX_SCRIPT_LEN, "palette edit")?;
@@ -195,6 +203,36 @@ mod tests {
                 && bypass.sprites == [0x101, 0x202, 0x303, 0x404]
                 && flags.packed() == 0x89ab_cdef
         ));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn aggregate_loader_routes_tilemap_words_and_native_remaps_in_order() {
+        let directory = std::env::temp_dir().join(format!(
+            "lm-native-assets-tilemap-loader-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("tiles.txt"),
+            "LML2TIL1\nword 1 beef\nremap -1 1,2 8EEF,8EF0\n",
+        )
+        .unwrap();
+        let spec = directory.join("aggregate.lmnat");
+        fs::write(&spec, "LMNATED1\nlayer2-tilemap=tiles.txt\n").unwrap();
+
+        assert_eq!(
+            load(&spec).unwrap().edits,
+            vec![
+                NativeLevelAssetsControllerEdit::Layer2TilemapWords(vec![(1, 0xbeef)]),
+                NativeLevelAssetsControllerEdit::Layer2TilemapRemap {
+                    script: "8EEF,8EF0".into(),
+                    global_offset: -1,
+                    selection: Some(vec![1, 2]),
+                },
+            ]
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 }

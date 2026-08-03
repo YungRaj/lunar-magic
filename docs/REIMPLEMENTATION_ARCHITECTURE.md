@@ -351,6 +351,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   edits to the aggregate controller's independent Layer 2 stream. Installed commits resolve and
   carry the profile's separate Layer 2 allocation plan; absent or tilemap-backed storage fails
   before publication.
+  Its mutually exclusive `layer2-tilemap` sibling uses `LML2TIL1` to route exact word paints and
+  selection-scoped native remap programs to the existing compressed-Layer-2 controller variants.
+  The adapter validates native bounds, selections, signed offsets, and remap syntax before staging;
+  object storage and descriptor-less cross-bank results remain explicit atomic failures.
   Its `exanimation-features` child uses the strict `LMEXFT1` grammar to carry four positive
   semantic states. The controller applies those states to the currently loaded feature byte, so
   automation and the installed Settings panel preserve its unrelated low nibble instead of

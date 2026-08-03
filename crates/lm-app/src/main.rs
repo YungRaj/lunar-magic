@@ -27,6 +27,7 @@ mod graphics_edit_script;
 mod graphics_render_spec;
 mod ips_shell;
 mod layer2_object_edit_script;
+mod layer2_tilemap_edit_script;
 mod layer3_document_shell;
 mod layer3_edit_script;
 mod level_edit_script;
