@@ -1000,6 +1000,13 @@ with the profile-decoded complete Map16 set. Its exact staged nine-domain aggreg
 a nearest-neighbor map canvas; clicking a rendered tile updates the same Layer 1/Layer 2 coordinate
 and hexadecimal Map16 form used by the typed edit transaction. Event-reveal preview count and every
 successful edit invalidate the raster key, while render failure leaves the property editor usable.
+The installed canvas can also retain a visually selected Map16 brush and paint either layer by
+clicking or dragging. Bresenham traversal covers intermediate grid cells when pointer samples skip
+coordinates, unchanged cells are omitted, and each sampled segment is submitted as one ordered
+typed controller batch. A collapsible 16-by-16 visual page picker uses the live overworld palette,
+native graphics atlas, and complete decoded Map16 set; selecting a cell updates the exact 16-bit
+brush value, while pages that reference graphics outside the overworld VRAM remain unavailable
+without disabling hexadecimal selection or property editing.
 Every ownership-backed reclamation commit—native level assets, Map16, graphics, palette,
 ExAnimation, and overworld—uses a separate asynchronous `LMRATS01` loader. The loader binds the
 manifest request to the current project revision, rejects stale completion before canonical

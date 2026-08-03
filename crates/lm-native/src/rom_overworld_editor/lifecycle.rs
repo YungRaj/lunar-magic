@@ -137,6 +137,8 @@ impl RomOverworldEditor {
                 self.search_end.clear();
                 self.x = 0;
                 self.y = 0;
+                self.paint_anchor = None;
+                self.map16_page = 0;
                 self.invalidate();
             }
             Err(error) => {
@@ -185,6 +187,9 @@ impl RomOverworldEditor {
         self.pending_open = None;
         self.pending_load = None;
         self.pending_close = None;
+        self.paint_anchor = None;
+        self.texture = None;
+        self.map16_texture = None;
         self.invalidate();
     }
 

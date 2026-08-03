@@ -64,9 +64,14 @@ pub(crate) struct RomOverworldEditor {
     y: usize,
     tile: String,
     loaded: Option<(u64, usize, usize, usize)>,
+    paint_enabled: bool,
+    paint_anchor: Option<(usize, usize)>,
     completed_reveals: usize,
     rendered_key: Option<(u64, usize)>,
     texture: Option<egui::TextureHandle>,
+    map16_page: usize,
+    map16_rendered_key: Option<(u64, usize)>,
+    map16_texture: Option<egui::TextureHandle>,
     search_start: String,
     search_end: String,
     error: Option<String>,
@@ -106,6 +111,7 @@ impl RomOverworldEditor {
         if self.workspace.is_some() {
             self.load_tile();
             self.refresh_texture(context);
+            self.refresh_map16_texture(context);
             egui::Window::new("ROM Complete Overworld Editor")
                 .default_size([820.0, 720.0])
                 .vscroll(true)
@@ -142,7 +148,7 @@ impl RomOverworldEditor {
             );
         }
         self.complete_file_controls(ui, stale, revision);
-        self.world_canvas(ui, shape);
+        self.world_canvas(ui, shape, stale);
         self.layer_tile_controls(ui, shape, stale);
         ui.separator();
         ui.horizontal(|ui| {
@@ -179,14 +185,15 @@ impl RomOverworldEditor {
         shape: CompleteOverworldShape,
         stale: bool,
     ) {
+        let old_selection = (self.layer, self.x, self.y);
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.layer, 0, "Layer 1");
             ui.selectable_value(&mut self.layer, 1, "Layer 2");
         });
-        let old_selection = (self.layer, self.x, self.y);
         ui.add(egui::Slider::new(&mut self.x, 0..=shape.width.saturating_sub(1)).text("X"));
         ui.add(egui::Slider::new(&mut self.y, 0..=shape.height.saturating_sub(1)).text("Y"));
         if old_selection != (self.layer, self.x, self.y) {
+            self.paint_anchor = None;
             self.loaded = None;
             self.load_tile();
         }
@@ -194,6 +201,7 @@ impl RomOverworldEditor {
             ui.label("Map16 tile");
             ui.text_edit_singleline(&mut self.tile);
         });
+        self.map16_picker(ui);
         if ui
             .add_enabled(!stale, egui::Button::new("Apply layer tile"))
             .clicked()
@@ -210,7 +218,57 @@ impl RomOverworldEditor {
         }
     }
 
-    fn world_canvas(&mut self, ui: &mut egui::Ui, shape: CompleteOverworldShape) {
+    fn map16_picker(&mut self, ui: &mut egui::Ui) {
+        let page_count = self
+            .workspace
+            .as_ref()
+            .map_or(0, |workspace| workspace.assets.map16.set.pages.len());
+        ui.collapsing("Visual Map16 tile picker", |ui| {
+            let previous_page = self.map16_page;
+            ui.add(
+                egui::Slider::new(&mut self.map16_page, 0..=page_count.saturating_sub(1))
+                    .text("Map16 page"),
+            );
+            if previous_page != self.map16_page {
+                self.map16_rendered_key = None;
+                self.refresh_map16_texture(ui.ctx());
+            }
+            let Some(texture) = self.map16_texture.clone() else {
+                ui.label("This Map16 page cannot be previewed with the current overworld assets.");
+                return;
+            };
+            let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click()));
+            if response.clicked()
+                && let Some(position) = response.interact_pointer_pos()
+                && let Some(index) =
+                    crate::map16_editor_render::selected_tile(response.rect, position)
+                && let Some(tile) = self
+                    .map16_page
+                    .checked_mul(lm_level::Map16Page::TILE_COUNT)
+                    .and_then(|base| base.checked_add(index))
+                    .and_then(|tile| u16::try_from(tile).ok())
+            {
+                self.tile = format!("{tile:04X}");
+            }
+            if let Ok(tile) = level_editor_forms::parse_hex_u16(&self.tile, "overworld tile")
+                && usize::from(tile) / lm_level::Map16Page::TILE_COUNT == self.map16_page
+            {
+                let index = usize::from(tile) % lm_level::Map16Page::TILE_COUNT;
+                let cell = response.rect.width() / 16.0;
+                let column = f32::from(u8::try_from(index % 16).unwrap_or_default());
+                let row = f32::from(u8::try_from(index / 16).unwrap_or_default());
+                let minimum = response.rect.min + egui::vec2(column * cell, row * cell);
+                ui.painter().rect_stroke(
+                    egui::Rect::from_min_size(minimum, egui::Vec2::splat(cell)),
+                    0.0,
+                    egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+                    egui::StrokeKind::Inside,
+                );
+            }
+        });
+    }
+
+    fn world_canvas(&mut self, ui: &mut egui::Ui, shape: CompleteOverworldShape, stale: bool) {
         let reveal_count = self.workspace.as_ref().map_or(0, |workspace| {
             workspace.controller.data().event_reveals.entries.len()
         });
@@ -227,9 +285,16 @@ impl RomOverworldEditor {
             ui.label("Overworld preview unavailable; property editing remains available.");
             return;
         };
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.paint_enabled, "Paint selected Map16 tile");
+            if self.paint_enabled {
+                ui.label("Drag across the map to paint a continuous stroke.");
+            }
+        });
+        let mut paint_position = None;
         egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
-            let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click()));
-            if response.clicked()
+            let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click_and_drag()));
+            if (response.clicked() || response.dragged())
                 && let Some(position) = response.interact_pointer_pos()
                 && let Some((x, y)) = overworld_editor_render::selected_tile(
                     response.rect,
@@ -241,9 +306,36 @@ impl RomOverworldEditor {
                 self.x = x;
                 self.y = y;
                 self.loaded = None;
-                self.load_tile();
+                if self.paint_enabled && !stale {
+                    paint_position = Some((x, y));
+                } else {
+                    self.load_tile();
+                    self.refresh_map16_texture(ui.ctx());
+                }
+            }
+            if shape.width > 0 && shape.height > 0 {
+                let width = f32::from(u16::try_from(shape.width).unwrap_or(1));
+                let height = f32::from(u16::try_from(shape.height).unwrap_or(1));
+                let selected_x = f32::from(u16::try_from(self.x).unwrap_or_default());
+                let selected_y = f32::from(u16::try_from(self.y).unwrap_or_default());
+                let cell_width = response.rect.width() / width;
+                let cell_height = response.rect.height() / height;
+                let minimum = response.rect.min
+                    + egui::vec2(selected_x * cell_width, selected_y * cell_height);
+                ui.painter().rect_stroke(
+                    egui::Rect::from_min_size(minimum, egui::vec2(cell_width, cell_height)),
+                    0.0,
+                    egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+                    egui::StrokeKind::Inside,
+                );
             }
         });
+        if let Some(position) = paint_position {
+            self.paint_to(position);
+        }
+        if !ui.input(|input| input.pointer.primary_down()) {
+            self.paint_anchor = None;
+        }
     }
 
     fn refresh_texture(&mut self, context: &egui::Context) {
@@ -275,6 +367,73 @@ impl RomOverworldEditor {
                 self.error = Some(format!("could not render native overworld: {error}"));
             }
         }
+    }
+
+    fn refresh_map16_texture(&mut self, context: &egui::Context) {
+        let Some(workspace) = self.workspace.as_ref() else {
+            return;
+        };
+        let page_count = workspace.assets.map16.set.pages.len();
+        self.map16_page = self.map16_page.min(page_count.saturating_sub(1));
+        let key = (workspace.controller.revision(), self.map16_page);
+        if self.map16_rendered_key == Some(key) {
+            return;
+        }
+        let Some(page) = workspace.assets.map16.set.pages.get(self.map16_page) else {
+            self.map16_texture = None;
+            self.map16_rendered_key = Some(key);
+            return;
+        };
+        let page = lm_level::Map16PageFile {
+            source_page: u16::try_from(self.map16_page).unwrap_or_default(),
+            page: page.clone(),
+        };
+        let palette = lm_graphics::PaletteInterchangeFile {
+            source_palette: workspace.slot,
+            palette: workspace.controller.data().palette.clone(),
+        };
+        match crate::map16_editor_render::render_texture(
+            context,
+            &page,
+            &workspace.assets.graphics,
+            &palette,
+        ) {
+            Ok(texture) => {
+                self.map16_texture = Some(texture);
+                self.map16_rendered_key = Some(key);
+            }
+            Err(_) => {
+                self.map16_texture = None;
+                self.map16_rendered_key = Some(key);
+            }
+        }
+    }
+
+    fn paint_to(&mut self, position: (usize, usize)) {
+        let tile = match level_editor_forms::parse_hex_u16(&self.tile, "overworld tile") {
+            Ok(tile) => tile,
+            Err(error) => {
+                self.error = Some(error);
+                self.paint_anchor = None;
+                return;
+            }
+        };
+        let cells = grid_line(self.paint_anchor.unwrap_or(position), position);
+        self.paint_anchor = Some(position);
+        let layer = self.layer_id();
+        let edits = stroke_edits(layer, &cells, tile, |x, y| self.current_tile(layer, x, y));
+        self.apply_many(&edits);
+    }
+
+    fn current_tile(&self, layer: OverworldLayerId, x: usize, y: usize) -> Option<u16> {
+        let workspace = self.workspace.as_ref()?;
+        let shape = workspace.profiled.profile.overworld_shape;
+        let index = y.checked_mul(shape.width)?.checked_add(x)?;
+        match layer {
+            OverworldLayerId::Layer1 => workspace.controller.data().layers.layer1.tiles.get(index),
+            OverworldLayerId::Layer2 => workspace.controller.data().layers.layer2.tiles.get(index),
+        }
+        .copied()
     }
 
     fn commit_controls(
@@ -330,11 +489,18 @@ impl RomOverworldEditor {
     }
 
     fn apply(&mut self, edit: OverworldControllerEdit) {
+        self.apply_many(&[edit]);
+    }
+
+    fn apply_many(&mut self, edits: &[OverworldControllerEdit]) {
+        if edits.is_empty() {
+            return;
+        }
         let Some(workspace) = self.workspace.as_mut() else {
             self.error = Some("overworld workspace is closed".into());
             return;
         };
-        if let Err(error) = workspace.controller.apply_edits(&[edit]) {
+        if let Err(error) = workspace.controller.apply_edits(edits) {
             self.error = Some(error.to_string());
         } else {
             self.invalidate();
@@ -359,6 +525,11 @@ impl RomOverworldEditor {
         };
         if let Some(tile) = tiles.get(self.y * shape.width + self.x) {
             self.tile = format!("{tile:04X}");
+            let page = usize::from(*tile) / lm_level::Map16Page::TILE_COUNT;
+            if page != self.map16_page {
+                self.map16_page = page;
+                self.map16_rendered_key = None;
+            }
         }
         self.loaded = Some((workspace.controller.revision(), self.layer, self.x, self.y));
     }
@@ -374,7 +545,100 @@ impl RomOverworldEditor {
     fn invalidate(&mut self) {
         self.loaded = None;
         self.rendered_key = None;
+        self.map16_rendered_key = None;
         self.records.invalidate();
         self.animation.invalidate();
+    }
+}
+
+fn grid_line(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> {
+    let (mut x, mut y) = (start.0 as i64, start.1 as i64);
+    let (end_x, end_y) = (end.0 as i64, end.1 as i64);
+    let dx = (end_x - x).abs();
+    let step_x = if x < end_x { 1 } else { -1 };
+    let dy = -(end_y - y).abs();
+    let step_y = if y < end_y { 1 } else { -1 };
+    let mut error = dx + dy;
+    let mut cells = Vec::new();
+    loop {
+        cells.push((x as usize, y as usize));
+        if x == end_x && y == end_y {
+            break;
+        }
+        let doubled = error * 2;
+        if doubled >= dy {
+            error += dy;
+            x += step_x;
+        }
+        if doubled <= dx {
+            error += dx;
+            y += step_y;
+        }
+    }
+    cells
+}
+
+fn stroke_edits(
+    layer: OverworldLayerId,
+    cells: &[(usize, usize)],
+    tile: u16,
+    mut current_tile: impl FnMut(usize, usize) -> Option<u16>,
+) -> Vec<OverworldControllerEdit> {
+    cells
+        .iter()
+        .copied()
+        .filter_map(|(x, y)| {
+            (current_tile(x, y) != Some(tile)).then_some(OverworldControllerEdit::SetLayerTile {
+                layer,
+                x,
+                y,
+                tile,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod canvas_tests {
+    use super::{OverworldControllerEdit, OverworldLayerId, grid_line, stroke_edits};
+
+    #[test]
+    fn drag_strokes_cover_skipped_grid_cells_in_both_directions() {
+        assert_eq!(
+            grid_line((1, 2), (5, 2)),
+            vec![(1, 2), (2, 2), (3, 2), (4, 2), (5, 2)]
+        );
+        assert_eq!(
+            grid_line((4, 4), (1, 1)),
+            vec![(4, 4), (3, 3), (2, 2), (1, 1)]
+        );
+        assert_eq!(grid_line((3, 7), (3, 7)), vec![(3, 7)]);
+    }
+
+    #[test]
+    fn stroke_batch_preserves_order_and_omits_unchanged_cells() {
+        let edits = stroke_edits(
+            OverworldLayerId::Layer2,
+            &[(2, 4), (3, 4), (4, 4)],
+            0x1234,
+            |x, _| (x == 3).then_some(0x1234),
+        );
+        assert_eq!(
+            edits,
+            vec![
+                OverworldControllerEdit::SetLayerTile {
+                    layer: OverworldLayerId::Layer2,
+                    x: 2,
+                    y: 4,
+                    tile: 0x1234,
+                },
+                OverworldControllerEdit::SetLayerTile {
+                    layer: OverworldLayerId::Layer2,
+                    x: 4,
+                    y: 4,
+                    tile: 0x1234,
+                },
+            ]
+        );
     }
 }
