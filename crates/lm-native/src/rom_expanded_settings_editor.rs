@@ -104,18 +104,7 @@ impl RomExpandedSettingsEditor {
             .add_enabled(!stale, egui::Button::new("Stage Layer 3 settings"))
             .clicked()
         {
-            match self.form.layer3_edits() {
-                Ok(edits) => {
-                    if let Some(controller) = self.controller.as_mut() {
-                        if let Err(error) = controller.apply_word_edits(&edits) {
-                            self.error = Some(error.to_string());
-                        } else {
-                            self.form = ExpandedSettingsForm::load(controller.record());
-                        }
-                    }
-                }
-                Err(error) => self.error = Some(error),
-            }
+            self.stage_edits(project_revision, self.form.layer3_edits());
         }
         ui.horizontal(|ui| {
             ui.label("Expanded mode");
@@ -126,26 +115,63 @@ impl RomExpandedSettingsEditor {
             .add_enabled(!stale, egui::Button::new("Stage Layer 3 expanded mode"))
             .clicked()
         {
-            match self.form.layer3_expanded_mode() {
-                Ok(flags) => {
-                    if let Some(controller) = self.controller.as_mut() {
-                        let mut record = controller.record().clone();
-                        if let Err(error) = record.set_layer3_expanded_mode_flags(flags) {
-                            self.error = Some(error.to_string());
-                        } else {
-                            let edits = (8..16)
-                                .map(|word| (word, record.word(word).expect("fixed word")))
-                                .collect::<Vec<_>>();
-                            if let Err(error) = controller.apply_word_edits(&edits) {
-                                self.error = Some(error.to_string());
-                            } else {
-                                self.form = ExpandedSettingsForm::load(controller.record());
-                            }
-                        }
+            self.stage_edits(project_revision, self.form.layer3_expanded_mode_edits());
+        }
+        ui.separator();
+        ui.heading("Super GFX Bypass");
+        ui.checkbox(
+            &mut self.form.bypass_enabled,
+            "Use per-level GFX/ExGFX files",
+        );
+        egui::Grid::new("rom-expanded-settings-super-gfx")
+            .num_columns(4)
+            .show(ui, |ui| {
+                for (slot, label) in ["FG1", "FG2", "FG3", "BG1", "BG2", "BG3"]
+                    .into_iter()
+                    .enumerate()
+                {
+                    ui.label(label);
+                    ui.add(
+                        egui::DragValue::new(&mut self.form.bypass_foreground_background[slot])
+                            .hexadecimal(3, false, true)
+                            .range(0..=0x0fff),
+                    );
+                    if slot % 2 == 1 {
+                        ui.end_row();
                     }
                 }
-                Err(error) => self.error = Some(error),
-            }
+                for (slot, label) in ["SP1", "SP2", "SP3", "SP4"].into_iter().enumerate() {
+                    ui.label(label);
+                    ui.add(
+                        egui::DragValue::new(&mut self.form.bypass_sprites[slot])
+                            .hexadecimal(3, false, true)
+                            .range(0..=0x0fff),
+                    );
+                    if slot % 2 == 1 {
+                        ui.end_row();
+                    }
+                }
+            });
+        if ui
+            .add_enabled(!stale, egui::Button::new("Stage Super GFX bypass"))
+            .clicked()
+        {
+            self.stage_edits(project_revision, self.form.super_graphics_bypass_edits());
+        }
+        ui.separator();
+        ui.heading("Sprite boundary interaction");
+        ui.checkbox(
+            &mut self.form.sprites_beyond_boundaries_use_air,
+            "Sprites beyond level boundaries interact with air instead of water",
+        );
+        if ui
+            .add_enabled(
+                !stale,
+                egui::Button::new("Stage sprite boundary interaction"),
+            )
+            .clicked()
+        {
+            self.stage_edits(project_revision, self.form.sprite_boundary_edits());
         }
         ui.separator();
         ui.label("All sixteen exact native words");
@@ -164,20 +190,7 @@ impl RomExpandedSettingsEditor {
                 .add_enabled(!stale, egui::Button::new("Stage all words"))
                 .clicked()
             {
-                match self.form.edits() {
-                    Ok(edits) => {
-                        if let Some(controller) = self.controller.as_mut() {
-                            if let Err(error) = controller.apply_word_edits(&edits) {
-                                self.error = Some(error.to_string());
-                            } else {
-                                self.form = ExpandedSettingsForm::load(controller.record());
-                            }
-                        } else {
-                            self.error = Some("expanded-settings workspace is closed".into());
-                        }
-                    }
-                    Err(error) => self.error = Some(error),
-                }
+                self.stage_edits(project_revision, self.form.edits());
             }
             let modified = self
                 .controller
@@ -199,6 +212,29 @@ impl RomExpandedSettingsEditor {
             ui.label(if modified { "Staged" } else { "Unchanged" });
         });
         result
+    }
+
+    fn stage_edits(&mut self, project_revision: u64, edits: Result<Vec<(usize, u16)>, String>) {
+        let Some(controller) = self.controller.as_mut() else {
+            self.error = Some("expanded-settings workspace is closed".into());
+            return;
+        };
+        if controller.revision() != project_revision {
+            self.error = Some("the ROM changed after this editor was opened".into());
+            return;
+        }
+        let edits = match edits {
+            Ok(edits) => edits,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        if let Err(error) = controller.apply_word_edits(&edits) {
+            self.error = Some(error.to_string());
+        } else {
+            self.form = ExpandedSettingsForm::load(controller.record());
+        }
     }
 
     fn close_confirmation(&mut self, context: &egui::Context) -> bool {
@@ -242,5 +278,93 @@ impl RomExpandedSettingsEditor {
 
     pub(crate) fn commit_succeeded(&mut self) {
         self.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_level::{ExpandedLevelHeader, SuperGraphicsBypass};
+    use lm_project::ExpandedLevelSettingsLayout;
+    use lm_rom::{Mapper, SnesChecksum, compute_snes_checksum};
+
+    #[test]
+    fn focused_semantic_controls_commit_reopen_checksum_undo_and_reject_stale_stage() {
+        let mut bytes = vec![0; 0x8000];
+        bytes[0x7fc0..0x7fd5].copy_from_slice(b"SUPER MARIOWORLD     ");
+        bytes[0x7fd5] = 0x20;
+        bytes[0x7fd9] = 1;
+        let checksum = compute_snes_checksum(&bytes, 0x7fdc).unwrap();
+        bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        let original = bytes.clone();
+        let layout = ExpandedLevelSettingsLayout {
+            mapper: Mapper::LoRom,
+            table_offset: 0x2000,
+            entries: 0x200,
+            stride: 0x20,
+        };
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let controller =
+            ExpandedSettingsController::decode(&app.controller_snapshot().unwrap(), layout)
+                .unwrap();
+        let revision = controller.revision();
+        let mut editor = RomExpandedSettingsEditor {
+            form: ExpandedSettingsForm::load(controller.record()),
+            controller: Some(controller),
+            ..Default::default()
+        };
+
+        editor.form.bypass_enabled = true;
+        editor.form.bypass_foreground_background = [1, 2, 3, 4, 5, 6];
+        editor.form.bypass_sprites = [0x101, 0x202, 0x303, 0x404];
+        editor.stage_edits(revision, editor.form.super_graphics_bypass_edits());
+        editor.form.layer3_expanded_mode = "89AFCDEF".into();
+        editor.stage_edits(revision, editor.form.layer3_expanded_mode_edits());
+        editor.form.sprites_beyond_boundaries_use_air = false;
+        editor.stage_edits(revision, editor.form.sprite_boundary_edits());
+
+        let staged = editor.controller.as_ref().unwrap().record();
+        assert_eq!(
+            ExpandedLevelHeader::from(staged).super_graphics_bypass(),
+            SuperGraphicsBypass {
+                enabled: true,
+                foreground_background: [1, 2, 3, 4, 5, 6],
+                sprites: [0x101, 0x202, 0x303, 0x404],
+            }
+        );
+        assert_eq!(staged.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
+        assert!(!ExpandedLevelHeader::from(staged).sprites_beyond_boundaries_use_air());
+
+        let before_stale = staged.clone();
+        editor.form.layer3_expanded_mode = "01234567".into();
+        editor.stage_edits(revision + 1, editor.form.layer3_expanded_mode_edits());
+        assert_eq!(editor.controller.as_ref().unwrap().record(), &before_stale);
+        assert!(editor.error.is_some());
+
+        let command = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .prepare_commit("Focused semantic settings")
+            .unwrap()
+            .into_command();
+        app.dispatch(command).unwrap();
+        let reopened = app
+            .project()
+            .unwrap()
+            .load_expanded_level_settings(0x105, layout)
+            .unwrap();
+        assert_eq!(reopened, before_stale);
+        assert_eq!(
+            SnesChecksum::decode(app.project().unwrap().rom.logical_bytes(), 0x7fdc).unwrap(),
+            compute_snes_checksum(app.project().unwrap().rom.logical_bytes(), 0x7fdc).unwrap()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.as_file_bytes().as_ref(),
+            original
+        );
     }
 }

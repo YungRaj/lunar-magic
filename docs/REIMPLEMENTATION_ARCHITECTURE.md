@@ -360,6 +360,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   expanded mode, Super GFX Bypass, and sprite boundary interaction. Each projection produces only
   its owned word batch and rejoins the ordinary revisioned document controller, so native buttons,
   raw-word editing, terminal automation, history, and persistence cannot diverge.
+- The focused installed-record window shares those semantic form projections but stages them in an
+  `ExpandedSettingsController` bound to the immutable project revision. Every button revalidates
+  that token, reloads canonical staged words, and emits the ordinary checksum-repaired application
+  command only at explicit ROM commit.
 - Complete `LMOWFULL` documents similarly retain their exact size-mode table and animation bound
   for their entire lifetime. Native-ROM and portable-document controllers call one staged
   nine-domain edit engine, while `LMOWDOC1` and `LMOWDRN1` keep open interpretation and preview

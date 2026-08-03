@@ -749,6 +749,10 @@ sprite-boundary controls beside Layer 3 tilemap and expanded mode. Shared-form t
 projection's unowned words and bitfields remain exact; the native editor integration test composes
 all three shared-word edits through monotonic history, snapshots the exact saved record, marks the
 acknowledged baseline clean, and restores a modified state through undo.
+The focused installed-record integration test drives Super GFX Bypass, expanded mode, and boundary
+interaction through the exact GUI staging helper, proves stale delivery cannot change its record,
+commits one checksum-valid ROM revision, semantically reopens the complete 32-byte value, and
+restores the original ROM byte-for-byte through application undo.
 Its ownership-backed route reads a file-backed `LMRATS01` manifest through the real shell
 dispatcher, reclaims the exact palette and ExAnimation snapshot blocks, preserves semantic reopen,
 rejects reuse of the now-stale evidence for a later edit without changing a byte, and restores the

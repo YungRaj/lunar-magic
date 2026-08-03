@@ -1327,6 +1327,11 @@ sprite boundary interaction. Each button derives its bounded word batch from the
 exact form, commits through the same document controller, and immediately reloads canonical state.
 Mode changes preserve the eight adjacent low 12-bit fields, bypass changes preserve word 1 and
 words 12–15, and boundary changes preserve every bit except word 8's `$4000` flag.
+The focused installed-ROM exact-record editor exposes the same projections and stages their shared
+form batches through `ExpandedSettingsController`. Its staging helper independently rechecks the
+captured project revision even though stale buttons are disabled, then reloads the canonical record
+after every accepted action. Commit remains one checksum-repaired application mutation with exact
+semantic reopen and whole-ROM undo.
 The installed-record type and the complete-level `ExpandedLevelHeader` have explicit lossless
 conversions over the same sixteen-word shape, allowing portable and native workflows to exchange
 the recovered record without assigning meanings or normalizing unknown values.
