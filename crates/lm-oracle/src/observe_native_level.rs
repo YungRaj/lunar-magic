@@ -203,7 +203,7 @@ mod tests {
         );
         assert_eq!(
             observed.get("native-level/layer1/objects/0000/screen-jump-resolved-screen"),
-            Some("37")
+            Some("39")
         );
     }
 }

@@ -1057,12 +1057,16 @@ extent, relocation, import normalization, rendering, and canvas sizing share tha
 while the raw packed target remains lossless and independently editable. Both complete-level and
 native-level semantic observations publish the packed target and resolved screen independently, so
 release evidence detects regressions in either representation or interpretation.
-The maximum live pair `$1F+$0F` resolves to `$2E`. Lunar Magic preserves that raw jump and its
-following object on MWL import/re-export but excludes the out-of-range artwork from automatic
-extent, leaving last-screen `$00`; Rust now applies the same visibility rule while stored/raw
-extent remains bounded to 32 screens. Both native jump editors show the resolved screen and mark
-values beyond `$1F` as retained lossless data rather than silently presenting them as valid canvas
-locations.
+The low-first horizontal form uses Lunar Magic's recovered `$1B0`-cell screen stride and `$200`-
+cell row stride rather than plain component addition; the high-first vertical form uses equal
+`$200` strides. Thus the maximum live pair `$1F/$0F` resolves to `$30`. Lunar Magic preserves that
+raw jump and its following object on MWL import/re-export but excludes a nonadvancing out-of-range
+object from automatic extent, leaving last-screen `$00`. If the following object advances, the
+five-bit primary cursor wraps first and the same layout mapping places its rendered cell on screen
+`$11`; Lunar Magic retains both raw records and stores last-screen `$11`. Rust now applies those
+same cursor, visibility, and lossless-normalization rules while stored/raw extent remains bounded
+to 32 screens. Both native jump editors show the resolved screen and mark values beyond `$1F` as
+retained lossless data rather than silently presenting them as valid canvas locations.
 The same table-aware serializer is shared by controller validation and ROM persistence; exhaustive
 tests cover all four selectors and all 256 sprite IDs.
 

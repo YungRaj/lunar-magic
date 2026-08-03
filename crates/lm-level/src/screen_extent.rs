@@ -21,32 +21,42 @@ pub fn native_level_screen_count(
     mode: LevelScreenExtentMode,
 ) -> u8 {
     let mut screen = 0_u16;
+    let mut jump = None;
+    let mut jump_advances = 0_u16;
     let mut stored_highest = 0_u16;
-    let mut visible_highest = 0_u16;
     for record in &objects.records {
-        if let Some(jump) = record.screen_jump() {
-            screen = jump.resolved_screen();
+        if let Some(next_jump) = record.screen_jump() {
+            screen = next_jump.resolved_screen();
+            jump = Some(next_jump);
+            jump_advances = 0;
             stored_highest = stored_highest.max(screen);
             continue;
         }
         if record.advances_screen() {
-            screen = screen.saturating_add(1).min(31);
+            if let Some(jump) = jump {
+                jump_advances = jump_advances.saturating_add(1);
+                screen = jump.resolved_screen_after_advances(jump_advances);
+            } else {
+                screen = screen.saturating_add(1) & 0x1f;
+            }
         }
         stored_highest = stored_highest.max(screen);
-        // Screen exits are editor-only markers and do not themselves extend automatic artwork
-        // bounds. Their high bit still advances stream state for a following positioned object.
-        if screen <= 31 && record.screen_exit().is_none() && record.command_id() != 0x28 {
-            visible_highest = visible_highest.max(screen);
-        }
     }
     let highest = match mode {
         LevelScreenExtentMode::Stored => stored_highest,
-        LevelScreenExtentMode::Auto => sprites
+        LevelScreenExtentMode::Auto => objects
             .native_placements()
-            .iter()
-            .fold(visible_highest, |highest, placement| {
-                highest.max(placement.screen)
-            }),
+            .into_iter()
+            .map(|placement| placement.screen)
+            .chain(
+                sprites
+                    .native_placements()
+                    .into_iter()
+                    .map(|placement| placement.screen),
+            )
+            .filter(|screen| *screen <= 31)
+            .max()
+            .unwrap_or(0),
     };
     u8::try_from(highest.min(31) + 1).unwrap_or(32)
 }
@@ -94,7 +104,7 @@ mod tests {
     }
 
     #[test]
-    fn extent_uses_the_additive_screen_jump_target() {
+    fn extent_uses_the_layout_stride_screen_jump_target() {
         let objects = ObjectStream {
             records: vec![
                 ObjectRecord::new(vec![5, 3, 1]).unwrap(),
@@ -126,6 +136,17 @@ mod tests {
         assert_eq!(
             native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Stored),
             32
+        );
+
+        let advancing = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0x1f, 0x0f, 1]).unwrap(),
+                ObjectRecord::new(vec![0x81, 0x10, 0]).unwrap(),
+            ],
+        };
+        assert_eq!(
+            native_level_screen_count(&advancing, &sprites, LevelScreenExtentMode::Auto),
+            0x12
         );
     }
 

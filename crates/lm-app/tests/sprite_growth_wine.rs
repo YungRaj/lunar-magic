@@ -874,6 +874,14 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
             0,
         ),
         (
+            "horizontal-first-low-jump-maximum-components-then-advance",
+            vec![
+                ObjectRecord::new(vec![0x1f, 0x0f, 1]).unwrap(),
+                ObjectRecord::new(vec![0x81, 0x10, 0]).unwrap(),
+            ],
+            0x11,
+        ),
+        (
             "out-of-order-exits",
             vec![
                 ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
@@ -935,6 +943,14 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
             ],
             8,
         ),
+        (
+            "vertical-first-high-jump-maximum-components",
+            vec![
+                ObjectRecord::new(vec![0x1f, 0x0f, 3]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+            0,
+        ),
     ] {
         let imported_rom = directory.join(format!("{case}.sfc"));
         let injected_mwl = directory.join(format!("{case}.mwl"));
@@ -976,9 +992,18 @@ fn lunar_magic_canonicalizes_imported_layer1_controls_and_extent() {
         )
         .unwrap();
         let mut expected_objects = injected.layer1.objects.clone();
-        expected_objects.canonicalize_import_controls(vertical);
-        assert_eq!(actual.layer1.header.last_screen(), expected_last_screen);
-        assert_eq!(actual.layer1.objects, expected_objects);
+        if !case.contains("maximum-components-then-advance") {
+            expected_objects.canonicalize_import_controls(vertical);
+        }
+        assert_eq!(
+            actual.layer1.header.last_screen(),
+            expected_last_screen,
+            "unexpected extent for {case}"
+        );
+        assert_eq!(
+            actual.layer1.objects, expected_objects,
+            "unexpected normalized objects for {case}"
+        );
         assert!(actual.sprites.tokens.is_empty());
     }
     fs::remove_dir_all(directory).unwrap();

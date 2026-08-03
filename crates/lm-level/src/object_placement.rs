@@ -34,14 +34,23 @@ impl ObjectStream {
     #[must_use]
     pub fn native_placements_for_orientation(&self, _vertical: bool) -> Vec<NativeObjectPlacement> {
         let mut screen = 0_u16;
+        let mut jump = None;
+        let mut jump_advances = 0_u16;
         let mut placements = Vec::with_capacity(self.records.len());
         for (record_index, record) in self.records.iter().enumerate() {
-            if let Some(jump) = record.screen_jump() {
-                screen = jump.resolved_screen();
+            if let Some(next_jump) = record.screen_jump() {
+                screen = next_jump.resolved_screen();
+                jump = Some(next_jump);
+                jump_advances = 0;
                 continue;
             }
             if record.advances_screen() {
-                screen = screen.saturating_add(1);
+                if let Some(jump) = jump {
+                    jump_advances = jump_advances.saturating_add(1);
+                    screen = jump.resolved_screen_after_advances(jump_advances);
+                } else {
+                    screen = screen.saturating_add(1) & 0x1f;
+                }
             }
             if !record.is_positioned_object() {
                 continue;
@@ -83,6 +92,7 @@ impl ObjectStream {
         let custom_time = self.custom_time(vertical);
         let mut source_screen = 0_u16;
         let mut output_screen = 0_u16;
+        let mut preserve_position_bits = false;
         let mut output = Vec::with_capacity(self.records.len());
         let mut exits: [Option<crate::ObjectRecord>; 32] = std::array::from_fn(|_| None);
         for mut record in self.records.drain(..) {
@@ -90,8 +100,11 @@ impl ObjectStream {
                 continue;
             }
             if let Some(jump) = record.screen_jump() {
-                source_screen = jump.resolved_screen().min(31);
-                output_screen = source_screen;
+                source_screen = jump.resolved_screen();
+                preserve_position_bits = source_screen > 31;
+                if !preserve_position_bits {
+                    output_screen = source_screen;
+                }
                 output.push(record);
                 continue;
             }
@@ -109,6 +122,10 @@ impl ObjectStream {
                 continue;
             }
             if record.is_positioned_object() {
+                if preserve_position_bits {
+                    output.push(record);
+                    continue;
+                }
                 if record.advances_screen() {
                     source_screen = source_screen.saturating_add(1).min(31);
                 }
@@ -316,6 +333,36 @@ mod tests {
     }
 
     #[test]
+    fn imported_out_of_range_jump_retains_following_advance_until_a_valid_jump() {
+        let opaque_jump = ObjectRecord::new(vec![0x1f, 0x0f, 1]).unwrap();
+        let advancing = ObjectRecord::new(vec![0x81, 0x10, 0]).unwrap();
+        let valid_jump = ObjectRecord::new(vec![3, 0, 1]).unwrap();
+        let ordinary = ObjectRecord::new(vec![1, 0x10, 0]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![
+                opaque_jump.clone(),
+                advancing.clone(),
+                valid_jump.clone(),
+                ordinary,
+            ],
+        };
+
+        stream.canonicalize_import_controls(false);
+
+        assert_eq!(stream.records[0], opaque_jump);
+        assert_eq!(stream.records[1], advancing);
+        assert_eq!(stream.records[2], valid_jump);
+        assert_eq!(
+            stream
+                .native_placements()
+                .iter()
+                .map(|placement| placement.screen)
+                .collect::<Vec<_>>(),
+            [0x11, 3]
+        );
+    }
+
+    #[test]
     fn byte_zero_bit_four_extends_the_perpendicular_coordinate() {
         let stream = ObjectStream {
             records: vec![ObjectRecord::new(vec![0x15, 0x17, 0]).unwrap()],
@@ -361,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn screen_jump_components_resolve_additively_in_both_storage_orders() {
+    fn screen_jump_components_follow_native_layout_strides_and_storage_orders() {
         for (vertical, jump) in [
             (false, ObjectRecord::new(vec![5, 3, 1]).unwrap()),
             (true, ObjectRecord::new(vec![5, 3, 3]).unwrap()),
@@ -373,6 +420,18 @@ mod tests {
             assert_eq!(placement.screen, 8);
             assert_eq!(placement.major, 8 * 16);
         }
+
+        let horizontal_boundary = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0x1f, 0x0f, 1]).unwrap(),
+                ObjectRecord::new(vec![0x81, 0x10, 0]).unwrap(),
+            ],
+        };
+        assert_eq!(
+            horizontal_boundary.native_placements()[0].screen,
+            0x11,
+            "the five-bit cursor wraps before the 0x1b0/0x200 layout mapping"
+        );
     }
 
     #[test]

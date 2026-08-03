@@ -419,6 +419,19 @@ fn mwl_import_ignores_screen_exits_and_preserves_raw_layer1_order() {
         expected_out_of_range
     );
 
+    out_of_range.layer1.objects.records[1]
+        .set_advances_screen(true)
+        .unwrap();
+    let expected_wrapped_advance = out_of_range.layer1.objects.clone();
+    controller
+        .replace_modeled_assets_from_mwl(&out_of_range)
+        .unwrap();
+    assert_eq!(controller.assets().level.layer1.header.last_screen(), 0x11);
+    assert_eq!(
+        controller.assets().level.layer1.objects,
+        expected_wrapped_advance
+    );
+
     let expected_core = controller.assets().clone();
     let prepared = controller
         .prepare_commit_with_layer2("import extent and raw order", &options(), &layer2_options())

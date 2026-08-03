@@ -479,17 +479,34 @@ pub struct ObjectScreenJump {
 }
 
 impl ObjectScreenJump {
-    /// Resolves the absolute major-axis screen selected by the two packed components.
+    /// Resolves the editor screen selected by the two packed components.
     ///
-    /// Lunar Magic adds the five-bit and four-bit components for both storage orders. The packed
-    /// target remains available separately so lossless editors can preserve and edit the exact
-    /// representation.
+    /// Lunar Magic's horizontal (`FirstLow`) layout stores one component at a `0x1b0`-cell screen
+    /// stride and the other at a `0x200`-cell row stride, then maps the resulting cell back to a
+    /// screen. Vertical (`FirstHigh`) layouts use equal `0x200` strides. The packed target remains
+    /// available separately so lossless editors can preserve and edit the exact representation.
     #[must_use]
     pub fn resolved_screen(self) -> u16 {
+        self.resolved_screen_after_advances(0)
+    }
+
+    /// Resolves the screen after serialized new-screen bits advance Lunar Magic's primary cursor.
+    ///
+    /// The cursor is five bits wide even for `FirstHigh`, whose initial primary component occupies
+    /// only four bits. It wraps after 31 before the layout-stride mapping is applied.
+    #[must_use]
+    pub fn resolved_screen_after_advances(self, advances: u16) -> u16 {
         let [low, high] = self.packed_target.to_le_bytes();
         match self.encoding {
-            ScreenJumpEncoding::FirstLow => u16::from(low & 0x1f) + u16::from(high & 0x0f),
-            ScreenJumpEncoding::FirstHigh => u16::from(high & 0x1f) + u16::from(low & 0x0f),
+            ScreenJumpEncoding::FirstLow => {
+                let primary = (u16::from(low & 0x1f) + advances) & 0x1f;
+                let cell = primary * 0x1b0 + u16::from(high & 0x0f) * 0x200;
+                cell / 0x1b0
+            }
+            ScreenJumpEncoding::FirstHigh => {
+                let primary = (u16::from(low & 0x0f) + advances) & 0x1f;
+                u16::from(high & 0x1f) + primary
+            }
         }
     }
 }
@@ -813,12 +830,21 @@ mod tests {
     }
 
     #[test]
-    fn both_screen_jump_encodings_add_their_packed_components() {
+    fn both_screen_jump_encodings_apply_their_native_layout_strides() {
         let first_low = ObjectRecord::new(vec![5, 3, 1]).unwrap();
         assert_eq!(first_low.screen_jump().unwrap().resolved_screen(), 8);
 
         let first_high = ObjectRecord::new(vec![5, 3, 3]).unwrap();
         assert_eq!(first_high.screen_jump().unwrap().resolved_screen(), 8);
+
+        let horizontal_maximum = ObjectRecord::new(vec![0x1f, 0x0f, 1]).unwrap();
+        assert_eq!(
+            horizontal_maximum
+                .screen_jump()
+                .unwrap()
+                .resolved_screen(),
+            0x30
+        );
     }
 
     #[test]

@@ -10747,7 +10747,7 @@ mod tests {
 
         assert!(screen_jump_resolution_label(FirstLow, 0x0305).contains("Resolved screen: 08"));
         let out_of_range = screen_jump_resolution_label(FirstLow, 0x0f1f);
-        assert!(out_of_range.contains("Resolved screen: 2E"));
+        assert!(out_of_range.contains("Resolved screen: 30"));
         assert!(out_of_range.contains("outside 00-1F"));
     }
 

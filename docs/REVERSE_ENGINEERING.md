@@ -336,6 +336,18 @@ The ROM-address and level-coordinate utilities through `00441fe0` are now named 
 
 The range through `004431c0` now identifies expanded-ROM relocation validation, level dirty-state propagation, level-state teardown, packed level-header setters, writable-ROM-range checks, screen-count derivation, common file dialogs, auxiliary editor window lifecycle, and DPI-aware icon installation. The four compact level-header writers document exact byte and bit positions but deliberately leave the UI field names unresolved until the associated dialog controls or format tables prove whether each field is a palette, tileset, or other selector. Relocation helpers separately validate IRAM word/byte ranges and Work RAM bank bytes before altering ROM data.
 
+Fresh decompiles of `RenderLevelObjectNodeListAndCacheCells` at `00435CF0`,
+`FindLastScreenContainingRenderedObjectCells` at `0043D5B0`, and
+`UpdateLevelScreenCountFromContent` at `00442600` close the packed screen-jump boundary. The
+renderer keeps separate one-byte primary and secondary cursors. A low-first horizontal jump maps
+them through the mode-0 `$1B0` screen-offset table plus a `$200` secondary stride; a high-first
+vertical jump uses equal `$200` strides. An ordinary record's high bit increments the primary
+cursor, which is masked to five bits before cell placement. Automatic extent is then derived from
+the last screen containing a nonzero rendered source-object cell, combined with sprite extent and
+clamped to the active mode's screen count. This explains the live maximum low-first `$1F/$0F`
+case: without an advance its cell is outside the 32-screen plane, while one advance wraps the
+primary cursor and maps the secondary `$0F` row to screen `$11`.
+
 The Windows DPI compatibility block through `004436f0` is now fully named. It dynamically resolves per-monitor DPI APIs with older-system fallbacks, installs appropriately sized small and large icon resources, controls dialog scaling behavior, reads the configured cursor base size, measures the visible cursor image and hotspot, and calculates a monitor-contained popup position that avoids obscuring the pointer.
 
 The tracking-tooltip and custom sidecar-metadata subsystem through `00445f90` is now named and typed. `ExternalMetadataGroupAEntry` is a recovered 12-byte record containing three owned pointers; `ExternalMetadataGroupBEntry` is a 28-byte record with three owned pointers plus 16 bytes of fields whose individual meanings remain unresolved. Their 1024-entry and 832-entry pointer/count/dimension/flag arrays now have explicit global names and array types. The `.msc`, `.ssc`, and `.osc` loaders are separated: `.msc` supplies two 256-entry label tables, `.ssc` parses custom-sprite display/tooltip/remap data into group A, and `.osc` parses custom-object display/tooltip/attribute data into group B. Allocation helpers document the compact nibble-to-dimension mapping and preserve both one-dimensional and two-dimensional storage modes.
