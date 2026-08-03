@@ -1,7 +1,8 @@
 use crate::{document_loader::DocumentLoader, native_level_assets_panels::AggregatePanels};
 use eframe::egui;
 use lm_app::{
-    AppState, Command, NativeLevelAssetsController, ProfiledControllerSnapshot, RevisionProfile,
+    AppState, Command, NativeLevelAssetsController, NativeLevelAssetsControllerEdit,
+    NativeLevelAssetsControllerError, ProfiledControllerSnapshot, RevisionProfile,
     RevisionProfileControllers,
 };
 use lm_graphics::PaletteOwnership;
@@ -44,6 +45,14 @@ struct Workspace {
 
 struct PendingLoad {
     profiled: ProfiledControllerSnapshot,
+}
+
+#[derive(Clone, Debug)]
+struct PendingLayer2ModeReset {
+    edit: NativeLevelAssetsControllerEdit,
+    revision: u64,
+    from: u8,
+    to: u8,
 }
 
 #[derive(Clone)]
@@ -610,6 +619,7 @@ pub(crate) struct RomLevelAssetsEditor {
     image_batch_worker: image_batch::LevelImageBatchWorker,
     image_batch_options: image_batch::LevelImageBatchOptions,
     pending_load: Option<PendingLoad>,
+    pending_layer2_mode_reset: Option<PendingLayer2ModeReset>,
     manifest_loader: crate::rom_ownership::RomOwnershipLoader,
     bypass_validation: Option<String>,
     bypass_layer2_texture: Option<egui::TextureHandle>,
@@ -705,6 +715,7 @@ impl RomLevelAssetsEditor {
                     }
                 });
         }
+        self.show_layer2_mode_reset_confirmation(context, project_revision);
         let approved = self.close_confirmation(context);
         self.show_error(context);
         (approved, command)
@@ -770,14 +781,26 @@ impl RomLevelAssetsEditor {
             match edit {
                 Ok(edit) if !stale => {
                     if let Some(workspace) = self.workspace.as_mut() {
-                        if let Err(error) = workspace.controller.apply_edits(&[edit]) {
-                            self.error = Some(error.to_string());
-                        } else {
-                            self.bypass_validation = None;
-                            self.bypass_layer2_texture = None;
-                            self.bypass_inspection = None;
-                            self.bypass_preview.invalidate();
-                            self.panels.invalidate();
+                        match workspace
+                            .controller
+                            .apply_edits(std::slice::from_ref(&edit))
+                        {
+                            Err(
+                                NativeLevelAssetsControllerError::Layer2ModeChangeRequiresReset {
+                                    from,
+                                    to,
+                                    ..
+                                },
+                            ) => {
+                                self.pending_layer2_mode_reset = Some(PendingLayer2ModeReset {
+                                    edit,
+                                    revision: workspace.controller.revision(),
+                                    from,
+                                    to,
+                                });
+                            }
+                            Err(error) => self.error = Some(error.to_string()),
+                            Ok(()) => self.invalidate_after_asset_edit(),
                         }
                     } else {
                         self.error = Some("level-assets workspace is closed".into());
@@ -1297,6 +1320,85 @@ impl RomLevelAssetsEditor {
         });
         None
     }
+
+    fn show_layer2_mode_reset_confirmation(
+        &mut self,
+        context: &egui::Context,
+        project_revision: u64,
+    ) {
+        let Some(pending) = self.pending_layer2_mode_reset.clone() else {
+            return;
+        };
+        let current_revision = self
+            .workspace
+            .as_ref()
+            .map(|workspace| workspace.controller.revision());
+        if !layer2_reset_confirmation_is_current(
+            pending.revision,
+            current_revision,
+            project_revision,
+        ) {
+            self.pending_layer2_mode_reset = None;
+            self.error = Some(
+                "the ROM workspace changed before the Layer 2 reset was confirmed; stage the header change again"
+                    .into(),
+            );
+            return;
+        }
+        egui::Window::new("Reset Layer 2 for level mode change?")
+            .collapsible(false)
+            .resizable(false)
+            .show(context, |ui| {
+                ui.label(format!(
+                    "Changing level mode ${:02X} to ${:02X} switches Layer 2 storage formats.",
+                    pending.from, pending.to
+                ));
+                ui.label(
+                    "Lunar Magic clears the tilemap workspace when entering a tilemap-backed mode. Object-backed data remains available if you switch back before saving.",
+                );
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.pending_layer2_mode_reset = None;
+                    }
+                    if ui.button("Reset Layer 2 and stage changes").clicked() {
+                        let result = self
+                            .workspace
+                            .as_mut()
+                            .ok_or_else(|| "level-assets workspace is closed".to_owned())
+                            .and_then(|workspace| {
+                                workspace
+                                    .controller
+                                    .apply_edits_with_layer2_reset(
+                                        std::slice::from_ref(&pending.edit),
+                                        true,
+                                    )
+                                    .map_err(|error| error.to_string())
+                            });
+                        self.pending_layer2_mode_reset = None;
+                        match result {
+                            Ok(()) => self.invalidate_after_asset_edit(),
+                            Err(error) => self.error = Some(error),
+                        }
+                    }
+                });
+            });
+    }
+
+    fn invalidate_after_asset_edit(&mut self) {
+        self.bypass_validation = None;
+        self.bypass_layer2_texture = None;
+        self.bypass_inspection = None;
+        self.bypass_preview.invalidate();
+        self.panels.invalidate();
+    }
+}
+
+fn layer2_reset_confirmation_is_current(
+    pending_revision: u64,
+    controller_revision: Option<u64>,
+    project_revision: u64,
+) -> bool {
+    controller_revision == Some(pending_revision) && project_revision == pending_revision
 }
 
 impl RomLevelAssetsEditor {
@@ -2873,6 +2975,14 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn layer2_reset_confirmation_rejects_closed_or_stale_workspaces() {
+        assert!(layer2_reset_confirmation_is_current(7, Some(7), 7));
+        assert!(!layer2_reset_confirmation_is_current(7, None, 7));
+        assert!(!layer2_reset_confirmation_is_current(7, Some(8), 7));
+        assert!(!layer2_reset_confirmation_is_current(7, Some(7), 8));
+    }
 
     #[test]
     fn level_visibility_filters_each_domain_without_reordering_painter_layers() {

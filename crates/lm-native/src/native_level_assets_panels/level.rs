@@ -17,6 +17,80 @@ impl AggregatePanels {
             file.source_slot,
             level_editor_forms::format_bytes(&level.layer1.header.encoded())
         ));
+        let mut stage_header = false;
+        ui.collapsing("Level header", |ui| {
+            egui::Grid::new("installed-native-level-header").show(ui, |ui| {
+                header_row(ui, "Level mode", &mut self.header.level_mode, 31);
+                header_row(
+                    ui,
+                    "Background palette",
+                    &mut self.header.background_palette,
+                    7,
+                );
+                header_row(ui, "Last screen", &mut self.header.last_screen, 31);
+                header_row(ui, "Background color", &mut self.header.background_color, 7);
+                header_row(ui, "Sprite tileset", &mut self.header.sprite_tileset, 15);
+                header_row(
+                    ui,
+                    "Default music selector",
+                    &mut self.header.default_music_selector,
+                    7,
+                );
+                header_row(
+                    ui,
+                    "Time limit selector",
+                    &mut self.header.time_limit_selector,
+                    3,
+                );
+                ui.label("Custom time bypass");
+                ui.checkbox(&mut self.header.custom_time_enabled, "Enabled");
+                ui.end_row();
+                ui.label("Custom time (hex)");
+                ui.add_enabled(
+                    self.header.custom_time_enabled,
+                    egui::DragValue::new(&mut self.header.custom_time_value)
+                        .range(0..=lm_level::CustomTimeSettings::MAX_VALUE)
+                        .hexadecimal(3, false, true),
+                );
+                ui.end_row();
+                ui.label("Force time reset");
+                ui.add_enabled(
+                    self.header.custom_time_enabled,
+                    egui::Checkbox::without_text(&mut self.header.force_time_reset),
+                );
+                ui.end_row();
+                header_row(
+                    ui,
+                    "Foreground palette",
+                    &mut self.header.foreground_palette,
+                    7,
+                );
+                header_row(ui, "Sprite palette", &mut self.header.sprite_palette, 7);
+                header_row(ui, "Object tileset", &mut self.header.object_tileset, 15);
+                header_row(
+                    ui,
+                    "Layer 1 vertical scroll",
+                    &mut self.header.layer1_vertical_scroll,
+                    3,
+                );
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Stage header changes").clicked() {
+                    stage_header = true;
+                }
+                if ui.button("Reset staged values").clicked() {
+                    self.header = native_level_document_form::NativeLevelHeaderForm::load(level);
+                }
+            });
+        });
+        if stage_header {
+            return Some(
+                self.header
+                    .edits()
+                    .map(|edits| NativeLevelAssetsControllerEdit::Level(edits))
+                    .map_err(|error| error.to_string()),
+            );
+        }
         ui.heading(format!("Objects ({})", level.layer1.objects.records.len()));
         index(
             ui,
@@ -202,4 +276,14 @@ impl AggregatePanels {
             edit.map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit]))
         })
     }
+}
+
+fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
+    ui.label(label);
+    ui.add(
+        egui::DragValue::new(value)
+            .range(0..=maximum)
+            .hexadecimal(2, false, true),
+    );
+    ui.end_row();
 }

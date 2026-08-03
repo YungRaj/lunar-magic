@@ -5,9 +5,9 @@ use lm_graphics::{
     Bgr555, ExAnimationFeature, Palette, PaletteChange, PaletteEntryOwner, PaletteInterchangeFile,
 };
 use lm_level::{
-    LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection,
-    NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteStream, ObjectRecord, ObjectStream, SpriteRecord,
-    SpriteToken, split_layer2_tilemap_planes,
+    CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor,
+    MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteStream, ObjectRecord,
+    ObjectStream, SpriteRecord, SpriteToken, split_layer2_tilemap_planes,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -709,6 +709,61 @@ fn aggregate_mode_storage_changes_apply_recovered_installed_descriptor_masks() {
             .unwrap();
         assert_eq!(controller.layer2_descriptor().unwrap().raw(), descriptor);
     }
+}
+
+#[test]
+fn complete_installed_header_batch_resets_layer2_and_reopens_losslessly() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let edits = [NativeLevelAssetsControllerEdit::Level(vec![
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundPalette(1)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LastScreen(2)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(0)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::BackgroundColor(3)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpriteTileset(4)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::DefaultMusicSelector(5)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::TimeLimitSelector(2)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpritePalette(6)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ForegroundPalette(7)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ObjectTileset(8)),
+        NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::Layer1VerticalScroll(
+            Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying,
+        )),
+        NativeLevelEdit::SetCustomTime(Some(CustomTimeSettings::new(0xabc, true).unwrap())),
+    ])];
+    controller
+        .apply_edits_with_layer2_reset(&edits, true)
+        .unwrap();
+    let expected_core = controller.assets().clone();
+    let expected_layer2 = controller.layer2().unwrap().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2("complete installed header", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("complete installed header", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets_with_layer2(
+            0,
+            NativeLevelAssetsLayer2Layout {
+                core: layout(),
+                layer2: layer2_layout(),
+            },
+            &SpriteLengthTable::standard(),
+            &[false; 256],
+        )
+        .unwrap();
+    assert_eq!(reopened.core, expected_core);
+    assert_eq!(reopened.layer2, expected_layer2);
 }
 
 #[test]

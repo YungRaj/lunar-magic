@@ -86,6 +86,7 @@ impl RomLevelAssetsEditor {
                 self.bypass_map16_grid = false;
                 self.bypass_selection = None;
                 self.bypass_inspection = None;
+                self.pending_layer2_mode_reset = None;
                 self.workspace = Some(workspace);
                 self.panels.invalidate();
             }
@@ -130,6 +131,7 @@ impl RomLevelAssetsEditor {
     fn clear(&mut self) {
         self.workspace = None;
         self.pending_load = None;
+        self.pending_layer2_mode_reset = None;
         self.pending_legacy_mwl_load = None;
         self.pending_palette_transfer = None;
         self.palette_rgb_expansion = None;

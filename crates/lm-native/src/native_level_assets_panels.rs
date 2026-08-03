@@ -4,7 +4,7 @@ mod level;
 mod palette;
 mod settings;
 
-use crate::exanimation_form;
+use crate::{exanimation_form, native_level_document_form};
 use eframe::egui;
 use lm_app::NativeLevelAssetsControllerEdit;
 use lm_graphics::{ExAnimationFeatureOptions, PaletteOwnership};
@@ -34,6 +34,7 @@ pub(crate) struct AggregatePanels {
     tab: usize,
     object_index: usize,
     object: String,
+    header: native_level_document_form::NativeLevelHeaderForm,
     layer2_object_index: usize,
     layer2_object: String,
     layer2_tile_index: usize,
@@ -115,6 +116,7 @@ impl AggregatePanels {
             return;
         }
         let assets = &file.assets;
+        self.header = native_level_document_form::NativeLevelHeaderForm::load(&assets.level);
         self.exanimation_features = features.map(|features| features.options);
         self.sprite_header = format!("{:02X}", assets.level.sprites.header);
         self.global = exanimation_form::GlobalForm::load(

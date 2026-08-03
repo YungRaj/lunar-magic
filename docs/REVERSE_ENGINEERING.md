@@ -3073,3 +3073,14 @@ of the five earlier staged hook writes or checksum/history effects escape.
 The logical-offset transaction is also container-transparent: headerless and
 512-byte copier-headered profile, native, and built-CLI gates retain the exact
 physical header shape and bytes while authenticating the same installed ROM.
+
+The installed ROM native-assets Level tab now exposes the complete five-byte
+legacy header as typed controls: level mode, screen count, palettes, graphics
+sets, music, preset/custom time, and Layer 1 vertical scroll. It emits the
+whole form as one ordered controller batch. If `ChangeLevelModeDialogProc`'s
+recovered storage classifier says the requested mode crosses the Layer 2
+object/tilemap boundary, the ordinary batch remains failure-atomic and the UI
+offers a revision-checked reset confirmation; approval alone replays the same
+batch through the explicit reset route. A mixed-field commit/reopen regression
+proves the header, custom-time control record, and reset Layer 2 representation
+all survive installed-ROM persistence together.
