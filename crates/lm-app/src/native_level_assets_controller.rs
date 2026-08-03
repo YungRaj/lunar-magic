@@ -48,6 +48,10 @@ pub enum NativeLevelAssetsControllerEdit {
         smart_spawn: bool,
     },
     SpriteBoundaryInteractionAir(bool),
+    Layer3TilemapSettings {
+        enabled: bool,
+        descriptor: lm_level::Layer3TilemapGraphicsDescriptor,
+    },
 }
 
 #[derive(Debug)]
@@ -990,6 +994,30 @@ pub(crate) fn apply_native_level_assets_edits(
                 let mut header = lm_level::ExpandedLevelHeader::from(&*record);
                 header.set_sprites_beyond_boundaries_use_air(*enabled);
                 *record = header.into();
+            }
+            NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
+                enabled,
+                descriptor,
+            } => {
+                let record = next.expanded_settings.as_mut().ok_or(
+                    NativeLevelAssetsControllerError::ExpandedSettingsUnavailable { command },
+                )?;
+                record
+                    .set_layer3_tilemap_enabled(*enabled)
+                    .map_err(
+                        |error| NativeLevelAssetsControllerError::ExpandedSettingsEdit {
+                            command,
+                            error,
+                        },
+                    )?;
+                record
+                    .set_layer3_tilemap_graphics_descriptor(*descriptor)
+                    .map_err(
+                        |error| NativeLevelAssetsControllerError::ExpandedSettingsEdit {
+                            command,
+                            error,
+                        },
+                    )?;
             }
         }
     }

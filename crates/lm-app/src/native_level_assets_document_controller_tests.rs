@@ -93,10 +93,17 @@ fn portable_boundary_interaction_is_semantic_lossless_and_undoable() {
     )
     .unwrap();
 
+    let descriptor = lm_level::Layer3TilemapGraphicsDescriptor::new(0xabc, 2, 3).unwrap();
     controller
         .apply_edits(
             0,
-            &[NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(true)],
+            &[
+                NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(true),
+                NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
+                    enabled: true,
+                    descriptor,
+                },
+            ],
             &PaletteOwnership::editable(2),
         )
         .unwrap();
@@ -111,6 +118,17 @@ fn portable_boundary_interaction_is_semantic_lossless_and_undoable() {
             .unwrap(),
         0xf123
     );
+    let settings = controller
+        .value()
+        .assets
+        .expanded_settings
+        .as_ref()
+        .unwrap();
+    assert!(settings.layer3_tilemap_enabled());
+    assert_eq!(
+        settings.layer3_tilemap_graphics_descriptor().unwrap(),
+        descriptor
+    );
     assert!(controller.undo(1).unwrap());
     assert_eq!(
         controller
@@ -123,6 +141,14 @@ fn portable_boundary_interaction_is_semantic_lossless_and_undoable() {
             .unwrap(),
         0xb123
     );
+    let settings = controller
+        .value()
+        .assets
+        .expanded_settings
+        .as_ref()
+        .unwrap();
+    assert!(!settings.layer3_tilemap_enabled());
+    assert_eq!(settings.word(1).unwrap(), 0);
 }
 
 #[test]

@@ -732,6 +732,11 @@ shared high flags and GFX selector, checksum-valid reopen, history undo/redo, ex
 failure atomicity for unavailable storage, duplicate commands, invalid booleans, range 4, or a late
 boundary command after a valid spawn command. Portable aggregate coverage independently proves
 boundary-air word preservation and undo, while rejecting the external-Lfix3-only settings command.
+Custom Layer 3 tilemap settings have a shared semantic aggregate edit covering the enable bit and
+packed graphics descriptor. Installed tests preserve all unowned bytes, exercise controller
+undo/redo, commit, checksum, semantic reopen, and exact ROM undo; portable aggregate history proves
+the same typed edit composes atomically with boundary interaction. Native form tests reject files
+above twelve bits and prove the exact `$EABC` descriptor for file `$ABC`, length 2, destination 3.
 Its ownership-backed route reads a file-backed `LMRATS01` manifest through the real shell
 dispatcher, reclaims the exact palette and ExAnimation snapshot blocks, preserves semantic reopen,
 rejects reuse of the now-stale evidence for a later edit without changing a byte, and restores the

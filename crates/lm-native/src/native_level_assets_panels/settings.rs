@@ -16,6 +16,27 @@ impl AggregatePanels {
             ui.label("This aggregate has no expanded-settings record.");
             return self.exanimation_feature_panel(ui);
         }
+        ui.heading("Custom Layer 3 tilemap graphics");
+        ui.checkbox(
+            &mut self.layer3_settings.layer3_enabled,
+            "Enable custom Layer 3 tilemap",
+        );
+        ui.horizontal(|ui| {
+            ui.label("GFX/ExGFX file");
+            ui.text_edit_singleline(&mut self.layer3_settings.layer3_file);
+        });
+        ui.add(
+            egui::Slider::new(&mut self.layer3_settings.layer3_length_selector, 0..=3)
+                .text("Length selector"),
+        );
+        ui.add(
+            egui::Slider::new(&mut self.layer3_settings.layer3_offset_selector, 0..=3)
+                .text("Destination selector"),
+        );
+        if ui.button("Apply Layer 3 tilemap settings").clicked() {
+            return Some(layer3_tilemap_edit(&self.layer3_settings));
+        }
+        ui.separator();
         ui.heading("Super GFX Bypass");
         ui.checkbox(&mut self.bypass_enabled, "Use per-level GFX/ExGFX files");
         egui::Grid::new("aggregate-super-gfx")
@@ -158,6 +179,22 @@ fn sprite_boundary_air_edit(enabled: bool) -> NativeLevelAssetsControllerEdit {
     NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(enabled)
 }
 
+fn layer3_tilemap_edit(
+    form: &crate::expanded_settings_editor_form::ExpandedSettingsForm,
+) -> Result<NativeLevelAssetsControllerEdit, String> {
+    let file = level_editor_forms::parse_hex_u16(&form.layer3_file, "Layer 3 graphics file")?;
+    let descriptor = lm_level::Layer3TilemapGraphicsDescriptor::new(
+        file,
+        form.layer3_length_selector,
+        form.layer3_offset_selector,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
+        enabled: form.layer3_enabled,
+        descriptor,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,5 +232,23 @@ mod tests {
             sprite_boundary_air_edit(true),
             NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(true)
         ));
+    }
+
+    #[test]
+    fn aggregate_layer3_form_emits_validated_semantic_intent() {
+        let mut form = crate::expanded_settings_editor_form::ExpandedSettingsForm::default();
+        form.layer3_enabled = true;
+        form.layer3_file = "ABC".into();
+        form.layer3_length_selector = 2;
+        form.layer3_offset_selector = 3;
+        assert!(matches!(
+            layer3_tilemap_edit(&form).unwrap(),
+            NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
+                enabled: true,
+                descriptor,
+            } if descriptor.packed() == 0xEABC
+        ));
+        form.layer3_file = "1000".into();
+        assert!(layer3_tilemap_edit(&form).is_err());
     }
 }

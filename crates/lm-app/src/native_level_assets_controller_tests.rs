@@ -728,6 +728,68 @@ fn sprite_boundary_air_setting_preserves_gfx_selector_history_and_rom_reopen() {
 }
 
 #[test]
+fn layer3_tilemap_settings_preserve_unowned_fields_history_and_rom_reopen() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let baseline = controller
+        .assets()
+        .expanded_settings
+        .as_ref()
+        .unwrap()
+        .clone();
+    let baseline_word_zero = baseline.word(0).unwrap();
+    let descriptor = lm_level::Layer3TilemapGraphicsDescriptor::new(0xabc, 2, 3).unwrap();
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
+            enabled: true,
+            descriptor,
+        }])
+        .unwrap();
+    let edited = controller.assets().expanded_settings.as_ref().unwrap();
+    assert_eq!(edited.word(0).unwrap(), baseline_word_zero | 0x2000);
+    assert_eq!(edited.word(1).unwrap(), 0xeabc);
+    assert_eq!(&edited.encoded()[4..], &baseline.encoded()[4..]);
+    assert!(controller.undo());
+    assert_eq!(
+        controller.assets().expanded_settings.as_ref(),
+        Some(&baseline)
+    );
+    assert!(controller.redo());
+
+    let prepared = controller
+        .prepare_commit("Layer 3 tilemap settings", &options())
+        .unwrap();
+    let original = snapshot.rom_bytes;
+    let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+    project
+        .apply_mutation("Layer 3 tilemap settings", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets(0, layout(), &SpriteLengthTable::standard(), &[false; 256])
+        .unwrap();
+    let settings = reopened.expanded_settings.as_ref().unwrap();
+    assert!(settings.layer3_tilemap_enabled());
+    assert_eq!(
+        settings.layer3_tilemap_graphics_descriptor().unwrap(),
+        descriptor
+    );
+    assert_eq!(&settings.encoded()[4..], &baseline.encoded()[4..]);
+    assert_eq!(
+        SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
+        compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()
+    );
+    assert!(project.undo().unwrap());
+    assert_eq!(project.rom.logical_bytes(), original);
+}
+
+#[test]
 fn installed_spawn_settings_share_history_commit_reopen_checksum_and_rom_undo() {
     let mut snapshot = snapshot();
     snapshot.rom_bytes[0x80..0x84].copy_from_slice(&[0xe1, 0x22, 0x33, 0x44]);

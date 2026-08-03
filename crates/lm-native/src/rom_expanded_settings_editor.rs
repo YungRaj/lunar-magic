@@ -84,6 +84,41 @@ impl RomExpandedSettingsEditor {
         if stale {
             ui.colored_label(egui::Color32::YELLOW, "The ROM changed after this editor was opened. Close and reopen it before committing.");
         }
+        ui.heading("Custom Layer 3 tilemap graphics");
+        ui.checkbox(
+            &mut self.form.layer3_enabled,
+            "Enable custom Layer 3 tilemap",
+        );
+        ui.horizontal(|ui| {
+            ui.label("GFX/ExGFX file");
+            ui.text_edit_singleline(&mut self.form.layer3_file);
+        });
+        ui.add(
+            egui::Slider::new(&mut self.form.layer3_length_selector, 0..=3).text("Length selector"),
+        );
+        ui.add(
+            egui::Slider::new(&mut self.form.layer3_offset_selector, 0..=3)
+                .text("Destination selector"),
+        );
+        if ui
+            .add_enabled(!stale, egui::Button::new("Stage Layer 3 settings"))
+            .clicked()
+        {
+            match self.form.layer3_edits() {
+                Ok(edits) => {
+                    if let Some(controller) = self.controller.as_mut() {
+                        if let Err(error) = controller.apply_word_edits(&edits) {
+                            self.error = Some(error.to_string());
+                        } else {
+                            self.form = ExpandedSettingsForm::load(controller.record());
+                        }
+                    }
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
+        ui.separator();
+        ui.label("All sixteen exact native words");
         egui::Grid::new("rom-expanded-settings-words")
             .striped(true)
             .show(ui, |ui| {
@@ -104,6 +139,8 @@ impl RomExpandedSettingsEditor {
                         if let Some(controller) = self.controller.as_mut() {
                             if let Err(error) = controller.apply_word_edits(&edits) {
                                 self.error = Some(error.to_string());
+                            } else {
+                                self.form = ExpandedSettingsForm::load(controller.record());
                             }
                         } else {
                             self.error = Some("expanded-settings workspace is closed".into());

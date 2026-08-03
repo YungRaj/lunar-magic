@@ -69,6 +69,7 @@ pub(crate) struct AggregatePanels {
     frame_index: usize,
     record: exanimation_form::RecordForm,
     settings: [String; 16],
+    layer3_settings: crate::expanded_settings_editor_form::ExpandedSettingsForm,
     bypass_enabled: bool,
     bypass_foreground_background: [u16; 6],
     bypass_sprites: [u16; 4],
@@ -187,6 +188,8 @@ impl AggregatePanels {
             self.record = exanimation_form::RecordForm::load(record, &frames);
         }
         if let Some(settings) = &assets.expanded_settings {
+            self.layer3_settings =
+                crate::expanded_settings_editor_form::ExpandedSettingsForm::load(settings);
             let bypass = lm_level::ExpandedLevelHeader::from(settings).super_graphics_bypass();
             self.bypass_enabled = bypass.enabled;
             self.bypass_foreground_background = bypass.foreground_background;

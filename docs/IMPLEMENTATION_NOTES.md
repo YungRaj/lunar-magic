@@ -1687,12 +1687,19 @@ record for the selected level. The window stages all sixteen exact words through
 `ExpandedSettingsController`, detects any intervening project revision, and emits a single
 checksum-inclusive `CommitRomMutation` into the application's ordinary undo/redo history. It does
 not bypass the profile's optional-table declaration or retain a stale controller after committing.
+That ROM window now also renders the recovered custom Layer 3 tilemap controls already present in
+the portable editor: enablement, twelve-bit GFX/ExGFX file, requested-length selector, and
+destination selector. Applying the semantic form changes only word 0 bit `$2000` and exact word 1,
+then reloads both semantic and raw controls from the staged record so a later raw apply cannot
+silently restore stale values.
 The same menu now exposes explicit Level and Layer 3 navigation entries instead of leaving the
 existing `ShowLayer3` application command reachable only from the terminal shell.
 The profile-qualified ROM workspace can also open a native level-assets editor for the selected
 level. It reuses the aggregate domain panels while retaining a `NativeLevelAssetsController`
 against the immutable application revision. Object/sprite, palette, ExAnimation, and optional
-expanded-settings edits are staged together. Profiles with Layer 2 add a dedicated tab for
+expanded-settings edits are staged together. Its Settings tab exposes the same custom Layer 3
+enable/file/length/destination form and submits one typed aggregate edit; installed and portable
+aggregate history preserve every word beyond the two owned fields. Profiles with Layer 2 add a dedicated tab for
 object-record copy/paste/editing or indexed 16-bit tilemap-word editing according to the level
 mode. Commit requires an explicit logical-PC allocation
 search range, derives a profile-wide protection policy, allocates and repoints every changed tagged

@@ -345,6 +345,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   Lfix3/expanded-settings bits, so GUI, scripts, and future automation use the same semantic
   transaction. The former requires authenticated installed Lfix3 storage; the latter also works
   in a portable aggregate that contains its expanded-settings record.
+- The installed aggregate Settings panel and focused ROM expanded-settings window reuse the same
+  custom Layer 3 form. The aggregate path carries a typed enable/descriptor edit; the focused path
+  stages the corresponding two-word batch and immediately reloads the form. Both preserve word 0
+  outside `$2000`, every field after word 1, and the exact descriptor selectors.
 - Complete `LMOWFULL` documents similarly retain their exact size-mode table and animation bound
   for their entire lifetime. Native-ROM and portable-document controllers call one staged
   nine-domain edit engine, while `LMOWDOC1` and `LMOWDRN1` keep open interpretation and preview
