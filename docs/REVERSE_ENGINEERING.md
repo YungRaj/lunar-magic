@@ -3120,3 +3120,13 @@ editing remains available for opaque encodings, and revision/history movement
 invalidates loaded semantic fields. The aggregate history regression now
 undoes and redoes a semantic Layer 2 relocation before committing an additional
 cross-domain edit, then reopens the exact object stream from ROM.
+
+Aggregate semantic forms now follow selection without a separate load gesture.
+Layer 1 objects, sprite tokens, and object-backed Layer 2 each retain the index
+whose fields are currently loaded: changing that index reloads immediately,
+while an unchanged selection preserves unapplied field edits across UI frames.
+Every accepted edit, Undo/Redo move, import, or other controller invalidation
+forces a canonical reload, clamps selections to the new stream endpoint, and
+disables semantic fields when the selected value is absent or a control token.
+Focused lifecycle tests cover selection changes, preservation of unapplied
+values, control-token rejection, and canonical Layer 1/Layer 2 revision reloads.

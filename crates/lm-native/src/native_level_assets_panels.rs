@@ -33,9 +33,11 @@ pub(super) enum PasteTarget {
 pub(crate) struct AggregatePanels {
     tab: usize,
     object_index: usize,
+    loaded_object_index: Option<usize>,
     level_record: native_level_document_form::NativeLevelRecordForm,
     header: native_level_document_form::NativeLevelHeaderForm,
     layer2_object_index: usize,
+    loaded_layer2_object_index: Option<usize>,
     layer2_record: native_level_document_form::NativeLevelRecordForm,
     layer2_tile_index: usize,
     layer2_tile: String,
@@ -46,6 +48,7 @@ pub(crate) struct AggregatePanels {
     layer2_remap_offset: i32,
     layer2_remap_selection_only: bool,
     sprite_index: usize,
+    loaded_sprite_index: Option<usize>,
     sprite_header: String,
     selected_color: usize,
     global: exanimation_form::GlobalForm,
@@ -84,7 +87,7 @@ impl AggregatePanels {
         sprite_lengths: &lm_level::SpriteLengthTable,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let (layer2, layer2_descriptor) = layer2;
-        self.load(revision, file, features, modes);
+        self.load(revision, file, layer2, features, modes);
         ui.horizontal(|ui| {
             let tabs = if layer2.is_some() {
                 &["Level", "Layer 2", "Palette", "ExAnimation", "Settings"][..]
@@ -109,6 +112,7 @@ impl AggregatePanels {
         &mut self,
         revision: u64,
         file: &NativeLevelAssetsFile,
+        layer2: Option<&lm_level::NativeLayer2Data>,
         features: Option<LoadedExAnimationFeatures>,
         modes: &[bool; 256],
     ) {
@@ -116,9 +120,21 @@ impl AggregatePanels {
             return;
         }
         let assets = &file.assets;
-        self.level_record.object_fields_loaded = false;
-        self.level_record.sprite_fields_loaded = false;
-        self.layer2_record.object_fields_loaded = false;
+        self.object_index = self
+            .object_index
+            .min(assets.level.layer1.objects.records.len());
+        self.sprite_index = self.sprite_index.min(assets.level.sprites.tokens.len());
+        self.loaded_object_index = None;
+        self.loaded_sprite_index = None;
+        self.sync_level_object_form(&assets.level, true);
+        self.sync_sprite_form(&assets.level, true);
+        self.loaded_layer2_object_index = None;
+        if let Some(lm_level::NativeLayer2Data::Objects(objects)) = layer2 {
+            self.layer2_object_index = self.layer2_object_index.min(objects.objects.records.len());
+            self.sync_layer2_object_form(objects, true);
+        } else {
+            self.layer2_record = Default::default();
+        }
         self.header = native_level_document_form::NativeLevelHeaderForm::load(&assets.level);
         self.exanimation_features = features.map(|features| features.options);
         self.sprite_header = format!("{:02X}", assets.level.sprites.header);
@@ -149,6 +165,37 @@ impl AggregatePanels {
         }
         self.loaded_revision = Some(revision);
     }
+
+    fn sync_level_object_form(&mut self, level: &lm_project::LoadedLevelSlot, force: bool) {
+        if !force && self.loaded_object_index == Some(self.object_index) {
+            return;
+        }
+        let screen = level::object_stream_screen(&level.layer1.objects, self.object_index);
+        self.level_record
+            .load_object(level.layer1.objects.records.get(self.object_index), screen);
+        self.loaded_object_index = Some(self.object_index);
+    }
+
+    fn sync_sprite_form(&mut self, level: &lm_project::LoadedLevelSlot, force: bool) {
+        if !force && self.loaded_sprite_index == Some(self.sprite_index) {
+            return;
+        }
+        self.level_record
+            .load_sprite(level.sprites.tokens.get(self.sprite_index));
+        self.loaded_sprite_index = Some(self.sprite_index);
+    }
+
+    fn sync_layer2_object_form(&mut self, objects: &lm_level::LevelObjectData, force: bool) {
+        if !force && self.loaded_layer2_object_index == Some(self.layer2_object_index) {
+            return;
+        }
+        let screen = level::object_stream_screen(&objects.objects, self.layer2_object_index);
+        self.layer2_record.load_object(
+            objects.objects.records.get(self.layer2_object_index),
+            screen,
+        );
+        self.loaded_layer2_object_index = Some(self.layer2_object_index);
+    }
 }
 
 pub(super) fn pasted_text(ui: &egui::Ui) -> Option<String> {
@@ -165,4 +212,85 @@ pub(super) fn index(ui: &mut egui::Ui, value: &mut usize, len: usize) {
         ui.label("Index");
         ui.add(egui::DragValue::new(value).range(0..=len));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_level::{
+        LegacyLevelHeader, LevelObjectData, NativeSpriteStream, ObjectRecord, ObjectStream,
+        SpriteRecord, SpriteToken,
+    };
+    use lm_project::LoadedLevelSlot;
+
+    fn object(bytes: [u8; 3]) -> ObjectRecord {
+        ObjectRecord::new(bytes.to_vec()).unwrap()
+    }
+
+    fn level() -> LoadedLevelSlot {
+        LoadedLevelSlot {
+            number: 0,
+            layer1: LevelObjectData {
+                header: LegacyLevelHeader::default(),
+                objects: ObjectStream {
+                    records: vec![object([0x45, 0x26, 0x42]), object([0x46, 0x37, 0x43])],
+                },
+            },
+            sprites: NativeSpriteStream {
+                header: 0,
+                expanded: false,
+                tokens: vec![
+                    SpriteToken::Record(SpriteRecord {
+                        encoded: vec![0, 1, 2],
+                    }),
+                    SpriteToken::Control(0x80),
+                ],
+            },
+        }
+    }
+
+    #[test]
+    fn aggregate_forms_follow_selection_but_preserve_unapplied_fields() {
+        let level = level();
+        let mut panels = AggregatePanels::default();
+        panels.sync_level_object_form(&level, true);
+        assert_eq!(panels.level_record.object, "45 26 42");
+        assert!(panels.level_record.object_fields_loaded);
+
+        panels.level_record.object_parameter = 0xaa;
+        panels.sync_level_object_form(&level, false);
+        assert_eq!(panels.level_record.object_parameter, 0xaa);
+        panels.object_index = 1;
+        panels.sync_level_object_form(&level, false);
+        assert_eq!(panels.level_record.object, "46 37 43");
+
+        panels.sync_sprite_form(&level, true);
+        assert!(panels.level_record.sprite_fields_loaded);
+        panels.sprite_index = 1;
+        panels.sync_sprite_form(&level, false);
+        assert_eq!(panels.level_record.sprite, "control 80");
+        assert!(!panels.level_record.sprite_fields_loaded);
+    }
+
+    #[test]
+    fn revision_reload_refreshes_canonical_layer1_and_layer2_records() {
+        let mut level = level();
+        let mut panels = AggregatePanels::default();
+        panels.sync_level_object_form(&level, true);
+        level.layer1.objects.records[0] = object([7, 8, 9]);
+        panels.sync_level_object_form(&level, true);
+        assert_eq!(panels.level_record.object, "07 08 09");
+
+        let mut layer2 = LevelObjectData {
+            header: LegacyLevelHeader::default(),
+            objects: ObjectStream {
+                records: vec![object([0x0a, 0x0b, 0x0c])],
+            },
+        };
+        panels.sync_layer2_object_form(&layer2, true);
+        assert_eq!(panels.layer2_record.object, "0A 0B 0C");
+        layer2.objects.records[0] = object([0x0d, 0x0e, 0x0f]);
+        panels.sync_layer2_object_form(&layer2, true);
+        assert_eq!(panels.layer2_record.object, "0D 0E 0F");
+    }
 }

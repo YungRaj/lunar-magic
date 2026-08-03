@@ -98,6 +98,7 @@ impl AggregatePanels {
             &mut self.object_index,
             level.layer1.objects.records.len(),
         );
+        self.sync_level_object_form(level, false);
         ui.text_edit_singleline(&mut self.level_record.object);
         object_semantic_fields(ui, &mut self.level_record);
         let mut action = None;
@@ -105,9 +106,7 @@ impl AggregatePanels {
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load").clicked() {
-                let screen = object_stream_screen(&level.layer1.objects, self.object_index);
-                self.level_record
-                    .load_object(level.layer1.objects.records.get(self.object_index), screen);
+                self.sync_level_object_form(level, true);
             }
             for (label, value) in [("Insert", 0), ("Replace", 1), ("Remove", 2)] {
                 if ui.button(label).clicked() {
@@ -206,6 +205,7 @@ impl AggregatePanels {
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         ui.heading(format!("Sprite tokens ({})", level.sprites.tokens.len()));
         index(ui, &mut self.sprite_index, level.sprites.tokens.len());
+        self.sync_sprite_form(level, false);
         ui.horizontal(|ui| {
             ui.label("Header");
             ui.text_edit_singleline(&mut self.sprite_header);
@@ -217,8 +217,7 @@ impl AggregatePanels {
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load record").clicked() {
-                self.level_record
-                    .load_sprite(level.sprites.tokens.get(self.sprite_index));
+                self.sync_sprite_form(level, true);
             }
             for (label, value) in [
                 ("Apply header", 0),

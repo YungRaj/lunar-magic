@@ -1,4 +1,4 @@
-use super::level::{object_semantic_fields, object_stream_screen};
+use super::level::object_semantic_fields;
 use super::{AggregatePanels, Layer2FillPattern, PasteTarget, index, pasted_text};
 use crate::{level_editor_forms, native_clipboard};
 use eframe::egui;
@@ -324,6 +324,7 @@ impl AggregatePanels {
             &mut self.layer2_object_index,
             objects.objects.records.len(),
         );
+        self.sync_layer2_object_form(objects, false);
         ui.text_edit_singleline(&mut self.layer2_record.object);
         object_semantic_fields(ui, &mut self.layer2_record);
         let mut action = None;
@@ -331,11 +332,7 @@ impl AggregatePanels {
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load").clicked() {
-                let screen = object_stream_screen(&objects.objects, self.layer2_object_index);
-                self.layer2_record.load_object(
-                    objects.objects.records.get(self.layer2_object_index),
-                    screen,
-                );
+                self.sync_layer2_object_form(objects, true);
             }
             for (label, value) in [("Insert", 0), ("Replace", 1), ("Remove", 2)] {
                 if ui.button(label).clicked() {
