@@ -737,12 +737,13 @@ packed graphics descriptor. Installed tests preserve all unowned bytes, exercise
 undo/redo, commit, checksum, semantic reopen, and exact ROM undo; portable aggregate history proves
 the same typed edit composes atomically with boundary interaction. Native form tests reject files
 above twelve bits and prove the exact `$EABC` descriptor for file `$ABC`, length 2, destination 3.
-`LMXSETED1` now carries that same Layer 3 edit plus semantic boundary interaction while retaining
-raw `word` compatibility. Parser tests cover exact resolution from nonzero shared words and reject
-overlaps, invalid booleans/descriptors, or word 16 before mutation. The real installed shell test
-commits the semantic descriptor, boundary bit, and a raw independent word with checksum repair and
-whole-ROM undo; the built portable-document process exercises edit, undo, redo, save, and exact
-reopen through Unicode paths.
+`LMXSETED1` now carries that same Layer 3 edit, exact `layer3-mode PACKED`, and semantic boundary
+interaction while retaining raw `word` compatibility. Parser tests cover exact resolution from
+nonzero shared words and reject overlaps (including mode versus boundary interaction), invalid
+booleans/descriptors, or word 16 before mutation. Model tests prove the mode setter changes only the
+eight high nibbles. The real installed shell test commits the semantic descriptor and mode with
+checksum repair, semantic reopen, low-field preservation, and whole-ROM undo; the built
+portable-document process exercises edit, undo, redo, save, and exact reopen through Unicode paths.
 Its ownership-backed route reads a file-backed `LMRATS01` manifest through the real shell
 dispatcher, reclaims the exact palette and ExAnimation snapshot blocks, preserves semantic reopen,
 rejects reuse of the now-stale evidence for a later edit without changing a byte, and restores the

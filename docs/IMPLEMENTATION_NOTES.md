@@ -1309,8 +1309,11 @@ monotonic revision tokens, preserves the saved baseline, and invalidates diverge
 script uses the `LMXSETED1` header followed by raw or semantic commands. `word INDEX VALUE` retains
 the original hexadecimal exact-word route. `layer3-tilemap ENABLED FILE LENGTH DESTINATION`
 accepts a canonical boolean, twelve-bit hexadecimal GFX/ExGFX file, and selectors `0..=3`;
-`boundary-air ENABLED` changes the recovered interaction bit. Commands declare their owned words:
-Layer 3 owns words 0–1, boundary interaction owns word 8, and raw writes own their selected word.
+`layer3-mode PACKED` accepts the exact 32-bit hexadecimal expanded mode, and `boundary-air ENABLED`
+changes the recovered interaction bit. Commands declare their owned words: Layer 3 tilemap owns
+words 0–1, expanded mode owns words 8–15, boundary interaction owns word 8, and raw writes own
+their selected word. The expanded-mode setter replaces only those words' high nibbles and preserves
+all eight adjacent low 12-bit fields.
 Any overlap, out-of-range word, invalid boolean, file, or selector rejects during parsing before an
 edit escapes. Resolution starts from the current record, preserves every unowned bit/word, and is
 shared by installed shell editing, portable-document history, and aggregate ROM automation. This

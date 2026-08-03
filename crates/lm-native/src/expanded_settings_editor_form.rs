@@ -8,6 +8,7 @@ pub(crate) struct ExpandedSettingsForm {
     pub(crate) layer3_file: String,
     pub(crate) layer3_length_selector: u8,
     pub(crate) layer3_offset_selector: u8,
+    pub(crate) layer3_expanded_mode: String,
 }
 
 impl ExpandedSettingsForm {
@@ -26,7 +27,19 @@ impl ExpandedSettingsForm {
             layer3_file: format!("{:03X}", descriptor.file()),
             layer3_length_selector: descriptor.length_selector(),
             layer3_offset_selector: descriptor.offset_selector(),
+            layer3_expanded_mode: format!("{:08X}", value.layer3_expanded_mode_flags().packed()),
         }
+    }
+
+    pub(crate) fn layer3_expanded_mode(&self) -> Result<lm_level::Layer3ExpandedModeFlags, String> {
+        let packed = u32::from_str_radix(
+            self.layer3_expanded_mode
+                .strip_prefix("0x")
+                .unwrap_or(&self.layer3_expanded_mode),
+            16,
+        )
+        .map_err(|_| "Layer 3 expanded mode must be an eight-digit hexadecimal value".to_owned())?;
+        Ok(lm_level::Layer3ExpandedModeFlags::from_packed(packed))
     }
 
     pub(crate) fn layer3_edits(&self) -> Result<Vec<(usize, u16)>, String> {
@@ -106,5 +119,19 @@ mod tests {
         let edits = form.layer3_edits().unwrap();
         assert_eq!(edits[0], (0, 0xa123));
         assert_eq!(edits[1], (1, 0xeabc));
+    }
+
+    #[test]
+    fn expanded_mode_form_round_trips_all_thirty_two_bits() {
+        let mut source = ExpandedLevelSettingsRecord::decode(&[0x5a; 32]).unwrap();
+        source
+            .set_layer3_expanded_mode_flags(lm_level::Layer3ExpandedModeFlags::from_packed(
+                0x89ab_cdef,
+            ))
+            .unwrap();
+        let mut form = ExpandedSettingsForm::load(&source);
+        assert_eq!(form.layer3_expanded_mode().unwrap().packed(), 0x89ab_cdef);
+        form.layer3_expanded_mode = "100000000".into();
+        assert!(form.layer3_expanded_mode().is_err());
     }
 }

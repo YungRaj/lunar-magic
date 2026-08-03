@@ -36,6 +36,18 @@ impl AggregatePanels {
         if ui.button("Apply Layer 3 tilemap settings").clicked() {
             return Some(layer3_tilemap_edit(&self.layer3_settings));
         }
+        ui.horizontal(|ui| {
+            ui.label("Expanded mode");
+            ui.text_edit_singleline(&mut self.layer3_settings.layer3_expanded_mode);
+        });
+        ui.small("Exact 32-bit mode packed from the high nibbles of words 8–F.");
+        if ui.button("Apply Layer 3 expanded mode").clicked() {
+            return Some(
+                self.layer3_settings
+                    .layer3_expanded_mode()
+                    .map(NativeLevelAssetsControllerEdit::Layer3ExpandedMode),
+            );
+        }
         ui.separator();
         ui.heading("Super GFX Bypass");
         ui.checkbox(&mut self.bypass_enabled, "Use per-level GFX/ExGFX files");
@@ -250,5 +262,12 @@ mod tests {
         ));
         form.layer3_file = "1000".into();
         assert!(layer3_tilemap_edit(&form).is_err());
+    }
+
+    #[test]
+    fn aggregate_layer3_mode_form_emits_all_packed_bits() {
+        let mut form = crate::expanded_settings_editor_form::ExpandedSettingsForm::default();
+        form.layer3_expanded_mode = "89ABCDEF".into();
+        assert_eq!(form.layer3_expanded_mode().unwrap().packed(), 0x89ab_cdef);
     }
 }

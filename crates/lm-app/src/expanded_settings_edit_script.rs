@@ -1,7 +1,7 @@
 //! Strict, bounded raw and semantic expanded-settings edit scripts.
 
 use lm_level::{
-    ExpandedLevelSettingsRecord, Layer3TilemapGraphicsDescriptor,
+    ExpandedLevelSettingsRecord, Layer3ExpandedModeFlags, Layer3TilemapGraphicsDescriptor,
     Layer3TilemapGraphicsDescriptorError,
 };
 use std::fmt;
@@ -19,6 +19,7 @@ pub enum ExpandedSettingsScriptEdit {
         enabled: bool,
         descriptor: Layer3TilemapGraphicsDescriptor,
     },
+    Layer3ExpandedMode(Layer3ExpandedModeFlags),
     SpriteBoundaryInteractionAir(bool),
 }
 
@@ -101,11 +102,22 @@ pub fn parse(input: &str) -> Result<ExpandedSettingsEditScript, ExpandedSettings
                     vec![0, 1],
                 )
             }
+            ["layer3-mode", packed] => (
+                ExpandedSettingsScriptEdit::Layer3ExpandedMode(
+                    Layer3ExpandedModeFlags::from_packed(number(line, packed)?),
+                ),
+                (8..16).collect(),
+            ),
             ["boundary-air", enabled] => (
                 ExpandedSettingsScriptEdit::SpriteBoundaryInteractionAir(boolean(line, enabled)?),
                 vec![8],
             ),
-            [command, ..] if !matches!(*command, "word" | "layer3-tilemap" | "boundary-air") => {
+            [command, ..]
+                if !matches!(
+                    *command,
+                    "word" | "layer3-tilemap" | "layer3-mode" | "boundary-air"
+                ) =>
+            {
                 return Err(ExpandedSettingsEditScriptError::UnknownCommand(
                     line,
                     (*command).into(),
@@ -153,6 +165,12 @@ impl ExpandedSettingsEditScript {
                         .expect("fixed word one");
                     touched[0] = true;
                     touched[1] = true;
+                }
+                ExpandedSettingsScriptEdit::Layer3ExpandedMode(flags) => {
+                    staged
+                        .set_layer3_expanded_mode_flags(flags)
+                        .expect("fixed mode words");
+                    touched[8..16].fill(true);
                 }
                 ExpandedSettingsScriptEdit::SpriteBoundaryInteractionAir(enabled) => {
                     let mut header = lm_level::ExpandedLevelHeader::from(&staged);
@@ -209,6 +227,20 @@ mod tests {
     }
 
     #[test]
+    fn resolves_layer3_mode_without_changing_any_shared_low_bits() {
+        let script = parse("LMXSETED1\nlayer3-mode 89abcdef\n").unwrap();
+        let source = ExpandedLevelSettingsRecord::decode(&[0x5a; 32]).unwrap();
+        let edits = script.resolve(&source).unwrap();
+        assert_eq!(edits.len(), 8);
+        let mut staged = source.clone();
+        for (word, value) in edits {
+            assert_eq!(value & 0x0fff, source.word(word).unwrap() & 0x0fff);
+            staged.set_word(word, value).unwrap();
+        }
+        assert_eq!(staged.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
+    }
+
+    #[test]
     fn rejects_bad_framing_values_overlaps_and_owned_word_bounds() {
         assert!(matches!(
             parse("LMXSETED1\nlayer3-tilemap true 1000 0 0\n"),
@@ -225,6 +257,10 @@ mod tests {
         assert_eq!(
             parse("LMXSETED1\nword 10 1\n"),
             Err(ExpandedSettingsEditScriptError::WordOutOfRange(2, 0x10))
+        );
+        assert_eq!(
+            parse("LMXSETED1\nlayer3-mode 89abcdef\nboundary-air true\n"),
+            Err(ExpandedSettingsEditScriptError::DuplicateWord(3, 8))
         );
         assert!(parse("OLD\n").is_err());
         assert!(matches!(

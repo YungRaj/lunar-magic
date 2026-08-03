@@ -117,6 +117,36 @@ impl RomExpandedSettingsEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+        ui.horizontal(|ui| {
+            ui.label("Expanded mode");
+            ui.text_edit_singleline(&mut self.form.layer3_expanded_mode);
+        });
+        ui.small("Exact 32-bit mode packed from the high nibbles of words 8–F.");
+        if ui
+            .add_enabled(!stale, egui::Button::new("Stage Layer 3 expanded mode"))
+            .clicked()
+        {
+            match self.form.layer3_expanded_mode() {
+                Ok(flags) => {
+                    if let Some(controller) = self.controller.as_mut() {
+                        let mut record = controller.record().clone();
+                        if let Err(error) = record.set_layer3_expanded_mode_flags(flags) {
+                            self.error = Some(error.to_string());
+                        } else {
+                            let edits = (8..16)
+                                .map(|word| (word, record.word(word).expect("fixed word")))
+                                .collect::<Vec<_>>();
+                            if let Err(error) = controller.apply_word_edits(&edits) {
+                                self.error = Some(error.to_string());
+                            } else {
+                                self.form = ExpandedSettingsForm::load(controller.record());
+                            }
+                        }
+                    }
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
         ui.separator();
         ui.label("All sixteen exact native words");
         egui::Grid::new("rom-expanded-settings-words")

@@ -65,6 +65,9 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
                     enabled,
                     descriptor,
                 }),
+                expanded_settings_edit_script::ExpandedSettingsScriptEdit::Layer3ExpandedMode(
+                    flags,
+                ) => edits.push(NativeLevelAssetsControllerEdit::Layer3ExpandedMode(flags)),
                 expanded_settings_edit_script::ExpandedSettingsScriptEdit::SpriteBoundaryInteractionAir(
                     enabled,
                 ) => edits.push(
@@ -123,7 +126,7 @@ mod tests {
         let expanded = directory.join("Expanded settings.txt");
         fs::write(
             &expanded,
-            "LMXSETED1\nlayer3-tilemap true abc 2 3\nboundary-air true\n",
+            "LMXSETED1\nlayer3-tilemap true abc 2 3\nlayer3-mode 89abcdef\n",
         )
         .unwrap();
         let spec = directory.join("Aggregate.lmnat");
@@ -141,12 +144,12 @@ mod tests {
                     enabled: true,
                     descriptor,
                 },
-                NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(true),
+                NativeLevelAssetsControllerEdit::Layer3ExpandedMode(flags),
                 NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
                     vertical_range: 3,
                     smart_spawn: true,
                 },
-            ] if descriptor.packed() == 0xeabc
+            ] if descriptor.packed() == 0xeabc && flags.packed() == 0x89ab_cdef
         ));
         fs::remove_dir_all(directory).unwrap();
     }

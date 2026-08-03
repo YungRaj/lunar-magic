@@ -1293,7 +1293,7 @@ fn command_script_drives_expanded_settings_history_and_save() {
     fs::write(&document, [0; ExpandedLevelSettingsRecord::ENCODED_LEN]).unwrap();
     fs::write(
         &edits,
-        "LMXSETED1\nlayer3-tilemap true abc 2 3\nboundary-air false\nword 2 1234\nword f abcd\n",
+        "LMXSETED1\nlayer3-tilemap true abc 2 3\nlayer3-mode 89abcdef\nword 2 1234\n",
     )
     .unwrap();
     fs::write(
@@ -1323,7 +1323,7 @@ fn command_script_drives_expanded_settings_history_and_save() {
     assert_eq!(saved.word(0).unwrap(), 0x2000);
     assert_eq!(saved.word(1).unwrap(), 0xeabc);
     assert_eq!(saved.word(2).unwrap(), 0x1234);
-    assert_eq!(saved.word(0xf).unwrap(), 0xabcd);
+    assert_eq!(saved.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
     fs::remove_dir_all(directory).unwrap();
 }
 

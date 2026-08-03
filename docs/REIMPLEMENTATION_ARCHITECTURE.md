@@ -350,7 +350,9 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   stages the corresponding two-word batch and immediately reloads the form. Both preserve word 0
   outside `$2000`, every field after word 1, and the exact descriptor selectors.
 - `LMXSETED1` is the corresponding deterministic automation boundary. Typed raw-word, Layer 3
-  tilemap, and boundary-interaction commands declare disjoint owned words before mutation. The
+  tilemap, exact 32-bit expanded-mode, and boundary-interaction commands declare disjoint owned
+  words before mutation. Expanded-mode editing scatters only the high nibbles of words 8–15 and
+  preserves every adjacent low 12-bit field. The
   standalone ROM shell and portable document resolve them against their current exact record;
   aggregate loading maps the semantic commands directly to the same controller edits as the GUI.
 - Complete `LMOWFULL` documents similarly retain their exact size-mode table and animation bound

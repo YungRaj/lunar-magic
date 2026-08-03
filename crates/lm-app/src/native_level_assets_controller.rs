@@ -52,6 +52,7 @@ pub enum NativeLevelAssetsControllerEdit {
         enabled: bool,
         descriptor: lm_level::Layer3TilemapGraphicsDescriptor,
     },
+    Layer3ExpandedMode(lm_level::Layer3ExpandedModeFlags),
 }
 
 #[derive(Debug)]
@@ -1012,6 +1013,19 @@ pub(crate) fn apply_native_level_assets_edits(
                     )?;
                 record
                     .set_layer3_tilemap_graphics_descriptor(*descriptor)
+                    .map_err(
+                        |error| NativeLevelAssetsControllerError::ExpandedSettingsEdit {
+                            command,
+                            error,
+                        },
+                    )?;
+            }
+            NativeLevelAssetsControllerEdit::Layer3ExpandedMode(flags) => {
+                let record = next.expanded_settings.as_mut().ok_or(
+                    NativeLevelAssetsControllerError::ExpandedSettingsUnavailable { command },
+                )?;
+                record
+                    .set_layer3_expanded_mode_flags(*flags)
                     .map_err(
                         |error| NativeLevelAssetsControllerError::ExpandedSettingsEdit {
                             command,

@@ -728,7 +728,7 @@ fn sprite_boundary_air_setting_preserves_gfx_selector_history_and_rom_reopen() {
 }
 
 #[test]
-fn layer3_tilemap_settings_preserve_unowned_fields_history_and_rom_reopen() {
+fn layer3_settings_preserve_unowned_fields_history_and_rom_reopen() {
     let snapshot = snapshot();
     let mut controller = NativeLevelAssetsController::decode(
         &snapshot,
@@ -746,16 +746,27 @@ fn layer3_tilemap_settings_preserve_unowned_fields_history_and_rom_reopen() {
         .clone();
     let baseline_word_zero = baseline.word(0).unwrap();
     let descriptor = lm_level::Layer3TilemapGraphicsDescriptor::new(0xabc, 2, 3).unwrap();
+    let mode = lm_level::Layer3ExpandedModeFlags::from_packed(0x89ab_cdef);
     controller
-        .apply_edits(&[NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
-            enabled: true,
-            descriptor,
-        }])
+        .apply_edits(&[
+            NativeLevelAssetsControllerEdit::Layer3TilemapSettings {
+                enabled: true,
+                descriptor,
+            },
+            NativeLevelAssetsControllerEdit::Layer3ExpandedMode(mode),
+        ])
         .unwrap();
     let edited = controller.assets().expanded_settings.as_ref().unwrap();
     assert_eq!(edited.word(0).unwrap(), baseline_word_zero | 0x2000);
     assert_eq!(edited.word(1).unwrap(), 0xeabc);
-    assert_eq!(&edited.encoded()[4..], &baseline.encoded()[4..]);
+    assert_eq!(&edited.encoded()[4..16], &baseline.encoded()[4..16]);
+    assert_eq!(edited.layer3_expanded_mode_flags(), mode);
+    for word in 8..16 {
+        assert_eq!(
+            edited.word(word).unwrap() & 0x0fff,
+            baseline.word(word).unwrap() & 0x0fff
+        );
+    }
     assert!(controller.undo());
     assert_eq!(
         controller.assets().expanded_settings.as_ref(),
@@ -780,7 +791,13 @@ fn layer3_tilemap_settings_preserve_unowned_fields_history_and_rom_reopen() {
         settings.layer3_tilemap_graphics_descriptor().unwrap(),
         descriptor
     );
-    assert_eq!(&settings.encoded()[4..], &baseline.encoded()[4..]);
+    assert_eq!(settings.layer3_expanded_mode_flags(), mode);
+    for word in 8..16 {
+        assert_eq!(
+            settings.word(word).unwrap() & 0x0fff,
+            baseline.word(word).unwrap() & 0x0fff
+        );
+    }
     assert_eq!(
         SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc).unwrap(),
         compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap()

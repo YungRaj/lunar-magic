@@ -274,6 +274,34 @@ impl ExpandedLevelSettingsRecord {
         Layer3ExpandedModeFlags::from_packed(packed)
     }
 
+    /// Replaces only the eight recovered high nibbles that form Lunar Magic's packed Layer 3
+    /// expanded-mode value. Every adjacent low twelve-bit field remains byte-exact.
+    ///
+    /// # Errors
+    ///
+    /// Propagates an internal fixed-record word-access error.
+    pub fn set_layer3_expanded_mode_flags(
+        &mut self,
+        flags: Layer3ExpandedModeFlags,
+    ) -> Result<(), ExpandedLevelSettingsError> {
+        let packed = flags.packed();
+        for nibble in 0_usize..4 {
+            let low_word = MODE_LOW_NIBBLE_WORDS[nibble];
+            let high_word = MODE_HIGH_NIBBLE_WORDS[nibble];
+            let low = self.word(low_word)? & 0x0fff;
+            let high = self.word(high_word)? & 0x0fff;
+            self.set_word(
+                low_word,
+                low | (((packed >> (nibble * 4)) as u16 & 0x000f) << 12),
+            )?;
+            self.set_word(
+                high_word,
+                high | (((packed >> ((nibble + 4) * 4)) as u16 & 0x000f) << 12),
+            )?;
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub fn layer3_tilemap_enabled(&self) -> bool {
         u16::from_le_bytes([self.encoded()[0], self.encoded()[1]]) & LAYER3_ENABLE_MASK != 0
@@ -380,6 +408,26 @@ mod tests {
             descriptor
         );
         assert_eq!(&record.encoded()[4..], &source[4..]);
+    }
+
+    #[test]
+    fn packed_mode_setter_preserves_every_adjacent_low_twelve_bit_field() {
+        let source = std::array::from_fn::<_, 32, _>(|index| u8::try_from(index).unwrap());
+        let mut record = ExpandedLevelSettingsRecord::decode(&source).unwrap();
+        let before = record.clone();
+        let flags = Layer3ExpandedModeFlags::from_packed(0x89ab_cdef);
+        record.set_layer3_expanded_mode_flags(flags).unwrap();
+        assert_eq!(record.layer3_expanded_mode_flags(), flags);
+        for word in 0..ExpandedLevelSettingsRecord::WORD_COUNT {
+            if (8..16).contains(&word) {
+                assert_eq!(
+                    record.word(word).unwrap() & 0x0fff,
+                    before.word(word).unwrap() & 0x0fff
+                );
+            } else {
+                assert_eq!(record.word(word).unwrap(), before.word(word).unwrap());
+            }
+        }
     }
 
     fn record_with_mode_flags(packed: u32) -> ExpandedLevelSettingsRecord {
