@@ -9,10 +9,10 @@ use lm_graphics::{
     PaletteOwnership,
 };
 use lm_level::{
-    ExpandedLevelSettingsError, HeaderValueError, LevelEditError, LevelScreenExtentMode,
-    MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data, NativeLayer2RemapError,
-    NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit, ObjectEditError,
-    SpriteLengthTable, SpriteStreamError, native_level_screen_count,
+    ExpandedLevelSettingsError, HeaderValueError, LegacyHeaderEdit, LevelEditError,
+    LevelScreenExtentMode, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN, NativeLayer2Data,
+    NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError, ObjectEdit,
+    ObjectEditError, SpriteLengthTable, SpriteStreamError, native_level_screen_count,
 };
 use lm_project::{
     InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
@@ -182,6 +182,7 @@ pub struct NativeLevelAssetsController {
     layer2: Option<NativeLayer2Data>,
     baseline_layer2_descriptor: Option<MwlLayer2Descriptor>,
     layer2_descriptor: Option<MwlLayer2Descriptor>,
+    normalized_reserved_level_mode: Option<u8>,
     previous_blocks: [Option<RatsBlock>; 5],
 }
 
@@ -267,11 +268,13 @@ impl NativeLevelAssetsController {
             .load_native_level_assets(usize::from(slot), layout, sprite_lengths, &modes)
             .map_err(NativeLevelAssetsControllerError::Load)?;
         let baseline = assets.clone();
-        assets
+        let source_level_mode = assets.level.layer1.header.level_mode();
+        let normalized_reserved_level_mode = assets
             .level
             .layer1
             .header
-            .canonicalize_lunar_magic_level_mode();
+            .canonicalize_lunar_magic_level_mode()
+            .then_some(source_level_mode);
         let features = if matches!(feature_installation, InstalledLayout::Absent) {
             None
         } else {
@@ -343,6 +346,7 @@ impl NativeLevelAssetsController {
             layer2,
             baseline_layer2_descriptor: layer2_descriptor,
             layer2_descriptor,
+            normalized_reserved_level_mode,
             previous_blocks,
         })
     }
@@ -365,6 +369,12 @@ impl NativeLevelAssetsController {
     #[must_use]
     pub const fn layer2_descriptor(&self) -> Option<MwlLayer2Descriptor> {
         self.layer2_descriptor
+    }
+
+    /// Returns the reserved source mode that Lunar Magic compatibility normalized to mode `$00`.
+    #[must_use]
+    pub const fn normalized_reserved_level_mode(&self) -> Option<u8> {
+        self.normalized_reserved_level_mode
     }
 
     #[must_use]
@@ -410,6 +420,13 @@ impl NativeLevelAssetsController {
         self.layer2 = staged_layer2;
         self.layer2_descriptor = staged_layer2_descriptor;
         self.features = staged_features;
+        if let Some(mode) = edits
+            .iter()
+            .rev()
+            .find_map(normalized_mode_from_aggregate_edit)
+        {
+            self.normalized_reserved_level_mode = Some(mode);
+        }
         Ok(())
     }
 
@@ -536,7 +553,11 @@ impl NativeLevelAssetsController {
         native_palette.colors.rotate_right(1);
 
         let mut layer1 = source.layer1.clone();
-        layer1.header.canonicalize_lunar_magic_level_mode();
+        let source_level_mode = layer1.header.level_mode();
+        let normalized_reserved_level_mode = layer1
+            .header
+            .canonicalize_lunar_magic_level_mode()
+            .then_some(source_level_mode);
         let vertical = layer1.header.is_vertical();
         layer1.objects.canonicalize_import_controls(vertical);
         let screen_count =
@@ -558,8 +579,23 @@ impl NativeLevelAssetsController {
         self.assets = staged;
         self.layer2 = Some(source.layer2.clone());
         self.layer2_descriptor = self.layer2_descriptor.map(|_| source.layer2_descriptor);
+        if let Some(mode) = normalized_reserved_level_mode {
+            self.normalized_reserved_level_mode = Some(mode);
+        }
         Ok(())
     }
+}
+
+fn normalized_mode_from_aggregate_edit(edit: &NativeLevelAssetsControllerEdit) -> Option<u8> {
+    let NativeLevelAssetsControllerEdit::Level(edits) = edit else {
+        return None;
+    };
+    edits.iter().rev().find_map(|edit| {
+        let NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(mode)) = edit else {
+            return None;
+        };
+        (lm_level::lunar_magic_canonical_level_mode(*mode) != *mode).then_some(*mode)
+    })
 }
 
 fn empty_compact_exanimation() -> lm_graphics::CompactExAnimation {

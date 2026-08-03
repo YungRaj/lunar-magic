@@ -417,6 +417,14 @@ impl VanillaLevelEditor {
             return None;
         };
         ui.label("Pristine SMW-US layout detected automatically.");
+        if let Some(mode) = controller.normalized_reserved_level_mode() {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                format!(
+                    "Mode ${mode:02X} is reserved. Lunar Magic compatibility uses mode $00 instead."
+                ),
+            );
+        }
         ui.separator();
         let object_count = controller.level().layer1.objects.records.len();
         let sprite_count = controller.level().sprites.tokens.len();

@@ -114,6 +114,7 @@ pub struct LevelController {
     baseline_layer2: Option<NativeLayer2Data>,
     layer2: Option<NativeLayer2Data>,
     layer2_descriptor: Option<MwlLayer2Descriptor>,
+    normalized_reserved_level_mode: Option<u8>,
     undo: Vec<LevelControllerState>,
     redo: Vec<LevelControllerState>,
     previous_layer1: Option<RatsBlock>,
@@ -200,7 +201,12 @@ impl LevelController {
             .load_level_slot(level_number, layout, sprite_lengths)
             .map_err(LevelControllerError::Load)?;
         let baseline = level.clone();
-        level.layer1.header.canonicalize_lunar_magic_level_mode();
+        let source_level_mode = level.layer1.header.level_mode();
+        let normalized_reserved_level_mode = level
+            .layer1
+            .header
+            .canonicalize_lunar_magic_level_mode()
+            .then_some(source_level_mode);
         let loaded_layer2 = layer2_layout
             .map(|layer2_layout| {
                 project.load_level_layer2_with_descriptor(
@@ -225,6 +231,7 @@ impl LevelController {
             baseline_layer2: layer2.clone(),
             layer2,
             layer2_descriptor,
+            normalized_reserved_level_mode,
             undo: Vec::new(),
             redo: Vec::new(),
             previous_layer1,
@@ -250,6 +257,12 @@ impl LevelController {
     #[must_use]
     pub const fn layer2(&self) -> Option<&NativeLayer2Data> {
         self.layer2.as_ref()
+    }
+
+    /// Returns the reserved source mode that Lunar Magic compatibility normalized to mode `$00`.
+    #[must_use]
+    pub const fn normalized_reserved_level_mode(&self) -> Option<u8> {
+        self.normalized_reserved_level_mode
     }
 
     #[must_use]
@@ -349,6 +362,9 @@ impl LevelController {
             edits,
             &self.sprite_lengths,
         )?;
+        if let Some(mode) = last_normalized_mode_edit(edits) {
+            self.normalized_reserved_level_mode = Some(mode);
+        }
         if self.state() != previous {
             push_bounded(&mut self.undo, previous);
             self.redo.clear();
@@ -439,6 +455,15 @@ impl LevelController {
             self.redo.clear();
         }
     }
+}
+
+fn last_normalized_mode_edit(edits: &[NativeLevelEdit]) -> Option<u8> {
+    edits.iter().rev().find_map(|edit| {
+        let NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(mode)) = edit else {
+            return None;
+        };
+        (lm_level::lunar_magic_canonical_level_mode(*mode) != *mode).then_some(*mode)
+    })
 }
 
 fn push_bounded(history: &mut Vec<LevelControllerState>, value: LevelControllerState) {

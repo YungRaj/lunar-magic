@@ -373,6 +373,7 @@ fn reserved_mode_mwl_import_canonicalizes_before_tilemap_storage_commit() {
     source.layer1.header.set_level_mode(0x12).unwrap();
 
     controller.replace_modeled_assets_from_mwl(&source).unwrap();
+    assert_eq!(controller.normalized_reserved_level_mode(), Some(0x12));
     assert_eq!(controller.assets().level.layer1.header.level_mode(), 0);
     assert_eq!(
         controller.assets().level.layer1.header.background_color(),
@@ -617,6 +618,7 @@ fn aggregate_decode_stages_reserved_level_mode_fallback_without_losing_backgroun
     )
     .unwrap();
     assert!(controller.is_modified());
+    assert_eq!(controller.normalized_reserved_level_mode(), Some(0x12));
     assert_eq!(controller.assets().level.layer1.header.level_mode(), 0);
     assert_eq!(
         controller.assets().level.layer1.header.background_color(),

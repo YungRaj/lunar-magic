@@ -726,6 +726,18 @@ impl RomLevelAssetsEditor {
                 "The ROM changed. Close and reopen this workspace before committing.",
             );
         }
+        if let Some(mode) = self
+            .workspace
+            .as_ref()
+            .and_then(|workspace| workspace.controller.normalized_reserved_level_mode())
+        {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                format!(
+                    "Mode ${mode:02X} is reserved. Lunar Magic compatibility uses mode $00 instead."
+                ),
+            );
+        }
         ui.horizontal(|ui| {
             ui.label("Allocation search (logical PC hex, end-exclusive)");
             ui.text_edit_singleline(&mut self.search_start);

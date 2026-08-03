@@ -236,6 +236,7 @@ fn reserved_level_mode_is_staged_as_lunar_magics_mode_zero_and_undoes() {
     let controller =
         LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
     assert!(controller.is_modified());
+    assert_eq!(controller.normalized_reserved_level_mode(), Some(0x12));
     assert_eq!(controller.level().layer1.header.level_mode(), 0);
     assert_eq!(controller.level().layer1.header.background_color(), 5);
 
@@ -266,6 +267,7 @@ fn semantic_reserved_mode_edit_canonicalizes_but_out_of_range_still_rejects() {
             0x1d,
         ))])
         .unwrap();
+    assert_eq!(controller.normalized_reserved_level_mode(), Some(0x1d));
     assert_eq!(controller.level().layer1.header.level_mode(), 0);
     assert!(
         controller
@@ -274,6 +276,7 @@ fn semantic_reserved_mode_edit_canonicalizes_but_out_of_range_still_rejects() {
             ))])
             .is_err()
     );
+    assert_eq!(controller.normalized_reserved_level_mode(), Some(0x1d));
     assert_eq!(controller.level().layer1.header.level_mode(), 0);
 }
 
