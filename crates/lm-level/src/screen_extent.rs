@@ -35,7 +35,7 @@ pub fn native_level_screen_count(
         stored_highest = stored_highest.max(screen);
         // Screen exits are editor-only markers and do not themselves extend automatic artwork
         // bounds. Their high bit still advances stream state for a following positioned object.
-        if record.screen_exit().is_none() && record.command_id() != 0x28 {
+        if screen <= 31 && record.screen_exit().is_none() && record.command_id() != 0x28 {
             visible_highest = visible_highest.max(screen);
         }
     }
@@ -106,6 +106,26 @@ mod tests {
         assert_eq!(
             native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Auto),
             9
+        );
+    }
+
+    #[test]
+    fn automatic_extent_ignores_artwork_after_an_out_of_range_jump() {
+        let objects = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0x1f, 0x0f, 1]).unwrap(),
+                ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+            ],
+        };
+        let sprites =
+            NativeSpriteStream::parse(&[0, 0xff], false, &SpriteLengthTable::standard()).unwrap();
+        assert_eq!(
+            native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Auto),
+            1
+        );
+        assert_eq!(
+            native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Stored),
+            32
         );
     }
 

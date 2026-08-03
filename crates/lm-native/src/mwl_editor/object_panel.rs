@@ -139,6 +139,15 @@ impl MwlObjectPanel {
             .and_then(ObjectRecord::screen_jump);
         if let Some(jump) = jump {
             ui.label(format!("Screen-jump encoding: {:?}", jump.encoding));
+            ui.label(format!(
+                "Resolved screen: {:02X}{}",
+                jump.resolved_screen(),
+                if jump.resolved_screen() <= 0x1f {
+                    ""
+                } else {
+                    " (outside 00-1F; retained losslessly)"
+                }
+            ));
             ui.horizontal(|ui| {
                 ui.label("Packed jump target (hex)");
                 ui.text_edit_singleline(&mut self.jump_target);

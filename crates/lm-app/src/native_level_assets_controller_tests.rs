@@ -400,6 +400,25 @@ fn mwl_import_ignores_screen_exits_and_preserves_raw_layer1_order() {
     assert_eq!(controller.assets().level.layer1.header.last_screen(), 31);
     assert_eq!(controller.assets().level.layer1.objects, expected_order);
 
+    let mut out_of_range = mwl_source(&controller);
+    out_of_range.layer1.objects = ObjectStream {
+        records: vec![
+            ObjectRecord::new(vec![0x1f, 0x0f, 1]).unwrap(),
+            ObjectRecord::new(vec![1, 0x10, 0]).unwrap(),
+        ],
+    };
+    let expected_out_of_range = out_of_range.layer1.objects.clone();
+
+    controller
+        .replace_modeled_assets_from_mwl(&out_of_range)
+        .unwrap();
+
+    assert_eq!(controller.assets().level.layer1.header.last_screen(), 0);
+    assert_eq!(
+        controller.assets().level.layer1.objects,
+        expected_out_of_range
+    );
+
     let expected_core = controller.assets().clone();
     let prepared = controller
         .prepare_commit_with_layer2("import extent and raw order", &options(), &layer2_options())

@@ -3358,9 +3358,7 @@ impl VanillaLevelEditor {
                 ui.end_row();
             });
             *target = pack_screen_jump_components(*encoding, first, second);
-            ui.small(format!(
-                "Packed target: {target:04X}. The original low/high ordering is preserved."
-            ));
+            ui.small(screen_jump_resolution_label(*encoding, *target));
         } else {
             egui::Grid::new("vanilla-object-fields").show(ui, |ui| {
                 header_row(ui, "Command", &mut self.object_form.command_id, 0x3f);
@@ -8417,6 +8415,26 @@ const fn pack_screen_jump_components(
     }
 }
 
+fn screen_jump_resolution_label(
+    encoding: lm_level::ScreenJumpEncoding,
+    packed_target: u16,
+) -> String {
+    let resolved = lm_level::ObjectScreenJump {
+        encoding,
+        packed_target,
+    }
+    .resolved_screen();
+    if resolved <= 0x1f {
+        format!(
+            "Packed target: {packed_target:04X}. Resolved screen: {resolved:02X}. The original low/high ordering is preserved."
+        )
+    } else {
+        format!(
+            "Packed target: {packed_target:04X}. Resolved screen: {resolved:02X}, outside 00-1F; the raw value is retained losslessly but does not contribute to automatic extent."
+        )
+    }
+}
+
 fn is_supported(snapshot: &lm_app::ControllerSnapshot) -> bool {
     snapshot.identity.game == SupportedGame::SuperMarioWorld
         && snapshot.identity.region == Region::NorthAmerica
@@ -10721,6 +10739,16 @@ mod tests {
 
         assert_eq!(pack_screen_jump_components(FirstLow, 0xff, 0xff), 0x0f1f);
         assert_eq!(pack_screen_jump_components(FirstHigh, 0xff, 0xff), 0x1f0f);
+    }
+
+    #[test]
+    fn screen_jump_resolution_label_distinguishes_native_and_out_of_range_targets() {
+        use lm_level::ScreenJumpEncoding::FirstLow;
+
+        assert!(screen_jump_resolution_label(FirstLow, 0x0305).contains("Resolved screen: 08"));
+        let out_of_range = screen_jump_resolution_label(FirstLow, 0x0f1f);
+        assert!(out_of_range.contains("Resolved screen: 2E"));
+        assert!(out_of_range.contains("outside 00-1F"));
     }
 
     #[test]
