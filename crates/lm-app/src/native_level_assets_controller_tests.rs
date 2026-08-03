@@ -678,17 +678,14 @@ fn sprite_boundary_air_setting_preserves_gfx_selector_history_and_rom_reopen() {
         .as_ref()
         .unwrap()
         .clone();
-    let mut header = ExpandedLevelHeader::from(&baseline);
+    let header = ExpandedLevelHeader::from(&baseline);
     let baseline_word = header.fields[8];
     let enabled = !header.sprites_beyond_boundaries_use_air();
-    header.set_sprites_beyond_boundaries_use_air(enabled);
     controller
-        .apply_edits(&[NativeLevelAssetsControllerEdit::ExpandedSettingsWords(
-            vec![(8, header.fields[8])],
-        )])
+        .apply_edits(&[NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(enabled)])
         .unwrap();
     let edited = controller.assets().expanded_settings.as_ref().unwrap();
-    assert_eq!(edited.word(8).unwrap() & 0x0fff, baseline_word & 0x0fff);
+    assert_eq!(edited.word(8).unwrap() & !0x4000, baseline_word & !0x4000);
     assert_eq!(
         ExpandedLevelHeader::from(edited).sprites_beyond_boundaries_use_air(),
         enabled
@@ -723,8 +720,8 @@ fn sprite_boundary_air_setting_preserves_gfx_selector_history_and_rom_reopen() {
             .unwrap()
             .word(8)
             .unwrap()
-            & 0x0fff,
-        baseline_word & 0x0fff
+            & !0x4000,
+        baseline_word & !0x4000
     );
     assert!(project.undo().unwrap());
     assert_eq!(project.rom.logical_bytes(), original);
@@ -842,6 +839,44 @@ fn installed_spawn_edit_rejects_invalid_range_without_touching_shared_flags_or_h
             command: 0,
             error: lm_level::SpriteSpawnRangeError(4),
         })
+    ));
+    assert_eq!(controller.lfix3_level_fields().unwrap().flags, 0xe1);
+    assert!(!controller.can_undo());
+    assert!(!controller.is_modified());
+}
+
+#[test]
+fn late_boundary_unavailability_rolls_back_an_earlier_spawn_edit() {
+    let snapshot = snapshot();
+    let mut unavailable_layout = layout();
+    unavailable_layout.expanded_settings = None;
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        unavailable_layout,
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    controller.attach_lfix3_level_fields(
+        Lfix3LevelFields {
+            flags: 0xe1,
+            high_position: 0x22,
+            additional_flags: 0x33,
+            runtime_flags: 0x44,
+        },
+        lfix3_layout(),
+    );
+
+    assert!(matches!(
+        controller.apply_edits(&[
+            NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+                vertical_range: 3,
+                smart_spawn: true,
+            },
+            NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(true),
+        ]),
+        Err(NativeLevelAssetsControllerError::ExpandedSettingsUnavailable { command: 1 })
     ));
     assert_eq!(controller.lfix3_level_fields().unwrap().flags, 0xe1);
     assert!(!controller.can_undo());

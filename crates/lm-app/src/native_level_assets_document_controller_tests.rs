@@ -1,7 +1,7 @@
 use super::*;
 use crate::{ExAnimationControllerEdit, PaletteControllerEdit};
 use lm_graphics::{Bgr555, CompactExAnimation, Palette, PaletteChange};
-use lm_level::{LevelObjectData, NativeSpriteStream};
+use lm_level::{ExpandedLevelSettingsRecord, LevelObjectData, NativeSpriteStream};
 use lm_project::{LoadedLevelSlot, LoadedNativeLevelAssets};
 
 fn file() -> NativeLevelAssetsFile {
@@ -75,6 +75,54 @@ fn mixed_edits_are_revisioned_and_reopen_canonically() {
     )
     .unwrap();
     assert_eq!(&reopened, controller.value());
+}
+
+#[test]
+fn portable_boundary_interaction_is_semantic_lossless_and_undoable() {
+    let mut source = file();
+    let mut bytes = [0; ExpandedLevelSettingsRecord::ENCODED_LEN];
+    bytes[16..18].copy_from_slice(&0xb123_u16.to_le_bytes());
+    source.assets.expanded_settings = Some(ExpandedLevelSettingsRecord::from_encoded(bytes));
+    let encoded = source.encode(&[false; 256]).unwrap();
+    let mut controller = NativeLevelAssetsDocumentController::decode(
+        "level.lmnative".into(),
+        &encoded,
+        SpriteLengthTable::standard(),
+        8,
+        &[false; 256],
+    )
+    .unwrap();
+
+    controller
+        .apply_edits(
+            0,
+            &[NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(true)],
+            &PaletteOwnership::editable(2),
+        )
+        .unwrap();
+    assert_eq!(
+        controller
+            .value()
+            .assets
+            .expanded_settings
+            .as_ref()
+            .unwrap()
+            .word(8)
+            .unwrap(),
+        0xf123
+    );
+    assert!(controller.undo(1).unwrap());
+    assert_eq!(
+        controller
+            .value()
+            .assets
+            .expanded_settings
+            .as_ref()
+            .unwrap()
+            .word(8)
+            .unwrap(),
+        0xb123
+    );
 }
 
 #[test]

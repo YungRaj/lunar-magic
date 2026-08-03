@@ -6,9 +6,12 @@ pub const MAX_SCRIPT_LEN: usize = 1024;
 const MAGIC: &str = "LMSPAWN1";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SpriteSpawnEdit {
-    pub vertical_range: u8,
-    pub smart_spawn: bool,
+pub enum SpriteSpawnEdit {
+    Properties {
+        vertical_range: u8,
+        smart_spawn: bool,
+    },
+    BoundaryInteractionAir(bool),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,8 +20,8 @@ pub enum SpriteSpawnEditScriptError {
     MissingMagic,
     UnsupportedVersion(String),
     TooManyLines,
-    MissingSettings,
-    DuplicateSettings(usize),
+    NoCommands,
+    DuplicateCommand(usize, String),
     WrongArity(usize),
     UnknownCommand(usize, String),
     InvalidRange(usize, String),
@@ -33,7 +36,7 @@ impl fmt::Display for SpriteSpawnEditScriptError {
 
 impl std::error::Error for SpriteSpawnEditScriptError {}
 
-pub fn parse(input: &str) -> Result<SpriteSpawnEdit, SpriteSpawnEditScriptError> {
+pub fn parse(input: &str) -> Result<Vec<SpriteSpawnEdit>, SpriteSpawnEditScriptError> {
     if input.len() > MAX_SCRIPT_LEN {
         return Err(SpriteSpawnEditScriptError::TooLarge);
     }
@@ -44,7 +47,9 @@ pub fn parse(input: &str) -> Result<SpriteSpawnEdit, SpriteSpawnEditScriptError>
     if magic != MAGIC {
         return Err(SpriteSpawnEditScriptError::UnsupportedVersion(magic.into()));
     }
-    let mut settings = None;
+    let mut edits = Vec::new();
+    let mut properties_seen = false;
+    let mut boundary_seen = false;
     for (offset, raw) in lines.enumerate() {
         let line = offset + 2;
         if line > 16 {
@@ -55,27 +60,34 @@ pub fn parse(input: &str) -> Result<SpriteSpawnEdit, SpriteSpawnEditScriptError>
             continue;
         }
         let words: Vec<_> = content.split_whitespace().collect();
-        let edit = match words.as_slice() {
-            ["settings", vertical_range, smart_spawn] => SpriteSpawnEdit {
-                vertical_range: vertical_range
-                    .parse::<u8>()
-                    .ok()
-                    .filter(|value| *value <= 3)
-                    .ok_or_else(|| {
-                        SpriteSpawnEditScriptError::InvalidRange(line, (*vertical_range).into())
-                    })?,
-                smart_spawn: match *smart_spawn {
-                    "true" => true,
-                    "false" => false,
-                    value => {
-                        return Err(SpriteSpawnEditScriptError::InvalidBoolean(
-                            line,
-                            value.into(),
-                        ));
-                    }
+        let (command, edit) = match words.as_slice() {
+            ["settings", vertical_range, smart_spawn] => (
+                "settings",
+                SpriteSpawnEdit::Properties {
+                    vertical_range: vertical_range
+                        .parse::<u8>()
+                        .ok()
+                        .filter(|value| *value <= 3)
+                        .ok_or_else(|| {
+                            SpriteSpawnEditScriptError::InvalidRange(line, (*vertical_range).into())
+                        })?,
+                    smart_spawn: match *smart_spawn {
+                        "true" => true,
+                        "false" => false,
+                        value => {
+                            return Err(SpriteSpawnEditScriptError::InvalidBoolean(
+                                line,
+                                value.into(),
+                            ));
+                        }
+                    },
                 },
-            },
-            [command, ..] if *command != "settings" => {
+            ),
+            ["boundary-air", enabled] => (
+                "boundary-air",
+                SpriteSpawnEdit::BoundaryInteractionAir(boolean(line, enabled)?),
+            ),
+            [command, ..] if !matches!(*command, "settings" | "boundary-air") => {
                 return Err(SpriteSpawnEditScriptError::UnknownCommand(
                     line,
                     (*command).into(),
@@ -83,11 +95,34 @@ pub fn parse(input: &str) -> Result<SpriteSpawnEdit, SpriteSpawnEditScriptError>
             }
             _ => return Err(SpriteSpawnEditScriptError::WrongArity(line)),
         };
-        if settings.replace(edit).is_some() {
-            return Err(SpriteSpawnEditScriptError::DuplicateSettings(line));
+        let seen = if command == "settings" {
+            &mut properties_seen
+        } else {
+            &mut boundary_seen
+        };
+        if std::mem::replace(seen, true) {
+            return Err(SpriteSpawnEditScriptError::DuplicateCommand(
+                line,
+                command.into(),
+            ));
         }
+        edits.push(edit);
     }
-    settings.ok_or(SpriteSpawnEditScriptError::MissingSettings)
+    if edits.is_empty() {
+        return Err(SpriteSpawnEditScriptError::NoCommands);
+    }
+    Ok(edits)
+}
+
+fn boolean(line: usize, value: &str) -> Result<bool, SpriteSpawnEditScriptError> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(SpriteSpawnEditScriptError::InvalidBoolean(
+            line,
+            value.into(),
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -95,13 +130,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_one_bounded_semantic_edit_and_rejects_noncanonical_values() {
+    fn parses_bounded_semantic_edits_and_rejects_noncanonical_values() {
         assert_eq!(
-            parse("LMSPAWN1\nsettings 3 true # scroll-triggered\n").unwrap(),
-            SpriteSpawnEdit {
-                vertical_range: 3,
-                smart_spawn: true,
-            }
+            parse("LMSPAWN1\nsettings 3 true # scroll-triggered\nboundary-air false\n").unwrap(),
+            vec![
+                SpriteSpawnEdit::Properties {
+                    vertical_range: 3,
+                    smart_spawn: true,
+                },
+                SpriteSpawnEdit::BoundaryInteractionAir(false),
+            ]
         );
         assert!(matches!(
             parse("LMSPAWN1\nsettings 4 false\n"),
@@ -113,7 +151,11 @@ mod tests {
         ));
         assert!(matches!(
             parse("LMSPAWN1\nsettings 1 true\nsettings 2 false\n"),
-            Err(SpriteSpawnEditScriptError::DuplicateSettings(3))
+            Err(SpriteSpawnEditScriptError::DuplicateCommand(3, _))
+        ));
+        assert!(matches!(
+            parse("LMSPAWN1\nboundary-air true\nboundary-air false\n"),
+            Err(SpriteSpawnEditScriptError::DuplicateCommand(3, _))
         ));
     }
 
@@ -125,7 +167,7 @@ mod tests {
         ));
         assert_eq!(
             parse("LMSPAWN1\n"),
-            Err(SpriteSpawnEditScriptError::MissingSettings)
+            Err(SpriteSpawnEditScriptError::NoCommands)
         );
         assert!(matches!(
             parse("LMSPAWN1\nspawn 1 true\n"),

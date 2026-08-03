@@ -59,11 +59,22 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
             sprite_spawn_edit_script::MAX_SCRIPT_LEN,
             "sprite-spawn edit",
         )?;
-        let edit = sprite_spawn_edit_script::parse(&text)?;
-        edits.push(NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
-            vertical_range: edit.vertical_range,
-            smart_spawn: edit.smart_spawn,
-        });
+        edits.extend(
+            sprite_spawn_edit_script::parse(&text)?
+                .into_iter()
+                .map(|edit| match edit {
+                    sprite_spawn_edit_script::SpriteSpawnEdit::Properties {
+                        vertical_range,
+                        smart_spawn,
+                    } => NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+                        vertical_range,
+                        smart_spawn,
+                    },
+                    sprite_spawn_edit_script::SpriteSpawnEdit::BoundaryInteractionAir(enabled) => {
+                        NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(enabled)
+                    }
+                }),
+        );
     }
     Ok(LoadedNativeAssetsEdits {
         edits,
@@ -80,7 +91,7 @@ mod tests {
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
     #[test]
-    fn aggregate_loader_routes_semantic_spawn_properties_without_raw_lfix3_bits() {
+    fn aggregate_loader_routes_semantic_spawn_properties_without_raw_shared_bits() {
         let directory = std::env::temp_dir().join(format!(
             "lm-native-spawn-loader-{}-{}",
             std::process::id(),
@@ -88,17 +99,20 @@ mod tests {
         ));
         fs::create_dir(&directory).unwrap();
         let spawn = directory.join("Spawn settings.txt");
-        fs::write(&spawn, "LMSPAWN1\nsettings 3 true\n").unwrap();
+        fs::write(&spawn, "LMSPAWN1\nsettings 3 true\nboundary-air false\n").unwrap();
         let spec = directory.join("Aggregate.lmnat");
         fs::write(&spec, "LMNATED1\nsprite-spawn=Spawn settings.txt\n").unwrap();
 
         let loaded = load(&spec).unwrap();
         assert!(matches!(
             loaded.edits.as_slice(),
-            [NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
-                vertical_range: 3,
-                smart_spawn: true,
-            }]
+            [
+                NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+                    vertical_range: 3,
+                    smart_spawn: true,
+                },
+                NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(false),
+            ]
         ));
         fs::remove_dir_all(directory).unwrap();
     }

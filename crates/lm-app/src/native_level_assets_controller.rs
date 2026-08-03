@@ -47,6 +47,7 @@ pub enum NativeLevelAssetsControllerEdit {
         vertical_range: u8,
         smart_spawn: bool,
     },
+    SpriteBoundaryInteractionAir(bool),
 }
 
 #[derive(Debug)]
@@ -981,6 +982,14 @@ pub(crate) fn apply_native_level_assets_edits(
                         error,
                     })?;
                 fields.set_sprite_spawn_settings(settings);
+            }
+            NativeLevelAssetsControllerEdit::SpriteBoundaryInteractionAir(enabled) => {
+                let record = next.expanded_settings.as_mut().ok_or(
+                    NativeLevelAssetsControllerError::ExpandedSettingsUnavailable { command },
+                )?;
+                let mut header = lm_level::ExpandedLevelHeader::from(&*record);
+                header.set_sprites_beyond_boundaries_use_air(*enabled);
+                *record = header.into();
             }
         }
     }
