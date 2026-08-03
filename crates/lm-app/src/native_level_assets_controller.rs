@@ -536,6 +536,7 @@ impl NativeLevelAssetsController {
         native_palette.colors.rotate_right(1);
 
         let mut layer1 = source.layer1.clone();
+        layer1.header.canonicalize_lunar_magic_level_mode();
         let vertical = layer1.header.is_vertical();
         layer1.objects.canonicalize_import_controls(vertical);
         let screen_count =

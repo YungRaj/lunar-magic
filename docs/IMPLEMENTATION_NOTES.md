@@ -3053,6 +3053,12 @@ edit. The shell exposes the operation as
 `level-mwl-import FILE SEARCH_START SEARCH_END`, automatically retargeting the MWL to the selected
 level and deriving every allocation policy from the active revision profile.
 
+The shared modeled-asset staging boundary also applies Lunar Magic's reserved legacy-mode repair
+before any orientation-dependent import work. MWL modes `$12` through `$1D` become `$00` while the
+background-color bits remain unchanged; sprite ordering, object-control canonicalization, extent,
+single import, and directory batch import therefore all observe the repaired mode in the same
+transaction. Low-level MWL decoding remains lossless until this editor-semantic import boundary.
+
 Ghidra's `ExportBinaryMwlLevelFile`, `ImportBinaryMwlLevelFile`,
 `LoadLfix3LevelRuntimeFields`, `WriteLfix3LevelRuntimeFields`, and expanded-level-mode helpers are
 the ground truth for the 64-byte MWL header boundary. The four vanilla entrance planes and four

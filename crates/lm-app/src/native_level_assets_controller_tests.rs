@@ -356,6 +356,55 @@ fn complete_mwl_modeled_assets_stage_commit_and_reopen_together() {
 }
 
 #[test]
+fn reserved_mode_mwl_import_canonicalizes_before_tilemap_storage_commit() {
+    let snapshot = tilemap_snapshot();
+    let mut controller = NativeLevelAssetsController::decode_with_layer2(
+        &snapshot,
+        layout(),
+        Some(layer2_layout()),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let mut source = mwl_source(&controller);
+    assert!(matches!(source.layer2, NativeLayer2Data::Tilemap(_)));
+    source.layer1.header.set_background_color(6).unwrap();
+    source.layer1.header.set_level_mode(0x12).unwrap();
+
+    controller.replace_modeled_assets_from_mwl(&source).unwrap();
+    assert_eq!(controller.assets().level.layer1.header.level_mode(), 0);
+    assert_eq!(
+        controller.assets().level.layer1.header.background_color(),
+        6
+    );
+    let expected_core = controller.assets().clone();
+    let expected_layer2 = controller.layer2().unwrap().clone();
+    let prepared = controller
+        .prepare_commit_with_layer2("import reserved MWL mode", &options(), &layer2_options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("import reserved MWL mode", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets_with_layer2(
+            0,
+            NativeLevelAssetsLayer2Layout {
+                core: layout(),
+                layer2: layer2_layout(),
+            },
+            &SpriteLengthTable::standard(),
+            &[false; 256],
+        )
+        .unwrap();
+    assert_eq!(reopened.core, expected_core);
+    assert_eq!(reopened.layer2, expected_layer2);
+    assert_eq!(reopened.core.level.layer1.header.level_mode(), 0);
+    assert_eq!(reopened.core.level.layer1.header.background_color(), 6);
+}
+
+#[test]
 fn mwl_import_ignores_screen_exits_and_preserves_raw_layer1_order() {
     let mut controller = NativeLevelAssetsController::decode_with_layer2(
         &snapshot(),
