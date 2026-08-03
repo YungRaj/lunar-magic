@@ -6,8 +6,9 @@ use lm_graphics::{
 };
 use lm_level::{
     CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor,
-    MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteStream, ObjectRecord,
-    ObjectStream, SpriteRecord, SpriteToken, split_layer2_tilemap_planes,
+    MwlLevelHeaderSection, NATIVE_LAYER2_TILEMAP_LEN, NativeSpriteRecordFields, NativeSpriteStream,
+    ObjectCoordinateNibbles, ObjectRecord, ObjectStream, SpriteRecord, SpriteToken,
+    split_layer2_tilemap_planes,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -907,6 +908,70 @@ fn installed_aggregate_history_is_bounded() {
         count += 1;
     }
     assert_eq!(count, NativeLevelAssetsController::HISTORY_LIMIT);
+}
+
+#[test]
+fn semantic_aggregate_object_and_sprite_fields_commit_and_reopen() {
+    let snapshot = snapshot();
+    let lengths = SpriteLengthTable::standard();
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &lengths,
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    let mut sprite = match &controller.assets().level.sprites.tokens[0] {
+        SpriteToken::Record(record) => record.clone(),
+        token => panic!("fixture requires a sprite record, got {token:?}"),
+    };
+    sprite
+        .set_native_fields(
+            NativeSpriteRecordFields {
+                y_low: 0x1d,
+                extra_bits: 0,
+                screen: 3,
+                x: 0x0e,
+                sprite_number: 2,
+            },
+            &lengths,
+        )
+        .unwrap();
+    controller
+        .apply_edits(&[NativeLevelAssetsControllerEdit::Level(vec![
+            NativeLevelEdit::Objects(vec![
+                ObjectEdit::SetParameter {
+                    index: 0,
+                    parameter: 0x55,
+                },
+                ObjectEdit::RelocateOrdinary {
+                    index: 0,
+                    screen: 2,
+                    coordinates: ObjectCoordinateNibbles {
+                        first: 0x0a,
+                        second: 0x0b,
+                    },
+                },
+            ]),
+            NativeLevelEdit::ReplaceSprite {
+                index: 0,
+                token: SpriteToken::Record(sprite),
+            },
+        ])])
+        .unwrap();
+    let expected = controller.assets().clone();
+    let prepared = controller
+        .prepare_commit("semantic aggregate fields", &options())
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(snapshot.rom_bytes).unwrap());
+    project
+        .apply_mutation("semantic aggregate fields", &prepared.mutation)
+        .unwrap();
+    let reopened = project
+        .load_native_level_assets(0, layout(), &lengths, &[false; 256])
+        .unwrap();
+    assert_eq!(reopened, expected);
 }
 
 #[test]

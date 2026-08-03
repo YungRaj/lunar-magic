@@ -2,7 +2,7 @@ use super::{AggregatePanels, PasteTarget, index, pasted_text};
 use crate::{level_editor_forms, native_clipboard, native_level_document_form};
 use eframe::egui;
 use lm_app::{NativeLevelAssetsControllerEdit, NativeLevelEdit};
-use lm_level::{ObjectEdit, SpriteToken};
+use lm_level::{ObjectEdit, SpriteLengthTable, SpriteToken};
 use lm_project::{LoadedLevelSlot, NativeLevelAssetsFile};
 
 impl AggregatePanels {
@@ -10,6 +10,7 @@ impl AggregatePanels {
         &mut self,
         ui: &mut egui::Ui,
         file: &NativeLevelAssetsFile,
+        sprite_lengths: &SpriteLengthTable,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let level = &file.assets.level;
         ui.label(format!(
@@ -97,24 +98,31 @@ impl AggregatePanels {
             &mut self.object_index,
             level.layer1.objects.records.len(),
         );
-        ui.text_edit_singleline(&mut self.object);
+        ui.text_edit_singleline(&mut self.level_record.object);
+        object_semantic_fields(ui, &mut self.level_record);
         let mut action = None;
+        let mut apply_object_fields = false;
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load").clicked() {
-                self.object = level
-                    .layer1
-                    .objects
-                    .records
-                    .get(self.object_index)
-                    .map_or_else(String::new, |record| {
-                        level_editor_forms::format_bytes(record.encoded())
-                    });
+                let screen = object_screen(level, self.object_index);
+                self.level_record
+                    .load_object(level.layer1.objects.records.get(self.object_index), screen);
             }
             for (label, value) in [("Insert", 0), ("Replace", 1), ("Remove", 2)] {
                 if ui.button(label).clicked() {
                     action = Some(value);
                 }
+            }
+            if ui
+                .add_enabled(
+                    self.level_record.object_fields_loaded
+                        && self.object_index < level.layer1.objects.records.len(),
+                    egui::Button::new("Apply object fields"),
+                )
+                .clicked()
+            {
+                apply_object_fields = true;
             }
             if ui
                 .add_enabled(
@@ -143,6 +151,13 @@ impl AggregatePanels {
         if let Some(error) = copy_error {
             return Some(Err(error));
         }
+        if apply_object_fields {
+            return Some(
+                self.level_record
+                    .object_field_edit(self.object_index)
+                    .map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit])),
+            );
+        }
         if self.paste_target == Some(PasteTarget::Object)
             && let Some(text) = pasted_text(ui)
         {
@@ -161,7 +176,7 @@ impl AggregatePanels {
                 2 => Ok(ObjectEdit::Remove {
                     index: self.object_index,
                 }),
-                _ => level_editor_forms::parse_object(&self.object).map(|record| {
+                _ => level_editor_forms::parse_object(&self.level_record.object).map(|record| {
                     if action == 0 {
                         ObjectEdit::Insert {
                             index: self.object_index,
@@ -180,13 +195,14 @@ impl AggregatePanels {
             }));
         }
         ui.separator();
-        self.sprite_panel(ui, level)
+        self.sprite_panel(ui, level, sprite_lengths)
     }
 
     fn sprite_panel(
         &mut self,
         ui: &mut egui::Ui,
         level: &LoadedLevelSlot,
+        sprite_lengths: &SpriteLengthTable,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         ui.heading(format!("Sprite tokens ({})", level.sprites.tokens.len()));
         index(ui, &mut self.sprite_index, level.sprites.tokens.len());
@@ -194,19 +210,15 @@ impl AggregatePanels {
             ui.label("Header");
             ui.text_edit_singleline(&mut self.sprite_header);
         });
-        ui.text_edit_singleline(&mut self.sprite);
+        ui.text_edit_singleline(&mut self.level_record.sprite);
+        sprite_semantic_fields(ui, &mut self.level_record);
         let mut action = None;
+        let mut apply_sprite_fields = false;
         let mut copy_error = None;
         ui.horizontal(|ui| {
             if ui.button("Load record").clicked() {
-                self.sprite = match level.sprites.tokens.get(self.sprite_index) {
-                    Some(SpriteToken::Record(record)) => {
-                        level_editor_forms::format_bytes(&record.encoded)
-                    }
-                    Some(SpriteToken::Screen(value)) => format!("yhigh {value:02X}"),
-                    Some(SpriteToken::Control(value)) => format!("control {value:02X}"),
-                    None => String::new(),
-                };
+                self.level_record
+                    .load_sprite(level.sprites.tokens.get(self.sprite_index));
             }
             for (label, value) in [
                 ("Apply header", 0),
@@ -217,6 +229,16 @@ impl AggregatePanels {
                 if ui.button(label).clicked() {
                     action = Some(value);
                 }
+            }
+            if ui
+                .add_enabled(
+                    self.level_record.sprite_fields_loaded
+                        && self.sprite_index < level.sprites.tokens.len(),
+                    egui::Button::new("Apply sprite fields"),
+                )
+                .clicked()
+            {
+                apply_sprite_fields = true;
             }
             let selected = level.sprites.tokens.get(self.sprite_index);
             if ui
@@ -241,6 +263,17 @@ impl AggregatePanels {
         if let Some(error) = copy_error {
             return Some(Err(error));
         }
+        if apply_sprite_fields {
+            return Some(
+                self.level_record
+                    .sprite_field_edit(
+                        self.sprite_index,
+                        level.sprites.tokens.get(self.sprite_index),
+                        sprite_lengths,
+                    )
+                    .map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit])),
+            );
+        }
         if self.paste_target == Some(PasteTarget::Sprite)
             && let Some(text) = pasted_text(ui)
         {
@@ -259,23 +292,69 @@ impl AggregatePanels {
                 3 => Ok(NativeLevelEdit::RemoveSprite {
                     index: self.sprite_index,
                 }),
-                _ => native_level_document_form::parse_sprite_token(&self.sprite).map(|token| {
-                    if action == 1 {
-                        NativeLevelEdit::InsertSprite {
-                            index: self.sprite_index,
-                            token,
+                _ => native_level_document_form::parse_sprite_token(&self.level_record.sprite).map(
+                    |token| {
+                        if action == 1 {
+                            NativeLevelEdit::InsertSprite {
+                                index: self.sprite_index,
+                                token,
+                            }
+                        } else {
+                            NativeLevelEdit::ReplaceSprite {
+                                index: self.sprite_index,
+                                token,
+                            }
                         }
-                    } else {
-                        NativeLevelEdit::ReplaceSprite {
-                            index: self.sprite_index,
-                            token,
-                        }
-                    }
-                }),
+                    },
+                ),
             };
             edit.map(|edit| NativeLevelAssetsControllerEdit::Level(vec![edit]))
         })
     }
+}
+
+fn semantic_field_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {
+    ui.label(label);
+    ui.add(egui::DragValue::new(value).range(0..=maximum));
+    ui.end_row();
+}
+
+fn object_semantic_fields(
+    ui: &mut egui::Ui,
+    form: &mut native_level_document_form::NativeLevelRecordForm,
+) {
+    egui::Grid::new("native-assets-object-semantic-fields").show(ui, |ui| {
+        semantic_field_row(ui, "Command", &mut form.object_command, 0x3f);
+        semantic_field_row(ui, "Parameter", &mut form.object_parameter, 0xff);
+        semantic_field_row(ui, "First coordinate", &mut form.object_first, 0x0f);
+        semantic_field_row(ui, "Second coordinate", &mut form.object_second, 0x0f);
+        ui.label("Screen");
+        ui.add(egui::DragValue::new(&mut form.object_screen).range(0..=0x1f));
+        ui.end_row();
+    });
+}
+
+fn object_screen(level: &LoadedLevelSlot, index: usize) -> Option<u16> {
+    level
+        .layer1
+        .objects
+        .native_placements()
+        .into_iter()
+        .find(|placement| placement.record_index == index)
+        .map(|placement| placement.screen)
+}
+
+fn sprite_semantic_fields(
+    ui: &mut egui::Ui,
+    form: &mut native_level_document_form::NativeLevelRecordForm,
+) {
+    egui::Grid::new("native-assets-sprite-semantic-fields").show(ui, |ui| {
+        semantic_field_row(ui, "Sprite number", &mut form.sprite_number, 0xff);
+        semantic_field_row(ui, "Screen", &mut form.sprite_screen, 0x1f);
+        semantic_field_row(ui, "X", &mut form.sprite_x, 0x0f);
+        semantic_field_row(ui, "Y (low 5 bits)", &mut form.sprite_y_low, 0x1f);
+        semantic_field_row(ui, "Extra bits", &mut form.sprite_extra_bits, 3);
+    });
 }
 
 fn header_row(ui: &mut egui::Ui, label: &str, value: &mut u8, maximum: u8) {

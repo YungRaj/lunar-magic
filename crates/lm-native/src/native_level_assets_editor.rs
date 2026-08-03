@@ -195,6 +195,7 @@ impl NativeLevelAssetsEditor {
                 None,
                 &document.modes,
                 &document.ownership,
+                document.controller.sprite_lengths(),
             )
         });
         if let Some(edit) = edit {

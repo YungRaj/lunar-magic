@@ -818,6 +818,7 @@ impl RomLevelAssetsEditor {
                     workspace.controller.exanimation_features(),
                     &workspace.profile.exanimation_double_size_modes,
                     &workspace.ownership,
+                    workspace.controller.sprite_lengths(),
                 )
             })
             .inner;

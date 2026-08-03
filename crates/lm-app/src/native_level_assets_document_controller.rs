@@ -94,6 +94,11 @@ impl NativeLevelAssetsDocumentController {
     }
 
     #[must_use]
+    pub const fn sprite_lengths(&self) -> &SpriteLengthTable {
+        &self.sprite_lengths
+    }
+
+    #[must_use]
     pub fn is_modified(&self) -> bool {
         self.value != self.saved
     }

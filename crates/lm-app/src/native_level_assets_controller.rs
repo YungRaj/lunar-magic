@@ -399,6 +399,11 @@ impl NativeLevelAssetsController {
         self.layer2_descriptor
     }
 
+    #[must_use]
+    pub const fn sprite_lengths(&self) -> &SpriteLengthTable {
+        &self.sprite_lengths
+    }
+
     /// Returns the reserved source mode that Lunar Magic compatibility normalized to mode `$00`.
     #[must_use]
     pub const fn normalized_reserved_level_mode(&self) -> Option<u8> {

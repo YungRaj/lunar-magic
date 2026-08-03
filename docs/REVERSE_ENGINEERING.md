@@ -3097,3 +3097,16 @@ exposes Undo/Redo before commit, disables them for stale or file-busy sessions,
 and clears pending destructive confirmations whenever history moves. A
 cross-domain regression commits the history-selected state and reopens the
 same core and Layer 2 aggregate from ROM.
+
+The shared portable/installed native-assets Level panel now exposes the same
+lossless semantic record fields as the standalone native-level editor. An
+ordinary object can edit its command, parameter, coordinate nibbles, and
+resolved screen as one atomic object batch. A sprite record can edit its
+number, screen, X, low five Y bits, and extra bits while preserving opaque
+extension bytes. Both aggregate controllers expose the immutable sprite-length
+table retained at decode, so semantic sprite replacement validates the exact
+standard or custom record width instead of assuming three bytes. Control
+tokens and objects without an ordinary placement keep semantic actions
+disabled, and revision reloads invalidate previously loaded field forms. A ROM
+commit/reopen regression proves combined semantic object relocation and sprite
+field replacement survive installed persistence exactly.

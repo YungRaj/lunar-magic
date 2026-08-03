@@ -33,7 +33,7 @@ pub(super) enum PasteTarget {
 pub(crate) struct AggregatePanels {
     tab: usize,
     object_index: usize,
-    object: String,
+    level_record: native_level_document_form::NativeLevelRecordForm,
     header: native_level_document_form::NativeLevelHeaderForm,
     layer2_object_index: usize,
     layer2_object: String,
@@ -46,7 +46,6 @@ pub(crate) struct AggregatePanels {
     layer2_remap_offset: i32,
     layer2_remap_selection_only: bool,
     sprite_index: usize,
-    sprite: String,
     sprite_header: String,
     selected_color: usize,
     global: exanimation_form::GlobalForm,
@@ -82,6 +81,7 @@ impl AggregatePanels {
         features: Option<LoadedExAnimationFeatures>,
         modes: &[bool; 256],
         ownership: &PaletteOwnership,
+        sprite_lengths: &lm_level::SpriteLengthTable,
     ) -> Option<Result<NativeLevelAssetsControllerEdit, String>> {
         let (layer2, layer2_descriptor) = layer2;
         self.load(revision, file, features, modes);
@@ -97,7 +97,7 @@ impl AggregatePanels {
         });
         ui.separator();
         match (layer2, self.tab) {
-            (_, 0) => self.level_panel(ui, file),
+            (_, 0) => self.level_panel(ui, file, sprite_lengths),
             (Some(layer2), 1) => self.layer2_panel(ui, layer2, layer2_descriptor),
             (Some(_), 2) | (None, 1) => self.palette_panel(ui, file, ownership),
             (Some(_), 3) | (None, 2) => self.animation_panel(ui, file, modes),
@@ -116,6 +116,8 @@ impl AggregatePanels {
             return;
         }
         let assets = &file.assets;
+        self.level_record.object_fields_loaded = false;
+        self.level_record.sprite_fields_loaded = false;
         self.header = native_level_document_form::NativeLevelHeaderForm::load(&assets.level);
         self.exanimation_features = features.map(|features| features.options);
         self.sprite_header = format!("{:02X}", assets.level.sprites.header);
