@@ -1045,18 +1045,28 @@ fn command_script_drives_mwl_lifecycle_and_dirty_eof_policy() {
     fs::create_dir(&directory).unwrap();
     let document = directory.join("level with spaces.mwl");
     let edits = directory.join("MWL edits.txt");
+    let layer3 = directory.join("Layer 3 settings.txt");
     let save_commands = directory.join("save commands.txt");
     let dirty_commands = directory.join("dirty commands.txt");
-    fs::write(&document, mwl_file().encode().unwrap()).unwrap();
+    let mut source = mwl_file();
+    source
+        .set_expanded_settings_section(&ExpandedLevelSettingsRecord::decode(&[0x5a; 32]).unwrap());
+    fs::write(&document, source.encode().unwrap()).unwrap();
     fs::write(
         &edits,
         "LMWLEDT1\nflags 12345678\nlevel 1ab\nsection layer1 aabbccdd\n",
     )
     .unwrap();
+    fs::write(
+        &layer3,
+        "LMMWLL31\nenabled true\nfile abc\nlength-selector 2\noffset-selector 3\nexpanded-mode 89abcdef\n",
+    )
+    .unwrap();
     let edit_commands = format!(
-        "mwl-open {}\nmwl-edit-file {}\nmwl-undo\nmwl-redo\nmwl-status\n",
+        "mwl-open {}\nmwl-edit-file {}\nmwl-edit-layer3-settings-file {}\nmwl-undo\nmwl-redo\nmwl-status\n",
         document.display(),
-        edits.display()
+        edits.display(),
+        layer3.display()
     );
     fs::write(
         &save_commands,
@@ -1088,6 +1098,19 @@ fn command_script_drives_mwl_lifecycle_and_dirty_eof_policy() {
             .level_number(),
         0x01ab
     );
+    let settings = saved.expanded_settings_section().unwrap();
+    assert!(settings.layer3_tilemap_enabled());
+    assert_eq!(
+        settings
+            .layer3_tilemap_graphics_descriptor()
+            .unwrap()
+            .packed(),
+        0xeabc
+    );
+    assert_eq!(settings.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
+    for word in 8..16 {
+        assert_eq!(settings.word(word).unwrap() & 0x0fff, 0x0a5a);
+    }
 
     fs::write(&edits, "LMWLEDT1\nflags fedcba98\n").unwrap();
     fs::write(&dirty_commands, &edit_commands).unwrap();

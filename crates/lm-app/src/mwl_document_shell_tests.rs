@@ -58,7 +58,7 @@ fn layer3_settings_spec_participates_in_history_and_save() {
     fs::write(&document, target.encode().unwrap()).unwrap();
     fs::write(
         &spec,
-        "LMMWLL31\nenabled true\nfile 028\nlength-selector 2\noffset-selector 0\n",
+        "LMMWLL31\nenabled true\nfile 028\nlength-selector 2\noffset-selector 0\nexpanded-mode 89abcdef\n",
     )
     .unwrap();
     let mut session = None;
@@ -77,6 +77,7 @@ fn layer3_settings_spec_participates_in_history_and_save() {
             .packed(),
         0x2028
     );
+    assert_eq!(edited.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
     assert!(controller.undo(1).unwrap());
     assert_eq!(
         controller
@@ -98,6 +99,14 @@ fn layer3_settings_spec_participates_in_history_and_save() {
             .unwrap()
             .packed(),
         0x2028
+    );
+    assert_eq!(
+        saved
+            .expanded_settings_section()
+            .unwrap()
+            .layer3_expanded_mode_flags()
+            .packed(),
+        0x89ab_cdef
     );
     fs::remove_file(document).unwrap();
     fs::remove_file(spec).unwrap();

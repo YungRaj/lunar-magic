@@ -35,6 +35,7 @@ struct OptionalAssetsInterpretation {
 pub(crate) struct MwlEditor {
     controller: Option<MwlDocumentController>,
     form: MwlForm,
+    layer3_settings: crate::expanded_settings_editor_form::ExpandedSettingsForm,
     loaded_header_revision: Option<u64>,
     loaded_section_key: Option<(u64, usize)>,
     error: Option<String>,
@@ -54,6 +55,7 @@ impl Default for MwlEditor {
         Self {
             controller: None,
             form: MwlForm::default(),
+            layer3_settings: Default::default(),
             loaded_header_revision: None,
             loaded_section_key: None,
             error: None,
@@ -146,6 +148,13 @@ impl MwlEditor {
             self.form.section_index = section_index.min(MwlFile::SECTION_COUNT - 1);
             self.loaded_header_revision = Some(revision);
             self.loaded_section_key = None;
+            self.layer3_settings = controller
+                .value()
+                .expanded_settings_section()
+                .map(|settings| {
+                    crate::expanded_settings_editor_form::ExpandedSettingsForm::load(&settings)
+                })
+                .unwrap_or_default();
         }
         if self.loaded_section_key != Some((revision, self.form.section_index)) {
             self.form
@@ -181,6 +190,7 @@ impl MwlEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+        self.layer3_settings_panel(ui);
         ui.separator();
         self.optional_assets_import_controls(ui);
         self.show_optional_assets_panel(ui);
@@ -235,6 +245,46 @@ impl MwlEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+    }
+
+    fn layer3_settings_panel(&mut self, ui: &mut egui::Ui) {
+        let available = self
+            .controller
+            .as_ref()
+            .is_some_and(|controller| controller.value().expanded_settings_section().is_ok());
+        ui.collapsing("Layer 3 expanded settings", |ui| {
+            if !available {
+                ui.label("This MWL has no exact expanded-settings section.");
+                return;
+            }
+            ui.checkbox(
+                &mut self.layer3_settings.layer3_enabled,
+                "Enable custom Layer 3 tilemap",
+            );
+            text_field(ui, "GFX/ExGFX file", &mut self.layer3_settings.layer3_file);
+            ui.add(
+                egui::Slider::new(&mut self.layer3_settings.layer3_length_selector, 0..=3)
+                    .text("Length selector"),
+            );
+            ui.add(
+                egui::Slider::new(&mut self.layer3_settings.layer3_offset_selector, 0..=3)
+                    .text("Destination selector"),
+            );
+            text_field(
+                ui,
+                "Expanded mode (8 hex digits)",
+                &mut self.layer3_settings.layer3_expanded_mode,
+            );
+            if ui.button("Apply Layer 3 expanded settings").clicked() {
+                match apply_layer3_settings_form(
+                    self.controller.as_mut().expect("availability checked"),
+                    &self.layer3_settings,
+                ) {
+                    Ok(()) => self.invalidate(),
+                    Err(error) => self.error = Some(error),
+                }
+            }
+        });
     }
 
     fn entrance_settings(&mut self, ui: &mut egui::Ui) {
@@ -437,4 +487,69 @@ fn text_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
         ui.label(label);
         ui.text_edit_singleline(value);
     });
+}
+
+fn apply_layer3_settings_form(
+    controller: &mut MwlDocumentController,
+    form: &crate::expanded_settings_editor_form::ExpandedSettingsForm,
+) -> Result<(), String> {
+    let (enabled, descriptor, mode) = form.layer3_settings()?;
+    controller
+        .apply_layer3_settings(controller.revision(), enabled, descriptor, Some(mode))
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lm_level::ExpandedLevelSettingsRecord;
+
+    #[test]
+    fn layer3_native_form_edits_complete_mwl_settings_and_reloads_losslessly() {
+        let mut file = MwlFile::default();
+        let mut bytes = [0x5a; ExpandedLevelSettingsRecord::ENCODED_LEN];
+        bytes[2..4].copy_from_slice(&0x007f_u16.to_le_bytes());
+        let baseline = ExpandedLevelSettingsRecord::decode(&bytes).unwrap();
+        file.set_expanded_settings_section(&baseline);
+        let mut controller =
+            MwlDocumentController::decode("portable.mwl".into(), &file.encode().unwrap()).unwrap();
+        let mut form = crate::expanded_settings_editor_form::ExpandedSettingsForm::load(&baseline);
+        form.layer3_enabled = true;
+        form.layer3_file = "ABC".into();
+        form.layer3_length_selector = 2;
+        form.layer3_offset_selector = 3;
+        form.layer3_expanded_mode = "89ABCDEF".into();
+
+        apply_layer3_settings_form(&mut controller, &form).unwrap();
+
+        let edited = controller.value().expanded_settings_section().unwrap();
+        assert!(edited.layer3_tilemap_enabled());
+        assert_eq!(
+            edited
+                .layer3_tilemap_graphics_descriptor()
+                .unwrap()
+                .packed(),
+            0xeabc
+        );
+        assert_eq!(edited.layer3_expanded_mode_flags().packed(), 0x89ab_cdef);
+        for word in 8..16 {
+            assert_eq!(
+                edited.word(word).unwrap() & 0x0fff,
+                baseline.word(word).unwrap() & 0x0fff
+            );
+        }
+        assert!(controller.undo(1).unwrap());
+        assert_eq!(
+            controller.value().expanded_settings_section().unwrap(),
+            baseline
+        );
+        let revision = controller.revision();
+        form.layer3_expanded_mode = "100000000".into();
+        assert!(apply_layer3_settings_form(&mut controller, &form).is_err());
+        assert_eq!(controller.revision(), revision);
+        assert_eq!(
+            controller.value().expanded_settings_section().unwrap(),
+            baseline
+        );
+    }
 }

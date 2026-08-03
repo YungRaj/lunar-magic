@@ -276,9 +276,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   the domain engine and atomically insert, replace, remove, or reorder frames; neither the terminal
   grammar nor the native panel decides single-versus-double width independently.
 - The exact 32-byte expanded-level settings record has a typed Layer 3 projection over word 0's
-  verified `$2000` enable bit and word 1's packed file/length/destination descriptor. It deliberately
-  retains selector aliases, unrelated flag bits, and all fourteen opaque words. Standalone and MWL
-  CLI adapters, oracle observations, the native semantic form, and a revisioned MWL application
+  verified `$2000` enable bit, word 1's packed file/length/destination descriptor, and the exact
+  32-bit expanded mode scattered across words 8–15. It deliberately retains selector aliases,
+  unrelated flag bits, and every adjacent low 12-bit field. Standalone and MWL CLI adapters, oracle
+  observations, installed and portable native semantic forms, and a revisioned MWL application
   transaction share that projection. The `LMMWLL31` shell adapter owns only bounded specification
   parsing; canonical reopen, undo/redo, save snapshots, and stale-revision rejection remain in the
   document controller. Installing the revision-specific `$4c0` main patch, `$6e00`

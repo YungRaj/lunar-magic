@@ -268,9 +268,10 @@ fn layer3_settings_edit_preserves_opaque_state_and_is_undoable() {
     let mut controller =
         MwlDocumentController::decode("level.mwl".into(), &source.encode().unwrap()).unwrap();
     let descriptor = Layer3TilemapGraphicsDescriptor::new(0xabc, 2, 3).unwrap();
+    let mode = lm_level::Layer3ExpandedModeFlags::from_packed(0x89ab_cdef);
 
     controller
-        .apply_layer3_settings(0, true, descriptor)
+        .apply_layer3_settings(0, true, descriptor, Some(mode))
         .unwrap();
 
     let edited = controller.value().expanded_settings_section().unwrap();
@@ -283,8 +284,16 @@ fn layer3_settings_edit_preserves_opaque_state_and_is_undoable() {
         edited.word(0).unwrap() & !0x2000,
         record.word(0).unwrap() & !0x2000
     );
+    assert_eq!(edited.layer3_expanded_mode_flags(), mode);
     for word in 2..ExpandedLevelSettingsRecord::WORD_COUNT {
-        assert_eq!(edited.word(word).unwrap(), record.word(word).unwrap());
+        if word >= 8 {
+            assert_eq!(
+                edited.word(word).unwrap() & 0x0fff,
+                record.word(word).unwrap() & 0x0fff
+            );
+        } else {
+            assert_eq!(edited.word(word).unwrap(), record.word(word).unwrap());
+        }
     }
     assert!(controller.undo(1).unwrap());
     assert_eq!(
@@ -300,7 +309,7 @@ fn layer3_settings_edit_rejects_missing_section_and_stale_revision_atomically() 
     let descriptor = Layer3TilemapGraphicsDescriptor::new(1, 0, 0).unwrap();
     assert!(
         controller
-            .apply_layer3_settings(0, true, descriptor)
+            .apply_layer3_settings(0, true, descriptor, None)
             .is_err()
     );
     assert_eq!(controller.revision(), 0);
@@ -308,7 +317,7 @@ fn layer3_settings_edit_rejects_missing_section_and_stale_revision_atomically() 
     assert!(!controller.can_undo());
     assert!(
         controller
-            .apply_layer3_settings(1, true, descriptor)
+            .apply_layer3_settings(1, true, descriptor, None)
             .is_err()
     );
     assert_eq!(controller.revision(), 0);

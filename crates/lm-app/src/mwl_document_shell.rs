@@ -42,7 +42,12 @@ fn edit_layer3_settings(
     )?;
     let spec = mwl_layer3_settings_spec::parse(&text)?;
     let controller = session.as_mut().ok_or("no MWL document is open")?;
-    controller.apply_layer3_settings(controller.revision(), spec.enabled, spec.descriptor)?;
+    controller.apply_layer3_settings(
+        controller.revision(),
+        spec.enabled,
+        spec.descriptor,
+        spec.expanded_mode,
+    )?;
     show_mwl_document_status(session.as_ref());
     Ok(())
 }

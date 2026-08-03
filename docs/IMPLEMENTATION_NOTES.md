@@ -761,9 +761,12 @@ domain edit engine, preserves unrelated MWL sections, verifies semantic reopen, 
 aliased destinations, and publishes only after the entire ordered batch succeeds.
 `mwl-edit-layer3-settings-file SPEC` is the corresponding revisioned application-shell workflow
 for the expanded record. Its bounded `LMMWLL31` specification contains `enabled`, hexadecimal
-`file`, `length-selector`, and `offset-selector` fields. The document controller applies them as
-one typed change, preserving unrelated bits, words, and sections through canonical reopen,
-undo/redo, recoverable save, and dirty-close protection.
+`file`, `length-selector`, and `offset-selector` fields plus an optional exact 32-bit
+`expanded-mode`. Omitting the new field preserves the current mode for backward compatibility.
+The document controller and native MWL form apply the complete setting as one typed change; mode
+editing replaces only the high nibbles of words 8–15, preserving their adjacent low 12-bit fields
+and all unrelated bits, words, and sections through canonical reload, undo/redo, recoverable save,
+and dirty-close protection.
 A Wine oracle edited palette color `$100` to BGR555 `$1234` and trigger 3 to `$07` through this
 Rust workflow, imported the result into Lunar Magic 3.63, and re-exported it. All 270 decoded
 optional-asset fields initially matched exactly. The strengthened size-mode-aware observation now

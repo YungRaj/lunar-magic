@@ -240,6 +240,7 @@ impl MwlDocumentController {
         expected_revision: u64,
         enabled: bool,
         descriptor: Layer3TilemapGraphicsDescriptor,
+        expanded_mode: Option<lm_level::Layer3ExpandedModeFlags>,
     ) -> Result<(), MwlDocumentControllerError> {
         if expected_revision != self.revision {
             return Err(MwlDocumentControllerError::StaleRevision {
@@ -257,6 +258,11 @@ impl MwlDocumentController {
         settings
             .set_layer3_tilemap_graphics_descriptor(descriptor)
             .map_err(MwlDocumentControllerError::ExpandedSettings)?;
+        if let Some(expanded_mode) = expanded_mode {
+            settings
+                .set_layer3_expanded_mode_flags(expanded_mode)
+                .map_err(MwlDocumentControllerError::ExpandedSettings)?;
+        }
         staged.set_expanded_settings_section(&settings);
         self.commit_staged(&staged)
     }

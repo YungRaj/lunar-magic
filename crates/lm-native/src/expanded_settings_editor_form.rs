@@ -42,6 +42,30 @@ impl ExpandedSettingsForm {
         Ok(lm_level::Layer3ExpandedModeFlags::from_packed(packed))
     }
 
+    pub(crate) fn layer3_settings(
+        &self,
+    ) -> Result<
+        (
+            bool,
+            Layer3TilemapGraphicsDescriptor,
+            lm_level::Layer3ExpandedModeFlags,
+        ),
+        String,
+    > {
+        let file = level_editor_forms::parse_hex_u16(&self.layer3_file, "Layer 3 graphics file")?;
+        let descriptor = Layer3TilemapGraphicsDescriptor::new(
+            file,
+            self.layer3_length_selector,
+            self.layer3_offset_selector,
+        )
+        .map_err(|error| error.to_string())?;
+        Ok((
+            self.layer3_enabled,
+            descriptor,
+            self.layer3_expanded_mode()?,
+        ))
+    }
+
     pub(crate) fn layer3_edits(&self) -> Result<Vec<(usize, u16)>, String> {
         let mut bytes = [0; ExpandedLevelSettingsRecord::ENCODED_LEN];
         for (index, value) in self.edits()? {
@@ -52,13 +76,7 @@ impl ExpandedSettingsForm {
         record
             .set_layer3_tilemap_enabled(self.layer3_enabled)
             .map_err(|error| error.to_string())?;
-        let file = level_editor_forms::parse_hex_u16(&self.layer3_file, "Layer 3 graphics file")?;
-        let descriptor = Layer3TilemapGraphicsDescriptor::new(
-            file,
-            self.layer3_length_selector,
-            self.layer3_offset_selector,
-        )
-        .map_err(|error| error.to_string())?;
+        let (_, descriptor, _) = self.layer3_settings()?;
         record
             .set_layer3_tilemap_graphics_descriptor(descriptor)
             .map_err(|error| error.to_string())?;
