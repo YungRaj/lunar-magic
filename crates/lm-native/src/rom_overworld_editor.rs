@@ -12,6 +12,9 @@ use lm_app::{
     ProfiledControllerSnapshot, SmwMainOverworldLayer2Controller,
 };
 use lm_graphics::{Palette, PaletteOwnership};
+use lm_overworld::{
+    OverworldEndpoint, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
+};
 use lm_project::{CompleteOverworldFile, CompleteOverworldShape};
 
 mod commit;
@@ -62,8 +65,24 @@ struct Workspace {
 
 struct MainLayer2Workspace {
     controller: SmwMainOverworldLayer2Controller,
+    original_paths: OverworldPathLinkTable,
+    paths: OverworldPathLinkTable,
     palette: Palette,
     assets: OverworldAssets,
+}
+
+#[derive(Default)]
+struct MainPathLinkForm {
+    index: usize,
+    source_x: String,
+    source_y: String,
+    source_submap: String,
+    destination_x: String,
+    destination_y: String,
+    destination_submap: String,
+    target_x: String,
+    target_y: String,
+    loaded: Option<usize>,
 }
 
 #[derive(Default)]
@@ -88,6 +107,7 @@ pub(crate) struct RomOverworldEditor {
     map16_page: usize,
     map16_rendered_key: Option<(u64, usize)>,
     map16_texture: Option<egui::TextureHandle>,
+    main_path: MainPathLinkForm,
     search_start: String,
     search_end: String,
     error: Option<String>,
@@ -119,10 +139,14 @@ impl RomOverworldEditor {
                 "The ROM changed; reopen before editing or committing.",
             );
         }
+        let paths_modified = self
+            .main_layer2_workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.paths != workspace.original_paths);
         ui.label("Gameplay-consumed SMW US main-map Layer 2 (128x64 tiles)");
         self.layer = 1;
-        self.world_canvas(ui, shape, stale);
-        self.main_layer2_tile_controls(ui, shape, stale);
+        self.world_canvas(ui, shape, stale || paths_modified);
+        self.main_layer2_tile_controls(ui, shape, stale || paths_modified);
         ui.separator();
         ui.horizontal(|ui| {
             ui.label("Allocation logical PC hex");
@@ -136,7 +160,7 @@ impl RomOverworldEditor {
             .is_some_and(|workspace| workspace.controller.is_modified());
         if ui
             .add_enabled(
-                modified && !stale,
+                modified && !paths_modified && !stale,
                 egui::Button::new("Commit playable Layer 2 map"),
             )
             .clicked()
@@ -151,7 +175,122 @@ impl RomOverworldEditor {
         } else {
             "No staged map changes"
         });
+        if paths_modified {
+            ui.small("Commit or discard the staged route-link edit before changing terrain.");
+        }
+        ui.separator();
+        if let Some(path_command) = self.main_path_link_controls(ui, stale, modified) {
+            return Some(path_command);
+        }
         None
+    }
+
+    fn main_path_link_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        stale: bool,
+        terrain_modified: bool,
+    ) -> Option<Command> {
+        let path_count = self
+            .main_layer2_workspace
+            .as_ref()
+            .map_or(0, |workspace| workspace.paths.links.len());
+        let paths_modified = self
+            .main_layer2_workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.paths != workspace.original_paths);
+        let mut command = None;
+        ui.collapsing("Gameplay route links", |ui| {
+            ui.label("Native source/destination endpoints and engine target bytes (hexadecimal).");
+            if path_count == 0 {
+                ui.label("No gameplay route links are installed.");
+                return;
+            }
+            let previous = self.main_path.index;
+            ui.add(egui::Slider::new(&mut self.main_path.index, 0..=path_count - 1).text("Link"));
+            if self.main_path.index != previous {
+                self.load_main_path_link();
+            }
+            egui::Grid::new("playable-overworld-path-link-form")
+                .striped(true)
+                .show(ui, |ui| {
+                    path_form_row(ui, "Source X", &mut self.main_path.source_x);
+                    path_form_row(ui, "Source Y", &mut self.main_path.source_y);
+                    path_form_row(ui, "Source submap", &mut self.main_path.source_submap);
+                    path_form_row(ui, "Destination X", &mut self.main_path.destination_x);
+                    path_form_row(ui, "Destination Y", &mut self.main_path.destination_y);
+                    path_form_row(
+                        ui,
+                        "Destination submap",
+                        &mut self.main_path.destination_submap,
+                    );
+                    path_form_row(ui, "Target X tile", &mut self.main_path.target_x);
+                    path_form_row(ui, "Target Y tile", &mut self.main_path.target_y);
+                });
+            ui.horizontal(|ui| {
+                if ui.button("Reload link").clicked() {
+                    self.load_main_path_link();
+                }
+                if ui
+                    .add_enabled(
+                        !stale && !terrain_modified,
+                        egui::Button::new("Apply route link"),
+                    )
+                    .clicked()
+                    && let Err(error) = self.apply_main_path_link()
+                {
+                    self.error = Some(error);
+                }
+                if ui
+                    .add_enabled(
+                        paths_modified && !stale && !terrain_modified,
+                        egui::Button::new("Commit route links"),
+                    )
+                    .clicked()
+                    && let Some(workspace) = self.main_layer2_workspace.as_ref()
+                {
+                    command = Some(Command::ReplaceNativeOverworldPathLinks {
+                        rev: workspace.controller.revision(),
+                        table: Box::new(workspace.paths.clone()),
+                    });
+                }
+            });
+            if terrain_modified {
+                ui.small("Commit or discard the staged terrain edit before changing route links.");
+            } else if paths_modified {
+                ui.small("Staged gameplay route changes");
+            }
+        });
+        command
+    }
+
+    fn load_main_path_link(&mut self) {
+        let Some(link) = self
+            .main_layer2_workspace
+            .as_ref()
+            .and_then(|workspace| workspace.paths.links.get(self.main_path.index))
+            .copied()
+        else {
+            self.main_path.loaded = None;
+            return;
+        };
+        self.main_path.set(link);
+    }
+
+    fn apply_main_path_link(&mut self) -> Result<(), String> {
+        if self.main_path.loaded != Some(self.main_path.index) {
+            return Err("reload the selected route link before applying it".into());
+        }
+        let link = self.main_path.parse()?;
+        let workspace = self
+            .main_layer2_workspace
+            .as_mut()
+            .ok_or("playable overworld workspace is closed")?;
+        let mut staged = workspace.paths.clone();
+        staged.links[self.main_path.index] = link;
+        staged.encode_planes().map_err(|error| error.to_string())?;
+        workspace.paths = staged;
+        Ok(())
     }
 
     fn main_layer2_tile_controls(
@@ -244,6 +383,51 @@ impl RomOverworldEditor {
         self.show_error(context);
         (approved, command)
     }
+}
+
+impl MainPathLinkForm {
+    fn set(&mut self, link: OverworldPathLink) {
+        self.source_x = format!("{:04X}", link.source.x);
+        self.source_y = format!("{:04X}", link.source.y);
+        self.source_submap = format!("{:02X}", link.source.submap);
+        self.destination_x = format!("{:04X}", link.destination.x);
+        self.destination_y = format!("{:04X}", link.destination.y);
+        self.destination_submap = format!("{:02X}", link.destination.submap);
+        self.target_x = format!("{:02X}", link.target.x_tile);
+        self.target_y = format!("{:02X}", link.target.y_tile);
+        self.loaded = Some(self.index);
+    }
+
+    fn parse(&self) -> Result<OverworldPathLink, String> {
+        Ok(OverworldPathLink {
+            source: OverworldEndpoint {
+                x: level_editor_forms::parse_hex_u16(&self.source_x, "route source X")?,
+                y: level_editor_forms::parse_hex_u16(&self.source_y, "route source Y")?,
+                submap: level_editor_forms::parse_hex_u8(
+                    &self.source_submap,
+                    "route source submap",
+                )?,
+            },
+            destination: OverworldEndpoint {
+                x: level_editor_forms::parse_hex_u16(&self.destination_x, "route destination X")?,
+                y: level_editor_forms::parse_hex_u16(&self.destination_y, "route destination Y")?,
+                submap: level_editor_forms::parse_hex_u8(
+                    &self.destination_submap,
+                    "route destination submap",
+                )?,
+            },
+            target: OverworldPathTarget {
+                x_tile: level_editor_forms::parse_hex_u8(&self.target_x, "route target X")?,
+                y_tile: level_editor_forms::parse_hex_u8(&self.target_y, "route target Y")?,
+            },
+        })
+    }
+}
+
+fn path_form_row(ui: &mut egui::Ui, label: &str, value: &mut String) {
+    ui.label(label);
+    ui.text_edit_singleline(value);
+    ui.end_row();
 }
 
 impl RomOverworldEditor {
@@ -944,7 +1128,8 @@ fn flood_fill_cells(
 #[cfg(test)]
 mod canvas_tests {
     use super::{
-        OverworldControllerEdit, OverworldLayerId, flood_fill_cells, grid_line, rectangle_cells,
+        MainPathLinkForm, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
+        OverworldPathLink, OverworldPathTarget, flood_fill_cells, grid_line, rectangle_cells,
         stroke_edits,
     };
 
@@ -1006,5 +1191,34 @@ mod canvas_tests {
         assert_eq!(flood_fill_cells(3, 3, &tiles, (2, 0)), vec![(2, 0)]);
         assert!(flood_fill_cells(3, 3, &tiles[..8], (0, 0)).is_empty());
         assert!(flood_fill_cells(3, 3, &tiles, (3, 0)).is_empty());
+    }
+
+    #[test]
+    fn integrated_route_form_round_trips_every_native_field() {
+        let link = OverworldPathLink {
+            source: OverworldEndpoint {
+                x: 0x1234,
+                y: 0x5678,
+                submap: 0x9a,
+            },
+            destination: OverworldEndpoint {
+                x: 0xbcde,
+                y: 0xf012,
+                submap: 0x34,
+            },
+            target: OverworldPathTarget {
+                x_tile: 0x56,
+                y_tile: 0x78,
+            },
+        };
+        let mut form = MainPathLinkForm {
+            index: 3,
+            ..Default::default()
+        };
+        form.set(link);
+        assert_eq!(form.loaded, Some(3));
+        assert_eq!(form.parse().unwrap(), link);
+        form.target_x = "100".into();
+        assert!(form.parse().is_err());
     }
 }

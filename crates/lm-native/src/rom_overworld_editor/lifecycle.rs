@@ -60,6 +60,8 @@ impl RomOverworldEditor {
                     self.y = 0;
                     self.paint_anchor = None;
                     self.map16_page = 0;
+                    self.main_path = Default::default();
+                    self.load_main_path_link();
                     self.invalidate();
                 }
                 Err(native_error) => {
@@ -91,7 +93,10 @@ impl RomOverworldEditor {
             || self
                 .main_layer2_workspace
                 .as_ref()
-                .is_some_and(|workspace| workspace.controller.is_modified());
+                .is_some_and(|workspace| {
+                    workspace.controller.is_modified()
+                        || workspace.paths != workspace.original_paths
+                });
         if !modified {
             self.clear();
             return true;
@@ -199,7 +204,7 @@ impl RomOverworldEditor {
             .resizable(false)
             .show(context, |ui| {
                 ui.label(if self.main_layer2_workspace.is_some() {
-                    "Playable Layer 2 map changes have not been committed."
+                    "Playable terrain or route-link changes have not been committed."
                 } else {
                     "Changes across the nine payloads have not been committed."
                 });
@@ -255,6 +260,10 @@ fn decode_main_layer2_workspace(
     let image =
         RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(|error| error.to_string())?;
     let project = Project::new(image.clone());
+    let paths = project
+        .load_overworld_path_links_detected(lm_profile::smw_us_v1_overworld_path_patch_locator())
+        .map_err(|error| format!("could not load gameplay route links: {error}"))?
+        .table;
     let mut map16_snapshot = snapshot.clone();
     map16_snapshot.mode = lm_app::EditorMode::Map16;
     let map16 =
@@ -280,6 +289,8 @@ fn decode_main_layer2_workspace(
     palette.colors.truncate(complete_colors);
     Ok(MainLayer2Workspace {
         controller,
+        original_paths: paths.clone(),
+        paths,
         palette,
         assets: crate::overworld_editor_render::OverworldAssets {
             map16: Map16SetFile {
@@ -444,6 +455,11 @@ mod tests {
         );
         assert_eq!(workspace.assets.map16.set.pages.len(), 0x100);
         assert_eq!(workspace.assets.graphics.graphics.tiles.len(), 0x200);
+        assert_eq!(
+            workspace.paths.links.len(),
+            workspace.original_paths.links.len()
+        );
+        assert!(!workspace.paths.links.is_empty());
         let canvas = lm_render::render_portable_overworld_layer(
             2,
             workspace.controller.layer(),
@@ -510,5 +526,35 @@ mod tests {
         let restored =
             lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap()).unwrap();
         assert_eq!(restored.layer.tile(12, 9).unwrap(), original);
+
+        let original_paths = workspace.paths.clone();
+        workspace.paths.links[0].destination.x ^= 1;
+        workspace.paths.links[0].target.x_tile ^= 1;
+        app.dispatch(lm_app::Command::ReplaceNativeOverworldPathLinks {
+            rev: app.project_revision(),
+            table: Box::new(workspace.paths.clone()),
+        })
+        .unwrap();
+        assert_eq!(
+            app.project()
+                .unwrap()
+                .load_overworld_path_links_detected(
+                    lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                )
+                .unwrap()
+                .table,
+            workspace.paths
+        );
+        app.dispatch(lm_app::Command::Undo).unwrap();
+        assert_eq!(
+            app.project()
+                .unwrap()
+                .load_overworld_path_links_detected(
+                    lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                )
+                .unwrap()
+                .table,
+            original_paths
+        );
     }
 }

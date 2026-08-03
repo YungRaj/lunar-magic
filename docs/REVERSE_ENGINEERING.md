@@ -2342,6 +2342,11 @@ vanilla overworld graphics slots `$1C-$1F`, and the shared working palette. The 
 2 alone instead of fabricating unauthenticated Layer 1 data, and the existing brush, rectangle,
 flood-fill, visual Map16 picker, revision-bound commit, semantic reopen, and application Undo paths
 operate directly on the gameplay-consumed streams.
+The same profile-free window now loads the engine-detected native path-link table and exposes every
+source endpoint, destination endpoint, submap byte, and engine target coordinate beside the map.
+Route commits use the existing revision-checked application command, semantic reopen, checksum,
+and Undo path. Terrain and route batches are deliberately staged one at a time so committing one
+domain cannot silently discard an uncommitted edit in the other.
 
 The ignored `native_main_overworld_layer2_paint_survives_snes9x_initialization` integration gate
 drives that same application controller over a four-cell paint, commits the ROM, reopens the entire
