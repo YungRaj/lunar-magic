@@ -26,6 +26,15 @@ enum Panel {
     Animation,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum MapPaintTool {
+    #[default]
+    Select,
+    Brush,
+    Rectangle,
+    Fill,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
     Editor,
@@ -64,7 +73,7 @@ pub(crate) struct RomOverworldEditor {
     y: usize,
     tile: String,
     loaded: Option<(u64, usize, usize, usize)>,
-    paint_enabled: bool,
+    paint_tool: MapPaintTool,
     paint_anchor: Option<(usize, usize)>,
     completed_reveals: usize,
     rendered_key: Option<(u64, usize)>,
@@ -286,15 +295,18 @@ impl RomOverworldEditor {
             return;
         };
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.paint_enabled, "Paint selected Map16 tile");
-            if self.paint_enabled {
-                ui.label("Drag across the map to paint a continuous stroke.");
-            }
+            ui.selectable_value(&mut self.paint_tool, MapPaintTool::Select, "Select");
+            ui.selectable_value(&mut self.paint_tool, MapPaintTool::Brush, "Brush");
+            ui.selectable_value(&mut self.paint_tool, MapPaintTool::Rectangle, "Rectangle");
+            ui.selectable_value(&mut self.paint_tool, MapPaintTool::Fill, "Fill");
         });
-        let mut paint_position = None;
+        let mut action = None;
         egui::ScrollArea::both().max_height(420.0).show(ui, |ui| {
             let response = ui.add(egui::Image::new(&texture).sense(egui::Sense::click_and_drag()));
-            if (response.clicked() || response.dragged())
+            if (response.clicked()
+                || response.dragged()
+                || response.drag_started()
+                || response.drag_stopped())
                 && let Some(position) = response.interact_pointer_pos()
                 && let Some((x, y)) = overworld_editor_render::selected_tile(
                     response.rect,
@@ -306,11 +318,34 @@ impl RomOverworldEditor {
                 self.x = x;
                 self.y = y;
                 self.loaded = None;
-                if self.paint_enabled && !stale {
-                    paint_position = Some((x, y));
-                } else {
-                    self.load_tile();
-                    self.refresh_map16_texture(ui.ctx());
+                match self.paint_tool {
+                    MapPaintTool::Select => {
+                        self.load_tile();
+                        self.refresh_map16_texture(ui.ctx());
+                    }
+                    MapPaintTool::Brush if !stale => action = Some((MapPaintTool::Brush, (x, y))),
+                    MapPaintTool::Fill if !stale && response.clicked() => {
+                        action = Some((MapPaintTool::Fill, (x, y)));
+                    }
+                    MapPaintTool::Rectangle if !stale => {
+                        if response.drag_started() {
+                            self.paint_anchor = ui
+                                .input(|input| input.pointer.press_origin())
+                                .and_then(|origin| {
+                                    overworld_editor_render::selected_tile(
+                                        response.rect,
+                                        origin,
+                                        shape.width,
+                                        shape.height,
+                                    )
+                                })
+                                .or(Some((x, y)));
+                        }
+                        if response.drag_stopped() || response.clicked() {
+                            action = Some((MapPaintTool::Rectangle, (x, y)));
+                        }
+                    }
+                    _ => {}
                 }
             }
             if shape.width > 0 && shape.height > 0 {
@@ -330,10 +365,16 @@ impl RomOverworldEditor {
                 );
             }
         });
-        if let Some(position) = paint_position {
-            self.paint_to(position);
+        if let Some((tool, position)) = action {
+            match tool {
+                MapPaintTool::Brush => self.paint_to(position),
+                MapPaintTool::Rectangle => self.paint_rectangle_to(position),
+                MapPaintTool::Fill => self.fill_at(position),
+                MapPaintTool::Select => {}
+            }
         }
-        if !ui.input(|input| input.pointer.primary_down()) {
+        if self.paint_tool == MapPaintTool::Brush && !ui.input(|input| input.pointer.primary_down())
+        {
             self.paint_anchor = None;
         }
     }
@@ -410,19 +451,54 @@ impl RomOverworldEditor {
     }
 
     fn paint_to(&mut self, position: (usize, usize)) {
-        let tile = match level_editor_forms::parse_hex_u16(&self.tile, "overworld tile") {
-            Ok(tile) => tile,
-            Err(error) => {
-                self.error = Some(error);
-                self.paint_anchor = None;
-                return;
-            }
+        let Some(tile) = self.brush_tile() else {
+            return;
         };
         let cells = grid_line(self.paint_anchor.unwrap_or(position), position);
         self.paint_anchor = Some(position);
         let layer = self.layer_id();
         let edits = stroke_edits(layer, &cells, tile, |x, y| self.current_tile(layer, x, y));
         self.apply_many(&edits);
+    }
+
+    fn paint_rectangle_to(&mut self, position: (usize, usize)) {
+        let Some(tile) = self.brush_tile() else {
+            return;
+        };
+        let start = self.paint_anchor.take().unwrap_or(position);
+        let cells = rectangle_cells(start, position);
+        let layer = self.layer_id();
+        let edits = stroke_edits(layer, &cells, tile, |x, y| self.current_tile(layer, x, y));
+        self.apply_many(&edits);
+    }
+
+    fn fill_at(&mut self, position: (usize, usize)) {
+        let Some(tile) = self.brush_tile() else {
+            return;
+        };
+        let layer = self.layer_id();
+        let Some(workspace) = self.workspace.as_ref() else {
+            return;
+        };
+        let shape = workspace.profiled.profile.overworld_shape;
+        let source = match layer {
+            OverworldLayerId::Layer1 => &workspace.controller.data().layers.layer1.tiles,
+            OverworldLayerId::Layer2 => &workspace.controller.data().layers.layer2.tiles,
+        };
+        let cells = flood_fill_cells(shape.width, shape.height, source, position);
+        let edits = stroke_edits(layer, &cells, tile, |x, y| self.current_tile(layer, x, y));
+        self.apply_many(&edits);
+    }
+
+    fn brush_tile(&mut self) -> Option<u16> {
+        match level_editor_forms::parse_hex_u16(&self.tile, "overworld tile") {
+            Ok(tile) => Some(tile),
+            Err(error) => {
+                self.error = Some(error);
+                self.paint_anchor = None;
+                None
+            }
+        }
     }
 
     fn current_tile(&self, layer: OverworldLayerId, x: usize, y: usize) -> Option<u16> {
@@ -598,9 +674,68 @@ fn stroke_edits(
         .collect()
 }
 
+fn rectangle_cells(start: (usize, usize), end: (usize, usize)) -> Vec<(usize, usize)> {
+    let minimum_x = start.0.min(end.0);
+    let maximum_x = start.0.max(end.0);
+    let minimum_y = start.1.min(end.1);
+    let maximum_y = start.1.max(end.1);
+    (minimum_y..=maximum_y)
+        .flat_map(|y| (minimum_x..=maximum_x).map(move |x| (x, y)))
+        .collect()
+}
+
+fn flood_fill_cells(
+    width: usize,
+    height: usize,
+    tiles: &[u16],
+    start: (usize, usize),
+) -> Vec<(usize, usize)> {
+    let Some(cell_count) = width.checked_mul(height) else {
+        return Vec::new();
+    };
+    if width == 0
+        || height == 0
+        || tiles.len() != cell_count
+        || start.0 >= width
+        || start.1 >= height
+    {
+        return Vec::new();
+    }
+    let start_index = start.1 * width + start.0;
+    let target = tiles[start_index];
+    let mut visited = vec![false; cell_count];
+    let mut pending = vec![start];
+    let mut cells = Vec::new();
+    while let Some((x, y)) = pending.pop() {
+        let index = y * width + x;
+        if visited[index] || tiles[index] != target {
+            continue;
+        }
+        visited[index] = true;
+        cells.push((x, y));
+        if x > 0 {
+            pending.push((x - 1, y));
+        }
+        if x + 1 < width {
+            pending.push((x + 1, y));
+        }
+        if y > 0 {
+            pending.push((x, y - 1));
+        }
+        if y + 1 < height {
+            pending.push((x, y + 1));
+        }
+    }
+    cells.sort_unstable_by_key(|&(x, y)| (y, x));
+    cells
+}
+
 #[cfg(test)]
 mod canvas_tests {
-    use super::{OverworldControllerEdit, OverworldLayerId, grid_line, stroke_edits};
+    use super::{
+        OverworldControllerEdit, OverworldLayerId, flood_fill_cells, grid_line, rectangle_cells,
+        stroke_edits,
+    };
 
     #[test]
     fn drag_strokes_cover_skipped_grid_cells_in_both_directions() {
@@ -640,5 +775,25 @@ mod canvas_tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn rectangle_cells_are_normalized_and_row_major() {
+        assert_eq!(
+            rectangle_cells((3, 2), (1, 1)),
+            vec![(1, 1), (2, 1), (3, 1), (1, 2), (2, 2), (3, 2)]
+        );
+    }
+
+    #[test]
+    fn flood_fill_is_four_connected_bounded_and_row_major() {
+        let tiles = [1, 1, 9, 1, 9, 2, 2, 2, 2];
+        assert_eq!(
+            flood_fill_cells(3, 3, &tiles, (0, 0)),
+            vec![(0, 0), (1, 0), (0, 1)]
+        );
+        assert_eq!(flood_fill_cells(3, 3, &tiles, (2, 0)), vec![(2, 0)]);
+        assert!(flood_fill_cells(3, 3, &tiles[..8], (0, 0)).is_empty());
+        assert!(flood_fill_cells(3, 3, &tiles, (3, 0)).is_empty());
     }
 }

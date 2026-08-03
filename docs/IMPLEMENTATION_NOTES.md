@@ -1003,7 +1003,11 @@ successful edit invalidate the raster key, while render failure leaves the prope
 The installed canvas can also retain a visually selected Map16 brush and paint either layer by
 clicking or dragging. Bresenham traversal covers intermediate grid cells when pointer samples skip
 coordinates, unchanged cells are omitted, and each sampled segment is submitted as one ordered
-typed controller batch. A collapsible 16-by-16 visual page picker uses the live overworld palette,
+typed controller batch. Rectangle painting normalizes either drag direction, retains the original
+pointer-down cell across the drag threshold, and emits row-major edits. Four-connected flood fill
+validates the exact rectangular layer shape, never crosses a different 16-bit tile value, and
+orders the bounded result deterministically before the same atomic edit boundary. A collapsible
+16-by-16 visual page picker uses the live overworld palette,
 native graphics atlas, and complete decoded Map16 set; selecting a cell updates the exact 16-bit
 brush value, while pages that reference graphics outside the overworld VRAM remain unavailable
 without disabling hexadecimal selection or property editing.

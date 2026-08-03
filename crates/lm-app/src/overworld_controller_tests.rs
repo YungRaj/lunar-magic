@@ -311,6 +311,70 @@ fn mixed_domains_expand_dispatch_reload_and_undo_as_one() {
     assert_eq!(app.project().unwrap().rom.logical_len(), 0x10000);
 }
 
+#[test]
+fn multi_cell_layer_gesture_batch_commits_reopens_and_undoes_as_one() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::ShowOverworld).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller = OverworldController::decode(
+        &snapshot,
+        0,
+        layout(),
+        &MODES,
+        PaletteOwnership::editable(16),
+    )
+    .unwrap();
+    let edits = (0..2)
+        .flat_map(|y| {
+            (0..2).map(move |x| OverworldControllerEdit::SetLayerTile {
+                layer: OverworldLayerId::Layer1,
+                x,
+                y,
+                tile: 0x4000 + u16::try_from(y * 2 + x).unwrap(),
+            })
+        })
+        .chain((0..2).map(|x| OverworldControllerEdit::SetLayerTile {
+            layer: OverworldLayerId::Layer2,
+            x,
+            y: 1,
+            tile: 0x5000 + u16::try_from(x).unwrap(),
+        }))
+        .collect::<Vec<_>>();
+    controller.apply_edits(&edits).unwrap();
+    let expected = controller.data().clone();
+    let prepared = controller
+        .prepare_commit(
+            "Paint overworld layer gesture",
+            &save_options(0x8000..0x10000),
+        )
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_complete_overworld(0, layout(), &MODES)
+            .unwrap(),
+        expected
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_complete_overworld(0, layout(), &MODES)
+            .unwrap(),
+        data()
+    );
+    app.dispatch(Command::Redo).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_complete_overworld(0, layout(), &MODES)
+            .unwrap(),
+        expected
+    );
+}
+
 fn every_payload_edit() -> Vec<OverworldControllerEdit> {
     vec![
         OverworldControllerEdit::SetLayerTile {
