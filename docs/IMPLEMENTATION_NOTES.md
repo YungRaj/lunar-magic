@@ -2583,7 +2583,9 @@ definition identity and nested painter order together, with monotonic revisions,
 saved baseline, and divergent redo invalidation. Bounded `LMOWAED1` scripts insert, remove, or reorder definitions
 by stable 16-bit sprite ID and insert, replace, remove, or directly reorder their painter-ordered
 tile parts. The native form exposes the same move-before/end operation without reconstructing part
-records. Revision checks,
+records. Its composition preview uses the renderer's exact 8×8 signed-offset geometry and painter
+order, retains the sprite origin, identifies tile/palette/flip fields, and selects the topmost
+overlapping part on click. Revision checks,
 atomic batches, canonical reopen, immutable saves, and dirty shutdown protect the keyed document;
 the built application exercises the workflow through paths containing spaces and Unicode.
 Output publication is create-new and cannot replace an existing file.

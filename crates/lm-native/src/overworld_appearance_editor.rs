@@ -9,6 +9,7 @@ use lm_app::{OverworldAppearanceDocumentController, OverworldAppearanceDocumentE
 mod document_io;
 mod form_fields;
 mod panels;
+mod preview;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PendingClose {
@@ -79,6 +80,7 @@ impl OverworldAppearanceEditor {
             self.clamp_indices();
             egui::Window::new("Portable Overworld Appearance Editor")
                 .default_size([720.0, 600.0])
+                .vscroll(true)
                 .show(context, |ui| self.contents(ui));
         }
         let approved = self.show_close_confirmation(context);
@@ -116,6 +118,7 @@ impl OverworldAppearanceEditor {
         let mut edit = self.definition_fields(ui, &definitions);
         ui.separator();
         if let Some(definition) = selected {
+            self.appearance_preview(ui, definition);
             edit = edit.or_else(|| self.part_fields(ui, revision, definition));
         } else {
             ui.label("Insert a sprite definition before adding tile parts.");
