@@ -40,11 +40,11 @@ impl ObjectStream {
                 screen = jump.packed_target;
                 continue;
             }
-            if !record.is_positioned_object() {
-                continue;
-            }
             if record.advances_screen() {
                 screen = screen.saturating_add(1);
+            }
+            if !record.is_positioned_object() {
+                continue;
             }
             let coordinates = record.coordinate_nibbles();
             let parameter = record.parameter();
@@ -71,6 +71,64 @@ impl ObjectStream {
         }
         placements
     }
+
+    /// Moves screen-exit controls behind the positional stream while preserving object screens.
+    ///
+    /// Lunar Magic applies an exit's advance to subsequent visible content, transfers that state
+    /// into the ordinary object's transition encoding, and stores the exit itself at the tail with
+    /// its advance cleared. Existing object and explicit-jump order remains stable.
+    pub fn canonicalize_screen_exits(&mut self) {
+        let mut source_screen = 0_u16;
+        let mut output_screen = 0_u16;
+        let mut output = Vec::with_capacity(self.records.len());
+        let mut exits = Vec::new();
+        for mut record in self.records.drain(..) {
+            if let Some(jump) = record.screen_jump() {
+                source_screen = jump.packed_target.min(31);
+                output_screen = source_screen;
+                output.push(record);
+                continue;
+            }
+            if record.screen_exit().is_some() {
+                if record.advances_screen() {
+                    source_screen = source_screen.saturating_add(1).min(31);
+                }
+                record
+                    .set_advances_screen(false)
+                    .expect("clearing an advance bit cannot collide with the terminator");
+                exits.push(record);
+                continue;
+            }
+            if record.is_positioned_object() {
+                if record.advances_screen() {
+                    source_screen = source_screen.saturating_add(1).min(31);
+                }
+                if source_screen == output_screen {
+                    record
+                        .set_advances_screen(false)
+                        .expect("clearing an advance bit cannot collide with the terminator");
+                } else if source_screen == output_screen.saturating_add(1).min(31)
+                    && record.set_advances_screen(true).is_ok()
+                {
+                    output_screen = source_screen;
+                } else {
+                    output.push(canonical_screen_jump(source_screen));
+                    output_screen = source_screen;
+                    record
+                        .set_advances_screen(false)
+                        .expect("clearing an advance bit cannot collide with the terminator");
+                }
+            }
+            output.push(record);
+        }
+        output.extend(exits);
+        self.records = output;
+    }
+}
+
+fn canonical_screen_jump(screen: u16) -> crate::ObjectRecord {
+    crate::ObjectRecord::new(vec![u8::try_from(screen.min(31)).unwrap_or(31), 0, 1])
+        .expect("a bounded first-low screen jump is always valid")
 }
 
 impl NativeObjectPlacement {
@@ -127,6 +185,51 @@ mod tests {
                     minor_span: 1,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn screen_exits_move_to_the_tail_while_their_live_advance_moves_to_the_object() {
+        let exit = ObjectRecord::new(vec![0x9f, 0, 2, 0, 4]).unwrap();
+        let object = ObjectRecord::new(vec![1, 0x10, 0]).unwrap();
+        let jump = ObjectRecord::new(vec![4, 0, 1]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![
+                exit.clone(),
+                object.clone(),
+                exit.clone(),
+                jump,
+                object,
+                exit,
+            ],
+        };
+        assert_eq!(
+            stream
+                .native_placements()
+                .iter()
+                .map(|placement| placement.screen)
+                .collect::<Vec<_>>(),
+            [1, 4]
+        );
+
+        stream.canonicalize_screen_exits();
+
+        assert!(stream.records[0].is_positioned_object());
+        assert!(stream.records[0].advances_screen());
+        assert!(stream.records[1].screen_jump().is_some());
+        assert!(stream.records[2].is_positioned_object());
+        assert!(
+            stream.records[3..]
+                .iter()
+                .all(|record| record.screen_exit().is_some() && !record.advances_screen())
+        );
+        assert_eq!(
+            stream
+                .native_placements()
+                .iter()
+                .map(|placement| placement.screen)
+                .collect::<Vec<_>>(),
+            [1, 4]
         );
     }
 

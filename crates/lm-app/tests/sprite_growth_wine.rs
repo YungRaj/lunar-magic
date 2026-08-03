@@ -834,15 +834,10 @@ fn lunar_magic_ignores_screen_exits_in_imported_extent() {
             &modes,
         )
         .unwrap();
+        let mut expected_objects = injected.layer1.objects.clone();
+        expected_objects.canonicalize_screen_exits();
         assert_eq!(actual.layer1.header.last_screen(), expected_last_screen);
-        assert_eq!(
-            actual.layer1.objects.records.len(),
-            injected.layer1.objects.records.len()
-        );
-        assert_eq!(
-            actual.layer1.objects.records[0].advances_screen(),
-            include_visible_object
-        );
+        assert_eq!(actual.layer1.objects, expected_objects);
         assert!(actual.sprites.tokens.is_empty());
     }
     fs::remove_dir_all(directory).unwrap();

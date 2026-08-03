@@ -380,6 +380,7 @@ fn mwl_import_ignores_screen_exits_and_preserves_raw_layer1_order() {
     controller.replace_modeled_assets_from_mwl(&source).unwrap();
 
     assert_eq!(controller.assets().level.layer1.header.last_screen(), 0);
+    assert!(!controller.assets().level.layer1.objects.records[0].advances_screen());
 
     let mut backward = mwl_source(&controller);
     backward.layer1.objects = ObjectStream {

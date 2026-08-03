@@ -3254,9 +3254,11 @@ generic ROM save/export therefore does not incorrectly substitute the import-onl
 Command-zero screen exits are excluded from automatic artwork extent: even an absolute
 screen-`$1F` marker in an otherwise empty imported level leaves Lunar Magic's field at `$00`.
 Its byte-zero high bit still advances stream state for following visible content, so the same exit
-followed by an ordinary object produces `$01`; Lunar Magic clears the now-redundant bit in the
-exit-only form. The shared extent helper and installed MWL import reproduce that live boundary
-without treating the editor-only marker itself as artwork.
+followed by an ordinary object produces `$01`. Lunar Magic transfers that transition onto the
+ordinary object, moves the exit behind the positional stream, and clears the exit's now-redundant
+bit. The shared placement walker applies control advances before later ordinary objects, while
+installed MWL import performs the same stable stream-state rewrite without sorting ordinary object
+order or treating the editor-only marker itself as artwork.
 
 For authenticated ordinary SMW-US Layer 3, the installed preview and both image-export paths load
 the source level's stripe tilemap and active profile graphics, honor editor start offsets and

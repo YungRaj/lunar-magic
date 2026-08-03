@@ -530,6 +530,7 @@ impl NativeLevelAssetsController {
         native_palette.colors.rotate_right(1);
 
         let mut layer1 = source.layer1.clone();
+        layer1.objects.canonicalize_screen_exits();
         let screen_count =
             native_level_screen_count(&layer1.objects, &sprites, LevelScreenExtentMode::Auto);
         layer1
