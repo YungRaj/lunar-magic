@@ -34,11 +34,12 @@ pub struct VanillaLevelMode {
 /// Decodes the recovered level-mode property flags used by Lunar Magic 3.63.
 #[must_use]
 pub const fn smw_us_v1_level_mode(index: u8) -> VanillaLevelMode {
-    let bounded = (index & 0x1f) as usize;
+    let canonical = lm_level::lunar_magic_canonical_level_mode(index & 0x1f);
+    let bounded = canonical as usize;
     let flags = LEVEL_MODE_FLAGS[bounded];
     VanillaLevelMode {
-        index: index & 0x1f,
-        vertical: lm_level::native_level_mode_is_vertical(index),
+        index: canonical,
+        vertical: lm_level::native_level_mode_is_vertical(canonical),
         alternate_layer_layout: flags & 2 != 0,
         high_flag: flags & 0x80 != 0,
         background_half_color: LEVEL_MODE_LAYER2_RENDER[bounded] & 0x40 != 0,
@@ -79,6 +80,13 @@ mod tests {
         assert_eq!(smw_us_v1_level_mode(0x0a).editor_major_screens, 28);
         assert_eq!(smw_us_v1_level_mode(0x0d).editor_major_screens, 28);
         assert_eq!(smw_us_v1_level_mode(0x23), smw_us_v1_level_mode(3));
+        for mode in 0x12..=0x1d {
+            assert_eq!(
+                smw_us_v1_level_mode(mode),
+                smw_us_v1_level_mode(0),
+                "mode {mode:02X}"
+            );
+        }
 
         for mode in [0x05, 0x06, 0x07, 0x08, 0x0a, 0x0d] {
             assert_eq!(

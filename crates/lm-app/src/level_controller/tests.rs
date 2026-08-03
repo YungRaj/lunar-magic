@@ -224,6 +224,60 @@ fn decoded_edit_allocates_through_app_and_reloads_natively() {
 }
 
 #[test]
+fn reserved_level_mode_is_staged_as_lunar_magics_mode_zero_and_undoes() {
+    let mut source = test_rom();
+    source[0x1201] = 0xb2;
+    let checksum = lm_rom::compute_snes_checksum(&source, 0x7fdc).unwrap();
+    source[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+
+    let mut app = AppState::default();
+    app.load_rom(source.clone()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    assert!(controller.is_modified());
+    assert_eq!(controller.level().layer1.header.level_mode(), 0);
+    assert_eq!(controller.level().layer1.header.background_color(), 5);
+
+    let prepared = controller
+        .prepare_commit("Normalize reserved level mode", &options())
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    let reopened = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, layout(), &SpriteLengthTable::standard())
+        .unwrap();
+    assert_eq!(reopened.layer1.header.level_mode(), 0);
+    assert_eq!(reopened.layer1.header.background_color(), 5);
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().rom.as_file_bytes(), source);
+}
+
+#[test]
+fn semantic_reserved_mode_edit_canonicalizes_but_out_of_range_still_rejects() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    controller
+        .apply_edits(&[NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(
+            0x1d,
+        ))])
+        .unwrap();
+    assert_eq!(controller.level().layer1.header.level_mode(), 0);
+    assert!(
+        controller
+            .apply_edits(&[NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::LevelMode(
+                0x20,
+            ))])
+            .is_err()
+    );
+    assert_eq!(controller.level().layer1.header.level_mode(), 0);
+}
+
+#[test]
 fn sprite_only_nonshared_commit_preserves_layer1_pointer_and_payload() {
     let mut app = AppState::default();
     app.load_rom(test_rom()).unwrap();

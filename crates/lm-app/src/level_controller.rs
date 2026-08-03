@@ -196,9 +196,11 @@ impl LevelController {
             )
             .map_err(|error| LevelControllerError::Load(error.into()))?
             .block;
-        let level = project
+        let mut level = project
             .load_level_slot(level_number, layout, sprite_lengths)
             .map_err(LevelControllerError::Load)?;
+        let baseline = level.clone();
+        level.layer1.header.canonicalize_lunar_magic_level_mode();
         let loaded_layer2 = layer2_layout
             .map(|layer2_layout| {
                 project.load_level_layer2_with_descriptor(
@@ -217,7 +219,7 @@ impl LevelController {
             checksum_field_offset: snapshot.identity.internal_header_offset + 0x1c,
             source_file_bytes: snapshot.rom_bytes.clone(),
             sprite_lengths: sprite_lengths.clone(),
-            baseline: level.clone(),
+            baseline,
             level,
             layer2_layout,
             baseline_layer2: layer2.clone(),

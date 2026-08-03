@@ -263,9 +263,15 @@ impl NativeLevelAssetsController {
         let image = RomImage::from_bytes(snapshot.rom_bytes.clone())
             .map_err(NativeLevelAssetsControllerError::Rom)?;
         let project = Project::new(image);
-        let assets = project
+        let mut assets = project
             .load_native_level_assets(usize::from(slot), layout, sprite_lengths, &modes)
             .map_err(NativeLevelAssetsControllerError::Load)?;
+        let baseline = assets.clone();
+        assets
+            .level
+            .layer1
+            .header
+            .canonicalize_lunar_magic_level_mode();
         let features = if matches!(feature_installation, InstalledLayout::Absent) {
             None
         } else {
@@ -329,7 +335,7 @@ impl NativeLevelAssetsController {
             sprite_lengths: sprite_lengths.clone(),
             double_size_modes: modes,
             palette_ownership,
-            baseline: assets.clone(),
+            baseline,
             assets,
             baseline_features: features,
             features,

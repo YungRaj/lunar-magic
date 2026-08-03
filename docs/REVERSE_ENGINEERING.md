@@ -275,6 +275,13 @@ the vertical layouts previously omitted from the Rust live-cache comparison. The
 those bases into both its rendering offset tables and the later cache traversal table, so they are
 layout state rather than a per-object adjustment.
 
+`LoadLevelModeConfiguration` at `00469540` bounds the stored mode before consuming any of the
+mode-property tables. Values `$12` through `$1D` trigger the localized warning, clear only the low
+five mode bits in legacy-header byte 1, set dirty flags `$06`, and continue as mode `$00`; the
+three background-color bits remain intact. This is a mutating compatibility fallback, not an
+unsupported-mode error. Rust therefore keeps exact low-level header decoding but applies this
+canonicalization when native editing controllers open or semantically edit a level.
+
 The `00424310`–`00427cc0` range continues the standard-object renderer family. It now identifies packed/conditional lookup patterns, boundary-aware 2x2 and 2x3 patterns, command-mapped and rectangular fills, and five variable-height edge/column renderers. The latter are named from proven geometry and tile families; exact vanilla SMW object identities remain explicitly marked medium-confidence pending dispatcher-table recovery.
 
 The `00427f50`–`0042fbf0` range covers additional adaptive standard-object geometry: four-column and tapered objects, top-row/remaining-row fills, capped columns, repeated 16x6 pattern strips, alternating columns and pairs, expanding edge-bounded shapes, page-1 bordered rectangles and wedges, cyclic two-column objects, and complementary ascending/descending diagonal line and edge-pair renderers. Names and comments distinguish directly proven geometry/tile behavior from still-unproven vanilla object identities.

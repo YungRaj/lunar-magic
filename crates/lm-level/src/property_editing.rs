@@ -1,5 +1,6 @@
 use crate::{
     CompleteLevelFile, ExpandedLevelHeader, HeaderValueError, Layer1VerticalScrollMode, Level,
+    lunar_magic_canonical_level_mode,
 };
 use std::fmt;
 
@@ -197,7 +198,10 @@ fn apply_header_edit(level: &mut Level, edit: LegacyHeaderEdit) -> Result<(), He
             level.header.legacy.set_background_palette(value)
         }
         LegacyHeaderEdit::LastScreen(value) => level.header.legacy.set_last_screen(value),
-        LegacyHeaderEdit::LevelMode(value) => level.header.legacy.set_level_mode(value),
+        LegacyHeaderEdit::LevelMode(value) => level
+            .header
+            .legacy
+            .set_level_mode(lunar_magic_canonical_level_mode(value)),
         LegacyHeaderEdit::BackgroundColor(value) => level.header.legacy.set_background_color(value),
         LegacyHeaderEdit::SpriteTileset(value) => level.header.legacy.set_sprite_tileset(value),
         LegacyHeaderEdit::DefaultMusicSelector(value) => {
@@ -351,6 +355,28 @@ mod tests {
             Err(LevelPropertyEditError::Header { command: 1, .. })
         ));
         assert_eq!(level, original);
+    }
+
+    #[test]
+    fn portable_semantic_mode_edit_uses_reserved_fallback_and_retains_bounds() {
+        let mut level = Level::default();
+        level.header.legacy = LegacyLevelHeader::decode(&[0, 0xe3, 0, 0, 0]).unwrap();
+        level
+            .apply_property_edits(&[LevelPropertyEdit::LegacyHeader(
+                LegacyHeaderEdit::LevelMode(0x12),
+            )])
+            .unwrap();
+        assert_eq!(level.header.legacy.level_mode(), 0);
+        assert_eq!(level.header.legacy.background_color(), 7);
+        let canonical = level.clone();
+        assert!(
+            level
+                .apply_property_edits(&[LevelPropertyEdit::LegacyHeader(
+                    LegacyHeaderEdit::LevelMode(0x20),
+                )])
+                .is_err()
+        );
+        assert_eq!(level, canonical);
     }
 
     #[test]

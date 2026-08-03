@@ -3,7 +3,24 @@ use std::fmt;
 /// Whether one of Lunar Magic's 32 native level modes uses vertical coordinate ordering.
 #[must_use]
 pub const fn native_level_mode_is_vertical(mode: u8) -> bool {
-    matches!(mode & 0x1f, 3 | 4 | 7 | 8 | 10 | 13)
+    matches!(
+        lunar_magic_canonical_level_mode(mode & 0x1f),
+        3 | 4 | 7 | 8 | 10 | 13
+    )
+}
+
+/// Applies Lunar Magic's native fallback for the twelve reserved level modes.
+///
+/// `LoadLevelModeConfiguration` clears stored modes `$12..=$1D` to mode `$00` before reading any
+/// mode-dependent tables. Callers validate or extract the five-bit physical field before using
+/// this semantic normalization.
+#[must_use]
+pub const fn lunar_magic_canonical_level_mode(mode: u8) -> u8 {
+    if mode >= 0x12 && mode <= 0x1d {
+        0
+    } else {
+        mode
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -72,6 +89,21 @@ impl LegacyLevelHeader {
     #[must_use]
     pub const fn level_mode(self) -> u8 {
         self.bytes[1] & 0x1f
+    }
+
+    /// Clears a reserved mode exactly as Lunar Magic does while loading level configuration.
+    ///
+    /// Returns whether the stored header changed. The three-bit background-color field is
+    /// preserved.
+    pub fn canonicalize_lunar_magic_level_mode(&mut self) -> bool {
+        let stored = self.level_mode();
+        let canonical = lunar_magic_canonical_level_mode(stored);
+        if canonical == stored {
+            false
+        } else {
+            self.bytes[1] = self.bytes[1] & 0xe0 | canonical;
+            true
+        }
     }
 
     /// Whether the selected native level mode uses Lunar Magic's vertical coordinate ordering.
@@ -439,6 +471,25 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(vertical, [3, 4, 7, 8, 10, 13]);
+    }
+
+    #[test]
+    fn reserved_modes_canonicalize_to_zero_without_changing_background_color() {
+        for mode in 0x12..=0x1d {
+            let mut header = LegacyLevelHeader::decode(&[0, 0xa0 | mode, 0, 0, 0]).unwrap();
+            assert!(header.canonicalize_lunar_magic_level_mode());
+            assert_eq!(header.level_mode(), 0, "mode {mode:02X}");
+            assert_eq!(header.background_color(), 5);
+            assert_eq!(header.encoded()[1], 0xa0);
+            assert!(!header.canonicalize_lunar_magic_level_mode());
+        }
+        for mode in [0x00, 0x11, 0x1e, 0x1f] {
+            let mut header = LegacyLevelHeader::decode(&[0, 0x60 | mode, 0, 0, 0]).unwrap();
+            assert!(!header.canonicalize_lunar_magic_level_mode());
+            assert_eq!(header.level_mode(), mode);
+            assert_eq!(header.background_color(), 3);
+        }
+        assert_eq!(lunar_magic_canonical_level_mode(0x32), 0x32);
     }
 
     #[test]

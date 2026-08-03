@@ -551,6 +551,31 @@ fn mixed_edits_prepare_one_checksum_valid_semantically_reopenable_commit() {
 }
 
 #[test]
+fn aggregate_decode_stages_reserved_level_mode_fallback_without_losing_background_color() {
+    let mut snapshot = snapshot();
+    snapshot.rom_bytes[0x101] = 0xd2;
+    let checksum = compute_snes_checksum(&snapshot.rom_bytes, 0x7fdc).unwrap();
+    snapshot.rom_bytes[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    snapshot.identity =
+        detect_identity(&RomImage::from_bytes(snapshot.rom_bytes.clone()).unwrap()).unwrap();
+
+    let controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    assert!(controller.is_modified());
+    assert_eq!(controller.assets().level.layer1.header.level_mode(), 0);
+    assert_eq!(
+        controller.assets().level.layer1.header.background_color(),
+        6
+    );
+}
+
+#[test]
 fn owned_aggregate_reclaims_four_payloads_keeps_direct_write_atomic_and_undoes() {
     let (snapshot, manifest) = tagged_snapshot();
     let mut controller = NativeLevelAssetsController::decode(

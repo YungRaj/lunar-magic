@@ -1,4 +1,4 @@
-use crate::Layer3ExpandedModeFlags;
+use crate::{Layer3ExpandedModeFlags, lunar_magic_canonical_level_mode};
 
 /// The source Lunar Magic assigns to one of its five level painter slots.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,19 +59,19 @@ const COMPOSITION_MASKS: [u8; 32] = [
 
 /// Replays `ConfigureLevelLayerSlotAssignments @ 004692B0` for an authentic level mode.
 ///
-/// Modes `$12..=$1D` are rejected because Lunar Magic itself replaces them with mode `$00` before
-/// indexing these tables. An enabled expanded-settings record applies packed bits 30 and 31 before
-/// the slot dispatcher runs. `split_layer3_priority` is legacy-header byte 2 bit 7.
+/// Modes `$12..=$1D` use Lunar Magic's mode-`$00` fallback before these tables are indexed. An
+/// enabled expanded-settings record applies packed bits 30 and 31 before the slot dispatcher runs.
+/// `split_layer3_priority` is legacy-header byte 2 bit 7.
 #[must_use]
 pub fn lunar_magic_level_layer_slots(
     level_mode: u8,
     split_layer3_priority: bool,
     expanded_mode: Option<Layer3ExpandedModeFlags>,
 ) -> Option<LevelLayerSlotAssignments> {
-    if level_mode >= 32 || (0x12..=0x1d).contains(&level_mode) {
+    if level_mode >= 32 {
         return None;
     }
-    let index = usize::from(level_mode);
+    let index = usize::from(lunar_magic_canonical_level_mode(level_mode));
     let mut primary = PRIMARY_SOURCE_MASKS[index];
     let mut alternate = ALTERNATE_SOURCE_MASKS[index];
     let mut composition = COMPOSITION_MASKS[index];
@@ -289,12 +289,18 @@ mod tests {
     }
 
     #[test]
-    fn invalid_editor_modes_are_not_silently_indexed() {
+    fn reserved_editor_modes_use_lunar_magics_mode_zero_fallback() {
+        let mode_zero = lunar_magic_level_layer_slots(0, false, None).unwrap();
         for mode in 0x12..=0x1d {
-            assert_eq!(lunar_magic_level_layer_slots(mode, false, None), None);
+            assert_eq!(
+                lunar_magic_level_layer_slots(mode, false, None),
+                Some(mode_zero),
+                "mode {mode:02X}"
+            );
         }
         assert!(lunar_magic_level_layer_slots(0x1e, false, None).is_some());
         assert!(lunar_magic_level_layer_slots(0x1f, false, None).is_some());
+        assert_eq!(lunar_magic_level_layer_slots(0x20, false, None), None);
     }
 
     #[test]

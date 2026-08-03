@@ -130,7 +130,9 @@ fn apply_header_edit(
     match edit {
         LegacyHeaderEdit::BackgroundPalette(value) => layer1.header.set_background_palette(value),
         LegacyHeaderEdit::LastScreen(value) => layer1.header.set_last_screen(value),
-        LegacyHeaderEdit::LevelMode(value) => layer1.header.set_level_mode(value),
+        LegacyHeaderEdit::LevelMode(value) => layer1
+            .header
+            .set_level_mode(lm_level::lunar_magic_canonical_level_mode(value)),
         LegacyHeaderEdit::BackgroundColor(value) => layer1.header.set_background_color(value),
         LegacyHeaderEdit::SpriteTileset(value) => layer1.header.set_sprite_tileset(value),
         LegacyHeaderEdit::DefaultMusicSelector(value) => {
