@@ -3513,6 +3513,11 @@ Aggregate automation exposes the same intent without an opaque byte. An `LMNATED
 missing, duplicate, malformed, or oversized command before mutation. The aggregate controller
 sets only those four named states on the currently loaded record, preserving the unrelated low
 nibble; absent profile storage is a typed late failure that rolls back earlier child edits.
+The profile-qualified application-shell integration fixture uses a real shared chained runtime
+operand for the installed ExAnimation pointer table and a distinct displaced feature-table
+operand. Starting from feature byte `$A5`, the complete `LMNATED1` batch reopens `$55`, retains
+low nibble `$5`, repairs the ROM checksum, and restores the entire pre-edit image through one
+application undo. A malformed `LMEXFT1` retry is rejected before any domain mutates the ROM.
 The installed-assets Super GFX preview is a live staged view rather than a one-shot diagnostic:
 enabling it renders the current aggregate, and every accepted settings, level, Layer 2, palette, or
 ExAnimation-feature edit invalidates and regenerates the texture from the controller's new staged

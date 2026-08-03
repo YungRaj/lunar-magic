@@ -738,6 +738,11 @@ prove exact semantic routing; aggregate-controller tests start from byte `$A5`, 
 `true false true false`, retain low nibble `$5`, commit/reopen byte `$55` with a valid checksum,
 undo the complete ROM exactly, and roll back an earlier child when installed feature storage is
 unavailable.
+The real profile-qualified application shell now includes that child in its mixed level, palette,
+ExAnimation, feature, and expanded-settings batch. Its fixture resolves the installed ExAnimation
+and feature tables through two displaced operands in one chained runtime, verifies `$A5` becomes
+`$55` with low nibble `$5`, checksum-valid semantic reopen, and byte-exact whole-batch undo, then
+proves a malformed feature retry leaves the restored ROM unchanged.
 Custom Layer 3 tilemap settings have a shared semantic aggregate edit covering the enable bit and
 packed graphics descriptor. Installed tests preserve all unowned bytes, exercise controller
 undo/redo, commit, checksum, semantic reopen, and exact ROM undo; portable aggregate history proves

@@ -5,7 +5,14 @@ use lm_project::{
 };
 
 fn native_assets_test_app(profile: &lm_profile::RevisionProfile) -> AppState {
-    let mut source = Project::new(RomImage::from_bytes(profiled_rom(profile)).unwrap());
+    native_assets_test_app_from_rom(profile, profiled_rom(profile))
+}
+
+fn native_assets_test_app_from_rom(
+    profile: &lm_profile::RevisionProfile,
+    rom: Vec<u8>,
+) -> AppState {
+    let mut source = Project::new(RomImage::from_bytes(rom).unwrap());
     let allocation = |search| AllocationPolicy {
         search,
         bank_size: Some(0x8000),
@@ -54,10 +61,50 @@ fn native_assets_test_app(profile: &lm_profile::RevisionProfile) -> AppState {
     app
 }
 
+fn profile_and_rom_with_installed_animation_features() -> (lm_profile::RevisionProfile, Vec<u8>) {
+    const FIRST_OPERAND: usize = 0x3_0000;
+    const RUNTIME: usize = 0x3_0100;
+    const FEATURE_TABLE: usize = 0x3_0201;
+    let mut profile = lm_profile::test_support::profile();
+    let lm_project::InstalledLayout::Unconditional(mut exanimation) =
+        profile.exanimation_installation
+    else {
+        panic!("test profile uses an unconditional ExAnimation layout");
+    };
+    exanimation.pointer_locator = Some(lm_project::ChainedSnesPointerLocator {
+        mapper: profile.mapper,
+        first_operand_offset: FIRST_OPERAND,
+        final_operand_displacement: 0,
+    });
+    profile.exanimation_installation = lm_project::InstalledLayout::Unconditional(exanimation);
+    profile.exanimation_feature_installation = lm_project::InstalledLayout::Unconditional(
+        lm_project::InstalledExAnimationFeatureRomLayout {
+            table_locator: lm_project::ChainedSnesPointerLocator {
+                mapper: profile.mapper,
+                first_operand_offset: FIRST_OPERAND,
+                final_operand_displacement: 3,
+            },
+        },
+    );
+    profile.validate().unwrap();
+
+    let mut rom = profiled_rom(&profile);
+    let pointer = |target: usize| pc_to_snes(profile.mapper, target).unwrap().to_le_bytes();
+    rom[FIRST_OPERAND..FIRST_OPERAND + 3].copy_from_slice(&pointer(RUNTIME)[..3]);
+    rom[RUNTIME..RUNTIME + 3].copy_from_slice(&pointer(profile.exanimation.pointers.offset)[..3]);
+    rom[RUNTIME + 3..RUNTIME + 6].copy_from_slice(&pointer(FEATURE_TABLE)[..3]);
+    rom[FEATURE_TABLE - 1] = 0;
+    rom[FEATURE_TABLE..FEATURE_TABLE + lm_project::EXANIMATION_FEATURE_LEVEL_COUNT].fill(0);
+    rom[FEATURE_TABLE + 0x105] = 0xa5;
+    let checksum = compute_snes_checksum(&rom, 0x7fdc).unwrap();
+    rom[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+    (profile, rom)
+}
+
 #[test]
 fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
-    let profile = lm_profile::test_support::profile();
-    let mut app = native_assets_test_app(&profile);
+    let (profile, rom) = profile_and_rom_with_installed_animation_features();
+    let mut app = native_assets_test_app_from_rom(&profile, rom);
     let before = app.project().unwrap().save_snapshot();
     let directory =
         std::env::temp_dir().join(format!("lm-app-native-assets-{}", std::process::id()));
@@ -78,16 +125,26 @@ fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
         "LMEXAED1\nsetting 07\n",
     )
     .unwrap();
+    fs::write(
+        directory.join("Animation feature edits.txt"),
+        "LMEXFT1\nfeatures true false true false\n",
+    )
+    .unwrap();
     fs::write(directory.join("設定 edits.txt"), "LMXSETED1\nword 2 abcd\n").unwrap();
     let spec = directory.join("Aggregate edits.lmnat");
     fs::write(
         &spec,
-        "LMNATED1\nlevel=Level edits.txt\npalette=Palette edits.txt\nexanimation=Animation edits.txt\nexpanded-settings=設定 edits.txt\n",
+        "LMNATED1\nlevel=Level edits.txt\npalette=Palette edits.txt\nexanimation=Animation edits.txt\nexanimation-features=Animation feature edits.txt\nexpanded-settings=設定 edits.txt\n",
     )
     .unwrap();
 
     execute_native_assets_script(&mut app, &spec, 0x1_0000..0x1_8000).unwrap();
     let project = app.project().unwrap();
+    let reopened_features = project
+        .load_installed_exanimation_features(0x105, profile.exanimation_feature_installation)
+        .unwrap();
+    assert_eq!(reopened_features.options.encode(), 0x55);
+    assert_eq!(reopened_features.options.preserved_low_nibble, 5);
     assert_eq!(
         project
             .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
@@ -122,6 +179,13 @@ fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
     );
     assert!(project.identity.as_ref().unwrap().checksum_matches());
     app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::write(
+        directory.join("Animation feature edits.txt"),
+        "LMEXFT1\nfeatures true false invalid false\n",
+    )
+    .unwrap();
+    assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x1_8000).is_err());
     assert_eq!(app.project().unwrap().save_snapshot(), before);
     fs::remove_dir_all(directory).unwrap();
 }
