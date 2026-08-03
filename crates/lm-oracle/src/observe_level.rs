@@ -166,6 +166,11 @@ fn observe_layer(result: &mut Observation, base: &str, layer: &lm_level::LayerDa
                     &format!("{object_base}/screen-jump-target"),
                     jump.packed_target,
                 );
+                put(
+                    result,
+                    &format!("{object_base}/screen-jump-resolved-screen"),
+                    jump.resolved_screen(),
+                );
             }
             None => put(result, &format!("{object_base}/kind"), "object"),
         }
@@ -255,6 +260,41 @@ mod tests {
         let difference = before.differences(&observe_level(&level));
         assert_eq!(difference.len(), 1);
         assert_eq!(difference[0].path, "level/sprites/0000/encoded");
+    }
+
+    #[test]
+    fn level_observation_exposes_packed_and_resolved_screen_jump_values() {
+        let level = Level {
+            layer1: LayerData {
+                objects: ObjectStream {
+                    records: vec![ObjectRecord::new(vec![5, 3, 1]).unwrap()],
+                },
+                raw_tilemap: Vec::new(),
+            },
+            layer2: LayerData {
+                objects: ObjectStream {
+                    records: vec![ObjectRecord::new(vec![5, 3, 3]).unwrap()],
+                },
+                raw_tilemap: Vec::new(),
+            },
+            ..Level::default()
+        };
+
+        let observed = observe_level(&level);
+        for base in ["level/layer1/objects/0000", "level/layer2/objects/0000"] {
+            assert_eq!(
+                observed.get(&format!("{base}/screen-jump-resolved-screen")),
+                Some("8")
+            );
+        }
+        assert_eq!(
+            observed.get("level/layer1/objects/0000/screen-jump-target"),
+            Some("773")
+        );
+        assert_eq!(
+            observed.get("level/layer2/objects/0000/screen-jump-target"),
+            Some("1283")
+        );
     }
 
     #[test]

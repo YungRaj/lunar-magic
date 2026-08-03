@@ -61,6 +61,11 @@ pub fn observe_native_level(file: &NativeLevelFile) -> Observation {
                     &format!("{base}/screen-jump-target"),
                     jump.packed_target,
                 );
+                put(
+                    &mut result,
+                    &format!("{base}/screen-jump-resolved-screen"),
+                    jump.resolved_screen(),
+                );
             }
             None => put(&mut result, &format!("{base}/kind"), "object"),
         }
@@ -195,6 +200,10 @@ mod tests {
         assert_eq!(
             observed.get("native-level/layer1/objects/0000/screen-jump-target"),
             Some("2842")
+        );
+        assert_eq!(
+            observed.get("native-level/layer1/objects/0000/screen-jump-resolved-screen"),
+            Some("37")
         );
     }
 }

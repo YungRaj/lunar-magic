@@ -1054,7 +1054,9 @@ screen-jump encodings and expose their exact packed target. Live horizontal and 
 with nonzero five-bit and four-bit components prove that Lunar Magic adds the two values to resolve
 the absolute major-axis screen regardless of their low-first or high-first storage order. Placement,
 extent, relocation, import normalization, rendering, and canvas sizing share that interpretation
-while the raw packed target remains lossless and independently editable.
+while the raw packed target remains lossless and independently editable. Both complete-level and
+native-level semantic observations publish the packed target and resolved screen independently, so
+release evidence detects regressions in either representation or interpretation.
 The same table-aware serializer is shared by controller validation and ROM persistence; exhaustive
 tests cover all four selectors and all 256 sprite IDs.
 
