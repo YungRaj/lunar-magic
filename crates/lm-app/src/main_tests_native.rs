@@ -194,6 +194,119 @@ fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
 }
 
 #[test]
+fn terminal_layer2_object_script_reopens_checksum_valid_and_rolls_back_atomically() {
+    let mut profile = lm_profile::test_support::profile();
+    profile.layer2 = Some(lm_project::LevelLayer2RomLayout {
+        mapper: profile.mapper,
+        pointers: lm_project::LevelPointerTable {
+            offset: 0x3_0000,
+            entries: 0x200,
+            stride: 3,
+        },
+        background_bank_substitution: None,
+        legacy_pointer_redirect: None,
+        descriptor_table: None,
+        maximum_compressed_len: 0x8000,
+        tilemap_encoding: lm_project::LevelLayer2TilemapEncoding::SplitPlanes,
+    });
+    let rom = profiled_rom(&profile);
+    let mut app = native_assets_test_app_from_rom(&profile, rom);
+    let before = app.project().unwrap().save_snapshot();
+    let baseline_level = app
+        .project()
+        .unwrap()
+        .load_level_slot(0x105, profile.level, &profile.sprite_lengths)
+        .unwrap();
+    let baseline_layer2 = app
+        .project()
+        .unwrap()
+        .load_level_layer2(
+            0x105,
+            baseline_level.layer1.header.level_mode(),
+            profile.layer2.unwrap(),
+        )
+        .unwrap();
+    let lm_level::NativeLayer2Data::Objects(objects) = baseline_layer2 else {
+        panic!("test level must use object-backed Layer 2");
+    };
+    let placement = objects
+        .objects
+        .native_placements()
+        .into_iter()
+        .find(|placement| {
+            let record = &objects.objects.records[placement.record_index];
+            record.encoded().len() == 3 && record.command_id() != 0 && record.command_id() != 0x27
+        })
+        .unwrap();
+    let record = &objects.objects.records[placement.record_index];
+    let field_command = record.command_id();
+    let directory =
+        std::env::temp_dir().join(format!("lm-app-layer2-objects-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir(&directory).unwrap();
+    let script = directory.join("Layer 2 objects.txt");
+    let spec = directory.join("Layer 2 aggregate.lmnat");
+    fs::write(&spec, "LMNATED1\nlayer2-objects=Layer 2 objects.txt\n").unwrap();
+    fs::write(
+        &script,
+        format!(
+            "LML2OBJ1\nobject fields {} {:02x} 55 1d 0c 0b true\n",
+            placement.record_index, field_command,
+        ),
+    )
+    .unwrap();
+    execute_native_assets_script(&mut app, &spec, 0x1_0000..0x1_8000).unwrap();
+    let reopened = app
+        .project()
+        .unwrap()
+        .load_level_layer2(
+            0x105,
+            baseline_level.layer1.header.level_mode(),
+            profile.layer2.unwrap(),
+        )
+        .unwrap();
+    let lm_level::NativeLayer2Data::Objects(reopened) = reopened else {
+        unreachable!();
+    };
+    let edited = reopened
+        .objects
+        .native_placements()
+        .into_iter()
+        .find(|placement| {
+            let record = &reopened.objects.records[placement.record_index];
+            record.command_id() == field_command
+                && record.parameter() == 0x55
+                && placement.screen == 0x1d
+                && placement.major == 0x1db
+                && placement.minor == 0x1c
+        })
+        .unwrap();
+    assert!(reopened.objects.records[edited.record_index].perpendicular_high_coordinate());
+    assert!(
+        app.project()
+            .unwrap()
+            .identity
+            .as_ref()
+            .unwrap()
+            .checksum_matches()
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+
+    fs::write(
+        &script,
+        format!(
+            "LML2OBJ1\nobject fields {} {:02x} 55 1d 0c 0b true\nobject remove 999\n",
+            placement.record_index, field_command,
+        ),
+    )
+    .unwrap();
+    assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x1_8000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn owned_native_assets_shell_reclaims_exact_blocks_and_rejects_stale_evidence() {
     let profile = lm_profile::test_support::profile();
     let mut app = native_assets_test_app(&profile);

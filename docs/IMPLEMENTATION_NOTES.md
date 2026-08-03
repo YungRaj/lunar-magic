@@ -2183,13 +2183,14 @@ the palette from the exact current aggregate revision, including unsaved edits. 
 viewport/overlay adapter and deterministic PNG encoder and publishes only to a new output path.
 The runnable shell exposes it as
 `native-assets-edit SPEC SEARCH_START SEARCH_END`. A bounded `LMNATED1` specification resolves
-optional `level`, `palette`, `exanimation`, `expanded-settings`, and semantic `sprite-spawn`
+optional `level`, `layer2-objects`, `palette`, `exanimation`, `expanded-settings`, and semantic `sprite-spawn`
 child scripts relative to the
 specification file, for example:
 
 ```text
 LMNATED1
 level=Level edits.txt
+layer2-objects=Layer 2 objects.txt
 palette=Palette edits.txt
 exanimation=Animation edits.txt
 expanded-settings=設定 edits.txt
@@ -2199,6 +2200,12 @@ sprite-spawn=Spawn settings.txt
 Every child retains its established strict format and limits. The shell parses all children before
 dispatch, stages every domain in memory, and publishes one checksum-valid undo entry; a late child
 or edit failure preserves the complete application project.
+`layer2-objects` uses the strict `LML2OBJ1` header and accepts only the authoritative `LMLEDIT1`
+`object ...` grammar. It therefore exposes insert/remove/move, parameter, absolute placement,
+screen-exit, and complete ordinary-field edits without duplicating or drifting from Layer 1's
+typed model. The installed profile must resolve the selected level to object-backed Layer 2;
+tilemap-backed or portable aggregates reject the child atomically. The aggregate save plan carries
+Layer 2's independent copy-on-write allocation policy through checksum repair and application undo.
 `sprite-spawn` uses `LMSPAWN1` followed by one or both unique semantic commands. `settings RANGE
 SMART` accepts decimal range `0..=3` and canonical boolean `SMART`; `boundary-air ENABLED` accepts
 another canonical boolean. Neither carries a raw shared word. The aggregate controller reads the

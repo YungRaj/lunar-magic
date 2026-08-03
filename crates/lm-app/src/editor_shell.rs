@@ -320,8 +320,13 @@ pub(crate) fn commit_native_assets_edits(
     let profiled = app.profiled_controller_snapshot()?;
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())?;
     let (_, options) = profiled.profile.native_level_assets_save_plan_for_rom(
-        search,
+        search.clone(),
         &image,
+        profiled.snapshot.identity.internal_header_offset,
+    )?;
+    let layer2_options = profiled.profile.level_layer2_save_plan(
+        search,
+        image.logical_len(),
         profiled.snapshot.identity.internal_header_offset,
     )?;
     let ownership = palette_ownership.unwrap_or_else(|| {
@@ -331,8 +336,15 @@ pub(crate) fn commit_native_assets_edits(
         .profile
         .decode_native_level_assets(&profiled.snapshot, ownership)?;
     controller.apply_edits(edits)?;
-    let prepared =
-        controller.prepare_commit("Apply native aggregate level-assets edit", &options)?;
+    let prepared = if let Some((_, layer2_options)) = layer2_options {
+        controller.prepare_commit_with_layer2(
+            "Apply native aggregate level-assets edit",
+            &options,
+            &layer2_options,
+        )?
+    } else {
+        controller.prepare_commit("Apply native aggregate level-assets edit", &options)?
+    };
     app.dispatch(prepared.into_command())?;
     Ok(())
 }

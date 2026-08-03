@@ -192,6 +192,10 @@ nibbles, and perpendicular-high state in the same typed transaction as portable 
 aggregate forms. It preserves custom extensions, rejects native-width changes atomically,
 regenerates transitions, tracks selection across reordering, reopens checksum-valid, and undoes
 the ROM byte-exactly.
+Object-backed Layer 2 now has the parallel strict `LML2OBJ1` aggregate child. It reuses the whole
+typed object grammar, rejects Layer 1 headers/sprites and tilemap-backed levels, carries Layer 2's
+separate allocation plan, and has checksum-valid semantic reopen, late-failure rollback, and exact
+ROM-undo evidence.
 
 The sprite row now has canvas-grade `LMLEDIT1 sprite place` and `sprite relocate-position`
 automation for both legacy and expanded streams. Installed GUI, portable GUI, automation, and

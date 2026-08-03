@@ -346,6 +346,11 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   Lfix3/expanded-settings bits, so GUI, scripts, and future automation use the same semantic
   transaction. The former requires authenticated installed Lfix3 storage; the latter also works
   in a portable aggregate that contains its expanded-settings record.
+  An optional `layer2-objects` child uses `LML2OBJ1` framing but delegates every command to the
+  authoritative `LMLEDIT1` object parser, rejects non-object domains, and maps the resulting typed
+  edits to the aggregate controller's independent Layer 2 stream. Installed commits resolve and
+  carry the profile's separate Layer 2 allocation plan; absent or tilemap-backed storage fails
+  before publication.
   Its `exanimation-features` child uses the strict `LMEXFT1` grammar to carry four positive
   semantic states. The controller applies those states to the currently loaded feature byte, so
   automation and the installed Settings panel preserve its unrelated low nibble instead of

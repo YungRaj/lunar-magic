@@ -2,8 +2,8 @@
 
 use crate::{
     editor_shell::read_bounded_utf8, exanimation_edit_script, exanimation_feature_edit_script,
-    expanded_settings_edit_script, level_edit_script, native_assets_edit_spec, palette_edit_script,
-    sprite_spawn_edit_script,
+    expanded_settings_edit_script, layer2_object_edit_script, level_edit_script,
+    native_assets_edit_spec, palette_edit_script, sprite_spawn_edit_script,
 };
 use lm_app::NativeLevelAssetsControllerEdit;
 use lm_graphics::PaletteOwnership;
@@ -21,6 +21,16 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
         let text = read_bounded_utf8(&path, level_edit_script::MAX_SCRIPT_LEN, "level edit")?;
         edits.push(NativeLevelAssetsControllerEdit::Level(
             level_edit_script::parse(&text)?,
+        ));
+    }
+    if let Some(path) = spec.layer2_objects {
+        let text = read_bounded_utf8(
+            &path,
+            layer2_object_edit_script::MAX_SCRIPT_LEN,
+            "Layer 2 object edit",
+        )?;
+        edits.push(NativeLevelAssetsControllerEdit::Layer2Objects(
+            layer2_object_edit_script::parse(&text)?,
         ));
     }
     let palette_script = if let Some(path) = spec.palette {
@@ -149,10 +159,12 @@ mod tests {
         .unwrap();
         let features = directory.join("Animation features.txt");
         fs::write(&features, "LMEXFT1\nfeatures true false true false\n").unwrap();
+        let layer2 = directory.join("Layer 2 objects.txt");
+        fs::write(&layer2, "LML2OBJ1\nobject remove 0\n").unwrap();
         let spec = directory.join("Aggregate.lmnat");
         fs::write(
             &spec,
-            "LMNATED1\nexanimation-features=Animation features.txt\nexpanded-settings=Expanded settings.txt\nsprite-spawn=Spawn settings.txt\n",
+            "LMNATED1\nlayer2-objects=Layer 2 objects.txt\nexanimation-features=Animation features.txt\nexpanded-settings=Expanded settings.txt\nsprite-spawn=Spawn settings.txt\n",
         )
         .unwrap();
 
@@ -160,6 +172,7 @@ mod tests {
         assert!(matches!(
             loaded.edits.as_slice(),
             [
+                NativeLevelAssetsControllerEdit::Layer2Objects(layer2),
                 NativeLevelAssetsControllerEdit::ExAnimationFeatureStates {
                     palette: true,
                     vanilla: false,
@@ -176,7 +189,8 @@ mod tests {
                     vertical_range: 3,
                     smart_spawn: true,
                 },
-            ] if descriptor.packed() == 0xeabc
+            ] if layer2 == &[lm_level::ObjectEdit::Remove { index: 0 }]
+                && descriptor.packed() == 0xeabc
                 && bypass.foreground_background == [1, 2, 3, 4, 5, 6]
                 && bypass.sprites == [0x101, 0x202, 0x303, 0x404]
                 && flags.packed() == 0x89ab_cdef

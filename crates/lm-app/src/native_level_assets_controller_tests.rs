@@ -5,8 +5,9 @@ use lm_graphics::{Bgr555, Palette, PaletteChange, PaletteEntryOwner, PaletteInte
 use lm_level::{
     split_layer2_tilemap_planes, CustomTimeSettings, ExpandedLevelHeader, Layer1VerticalScrollMode,
     LegacyHeaderEdit, MwlFile, MwlLayer2Descriptor, MwlLevelHeaderSection,
-    NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord,
-    ObjectStream, SpriteRecord, SpriteToken, NATIVE_LAYER2_TILEMAP_LEN,
+    NativeObjectRecordFields, NativeSpriteRecordFields, NativeSpriteStream,
+    ObjectCoordinateNibbles, ObjectRecord, ObjectStream, SpriteRecord, SpriteToken,
+    NATIVE_LAYER2_TILEMAP_LEN,
 };
 use lm_project::{
     ExAnimationRomLayout, ExAnimationSaveOptions, ExpandedLevelSettingsLayout,
@@ -1562,16 +1563,17 @@ fn layer2_object_edit_commits_with_every_core_domain_and_reopens() {
     let duplicate = layer2.objects.records[0].clone();
     controller
         .apply_edits(&[NativeLevelAssetsControllerEdit::Layer2Objects(vec![
-            ObjectEdit::SetParameter {
+            ObjectEdit::SetOrdinaryFields {
                 index: 0,
-                parameter: 0x66,
-            },
-            ObjectEdit::RelocateOrdinary {
-                index: 0,
-                screen: 3,
-                coordinates: ObjectCoordinateNibbles {
-                    first: 0x0c,
-                    second: 0x0d,
+                fields: NativeObjectRecordFields {
+                    command_id: 1,
+                    parameter: 0x66,
+                    screen: 3,
+                    coordinates: ObjectCoordinateNibbles {
+                        first: 0x0c,
+                        second: 0x0d,
+                    },
+                    perpendicular_high: true,
                 },
             },
         ])])

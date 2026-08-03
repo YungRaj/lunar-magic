@@ -726,6 +726,14 @@ resulting index before commit. Controller save/reopen coverage proves the typed 
 canonical, while the application-shell gate edits a real ROM record, verifies every named field,
 checksum, exact reopen, late-batch rollback, and byte-exact undo.
 
+Object-backed Layer 2 automation wraps that exact object grammar in strict `LML2OBJ1` framing and
+an `LMNATED1 layer2-objects` child. Parser tests accept every positioned object shape and reject
+headers, sprites, malformed framing, and command `$40`; aggregate-controller coverage applies the
+complete ordinary-field edit and reopens it alongside every core domain. The runnable ExLoROM
+profile gate changes command, parameter, absolute position, and perpendicular-high state, repairs
+the checksum, reopens semantically, undoes byte-exactly, and proves a late invalid removal leaves
+the entire ROM unchanged.
+
 Absolute sprite automation adds `LMLEDIT1 sprite place` and `sprite relocate-position`. Shared
 model tests place and relocate legacy records across stable screen ordering, reject legacy Y `$20`
 without mutation, and prove expanded placement/relocation rebuild upper-Y transitions while

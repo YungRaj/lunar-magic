@@ -11,6 +11,7 @@ const MAX_LINES: usize = 16;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeAssetsEditSpec {
     pub level: Option<PathBuf>,
+    pub layer2_objects: Option<PathBuf>,
     pub palette: Option<PathBuf>,
     pub exanimation: Option<PathBuf>,
     pub exanimation_features: Option<PathBuf>,
@@ -96,6 +97,7 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
         if !matches!(
             key,
             "level"
+                | "layer2-objects"
                 | "palette"
                 | "exanimation"
                 | "exanimation-features"
@@ -123,6 +125,7 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
     }
     Ok(NativeAssetsEditSpec {
         level: fields.remove("level"),
+        layer2_objects: fields.remove("layer2-objects"),
         palette: fields.remove("palette"),
         exanimation: fields.remove("exanimation"),
         exanimation_features: fields.remove("exanimation-features"),
@@ -138,7 +141,7 @@ mod tests {
     #[test]
     fn resolves_relative_unicode_paths_and_rejects_duplicates() {
         let spec = parse(
-            "LMNATED1\nlevel=Scripts/Level edits.txt\nexanimation-features=Animation.txt\nexpanded-settings=設定.txt\nsprite-spawn=Spawn.txt\n",
+            "LMNATED1\nlevel=Scripts/Level edits.txt\nlayer2-objects=Layer 2.txt\nexanimation-features=Animation.txt\nexpanded-settings=設定.txt\nsprite-spawn=Spawn.txt\n",
             Path::new("project"),
         )
         .unwrap();
@@ -149,6 +152,10 @@ mod tests {
         assert_eq!(
             spec.exanimation_features,
             Some(PathBuf::from("project/Animation.txt"))
+        );
+        assert_eq!(
+            spec.layer2_objects,
+            Some(PathBuf::from("project/Layer 2.txt"))
         );
         assert_eq!(
             spec.expanded_settings,
