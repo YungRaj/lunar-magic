@@ -59,7 +59,6 @@ pub(crate) struct AggregatePanels {
     sprite_header: native_level_document_form::NativeSpriteHeaderForm,
     sprite_vertical_spawn_range: u8,
     sprite_smart_spawn: bool,
-    sprite_spawn_raw: u8,
     sprite_spawn_available: bool,
     selected_color: usize,
     global: exanimation_form::GlobalForm,
@@ -168,7 +167,6 @@ impl AggregatePanels {
         self.sprite_spawn_available = lfix3_fields.is_some();
         if let Some(fields) = lfix3_fields {
             let spawn = fields.sprite_spawn_settings();
-            self.sprite_spawn_raw = spawn.raw();
             self.sprite_vertical_spawn_range = spawn.vertical_range();
             self.sprite_smart_spawn = spawn.smart_spawn();
         }

@@ -725,6 +725,10 @@ bound.
 The runnable `LMNATED1` shell workflow additionally covers relative paths containing spaces and
 Unicode, strict child formats, all four editable domains in one operation, checksum repair, and
 byte-exact restoration of the entire pre-edit ROM through one undo.
+The fifth installed-only `sprite-spawn` child has a separately bounded `LMSPAWN1` grammar. Loader
+tests prove it emits only semantic range/Smart-Spawn intent, while aggregate-controller tests prove
+current Lfix3 authentication, preservation of the shared high flags, checksum-valid reopen,
+history undo/redo, exact ROM undo, and failure atomicity for unavailable storage or range 4.
 Its ownership-backed route reads a file-backed `LMRATS01` manifest through the real shell
 dispatcher, reclaims the exact palette and ExAnimation snapshot blocks, preserves semantic reopen,
 rejects reuse of the now-stale evidence for a later edit without changing a byte, and restores the

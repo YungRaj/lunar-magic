@@ -100,6 +100,21 @@ fn stale_late_invalid_and_no_op_batches_are_atomic() {
         ))
     ));
     assert_eq!(controller.value(), &before);
+    let result = controller.apply_edits(
+        0,
+        &[NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+            vertical_range: 3,
+            smart_spawn: true,
+        }],
+        &PaletteOwnership::editable(2),
+    );
+    assert!(matches!(
+        result,
+        Err(NativeLevelAssetsDocumentControllerError::Edit(
+            NativeLevelAssetsControllerError::SpriteSpawnSettingsUnavailable { command: 0 }
+        ))
+    ));
+    assert_eq!(controller.value(), &before);
     controller
         .apply_edits(0, &[], &PaletteOwnership::editable(2))
         .unwrap();

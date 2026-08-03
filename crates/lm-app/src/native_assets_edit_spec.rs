@@ -14,6 +14,7 @@ pub struct NativeAssetsEditSpec {
     pub palette: Option<PathBuf>,
     pub exanimation: Option<PathBuf>,
     pub expanded_settings: Option<PathBuf>,
+    pub sprite_spawn: Option<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -93,7 +94,7 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
         let key = key.trim();
         if !matches!(
             key,
-            "level" | "palette" | "exanimation" | "expanded-settings"
+            "level" | "palette" | "exanimation" | "expanded-settings" | "sprite-spawn"
         ) {
             return Err(NativeAssetsEditSpecError::UnknownField(line, key.into()));
         }
@@ -119,6 +120,7 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
         palette: fields.remove("palette"),
         exanimation: fields.remove("exanimation"),
         expanded_settings: fields.remove("expanded-settings"),
+        sprite_spawn: fields.remove("sprite-spawn"),
     })
 }
 
@@ -129,7 +131,7 @@ mod tests {
     #[test]
     fn resolves_relative_unicode_paths_and_rejects_duplicates() {
         let spec = parse(
-            "LMNATED1\nlevel=Scripts/Level edits.txt\nexpanded-settings=設定.txt\n",
+            "LMNATED1\nlevel=Scripts/Level edits.txt\nexpanded-settings=設定.txt\nsprite-spawn=Spawn.txt\n",
             Path::new("project"),
         )
         .unwrap();
@@ -141,6 +143,7 @@ mod tests {
             spec.expanded_settings,
             Some(PathBuf::from("project/設定.txt"))
         );
+        assert_eq!(spec.sprite_spawn, Some(PathBuf::from("project/Spawn.txt")));
         assert!(parse("LMNATED1\nlevel=a\nlevel=b\n", Path::new(".")).is_err());
         assert!(parse("LMNATED1\n", Path::new(".")).is_err());
     }

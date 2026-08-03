@@ -2073,7 +2073,8 @@ the palette from the exact current aggregate revision, including unsaved edits. 
 viewport/overlay adapter and deterministic PNG encoder and publishes only to a new output path.
 The runnable shell exposes it as
 `native-assets-edit SPEC SEARCH_START SEARCH_END`. A bounded `LMNATED1` specification resolves
-optional `level`, `palette`, `exanimation`, and `expanded-settings` child scripts relative to the
+optional `level`, `palette`, `exanimation`, `expanded-settings`, and installed-only `sprite-spawn`
+child scripts relative to the
 specification file, for example:
 
 ```text
@@ -2082,11 +2083,18 @@ level=Level edits.txt
 palette=Palette edits.txt
 exanimation=Animation edits.txt
 expanded-settings=設定 edits.txt
+sprite-spawn=Spawn settings.txt
 ```
 
 Every child retains its established strict format and limits. The shell parses all children before
 dispatch, stages every domain in memory, and publishes one checksum-valid undo entry; a late child
 or edit failure preserves the complete application project.
+`sprite-spawn` uses `LMSPAWN1` followed by exactly one `settings RANGE SMART` command, where range
+is decimal `0..=3` and `SMART` is canonical `true` or `false`. It carries semantic intent rather
+than a raw Lfix3 byte: the aggregate controller reads the authenticated current flags, replaces
+only bits 0–2, and preserves the five shared flags. Missing/unauthenticated Lfix3 storage and
+invalid ranges reject before application history. Portable aggregate documents deliberately reject
+this installed-ROM-only domain through that same unavailable-state boundary.
 
 `native-assets-edit-owned SPEC SEARCH_START SEARCH_END OWNERSHIP_MANIFEST` adds exact reclamation
 for the four tagged members of that aggregate. The immutable controller snapshot supplies the

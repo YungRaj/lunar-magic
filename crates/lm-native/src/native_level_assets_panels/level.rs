@@ -263,7 +263,6 @@ impl AggregatePanels {
         }
         if apply_spawn_settings {
             return Some(spawn_settings_edit(
-                self.sprite_spawn_raw,
                 self.sprite_vertical_spawn_range,
                 self.sprite_smart_spawn,
             ));
@@ -397,14 +396,16 @@ impl AggregatePanels {
 }
 
 fn spawn_settings_edit(
-    raw: u8,
     vertical_range: u8,
     smart_spawn: bool,
 ) -> Result<NativeLevelAssetsControllerEdit, String> {
-    lm_level::SpriteSpawnSettings::from_raw(raw)
-        .with_properties(vertical_range, smart_spawn)
-        .map(NativeLevelAssetsControllerEdit::SpriteSpawnSettings)
-        .map_err(|error| error.to_string())
+    if vertical_range > lm_level::SpriteSpawnSettings::RANGE_MASK {
+        return Err(lm_level::SpriteSpawnRangeError(vertical_range).to_string());
+    }
+    Ok(NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+        vertical_range,
+        smart_spawn,
+    })
 }
 
 #[cfg(test)]
@@ -412,13 +413,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn installed_spawn_form_preserves_shared_lfix3_flags() {
+    fn installed_spawn_form_emits_bounded_semantic_intent() {
         assert!(matches!(
-            spawn_settings_edit(0xe1, 3, true).unwrap(),
-            NativeLevelAssetsControllerEdit::SpriteSpawnSettings(value) if value.raw() == 0xe7
+            spawn_settings_edit(3, true).unwrap(),
+            NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+                vertical_range: 3,
+                smart_spawn: true,
+            }
         ));
         assert_eq!(
-            spawn_settings_edit(0xe1, 4, false).unwrap_err(),
+            spawn_settings_edit(4, false).unwrap_err(),
             "sprite vertical spawn range must be in 0..=3, got 4"
         );
     }

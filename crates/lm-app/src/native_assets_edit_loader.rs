@@ -2,7 +2,7 @@
 
 use crate::{
     editor_shell::read_bounded_utf8, exanimation_edit_script, expanded_settings_edit_script,
-    level_edit_script, native_assets_edit_spec, palette_edit_script,
+    level_edit_script, native_assets_edit_spec, palette_edit_script, sprite_spawn_edit_script,
 };
 use lm_app::NativeLevelAssetsControllerEdit;
 use lm_graphics::PaletteOwnership;
@@ -53,8 +53,53 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
             expanded_settings_edit_script::parse(&text)?,
         ));
     }
+    if let Some(path) = spec.sprite_spawn {
+        let text = read_bounded_utf8(
+            &path,
+            sprite_spawn_edit_script::MAX_SCRIPT_LEN,
+            "sprite-spawn edit",
+        )?;
+        let edit = sprite_spawn_edit_script::parse(&text)?;
+        edits.push(NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+            vertical_range: edit.vertical_range,
+            smart_spawn: edit.smart_spawn,
+        });
+    }
     Ok(LoadedNativeAssetsEdits {
         edits,
         palette_ownership: palette_script.map(|script| script.ownership),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn aggregate_loader_routes_semantic_spawn_properties_without_raw_lfix3_bits() {
+        let directory = std::env::temp_dir().join(format!(
+            "lm-native-spawn-loader-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory).unwrap();
+        let spawn = directory.join("Spawn settings.txt");
+        fs::write(&spawn, "LMSPAWN1\nsettings 3 true\n").unwrap();
+        let spec = directory.join("Aggregate.lmnat");
+        fs::write(&spec, "LMNATED1\nsprite-spawn=Spawn settings.txt\n").unwrap();
+
+        let loaded = load(&spec).unwrap();
+        assert!(matches!(
+            loaded.edits.as_slice(),
+            [NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+                vertical_range: 3,
+                smart_spawn: true,
+            }]
+        ));
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

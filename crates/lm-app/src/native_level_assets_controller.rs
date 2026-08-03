@@ -12,8 +12,8 @@ use lm_level::{
     ExpandedLevelSettingsError, HeaderValueError, Layer2Storage, LegacyHeaderEdit, LevelEditError,
     LevelObjectData, LevelScreenExtentMode, MwlLayer2Descriptor, NATIVE_LAYER2_TILEMAP_LEN,
     NativeLayer2Data, NativeLayer2RemapError, NativeLayer2RemapProgram, NativeSpriteEncodingError,
-    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteSpawnSettings, SpriteStreamError,
-    level_mode_layer2_storage, native_level_screen_count,
+    ObjectEdit, ObjectEditError, SpriteLengthTable, SpriteStreamError, level_mode_layer2_storage,
+    native_level_screen_count,
 };
 use lm_project::{
     InstalledExAnimationFeatureRomLayout, InstalledLayout, LevelLayer2IoError,
@@ -43,7 +43,10 @@ pub enum NativeLevelAssetsControllerEdit {
     ExAnimation(Vec<ExAnimationControllerEdit>),
     ExAnimationFeatures(ExAnimationFeatureOptions),
     ExpandedSettingsWords(Vec<(usize, u16)>),
-    SpriteSpawnSettings(SpriteSpawnSettings),
+    SpriteSpawnProperties {
+        vertical_range: u8,
+        smart_spawn: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -125,6 +128,10 @@ pub enum NativeLevelAssetsControllerError {
     },
     SpriteSpawnSettingsUnavailable {
         command: usize,
+    },
+    SpriteSpawnRange {
+        command: usize,
+        error: lm_level::SpriteSpawnRangeError,
     },
     Lfix3Fields(lm_project::Lfix3LevelFieldsIoError),
     MwlTargetMismatch {
@@ -959,11 +966,21 @@ pub(crate) fn apply_native_level_assets_edits(
                     })?;
                 }
             }
-            NativeLevelAssetsControllerEdit::SpriteSpawnSettings(settings) => {
+            NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+                vertical_range,
+                smart_spawn,
+            } => {
                 let fields = staged_lfix3_fields.as_mut().ok_or(
                     NativeLevelAssetsControllerError::SpriteSpawnSettingsUnavailable { command },
                 )?;
-                fields.set_sprite_spawn_settings(*settings);
+                let settings = fields
+                    .sprite_spawn_settings()
+                    .with_properties(*vertical_range, *smart_spawn)
+                    .map_err(|error| NativeLevelAssetsControllerError::SpriteSpawnRange {
+                        command,
+                        error,
+                    })?;
+                fields.set_sprite_spawn_settings(settings);
             }
         }
     }

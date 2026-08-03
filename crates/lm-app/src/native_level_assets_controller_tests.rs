@@ -755,16 +755,11 @@ fn installed_spawn_settings_share_history_commit_reopen_checksum_and_rom_undo() 
         },
         lfix3_layout(),
     );
-    let settings = controller
-        .lfix3_level_fields()
-        .unwrap()
-        .sprite_spawn_settings()
-        .with_properties(3, true)
-        .unwrap();
     controller
-        .apply_edits(&[NativeLevelAssetsControllerEdit::SpriteSpawnSettings(
-            settings,
-        )])
+        .apply_edits(&[NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+            vertical_range: 3,
+            smart_spawn: true,
+        }])
         .unwrap();
     assert_eq!(controller.lfix3_level_fields().unwrap().flags, 0xe7);
     assert!(controller.undo());
@@ -806,12 +801,49 @@ fn installed_spawn_edit_rejects_unavailable_lfix3_without_history() {
     .unwrap();
     let before = controller.assets().clone();
     assert!(matches!(
-        controller.apply_edits(&[NativeLevelAssetsControllerEdit::SpriteSpawnSettings(
-            lm_level::SpriteSpawnSettings::from_raw(0),
-        )]),
+        controller.apply_edits(&[NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+            vertical_range: 0,
+            smart_spawn: false,
+        }]),
         Err(NativeLevelAssetsControllerError::SpriteSpawnSettingsUnavailable { command: 0 })
     ));
     assert_eq!(controller.assets(), &before);
+    assert!(!controller.can_undo());
+    assert!(!controller.is_modified());
+}
+
+#[test]
+fn installed_spawn_edit_rejects_invalid_range_without_touching_shared_flags_or_history() {
+    let snapshot = snapshot();
+    let mut controller = NativeLevelAssetsController::decode(
+        &snapshot,
+        layout(),
+        &SpriteLengthTable::standard(),
+        &[false; 256],
+        PaletteOwnership::editable(2),
+    )
+    .unwrap();
+    controller.attach_lfix3_level_fields(
+        Lfix3LevelFields {
+            flags: 0xe1,
+            high_position: 0x22,
+            additional_flags: 0x33,
+            runtime_flags: 0x44,
+        },
+        lfix3_layout(),
+    );
+
+    assert!(matches!(
+        controller.apply_edits(&[NativeLevelAssetsControllerEdit::SpriteSpawnProperties {
+            vertical_range: 4,
+            smart_spawn: true,
+        }]),
+        Err(NativeLevelAssetsControllerError::SpriteSpawnRange {
+            command: 0,
+            error: lm_level::SpriteSpawnRangeError(4),
+        })
+    ));
+    assert_eq!(controller.lfix3_level_fields().unwrap().flags, 0xe1);
     assert!(!controller.can_undo());
     assert!(!controller.is_modified());
 }

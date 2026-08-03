@@ -65,6 +65,7 @@ mod revision_patch_shell;
 mod shell_command;
 mod shell_document_command;
 mod spec_text;
+mod sprite_spawn_edit_script;
 mod startup;
 mod tool_shell;
 mod ui_shell;

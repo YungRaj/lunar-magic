@@ -340,7 +340,9 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
 - Runnable aggregate editing uses a separate bounded `LMNATED1` composition specification. It
   resolves the existing domain scripts relative to the specification, parses them all before
   mutation, and drives the profile-qualified aggregate controller so mixed edits remain one
-  checksum-inclusive application revision and undo operation.
+  checksum-inclusive application revision and undo operation. Its installed-only `LMSPAWN1`
+  child carries vertical-range/Smart-Spawn properties rather than raw shared Lfix3 bits, so GUI,
+  scripts, and future automation use the same authenticated semantic transaction.
 - Complete `LMOWFULL` documents similarly retain their exact size-mode table and animation bound
   for their entire lifetime. Native-ROM and portable-document controllers call one staged
   nine-domain edit engine, while `LMOWDOC1` and `LMOWDRN1` keep open interpretation and preview
