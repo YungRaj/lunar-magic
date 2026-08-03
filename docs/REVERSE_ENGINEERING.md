@@ -3141,3 +3141,19 @@ clears the pending move on rejection, preventing failed batches from drifting
 selection. One aggregate regression reorders all three streams atomically,
 undoes/redoes the complete state, commits it, and reopens the exact priority
 order from ROM.
+
+The Lunar Magic 3.63 `Change Properties in Sprite Header` dialog is now traced
+from resource `$3F5` through its procedure at `$00412CE0`. Its two buoyancy
+widgets are independent auto-checkboxes, not radio alternatives. On accept,
+control `$1B4` clears/sets sprite-header bit `$80`, and control `$1B5`
+clears/sets bit `$40`; initialization reads those same bits back into the same
+controls. The Rust semantic names therefore intentionally do not follow
+ascending bit order. The same handler also separates three adjacent settings
+from the sprite stream byte: combo `$68` stores the horizontal-level vertical
+spawn range in `DAT_005F1A46` bits 0–1, checkbox `$69` stores Smart Spawn in bit
+2, and checkbox `$6A` stores the beyond-boundary air/water choice in bit 2 of
+the packed high nibbles returned by `$00464B00`. `ExportBinaryMwlLevelFile`
+places `DAT_005F1A46` at MWL level-header byte 6, while
+`LoadLfix3LevelRuntimeFields`/`WriteLfix3LevelRuntimeFields` prove it is a
+separate current-Lfix3 per-level plane in ROM. Those storage domains must remain
+separate when the remaining controls are made semantic.

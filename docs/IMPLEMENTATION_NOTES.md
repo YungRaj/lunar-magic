@@ -3165,7 +3165,10 @@ The installed aggregate, pristine-ROM, portable native-level, binary MWL, and co
 editors all expose the original sprite-memory settings `$00..=$12` and both buoyancy modes as typed
 controls. `NativeSpriteHeader` partitions those user-facing fields from the serializer-owned
 expanded-framing bit `$20`, so changing gameplay properties cannot silently change the stream
-grammar. A shared native form keeps all document workspaces on that interpretation and reloads
+grammar. Lunar Magic 3.63's dialog procedure at `$00412CE0` proves that its independent checkbox
+control `$1B4` (buoyancy 1) owns header bit `$80`, while `$1B5` (buoyancy 2) owns bit `$40`; the
+shared semantic model follows that non-numeric ordering and tests each bit independently. A shared
+native form keeps all document workspaces on that interpretation and reloads
 canonical controller state after edits and history navigation. Focused model/workspace coverage
 rejects memory setting `$13` and preserves `$20`, while an application-backed regression exercises
 edit, undo/redo, checksum repair, exact ROM reopen, and ROM-history undo.

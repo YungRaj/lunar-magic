@@ -323,7 +323,7 @@ mod tests {
         let mut form = NativeSpriteHeaderForm::load(0x20);
         form.memory = 0x12;
         form.buoyancy_1 = true;
-        assert_eq!(form.header().unwrap(), 0x72);
+        assert_eq!(form.header().unwrap(), 0xb2);
 
         form.memory = 0x13;
         assert_eq!(form.header(), Err(NativeSpriteMemoryError(0x13)));

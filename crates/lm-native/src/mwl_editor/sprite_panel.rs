@@ -495,7 +495,7 @@ mod tests {
         panel.header.memory = 0x12;
         panel.header.buoyancy_2 = true;
         panel.stream.as_mut().unwrap().header = panel.header.header().unwrap();
-        assert_eq!(panel.stream.unwrap().header, 0xb2);
+        assert_eq!(panel.stream.unwrap().header, 0x72);
     }
 
     #[test]

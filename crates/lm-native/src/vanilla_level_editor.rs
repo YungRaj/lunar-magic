@@ -13649,7 +13649,7 @@ mod tests {
         let mut form = SpriteForm::from_token(0x20, None);
         form.sprite_memory = 0x12;
         form.sprite_buoyancy_1 = true;
-        assert_eq!(form.semantic_header().unwrap(), 0x72);
+        assert_eq!(form.semantic_header().unwrap(), 0xb2);
 
         form.sprite_memory = 0x13;
         assert_eq!(

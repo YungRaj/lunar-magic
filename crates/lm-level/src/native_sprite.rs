@@ -32,8 +32,11 @@ impl std::error::Error for NativeSpriteMemoryError {}
 
 impl NativeSpriteHeader {
     pub const MEMORY_MASK: u8 = 0x1f;
-    pub const BUOYANCY_1_FLAG: u8 = 0x40;
-    pub const BUOYANCY_2_FLAG: u8 = 0x80;
+    // Lunar Magic dialog control 436 ("buoyancy 1") owns bit $80; control 437
+    // ("buoyancy 2") owns bit $40. Keep these names tied to the UI semantics,
+    // rather than ordering them by bit position.
+    pub const BUOYANCY_1_FLAG: u8 = 0x80;
+    pub const BUOYANCY_2_FLAG: u8 = 0x40;
     pub const MAX_MEMORY: u8 = 0x12;
 
     #[must_use]
@@ -216,7 +219,7 @@ mod tests {
         let header = NativeSpriteHeader::from_raw(0x20)
             .with_properties(0x12, true, false)
             .unwrap();
-        assert_eq!(header.raw(), 0x72);
+        assert_eq!(header.raw(), 0xb2);
         assert_eq!(header.memory(), 0x12);
         assert!(header.buoyancy_1());
         assert!(!header.buoyancy_2());
@@ -225,7 +228,20 @@ mod tests {
             header.with_properties(0x13, false, false),
             Err(NativeSpriteMemoryError(0x13))
         );
-        assert_eq!(header.raw(), 0x72);
+        assert_eq!(header.raw(), 0xb2);
+    }
+
+    #[test]
+    fn semantic_header_buoyancy_controls_own_lunar_magic_bits() {
+        let first = NativeSpriteHeader::from_raw(0)
+            .with_properties(0, true, false)
+            .unwrap();
+        let second = NativeSpriteHeader::from_raw(0)
+            .with_properties(0, false, true)
+            .unwrap();
+
+        assert_eq!(first.raw(), 0x80);
+        assert_eq!(second.raw(), 0x40);
     }
 
     #[test]
