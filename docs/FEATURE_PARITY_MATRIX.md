@@ -177,6 +177,11 @@ validate all six native planes before dispatch, update an authentic installed ru
 checksum, reopen the exact result, and undo to the original ROM byte-for-byte. A late invalid
 destination proves earlier staged clearing cannot escape.
 
+The screen-exit row now also has strict `LMLEDIT1 object screen-exit INDEX SCREEN
+DESTINATION_AND_FLAGS` automation through the same canonical setter as the native form. It covers
+compact/extended shape changes, required flag `$0400`, advance-bit preservation, checksum-valid
+ROM reopen, exact undo, out-of-range screen rejection, and late wrong-record rollback.
+
 ## Current critical path
 
 The fastest route to a broadly usable editor is:

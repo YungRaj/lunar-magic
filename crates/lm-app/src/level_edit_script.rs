@@ -175,6 +175,26 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
                 },
             ]))
         }
+        [
+            "object",
+            "screen-exit",
+            index,
+            screen,
+            destination_and_flags,
+        ] => {
+            let screen = hex_byte(line, screen)?;
+            if screen > 0x1f {
+                return Err(LevelEditScriptError::InvalidNumber {
+                    line,
+                    value: screen.to_string(),
+                });
+            }
+            Ok(NativeLevelEdit::Objects(vec![ObjectEdit::SetScreenExit {
+                index: decimal(line, index)?,
+                screen,
+                destination_and_flags: hex_word(line, destination_and_flags)?,
+            }]))
+        }
         ["object", "relocate", index, screen, first, second] => Ok(NativeLevelEdit::Objects(vec![
             ObjectEdit::RelocateOrdinary {
                 index: decimal(line, index)?,
@@ -408,6 +428,7 @@ mod tests {
             object coordinates 0 0e 0d\n\
             object screen-advance 0 true\n\
             object screen-jump-target 0 0f1e\n\
+            object screen-exit 0 1f bcde\n\
             object relocate 0 001f 0c 0b\n\
             sprite-header 10\n\
             sprite-properties 12 true false\n\
@@ -421,7 +442,7 @@ mod tests {
             sprite remove 1\n\
             custom-time abc true\n";
         let edits = parse(script).unwrap();
-        assert_eq!(edits.len(), 23);
+        assert_eq!(edits.len(), 24);
         assert!(matches!(edits[0], NativeLevelEdit::LegacyHeader(_)));
         assert_eq!(
             edits[1],
@@ -461,15 +482,24 @@ mod tests {
         assert!(matches!(
             edits[11],
             NativeLevelEdit::Objects(ref edits)
+                if edits == &[ObjectEdit::SetScreenExit {
+                    index: 0,
+                    screen: 0x1f,
+                    destination_and_flags: 0xbcde,
+                }]
+        ));
+        assert!(matches!(
+            edits[12],
+            NativeLevelEdit::Objects(ref edits)
                 if edits == &[ObjectEdit::RelocateOrdinary {
                     index: 0,
                     screen: 0x1f,
                     coordinates: ObjectCoordinateNibbles { first: 0x0c, second: 0x0b }
                 }]
         ));
-        assert!(matches!(edits[12], NativeLevelEdit::SetSpriteHeader(0x10)));
+        assert!(matches!(edits[13], NativeLevelEdit::SetSpriteHeader(0x10)));
         assert_eq!(
-            edits[13],
+            edits[14],
             NativeLevelEdit::SetSpriteHeaderProperties {
                 memory: 0x12,
                 buoyancy_1: true,
@@ -477,11 +507,11 @@ mod tests {
             }
         );
         assert!(matches!(
-            edits[19],
+            edits[20],
             NativeLevelEdit::SortLegacySpritesByScreen { selected: 0 }
         ));
         assert!(matches!(
-            edits[20],
+            edits[21],
             NativeLevelEdit::RelocateExpandedSprite {
                 selected: 0,
                 screen: 4,
@@ -490,14 +520,14 @@ mod tests {
             }
         ));
         assert!(matches!(
-            edits[16],
+            edits[17],
             NativeLevelEdit::InsertSprite {
                 token: SpriteToken::Control(0x90),
                 ..
             }
         ));
         assert_eq!(
-            edits[22],
+            edits[23],
             NativeLevelEdit::SetCustomTime(Some(CustomTimeSettings::new(0xabc, true).unwrap()))
         );
     }
@@ -509,6 +539,7 @@ mod tests {
             "LMLEDIT1\nobject insert 0 01\n",
             "LMLEDIT1\nobject command 0 xyz\n",
             "LMLEDIT1\nobject screen-advance 0 yes\n",
+            "LMLEDIT1\nobject screen-exit 0 20 0000\n",
             "LMLEDIT1\nsprite insert 0 screen 80\n",
             "LMLEDIT1\nsprite insert 0 control 7f\n",
             "LMLEDIT1\nsprite insert 0 mystery 00\n",

@@ -544,6 +544,10 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   bit-preserving typed command-ID/parameter/coordinate/screen-advance changes, with
   shape-changing or terminator-colliding typed edits rejected. Existing screen-jump controls also
   accept exact packed-target edits without changing their recovered encoding variant.
+  Existing command-zero screen exits accept a typed source-screen and destination/flags edit. The
+  shared object transaction delegates to Lunar Magic's canonical setter, preserves the unrelated
+  advance bit, adds required flag `$0400`, and permits the recovered compact/extended shape change
+  while keeping late wrong-record or out-of-range failures atomic.
   Both `LMLEDIT1` and the focused `level-header` command expose the typed four-way Layer 1
   vertical-scroll mode, reject raw values above 3, and preserve the object tileset plus both
   unrelated high bits in the shared header byte.

@@ -1038,6 +1038,12 @@ when this explicit semantic edit is applied.
 Semantic sprite properties accept memory `$00..=$12` plus canonical booleans and preserve the
 serializer-owned expanded-framing bit `$20` from the staged stream. Invalid memory and boolean
 values reject before application, while controller-side validation keeps direct callers atomic.
+Existing screen-exit objects can be edited semantically with `object screen-exit INDEX SCREEN
+DESTINATION_AND_FLAGS`. The decimal record index selects a recognized command-zero exit, while the
+source screen and 16-bit destination/flags value are hexadecimal. The shared typed object edit
+rejects source screens above `$1F` and non-exit records atomically, unconditionally adds Lunar
+Magic's required `$0400` flag, preserves the unrelated advance-screen bit, and canonically changes
+between the four-byte parameter-0 and five-byte parameter-2 shapes.
 Indexes are decimal, field and token values are hexadecimal, and raw records use contiguous hex.
 For example:
 
@@ -1050,6 +1056,7 @@ object parameter 0 7f
 object coordinates 0 0e 0d
 object screen-advance 0 true
 object screen-jump-target 1 0a1b
+object screen-exit 2 1f bcde
 sprite-header 10
 sprite-properties 12 true false
 sprite insert 1 screen 12

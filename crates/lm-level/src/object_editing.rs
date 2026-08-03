@@ -61,6 +61,12 @@ pub enum ObjectEdit {
         index: usize,
         packed_target: u16,
     },
+    /// Canonically rewrites an existing screen-exit source screen and destination/flags value.
+    SetScreenExit {
+        index: usize,
+        screen: u8,
+        destination_and_flags: u16,
+    },
     /// Relocates one ordinary object and canonically regenerates owned screen transitions.
     RelocateOrdinary {
         index: usize,
@@ -189,6 +195,17 @@ impl ObjectStream {
                     let target = record_mut(&mut staged, command, *index)?;
                     target
                         .set_screen_jump_target(*packed_target)
+                        .map_err(|error| ObjectEditError::Field { command, error })?;
+                    Ok(())
+                }
+                ObjectEdit::SetScreenExit {
+                    index,
+                    screen,
+                    destination_and_flags,
+                } => {
+                    let target = record_mut(&mut staged, command, *index)?;
+                    target
+                        .set_screen_exit(*screen, *destination_and_flags)
                         .map_err(|error| ObjectEditError::Field { command, error })?;
                     Ok(())
                 }
@@ -409,6 +426,42 @@ mod tests {
                 ])
                 .is_err()
         );
+        assert_eq!(stream, original);
+    }
+
+    #[test]
+    fn screen_exit_edit_changes_shape_canonically_and_is_transactional() {
+        let source = ObjectRecord::new(vec![0x85, 0x0a, 0, 0x34]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![source.clone(), record(2)],
+        };
+        stream
+            .apply_edits(&[ObjectEdit::SetScreenExit {
+                index: 0,
+                screen: 0x1f,
+                destination_and_flags: 0x1000,
+            }])
+            .unwrap();
+        assert_eq!(stream.records[0].encoded(), &[0x9f, 0, 2, 0, 0x14]);
+
+        let original = stream.clone();
+        assert!(matches!(
+            stream.apply_edits(&[
+                ObjectEdit::SetParameter {
+                    index: 1,
+                    parameter: 0x7f,
+                },
+                ObjectEdit::SetScreenExit {
+                    index: 1,
+                    screen: 0,
+                    destination_and_flags: 0,
+                },
+            ]),
+            Err(ObjectEditError::Field {
+                command: 1,
+                error: ObjectFieldError::NotScreenExit,
+            })
+        ));
         assert_eq!(stream, original);
     }
 
