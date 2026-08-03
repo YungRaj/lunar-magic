@@ -71,6 +71,26 @@ pub(super) fn apply_edit(
         OverworldAppearanceDocumentEdit::ReplaceParts { sprite_id, values } => {
             *parts_mut(definitions, *sprite_id)? = values.clone();
         }
+        OverworldAppearanceDocumentEdit::TranslateParts {
+            sprite_id,
+            delta_x,
+            delta_y,
+        } => {
+            let parts = parts_mut(definitions, *sprite_id)?;
+            let translated = parts
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, mut part)| {
+                    part.x_offset =
+                        translated_offset(*sprite_id, index, "x", part.x_offset, *delta_x)?;
+                    part.y_offset =
+                        translated_offset(*sprite_id, index, "y", part.y_offset, *delta_y)?;
+                    Ok(part)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            *parts = translated;
+        }
         OverworldAppearanceDocumentEdit::MovePartBefore {
             sprite_id,
             index,
@@ -107,6 +127,25 @@ pub(super) fn apply_edit(
         }
     }
     Ok(())
+}
+
+fn translated_offset(
+    sprite_id: u16,
+    index: usize,
+    axis: &'static str,
+    offset: i16,
+    delta: i32,
+) -> Result<i16, OverworldAppearanceEditError> {
+    i32::from(offset)
+        .checked_add(delta)
+        .and_then(|value| i16::try_from(value).ok())
+        .ok_or(OverworldAppearanceEditError::PartOffsetOverflow {
+            sprite_id,
+            index,
+            axis,
+            offset,
+            delta,
+        })
 }
 
 fn definition_index(

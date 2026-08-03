@@ -36,6 +36,11 @@ pub enum OverworldAppearanceDocumentEdit {
         sprite_id: u16,
         values: Vec<SpriteAppearancePart>,
     },
+    TranslateParts {
+        sprite_id: u16,
+        delta_x: i32,
+        delta_y: i32,
+    },
     MovePartBefore {
         sprite_id: u16,
         index: usize,
@@ -304,7 +309,17 @@ impl OverworldAppearanceDocumentController {
 pub enum OverworldAppearanceEditError {
     DuplicateSpriteId(u16),
     UnknownSpriteId(u16),
-    IndexOutOfBounds { index: usize, len: usize },
+    IndexOutOfBounds {
+        index: usize,
+        len: usize,
+    },
+    PartOffsetOverflow {
+        sprite_id: u16,
+        index: usize,
+        axis: &'static str,
+        offset: i16,
+        delta: i32,
+    },
 }
 
 #[derive(Debug)]

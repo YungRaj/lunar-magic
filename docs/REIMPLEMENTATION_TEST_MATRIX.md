@@ -382,7 +382,10 @@ reopen; dirty close/discard; and a built-binary Unicode-and-space-path lifecycle
 reverse painter-order hit testing used to select the topmost overlapping part. Drag tests cover
 world-pixel snapping at scale, both signed limits, preservation of tile/palette/flip fields, no-op
 release, and exactly one typed replacement after motion. Keyboard tests cover one-pixel and
-eight-pixel steps, field preservation, and history-neutral movement against both signed edges. Typed
+eight-pixel selected-part steps plus Alt-modified whole-composition steps at both sizes. Controller
+tests prove that complete translations stage every signed offset, advance exactly one revision, and
+reject any overflowing member without partial movement; preview tests prove blocked group edges are
+history-neutral. Ctrl/Command chords remain unconsumed. Typed
 appearance-part clipboard tests round-trip tile, palette, signed offsets, and flips; reject invalid
 widths, palettes, flags, domains, and multi-part delivery; and prove request-captured replace/insert
 targets each advance exactly one revision while stale delivery preserves the current document.

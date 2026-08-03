@@ -25,6 +25,13 @@ struct PreviewBounds {
     max_y: i32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PreviewNudge {
+    delta_x: i32,
+    delta_y: i32,
+    composition: bool,
+}
+
 impl PreviewBounds {
     fn for_parts(parts: &[SpriteAppearancePart]) -> Self {
         let mut bounds = Self {
@@ -68,7 +75,7 @@ impl OverworldAppearanceEditor {
         }
         ui.heading("Composition preview");
         ui.label(
-            "Click to select; drag or use arrows to move one pixel. Shift+arrow moves eight pixels.",
+            "Click to select; arrows move one part, Alt+arrows move all parts. Shift changes either step to eight pixels.",
         );
         let (rect, response) = ui.allocate_exact_size(PREVIEW_SIZE, egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
@@ -225,15 +232,10 @@ impl OverworldAppearanceEditor {
         {
             return Some(edit);
         }
-        if let Some((delta_x, delta_y)) = nudge
-            && let Some(part) = definition.parts.get(self.part_index).copied()
-            && let Some(value) = nudged_part(part, delta_x, delta_y)
+        if let Some(nudge) = nudge
+            && let Some(edit) = nudge_edit(definition, self.part_index, nudge)
         {
-            return Some(lm_app::OverworldAppearanceDocumentEdit::ReplacePart {
-                sprite_id: definition.sprite_id,
-                index: self.part_index,
-                value,
-            });
+            return Some(edit);
         }
         None
     }
@@ -288,10 +290,10 @@ fn completed_drag_edit(drag: PreviewDrag) -> Option<lm_app::OverworldAppearanceD
     )
 }
 
-fn preview_nudge(ui: &mut egui::Ui) -> Option<(i32, i32)> {
+fn preview_nudge(ui: &mut egui::Ui) -> Option<PreviewNudge> {
     ui.input_mut(|input| {
         let modifiers = input.modifiers;
-        if modifiers.alt || modifiers.ctrl || modifiers.command || modifiers.mac_cmd {
+        if modifiers.ctrl || modifiers.command || modifiers.mac_cmd {
             return None;
         }
         let step = if modifiers.shift { 8 } else { 1 };
@@ -299,10 +301,61 @@ fn preview_nudge(ui: &mut egui::Ui) -> Option<(i32, i32)> {
         let right = input.consume_key(modifiers, egui::Key::ArrowRight);
         let up = input.consume_key(modifiers, egui::Key::ArrowUp);
         let down = input.consume_key(modifiers, egui::Key::ArrowDown);
-        let x = i32::from(right) * step - i32::from(left) * step;
-        let y = i32::from(down) * step - i32::from(up) * step;
-        (x != 0 || y != 0).then_some((x, y))
+        preview_nudge_value(modifiers.alt, step, left, right, up, down)
     })
+}
+
+fn preview_nudge_value(
+    composition: bool,
+    step: i32,
+    left: bool,
+    right: bool,
+    up: bool,
+    down: bool,
+) -> Option<PreviewNudge> {
+    let delta_x = i32::from(right) * step - i32::from(left) * step;
+    let delta_y = i32::from(down) * step - i32::from(up) * step;
+    (delta_x != 0 || delta_y != 0).then_some(PreviewNudge {
+        delta_x,
+        delta_y,
+        composition,
+    })
+}
+
+fn nudge_edit(
+    definition: &SpriteAppearanceDefinition,
+    part_index: usize,
+    nudge: PreviewNudge,
+) -> Option<lm_app::OverworldAppearanceDocumentEdit> {
+    if nudge.composition {
+        if definition.parts.is_empty()
+            || !definition.parts.iter().all(|part| {
+                translated_offset_fits(part.x_offset, nudge.delta_x)
+                    && translated_offset_fits(part.y_offset, nudge.delta_y)
+            })
+        {
+            return None;
+        }
+        return Some(lm_app::OverworldAppearanceDocumentEdit::TranslateParts {
+            sprite_id: definition.sprite_id,
+            delta_x: nudge.delta_x,
+            delta_y: nudge.delta_y,
+        });
+    }
+    let part = definition.parts.get(part_index).copied()?;
+    nudged_part(part, nudge.delta_x, nudge.delta_y).map(|value| {
+        lm_app::OverworldAppearanceDocumentEdit::ReplacePart {
+            sprite_id: definition.sprite_id,
+            index: part_index,
+            value,
+        }
+    })
+}
+
+fn translated_offset_fits(offset: i16, delta: i32) -> bool {
+    i32::from(offset)
+        .checked_add(delta)
+        .is_some_and(|value| i16::try_from(value).is_ok())
 }
 
 fn nudged_part(
@@ -431,5 +484,77 @@ mod tests {
         assert_eq!((tile.x_offset, tile.y_offset), (18, 12));
         assert_eq!(nudged_part(part(i16::MIN, 0), -1, 0), None);
         assert_eq!(nudged_part(part(0, i16::MAX), 0, 8), None);
+    }
+
+    #[test]
+    fn composition_nudges_are_atomic_and_boundary_neutral() {
+        assert_eq!(
+            preview_nudge_value(true, 1, true, false, false, false),
+            Some(PreviewNudge {
+                delta_x: -1,
+                delta_y: 0,
+                composition: true,
+            })
+        );
+        assert_eq!(
+            preview_nudge_value(true, 8, false, false, true, false),
+            Some(PreviewNudge {
+                delta_x: 0,
+                delta_y: -8,
+                composition: true,
+            })
+        );
+        let definition = SpriteAppearanceDefinition {
+            sprite_id: 0x1234,
+            parts: vec![part(-8, 16), part(24, -32)],
+        };
+        assert_eq!(
+            nudge_edit(
+                &definition,
+                1,
+                PreviewNudge {
+                    delta_x: 8,
+                    delta_y: -8,
+                    composition: true,
+                }
+            ),
+            Some(lm_app::OverworldAppearanceDocumentEdit::TranslateParts {
+                sprite_id: 0x1234,
+                delta_x: 8,
+                delta_y: -8,
+            })
+        );
+
+        let blocked = SpriteAppearanceDefinition {
+            sprite_id: 0x1234,
+            parts: vec![part(0, 0), part(i16::MAX, 8)],
+        };
+        assert_eq!(
+            nudge_edit(
+                &blocked,
+                0,
+                PreviewNudge {
+                    delta_x: 1,
+                    delta_y: 0,
+                    composition: true,
+                }
+            ),
+            None
+        );
+        assert_eq!(
+            nudge_edit(
+                &SpriteAppearanceDefinition {
+                    sprite_id: 1,
+                    parts: Vec::new(),
+                },
+                0,
+                PreviewNudge {
+                    delta_x: 1,
+                    delta_y: 0,
+                    composition: true,
+                }
+            ),
+            None
+        );
     }
 }

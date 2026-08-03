@@ -197,6 +197,68 @@ fn complete_part_replacement_is_one_revision_and_failure_atomic() {
 }
 
 #[test]
+fn complete_part_translation_is_one_revision_and_overflow_atomic() {
+    let mut controller = controller();
+    controller
+        .apply_edits(
+            0,
+            &[OverworldAppearanceDocumentEdit::ReplaceParts {
+                sprite_id: 1,
+                values: vec![part(1, -20), part(2, 30)],
+            }],
+        )
+        .unwrap();
+    controller
+        .apply_edits(
+            1,
+            &[OverworldAppearanceDocumentEdit::TranslateParts {
+                sprite_id: 1,
+                delta_x: 8,
+                delta_y: -1,
+            }],
+        )
+        .unwrap();
+    assert_eq!(controller.revision(), 2);
+    let parts = &controller.value().definition(1).unwrap().parts;
+    assert_eq!((parts[0].x_offset, parts[0].y_offset), (-12, -9));
+    assert_eq!((parts[1].x_offset, parts[1].y_offset), (38, -9));
+
+    controller
+        .apply_edits(
+            2,
+            &[OverworldAppearanceDocumentEdit::ReplacePart {
+                sprite_id: 1,
+                index: 1,
+                value: part(3, i16::MAX),
+            }],
+        )
+        .unwrap();
+    let before = controller.value().clone();
+    assert!(matches!(
+        controller.apply_edits(
+            3,
+            &[OverworldAppearanceDocumentEdit::TranslateParts {
+                sprite_id: 1,
+                delta_x: 1,
+                delta_y: 0,
+            }]
+        ),
+        Err(OverworldAppearanceDocumentControllerError::Edit {
+            error: OverworldAppearanceEditError::PartOffsetOverflow {
+                sprite_id: 1,
+                index: 1,
+                axis: "x",
+                offset: i16::MAX,
+                delta: 1,
+            },
+            ..
+        })
+    ));
+    assert_eq!(controller.value(), &before);
+    assert_eq!(controller.revision(), 3);
+}
+
+#[test]
 fn duplicate_missing_late_index_and_palette_failures_are_atomic() {
     let mut controller = controller();
     let original = controller.value().clone();

@@ -2588,8 +2588,12 @@ order, retains the sprite origin, identifies tile/palette/flip fields, and selec
 overlapping part on click. Dragging previews pixel-snapped signed offsets without changing the
 document, clamps both axes to the encoded `i16` range, and publishes one typed replacement only
 when the pointer is released after actual motion. A focused preview additionally consumes unmodified
-arrows as one-pixel nudges and Shift+arrow as exact eight-pixel tile steps; blocked edge movement is
-history-neutral and every accepted nudge uses the same field-preserving replacement. The native part
+arrows as one-pixel selected-part nudges and Shift+arrow as exact eight-pixel selected-part tile
+steps. Alt+arrow translates the complete composition by one pixel and Alt+Shift+arrow translates it
+by eight pixels through one first-class `TranslateParts` edit. The controller stages every translated
+signed offset before assignment, so one overflowing part rejects the complete operation without a
+revision; blocked selected-part and composition edge movement is history-neutral. Ctrl/Command
+chords remain available to the surrounding application. The native part
 panel also copies one complete part through a distinct fixed-width typed clipboard domain, capturing
 tile, palette, both signed offsets, and both flips. Paste-over and paste-after bind delivery to the
 requested sprite ID, part index, mode, and document revision; selection changes cannot redirect the
