@@ -214,6 +214,59 @@ fn command_script_installs_expanded_settings_and_saves_a_new_rom() {
 }
 
 #[test]
+fn command_script_edits_builtin_smw_level_without_external_profile() {
+    let directory = std::env::temp_dir().join(format!(
+        "lm-app-builtin-level-edit-{}-{}",
+        std::process::id(),
+        NEXT_SCRIPT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let input = directory.join("pristine source.smc");
+    let output = directory.join("edited output.smc");
+    let edits = directory.join("level edits.txt");
+    let commands = directory.join("commands.txt");
+    let original = pristine_smw_us_rom_bytes();
+    fs::write(&input, &original).unwrap();
+    fs::write(&edits, "LMLEDIT1\nheader background-palette 05\n").unwrap();
+    fs::write(
+        &commands,
+        format!(
+            "open {}\nrom-expand 100000 ff\nlevel 105\nlevel-edit {} 080000 100000\nsave-as {}\nquit\n",
+            input.display(),
+            edits.display(),
+            output.display()
+        ),
+    )
+    .unwrap();
+
+    let run = Command::new(env!("CARGO_BIN_EXE_lm-app"))
+        .arg("--script")
+        .arg(&commands)
+        .output()
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run.stdout),
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(fs::read(&input).unwrap(), original);
+    let image = RomImage::from_bytes(fs::read(&output).unwrap()).unwrap();
+    assert_eq!(image.logical_len(), 0x10_0000);
+    assert!(detect_identity(&image).unwrap().checksum_matches());
+    let project = Project::new(image);
+    let level = project
+        .load_level_slot(
+            0x105,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+    assert_eq!(level.layer1.header.background_palette(), 5);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn command_script_installs_complete_layer3_runtime_and_reopens_checksum_valid() {
     let directory = std::env::temp_dir().join(format!(
         "lm-app-layer3-runtime-日本語-{}-{}",

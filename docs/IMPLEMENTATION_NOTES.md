@@ -1051,7 +1051,13 @@ through the authoritative revision check. It is therefore undoable and cannot by
 dirty-state/save handling.
 
 For complete native level-controller batches, `level-edit SCRIPT SEARCH_START SEARCH_END` reads a
-bounded UTF-8 `LMLEDIT1` script. It supports all eleven recovered header fields, including strict
+bounded UTF-8 `LMLEDIT1` script. For the authenticated North American SMW revision-0 LoROM layout,
+this command shares the native GUI's built-in fallback and does not require an external revision
+profile. It detects the sprite-pointer representation and expanded framing, protects the Layer 1
+pointer table and internal header, keeps pristine shared-bank sprite relocation inside its original
+bank, repairs the checksum, and honors the caller's bounded Layer 1 allocation range. Other ROM
+identities still require an audited profile rather than accepting US offsets speculatively.
+It supports all eleven recovered header fields, including strict
 `header layer1-scroll VALUE`; object
 insert/replace/remove/move plus typed command-ID, parameter, coordinate-nibble, and screen-advance
 edits and exact packed screen-jump targets; raw sprite-header replacement plus semantic

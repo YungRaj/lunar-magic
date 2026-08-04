@@ -4,8 +4,9 @@ use crate::{
     shell_command,
 };
 use lm_app::{
-    AppState, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit, OverworldControllerEdit,
-    OverworldLayerId, RevisionProfileControllers, SmwMainOverworldLayer2Controller,
+    AppState, LevelController, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit,
+    OverworldControllerEdit, OverworldLayerId, RevisionProfileControllers,
+    SmwMainOverworldLayer2Controller,
     VanillaEntranceController, VanillaEntranceEdit, discover_mwl_directory,
     export_smw_us_v1_installed_mwl_batch, prepare_declared_mwl_import, publish_mwl_batch_new,
 };
@@ -15,7 +16,7 @@ use lm_project::{
     Map16SetSaveOptions, MwlNativeLevel, PaletteSaveOptions,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
-use lm_rom::RomImage;
+use lm_rom::{RomImage, SnesPointer24};
 use std::ops::Range;
 use std::path::Path;
 
@@ -446,6 +447,9 @@ pub(crate) fn commit_level_edits(
     search: Range<usize>,
     description: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if app.revision_profile().is_none() {
+        return commit_builtin_smw_level_edits(app, edits, search, description);
+    }
     let profiled = app.profiled_controller_snapshot()?;
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())?;
     let policy = profiled.profile.allocation_policy_for_rom(
@@ -464,6 +468,100 @@ pub(crate) fn commit_level_edits(
         erase_fill: 0xff,
     };
     let prepared = controller.prepare_commit(description, &options)?;
+    app.dispatch(prepared.into_command())?;
+    Ok(())
+}
+
+fn commit_builtin_smw_level_edits(
+    app: &mut AppState,
+    edits: &[NativeLevelEdit],
+    search: Range<usize>,
+    description: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let snapshot = app.controller_snapshot()?;
+    if snapshot.identity.game != lm_rom::SupportedGame::SuperMarioWorld
+        || snapshot.identity.region != lm_rom::Region::NorthAmerica
+        || snapshot.identity.revision != 0
+        || snapshot.identity.mapper != lm_rom::Mapper::LoRom
+    {
+        return Err(
+            "built-in level-edit requires the North American SMW revision 0 LoROM layout; install a matching audited revision profile for this ROM"
+                .into(),
+        );
+    }
+    let image = RomImage::from_bytes(snapshot.rom_bytes.clone())?;
+    let mut layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    layout.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image)?;
+    let level = match snapshot.mode {
+        lm_app::EditorMode::Level(level) => usize::from(level),
+        mode => return Err(format!("level-edit requires level mode, got {mode:?}").into()),
+    };
+    let sprite_pointer = layout.sprites.read_snes_pointer(&image, level)?;
+    let sprite_offset = sprite_pointer.to_pc(layout.mapper)?;
+    let sprite_header = image.read(sprite_offset, 1)?[0];
+    layout.expanded_sprites = lm_level::NativeSpriteStream::header_uses_expanded_framing(
+        sprite_header,
+    );
+    let mut controller =
+        LevelController::decode(&snapshot, layout, &lm_level::SpriteLengthTable::standard())?;
+    controller.apply_edits(edits)?;
+
+    let protected = vec![
+        ProtectedRange(
+            layout.layer1.offset
+                ..layout.layer1.offset + layout.layer1.entries * layout.layer1.stride,
+        ),
+        ProtectedRange(
+            snapshot.identity.internal_header_offset
+                ..snapshot.identity.internal_header_offset + 0x40,
+        ),
+    ];
+    let layer1_policy = AllocationPolicy {
+        search,
+        bank_size: Some(0x8000),
+        fill_bytes: vec![0xff, 0x00],
+        protected,
+    };
+    let sprite_policy = match layout.sprites {
+        lm_project::SpritePointerTable::SplitSharedBank { bank_offset, .. } => {
+            let bank = *image
+                .logical_bytes()
+                .get(bank_offset)
+                .ok_or("shared sprite bank byte lies outside the ROM")?;
+            let start = SnesPointer24::new((u32::from(bank) << 16) | 0x8000)
+                .map_err(|pointer| format!("invalid shared sprite-bank pointer {pointer:#08x}"))?
+                .to_pc(layout.mapper)?;
+            let end = start
+                .checked_add(0x8000)
+                .ok_or("shared sprite bank range overflows")?;
+            if end > image.logical_len() {
+                return Err("shared sprite bank is not fully present in the ROM".into());
+            }
+            AllocationPolicy {
+                search: start..end,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: layer1_policy.protected.clone(),
+            }
+        }
+        _ => layer1_policy.clone(),
+    };
+    let options = LevelSaveOptions {
+        layer1_allocation: layer1_policy,
+        sprite_allocation: sprite_policy,
+        previous_layer1: None,
+        previous_sprites: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let prepared = if matches!(
+        layout.sprites,
+        lm_project::SpritePointerTable::SplitSharedBank { .. }
+    ) {
+        controller.prepare_commit_with_shared_bank_sprite_relocation(description, &options)?
+    } else {
+        controller.prepare_commit(description, &options)?
+    };
     app.dispatch(prepared.into_command())?;
     Ok(())
 }

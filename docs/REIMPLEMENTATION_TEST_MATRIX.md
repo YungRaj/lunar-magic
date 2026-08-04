@@ -754,6 +754,11 @@ non-persistable zero-without-force form. The application-shell test commits both
 vertical forms, proves their raw command-`$28` records differ but decode to the same typed value,
 checks checksum-valid reopen and exact whole-ROM undo after each, and requires malformed input to
 leave the restored ROM byte-identical.
+Built-process coverage also opens an authenticated pristine SMW-US ROM without an external
+revision profile, expands it, applies `LMLEDIT1` through the native GUI's built-in layout fallback,
+saves to a distinct path, and reopens the result to prove the semantic header edit, checksum, size,
+and untouched source ROM. This covers the former mismatch where the ROM accepted by the built-in
+editor failed with `NoRevisionProfile` through `level-edit`.
 Semantic `LMLEDIT1 sprite-properties` tests cover memory `$12`, both independent buoyancy flags,
 strict `$13` rejection, and canonical boolean parsing. The application-shell test first expands the
 sprite stream, then proves the staged semantic edit retains framing bit `$20`, reopens with the
