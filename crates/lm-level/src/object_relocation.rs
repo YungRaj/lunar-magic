@@ -349,6 +349,31 @@ mod tests {
     }
 
     #[test]
+    fn semantic_relocation_removes_a_redundant_leading_screen_zero_jump() {
+        let mut stream = ObjectStream {
+            records: vec![
+                ObjectRecord::new(vec![0, 0, 1]).unwrap(),
+                object(false, 3, 4, 0x20),
+            ],
+        };
+        let selected = stream
+            .relocate_ordinary_object(
+                1,
+                0,
+                ObjectCoordinateNibbles {
+                    first: 2,
+                    second: 4,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(selected, 0);
+        assert_eq!(stream.records.len(), 1);
+        assert!(stream.records[0].screen_jump().is_none());
+        assert_eq!(stream.records[0].coordinate_nibbles().first, 2);
+    }
+
+    #[test]
     fn absolute_insertion_regenerates_transitions_and_preserves_trailing_controls() {
         let control = ObjectRecord::new(vec![7, 5, 0, 0xcb]).unwrap();
         let mut stream = ObjectStream {

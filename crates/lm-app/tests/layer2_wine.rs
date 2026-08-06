@@ -148,12 +148,25 @@ fn lunar_magic_reexports_rust_object_backed_layer2_edit() {
     let NativeLayer2Data::Objects(objects) = &mut loaded.data else {
         unreachable!();
     };
-    let original_coordinates = objects.objects.records[object_index].coordinate_nibbles();
-    objects.objects.records[object_index]
-        .set_coordinate_nibbles(lm_level::ObjectCoordinateNibbles {
-            first: original_coordinates.first ^ 1,
-            second: original_coordinates.second,
-        })
+    let placement = objects
+        .objects
+        .native_placements_for_orientation(objects.header.is_vertical())
+        .into_iter()
+        .find(|placement| placement.record_index == object_index)
+        .expect("the selected ordinary object must have a resolved placement");
+    let original = objects.objects.records[object_index].clone();
+    let original_coordinates = original.coordinate_nibbles();
+    objects
+        .objects
+        .relocate_ordinary_object_position(
+            object_index,
+            placement.screen,
+            lm_level::ObjectCoordinateNibbles {
+                first: original_coordinates.first ^ 1,
+                second: original_coordinates.second,
+            },
+            original.perpendicular_high_coordinate(),
+        )
         .unwrap();
 
     let allocation_start = project.rom.logical_len();
