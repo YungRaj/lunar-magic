@@ -2784,6 +2784,9 @@ impl VanillaLevelEditor {
                 self.apply_object_result(Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Remove {
                     index: self.selected_object,
                 }])));
+                if self.error.is_none() {
+                    self.canvas_entity_selection = None;
+                }
             }
             (CanvasEntitySelection::Layer2Object, CanvasEntityShortcut::Duplicate) => {
                 let Some(record) = self.controller.as_ref().and_then(|controller| {
@@ -2820,6 +2823,7 @@ impl VanillaLevelEditor {
                 match controller.apply_layer2_object_edits(&[ObjectEdit::Remove { index }]) {
                     Ok(()) => {
                         self.reload_layer2_object_form();
+                        self.canvas_entity_selection = None;
                         self.error = None;
                     }
                     Err(error) => self.error = Some(error.to_string()),
@@ -2852,6 +2856,7 @@ impl VanillaLevelEditor {
                             controller.level().sprites.header,
                             controller.level().sprites.tokens.get(self.selected_sprite),
                         );
+                        self.canvas_entity_selection = None;
                         self.error = None;
                     }
                     Err(error) => self.error = Some(error.to_string()),
@@ -11126,6 +11131,7 @@ mod tests {
             },
             &shortcut_baseline
         );
+        assert_eq!(editor.canvas_entity_selection, None);
         editor.layer2_object_form = ObjectForm::from_record(&template);
         editor.layer2_object_placement_template = Some(template.clone());
         let before_button_insert = match editor.controller.as_ref().unwrap().layer2().unwrap() {
@@ -14033,6 +14039,7 @@ mod tests {
             editor.controller.as_ref().unwrap().level().layer1.objects,
             original_objects
         );
+        assert_eq!(editor.canvas_entity_selection, None);
 
         let original_sprites = editor.controller.as_ref().unwrap().level().sprites.clone();
         editor.selected_sprite = original_sprites
@@ -14058,6 +14065,7 @@ mod tests {
             editor.controller.as_ref().unwrap().level().sprites,
             original_sprites
         );
+        assert_eq!(editor.canvas_entity_selection, None);
     }
 
     #[test]
