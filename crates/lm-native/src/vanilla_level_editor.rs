@@ -2032,82 +2032,95 @@ impl VanillaLevelEditor {
         // Keep the controls to one stable row. Wrapping made a horizontal window resize add or
         // remove toolbar rows, so the canvas height jumped independently of the window and looked
         // as though it was not following the native resize.
-        egui::ScrollArea::horizontal()
-            .id_salt("vanilla-level-canvas-tools")
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let mut game_preview = self.game_preview();
-                    if ui.toggle_value(&mut game_preview, "Game pixels").changed() {
-                        self.game_preview = Some(game_preview);
-                    }
-                    if game_preview {
-                        let mut snes_viewport = self.snes_viewport();
-                        if ui
-                            .toggle_value(&mut snes_viewport, "256×224 viewport")
-                            .changed()
+        ui.scope(|ui| {
+            // macOS-style floating scrollbars are painted over their contents. In this compact
+            // toolbar that put the horizontal scrollbar directly on top of buttons whenever the
+            // window was narrow. Use a solid, permanently reserved scrollbar row here so controls
+            // remain clickable and the canvas below retains a stable height while resizing.
+            ui.style_mut().spacing.scroll.floating = false;
+            egui::ScrollArea::horizontal()
+                .id_salt("vanilla-level-canvas-tools")
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let mut game_preview = self.game_preview();
+                        if ui.toggle_value(&mut game_preview, "Game pixels").changed() {
+                            self.game_preview = Some(game_preview);
+                        }
+                        if game_preview {
+                            let mut snes_viewport = self.snes_viewport();
+                            if ui
+                                .toggle_value(&mut snes_viewport, "256×224 viewport")
+                                .changed()
+                            {
+                                self.snes_viewport = Some(snes_viewport);
+                            }
+                            if snes_viewport {
+                                self.show_preview_camera_tools(
+                                    ui,
+                                    major_tiles,
+                                    minor_tiles,
+                                    vertical,
+                                );
+                            }
+                        }
+                        ui.separator();
+                        ui.label("Canvas tool:");
+                        ui.selectable_value(&mut self.placement_mode, None, "Select / move");
+                        ui.selectable_value(
+                            &mut self.placement_mode,
+                            Some(CanvasPlacementMode::Object),
+                            "Place object",
+                        );
+                        ui.selectable_value(
+                            &mut self.placement_mode,
+                            Some(CanvasPlacementMode::Sprite),
+                            "Place sprite",
+                        );
+                        if matches!(
+                            self.controller.as_ref().and_then(LevelController::layer2),
+                            Some(lm_level::NativeLayer2Data::Tilemap(_))
+                        ) && layer2_tilemap_editable(self.shared_vanilla_background)
                         {
-                            self.snes_viewport = Some(snes_viewport);
+                            ui.selectable_value(
+                                &mut self.placement_mode,
+                                Some(CanvasPlacementMode::Layer2Tile),
+                                "Paint Layer 2 tile",
+                            );
+                        } else if matches!(
+                            self.controller.as_ref().and_then(LevelController::layer2),
+                            Some(lm_level::NativeLayer2Data::Objects(_))
+                        ) {
+                            ui.selectable_value(
+                                &mut self.placement_mode,
+                                Some(CanvasPlacementMode::Layer2Object),
+                                "Place Layer 2 object",
+                            );
                         }
-                        if snes_viewport {
-                            self.show_preview_camera_tools(ui, major_tiles, minor_tiles, vertical);
+                        ui.separator();
+                        ui.label("Zoom:");
+                        let mut zoom = self.canvas_zoom_percent();
+                        if ui.small_button("−").clicked() {
+                            zoom = zoom.saturating_sub(ROM_LEVEL_CANVAS_ZOOM_STEP);
                         }
-                    }
-                    ui.separator();
-                    ui.label("Canvas tool:");
-                    ui.selectable_value(&mut self.placement_mode, None, "Select / move");
-                    ui.selectable_value(
-                        &mut self.placement_mode,
-                        Some(CanvasPlacementMode::Object),
-                        "Place object",
-                    );
-                    ui.selectable_value(
-                        &mut self.placement_mode,
-                        Some(CanvasPlacementMode::Sprite),
-                        "Place sprite",
-                    );
-                    if matches!(
-                        self.controller.as_ref().and_then(LevelController::layer2),
-                        Some(lm_level::NativeLayer2Data::Tilemap(_))
-                    ) && layer2_tilemap_editable(self.shared_vanilla_background)
-                    {
-                        ui.selectable_value(
-                            &mut self.placement_mode,
-                            Some(CanvasPlacementMode::Layer2Tile),
-                            "Paint Layer 2 tile",
-                        );
-                    } else if matches!(
-                        self.controller.as_ref().and_then(LevelController::layer2),
-                        Some(lm_level::NativeLayer2Data::Objects(_))
-                    ) {
-                        ui.selectable_value(
-                            &mut self.placement_mode,
-                            Some(CanvasPlacementMode::Layer2Object),
-                            "Place Layer 2 object",
-                        );
-                    }
-                    ui.separator();
-                    ui.label("Zoom:");
-                    let mut zoom = self.canvas_zoom_percent();
-                    if ui.small_button("−").clicked() {
-                        zoom = zoom.saturating_sub(ROM_LEVEL_CANVAS_ZOOM_STEP);
-                    }
-                    let slider = egui::Slider::new(
-                        &mut zoom,
-                        ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM,
-                    )
-                    .suffix("%")
-                    .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
-                    ui.add(slider);
-                    if ui.small_button("Reset").clicked() {
-                        zoom = 100;
-                    }
-                    if ui.small_button("+").clicked() {
-                        zoom = zoom.saturating_add(ROM_LEVEL_CANVAS_ZOOM_STEP);
-                    }
-                    self.canvas_zoom_percent = Some(clamp_canvas_zoom(zoom));
-                })
-            });
+                        let slider = egui::Slider::new(
+                            &mut zoom,
+                            ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM,
+                        )
+                        .suffix("%")
+                        .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
+                        ui.add(slider);
+                        if ui.small_button("Reset").clicked() {
+                            zoom = 100;
+                        }
+                        if ui.small_button("+").clicked() {
+                            zoom = zoom.saturating_add(ROM_LEVEL_CANVAS_ZOOM_STEP);
+                        }
+                        self.canvas_zoom_percent = Some(clamp_canvas_zoom(zoom));
+                    })
+                });
+        });
     }
 
     fn show_preview_camera_tools(
