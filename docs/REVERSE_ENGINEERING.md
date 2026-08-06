@@ -292,6 +292,14 @@ The `0041b410`–`0041e300` range identifies the analogous overworld foreground 
 
 The `0041e3d0`–`00422260` range identifies filename/common-dialog helpers, in-place copier-header conversion, the Lunar IPS creation/application engines, ROM expansion/metadata loading, level-layout dimension tables, and the first core level-object tile renderers. IPS normal records, RLE records, reserved EOF handling, optional truncate metadata, sparse growth, header normalization, and logging behavior are annotated for clean-room reuse.
 
+The paired system-menu commands are `$23BA` (Create IPS) and `$23BB` (Apply IPS). A live 3.63
+oracle settles the coordinate ambiguity: with a 512-byte copier prefix, a logical edit at `$001000`
+is encoded at physical IPS offset `$001200`. The native `ToggleSnesCopierHeader` path gives a
+headerless supported ROM the recovered canonical prefix before either operation and removes that
+temporary prefix again afterward. Applying to a ROM that differs from the original raises `This ROM
+has already been changed!` before file selection; Cancel performs no write. Wrong IPS magic raises
+`This is not an IPS file!` and likewise leaves the complete file unchanged.
+
 The `00422330`–`00424210` range consists of fixed and lookup-driven standard-object renderers. Names currently describe proven geometry and tile-selection behavior (single cells, horizontal/vertical pairs, 2x2, 3x3, 4x4, and composite patterns); comments explicitly mark exact in-game object identities as unproven where dispatcher evidence is still pending. The `0x3800`-cell Map16 tile/flag/source arrays and `0x4080`-entry modified-cell list are typed and named.
 
 `ConfigureLevelLayoutDimensions` at `00421690` also proves the physical split of that shared

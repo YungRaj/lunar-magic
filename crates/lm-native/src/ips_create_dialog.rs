@@ -164,11 +164,10 @@ fn create_and_publish_ips(before: &Path, after: &Path, output: &Path) -> Result<
         "modified IPS image",
     )
     .map_err(|error| error.to_string())?;
-    let patch = lm_rom::create_ips(
-        logical_ips_image(&before_bytes),
-        logical_ips_image(&after_bytes),
-    )
-    .map_err(|error| error.to_string())?;
+    let before_image = crate::ips_compat::lunar_magic_ips_image(&before_bytes)?;
+    let after_image = crate::ips_compat::lunar_magic_ips_image(&after_bytes)?;
+    let patch =
+        lm_rom::create_ips(&before_image, &after_image).map_err(|error| error.to_string())?;
     if output.exists() {
         lm_app::file_persistence::replace_existing(output, &patch)
     } else {
@@ -176,14 +175,6 @@ fn create_and_publish_ips(before: &Path, after: &Path, output: &Path) -> Result<
     }
     .map_err(|error| error.to_string())?;
     Ok(patch.len())
-}
-
-fn logical_ips_image(bytes: &[u8]) -> &[u8] {
-    if lm_rom::detect_copier_header(bytes.len()) == lm_rom::CopierHeader::Present {
-        &bytes[lm_rom::COPIER_HEADER_LEN..]
-    } else {
-        bytes
-    }
 }
 
 fn validate_distinct_paths(before: &Path, after: &Path, output: &Path) -> Result<(), String> {
@@ -237,10 +228,13 @@ mod tests {
         let before = directory.join("before.smc");
         let after = directory.join("after.smc");
         let output = directory.join("change.ips");
-        fs::write(&before, [0_u8; 32]).unwrap();
-        let mut changed = [0_u8; 40];
-        changed[7..15].fill(0x5a);
-        fs::write(&after, changed).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut changed = original.clone();
+        changed[0x1234] ^= 0x5a;
+        let checksum = lm_rom::compute_snes_checksum(&changed, 0x7fdc).unwrap();
+        changed[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
+        fs::write(&before, &original).unwrap();
+        fs::write(&after, &changed).unwrap();
 
         let (sender, completion) = mpsc::channel();
         let worker_before = before.clone();
@@ -262,8 +256,10 @@ mod tests {
         dialog.wait_for_test();
         assert!(dialog.error.is_none());
         let patch = fs::read(&output).unwrap();
-        assert_eq!(lm_rom::apply_ips(&[0_u8; 32], &patch).unwrap(), changed);
-        assert_eq!(fs::read(&before).unwrap(), [0_u8; 32]);
+        let normalized = crate::ips_compat::lunar_magic_ips_image(&original).unwrap();
+        let patched = lm_rom::apply_ips(&normalized, &patch).unwrap();
+        assert_eq!(&patched[lm_rom::COPIER_HEADER_LEN..], changed.as_slice());
+        assert_eq!(fs::read(&before).unwrap(), original);
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -281,13 +277,14 @@ mod tests {
     }
 
     #[test]
-    fn copier_headers_are_normalized_before_comparison() {
-        let mut headered = vec![0x7e; lm_rom::COPIER_HEADER_LEN];
-        headered.extend(vec![0x11; 0x8000]);
-        assert_eq!(logical_ips_image(&headered), &[0x11; 0x8000]);
+    fn headerless_roms_are_normalized_to_lunar_magics_headered_ips_coordinates() {
+        let logical = crate::test_support::pristine_smw_us_rom_bytes();
+        let normalized = crate::ips_compat::lunar_magic_ips_image(&logical).unwrap();
+        assert_eq!(normalized.len(), logical.len() + lm_rom::COPIER_HEADER_LEN);
         assert_eq!(
-            logical_ips_image(&headered[lm_rom::COPIER_HEADER_LEN..]),
-            &[0x11; 0x8000]
+            &normalized[..lm_rom::COPIER_HEADER_LEN],
+            &lm_profile::smw_us_v1_lunar_magic_copier_header()
         );
+        assert_eq!(&normalized[lm_rom::COPIER_HEADER_LEN..], logical);
     }
 }

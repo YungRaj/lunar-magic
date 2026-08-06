@@ -3544,9 +3544,13 @@ before publication leaves no output files visible.
 
 Native IPS creation now mirrors the recovered `CreateIpsPatch` (`0041F0B0`) selection order:
 original ROM, modified ROM, then output patch. A background worker performs bounded regular-file
-reads, compares logical ROM bytes after copier-header normalization, uses the shared deterministic
-normal/RLE IPS encoder, rejects canonical input/output aliases, and atomically creates or replaces
-the selected `.ips` file without freezing the frontend.
+reads, materializes Lunar Magic's physical headered IPS coordinate space, uses the shared
+deterministic normal/RLE IPS encoder, rejects canonical input/output aliases, and atomically creates
+or replaces the selected `.ips` file without freezing the frontend. Existing copier prefixes enter
+the comparison byte-for-byte; supported headerless ROMs receive the recovered synthesized prefix.
+Native application performs the reciprocal conversion: apply to that physical form, discard only
+the temporary prefix, and route the resulting logical change through the revision-checked project
+transaction so the open ROM's exact physical header state remains unchanged.
 
 The current SMW US revision-0 profile also contains the recovered multi-bank overworld-message
 installation boundary used once more than 96 level-name slots are enabled. It installs the fixed

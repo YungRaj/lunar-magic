@@ -16,7 +16,9 @@ impl IpsPatchWorkspace {
             .map_err(|error| error.to_string())?;
         let image = RomImage::from_bytes(snapshot.rom_bytes).map_err(|error| error.to_string())?;
         let source = image.logical_bytes();
-        let target = apply_ips(source, &patch).map_err(|error| error.to_string())?;
+        let logical_patch =
+            crate::ips_compat::logical_patch_for_open_rom(image.as_file_bytes(), &patch)?;
+        let target = apply_ips(source, &logical_patch).map_err(|error| error.to_string())?;
         let changed_bytes = source
             .iter()
             .zip(&target)
@@ -25,7 +27,7 @@ impl IpsPatchWorkspace {
             + source.len().abs_diff(target.len());
         Ok(Self {
             revision: snapshot.revision,
-            patch,
+            patch: logical_patch,
             source_len: source.len(),
             target_len: target.len(),
             changed_bytes,
@@ -64,7 +66,11 @@ mod tests {
         target[0x23456] ^= 0x80;
         let checksum = compute_snes_checksum(&target, 0x7fdc).unwrap();
         target[0x7fdc..0x7fe0].copy_from_slice(&checksum.encoded());
-        let patch = create_ips(&source, &target).unwrap();
+        let patch = create_ips(
+            &crate::ips_compat::lunar_magic_ips_image(&source).unwrap(),
+            &crate::ips_compat::lunar_magic_ips_image(&target).unwrap(),
+        )
+        .unwrap();
         let mut app = AppState::default();
         app.load_rom(source.clone()).unwrap();
         let workspace = IpsPatchWorkspace::load(&app, patch).unwrap();
@@ -85,7 +91,8 @@ mod tests {
         let mut app = AppState::default();
         app.load_rom(source.clone()).unwrap();
         assert!(IpsPatchWorkspace::load(&app, b"bad".to_vec()).is_err());
-        let patch = create_ips(&source, &source).unwrap();
+        let normalized = crate::ips_compat::lunar_magic_ips_image(&source).unwrap();
+        let patch = create_ips(&normalized, &normalized).unwrap();
         let workspace = IpsPatchWorkspace::load(&app, patch).unwrap();
         assert_eq!(workspace.changed_bytes, 0);
         assert!(workspace.prepare(0).is_err());
