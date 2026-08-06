@@ -12,6 +12,7 @@ mod level;
 mod level_map16_cache;
 mod map16;
 mod native_level_raster;
+mod native_overworld_sprite;
 mod observe_editor_overlays;
 mod observe_layer3_plane;
 mod overworld;
@@ -68,6 +69,10 @@ pub use native_level_raster::{
     draw_native_sprite_preview_definition, draw_native_sprite_preview_definition_pages,
     draw_native_sprite_preview_definition_pages_with_half_color, render_native_level_framebuffer,
     render_native_level_framebuffer_with_layer_palette_routing,
+};
+pub use native_overworld_sprite::{
+    NativeOverworldSpritePlacement, ResolvedNativeOverworldSpriteElement,
+    resolve_native_overworld_sprite_elements,
 };
 pub use observe_editor_overlays::observe_editor_overlays;
 pub use observe_layer3_plane::observe_materialized_layer3_plane;

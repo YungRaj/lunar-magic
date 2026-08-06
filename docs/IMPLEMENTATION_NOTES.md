@@ -4236,4 +4236,7 @@ labels, and the `$10000`/`$20000` external graphics and palette range records. D
 native UTF-8 BOM, enforces Lunar Magic's 256-part, signed `$2FFF`, Sprite Map16 `$CFF`, and range
 `$BFF` bounds, and applies later tooltip/appearance lines over earlier definitions. Canonical encode
 round-trips the complete semantic value. The portable `LMOWAPP1` format remains separate because it
-stores already-resolved 8×8 tile/palette parts; native `.s16ov` resolution is the next bridge.
+stores already-resolved 8×8 tile/palette parts. Native `.s16ov` is now modeled as the distinct
+zero-filled `0x4000`-byte store for eight custom Sprite Map16 pages. Renderer resolution maps native
+indexes `$000..$3FF` through the caller's built-ins and `$400..$BFF` through `.s16ov`, expands all
+four 8×8 quadrants, and preserves labels, translucency, shadows, and unresolved internal indexes.

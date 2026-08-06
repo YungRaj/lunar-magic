@@ -115,7 +115,7 @@ pub use native_layer2::{
 pub use native_layer2_remap::{
     NativeLayer2RemapError, NativeLayer2RemapProgram, NativeLayer2RemapResult,
 };
-pub use native_map16_sidecar::{M16Sidecar, NativeMap16SidecarError, S16Sidecar};
+pub use native_map16_sidecar::{M16Sidecar, NativeMap16SidecarError, S16OvSidecar, S16Sidecar};
 pub use native_sprite::{
     NativeSpriteEncodingError, NativeSpriteFieldError, NativeSpriteHeader, NativeSpriteMemoryError,
     NativeSpriteRecordFields, NativeSpriteStream, SpriteLengthTable, SpriteLengthTableError,

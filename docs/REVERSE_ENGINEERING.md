@@ -3436,3 +3436,9 @@ handling. Sentinel IDs `$10000/$20000` install tile-range mappings through `$BFF
 graphics and palettes. Repeated sprite definitions free and replace the earlier allocation, which
 the Rust ordered-map codec reproduces semantically. The official help independently names `.sscov`
 and `.s16ov`; the prior `.ovssc` ledger spelling was incorrect.
+
+`LoadOverworld16x16SpriteSidecar` (`00544250`, reached from the `.s16ov` string xref at
+`005d59f8`) clears exactly `0x4000` bytes before reading at most that many bytes from the
+ROM-adjacent sidecar. This distinguishes it from the larger ordinary `.s16` store. Together with
+the native Sprite Map16 page layout, those bytes supply the eight custom pages `$400..$BFF`; the
+four preceding pages are built in, while `$C00..$CFF` remains Lunar Magic-internal display space.

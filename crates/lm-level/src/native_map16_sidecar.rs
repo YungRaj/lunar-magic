@@ -128,6 +128,73 @@ impl S16Sidecar {
     }
 }
 
+/// Overworld Sprite Map16 sidecar represented as Lunar Magic's zero-filled `$4000`-byte buffer.
+///
+/// Unlike `.s16`, `.s16ov` contains exactly the eight custom pages addressed by native Sprite
+/// Map16 indexes `$400..$BFF`; the preceding four built-in pages are not stored in this file.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct S16OvSidecar {
+    bytes: Vec<u8>,
+    loaded_len: usize,
+}
+
+impl S16OvSidecar {
+    pub const CAPACITY: usize = 0x4000;
+    pub const ENTRY_COUNT: usize = Self::CAPACITY / 4;
+    pub const TILE_COUNT: usize = Self::CAPACITY / Map16Tile::GRAPHICS_LEN;
+    pub const FIRST_NATIVE_TILE: usize = 0x400;
+    pub const END_NATIVE_TILE: usize = Self::FIRST_NATIVE_TILE + Self::TILE_COUNT;
+
+    /// Loads any native prefix into the recovered zero-filled working buffer.
+    pub fn decode(bytes: &[u8]) -> Result<Self, NativeMap16SidecarError> {
+        if bytes.len() > Self::CAPACITY {
+            return Err(NativeMap16SidecarError::S16OvTooLarge(bytes.len()));
+        }
+        let mut buffer = vec![0; Self::CAPACITY];
+        buffer[..bytes.len()].copy_from_slice(bytes);
+        Ok(Self {
+            bytes: buffer,
+            loaded_len: bytes.len(),
+        })
+    }
+
+    #[must_use]
+    pub const fn loaded_len(&self) -> usize {
+        self.loaded_len
+    }
+
+    #[must_use]
+    pub fn entry(&self, index: usize) -> Option<u32> {
+        read_entry(&self.bytes, index)
+    }
+
+    #[must_use]
+    pub fn tile(&self, index: usize) -> Option<Map16Tile> {
+        read_tile(&self.bytes, index)
+    }
+
+    /// Resolves a native Sprite Map16 index from the sidecar-owned `$400..$BFF` band.
+    #[must_use]
+    pub fn native_tile(&self, native_index: usize) -> Option<Map16Tile> {
+        let index = native_index.checked_sub(Self::FIRST_NATIVE_TILE)?;
+        (index < Self::TILE_COUNT)
+            .then(|| self.tile(index))
+            .flatten()
+    }
+
+    pub fn set_entry(&mut self, index: usize, value: u32) -> Result<(), NativeMap16SidecarError> {
+        write_entry(&mut self.bytes, index, value, Self::ENTRY_COUNT)?;
+        self.loaded_len = self.loaded_len.max((index + 1) * 4);
+        Ok(())
+    }
+
+    /// Re-emits the exact prefix length accepted from disk.
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        self.bytes[..self.loaded_len].to_vec()
+    }
+}
+
 fn read_entry(bytes: &[u8], index: usize) -> Option<u32> {
     let offset = index.checked_mul(4)?;
     Some(u32::from_le_bytes(
@@ -158,6 +225,7 @@ fn write_entry(
 pub enum NativeMap16SidecarError {
     M16Length(usize),
     S16TooLarge(usize),
+    S16OvTooLarge(usize),
     InvalidEntry(usize),
 }
 
@@ -236,5 +304,32 @@ mod tests {
                 S16Sidecar::ENTRY_COUNT
             ))
         );
+    }
+
+    #[test]
+    fn s16ov_zero_fills_one_exact_custom_native_page_band() {
+        let bytes = vec![1, 0, 2, 0, 3, 0, 4, 0];
+        let mut sidecar = S16OvSidecar::decode(&bytes).unwrap();
+        assert_eq!(sidecar.loaded_len(), Map16Tile::GRAPHICS_LEN);
+        assert_eq!(sidecar.encode(), bytes);
+        assert_eq!(
+            sidecar.native_tile(0x400),
+            Some(Map16Tile {
+                top_left: crate::Subtile(1),
+                top_right: crate::Subtile(2),
+                bottom_left: crate::Subtile(3),
+                bottom_right: crate::Subtile(4),
+                acts_like: 0,
+            })
+        );
+        assert_eq!(sidecar.native_tile(0x3ff), None);
+        assert_eq!(sidecar.native_tile(0xc00), None);
+        sidecar.set_entry(S16OvSidecar::ENTRY_COUNT - 1, 7).unwrap();
+        assert_eq!(sidecar.entry(S16OvSidecar::ENTRY_COUNT - 1), Some(7));
+        assert_eq!(sidecar.encode().len(), S16OvSidecar::CAPACITY);
+        assert!(matches!(
+            S16OvSidecar::decode(&vec![0; S16OvSidecar::CAPACITY + 1]),
+            Err(NativeMap16SidecarError::S16OvTooLarge(_))
+        ));
     }
 }
