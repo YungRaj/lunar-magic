@@ -76,6 +76,7 @@ pub enum LevelControllerError {
         layout: Mapper,
     },
     Rom(RomError),
+    ExpansionRebase(String),
     Load(LevelLoadError),
     ObjectEdit {
         command: usize,
@@ -281,6 +282,62 @@ impl LevelController {
     #[must_use]
     pub const fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Rebinds staged level data to a project snapshot produced solely by ROM expansion.
+    ///
+    /// Expansion changes the project revision and the internal ROM size/checksum fields, but it
+    /// must not invalidate edits staged against the unchanged level streams. This method verifies
+    /// that the new logical image is an append-only expansion (apart from those authenticated
+    /// header fields) before adopting it as the commit source.
+    pub fn rebase_after_rom_expansion(
+        &mut self,
+        snapshot: &ControllerSnapshot,
+    ) -> Result<(), LevelControllerError> {
+        let level = u16::try_from(self.level.number).map_err(|_| {
+            LevelControllerError::ExpansionRebase("staged level number exceeds u16".into())
+        })?;
+        if snapshot.mode != EditorMode::Level(level) {
+            return Err(LevelControllerError::WrongMode(snapshot.mode));
+        }
+        if snapshot.identity.mapper != self.layout.mapper {
+            return Err(LevelControllerError::MapperMismatch {
+                snapshot: snapshot.identity.mapper,
+                layout: self.layout.mapper,
+            });
+        }
+        let old = RomImage::from_bytes(self.source_file_bytes.clone())
+            .map_err(LevelControllerError::Rom)?;
+        let new =
+            RomImage::from_bytes(snapshot.rom_bytes.clone()).map_err(LevelControllerError::Rom)?;
+        if new.logical_len() <= old.logical_len() {
+            return Err(LevelControllerError::ExpansionRebase(
+                "replacement snapshot is not larger than the staged source ROM".into(),
+            ));
+        }
+        let header = snapshot.identity.internal_header_offset;
+        let mutable_header = [
+            header + 0x17,
+            header + 0x1c,
+            header + 0x1d,
+            header + 0x1e,
+            header + 0x1f,
+        ];
+        let unchanged = old
+            .logical_bytes()
+            .iter()
+            .zip(new.logical_bytes())
+            .enumerate()
+            .all(|(offset, (before, after))| before == after || mutable_header.contains(&offset));
+        if !unchanged {
+            return Err(LevelControllerError::ExpansionRebase(
+                "expanded snapshot changed bytes outside the ROM size/checksum header fields"
+                    .into(),
+            ));
+        }
+        self.source_file_bytes.clone_from(&snapshot.rom_bytes);
+        self.revision = snapshot.revision;
+        Ok(())
     }
 
     #[must_use]

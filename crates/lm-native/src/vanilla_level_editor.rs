@@ -311,6 +311,7 @@ enum CanvasEntityShortcut {
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
     controller: Option<LevelController>,
+    pending_expansion_commit: Option<LevelController>,
     entrance_controller: Option<VanillaEntranceController>,
     entrance_form: VanillaMainEntrance,
     midway_form: Option<SeparateMidwayEntrance>,
@@ -426,6 +427,11 @@ impl VanillaLevelEditor {
             level,
             sprite_lengths_signature: ssc_sprite_lengths_signature(custom_sprites),
         };
+        match self.take_pending_expansion_commit(&snapshot) {
+            Ok(Some(command)) => return Some(command),
+            Ok(None) => {}
+            Err(error) => self.error = Some(error),
+        }
         if self.key != Some(key) {
             self.load(&snapshot, key, custom_sprites);
         }
@@ -564,13 +570,15 @@ impl VanillaLevelEditor {
         snapshot: &lm_app::ControllerSnapshot,
     ) -> Option<Command> {
         ui.separator();
-        let expanded = snapshot.rom_bytes.len() > 0x80_000;
+        let expanded = RomImage::from_bytes(snapshot.rom_bytes.clone())
+            .is_ok_and(|image| image.logical_len() > 0x80_000);
         let relocation_needed = self.controller.as_ref().is_some_and(|controller| {
             controller.layer1_is_modified() || controller.layer2_is_modified()
         });
         if !expanded && relocation_needed {
             ui.label("Layer 1/2 relocation needs one expanded free-space bank.");
             if ui.button("Expand ROM to 1 MiB").clicked() {
+                self.pending_expansion_commit = self.controller.clone();
                 return Some(Command::ExpandRom(RomExpansionCommand {
                     expected_revision: snapshot.revision,
                     mapper: snapshot.identity.mapper,
@@ -1415,6 +1423,7 @@ impl VanillaLevelEditor {
     fn clear(&mut self) {
         self.key = None;
         self.controller = None;
+        self.pending_expansion_commit = None;
         self.entrance_controller = None;
         self.midway_form = None;
         self.midway_install_form = SeparateMidwayEntrance::default();
@@ -1457,6 +1466,19 @@ impl VanillaLevelEditor {
         self.resizing_object = None;
         self.resizing_layer2_object = None;
         self.canvas_entity_selection = None;
+    }
+
+    fn take_pending_expansion_commit(
+        &mut self,
+        snapshot: &lm_app::ControllerSnapshot,
+    ) -> Result<Option<Command>, String> {
+        let Some(mut staged) = self.pending_expansion_commit.take() else {
+            return Ok(None);
+        };
+        staged
+            .rebase_after_rom_expansion(snapshot)
+            .map_err(|error| error.to_string())?;
+        prepare_commit(&staged, snapshot).map(Some)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -8819,6 +8841,74 @@ fn pristine_sprite_bank_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staged_level_edit_rebases_across_expansion_then_commits_and_reopens() {
+        let source = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(source).unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller = LevelController::decode(
+            &snapshot,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        let baseline = controller.level().layer1.objects.records.len();
+        let record = controller.level().layer1.objects.records[1].clone();
+        let sprite_baseline = controller.level().sprites.tokens.len();
+        let sprite = controller.level().sprites.tokens[1].clone();
+        controller
+            .apply_edits(&[
+                NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
+                    index: baseline,
+                    record,
+                }]),
+                NativeLevelEdit::InsertSprite {
+                    index: sprite_baseline,
+                    token: sprite,
+                },
+            ])
+            .unwrap();
+        let expected = controller.level().clone();
+
+        app.dispatch(Command::ExpandRom(RomExpansionCommand {
+            expected_revision: snapshot.revision,
+            mapper: Mapper::LoRom,
+            target_logical_len: 0x10_0000,
+            fill: 0xff,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        let expanded = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor {
+            pending_expansion_commit: Some(controller),
+            ..VanillaLevelEditor::default()
+        };
+        let commit = editor
+            .take_pending_expansion_commit(&expanded)
+            .unwrap()
+            .expect("expanded ROM should produce the pending level commit");
+        assert!(editor.pending_expansion_commit.is_none());
+        app.dispatch(commit).unwrap();
+
+        if let Ok(path) = std::env::var("LM_NATIVE_EXPANSION_ARTIFACT") {
+            std::fs::write(path, app.project().unwrap().save_snapshot()).unwrap();
+        }
+
+        let reopened = app.controller_snapshot().unwrap();
+        let reopened = LevelController::decode(
+            &reopened,
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            &SpriteLengthTable::standard(),
+        )
+        .unwrap();
+        assert_eq!(reopened.level(), &expected);
+        assert_eq!(reopened.level().layer1.objects.records.len(), baseline + 1);
+        assert_eq!(reopened.level().sprites.tokens.len(), sprite_baseline + 1);
+        assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
+    }
 
     #[test]
     fn level_mode_confirmation_is_required_only_across_loaded_layer2_storage_classes() {
