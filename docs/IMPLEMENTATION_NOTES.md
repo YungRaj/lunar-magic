@@ -4188,3 +4188,12 @@ runs only after all source copies and only once per referenced destination, pres
 last-source-wins result when remap aliases exist. The installed preview captures both separate
 offset controls, their ten-bit sum, the selected one of sixteen persistent color maps, and every
 map entry before background loading; later UI changes cannot alter an in-flight request.
+
+Apply now produces one revision-bound ROM mutation across the imported Map16 page, only the
+referenced tiles of all eight active FG/BG/SP graphics slots, and the optional selected palette
+row. Graphics ownership comes from the request-captured level's exact legacy object and sprite
+tilesets. Duplicate GFX file assignments coalesce when their local writes agree and reject when two
+VRAM slots demand nonrepresentable different pixels. Pristine palettes install the recovered custom
+palette runtime inside the same private project before saving the row. Every saved GFX file, palette,
+and Map16 result is reopened before publication; one application Undo restores the complete original
+ROM. Super GFX Bypass and the optional background index-grid paste remain explicit pending routes.

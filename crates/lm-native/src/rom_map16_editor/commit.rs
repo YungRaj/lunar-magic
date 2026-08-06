@@ -43,7 +43,10 @@ impl RomMap16Editor {
             .map_err(|error| error.to_string())
     }
 
-    fn profile_save_options(&self, workspace: &Workspace) -> Result<Map16SetSaveOptions, String> {
+    pub(super) fn profile_save_options(
+        &self,
+        workspace: &Workspace,
+    ) -> Result<Map16SetSaveOptions, String> {
         let search = parse_search_range(&self.search_start, &self.search_end)?;
         let profile = workspace
             .profile
@@ -63,7 +66,7 @@ impl RomMap16Editor {
         })
     }
 
-    fn smw_save_options(
+    pub(super) fn smw_save_options(
         &self,
         workspace: &Workspace,
     ) -> Result<SmwUsV1CompleteMap16SaveOptions, String> {

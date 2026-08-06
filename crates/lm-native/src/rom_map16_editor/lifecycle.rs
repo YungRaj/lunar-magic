@@ -52,6 +52,7 @@ impl RomMap16Editor {
                 self.pending_snes_tileset = None;
                 self.snes_tileset_preview = None;
                 self.snes_tileset_include_palette = false;
+                self.snes_tileset_palette_row = 0;
                 self.snes_tileset_deduplicate = false;
                 self.snes_tileset_graphics_offset = 0;
                 self.snes_tileset_map_offset = 0;

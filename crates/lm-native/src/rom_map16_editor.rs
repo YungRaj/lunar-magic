@@ -162,6 +162,7 @@ pub(crate) struct RomMap16Editor {
     pending_snes_tileset: Option<snes_tileset_import::PendingSnesTileset>,
     snes_tileset_preview: Option<snes_tileset_import::SnesTilesetPreview>,
     snes_tileset_include_palette: bool,
+    snes_tileset_palette_row: u8,
     snes_tileset_deduplicate: bool,
     snes_tileset_graphics_offset: u16,
     snes_tileset_map_offset: u16,
@@ -212,7 +213,9 @@ impl RomMap16Editor {
         if let Some(import_command) = self.bitmap_import_window(context, project_revision) {
             command = Some(import_command);
         }
-        self.snes_tileset_preview_window(context, project_revision);
+        if let Some(snes_command) = self.snes_tileset_preview_window(context, project_revision) {
+            command = Some(snes_command);
+        }
         let approved = self.close_confirmation(context);
         self.show_error(context);
         (approved, command)

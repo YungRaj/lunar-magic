@@ -1,4 +1,4 @@
-use super::RomMap16Editor;
+use super::{Command, Controller, RomMap16Editor};
 use crate::{dialogs, document_loader::BoundedRead};
 use eframe::egui;
 use lm_app::{
@@ -6,6 +6,8 @@ use lm_app::{
     SNES_TILESET_PALETTE_ROW_LEN, SnesMap16DefinitionPlacement, SnesMap16TilesetImport,
 };
 use lm_level::Map16Page;
+use lm_project::{GraphicsSaveOptions, PaletteSaveOptions, Project, RomMutation};
+use lm_rom::RomImage;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct PendingSnesTileset {
@@ -13,8 +15,10 @@ pub(super) struct PendingSnesTileset {
     page: usize,
     placement: SnesMap16DefinitionPlacement,
     includes_palette: bool,
+    palette_row: u8,
     remap_offset: u16,
     color_map: Option<[u8; 16]>,
+    level: u16,
 }
 
 pub(super) struct SnesTilesetPreview {
@@ -23,7 +27,7 @@ pub(super) struct SnesTilesetPreview {
     candidate_page: Map16Page,
     assignments: Vec<u16>,
     written_definitions: usize,
-    has_palette: bool,
+    palette: Option<[lm_graphics::Bgr555; 16]>,
 }
 
 impl RomMap16Editor {
@@ -77,6 +81,13 @@ impl RomMap16Editor {
         ui.label("SNES graphics set + screen tile map");
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.snes_tileset_include_palette, "Import palette row");
+            ui.add_enabled(
+                self.snes_tileset_include_palette,
+                egui::DragValue::new(&mut self.snes_tileset_palette_row)
+                    .range(0..=15)
+                    .prefix("row ")
+                    .hexadecimal(1, false, true),
+            );
             ui.checkbox(
                 &mut self.snes_tileset_deduplicate,
                 "Optimize Map16 definitions",
@@ -128,6 +139,14 @@ impl RomMap16Editor {
     }
 
     fn start_snes_tileset_load(&mut self, project_revision: u64) {
+        let Ok(level) = u16::from_str_radix(self.preview_level.trim(), 16) else {
+            self.error = Some("preview level must be hexadecimal".into());
+            return;
+        };
+        if level > 0x1ff {
+            self.error = Some("preview level must be in 000..1FF".into());
+            return;
+        }
         let Some(graphics) = dialogs::choose_snes_graphics_set() else {
             return;
         };
@@ -164,6 +183,7 @@ impl RomMap16Editor {
                         SnesMap16DefinitionPlacement::Direct
                     },
                     includes_palette: self.snes_tileset_include_palette,
+                    palette_row: self.snes_tileset_palette_row,
                     remap_offset: self
                         .snes_tileset_graphics_offset
                         .wrapping_add(self.snes_tileset_map_offset)
@@ -172,6 +192,7 @@ impl RomMap16Editor {
                         self.snes_tileset_color_maps
                             [usize::from(self.snes_tileset_color_filter_index)]
                     }),
+                    level,
                 });
             }
             Err(error) => self.error = Some(error),
@@ -182,15 +203,15 @@ impl RomMap16Editor {
         &mut self,
         context: &egui::Context,
         project_revision: u64,
-    ) {
+    ) -> Option<Command> {
         let Some(preview) = self.snes_tileset_preview.as_ref() else {
-            return;
+            return None;
         };
         let stale = preview.pending.revision != project_revision;
         let page = preview.pending.page;
         let placement = preview.pending.placement;
         let written = preview.written_definitions;
-        let has_palette = preview.has_palette;
+        let palette_row = preview.palette.map(|_| preview.pending.palette_row);
         let assignment_span = preview
             .assignments
             .first()
@@ -202,6 +223,7 @@ impl RomMap16Editor {
         let graphics_tiles = preview.materialized.graphics.tiles.len();
         let candidate_tiles = preview.candidate_page.tiles.len();
         let mut discard = false;
+        let mut apply = false;
         egui::Window::new("SNES tileset import preview")
             .collapsible(false)
             .resizable(false)
@@ -212,19 +234,352 @@ impl RomMap16Editor {
                 ui.label(format!("Candidate definitions: {candidate_tiles}"));
                 ui.label(format!("Definitions written: {written}"));
                 ui.label(format!("Index-grid span: {assignment_span}"));
-                ui.label(format!("Palette row loaded: {}", if has_palette { "yes" } else { "no" }));
+                ui.label(match palette_row {
+                    Some(row) => format!("Palette row loaded: ${row:X}"),
+                    None => "Palette row loaded: no".into(),
+                });
                 if stale {
                     ui.colored_label(egui::Color32::YELLOW, "The ROM changed; discard this preview.");
                 }
                 ui.small("The decoded graphics, optional palette, candidate page, and background index grid are retained together for the atomic ROM-application milestone.");
-                if ui.button("Discard preview").clicked() {
-                    discard = true;
-                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            !stale,
+                            egui::Button::new("Apply graphics + palette + Map16"),
+                        )
+                        .clicked()
+                    {
+                        apply = true;
+                    }
+                    if ui.button("Discard preview").clicked() {
+                        discard = true;
+                    }
+                });
             });
         if discard {
             self.snes_tileset_preview = None;
         }
+        if apply {
+            match self.prepare_snes_tileset_graphics_map16_command() {
+                Ok(command) => {
+                    self.snes_tileset_preview = None;
+                    return Some(command);
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
+        None
     }
+
+    fn prepare_snes_tileset_graphics_map16_command(&self) -> Result<Command, String> {
+        let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+        let preview = self
+            .snes_tileset_preview
+            .as_ref()
+            .ok_or("SNES tileset preview is closed")?;
+        if workspace.controller.revision() != preview.pending.revision {
+            return Err("the ROM changed after the SNES tileset preview was created".into());
+        }
+
+        let mut controller = workspace.controller.clone();
+        let replacements = preview
+            .candidate_page
+            .tiles
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(tile, value)| {
+                (
+                    lm_level::Map16Address {
+                        page: preview.pending.page,
+                        tile,
+                    },
+                    value,
+                )
+            })
+            .collect();
+        controller.apply_edits(&[lm_app::Map16ControllerEdit::ReplaceTiles {
+            replacements,
+            resolution_limit: controller.set().pages.len() * Map16Page::TILE_COUNT,
+        }])?;
+        let map16_commit = match &controller {
+            Controller::Profile(controller) => controller
+                .prepare_commit(
+                    "Import SNES tileset graphics, palette, and Map16",
+                    &self.profile_save_options(workspace)?,
+                )
+                .map_err(|error| error.to_string())?,
+            Controller::Smw(controller) => controller
+                .prepare_commit(
+                    "Import SNES tileset graphics, palette, and Map16",
+                    &self.smw_save_options(workspace)?,
+                )
+                .map_err(|error| error.to_string())?,
+        };
+
+        let image = RomImage::from_bytes(workspace.snapshot.rom_bytes.clone())
+            .map_err(|error| error.to_string())?;
+        let before = image.logical_bytes().to_vec();
+        let mut project = Project::new(image);
+        project
+            .apply_mutation("Stage imported Map16 page", &map16_commit.mutation)
+            .map_err(|error| error.to_string())?;
+        let assignments = active_eight_graphics_files(workspace, &project, preview.pending.level)?;
+        let layout = match &workspace.profile {
+            Some(profile) => profile.graphics,
+            None => lm_profile::smw_us_v1_vanilla_graphics_layout(),
+        };
+        let mut baselines = Vec::with_capacity(8);
+        for file in assignments {
+            let mut graphics = project
+                .load_graphics_file(file, layout)
+                .map_err(|error| error.to_string())?;
+            if graphics.tiles.len() > 0x80 {
+                return Err(format!(
+                    "active graphics file {file:03X} has {} tiles; expected at most 128",
+                    graphics.tiles.len()
+                ));
+            }
+            graphics.tiles.resize_with(0x80, || {
+                lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT])
+            });
+            baselines.push(graphics);
+        }
+        let baselines: [lm_graphics::GraphicsFile4bpp; 8] = baselines
+            .try_into()
+            .map_err(|_| "active graphics workspace did not contain eight slots")?;
+        let staged = lm_app::stage_snes_tileset_graphics_files(
+            &preview.materialized,
+            assignments,
+            &baselines,
+        )
+        .map_err(|error| error.to_string())?;
+        let allocation = if let Some(profile) = &workspace.profile {
+            profile
+                .allocation_policy_for_rom(
+                    crate::rom_allocation::parse_search_range(
+                        &self.search_start,
+                        &self.search_end,
+                    )?,
+                    &project.rom,
+                    workspace.internal_header,
+                )
+                .map_err(|error| error.to_string())?
+        } else {
+            self.smw_save_options(workspace)?.allocation
+        };
+        let options = GraphicsSaveOptions {
+            allocation: allocation.clone(),
+            previous_block: None,
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        for (file, graphics) in &staged {
+            project
+                .save_graphics_file(*file, graphics, layout, &options)
+                .map_err(|error| error.to_string())?;
+        }
+        let expected_palette = if let Some(row) = preview.palette {
+            Some(stage_and_save_palette_row(
+                &mut project,
+                preview.pending.level,
+                preview.pending.palette_row,
+                row,
+                allocation,
+            )?)
+        } else {
+            None
+        };
+        project
+            .refresh_checksum(workspace.internal_header + 0x1c)
+            .map_err(|error| error.to_string())?;
+        for (file, expected) in staged {
+            let mut reopened = project
+                .load_graphics_file(file, layout)
+                .map_err(|error| error.to_string())?;
+            reopened.tiles.resize_with(0x80, || {
+                lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT])
+            });
+            if reopened != expected {
+                return Err(format!("saved graphics file {file:03X} did not reopen"));
+            }
+        }
+        if let Some((palette_layout, expected)) = expected_palette {
+            let reopened = project
+                .load_palette(usize::from(preview.pending.level), palette_layout)
+                .map_err(|error| error.to_string())?;
+            if reopened != expected {
+                return Err("saved SNES tileset palette did not reopen".into());
+            }
+        }
+        let mutation = RomMutation::between(
+            workspace.snapshot.identity.mapper,
+            &before,
+            project.rom.logical_bytes(),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(lm_app::PreparedRomCommit {
+            expected_revision: preview.pending.revision,
+            description: "Import SNES tileset graphics, palette, and Map16".into(),
+            mutation,
+        }
+        .into_command())
+    }
+}
+
+fn stage_and_save_palette_row(
+    project: &mut Project,
+    level: u16,
+    row: u8,
+    colors: [lm_graphics::Bgr555; 16],
+    allocation: lm_rats::AllocationPolicy,
+) -> Result<(lm_project::PaletteRomLayout, lm_graphics::Palette), String> {
+    if row > 15 {
+        return Err(format!("palette row must be in 0..F, got {row:X}"));
+    }
+    let installation = lm_profile::smw_us_v1_custom_palette_installation();
+    let existing_layout = installation
+        .resolve(&project.rom)
+        .map_err(|error| error.to_string())?;
+    let mut palette = if let Some(layout) = existing_layout {
+        project
+            .load_palette(usize::from(level), layout)
+            .map_err(|error| error.to_string())?
+    } else {
+        let loaded = project
+            .load_level_slot(
+                usize::from(level),
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .map_err(|error| error.to_string())?;
+        let composed =
+            lm_profile::compose_smw_us_v1_level_palette(project, level, loaded.layer1.header, 0)
+                .map_err(|error| error.to_string())?;
+        let mut palette = composed.palette;
+        palette.colors.push(composed.backdrop);
+        palette
+    };
+    if existing_layout.is_none() {
+        let shared_layout = lm_profile::smw_us_v1_shared_palette_layout();
+        let expected = project
+            .rom
+            .read(
+                shared_layout.table_offset,
+                lm_graphics::SmwPaletteFile::EXPANDED_FILE_LEN,
+            )
+            .map_err(|error| error.to_string())?
+            .to_vec();
+        let shared = lm_graphics::SmwPaletteFile::expanded(
+            expected[0x10..].to_vec(),
+            expected[..0x10].to_vec(),
+        )
+        .map_err(|error| error.to_string())?;
+        let plan =
+            lm_profile::smw_us_v1_expanded_shared_palette_installation_plan(&shared, &expected)
+                .map_err(|error| error.to_string())?;
+        project
+            .install_relocatable_patch(&plan)
+            .map_err(|error| error.to_string())?;
+    }
+    let layout = installation
+        .resolve(&project.rom)
+        .map_err(|error| error.to_string())?
+        .ok_or("custom palette installation did not resolve")?;
+    if palette.colors.len() == lm_profile::SMW_US_V1_CUSTOM_PALETTE_COLORS {
+        palette.colors.rotate_left(1);
+    }
+    let start = usize::from(row) * 16;
+    palette
+        .colors
+        .get_mut(start..start + 16)
+        .ok_or_else(|| format!("palette row {row:X} is outside the working palette"))?
+        .copy_from_slice(&colors);
+    if palette.colors.len() == lm_profile::SMW_US_V1_CUSTOM_PALETTE_COLORS {
+        palette.colors.rotate_right(1);
+    }
+    project
+        .save_palette(
+            usize::from(level),
+            &palette,
+            layout,
+            &PaletteSaveOptions {
+                allocation,
+                previous_block: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    Ok((layout, palette))
+}
+
+fn active_eight_graphics_files(
+    workspace: &super::Workspace,
+    project: &Project,
+    level: u16,
+) -> Result<[usize; 8], String> {
+    if let Some(profile) = &workspace.profile
+        && (profile.game != lm_rom::SupportedGame::SuperMarioWorld
+            || profile.region != lm_rom::Region::NorthAmerica
+            || profile.revision != 0)
+    {
+        return Err(format!(
+            "SNES tileset graphics ownership is not recovered for profile {}",
+            profile.name
+        ));
+    }
+    let (layout, lengths) = match &workspace.profile {
+        Some(profile) => (
+            profile
+                .level_layout_for_rom(&project.rom)
+                .map_err(|error| error.to_string())?,
+            profile.sprite_lengths.clone(),
+        ),
+        None => (
+            lm_profile::smw_us_v1_vanilla_level_layout(),
+            lm_level::SpriteLengthTable::standard(),
+        ),
+    };
+    let loaded = project
+        .load_level_slot(usize::from(level), layout, &lengths)
+        .map_err(|error| error.to_string())?;
+    if let Some(profile) = &workspace.profile
+        && let Some(settings_layout) = profile.expanded_settings
+    {
+        let settings = project
+            .load_expanded_level_settings(usize::from(level), settings_layout)
+            .map_err(|error| error.to_string())?;
+        if lm_level::ExpandedLevelHeader::from(&settings)
+            .super_graphics_bypass()
+            .enabled
+        {
+            return Err(
+                "SNES tileset import into ten-slot Super GFX Bypass is not recovered".into(),
+            );
+        }
+    }
+    let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
+        &project.rom,
+        usize::from(loaded.layer1.header.object_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+        &project.rom,
+        usize::from(loaded.layer1.header.sprite_tileset()),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok([
+        foreground[0],
+        foreground[1],
+        foreground[2],
+        foreground[3],
+        sprites[0],
+        sprites[1],
+        sprites[2],
+        sprites[3],
+    ])
 }
 
 fn prepare_preview(
@@ -239,6 +594,7 @@ fn prepare_preview(
     // The installed editor's current 1,024-tile workspace is canonical, so no additional external
     // graphics-remap stream is active here.
     let remap = std::array::from_fn(|index| u16::try_from(index).unwrap());
+    let imported_palette = decoded.palette_row;
     let materialized = decoded
         .materialize_with_options(&remap, pending.remap_offset, pending.color_map.as_ref())
         .map_err(|error| error.to_string())?;
@@ -252,7 +608,7 @@ fn prepare_preview(
         .map_err(|error| error.to_string())?;
     Ok(SnesTilesetPreview {
         pending,
-        has_palette: decoded.palette_row.is_some(),
+        palette: imported_palette,
         materialized,
         candidate_page,
         assignments: applied.assignments,
@@ -263,7 +619,7 @@ fn prepare_preview(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_app::LUNAR_MAGIC_BLANK_MAP16_WORD;
+    use lm_app::{AppState, Command, LUNAR_MAGIC_BLANK_MAP16_WORD};
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_level::{Map16Tile, Subtile};
 
@@ -287,8 +643,10 @@ mod tests {
             page: 0x82,
             placement,
             includes_palette: false,
+            palette_row: 0,
             remap_offset: 0,
             color_map: None,
+            level: 0x105,
         }
     }
 
@@ -308,7 +666,7 @@ mod tests {
         assert_eq!(preview.assignments[0], 0x8200);
         assert_eq!(preview.assignments[255], 0x82ff);
         assert_eq!(preview.written_definitions, 256);
-        assert!(!preview.has_palette);
+        assert!(preview.palette.is_none());
     }
 
     #[test]
@@ -364,5 +722,63 @@ mod tests {
         .unwrap();
         assert_eq!(preview.candidate_page.tiles[0].top_left.0, 1);
         assert_eq!(preview.materialized.graphics.tiles[1].pixels(), &[7; 64]);
+    }
+
+    #[test]
+    fn native_apply_commits_graphics_and_map16_atomically_reopens_and_undoes() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::ShowMap16).unwrap();
+        let mut editor = RomMap16Editor::default();
+        editor.open(&app);
+        let workspace = editor.workspace.as_ref().unwrap();
+        let revision = workspace.controller.revision();
+        let target = workspace.controller.set().pages[2].clone();
+        let mut request = pending(SnesMap16DefinitionPlacement::Direct);
+        request.revision = revision;
+        request.page = 2;
+        request.level = 0x105;
+        request.includes_palette = true;
+        request.palette_row = 3;
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([6; 64])],
+        }
+        .encode()
+        .unwrap();
+        let map = (0..0x400)
+            .flat_map(|_| 0x0400_u16.to_le_bytes())
+            .collect::<Vec<_>>();
+        let palette_bytes = (0_u16..16)
+            .flat_map(|value| (0x1200 | value).to_le_bytes())
+            .collect::<Vec<_>>();
+        editor.snes_tileset_preview =
+            Some(prepare_preview(request, &graphics, &map, Some(&palette_bytes), &target).unwrap());
+
+        let command = editor
+            .prepare_snes_tileset_graphics_map16_command()
+            .unwrap();
+        app.dispatch(command).unwrap();
+        let project = app.project().unwrap();
+        let reopened_map16 = lm_profile::load_smw_us_v1_complete_map16(project).unwrap();
+        assert_eq!(reopened_map16.foreground.definitions[2 * 256 * 4], 0x0400);
+        let reopened_graphics = project
+            .load_graphics_file(0x14, lm_profile::smw_us_v1_vanilla_graphics_layout())
+            .unwrap();
+        assert_eq!(reopened_graphics.tiles[0].pixels(), &[6; 64]);
+        let palette_layout = lm_profile::smw_us_v1_custom_palette_installation()
+            .resolve(&project.rom)
+            .unwrap()
+            .unwrap();
+        let mut reopened_palette = project.load_palette(0x105, palette_layout).unwrap();
+        reopened_palette.colors.rotate_left(1);
+        assert_eq!(
+            &reopened_palette.colors[3 * 16..4 * 16],
+            &(0_u16..16)
+                .map(|value| lm_graphics::Bgr555(0x1200 | value))
+                .collect::<Vec<_>>()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
     }
 }

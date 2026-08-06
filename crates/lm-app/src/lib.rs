@@ -311,7 +311,7 @@ pub use snapshot::{ControllerSnapshot, ProfiledControllerSnapshot};
 pub use snes_map16_tileset_import::{
     AppliedSnesMap16Page, MaterializedSnesMap16Tileset, SNES_TILESET_GRAPHICS_LEN,
     SNES_TILESET_MAP_LEN, SNES_TILESET_PALETTE_ROW_LEN, SnesMap16DefinitionPlacement,
-    SnesMap16TilesetImport, SnesMap16TilesetImportError,
+    SnesMap16TilesetImport, SnesMap16TilesetImportError, stage_snes_tileset_graphics_files,
 };
 pub use ssc_sidecar_controller::{
     SscSidecarController, SscSidecarControllerError, SscSidecarSaveSnapshot,
