@@ -91,25 +91,60 @@ impl SnesMap16TilesetImport {
         &self,
         remap: &[u16; TILE_COUNT],
     ) -> Result<MaterializedSnesMap16Tileset, SnesMap16TilesetImportError> {
+        self.materialize_with_options(remap, 0, None)
+    }
+
+    /// Applies the two native remap offsets and optional selected 16-entry color-map filter.
+    ///
+    /// Lunar Magic adds the two dialog offsets before indexing its 1,024-entry remap table and
+    /// wraps that lookup to ten bits. After all copies finish, it filters every referenced
+    /// destination tile exactly once.
+    pub fn materialize_with_options(
+        &self,
+        remap: &[u16; TILE_COUNT],
+        remap_offset: u16,
+        color_map: Option<&[u8; 16]>,
+    ) -> Result<MaterializedSnesMap16Tileset, SnesMap16TilesetImportError> {
         if self.source_graphics.tiles.len() != TILE_COUNT || self.source_tilemap.len() != TILE_COUNT
         {
             return Err(SnesMap16TilesetImportError::InternalShape);
+        }
+        if let Some(map) = color_map
+            && let Some((index, value)) = map
+                .iter()
+                .copied()
+                .enumerate()
+                .find(|(_, value)| *value > 15)
+        {
+            return Err(SnesMap16TilesetImportError::ColorMapValue { index, value });
         }
         let mut graphics = GraphicsFile4bpp {
             tiles: vec![IndexedTile::new([0; IndexedTile::PIXEL_COUNT]); TILE_COUNT],
         };
         let mut tilemap = Vec::with_capacity(TILE_COUNT);
+        let mut referenced_destinations = [false; TILE_COUNT];
         for word in self.source_tilemap.iter().copied() {
             let source = usize::from(word & 0x03ff);
-            let destination = usize::from(remap[source]);
+            let lookup = (source + usize::from(remap_offset)) & 0x03ff;
+            let destination = usize::from(remap[lookup]);
             if destination >= TILE_COUNT {
                 return Err(SnesMap16TilesetImportError::RemapTarget {
-                    source,
+                    source: lookup,
                     destination,
                 });
             }
             graphics.tiles[destination] = self.source_graphics.tiles[source].clone();
-            tilemap.push((word & 0xfc00) | remap[source]);
+            referenced_destinations[destination] = true;
+            tilemap.push((word & 0xfc00) | remap[lookup]);
+        }
+        if let Some(map) = color_map {
+            for (tile, referenced) in graphics.tiles.iter_mut().zip(referenced_destinations) {
+                if referenced {
+                    let pixels =
+                        std::array::from_fn(|index| map[usize::from(tile.pixels()[index] & 0x0f)]);
+                    *tile = IndexedTile::new(pixels);
+                }
+            }
         }
 
         let tiles = (0..Map16Page::TILE_COUNT)
@@ -225,6 +260,7 @@ pub enum SnesMap16TilesetImportError {
     PaletteRowLength(usize),
     Graphics(String),
     RemapTarget { source: usize, destination: usize },
+    ColorMapValue { index: usize, value: u8 },
     NotEnoughBlankDefinitions { available: usize, needed: usize },
     InternalShape,
 }
@@ -397,5 +433,37 @@ mod tests {
             })
         );
         assert_eq!(insufficient, before);
+    }
+
+    #[test]
+    fn native_offset_wraps_remap_lookup_and_color_filter_runs_once_per_destination() {
+        let graphics = [encoded_tile(1), encoded_tile(2)].concat();
+        let mut words = vec![0_u16; 0x400];
+        words[0] = 0;
+        words[1] = 1;
+        let decoded = SnesMap16TilesetImport::decode(&graphics, &tilemap(words), None).unwrap();
+        let mut remap = std::array::from_fn(|index| index as u16);
+        // Offset 0x3ff maps source 1 through entry 0 and source 0 through entry 0x3ff.
+        remap[0x3ff] = 8;
+        remap[0] = 9;
+        let mut colors = std::array::from_fn(|index| index as u8);
+        colors[1] = 5;
+        colors[2] = 6;
+        let output = decoded
+            .materialize_with_options(&remap, 0x3ff, Some(&colors))
+            .unwrap();
+        assert_eq!(output.page.tiles[0].top_left.0, 8);
+        assert_eq!(output.page.tiles[0].top_right.0, 9);
+        assert_eq!(output.graphics.tiles[8].pixels(), &[5; 64]);
+        assert_eq!(output.graphics.tiles[9].pixels(), &[6; 64]);
+
+        colors[7] = 16;
+        assert_eq!(
+            decoded.materialize_with_options(&remap, 0, Some(&colors)),
+            Err(SnesMap16TilesetImportError::ColorMapValue {
+                index: 7,
+                value: 16,
+            })
+        );
     }
 }

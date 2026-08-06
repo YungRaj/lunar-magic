@@ -163,6 +163,11 @@ pub(crate) struct RomMap16Editor {
     snes_tileset_preview: Option<snes_tileset_import::SnesTilesetPreview>,
     snes_tileset_include_palette: bool,
     snes_tileset_deduplicate: bool,
+    snes_tileset_graphics_offset: u16,
+    snes_tileset_map_offset: u16,
+    snes_tileset_color_filter: bool,
+    snes_tileset_color_filter_index: u8,
+    snes_tileset_color_maps: [[u8; 16]; 16],
 }
 
 impl RomMap16Editor {

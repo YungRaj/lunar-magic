@@ -4181,3 +4181,10 @@ optional palette row, and all 256 global assignments. While loading or previewin
 other transfers, commit, and close are gated. The preview deliberately has no partial Apply action:
 publishing it must wait for the cross-domain ROM transaction so graphics, palette, definitions, and
 the optional background index grid can never diverge.
+
+SNES tileset materialization now accepts the combined native remap offset and one optional 16-entry
+color map. The offset wraps before lookup, while remap destinations remain range-checked. Filtering
+runs only after all source copies and only once per referenced destination, preserving the native
+last-source-wins result when remap aliases exist. The installed preview captures both separate
+offset controls, their ten-bit sum, the selected one of sixteen persistent color maps, and every
+map entry before background loading; later UI changes cannot alter an in-flight request.

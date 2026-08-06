@@ -13,6 +13,8 @@ pub(super) struct PendingSnesTileset {
     page: usize,
     placement: SnesMap16DefinitionPlacement,
     includes_palette: bool,
+    remap_offset: u16,
+    color_map: Option<[u8; 16]>,
 }
 
 pub(super) struct SnesTilesetPreview {
@@ -89,6 +91,39 @@ impl RomMap16Editor {
                 self.start_snes_tileset_load(project_revision);
             }
         });
+        ui.horizontal(|ui| {
+            ui.label("Graphics offset");
+            ui.add(
+                egui::DragValue::new(&mut self.snes_tileset_graphics_offset)
+                    .range(0..=0x3ff)
+                    .hexadecimal(3, false, true),
+            );
+            ui.label("Map offset");
+            ui.add(
+                egui::DragValue::new(&mut self.snes_tileset_map_offset)
+                    .range(0..=0x3ff)
+                    .hexadecimal(3, false, true),
+            );
+            ui.checkbox(&mut self.snes_tileset_color_filter, "Color-map filter");
+            ui.add_enabled(
+                self.snes_tileset_color_filter,
+                egui::DragValue::new(&mut self.snes_tileset_color_filter_index).range(0..=15),
+            );
+        });
+        if self.snes_tileset_color_filter {
+            let map = &mut self.snes_tileset_color_maps
+                [usize::from(self.snes_tileset_color_filter_index)];
+            ui.horizontal_wrapped(|ui| {
+                ui.label("Color map");
+                for value in map {
+                    ui.add(
+                        egui::DragValue::new(value)
+                            .range(0..=15)
+                            .hexadecimal(1, false, true),
+                    );
+                }
+            });
+        }
         ui.small("Loads the original .set/.bin plus 32×32 .map workflow with an optional 16-color .col/.pal row. Preview is revision-bound and blocks conflicting Map16 work.");
     }
 
@@ -129,6 +164,14 @@ impl RomMap16Editor {
                         SnesMap16DefinitionPlacement::Direct
                     },
                     includes_palette: self.snes_tileset_include_palette,
+                    remap_offset: self
+                        .snes_tileset_graphics_offset
+                        .wrapping_add(self.snes_tileset_map_offset)
+                        & 0x03ff,
+                    color_map: self.snes_tileset_color_filter.then(|| {
+                        self.snes_tileset_color_maps
+                            [usize::from(self.snes_tileset_color_filter_index)]
+                    }),
                 });
             }
             Err(error) => self.error = Some(error),
@@ -197,7 +240,7 @@ fn prepare_preview(
     // graphics-remap stream is active here.
     let remap = std::array::from_fn(|index| u16::try_from(index).unwrap());
     let materialized = decoded
-        .materialize(&remap)
+        .materialize_with_options(&remap, pending.remap_offset, pending.color_map.as_ref())
         .map_err(|error| error.to_string())?;
     let mut candidate_page = target.clone();
     let applied = materialized
@@ -221,6 +264,7 @@ fn prepare_preview(
 mod tests {
     use super::*;
     use lm_app::LUNAR_MAGIC_BLANK_MAP16_WORD;
+    use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_level::{Map16Tile, Subtile};
 
     fn blank_page() -> Map16Page {
@@ -243,6 +287,8 @@ mod tests {
             page: 0x82,
             placement,
             includes_palette: false,
+            remap_offset: 0,
+            color_map: None,
         }
     }
 
@@ -294,5 +340,29 @@ mod tests {
             .is_err()
         );
         assert_eq!(occupied, before);
+    }
+
+    #[test]
+    fn native_preview_applies_captured_combined_offset_and_color_map() {
+        let mut request = pending(SnesMap16DefinitionPlacement::Direct);
+        request.remap_offset = 1;
+        let mut colors = std::array::from_fn(|index| index as u8);
+        colors[1] = 7;
+        request.color_map = Some(colors);
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([1; 64])],
+        }
+        .encode()
+        .unwrap();
+        let preview = prepare_preview(
+            request,
+            &graphics,
+            &[0; SNES_TILESET_MAP_LEN],
+            None,
+            &blank_page(),
+        )
+        .unwrap();
+        assert_eq!(preview.candidate_page.tiles[0].top_left.0, 1);
+        assert_eq!(preview.materialized.graphics.tiles[1].pixels(), &[7; 64]);
     }
 }

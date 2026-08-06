@@ -3392,3 +3392,13 @@ only these four words, preserving destination Acts Like values; the alternate pa
 definitions into blank entries. If enabled, the workflow asks for a `.col`/`.pal` file and
 `LoadPaletteRowFromFile` at `$004765E0` reads exactly `$20` bytes into the selected working palette
 row. Background-page import can additionally paste the resulting index grid into the level.
+
+The previously unpromoted options callback at `$004E4E00` clarifies the remap ABI. On first open it
+calls `InitializeIdentityTileRemap` at `$004E4DD0`, which fills all 1,024 words at `$00963F78` with
+their own indexes. Accept stores the two hexadecimal offset controls in `$005E5678` and `$00E27A98`.
+The importer adds those values to each source tile, masks the sum to ten bits, and indexes the remap
+table; identity is therefore the exact initial native state rather than a Rust approximation. The
+optional color-map selector is one-based in `$00E27A9C`. After all graphics copies, the importer
+visits each referenced remapped destination only once and calls `ApplyColorMapFilterToGraphicsTile`
+at `$00503CE0` with selector minus one. That function maps each of the tile's 64 low-nibble pixel
+indexes through the chosen 16-byte row of the 16×16 table at `$0091C580`, then re-encodes 4bpp.
