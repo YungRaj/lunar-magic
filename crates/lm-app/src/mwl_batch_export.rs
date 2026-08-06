@@ -65,19 +65,39 @@ pub fn export_smw_us_v1_installed_mwl_batch_until(
         .ok_or("active revision profile has no installed per-level palette")?;
     let ownership = lm_graphics::PaletteOwnership::editable(palette.colors_per_palette);
     let level_count = profiled.profile.level.layer1.entries;
+    let builtin_documents = if mode == MwlBatchExportMode::All {
+        let Some(documents) = export_builtin_smw_us_v1_mwl_batch_until(
+            &profiled.snapshot,
+            MwlBatchExportMode::All,
+            &mut cancelled,
+        )?
+        else {
+            return Ok(None);
+        };
+        Some(documents)
+    } else {
+        None
+    };
     let mut documents = Vec::with_capacity(level_count);
     for slot in 0..level_count {
         if cancelled() {
             return Ok(None);
         }
-        if mode == MwlBatchExportMode::Modified
-            && !native_level_is_in_expanded_area(
-                &image,
-                profiled.profile.mapper,
-                profiled.profile.level.layer1,
-                slot,
-            )?
-        {
+        let modified = native_level_is_in_expanded_area(
+            &image,
+            profiled.profile.mapper,
+            profiled.profile.level.layer1,
+            slot,
+        )?;
+        if mode == MwlBatchExportMode::Modified && !modified {
+            continue;
+        }
+        if !modified {
+            let document = builtin_documents
+                .as_ref()
+                .and_then(|documents| documents.get(slot))
+                .ok_or_else(|| format!("missing built-in MWL fallback for level {slot:03X}"))?;
+            documents.push(document.clone());
             continue;
         }
         let level = u16::try_from(slot).map_err(|error| error.to_string())?;
@@ -154,14 +174,13 @@ pub fn export_builtin_smw_us_v1_mwl_batch_until(
         if cancelled() {
             return Ok(None);
         }
-        if mode == MwlBatchExportMode::Modified
-            && !native_level_is_in_expanded_area(
-                &project.rom,
-                level_layout.mapper,
-                level_layout.layer1,
-                slot,
-            )?
-        {
+        let modified = native_level_is_in_expanded_area(
+            &project.rom,
+            level_layout.mapper,
+            level_layout.layer1,
+            slot,
+        )?;
+        if mode == MwlBatchExportMode::Modified && !modified {
             continue;
         }
         let mut level = project
@@ -210,7 +229,7 @@ pub fn export_builtin_smw_us_v1_mwl_batch_until(
                 level.layer1.header.level_mode(),
                 layer2_layout,
             )
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| format!("level {slot:03X}: {error}"))?;
         if let lm_level::NativeLayer2Data::Objects(layer2) = &mut loaded_layer2.data {
             remove_redundant_screen_jumps(&mut layer2.objects);
         }

@@ -220,7 +220,9 @@ impl Project {
                 // The original loader writes shared-background RLE directly into the low-byte
                 // plane and only consumes its first 0x360 bytes. A small number of pristine
                 // streams emit one trailing padding byte before the terminator.
-                if substituted_pointer.is_some() && decoded.len() == LEGACY_LAYER2_TILEMAP_LEN + 1 {
+                if (substituted_pointer.is_some() || raw_descriptor.is_some())
+                    && decoded.len() == LEGACY_LAYER2_TILEMAP_LEN + 1
+                {
                     decoded.truncate(LEGACY_LAYER2_TILEMAP_LEN);
                 }
                 let (tilemap, descriptor) = match decoded.len() {
@@ -528,6 +530,34 @@ mod tests {
         let project = Project::new(RomImage::from_bytes(bytes).unwrap());
         let mut installed = layout(1);
         installed.tilemap_encoding = LevelLayer2TilemapEncoding::Legacy { high_byte: 0x7f };
+        installed.descriptor_table = Some(LevelLayer2DescriptorTable {
+            offset: 0x40,
+            entries: 1,
+            stride: 1,
+        });
+
+        let loaded = project
+            .load_level_layer2_with_descriptor(0, 0, installed)
+            .unwrap();
+        let NativeLayer2Data::Tilemap(tilemap) = loaded.data else {
+            panic!("level mode zero must decode as a tilemap");
+        };
+        assert_eq!(&tilemap[..4], &[0x34, 1, 0x34, 1]);
+        assert_eq!(loaded.descriptor, Some(MwlLayer2Descriptor::from_raw(0x0c)));
+    }
+
+    #[test]
+    fn installed_descriptor_accepts_pre_migration_legacy_padding_byte() {
+        let mut legacy = vec![0x34; LEGACY_LAYER2_TILEMAP_LEN];
+        legacy.push(0);
+        let compressed = encode_terminated_rle(&legacy);
+        let mut bytes = vec![0xff; 0x8000];
+        bytes[0x20..0x23]
+            .copy_from_slice(&pc_to_snes(Mapper::LoRom, 0x100).unwrap().to_le_bytes()[..3]);
+        bytes[0x40] = 0x18;
+        bytes[0x100..0x100 + compressed.len()].copy_from_slice(&compressed);
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let mut installed = layout(1);
         installed.descriptor_table = Some(LevelLayer2DescriptorTable {
             offset: 0x40,
             entries: 1,

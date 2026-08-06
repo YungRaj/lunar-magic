@@ -193,12 +193,18 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    fn installed_fixture() -> ProfiledControllerSnapshot {
+    fn installed_fixture(headered: bool) -> ProfiledControllerSnapshot {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let rom_bytes = fs::read(
+        let physical = fs::read(
             root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
         )
         .unwrap();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let rom_bytes = if headered {
+            physical
+        } else {
+            physical_image.logical_bytes().to_vec()
+        };
         let image = RomImage::from_bytes(rom_bytes.clone()).unwrap();
         let mut profile = lm_profile::test_support::profile();
         profile.mapper = lm_rom::Mapper::LoRom;
@@ -301,25 +307,74 @@ mod tests {
 
     #[test]
     fn installed_worker_exports_only_lunar_magic_modified_selection() {
-        let directory = temporary_directory("installed-modified");
-        let result = run_export(
-            BatchSource::Installed(installed_fixture()),
-            &directory.join("Installed.mwl"),
-            MwlBatchExportMode::Modified,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
-        assert_eq!(result, Some(1));
-        assert!(directory.join("Installed 000.mwl").is_file());
-        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
-        fs::remove_dir_all(directory).unwrap();
+        let mut headered_bytes = None;
+        for headered in [true, false] {
+            let directory = temporary_directory(if headered {
+                "installed-modified-headered"
+            } else {
+                "installed-modified-headerless"
+            });
+            let result = run_export(
+                BatchSource::Installed(installed_fixture(headered)),
+                &directory.join("Installed.mwl"),
+                MwlBatchExportMode::Modified,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert_eq!(result, Some(1));
+            assert!(directory.join("Installed 000.mwl").is_file());
+            assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+            let bytes = fs::read(directory.join("Installed 000.mwl")).unwrap();
+            if let Some(expected) = &headered_bytes {
+                assert_eq!(&bytes, expected);
+            } else {
+                headered_bytes = Some(bytes);
+            }
+            fs::remove_dir_all(directory).unwrap();
+        }
+    }
+
+    #[test]
+    fn installed_worker_exports_all_512_levels_across_copier_header_variants() {
+        let mut headered_hashes = None;
+        for headered in [true, false] {
+            let directory = temporary_directory(if headered {
+                "installed-all-headered"
+            } else {
+                "installed-all-headerless"
+            });
+            let result = run_export(
+                BatchSource::Installed(installed_fixture(headered)),
+                &directory.join("Installed.mwl"),
+                MwlBatchExportMode::All,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
+            assert_eq!(result, Some(0x200));
+            assert!(directory.join("Installed 000.mwl").is_file());
+            assert!(directory.join("Installed 1FF.mwl").is_file());
+            assert_eq!(fs::read_dir(&directory).unwrap().count(), 0x200);
+            let hashes = (0..0x200)
+                .map(|level| {
+                    lm_oracle::sha256_hex(
+                        &fs::read(directory.join(format!("Installed {level:03X}.mwl"))).unwrap(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if let Some(expected) = &headered_hashes {
+                assert_eq!(&hashes, expected);
+            } else {
+                headered_hashes = Some(hashes);
+            }
+            fs::remove_dir_all(directory).unwrap();
+        }
     }
 
     #[test]
     fn worker_cancellation_never_publishes_partial_output() {
         let directory = temporary_directory("cancelled");
         let result = run_export(
-            BatchSource::Installed(installed_fixture()),
+            BatchSource::Installed(installed_fixture(true)),
             &directory.join("Cancelled.mwl"),
             MwlBatchExportMode::Modified,
             &AtomicBool::new(true),
