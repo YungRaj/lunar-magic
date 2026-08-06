@@ -587,6 +587,21 @@ fn bitmap_multi_row_color_options(
             .show(ui, |ui| {
                 for row in 0..8 {
                     ui.label(format!("{row}:"));
+                    for (marker, state, description) in [
+                        ("F", BitmapPaletteEntryState::Free, "free"),
+                        ("U", BitmapPaletteEntryState::Reusable, "reusable"),
+                        ("X", BitmapPaletteEntryState::Reserved, "reserved"),
+                    ] {
+                        if ui
+                            .small_button(marker)
+                            .on_hover_text(format!("Mark every color in row {row} {description}"))
+                            .clicked()
+                        {
+                            changed |=
+                                set_bitmap_palette_row_state(&mut options.entries, row, state);
+                        }
+                    }
+                    ui.separator();
                     for entry in 0..Palette::COLORS_PER_ROW {
                         let index = row * Palette::COLORS_PER_ROW + entry;
                         let color = palette.colors.get(index).copied().unwrap_or_default();
@@ -624,6 +639,25 @@ fn bitmap_multi_row_color_options(
                 }
             });
     });
+    changed
+}
+
+fn set_bitmap_palette_row_state(
+    entries: &mut [BitmapPaletteEntryState],
+    row: usize,
+    state: BitmapPaletteEntryState,
+) -> bool {
+    let Some(start) = row.checked_mul(Palette::COLORS_PER_ROW) else {
+        return false;
+    };
+    let Some(end) = start.checked_add(Palette::COLORS_PER_ROW) else {
+        return false;
+    };
+    let Some(entries) = entries.get_mut(start..end) else {
+        return false;
+    };
+    let changed = entries.iter().any(|entry| *entry != state);
+    entries.fill(state);
     changed
 }
 
@@ -733,6 +767,50 @@ fn decode_clipboard_rgba(
 mod tests {
     use super::*;
     use lm_graphics::Rgba8;
+
+    #[test]
+    fn palette_row_controls_update_exactly_one_complete_row() {
+        let mut entries = vec![BitmapPaletteEntryState::Reserved; 128];
+
+        assert!(set_bitmap_palette_row_state(
+            &mut entries,
+            3,
+            BitmapPaletteEntryState::Reusable,
+        ));
+        assert!(
+            entries[..48]
+                .iter()
+                .all(|entry| *entry == BitmapPaletteEntryState::Reserved)
+        );
+        assert!(
+            entries[48..64]
+                .iter()
+                .all(|entry| *entry == BitmapPaletteEntryState::Reusable)
+        );
+        assert!(
+            entries[64..]
+                .iter()
+                .all(|entry| *entry == BitmapPaletteEntryState::Reserved)
+        );
+        assert!(!set_bitmap_palette_row_state(
+            &mut entries,
+            3,
+            BitmapPaletteEntryState::Reusable,
+        ));
+
+        let unchanged = entries.clone();
+        assert!(!set_bitmap_palette_row_state(
+            &mut entries,
+            8,
+            BitmapPaletteEntryState::Free,
+        ));
+        assert!(!set_bitmap_palette_row_state(
+            &mut entries,
+            usize::MAX,
+            BitmapPaletteEntryState::Free,
+        ));
+        assert_eq!(entries, unchanged);
+    }
 
     #[test]
     fn optional_graphics_assignments_are_explicit_hexadecimal_values() {

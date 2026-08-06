@@ -1143,7 +1143,10 @@ index zero of all eight active 16-color rows reusable, exposes entries 1–8 of 
 and initially reserves the remaining entries. `HandleBitmapImportOptionsDialog` at `004f15e0`
 offers “Median Cut” and “Popularity”, a 1–128 color limit, four priority levels, three whole-row
 state buttons, independent reserve/reuse toggles, and transactional restoration of all 128 state
-bytes plus the palette snapshot on cancel. Initialized data at `$005e55cc` confirms the related
+bytes plus the palette snapshot on cancel. The Rust dialog now mirrors those three whole-row
+Free/Reusable/Reserved actions for every one of the eight rows in addition to its individual entry
+controls. A focused boundary test proves that each action changes exactly 16 entries, is
+idempotent, and rejects out-of-range row indexes. Initialized data at `$005e55cc` confirms the related
 priority toggles enabled, priority level 3 at `$005e55d0`, maximum 128 colors at `$005e55fc`, and
 the recovered default optimization flag block.
 

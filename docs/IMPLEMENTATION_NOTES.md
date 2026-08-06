@@ -4078,3 +4078,10 @@ Map16 stages `$0100`, `$0101`, and `$0111` identify their `$0112` target; and La
 `$100`, `$101`, and `$102` identify their `$103` target. The same generation predicates control
 the migration button and typed command, so the dialog cannot describe one source format while
 dispatching another. Focused coverage enumerates every supported legacy generation.
+
+The native Map16 bitmap-import color dialog now exposes Lunar Magic's recovered bulk palette-row
+actions. Each of the eight rows has explicit Free, Reusable, and Reserved buttons alongside the 16
+individual state cells. The shared bounded helper changes exactly one complete row, reports no-op
+updates accurately, and rejects overflow or rows outside the 128-entry workspace. Focused UI and
+bitmap-planning tests pass, followed by the 221-test renderer suite and both pristine all-512-level
+materialization/dimension gates.
