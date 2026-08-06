@@ -223,6 +223,55 @@ fn split_low_word_and_bank_fixups_publish_one_allocated_address() {
 }
 
 #[test]
+fn split_byte_planes_publish_one_allocated_address() {
+    let mut split = plan();
+    split.writes = vec![
+        PatchWrite {
+            offset: 0x200,
+            expected: vec![0xff],
+            replacement: vec![0],
+            fixups: vec![PatchFixup {
+                offset: 0,
+                target_payload: 1,
+                target_addend: 1,
+                encoding: PatchFixupEncoding::Low8,
+            }],
+        },
+        PatchWrite {
+            offset: 0x300,
+            expected: vec![0xff],
+            replacement: vec![0],
+            fixups: vec![PatchFixup {
+                offset: 0,
+                target_payload: 1,
+                target_addend: 1,
+                encoding: PatchFixupEncoding::High8,
+            }],
+        },
+        PatchWrite {
+            offset: 0x400,
+            expected: vec![0xff],
+            replacement: vec![0],
+            fixups: vec![PatchFixup {
+                offset: 0,
+                target_payload: 1,
+                target_addend: 1,
+                encoding: PatchFixupEncoding::Bank8LowBank,
+            }],
+        },
+    ];
+    let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+    let result = project.install_relocatable_patch(&split).unwrap();
+    let mut target = pc_to_snes(Mapper::LoRom, result.blocks[1].payload.start + 1)
+        .unwrap()
+        .to_le_bytes();
+    target[2] &= 0x7f;
+    assert_eq!(project.rom.read(0x200, 1).unwrap(), &target[..1]);
+    assert_eq!(project.rom.read(0x300, 1).unwrap(), &target[1..2]);
+    assert_eq!(project.rom.read(0x400, 1).unwrap(), &target[2..3]);
+}
+
+#[test]
 fn malformed_fixups_writes_and_expansion_policy_are_rejected() {
     let mut cases = Vec::new();
     let mut missing = plan();

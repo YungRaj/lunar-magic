@@ -591,6 +591,8 @@ fn relocate_for_runtime(
         let replacement: &[u8] = match fixup.encoding {
             PatchFixupEncoding::Long24 | PatchFixupEncoding::Long24LowBank => &encoded[..3],
             PatchFixupEncoding::Low16 => &encoded[..2],
+            PatchFixupEncoding::Low8 => &encoded[..1],
+            PatchFixupEncoding::High8 => &encoded[1..2],
             PatchFixupEncoding::Bank8 | PatchFixupEncoding::Bank8LowBank => &encoded[2..3],
         };
         bytes[fixup.offset..fixup.offset + replacement.len()].copy_from_slice(replacement);

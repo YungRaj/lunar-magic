@@ -16,6 +16,10 @@ pub enum PatchFixupEncoding {
     Long24LowBank,
     /// Low 16 bits of the SNES address.
     Low16,
+    /// Low byte of the SNES address, for split-plane pointer tables.
+    Low8,
+    /// High byte of the low word, for split-plane pointer tables.
+    High8,
     /// Bank byte of the SNES address.
     Bank8,
     /// Bank byte using the equivalent low-bank `LoROM` mirror.
@@ -28,7 +32,7 @@ impl PatchFixupEncoding {
         match self {
             Self::Long24 | Self::Long24LowBank => 3,
             Self::Low16 => 2,
-            Self::Bank8 | Self::Bank8LowBank => 1,
+            Self::Low8 | Self::High8 | Self::Bank8 | Self::Bank8LowBank => 1,
         }
     }
 }
@@ -491,6 +495,8 @@ fn apply_fixups(
         let replacement: &[u8] = match fixup.encoding {
             PatchFixupEncoding::Long24 | PatchFixupEncoding::Long24LowBank => &encoded[..3],
             PatchFixupEncoding::Low16 => &encoded[..2],
+            PatchFixupEncoding::Low8 => &encoded[..1],
+            PatchFixupEncoding::High8 => &encoded[1..2],
             PatchFixupEncoding::Bank8 | PatchFixupEncoding::Bank8LowBank => &encoded[2..3],
         };
         bytes[fixup.offset..fixup.offset + replacement.len()].copy_from_slice(replacement);
