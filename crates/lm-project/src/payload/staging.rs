@@ -47,6 +47,22 @@ pub(crate) fn commit_staged(
     original: &[u8],
     staged: &[u8],
 ) -> Result<(), PayloadSaveError> {
+    commit_staged_with_kind(
+        project,
+        description,
+        original,
+        staged,
+        crate::EditKind::Ordinary,
+    )
+}
+
+pub(crate) fn commit_staged_with_kind(
+    project: &mut Project,
+    description: String,
+    original: &[u8],
+    staged: &[u8],
+    kind: crate::EditKind,
+) -> Result<(), PayloadSaveError> {
     let writes = changed_writes(original, &staged[..original.len()]);
     let mut transaction = RomTransaction::new(&mut project.rom);
     for write in writes {
@@ -58,7 +74,7 @@ pub(crate) fn commit_staged(
         project.history.push_batch(EditBatch {
             description,
             edits,
-            kind: crate::EditKind::Ordinary,
+            kind,
             copier_header: None,
         });
         project.synchronize_identity_checksums();

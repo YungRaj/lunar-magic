@@ -253,10 +253,11 @@ Wine import/re-export over a real pristine-ROM record confirms screens `$00/$1F`
   Mode 2's authenticated standard-LoROM runtime is now retained as an immutable template. A Rust
   staging component converts all 50 split-plane standard pointers plus the independently addressed
   GFX33/GFX32 startup pair to LZ3, keeping the latter in their required shared bank. Lunar Magic
-  recognizes the staged ROM as already `LC_LZ3` and re-exports all 52 files byte-identically. This
-  component remains unavailable as a standalone UI action until the 128 optional ExAnimation
-  pointers, populated ExGFX domains, and installed overworld-event streams participate in the same
-  atomic transaction.
+  recognizes the staged ROM as already `LC_LZ3` and re-exports all 52 files byte-identically. The
+  completed application transaction now also walks every non-null compressed `$80..$FFF`
+  ExAnimation/ExGFX pointer and converts both installed overworld-event streams before publishing
+  the runtime/metadata switch. Raw `$60..$63` files remain unchanged because the selected codec does
+  not apply to them.
 - `LevelObjectNode` (currently 29 recovered bytes): linked-list pointer plus the serialized command bytes and encoding-variant field. Unknown regions remain explicitly named as byte arrays. The type is applied at the Layer 1 list head (`0060b6b8`).
 - `ManualEditorCommandBuffer` (16 bytes): shared encoded-command workspace used by the manual object and sprite editors, applied at `008636c4`.
 - `LayerScrollMode` (8-bit enum): all 32 scroll-mode values, including automatic directional modes and unused slots.

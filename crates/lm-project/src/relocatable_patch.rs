@@ -1,7 +1,8 @@
 //! Failure-atomic installation of mutually relocatable tagged runtime payloads.
 
 use crate::{
-    Project, RatsOwnershipManifest, RatsReclamationError, payload::staging::commit_staged,
+    EditKind, Project, RatsOwnershipManifest, RatsReclamationError,
+    payload::staging::{commit_staged, commit_staged_with_kind},
 };
 use lm_rats::{AllocationError, AllocationPolicy, FreeSpaceAllocator, ProtectedRange, RatsBlock};
 use lm_rom::{Mapper, RomError, RomImage, compute_snes_checksum, pc_to_snes};
@@ -207,6 +208,18 @@ impl Project {
         let original = self.rom.logical_bytes().to_vec();
         let (staged, result) = stage_relocatable_patch(&original, plan)?;
         commit_staged(self, plan.description.clone(), &original, &staged)?;
+        Ok(result)
+    }
+
+    /// Installs a relocatable plan while retaining a semantic history marker for undo/redo.
+    pub fn install_relocatable_patch_with_kind(
+        &mut self,
+        plan: &RelocatablePatchPlan,
+        kind: EditKind,
+    ) -> Result<RelocatablePatchResult, RelocatablePatchError> {
+        let original = self.rom.logical_bytes().to_vec();
+        let (staged, result) = stage_relocatable_patch(&original, plan)?;
+        commit_staged_with_kind(self, plan.description.clone(), &original, &staged, kind)?;
         Ok(result)
     }
 

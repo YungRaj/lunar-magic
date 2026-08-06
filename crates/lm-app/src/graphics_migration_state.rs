@@ -34,25 +34,44 @@ impl AppState {
         {
             return Err(AppError::GraphicsMigrationProfileMismatch);
         }
-        // Recompressing Lunar Magic's installed SMW graphics streams is only one part of its
-        // Change Compression operation.  The ROM's 65C816 decompressor, metadata nibble, and
-        // compression-dependent auxiliary tables must be migrated in the same transaction.  Do
-        // not publish a ROM that merely reopens through our target codec but fails in-game.
-        if lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
-            &self.project.as_ref().ok_or(AppError::NoProject)?.rom,
-        ) {
-            return Err(AppError::GraphicsRuntimeMigrationRequired);
-        }
         if source.compression == target {
             return Ok(Vec::new());
         }
         self.ensure_project_revision_capacity()?;
-
-        let changed = self
-            .project
-            .as_mut()
-            .ok_or(AppError::NoProject)?
-            .migrate_graphics_compression(source, target, options)?;
+        let installed_smw = lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+            &self.project.as_ref().ok_or(AppError::NoProject)?.rom,
+        );
+        let changed = if installed_smw {
+            if source.compression != GraphicsCompression::Lz2 || target != GraphicsCompression::Lz3
+            {
+                return Err(AppError::GraphicsRuntimeMigrationRequired);
+            }
+            let project = self.project.as_mut().ok_or(AppError::NoProject)?;
+            let current_len = project.rom.logical_len();
+            let target_len = match current_len {
+                0..0x20_0000 => 0x20_0000,
+                0x20_0000..0x40_0000 => 0x40_0000,
+                _ => return Err(AppError::GraphicsRuntimeMigrationRequired),
+            };
+            let plan = lm_profile::smw_us_v1_lz3_installation_plan(
+                &project.rom,
+                lm_rats::AllocationPolicy::lorom(current_len..target_len),
+                options.checksum_field,
+            )?;
+            project.install_relocatable_patch_with_kind(
+                &plan,
+                lm_project::EditKind::GraphicsCompressionMigration {
+                    source: source.compression,
+                    target,
+                },
+            )?;
+            true
+        } else {
+            self.project
+                .as_mut()
+                .ok_or(AppError::NoProject)?
+                .migrate_graphics_compression(source, target, options)?
+        };
         debug_assert!(changed);
         self.revision_profile
             .as_mut()
@@ -89,6 +108,7 @@ mod tests {
     use lm_project::{GraphicsSaveOptions, LevelPointerTable, Project};
     use lm_rats::{AllocationPolicy, ProtectedRange};
     use lm_rom::{Mapper, RomImage, SnesChecksum, compute_snes_checksum};
+    use std::fs;
 
     fn layout(compression: GraphicsCompression) -> GraphicsRomLayout {
         GraphicsRomLayout {
@@ -302,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn installed_smw_graphics_reject_payload_only_compression_migration() {
+    fn installed_smw_graphics_reject_unauthenticated_runtime_before_mutation() {
         let mut app = AppState::default();
         app.load_rom(fixture()).unwrap();
         install_test_profile(&mut app);
@@ -318,10 +338,64 @@ mod tests {
 
         assert!(matches!(
             app.dispatch(command(0)),
-            Err(AppError::GraphicsRuntimeMigrationRequired)
+            Err(AppError::GraphicsCompressionMigration(_))
         ));
         assert_eq!(app.project().unwrap().rom.as_file_bytes(), before);
         assert_eq!(app.project_revision(), 0);
         assert!(!app.project().unwrap().history.can_undo());
+    }
+
+    #[test]
+    #[ignore = "requires retained Lunar Magic 3.63 LZ2-Orig installed-graphics ROM"]
+    fn installed_smw_lz3_command_reopens_and_undo_redo_tracks_effective_codec() {
+        let original = fs::read(std::env::var_os("LM_LZ2_ORIGINAL_ROM").unwrap()).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let source = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        let mut profile = lm_profile::test_support::profile();
+        profile.graphics = source;
+        app.revision_profile = Some(profile);
+        app.dispatch(Command::MigrateGraphicsCompression {
+            expected_revision: 0,
+            source,
+            target: GraphicsCompression::Lz3,
+            options: GraphicsMigrationOptions {
+                allocation: allocation(0x8000..0x10000),
+                reuse_identical: true,
+                erase_fill: 0xff,
+                checksum_field: 0x7fdc,
+            },
+        })
+        .unwrap();
+        assert_eq!(app.project_revision(), 1);
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_graphics_compression_mode(&app.project().unwrap().rom)
+                .unwrap(),
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        assert_eq!(
+            app.revision_profile().unwrap().graphics.compression,
+            GraphicsCompression::Lz3
+        );
+        if let Some(path) = std::env::var_os("LM_LZ3_APP_RUST_OUTPUT") {
+            fs::write(path, app.project().unwrap().rom.as_file_bytes()).unwrap();
+        }
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
+        assert_eq!(
+            app.revision_profile().unwrap().graphics.compression,
+            GraphicsCompression::Lz2
+        );
+        app.dispatch(Command::Redo).unwrap();
+        assert_eq!(
+            app.revision_profile().unwrap().graphics.compression,
+            GraphicsCompression::Lz3
+        );
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_graphics_compression_mode(&app.project().unwrap().rom)
+                .unwrap(),
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3
+        );
     }
 }

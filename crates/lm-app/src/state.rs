@@ -131,6 +131,7 @@ pub enum AppError {
     GraphicsCompressionRuntimeIdentityMismatch,
     GraphicsCompressionRuntimeUnavailable,
     GraphicsCompressionRuntimeDetect(lm_profile::SmwUsV1GraphicsCompressionDetectError),
+    GraphicsCompressionMigration(lm_profile::SmwUsV1GraphicsCompressionMigrationError),
     NativeOverworldPathIdentityMismatch,
     NativeOverworldPathReopenMismatch,
     NativeOverworldPath(lm_project::OverworldPathLinkIoError),
@@ -228,6 +229,12 @@ impl From<IdentityError> for AppError {
 impl From<lm_profile::SmwUsV1GraphicsCompressionDetectError> for AppError {
     fn from(value: lm_profile::SmwUsV1GraphicsCompressionDetectError) -> Self {
         Self::GraphicsCompressionRuntimeDetect(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1GraphicsCompressionMigrationError> for AppError {
+    fn from(value: lm_profile::SmwUsV1GraphicsCompressionMigrationError) -> Self {
+        Self::GraphicsCompressionMigration(value)
     }
 }
 
