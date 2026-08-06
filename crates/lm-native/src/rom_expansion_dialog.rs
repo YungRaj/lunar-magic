@@ -3,9 +3,12 @@ use eframe::egui;
 use lm_app::{AppState, Command, RomExpansionCommand};
 use lm_rom::RomImage;
 
+const LUNAR_MAGIC_LOROM_TARGETS: [usize; 3] = [0x20_0000, 0x30_0000, 0x40_0000];
+
 #[derive(Default)]
 pub(crate) struct RomExpansionDialog {
     open: bool,
+    current_logical_len: usize,
     target: String,
     fill: String,
     error: Option<String>,
@@ -16,8 +19,12 @@ impl RomExpansionDialog {
         match app.controller_snapshot() {
             Ok(snapshot) => match RomImage::from_bytes(snapshot.rom_bytes) {
                 Ok(image) => {
+                    self.current_logical_len = image.logical_len();
                     self.target = format!("{:X}", suggested_target(image.logical_len()));
-                    self.fill = "FF".into();
+                    // ExpandRomBackingStore at $004A7390 grows the original backing store through
+                    // ZeroRomRange. Keep the advanced field visible, but default the installed
+                    // workflow to Lunar Magic's exact fill rather than allocator-friendly $FF.
+                    self.fill = "00".into();
                     self.open = true;
                     self.error = None;
                 }
@@ -36,6 +43,24 @@ impl RomExpansionDialog {
                 .show(context, |ui| {
                     ui.label("Target logical ROM size in hexadecimal bytes.");
                     ui.label("The target must be larger, 32 KiB aligned, and mapper-addressable.");
+                    ui.horizontal(|ui| {
+                        ui.label("Lunar Magic target:");
+                        for (target, label) in LUNAR_MAGIC_LOROM_TARGETS
+                            .into_iter()
+                            .zip(["2 MiB", "3 MiB", "4 MiB"])
+                        {
+                            if ui
+                                .add_enabled(
+                                    target > self.current_logical_len,
+                                    egui::Button::new(label),
+                                )
+                                .clicked()
+                            {
+                                self.target = format!("{target:X}");
+                                self.fill = "00".into();
+                            }
+                        }
+                    });
                     ui.horizontal(|ui| {
                         ui.label("Target");
                         ui.text_edit_singleline(&mut self.target);
@@ -91,10 +116,9 @@ fn build_command(app: &AppState, target: &str, fill: &str) -> Result<Command, St
 }
 
 fn suggested_target(current: usize) -> usize {
-    current
-        .checked_div(0x8000)
-        .and_then(|banks| banks.checked_add(1))
-        .and_then(|banks| banks.checked_mul(0x8000))
+    LUNAR_MAGIC_LOROM_TARGETS
+        .into_iter()
+        .find(|&target| target > current)
         .unwrap_or(current)
 }
 
@@ -103,9 +127,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn suggested_target_advances_to_another_complete_bank() {
-        assert_eq!(suggested_target(0x8000), 0x10000);
-        assert_eq!(suggested_target(0x8001), 0x10000);
+    fn suggested_target_follows_the_original_fixed_lorom_commands() {
+        assert_eq!(suggested_target(0x80_000), 0x20_0000);
+        assert_eq!(suggested_target(0x20_0000), 0x30_0000);
+        assert_eq!(suggested_target(0x30_0000), 0x40_0000);
+        assert_eq!(suggested_target(0x40_0000), 0x40_0000);
     }
 
     #[test]
@@ -117,5 +143,18 @@ mod tests {
         assert!(dialog.open);
         dialog.commit_succeeded();
         assert!(!dialog.open);
+    }
+
+    #[test]
+    fn pristine_dialog_defaults_to_lunar_magics_two_mib_zero_fill_command() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        let mut dialog = RomExpansionDialog::default();
+        dialog.open(&app);
+        assert!(dialog.open);
+        assert_eq!(dialog.current_logical_len, 0x80_000);
+        assert_eq!(dialog.target, "200000");
+        assert_eq!(dialog.fill, "00");
     }
 }
