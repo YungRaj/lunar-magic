@@ -508,6 +508,17 @@ Verified symbol coverage after this pass: **1,317 named functions out of 3,912 t
 
 MWL level-file import/export and recent-file UI support through `004797d0` are now named. The importer auto-detects binary `LM` containers and legacy text manifests, validates versioned section offsets/sizes, upgrades historical headers and ExAnimation records, imports packed secondary exits, and converts stored SNES addresses for each mapper. The binary exporter writes MWL version `0x0363` with an eight-entry section directory covering level header, Layer 1, Layer 2, sprites, palette, secondary exits, ExAnimation, and the expanded header. Legacy export writes the text manifest plus `.mw0`-`.mw3` sidecars. Recent-file helpers manage ten paths, UTF-8-safe abbreviated menu labels, insertion/removal, and persistent menu rebuilding.
 
+Live port-8089 revalidation of `ImportLevelFileAutoDetect` at `00477940` also recovers two
+non-obvious legacy-version rules. Auto-detection requires the `Lunar Magic ` signature at the
+physical start of the file; leading comments are not skipped. The importer initializes the
+version to `$0132`, then replaces it only when both the fixed-position `%1X` major and `%2X` minor
+scans succeed. Thus malformed version text defaults to the six-field 1.32 layout, while parseable
+future versions (for example 9.99) are accepted through the current layout rather than rejected.
+The `$0132` boundary controls the five-versus-six level-header fields and eight-versus-twelve-bit
+secondary-exit indexes; `$0341` controls the recovered Layer 2 flag normalization. Rust mirrors
+these permissive compatibility branches while retaining bounded lines, safe sidecar names, exact
+field counts, and collision/index validation.
+
 Two format structures were added: `MwlSectionDirectoryEntry` (8 bytes: file offset and byte length) and `MwlSecondaryExitEntry` (8 bytes: 16-bit exit index, five semantic field bytes, and one reserved byte).
 
 The recovered binary import loop caps the section at `$10000` bytes (8,192 records), writes a record

@@ -451,6 +451,29 @@ mod tests {
     }
 
     #[test]
+    fn historical_layer2_version_boundary_flows_through_complete_bundle_decode() {
+        let source = level_105();
+        assert_eq!(source.layer1.header.level_mode(), 0);
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 105", &SpriteLengthTable::standard())
+                .unwrap();
+        bundle.manifest.layer2.flags = 0xff;
+        bundle.manifest.version = 0x0340;
+        let old = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, false)
+            .unwrap();
+        assert_eq!(old.version, 0x0340);
+        assert_eq!(old.layer2_descriptor.raw(), 0xf6);
+
+        bundle.manifest.version = 0x0341;
+        let current = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, false)
+            .unwrap();
+        assert_eq!(current.version, 0x0341);
+        assert_eq!(current.layer2_descriptor.raw(), 0xff);
+    }
+
+    #[test]
     fn legacy_export_rejects_addresses_the_format_cannot_represent() {
         let mut source = level_105();
         source.layer1_metadata[1] = 0x0100_0000;

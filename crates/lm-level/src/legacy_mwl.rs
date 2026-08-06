@@ -43,18 +43,17 @@ impl LegacyMwlManifest {
     /// # Errors
     ///
     /// Rejects invalid UTF-8, unsupported framing, malformed hexadecimal fields, unsafe sidecar
-    /// names, duplicate/oversized exit tables, and versions newer than this implementation.
+    /// names, and duplicate/oversized exit tables. Lunar Magic defaults an unparsable legacy
+    /// header version to 1.32 and accepts later parseable versions through its current branch;
+    /// this decoder deliberately retains that compatibility behavior.
     pub fn decode(bytes: &[u8]) -> Result<Self, LegacyMwlError> {
         if bytes.len() > Self::MAX_FILE_BYTES {
             return Err(LegacyMwlError::FileTooLarge(bytes.len()));
         }
         let text = std::str::from_utf8(bytes).map_err(|_| LegacyMwlError::Utf8)?;
         let mut lines = LogicalLines::new(text)?;
-        let header_line = lines.next_data()?.ok_or(LegacyMwlError::MissingHeader)?;
+        let header_line = lines.next_header()?.ok_or(LegacyMwlError::MissingHeader)?;
         let version = parse_version(header_line)?;
-        if version > Self::CURRENT_VERSION {
-            return Err(LegacyMwlError::UnsupportedVersion(version));
-        }
         let attribution = lines
             .next_data()?
             .ok_or(LegacyMwlError::MissingAttribution)?
@@ -142,10 +141,10 @@ impl LegacyMwlManifest {
     ///
     /// # Errors
     ///
-    /// Rejects unsupported versions, invalid text or filenames, out-of-range values, and duplicate
-    /// secondary exits.
+    /// Rejects versions outside the legacy header's three hexadecimal digits, invalid text or
+    /// filenames, out-of-range values, and duplicate secondary exits.
     pub fn validate(&self) -> Result<(), LegacyMwlError> {
-        if self.version > Self::CURRENT_VERSION {
+        if self.version > 0x0fff {
             return Err(LegacyMwlError::UnsupportedVersion(self.version));
         }
         if self.level_number > 0x01ff {
@@ -294,20 +293,22 @@ fn validate_text_line(value: &str, field: &'static str) -> Result<(), LegacyMwlE
 }
 
 fn parse_version(line: &str) -> Result<u16, LegacyMwlError> {
-    let version = line
-        .strip_prefix("Lunar Magic Version ")
-        .ok_or(LegacyMwlError::MissingHeader)?;
-    let (major, minor) = version
-        .split_once('.')
-        .ok_or(LegacyMwlError::Version(version.to_string()))?;
-    if major.len() != 1 || minor.len() != 2 {
-        return Err(LegacyMwlError::Version(version.to_string()));
+    if !line.starts_with("Lunar Magic ") {
+        return Err(LegacyMwlError::MissingHeader);
     }
-    let major =
-        u16::from_str_radix(major, 16).map_err(|_| LegacyMwlError::Version(version.into()))?;
-    let minor =
-        u16::from_str_radix(minor, 16).map_err(|_| LegacyMwlError::Version(version.into()))?;
-    Ok(major << 8 | minor)
+    let bytes = line.as_bytes();
+    let parsed = bytes
+        .get(20)
+        .and_then(|major| std::str::from_utf8(std::slice::from_ref(major)).ok())
+        .and_then(|major| u16::from_str_radix(major, 16).ok())
+        .zip(
+            bytes
+                .get(22..24)
+                .and_then(|minor| std::str::from_utf8(minor).ok())
+                .and_then(|minor| u16::from_str_radix(minor, 16).ok()),
+        )
+        .map(|(major, minor)| major << 8 | minor);
+    Ok(parsed.unwrap_or(0x0132))
 }
 
 fn fields(line: &str) -> Vec<&str> {
@@ -356,6 +357,17 @@ impl<'a> LogicalLines<'a> {
         Ok(Self {
             lines: text.lines(),
         })
+    }
+
+    fn next_header(&mut self) -> Result<Option<&'a str>, LegacyMwlError> {
+        let Some(raw) = self.lines.next() else {
+            return Ok(None);
+        };
+        let line = raw.strip_suffix('\r').unwrap_or(raw);
+        if line.len() > LegacyMwlManifest::MAX_LINE_BYTES {
+            return Err(LegacyMwlError::LineTooLong(line.len()));
+        }
+        Ok(Some(line))
     }
 
     fn next_data(&mut self) -> Result<Option<&'a str>, LegacyMwlError> {
@@ -449,6 +461,41 @@ mod tests {
         assert!(matches!(
             manifest.encode(),
             Err(LegacyMwlError::UnsupportedEncodeVersion(0x0131))
+        ));
+    }
+
+    #[test]
+    fn malformed_version_defaults_to_132_and_future_versions_use_the_current_shape() {
+        let malformed = std::str::from_utf8(fixture())
+            .unwrap()
+            .replace("Lunar Magic Version 3.63", "Lunar Magic Version nope");
+        let decoded = LegacyMwlManifest::decode(malformed.as_bytes()).unwrap();
+        assert_eq!(decoded.version, 0x0132);
+        assert_eq!(decoded.header, [0x5b, 0, 0x9a, 0, 0]);
+        assert_eq!(decoded.secondary_exits[0].index, 0x1cb);
+
+        let future = std::str::from_utf8(fixture())
+            .unwrap()
+            .replace("Lunar Magic Version 3.63", "Lunar Magic Version 9.99");
+        let decoded = LegacyMwlManifest::decode(future.as_bytes()).unwrap();
+        assert_eq!(decoded.version, 0x0999);
+        assert!(matches!(
+            decoded.encode(),
+            Err(LegacyMwlError::UnsupportedEncodeVersion(0x0999))
+        ));
+
+        let wrong_prefix = std::str::from_utf8(fixture())
+            .unwrap()
+            .replace("Lunar Magic ", "Lunar Tragic ");
+        assert!(matches!(
+            LegacyMwlManifest::decode(wrong_prefix.as_bytes()),
+            Err(LegacyMwlError::MissingHeader)
+        ));
+
+        let leading_comment = [b"// comment before signature\n".as_slice(), fixture()].concat();
+        assert!(matches!(
+            LegacyMwlManifest::decode(&leading_comment),
+            Err(LegacyMwlError::MissingHeader)
         ));
     }
 
