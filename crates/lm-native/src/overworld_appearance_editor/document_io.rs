@@ -15,6 +15,13 @@ impl OverworldAppearanceEditor {
         let Some(path) = dialogs::choose_overworld_appearance_document() else {
             return;
         };
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("sscov"))
+        {
+            self.start_native_pair_load(path);
+            return;
+        }
         if let Err(error) = self.loader.start(vec![BoundedRead::new(
             path,
             u64::try_from(SpriteAppearanceFile::MAX_FILE_LEN).unwrap_or(u64::MAX),
@@ -27,9 +34,23 @@ impl OverworldAppearanceEditor {
     }
 
     pub(super) fn import_native_pair(&mut self) {
+        if self
+            .controller
+            .as_ref()
+            .is_some_and(OverworldAppearanceDocumentController::is_modified)
+        {
+            self.error = Some(
+                "save or discard portable appearance changes before opening a native pair".into(),
+            );
+            return;
+        }
         let Some(path) = dialogs::choose_native_overworld_sprite_sidecar() else {
             return;
         };
+        self.start_native_pair_load(path);
+    }
+
+    fn start_native_pair_load(&mut self, path: std::path::PathBuf) {
         let map16_path = path.with_extension("s16ov");
         if let Err(error) = self.loader.start(vec![
             BoundedRead::new(
@@ -80,22 +101,6 @@ impl OverworldAppearanceEditor {
             self.error = Some(error);
         }
     }
-
-    pub(super) fn replace_with_import(&mut self, value: SpriteAppearanceFile) {
-        let Some(controller) = self.controller.as_mut() else {
-            self.error =
-                Some("open a portable appearance document before importing native sidecars".into());
-            return;
-        };
-        let edits = replacement_edits(controller.value(), &value);
-        match controller.apply_edits(controller.revision(), &edits) {
-            Ok(()) => {
-                self.clipboard_paste_target = None;
-                self.invalidate();
-            }
-            Err(error) => self.error = Some(error.to_string()),
-        }
-    }
 }
 
 pub(super) fn decode(
@@ -108,44 +113,18 @@ pub(super) fn decode(
     OverworldAppearanceDocumentController::decode(path, &bytes).map_err(|error| error.to_string())
 }
 
-pub(super) fn decode_native_pair(loaded: LoadedDocument) -> Result<SpriteAppearanceFile, String> {
-    let [(_, definitions), (_, map16)] =
+pub(super) fn decode_native_pair(
+    loaded: LoadedDocument,
+) -> Result<lm_app::NativeOverworldAppearanceController, String> {
+    let [(definitions_path, definitions), (map16_path, map16)] =
         loaded.into_exact::<2>("native overworld sprite sidecar")?;
-    let definitions = lm_overworld::NativeOverworldSpriteSidecar::decode(&definitions)
-        .map_err(|error| error.to_string())?;
-    let map16 = S16OvSidecar::decode(&map16).map_err(|error| error.to_string())?;
-    lm_render::import_native_overworld_appearances(
+    lm_app::NativeOverworldAppearanceController::decode(
+        definitions_path,
+        map16_path,
         &definitions,
-        lm_render::lunar_magic_builtin_overworld_sprite_map16(),
         &map16,
     )
     .map_err(|error| error.to_string())
-}
-
-fn replacement_edits(
-    current: &SpriteAppearanceFile,
-    replacement: &SpriteAppearanceFile,
-) -> Vec<lm_app::OverworldAppearanceDocumentEdit> {
-    let mut edits = current
-        .definitions
-        .iter()
-        .map(
-            |definition| lm_app::OverworldAppearanceDocumentEdit::RemoveDefinition {
-                sprite_id: definition.sprite_id,
-            },
-        )
-        .collect::<Vec<_>>();
-    for (index, definition) in replacement.definitions.iter().enumerate() {
-        edits.push(lm_app::OverworldAppearanceDocumentEdit::InsertDefinition {
-            index,
-            sprite_id: definition.sprite_id,
-        });
-        edits.push(lm_app::OverworldAppearanceDocumentEdit::ReplaceParts {
-            sprite_id: definition.sprite_id,
-            values: definition.parts.clone(),
-        });
-    }
-    edits
 }
 
 #[cfg(test)]
@@ -186,7 +165,14 @@ mod tests {
                 (PathBuf::from("sprites.s16ov"), native.sprite_map16.encode()),
             ],
         };
-        assert_eq!(decode_native_pair(loaded).unwrap(), portable);
+        let controller = decode_native_pair(loaded).unwrap();
+        let converted = lm_render::import_native_overworld_appearances(
+            &controller.value().definitions,
+            lm_render::lunar_magic_builtin_overworld_sprite_map16(),
+            &controller.value().sprite_map16,
+        )
+        .unwrap();
+        assert_eq!(converted, portable);
     }
 
     #[test]
@@ -197,7 +183,13 @@ mod tests {
                 (PathBuf::from("original.s16ov"), Vec::new()),
             ],
         };
-        let imported = decode_native_pair(loaded).unwrap();
+        let native = decode_native_pair(loaded).unwrap();
+        let imported = lm_render::import_native_overworld_appearances(
+            &native.value().definitions,
+            lm_render::lunar_magic_builtin_overworld_sprite_map16(),
+            &native.value().sprite_map16,
+        )
+        .unwrap();
         let parts = &imported.definition(1).unwrap().parts;
         assert_eq!(parts.len(), 4);
         assert_eq!(
@@ -211,33 +203,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             [(0, 0, 1), (8, 0, 1), (0, 8, 1), (8, 8, 1)]
         );
-    }
-
-    #[test]
-    fn replacement_batch_is_complete_ordered_and_one_revision() {
-        let current = SpriteAppearanceFile {
-            definitions: vec![SpriteAppearanceDefinition {
-                sprite_id: 7,
-                parts: Vec::new(),
-            }],
-        };
-        let mut controller = OverworldAppearanceDocumentController::decode(
-            PathBuf::from("appearance.lmowapp"),
-            &current.encode().unwrap(),
-        )
-        .unwrap();
-        let replacement = portable();
-        controller
-            .apply_edits(
-                controller.revision(),
-                &replacement_edits(controller.value(), &replacement),
-            )
-            .unwrap();
-        assert_eq!(controller.value(), &replacement);
-        assert_eq!(controller.revision(), 1);
-        assert!(controller.is_modified());
-        assert!(controller.undo(1).unwrap());
-        assert_eq!(controller.value(), &current);
     }
 
     #[test]

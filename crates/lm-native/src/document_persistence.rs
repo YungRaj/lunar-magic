@@ -108,6 +108,30 @@ macro_rules! paired_controller {
 paired_controller!(lm_app::CustomObjectLibraryController);
 paired_controller!(lm_app::CustomSpriteLibraryController);
 
+impl PairedDocumentSaveController for lm_app::NativeOverworldAppearanceController {
+    fn begin_paired_save(&mut self) -> Result<PairedDocumentSaveSnapshot, String> {
+        self.begin_save()
+            .map(|snapshot| PairedDocumentSaveSnapshot {
+                request_id: snapshot.request_id,
+                first_path: snapshot.definitions_path,
+                first_bytes: snapshot.definitions,
+                second_path: snapshot.sprite_map16_path,
+                second_bytes: snapshot.sprite_map16,
+            })
+            .map_err(|error| error.to_string())
+    }
+
+    fn acknowledge_paired_save(&mut self, request_id: u64) -> Result<(), String> {
+        self.acknowledge_save(request_id)
+            .map_err(|error| error.to_string())
+    }
+
+    fn cancel_paired_save(&mut self, request_id: u64) -> Result<(), String> {
+        self.cancel_save(request_id)
+            .map_err(|error| error.to_string())
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct DocumentPersistence {
     worker: PersistenceWorker,
@@ -203,6 +227,14 @@ impl DocumentPersistence {
     ) -> Result<(), String> {
         Self::complete(controller, self.worker.wait_for_test())
     }
+
+    #[cfg(test)]
+    fn wait_for_pair_test<C: PairedDocumentSaveController>(
+        &mut self,
+        controller: &mut C,
+    ) -> Result<(), String> {
+        Self::complete_pair(controller, self.worker.wait_for_test())
+    }
 }
 
 #[cfg(test)]
@@ -286,5 +318,46 @@ mod tests {
         assert!(controller.acknowledged.is_empty());
         assert_eq!(controller.cancelled, [41]);
         assert!(!controller.pending);
+    }
+
+    #[test]
+    fn native_overworld_pair_persists_and_acknowledges_both_files_atomically() {
+        let definitions = path("native.sscov");
+        let map16 = path("native.s16ov");
+        fs::write(&definitions, b"01\t2\t0,0,400\n").unwrap();
+        fs::write(&map16, [0; 8]).unwrap();
+        let mut controller = lm_app::NativeOverworldAppearanceController::decode(
+            definitions.clone(),
+            map16.clone(),
+            &fs::read(&definitions).unwrap(),
+            &fs::read(&map16).unwrap(),
+        )
+        .unwrap();
+        controller
+            .apply_edits(
+                0,
+                &[lm_app::NativeOverworldAppearanceEdit::SetTooltip {
+                    sprite_id: 1,
+                    value: Some(lm_overworld::NativeOverworldSpriteTooltip {
+                        disable_original_position_text: true,
+                        text: "Saved together".into(),
+                    }),
+                }],
+            )
+            .unwrap();
+        let mut persistence = DocumentPersistence::default();
+        persistence.begin_pair(&mut controller).unwrap();
+        persistence.wait_for_pair_test(&mut controller).unwrap();
+        assert!(!controller.is_modified());
+        let reopened = lm_app::NativeOverworldAppearanceController::decode(
+            definitions.clone(),
+            map16.clone(),
+            &fs::read(&definitions).unwrap(),
+            &fs::read(&map16).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(reopened.value(), controller.value());
+        fs::remove_file(definitions).unwrap();
+        fs::remove_file(map16).unwrap();
     }
 }

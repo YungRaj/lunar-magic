@@ -4258,3 +4258,12 @@ tooltips, tile or label appearances, graphics/palette ranges, and any custom Spr
 definition. Canonical paired reopen validates both files before publication; history restores both
 domains together, and immutable paired save snapshots retain native shadows, translucency, labels,
 priority bits, range kinds, exact custom Map16 words, and the `.s16ov` loaded prefix length.
+
+The native frontend recognizes `.sscov` in the appearance-document chooser and opens its required
+same-basename `.s16ov` through one bounded two-file worker. A distinct native editor mode binds
+directly to the lossless paired controller: regular and custom sprite IDs can edit tooltip enable,
+position-text suppression, shadow, positioned labels, ordered Map16 parts, signed offsets, and
+translucency, while the custom definition panel edits all four exact subtile words across
+`$400..$BFF`. Undo/redo spans both files. Save uses the shared paired persistence worker and only
+acknowledges the controller after both existing files have been replaced atomically; a disk reopen
+test compares the complete semantic pair.

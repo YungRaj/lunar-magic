@@ -422,6 +422,7 @@ pub(crate) fn choose_entity_appearance_document() -> Option<PathBuf> {
 pub(crate) fn choose_overworld_appearance_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Portable Lunar Magic overworld appearances", &["lmowapp"])
+        .add_filter("Lunar Magic native overworld sprite display", &["sscov"])
         .pick_file()
 }
 

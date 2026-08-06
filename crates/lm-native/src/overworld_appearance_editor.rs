@@ -10,6 +10,7 @@ use lm_app::{OverworldAppearanceDocumentController, OverworldAppearanceDocumentE
 
 mod document_io;
 mod form_fields;
+mod native_mode;
 mod panels;
 mod preview;
 
@@ -44,6 +45,8 @@ struct AppearancePasteTarget {
 #[derive(Default)]
 pub(crate) struct OverworldAppearanceEditor {
     controller: Option<OverworldAppearanceDocumentController>,
+    native_controller: Option<lm_app::NativeOverworldAppearanceController>,
+    native_form: native_mode::NativeAppearanceForm,
     definition_index: usize,
     definition: DefinitionForm,
     definition_key: Option<(u64, usize)>,
@@ -62,7 +65,7 @@ pub(crate) struct OverworldAppearanceEditor {
 
 impl OverworldAppearanceEditor {
     pub(crate) fn is_open(&self) -> bool {
-        self.controller.is_some() || self.loader.is_running()
+        self.controller.is_some() || self.native_controller.is_some() || self.loader.is_running()
     }
 
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
@@ -74,10 +77,15 @@ impl OverworldAppearanceEditor {
             self.error = Some("wait for appearance persistence to finish before closing".into());
             return false;
         }
-        let Some(controller) = &self.controller else {
-            return true;
-        };
-        if !controller.is_modified() {
+        let modified = self
+            .controller
+            .as_ref()
+            .is_some_and(OverworldAppearanceDocumentController::is_modified)
+            || self
+                .native_controller
+                .as_ref()
+                .is_some_and(lm_app::NativeOverworldAppearanceController::is_modified);
+        if !modified {
             self.clear();
             return true;
         }
@@ -105,7 +113,13 @@ impl OverworldAppearanceEditor {
                 }
                 Some(PendingAppearanceLoad::NativeImport) => {
                     match result.and_then(document_io::decode_native_pair) {
-                        Ok(value) => self.replace_with_import(value),
+                        Ok(controller) => {
+                            self.controller = None;
+                            self.native_controller = Some(controller);
+                            self.clipboard_paste_target = None;
+                            self.native_form.invalidate();
+                            self.invalidate();
+                        }
                         Err(error) => self.error = Some(error),
                     }
                 }
@@ -124,15 +138,31 @@ impl OverworldAppearanceEditor {
         {
             self.error = Some(error);
         }
-        if self.controller.is_some() {
+        if let Some(controller) = self.native_controller.as_mut()
+            && let Some(Err(error)) = self.persistence.show_pair(context, controller)
+        {
+            self.error = Some(error);
+        }
+        if self.controller.is_some() || self.native_controller.is_some() {
             self.clamp_indices();
-            egui::Window::new("Portable Overworld Appearance Editor")
+            let title = if self.native_controller.is_some() {
+                "Native Overworld Appearance Editor"
+            } else {
+                "Portable Overworld Appearance Editor"
+            };
+            egui::Window::new(title)
                 .default_size([720.0, 600.0])
                 .vscroll(true)
                 .show(context, |ui| {
                     ui.add_enabled_ui(
                         !self.loader.is_running() && !self.native_persistence.is_running(),
-                        |ui| self.contents(ui),
+                        |ui| {
+                            if self.native_controller.is_some() {
+                                self.native_contents(ui);
+                            } else {
+                                self.contents(ui);
+                            }
+                        },
                     );
                 });
         }
@@ -442,9 +472,11 @@ impl OverworldAppearanceEditor {
 
     fn clear(&mut self) {
         self.controller = None;
+        self.native_controller = None;
         self.clipboard_paste_target = None;
         self.pending_close = None;
         self.pending_load = None;
+        self.native_form.invalidate();
         self.invalidate();
     }
 }
