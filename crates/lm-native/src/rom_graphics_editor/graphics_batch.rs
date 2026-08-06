@@ -15,6 +15,8 @@ pub(super) struct GraphicsBatchSource {
     pub(super) slots: Vec<usize>,
     pub(super) file_numbers: Vec<usize>,
     pub(super) family: &'static str,
+    /// Uses Lunar Magic's `ExGFX` namespace even for reserved files `$60` through `$63`.
+    pub(super) exgraphics_names: bool,
     pub(super) encoding: GraphicsBatchEncoding,
     pub(super) raw_4bpp_overrides: Vec<(usize, Vec<u8>)>,
     /// Per-file `(slot, layout)` mappings for non-tabular sources; empty uses `slots` and `layout`.
@@ -211,7 +213,12 @@ fn export_batch(
             match source.encoding {
                 GraphicsBatchEncoding::Native => project
                     .load_decompressed_graphics_file(load_slot, load_layout)
-                    .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?,
+                    .map_err(|error| {
+                        format!(
+                            "{}: {error}",
+                            graphics_file_name(file_number, source.exgraphics_names)
+                        )
+                    })?,
                 GraphicsBatchEncoding::Decoded4Bpp => {
                     let loaded = project
                         .load_super_graphics_file(
@@ -222,19 +229,29 @@ fn export_batch(
                             })?,
                             load_layout,
                         )
-                        .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?;
+                        .map_err(|error| {
+                            format!(
+                                "{}: {error}",
+                                graphics_file_name(file_number, source.exgraphics_names)
+                            )
+                        })?;
                     lm_graphics::GraphicsFile4bpp {
                         tiles: loaded.tiles,
                     }
                     .encode()
-                    .map_err(|error| format!("{}: {error}", graphics_file_name(file_number)))?
+                    .map_err(|error| {
+                        format!(
+                            "{}: {error}",
+                            graphics_file_name(file_number, source.exgraphics_names)
+                        )
+                    })?
                 }
             }
         };
         if source.encoding == GraphicsBatchEncoding::Decoded4Bpp && bytes.len() != 0x1000 {
             return Err(format!(
                 "{}: decoded level GFX has {:#X} bytes instead of 0x1000",
-                graphics_file_name(file_number),
+                graphics_file_name(file_number, source.exgraphics_names),
                 bytes.len()
             ));
         }
@@ -242,7 +259,10 @@ fn export_batch(
             GraphicsExportTarget::Directory(directory) => group
                 .as_mut()
                 .expect("directory exports create a staging group")
-                .stage(&batch_output_path(directory, file_number), &bytes)
+                .stage(
+                    &batch_output_path(directory, file_number, source.exgraphics_names),
+                    &bytes,
+                )
                 .map_err(|error| format!("GFX{file_number:02X}: {error}"))?,
             GraphicsExportTarget::JoinedFile(_) => joined_files.push(bytes),
         }
@@ -271,12 +291,16 @@ fn export_batch(
     Ok(Some(total))
 }
 
-fn batch_output_path(directory: &Path, slot: usize) -> PathBuf {
-    directory.join(graphics_file_name(slot))
+fn batch_output_path(directory: &Path, slot: usize, exgraphics: bool) -> PathBuf {
+    directory.join(graphics_file_name(slot, exgraphics))
 }
 
-fn graphics_file_name(slot: usize) -> String {
-    let prefix = if slot < 0x80 { "GFX" } else { "ExGFX" };
+fn graphics_file_name(slot: usize, exgraphics: bool) -> String {
+    let prefix = if exgraphics || slot >= 0x80 {
+        "ExGFX"
+    } else {
+        "GFX"
+    };
     format!("{prefix}{slot:02X}.bin")
 }
 
@@ -356,6 +380,7 @@ mod tests {
                 slots: vec![0, 1],
                 file_numbers: vec![0, 1],
                 family: "standard",
+                exgraphics_names: false,
                 encoding: GraphicsBatchEncoding::Native,
                 raw_4bpp_overrides: Vec::new(),
                 file_layouts: Vec::new(),
@@ -367,24 +392,28 @@ mod tests {
     #[test]
     fn batch_names_use_fixed_uppercase_standard_gfx_numbers() {
         assert_eq!(
-            batch_output_path(Path::new("/tmp/Graphics"), 0),
+            batch_output_path(Path::new("/tmp/Graphics"), 0, false),
             Path::new("/tmp/Graphics/GFX00.bin")
         );
         assert_eq!(
-            batch_output_path(Path::new("/tmp/Graphics"), 0x31),
+            batch_output_path(Path::new("/tmp/Graphics"), 0x31, false),
             Path::new("/tmp/Graphics/GFX31.bin")
         );
         assert_eq!(
-            batch_output_path(Path::new("/tmp/Graphics"), 0x33),
+            batch_output_path(Path::new("/tmp/Graphics"), 0x33, false),
             Path::new("/tmp/Graphics/GFX33.bin")
         );
         assert_eq!(
-            batch_output_path(Path::new("/tmp/Graphics"), 0x80),
+            batch_output_path(Path::new("/tmp/Graphics"), 0x80, true),
             Path::new("/tmp/Graphics/ExGFX80.bin")
         );
         assert_eq!(
-            batch_output_path(Path::new("/tmp/Graphics"), 0xfff),
+            batch_output_path(Path::new("/tmp/Graphics"), 0xfff, true),
             Path::new("/tmp/Graphics/ExGFXFFF.bin")
+        );
+        assert_eq!(
+            batch_output_path(Path::new("/tmp/Graphics"), 0x60, true),
+            Path::new("/tmp/Graphics/ExGFX60.bin")
         );
     }
 
@@ -543,6 +572,7 @@ mod tests {
             slots: vec![0x80],
             file_numbers: vec![0x80],
             family: "extended",
+            exgraphics_names: true,
             encoding: GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: Vec::new(),
@@ -609,6 +639,7 @@ mod tests {
             slots: vec![0],
             file_numbers: vec![0],
             family: "level",
+            exgraphics_names: false,
             encoding: GraphicsBatchEncoding::Decoded4Bpp,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: Vec::new(),

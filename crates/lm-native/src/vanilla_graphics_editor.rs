@@ -619,6 +619,7 @@ fn pristine_level_graphics_batch_source(
         slots: slots.clone(),
         file_numbers: slots,
         family: "level",
+        exgraphics_names: false,
         encoding: graphics_batch::GraphicsBatchEncoding::Decoded4Bpp,
         raw_4bpp_overrides,
         file_layouts: Vec::new(),

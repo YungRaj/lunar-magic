@@ -21,6 +21,8 @@ pub(super) struct GraphicsImportSource {
     pub(super) family: &'static str,
     pub(super) description: &'static str,
     pub(super) smw_us_v1_special: bool,
+    /// Uses Lunar Magic's `ExGFX` namespace even for reserved files `$60` through `$63`.
+    pub(super) exgraphics_names: bool,
 }
 
 struct RunningImport {
@@ -182,7 +184,7 @@ fn prepare_import(
                 if cancelled.load(Ordering::Relaxed) {
                     return Ok(None);
                 }
-                let name = graphics_file_name(file_number);
+                let name = graphics_file_name(file_number, source.exgraphics_names);
                 let description = format!("{name} raw graphics");
                 let bytes = crate::dialogs::read_regular_bounded(
                     &directory.join(&name),
@@ -254,8 +256,12 @@ fn prepare_import(
     }
 }
 
-fn graphics_file_name(slot: usize) -> String {
-    let prefix = if slot < 0x80 { "GFX" } else { "ExGFX" };
+fn graphics_file_name(slot: usize, exgraphics: bool) -> String {
+    let prefix = if exgraphics || slot >= 0x80 {
+        "ExGFX"
+    } else {
+        "GFX"
+    };
     format!("{prefix}{slot:02X}.bin")
 }
 
@@ -295,7 +301,9 @@ pub(super) fn enumerate_exgraphics_files(
         let digits = &name[5..name.len() - 4];
         let slot = usize::from_str_radix(digits, 16)
             .map_err(|_| format!("invalid ExGFX filename {name}"))?;
-        if !(0x80..table_entries.min(0x1000)).contains(&slot) || graphics_file_name(slot) != name {
+        let native_slot =
+            (0x60..=0x63).contains(&slot) || (0x80..table_entries.min(0x1000)).contains(&slot);
+        if !native_slot || graphics_file_name(slot, true) != name {
             return Err(format!(
                 "ExGFX filename {name} is noncanonical or outside the profile table"
             ));
@@ -305,7 +313,7 @@ pub(super) fn enumerate_exgraphics_files(
     slots.sort_unstable();
     if slots.is_empty() {
         return Err(format!(
-            "{} contains no canonical ExGFX80.bin through ExGFXFFF.bin files",
+            "{} contains no canonical ExGFX60.bin through ExGFX63.bin or ExGFX80.bin through ExGFXFFF.bin files",
             directory.display()
         ));
     }
@@ -346,10 +354,11 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         fs::write(directory.join("ExGFX123.bin"), []).unwrap();
         fs::write(directory.join("ExGFX80.bin"), []).unwrap();
+        fs::write(directory.join("ExGFX60.bin"), []).unwrap();
         fs::write(directory.join("notes.txt"), []).unwrap();
         assert_eq!(
             enumerate_exgraphics_files(&directory, 0x200).unwrap(),
-            [0x80, 0x123]
+            [0x60, 0x80, 0x123]
         );
         fs::write(directory.join("ExGFX081.bin"), []).unwrap();
         assert!(enumerate_exgraphics_files(&directory, 0x200).is_err());

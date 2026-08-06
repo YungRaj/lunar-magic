@@ -740,6 +740,7 @@ impl RomGraphicsEditor {
             slots: slots.clone(),
             file_numbers: slots,
             family: "level",
+            exgraphics_names: false,
             encoding: graphics_batch::GraphicsBatchEncoding::Decoded4Bpp,
             raw_4bpp_overrides,
             file_layouts: Vec::new(),
@@ -1079,6 +1080,7 @@ impl RomGraphicsEditor {
             slots: slots.clone(),
             file_numbers: slots,
             family: "standard",
+            exgraphics_names: false,
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: Vec::new(),
@@ -1115,6 +1117,7 @@ impl RomGraphicsEditor {
             family: "standard",
             description: "Insert all standard GFX files",
             smw_us_v1_special: false,
+            exgraphics_names: false,
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1136,6 +1139,7 @@ impl RomGraphicsEditor {
             slots: slots.clone(),
             file_numbers: slots,
             family: "standard",
+            exgraphics_names: false,
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: Vec::new(),
@@ -1172,6 +1176,7 @@ impl RomGraphicsEditor {
             family: "standard",
             description: "Insert AllGFX.bin",
             smw_us_v1_special: false,
+            exgraphics_names: false,
         };
         match self.graphics_import.start_joined(source, path) {
             Ok(()) => self.io_status = None,
@@ -1199,6 +1204,7 @@ impl RomGraphicsEditor {
             slots: vec![0, 1],
             file_numbers: vec![0x33, 0x32],
             family: "special",
+            exgraphics_names: false,
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: vec![(0, layouts.gfx33), (0, layouts.gfx32)],
@@ -1241,6 +1247,7 @@ impl RomGraphicsEditor {
             family: "special",
             description: "Insert GFX32/GFX33 files",
             smw_us_v1_special: true,
+            exgraphics_names: false,
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1272,6 +1279,7 @@ impl RomGraphicsEditor {
             slots: slots.clone(),
             file_numbers: slots,
             family: "extended",
+            exgraphics_names: true,
             encoding: graphics_batch::GraphicsBatchEncoding::Native,
             raw_4bpp_overrides: Vec::new(),
             file_layouts: Vec::new(),
@@ -1317,6 +1325,7 @@ impl RomGraphicsEditor {
             family: "extended",
             description: "Insert ExGFX files",
             smw_us_v1_special: false,
+            exgraphics_names: true,
         };
         match self.graphics_import.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1360,7 +1369,8 @@ fn installed_exgraphics_slots(
         ));
     }
     let project = lm_project::Project::new(image.clone());
-    (EXGFX_FIRST..layout.pointers.entries)
+    (0x60..=0x63)
+        .chain(EXGFX_FIRST..layout.pointers.entries)
         .filter_map(|slot| match layout.read_pointer(&project, slot) {
             Ok(pointer) if pointer.get() == 0 => None,
             Ok(_) => Some(Ok(slot)),
@@ -1415,14 +1425,14 @@ mod tests {
             maximum_decompressed_len: 0x10000,
         };
         let mut bytes = vec![0; 0x8000];
-        for slot in [0x80, 0x82] {
+        for slot in [0x60, 0x63, 0x80, 0x82] {
             let offset = layout.pointers.offset + slot * 3;
             bytes[offset..offset + 3].copy_from_slice(&[0x00, 0x81, 0x80]);
         }
         let image = RomImage::from_bytes(bytes).unwrap();
         assert_eq!(
             installed_exgraphics_slots(&image, layout).unwrap(),
-            [0x80, 0x82]
+            [0x60, 0x63, 0x80, 0x82]
         );
 
         let mut profile = lm_profile::test_support::profile();
