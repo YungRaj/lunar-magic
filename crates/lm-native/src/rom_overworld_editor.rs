@@ -847,6 +847,7 @@ impl RomOverworldEditor {
             context,
             &file,
             &workspace.assets,
+            workspace.native_appearances.as_ref(),
             self.completed_reveals,
         ) {
             Ok(texture) => {

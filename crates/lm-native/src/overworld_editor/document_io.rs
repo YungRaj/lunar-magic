@@ -48,6 +48,7 @@ pub(super) fn pending_from_loaded(loaded: LoadedDocument) -> Result<PendingOpen,
             map16: Map16SetFile::decode(&map16_bytes).map_err(|error| error.to_string())?,
             graphics: GraphicsInterchangeFile::decode(&graphics_bytes)
                 .map_err(|error| error.to_string())?,
+            native_sprite_graphics_cache: Vec::new(),
         },
         maximum_records: "32".into(),
     })

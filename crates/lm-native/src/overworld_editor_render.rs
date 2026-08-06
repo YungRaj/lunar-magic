@@ -6,6 +6,7 @@ use lm_project::CompleteOverworldFile;
 pub(crate) struct OverworldAssets {
     pub(crate) map16: Map16SetFile,
     pub(crate) graphics: GraphicsInterchangeFile,
+    pub(crate) native_sprite_graphics_cache: Vec<lm_graphics::IndexedTile>,
 }
 
 pub(crate) fn render_layer_texture(
@@ -60,9 +61,10 @@ pub(crate) fn render_texture(
     context: &egui::Context,
     overworld: &CompleteOverworldFile,
     assets: &OverworldAssets,
+    native_appearances: Option<&lm_render::NativeOverworldAppearancePair>,
     completed_reveals: usize,
 ) -> Result<egui::TextureHandle, String> {
-    let canvas = lm_render::render_portable_overworld(
+    let mut canvas = lm_render::render_portable_overworld(
         overworld,
         &assets.map16,
         &assets.graphics,
@@ -71,6 +73,31 @@ pub(crate) fn render_texture(
         completed_reveals,
     )
     .map_err(|error| error.to_string())?;
+    if let Some(native) = native_appearances {
+        let placements = overworld
+            .data
+            .sprites
+            .iter()
+            .map(|sprite| lm_render::NativeOverworldSpritePlacement {
+                id: sprite.id,
+                x: i32::from(sprite.x),
+                y: i32::from(sprite.y),
+                submap: sprite.submap.encoded(),
+            })
+            .collect::<Vec<_>>();
+        let elements = lm_render::resolve_native_overworld_sprite_elements(
+            &placements,
+            &native.definitions,
+            lm_render::lunar_magic_builtin_overworld_sprite_map16(),
+            &native.sprite_map16,
+        );
+        lm_render::draw_resolved_native_overworld_sprite_resource_elements(
+            &mut canvas,
+            &elements,
+            &assets.native_sprite_graphics_cache,
+            &overworld.data.palette,
+        );
+    }
     let mut rgba = Vec::with_capacity(canvas.pixels().len() * 4);
     for pixel in canvas.pixels() {
         rgba.extend_from_slice(&[pixel.red, pixel.green, pixel.blue, pixel.alpha]);

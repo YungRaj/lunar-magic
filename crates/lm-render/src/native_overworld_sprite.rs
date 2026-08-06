@@ -507,6 +507,71 @@ pub fn draw_resolved_native_overworld_sprite_elements(
     }
 }
 
+/// Paints native overworld elements from Lunar Magic's materialized global graphics cache.
+///
+/// Active-palette routes use their recovered color offset. External palette-cache routes are
+/// intentionally left unpainted until their companion palette asset is supplied; this prevents
+/// a visually plausible but incorrect fallback to the active ROM palette.
+pub fn draw_resolved_native_overworld_sprite_resource_elements(
+    canvas: &mut Canvas,
+    elements: &[ResolvedNativeOverworldSpriteElement],
+    graphics_cache: &[IndexedTile],
+    active_palette: &Palette,
+) {
+    for element in elements {
+        match element {
+            ResolvedNativeOverworldSpriteElement::Tile {
+                tile_number,
+                palette: palette_index,
+                x,
+                y,
+                priority,
+                x_flip,
+                y_flip,
+                translucent,
+                graphics_base,
+                palette_base,
+                active_palette_offset,
+                ..
+            } if *palette_base == NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE => {
+                let Some(tiles) = graphics_cache.get(usize::from(*graphics_base)..) else {
+                    continue;
+                };
+                let word = tile_number
+                    | (u16::from(*palette_index) << 10)
+                    | (u16::from(*priority) << 13)
+                    | (u16::from(*x_flip) << 14)
+                    | (u16::from(*y_flip) << 15);
+                native_level_raster::draw_sprite_subtile_clipped_with_palette_base(
+                    canvas,
+                    word,
+                    tiles,
+                    active_palette,
+                    (*x, *y),
+                    *translucent,
+                    usize::from(*active_palette_offset),
+                );
+            }
+            ResolvedNativeOverworldSpriteElement::Label { x, y, text, .. } => {
+                crate::draw_lunar_magic_editor_label(canvas, text, *x, *y);
+            }
+            ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
+                definition_index,
+                x,
+                y,
+                ..
+            } => native_level_raster::draw_lunar_magic_editor_text_definition(
+                canvas,
+                *definition_index,
+                *x,
+                *y,
+            ),
+            ResolvedNativeOverworldSpriteElement::Tile { .. }
+            | ResolvedNativeOverworldSpriteElement::UnresolvedMap16 { .. } => {}
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn expand_map16(
     output: &mut Vec<ResolvedNativeOverworldSpriteElement>,
@@ -995,6 +1060,36 @@ mod tests {
                 .flat_map(|x| (0..16).map(move |y| (x, y)))
                 .any(|(x, y)| canvas.get(x, y) != Some(backdrop))
         );
+    }
+
+    #[test]
+    fn resource_raster_uses_materialized_graphics_base_and_active_palette_half() {
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let mut cache = vec![blank; 0x1e01];
+        cache[0x1e00] = IndexedTile::new([1; IndexedTile::PIXEL_COUNT]);
+        let mut colors = vec![Bgr555(0); 256];
+        colors[0x80 + 1] = Bgr555(0x03e0);
+        let mut canvas = Canvas::try_new(8, 8).unwrap();
+        draw_resolved_native_overworld_sprite_resource_elements(
+            &mut canvas,
+            &[ResolvedNativeOverworldSpriteElement::Tile {
+                sprite_index: 0,
+                tile_number: 0,
+                palette: 0,
+                x: 0,
+                y: 0,
+                priority: false,
+                x_flip: false,
+                y_flip: false,
+                translucent: false,
+                graphics_base: 0x1e00,
+                palette_base: NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE,
+                active_palette_offset: 0x80,
+            }],
+            &cache,
+            &Palette { colors },
+        );
+        assert_eq!(canvas.get(0, 0).unwrap().green, 255);
     }
 
     #[test]

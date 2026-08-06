@@ -754,13 +754,33 @@ pub(crate) fn draw_sprite_subtile_clipped(
     target: (i32, i32),
     half_color: bool,
 ) {
+    draw_sprite_subtile_clipped_with_palette_base(
+        canvas,
+        word,
+        tiles,
+        palette,
+        target,
+        half_color,
+        8 * 16,
+    );
+}
+
+pub(crate) fn draw_sprite_subtile_clipped_with_palette_base(
+    canvas: &mut Canvas,
+    word: u16,
+    tiles: &[IndexedTile],
+    palette: &Palette,
+    target: (i32, i32),
+    half_color: bool,
+    palette_color_base: usize,
+) {
     let (target_x, target_y) = target;
     let Some(tile) = tiles.get(usize::from(word & 0x01ff)) else {
         return;
     };
     let x_flip = word & 0x4000 != 0;
     let y_flip = word & 0x8000 != 0;
-    let palette_base = (8 + usize::from((word >> 10) & 7)) * 16;
+    let palette_base = palette_color_base + usize::from((word >> 10) & 7) * 16;
     for y in 0..8 {
         for x in 0..8 {
             let source_x = if x_flip { 7 - x } else { x };

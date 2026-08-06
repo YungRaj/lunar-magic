@@ -14,6 +14,9 @@ use lm_rom::RomImage;
 
 const OVERWORLD_GRAPHICS_FILES: [usize; 4] = [0x1c, 0x1d, 0x1e, 0x1f];
 const TILES_PER_NATIVE_GRAPHICS_SLOT: usize = 0x80;
+const NATIVE_SPRITE_CACHE_TILES: usize = 0x2a00;
+const NATIVE_SPRITE_SUBMAP_BASE: usize = 0x1c00;
+const NATIVE_SPRITE_SUBMAP_STRIDE: usize = 0x200;
 
 impl RomOverworldEditor {
     pub(crate) fn handles(app: &AppState) -> bool {
@@ -315,6 +318,10 @@ fn decode_main_layer2_workspace(
                 source_slot: u16::try_from(OVERWORLD_GRAPHICS_FILES[0]).unwrap_or_default(),
                 graphics: GraphicsFile4bpp { tiles },
             },
+            native_sprite_graphics_cache: load_native_sprite_graphics_cache(
+                &project,
+                lm_profile::smw_us_v1_vanilla_graphics_layout(),
+            )?,
         },
     })
 }
@@ -431,7 +438,58 @@ fn decode_overworld_assets(
             source_slot: u16::try_from(OVERWORLD_GRAPHICS_FILES[0]).unwrap_or_default(),
             graphics: GraphicsFile4bpp { tiles },
         },
+        native_sprite_graphics_cache: load_native_sprite_graphics_cache(
+            &project,
+            profiled.profile.graphics,
+        )?,
     })
+}
+
+fn load_native_sprite_graphics_cache(
+    project: &Project,
+    graphics_layout: lm_project::GraphicsRomLayout,
+) -> Result<Vec<IndexedTile>, String> {
+    let settings = lm_profile::load_smw_us_v1_overworld_settings(project)
+        .map_err(|error| format!("could not load overworld graphics settings: {error}"))?
+        .settings;
+    let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+    let mut cache = vec![blank.clone(); NATIVE_SPRITE_CACHE_TILES];
+    for (submap, record) in settings.records.iter().enumerate() {
+        let base = NATIVE_SPRITE_SUBMAP_BASE + submap * NATIVE_SPRITE_SUBMAP_STRIDE;
+        for (slot, file_number) in native_sprite_graphics_files(record)?
+            .into_iter()
+            .enumerate()
+        {
+            let mut tiles = project
+                .load_graphics_file(file_number, graphics_layout)
+                .map_err(|error| {
+                    format!(
+                        "could not load overworld submap {submap} sprite GFX{file_number:02X}: {error}"
+                    )
+                })?
+                .tiles;
+            if tiles.len() > TILES_PER_NATIVE_GRAPHICS_SLOT {
+                return Err(format!(
+                    "overworld submap {submap} sprite GFX{file_number:02X} has {} tiles; expected at most {TILES_PER_NATIVE_GRAPHICS_SLOT}",
+                    tiles.len()
+                ));
+            }
+            tiles.resize(TILES_PER_NATIVE_GRAPHICS_SLOT, blank.clone());
+            let start = base + slot * TILES_PER_NATIVE_GRAPHICS_SLOT;
+            cache[start..start + TILES_PER_NATIVE_GRAPHICS_SLOT].clone_from_slice(&tiles);
+        }
+    }
+    Ok(cache)
+}
+
+fn native_sprite_graphics_files(
+    record: &lm_level::ExpandedLevelSettingsRecord,
+) -> Result<[usize; 4], String> {
+    let mut files = [0; 4];
+    for (slot, word) in [11_usize, 10, 9, 8].into_iter().enumerate() {
+        files[slot] = usize::from(record.word(word).map_err(|error| error.to_string())? & 0x0fff);
+    }
+    Ok(files)
 }
 
 fn append_overworld_graphics_slot(
@@ -456,7 +514,8 @@ fn append_overworld_graphics_slot(
 mod tests {
     use super::{
         TILES_PER_NATIVE_GRAPHICS_SLOT, append_overworld_graphics_slot,
-        decode_main_layer2_workspace, decode_native_appearance_siblings, parse_slot,
+        decode_main_layer2_workspace, decode_native_appearance_siblings,
+        native_sprite_graphics_files, parse_slot,
     };
     use lm_graphics::IndexedTile;
     use std::{fs, path::Path};
@@ -468,6 +527,15 @@ mod tests {
         assert!(parse_slot("").is_err());
         assert!(parse_slot("10000").is_err());
         assert!(parse_slot("not-a-slot").is_err());
+    }
+
+    #[test]
+    fn native_overworld_sprite_slots_follow_recovered_reverse_word_order() {
+        let record = lm_profile::smw_us_v1_default_special_expanded_settings_record();
+        assert_eq!(
+            native_sprite_graphics_files(&record).unwrap(),
+            [0x10, 0x0f, 0x1c, 0x1d]
+        );
     }
 
     #[test]
