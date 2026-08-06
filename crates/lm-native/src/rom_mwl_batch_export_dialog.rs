@@ -12,6 +12,32 @@ enum BatchSource {
     Builtin(ControllerSnapshot),
 }
 
+fn run_export(
+    source: BatchSource,
+    template: &std::path::Path,
+    mode: MwlBatchExportMode,
+    cancelled: &AtomicBool,
+) -> Result<Option<usize>, String> {
+    let exported = match source {
+        BatchSource::Installed(profiled) => {
+            lm_app::export_smw_us_v1_installed_mwl_batch_until(&profiled, mode, || {
+                cancelled.load(Ordering::Relaxed)
+            })
+        }
+        BatchSource::Builtin(snapshot) => {
+            lm_app::export_builtin_smw_us_v1_mwl_batch_until(&snapshot, mode, || {
+                cancelled.load(Ordering::Relaxed)
+            })
+        }
+    }?;
+    match exported {
+        Some(documents) if !cancelled.load(Ordering::Relaxed) => {
+            lm_app::publish_mwl_batch_new(template, &documents).map(Some)
+        }
+        Some(_) | None => Ok(None),
+    }
+}
+
 struct RunningExport {
     template: PathBuf,
     cancelled: Arc<AtomicBool>,
@@ -68,24 +94,7 @@ impl RomMwlBatchExportDialog {
         let spawn = std::thread::Builder::new()
             .name("lm-rom-mwl-batch-export".into())
             .spawn(move || {
-                let exported = match source {
-                    BatchSource::Installed(profiled) => {
-                        lm_app::export_smw_us_v1_installed_mwl_batch_until(&profiled, mode, || {
-                            worker_cancelled.load(Ordering::Relaxed)
-                        })
-                    }
-                    BatchSource::Builtin(snapshot) => {
-                        lm_app::export_builtin_smw_us_v1_mwl_batch_until(&snapshot, mode, || {
-                            worker_cancelled.load(Ordering::Relaxed)
-                        })
-                    }
-                }
-                .and_then(|documents| match documents {
-                    Some(documents) if !worker_cancelled.load(Ordering::Relaxed) => {
-                        lm_app::publish_mwl_batch_new(&worker_template, &documents).map(Some)
-                    }
-                    Some(_) | None => Ok(None),
-                });
+                let exported = run_export(source, &worker_template, mode, &worker_cancelled);
                 let _ignored = sender.send(exported);
             });
         match spawn {
@@ -174,11 +183,69 @@ impl RomMwlBatchExportDialog {
 
 #[cfg(test)]
 mod tests {
-    use super::{BatchSource, RomMwlBatchExportDialog};
-    use lm_app::{ControllerSnapshot, EditorMode, MwlBatchExportMode};
+    use super::{BatchSource, RomMwlBatchExportDialog, run_export};
+    use lm_app::{ControllerSnapshot, EditorMode, MwlBatchExportMode, ProfiledControllerSnapshot};
+    use lm_project::{
+        ExAnimationRomLayout, InstalledExAnimationRomLayout, InstalledLayout, LevelPointerTable,
+    };
     use lm_rom::RomImage;
     use std::fs;
+    use std::sync::atomic::AtomicBool;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    fn installed_fixture() -> ProfiledControllerSnapshot {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rom_bytes = fs::read(
+            root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
+        )
+        .unwrap();
+        let image = RomImage::from_bytes(rom_bytes.clone()).unwrap();
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = lm_rom::Mapper::LoRom;
+        profile.level = lm_profile::smw_us_v1_vanilla_level_layout();
+        profile.level.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        profile.layer2 = Some(lm_profile::smw_us_v1_layer2_layout(&image).unwrap());
+        profile.palette = lm_profile::smw_us_v1_custom_palette_layout();
+        profile.palette_installation = InstalledLayout::Unconditional(profile.palette);
+        profile.exanimation = ExAnimationRomLayout {
+            mapper: lm_rom::Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x8138b,
+                entries: 0x200,
+                stride: 3,
+            },
+            maximum_records: 32,
+            maximum_encoded_len: 0x8000,
+        };
+        profile.exanimation_installation =
+            InstalledLayout::Unconditional(InstalledExAnimationRomLayout {
+                payload: profile.exanimation,
+                pointer_presence_mask: 0x00ff_0000,
+                pointer_locator: None,
+            });
+        profile.exanimation_feature_installation = InstalledLayout::Absent;
+        profile.expanded_settings = Some(lm_profile::smw_us_v1_expanded_settings_layout());
+        profile.map16.mapper = lm_rom::Mapper::LoRom;
+        profile.graphics.mapper = lm_rom::Mapper::LoRom;
+        profile.overworld.layers.mapper = lm_rom::Mapper::LoRom;
+        profile.overworld.event_reveals.mapper = lm_rom::Mapper::LoRom;
+        profile.overworld.endpoints.mapper = lm_rom::Mapper::LoRom;
+        profile.overworld.messages.mapper = lm_rom::Mapper::LoRom;
+        profile.overworld.sprites.mapper = lm_rom::Mapper::LoRom;
+        profile.overworld.palette.mapper = lm_rom::Mapper::LoRom;
+        profile.overworld.animation.mapper = lm_rom::Mapper::LoRom;
+        profile.validate().unwrap();
+        ProfiledControllerSnapshot {
+            snapshot: ControllerSnapshot {
+                revision: 0,
+                mode: EditorMode::Level(0),
+                identity: lm_rom::detect_identity(&image).unwrap(),
+                document_path: None,
+                rom_bytes,
+            },
+            profile,
+        }
+    }
 
     #[test]
     fn default_dialog_is_closed_and_close_is_idempotent() {
@@ -230,5 +297,49 @@ mod tests {
         assert!(directory.join("Vanilla 1FF.mwl").is_file());
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 0x200);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn installed_worker_exports_only_lunar_magic_modified_selection() {
+        let directory = temporary_directory("installed-modified");
+        let result = run_export(
+            BatchSource::Installed(installed_fixture()),
+            &directory.join("Installed.mwl"),
+            MwlBatchExportMode::Modified,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(result, Some(1));
+        assert!(directory.join("Installed 000.mwl").is_file());
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn worker_cancellation_never_publishes_partial_output() {
+        let directory = temporary_directory("cancelled");
+        let result = run_export(
+            BatchSource::Installed(installed_fixture()),
+            &directory.join("Cancelled.mwl"),
+            MwlBatchExportMode::Modified,
+            &AtomicBool::new(true),
+        )
+        .unwrap();
+        assert_eq!(result, None);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 0);
+        fs::remove_dir(directory).unwrap();
+    }
+
+    fn temporary_directory(label: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "lm-native-mwl-batch-{label}-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).unwrap();
+        directory
     }
 }
