@@ -4292,3 +4292,13 @@ overwrite behavior. Each expanded 8x8 element retains the selected parent route 
 palette, priority, flips, and translucency. Focused tests cover defaults, all transforms, ignored
 limits, overlapping records, and internal sentinels; this is the source-selection contract used by
 the installed-overworld preview integration rather than a guessed direct tile-array index.
+
+The profiled installed-overworld open transaction now derives `.sscov` and `.s16ov` from the
+actual ROM document path and requests both through the same non-blocking bounded loader as the
+required palette-ownership evidence. A genuinely absent sibling is omitted independently; an
+existing malformed, oversized, non-regular, or unreadable sibling rejects the whole workspace
+before publication. Either native file can exist alone because Lunar Magic initializes the missing
+domain to an empty definition map or zero-length Sprite Map16 prefix. The workspace retains the
+lossless native pair and reports its appearance, tooltip, and exact loaded-prefix counts. Focused
+tests cover no sidecars, either sidecar independently, Unicode basenames, malformed definitions,
+duplicates, unexpected paths, and sidecars returned without an owning ROM path.

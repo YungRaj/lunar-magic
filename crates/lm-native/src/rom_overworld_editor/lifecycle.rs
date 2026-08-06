@@ -43,6 +43,7 @@ impl RomOverworldEditor {
                 self.pending_open = Some(PendingOpen {
                     profiled,
                     slot: "0".into(),
+                    rom_path: app.document_path.clone(),
                 });
             }
             Ok(_) => self.error = Some("switch to overworld mode before opening the editor".into()),
@@ -148,12 +149,24 @@ impl RomOverworldEditor {
             self.pending_open = Some(pending);
             return;
         };
-        let request = BoundedRead::new(
+        let mut requests = vec![BoundedRead::new(
             path,
             u64::try_from(PaletteOwnershipFile::MAX_FILE_LEN).unwrap_or(u64::MAX),
             "palette ownership evidence",
-        );
-        match self.loader.start(vec![request]) {
+        )];
+        if let Some(rom_path) = pending.rom_path.as_ref() {
+            requests.push(BoundedRead::optional(
+                rom_path.with_extension("sscov"),
+                u64::try_from(lm_overworld::SSCOV_MAX_BYTES).unwrap_or(u64::MAX),
+                "ROM-adjacent native overworld sprite display definitions",
+            ));
+            requests.push(BoundedRead::optional(
+                rom_path.with_extension("s16ov"),
+                u64::try_from(lm_level::S16OvSidecar::CAPACITY).unwrap_or(u64::MAX),
+                "ROM-adjacent native overworld Sprite Map16 definitions",
+            ));
+        }
+        match self.loader.start(requests) {
             Ok(()) => {
                 self.pending_load = Some(PendingLoad {
                     open: pending,
@@ -320,7 +333,10 @@ fn decode_loaded(
         current_revision,
         "overworld ownership evidence",
     )?;
-    let [(_, bytes)] = loaded.into_exact::<1>("overworld ownership")?;
+    let mut files = loaded.files.into_iter();
+    let (_, bytes) = files
+        .next()
+        .ok_or("overworld ownership loader omitted its required first input")?;
     let ownership = PaletteOwnershipFile::decode(&bytes)
         .map_err(|error| error.to_string())?
         .ownership;
@@ -336,6 +352,8 @@ fn decode_loaded(
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
     let assets = decode_overworld_assets(&profiled)?;
+    let native_appearances =
+        decode_native_appearance_siblings(pending.open.rom_path.as_deref(), files.collect())?;
     Ok(Workspace {
         controller,
         profiled,
@@ -343,7 +361,47 @@ fn decode_loaded(
         image,
         ownership,
         assets,
+        native_appearances,
     })
+}
+
+fn decode_native_appearance_siblings(
+    rom_path: Option<&std::path::Path>,
+    files: Vec<(std::path::PathBuf, Vec<u8>)>,
+) -> Result<Option<lm_render::NativeOverworldAppearancePair>, String> {
+    let Some(rom_path) = rom_path else {
+        if files.is_empty() {
+            return Ok(None);
+        }
+        return Err("overworld loader returned native sidecars without a ROM document path".into());
+    };
+    let definitions_path = rom_path.with_extension("sscov");
+    let map16_path = rom_path.with_extension("s16ov");
+    let mut definitions = None;
+    let mut map16 = None;
+    for (path, bytes) in files {
+        if path == definitions_path && definitions.is_none() {
+            definitions = Some(bytes);
+        } else if path == map16_path && map16.is_none() {
+            map16 = Some(bytes);
+        } else {
+            return Err(format!(
+                "overworld loader returned an unexpected or duplicate sidecar: {}",
+                path.display()
+            ));
+        }
+    }
+    if definitions.is_none() && map16.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(lm_render::NativeOverworldAppearancePair {
+        definitions: lm_overworld::NativeOverworldSpriteSidecar::decode(
+            definitions.as_deref().unwrap_or_default(),
+        )
+        .map_err(|error| error.to_string())?,
+        sprite_map16: lm_level::S16OvSidecar::decode(map16.as_deref().unwrap_or_default())
+            .map_err(|error| error.to_string())?,
+    }))
 }
 
 fn decode_overworld_assets(
@@ -398,7 +456,7 @@ fn append_overworld_graphics_slot(
 mod tests {
     use super::{
         TILES_PER_NATIVE_GRAPHICS_SLOT, append_overworld_graphics_slot,
-        decode_main_layer2_workspace, parse_slot,
+        decode_main_layer2_workspace, decode_native_appearance_siblings, parse_slot,
     };
     use lm_graphics::IndexedTile;
     use std::{fs, path::Path};
@@ -435,6 +493,65 @@ mod tests {
                 ],
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn rom_adjacent_native_appearance_siblings_are_optional_independent_and_lossless() {
+        let rom = Path::new("World 日本語.smc");
+        assert_eq!(
+            decode_native_appearance_siblings(Some(rom), Vec::new()).unwrap(),
+            None
+        );
+        let definitions = b"05\t3\t-2,4,8400\n10000\t12\t400-4FF,1234\n".to_vec();
+        let pair = decode_native_appearance_siblings(
+            Some(rom),
+            vec![(rom.with_extension("sscov"), definitions)],
+        )
+        .unwrap()
+        .unwrap();
+        assert!(pair.definitions.appearances[&5].shadow);
+        assert_eq!(pair.sprite_map16.loaded_len(), 0);
+
+        let pair = decode_native_appearance_siblings(
+            Some(rom),
+            vec![(rom.with_extension("s16ov"), vec![1, 0, 0, 0, 2])],
+        )
+        .unwrap()
+        .unwrap();
+        assert!(pair.definitions.appearances.is_empty());
+        assert_eq!(pair.sprite_map16.loaded_len(), 5);
+    }
+
+    #[test]
+    fn rom_adjacent_native_appearance_group_rejects_unknown_duplicate_and_malformed_files() {
+        let rom = Path::new("World.smc");
+        assert!(
+            decode_native_appearance_siblings(
+                Some(rom),
+                vec![(rom.with_extension("other"), Vec::new())],
+            )
+            .is_err()
+        );
+        assert!(
+            decode_native_appearance_siblings(
+                Some(rom),
+                vec![
+                    (rom.with_extension("sscov"), Vec::new()),
+                    (rom.with_extension("sscov"), Vec::new()),
+                ],
+            )
+            .is_err()
+        );
+        assert!(
+            decode_native_appearance_siblings(
+                Some(rom),
+                vec![(rom.with_extension("sscov"), b"05\t3\t0,0,D00\n".to_vec())],
+            )
+            .is_err()
+        );
+        assert!(
+            decode_native_appearance_siblings(None, vec![("x.sscov".into(), Vec::new())]).is_err()
         );
     }
 

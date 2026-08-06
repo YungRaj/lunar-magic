@@ -49,6 +49,7 @@ enum PendingClose {
 struct PendingOpen {
     profiled: ProfiledControllerSnapshot,
     slot: String,
+    rom_path: Option<std::path::PathBuf>,
 }
 
 struct PendingLoad {
@@ -63,6 +64,7 @@ struct Workspace {
     image: lm_rom::RomImage,
     ownership: PaletteOwnership,
     assets: OverworldAssets,
+    native_appearances: Option<lm_render::NativeOverworldAppearancePair>,
 }
 
 struct MainLayer2Workspace {
@@ -494,7 +496,7 @@ fn path_form_row(ui: &mut egui::Ui, label: &str, value: &mut String) {
 
 impl RomOverworldEditor {
     fn contents(&mut self, ui: &mut egui::Ui, revision: u64) -> Option<Command> {
-        let (stale, shape, slot, controller_revision, data, modes, ownership) = {
+        let (stale, shape, slot, controller_revision, data, modes, ownership, native_summary) = {
             let workspace = self.workspace.as_ref()?;
             (
                 workspace.controller.revision() != revision,
@@ -504,6 +506,13 @@ impl RomOverworldEditor {
                 workspace.controller.data().clone(),
                 workspace.profiled.profile.exanimation_double_size_modes,
                 workspace.ownership.clone(),
+                workspace.native_appearances.as_ref().map(|pair| {
+                    (
+                        pair.definitions.appearances.len(),
+                        pair.definitions.tooltips.len(),
+                        pair.sprite_map16.loaded_len(),
+                    )
+                }),
             )
         };
         if stale {
@@ -513,6 +522,11 @@ impl RomOverworldEditor {
             );
         }
         self.complete_file_controls(ui, stale, revision);
+        if let Some((appearances, tooltips, map16_bytes)) = native_summary {
+            ui.label(format!(
+                "ROM-adjacent native sprite display: {appearances} appearances, {tooltips} tooltips, {map16_bytes} Sprite Map16 bytes"
+            ));
+        }
         self.world_canvas(ui, shape, stale);
         self.layer_tile_controls(ui, shape, stale);
         ui.separator();
