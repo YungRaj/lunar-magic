@@ -86,7 +86,7 @@ pub use allocation::RevisionAllocationError;
 pub use audit::{
     DirectTableAudit, PointerTableAudit, RevisionProfileAudit, RevisionProfileAuditError,
 };
-pub use copier_header::smw_us_v1_lunar_magic_copier_header;
+pub use copier_header::{lunar_magic_copier_header, smw_us_v1_lunar_magic_copier_header};
 pub use credits_tilemap::{
     SMW_US_V1_CREDITS_BLANK_WORD, SMW_US_V1_CREDITS_EXPANDED_OFFSETS_OFFSET,
     SMW_US_V1_CREDITS_LEGACY_ROWS, SMW_US_V1_CREDITS_OFFSETS_OFFSET,

@@ -1376,7 +1376,7 @@ fn rust_direct_rom_main_entrance_edit_is_exported_by_lunar_magic() {
         let mut app = AppState::default();
         app.load_rom(logical_rom.clone()).unwrap();
         if copier_header.is_some() {
-            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 0 })
+            app.dispatch(Command::SetLunarMagicCopierHeader { rev: 0 })
                 .unwrap();
         }
         app.dispatch(Command::SelectLevel(0x105)).unwrap();

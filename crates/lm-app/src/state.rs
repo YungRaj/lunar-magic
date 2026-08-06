@@ -844,8 +844,8 @@ impl AppState {
             Command::SetCopierHeader { rev, target, fill } => {
                 self.set_copier_header(rev, target, fill)?
             }
-            Command::SetLunarMagicSmwUsCopierHeader { rev } => {
-                self.set_lunar_magic_smw_us_copier_header(rev)?
+            Command::SetLunarMagicCopierHeader { rev } => {
+                self.set_lunar_magic_copier_header(rev)?
             }
             Command::ReplaceNativeOverworldPathLinks { rev, table } => {
                 self.replace_native_path_links(rev, &table)?

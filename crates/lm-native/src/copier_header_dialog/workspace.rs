@@ -25,7 +25,13 @@ impl CopierHeaderWorkspace {
             },
             logical_len: image.logical_len(),
             canonical_lunar_magic: image.copier_header_bytes()
-                == Some(lm_profile::smw_us_v1_lunar_magic_copier_header().as_slice()),
+                == Some(
+                    lm_profile::lunar_magic_copier_header(
+                        image.logical_len(),
+                        snapshot.identity.map_mode,
+                    )
+                    .as_slice(),
+                ),
         })
     }
 
@@ -60,9 +66,9 @@ impl CopierHeaderWorkspace {
             ));
         }
         if self.canonical_lunar_magic {
-            return Err("the open ROM already has Lunar Magic's canonical SMW header".into());
+            return Err("the open ROM already has Lunar Magic's synthesized header".into());
         }
-        Ok(Command::SetLunarMagicSmwUsCopierHeader { rev: self.revision })
+        Ok(Command::SetLunarMagicCopierHeader { rev: self.revision })
     }
 
     pub(super) fn prepare(&self, current_revision: u64, fill: u8) -> Result<Command, String> {

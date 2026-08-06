@@ -67,7 +67,7 @@ impl CopierHeaderDialog {
                          contents remain identical.",
                     );
                     ui.add_enabled_ui(!workspace.canonical_lunar_magic(), |ui| {
-                        if ui.button("Use Lunar Magic canonical SMW header").clicked() {
+                        if ui.button("Use Lunar Magic synthesized header").clicked() {
                             match workspace.prepare_lunar_magic_canonical(app.project_revision()) {
                                 Ok(value) => command = Some(value),
                                 Err(error) => self.error = Some(error),

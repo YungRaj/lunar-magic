@@ -124,7 +124,7 @@ pub enum Command {
         fill: u8,
     },
     /// Adds or replaces the physical prefix with Lunar Magic 3.63's canonical SMW-US header.
-    SetLunarMagicSmwUsCopierHeader {
+    SetLunarMagicCopierHeader {
         rev: u64,
     },
     /// Replaces the fixed native SMW US revision-0 path-link planes.

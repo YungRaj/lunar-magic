@@ -2,7 +2,7 @@ use crate::{AppError, AppState, FrontendEffect};
 use lm_rom::CopierHeader;
 
 impl AppState {
-    pub(crate) fn set_lunar_magic_smw_us_copier_header(
+    pub(crate) fn set_lunar_magic_copier_header(
         &mut self,
         expected_revision: u64,
     ) -> Result<Vec<FrontendEffect>, AppError> {
@@ -18,18 +18,13 @@ impl AppState {
             .identity
             .as_ref()
             .ok_or(AppError::CopierHeaderIdentityMismatch)?;
-        if identity.game != lm_rom::SupportedGame::SuperMarioWorld
-            || identity.region != lm_rom::Region::NorthAmerica
-            || identity.revision != 0
-        {
-            return Err(AppError::CopierHeaderIdentityMismatch);
-        }
-        let header = lm_profile::smw_us_v1_lunar_magic_copier_header();
+        let header =
+            lm_profile::lunar_magic_copier_header(project.rom.logical_len(), identity.map_mode);
         if project.rom.copier_header_bytes() == Some(header.as_slice()) {
             return Ok(Vec::new());
         }
         self.ensure_project_revision_capacity()?;
-        let description = "Add Lunar Magic canonical SMW-US copier header".to_owned();
+        let description = "Add Lunar Magic synthesized copier header".to_owned();
         let project = self.project.as_mut().ok_or(AppError::NoProject)?;
         let changed = project.set_copier_header_exact(description.clone(), &header)?;
         debug_assert!(changed);
@@ -132,7 +127,7 @@ mod tests {
         noncanonical.extend_from_slice(&logical);
         let mut app = AppState::default();
         app.load_rom(noncanonical.clone()).unwrap();
-        app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 0 })
+        app.dispatch(Command::SetLunarMagicCopierHeader { rev: 0 })
             .unwrap();
         let canonical = lm_profile::smw_us_v1_lunar_magic_copier_header();
         let installed = app.project().unwrap().save_snapshot();
@@ -145,7 +140,7 @@ mod tests {
         app.dispatch(Command::Redo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), installed);
         assert!(
-            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 3 })
+            app.dispatch(Command::SetLunarMagicCopierHeader { rev: 3 })
                 .unwrap()
                 .is_empty()
         );
@@ -154,39 +149,74 @@ mod tests {
     }
 
     #[test]
+    fn lunar_magic_header_action_uses_the_current_size_and_map_mode() {
+        let source = original();
+        let mut app = AppState::default();
+        app.load_rom(source).unwrap();
+        app.dispatch(crate::Command::ExpandRom(crate::RomExpansionCommand {
+            expected_revision: 0,
+            mapper: lm_rom::Mapper::LoRom,
+            target_logical_len: 0x20_0000,
+            fill: 0,
+            checksum_field: 0x7fdc,
+        }))
+        .unwrap();
+        app.dispatch(Command::SetLunarMagicCopierHeader { rev: 1 })
+            .unwrap();
+        let expected = lm_profile::lunar_magic_copier_header(0x20_0000, 0x20);
+        assert_eq!(
+            app.project().unwrap().rom.copier_header_bytes(),
+            Some(expected.as_slice())
+        );
+    }
+
+    #[test]
+    fn lunar_magic_header_action_uses_sa1_fast_mapping_fields_after_expansion() {
+        let mut image = lm_rom::RomImage::from_bytes(original()).unwrap();
+        image.write(0x7fd5, &[0x23, 0x34]).unwrap();
+        image.update_snes_checksum(0x7fdc).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(image.as_file_bytes().to_vec()).unwrap();
+        app.dispatch(Command::ExpandSa1Rom {
+            expected_revision: 0,
+            target_logical_len: lm_project::SA1_6_MIB_LEN,
+        })
+        .unwrap();
+        app.dispatch(Command::SetLunarMagicCopierHeader { rev: 1 })
+            .unwrap();
+        let expected = lm_profile::lunar_magic_copier_header(lm_project::SA1_6_MIB_LEN, 0x23);
+        assert_eq!(&expected[..4], &[0x00, 0x03, 0x30, 0x80]);
+        assert_eq!(
+            app.project().unwrap().rom.copier_header_bytes(),
+            Some(expected.as_slice())
+        );
+    }
+
+    #[test]
     fn lunar_magic_canonical_header_rejections_leave_bytes_revision_and_history_unchanged() {
         let source = original();
         let mut app = AppState::default();
         app.load_rom(source.clone()).unwrap();
-        app.project
-            .as_mut()
-            .unwrap()
-            .identity
-            .as_mut()
-            .unwrap()
-            .region = lm_rom::Region::Japan;
+        app.project.as_mut().unwrap().identity = None;
         assert!(matches!(
-            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 0 }),
+            app.dispatch(Command::SetLunarMagicCopierHeader { rev: 0 }),
             Err(AppError::CopierHeaderIdentityMismatch)
         ));
         assert_eq!(app.project().unwrap().save_snapshot(), source);
         assert_eq!(app.project_revision(), 0);
         assert_eq!(app.project().unwrap().history.undo_len(), 0);
 
-        app.project
-            .as_mut()
-            .unwrap()
-            .identity
-            .as_mut()
-            .unwrap()
-            .region = lm_rom::Region::NorthAmerica;
+        app.project.as_mut().unwrap().identity = Some(
+            lm_rom::detect_identity(&lm_rom::RomImage::from_bytes(source.clone()).unwrap())
+                .unwrap(),
+        );
         assert!(matches!(
-            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 1 }),
+            app.dispatch(Command::SetLunarMagicCopierHeader { rev: 1 }),
             Err(AppError::StaleProjectRevision { .. })
         ));
         app.dispatch(Command::Save).unwrap();
         assert!(matches!(
-            app.dispatch(Command::SetLunarMagicSmwUsCopierHeader { rev: 0 }),
+            app.dispatch(Command::SetLunarMagicCopierHeader { rev: 0 }),
             Err(AppError::SaveInProgress)
         ));
         assert_eq!(app.project().unwrap().save_snapshot(), source);
