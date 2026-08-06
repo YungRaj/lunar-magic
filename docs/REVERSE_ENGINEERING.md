@@ -425,6 +425,15 @@ The level-editor overlay and viewport-composition block through `004530a0` is no
 
 The full-level image export and initial SNES graphics-decoding block through `00455040` is now named. Export helpers calculate complete level dimensions, replace the interactive render surface temporarily, render the level in 16-pixel strips, and emit either bottom-up 24-bit BMP data or a packed RGB buffer passed to the PNG encoder before restoring editor state. The adjacent planar decoders expand SNES 8x8 tiles into indexed pixels, with a specialized 4-bpp implementation and a generic 1-through-8-bpp implementation.
 
+A pristine-ROM corpus run now exercises that native path directly under Wine.
+With modified-only and auto-screen adjustment both disabled, Lunar Magic 3.63
+exports 488 complete-level PNGs using stored extents and declines 24 empty
+Layer 1 slots (`095,096,097,098,099,09A,09B,0CC,0D5,0D9,0DF,0E2,0E5,195,
+196,197,198,199,19A,19B,1C7,1DE,1EB,1F6`). This establishes the full-corpus
+oracle contract: Rust must match 488 rendered outcomes plus those same 24
+native non-renderable outcomes; treating the latter as successful blank images
+would be a parity failure.
+
 The reciprocal SNES 4-bpp encoder, level-editor activation/teardown, and Map16 persistence range through `00458f90` is now named. UI helpers finalize a loaded level at the selected entrance, enable or disable the complete editing command set, guard destructive operations with modified-level/shared-palette/auxiliary-editor prompts, and release all render surfaces when a ROM closes. The Map16 pipeline now distinguishes base data, the primary remap/page allocation transaction, and eight secondary page blocks; separate legacy/expanded loaders and savers resolve mapper-specific pointers, trim empty `0x1004` tails, repair invalid or cyclic remap chains, retire old allocations, and patch relocated block pointers.
 
 Whole-ROM Map16 bank import/export and the ExAnimation runtime through `0045b360` are now named. The Map16 helpers iterate all fifteen FG/BG banks while preserving the active editor bank. ExAnimation helpers detect legacy versus expanded formats, advance vanilla/global/level animation records, implement trigger and frame sequencing, transfer planar graphics and palette data, maintain destination-ownership maps, run the preview timer, and navigate between clicked tiles or colors and their owning animation records. Project `Graphics` and `ExternalGraphics` file readers, external palette conversion, and loading/validation of animated GFX 33 plus player GFX 32 are also identified.
@@ -3089,6 +3098,14 @@ The live `InitializeSpriteRenderDispatchTable` at `004cb250` proves that the
 This matters because an absent Rust preview cannot automatically be classified
 as Lunar Magic's native empty handler. A renewed table-to-renderer audit found
 additional dedicated handlers inside the standard `$00`–`$ED` range.
+
+The pristine 512-slot renderer audit exposed another false-empty entry: `$29`.
+The live dispatch table routes it to `004c4d10`, where the packed placement's
+low nibble must be `$C` and rows `$0`–`$6` select the Morton, Roy, Ludwig,
+Iggy, Larry, Lemmy, and Wendy two-line boss labels. Other placements emit the
+native `MAY GLITCH!` warning. The Rust renderer now implements all seven
+branches; across the untouched ROM corpus all 3,290 sprite instances resolve,
+with zero native-empty and zero unresolved instances.
 
 The first corrected cluster covers `$80`, `$83`, `$87`, `$88`, and `$8B`.
 Disassembly at `004c7680`, `004c7850`, `004c7af0`, `004c7b60`, and

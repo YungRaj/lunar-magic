@@ -377,6 +377,34 @@ pub fn draw_native_sprite_preview_definition_pages(
     target_x: i32,
     target_y: i32,
 ) {
+    draw_native_sprite_preview_definition_pages_with_half_color(
+        canvas,
+        subtiles,
+        ordinary_tiles,
+        animated_tiles,
+        palette,
+        target_x,
+        target_y,
+        false,
+    );
+}
+
+/// Draws a sprite preview with optional Lunar Magic packed-channel half-color composition.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_native_sprite_preview_definition_pages_with_half_color(
+    canvas: &mut Canvas,
+    subtiles: [u16; 4],
+    ordinary_tiles: &[IndexedTile],
+    animated_tiles: &[IndexedTile],
+    palette: &Palette,
+    target_x: i32,
+    target_y: i32,
+    half_color: bool,
+) {
+    if let Some(definition_index) = editor_text_definition_index(subtiles) {
+        draw_lunar_magic_editor_text_definition(canvas, definition_index, target_x, target_y);
+        return;
+    }
     for (quadrant, word) in subtiles.into_iter().enumerate() {
         let x = quadrant / 2;
         let y = quadrant % 2;
@@ -393,8 +421,210 @@ pub fn draw_native_sprite_preview_definition_pages(
                 target_x.saturating_add(i32::try_from(x * 8).unwrap_or(i32::MAX)),
                 target_y.saturating_add(i32::try_from(y * 8).unwrap_or(i32::MAX)),
             ),
+            half_color,
         );
     }
+}
+
+const LM363_EDITOR_TEXT_DEFINITIONS: &[u8; 0x800] =
+    include_bytes!("assets/lm363-editor-text-definitions.bin");
+const LM363_EDITOR_TEXT_GLYPHS: &[u8; 0x13c0] =
+    include_bytes!("assets/lm363-editor-text-glyphs.bin");
+const LM363_EDITOR_TEXT_PALETTE: &[u8; 0x100] =
+    include_bytes!("assets/lm363-editor-text-palette.bin");
+const LM363_EDITOR_FONT: &[u8; 590_356] = include_bytes!("assets/lm363-editor-font.bin");
+const LM363_EDITOR_FONT_HEADER: usize = 20;
+const LM363_EDITOR_FONT_WIDTH: usize = 24;
+const LM363_EDITOR_FONT_HEIGHT: usize = 24;
+const LM363_EDITOR_FONT_ORIGIN_X: i32 = 4;
+const LM363_EDITOR_FONT_TEXT_HEIGHT: usize = 16;
+const LM363_EDITOR_FONT_GLYPH_BYTES: usize = LM363_EDITOR_FONT_WIDTH * LM363_EDITOR_FONT_HEIGHT * 4;
+const LM363_EDITOR_FONT_RECORD_BYTES: usize = 2 + LM363_EDITOR_FONT_GLYPH_BYTES;
+
+fn editor_text_definition_index(subtiles: [u16; 4]) -> Option<u8> {
+    let index = subtiles[0];
+    ((0x3c00..=0x3cff).contains(&index) && subtiles[1..] == [0x0019; 3]).then_some(index as u8)
+}
+
+/// Draws one definition from Lunar Magic 3.63's dynamic `$3Cxx` editor-label cache.
+///
+/// These definitions are Windows editor artwork, not SNES SP graphics. Lunar Magic materializes
+/// them into its `$880` sidecar tile page after opening a level with sprite previews enabled.
+fn draw_lunar_magic_editor_text_definition(
+    canvas: &mut Canvas,
+    definition_index: u8,
+    target_x: i32,
+    target_y: i32,
+) {
+    let definition_offset = usize::from(definition_index) * 8;
+    for quadrant in 0..4 {
+        let word_offset = definition_offset + quadrant * 2;
+        let word = u16::from_le_bytes([
+            LM363_EDITOR_TEXT_DEFINITIONS[word_offset],
+            LM363_EDITOR_TEXT_DEFINITIONS[word_offset + 1],
+        ]);
+        let tile = usize::from(word & 0x03ff);
+        let tile_offset = tile * 64;
+        if tile_offset + 64 > LM363_EDITOR_TEXT_GLYPHS.len() {
+            continue;
+        }
+        let x_flip = word & 0x4000 != 0;
+        let y_flip = word & 0x8000 != 0;
+        let palette = usize::from((word >> 10) & 7) * 64;
+        let quadrant_x = quadrant / 2;
+        let quadrant_y = quadrant % 2;
+        for y in 0..8 {
+            for x in 0..8 {
+                let source_x = if x_flip { 7 - x } else { x };
+                let source_y = if y_flip { 7 - y } else { y };
+                let color_index =
+                    usize::from(LM363_EDITOR_TEXT_GLYPHS[tile_offset + source_y * 8 + source_x]);
+                if color_index == 0 {
+                    continue;
+                }
+                let color = palette + color_index * 4;
+                if color + 3 >= LM363_EDITOR_TEXT_PALETTE.len() {
+                    continue;
+                }
+                let x =
+                    target_x.saturating_add(i32::try_from(quadrant_x * 8 + x).unwrap_or(i32::MAX));
+                let y =
+                    target_y.saturating_add(i32::try_from(quadrant_y * 8 + y).unwrap_or(i32::MAX));
+                let (Ok(x), Ok(y)) = (usize::try_from(x), usize::try_from(y)) else {
+                    continue;
+                };
+                if x >= canvas.width() || y >= canvas.height() {
+                    continue;
+                }
+                // Lunar Magic's 32-bit DIB palette is stored as B, G, R, unused.
+                canvas.set(
+                    x,
+                    y,
+                    Rgba {
+                        red: LM363_EDITOR_TEXT_PALETTE[color + 2],
+                        green: LM363_EDITOR_TEXT_PALETTE[color + 1],
+                        blue: LM363_EDITOR_TEXT_PALETTE[color],
+                        alpha: 255,
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// Draws Lunar Magic's 8-pixel editor-node text from the authenticated `$3Cxx` sidecar cache.
+///
+/// `RenderEditorTextLabel` places a blue-background `$3C7C` definition and then the character
+/// definition at each eight-pixel cell. Successive strings occupy successive eight-pixel rows.
+pub fn draw_lunar_magic_editor_node_text_lines(
+    canvas: &mut Canvas,
+    lines: &[&str],
+    target_x: i32,
+    target_y: i32,
+) {
+    for (row, line) in lines.iter().enumerate() {
+        let y = target_y.saturating_add(i32::try_from(row * 8).unwrap_or(i32::MAX));
+        for (column, character) in line.bytes().enumerate() {
+            let x = target_x.saturating_add(i32::try_from(column * 8).unwrap_or(i32::MAX));
+            draw_lunar_magic_editor_text_definition(canvas, b'|', x, y);
+            draw_lunar_magic_editor_text_definition(canvas, character, x, y);
+        }
+    }
+}
+
+/// Draws Lunar Magic 3.63's bold System-font level-editor annotation text.
+///
+/// The native editor creates this font at 10 points and 96 DPI, paints white glyphs over an opaque
+/// blue text background, and clips at the framebuffer boundary. The retained glyph cache was
+/// produced with those exact `CreateFontA` and GDI settings under the audit Wine prefix.
+pub fn draw_lunar_magic_editor_label(
+    canvas: &mut Canvas,
+    text: &str,
+    target_x: i32,
+    target_y: i32,
+) {
+    let width = text.bytes().fold(0_i32, |width, character| {
+        width.saturating_add(i32::from(lm363_editor_font_advance(character)))
+    });
+    let Ok(width) = usize::try_from(width) else {
+        return;
+    };
+    let mut source_pixels = vec![
+        Rgba {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        };
+        width * LM363_EDITOR_FONT_TEXT_HEIGHT
+    ];
+    let mut cursor = 0_i32;
+    for character in text.bytes() {
+        let record =
+            LM363_EDITOR_FONT_HEADER + usize::from(character) * LM363_EDITOR_FONT_RECORD_BYTES;
+        let pixels = record + 2;
+        for y in 0..LM363_EDITOR_FONT_HEIGHT.min(LM363_EDITOR_FONT_TEXT_HEIGHT) {
+            for x in 0..LM363_EDITOR_FONT_WIDTH {
+                let source = pixels + (y * LM363_EDITOR_FONT_WIDTH + x) * 4;
+                let blue = LM363_EDITOR_FONT[source];
+                let green = LM363_EDITOR_FONT[source + 1];
+                let red = LM363_EDITOR_FONT[source + 2];
+                if (red, green, blue) == (0, 0, 255) {
+                    continue;
+                }
+                let output_x = cursor
+                    .saturating_add(i32::try_from(x).unwrap_or(i32::MAX))
+                    .saturating_sub(LM363_EDITOR_FONT_ORIGIN_X);
+                let Ok(output_x) = usize::try_from(output_x) else {
+                    continue;
+                };
+                if output_x < width {
+                    source_pixels[y * width + output_x] = Rgba {
+                        red,
+                        green,
+                        blue,
+                        alpha: 255,
+                    };
+                }
+            }
+        }
+        cursor = cursor.saturating_add(i32::from(lm363_editor_font_advance(character)));
+    }
+
+    for y in 0..LM363_EDITOR_FONT_TEXT_HEIGHT {
+        for x in 0..width {
+            let output_x = target_x.saturating_add(i32::try_from(x).unwrap_or(i32::MAX));
+            let output_y = target_y.saturating_add(i32::try_from(y).unwrap_or(i32::MAX));
+            let (Ok(output_x), Ok(output_y)) =
+                (usize::try_from(output_x), usize::try_from(output_y))
+            else {
+                continue;
+            };
+            if output_x >= canvas.width() || output_y >= canvas.height() {
+                continue;
+            }
+            let destination = canvas.get(output_x, output_y).unwrap_or_default();
+            let source = source_pixels[y * width + x];
+            canvas.set(
+                output_x,
+                output_y,
+                Rgba {
+                    red: ((u16::from(destination.red & 0xfe) + u16::from(source.red & 0xfe)) >> 1)
+                        as u8,
+                    green: ((u16::from(destination.green & 0xfe) + u16::from(source.green & 0xfe))
+                        >> 1) as u8,
+                    blue: ((u16::from(destination.blue & 0xfe) + u16::from(source.blue & 0xfe))
+                        >> 1) as u8,
+                    alpha: 255,
+                },
+            );
+        }
+    }
+}
+
+fn lm363_editor_font_advance(character: u8) -> i16 {
+    let offset = LM363_EDITOR_FONT_HEADER + usize::from(character) * LM363_EDITOR_FONT_RECORD_BYTES;
+    i16::from_le_bytes([LM363_EDITOR_FONT[offset], LM363_EDITOR_FONT[offset + 1]])
 }
 
 fn draw_map16_clipped(
@@ -522,6 +752,7 @@ fn draw_sprite_subtile_clipped(
     tiles: &[IndexedTile],
     palette: &Palette,
     target: (i32, i32),
+    half_color: bool,
 ) {
     let (target_x, target_y) = target;
     let Some(tile) = tiles.get(usize::from(word & 0x01ff)) else {
@@ -558,16 +789,27 @@ fn draw_sprite_subtile_clipped(
                 continue;
             };
             let rgb = color.to_rgb8();
-            canvas.set(
-                output_x,
-                output_y,
+            let source = Rgba {
+                red: rgb.red,
+                green: rgb.green,
+                blue: rgb.blue,
+                alpha: 255,
+            };
+            let output = if half_color {
+                let destination = canvas.get(output_x, output_y).unwrap_or_default();
                 Rgba {
-                    red: rgb.red,
-                    green: rgb.green,
-                    blue: rgb.blue,
+                    red: ((u16::from(destination.red & 0xfe) + u16::from(source.red & 0xfe)) >> 1)
+                        as u8,
+                    green: ((u16::from(destination.green & 0xfe) + u16::from(source.green & 0xfe))
+                        >> 1) as u8,
+                    blue: ((u16::from(destination.blue & 0xfe) + u16::from(source.blue & 0xfe))
+                        >> 1) as u8,
                     alpha: 255,
-                },
-            );
+                }
+            } else {
+                source
+            };
+            canvas.set(output_x, output_y, output);
         }
     }
 }
@@ -598,6 +840,134 @@ mod tests {
 
     fn solid(index: u8) -> IndexedTile {
         IndexedTile::new([index; IndexedTile::PIXEL_COUNT])
+    }
+
+    #[test]
+    fn editor_text_definitions_use_the_authenticated_sidecar_cache() {
+        let untouched = Rgba {
+            red: 255,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        };
+        let mut canvas = Canvas::from_pixels(16, 16, vec![untouched; 256]).unwrap();
+        let unused_tiles = [solid(0)];
+        let unused_palette = palette();
+
+        // Native text emits its background definition first and the ASCII definition second.
+        draw_native_sprite_preview_definition_pages(
+            &mut canvas,
+            [0x3c7c, 0x0019, 0x0019, 0x0019],
+            &unused_tiles,
+            &unused_tiles,
+            &unused_palette,
+            0,
+            0,
+        );
+        draw_native_sprite_preview_definition_pages(
+            &mut canvas,
+            [0x3c44, 0x0019, 0x0019, 0x0019],
+            &unused_tiles,
+            &unused_tiles,
+            &unused_palette,
+            0,
+            0,
+        );
+
+        let pixels = canvas.pixels();
+        assert!(pixels.contains(&Rgba {
+            red: 208,
+            green: 248,
+            blue: 248,
+            alpha: 255,
+        }));
+        assert!(pixels.contains(&Rgba {
+            red: 0,
+            green: 0,
+            blue: 128,
+            alpha: 255,
+        }));
+        assert!(pixels.iter().filter(|&&pixel| pixel != untouched).count() > 10);
+    }
+
+    #[test]
+    fn sprite_half_color_averages_each_packed_channel_with_the_existing_scene() {
+        let mut colors = vec![Bgr555(0); 256];
+        colors[8 * 16 + 1] = Bgr555(0x001f);
+        let palette = Palette { colors };
+        let tiles = [solid(1)];
+        let backdrop = Rgba {
+            red: 20,
+            green: 40,
+            blue: 60,
+            alpha: 255,
+        };
+        let mut canvas = Canvas::from_pixels(16, 16, vec![backdrop; 256]).unwrap();
+
+        draw_native_sprite_preview_definition_pages_with_half_color(
+            &mut canvas,
+            [0; 4],
+            &tiles,
+            &tiles,
+            &palette,
+            0,
+            0,
+            true,
+        );
+
+        assert_eq!(
+            canvas.get(0, 0),
+            Some(Rgba {
+                red: 137,
+                green: 20,
+                blue: 30,
+                alpha: 255,
+            })
+        );
+    }
+
+    #[test]
+    fn editor_node_text_uses_eight_pixel_cells_and_rows() {
+        let untouched = Rgba {
+            red: 255,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        };
+        let mut canvas = Canvas::from_pixels(32, 24, vec![untouched; 32 * 24]).unwrap();
+        draw_lunar_magic_editor_node_text_lines(&mut canvas, &["AB", "C "], 0, 0);
+
+        assert_ne!(canvas.get(0, 0), Some(untouched));
+        assert_ne!(canvas.get(8, 0), Some(untouched));
+        assert_ne!(canvas.get(0, 8), Some(untouched));
+        assert_ne!(canvas.get(8, 8), Some(untouched));
+        assert_eq!(canvas.get(16, 0), Some(untouched));
+        assert_eq!(canvas.get(0, 16), Some(untouched));
+    }
+
+    #[test]
+    fn blended_editor_label_has_a_stable_native_pixel_hash() {
+        let backdrop = Rgba {
+            red: 20,
+            green: 40,
+            blue: 60,
+            alpha: 255,
+        };
+        let mut canvas = Canvas::from_pixels(160, 16, vec![backdrop; 160 * 16]).unwrap();
+
+        draw_lunar_magic_editor_label(&mut canvas, ">Entrance to level C5", 0, 0);
+
+        let hash = canvas
+            .pixels()
+            .iter()
+            .fold(0xcbf2_9ce4_8422_2325_u64, |hash, pixel| {
+                [pixel.red, pixel.green, pixel.blue, pixel.alpha]
+                    .into_iter()
+                    .fold(hash, |hash, byte| {
+                        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+                    })
+            });
+        assert_eq!(hash, 0xd206_2d38_c1e5_60a7);
     }
 
     #[test]
