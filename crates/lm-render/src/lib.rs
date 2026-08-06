@@ -71,8 +71,10 @@ pub use native_level_raster::{
     render_native_level_framebuffer_with_layer_palette_routing,
 };
 pub use native_overworld_sprite::{
+    NativeOverworldAppearanceConversionError, NativeOverworldAppearancePair,
     NativeOverworldSpritePlacement, ResolvedNativeOverworldSpriteElement,
-    draw_resolved_native_overworld_sprite_elements, resolve_native_overworld_sprite_elements,
+    draw_resolved_native_overworld_sprite_elements, export_native_overworld_appearances,
+    import_native_overworld_appearances, resolve_native_overworld_sprite_elements,
 };
 pub use observe_editor_overlays::observe_editor_overlays;
 pub use observe_layer3_plane::observe_materialized_layer3_plane;

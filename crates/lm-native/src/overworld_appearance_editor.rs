@@ -3,6 +3,7 @@ use crate::{
     document_persistence::DocumentPersistence,
     native_clipboard,
     overworld_appearance_editor_forms::{DefinitionForm, PartForm},
+    persistence_worker::PersistenceWorker,
 };
 use eframe::egui;
 use lm_app::{OverworldAppearanceDocumentController, OverworldAppearanceDocumentEdit};
@@ -16,6 +17,12 @@ mod preview;
 enum PendingClose {
     Document,
     Application,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingAppearanceLoad {
+    PortableOpen,
+    NativeImport,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,7 +55,9 @@ pub(crate) struct OverworldAppearanceEditor {
     error: Option<String>,
     pending_close: Option<PendingClose>,
     persistence: DocumentPersistence,
+    native_persistence: PersistenceWorker,
     loader: DocumentLoader,
+    pending_load: Option<PendingAppearanceLoad>,
 }
 
 impl OverworldAppearanceEditor {
@@ -57,7 +66,7 @@ impl OverworldAppearanceEditor {
     }
 
     pub(crate) fn request_close(&mut self, application: bool) -> bool {
-        if self.loader.is_running() {
+        if self.loader.is_running() || self.native_persistence.is_running() {
             self.error = Some("wait for appearance loading to finish before closing".into());
             return false;
         }
@@ -82,14 +91,33 @@ impl OverworldAppearanceEditor {
 
     pub(crate) fn show(&mut self, context: &egui::Context) -> bool {
         if let Some(result) = self.loader.show(context) {
-            match result.and_then(document_io::decode) {
-                Ok(controller) => {
-                    self.controller = Some(controller);
-                    self.clipboard_paste_target = None;
-                    self.invalidate();
+            let pending = self.pending_load.take();
+            match pending {
+                Some(PendingAppearanceLoad::PortableOpen) => {
+                    match result.and_then(document_io::decode) {
+                        Ok(controller) => {
+                            self.controller = Some(controller);
+                            self.clipboard_paste_target = None;
+                            self.invalidate();
+                        }
+                        Err(error) => self.error = Some(error),
+                    }
                 }
-                Err(error) => self.error = Some(error),
+                Some(PendingAppearanceLoad::NativeImport) => {
+                    match result.and_then(document_io::decode_native_pair) {
+                        Ok(value) => self.replace_with_import(value),
+                        Err(error) => self.error = Some(error),
+                    }
+                }
+                None => {
+                    self.error = Some("appearance loader completed without an operation".into())
+                }
             }
+        }
+        if let Some(completion) = self.native_persistence.show(context)
+            && let Err(error) = completion.result
+        {
+            self.error = Some(error);
         }
         if let Some(controller) = self.controller.as_mut()
             && let Some(Err(error)) = self.persistence.show(context, controller)
@@ -101,7 +129,12 @@ impl OverworldAppearanceEditor {
             egui::Window::new("Portable Overworld Appearance Editor")
                 .default_size([720.0, 600.0])
                 .vscroll(true)
-                .show(context, |ui| self.contents(ui));
+                .show(context, |ui| {
+                    ui.add_enabled_ui(
+                        !self.loader.is_running() && !self.native_persistence.is_running(),
+                        |ui| self.contents(ui),
+                    );
+                });
         }
         let approved = self.show_close_confirmation(context);
         self.show_error(context);
@@ -174,6 +207,8 @@ impl OverworldAppearanceEditor {
         );
         let mut history = None;
         let mut save_requested = false;
+        let mut native_import_requested = false;
+        let mut native_export_requested = false;
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(can_undo, egui::Button::new("Undo"))
@@ -190,6 +225,8 @@ impl OverworldAppearanceEditor {
             save_requested = ui
                 .add_enabled(!self.persistence.is_running(), egui::Button::new("Save"))
                 .clicked();
+            native_import_requested = ui.button("Import Native Pair").clicked();
+            native_export_requested = ui.button("Export Native Pair").clicked();
             ui.label(if modified { "Modified" } else { "Saved" });
         });
         let mut changed = false;
@@ -213,6 +250,12 @@ impl OverworldAppearanceEditor {
         }
         if changed {
             self.invalidate();
+        }
+        if native_import_requested {
+            self.import_native_pair();
+        }
+        if native_export_requested {
+            self.export_native_pair();
         }
     }
 
@@ -401,6 +444,7 @@ impl OverworldAppearanceEditor {
         self.controller = None;
         self.clipboard_paste_target = None;
         self.pending_close = None;
+        self.pending_load = None;
         self.invalidate();
     }
 }

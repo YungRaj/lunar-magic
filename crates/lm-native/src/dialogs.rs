@@ -425,6 +425,21 @@ pub(crate) fn choose_overworld_appearance_document() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_native_overworld_sprite_sidecar() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Native Overworld Sprite Display Sidecars")
+        .add_filter("Lunar Magic overworld sprite display", &["sscov"])
+        .pick_file()
+}
+
+pub(crate) fn choose_native_overworld_sprite_sidecar_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Native Overworld Sprite Display Sidecars")
+        .add_filter("Lunar Magic overworld sprite display", &["sscov"])
+        .set_file_name("sprites.sscov")
+        .save_file()
+}
+
 pub(crate) fn choose_layer3_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Portable Lunar Magic Layer 3", &["lmlayer3"])

@@ -2,8 +2,282 @@
 
 use crate::{Canvas, native_level_raster};
 use lm_graphics::{IndexedTile, Palette};
-use lm_level::{Map16Tile, S16OvSidecar, Subtile};
-use lm_overworld::{NativeOverworldSpriteDisplay, NativeOverworldSpriteSidecar};
+use lm_level::{Map16Tile, NativeMap16SidecarError, S16OvSidecar, Subtile};
+use lm_overworld::{
+    NativeOverworldSpriteAppearance, NativeOverworldSpriteDisplay, NativeOverworldSpriteMap16Part,
+    NativeOverworldSpriteSidecar, NativeOverworldSpriteSidecarError, SpriteAppearanceDefinition,
+    SpriteAppearanceFile, SpriteAppearanceFileError, SpriteAppearancePart,
+};
+use std::{collections::BTreeMap, fmt};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeOverworldAppearancePair {
+    pub definitions: NativeOverworldSpriteSidecar,
+    pub sprite_map16: S16OvSidecar,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NativeOverworldAppearanceConversionError {
+    Portable(SpriteAppearanceFileError),
+    Sidecar(NativeOverworldSpriteSidecarError),
+    Map16(NativeMap16SidecarError),
+    Shadow(u16),
+    Label(u16),
+    Translucent {
+        sprite_id: u16,
+        part: usize,
+    },
+    MissingDefinition {
+        sprite_id: u16,
+        native_tile: u16,
+    },
+    Priority {
+        sprite_id: u16,
+        part: usize,
+    },
+    CoordinateOverflow {
+        sprite_id: u16,
+        part: usize,
+    },
+    IncompleteQuadrantGroup {
+        sprite_id: u16,
+        parts: usize,
+    },
+    InvalidQuadrantGeometry {
+        sprite_id: u16,
+        group: usize,
+    },
+    TileOutOfRange {
+        sprite_id: u16,
+        part: usize,
+        tile: u16,
+    },
+    TooManyMap16Definitions(usize),
+}
+
+impl fmt::Display for NativeOverworldAppearanceConversionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "cannot convert overworld sprite appearances: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for NativeOverworldAppearanceConversionError {}
+
+/// Imports the exactly representable visual subset of Lunar Magic's native sidecars.
+///
+/// Portable appearances have no shadow, text-label, translucency, or priority fields, so those
+/// native constructs are rejected explicitly instead of being silently discarded.
+pub fn import_native_overworld_appearances(
+    definitions: &NativeOverworldSpriteSidecar,
+    builtin_sprite_map16: &[Map16Tile],
+    custom_sprite_map16: &S16OvSidecar,
+) -> Result<SpriteAppearanceFile, NativeOverworldAppearanceConversionError> {
+    let mut portable = Vec::with_capacity(definitions.appearances.len());
+    for (&sprite_id, appearance) in &definitions.appearances {
+        if appearance.shadow {
+            return Err(NativeOverworldAppearanceConversionError::Shadow(sprite_id));
+        }
+        let NativeOverworldSpriteDisplay::Tiles(parts) = &appearance.display else {
+            return Err(NativeOverworldAppearanceConversionError::Label(sprite_id));
+        };
+        let mut output_parts = Vec::with_capacity(parts.len().saturating_mul(4));
+        for (part_index, part) in parts.iter().enumerate() {
+            if part.translucent {
+                return Err(NativeOverworldAppearanceConversionError::Translucent {
+                    sprite_id,
+                    part: part_index,
+                });
+            }
+            let definition =
+                resolve_map16_definition(part.tile, builtin_sprite_map16, custom_sprite_map16)
+                    .ok_or(
+                        NativeOverworldAppearanceConversionError::MissingDefinition {
+                            sprite_id,
+                            native_tile: part.tile,
+                        },
+                    )?;
+            for (subtile, dx, dy) in [
+                (definition.top_left, 0_i16, 0_i16),
+                (definition.top_right, 8, 0),
+                (definition.bottom_left, 0, 8),
+                (definition.bottom_right, 8, 8),
+            ] {
+                if subtile.priority() {
+                    return Err(NativeOverworldAppearanceConversionError::Priority {
+                        sprite_id,
+                        part: part_index,
+                    });
+                }
+                output_parts.push(SpriteAppearancePart {
+                    tile_index: subtile.tile_number(),
+                    palette_index: subtile.palette(),
+                    x_offset: part.x.checked_add(dx).ok_or(
+                        NativeOverworldAppearanceConversionError::CoordinateOverflow {
+                            sprite_id,
+                            part: part_index,
+                        },
+                    )?,
+                    y_offset: part.y.checked_add(dy).ok_or(
+                        NativeOverworldAppearanceConversionError::CoordinateOverflow {
+                            sprite_id,
+                            part: part_index,
+                        },
+                    )?,
+                    x_flip: subtile.x_flip(),
+                    y_flip: subtile.y_flip(),
+                });
+            }
+        }
+        portable.push(SpriteAppearanceDefinition {
+            sprite_id,
+            parts: output_parts,
+        });
+    }
+    let file = SpriteAppearanceFile {
+        definitions: portable,
+    };
+    file.encode()
+        .map_err(NativeOverworldAppearanceConversionError::Portable)?;
+    Ok(file)
+}
+
+/// Exports portable appearances whose ordered parts form exact 2x2 Map16 quadrant groups.
+///
+/// One custom `.s16ov` definition is allocated per four portable parts. Requiring complete groups
+/// avoids inventing a supposedly transparent filler tile and guarantees reciprocal import.
+pub fn export_native_overworld_appearances(
+    portable: &SpriteAppearanceFile,
+) -> Result<NativeOverworldAppearancePair, NativeOverworldAppearanceConversionError> {
+    portable
+        .encode()
+        .map_err(NativeOverworldAppearanceConversionError::Portable)?;
+    let definition_count = portable
+        .definitions
+        .iter()
+        .try_fold(0_usize, |count, definition| {
+            if definition.parts.len() % 4 != 0 {
+                return Err(
+                    NativeOverworldAppearanceConversionError::IncompleteQuadrantGroup {
+                        sprite_id: definition.sprite_id,
+                        parts: definition.parts.len(),
+                    },
+                );
+            }
+            count.checked_add(definition.parts.len() / 4).ok_or(
+                NativeOverworldAppearanceConversionError::TooManyMap16Definitions(usize::MAX),
+            )
+        })?;
+    if definition_count > S16OvSidecar::TILE_COUNT {
+        return Err(
+            NativeOverworldAppearanceConversionError::TooManyMap16Definitions(definition_count),
+        );
+    }
+    let mut s16ov =
+        S16OvSidecar::decode(&[]).map_err(NativeOverworldAppearanceConversionError::Map16)?;
+    let mut appearances = BTreeMap::new();
+    let mut definition_index = 0_usize;
+    for definition in &portable.definitions {
+        let mut native_parts = Vec::with_capacity(definition.parts.len() / 4);
+        for (group, parts) in definition.parts.chunks_exact(4).enumerate() {
+            let x = parts[0].x_offset;
+            let y = parts[0].y_offset;
+            let expected = [
+                (Some(x), Some(y)),
+                (x.checked_add(8), Some(y)),
+                (Some(x), y.checked_add(8)),
+                (x.checked_add(8), y.checked_add(8)),
+            ];
+            for (part, (expected_x, expected_y)) in parts.iter().zip(expected) {
+                if Some(part.x_offset) != expected_x || Some(part.y_offset) != expected_y {
+                    return Err(
+                        NativeOverworldAppearanceConversionError::InvalidQuadrantGeometry {
+                            sprite_id: definition.sprite_id,
+                            group,
+                        },
+                    );
+                }
+            }
+            let mut words = [0_u16; 4];
+            for (part_index, part) in parts.iter().enumerate() {
+                if part.tile_index > 0x03ff {
+                    return Err(NativeOverworldAppearanceConversionError::TileOutOfRange {
+                        sprite_id: definition.sprite_id,
+                        part: group * 4 + part_index,
+                        tile: part.tile_index,
+                    });
+                }
+                words[part_index] = part.tile_index
+                    | (u16::from(part.palette_index) << 10)
+                    | (u16::from(part.x_flip) << 14)
+                    | (u16::from(part.y_flip) << 15);
+            }
+            let map16 = Map16Tile {
+                top_left: Subtile(words[0]),
+                top_right: Subtile(words[1]),
+                bottom_left: Subtile(words[2]),
+                bottom_right: Subtile(words[3]),
+                acts_like: 0,
+            };
+            let encoded = map16.encode_graphics();
+            for (entry, bytes) in encoded.chunks_exact(4).enumerate() {
+                s16ov
+                    .set_entry(
+                        definition_index * 2 + entry,
+                        u32::from_le_bytes(bytes.try_into().unwrap()),
+                    )
+                    .map_err(NativeOverworldAppearanceConversionError::Map16)?;
+            }
+            native_parts.push(NativeOverworldSpriteMap16Part {
+                x,
+                y,
+                tile: u16::try_from(S16OvSidecar::FIRST_NATIVE_TILE + definition_index).map_err(
+                    |_| {
+                        NativeOverworldAppearanceConversionError::TooManyMap16Definitions(
+                            definition_count,
+                        )
+                    },
+                )?,
+                translucent: false,
+            });
+            definition_index += 1;
+        }
+        appearances.insert(
+            definition.sprite_id,
+            NativeOverworldSpriteAppearance {
+                shadow: false,
+                display: NativeOverworldSpriteDisplay::Tiles(native_parts),
+            },
+        );
+    }
+    let definitions = NativeOverworldSpriteSidecar {
+        tooltips: BTreeMap::new(),
+        appearances,
+        graphics_ranges: Vec::new(),
+        palette_ranges: Vec::new(),
+    };
+    definitions
+        .encode()
+        .map_err(NativeOverworldAppearanceConversionError::Sidecar)?;
+    Ok(NativeOverworldAppearancePair {
+        definitions,
+        sprite_map16: s16ov,
+    })
+}
+
+fn resolve_map16_definition(
+    native_tile: u16,
+    builtin: &[Map16Tile],
+    custom: &S16OvSidecar,
+) -> Option<Map16Tile> {
+    if usize::from(native_tile) < S16OvSidecar::FIRST_NATIVE_TILE {
+        builtin.get(usize::from(native_tile)).copied()
+    } else {
+        custom.native_tile(usize::from(native_tile))
+    }
+}
 
 /// One sprite placement in native editor pixel coordinates.
 ///
@@ -416,5 +690,107 @@ mod tests {
                 .flat_map(|x| (0..16).map(move |y| (x, y)))
                 .any(|(x, y)| canvas.get(x, y) != Some(backdrop))
         );
+    }
+
+    #[test]
+    fn portable_native_pair_round_trip_is_exact_for_complete_quadrants() {
+        let portable = SpriteAppearanceFile {
+            definitions: vec![SpriteAppearanceDefinition {
+                sprite_id: 0x105,
+                parts: vec![
+                    SpriteAppearancePart {
+                        tile_index: 1,
+                        palette_index: 2,
+                        x_offset: -4,
+                        y_offset: 6,
+                        x_flip: false,
+                        y_flip: false,
+                    },
+                    SpriteAppearancePart {
+                        tile_index: 2,
+                        palette_index: 3,
+                        x_offset: 4,
+                        y_offset: 6,
+                        x_flip: true,
+                        y_flip: false,
+                    },
+                    SpriteAppearancePart {
+                        tile_index: 3,
+                        palette_index: 4,
+                        x_offset: -4,
+                        y_offset: 14,
+                        x_flip: false,
+                        y_flip: true,
+                    },
+                    SpriteAppearancePart {
+                        tile_index: 4,
+                        palette_index: 5,
+                        x_offset: 4,
+                        y_offset: 14,
+                        x_flip: true,
+                        y_flip: true,
+                    },
+                ],
+            }],
+        };
+        let native = export_native_overworld_appearances(&portable).unwrap();
+        assert_eq!(native.sprite_map16.loaded_len(), Map16Tile::GRAPHICS_LEN);
+        let encoded = native.definitions.encode().unwrap();
+        assert!(
+            std::str::from_utf8(&encoded)
+                .unwrap()
+                .contains("05\t12\t-4,6,400")
+        );
+        assert_eq!(
+            import_native_overworld_appearances(
+                &NativeOverworldSpriteSidecar::decode(&encoded).unwrap(),
+                &[],
+                &S16OvSidecar::decode(&native.sprite_map16.encode()).unwrap(),
+            )
+            .unwrap(),
+            portable
+        );
+    }
+
+    #[test]
+    fn conversion_rejects_every_non_representable_semantic_instead_of_narrowing() {
+        let incomplete = SpriteAppearanceFile {
+            definitions: vec![SpriteAppearanceDefinition {
+                sprite_id: 1,
+                parts: vec![SpriteAppearancePart {
+                    tile_index: 0,
+                    palette_index: 0,
+                    x_offset: 0,
+                    y_offset: 0,
+                    x_flip: false,
+                    y_flip: false,
+                }],
+            }],
+        };
+        assert!(matches!(
+            export_native_overworld_appearances(&incomplete),
+            Err(NativeOverworldAppearanceConversionError::IncompleteQuadrantGroup { .. })
+        ));
+
+        let mut native = definitions();
+        native.appearances.remove(&3);
+        assert!(matches!(
+            import_native_overworld_appearances(
+                &native,
+                &vec![Map16Tile::default(); 0x400],
+                &S16OvSidecar::decode(&[]).unwrap(),
+            ),
+            Err(NativeOverworldAppearanceConversionError::Shadow(0x102))
+        ));
+        native = definitions();
+        native.appearances.remove(&0x102);
+        assert!(matches!(
+            import_native_overworld_appearances(
+                &native,
+                &vec![Map16Tile::default(); 0x400],
+                &S16OvSidecar::decode(&[]).unwrap(),
+            ),
+            Err(NativeOverworldAppearanceConversionError::Label(3))
+        ));
     }
 }

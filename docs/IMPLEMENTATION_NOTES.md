@@ -4242,3 +4242,11 @@ indexes `$000..$3FF` through the caller's built-ins and `$400..$BFF` through `.s
 four 8×8 quadrants, and preserves labels, translucency, and shadows. The concrete raster route uses
 packed-channel averaging for translucent parts, the authenticated editor font for labels, and the
 authenticated dynamic definition/glyph/palette cache for internal `$C00..$CFF` definitions.
+
+The portable overworld appearance editor now exposes bounded native-pair import and atomic
+create-new export for `.sscov` plus its same-basename `.s16ov`. Export allocates one custom Sprite
+Map16 definition per exact ordered 2×2 quadrant group; reciprocal import expands those definitions
+back to the original four portable 8×8 parts. Import replaces the open document in one revision and
+therefore supports one-step undo. Conversion rejects incomplete geometry, missing built-in pages,
+priority, translucency, shadows, text labels, excessive definitions, and tile/coordinate overflow
+instead of narrowing them. ROM-backed built-in `$000..$3FF` import remains a separate integration.
