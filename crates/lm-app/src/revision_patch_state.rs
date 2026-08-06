@@ -4,6 +4,61 @@ use lm_rom::{Mapper, Region, SupportedGame};
 use std::ops::Range;
 
 impl AppState {
+    pub(crate) fn install_lz2_speed_runtime(
+        &mut self,
+        expected_revision: u64,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if expected_revision != self.project_revision {
+            return Err(AppError::StaleProjectRevision {
+                expected: expected_revision,
+                actual: self.project_revision,
+            });
+        }
+        self.require_no_pending_save()?;
+        self.ensure_project_revision_capacity()?;
+        let project = self.project.as_mut().ok_or(AppError::NoProject)?;
+        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+        if identity.game != SupportedGame::SuperMarioWorld
+            || identity.region != Region::NorthAmerica
+            || identity.revision != 0
+            || identity.mapper != Mapper::LoRom
+        {
+            return Err(AppError::GraphicsCompressionRuntimeIdentityMismatch);
+        }
+        if !lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&project.rom) {
+            return Err(AppError::GraphicsCompressionRuntimeUnavailable);
+        }
+        let logical_len = project.rom.logical_len();
+        let mut allocation = lm_rats::AllocationPolicy::lorom(0x80_000..logical_len);
+        allocation.protected.extend([
+            lm_rats::ProtectedRange(
+                lm_profile::SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET
+                    ..lm_profile::SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET + 5,
+            ),
+            lm_rats::ProtectedRange(
+                lm_profile::SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET
+                    ..lm_profile::SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET + 1,
+            ),
+            lm_rats::ProtectedRange(
+                identity.internal_header_offset + 0x1c..identity.internal_header_offset + 0x20,
+            ),
+        ]);
+        let plan = lm_profile::smw_us_v1_lz2_speed_installation_plan(
+            &project.rom,
+            allocation,
+            identity.internal_header_offset + 0x1c,
+        )?;
+        project.install_relocatable_patch(&plan)?;
+        self.advance_project_revision()?;
+        let description = "Install SMW US LZ2 Speed graphics runtime".to_owned();
+        self.status.clone_from(&description);
+        Ok(vec![FrontendEffect::ProjectChanged {
+            description,
+            mode: self.mode,
+            revision: self.project_revision,
+        }])
+    }
+
     pub(crate) fn install(
         &mut self,
         expected_revision: u64,

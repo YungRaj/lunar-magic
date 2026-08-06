@@ -128,6 +128,9 @@ pub enum AppError {
     Sprite19FixAlreadyInstalled,
     SupportPatchBIdentityMismatch,
     SupportPatchBAlreadyInstalled,
+    GraphicsCompressionRuntimeIdentityMismatch,
+    GraphicsCompressionRuntimeUnavailable,
+    GraphicsCompressionRuntimeDetect(lm_profile::SmwUsV1GraphicsCompressionDetectError),
     NativeOverworldPathIdentityMismatch,
     NativeOverworldPathReopenMismatch,
     NativeOverworldPath(lm_project::OverworldPathLinkIoError),
@@ -219,6 +222,12 @@ impl From<RomError> for AppError {
 impl From<IdentityError> for AppError {
     fn from(value: IdentityError) -> Self {
         Self::Identity(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1GraphicsCompressionDetectError> for AppError {
+    fn from(value: lm_profile::SmwUsV1GraphicsCompressionDetectError) -> Self {
+        Self::GraphicsCompressionRuntimeDetect(value)
     }
 }
 
@@ -800,6 +809,7 @@ impl AppState {
             Command::InstallLayer2Runtime { rev } => self.install_layer2_runtime(rev)?,
             Command::InstallSprite19Fix { rev } => self.install_sprite19_fix(rev)?,
             Command::InstallSupportPatchB { rev } => self.install_support_patch_b(rev)?,
+            Command::InstallLz2SpeedRuntime { rev } => self.install_lz2_speed_runtime(rev)?,
             Command::InstallExpandedSharedPalettes { rev } => {
                 self.install_native_expanded_shared_palettes(rev)?
             }

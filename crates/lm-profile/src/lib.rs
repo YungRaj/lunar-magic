@@ -11,6 +11,7 @@ mod expanded_settings_install;
 mod expanded_settings_runtime;
 mod expanded_settings_runtime_21c;
 mod expanded_settings_runtime_bundle;
+mod graphics_compression_runtime;
 mod layer2_runtime_install;
 mod layer3_compatibility;
 mod layer3_dispatch_code;
@@ -149,6 +150,11 @@ pub use expanded_settings_runtime_bundle::{
     SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_DESTINATIONS, resolve_expanded_settings_runtime_allocation,
     smw_us_v1_expanded_settings_fixed_writes, smw_us_v1_expanded_settings_runtime_bundle,
     smw_us_v1_expanded_settings_runtime_writes,
+};
+pub use graphics_compression_runtime::{
+    SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET, SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET,
+    SmwUsV1GraphicsCompressionDetectError, SmwUsV1GraphicsCompressionMode,
+    detect_smw_us_v1_graphics_compression_mode, smw_us_v1_lz2_speed_installation_plan,
 };
 pub use layer2_runtime_install::{
     SmwUsV1Layer2Format102MigrationError, smw_us_v1_layer2_format_100_migration,

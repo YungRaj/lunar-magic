@@ -98,6 +98,11 @@ pub enum Command {
     InstallSupportPatchB {
         rev: u64,
     },
+    /// Installs Lunar Magic's authenticated fast LZ2 graphics decompressor without recompressing
+    /// the payload-compatible graphics streams.
+    InstallLz2SpeedRuntime {
+        rev: u64,
+    },
     InstallExpandedSharedPalettes {
         rev: u64,
     },

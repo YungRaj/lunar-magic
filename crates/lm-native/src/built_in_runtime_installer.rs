@@ -92,6 +92,11 @@ impl BuiltInRuntimeInstaller {
                     BuiltInRuntime::ExpandedSharedPalettes,
                     BuiltInRuntime::ExpandedSharedPalettes.label(),
                 );
+                ui.selectable_value(
+                    &mut workspace.runtime,
+                    BuiltInRuntime::Lz2SpeedGraphics,
+                    BuiltInRuntime::Lz2SpeedGraphics.label(),
+                );
             });
         ui.label(workspace.runtime.description());
         if workspace.selection_is_installed() {
@@ -295,6 +300,36 @@ mod tests {
                 .prepare(app.project_revision())
                 .is_err()
         );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    #[ignore = "requires retained Lunar Magic 3.63 LZ2-Orig installed-graphics ROM"]
+    fn lz2_speed_selection_installs_reopens_and_undoes_exactly() {
+        let original = fs::read(std::env::var_os("LM_LZ2_ORIGINAL_ROM").unwrap()).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Lz2SpeedGraphics;
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        assert!(matches!(
+            command,
+            Command::InstallLz2SpeedRuntime { rev: 0 }
+        ));
+        app.dispatch(command).unwrap();
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_graphics_compression_mode(&app.project().unwrap().rom)
+                .unwrap(),
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed
+        );
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }

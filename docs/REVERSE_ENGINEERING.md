@@ -240,6 +240,16 @@ Wine import/re-export over a real pristine-ROM record confirms screens `$00/$1F`
   decompilation of the mode-2 wrapper, encoder, decoder, and copy helpers confirms the third codec
   is Lunar Magic's LZ3 variant: LZ2-style headers, zero-fill command 3, one-byte relative or
   two-byte absolute dictionary operands, bit-reversed forward copy, and reverse commands 6 and 7.
+  For SMW US revision 0, Lunar Magic stores this mode in the low nibble at logical `$07FFEB`.
+  Modes 1 and 2 replace the fixed routine at `$0038E3` with a JSL to an exactly owned RATS runtime
+  followed by RTS. The standard-LoROM mode-1 body is `$1C0` bytes (CRC32 `$5D3CAC46`); mode 2 is
+  `$2AB` bytes (CRC32 `$DCB7727E`). Both end in `LM 01 01`. Mode 0 instead requires the original
+  five-byte routine. `RemoveGraphicsCompressionRuntime` (`$00480060`),
+  `InstallGraphicsCompressionMode1Runtime` (`$00480120`),
+  `InstallGraphicsCompressionMode2Runtime` (`$00480220`), and
+  `ConvertRomGraphicsCompressionMode` (`$00480320`) establish the removal/install/conversion
+  lifecycle. A fresh command-line `LC_LZ2_Speed` oracle proves modes 0 and 1 share payload encoding:
+  only the hook, runtime allocation, metadata nibble, and checksum compensation change.
 - `LevelObjectNode` (currently 29 recovered bytes): linked-list pointer plus the serialized command bytes and encoding-variant field. Unknown regions remain explicitly named as byte arrays. The type is applied at the Layer 1 list head (`0060b6b8`).
 - `ManualEditorCommandBuffer` (16 bytes): shared encoded-command workspace used by the manual object and sprite editors, applied at `008636c4`.
 - `LayerScrollMode` (8-bit enum): all 32 scroll-mode values, including automatic directional modes and unused slots.

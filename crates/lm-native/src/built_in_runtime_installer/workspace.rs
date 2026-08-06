@@ -11,6 +11,7 @@ pub(super) enum BuiltInRuntime {
     Layer2Runtime,
     Sprite19Fix,
     SupportPatchB,
+    Lz2SpeedGraphics,
     ExpandedSharedPalettes,
 }
 
@@ -24,6 +25,7 @@ impl BuiltInRuntime {
             Self::Layer2Runtime => "Layer 2 object-data runtime format $103",
             Self::Sprite19Fix => "Sprite 19 ASM fix",
             Self::SupportPatchB => "Level support patch B (custom time / scroll)",
+            Self::Lz2SpeedGraphics => "LZ2 Speed graphics decompressor",
             Self::ExpandedSharedPalettes => "Expanded shared/custom palettes",
         }
     }
@@ -53,6 +55,10 @@ impl BuiltInRuntime {
             Self::SupportPatchB => {
                 "Install the recovered fixed runtime used by custom level time and separate scroll settings."
             }
+            Self::Lz2SpeedGraphics => {
+                "Install Lunar Magic's fast LZ2 decompressor. LZ2 Orig and LZ2 Speed share the \
+                 same payload format, so graphics data is not recompressed."
+            }
             Self::ExpandedSharedPalettes => {
                 "Install the recovered shared-palette hooks, helpers, expanded table, and the \
                  512-entry per-level custom-palette pointer table."
@@ -69,6 +75,7 @@ pub(super) struct BuiltInRuntimeWorkspace {
     layer2_generation: lm_profile::SmwUsV1Layer2RuntimeGeneration,
     sprite19_fix_installed: bool,
     support_patch_b_installed: bool,
+    graphics_compression_mode: Option<lm_profile::SmwUsV1GraphicsCompressionMode>,
 }
 
 impl BuiltInRuntimeWorkspace {
@@ -106,6 +113,11 @@ impl BuiltInRuntimeWorkspace {
             lm_profile::detect_smw_us_v1_support_patch_b(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?
                 == lm_profile::SmwUsV1SupportPatchBState::Installed;
+        let graphics_compression_mode =
+            lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&project.rom)
+                .then(|| lm_profile::detect_smw_us_v1_graphics_compression_mode(&project.rom))
+                .transpose()
+                .map_err(|error| error.to_string())?;
         Ok(Self {
             revision: snapshot.revision,
             runtime: BuiltInRuntime::default(),
@@ -114,6 +126,7 @@ impl BuiltInRuntimeWorkspace {
             layer2_generation,
             sprite19_fix_installed,
             support_patch_b_installed,
+            graphics_compression_mode,
         })
     }
 
@@ -135,6 +148,10 @@ impl BuiltInRuntimeWorkspace {
             }
             BuiltInRuntime::Sprite19Fix => self.sprite19_fix_installed,
             BuiltInRuntime::SupportPatchB => self.support_patch_b_installed,
+            BuiltInRuntime::Lz2SpeedGraphics => {
+                self.graphics_compression_mode
+                    == Some(lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed)
+            }
             _ => false,
         }
     }
@@ -236,6 +253,17 @@ impl BuiltInRuntimeWorkspace {
             }
             BuiltInRuntime::Sprite19Fix => Command::InstallSprite19Fix { rev: self.revision },
             BuiltInRuntime::SupportPatchB => Command::InstallSupportPatchB { rev: self.revision },
+            BuiltInRuntime::Lz2SpeedGraphics => {
+                if self.graphics_compression_mode
+                    != Some(lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original)
+                {
+                    return Err(
+                        "LZ2 Speed installation requires an installed 4bpp LZ2 Orig graphics runtime"
+                            .into(),
+                    );
+                }
+                Command::InstallLz2SpeedRuntime { rev: self.revision }
+            }
             BuiltInRuntime::ExpandedSharedPalettes => {
                 Command::InstallExpandedSharedPalettes { rev: self.revision }
             }
