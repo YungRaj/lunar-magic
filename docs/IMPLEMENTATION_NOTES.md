@@ -4109,3 +4109,11 @@ remaining palette color claims its globally nearest unused source color before o
 mapping. A constrained four-color/three-slot test proves default allocation fills the two remaining
 entries while Maintain Detail retains only the reusable exact color, and a separate two-color test
 proves the distinct-source claim prevents both source colors from collapsing to one palette index.
+
+Palette-aware bitmap reduction now performs Lunar Magic's preserved-color substitution before
+source pixels are mapped. It greedily selects the globally nearest unmatched reduced/reusable pair,
+uses the exact HSL240 hue/saturation/lightness admission branches from `ProcessBitmapGraphicsImport`,
+retires a rejected source color without trying a second candidate, and consumes a reusable RGB555
+value only once. The live default at `DAT_005e5600` is 45; the native editor exposes the complete
+0–240 range, where 240 accepts every nearest pair. Focused tests cover close-hue acceptance,
+distant-hue rejection, the unlimited setting, neutral-color bypass, and the native free-entry gate.

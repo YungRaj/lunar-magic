@@ -51,6 +51,8 @@ pub struct BitmapPaletteColorOptions {
     pub prioritize_unique_colors: bool,
     /// Keeps the exact-fit allocation pass and skips the weighted partial-set extension pass.
     pub maintain_detail: bool,
+    /// Maximum circular HSL240 hue distance when substituting a preserved palette color.
+    pub reusable_color_hue_tolerance: u16,
     /// Lunar Magic's first high-color neighborhood reduction pass.
     pub popularity_reduction_method_1: bool,
     /// Lunar Magic's second high-color neighborhood reduction pass.
@@ -78,6 +80,7 @@ impl BitmapPaletteColorOptions {
             priority_level: 3,
             prioritize_unique_colors: true,
             maintain_detail: false,
+            reusable_color_hue_tolerance: 45,
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
         }
@@ -101,6 +104,11 @@ impl BitmapPaletteColorOptions {
         if !(1..=4).contains(&self.priority_level) {
             return Err(BitmapPaletteReductionError::PriorityLevel(
                 self.priority_level,
+            ));
+        }
+        if self.reusable_color_hue_tolerance > 240 {
+            return Err(BitmapPaletteReductionError::HueTolerance(
+                self.reusable_color_hue_tolerance,
             ));
         }
         Ok(())
@@ -196,7 +204,7 @@ fn reduce_bitmap_palette_internal(
             .entry(lunar_magic_bitmap_color(*pixel).0)
             .or_default() += 1;
     }
-    let colors = if histogram.len() <= options.maximum_colors {
+    let mut colors = if histogram.len() <= options.maximum_colors {
         histogram.keys().copied().map(Bgr555).collect()
     } else {
         match options.reduction {
@@ -211,6 +219,9 @@ fn reduce_bitmap_palette_internal(
             }
         }
     };
+    if let Some(original) = original {
+        substitute_reusable_palette_colors(&mut colors, original, options)?;
+    }
     let opaque_indices = if options.maintain_detail {
         maintain_detail_palette_indices(&opaque, &colors)?
     } else {
@@ -240,6 +251,86 @@ fn reduce_bitmap_palette_internal(
         return Err(BitmapPaletteReductionError::IndexPlaneMismatch);
     }
     Ok(ReducedBitmapPalette { colors, indices })
+}
+
+fn substitute_reusable_palette_colors(
+    colors: &mut [Bgr555],
+    original: &Palette,
+    options: &BitmapPaletteColorOptions,
+) -> Result<(), BitmapPaletteReductionError> {
+    if original.colors.len() < BITMAP_PALETTE_COLORS {
+        return Err(BitmapPaletteReductionError::PaletteColors(
+            original.colors.len(),
+        ));
+    }
+    if !options.entries.contains(&BitmapPaletteEntryState::Free) {
+        return Ok(());
+    }
+    let reusable = options
+        .entries
+        .iter()
+        .zip(&original.colors)
+        .filter_map(|(state, color)| {
+            (*state == BitmapPaletteEntryState::Reusable).then_some(color.0)
+        })
+        .collect::<Vec<_>>();
+    let mut selected_available = vec![true; colors.len()];
+    let mut reusable_color_used = BTreeMap::<u16, ()>::new();
+    loop {
+        let mut best = None::<(u32, usize, usize)>;
+        for (selected_index, selected) in colors.iter().enumerate() {
+            if !selected_available[selected_index] {
+                continue;
+            }
+            for (reusable_index, candidate) in reusable.iter().enumerate() {
+                if reusable_color_used.contains_key(candidate) {
+                    continue;
+                }
+                let proposal = (
+                    lunar_magic_color_distance(selected.0, *candidate),
+                    selected_index,
+                    reusable_index,
+                );
+                if best.is_none_or(|current| proposal < current) {
+                    best = Some(proposal);
+                }
+            }
+        }
+        let Some((_, selected_index, reusable_index)) = best else {
+            break;
+        };
+        selected_available[selected_index] = false;
+        let candidate = reusable[reusable_index];
+        if reusable_color_matches(
+            colors[selected_index].0,
+            candidate,
+            options.reusable_color_hue_tolerance,
+        ) {
+            colors[selected_index] = Bgr555(candidate);
+            reusable_color_used.insert(candidate, ());
+        }
+    }
+    Ok(())
+}
+
+fn reusable_color_matches(selected: u16, reusable: u16, hue_tolerance: u16) -> bool {
+    if hue_tolerance >= 240 {
+        return true;
+    }
+    let selected = lunar_magic_hsl240(selected);
+    let reusable = lunar_magic_hsl240(reusable);
+    if selected.saturation < 31 && reusable.saturation < 31 {
+        return true;
+    }
+    if circular_hue_distance(selected.hue, reusable.hue) > hue_tolerance {
+        return false;
+    }
+    if selected.lightness > 15 && reusable.lightness > 15 {
+        return selected.saturation > 30 && reusable.saturation > 30;
+    }
+    selected.lightness < 16
+        && reusable.lightness < 16
+        && selected.saturation.abs_diff(reusable.saturation) < 60
 }
 
 fn maintain_detail_palette_indices(
@@ -1156,6 +1247,7 @@ pub enum BitmapPaletteReductionError {
     EntryCount(usize),
     MaximumColors(usize),
     PriorityLevel(u8),
+    HueTolerance(u16),
     FractionalAlpha { index: usize, alpha: u8 },
     Quantizer(QuantizerError),
     EmptyOpaquePalette,
@@ -1201,6 +1293,7 @@ mod tests {
         assert_eq!(options.priority_level, 3);
         assert!(options.prioritize_unique_colors);
         assert!(!options.maintain_detail);
+        assert_eq!(options.reusable_color_hue_tolerance, 45);
         assert!(options.popularity_reduction_method_1);
         assert!(!options.popularity_reduction_method_2);
         for row in 0..8 {
@@ -1391,6 +1484,7 @@ mod tests {
             priority_level: 3,
             prioritize_unique_colors: true,
             maintain_detail: false,
+            reusable_color_hue_tolerance: 45,
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
         }
@@ -1430,6 +1524,55 @@ mod tests {
                 lightness: 124,
             }
         );
+    }
+
+    #[test]
+    fn reusable_palette_substitution_obeys_recovered_hue_policy() {
+        let mut options = reserved_options();
+        options.entries[1] = BitmapPaletteEntryState::Free;
+        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        let mut original = palette();
+        original.colors[16] = Bgr555(0x001e);
+
+        let mut close_red = [Bgr555(0x001f)];
+        substitute_reusable_palette_colors(&mut close_red, &original, &options).unwrap();
+        assert_eq!(close_red, [Bgr555(0x001e)]);
+
+        let mut blue = [Bgr555(0x7c00)];
+        substitute_reusable_palette_colors(&mut blue, &original, &options).unwrap();
+        assert_eq!(blue, [Bgr555(0x7c00)]);
+
+        options.reusable_color_hue_tolerance = 240;
+        substitute_reusable_palette_colors(&mut blue, &original, &options).unwrap();
+        assert_eq!(blue, [Bgr555(0x001e)]);
+    }
+
+    #[test]
+    fn reusable_palette_substitution_accepts_neutral_colors_outside_hue_limit() {
+        let mut options = reserved_options();
+        options.entries[1] = BitmapPaletteEntryState::Free;
+        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        options.reusable_color_hue_tolerance = 0;
+        let mut original = palette();
+        original.colors[16] = Bgr555(0x4210);
+        let mut colors = [Bgr555(0x39ce)];
+
+        substitute_reusable_palette_colors(&mut colors, &original, &options).unwrap();
+
+        assert_eq!(colors, [Bgr555(0x4210)]);
+    }
+
+    #[test]
+    fn reusable_palette_substitution_requires_a_free_destination_entry() {
+        let mut options = reserved_options();
+        options.entries[16] = BitmapPaletteEntryState::Reusable;
+        let mut original = palette();
+        original.colors[16] = Bgr555(0x001e);
+        let mut colors = [Bgr555(0x001f)];
+
+        substitute_reusable_palette_colors(&mut colors, &original, &options).unwrap();
+
+        assert_eq!(colors, [Bgr555(0x001f)]);
     }
 
     #[test]

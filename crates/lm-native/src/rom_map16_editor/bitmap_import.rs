@@ -581,6 +581,12 @@ fn bitmap_multi_row_color_options(
                 });
         });
         changed |= bitmap_popularity_reduction_options(ui, options);
+        changed |= ui
+            .add(
+                egui::Slider::new(&mut options.reusable_color_hue_tolerance, 0..=240)
+                    .text("Reusable-color hue tolerance"),
+            )
+            .changed();
         ui.label("Palette entries: F = free, U = reusable, X = reserved");
         egui::Grid::new("map16-bitmap-palette-entry-states")
             .spacing([3.0, 3.0])

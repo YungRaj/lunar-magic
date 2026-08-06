@@ -1242,6 +1242,17 @@ unless both colors are near black. The Rust allocator now reproduces the 0–240
 strict first-entry tie behavior, run restart, and entry swaps before mapping source pixels to row
 indexes; leaving colors in insertion order changes both palette words and encoded graphics.
 
+The earlier preserved-color substitution in `ProcessBitmapGraphicsImport` is now recovered as
+well. When at least one palette entry is free, Lunar Magic repeatedly chooses the globally nearest
+pair between an unmatched reduced color and an unused reusable palette color using its weighted
+RGB555 metric. It accepts the replacement when the circular HSL240 hue difference is within
+`DAT_005e5600`, subject to the recovered saturation/lightness guards; two low-saturation colors are
+accepted regardless of hue, and a value of 240 disables all guards. A live Lunar Magic 3.63 process
+reports the initialized value `$2D` (45). Rejected reduced colors are retired rather than tried
+against a second preserved color. Rust now reproduces that ordering, one-use-by-color rule, default,
+and exact 0–240 bound before global source-index mapping, and exposes the tolerance in the native
+bitmap-import dialog.
+
 The following controller and selection tooling through `004f5990` is now named. This includes the import-preview zoom menu and keyboard hook, the top-level bitmap import workflow, a textual remapping language that can transform graphics indexes, palette rows, Map16 indexes, and secondary-map values, and the custom registered `Lunar Magic 16x16 Tiles` clipboard serializer. Added the exact 0xA0-byte `LunarMagicTileClipboardHeader` with section offsets, selected count, rectangular dimensions, source Map16 index, flags, and explicitly represented reserved regions.
 
 Map16 import/export, history, and visible rendering through `004f9e40` are now named and annotated. Added exact 64-byte `Lm16Map16FileHeader` and `Lm16Map16SectionDirectory` structures for the structured `.map16` format. Added the exact 811,788-byte `Map16UndoSnapshot` and typed its live linked-list globals. Rendering names now distinguish decoded tile composition, Acts Like overlays, selected-tile highlighting, page frames and labels, page boundaries, and bounded versus drag-selection marching ants.
