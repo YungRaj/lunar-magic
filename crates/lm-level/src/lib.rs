@@ -83,7 +83,10 @@ pub use layer3_editing::{Layer3Edit, Layer3EditError};
 pub use layer3_tilemap_workspace::{
     LAYER3_TILEMAP_WORKSPACE_LEN, Layer3TilemapWorkspace, Layer3TilemapWorkspaceError,
 };
-pub use legacy_mwl::{LegacyMwlError, LegacyMwlManifest, LegacyMwlSecondaryExit, LegacyMwlSidecar};
+pub use legacy_mwl::{
+    LegacyMwlDecodeReport, LegacyMwlDiagnostic, LegacyMwlError, LegacyMwlManifest,
+    LegacyMwlSecondaryExit, LegacyMwlSidecar,
+};
 pub use level_layer_slots::{
     Layer3PrioritySelection, LevelLayerPainterSlot, LevelLayerSlotAssignments,
     LevelLayerSlotSource, lunar_magic_level_layer_slots,

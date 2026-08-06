@@ -613,6 +613,7 @@ pub(crate) struct RomLevelAssetsEditor {
     pending_palette_transfer: Option<crate::rom_palette_editor::transfer::PendingTransfer>,
     palette_rgb_expansion: Option<lm_graphics::RgbChannelExpansion>,
     pending_legacy_mwl_load: Option<mwl::PendingLegacyMwlLoad>,
+    legacy_mwl_status: Option<String>,
     mwl_batch_worker: mwl_batch::MwlBatchExportWorker,
     mwl_batch_status: Option<String>,
     level_image_status: Option<String>,
@@ -1330,6 +1331,9 @@ impl RomLevelAssetsEditor {
             ui.label(status);
         }
         self.show_mwl_actions(ui, stale, modified);
+        if let Some(status) = &self.legacy_mwl_status {
+            ui.label(status);
+        }
         if let Some(status) = &self.mwl_batch_status {
             ui.label(status);
         }
@@ -3032,6 +3036,38 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn legacy_manifest_compatibility_diagnostics_are_visible_before_sidecar_commit() {
+        let mut editor = RomLevelAssetsEditor {
+            pending_legacy_mwl_load: Some(mwl::PendingLegacyMwlLoad::Manifest { revision: 0 }),
+            ..RomLevelAssetsEditor::default()
+        };
+        let bytes = b"Lunar Magic Version 3.63\n\
+                      attribution\n\
+                      FFF 00 00 00 00 00\n\
+                      00 000001 level.mw0\n\
+                      00 000002 level.mw1\n\
+                      00 000003 level.mw2\n"
+            .to_vec();
+        let result = editor
+            .finish_legacy_mwl_load(
+                Ok(crate::document_loader::LoadedDocument {
+                    files: vec![(std::path::PathBuf::from("manifest.mwl"), bytes)],
+                }),
+                0,
+            )
+            .unwrap();
+        assert!(result.is_none());
+        assert!(
+            editor
+                .legacy_mwl_status
+                .as_deref()
+                .unwrap()
+                .contains("$FFF was clamped to $1FF")
+        );
+        assert!(editor.legacy_mwl_loader.is_running());
+    }
 
     #[test]
     fn layer2_reset_confirmation_rejects_closed_or_stale_workspaces() {

@@ -78,6 +78,7 @@ impl RomLevelAssetsEditor {
                 self.search_end.clear();
                 self.mwl_batch_status = None;
                 self.level_image_status = None;
+                self.legacy_mwl_status = None;
                 self.bypass_validation = None;
                 self.bypass_layer2_texture = None;
                 self.bypass_preview = Default::default();
@@ -138,6 +139,7 @@ impl RomLevelAssetsEditor {
         self.pending_close = None;
         self.mwl_batch_status = None;
         self.level_image_status = None;
+        self.legacy_mwl_status = None;
         self.bypass_validation = None;
         self.bypass_layer2_texture = None;
         self.bypass_preview = Default::default();

@@ -516,8 +516,18 @@ scans succeed. Thus malformed version text defaults to the six-field 1.32 layout
 future versions (for example 9.99) are accepted through the current layout rather than rejected.
 The `$0132` boundary controls the five-versus-six level-header fields and eight-versus-twelve-bit
 secondary-exit indexes; `$0341` controls the recovered Layer 2 flag normalization. Rust mirrors
-these permissive compatibility branches while retaining bounded lines, safe sidecar names, exact
-field counts, and collision/index validation.
+these permissive compatibility branches while retaining bounded lines, safe sidecar names, and
+exact required manifest/sidecar field validation.
+
+The same function's legacy text loop is intentionally not failure-atomic. Its `%03X` source-level
+field is clamped to the last available editor slot. Each secondary-exit row is parsed independently:
+a malformed row raises the original error prompt but import continues, and a later valid row for an
+already-written index replaces the earlier table value. Rust's `decode_with_diagnostics` models
+that final state without unsafe `fscanf` continuation: it emits structured clamp/ignored/replaced
+diagnostics, retains all bounded structural failures as hard errors, and the native two-stage
+import displays the compatibility summary before it prepares a ROM transaction. Programmatically
+constructed manifests remain strictly validated so callers cannot accidentally publish duplicate
+keys; only file decoding applies the original recovery policy.
 
 Two format structures were added: `MwlSectionDirectoryEntry` (8 bytes: file offset and byte length) and `MwlSecondaryExitEntry` (8 bytes: 16-bit exit index, five semantic field bytes, and one reserved byte).
 

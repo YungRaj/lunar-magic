@@ -164,6 +164,7 @@ impl RomLevelAssetsEditor {
         let Some(path) = crate::dialogs::choose_mwl_document() else {
             return Ok(());
         };
+        self.legacy_mwl_status = None;
         self.legacy_mwl_loader.start(vec![BoundedRead::new(
             path,
             u64::try_from(LegacyMwlManifest::MAX_FILE_BYTES).unwrap_or(u64::MAX),
@@ -190,8 +191,20 @@ impl RomLevelAssetsEditor {
                 if revision != project_revision {
                     return Err("the ROM changed while the legacy MWL was loading".into());
                 }
-                let manifest =
-                    LegacyMwlManifest::decode(&bytes).map_err(|error| error.to_string())?;
+                let report = LegacyMwlManifest::decode_with_diagnostics(&bytes)
+                    .map_err(|error| error.to_string())?;
+                self.legacy_mwl_status = (!report.diagnostics.is_empty()).then(|| {
+                    format!(
+                        "Legacy import compatibility: {}",
+                        report
+                            .diagnostics
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    )
+                });
+                let manifest = report.manifest;
                 let paths = lm_app::legacy_mwl_sidecar_paths(&path, &manifest);
                 let mut requests = paths
                     .into_iter()

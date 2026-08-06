@@ -32,6 +32,41 @@ pub struct LegacyMwlManifest {
     pub secondary_exits: Vec<LegacyMwlSecondaryExit>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LegacyMwlDecodeReport {
+    pub manifest: LegacyMwlManifest,
+    pub diagnostics: Vec<LegacyMwlDiagnostic>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LegacyMwlDiagnostic {
+    LevelNumberClamped { source: u16, target: u16 },
+    IgnoredSecondaryExit { line: usize },
+    ReplacedSecondaryExit { index: u16 },
+}
+
+impl fmt::Display for LegacyMwlDiagnostic {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::LevelNumberClamped { source, target } => {
+                write!(
+                    formatter,
+                    "source level ${source:03X} was clamped to ${target:03X}"
+                )
+            }
+            Self::IgnoredSecondaryExit { line } => {
+                write!(formatter, "ignored malformed secondary-exit row {line}")
+            }
+            Self::ReplacedSecondaryExit { index } => {
+                write!(
+                    formatter,
+                    "later secondary exit ${index:03X} replaced an earlier row"
+                )
+            }
+        }
+    }
+}
+
 impl LegacyMwlManifest {
     pub const CURRENT_VERSION: u16 = 0x0363;
     pub const MAX_FILE_BYTES: usize = 1024 * 1024;
@@ -47,6 +82,12 @@ impl LegacyMwlManifest {
     /// header version to 1.32 and accepts later parseable versions through its current branch;
     /// this decoder deliberately retains that compatibility behavior.
     pub fn decode(bytes: &[u8]) -> Result<Self, LegacyMwlError> {
+        Self::decode_with_diagnostics(bytes).map(|report| report.manifest)
+    }
+
+    /// Decodes with the non-fatal compatibility diagnostics Lunar Magic presents while
+    /// continuing the legacy import.
+    pub fn decode_with_diagnostics(bytes: &[u8]) -> Result<LegacyMwlDecodeReport, LegacyMwlError> {
         if bytes.len() > Self::MAX_FILE_BYTES {
             return Err(LegacyMwlError::FileTooLarge(bytes.len()));
         }
@@ -70,7 +111,15 @@ impl LegacyMwlManifest {
                 actual: level_fields.len(),
             });
         }
-        let level_number = parse_hex_u16(level_fields[0], 0x01ff, "level number")?;
+        let source_level_number = parse_hex_u16(level_fields[0], 0x0fff, "level number")?;
+        let level_number = source_level_number.min(0x01ff);
+        let mut diagnostics = Vec::new();
+        if source_level_number != level_number {
+            diagnostics.push(LegacyMwlDiagnostic::LevelNumberClamped {
+                source: source_level_number,
+                target: level_number,
+            });
+        }
         let mut header = [0; 5];
         for (destination, field) in header.iter_mut().zip(&level_fields[1..]) {
             *destination = parse_hex_u8(field, "level header")?;
@@ -91,35 +140,52 @@ impl LegacyMwlManifest {
                 .ok_or(LegacyMwlError::MissingSidecar("sprites"))?,
         )?;
 
-        let mut secondary_exits = Vec::new();
-        let mut seen = [false; Self::MAX_SECONDARY_EXITS];
+        let mut secondary_exits: Vec<LegacyMwlSecondaryExit> = Vec::new();
+        let mut exit_lines = 0_usize;
         while let Some(line) = lines.next_data()? {
+            exit_lines += 1;
             let fields = fields(line);
             if fields.len() != 4 {
-                return Err(LegacyMwlError::SecondaryExitFieldCount(fields.len()));
+                diagnostics.push(LegacyMwlDiagnostic::IgnoredSecondaryExit { line: exit_lines });
+                continue;
             }
-            let mut index = parse_hex_u16(fields[0], 0x1fff, "secondary exit index")?;
+            let index_maximum = if version < 0x0132 { 0x00ff } else { 0x0fff };
+            let Ok(mut index) = parse_hex_u16(fields[0], index_maximum, "secondary exit index")
+            else {
+                diagnostics.push(LegacyMwlDiagnostic::IgnoredSecondaryExit { line: exit_lines });
+                continue;
+            };
             if version < 0x0132 && level_number & 0x100 != 0 {
                 index = index
                     .checked_add(0x100)
                     .ok_or(LegacyMwlError::SecondaryExitIndex(index))?;
             }
-            if index >= 0x2000 {
-                return Err(LegacyMwlError::SecondaryExitIndex(index));
-            }
-            if seen[usize::from(index)] {
-                return Err(LegacyMwlError::DuplicateSecondaryExit(index));
-            }
-            seen[usize::from(index)] = true;
-            secondary_exits.push(LegacyMwlSecondaryExit {
+            let parsed = [fields[1], fields[2], fields[3]]
+                .map(|field| parse_hex_u8(field, "secondary exit field"));
+            let [
+                Ok(position_and_method),
+                Ok(screen_and_y),
+                Ok(destination_high_and_flags),
+            ] = parsed
+            else {
+                diagnostics.push(LegacyMwlDiagnostic::IgnoredSecondaryExit { line: exit_lines });
+                continue;
+            };
+            let exit = LegacyMwlSecondaryExit {
                 index,
-                position_and_method: parse_hex_u8(fields[1], "secondary exit position")?,
-                screen_and_y: parse_hex_u8(fields[2], "secondary exit screen/Y")?,
-                destination_high_and_flags: parse_hex_u8(
-                    fields[3],
-                    "secondary exit destination flags",
-                )?,
-            });
+                position_and_method,
+                screen_and_y,
+                destination_high_and_flags,
+            };
+            if let Some(existing) = secondary_exits
+                .iter_mut()
+                .find(|value| value.index == index)
+            {
+                *existing = exit;
+                diagnostics.push(LegacyMwlDiagnostic::ReplacedSecondaryExit { index });
+            } else {
+                secondary_exits.push(exit);
+            }
         }
         let manifest = Self {
             version,
@@ -132,7 +198,10 @@ impl LegacyMwlManifest {
             secondary_exits,
         };
         manifest.validate()?;
-        Ok(manifest)
+        Ok(LegacyMwlDecodeReport {
+            manifest,
+            diagnostics,
+        })
     }
 
     /// Validates a decoded or programmatically constructed legacy manifest.
@@ -500,13 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_fields_duplicates_and_unsafe_names_are_rejected() {
-        let mut duplicate = fixture().to_vec();
-        duplicate.extend_from_slice(b"1CB 00 00 00\r\n");
-        assert!(matches!(
-            LegacyMwlManifest::decode(&duplicate),
-            Err(LegacyMwlError::DuplicateSecondaryExit(0x1cb))
-        ));
+    fn malformed_fields_and_unsafe_names_are_rejected() {
         let unsafe_name = std::str::from_utf8(fixture())
             .unwrap()
             .replace("Level 105.mw0", "../evil.mw0");
@@ -521,5 +584,37 @@ mod tests {
             LegacyMwlManifest::decode(trailing.as_bytes()),
             Err(LegacyMwlError::LevelFieldCount { .. })
         ));
+    }
+
+    #[test]
+    fn source_level_and_secondary_exit_recovery_match_prompt_and_continue_import() {
+        let mut input = std::str::from_utf8(fixture())
+            .unwrap()
+            .replace("105 5B", "FFF 5B")
+            .into_bytes();
+        input.extend_from_slice(b"not an exit\r\n1CB 11 22 33\r\n");
+        let report = LegacyMwlManifest::decode_with_diagnostics(&input).unwrap();
+        assert_eq!(report.manifest.level_number, 0x01ff);
+        assert_eq!(report.manifest.secondary_exits.len(), 1);
+        assert_eq!(
+            report.manifest.secondary_exits[0],
+            LegacyMwlSecondaryExit {
+                index: 0x1cb,
+                position_and_method: 0x11,
+                screen_and_y: 0x22,
+                destination_high_and_flags: 0x33,
+            }
+        );
+        assert_eq!(
+            report.diagnostics,
+            [
+                LegacyMwlDiagnostic::LevelNumberClamped {
+                    source: 0x0fff,
+                    target: 0x01ff,
+                },
+                LegacyMwlDiagnostic::IgnoredSecondaryExit { line: 2 },
+                LegacyMwlDiagnostic::ReplacedSecondaryExit { index: 0x1cb },
+            ]
+        );
     }
 }
