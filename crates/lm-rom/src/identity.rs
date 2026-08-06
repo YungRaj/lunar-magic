@@ -211,12 +211,12 @@ mod tests {
 
     #[test]
     fn mapper_must_represent_the_complete_logical_image() {
-        let oversized_sa1 = smw_rom(0x40_8000, 0x23);
+        let oversized_sa1 = smw_rom(0x80_8000, 0x23);
         assert_eq!(
             detect_identity(&oversized_sa1),
             Err(IdentityError::UnsupportedRomSize {
                 mapper: Mapper::Sa1,
-                logical_len: 0x40_8000,
+                logical_len: 0x80_8000,
             })
         );
 

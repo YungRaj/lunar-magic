@@ -223,6 +223,11 @@ pub enum Command {
     ConvertRomTo64MbitExLoRom {
         expected_revision: u64,
     },
+    /// Expands a qualified SA-1 SMW ROM to Lunar Magic's fixed 6- or 8-MiB layout.
+    ExpandSa1Rom {
+        expected_revision: u64,
+        target_logical_len: usize,
+    },
     /// Permanently applies Lunar Magic's level-access restriction migration.
     RestrictLevelAccess {
         rev: u64,

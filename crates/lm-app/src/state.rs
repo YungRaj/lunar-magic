@@ -91,6 +91,8 @@ pub enum AppError {
     GraphicsMigration(GraphicsIoError),
     LevelAccessRestriction(lm_project::LevelAccessRestrictionError),
     ExLoRomConversion(lm_project::ExLoRomConversionError),
+    Sa1Expansion(lm_project::Sa1ExpansionError),
+    Sa1ExpansionRequiresFixedTarget,
     GraphicsMigrationProfileMismatch,
     GraphicsRuntimeMigrationRequired,
     RevisionPatchPlan(lm_profile::RevisionPatchPlanError),
@@ -314,6 +316,12 @@ impl From<lm_project::LevelAccessRestrictionError> for AppError {
 impl From<lm_project::ExLoRomConversionError> for AppError {
     fn from(value: lm_project::ExLoRomConversionError) -> Self {
         Self::ExLoRomConversion(value)
+    }
+}
+
+impl From<lm_project::Sa1ExpansionError> for AppError {
+    fn from(value: lm_project::Sa1ExpansionError) -> Self {
+        Self::Sa1Expansion(value)
     }
 }
 
@@ -897,6 +905,10 @@ impl AppState {
             Command::ConvertRomTo64MbitExLoRom { expected_revision } => {
                 self.convert_rom_to_64_mbit_exlorom(expected_revision)?
             }
+            Command::ExpandSa1Rom {
+                expected_revision,
+                target_logical_len,
+            } => self.expand_sa1_rom(expected_revision, target_logical_len)?,
             Command::RestrictLevelAccess { rev, title, keys } => {
                 self.restrict_level_access(rev, &title, keys)?
             }

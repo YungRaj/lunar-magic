@@ -70,6 +70,7 @@ mod rats_reclamation;
 mod relocatable_patch;
 mod restore_archive;
 mod rom_expansion;
+mod sa1_expansion;
 mod secondary_exit_patch;
 mod separate_midway_patch;
 mod shared_palette_io;
@@ -250,6 +251,7 @@ pub use restore_archive::{
     LunarRestorePointRecord, LunarRestoreReversionRequest, LunarRestoredAssociatedFile,
     PackedRestoreDate, PackedRestoreTime,
 };
+pub use sa1_expansion::{SA1_6_MIB_LEN, SA1_8_MIB_LEN, Sa1ExpansionError};
 pub use secondary_exit_patch::{
     LoadedSecondaryExitTable, SecondaryExitPatchError, SecondaryExitPatchLocator,
     SecondaryExitStorage,

@@ -1,6 +1,33 @@
 use crate::{AppError, AppState, FrontendEffect, RomExpansionCommand};
 
 impl AppState {
+    pub(crate) fn expand_sa1_rom(
+        &mut self,
+        expected_revision: u64,
+        target_logical_len: usize,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if expected_revision != self.project_revision {
+            return Err(AppError::StaleProjectRevision {
+                expected: expected_revision,
+                actual: self.project_revision,
+            });
+        }
+        self.ensure_project_revision_capacity()?;
+        self.project
+            .as_mut()
+            .ok_or(AppError::NoProject)?
+            .expand_sa1_rom(target_logical_len)?;
+        self.advance_project_revision()?;
+        let mib = target_logical_len / 0x10_0000;
+        let description = format!("Expand SA-1 ROM to {mib} MiB");
+        self.status.clone_from(&description);
+        Ok(vec![FrontendEffect::ProjectChanged {
+            description,
+            mode: self.mode,
+            revision: self.project_revision,
+        }])
+    }
+
     pub(crate) fn convert_rom_to_64_mbit_exlorom(
         &mut self,
         expected_revision: u64,
@@ -43,6 +70,9 @@ impl AppState {
             });
         }
         let project = self.project.as_ref().ok_or(AppError::NoProject)?;
+        if project.identity.as_ref().map(|identity| identity.mapper) == Some(lm_rom::Mapper::Sa1) {
+            return Err(AppError::Sa1ExpansionRequiresFixedTarget);
+        }
         if request.target_logical_len == project.rom.logical_len() {
             return Ok(Vec::new());
         }
@@ -108,6 +138,72 @@ mod tests {
                 .join("sysLMRestore/smwOrig.smc"),
         )
         .unwrap()
+    }
+
+    fn sa1_smw() -> Vec<u8> {
+        let mut image = RomImage::from_bytes(pristine_smw()).unwrap();
+        image.write(0x7fd5, &[0x23, 0x34]).unwrap();
+        image.update_snes_checksum(0x7fdc).unwrap();
+        image.as_file_bytes().to_vec()
+    }
+
+    #[test]
+    fn sa1_fixed_targets_are_revisioned_reopenable_and_individually_undoable() {
+        let mut app = AppState::default();
+        app.load_rom(sa1_smw()).unwrap();
+        app.dispatch(Command::ExpandSa1Rom {
+            expected_revision: 0,
+            target_logical_len: lm_project::SA1_6_MIB_LEN,
+        })
+        .unwrap();
+        assert_eq!(app.project_revision(), 1);
+        assert_eq!(
+            app.project().unwrap().rom.logical_len(),
+            lm_project::SA1_6_MIB_LEN
+        );
+        assert_eq!(
+            detect_identity(&RomImage::from_bytes(app.project().unwrap().save_snapshot()).unwrap())
+                .unwrap()
+                .mapper,
+            Mapper::Sa1
+        );
+        app.dispatch(Command::ExpandSa1Rom {
+            expected_revision: 1,
+            target_logical_len: lm_project::SA1_8_MIB_LEN,
+        })
+        .unwrap();
+        assert_eq!(app.project_revision(), 2);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_len(),
+            lm_project::SA1_6_MIB_LEN
+        );
+        app.dispatch(Command::Redo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_len(),
+            lm_project::SA1_8_MIB_LEN
+        );
+    }
+
+    #[test]
+    fn generic_expansion_cannot_bypass_sa1_metadata_and_bank_locks() {
+        let mut app = AppState::default();
+        app.load_rom(sa1_smw()).unwrap();
+        let before = app.project().unwrap().rom.as_file_bytes().to_vec();
+        let result = app.dispatch(Command::ExpandRom(RomExpansionCommand {
+            expected_revision: 0,
+            mapper: Mapper::Sa1,
+            target_logical_len: lm_project::SA1_6_MIB_LEN,
+            fill: 0,
+            checksum_field: 0x7fdc,
+        }));
+        assert!(matches!(
+            result,
+            Err(AppError::Sa1ExpansionRequiresFixedTarget)
+        ));
+        assert_eq!(app.project_revision(), 0);
+        assert_eq!(app.project().unwrap().rom.as_file_bytes(), before);
+        assert!(!app.project().unwrap().history.can_undo());
     }
 
     #[test]

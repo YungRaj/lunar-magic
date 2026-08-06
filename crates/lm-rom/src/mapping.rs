@@ -56,15 +56,14 @@ pub fn snes_to_pc(mapper: Mapper, address: u32) -> Result<usize, RomError> {
         }
         Mapper::Sa1 => {
             if bank >= 0xc0 {
-                Ok(usize::try_from(address & 0x003f_ffff).unwrap_or(0))
+                Ok(0x0040_0000 + usize::try_from(address & 0x003f_ffff).unwrap_or(0))
             } else {
-                if (0x40..=0x7d).contains(&bank) {
-                    return Err(RomError::InvalidSnesAddress(address));
-                }
                 if word < 0x8000 {
                     return Err(RomError::InvalidSnesAddress(address));
                 }
-                Ok(usize::try_from((address >> 1) & 0x001f_8000 | address & 0x7fff).unwrap_or(0))
+                let low =
+                    usize::try_from((address >> 1) & 0x001f_8000 | address & 0x7fff).unwrap_or(0);
+                Ok(if bank < 0x80 { low } else { low + 0x0020_0000 })
             }
         }
     }
@@ -101,13 +100,16 @@ pub fn pc_to_snes(mapper: Mapper, offset: usize) -> Result<u32, RomError> {
             Ok(((base | (local >> 15)) << 16) | 0x8000 | (local & 0x7fff))
         }
         Mapper::Sa1 => {
-            if offset >= 0x0040_0000 {
+            if offset >= 0x0080_0000 {
                 return Err(RomError::UnrepresentablePcOffset(offset));
             }
             if offset < 0x0020_0000 {
                 Ok(((offset32 & 0x001f_8000) << 1) | 0x8000 | (offset32 & 0x7fff))
+            } else if offset < 0x0040_0000 {
+                let local = offset32 - 0x0020_0000;
+                Ok(0x0080_0000 | ((local & 0x001f_8000) << 1) | 0x8000 | (local & 0x7fff))
             } else {
-                Ok(0x00c0_0000 | offset32)
+                Ok(0x00c0_0000 | (offset32 - 0x0040_0000))
             }
         }
     }
@@ -123,10 +125,10 @@ mod tests {
     #[test]
     fn mappings_round_trip() {
         for mapper in [Mapper::LoRom, Mapper::ExLoRom, Mapper::Sa1] {
-            let max = if mapper == Mapper::ExLoRom {
-                0x007e_ffff
-            } else {
-                0x003f_ffff
+            let max = match mapper {
+                Mapper::ExLoRom => 0x007e_ffff,
+                Mapper::Sa1 => 0x007f_ffff,
+                Mapper::LoRom => 0x003f_ffff,
             };
             for offset in [0, 0x7fff, 0x8000, 0x001f_ffff, 0x0020_0000, max] {
                 assert_eq!(
@@ -145,19 +147,15 @@ mod tests {
         }
         assert!(snes_to_pc(Mapper::LoRom, 0x00_7fff).is_err());
         assert!(snes_to_pc(Mapper::ExLoRom, 0x80_0000).is_err());
-        assert_eq!(snes_to_pc(Mapper::Sa1, 0xc0_0000).unwrap(), 0);
-        assert_eq!(snes_to_pc(Mapper::Sa1, 0xff_ffff).unwrap(), 0x3f_ffff);
-        assert_eq!(snes_to_pc(Mapper::Sa1, 0x80_8000).unwrap(), 0);
-        for address in [0x40_0000, 0x40_8000, 0x60_ffff, 0x7d_ffff] {
-            assert_eq!(
-                snes_to_pc(Mapper::Sa1, address),
-                Err(RomError::InvalidSnesAddress(address))
-            );
-        }
+        assert_eq!(snes_to_pc(Mapper::Sa1, 0xc0_0000).unwrap(), 0x40_0000);
+        assert_eq!(snes_to_pc(Mapper::Sa1, 0xff_ffff).unwrap(), 0x7f_ffff);
+        assert_eq!(snes_to_pc(Mapper::Sa1, 0x80_8000).unwrap(), 0x20_0000);
+        assert_eq!(snes_to_pc(Mapper::Sa1, 0x40_8000).unwrap(), 0);
         assert!(pc_to_snes(Mapper::LoRom, 0x40_0000).is_err());
         assert!(pc_to_snes(Mapper::ExLoRom, 0x80_0000).is_err());
         assert!(pc_to_snes(Mapper::ExLoRom, 0x7f_0000).is_err());
-        assert!(pc_to_snes(Mapper::Sa1, 0x40_0000).is_err());
+        assert_eq!(pc_to_snes(Mapper::Sa1, 0x40_0000), Ok(0xc0_0000));
+        assert!(pc_to_snes(Mapper::Sa1, 0x80_0000).is_err());
     }
 
     #[test]
@@ -165,7 +163,7 @@ mod tests {
         for (mapper, len) in [
             (Mapper::LoRom, LOROM_LEN),
             (Mapper::ExLoRom, EXLOROM_ADDRESSABLE_LEN),
-            (Mapper::Sa1, LOROM_LEN),
+            (Mapper::Sa1, 0x0080_0000),
         ] {
             for offset in 0..len {
                 let address = pc_to_snes(mapper, offset).unwrap();
@@ -192,7 +190,10 @@ mod tests {
         }
 
         assert_eq!(pc_to_snes(Mapper::Sa1, 0x1f_ffff), Ok(0x3f_ffff));
-        assert_eq!(pc_to_snes(Mapper::Sa1, 0x20_0000), Ok(0xe0_0000));
+        assert_eq!(pc_to_snes(Mapper::Sa1, 0x20_0000), Ok(0x80_8000));
+        assert_eq!(pc_to_snes(Mapper::Sa1, 0x3f_ffff), Ok(0xbf_ffff));
+        assert_eq!(pc_to_snes(Mapper::Sa1, 0x40_0000), Ok(0xc0_0000));
+        assert_eq!(pc_to_snes(Mapper::Sa1, 0x7f_ffff), Ok(0xff_ffff));
     }
 
     #[test]
@@ -237,5 +238,8 @@ mod tests {
         ));
         assert!(mapper_supports_image_len(Mapper::ExLoRom, 0x0080_0000));
         assert!(!mapper_supports_image_len(Mapper::ExLoRom, 0x0080_8000));
+        assert!(mapper_supports_image_len(Mapper::Sa1, 0x0060_0000));
+        assert!(mapper_supports_image_len(Mapper::Sa1, 0x0080_0000));
+        assert!(!mapper_supports_image_len(Mapper::Sa1, 0x0080_8000));
     }
 }

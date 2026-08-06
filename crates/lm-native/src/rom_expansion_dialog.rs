@@ -1,6 +1,7 @@
 use crate::level_editor_forms;
 use eframe::egui;
 use lm_app::{AppState, Command, RomExpansionCommand};
+use lm_project::{SA1_6_MIB_LEN, SA1_8_MIB_LEN};
 use lm_rom::{Mapper, RomImage};
 
 const LUNAR_MAGIC_LOROM_TARGETS: [usize; 3] = [0x20_0000, 0x30_0000, 0x40_0000];
@@ -13,6 +14,7 @@ pub(crate) struct RomExpansionDialog {
     fill: String,
     source_mapper: Option<Mapper>,
     confirm_exlorom: bool,
+    confirm_sa1_target: Option<usize>,
     error: Option<String>,
 }
 
@@ -30,6 +32,7 @@ impl RomExpansionDialog {
                     self.fill = "00".into();
                     self.open = true;
                     self.confirm_exlorom = false;
+                    self.confirm_sa1_target = None;
                     self.error = None;
                 }
                 Err(error) => self.error = Some(error.to_string()),
@@ -55,7 +58,11 @@ impl RomExpansionDialog {
                         {
                             if ui
                                 .add_enabled(
-                                    target > self.current_logical_len,
+                                    ordinary_expansion_eligible(
+                                        self.source_mapper,
+                                        self.current_logical_len,
+                                        target,
+                                    ),
                                     egui::Button::new(label),
                                 )
                                 .clicked()
@@ -87,19 +94,54 @@ impl RomExpansionDialog {
                     if !exlorom_eligible {
                         ui.weak("Requires a checksum-valid 512 KiB–4 MiB SMW LoROM.");
                     }
-                    ui.horizontal(|ui| {
-                        ui.label("Target");
-                        ui.text_edit_singleline(&mut self.target);
+                    ui.separator();
+                    ui.heading("SA-1 expansion");
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Lunar Magic target:");
+                        for (target, label) in [
+                            (SA1_6_MIB_LEN, "6 MiB"),
+                            (SA1_8_MIB_LEN, "8 MiB"),
+                        ] {
+                            if ui
+                                .add_enabled(
+                                    self.source_mapper == Some(Mapper::Sa1)
+                                        && target > self.current_logical_len,
+                                    egui::Button::new(label),
+                                )
+                                .clicked()
+                            {
+                                self.confirm_sa1_target = Some(target);
+                            }
+                        }
                     });
-                    ui.horizontal(|ui| {
-                        ui.label("Fill byte");
-                        ui.text_edit_singleline(&mut self.fill);
+                    if self.source_mapper != Some(Mapper::Sa1) {
+                        ui.weak("These fixed targets are available only for an SA-1 ROM.");
+                    }
+                    let ordinary_route = self.source_mapper != Some(Mapper::Sa1);
+                    ui.add_enabled_ui(ordinary_route, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Target");
+                            ui.text_edit_singleline(&mut self.target);
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Fill byte");
+                            ui.text_edit_singleline(&mut self.fill);
+                        });
                     });
+                    if !ordinary_route {
+                        ui.weak("SA-1 ROMs must use the fixed 6 MiB or 8 MiB action above.");
+                    }
                     ui.horizontal(|ui| {
                         if ui.button("Cancel").clicked() {
                             self.open = false;
                         }
-                        if ui.button("Expand transactionally").clicked() {
+                        if ui
+                            .add_enabled(
+                                ordinary_route,
+                                egui::Button::new("Expand transactionally"),
+                            )
+                            .clicked()
+                        {
                             match build_command(app, &self.target, &self.fill) {
                                 Ok(value) => {
                                     command = Some(value);
@@ -136,6 +178,37 @@ impl RomExpansionDialog {
                     });
                 });
         }
+        if let Some(target) = self.confirm_sa1_target {
+            let mib = target / 0x10_0000;
+            egui::Window::new("Expand SA-1 ROM?")
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    ui.label(format!("This will expand the SA-1 ROM to {mib} MiB."));
+                    if target == SA1_6_MIB_LEN {
+                        ui.label(
+                            "If using Snes9x, this requires version 1.54+ or FuSoYa's custom \
+                             8MB Snes9x build.",
+                        );
+                    } else {
+                        ui.label(
+                            "If using Snes9x, this requires version 1.54+ or FuSoYa's custom \
+                             8MB Snes9x build. ZSNES requires FuSoYa's custom 8MB build.",
+                        );
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            self.confirm_sa1_target = None;
+                        }
+                        if ui.button("Expand ROM").clicked() {
+                            command = Some(Command::ExpandSa1Rom {
+                                expected_revision: app.project_revision(),
+                                target_logical_len: target,
+                            });
+                        }
+                    });
+                });
+        }
         if let Some(error) = self.error.clone() {
             egui::Window::new("ROM expansion error").show(context, |ui| {
                 ui.label(error);
@@ -150,6 +223,7 @@ impl RomExpansionDialog {
     pub(crate) fn commit_succeeded(&mut self) {
         self.open = false;
         self.confirm_exlorom = false;
+        self.confirm_sa1_target = None;
     }
 }
 
@@ -157,6 +231,9 @@ fn build_command(app: &AppState, target: &str, fill: &str) -> Result<Command, St
     let snapshot = app
         .controller_snapshot()
         .map_err(|error| error.to_string())?;
+    if snapshot.identity.mapper == Mapper::Sa1 {
+        return Err("SA-1 ROMs must use the fixed 6 MiB or 8 MiB expansion action".to_owned());
+    }
     let target_logical_len = level_editor_forms::parse_hex_u32(target, "target size")? as usize;
     let fill = level_editor_forms::parse_hex_u8(fill, "expansion fill byte")?;
     Ok(Command::ExpandRom(RomExpansionCommand {
@@ -177,6 +254,14 @@ fn suggested_target(current: usize) -> usize {
 
 fn exlorom_eligible(mapper: Option<Mapper>, logical_len: usize) -> bool {
     mapper == Some(Mapper::LoRom) && (0x80_000..=0x40_0000).contains(&logical_len)
+}
+
+fn ordinary_expansion_eligible(
+    mapper: Option<Mapper>,
+    current_logical_len: usize,
+    target_logical_len: usize,
+) -> bool {
+    mapper != Some(Mapper::Sa1) && target_logical_len > current_logical_len
 }
 
 #[cfg(test)]
@@ -226,5 +311,24 @@ mod tests {
         assert!(!exlorom_eligible(Some(Mapper::LoRom), 0x40_8000));
         assert!(!exlorom_eligible(Some(Mapper::ExLoRom), 0x40_0000));
         assert!(!exlorom_eligible(None, 0x80_000));
+    }
+
+    #[test]
+    fn ordinary_actions_cannot_bypass_fixed_sa1_expansion() {
+        assert!(ordinary_expansion_eligible(
+            Some(Mapper::LoRom),
+            0x80_000,
+            0x20_0000
+        ));
+        assert!(!ordinary_expansion_eligible(
+            Some(Mapper::Sa1),
+            0x80_000,
+            0x20_0000
+        ));
+        assert!(!ordinary_expansion_eligible(
+            Some(Mapper::LoRom),
+            0x20_0000,
+            0x20_0000
+        ));
     }
 }
