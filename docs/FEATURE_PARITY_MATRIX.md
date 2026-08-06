@@ -283,6 +283,14 @@ typed packed fields. It shares the two GUI workspaces' transaction, preserves cu
 expanded upper-Y, guards revision-selected record width, follows selection across canonical
 reordering, and has checksum/reopen plus byte-exact ROM-undo evidence.
 
+The Graphics extract/insert row now has exact pristine standard-GFX extraction evidence. The
+installed editor exports all 52 files (`GFX00` through `GFX33`), resolves the two startup streams,
+and applies Lunar Magic's per-file packed-3bpp expansion table plus its legacy fourth-plane
+synthesis for GFX01, GFX08, GFX17, GFX1E, and GFX31. The retained
+`retained_lunar_magic_standard_export_matches_every_file` oracle byte-matches every file from a
+fresh Lunar Magic 3.63 `-ExportGFX` run; non-pristine profiles retain their declared native table
+behavior. First-time standard-GFX insertion into a vanilla ROM remains on the critical path.
+
 ## Current critical path
 
 The fastest route to a broadly usable editor is:

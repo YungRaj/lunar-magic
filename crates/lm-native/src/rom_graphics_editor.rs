@@ -1075,17 +1075,24 @@ impl RomGraphicsEditor {
         let Some(directory) = crate::dialogs::choose_graphics_directory() else {
             return;
         };
-        let slots = standard_graphics_slots(workspace.profile.graphics);
+        let (slots, file_numbers, file_layouts, encoding) =
+            match lunar_magic_standard_graphics_sources(&workspace.profile, &workspace.image) {
+                Ok(sources) => sources,
+                Err(error) => {
+                    self.error = Some(error);
+                    return;
+                }
+            };
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
             slots: slots.clone(),
-            file_numbers: slots,
+            file_numbers,
             family: "standard",
             exgraphics_names: false,
-            encoding: graphics_batch::GraphicsBatchEncoding::Native,
+            encoding,
             raw_4bpp_overrides: Vec::new(),
-            file_layouts: Vec::new(),
+            file_layouts,
         };
         match self.graphics_batch.start(source, directory) {
             Ok(()) => self.io_status = None,
@@ -1135,17 +1142,24 @@ impl RomGraphicsEditor {
         let Some(path) = crate::dialogs::choose_all_gfx_save_path() else {
             return;
         };
-        let slots = standard_graphics_slots(workspace.profile.graphics);
+        let (slots, file_numbers, file_layouts, encoding) =
+            match lunar_magic_standard_graphics_sources(&workspace.profile, &workspace.image) {
+                Ok(sources) => sources,
+                Err(error) => {
+                    self.error = Some(error);
+                    return;
+                }
+            };
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
             slots: slots.clone(),
-            file_numbers: slots,
+            file_numbers,
             family: "standard",
             exgraphics_names: false,
-            encoding: graphics_batch::GraphicsBatchEncoding::Native,
+            encoding,
             raw_4bpp_overrides: Vec::new(),
-            file_layouts: Vec::new(),
+            file_layouts,
         };
         match self.graphics_batch.start_joined(source, path) {
             Ok(()) => self.io_status = None,
@@ -1374,6 +1388,45 @@ fn standard_graphics_slots(layout: lm_project::GraphicsRomLayout) -> Vec<usize> 
     (0..layout.pointers.entries.min(STANDARD_GFX_LIMIT)).collect()
 }
 
+type StandardGraphicsSources = (
+    Vec<usize>,
+    Vec<usize>,
+    Vec<(usize, lm_project::GraphicsRomLayout)>,
+    graphics_batch::GraphicsBatchEncoding,
+);
+
+fn lunar_magic_standard_graphics_sources(
+    profile: &RevisionProfile,
+    image: &lm_rom::RomImage,
+) -> Result<StandardGraphicsSources, String> {
+    let mut slots = standard_graphics_slots(profile.graphics);
+    let mut file_numbers = slots.clone();
+    if !pristine_special_graphics(profile) {
+        return Ok((
+            slots,
+            file_numbers,
+            Vec::new(),
+            graphics_batch::GraphicsBatchEncoding::Native,
+        ));
+    }
+    let special = lm_profile::smw_us_v1_special_graphics_layouts(image)
+        .map_err(|error| format!("cannot resolve live GFX32/GFX33: {error}"))?;
+    let mut file_layouts = slots
+        .iter()
+        .copied()
+        .map(|slot| (slot, profile.graphics))
+        .collect::<Vec<_>>();
+    slots.extend([0x32, 0x33]);
+    file_numbers.extend([0x32, 0x33]);
+    file_layouts.extend([(0, special.gfx32), (0, special.gfx33)]);
+    Ok((
+        slots,
+        file_numbers,
+        file_layouts,
+        graphics_batch::GraphicsBatchEncoding::LunarMagicStandard,
+    ))
+}
+
 fn installed_exgraphics_slots(
     image: &lm_rom::RomImage,
     layout: lm_project::GraphicsRomLayout,
@@ -1398,12 +1451,28 @@ fn installed_exgraphics_slots(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_external_edit_revision, installed_exgraphics_slots, pristine_special_graphics,
-        supports_exgraphics, supports_native_exgraphics,
+        ensure_external_edit_revision, installed_exgraphics_slots,
+        lunar_magic_standard_graphics_sources, pristine_special_graphics, supports_exgraphics,
+        supports_native_exgraphics,
     };
     use crate::level_graphics_export::legacy_level_graphics_files;
     use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
     use lm_rom::{Mapper, RomImage};
+
+    #[test]
+    fn non_vanilla_standard_export_retains_profile_table_and_native_encoding() {
+        let profile = lm_profile::test_support::profile();
+        let image = RomImage::from_bytes(vec![0; 0x8000]).unwrap();
+        let (slots, file_numbers, file_layouts, encoding) =
+            lunar_magic_standard_graphics_sources(&profile, &image).unwrap();
+        assert_eq!(slots, file_numbers);
+        assert_eq!(slots.len(), profile.graphics.pointers.entries.min(0x34));
+        assert!(file_layouts.is_empty());
+        assert_eq!(
+            encoding,
+            super::graphics_batch::GraphicsBatchEncoding::Native
+        );
+    }
 
     #[test]
     fn special_pair_actions_require_the_exact_recovered_split_layout() {

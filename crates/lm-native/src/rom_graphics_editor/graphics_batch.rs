@@ -27,6 +27,7 @@ pub(super) struct GraphicsBatchSource {
 pub(super) enum GraphicsBatchEncoding {
     Native,
     Decoded4Bpp,
+    LunarMagicStandard,
 }
 
 struct RunningBatch {
@@ -246,6 +247,17 @@ fn export_batch(
                         )
                     })?
                 }
+                GraphicsBatchEncoding::LunarMagicStandard => {
+                    let native = project
+                        .load_decompressed_graphics_file(load_slot, load_layout)
+                        .map_err(|error| {
+                            format!(
+                                "{}: {error}",
+                                graphics_file_name(file_number, source.exgraphics_names)
+                            )
+                        })?;
+                    lunar_magic_standard_export_bytes(file_number, native)?
+                }
             }
         };
         if source.encoding == GraphicsBatchEncoding::Decoded4Bpp && bytes.len() != 0x1000 {
@@ -291,6 +303,80 @@ fn export_batch(
     Ok(Some(total))
 }
 
+fn lunar_magic_standard_export_bytes(
+    file_number: usize,
+    native: Vec<u8>,
+) -> Result<Vec<u8>, String> {
+    let expands_to_editable_4bpp = matches!(
+        file_number,
+        0x00..=0x26 | 0x2c..=0x2e | 0x30..=0x31 | 0x33
+    );
+    let mut editable = if !expands_to_editable_4bpp || native.len() == 0x1000 {
+        native
+    } else {
+        if native.len() % 24 != 0 {
+            return Err(format!(
+                "GFX{file_number:02X}: Lunar Magic's packed 3bpp source requires complete 24-byte tiles; got {:#X} bytes",
+                native.len()
+            ));
+        }
+        let tiles = lm_graphics::decode_planar_tiles(&native, 3)
+            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
+        lm_graphics::encode_planar_tiles(&tiles, 4)
+            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?
+    };
+    if matches!(file_number, 0x01 | 0x17 | 0x31) {
+        synthesize_missing_fourth_graphics_bitplane(&mut editable);
+    }
+    match file_number {
+        0x08 => synthesize_selected_tiles(
+            &mut editable,
+            &[
+                0x37, 0x38, 0x39, 0x3a, 0x3b, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x56, 0x57, 0x58, 0x59,
+                0x5a, 0x5b, 0x7a, 0x7b, 0x60, 0x70, 0x6e, 0x6f, 0x7e, 0x7f,
+            ],
+        ),
+        0x1e => synthesize_selected_tiles(&mut editable, &(0..0x80).collect::<Vec<_>>()),
+        _ => {}
+    }
+    Ok(editable)
+}
+
+fn synthesize_selected_tiles(bytes: &mut [u8], tiles: &[usize]) {
+    for tile in tiles {
+        let base = tile * 0x20;
+        for row in 0..8 {
+            let offset = base + 0x10 + row * 2;
+            if offset + 1 >= bytes.len() {
+                return;
+            }
+            bytes[offset + 1] = bytes[offset - 0x10] | bytes[offset - 0x0f] | bytes[offset];
+        }
+    }
+}
+
+fn synthesize_missing_fourth_graphics_bitplane(bytes: &mut [u8]) {
+    let ranges = [0x10..0x40, 0x210..0x240];
+    if ranges
+        .iter()
+        .flat_map(Clone::clone)
+        .filter(|offset| offset & 0x10 != 0 && offset & 1 == 0)
+        .any(|offset| bytes.get(offset + 1).is_some_and(|value| *value != 0))
+    {
+        return;
+    }
+    for offset in ranges
+        .into_iter()
+        .flatten()
+        .filter(|offset| offset & 0x10 != 0 && offset & 1 == 0)
+    {
+        if offset + 1 >= bytes.len() {
+            return;
+        }
+        bytes[offset + 1] = bytes[offset - 0x10] | bytes[offset - 0x0f] | bytes[offset];
+    }
+}
+
 fn batch_output_path(directory: &Path, slot: usize, exgraphics: bool) -> PathBuf {
     directory.join(graphics_file_name(slot, exgraphics))
 }
@@ -308,7 +394,7 @@ fn graphics_file_name(slot: usize, exgraphics: bool) -> String {
 mod tests {
     use super::{
         GraphicsBatchEncoding, GraphicsBatchSource, GraphicsExportTarget, RunningBatch,
-        batch_output_path, export_batch,
+        batch_output_path, export_batch, lunar_magic_standard_export_bytes,
     };
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{
@@ -655,6 +741,68 @@ mod tests {
         assert_eq!(exported.len(), 0x1000);
         assert_eq!(exported, expected_4bpp);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn lunar_magic_standard_export_expands_only_the_editable_ordinary_range() {
+        let tiles = vec![IndexedTile::new([7; 64]); 128];
+        let native = lm_graphics::encode_planar_tiles(&tiles, 3).unwrap();
+        let expected = lm_graphics::encode_planar_tiles(&tiles, 4).unwrap();
+        assert_eq!(
+            lunar_magic_standard_export_bytes(0x00, native.clone()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            lunar_magic_standard_export_bytes(0x27, native.clone()).unwrap(),
+            native
+        );
+        for file_number in [0x2c, 0x2e, 0x30, 0x33] {
+            assert_eq!(
+                lunar_magic_standard_export_bytes(file_number, native.clone()).unwrap(),
+                expected,
+                "GFX{file_number:02X}"
+            );
+        }
+        assert_eq!(
+            lunar_magic_standard_export_bytes(0x31, native.clone())
+                .unwrap()
+                .len(),
+            expected.len()
+        );
+        for file_number in [0x27, 0x2b, 0x2f, 0x32] {
+            assert_eq!(
+                lunar_magic_standard_export_bytes(file_number, native.clone()).unwrap(),
+                native,
+                "GFX{file_number:02X}"
+            );
+        }
+        assert!(lunar_magic_standard_export_bytes(0x00, vec![0; 17]).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires a retained pristine ROM and Lunar Magic -ExportGFX directory"]
+    fn retained_lunar_magic_standard_export_matches_every_file() {
+        let rom = std::env::var_os("LM_PRISTINE_GFX_ROM").expect("LM_PRISTINE_GFX_ROM");
+        let directory =
+            PathBuf::from(std::env::var_os("LM_GFX_EXPORT_DIR").expect("LM_GFX_EXPORT_DIR"));
+        let image = RomImage::from_bytes(fs::read(rom).unwrap()).unwrap();
+        let project = Project::new(image.clone());
+        let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        let special = lm_profile::smw_us_v1_special_graphics_layouts(&image).unwrap();
+        for file_number in 0..0x34 {
+            let (slot, layout) = match file_number {
+                0x00..=0x31 => (file_number, ordinary),
+                0x32 => (0, special.gfx32),
+                0x33 => (0, special.gfx33),
+                _ => unreachable!(),
+            };
+            let native = project
+                .load_decompressed_graphics_file(slot, layout)
+                .unwrap();
+            let actual = lunar_magic_standard_export_bytes(file_number, native).unwrap();
+            let expected = fs::read(directory.join(format!("GFX{file_number:02X}.bin"))).unwrap();
+            assert_eq!(actual, expected, "GFX{file_number:02X}");
+        }
     }
 
     #[test]
