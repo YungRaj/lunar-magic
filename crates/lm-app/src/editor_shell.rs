@@ -101,6 +101,7 @@ pub(crate) fn execute_native_assets_script(
         app,
         &loaded.edits,
         &loaded.map16_edits,
+        &loaded.entrance_edits,
         loaded.palette_ownership,
         search,
     )?;
@@ -321,10 +322,11 @@ pub(crate) fn commit_native_assets_edits(
     app: &mut AppState,
     edits: &[lm_app::NativeLevelAssetsControllerEdit],
     map16_edits: &[Map16ControllerEdit],
+    entrance_edits: &[VanillaEntranceEdit],
     palette_ownership: Option<lm_graphics::PaletteOwnership>,
     search: Range<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if edits.is_empty() && map16_edits.is_empty() {
+    if edits.is_empty() && map16_edits.is_empty() && entrance_edits.is_empty() {
         return Err("native-assets edit specification contains no domains".into());
     }
     let profiled = app.profiled_controller_snapshot()?;
@@ -355,7 +357,7 @@ pub(crate) fn commit_native_assets_edits(
     } else {
         controller.prepare_commit("Apply native aggregate level-assets edit", &options)?
     };
-    if map16_edits.is_empty() {
+    if map16_edits.is_empty() && entrance_edits.is_empty() {
         app.dispatch(prepared.into_command())?;
         return Ok(());
     }
@@ -369,35 +371,56 @@ pub(crate) fn commit_native_assets_edits(
     let mut staged = Project::new(original);
     staged.apply_mutation("Stage aggregate level assets", &prepared.mutation)?;
 
-    let mut map16_snapshot = profiled.snapshot.clone();
-    map16_snapshot.mode = EditorMode::Map16;
-    map16_snapshot.rom_bytes = staged.save_snapshot();
-    let staged_image = RomImage::from_bytes(map16_snapshot.rom_bytes.clone())?;
-    let policy = profiled.profile.allocation_policy_for_rom(
-        search,
-        &staged_image,
-        map16_snapshot.identity.internal_header_offset,
-    )?;
-    let mut map16 = profiled.profile.decode_map16(&map16_snapshot)?;
-    map16.apply_edits(map16_edits)?;
-    let map16_options = Map16SetSaveOptions {
-        graphics_allocation: policy.clone(),
-        acts_like_allocation: policy,
-        previous_graphics: Vec::new(),
-        previous_acts_like: Vec::new(),
-        reuse_identical: true,
-        erase_fill: 0xff,
-    };
-    let map16_prepared = map16.prepare_commit(
-        "Stage aggregate Map16 definitions",
-        &map16_options,
-    )?;
-    staged.apply_mutation("Stage aggregate Map16 definitions", &map16_prepared.mutation)?;
+    if !map16_edits.is_empty() {
+        let mut map16_snapshot = profiled.snapshot.clone();
+        map16_snapshot.mode = EditorMode::Map16;
+        map16_snapshot.rom_bytes = staged.save_snapshot();
+        let staged_image = RomImage::from_bytes(map16_snapshot.rom_bytes.clone())?;
+        let policy = profiled.profile.allocation_policy_for_rom(
+            search,
+            &staged_image,
+            map16_snapshot.identity.internal_header_offset,
+        )?;
+        let mut map16 = profiled.profile.decode_map16(&map16_snapshot)?;
+        map16.apply_edits(map16_edits)?;
+        let map16_options = Map16SetSaveOptions {
+            graphics_allocation: policy.clone(),
+            acts_like_allocation: policy,
+            previous_graphics: Vec::new(),
+            previous_acts_like: Vec::new(),
+            reuse_identical: true,
+            erase_fill: 0xff,
+        };
+        let map16_prepared =
+            map16.prepare_commit("Stage aggregate Map16 definitions", &map16_options)?;
+        staged.apply_mutation("Stage aggregate Map16 definitions", &map16_prepared.mutation)?;
+    }
+    if !entrance_edits.is_empty() {
+        let mut entrance_snapshot = profiled.snapshot.clone();
+        entrance_snapshot.rom_bytes = staged.save_snapshot();
+        let mut layout = lm_profile::smw_us_v1_vanilla_entrance_layout();
+        layout.mapper = mapper;
+        let mut entrances = if entrance_edits
+            .iter()
+            .any(|edit| matches!(edit, VanillaEntranceEdit::SetMidway(_)))
+        {
+            VanillaEntranceController::decode_with_midway(
+                &entrance_snapshot,
+                layout,
+                lm_profile::smw_us_v1_separate_midway_locator(),
+            )?
+        } else {
+            VanillaEntranceController::decode(&entrance_snapshot, layout)?
+        };
+        entrances.apply_edits(entrance_edits)?;
+        let entrance_prepared = entrances.prepare_commit("Stage aggregate entrances")?;
+        staged.apply_mutation("Stage aggregate entrances", &entrance_prepared.mutation)?;
+    }
     let combined = RomMutation::between(mapper, &original_logical, staged.rom.logical_bytes())?;
     app.dispatch(
         lm_app::PreparedRomCommit {
             expected_revision: profiled.snapshot.revision,
-            description: "Apply native aggregate level-assets and Map16 edit".into(),
+            description: "Apply native aggregate level-assets, Map16, and entrance edit".into(),
             mutation: combined,
         }
         .into_command(),

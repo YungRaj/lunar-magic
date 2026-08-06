@@ -139,10 +139,15 @@ fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
         "LMM16ED1\ntile 01 02 0001 0002 0003 0004 0000 10000\n",
     )
     .unwrap();
+    fs::write(
+        directory.join("Entrance edits.txt"),
+        "LMENTR1\nmain 12 34 56 78\nlayer2-scroll 0a\n",
+    )
+    .unwrap();
     let spec = directory.join("Aggregate edits.lmnat");
     fs::write(
         &spec,
-        "LMNATED1\nlevel=Level edits.txt\nmap16=Map16 edits.txt\npalette=Palette edits.txt\nexanimation=Animation edits.txt\nexanimation-features=Animation feature edits.txt\nexpanded-settings=設定 edits.txt\n",
+        "LMNATED1\nlevel=Level edits.txt\nmap16=Map16 edits.txt\nentrances=Entrance edits.txt\npalette=Palette edits.txt\nexanimation=Animation edits.txt\nexanimation-features=Animation feature edits.txt\nexpanded-settings=設定 edits.txt\n",
     )
     .unwrap();
 
@@ -188,6 +193,15 @@ fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
     let map16 = project.load_map16_set(profile.map16).unwrap();
     assert_eq!(map16.pages[1].tiles[2].top_left.0, 1);
     assert_eq!(map16.pages[1].tiles[2].bottom_right.0, 4);
+    let mut entrance_layout = lm_profile::smw_us_v1_vanilla_entrance_layout();
+    entrance_layout.mapper = profile.mapper;
+    let entrance = project
+        .load_vanilla_main_entrance(0x105, entrance_layout)
+        .unwrap();
+    assert_eq!(entrance.position, 0xa2);
+    assert_eq!(entrance.vertical_settings, 0x34);
+    assert_eq!(entrance.screen_and_method, 0x56);
+    assert_eq!(entrance.level_mode_and_screen, 0x78);
     assert!(project.identity.as_ref().unwrap().checksum_matches());
     app.dispatch(Command::Undo).unwrap();
     assert_eq!(app.project().unwrap().save_snapshot(), before);
@@ -206,6 +220,18 @@ fn terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation() {
     fs::write(
         directory.join("Map16 edits.txt"),
         "LMM16ED1\nacts-like 00 01 0002 10000\nacts-like 00 02 0001 10000\n",
+    )
+    .unwrap();
+    assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x10_0000).is_err());
+    assert_eq!(app.project().unwrap().save_snapshot(), before);
+    fs::write(
+        directory.join("Map16 edits.txt"),
+        "LMM16ED1\ntile 01 02 0001 0002 0003 0004 0000 10000\n",
+    )
+    .unwrap();
+    fs::write(
+        directory.join("Entrance edits.txt"),
+        "LMENTR1\nmain 12 34 56 78\nmidway 9a bc de f0\n",
     )
     .unwrap();
     assert!(execute_native_assets_script(&mut app, &spec, 0x1_0000..0x10_0000).is_err());

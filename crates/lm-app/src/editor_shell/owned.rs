@@ -35,6 +35,11 @@ pub(crate) fn execute_owned_editor_script(
                     "aggregate Map16 edits do not yet support reclamation manifests".into(),
                 );
             }
+            if !loaded.entrance_edits.is_empty() {
+                return Err(
+                    "aggregate entrance edits do not yet support reclamation manifests".into(),
+                );
+            }
             commit_native_assets(
                 app,
                 &loaded.edits,

@@ -1,18 +1,20 @@
 //! Shared loading of bounded aggregate composition scripts.
 
 use crate::{
-    editor_shell::read_bounded_utf8, exanimation_edit_script, exanimation_feature_edit_script,
+    editor_shell::read_bounded_utf8, entrance_edit_script, exanimation_edit_script,
+    exanimation_feature_edit_script,
     expanded_settings_edit_script, layer2_object_edit_script, layer2_tilemap_edit_script,
     level_edit_script, map16_edit_script, native_assets_edit_spec, palette_edit_script,
     sprite_spawn_edit_script,
 };
-use lm_app::{Map16ControllerEdit, NativeLevelAssetsControllerEdit};
+use lm_app::{Map16ControllerEdit, NativeLevelAssetsControllerEdit, VanillaEntranceEdit};
 use lm_graphics::PaletteOwnership;
 use std::path::Path;
 
 pub(crate) struct LoadedNativeAssetsEdits {
     pub edits: Vec<NativeLevelAssetsControllerEdit>,
     pub map16_edits: Vec<Map16ControllerEdit>,
+    pub entrance_edits: Vec<VanillaEntranceEdit>,
     pub palette_ownership: Option<PaletteOwnership>,
 }
 
@@ -22,6 +24,16 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
     let map16_edits = if let Some(path) = spec.map16 {
         let text = read_bounded_utf8(&path, map16_edit_script::MAX_SCRIPT_LEN, "Map16 edit")?;
         map16_edit_script::parse(&text)?
+    } else {
+        Vec::new()
+    };
+    let entrance_edits = if let Some(path) = spec.entrances {
+        let text = read_bounded_utf8(
+            &path,
+            entrance_edit_script::MAX_SCRIPT_LEN,
+            "entrance edit",
+        )?;
+        entrance_edit_script::parse(&text)?
     } else {
         Vec::new()
     };
@@ -146,6 +158,7 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
     Ok(LoadedNativeAssetsEdits {
         edits,
         map16_edits,
+        entrance_edits,
         palette_ownership: palette_script.map(|script| script.ownership),
     })
 }
@@ -258,8 +271,17 @@ mod tests {
             "LMM16ED1\nsubtile 01 02 br 1234 10000\n",
         )
         .unwrap();
+        fs::write(
+            directory.join("entrances.txt"),
+            "LMENTR1\nmain 12 34 56 78\n",
+        )
+        .unwrap();
         let spec = directory.join("aggregate.lmnat");
-        fs::write(&spec, "LMNATED1\nlevel=level.txt\nmap16=blocks.txt\n").unwrap();
+        fs::write(
+            &spec,
+            "LMNATED1\nlevel=level.txt\nmap16=blocks.txt\nentrances=entrances.txt\n",
+        )
+        .unwrap();
         fs::write(
             directory.join("level.txt"),
             "LMLEDIT1\nheader last-screen 1f\n",
@@ -272,6 +294,10 @@ mod tests {
             loaded.map16_edits.as_slice(),
             [Map16ControllerEdit::SetSubtile { address, .. }]
                 if address.page == 1 && address.tile == 2
+        ));
+        assert!(matches!(
+            loaded.entrance_edits.as_slice(),
+            [VanillaEntranceEdit::SetMain(main)] if main.position == 0x12
         ));
         fs::remove_dir_all(directory).unwrap();
     }

@@ -116,8 +116,8 @@ fn edit(
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let loaded = native_assets_edit_loader::load(path)?;
-    if !loaded.map16_edits.is_empty() {
-        return Err("Map16 edits require a ROM-backed native-assets session".into());
+    if !loaded.map16_edits.is_empty() || !loaded.entrance_edits.is_empty() {
+        return Err("Map16 and entrance edits require a ROM-backed native-assets session".into());
     }
     let controller = session
         .as_mut()
