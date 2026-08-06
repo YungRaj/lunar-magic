@@ -650,7 +650,7 @@ impl VanillaLevelEditor {
                     self.selected_layer2_tile
                 ));
                 if layer2_tilemap_editable(self.shared_vanilla_background) {
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label("Map16 word");
                         ui.add(
                             egui::DragValue::new(&mut self.layer2_word).hexadecimal(4, false, true),
@@ -749,7 +749,7 @@ impl VanillaLevelEditor {
             "vanilla-layer2-raw-object",
             &mut self.layer2_object_form,
         );
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Place on canvas").clicked() {
                 self.placement_mode = Some(CanvasPlacementMode::Layer2Object);
                 self.error = None;
@@ -947,7 +947,7 @@ impl VanillaLevelEditor {
         if let Some(error) = &self.error {
             ui.colored_label(egui::Color32::RED, error);
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Stage header changes").clicked() {
                 let controller = self
                     .controller
@@ -1134,7 +1134,7 @@ impl VanillaLevelEditor {
                 }
             };
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Stage entrance fields").clicked() {
                 controller.set_entrance(self.entrance_form);
                 if let Some(midway) = self.midway_form {
@@ -1173,7 +1173,7 @@ impl VanillaLevelEditor {
         let modified = controller.is_modified();
         let mut undo = false;
         let mut redo = false;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             undo = ui
                 .add_enabled(can_undo, egui::Button::new("Undo staged edit"))
                 .clicked();
@@ -3731,7 +3731,7 @@ impl VanillaLevelEditor {
                 "vanilla-standard-object-catalog"
             })
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Hex filter");
                     ui.text_edit_singleline(&mut self.object_catalog_filter);
                     if ui.button("Clear").clicked() {
@@ -3825,7 +3825,7 @@ impl VanillaLevelEditor {
                 "vanilla-custom-object-catalog"
             })
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Hex/name filter");
                     ui.text_edit_singleline(&mut self.custom_object_catalog_filter);
                     if ui.button("Clear").clicked() {
@@ -3905,7 +3905,7 @@ impl VanillaLevelEditor {
                 "vanilla-extended-object-catalog"
             })
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Hex filter");
                     ui.text_edit_singleline(&mut self.extended_object_catalog_filter);
                     if ui.button("Clear").clicked() {
@@ -3994,7 +3994,7 @@ impl VanillaLevelEditor {
         record_count: usize,
         has_selection: bool,
     ) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Insert after selection").clicked() {
                 self.insert_object_after_selection(record_count);
             }
@@ -4248,7 +4248,7 @@ impl VanillaLevelEditor {
     }
 
     fn sprite_editor_actions(&mut self, ui: &mut egui::Ui, token_count: usize) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Stage sprite header").clicked()
                 && let Some(controller) = self.controller.as_mut()
             {
@@ -4351,7 +4351,7 @@ impl VanillaLevelEditor {
         egui::CollapsingHeader::new("Add standard sprite visually")
             .id_salt("vanilla-standard-sprite-catalog")
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Hex filter");
                     ui.text_edit_singleline(&mut self.sprite_catalog_filter);
                     if ui.button("Clear").clicked() {
@@ -4424,7 +4424,7 @@ impl VanillaLevelEditor {
         egui::CollapsingHeader::new("Add custom SSC sprite visually")
             .id_salt("vanilla-custom-sprite-catalog")
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Hex/name filter");
                     ui.text_edit_singleline(&mut self.custom_sprite_catalog_filter);
                     if ui.button("Clear").clicked() {
