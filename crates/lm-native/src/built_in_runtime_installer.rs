@@ -97,22 +97,8 @@ impl BuiltInRuntimeInstaller {
         if workspace.selection_is_installed() {
             ui.label("The selected current runtime is already installed and authenticated.");
         }
-        if workspace.selection_migrates_legacy_runtime() {
-            ui.label(match workspace.runtime {
-                BuiltInRuntime::Lfix3Core => {
-                    "The authenticated legacy Lfix3 generation will be migrated to the current \
-                     runtime while preserving or converting its live per-level tables."
-                }
-                BuiltInRuntime::Map16Runtime => {
-                    "The authenticated stage-three Map16 runtime will be migrated in place while \
-                     leaving existing Map16 data and allocations untouched."
-                }
-                BuiltInRuntime::Layer2Runtime => {
-                    "The authenticated format-$102 pointer table and per-level descriptors will \
-                     be converted to format $103 together with the exact current runtime hook."
-                }
-                _ => unreachable!(),
-            });
+        if let Some(description) = workspace.migration_description() {
+            ui.label(description);
         }
         ui.label(
             "Installation may expand the ROM. All allocations, hooks, checksum repair, and \
@@ -253,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn lfix3_selection_installs_exact_hooks_checksums_and_undoes() {
+    fn lfix3_runtime_selection_installs_reopens_and_undoes_exactly() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(original.clone()).unwrap();
@@ -475,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn sprite19_selection_installs_oracle_exact_fix_and_undoes() {
+    fn sprite19_fix_selection_installs_authenticates_and_undoes_exactly() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
         app.load_rom(original.clone()).unwrap();

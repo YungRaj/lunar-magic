@@ -4065,3 +4065,10 @@ On macOS, an approved executable path ending in an existing `.app` directory is 
 system `/usr/bin/open` tool with wait and new-instance flags; `--args` preserves each expanded
 argument as a separate process value. Ordinary executable paths retain the direct launch path on
 every platform, and neither route invokes a command shell.
+
+The built-in runtime installer reports the exact authenticated legacy generation it will migrate.
+Lfix3 generations 1 and 2 distinguish packed-table conversion from three-plane preservation;
+Map16 stages `$0100`, `$0101`, and `$0111` identify their `$0112` target; and Layer 2 formats
+`$100`, `$101`, and `$102` identify their `$103` target. The same generation predicates control
+the migration button and typed command, so the dialog cannot describe one source format while
+dispatching another. Focused coverage enumerates every supported legacy generation.
