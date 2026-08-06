@@ -4177,45 +4177,95 @@ impl VanillaLevelEditor {
         let Some(controller) = &self.controller else {
             return;
         };
-        let count = controller.level().sprites.tokens.len();
+        let header = controller.level().sprites.header;
+        let tokens = controller.level().sprites.tokens.clone();
+        let count = tokens.len();
         let placements = controller.level().sprites.native_placements();
+        let texture = self.sprite_texture.clone();
+        let animated_texture = self
+            .animated_sprite_textures
+            .get(usize::from(sprite_animation_phase(
+                ui.input(|input| input.time),
+            )))
+            .cloned()
+            .or_else(|| texture.clone());
+        let level_header = &controller.level().layer1.header;
+        let vertical = lm_profile::smw_us_v1_level_mode(level_header.level_mode()).vertical;
+        let level_mode = level_header.level_mode();
+        let sprite_tileset = self.form.sprite_tileset;
         egui::CollapsingHeader::new(format!("Edit existing enemies and sprites ({count})"))
             .id_salt("vanilla-existing-sprites")
             .default_open(false)
             .show(ui, |ui| {
+                ui.label(
+                    "Select a picture to edit that existing record, or place another copy of it.",
+                );
                 egui::ScrollArea::vertical()
-                    .max_height(240.0)
+                    .id_salt("vanilla-existing-sprite-picture-list")
+                    .max_height(220.0)
                     .show(ui, |ui| {
-                        for (index, token) in controller.level().sprites.tokens.iter().enumerate() {
-                            let text = SpriteForm::from_token(
-                                controller.level().sprites.header,
-                                Some(token),
-                            )
-                            .encoded;
-                            let semantic = placements
-                                .iter()
-                                .find(|placement| placement.token_index == index)
-                                .map_or_else(String::new, |placement| {
-                                    format!(
-                                        "sprite {:02X} @ {}:{:X},{} · ",
-                                        placement.sprite_number,
-                                        placement.screen,
-                                        placement.major & 0x0f,
-                                        placement.minor
-                                    )
-                                });
+                        ui.horizontal_wrapped(|ui| {
+                            for placement in &placements {
+                                let index = placement.token_index;
+                                let Some(token) = tokens.get(index) else {
+                                    continue;
+                                };
+                                let form = SpriteForm::from_token(header, Some(token));
+                                let mode = sprite_catalog_preview_mode(
+                                    &form,
+                                    vertical,
+                                    level_mode,
+                                    sprite_tileset,
+                                );
+                                let response = draw_sprite_catalog_entry(
+                                    ui,
+                                    texture.as_ref(),
+                                    animated_texture.as_ref(),
+                                    placement.sprite_number,
+                                    mode,
+                                    index == self.selected_sprite,
+                                )
+                                .on_hover_text(format!(
+                                    "Existing record {index}\nScreen {}, tile ${:X},{}\nClick to select and copy",
+                                    placement.screen,
+                                    placement.major & 0x0f,
+                                    placement.minor
+                                ));
+                                if response.clicked() {
+                                    self.selected_sprite = index;
+                                    self.sprite_form = form;
+                                }
+                            }
+                        });
+                    });
+                let selected_is_record = matches!(
+                    tokens.get(self.selected_sprite),
+                    Some(SpriteToken::Record(_))
+                );
+                if ui
+                    .add_enabled(
+                        selected_is_record,
+                        egui::Button::new("Place a copy on canvas"),
+                    )
+                    .clicked()
+                {
+                    self.placement_mode = Some(CanvasPlacementMode::Sprite);
+                    self.error = None;
+                }
+                egui::CollapsingHeader::new("Raw stream records and control commands")
+                    .id_salt("vanilla-existing-sprite-raw-list")
+                    .show(ui, |ui| {
+                        for (index, token) in tokens.iter().enumerate() {
+                            let text = SpriteForm::from_token(header, Some(token)).encoded;
                             if ui
                                 .selectable_label(
                                     index == self.selected_sprite,
-                                    format!("{index:03}: {semantic}{text}"),
+                                    format!("{index:03}: {text}"),
                                 )
                                 .clicked()
                             {
                                 self.selected_sprite = index;
-                                self.sprite_form = SpriteForm::from_token(
-                                    controller.level().sprites.header,
-                                    Some(token),
-                                );
+                                self.sprite_form = SpriteForm::from_token(header, Some(token));
                             }
                         }
                     });
