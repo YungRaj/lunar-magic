@@ -3090,14 +3090,16 @@ active editor, profile/save state, undo/redo availability, and current level. It
 document path, ROM identity/hash/bytes, or user status text. Original CHM topic launching, deeper
 ROM/runtime diagnostics, and Wine-observed About behavior remain open parity gates.
 
-**Tools → Keyboard Shortcuts** now provides a staged native editor for the existing typed shortcut
-configuration. It covers all twelve frontend actions and every portable character, function,
-navigation, and editing key family; validates the complete binding set before applying it; and
-rejects duplicate gestures without changing active bindings. Active shortcuts are suppressed while
-the editor is open so typing a candidate cannot invoke an existing command. Applying either a
-populated or cleared binding set persists the canonical `LMSHORT1` configuration in native
-application storage and restores it on the next launch. Cancel and window close discard staged
-edits. The original Lunar Magic shortcut-dialog layout and Wine-observed behavior remain unverified.
+**Tools → Keyboard Shortcuts** is a Rust extension over Lunar Magic's fixed per-editor key
+dispatch. It provides a staged native editor for the typed shortcut configuration, covers all
+twelve frontend actions and every portable character, function, navigation, and editing key
+family, validates the complete binding set before applying it, and rejects duplicate gestures
+without changing active bindings. Active shortcuts are suppressed while the editor is open so
+typing a candidate cannot invoke an existing command. Applying either a populated or cleared
+binding set persists the canonical `LMSHORT1` configuration in native application storage and
+restores it on the next launch. Cancel and window close discard staged edits. Because Lunar Magic
+3.63 has no corresponding global shortcut-configuration dialog, this extension is not counted as
+an original feature-parity workflow; original fixed keys are verified with their owning editors.
 
 **Tools → Customize Toolbar** now stages the current portable toolbar as an ordered sequence of
 actions and separators. It preserves each action's stable ID and independently selected typed
