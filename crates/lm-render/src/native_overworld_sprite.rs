@@ -333,6 +333,8 @@ pub struct NativeOverworldSpritePlacement {
     pub id: u16,
     pub x: i32,
     pub y: i32,
+    /// Lunar Magic overworld map index (`0..=6`) selecting the active graphics cache.
+    pub submap: u8,
 }
 
 /// A display element after `.sscov` Sprite Map16 references have been expanded.
@@ -352,6 +354,8 @@ pub enum ResolvedNativeOverworldSpriteElement {
         graphics_base: u16,
         /// Lunar Magic editor palette-cache base or `$FFFF` active-palette sentinel.
         palette_base: u16,
+        /// Byte offset of the selected CGRAM half within Lunar Magic's active palette cache.
+        active_palette_offset: u16,
     },
     Label {
         sprite_index: usize,
@@ -407,6 +411,7 @@ pub fn resolve_native_overworld_sprite_elements(
                 builtin_sprite_map16,
                 custom_sprite_map16,
                 &resources,
+                placement.submap,
             );
         }
         match &appearance.display {
@@ -422,6 +427,7 @@ pub fn resolve_native_overworld_sprite_elements(
                         builtin_sprite_map16,
                         custom_sprite_map16,
                         &resources,
+                        placement.submap,
                     );
                 }
             }
@@ -512,6 +518,7 @@ fn expand_map16(
     builtin: &[Map16Tile],
     custom: &S16OvSidecar,
     resources: &NativeOverworldSpriteResourceMap,
+    submap: u8,
 ) {
     if (0xc00..=0xcff).contains(&native_tile) {
         output.push(ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
@@ -538,7 +545,7 @@ fn expand_map16(
         });
         return;
     };
-    let (graphics_base, palette_base) = resources.route(native_tile);
+    let route = resources.route_for_submap(native_tile, submap);
     for (subtile, dx, dy) in [
         (definition.top_left, 0, 0),
         (definition.top_right, 8, 0),
@@ -552,8 +559,9 @@ fn expand_map16(
             x + dx,
             y + dy,
             translucent,
-            graphics_base,
-            palette_base,
+            route.graphics_base,
+            route.palette_base,
+            route.active_palette_offset,
         );
     }
 }
@@ -567,6 +575,7 @@ fn push_subtile(
     translucent: bool,
     graphics_base: u16,
     palette_base: u16,
+    active_palette_offset: u16,
 ) {
     output.push(ResolvedNativeOverworldSpriteElement::Tile {
         sprite_index,
@@ -580,7 +589,16 @@ fn push_subtile(
         translucent,
         graphics_base,
         palette_base,
+        active_palette_offset,
     });
+}
+
+/// Materialized graphics and palette cache route for one overworld submap.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeOverworldSpriteResourceRoute {
+    pub graphics_base: u16,
+    pub palette_base: u16,
+    pub active_palette_offset: u16,
 }
 
 /// Exact routing tables initialized and overridden by Lunar Magic's `.sscov` loader.
@@ -595,6 +613,12 @@ impl NativeOverworldSpriteResourceMap {
     pub const INTERNAL_GRAPHICS_BASE: u16 = 0x3100;
     pub const ACTIVE_PALETTE_BASE: u16 = 0xffff;
     pub const INTERNAL_PALETTE_BASE: u16 = 0xfffe;
+    const SUBMAP_BASE_GRAPHICS_BASES: [u16; 7] =
+        [0x0000, 0x0400, 0x0800, 0x0c00, 0x1000, 0x1400, 0x1800];
+    const SUBMAP_ACTIVE_GRAPHICS_BASES: [u16; 7] =
+        [0x1c00, 0x1e00, 0x2000, 0x2200, 0x2400, 0x2600, 0x2800];
+    const SUBMAP_ANIMATED_GRAPHICS_BASES: [u16; 7] =
+        [0x2a00, 0x2b00, 0x2c00, 0x2d00, 0x2e00, 0x2f00, 0x3000];
 
     /// Reproduces `InitializeOverworldEditorModel` and the two range loops in
     /// `LoadCustomOverworldSpriteSidecar` (`005446D0`, `005438A0`).
@@ -641,6 +665,32 @@ impl NativeOverworldSpriteResourceMap {
             (Self::ACTIVE_GRAPHICS_BASE, Self::ACTIVE_PALETTE_BASE),
             |graphics| (*graphics, self.palettes[index]),
         )
+    }
+
+    /// Resolves Lunar Magic's three submap-relative graphics-cache sentinels.
+    ///
+    /// The recovered tables at `005E46A4`, `005E46DC`, and `005E4714` contain seven
+    /// DWORD byte offsets; `RenderOverworldLinkedTileOverlays` shifts each by six before use.
+    /// Out-of-range map indices conservatively select the last available submap.
+    #[must_use]
+    pub fn route_for_submap(
+        &self,
+        native_tile: u16,
+        submap: u8,
+    ) -> NativeOverworldSpriteResourceRoute {
+        let (raw_graphics, palette_base) = self.route(native_tile);
+        let map = usize::from(submap).min(6);
+        let (graphics_base, active_palette_offset) = match raw_graphics {
+            0x0000 => (Self::SUBMAP_BASE_GRAPHICS_BASES[map], 0),
+            Self::ACTIVE_GRAPHICS_BASE => (Self::SUBMAP_ACTIVE_GRAPHICS_BASES[map], 0x80),
+            0x2a00 => (Self::SUBMAP_ANIMATED_GRAPHICS_BASES[map], 0),
+            _ => (raw_graphics, 0x80),
+        };
+        NativeOverworldSpriteResourceRoute {
+            graphics_base,
+            palette_base,
+            active_palette_offset,
+        }
     }
 }
 
@@ -752,6 +802,68 @@ mod tests {
     }
 
     #[test]
+    fn resource_routes_materialize_all_recovered_submap_cache_tables() {
+        let mut definitions = definitions();
+        definitions.graphics_ranges = vec![
+            NativeOverworldSpriteRange {
+                kind: 1,
+                first_tile: 0x400,
+                last_tile: 0x400,
+                base: 0,
+            },
+            NativeOverworldSpriteRange {
+                kind: 3,
+                first_tile: 0x401,
+                last_tile: 0x401,
+                base: 0,
+            },
+            NativeOverworldSpriteRange {
+                kind: 0,
+                first_tile: 0x402,
+                last_tile: 0x402,
+                base: 0x20,
+            },
+        ];
+        let routes = NativeOverworldSpriteResourceMap::from_definitions(&definitions);
+        for submap in 0..7 {
+            assert_eq!(
+                routes.route_for_submap(0x3ff, submap),
+                NativeOverworldSpriteResourceRoute {
+                    graphics_base: [0x1c00, 0x1e00, 0x2000, 0x2200, 0x2400, 0x2600, 0x2800,]
+                        [usize::from(submap)],
+                    palette_base: NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE,
+                    active_palette_offset: 0x80,
+                }
+            );
+            assert_eq!(
+                routes.route_for_submap(0x400, submap).graphics_base,
+                [0x0000, 0x0400, 0x0800, 0x0c00, 0x1000, 0x1400, 0x1800][usize::from(submap)]
+            );
+            assert_eq!(
+                routes.route_for_submap(0x400, submap).active_palette_offset,
+                0
+            );
+            assert_eq!(
+                routes.route_for_submap(0x401, submap).graphics_base,
+                [0x2a00, 0x2b00, 0x2c00, 0x2d00, 0x2e00, 0x2f00, 0x3000][usize::from(submap)]
+            );
+            assert_eq!(
+                routes.route_for_submap(0x401, submap).active_palette_offset,
+                0
+            );
+            assert_eq!(routes.route_for_submap(0x402, submap).graphics_base, 0x4220);
+            assert_eq!(
+                routes.route_for_submap(0x402, submap).active_palette_offset,
+                0x80
+            );
+        }
+        assert_eq!(
+            routes.route_for_submap(0x3ff, u8::MAX),
+            routes.route_for_submap(0x3ff, 6)
+        );
+    }
+
+    #[test]
     fn resolves_shadow_custom_tiles_labels_and_retains_internal_references() {
         let mut builtin = vec![Map16Tile::default(); 0x400];
         builtin[0x20] = Map16Tile {
@@ -768,11 +880,13 @@ mod tests {
                     id: 0x102,
                     x: 100,
                     y: 40,
+                    submap: 0,
                 },
                 NativeOverworldSpritePlacement {
                     id: 3,
                     x: 10,
                     y: 20,
+                    submap: 0,
                 },
             ],
             &definitions(),
@@ -853,6 +967,7 @@ mod tests {
                     translucent: true,
                     graphics_base: NativeOverworldSpriteResourceMap::ACTIVE_GRAPHICS_BASE,
                     palette_base: NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE,
+                    active_palette_offset: 0x80,
                 },
                 ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
                     sprite_index: 0,
