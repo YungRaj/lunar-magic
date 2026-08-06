@@ -34,7 +34,9 @@ const VANILLA_LAYER2_VERTICAL_SCROLL: [u8; 16] = [3, 1, 1, 0, 0, 2, 2, 1, 0, 0, 
 const VANILLA_LAYER2_HORIZONTAL_SCROLL: [u8; 16] = [2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 const VANILLA_INITIAL_LAYER1_Y: [u8; 4] = [0x00, 0x60, 0xc0, 0x00];
 const VANILLA_INITIAL_LAYER2_Y: [u8; 4] = [0x60, 0x90, 0xc0, 0x00];
-const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 380.0;
+// At the default desktop window size this leaves the one-screen canvas pane close to 256:224,
+// minimizing its centered side bezels while retaining a useful, fixed-width editing column.
+const ROM_LEVEL_TOOL_PANEL_WIDTH: f32 = 530.0;
 const STANDARD_SPRITE_MAX: u8 = 0xed;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -533,7 +535,7 @@ impl VanillaLevelEditor {
             }
             ui.allocate_ui_with_layout(
                 egui::vec2(ui.available_width(), workspace_size.y),
-                egui::Layout::top_down(egui::Align::Min),
+                egui::Layout::top_down(egui::Align::Center),
                 |ui| {
                     self.object_canvas(
                         ui,
@@ -1870,8 +1872,14 @@ impl VanillaLevelEditor {
         let game_preview = self.game_preview();
         let snes_viewport = game_preview && self.snes_viewport();
         self.show_canvas_tools(ui, major_tiles, minor_tiles, vertical);
+        if self.placement_mode.is_some() {
+            ui.label("Click a canvas tile to place the values from the matching editor below.");
+        } else {
+            ui.label("Select or drag an object/enemy; Insert duplicates the selection and Delete removes it.");
+        }
+        let canvas_available = ui.available_size();
         let cell = if snes_viewport {
-            fitted_snes_viewport_cell(ui.available_size(), self.canvas_zoom_percent())
+            fitted_snes_viewport_cell(canvas_available, self.canvas_zoom_percent())
         } else {
             self.canvas_cell()
         };
@@ -1881,15 +1889,13 @@ impl VanillaLevelEditor {
             // 656-pixel-wide editor DIB, repeating the plane horizontally.
             egui::vec2(656.0, 512.0)
         } else if snes_viewport {
-            egui::vec2(16.0 * cell, 14.0 * cell)
+            // The editing surface follows the pane itself on every native window resize. Keep
+            // square SNES pixels and reveal the surplus edge of the level on the non-limiting
+            // axis instead of leaving a fixed-size 256×224 rectangle letterboxed inside it.
+            canvas_available
         } else {
             world_size
         };
-        if self.placement_mode.is_some() {
-            ui.label("Click a canvas tile to place the values from the matching editor below.");
-        } else {
-            ui.label("Select or drag an object/enemy; Insert duplicates the selection and Delete removes it.");
-        }
         let audit_scroll = visual_smoke_editor_scroll_column().is_some()
             || visual_smoke_editor_scroll_row().is_some();
         let scroll_id = if audit_scroll {
@@ -1912,15 +1918,22 @@ impl VanillaLevelEditor {
         if !snes_viewport && let Some(offset) = requested_vertical_scroll {
             scroll_area = scroll_area.vertical_scroll_offset(offset);
         }
-        let scroll_output = scroll_area.show(ui, |ui| {
+        let mut paint_canvas = |ui: &mut egui::Ui| {
             let (rect, response) =
                 ui.allocate_exact_size(canvas_size, egui::Sense::click_and_drag());
             let painter = ui.painter_at(rect);
             let paint_rect = if snes_viewport {
                 let (origin_x, origin_y) =
                     self.game_preview_camera_origin(major_tiles, minor_tiles, vertical);
+                let rendered_viewport = egui::vec2(16.0 * cell, 14.0 * cell);
+                let centered_crop = egui::vec2(
+                    ((rendered_viewport.x - rect.width()) * 0.5).max(0.0),
+                    ((rendered_viewport.y - rect.height()) * 0.5).max(0.0),
+                );
                 egui::Rect::from_min_size(
-                    rect.min - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell),
+                    rect.min
+                        - egui::vec2(f32::from(origin_x) * cell, f32::from(origin_y) * cell)
+                        - centered_crop,
                     world_size,
                 )
             } else {
@@ -1953,7 +1966,13 @@ impl VanillaLevelEditor {
                     custom_map16,
                 );
             }
-        });
+        };
+        if snes_viewport {
+            // Paint directly so scroll-area frame padding cannot become a visible bezel.
+            paint_canvas(ui);
+            return;
+        }
+        let scroll_output = scroll_area.show(ui, paint_canvas);
         if !snes_viewport && let Some(requested) = requested_vertical_scroll {
             let target = clamped_scroll_offset(
                 requested,
@@ -1974,77 +1993,85 @@ impl VanillaLevelEditor {
         minor_tiles: u16,
         vertical: bool,
     ) {
-        ui.horizontal_wrapped(|ui| {
-            let mut game_preview = self.game_preview();
-            if ui.toggle_value(&mut game_preview, "Game pixels").changed() {
-                self.game_preview = Some(game_preview);
-            }
-            if game_preview {
-                let mut snes_viewport = self.snes_viewport();
-                if ui
-                    .toggle_value(&mut snes_viewport, "256×224 viewport")
-                    .changed()
-                {
-                    self.snes_viewport = Some(snes_viewport);
-                }
-                if snes_viewport {
-                    self.show_preview_camera_tools(ui, major_tiles, minor_tiles, vertical);
-                }
-            }
-            ui.separator();
-            ui.label("Canvas tool:");
-            ui.selectable_value(&mut self.placement_mode, None, "Select / move");
-            ui.selectable_value(
-                &mut self.placement_mode,
-                Some(CanvasPlacementMode::Object),
-                "Place object",
-            );
-            ui.selectable_value(
-                &mut self.placement_mode,
-                Some(CanvasPlacementMode::Sprite),
-                "Place sprite",
-            );
-            if matches!(
-                self.controller.as_ref().and_then(LevelController::layer2),
-                Some(lm_level::NativeLayer2Data::Tilemap(_))
-            ) && layer2_tilemap_editable(self.shared_vanilla_background)
-            {
-                ui.selectable_value(
-                    &mut self.placement_mode,
-                    Some(CanvasPlacementMode::Layer2Tile),
-                    "Paint Layer 2 tile",
-                );
-            } else if matches!(
-                self.controller.as_ref().and_then(LevelController::layer2),
-                Some(lm_level::NativeLayer2Data::Objects(_))
-            ) {
-                ui.selectable_value(
-                    &mut self.placement_mode,
-                    Some(CanvasPlacementMode::Layer2Object),
-                    "Place Layer 2 object",
-                );
-            }
-            ui.separator();
-            ui.label("Zoom:");
-            let mut zoom = self.canvas_zoom_percent();
-            if ui.small_button("−").clicked() {
-                zoom = zoom.saturating_sub(ROM_LEVEL_CANVAS_ZOOM_STEP);
-            }
-            let slider = egui::Slider::new(
-                &mut zoom,
-                ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM,
-            )
-            .suffix("%")
-            .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
-            ui.add(slider);
-            if ui.small_button("Reset").clicked() {
-                zoom = 100;
-            }
-            if ui.small_button("+").clicked() {
-                zoom = zoom.saturating_add(ROM_LEVEL_CANVAS_ZOOM_STEP);
-            }
-            self.canvas_zoom_percent = Some(clamp_canvas_zoom(zoom));
-        });
+        // Keep the controls to one stable row. Wrapping made a horizontal window resize add or
+        // remove toolbar rows, so the canvas height jumped independently of the window and looked
+        // as though it was not following the native resize.
+        egui::ScrollArea::horizontal()
+            .id_salt("vanilla-level-canvas-tools")
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let mut game_preview = self.game_preview();
+                    if ui.toggle_value(&mut game_preview, "Game pixels").changed() {
+                        self.game_preview = Some(game_preview);
+                    }
+                    if game_preview {
+                        let mut snes_viewport = self.snes_viewport();
+                        if ui
+                            .toggle_value(&mut snes_viewport, "256×224 viewport")
+                            .changed()
+                        {
+                            self.snes_viewport = Some(snes_viewport);
+                        }
+                        if snes_viewport {
+                            self.show_preview_camera_tools(ui, major_tiles, minor_tiles, vertical);
+                        }
+                    }
+                    ui.separator();
+                    ui.label("Canvas tool:");
+                    ui.selectable_value(&mut self.placement_mode, None, "Select / move");
+                    ui.selectable_value(
+                        &mut self.placement_mode,
+                        Some(CanvasPlacementMode::Object),
+                        "Place object",
+                    );
+                    ui.selectable_value(
+                        &mut self.placement_mode,
+                        Some(CanvasPlacementMode::Sprite),
+                        "Place sprite",
+                    );
+                    if matches!(
+                        self.controller.as_ref().and_then(LevelController::layer2),
+                        Some(lm_level::NativeLayer2Data::Tilemap(_))
+                    ) && layer2_tilemap_editable(self.shared_vanilla_background)
+                    {
+                        ui.selectable_value(
+                            &mut self.placement_mode,
+                            Some(CanvasPlacementMode::Layer2Tile),
+                            "Paint Layer 2 tile",
+                        );
+                    } else if matches!(
+                        self.controller.as_ref().and_then(LevelController::layer2),
+                        Some(lm_level::NativeLayer2Data::Objects(_))
+                    ) {
+                        ui.selectable_value(
+                            &mut self.placement_mode,
+                            Some(CanvasPlacementMode::Layer2Object),
+                            "Place Layer 2 object",
+                        );
+                    }
+                    ui.separator();
+                    ui.label("Zoom:");
+                    let mut zoom = self.canvas_zoom_percent();
+                    if ui.small_button("−").clicked() {
+                        zoom = zoom.saturating_sub(ROM_LEVEL_CANVAS_ZOOM_STEP);
+                    }
+                    let slider = egui::Slider::new(
+                        &mut zoom,
+                        ROM_LEVEL_CANVAS_MIN_ZOOM..=ROM_LEVEL_CANVAS_MAX_ZOOM,
+                    )
+                    .suffix("%")
+                    .step_by(f64::from(ROM_LEVEL_CANVAS_ZOOM_STEP));
+                    ui.add(slider);
+                    if ui.small_button("Reset").clicked() {
+                        zoom = 100;
+                    }
+                    if ui.small_button("+").clicked() {
+                        zoom = zoom.saturating_add(ROM_LEVEL_CANVAS_ZOOM_STEP);
+                    }
+                    self.canvas_zoom_percent = Some(clamp_canvas_zoom(zoom));
+                })
+            });
     }
 
     fn show_preview_camera_tools(
@@ -2397,6 +2424,10 @@ impl VanillaLevelEditor {
                     vertical,
                     level_mode,
                     sprite_tileset: self.form.sprite_tileset,
+                    sprite_memory_index: self
+                        .controller
+                        .as_ref()
+                        .map_or(0, |controller| controller.level().sprites.header & 0x3f),
                     animation_phase,
                     custom_sprites,
                     custom_map16,
@@ -5950,8 +5981,14 @@ fn vanilla_horizontal_entrance_scroll_row(entrance: VanillaMainEntrance) -> u16 
 /// The two coordinate tables are the live arrays used by
 /// `DrawPrimaryOrMidwayEntranceLabel` at `00452920`. The entrance pose changes the horizontal
 /// label clearance from 18 to 24 pixels; the marker itself is rendered immediately to its left.
-fn horizontal_primary_entrance_label_pixels(entrance: VanillaMainEntrance) -> (u16, u16) {
-    let screen = u16::from(entrance.level_mode_and_screen & 0x1f) * 0x100;
+pub(crate) fn horizontal_primary_entrance_label_pixels(
+    entrance: VanillaMainEntrance,
+) -> (u16, u16) {
+    horizontal_entrance_label_pixels(entrance, u16::from(entrance.level_mode_and_screen & 0x1f))
+}
+
+fn horizontal_entrance_label_pixels(entrance: VanillaMainEntrance, screen: u16) -> (u16, u16) {
+    let screen = screen * 0x100;
     let x_setting = usize::from(entrance.vertical_settings & 7);
     let y_setting = usize::from(entrance.position & 0x0f);
     let x = screen + u16::from(VANILLA_ENTRANCE_X_LOW[x_setting]);
@@ -5962,8 +5999,14 @@ fn horizontal_primary_entrance_label_pixels(entrance: VanillaMainEntrance) -> (u
     (x.saturating_add(label_clearance), y)
 }
 
-fn horizontal_primary_entrance_marker_pixels(entrance: VanillaMainEntrance) -> (u16, u16) {
-    let screen = u16::from(entrance.level_mode_and_screen & 0x1f) * 0x100;
+pub(crate) fn horizontal_primary_entrance_marker_pixels(
+    entrance: VanillaMainEntrance,
+) -> (u16, u16) {
+    horizontal_entrance_marker_pixels(entrance, u16::from(entrance.level_mode_and_screen & 0x1f))
+}
+
+fn horizontal_entrance_marker_pixels(entrance: VanillaMainEntrance, screen: u16) -> (u16, u16) {
+    let screen = screen * 0x100;
     let x_setting = usize::from(entrance.vertical_settings & 7);
     let y_setting = usize::from(entrance.position & 0x0f);
     (
@@ -5973,8 +6016,76 @@ fn horizontal_primary_entrance_marker_pixels(entrance: VanillaMainEntrance) -> (
     )
 }
 
-fn vertical_primary_entrance_marker_pixels(
+pub(crate) fn vertical_primary_entrance_marker_pixels(
     entrance: VanillaMainEntrance,
+    alternate_layout: bool,
+) -> (u16, u16) {
+    let y_setting = usize::from(entrance.position & 0x0f);
+    let screen = if entrance.level_mode_and_screen & 0x20 != 0 {
+        u16::from(entrance.level_mode_and_screen & 0x1f)
+    } else {
+        // With vertical entrance positioning disabled, Lunar Magic retains the legacy entrance
+        // table's page and emits the "Turn on vertical entrance positioning" warning.
+        u16::from(VANILLA_ENTRANCE_Y_HIGH[y_setting])
+    };
+    vertical_entrance_marker_pixels(entrance, screen, alternate_layout)
+}
+
+/// Returns Lunar Magic's marker and label anchors for a secondary entrance targeting the
+/// current level. This follows `DrawSecondaryEntranceLabels` at `$00452D10`, including its
+/// ordinary horizontal/vertical tables and the expanded-coordinate flag-$40 path.
+pub(crate) fn secondary_entrance_marker_and_label_pixels(
+    exit: lm_level::SecondaryExit,
+    vertical: bool,
+    alternate_vertical_layout: bool,
+) -> ((u16, u16), (u16, u16)) {
+    let position = usize::from(exit.position_and_method & 0x0f);
+    let vertical_position = usize::from(exit.y & 7);
+    let (marker_x, marker_y) = if exit.destination_flags & 0x40 == 0 {
+        if vertical {
+            let x_high = if alternate_vertical_layout {
+                VANILLA_ALTERNATE_VERTICAL_ENTRANCE_X_HIGH[vertical_position]
+            } else {
+                VANILLA_VERTICAL_ENTRANCE_X_HIGH[vertical_position]
+            };
+            (
+                u16::from(x_high) * 0x100 + u16::from(VANILLA_ENTRANCE_X_LOW[vertical_position]),
+                u16::from(exit.screen) * 0x100 + u16::from(VANILLA_ENTRANCE_Y_LOW[position]),
+            )
+        } else {
+            (
+                u16::from(exit.screen) * 0x100
+                    + u16::from(VANILLA_ENTRANCE_X_LOW[vertical_position]),
+                u16::from(VANILLA_ENTRANCE_Y_HIGH[position]) * 0x100
+                    + u16::from(VANILLA_ENTRANCE_Y_LOW[position]),
+            )
+        }
+    } else {
+        let packed_x = exit.x_and_overworld_flags | exit.x;
+        let mut x =
+            (u16::from(exit.position_and_method & 0x0f) + u16::from(packed_x & 0x3f) * 0x10) * 0x10;
+        let mut y = (u16::from(exit.destination_flags >> 1 & 0x18) + u16::from(exit.y)) * 0x10;
+        if vertical {
+            x = u16::from(exit.screen) * 0x100 + (x & 0xf0);
+        } else {
+            y = u16::from(exit.screen) * 0x100 + (y & 0xf0);
+        }
+        (y, x)
+    };
+    let pose = exit.destination_flags & 7;
+    let mut clearance = if pose < 3 || pose == 5 { 18 } else { 24 };
+    if exit.additional_flags & 0x40 != 0 && pose == 6 {
+        clearance += 10;
+    }
+    (
+        (marker_x, marker_y),
+        (marker_x.saturating_add(clearance), marker_y),
+    )
+}
+
+fn vertical_entrance_marker_pixels(
+    entrance: VanillaMainEntrance,
+    screen: u16,
     alternate_layout: bool,
 ) -> (u16, u16) {
     let x_setting = usize::from(entrance.vertical_settings & 7);
@@ -5986,12 +6097,44 @@ fn vertical_primary_entrance_marker_pixels(
     };
     (
         u16::from(x_high) * 0x100 + u16::from(VANILLA_ENTRANCE_X_LOW[x_setting]),
-        u16::from(VANILLA_ENTRANCE_Y_HIGH[y_setting]) * 0x100
-            + u16::from(VANILLA_ENTRANCE_Y_LOW[y_setting]),
+        screen * 0x100 + u16::from(VANILLA_ENTRANCE_Y_LOW[y_setting]),
     )
 }
 
-fn vertical_primary_entrance_label_pixels(
+/// Returns the vanilla midway entrance marker. In an untouched SMW ROM, midway entrances share
+/// the main entrance's X/Y and pose settings; the high nibble of `$05:D7A1` selects their screen.
+/// This is the `DAT_00600246 >> 4` path in Lunar Magic 3.63's
+/// `DrawPrimaryOrMidwayEntranceLabel` at `00452920`.
+pub(crate) fn midway_entrance_marker_pixels(
+    entrance: VanillaMainEntrance,
+    vertical: bool,
+    alternate_vertical_layout: bool,
+) -> (u16, u16) {
+    let screen = u16::from(entrance.screen_and_method >> 4);
+    if vertical {
+        vertical_entrance_marker_pixels(entrance, screen, alternate_vertical_layout)
+    } else {
+        horizontal_entrance_marker_pixels(entrance, screen)
+    }
+}
+
+pub(crate) fn midway_entrance_label_pixels(
+    entrance: VanillaMainEntrance,
+    vertical: bool,
+    alternate_vertical_layout: bool,
+) -> (u16, u16) {
+    let screen = u16::from(entrance.screen_and_method >> 4);
+    let (x, y) = if vertical {
+        vertical_entrance_marker_pixels(entrance, screen, alternate_vertical_layout)
+    } else {
+        horizontal_entrance_marker_pixels(entrance, screen)
+    };
+    let pose = entrance.vertical_settings >> 3 & 7;
+    let label_clearance = if pose < 3 || pose == 5 { 18 } else { 24 };
+    (x.saturating_add(label_clearance), y)
+}
+
+pub(crate) fn vertical_primary_entrance_label_pixels(
     entrance: VanillaMainEntrance,
     alternate_layout: bool,
 ) -> (u16, u16) {
@@ -6070,7 +6213,7 @@ fn draw_primary_entrance_position_warning(
     // RenderConfiguredLevelEntrance at 004cc660 emits this warning when a vertical level still
     // has the entrance-positioning bit disabled. Its first label starts one tile right and
     // twenty pixels below the entrance's world anchor.
-    if !vertical || entrance.screen_and_method & 1 != 0 {
+    if !vertical || entrance.level_mode_and_screen & 0x20 != 0 {
         return;
     }
     let y_setting = usize::from(entrance.position & 0x0f);
@@ -7417,6 +7560,7 @@ struct SpritePlacementDraw<'a> {
     vertical: bool,
     level_mode: u8,
     sprite_tileset: u8,
+    sprite_memory_index: u8,
     animation_phase: u8,
     custom_sprites: Option<&'a lm_level::SscResolvedTable>,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
@@ -7438,6 +7582,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         vertical,
         level_mode,
         sprite_tileset,
+        sprite_memory_index,
         animation_phase,
         custom_sprites,
         custom_map16,
@@ -7481,6 +7626,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     vertical,
                     level_mode,
                     sprite_tileset,
+                    sprite_memory_index,
                     animation_phase,
                     standard_8a_count,
                 ),
@@ -7503,15 +7649,27 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     painter,
                     texture,
                     animated_texture,
-                    sprite_preview_part_rect(marker, part.x, part.y, cell_size),
+                    wrap_horizontal_sprite_preview_rect(
+                        sprite_preview_part_rect(marker, part.x, part.y, cell_size),
+                        target,
+                        cell_size,
+                        vertical,
+                    ),
                     part.subtiles,
                     // Lunar Magic draws $E1's ghost definition at 50% opacity while keeping
                     // its separate $114 star overlay opaque. egui tint colors are premultiplied;
                     // white-with-alpha would gamma-adjust this to roughly 75% opacity.
-                    sprite_preview_source_tint(
-                        uses_standard.then_some(placement.sprite_number),
-                        part.definition_index,
-                    ),
+                    if uses_standard
+                        && level_mode == 0x0c
+                        && matches!(placement.sprite_number, 0x38..=0x39)
+                    {
+                        egui::Color32::from_rgba_premultiplied(127, 127, 127, 128)
+                    } else {
+                        sprite_preview_source_tint(
+                            uses_standard.then_some(placement.sprite_number),
+                            part.definition_index,
+                        )
+                    },
                 );
             }
         } else if let Some(parts) = external_preview.as_deref()
@@ -7569,6 +7727,21 @@ fn sprite_preview_part_rect(marker: egui::Rect, x: i16, y: i16, cell_size: f32) 
     ))
 }
 
+fn wrap_horizontal_sprite_preview_rect(
+    mut part: egui::Rect,
+    canvas: egui::Rect,
+    cell_size: f32,
+    vertical: bool,
+) -> egui::Rect {
+    if vertical || canvas.height() <= 0.0 || cell_size <= 0.0 {
+        return part;
+    }
+    while part.min.y >= canvas.max.y {
+        part = part.translate(egui::vec2(16.0 * cell_size, -canvas.height()));
+    }
+    part
+}
+
 fn sprite_preview_bounds(
     marker: egui::Rect,
     offsets: impl IntoIterator<Item = (i16, i16)>,
@@ -7600,20 +7773,28 @@ fn should_draw_unresolved_sprite_marker(uses_standard: bool, sprite_number: u8) 
             != lm_render::StandardSpritePreviewSource::NativeEmpty
 }
 
-fn standard_sprite_preview_mode(
+pub(crate) fn standard_sprite_preview_mode(
     placement: &lm_level::NativeSpritePlacement,
     vertical: bool,
     level_mode: u8,
     sprite_tileset: u8,
+    sprite_memory_index: u8,
     animation_phase: u8,
     sprite_8a_sequence_index: u8,
 ) -> lm_render::StandardSpritePreviewMode {
     lm_render::StandardSpritePreviewMode {
         placement_first: placement.packed_display_position(),
+        serialized_first_byte: placement.first_byte,
         placement_major: placement.major,
         placement_minor: placement.minor,
         level_mode,
+        extra_bits: placement.extra_bits,
         sprite_graphics_mode: sprite_tileset,
+        wide_context: if sprite_memory_index == 1 {
+            lm_render::StandardSpriteWideContext::ValidLong64
+        } else {
+            lm_render::StandardSpriteWideContext::ValidShort
+        },
         animation_phase,
         sprite_8a_sequence_index,
         level_orientation: if vertical {
@@ -8369,7 +8550,7 @@ fn editor_level_layout(
 }
 
 fn workspace_tool_width(available_width: f32) -> f32 {
-    ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.42).max(280.0))
+    ROM_LEVEL_TOOL_PANEL_WIDTH.min((available_width * 0.49).max(280.0))
 }
 
 fn load_animation_textures(
@@ -8398,12 +8579,16 @@ fn fitted_snes_viewport_cell(available: egui::Vec2, zoom_percent: u16) -> f32 {
     const TILE_PIXELS: f32 = 16.0;
     const VIEWPORT_WIDTH: f32 = 256.0;
     const VIEWPORT_HEIGHT: f32 = 224.0;
-    const CAPTION_RESERVE: f32 = 28.0;
-    let horizontal_scale = available.x.max(VIEWPORT_WIDTH) / VIEWPORT_WIDTH;
-    let vertical_scale = (available.y - CAPTION_RESERVE).max(VIEWPORT_HEIGHT) / VIEWPORT_HEIGHT;
-    let fitted_pixel_scale = horizontal_scale.min(vertical_scale).floor().max(1.0);
+    let horizontal_scale = available.x.max(1.0) / VIEWPORT_WIDTH;
+    // `available` is measured after the toolbar and instruction row have been laid out, so it is
+    // already the canvas pane's complete inner rectangle. Reserving caption space here would
+    // count that row twice and leave an avoidable border, especially after maximizing the window.
+    let vertical_scale = available.y.max(1.0) / VIEWPORT_HEIGHT;
+    // Cover the complete responsive canvas. The non-matching edge is clipped symmetrically by
+    // the viewport painter, preventing a narrow or short window from exposing unrendered space.
+    let fitted_pixel_scale = horizontal_scale.max(vertical_scale).max(1.0 / TILE_PIXELS);
     let zoom_steps = f32::from(clamp_canvas_zoom(zoom_percent)) / 100.0;
-    (fitted_pixel_scale * zoom_steps).max(1.0).floor() * TILE_PIXELS
+    (fitted_pixel_scale * zoom_steps).max(1.0 / TILE_PIXELS) * TILE_PIXELS
 }
 
 fn game_preview_origin(
@@ -8908,6 +9093,20 @@ mod tests {
         assert_eq!(reopened.level().layer1.objects.records.len(), baseline + 1);
         assert_eq!(reopened.level().sprites.tokens.len(), sprite_baseline + 1);
         assert_eq!(app.project().unwrap().rom.logical_len(), 0x10_0000);
+    }
+
+    #[test]
+    fn horizontal_sprite_preview_rect_wraps_to_the_following_screen() {
+        let canvas = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(2048.0, 432.0));
+        let part = egui::Rect::from_min_size(egui::pos2(1773.0, 453.0), egui::vec2(16.0, 16.0));
+        assert_eq!(
+            wrap_horizontal_sprite_preview_rect(part, canvas, 16.0, false).min,
+            egui::pos2(2029.0, 21.0)
+        );
+        assert_eq!(
+            wrap_horizontal_sprite_preview_rect(part, canvas, 16.0, true),
+            part
+        );
     }
 
     #[test]
@@ -10398,12 +10597,139 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_write_pristine_512_renderer_manifest_when_requested() {
+        use std::fmt::Write as _;
+
+        let Ok(output) = std::env::var("LM_PRISTINE_512_RENDER_MANIFEST") else {
+            return;
+        };
+        fn fnv1a(bytes: &[u8]) -> u64 {
+            bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+                (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+            })
+        }
+
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let definition_map =
+            lm_profile::load_smw_us_v1_standard_object_definition_map(&image).unwrap();
+        let project = lm_project::Project::new(image);
+        let layout = lm_profile::smw_us_v1_vanilla_level_layout();
+        let lengths = SpriteLengthTable::standard();
+        let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+        lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+        let mut manifest = String::from(
+            "slot\tnative_renderable\tmode\tvertical\tobject_tileset\tsprite_tileset\tobjects\tobject_cells\tobject_hash\tsprites\tresolved_sprites\tnative_empty_sprites\tunresolved_sprites\tsprite_ids\n",
+        );
+        let mut native_renderable = 0_usize;
+
+        for slot in 0_u16..0x200 {
+            let level = project
+                .load_level_slot(usize::from(slot), layout, &lengths)
+                .unwrap_or_else(|error| panic!("level ${slot:03X} failed: {error}"));
+            let header = level.layer1.header;
+            let mode = lm_profile::smw_us_v1_level_mode(header.level_mode());
+            let vertical = mode.vertical;
+            let family = match lm_profile::smw_us_v1_object_family(header.object_tileset()) {
+                lm_profile::VanillaObjectFamily::Normal => 0,
+                lm_profile::VanillaObjectFamily::Castle => 1,
+                lm_profile::VanillaObjectFamily::Rope => 2,
+                lm_profile::VanillaObjectFamily::Underground => 3,
+                lm_profile::VanillaObjectFamily::GhostHouse => 4,
+            };
+            let object_layout = lm_render::NativeLevelMap16Layout {
+                width: if vertical { 27 } else { 512 },
+                height: if vertical { 512 } else { 27 },
+                page_stride: 0x1b0,
+                base_cell: 0,
+                vertical,
+            };
+            let report = lm_render::render_mapped_standard_object_stream(
+                &level.layer1.objects,
+                &definitions,
+                definition_map.family(family).unwrap(),
+                object_layout,
+                VANILLA_EMPTY_MAP16_TILE,
+            )
+            .unwrap_or_else(|error| panic!("level ${slot:03X} objects failed: {error}"));
+            assert!(report.missing_commands.is_empty(), "level ${slot:03X}");
+            assert!(
+                report.missing_extended_objects.is_empty(),
+                "level ${slot:03X}"
+            );
+
+            let placements = level.sprites.native_placements();
+            let mut resolved = 0_usize;
+            let mut native_empty = 0_usize;
+            let mut unresolved = 0_usize;
+            let mut ids = std::collections::BTreeSet::new();
+            let mut sequence_8a = 0_u8;
+            for placement in &placements {
+                ids.insert(placement.sprite_number);
+                let preview = lm_render::render_lunar_magic_standard_sprite_with_mode(
+                    placement.sprite_number,
+                    standard_sprite_preview_mode(
+                        placement,
+                        vertical,
+                        header.level_mode(),
+                        header.sprite_tileset(),
+                        level.sprites.header & 0x3f,
+                        0,
+                        sequence_8a,
+                    ),
+                );
+                if placement.sprite_number == 0x8a {
+                    sequence_8a = sequence_8a.saturating_add(1);
+                }
+                if preview.is_some() {
+                    resolved += 1;
+                } else if lm_render::lunar_magic_standard_sprite_preview_source(
+                    placement.sprite_number,
+                ) == lm_render::StandardSpritePreviewSource::NativeEmpty
+                {
+                    native_empty += 1;
+                } else {
+                    unresolved += 1;
+                }
+            }
+            let id_text = ids
+                .iter()
+                .map(|id| format!("{id:02X}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            let renders_in_lunar_magic = !level.layer1.objects.records.is_empty();
+            native_renderable += usize::from(renders_in_lunar_magic);
+            writeln!(
+                manifest,
+                "{slot:03X}\t{}\t{:02X}\t{}\t{:02X}\t{:02X}\t{}\t{}\t{:016X}\t{}\t{}\t{}\t{}\t{}",
+                u8::from(renders_in_lunar_magic),
+                header.level_mode(),
+                u8::from(vertical),
+                header.object_tileset(),
+                header.sprite_tileset(),
+                level.layer1.objects.records.len(),
+                report.painted_cells.len(),
+                fnv1a(&report.cache.encode()),
+                placements.len(),
+                resolved,
+                native_empty,
+                unresolved,
+                id_text,
+            )
+            .unwrap();
+        }
+        assert_eq!(native_renderable, 488);
+        std::fs::write(output, manifest).unwrap();
+    }
+
+    #[test]
     fn window_workspace_reserves_the_majority_for_the_canvas() {
         for width in [720.0_f32, 1_100.0, 1_600.0, 3_200.0] {
             let tools = workspace_tool_width(width);
             assert!(tools >= 280.0);
             assert!(tools <= ROM_LEVEL_TOOL_PANEL_WIDTH);
-            assert!(width - tools > width * 0.57);
+            assert!(width - tools > width * 0.50);
         }
     }
 
@@ -10901,7 +11227,9 @@ mod tests {
             return;
         };
         let level = u16::from_str_radix(level.trim_start_matches("0x"), 16).unwrap();
-        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let bytes = std::env::var("LM_DIAGNOSTIC_ROM")
+            .map(|path| std::fs::read(path).unwrap())
+            .unwrap_or_else(|_| crate::test_support::pristine_smw_us_rom_bytes());
         let mut app = AppState::default();
         app.load_rom(bytes).unwrap();
         app.dispatch(Command::SelectLevel(level)).unwrap();
@@ -10924,7 +11252,57 @@ mod tests {
             .sprites
             .native_placements()
         {
-            eprintln!("{placement:?}");
+            let token =
+                &editor.controller.as_ref().unwrap().level().sprites.tokens[placement.token_index];
+            eprintln!("{placement:?} token={token:?}");
+        }
+    }
+
+    #[test]
+    fn diagnostic_print_pristine_level_object_placements_when_requested() {
+        let Ok(level) = std::env::var("LM_DIAGNOSTIC_LEVEL_OBJECTS") else {
+            return;
+        };
+        let level = u16::from_str_radix(level.trim_start_matches("0x"), 16).unwrap();
+        let bytes = std::env::var("LM_DIAGNOSTIC_ROM")
+            .map(|path| std::fs::read(path).unwrap())
+            .unwrap_or_else(|_| crate::test_support::pristine_smw_us_rom_bytes());
+        let mut app = AppState::default();
+        app.load_rom(bytes).unwrap();
+        app.dispatch(Command::SelectLevel(level)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let loaded = editor.controller.as_ref().unwrap().level();
+        let vertical = lm_profile::smw_us_v1_level_mode(loaded.layer1.header.level_mode()).vertical;
+        eprintln!(
+            "header={:02X?} sprite-tileset={:02X} object-tileset={:02X}",
+            loaded.layer1.header.encoded(),
+            loaded.layer1.header.sprite_tileset(),
+            loaded.layer1.header.object_tileset(),
+        );
+        for placement in loaded
+            .layer1
+            .objects
+            .native_placements_for_orientation(vertical)
+        {
+            let record = &loaded.layer1.objects.records[placement.record_index];
+            let (x, y) = placement.tile_coordinates(vertical);
+            eprintln!(
+                "object {} @({x},{y}) command={:02X} parameter={:02X} bytes={:02X?}",
+                placement.record_index,
+                record.command_id(),
+                record.parameter(),
+                record.encoded(),
+            );
         }
     }
 
@@ -10953,7 +11331,9 @@ mod tests {
 
     #[test]
     fn unresolved_sprite_markers_preserve_lunar_magics_native_empty_handlers() {
-        for sprite_number in [0x29, 0xee, 0xf0, 0xf1] {
+        // Dispatch $29 is a real built-in handler at $004C4D10. Only the three entries routed
+        // to Lunar Magic's default empty handler suppress an unresolved marker.
+        for sprite_number in [0xee, 0xf0, 0xf1] {
             assert!(!should_draw_unresolved_sprite_marker(true, sprite_number));
         }
         assert!(should_draw_unresolved_sprite_marker(true, 0x00));
@@ -12787,15 +13167,47 @@ mod tests {
     }
 
     #[test]
-    fn exact_snes_viewport_fits_the_available_editor_area_and_preserves_zoom() {
+    fn one_snes_screen_fills_the_available_canvas_pane_and_preserves_zoom() {
         for (available, zoom, expected) in [
-            (egui::vec2(800.0, 600.0), 100, 32.0),
-            (egui::vec2(800.0, 600.0), 200, 64.0),
-            (egui::vec2(256.0, 252.0), 100, 16.0),
-            (egui::vec2(1_200.0, 1_000.0), 125, 80.0),
+            (egui::vec2(800.0, 600.0), 100, 50.0),
+            (egui::vec2(800.0, 600.0), 200, 100.0),
+            (egui::vec2(256.0, 252.0), 100, 18.0),
+            (egui::vec2(1_200.0, 1_000.0), 125, 93.75),
+            (egui::vec2(128.0, 140.0), 100, 10.0),
         ] {
-            assert!((fitted_snes_viewport_cell(available, zoom) - expected).abs() < f32::EPSILON);
+            assert!((fitted_snes_viewport_cell(available, zoom) - expected).abs() < 0.0001);
         }
+    }
+
+    #[test]
+    fn fitted_snes_viewport_sizes_exactly_one_256_by_224_screen() {
+        let cell = fitted_snes_viewport_cell(egui::vec2(800.0, 600.0), 100);
+        let canvas = egui::vec2(16.0 * cell, 14.0 * cell);
+        assert!((canvas.x - 800.0).abs() < 0.001);
+        assert!((canvas.y - 700.0).abs() < 0.001);
+        // Cover mode must reach both pane edges; the mismatched axis is centered and clipped.
+        assert!(canvas.x >= 800.0);
+        assert!(canvas.y >= 600.0);
+    }
+
+    #[test]
+    fn snes_screen_fit_recomputes_for_window_resize_and_full_screen() {
+        let windowed = fitted_snes_viewport_cell(egui::vec2(640.0, 480.0), 100);
+        let resized = fitted_snes_viewport_cell(egui::vec2(960.0, 720.0), 100);
+        let full_screen = fitted_snes_viewport_cell(egui::vec2(1_920.0, 1_080.0), 100);
+        assert!(resized > windowed);
+        assert!(full_screen > resized);
+        for cell in [windowed, resized, full_screen] {
+            assert!((16.0 * cell / (14.0 * cell) - 256.0 / 224.0).abs() < 0.000_001);
+        }
+    }
+
+    #[test]
+    fn snes_screen_fit_responds_to_horizontal_only_resize() {
+        let narrow = fitted_snes_viewport_cell(egui::vec2(640.0, 480.0), 100);
+        let wide = fitted_snes_viewport_cell(egui::vec2(800.0, 480.0), 100);
+        assert_eq!(narrow, 40.0);
+        assert_eq!(wide, 50.0);
     }
 
     #[test]
@@ -12896,6 +13308,72 @@ mod tests {
             (0x22, 0x160)
         );
         assert_eq!(entrance.screen_and_method & 1, 0);
+    }
+
+    #[test]
+    fn level_1d9_midway_entrance_uses_the_vanilla_midway_screen_nibble() {
+        let entrance = VanillaMainEntrance {
+            position: 0x09,
+            vertical_settings: 0x03,
+            screen_and_method: 0x0a,
+            level_mode_and_screen: 0x03,
+        };
+        assert_eq!(
+            horizontal_primary_entrance_marker_pixels(entrance),
+            (0x3e0, 0x130)
+        );
+        assert_eq!(
+            midway_entrance_marker_pixels(entrance, false, false),
+            (0xe0, 0x130)
+        );
+        assert_eq!(
+            midway_entrance_label_pixels(entrance, false, false),
+            (0xf2, 0x130)
+        );
+    }
+
+    #[test]
+    fn level_01d_secondary_entrance_uses_five_screen_bits_and_native_label_clearance() {
+        let exit = lm_level::SecondaryExit {
+            destination_level: 0x01d,
+            position_and_method: 2,
+            screen: 0x0a,
+            x: 0,
+            y: 3,
+            destination_flags: 3,
+            x_and_overworld_flags: 0,
+            additional_flags: 0,
+        };
+        assert_eq!(
+            secondary_entrance_marker_and_label_pixels(exit, false, false),
+            ((0x0ae0, 0x60), (0x0af8, 0x60))
+        );
+    }
+
+    #[test]
+    fn level_1ce_vertical_primary_and_midway_use_their_configured_screens() {
+        let entrance = VanillaMainEntrance {
+            position: 0x73,
+            vertical_settings: 0xf8,
+            screen_and_method: 0x03,
+            level_mode_and_screen: 0x64,
+        };
+        assert_eq!(
+            vertical_primary_entrance_marker_pixels(entrance, false),
+            (0x10, 0x480)
+        );
+        assert_eq!(
+            vertical_primary_entrance_label_pixels(entrance, false),
+            (0x28, 0x480)
+        );
+        assert_eq!(
+            midway_entrance_marker_pixels(entrance, true, false),
+            (0x10, 0x80)
+        );
+        assert_eq!(
+            midway_entrance_label_pixels(entrance, true, false),
+            (0x28, 0x80)
+        );
     }
 
     #[test]
@@ -14010,7 +14488,7 @@ mod tests {
             sprite_number: 0xe5,
             extra_bits: 1,
         };
-        let horizontal = standard_sprite_preview_mode(&placement, false, 3, 5, 2, 4);
+        let horizontal = standard_sprite_preview_mode(&placement, false, 3, 5, 1, 2, 4);
         assert_eq!(horizontal.placement_first, 0x94);
         assert_eq!(horizontal.placement_major, 0x24);
         assert_eq!(horizontal.placement_minor, 9);
@@ -14019,14 +14497,22 @@ mod tests {
         assert_eq!(horizontal.animation_phase, 2);
         assert_eq!(horizontal.sprite_8a_sequence_index, 4);
         assert_eq!(
+            horizontal.wide_context,
+            lm_render::StandardSpriteWideContext::ValidLong64
+        );
+        assert_eq!(
             horizontal.level_orientation,
             lm_render::StandardLevelOrientation::Horizontal
         );
-        let vertical = standard_sprite_preview_mode(&placement, true, 7, 6, 1, 2);
+        let vertical = standard_sprite_preview_mode(&placement, true, 7, 6, 0, 1, 2);
         assert_eq!(vertical.level_mode, 7);
         assert_eq!(vertical.sprite_graphics_mode, 6);
         assert_eq!(vertical.animation_phase, 1);
         assert_eq!(vertical.sprite_8a_sequence_index, 2);
+        assert_eq!(
+            vertical.wide_context,
+            lm_render::StandardSpriteWideContext::ValidShort
+        );
         assert_eq!(
             vertical.level_orientation,
             lm_render::StandardLevelOrientation::Vertical
@@ -14574,6 +15060,7 @@ mod tests {
                         vertical,
                         reopened.layer1.header.level_mode(),
                         reopened.layer1.header.sprite_tileset(),
+                        reopened.sprites.header & 0x3f,
                         0,
                         0,
                     ),

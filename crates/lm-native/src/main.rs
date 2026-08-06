@@ -72,6 +72,7 @@ mod palette_editor;
 mod path_editor;
 mod path_editor_forms;
 mod persistence_worker;
+mod pristine_full_level_render;
 mod profile_loader;
 mod rats_reclamation_dialog;
 mod recovery_store;

@@ -41,6 +41,16 @@ proves both rules against Lunar Magic 3.63, while
 `mwl_import_recomputes_last_screen_without_sorting_raw_layer1_order` covers the installed Rust
 import boundary.
 
+Current native-renderer integration evidence covers a complete level rather than a single fixed
+viewport. `pristine_full_level_render` composes the stored full extent with authenticated Map16,
+background, object, sprite, entrance, orientation, palette, and animation state. The responsive
+viewport fits exactly one 256-by-224 SNES screen into the available canvas and recomputes that fit
+for horizontal, vertical, and full-screen window changes. The fixture-backed `lm-native` gate has
+642 passing tests plus 13 independently rerun oracle-corpus tests (7 external-runtime tests remain
+explicitly ignored); `every_pristine_level_materializes_its_builtin_render_assets` traverses all
+512 pristine level slots, while `pristine_full_render_matches_native_dimensions_and_empty_outcomes`
+checks full-render dimensions and empty outcomes.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

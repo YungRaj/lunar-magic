@@ -17,6 +17,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) animated_sprite_images: Vec<egui::ColorImage>,
     pub(crate) entrance_image: egui::ColorImage,
     pub(crate) sprite_tiles: Vec<IndexedTile>,
+    pub(crate) animated_sprite_tiles: Vec<IndexedTile>,
     pub(crate) palette: Palette,
     pub(crate) backdrop: lm_graphics::Bgr555,
     pub(crate) foreground_image: egui::ColorImage,
@@ -130,6 +131,29 @@ pub(crate) fn render(
     game_runtime: bool,
     special_world_passed: bool,
 ) -> Result<VanillaMap16Preview, String> {
+    render_with_editor_palette_phase(
+        rom_bytes,
+        level,
+        header,
+        game_runtime,
+        special_world_passed,
+        requested_vanilla_editor_palette_phase(),
+    )
+}
+
+pub(crate) fn render_with_editor_palette_phase(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    game_runtime: bool,
+    special_world_passed: bool,
+    editor_palette_phase: usize,
+) -> Result<VanillaMap16Preview, String> {
+    if editor_palette_phase >= 8 {
+        return Err(format!(
+            "vanilla editor palette phase {editor_palette_phase} is outside 0..8"
+        ));
+    }
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
     let tileset = header.object_tileset();
@@ -157,10 +181,7 @@ pub(crate) fn render(
     let backdrop = composed_palette.backdrop;
     let mut palette = composed_palette.palette;
     if !game_runtime {
-        apply_vanilla_editor_palette_animation(
-            &mut palette,
-            requested_vanilla_editor_palette_phase(),
-        );
+        apply_vanilla_editor_palette_animation(&mut palette, editor_palette_phase);
     }
     let mut sprite_graphics_files = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
         &project.rom,
@@ -219,6 +240,7 @@ pub(crate) fn render(
     // cache $600, independently of the ordinary level sprite slots at cache $400-$5FF.
     let animated_sprite_slots = load_vanilla_sprite_display_page(&project)?;
     let animated_sprite_image = render_sprite_graphics_atlas(&animated_sprite_slots, &palette);
+    let animated_sprite_tiles = materialize_layer1_sprite_vram(&animated_sprite_slots);
     let animated_sprite_images = vec![animated_sprite_image; 4];
     let sprite_image = render_sprite_graphics_atlas(&sprite_graphics, &palette);
     let entrance_image = render_default_entrance_marker(&project, &palette)?;
@@ -278,6 +300,7 @@ pub(crate) fn render(
         animated_sprite_images,
         entrance_image,
         sprite_tiles,
+        animated_sprite_tiles,
         palette,
         backdrop,
         sprite_graphics_files,
@@ -369,19 +392,163 @@ fn render_default_entrance_marker(
     project: &Project,
     palette: &Palette,
 ) -> Result<egui::ColorImage, String> {
-    const WIDTH: usize = 16;
-    const HEIGHT: usize = 32;
+    render_entrance_marker(project, palette, 0)
+}
+
+pub(crate) fn render_entrance_marker(
+    project: &Project,
+    palette: &Palette,
+    action: u8,
+) -> Result<egui::ColorImage, String> {
+    // The full-level main/midway path emits only the configured player pose; `$217` must not
+    // accompany action 6 in this compositor.
+    let mut image = render_entrance_marker_with_helpers(project, palette, action, false)?;
+    add_action_six_left_boundary(&mut image, palette, action);
+    Ok(image)
+}
+
+pub(crate) fn render_secondary_entrance_marker(
+    project: &Project,
+    palette: &Palette,
+    action: u8,
+) -> Result<egui::ColorImage, String> {
+    render_entrance_marker(project, palette, action)
+}
+
+fn add_action_six_left_boundary(image: &mut egui::ColorImage, palette: &Palette, action: u8) {
+    if action == 6 {
+        // `$306/$316` is emitted through RenderEditorTileAtOffset. Its signed three-pixel
+        // boundary fragment lands immediately left of the nominal +3 X offset; preserving that
+        // fragment is observable where the secondary-entrance label pointer crosses the pose.
+        const LEFT_BOUNDARY: &[(usize, usize, u8)] = &[
+            (15, 16, 2),
+            (14, 17, 2),
+            (15, 17, 1),
+            (14, 18, 2),
+            (15, 18, 1),
+            (15, 19, 2),
+            (15, 22, 2),
+            (14, 23, 2),
+            (15, 23, 3),
+            (14, 24, 2),
+            (15, 24, 3),
+            (13, 25, 2),
+            (14, 25, 3),
+            (15, 25, 3),
+            (13, 26, 2),
+            (14, 26, 3),
+            (15, 26, 3),
+            (13, 27, 2),
+            (14, 27, 5),
+            (15, 27, 3),
+            (14, 28, 2),
+            (15, 28, 2),
+        ];
+        let width = image.size[0];
+        for &(x, y, palette_index) in LEFT_BOUNDARY {
+            if let Some([red, green, blue, alpha]) = palette_color(palette, 8, palette_index) {
+                image.pixels[y * width + x] =
+                    egui::Color32::from_rgba_unmultiplied(red, green, blue, alpha);
+            }
+        }
+    }
+}
+
+fn render_entrance_marker_with_helpers(
+    project: &Project,
+    palette: &Palette,
+    action: u8,
+    include_action_helper: bool,
+) -> Result<egui::ColorImage, String> {
     // Horizontal action-0 path in `RenderConfiguredLevelEntrance` @ 004CC660. Lunar Magic places
     // editor-only Map16 $300 at Y+2 and $310 at Y+18. These are their live sidecar definitions.
-    const PARTS: [([u16; 4], usize); 2] = [
-        ([0x40e1, 0x40f1, 0x40e0, 0x40f0], 0),
-        ([0x4005, 0x4015, 0x4004, 0x4014], 16),
-    ];
+    let (width, height, parts): (usize, usize, &[([u16; 4], usize, usize)]) = match action {
+        // Actions 1 and 2 use their own `$303/$313` and `$302/$312` GFX32 definitions. These
+        // values are the live Lunar Magic 3.63 sidecar entries for an untouched SMW ROM.
+        1 => (
+            16,
+            32,
+            &[
+                ([0x00e0, 0x00f0, 0x00e1, 0x00f1], 0, 0),
+                ([0x0000, 0x0010, 0x0001, 0x0011], 0, 16),
+            ],
+        ),
+        2 => (
+            16,
+            32,
+            &[
+                ([0x40e1, 0x40f1, 0x40e0, 0x40f0], 0, 0),
+                ([0x4001, 0x4011, 0x4000, 0x4010], 0, 16),
+            ],
+        ),
+        // Action 3 uses editor definitions $308/$318. Ghidra's case sets the horizontal
+        // entrance offset to eight pixels before emitting both halves.
+        3 => (
+            24,
+            32,
+            &[
+                ([0x0108, 0x0118, 0x0109, 0x0119], 8, 0),
+                ([0x000e, 0x001e, 0x000f, 0x001f], 8, 16),
+            ],
+        ),
+        // Action 4 shares the `$308/$318` pose but starts three pixels above the
+        // entrance anchor. Shift the image origin down five pixels so its signed call offsets are
+        // retained. The separate `$11A` overlay comes from the ordinary sprite cache, not GFX32,
+        // and is therefore composited by the full-level renderer.
+        4 => (
+            24,
+            34,
+            &[
+                ([0x0108, 0x0118, 0x0109, 0x0119], 8, 2),
+                ([0x000e, 0x001e, 0x000f, 0x001f], 8, 18),
+            ],
+        ),
+        // Case 5 in `RenderConfiguredLevelEntrance` draws the swimming/rope entrance pose from
+        // `$304/$314`, adds `$117` fourteen pixels to the left, and overlays `$216` two pixels
+        // below the lower cell. The image origin is shifted right by 14 so the caller can retain
+        // Lunar Magic's signed placement offset.
+        5 => (
+            48,
+            34,
+            &[
+                ([0x40e1, 0x40f1, 0x40e0, 0x40f0], 16, 0),
+                ([0x4029, 0x4039, 0x4028, 0x4038], 16, 16),
+            ],
+        ),
+        // Action 6 emits definitions $306/$316 at (+3,+3)/(+3,+19), followed by $217
+        // at (-13,+19) for this secondary entrance pose. Shift the image origin by 13 pixels;
+        // the full-level compositor applies the inverse anchor adjustment.
+        6 if include_action_helper => (
+            48,
+            32,
+            &[
+                ([0x40e1, 0x40f1, 0x40e0, 0x40f0], 16, 0),
+                ([0x402b, 0x403b, 0x402a, 0x403a], 16, 16),
+                ([0x0019, 0x0019, 0x601a, 0x601b], 0, 16),
+            ],
+        ),
+        6 => (
+            48,
+            32,
+            &[
+                ([0x40e1, 0x40f1, 0x40e0, 0x40f0], 16, 0),
+                ([0x402b, 0x403b, 0x402a, 0x403a], 16, 16),
+            ],
+        ),
+        _ => (
+            16,
+            32,
+            &[
+                ([0x40e1, 0x40f1, 0x40e0, 0x40f0], 0, 0),
+                ([0x4005, 0x4015, 0x4004, 0x4014], 0, 16),
+            ],
+        ),
+    };
     let player_bytes = load_smw_us_v1_special_graphics_file(project, false)?;
     let player_tiles = lm_graphics::decode_planar_tiles(&player_bytes, 4)
         .map_err(|error| format!("cannot decode pristine entrance GFX32: {error}"))?;
-    let mut rgba = vec![0; WIDTH * HEIGHT * 4];
-    for (definition, part_y) in PARTS {
+    let mut rgba = vec![0; width * height * 4];
+    for &(definition, part_x, part_y) in parts {
         for (quadrant, word) in definition.into_iter().enumerate() {
             let tile_index = usize::from(word & 0x03ff);
             let tile = player_tiles
@@ -390,8 +557,8 @@ fn render_default_entrance_marker(
             let (x, y) = map16_quadrant_offset(quadrant);
             draw_subtile_over(
                 &mut rgba,
-                WIDTH,
-                (x, part_y + y),
+                width,
+                (part_x + x, part_y + y),
                 Some(tile),
                 palette,
                 8 + usize::from(word >> 10 & 7),
@@ -400,7 +567,7 @@ fn render_default_entrance_marker(
         }
     }
     Ok(egui::ColorImage::from_rgba_unmultiplied(
-        [WIDTH, HEIGHT],
+        [width, height],
         &rgba,
     ))
 }
@@ -1184,6 +1351,35 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     #[test]
+    fn secondary_action_six_preserves_signed_left_boundary_without_primary_helper() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let level = project
+            .load_level_slot(
+                0x001,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let palette = lm_profile::compose_smw_us_v1_level_palette(
+            &project,
+            0x001,
+            game_palette_header(0x001, level.layer1.header),
+            0,
+        )
+        .unwrap()
+        .palette;
+        let marker = render_secondary_entrance_marker(&project, &palette, 6).unwrap();
+        assert_eq!(marker.size, [48, 32]);
+        let pixel = |x: usize, y: usize| marker.pixels[y * marker.size[0] + x];
+        assert_eq!(pixel(15, 16), egui::Color32::BLACK);
+        assert_eq!(pixel(15, 17), egui::Color32::WHITE);
+        assert_eq!(pixel(15, 27), egui::Color32::from_rgb(140, 90, 24));
+        assert_eq!(pixel(14, 27), egui::Color32::from_rgb(255, 222, 115));
+        assert_eq!(pixel(12, 25), egui::Color32::TRANSPARENT);
+    }
+
+    #[test]
     fn editor_palette_materializes_all_vanilla_dragon_coin_colors() {
         let mut palette = Palette {
             colors: vec![Bgr555(0); 256],
@@ -1212,6 +1408,24 @@ mod tests {
                 blue: 74,
             }
         );
+    }
+
+    #[test]
+    fn explicit_editor_palette_phase_is_independent_of_map16_animation() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = RomImage::from_bytes(bytes.clone()).unwrap();
+        let project = Project::new(image);
+        let level = project
+            .load_level_slot(
+                0x010,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let preview =
+            render_with_editor_palette_phase(bytes, 0x010, level.layer1.header, false, false, 1)
+                .unwrap();
+        assert_eq!(preview.palette.colors[0x64], Bgr555(0x035f));
     }
 
     #[test]
