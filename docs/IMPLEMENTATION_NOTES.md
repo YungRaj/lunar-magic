@@ -3074,7 +3074,11 @@ canonical manifest, binds it to the current project revision, validates every de
 showing a reclaim/retain byte summary, and accepts an explicit erase fill. The application command
 revalidates the proof, protects the complete internal-header/vector block, repairs the checksum,
 and publishes one undoable revision. Stale or forged evidence leaves ROM, history, and revision
-unchanged; a manifest retaining every owned block is an exact no-op.
+unchanged; a manifest retaining every owned block is an exact no-op. The same transaction now has
+full mapper-family coverage: ordinary LoROM, 8-MiB ExLoROM, and 6-MiB SA-1 all reclaim and retain
+the intended logical-PC blocks, repair the active identity's checksum field, redetect and reopen
+with the same mapper, and traverse byte-exact Undo/Redo. The ExLoROM case additionally proves that
+the complete physical copier prefix remains outside the reclamation boundary.
 
 See [REIMPLEMENTATION_ARCHITECTURE.md](REIMPLEMENTATION_ARCHITECTURE.md) and
 [REIMPLEMENTATION_TEST_MATRIX.md](REIMPLEMENTATION_TEST_MATRIX.md) for the compatibility tiers and
