@@ -14,9 +14,12 @@ use lm_rom::RomImage;
 
 const OVERWORLD_GRAPHICS_FILES: [usize; 4] = [0x1c, 0x1d, 0x1e, 0x1f];
 const TILES_PER_NATIVE_GRAPHICS_SLOT: usize = 0x80;
-const NATIVE_SPRITE_CACHE_TILES: usize = 0x2a00;
+const NATIVE_SPRITE_CACHE_TILES: usize = 0x3100;
+const NATIVE_BASE_SUBMAP_STRIDE: usize = 0x400;
 const NATIVE_SPRITE_SUBMAP_BASE: usize = 0x1c00;
 const NATIVE_SPRITE_SUBMAP_STRIDE: usize = 0x200;
+const NATIVE_ANIMATED_SUBMAP_BASE: usize = 0x2a00;
+const NATIVE_ANIMATED_SUBMAP_STRIDE: usize = 0x100;
 
 impl RomOverworldEditor {
     pub(crate) fn handles(app: &AppState) -> bool {
@@ -455,31 +458,97 @@ fn load_native_sprite_graphics_cache(
     let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
     let mut cache = vec![blank.clone(); NATIVE_SPRITE_CACHE_TILES];
     for (submap, record) in settings.records.iter().enumerate() {
+        let base = submap * NATIVE_BASE_SUBMAP_STRIDE;
+        for (slot, file_number) in native_base_graphics_files(record)?.into_iter().enumerate() {
+            load_native_graphics_cache_slot(
+                project,
+                graphics_layout,
+                &mut cache,
+                &blank,
+                submap,
+                "base",
+                file_number,
+                base + slot * TILES_PER_NATIVE_GRAPHICS_SLOT,
+                TILES_PER_NATIVE_GRAPHICS_SLOT,
+            )?;
+        }
         let base = NATIVE_SPRITE_SUBMAP_BASE + submap * NATIVE_SPRITE_SUBMAP_STRIDE;
         for (slot, file_number) in native_sprite_graphics_files(record)?
             .into_iter()
             .enumerate()
         {
-            let mut tiles = project
-                .load_graphics_file(file_number, graphics_layout)
-                .map_err(|error| {
-                    format!(
-                        "could not load overworld submap {submap} sprite GFX{file_number:02X}: {error}"
-                    )
-                })?
-                .tiles;
-            if tiles.len() > TILES_PER_NATIVE_GRAPHICS_SLOT {
-                return Err(format!(
-                    "overworld submap {submap} sprite GFX{file_number:02X} has {} tiles; expected at most {TILES_PER_NATIVE_GRAPHICS_SLOT}",
-                    tiles.len()
-                ));
-            }
-            tiles.resize(TILES_PER_NATIVE_GRAPHICS_SLOT, blank.clone());
-            let start = base + slot * TILES_PER_NATIVE_GRAPHICS_SLOT;
-            cache[start..start + TILES_PER_NATIVE_GRAPHICS_SLOT].clone_from_slice(&tiles);
+            load_native_graphics_cache_slot(
+                project,
+                graphics_layout,
+                &mut cache,
+                &blank,
+                submap,
+                "sprite",
+                file_number,
+                base + slot * TILES_PER_NATIVE_GRAPHICS_SLOT,
+                TILES_PER_NATIVE_GRAPHICS_SLOT,
+            )?;
         }
+        load_native_graphics_cache_slot(
+            project,
+            graphics_layout,
+            &mut cache,
+            &blank,
+            submap,
+            "animated",
+            usize::from(record.word(0).map_err(|error| error.to_string())? & 0x0fff),
+            NATIVE_ANIMATED_SUBMAP_BASE + submap * NATIVE_ANIMATED_SUBMAP_STRIDE,
+            NATIVE_ANIMATED_SUBMAP_STRIDE,
+        )?;
     }
     Ok(cache)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn load_native_graphics_cache_slot(
+    project: &Project,
+    graphics_layout: lm_project::GraphicsRomLayout,
+    cache: &mut [IndexedTile],
+    blank: &IndexedTile,
+    submap: usize,
+    domain: &str,
+    file_number: usize,
+    start: usize,
+    capacity: usize,
+) -> Result<(), String> {
+    if file_number == 0x7f {
+        return Ok(());
+    }
+    let mut tiles = project
+        .load_graphics_file(file_number, graphics_layout)
+        .map_err(|error| {
+            format!(
+                "could not load overworld submap {submap} {domain} GFX{file_number:02X}: {error}"
+            )
+        })?
+        .tiles;
+    if tiles.len() > capacity {
+        return Err(format!(
+            "overworld submap {submap} {domain} GFX{file_number:02X} has {} tiles; expected at most {capacity}",
+            tiles.len()
+        ));
+    }
+    tiles.resize(capacity, blank.clone());
+    let destination = cache
+        .get_mut(start..start + capacity)
+        .ok_or("internal native overworld graphics cache layout overflow")?;
+    destination.clone_from_slice(&tiles);
+    Ok(())
+}
+
+fn native_base_graphics_files(
+    record: &lm_level::ExpandedLevelSettingsRecord,
+) -> Result<[usize; 8], String> {
+    let mut files = [0; 8];
+    for (slot, word) in (0_usize..=7).rev().enumerate() {
+        files[slot] = usize::from(record.word(word).map_err(|error| error.to_string())? & 0x0fff);
+    }
+    Ok(files)
 }
 
 fn native_sprite_graphics_files(
@@ -515,7 +584,7 @@ mod tests {
     use super::{
         TILES_PER_NATIVE_GRAPHICS_SLOT, append_overworld_graphics_slot,
         decode_main_layer2_workspace, decode_native_appearance_siblings,
-        native_sprite_graphics_files, parse_slot,
+        native_base_graphics_files, native_sprite_graphics_files, parse_slot,
     };
     use lm_graphics::IndexedTile;
     use std::{fs, path::Path};
@@ -532,6 +601,10 @@ mod tests {
     #[test]
     fn native_overworld_sprite_slots_follow_recovered_reverse_word_order() {
         let record = lm_profile::smw_us_v1_default_special_expanded_settings_record();
+        assert_eq!(
+            native_base_graphics_files(&record).unwrap(),
+            [0x1c, 0x1d, 0x08, 0x1e, 0x7f, 0x7f, 0x7f, 0x14]
+        );
         assert_eq!(
             native_sprite_graphics_files(&record).unwrap(),
             [0x10, 0x0f, 0x1c, 0x1d]
