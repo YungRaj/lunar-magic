@@ -287,6 +287,20 @@ pub fn smw_us_v1_lz2_original_installation_plan(
     )
 }
 
+/// Builds Lunar Magic's complete installed-SMW `LZ3` to `LZ2 Speed` conversion.
+pub fn smw_us_v1_lz2_speed_migration_plan(
+    image: &RomImage,
+    allocation: AllocationPolicy,
+    checksum_field: usize,
+) -> Result<RelocatablePatchPlan, SmwUsV1GraphicsCompressionMigrationError> {
+    smw_us_v1_graphics_compression_installation_plan(
+        image,
+        allocation,
+        checksum_field,
+        SmwUsV1GraphicsCompressionMode::Lz2Speed,
+    )
+}
+
 fn smw_us_v1_graphics_compression_installation_plan(
     image: &RomImage,
     allocation: AllocationPolicy,
@@ -313,16 +327,25 @@ fn smw_us_v1_graphics_compression_installation_plan(
                 lm_project::EventTilemapCompression::Lz2,
             )
         }
+        SmwUsV1GraphicsCompressionMode::Lz2Speed
+            if source_mode == SmwUsV1GraphicsCompressionMode::Lz3 =>
+        {
+            (
+                GraphicsCompression::Lz3,
+                GraphicsCompression::Lz2,
+                lm_project::EventTilemapCompression::Lz2,
+            )
+        }
         _ => {
             return Err(SmwUsV1GraphicsCompressionDetectError::SourceMode {
                 expected: match target_mode {
                     SmwUsV1GraphicsCompressionMode::Lz3 => {
                         SmwUsV1GraphicsCompressionMode::Lz2Original
                     }
-                    SmwUsV1GraphicsCompressionMode::Lz2Original => {
+                    SmwUsV1GraphicsCompressionMode::Lz2Original
+                    | SmwUsV1GraphicsCompressionMode::Lz2Speed => {
                         SmwUsV1GraphicsCompressionMode::Lz3
                     }
-                    SmwUsV1GraphicsCompressionMode::Lz2Speed => unreachable!(),
                 },
                 actual: source_mode,
             }
@@ -360,8 +383,11 @@ fn smw_us_v1_graphics_compression_installation_plan(
             .encode()
             .map_err(GraphicsIoError::from)?,
     );
-    let runtime =
-        (target_mode == SmwUsV1GraphicsCompressionMode::Lz3).then(|| decode_hex(LZ3_RUNTIME_HEX));
+    let runtime = match target_mode {
+        SmwUsV1GraphicsCompressionMode::Lz2Original => None,
+        SmwUsV1GraphicsCompressionMode::Lz2Speed => Some(decode_hex(SPEED_RUNTIME_HEX)),
+        SmwUsV1GraphicsCompressionMode::Lz3 => Some(decode_hex(LZ3_RUNTIME_HEX)),
+    };
     let first_bank_end = allocation
         .search
         .start
@@ -581,8 +607,8 @@ fn smw_us_v1_graphics_compression_installation_plan(
             (metadata & 0xf0)
                 | match target_mode {
                     SmwUsV1GraphicsCompressionMode::Lz2Original => 0,
+                    SmwUsV1GraphicsCompressionMode::Lz2Speed => 1,
                     SmwUsV1GraphicsCompressionMode::Lz3 => 2,
-                    SmwUsV1GraphicsCompressionMode::Lz2Speed => unreachable!(),
                 },
         ],
         fixups: Vec::new(),
@@ -592,10 +618,12 @@ fn smw_us_v1_graphics_compression_installation_plan(
             SmwUsV1GraphicsCompressionMode::Lz2Original => {
                 "restore SMW LZ2 Orig decoder and migrate all graphics".into()
             }
+            SmwUsV1GraphicsCompressionMode::Lz2Speed => {
+                "install SMW LZ2 Speed decoder and migrate all graphics".into()
+            }
             SmwUsV1GraphicsCompressionMode::Lz3 => {
                 "install SMW LZ3 decoder and migrate all graphics".into()
             }
-            SmwUsV1GraphicsCompressionMode::Lz2Speed => unreachable!(),
         },
         mapper: Mapper::LoRom,
         allocation,
@@ -922,6 +950,60 @@ mod tests {
             }
         );
         if let Some(path) = std::env::var_os("LM_LZ2_REVERSE_RUST_OUTPUT") {
+            fs::write(path, project.rom.as_file_bytes()).unwrap();
+        }
+        project.history.undo(&mut project.rom).unwrap();
+        assert_eq!(project.rom.as_file_bytes(), original);
+    }
+
+    #[test]
+    #[ignore = "requires retained Lunar Magic 3.63 LZ3 installed-graphics ROM"]
+    fn direct_lz2_speed_migration_preserves_all_52_graphics_and_undoes() {
+        let original = fs::read(std::env::var_os("LM_LZ3_ROM").unwrap()).unwrap();
+        let image = RomImage::from_bytes(original.clone()).unwrap();
+        let source = Project::new(image.clone());
+        let mut ordinary_layout = crate::smw_us_v1_vanilla_graphics_layout();
+        ordinary_layout.compression = GraphicsCompression::Lz3;
+        let ordinary = (0..ordinary_layout.pointers.entries)
+            .map(|slot| source.load_graphics_file(slot, ordinary_layout).unwrap())
+            .collect::<Vec<_>>();
+        let mut special = crate::smw_us_v1_special_graphics_layouts(&image).unwrap();
+        special.gfx33.compression = GraphicsCompression::Lz3;
+        special.gfx32.compression = GraphicsCompression::Lz3;
+        let gfx33 = source.load_graphics_file(0, special.gfx33).unwrap();
+        let gfx32 = source.load_graphics_file(0, special.gfx32).unwrap();
+        let plan = smw_us_v1_lz2_speed_migration_plan(
+            &image,
+            AllocationPolicy::lorom(image.logical_len()..0x40_0000),
+            0x7fdc,
+        )
+        .unwrap();
+        let mut project = Project::new(image);
+        project.install_relocatable_patch(&plan).unwrap();
+        assert_eq!(
+            detect_smw_us_v1_graphics_compression_mode(&project.rom).unwrap(),
+            SmwUsV1GraphicsCompressionMode::Lz2Speed
+        );
+        let mut target_layout = ordinary_layout;
+        target_layout.compression = GraphicsCompression::Lz2;
+        for (slot, expected) in ordinary.iter().enumerate() {
+            assert_eq!(
+                project.load_graphics_file(slot, target_layout).unwrap(),
+                *expected
+            );
+        }
+        let mut target_special = crate::smw_us_v1_special_graphics_layouts(&project.rom).unwrap();
+        target_special.gfx33.compression = GraphicsCompression::Lz2;
+        target_special.gfx32.compression = GraphicsCompression::Lz2;
+        assert_eq!(
+            project.load_graphics_file(0, target_special.gfx33).unwrap(),
+            gfx33
+        );
+        assert_eq!(
+            project.load_graphics_file(0, target_special.gfx32).unwrap(),
+            gfx32
+        );
+        if let Some(path) = std::env::var_os("LM_LZ2_SPEED_DIRECT_RUST_OUTPUT") {
             fs::write(path, project.rom.as_file_bytes()).unwrap();
         }
         project.history.undo(&mut project.rom).unwrap();

@@ -28,8 +28,24 @@ impl AppState {
         if !lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&project.rom) {
             return Err(AppError::GraphicsCompressionRuntimeUnavailable);
         }
+        let source_mode = lm_profile::detect_smw_us_v1_graphics_compression_mode(&project.rom)?;
         let logical_len = project.rom.logical_len();
-        let mut allocation = lm_rats::AllocationPolicy::lorom(0x80_000..logical_len);
+        let checksum_field = identity.internal_header_offset + 0x1c;
+        let allocation_range = match source_mode {
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original => 0x80_000..logical_len,
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3 => {
+                let target_len = match logical_len {
+                    0..0x20_0000 => 0x20_0000,
+                    0x20_0000..0x40_0000 => 0x40_0000,
+                    _ => return Err(AppError::GraphicsCompressionRuntimeUnavailable),
+                };
+                logical_len..target_len
+            }
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed => {
+                return Err(AppError::GraphicsCompressionRuntimeUnavailable);
+            }
+        };
+        let mut allocation = lm_rats::AllocationPolicy::lorom(allocation_range);
         allocation.protected.extend([
             lm_rats::ProtectedRange(
                 lm_profile::SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET
@@ -39,16 +55,39 @@ impl AppState {
                 lm_profile::SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET
                     ..lm_profile::SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET + 1,
             ),
-            lm_rats::ProtectedRange(
-                identity.internal_header_offset + 0x1c..identity.internal_header_offset + 0x20,
-            ),
+            lm_rats::ProtectedRange(checksum_field..checksum_field + 4),
         ]);
-        let plan = lm_profile::smw_us_v1_lz2_speed_installation_plan(
-            &project.rom,
-            allocation,
-            identity.internal_header_offset + 0x1c,
-        )?;
-        project.install_relocatable_patch(&plan)?;
+        let plan = match source_mode {
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original => {
+                lm_profile::smw_us_v1_lz2_speed_installation_plan(
+                    &project.rom,
+                    allocation,
+                    checksum_field,
+                )?
+            }
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3 => {
+                lm_profile::smw_us_v1_lz2_speed_migration_plan(
+                    &project.rom,
+                    allocation,
+                    checksum_field,
+                )?
+            }
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed => unreachable!(),
+        };
+        if source_mode == lm_profile::SmwUsV1GraphicsCompressionMode::Lz3 {
+            project.install_relocatable_patch_with_kind(
+                &plan,
+                lm_project::EditKind::GraphicsCompressionMigration {
+                    source: lm_project::GraphicsCompression::Lz3,
+                    target: lm_project::GraphicsCompression::Lz2,
+                },
+            )?;
+            if let Some(profile) = self.revision_profile.as_mut() {
+                profile.graphics.compression = lm_project::GraphicsCompression::Lz2;
+            }
+        } else {
+            project.install_relocatable_patch(&plan)?;
+        }
         self.advance_project_revision()?;
         let description = "Install SMW US LZ2 Speed graphics runtime".to_owned();
         self.status.clone_from(&description);

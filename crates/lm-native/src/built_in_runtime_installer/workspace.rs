@@ -254,11 +254,13 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::Sprite19Fix => Command::InstallSprite19Fix { rev: self.revision },
             BuiltInRuntime::SupportPatchB => Command::InstallSupportPatchB { rev: self.revision },
             BuiltInRuntime::Lz2SpeedGraphics => {
-                if self.graphics_compression_mode
-                    != Some(lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original)
-                {
+                if !matches!(
+                    self.graphics_compression_mode,
+                    Some(lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original)
+                        | Some(lm_profile::SmwUsV1GraphicsCompressionMode::Lz3)
+                ) {
                     return Err(
-                        "LZ2 Speed installation requires an installed 4bpp LZ2 Orig graphics runtime"
+                        "LZ2 Speed installation requires authenticated installed 4bpp LZ2 Orig or LZ3 graphics"
                             .into(),
                     );
                 }

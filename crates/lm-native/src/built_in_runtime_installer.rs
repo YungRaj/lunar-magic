@@ -335,6 +335,32 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires retained Lunar Magic 3.63 LZ3 installed-graphics ROM"]
+    fn lz2_speed_selection_migrates_directly_from_lz3_and_undoes_exactly() {
+        let original = fs::read(std::env::var_os("LM_LZ3_ROM").unwrap()).unwrap();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Lz2SpeedGraphics;
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        app.dispatch(command).unwrap();
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_graphics_compression_mode(&app.project().unwrap().rom)
+                .unwrap(),
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed
+        );
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
     fn map16_runtime_selection_installs_auxiliary_hooks_and_undoes_exactly() {
         let original = crate::test_support::pristine_smw_us_rom_bytes();
         let mut app = AppState::default();
