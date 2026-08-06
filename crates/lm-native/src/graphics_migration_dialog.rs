@@ -47,9 +47,9 @@ impl GraphicsMigrationDialog {
                 .resizable(false)
                 .show(context, |ui| {
                     ui.label(
-                        "Recompress and repoint every profile-declared graphics slot. Installed \
-                         SMW graphics require the matching in-game runtime migration and are \
-                         rejected until that transaction is available.",
+                        "Recompress and repoint every standard, special, ExAnimation, ExGFX, and \
+                         installed overworld-event stream. Installed SMW graphics switch the \
+                         matching in-game decoder in the same undoable transaction.",
                     );
                     egui::ComboBox::from_label("Target codec")
                         .selected_text(codec_name(self.target))

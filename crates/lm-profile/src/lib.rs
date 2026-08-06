@@ -155,7 +155,8 @@ pub use graphics_compression_runtime::{
     SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET, SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET,
     SmwUsV1GraphicsCompressionDetectError, SmwUsV1GraphicsCompressionMigrationError,
     SmwUsV1GraphicsCompressionMode, detect_smw_us_v1_graphics_compression_mode,
-    smw_us_v1_lz2_speed_installation_plan, smw_us_v1_lz3_installation_plan,
+    smw_us_v1_lz2_original_installation_plan, smw_us_v1_lz2_speed_installation_plan,
+    smw_us_v1_lz3_installation_plan,
 };
 pub use layer2_runtime_install::{
     SmwUsV1Layer2Format102MigrationError, smw_us_v1_layer2_format_100_migration,

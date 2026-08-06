@@ -42,8 +42,11 @@ impl AppState {
             &self.project.as_ref().ok_or(AppError::NoProject)?.rom,
         );
         let changed = if installed_smw {
-            if source.compression != GraphicsCompression::Lz2 || target != GraphicsCompression::Lz3
-            {
+            if !matches!(
+                (source.compression, target),
+                (GraphicsCompression::Lz2, GraphicsCompression::Lz3)
+                    | (GraphicsCompression::Lz3, GraphicsCompression::Lz2)
+            ) {
                 return Err(AppError::GraphicsRuntimeMigrationRequired);
             }
             let project = self.project.as_mut().ok_or(AppError::NoProject)?;
@@ -53,11 +56,19 @@ impl AppState {
                 0x20_0000..0x40_0000 => 0x40_0000,
                 _ => return Err(AppError::GraphicsRuntimeMigrationRequired),
             };
-            let plan = lm_profile::smw_us_v1_lz3_installation_plan(
-                &project.rom,
-                lm_rats::AllocationPolicy::lorom(current_len..target_len),
-                options.checksum_field,
-            )?;
+            let allocation = lm_rats::AllocationPolicy::lorom(current_len..target_len);
+            let plan = match target {
+                GraphicsCompression::Lz2 => lm_profile::smw_us_v1_lz2_original_installation_plan(
+                    &project.rom,
+                    allocation,
+                    options.checksum_field,
+                )?,
+                GraphicsCompression::Lz3 => lm_profile::smw_us_v1_lz3_installation_plan(
+                    &project.rom,
+                    allocation,
+                    options.checksum_field,
+                )?,
+            };
             project.install_relocatable_patch_with_kind(
                 &plan,
                 lm_project::EditKind::GraphicsCompressionMigration {
@@ -396,6 +407,41 @@ mod tests {
             lm_profile::detect_smw_us_v1_graphics_compression_mode(&app.project().unwrap().rom)
                 .unwrap(),
             lm_profile::SmwUsV1GraphicsCompressionMode::Lz3
+        );
+        let lz3 = app.project().unwrap().rom.as_file_bytes().to_vec();
+        let source = app.revision_profile().unwrap().graphics;
+        app.dispatch(Command::MigrateGraphicsCompression {
+            expected_revision: app.project_revision(),
+            source,
+            target: GraphicsCompression::Lz2,
+            options: GraphicsMigrationOptions {
+                allocation: allocation(0x8000..0x10000),
+                reuse_identical: true,
+                erase_fill: 0xff,
+                checksum_field: 0x7fdc,
+            },
+        })
+        .unwrap();
+        assert_eq!(app.project_revision(), 4);
+        assert_eq!(
+            lm_profile::detect_smw_us_v1_graphics_compression_mode(&app.project().unwrap().rom)
+                .unwrap(),
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original
+        );
+        assert_eq!(
+            app.revision_profile().unwrap().graphics.compression,
+            GraphicsCompression::Lz2
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.as_file_bytes(), lz3);
+        assert_eq!(
+            app.revision_profile().unwrap().graphics.compression,
+            GraphicsCompression::Lz3
+        );
+        app.dispatch(Command::Redo).unwrap();
+        assert_eq!(
+            app.revision_profile().unwrap().graphics.compression,
+            GraphicsCompression::Lz2
         );
     }
 }
