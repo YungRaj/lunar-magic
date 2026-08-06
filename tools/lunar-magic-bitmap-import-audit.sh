@@ -7,6 +7,9 @@ usage() {
     echo "  The authenticated Editors -> 16x16 Tile Map command opens the modeless editor." >&2
     echo "  LM_WINE_EXECUTABLE: target process name (default: LMBitmapOracle.exe)" >&2
     echo "  LM_MINGW_CC: 32-bit MinGW compiler (default: i686-w64-mingw32-gcc)" >&2
+    echo "  LM_BITMAP_REDUCTION: median-cut or popularity (default: median-cut)" >&2
+    echo "  LM_BITMAP_PRIORITY: Popularity priority from 1 through 4 (default: 3)" >&2
+    echo "  LM_BITMAP_MAX_COLORS: maximum reduced colors from 2 through 128 (default: 128)" >&2
     exit 2
 }
 
@@ -17,10 +20,38 @@ bitmap=$2
 workspace=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 target_executable=${LM_WINE_EXECUTABLE:-LMBitmapOracle.exe}
 compiler=${LM_MINGW_CC:-i686-w64-mingw32-gcc}
+reduction=${LM_BITMAP_REDUCTION:-median-cut}
+priority=${LM_BITMAP_PRIORITY:-3}
+maximum_colors=${LM_BITMAP_MAX_COLORS:-128}
 helper="$output_dir/bin/wine-window-command.exe"
 paste_log="$output_dir/paste.log"
 paste_pid=
 guard_set=0
+
+case "$reduction" in
+    median-cut|popularity) ;;
+    *)
+        echo "LM_BITMAP_REDUCTION must be median-cut or popularity" >&2
+        exit 2
+        ;;
+esac
+case "$priority" in
+    1|2|3|4) ;;
+    *)
+        echo "LM_BITMAP_PRIORITY must be from 1 through 4" >&2
+        exit 2
+        ;;
+esac
+case "$maximum_colors" in
+    *[!0-9]*|'')
+        echo "LM_BITMAP_MAX_COLORS must be from 2 through 128" >&2
+        exit 2
+        ;;
+esac
+if [ "$maximum_colors" -lt 2 ] || [ "$maximum_colors" -gt 128 ]; then
+    echo "LM_BITMAP_MAX_COLORS must be from 2 through 128" >&2
+    exit 2
+fi
 
 [ -f "$bitmap" ] || {
     echo "bitmap does not exist: $bitmap" >&2
@@ -66,16 +97,37 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-modeless_handle=$(wine "$helper" "$target_executable" read 0x00a09270,4 2>/dev/null)
+read_value() {
+    wine "$helper" "$target_executable" read "$1,$2" 2>/dev/null | tr -d '\r\n'
+}
+
+level_loaded=$(read_value 0x00e2782a 1)
+[ "$level_loaded" = "01" ] || {
+    echo "the target process does not have a ROM level loaded" >&2
+    exit 1
+}
+current_level=$(read_value 0x005e7738 4)
+
+# A modeless Map16 window restored before ROM loading retains stale palette/graphics buffers.
+# Reload the authenticated current slot through Lunar Magic's own level dialog before observing
+# those buffers. The first two little-endian bytes cover Lunar Magic's 0x000..0x1ff level range.
+current_level_hex=$(printf '%s' "$current_level" | cut -c 3-4)$(printf '%s' "$current_level" | cut -c 1-2)
+wine "$helper" "$target_executable" open-level "$current_level_hex" >/dev/null 2>&1
+refreshed_level=$(read_value 0x005e7738 4)
+[ "$refreshed_level" = "$current_level" ] || {
+    echo "Lunar Magic did not reload the current level $current_level_hex" >&2
+    exit 1
+}
+
+modeless_handle=$(read_value 0x00a09270 4)
 if [ "$modeless_handle" = "00000000" ]; then
-    # HandleLevelEditorCommand routes 0x232f through RestoreOpenAuxiliaryEditorWindows and
-    # ShowMap16EditorDialog. A persisted open flag can outlive its HWND after an abnormal Wine
-    # shutdown; canonicalize that impossible state to closed before issuing the real command.
+# HandleLevelEditorCommand routes 0x232f through RestoreOpenAuxiliaryEditorWindows and
+# ShowMap16EditorDialog. Canonicalize a persisted stale open flag before issuing the command.
     wine "$helper" "$target_executable" write-byte 0x00e27828,0 >/dev/null 2>&1
     wine "$helper" "$target_executable" post-command 0x232f >/dev/null 2>&1
     attempt=0
     while [ "$attempt" -lt 200 ]; do
-        modeless_handle=$(wine "$helper" "$target_executable" read 0x00a09270,4 2>/dev/null)
+        modeless_handle=$(read_value 0x00a09270 4)
         [ "$modeless_handle" != "00000000" ] && break
         attempt=$((attempt + 1))
         sleep 0.025
@@ -124,6 +176,30 @@ done
 }
 
 restore_guard
+if [ "$reduction" = "popularity" ]; then
+    wine "$helper" "$target_executable" click 0x6b >/dev/null 2>&1
+    color_dialog_ready=0
+    attempt=0
+    while [ "$attempt" -lt 200 ]; do
+        if wine "$helper" "$target_executable" list 2>/dev/null |
+            grep -q 'title=Bitmap Pasting Color Options'; then
+            color_dialog_ready=1
+            break
+        fi
+        attempt=$((attempt + 1))
+        sleep 0.025
+    done
+    [ "$color_dialog_ready" -eq 1 ] || {
+        echo "bitmap color-options dialog was not ready within 5 seconds" >&2
+        exit 1
+    }
+    wine "$helper" "$target_executable" select 0x69,1 >/dev/null 2>&1
+    wine "$helper" "$target_executable" select "0x78,$((maximum_colors - 1))" >/dev/null 2>&1
+    wine "$helper" "$target_executable" select "0x71,$((priority - 1))" >/dev/null 2>&1
+    wine "$helper" "$target_executable" dialog-values \
+        >"$output_dir/color-options.txt" 2>/dev/null
+    wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
+fi
 wine "$helper" "$target_executable" list '#32770' 2>/dev/null |
     sed -n '/title=Convert and Paste Bitmap (in hex)/,/title=16x16 Tile Map Editor/p' \
     >"$output_dir/dialog.txt"
@@ -147,6 +223,10 @@ graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{prin
     printf 'field\tvalue\n'
     printf 'target_executable\t%s\n' "$target_executable"
     printf 'modeless_handle\t%s\n' "$modeless_handle"
+    printf 'current_level_le32\t%s\n' "$current_level"
+    printf 'reduction\t%s\n' "$reduction"
+    printf 'priority\t%s\n' "$priority"
+    printf 'maximum_colors\t%s\n' "$maximum_colors"
     printf 'palette_byte_differences\t%s\n' "$palette_differences"
     printf 'graphics_byte_differences\t%s\n' "$graphics_differences"
     printf 'palette_before_sha256\t%s\n' "$palette_before_sha"

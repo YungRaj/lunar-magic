@@ -4085,3 +4085,10 @@ individual state cells. The shared bounded helper changes exactly one complete r
 updates accurately, and rejects overflow or rows outside the 128-entry workspace. Focused UI and
 bitmap-planning tests pass, followed by the 221-test renderer suite and both pristine all-512-level
 materialization/dimension gates.
+
+The Wine bitmap-import oracle now rejects processes without a loaded level, records the exact live
+level, and reloads that slot through Lunar Magic before capturing Map16 buffers. This prevents a
+restored pre-ROM modeless window from supplying stale palette/graphics evidence. Popularity audits
+also drive and record the priority and 2..128 maximum-color controls. Cross-captures identified the
+changing level-105 palette cell `$64` as animation state—not a reduction result—while the converted
+graphics remained byte-identical; parity assertions therefore exclude that false signal.

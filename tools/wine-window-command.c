@@ -448,6 +448,7 @@ int main(int argc, char **argv) {
             "       wine-window-command.exe EXECUTABLE children\n"
             "       wine-window-command.exe EXECUTABLE click CONTROL_ID\n"
             "       wine-window-command.exe EXECUTABLE set-text CONTROL_ID,TEXT\n"
+            "       wine-window-command.exe EXECUTABLE select CONTROL_ID,INDEX\n"
             "       wine-window-command.exe EXECUTABLE clipboard-bmp WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE clipboard-bmp-paste WINDOWS_PATH\n"
             "       wine-window-command.exe EXECUTABLE command-at HWND_ADDRESS,COMMAND_ID\n"
@@ -477,6 +478,7 @@ int main(int argc, char **argv) {
     BOOL children = _stricmp(argv[2], "children") == 0;
     BOOL click = _stricmp(argv[2], "click") == 0;
     BOOL set_text = _stricmp(argv[2], "set-text") == 0;
+    BOOL select_combo = _stricmp(argv[2], "select") == 0;
     BOOL clipboard_bmp = _stricmp(argv[2], "clipboard-bmp") == 0;
     BOOL clipboard_bmp_paste = _stricmp(argv[2], "clipboard-bmp-paste") == 0;
     BOOL command_at = _stricmp(argv[2], "command-at") == 0;
@@ -508,7 +510,7 @@ int main(int argc, char **argv) {
         .process_id = process_id,
         .window = NULL,
         .list = _stricmp(argv[2], "list") == 0,
-        .window_class = save || level || dialog_values || children || click || set_text
+        .window_class = save || level || dialog_values || children || click || set_text || select_combo
             ? "#32770"
             : (menu || post_command || clipboard_bmp || clipboard_bmp_paste || key
                 ? "LMFrame"
@@ -994,6 +996,50 @@ int main(int argc, char **argv) {
              character++) {
             PostMessage(control, WM_CHAR, *character, 0);
         }
+        return 0;
+    }
+    if (select_combo) {
+        if (argc != 4) {
+            fprintf(stderr, "select requires CONTROL_ID,INDEX\n");
+            return 2;
+        }
+        char *separator = strchr(argv[3], ',');
+        if (separator == NULL) {
+            fprintf(stderr, "select requires CONTROL_ID,INDEX\n");
+            return 2;
+        }
+        *separator = '\0';
+        char *control_end = NULL;
+        char *index_end = NULL;
+        unsigned long control_id = strtoul(argv[3], &control_end, 0);
+        unsigned long index = strtoul(separator + 1, &index_end, 0);
+        if (
+            control_end == argv[3] ||
+            *control_end != '\0' ||
+            index_end == separator + 1 ||
+            *index_end != '\0' ||
+            control_id > 0xffff ||
+            index > INT_MAX
+        ) {
+            fprintf(stderr, "invalid combo selection: %s,%s\n", argv[3], separator + 1);
+            return 2;
+        }
+        HWND control = GetDlgItem(search.window, (int)control_id);
+        if (control == NULL) {
+            fprintf(stderr, "combo control not found: 0x%04lx\n", control_id);
+            return 1;
+        }
+        LRESULT selected = SendMessage(control, CB_SETCURSEL, index, 0);
+        if (selected == CB_ERR) {
+            fprintf(stderr, "combo selection rejected: 0x%04lx,%lu\n", control_id, index);
+            return 1;
+        }
+        SendMessage(
+            search.window,
+            WM_COMMAND,
+            MAKEWPARAM((WORD)control_id, CBN_SELCHANGE),
+            (LPARAM)control
+        );
         return 0;
     }
     if (clipboard_bmp || clipboard_bmp_paste) {
