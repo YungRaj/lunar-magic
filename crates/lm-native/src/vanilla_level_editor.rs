@@ -2545,7 +2545,17 @@ impl VanillaLevelEditor {
         vertical: bool,
         visibility: crate::application::LevelViewVisibility,
     ) {
-        if response.clicked() || response.drag_started() {
+        // Select on the physical press, not only on egui's synthesized click at release. A
+        // click-and-drag response may cease to qualify as `clicked()` after even a tiny amount of
+        // pointer motion (especially through remote-desktop clients), which previously made the
+        // canvas appear completely inert. The same press also becomes the anchor if egui later
+        // promotes the gesture to a drag.
+        let primary_pressed = response.hovered()
+            && response
+                .ctx
+                .input(|input| input.pointer.button_pressed(egui::PointerButton::Primary));
+        let selection_pressed = primary_pressed || response.clicked() || response.drag_started();
+        if selection_pressed {
             response.request_focus();
         }
         if response.clicked()
@@ -2569,7 +2579,8 @@ impl VanillaLevelEditor {
             }
             return;
         }
-        if response.clicked()
+        if selection_pressed
+            && self.placement_mode.is_none()
             && let Some(index) = hit_object
             && let Some(record) = records.get(index)
         {
@@ -2578,7 +2589,8 @@ impl VanillaLevelEditor {
             self.object_form = ObjectForm::from_record(record);
             self.object_placement_template = Some(record.clone());
         }
-        if response.clicked()
+        if selection_pressed
+            && self.placement_mode.is_none()
             && hit_object.is_none()
             && let Some(index) = hit_layer2_object
             && let Some(record) = layer2_records.get(index)
@@ -2602,7 +2614,8 @@ impl VanillaLevelEditor {
             self.selected_layer2_tile = index;
             self.layer2_word = u16::from_le_bytes([word[0], word[1]]);
         }
-        if (response.clicked() || response.drag_started())
+        if selection_pressed
+            && self.placement_mode.is_none()
             && let Some(index) = hit_sprite
             && let Some(controller) = &self.controller
         {
