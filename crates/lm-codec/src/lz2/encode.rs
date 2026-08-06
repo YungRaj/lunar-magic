@@ -89,13 +89,11 @@ fn best_dictionary(
     let target = input[offset];
     let maximum = (input.len() - offset).min(1024);
     let normal_sources = &positions[usize::from(target)];
-    let flipped_sources = &positions[usize::from(target.reverse_bits())];
     let mut best = None;
-    for (command, sources) in [
-        (4, normal_sources.as_slice()),
-        (5, flipped_sources.as_slice()),
-        (6, normal_sources.as_slice()),
-    ] {
+    // Lunar Magic 3.63's standard-GFX LZ2 reader dispatches command classes 4 through 7 to the
+    // same forward-copy routine. Emit only class 4 so encoded streams have identical semantics in
+    // both the original editor and the Rust decoder.
+    for (command, sources) in [(4, normal_sources.as_slice())] {
         for &source in sources
             .iter()
             .rev()

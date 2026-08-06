@@ -141,6 +141,41 @@ pub fn prepare_smw_us_v1_special_graphics_import(
     raw_files: &[Vec<u8>],
     options: &GraphicsSaveOptions,
 ) -> Result<PreparedRomCommit, String> {
+    prepare_smw_us_v1_special_graphics_import_inner(
+        expected_revision,
+        image,
+        checksum_field,
+        raw_files,
+        options,
+        true,
+    )
+}
+
+pub(crate) fn prepare_smw_us_v1_special_graphics_import_resized(
+    expected_revision: u64,
+    image: RomImage,
+    checksum_field: usize,
+    raw_files: &[Vec<u8>],
+    options: &GraphicsSaveOptions,
+) -> Result<PreparedRomCommit, String> {
+    prepare_smw_us_v1_special_graphics_import_inner(
+        expected_revision,
+        image,
+        checksum_field,
+        raw_files,
+        options,
+        false,
+    )
+}
+
+fn prepare_smw_us_v1_special_graphics_import_inner(
+    expected_revision: u64,
+    image: RomImage,
+    checksum_field: usize,
+    raw_files: &[Vec<u8>],
+    options: &GraphicsSaveOptions,
+    require_current_sizes: bool,
+) -> Result<PreparedRomCommit, String> {
     const FILE_NUMBERS: [usize; 2] = [0x33, 0x32];
     if raw_files.len() != FILE_NUMBERS.len() {
         return Err(format!(
@@ -150,21 +185,23 @@ pub fn prepare_smw_us_v1_special_graphics_import(
     }
     let live = lm_profile::smw_us_v1_special_graphics_layouts(&image)
         .map_err(|error| format!("special graphics startup layout: {error}"))?;
-    let original = Project::new(image.clone());
-    for ((file_number, bytes), layout) in FILE_NUMBERS
-        .into_iter()
-        .zip(raw_files)
-        .zip([live.gfx33, live.gfx32])
-    {
-        let current = original
-            .load_decompressed_graphics_file(0, layout)
-            .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
-        if bytes.len() != current.len() {
-            return Err(format!(
-                "GFX{file_number:02X}: expected {} raw bytes, got {}",
-                current.len(),
-                bytes.len()
-            ));
+    if require_current_sizes {
+        let original = Project::new(image.clone());
+        for ((file_number, bytes), layout) in FILE_NUMBERS
+            .into_iter()
+            .zip(raw_files)
+            .zip([live.gfx33, live.gfx32])
+        {
+            let current = original
+                .load_decompressed_graphics_file(0, layout)
+                .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
+            if bytes.len() != current.len() {
+                return Err(format!(
+                    "GFX{file_number:02X}: expected {} raw bytes, got {}",
+                    current.len(),
+                    bytes.len()
+                ));
+            }
         }
     }
     let gfx33_planes = live

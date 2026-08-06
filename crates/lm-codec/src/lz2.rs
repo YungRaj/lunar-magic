@@ -48,16 +48,13 @@ pub fn decode_lz2_prefix(input: &[u8], output_limit: usize) -> Result<DecodedLz2
             });
         }
         let (command, len) = decode_header(header, input, &mut cursor)?;
-        if command == 7 {
-            return Err(CodecError::UnsupportedLz2Command(command));
-        }
         ensure_room(&output, len, output_limit)?;
         match command {
             0 => copy_literal(input, &mut cursor, len, &mut output)?,
             1 => fill_byte(input, &mut cursor, len, &mut output)?,
             2 => fill_word(input, &mut cursor, len, &mut output)?,
             3 => fill_incrementing(input, &mut cursor, len, &mut output)?,
-            4..=6 => copy_dictionary(input, &mut cursor, len, command, &mut output)?,
+            4..=7 => copy_dictionary(input, &mut cursor, len, &mut output)?,
             other => return Err(CodecError::UnsupportedLz2Command(other)),
         }
     }
@@ -129,7 +126,6 @@ fn copy_dictionary(
     input: &[u8],
     cursor: &mut usize,
     len: usize,
-    command: u8,
     output: &mut Vec<u8>,
 ) -> Result<(), CodecError> {
     let high = *input.get(*cursor).ok_or(CodecError::UnexpectedEnd)?;
@@ -137,25 +133,13 @@ fn copy_dictionary(
     *cursor += 2;
     let source = (usize::from(high) << 8) | usize::from(low);
     for index in 0..len {
-        let address = if command == 6 {
-            source
-                .checked_sub(index)
-                .ok_or(CodecError::InvalidBackReference {
-                    offset: source,
-                    produced: output.len(),
-                })?
-        } else {
-            source + index
-        };
-        let mut value = *output
+        let address = source + index;
+        let value = *output
             .get(address)
             .ok_or(CodecError::InvalidBackReference {
                 offset: address,
                 produced: output.len(),
             })?;
-        if command == 5 {
-            value = value.reverse_bits();
-        }
         output.push(value);
     }
     Ok(())

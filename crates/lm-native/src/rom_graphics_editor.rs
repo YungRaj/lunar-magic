@@ -1114,18 +1114,27 @@ impl RomGraphicsEditor {
         let Some(directory) = crate::dialogs::choose_graphics_import_directory() else {
             return;
         };
-        let slots = standard_graphics_slots(workspace.profile.graphics);
+        let pristine_install = pristine_special_graphics(&workspace.profile)
+            && !lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&workspace.image);
+        let (slots, file_numbers) = if pristine_install {
+            let files = (0..0x34).collect::<Vec<_>>();
+            (files.clone(), files)
+        } else {
+            let slots = standard_graphics_slots(workspace.profile.graphics);
+            (slots.clone(), slots)
+        };
         let source = graphics_import::GraphicsImportSource {
             expected_revision: workspace.controller.revision(),
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
             checksum_field: workspace.internal_header + 0x1c,
             options,
-            slots: slots.clone(),
-            file_numbers: slots,
+            slots,
+            file_numbers,
             family: "standard",
             description: "Insert all standard GFX files",
             smw_us_v1_special: false,
+            smw_us_v1_standard_install: pristine_install,
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
         };
@@ -1181,18 +1190,27 @@ impl RomGraphicsEditor {
         let Some(path) = crate::dialogs::choose_all_gfx_file() else {
             return;
         };
-        let slots = standard_graphics_slots(workspace.profile.graphics);
+        let pristine_install = pristine_special_graphics(&workspace.profile)
+            && !lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(&workspace.image);
+        let (slots, file_numbers) = if pristine_install {
+            let files = (0..0x34).collect::<Vec<_>>();
+            (files.clone(), files)
+        } else {
+            let slots = standard_graphics_slots(workspace.profile.graphics);
+            (slots.clone(), slots)
+        };
         let source = graphics_import::GraphicsImportSource {
             expected_revision: workspace.controller.revision(),
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
             checksum_field: workspace.internal_header + 0x1c,
             options,
-            slots: slots.clone(),
-            file_numbers: slots,
+            slots,
+            file_numbers,
             family: "standard",
             description: "Insert AllGFX.bin",
             smw_us_v1_special: false,
+            smw_us_v1_standard_install: pristine_install,
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
         };
@@ -1265,6 +1283,7 @@ impl RomGraphicsEditor {
             family: "special",
             description: "Insert GFX32/GFX33 files",
             smw_us_v1_special: true,
+            smw_us_v1_standard_install: false,
             smw_us_v1_exgraphics: false,
             exgraphics_names: false,
         };
@@ -1348,6 +1367,7 @@ impl RomGraphicsEditor {
             family: "extended",
             description: "Insert ExGFX files",
             smw_us_v1_special: false,
+            smw_us_v1_standard_install: false,
             smw_us_v1_exgraphics: supports_native_exgraphics(&workspace.profile, &workspace.image),
             exgraphics_names: true,
         };

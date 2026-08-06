@@ -806,6 +806,31 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a retained Lunar Magic first-import ROM and its Graphics directory"]
+    fn retained_lunar_magic_standard_import_reopens_every_file() {
+        let rom = std::env::var_os("LM_IMPORTED_GFX_ROM").expect("LM_IMPORTED_GFX_ROM");
+        let directory =
+            PathBuf::from(std::env::var_os("LM_GFX_EXPORT_DIR").expect("LM_GFX_EXPORT_DIR"));
+        let image = RomImage::from_bytes(fs::read(rom).unwrap()).unwrap();
+        let project = Project::new(image.clone());
+        let ordinary = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        let special = lm_profile::smw_us_v1_special_graphics_layouts(&image).unwrap();
+        for file_number in 0..0x34 {
+            let (slot, layout) = match file_number {
+                0x00..=0x31 => (file_number, ordinary),
+                0x32 => (0, special.gfx32),
+                0x33 => (0, special.gfx33),
+                _ => unreachable!(),
+            };
+            let actual = project
+                .load_decompressed_graphics_file(slot, layout)
+                .unwrap();
+            let expected = fs::read(directory.join(format!("GFX{file_number:02X}.bin"))).unwrap();
+            assert_eq!(actual, expected, "GFX{file_number:02X}");
+        }
+    }
+
+    #[test]
     fn level_batch_prefers_the_staged_4bpp_override_for_an_active_file() {
         let directory = temporary_directory();
         fs::create_dir(&directory).unwrap();

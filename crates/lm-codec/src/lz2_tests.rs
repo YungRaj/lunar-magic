@@ -10,11 +10,11 @@ fn literal_round_trip() {
 }
 
 #[test]
-fn decodes_copy_variants() {
+fn lunar_magic_dictionary_command_classes_are_forward_copy_aliases() {
     let stream = [3, 0x01, 0x02, 0x04, 0x08, 0xa3, 0, 0, 0xc3, 0, 3, 0xff];
     assert_eq!(
         decode_lz2(&stream, 32).unwrap(),
-        [1, 2, 4, 8, 128, 64, 32, 16, 8, 4, 2, 1]
+        [1, 2, 4, 8, 1, 2, 4, 8, 8, 1, 2, 4]
     );
 }
 
@@ -37,22 +37,13 @@ fn maximum_command_length_round_trips() {
 }
 
 #[test]
-fn deterministic_encoder_uses_all_dictionary_variants() {
-    for (expected_command, source) in [
-        (4, b"abcdWXYZabcdWXYZ".to_vec()),
-        (
-            5,
-            [0x01_u8, 0x23, 0x45, 0x67, 0x80, 0xc4, 0xa2, 0xe6].to_vec(),
-        ),
-        (6, b"abcdWXYZZYXWdcba".to_vec()),
-    ] {
-        let encoded = encode_lz2(&source);
-        assert_eq!(decode_lz2(&encoded, 0x1000).unwrap(), source);
-        assert!(
-            commands(&encoded).contains(&expected_command),
-            "{encoded:02x?}"
-        );
-    }
+fn deterministic_encoder_uses_only_lunar_magic_compatible_dictionary_copy() {
+    let source = b"abcdWXYZabcdWXYZ";
+    let encoded = encode_lz2(source);
+    assert_eq!(decode_lz2(&encoded, 0x1000).unwrap(), source);
+    let commands = commands(&encoded);
+    assert!(commands.contains(&4), "{encoded:02x?}");
+    assert!(!commands.iter().any(|command| (5..=7).contains(command)));
 }
 
 #[test]
@@ -122,11 +113,11 @@ fn every_two_byte_input_is_a_total_decode_operation() {
 }
 
 #[test]
-fn reserved_extended_command_headers_are_rejected() {
+fn command_seven_alias_still_requires_a_complete_reference_operand() {
     for header in 0xfc..=0xfe {
         assert_eq!(
-            decode_lz2_prefix(&[header, 0x00, 0xff], 1),
-            Err(CodecError::UnsupportedLz2Command(7))
+            decode_lz2_prefix(&[header, 0x00, 0xff], 1024),
+            Err(CodecError::UnexpectedEnd)
         );
     }
 }

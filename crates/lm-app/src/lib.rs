@@ -100,6 +100,7 @@ mod shortcut;
 mod smw_main_overworld_layer2_controller;
 mod smw_map16_controller;
 mod smw_us_v1_exgraphics_install;
+mod smw_us_v1_standard_graphics_install;
 mod snapshot;
 mod snes_map16_tileset_import;
 mod ssc_sidecar_controller;
@@ -315,6 +316,9 @@ pub use smw_map16_controller::{
     SmwMap16ControllerError,
 };
 pub use smw_us_v1_exgraphics_install::prepare_smw_us_v1_exgraphics_install;
+pub use smw_us_v1_standard_graphics_install::{
+    prepare_smw_us_v1_joined_standard_graphics_install, prepare_smw_us_v1_standard_graphics_install,
+};
 pub use snapshot::{ControllerSnapshot, ProfiledControllerSnapshot};
 pub use snes_map16_tileset_import::{
     AppliedSnesMap16Page, MaterializedSnesMap16Tileset, SNES_TILESET_GRAPHICS_LEN,

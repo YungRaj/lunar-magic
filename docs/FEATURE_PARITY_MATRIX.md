@@ -289,7 +289,14 @@ and applies Lunar Magic's per-file packed-3bpp expansion table plus its legacy f
 synthesis for GFX01, GFX08, GFX17, GFX1E, and GFX31. The retained
 `retained_lunar_magic_standard_export_matches_every_file` oracle byte-matches every file from a
 fresh Lunar Magic 3.63 `-ExportGFX` run; non-pristine profiles retain their declared native table
-behavior. First-time standard-GFX insertion into a vanilla ROM remains on the critical path.
+behavior. Reciprocal first-time directory and `AllGFX.bin` insertion authenticate and install the
+recovered 4bpp runtime, expand the ROM to 1 MiB, allocate all 52 files atomically, preserve the
+shared-bank GFX32/GFX33 startup contract, repair the checksum, semantically reopen every file, and
+undo to the byte-exact original ROM. The automated Wine gate
+`lunar_magic_reexports_every_rust_first_install_standard_gfx_file` has Lunar Magic 3.63 re-export
+the Rust-installed ROM with zero differing files. LZ2 encoding consequently restricts dictionary
+output to command 4 because the original editor aliases command classes 4 through 7 to forward
+copy; this prevents Rust-only self-consistent streams.
 
 ## Current critical path
 

@@ -21,6 +21,7 @@ pub(super) struct GraphicsImportSource {
     pub(super) family: &'static str,
     pub(super) description: &'static str,
     pub(super) smw_us_v1_special: bool,
+    pub(super) smw_us_v1_standard_install: bool,
     pub(super) smw_us_v1_exgraphics: bool,
     /// Uses Lunar Magic's `ExGFX` namespace even for reserved files `$60` through `$63`.
     pub(super) exgraphics_names: bool,
@@ -199,7 +200,14 @@ fn prepare_import(
             if cancelled.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            if source.smw_us_v1_exgraphics {
+            if source.smw_us_v1_standard_install {
+                lm_app::prepare_smw_us_v1_standard_graphics_install(
+                    source.expected_revision,
+                    source.image,
+                    &files,
+                )
+                .map(Some)
+            } else if source.smw_us_v1_exgraphics {
                 let files = source
                     .file_numbers
                     .iter()
@@ -262,15 +270,24 @@ fn prepare_import(
             if cancelled.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            lm_app::prepare_joined_standard_graphics_import(
-                source.expected_revision,
-                source.image,
-                source.layout,
-                source.checksum_field,
-                &joined,
-                &source.options,
-            )
-            .map(Some)
+            if source.smw_us_v1_standard_install {
+                lm_app::prepare_smw_us_v1_joined_standard_graphics_install(
+                    source.expected_revision,
+                    source.image,
+                    &joined,
+                )
+                .map(Some)
+            } else {
+                lm_app::prepare_joined_standard_graphics_import(
+                    source.expected_revision,
+                    source.image,
+                    source.layout,
+                    source.checksum_field,
+                    &joined,
+                    &source.options,
+                )
+                .map(Some)
+            }
         }
     }
 }
