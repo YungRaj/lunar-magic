@@ -4210,3 +4210,13 @@ backs all six, and the unavailable fourth page `$300..$3FF` owns no file. Instal
 settings are authenticated through their built-in owner even without an external revision profile.
 The bypass record's dialog order is converted to VRAM order before staging, duplicate-file conflict
 checks remain atomic, every changed file reopens, and one Undo restores the combined installed ROM.
+
+A disposable Lunar Magic 3.63 Wine oracle now authenticates the original SNES tileset-import
+interaction as well as its decompiled implementation. The audit opens the hidden command from the
+Map16 render child, captures the default checked Optimize control, switches to direct placement,
+and supplies the graphics-set and `$0800`-byte screen-map files through the two native file dialogs.
+On selected page `$00`, the retained clean run changed 5,491 of 65,536 decoded graphics bytes and
+1,819 of 2,048 Map16 bytes. Its manifest records all four before/after SHA-256 values, selected page,
+and exact buffer address. A separate observed optimized failure changed graphics before reporting
+that the page lacked enough blank definitions; the Rust transaction deliberately offers stronger
+failure atomicity rather than reproducing that partial mutation.

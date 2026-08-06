@@ -3413,3 +3413,14 @@ optional color-map selector is one-based in `$00E27A9C`. After all graphics copi
 visits each referenced remapped destination only once and calls `ApplyColorMapFilterToGraphicsTile`
 at `$00503CE0` with selector minus one. That function maps each of the tile's 64 low-nibble pixel
 indexes through the chosen 16-byte row of the 16×16 table at `$0091C580`, then re-encodes 4bpp.
+
+The live Wine interaction is retained under
+`oracle-work/lm363/pristine-us/snes-tileset-import-direct`. The hidden Map16 shortcut is dispatched
+from the render child around `$00500356`; its Ctrl/Shift/Alt/F1 guards exit through the conditional
+branches at `$00500375/$00500382/$0050038F/$0050039C`. The audit temporarily neutralizes only those
+four branches in a disposable process, posts Insert to the authenticated child handle at
+`$009B958C`, and immediately restores the exact instruction bytes. The native options dialog uses
+control `$70` for Optimize and initializes it checked. Direct import then copies `$200` dwords to
+`$00777E58 + page * $800`; selected page comes from `$00E27AE0 >> 4`. The retained page-zero run
+records 5,491 graphics-byte and 1,819 Map16-byte differences and preserves both complete buffers,
+dialog snapshots, and their hashes so the observation can be independently rechecked.

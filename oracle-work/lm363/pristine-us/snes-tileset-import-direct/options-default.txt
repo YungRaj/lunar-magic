@@ -1,0 +1,7 @@
+button=0x01df check=0 enabled=1 visible=1 title=Original to Mapped Tiles
+button=0x0006 check=0 enabled=1 visible=1 title=Reset
+edit-parent=0x0000 text=
+edit-parent=0x0000 text=
+combo=0x006e selected=0 text=
+combo=0x01a0 selected=0 text=
+button=0x0070 check=1 enabled=1 visible=1 title=Optimize Map16, insert to blank tiles, and paste
