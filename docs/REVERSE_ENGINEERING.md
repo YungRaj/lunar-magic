@@ -3451,3 +3451,13 @@ payload at RVA `00AB0E6C`; its retained SHA-256 is
 `RenderOverworldLinkedTileOverlays` (`00541180`) indexes that table with each render-grid node's
 15-bit tile word. Rust therefore resolves `$000..$3FF` from the exact retained resource and
 `$400..$BFF` from `.s16ov`, rather than substituting ordinary level Map16 definitions.
+
+The same live decompile now proves both external-resource routing tables. During
+`InitializeOverworldEditorModel` (`005446D0`), native Sprite Map16 `$000..$BFF` receives graphics
+base `$1C00` and palette sentinel `$FFFF`; internal `$C00..$CFF` receives `$3100/$FFFE`.
+`LoadCustomOverworldSpriteSidecar` transforms graphics range bases by `kind & 3`: kinds 0, 1, 2,
+and 3 add `$4200`, `$0000`, `$1C00`, and `$2A00`, respectively. An adjusted base at or above
+`$4600` is ignored. Palette bases at or above `$0400` are likewise ignored. Accepted inclusive
+ranges write one constant route per native Sprite Map16 index, with later records overwriting
+earlier records. `RenderOverworldLinkedTileOverlays` reads both tables before resolving each 8x8
+subtile, so routing belongs to the parent Sprite Map16 reference rather than its subtile number.

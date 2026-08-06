@@ -348,6 +348,10 @@ pub enum ResolvedNativeOverworldSpriteElement {
         x_flip: bool,
         y_flip: bool,
         translucent: bool,
+        /// Lunar Magic editor graphics-cache base selected by the native Sprite Map16 index.
+        graphics_base: u16,
+        /// Lunar Magic editor palette-cache base or `$FFFF` active-palette sentinel.
+        palette_base: u16,
     },
     Label {
         sprite_index: usize,
@@ -386,6 +390,7 @@ pub fn resolve_native_overworld_sprite_elements(
     builtin_sprite_map16: &[Map16Tile],
     custom_sprite_map16: &S16OvSidecar,
 ) -> Vec<ResolvedNativeOverworldSpriteElement> {
+    let resources = NativeOverworldSpriteResourceMap::from_definitions(definitions);
     let mut output = Vec::new();
     for (sprite_index, placement) in placements.iter().enumerate() {
         let Some(appearance) = definitions.appearances.get(&placement.id) else {
@@ -401,6 +406,7 @@ pub fn resolve_native_overworld_sprite_elements(
                 true,
                 builtin_sprite_map16,
                 custom_sprite_map16,
+                &resources,
             );
         }
         match &appearance.display {
@@ -415,6 +421,7 @@ pub fn resolve_native_overworld_sprite_elements(
                         part.translucent,
                         builtin_sprite_map16,
                         custom_sprite_map16,
+                        &resources,
                     );
                 }
             }
@@ -504,6 +511,7 @@ fn expand_map16(
     translucent: bool,
     builtin: &[Map16Tile],
     custom: &S16OvSidecar,
+    resources: &NativeOverworldSpriteResourceMap,
 ) {
     if (0xc00..=0xcff).contains(&native_tile) {
         output.push(ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
@@ -530,13 +538,23 @@ fn expand_map16(
         });
         return;
     };
+    let (graphics_base, palette_base) = resources.route(native_tile);
     for (subtile, dx, dy) in [
         (definition.top_left, 0, 0),
         (definition.top_right, 8, 0),
         (definition.bottom_left, 0, 8),
         (definition.bottom_right, 8, 8),
     ] {
-        push_subtile(output, sprite_index, subtile, x + dx, y + dy, translucent);
+        push_subtile(
+            output,
+            sprite_index,
+            subtile,
+            x + dx,
+            y + dy,
+            translucent,
+            graphics_base,
+            palette_base,
+        );
     }
 }
 
@@ -547,6 +565,8 @@ fn push_subtile(
     x: i32,
     y: i32,
     translucent: bool,
+    graphics_base: u16,
+    palette_base: u16,
 ) {
     output.push(ResolvedNativeOverworldSpriteElement::Tile {
         sprite_index,
@@ -558,14 +578,79 @@ fn push_subtile(
         x_flip: subtile.x_flip(),
         y_flip: subtile.y_flip(),
         translucent,
+        graphics_base,
+        palette_base,
     });
+}
+
+/// Exact routing tables initialized and overridden by Lunar Magic's `.sscov` loader.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NativeOverworldSpriteResourceMap {
+    graphics: [u16; 0xc00],
+    palettes: [u16; 0xc00],
+}
+
+impl NativeOverworldSpriteResourceMap {
+    pub const ACTIVE_GRAPHICS_BASE: u16 = 0x1c00;
+    pub const INTERNAL_GRAPHICS_BASE: u16 = 0x3100;
+    pub const ACTIVE_PALETTE_BASE: u16 = 0xffff;
+    pub const INTERNAL_PALETTE_BASE: u16 = 0xfffe;
+
+    /// Reproduces `InitializeOverworldEditorModel` and the two range loops in
+    /// `LoadCustomOverworldSpriteSidecar` (`005446D0`, `005438A0`).
+    #[must_use]
+    pub fn from_definitions(definitions: &NativeOverworldSpriteSidecar) -> Self {
+        let mut value = Self {
+            graphics: [Self::ACTIVE_GRAPHICS_BASE; 0xc00],
+            palettes: [Self::ACTIVE_PALETTE_BASE; 0xc00],
+        };
+        for range in &definitions.graphics_ranges {
+            let offset = match range.kind & 3 {
+                0 => 0x4200_u32,
+                1 => 0,
+                2 => 0x1c00,
+                _ => 0x2a00,
+            };
+            let adjusted = u32::from(range.base) + offset;
+            if adjusted >= 0x4600 {
+                continue;
+            }
+            for tile in range.first_tile..=range.last_tile {
+                value.graphics[usize::from(tile)] = adjusted as u16;
+            }
+        }
+        for range in &definitions.palette_ranges {
+            if range.base >= 0x400 {
+                continue;
+            }
+            for tile in range.first_tile..=range.last_tile {
+                value.palettes[usize::from(tile)] = range.base;
+            }
+        }
+        value
+    }
+
+    /// Returns the graphics and palette base selected for one native Sprite Map16 tile.
+    #[must_use]
+    pub fn route(&self, native_tile: u16) -> (u16, u16) {
+        if (0xc00..=0xcff).contains(&native_tile) {
+            return (Self::INTERNAL_GRAPHICS_BASE, Self::INTERNAL_PALETTE_BASE);
+        }
+        let index = usize::from(native_tile);
+        self.graphics.get(index).map_or(
+            (Self::ACTIVE_GRAPHICS_BASE, Self::ACTIVE_PALETTE_BASE),
+            |graphics| (*graphics, self.palettes[index]),
+        )
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use lm_graphics::Bgr555;
-    use lm_overworld::{NativeOverworldSpriteAppearance, NativeOverworldSpriteMap16Part};
+    use lm_overworld::{
+        NativeOverworldSpriteAppearance, NativeOverworldSpriteMap16Part, NativeOverworldSpriteRange,
+    };
     use std::collections::BTreeMap;
 
     fn definitions() -> NativeOverworldSpriteSidecar {
@@ -607,6 +692,63 @@ mod tests {
             graphics_ranges: Vec::new(),
             palette_ranges: Vec::new(),
         }
+    }
+
+    #[test]
+    fn resource_routes_match_ghidra_defaults_transforms_overwrites_and_limits() {
+        let mut definitions = definitions();
+        definitions.graphics_ranges = vec![
+            NativeOverworldSpriteRange {
+                kind: 0,
+                first_tile: 0x400,
+                last_tile: 0x402,
+                base: 0x20,
+            },
+            NativeOverworldSpriteRange {
+                kind: 6,
+                first_tile: 0x401,
+                last_tile: 0x401,
+                base: 0x30,
+            },
+            NativeOverworldSpriteRange {
+                kind: 0,
+                first_tile: 0x402,
+                last_tile: 0x402,
+                base: 0x400,
+            },
+        ];
+        definitions.palette_ranges = vec![
+            NativeOverworldSpriteRange {
+                kind: 0xabcd,
+                first_tile: 0x400,
+                last_tile: 0x402,
+                base: 0x123,
+            },
+            NativeOverworldSpriteRange {
+                kind: 0,
+                first_tile: 0x401,
+                last_tile: 0x402,
+                base: 0x400,
+            },
+        ];
+        let routes = NativeOverworldSpriteResourceMap::from_definitions(&definitions);
+        assert_eq!(
+            routes.route(0x3ff),
+            (
+                NativeOverworldSpriteResourceMap::ACTIVE_GRAPHICS_BASE,
+                NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE,
+            )
+        );
+        assert_eq!(routes.route(0x400), (0x4220, 0x123));
+        assert_eq!(routes.route(0x401), (0x1c30, 0x123));
+        assert_eq!(routes.route(0x402), (0x4220, 0x123));
+        assert_eq!(
+            routes.route(0xc00),
+            (
+                NativeOverworldSpriteResourceMap::INTERNAL_GRAPHICS_BASE,
+                NativeOverworldSpriteResourceMap::INTERNAL_PALETTE_BASE,
+            )
+        );
     }
 
     #[test]
@@ -709,6 +851,8 @@ mod tests {
                     x_flip: false,
                     y_flip: false,
                     translucent: true,
+                    graphics_base: NativeOverworldSpriteResourceMap::ACTIVE_GRAPHICS_BASE,
+                    palette_base: NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE,
                 },
                 ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
                     sprite_index: 0,

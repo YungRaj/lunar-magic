@@ -4283,3 +4283,12 @@ translucency flag, graphics/palette range field, loaded Map16 prefix length, non
 prefix digest. All input/output/observation paths must be pairwise distinct. A built-process test
 round-trips native-only fields through Unicode paths, while malformed or oversized input publishes
 nothing.
+
+Native overworld sprite resolution now carries Lunar Magic's exact per-Sprite-Map16 graphics and
+palette routes. `NativeOverworldSpriteResourceMap` initializes `$000..$BFF` to `$1C00/$FFFF`,
+retains `$3100/$FFFE` for internal `$C00..$CFF`, applies the four Ghidra-proved graphics transforms,
+ignores adjusted graphics bases at `$4600+` and palette bases at `$0400+`, and preserves later-range
+overwrite behavior. Each expanded 8x8 element retains the selected parent route alongside its tile,
+palette, priority, flips, and translucency. Focused tests cover defaults, all transforms, ignored
+limits, overlapping records, and internal sentinels; this is the source-selection contract used by
+the installed-overworld preview integration rather than a guessed direct tile-array index.
