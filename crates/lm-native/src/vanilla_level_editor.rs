@@ -1877,6 +1877,20 @@ impl VanillaLevelEditor {
         } else {
             ui.label("Select or drag an object/enemy; Insert duplicates the selection and Delete removes it.");
         }
+        if let Some(selection) = self.canvas_entity_selection {
+            let description = match selection {
+                CanvasEntitySelection::Layer1Object => {
+                    format!("Selected Layer 1 object {}", self.selected_object)
+                }
+                CanvasEntitySelection::Layer2Object => {
+                    format!("Selected Layer 2 object {}", self.selected_layer2_object)
+                }
+                CanvasEntitySelection::Sprite => {
+                    format!("Selected sprite token {}", self.selected_sprite)
+                }
+            };
+            ui.colored_label(egui::Color32::YELLOW, description);
+        }
         let canvas_available = ui.available_size();
         let cell = if snes_viewport {
             fitted_snes_viewport_cell(canvas_available, self.canvas_zoom_percent())
@@ -2374,6 +2388,10 @@ impl VanillaLevelEditor {
                     &layer2_resize_models,
                     cell,
                     editor_overlays,
+                    matches!(
+                        self.canvas_entity_selection,
+                        Some(CanvasEntitySelection::Layer2Object)
+                    ),
                 )
             })
             .unwrap_or_default();
@@ -2393,6 +2411,10 @@ impl VanillaLevelEditor {
                     &layer1_resize_models,
                     cell,
                     editor_overlays,
+                    matches!(
+                        self.canvas_entity_selection,
+                        Some(CanvasEntitySelection::Layer1Object)
+                    ),
                 )
             })
             .unwrap_or_default();
@@ -2425,6 +2447,10 @@ impl VanillaLevelEditor {
                     custom_map16,
                     external_textures: &self.external_sprite_textures,
                     editor_overlays,
+                    selection_visible: matches!(
+                        self.canvas_entity_selection,
+                        Some(CanvasEntitySelection::Sprite)
+                    ),
                 })
             })
             .flatten();
@@ -7254,6 +7280,7 @@ fn draw_object_placement_markers(
     resize_models: &HashMap<usize, lm_render::StandardObjectResizeModel>,
     cell: f32,
     editor_overlays: bool,
+    selection_visible: bool,
 ) -> ObjectPlacementHits {
     let mut hits = ObjectPlacementHits::default();
     for placement in placements {
@@ -7264,13 +7291,14 @@ fn draw_object_placement_markers(
         let artwork_rect = artwork_bounds.get(&index).copied();
         let object_rect =
             artwork_rect.unwrap_or_else(|| encoded_object_rect(canvas, *placement, vertical, cell));
-        if editor_overlays {
+        let selected_visible = index == selected && (editor_overlays || selection_visible);
+        if editor_overlays || selected_visible {
             draw_object_marker(
                 painter,
                 map16_texture,
                 object_rect,
                 record,
-                index == selected,
+                selected_visible,
                 artwork_rect.is_some(),
             );
         }
@@ -7556,6 +7584,7 @@ struct SpritePlacementDraw<'a> {
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
     external_textures: &'a HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
     editor_overlays: bool,
+    selection_visible: bool,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -7578,6 +7607,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         custom_map16,
         external_textures,
         editor_overlays,
+        selection_visible,
     } = request;
     let mut hit = None;
     let mut standard_8a_count = 0_u8;
@@ -7695,7 +7725,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 egui::Color32::WHITE,
             );
         }
-        if editor_overlays && placement.token_index == selected {
+        if (editor_overlays || selection_visible) && placement.token_index == selected {
             painter.rect_stroke(
                 interactive_rect,
                 marker.width() / 2.0,
@@ -9534,6 +9564,7 @@ mod tests {
             &HashMap::new(),
             &HashMap::new(),
             ROM_LEVEL_CANVAS_CELL,
+            false,
             false,
         );
         assert_eq!(hits.body, Some(0));
@@ -14574,6 +14605,7 @@ mod tests {
                     custom_map16: None,
                     external_textures: &HashMap::new(),
                     editor_overlays: false,
+                    selection_visible: false,
                 });
             });
         });
