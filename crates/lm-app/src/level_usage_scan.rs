@@ -122,9 +122,6 @@ impl From<LevelUsageAnalysisError> for LevelUsageScanError {
 /// initialization failures are returned, while slot-local failures are retained as diagnostics.
 /// The callback runs before every slot, making cancellation deterministic and toolkit-neutral.
 ///
-/// Music is deliberately not included yet. Lunar Magic resolves an explicit zero through a
-/// runtime-populated default table; that resolver must be recovered rather than guessed.
-///
 /// # Errors
 ///
 /// Rejects a mismatched profile/ROM, malformed global object maps, counter failures, or callback
@@ -557,6 +554,17 @@ mod tests {
     use super::*;
     use crate::{ControllerSnapshot, EditorMode};
 
+    fn builtin_snapshot(rom_bytes: Vec<u8>) -> ControllerSnapshot {
+        let image = RomImage::from_bytes(rom_bytes.clone()).unwrap();
+        ControllerSnapshot {
+            revision: 0,
+            mode: EditorMode::Level(0x105),
+            identity: lm_rom::detect_identity(&image).unwrap(),
+            document_path: None,
+            rom_bytes,
+        }
+    }
+
     #[test]
     fn maximum_cache_layout_tracks_native_orientation() {
         assert_eq!(
@@ -754,5 +762,50 @@ mod tests {
             }
         }
         assert_eq!(mismatched_counts, 0);
+
+        let headerless_snapshot = builtin_snapshot(image.logical_bytes().to_vec());
+        let headerless_result = scan_builtin_smw_us_v1_level_usage(
+            &headerless_snapshot,
+            LevelUsageScanOptions::default(),
+            |_| ControlFlow::Continue(()),
+        )
+        .unwrap();
+        assert_eq!(headerless_result, builtin_result);
+
+        let unused_options = LevelUsageScanOptions {
+            only_unused_defined_map16: true,
+            only_unused_inserted_graphics: true,
+            sprites: false,
+            music: false,
+            ..LevelUsageScanOptions::default()
+        };
+        let unused_result =
+            scan_builtin_smw_us_v1_level_usage(&headerless_snapshot, unused_options, |_| {
+                ControlFlow::Continue(())
+            })
+            .unwrap();
+        let expected_unused_map16 = builtin_result
+            .report
+            .map16_tiles
+            .iter()
+            .filter(|entry| entry.count == 0)
+            .cloned()
+            .collect::<Vec<_>>();
+        let expected_unused_graphics = builtin_result
+            .report
+            .graphics_files
+            .iter()
+            .filter(|entry| entry.count == 0)
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(unused_result.report.map16_tiles, expected_unused_map16);
+        assert_eq!(
+            unused_result.report.graphics_files,
+            expected_unused_graphics
+        );
+        assert!(unused_result.report.sprites.is_empty());
+        assert!(unused_result.report.music_tracks.is_empty());
+        assert_eq!(unused_result.loaded_levels, builtin_result.loaded_levels);
+        assert_eq!(unused_result.diagnostics, builtin_result.diagnostics);
     }
 }
