@@ -37,3 +37,19 @@ legacy/expanded sprite ordering, expanded-control canonicalization, expanded-fra
 downgrade, vertical expanded ordering, Layer 1 control and extent canonicalization, raw Layer 1
 ordering, all screen-exit boundary shapes, direct and packed entrances, existing separate-midway
 updates, and first-install separate-midway runtime publication.
+
+## 2026-08-05 — Layer 2 and Layer 3 publication audit
+
+The executable, pristine ROM, and Wine identities are unchanged from the core audit above.
+
+```text
+cargo test -p lm-app --test layer2_wine -- --ignored --nocapture
+2 passed: checksum-atomic tilemap editing and semantic object-backed editing
+
+cargo test -p lm-app --test layer3_install_wine -- --ignored --nocapture
+1 passed: first-time Rust Layer 3 installation reopened and exported canonically in Lunar Magic
+```
+
+The object-backed Layer 2 oracle edits through the same semantic relocation operation used by the
+native canvas. This regenerates owned screen transitions, including removal of a redundant leading
+screen-zero jump, before Lunar Magic re-exports the exact expected payload.
