@@ -9,7 +9,7 @@ usage() {
     echo "  LM_MINGW_CC: 32-bit MinGW compiler (default: i686-w64-mingw32-gcc)" >&2
     echo "  LM_BITMAP_REDUCTION: median-cut or popularity (default: median-cut)" >&2
     echo "  LM_BITMAP_PRIORITY: Popularity priority from 1 through 4 (default: 3)" >&2
-    echo "  LM_BITMAP_MAX_COLORS: maximum reduced colors from 2 through 128 (default: 128)" >&2
+    echo "  LM_BITMAP_MAX_COLORS: maximum reduced colors from 1 through 128 (default: 128)" >&2
     exit 2
 }
 
@@ -44,12 +44,12 @@ case "$priority" in
 esac
 case "$maximum_colors" in
     *[!0-9]*|'')
-        echo "LM_BITMAP_MAX_COLORS must be from 2 through 128" >&2
+        echo "LM_BITMAP_MAX_COLORS must be from 1 through 128" >&2
         exit 2
         ;;
 esac
-if [ "$maximum_colors" -lt 2 ] || [ "$maximum_colors" -gt 128 ]; then
-    echo "LM_BITMAP_MAX_COLORS must be from 2 through 128" >&2
+if [ "$maximum_colors" -lt 1 ] || [ "$maximum_colors" -gt 128 ]; then
+    echo "LM_BITMAP_MAX_COLORS must be from 1 through 128" >&2
     exit 2
 fi
 
