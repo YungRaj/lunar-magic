@@ -14,6 +14,7 @@ use crate::{
     expanded_settings_editor::ExpandedSettingsEditor,
     graphics_editor::GraphicsEditor,
     graphics_migration_dialog::GraphicsMigrationDialog,
+    help_dialog::HelpDialog,
     ips_create_dialog::IpsCreateDialog,
     ips_patch_dialog::IpsPatchDialog,
     layer3_editor::Layer3Editor,
@@ -104,6 +105,7 @@ pub(crate) struct NativeApplication {
     effects: EffectState,
     about_dialog: AboutDialog,
     diagnostics_dialog: DiagnosticsDialog,
+    help_dialog: HelpDialog,
     shortcut_editor: ShortcutEditor,
     toolbar_editor: ToolbarEditor,
     level_text: String,
@@ -568,6 +570,7 @@ impl eframe::App for NativeApplication {
         self.show_confirmation(context);
         self.about_dialog.show(context);
         self.diagnostics_dialog.show(context);
+        self.help_dialog.show(context);
         if let Some(shortcuts) = self.shortcut_editor.show(context) {
             match self.app.set_shortcuts(shortcuts) {
                 Ok(()) => self.app.status = "Updated keyboard shortcuts".into(),

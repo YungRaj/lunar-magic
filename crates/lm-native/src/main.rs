@@ -29,6 +29,7 @@ mod graphics_batch;
 mod graphics_editor;
 mod graphics_migration_dialog;
 mod graphics_painter;
+mod help_dialog;
 mod ips_create_dialog;
 mod ips_patch_dialog;
 mod layer3_editor;

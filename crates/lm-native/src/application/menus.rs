@@ -19,6 +19,10 @@ impl NativeApplication {
 
     fn help_menu(&mut self, ui: &mut egui::Ui) {
         ui.menu_button("Help", |ui| {
+            if ui.button("Help Topics…").clicked() {
+                ui.close_menu();
+                self.help_dialog.open();
+            }
             if ui.button("Compatibility diagnostics…").clicked() {
                 ui.close_menu();
                 self.diagnostics_dialog.open(&self.app);
