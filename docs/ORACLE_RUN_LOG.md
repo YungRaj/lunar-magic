@@ -30,14 +30,16 @@ cargo test -p lm-app --test support_patch_b_wine -- --ignored --nocapture
 1 passed: lunar_magic_preserves_rust_installed_support_patch_b_and_custom_time
 
 cargo test -p lm-app --test sprite_growth_wine -- --ignored --nocapture
-17 passed; 0 failed
+18 passed; 0 failed
 ```
 
-The 17-test level suite covers semantic MWL object and sprite edits, direct sprite growth,
+The 18-test level suite covers semantic MWL object and sprite edits, direct sprite growth,
 legacy/expanded sprite ordering, expanded-control canonicalization, expanded-framing retention and
 downgrade, vertical expanded ordering, Layer 1 control and extent canonicalization, raw Layer 1
-ordering, all screen-exit boundary shapes, direct and packed entrances, existing separate-midway
-updates, and first-install separate-midway runtime publication.
+ordering, all screen-exit boundary shapes, direct and packed entrances, all eight vertical-range and
+Smart Spawn combinations with preservation of their five shared flags, existing separate-midway
+updates, and first-install separate-midway runtime publication. The exhaustive spawn test also
+reopened a checksum-valid ROM after all sixteen original-editor import/export operations.
 
 ## 2026-08-05 — Layer 2 and Layer 3 publication audit
 

@@ -1254,6 +1254,98 @@ fn lunar_magic_imports_and_reexports_rust_packed_entrance_edits() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Proves every vertical-range and Smart Spawn combination at Lunar Magic's shared MWL-header
+/// boundary. Header byte 6 also owns five entrance/Lfix3 flags, so each edit must retain those
+/// unrelated bits across both Rust publication and Lunar Magic import/re-export.
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and SMW ROM fixtures"]
+fn lunar_magic_imports_and_reexports_every_sprite_spawn_setting() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let original_rom = pristine_smw_us_rom_path(&root);
+    let directory = std::env::temp_dir().join(format!(
+        "lm-sprite-spawn-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let imported_rom = directory.join("sprite spawn edit.sfc");
+    let mut current_mwl = directory.join("source.mwl");
+    fs::copy(&original_rom, &imported_rom).unwrap();
+
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &imported_rom,
+        &current_mwl,
+        "105",
+    );
+    let initial = MwlFile::decode(&fs::read(&current_mwl).unwrap()).unwrap();
+    let initial_header =
+        MwlLevelHeaderSection::decode(initial.section(MwlSectionKind::LevelHeader)).unwrap();
+    let shared_flags = initial_header.sprite_spawn_settings().raw() & !0x07;
+
+    for smart_spawn in [false, true] {
+        for vertical_range in 0..=3 {
+            let edited_mwl = directory.join(format!(
+                "edited range {vertical_range} smart {}.mwl",
+                u8::from(smart_spawn)
+            ));
+            let reexported_mwl = directory.join(format!(
+                "reexported range {vertical_range} smart {}.mwl",
+                u8::from(smart_spawn)
+            ));
+            let mut document =
+                MwlDocumentController::decode(edited_mwl.clone(), &fs::read(&current_mwl).unwrap())
+                    .unwrap();
+            let header = MwlLevelHeaderSection::decode(
+                document.value().section(MwlSectionKind::LevelHeader),
+            )
+            .unwrap();
+            let expected = header
+                .sprite_spawn_settings()
+                .with_properties(vertical_range, smart_spawn)
+                .unwrap();
+            assert_eq!(expected.raw() & !0x07, shared_flags);
+            document
+                .apply_edits(
+                    0,
+                    &[lm_app::MwlDocumentEdit::SetSpriteSpawnSettings(expected)],
+                )
+                .unwrap();
+            fs::write(&edited_mwl, document.begin_save().unwrap().bytes).unwrap();
+
+            run_lunar_magic_level_command(
+                &lunar_magic,
+                "-ImportLevel",
+                &imported_rom,
+                &edited_mwl,
+                "105",
+            );
+            run_lunar_magic_level_command(
+                &lunar_magic,
+                "-ExportLevel",
+                &imported_rom,
+                &reexported_mwl,
+                "105",
+            );
+            let reexported = MwlFile::decode(&fs::read(&reexported_mwl).unwrap()).unwrap();
+            let reopened =
+                MwlLevelHeaderSection::decode(reexported.section(MwlSectionKind::LevelHeader))
+                    .unwrap();
+            assert_eq!(reopened.sprite_spawn_settings(), expected);
+            assert_eq!(reopened.sprite_spawn_settings().raw() & !0x07, shared_flags);
+            current_mwl = reexported_mwl;
+        }
+    }
+    assert!(
+        detect_identity(&RomImage::from_bytes(fs::read(&imported_rom).unwrap()).unwrap())
+            .unwrap()
+            .checksum_matches()
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
 /// Proves direct writes to the four pristine SMW entrance planes are interpreted by Lunar Magic
 /// for both physical copier-header shapes.
 #[test]
