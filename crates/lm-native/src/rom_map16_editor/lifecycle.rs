@@ -49,6 +49,10 @@ impl RomMap16Editor {
                 self.bitmap_converted_texture = None;
                 self.bitmap_preview_zoom = 1;
                 self.bitmap_preview_scroll = egui::Vec2::ZERO;
+                self.pending_snes_tileset = None;
+                self.snes_tileset_preview = None;
+                self.snes_tileset_include_palette = false;
+                self.snes_tileset_deduplicate = false;
                 self.invalidate();
             }
             Err(error) => self.error = Some(error),
@@ -92,10 +96,17 @@ impl RomMap16Editor {
             self.error = Some("wait for Map16 page saving to finish before closing".into());
             return false;
         }
+        if self.snes_tileset_loader.is_running() {
+            self.error = Some("wait for SNES tileset loading to finish before closing".into());
+            return false;
+        }
         let Some(workspace) = &self.workspace else {
             return true;
         };
-        if !workspace.controller.is_modified() && self.bitmap_session.is_none() {
+        if !workspace.controller.is_modified()
+            && self.bitmap_session.is_none()
+            && self.snes_tileset_preview.is_none()
+        {
             self.clear();
             return true;
         }
@@ -155,6 +166,8 @@ impl RomMap16Editor {
         self.pending_selected_import = None;
         self.pending_legacy_page = None;
         self.pending_bitmap_import = None;
+        self.pending_snes_tileset = None;
+        self.snes_tileset_preview = None;
         self.clipboard_paste_target = None;
         self.rectangle_clipboard_paste_target = None;
         self.staged_revision = 0;

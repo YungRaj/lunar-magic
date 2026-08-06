@@ -20,6 +20,27 @@ pub(crate) fn choose_map16_bitmap() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_snes_graphics_set() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Select SNES GFX Set")
+        .add_filter("SNES GFX Set", &["set", "bin"])
+        .pick_file()
+}
+
+pub(crate) fn choose_snes_screen_tile_map() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Select SNES Screen Tile Map")
+        .add_filter("SNES Screen Tile Map", &["map"])
+        .pick_file()
+}
+
+pub(crate) fn choose_snes_palette_row() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Select SNES Palette Row")
+        .add_filter("SNES Palette", &["col", "pal"])
+        .pick_file()
+}
+
 pub(crate) fn choose_save_path() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("SNES ROM", &["smc", "sfc"])

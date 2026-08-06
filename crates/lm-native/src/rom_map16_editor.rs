@@ -13,6 +13,7 @@ mod complete_file;
 mod legacy_page;
 mod lifecycle;
 mod selected_file;
+mod snes_tileset_import;
 #[cfg(test)]
 mod tests;
 
@@ -157,6 +158,11 @@ pub(crate) struct RomMap16Editor {
     bitmap_converted_texture: Option<egui::TextureHandle>,
     bitmap_preview_zoom: u8,
     bitmap_preview_scroll: egui::Vec2,
+    snes_tileset_loader: DocumentLoader,
+    pending_snes_tileset: Option<snes_tileset_import::PendingSnesTileset>,
+    snes_tileset_preview: Option<snes_tileset_import::SnesTilesetPreview>,
+    snes_tileset_include_palette: bool,
+    snes_tileset_deduplicate: bool,
 }
 
 impl RomMap16Editor {
@@ -169,6 +175,7 @@ impl RomMap16Editor {
         self.poll_complete_file_io(context);
         self.poll_selected_file_io(context);
         self.poll_legacy_page_io(context);
+        self.poll_snes_tileset_io(context);
         let manifest_command = match self.manifest_loader.show(context, project_revision) {
             Some(Ok(manifest)) => match self.prepare_commit_owned(&manifest) {
                 Ok(command) => Some(command),
@@ -200,6 +207,7 @@ impl RomMap16Editor {
         if let Some(import_command) = self.bitmap_import_window(context, project_revision) {
             command = Some(import_command);
         }
+        self.snes_tileset_preview_window(context, project_revision);
         let approved = self.close_confirmation(context);
         self.show_error(context);
         (approved, command)
@@ -232,7 +240,9 @@ impl RomMap16Editor {
             || self.legacy_page_persistence.is_running()
             || self.bitmap_loader.is_running()
             || self.bitmap_clipboard_loader.is_running()
-            || self.bitmap_session.is_some();
+            || self.bitmap_session.is_some()
+            || self.snes_tileset_loader.is_running()
+            || self.snes_tileset_preview.is_some();
         let edit_blocked = stale || file_busy;
         self.history_controls(ui, edit_blocked);
         self.selection_and_clipboard(ui, edit_blocked, pages, pasted.as_deref());
@@ -247,7 +257,9 @@ impl RomMap16Editor {
                 || self.legacy_page_persistence.is_running()
                 || self.bitmap_loader.is_running()
                 || self.bitmap_clipboard_loader.is_running()
-                || self.bitmap_session.is_some(),
+                || self.bitmap_session.is_some()
+                || self.snes_tileset_loader.is_running()
+                || self.snes_tileset_preview.is_some(),
             project_revision,
         );
         self.selected_file_controls(ui, edit_blocked, project_revision, pasted.as_deref());
@@ -258,10 +270,13 @@ impl RomMap16Editor {
                 || self.selected_persistence.is_running()
                 || self.bitmap_loader.is_running()
                 || self.bitmap_clipboard_loader.is_running()
-                || self.bitmap_session.is_some(),
+                || self.bitmap_session.is_some()
+                || self.snes_tileset_loader.is_running()
+                || self.snes_tileset_preview.is_some(),
             project_revision,
         );
         self.bitmap_import_controls(ui, edit_blocked, project_revision);
+        self.snes_tileset_controls(ui, edit_blocked, project_revision);
         self.commit_controls(ui, edit_blocked, project_revision)
     }
     fn visual_page(&mut self, ui: &mut egui::Ui) {

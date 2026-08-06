@@ -4172,3 +4172,12 @@ Optimized mode performs stable first-occurrence deduplication across the importe
 four-word `$1004` blanks on the selected page before writing, and rejects without mutation unless
 every unique definition fits. Unique definitions then occupy blank indexes in ascending order, and
 all 256 sources receive page-qualified global assignments for the later background index-grid paste.
+
+The installed Map16 editor starts this workflow with Lunar Magic's ordered graphics-set, screen-map,
+and optional palette-row dialogs. Each accepted request captures the application revision, selected
+page, and direct/optimized choice before a bounded worker reads the files. Completion rejects stale
+ROM state and builds one retained preview containing decoded graphics, the candidate Map16 page,
+optional palette row, and all 256 global assignments. While loading or previewing, Map16 edits,
+other transfers, commit, and close are gated. The preview deliberately has no partial Apply action:
+publishing it must wait for the cross-domain ROM transaction so graphics, palette, definitions, and
+the optional background index grid can never diverge.
