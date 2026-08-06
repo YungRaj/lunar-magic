@@ -303,6 +303,28 @@ impl NativeLevelAssetsController {
         double_size_modes: &[bool],
         palette_ownership: PaletteOwnership,
     ) -> Result<Self, NativeLevelAssetsControllerError> {
+        Self::decode_with_preloaded_assets(
+            snapshot,
+            layout,
+            layer2_layout,
+            feature_installation,
+            sprite_lengths,
+            double_size_modes,
+            palette_ownership,
+            None,
+        )
+    }
+
+    pub(crate) fn decode_with_preloaded_assets(
+        snapshot: &ControllerSnapshot,
+        layout: NativeLevelAssetsLayout,
+        layer2_layout: Option<LevelLayer2RomLayout>,
+        feature_installation: InstalledLayout<InstalledExAnimationFeatureRomLayout>,
+        sprite_lengths: &SpriteLengthTable,
+        double_size_modes: &[bool],
+        palette_ownership: PaletteOwnership,
+        preloaded_assets: Option<LoadedNativeLevelAssets>,
+    ) -> Result<Self, NativeLevelAssetsControllerError> {
         let EditorMode::Level(slot) = snapshot.mode else {
             return Err(NativeLevelAssetsControllerError::WrongMode(snapshot.mode));
         };
@@ -318,9 +340,13 @@ impl NativeLevelAssetsController {
         let image = RomImage::from_bytes(snapshot.rom_bytes.clone())
             .map_err(NativeLevelAssetsControllerError::Rom)?;
         let project = Project::new(image);
-        let mut assets = project
-            .load_native_level_assets(usize::from(slot), layout, sprite_lengths, &modes)
-            .map_err(NativeLevelAssetsControllerError::Load)?;
+        let uses_optional_asset_fallback = preloaded_assets.is_some();
+        let mut assets = match preloaded_assets {
+            Some(assets) => assets,
+            None => project
+                .load_native_level_assets(usize::from(slot), layout, sprite_lengths, &modes)
+                .map_err(NativeLevelAssetsControllerError::Load)?,
+        };
         let baseline = assets.clone();
         let source_level_mode = assets.level.layer1.header.level_mode();
         let normalized_reserved_level_mode = assets
@@ -358,17 +384,19 @@ impl NativeLevelAssetsController {
         let previous_blocks = [
             snapshot_block(&project, layout.level.layer1, slot, layout.level.mapper)?,
             snapshot_sprite_block(&project, layout.level.sprites, slot, layout.level.mapper)?,
-            snapshot_block(
+            snapshot_optional_block(
                 &project,
                 layout.palette.pointers,
                 slot,
                 layout.palette.mapper,
+                uses_optional_asset_fallback,
             )?,
-            snapshot_block(
+            snapshot_optional_block(
                 &project,
                 layout.exanimation.pointers,
                 slot,
                 layout.exanimation.mapper,
+                uses_optional_asset_fallback,
             )?,
             match layer2_layout {
                 Some(layer2_layout) => {
@@ -857,10 +885,33 @@ fn snapshot_block(
     let pointer_offset = table
         .pointer_offset(slot)
         .map_err(NativeLevelAssetsControllerError::Layout)?;
+    if project
+        .rom
+        .read(pointer_offset, 3)
+        .map_err(NativeLevelAssetsControllerError::Rom)?
+        == [0, 0, 0]
+    {
+        return Ok(None);
+    }
     match project.load_payload(pointer_offset, mapper, &PayloadReadPolicy::Tagged) {
         Ok(payload) => Ok(payload.block),
         Err(PayloadLoadError::PointerNotTagged { .. }) => Ok(None),
         Err(error) => Err(NativeLevelAssetsControllerError::Payload(error)),
+    }
+}
+
+fn snapshot_optional_block(
+    project: &Project,
+    table: LevelPointerTable,
+    slot: usize,
+    mapper: Mapper,
+    empty_pointer_is_valid: bool,
+) -> Result<Option<RatsBlock>, NativeLevelAssetsControllerError> {
+    match snapshot_block(project, table, slot, mapper) {
+        Err(NativeLevelAssetsControllerError::Payload(PayloadLoadError::Rom(
+            RomError::InvalidSnesAddress(_),
+        ))) if empty_pointer_is_valid => Ok(None),
+        result => result,
     }
 }
 

@@ -248,13 +248,98 @@ fn batch_output_path(
 
 #[cfg(test)]
 mod tests {
-    use super::{LevelImageBatchOptions, LevelImageFormat, RunningBatch, batch_output_path};
+    use super::{
+        BatchImageSource, LevelImageBatchOptions, LevelImageFormat, RunningBatch,
+        batch_output_path, export_batch, render_batch_level_canvas,
+    };
+    use lm_app::{ControllerSnapshot, EditorMode};
+    use lm_project::{
+        ExAnimationRomLayout, InstalledExAnimationRomLayout, InstalledLayout, LevelPointerTable,
+    };
+    use lm_rom::{Mapper, RomImage};
     use std::path::{Path, PathBuf};
     use std::sync::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc,
     };
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn installed_source(headered: bool) -> BatchImageSource {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let physical = std::fs::read(
+            root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
+        )
+        .unwrap();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let rom_bytes = if headered {
+            physical
+        } else {
+            physical_image.logical_bytes().to_vec()
+        };
+        let image = RomImage::from_bytes(rom_bytes.clone()).unwrap();
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = Mapper::LoRom;
+        profile.level = lm_profile::smw_us_v1_vanilla_level_layout();
+        profile.level.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        profile.layer2 = Some(lm_profile::smw_us_v1_layer2_layout(&image).unwrap());
+        profile.palette = lm_profile::smw_us_v1_custom_palette_layout();
+        profile.palette_installation = InstalledLayout::Unconditional(profile.palette);
+        profile.exanimation = ExAnimationRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x8138b,
+                entries: 0x200,
+                stride: 3,
+            },
+            maximum_records: 32,
+            maximum_encoded_len: 0x8000,
+        };
+        profile.exanimation_installation =
+            InstalledLayout::Unconditional(InstalledExAnimationRomLayout {
+                payload: profile.exanimation,
+                pointer_presence_mask: 0x00ff_0000,
+                pointer_locator: None,
+            });
+        profile.exanimation_feature_installation = InstalledLayout::Absent;
+        profile.expanded_settings = Some(lm_profile::smw_us_v1_expanded_settings_layout());
+        profile.map16.mapper = Mapper::LoRom;
+        profile.map16.graphics.offset = 0x180000;
+        profile.map16.acts_like.offset = 0x181000;
+        profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        profile.overworld.layers.mapper = Mapper::LoRom;
+        profile.overworld.layers.layer1.offset = 0x182000;
+        profile.overworld.layers.layer2.offset = 0x183000;
+        profile.overworld.event_reveals.mapper = Mapper::LoRom;
+        profile.overworld.event_reveals.sources.offset = 0x184000;
+        profile.overworld.event_reveals.destinations.offset = 0x185000;
+        profile.overworld.endpoints.mapper = Mapper::LoRom;
+        profile.overworld.endpoints.pointers.offset = 0x186000;
+        profile.overworld.messages.mapper = Mapper::LoRom;
+        profile.overworld.messages.pointers.offset = 0x187000;
+        profile.overworld.sprites.mapper = Mapper::LoRom;
+        profile.overworld.sprites.pointers.offset = 0x188000;
+        profile.overworld.palette.mapper = Mapper::LoRom;
+        profile.overworld.palette.pointers.offset = 0x189000;
+        profile.overworld.animation.mapper = Mapper::LoRom;
+        profile.overworld.animation.pointers.offset = 0x18a000;
+        profile.validate().unwrap();
+        BatchImageSource {
+            snapshot: ControllerSnapshot {
+                revision: 0,
+                mode: EditorMode::Level(0),
+                identity: lm_rom::detect_identity(&image).unwrap(),
+                document_path: None,
+                rom_bytes,
+            },
+            profile,
+            image,
+            ownership: lm_graphics::PaletteOwnership::editable(257),
+            animation_phase: Some(2),
+            special_world_passed: false,
+            visibility: crate::application::LevelViewVisibility::default(),
+        }
+    }
 
     #[test]
     fn batch_names_use_the_original_template_and_uppercase_level_numbers() {
@@ -300,5 +385,91 @@ mod tests {
         };
         running.request_cancel();
         assert!(cancelled.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn installed_full_level_variants_encode_identically_without_copier_header() {
+        let mut expected = None;
+        for headered in [true, false] {
+            let source = installed_source(headered);
+            let source = &source;
+            let encoded = [0x000, 0x01c, 0x109]
+                .into_iter()
+                .flat_map(|level| {
+                    [false, true].map(move |auto_set_screens| {
+                        let canvas =
+                            render_batch_level_canvas(&source, level, auto_set_screens).unwrap();
+                        assert!(canvas.width() >= 256);
+                        assert!(canvas.height() >= 224);
+                        (
+                            level,
+                            auto_set_screens,
+                            lm_oracle::sha256_hex(&lm_render::encode_png(&canvas).unwrap()),
+                            lm_oracle::sha256_hex(&lm_render::encode_bmp(&canvas).unwrap()),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let Some(expected) = &expected {
+                assert_eq!(&encoded, expected);
+            } else {
+                expected = Some(encoded);
+            }
+        }
+    }
+
+    #[test]
+    fn installed_modified_batch_publishes_only_the_wine_selected_level() {
+        let directory = temporary_directory("modified");
+        let completed = AtomicUsize::new(0);
+        let report = export_batch(
+            &installed_source(true),
+            &directory.join("Levels.png"),
+            LevelImageFormat::Png,
+            LevelImageBatchOptions::default(),
+            &completed,
+            &AtomicBool::new(false),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(report.exported, 1);
+        assert_eq!(report.skipped_unrenderable, 0);
+        assert_eq!(completed.load(Ordering::Relaxed), 0x200);
+        assert!(directory.join("Levels 000.png").is_file());
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn cancelled_batch_never_publishes_a_partial_image_group() {
+        let directory = temporary_directory("cancelled");
+        let result = export_batch(
+            &installed_source(true),
+            &directory.join("Levels.bmp"),
+            LevelImageFormat::Bmp,
+            LevelImageBatchOptions {
+                modified_only: false,
+                auto_set_screens: false,
+            },
+            &AtomicUsize::new(0),
+            &AtomicBool::new(true),
+        )
+        .unwrap();
+        assert_eq!(result, None);
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    fn temporary_directory(label: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "lm-native-level-image-{label}-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        directory
     }
 }

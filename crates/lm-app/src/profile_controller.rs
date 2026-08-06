@@ -7,7 +7,10 @@ use crate::{
     RevisionProfile, RevisionProfileError,
 };
 use lm_graphics::{GraphicsOwnership, PaletteOwnership};
-use lm_project::InstalledLayoutError;
+use lm_project::{
+    InstalledAsset, InstalledLayoutError, LoadedNativeLevelAssets, NativeLevelAssetsLoadError,
+    Project,
+};
 use lm_rom::{RomError, RomImage};
 use std::fmt;
 
@@ -31,6 +34,7 @@ pub enum ProfileControllerError {
     ExAnimationUnavailable,
     Lfix3Detect(lm_profile::SmwUsV1Lfix3DetectError),
     Lfix3Fields(lm_project::Lfix3LevelFieldsIoError),
+    VanillaPalette(lm_profile::SmwUsV1LevelPaletteError),
 }
 
 impl fmt::Display for ProfileControllerError {
@@ -191,19 +195,23 @@ impl RevisionProfileControllers for RevisionProfile {
             .resolve(&image)?
             .payload;
         let level = self.level_layout_for_rom(&image)?;
-        let mut controller = NativeLevelAssetsController::decode_with_layer2_and_features(
+        let layout = lm_project::NativeLevelAssetsLayout {
+            level,
+            palette,
+            exanimation,
+            expanded_settings: self.expanded_settings,
+        };
+        let preloaded_assets =
+            load_smw_us_v1_assets_with_vanilla_fallback(self, snapshot, &image, layout)?;
+        let mut controller = NativeLevelAssetsController::decode_with_preloaded_assets(
             snapshot,
-            lm_project::NativeLevelAssetsLayout {
-                level,
-                palette,
-                exanimation,
-                expanded_settings: self.expanded_settings,
-            },
+            layout,
             self.layer2,
             self.exanimation_feature_installation,
             &self.sprite_lengths,
             &self.exanimation_double_size_modes,
             palette_ownership,
+            preloaded_assets,
         )
         .map_err(ProfileControllerError::NativeAssets)?;
         if self.game == lm_rom::SupportedGame::SuperMarioWorld
@@ -338,6 +346,124 @@ impl RevisionProfileControllers for RevisionProfile {
     }
 }
 
+fn load_smw_us_v1_assets_with_vanilla_fallback(
+    profile: &RevisionProfile,
+    snapshot: &ControllerSnapshot,
+    image: &RomImage,
+    layout: lm_project::NativeLevelAssetsLayout,
+) -> Result<Option<LoadedNativeLevelAssets>, ProfileControllerError> {
+    if profile.game != lm_rom::SupportedGame::SuperMarioWorld
+        || profile.region != lm_rom::Region::NorthAmerica
+        || profile.revision != 0
+        || profile.mapper != lm_rom::Mapper::LoRom
+    {
+        return Ok(None);
+    }
+    let crate::EditorMode::Level(slot) = snapshot.mode else {
+        return Ok(None);
+    };
+    let slot = usize::from(slot);
+    let pointer_offset = layout
+        .palette
+        .pointers
+        .pointer_offset(slot)
+        .map_err(|error| {
+            ProfileControllerError::NativeAssets(NativeLevelAssetsControllerError::Load(
+                NativeLevelAssetsLoadError::Palette(error.into()),
+            ))
+        })?;
+    let palette_empty = image.read(pointer_offset, 3)? == [0, 0, 0];
+    let installed_exanimation = profile
+        .exanimation_installation
+        .resolve(image)?
+        .ok_or(ProfileControllerError::ExAnimationUnavailable)?
+        .resolve(image)?;
+    let exanimation_pointer_offset = installed_exanimation
+        .payload
+        .pointers
+        .pointer_offset(slot)
+        .map_err(|error| {
+            ProfileControllerError::NativeAssets(NativeLevelAssetsControllerError::Load(
+                NativeLevelAssetsLoadError::ExAnimation(error.into()),
+            ))
+        })?;
+    let pointer = image.read(exanimation_pointer_offset, 3)?;
+    let raw_pointer =
+        u32::from(pointer[0]) | (u32::from(pointer[1]) << 8) | (u32::from(pointer[2]) << 16);
+    let exanimation_empty = raw_pointer & installed_exanimation.pointer_presence_mask == 0;
+    if !palette_empty && !exanimation_empty {
+        return Ok(None);
+    }
+
+    let project = Project::new(image.clone());
+    let level = project
+        .load_level_slot(slot, layout.level, &profile.sprite_lengths)
+        .map_err(|error| {
+            ProfileControllerError::NativeAssets(NativeLevelAssetsControllerError::Load(
+                NativeLevelAssetsLoadError::Level(error),
+            ))
+        })?;
+    let palette = if palette_empty {
+        let mut palette = lm_profile::compose_smw_us_v1_level_palette(
+            &project,
+            u16::try_from(slot).expect("SMW-US has exactly 512 level slots"),
+            level.layer1.header,
+            0,
+        )
+        .map_err(ProfileControllerError::VanillaPalette)?
+        .palette;
+        palette.colors.insert(1, lm_graphics::Bgr555(0));
+        palette.colors.rotate_left(1);
+        palette
+    } else {
+        project
+            .load_palette(slot, layout.palette)
+            .map_err(|error| {
+                ProfileControllerError::NativeAssets(NativeLevelAssetsControllerError::Load(
+                    NativeLevelAssetsLoadError::Palette(error),
+                ))
+            })?
+    };
+    let exanimation = match project
+        .load_installed_exanimation(
+            slot,
+            profile.exanimation_installation,
+            &profile.exanimation_double_size_modes,
+        )
+        .map_err(|error| {
+            ProfileControllerError::NativeAssets(NativeLevelAssetsControllerError::Load(
+                NativeLevelAssetsLoadError::ExAnimation(error),
+            ))
+        })? {
+        InstalledAsset::Present(animation) => animation,
+        InstalledAsset::SlotEmpty => lm_graphics::CompactExAnimation {
+            setting: 0,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: Vec::new(),
+        },
+        InstalledAsset::SubsystemAbsent => {
+            return Err(ProfileControllerError::ExAnimationUnavailable);
+        }
+    };
+    let expanded_settings = layout
+        .expanded_settings
+        .map(|settings| project.load_expanded_level_settings(slot, settings))
+        .transpose()
+        .map_err(|error| {
+            ProfileControllerError::NativeAssets(NativeLevelAssetsControllerError::Load(
+                NativeLevelAssetsLoadError::ExpandedSettings(error),
+            ))
+        })?;
+    Ok(Some(LoadedNativeLevelAssets {
+        level,
+        palette,
+        exanimation,
+        expanded_settings,
+    }))
+}
+
 fn validate_snapshot(
     profile: &RevisionProfile,
     snapshot: &ControllerSnapshot,
@@ -354,7 +480,68 @@ fn validate_snapshot(
 mod tests {
     use super::*;
     use crate::EditorMode;
+    use lm_project::{
+        ExAnimationRomLayout, InstalledExAnimationRomLayout, InstalledLayout, LevelPointerTable,
+    };
     use lm_rom::{Mapper, Region, RomIdentity, SnesChecksum, SupportedGame};
+
+    fn installed_fixture(headered: bool, level: u16) -> (RevisionProfile, ControllerSnapshot) {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let physical = std::fs::read(
+            root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
+        )
+        .unwrap();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let rom_bytes = if headered {
+            physical
+        } else {
+            physical_image.logical_bytes().to_vec()
+        };
+        let image = RomImage::from_bytes(rom_bytes.clone()).unwrap();
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = Mapper::LoRom;
+        profile.level = lm_profile::smw_us_v1_vanilla_level_layout();
+        profile.level.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        profile.layer2 = Some(lm_profile::smw_us_v1_layer2_layout(&image).unwrap());
+        profile.palette = lm_profile::smw_us_v1_custom_palette_layout();
+        profile.palette_installation = InstalledLayout::Unconditional(profile.palette);
+        profile.exanimation = ExAnimationRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x8138b,
+                entries: 0x200,
+                stride: 3,
+            },
+            maximum_records: 32,
+            maximum_encoded_len: 0x8000,
+        };
+        profile.exanimation_installation =
+            InstalledLayout::Unconditional(InstalledExAnimationRomLayout {
+                payload: profile.exanimation,
+                pointer_presence_mask: 0x00ff_0000,
+                pointer_locator: None,
+            });
+        profile.exanimation_feature_installation = InstalledLayout::Absent;
+        profile.expanded_settings = Some(lm_profile::smw_us_v1_expanded_settings_layout());
+        profile.map16.mapper = Mapper::LoRom;
+        profile.graphics.mapper = Mapper::LoRom;
+        profile.overworld.layers.mapper = Mapper::LoRom;
+        profile.overworld.event_reveals.mapper = Mapper::LoRom;
+        profile.overworld.endpoints.mapper = Mapper::LoRom;
+        profile.overworld.messages.mapper = Mapper::LoRom;
+        profile.overworld.sprites.mapper = Mapper::LoRom;
+        profile.overworld.palette.mapper = Mapper::LoRom;
+        profile.overworld.animation.mapper = Mapper::LoRom;
+        profile.validate().unwrap();
+        let snapshot = ControllerSnapshot {
+            revision: 0,
+            mode: EditorMode::Level(level),
+            identity: lm_rom::detect_identity(&image).unwrap(),
+            document_path: None,
+            rom_bytes,
+        };
+        (profile, snapshot)
+    }
 
     #[test]
     fn identity_mismatch_precedes_rom_and_layout_access() {
@@ -401,5 +588,29 @@ mod tests {
                 }
             ))
         ));
+    }
+
+    #[test]
+    fn installed_untouched_level_composes_empty_palette_and_exanimation_slots() {
+        let mut expected = None;
+        for headered in [true, false] {
+            let (profile, snapshot) = installed_fixture(headered, 0x01c);
+            let controller = profile
+                .decode_native_level_assets(&snapshot, PaletteOwnership::editable(257))
+                .unwrap();
+            assert_eq!(controller.assets().palette.colors.len(), 257);
+            assert!(controller.assets().exanimation.records.is_empty());
+            assert!(controller.layer2().is_some());
+            let state = (
+                controller.assets().clone(),
+                controller.layer2().cloned(),
+                controller.layer2_descriptor(),
+            );
+            if let Some(expected) = &expected {
+                assert_eq!(&state, expected);
+            } else {
+                expected = Some(state);
+            }
+        }
     }
 }

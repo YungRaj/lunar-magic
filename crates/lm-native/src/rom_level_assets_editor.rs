@@ -1701,9 +1701,18 @@ fn render_super_graphics_level_canvas(
             );
         }
     }
-    let map16 = project
-        .load_map16_set(workspace.profile.map16)
-        .map_err(|error| error.to_string())?;
+    let map16 = if is_smw_us_v1_profile(&workspace.profile) {
+        let mut snapshot = workspace.snapshot.clone();
+        snapshot.mode = lm_app::EditorMode::Map16;
+        lm_app::SmwMap16Controller::decode(&snapshot)
+            .map_err(|error| error.to_string())?
+            .set()
+            .clone()
+    } else {
+        project
+            .load_map16_set(workspace.profile.map16)
+            .map_err(|error| error.to_string())?
+    };
     let (layer1, layout, mut diagnostics) = render_object_placements(
         &workspace.image,
         &workspace.controller.assets().level.layer1.objects,

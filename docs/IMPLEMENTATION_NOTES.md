@@ -3488,6 +3488,12 @@ along their recovered major axis through the same stride-preserving bounded rast
 Both paths snapshot the active animation phase and Special World state at dispatch, then carry
 those immutable view inputs through background rendering. This matches the documented current-view
 boundary without letting a long batch mix view states when the frontend clock or toggle advances.
+Installed SMW profiles additionally treat zero per-level palette and ExAnimation pointers as the
+original tool's intentional "use vanilla defaults" state rather than malformed addresses. The
+shared profile controller composes the vanilla 257-word working palette and empty compact
+ExAnimation while retaining installed data for either nonempty domain. Full-level rendering also
+uses the complete native SMW Map16 controller, so editor and exported-image definitions cannot
+diverge after Lunar Magic installs or migrates its Map16 runtime.
 The shared View menu additionally owns independent Layer 1, Layer 2, Layer 3, and sprite visibility. The
 primary canvas and installed preview omit hidden artwork and its interaction targets; inspection
 and image export receive the same immutable visibility snapshot. Visible raster layers retain the
