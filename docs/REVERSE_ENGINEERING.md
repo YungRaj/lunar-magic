@@ -3368,3 +3368,9 @@ launch request remains authoritative for First Map16 tile because that field is 
 the same global. Native previews also initialize the recovered eight-row color state immediately;
 the former Rust-only single-row mode remains available to portable APIs but is not exposed as an
 original Lunar Magic dialog choice.
+
+The disposable Wine bitmap audit now sets controls `$74/$65/$66/$6B/$68/$6D` to independently
+requested Boolean states before accepting Bitmap Pasting Other Options. The retained inverted-state
+capture observed `DAT_005E55F4..DAT_005E55F8 = 00 00 00 00 00` and
+`DAT_00E27B31 = 01`, directly confirming that each checkbox owns the documented byte and that the
+dialog's OK path persists all six choices before conversion.

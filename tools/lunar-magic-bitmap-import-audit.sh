@@ -14,6 +14,12 @@ usage() {
     echo "  LM_BITMAP_MAINTAIN_DETAIL: keep exact bitmap colors until capacity, 0 or 1 (default: 0)" >&2
     echo "  LM_BITMAP_ALLOW_UNMARKED: allow changing unreserved palette colors, 0 or 1 (default: 1)" >&2
     echo "  LM_BITMAP_EXACT_MATCHES: disabled native exact-match state; only 1 is accepted" >&2
+    echo "  LM_BITMAP_OPTIMIZE_8X8: optimize newly converted 8x8 tiles, 0 or 1 (default: 1)" >&2
+    echo "  LM_BITMAP_REUSE_EXISTING_8X8: optimize with existing 8x8 tiles, 0 or 1 (default: 1)" >&2
+    echo "  LM_BITMAP_OPTIMIZE_16X16: deduplicate 16x16 tiles, 0 or 1 (default: 1)" >&2
+    echo "  LM_BITMAP_LAYER_PRIORITY: enable imported-tile priority, 0 or 1 (default: 0)" >&2
+    echo "  LM_BITMAP_USE_BLANK_8X8: use configured blank 8x8 tile, 0 or 1 (default: 1)" >&2
+    echo "  LM_BITMAP_USE_BLANK_16X16: use configured blank 16x16 tile, 0 or 1 (default: 1)" >&2
     exit 2
 }
 
@@ -31,6 +37,12 @@ unique_colors=${LM_BITMAP_UNIQUE_COLORS:-1}
 maintain_detail=${LM_BITMAP_MAINTAIN_DETAIL:-0}
 allow_unmarked=${LM_BITMAP_ALLOW_UNMARKED:-1}
 exact_matches=${LM_BITMAP_EXACT_MATCHES:-1}
+optimize_8x8=${LM_BITMAP_OPTIMIZE_8X8:-1}
+reuse_existing_8x8=${LM_BITMAP_REUSE_EXISTING_8X8:-1}
+optimize_16x16=${LM_BITMAP_OPTIMIZE_16X16:-1}
+layer_priority=${LM_BITMAP_LAYER_PRIORITY:-0}
+use_blank_8x8=${LM_BITMAP_USE_BLANK_8X8:-1}
+use_blank_16x16=${LM_BITMAP_USE_BLANK_16X16:-1}
 helper="$output_dir/bin/wine-window-command.exe"
 paste_log="$output_dir/paste.log"
 paste_pid=
@@ -88,6 +100,16 @@ case "$exact_matches" in
         exit 2
         ;;
 esac
+for bitmap_other_flag in "$optimize_8x8" "$reuse_existing_8x8" "$optimize_16x16" \
+    "$layer_priority" "$use_blank_8x8" "$use_blank_16x16"; do
+    case "$bitmap_other_flag" in
+        0|1) ;;
+        *)
+            echo "all LM_BITMAP_* Other Options flags must be 0 or 1" >&2
+            exit 2
+            ;;
+    esac
+done
 
 [ -f "$bitmap" ] || {
     echo "bitmap does not exist: $bitmap" >&2
@@ -135,6 +157,20 @@ trap cleanup EXIT HUP INT TERM
 
 read_value() {
     wine "$helper" "$target_executable" read "$1,$2" 2>/dev/null | tr -d '\r\n'
+}
+
+set_checkbox() {
+    checkbox_id=$1
+    desired_state=$2
+    current_state=$(wine "$helper" "$target_executable" dialog-values 2>/dev/null |
+        sed -n "s/^button=$checkbox_id check=\([01]\).*/\1/p" | head -n 1)
+    [ -n "$current_state" ] || {
+        echo "could not read bitmap checkbox $checkbox_id" >&2
+        exit 1
+    }
+    if [ "$current_state" -ne "$desired_state" ]; then
+        wine "$helper" "$target_executable" click "$checkbox_id" >/dev/null 2>&1
+    fi
 }
 
 level_loaded=$(read_value 0x00e2782a 1)
@@ -228,18 +264,24 @@ done
     echo "bitmap other-options dialog was not ready within 5 seconds" >&2
     exit 1
 }
+set_checkbox 0x0074 "$optimize_8x8"
+set_checkbox 0x0065 "$reuse_existing_8x8"
+set_checkbox 0x0066 "$optimize_16x16"
+set_checkbox 0x006b "$layer_priority"
+set_checkbox 0x0068 "$use_blank_8x8"
+set_checkbox 0x006d "$use_blank_16x16"
 wine "$helper" "$target_executable" dialog-values \
     >"$output_dir/other-options.txt" 2>/dev/null
 wine "$helper" "$target_executable" list '#32770' 2>/dev/null |
     sed -n '/title=Bitmap Pasting Other Options/,/title=Convert and Paste Bitmap/p' \
     >"$output_dir/other-options-windows.txt"
-wine "$helper" "$target_executable" click 2 >/dev/null 2>&1
+wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
 first_graphics_tile=$(read_value 0x005e55e0 4)
 blank_graphics_tile=$(read_value 0x005e55ec 4)
 first_map16_tile=$(read_value 0x005e55e4 4)
 blank_map16_tile=$(read_value 0x005e55f0 4)
 other_option_flags=$(read_value 0x005e55f4 5)
-layer_priority=$(read_value 0x00e27b31 1)
+observed_layer_priority=$(read_value 0x00e27b31 1)
 
 if [ "$reduction" = "popularity" ] || [ "$maximum_colors" -ne 128 ] ||
     [ "$maintain_detail" -ne 0 ] || [ "$allow_unmarked" -ne 1 ] ||
@@ -267,19 +309,6 @@ if [ "$reduction" = "popularity" ] || [ "$maximum_colors" -ne 128 ] ||
     fi
     wine "$helper" "$target_executable" select "0x78,$((maximum_colors - 1))" >/dev/null 2>&1
     wine "$helper" "$target_executable" select "0x71,$((priority - 1))" >/dev/null 2>&1
-    set_checkbox() {
-        checkbox_id=$1
-        desired_state=$2
-        current_state=$(wine "$helper" "$target_executable" dialog-values 2>/dev/null |
-            sed -n "s/^button=$checkbox_id check=\([01]\).*/\1/p" | head -n 1)
-        [ -n "$current_state" ] || {
-            echo "could not read bitmap color checkbox $checkbox_id" >&2
-            exit 1
-        }
-        if [ "$current_state" -ne "$desired_state" ]; then
-            wine "$helper" "$target_executable" click "$checkbox_id" >/dev/null 2>&1
-        fi
-    }
     set_checkbox 0x006e "$unique_colors"
     set_checkbox 0x0066 "$maintain_detail"
     set_checkbox 0x0074 "$allow_unmarked"
@@ -320,12 +349,18 @@ graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{prin
     printf 'maintain_detail\t%s\n' "$maintain_detail"
     printf 'allow_unmarked\t%s\n' "$allow_unmarked"
     printf 'exact_matches\t%s\n' "$exact_matches"
+    printf 'optimize_8x8\t%s\n' "$optimize_8x8"
+    printf 'reuse_existing_8x8\t%s\n' "$reuse_existing_8x8"
+    printf 'optimize_16x16\t%s\n' "$optimize_16x16"
+    printf 'requested_layer_priority\t%s\n' "$layer_priority"
+    printf 'use_blank_8x8\t%s\n' "$use_blank_8x8"
+    printf 'use_blank_16x16\t%s\n' "$use_blank_16x16"
     printf 'first_graphics_tile_le32\t%s\n' "$first_graphics_tile"
     printf 'blank_graphics_tile_le32\t%s\n' "$blank_graphics_tile"
     printf 'first_map16_tile_le32\t%s\n' "$first_map16_tile"
     printf 'blank_map16_tile_le32\t%s\n' "$blank_map16_tile"
     printf 'other_option_flags_f4_through_f8\t%s\n' "$other_option_flags"
-    printf 'layer_priority\t%s\n' "$layer_priority"
+    printf 'observed_layer_priority\t%s\n' "$observed_layer_priority"
     printf 'palette_byte_differences\t%s\n' "$palette_differences"
     printf 'graphics_byte_differences\t%s\n' "$graphics_differences"
     printf 'palette_before_sha256\t%s\n' "$palette_before_sha"

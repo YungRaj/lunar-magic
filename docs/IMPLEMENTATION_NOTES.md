@@ -4144,3 +4144,9 @@ Every accepted color and Other Options edit is retained in the Map16 editor's pr
 including across Cancel, successful import, and closing/reopening the Map16 window. A newly launched
 preview restores those choices while letting its explicitly captured First Map16 tile replace that
 one global, matching the original dialog's persistent globals without bypassing revision checks.
+
+The Wine oracle can now drive every Boolean Other Options control independently instead of merely
+photographing the defaults. Its manifest records requested new/existing 8×8 optimization, 16×16
+deduplication, layer priority, and both blank shortcuts alongside the observed five-byte native
+flag block and priority byte. An all-inverted live capture proves all six widgets accepted their
+requested states and the corresponding globals became `00 00 00 00 00` plus priority `01`.
