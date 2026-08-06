@@ -1899,6 +1899,7 @@ impl VanillaLevelEditor {
         } else {
             ui.label("Select or drag an object/enemy; Insert duplicates the selection and Delete removes it.");
         }
+        let mut toolbar_shortcut = None;
         if let Some(selection) = self.canvas_entity_selection {
             let description = match selection {
                 CanvasEntitySelection::Layer1Object => {
@@ -1911,7 +1912,18 @@ impl VanillaLevelEditor {
                     format!("Selected sprite token {}", self.selected_sprite)
                 }
             };
-            ui.colored_label(egui::Color32::YELLOW, description);
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(egui::Color32::YELLOW, description);
+                if ui.button("Duplicate selected").clicked() {
+                    toolbar_shortcut = Some(CanvasEntityShortcut::Duplicate);
+                }
+                if ui.button("Delete selected").clicked() {
+                    toolbar_shortcut = Some(CanvasEntityShortcut::Remove);
+                }
+            });
+        }
+        if let Some(shortcut) = toolbar_shortcut {
+            self.apply_canvas_entity_shortcut(shortcut);
         }
         let canvas_available = ui.available_size();
         let cell = if snes_viewport {
@@ -5019,7 +5031,9 @@ fn canvas_entity_shortcut(response: &egui::Response) -> Option<CanvasEntityShort
         }
         if input.consume_key(modifiers, egui::Key::Insert) {
             Some(CanvasEntityShortcut::Duplicate)
-        } else if input.consume_key(modifiers, egui::Key::Delete) {
+        } else if input.consume_key(modifiers, egui::Key::Delete)
+            || input.consume_key(modifiers, egui::Key::Backspace)
+        {
             Some(CanvasEntityShortcut::Remove)
         } else {
             None
