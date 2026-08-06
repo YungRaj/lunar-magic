@@ -441,6 +441,11 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   profile's effective in-memory codec only for that typed entry, including across interleaved
   ordinary edits, profile lifecycle changes, and undo/redo, while leaving the external profile
   artifact immutable.
+  The low-level transaction is deliberately not exposed as a complete SMW compression conversion:
+  an installed 4bpp SMW ROM is rejected at the application boundary until the matching 65C816
+  decompressor replacement, Lunar Magic metadata nibble, and compression-dependent auxiliary
+  tables can be migrated atomically. This prevents a target-codec semantic reopen in the editor
+  from being mistaken for an in-game-safe ROM.
 - External profiles have one bounded reader shared by frontends. Total bytes, lines, line bytes,
   and profile-name bytes are capped before field storage; invalid UTF-8 and over-limit inputs never
   reach ROM identity or pointer-table processing.

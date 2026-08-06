@@ -91,6 +91,7 @@ pub enum AppError {
     GraphicsMigration(GraphicsIoError),
     LevelAccessRestriction(lm_project::LevelAccessRestrictionError),
     GraphicsMigrationProfileMismatch,
+    GraphicsRuntimeMigrationRequired,
     RevisionPatchPlan(lm_profile::RevisionPatchPlanError),
     ExpandedSettingsPlan(lm_profile::ExpandedSettingsInstallPlanError),
     Layer3Plan(lm_profile::CompleteLayer3BuildError),

@@ -34,6 +34,15 @@ impl AppState {
         {
             return Err(AppError::GraphicsMigrationProfileMismatch);
         }
+        // Recompressing Lunar Magic's installed SMW graphics streams is only one part of its
+        // Change Compression operation.  The ROM's 65C816 decompressor, metadata nibble, and
+        // compression-dependent auxiliary tables must be migrated in the same transaction.  Do
+        // not publish a ROM that merely reopens through our target codec but fails in-game.
+        if lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(
+            &self.project.as_ref().ok_or(AppError::NoProject)?.rom,
+        ) {
+            return Err(AppError::GraphicsRuntimeMigrationRequired);
+        }
         if source.compression == target {
             return Ok(Vec::new());
         }
@@ -289,6 +298,30 @@ mod tests {
         ));
         assert_eq!(app.project_revision(), 0);
         assert_eq!(app.project().unwrap().rom.as_file_bytes(), before);
+        assert!(!app.project().unwrap().history.can_undo());
+    }
+
+    #[test]
+    fn installed_smw_graphics_reject_payload_only_compression_migration() {
+        let mut app = AppState::default();
+        app.load_rom(fixture()).unwrap();
+        install_test_profile(&mut app);
+        for offset in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS {
+            app.project
+                .as_mut()
+                .unwrap()
+                .rom
+                .write(offset, &[lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER])
+                .unwrap();
+        }
+        let before = app.project().unwrap().rom.as_file_bytes().to_vec();
+
+        assert!(matches!(
+            app.dispatch(command(0)),
+            Err(AppError::GraphicsRuntimeMigrationRequired)
+        ));
+        assert_eq!(app.project().unwrap().rom.as_file_bytes(), before);
+        assert_eq!(app.project_revision(), 0);
         assert!(!app.project().unwrap().history.can_undo());
     }
 }

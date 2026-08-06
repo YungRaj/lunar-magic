@@ -46,7 +46,11 @@ impl GraphicsMigrationDialog {
                 .collapsible(false)
                 .resizable(false)
                 .show(context, |ui| {
-                    ui.label("Recompress and repoint every profile-declared graphics slot.");
+                    ui.label(
+                        "Recompress and repoint every profile-declared graphics slot. Installed \
+                         SMW graphics require the matching in-game runtime migration and are \
+                         rejected until that transaction is available.",
+                    );
                     egui::ComboBox::from_label("Target codec")
                         .selected_text(codec_name(self.target))
                         .show_ui(ui, |ui| {
