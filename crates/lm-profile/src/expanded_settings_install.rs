@@ -145,7 +145,10 @@ pub fn smw_us_v1_expanded_settings_installation_plan_with_overworld_settings(
                 ..SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END,
             // Lunar Magic places the tag in the preceding bank's final eight bytes.
             bank_size: None,
-            fill_bytes: vec![0xff],
+            // Lunar Magic's 4bpp GFX insertion expands a vanilla ROM with zero-filled space.
+            // ExGFX installation immediately reuses that space for this prerequisite, while a
+            // direct expanded-settings install still encounters the usual `$FF` expansion fill.
+            fill_bytes: vec![0xff, 0x00],
             protected: Vec::new(),
         },
         checksum_field: SMW_US_V1_CHECKSUM_FIELD,
@@ -251,5 +254,24 @@ mod tests {
         ));
         assert_eq!(project.rom.logical_bytes(), original);
         assert_eq!(project.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn plan_accepts_lunar_magics_zero_filled_gfx_expansion() {
+        let (_, mut before) = fixtures();
+        before.expand(Mapper::LoRom, 0x09_0000, 0x00).unwrap();
+        let original = before.logical_bytes().to_vec();
+        let mut project = Project::new(before);
+        let result = project
+            .install_relocatable_patch(&smw_us_v1_expanded_settings_installation_plan().unwrap())
+            .unwrap();
+
+        assert_eq!(
+            result.blocks[0].header_offset,
+            SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START
+        );
+        assert_eq!(result.blocks[0].payload.start, 0x08_8000);
+        project.undo().unwrap();
+        assert_eq!(project.rom.logical_bytes(), original);
     }
 }
