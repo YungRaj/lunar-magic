@@ -10,6 +10,7 @@ usage() {
     echo "  LM_BITMAP_REDUCTION: median-cut or popularity (default: median-cut)" >&2
     echo "  LM_BITMAP_PRIORITY: Popularity priority from 1 through 4 (default: 3)" >&2
     echo "  LM_BITMAP_MAX_COLORS: maximum reduced colors from 1 through 128 (default: 128)" >&2
+    echo "  LM_BITMAP_UNIQUE_COLORS: give higher priority to unique colors, 0 or 1 (default: 1)" >&2
     exit 2
 }
 
@@ -23,6 +24,7 @@ compiler=${LM_MINGW_CC:-i686-w64-mingw32-gcc}
 reduction=${LM_BITMAP_REDUCTION:-median-cut}
 priority=${LM_BITMAP_PRIORITY:-3}
 maximum_colors=${LM_BITMAP_MAX_COLORS:-128}
+unique_colors=${LM_BITMAP_UNIQUE_COLORS:-1}
 helper="$output_dir/bin/wine-window-command.exe"
 paste_log="$output_dir/paste.log"
 paste_pid=
@@ -52,6 +54,13 @@ if [ "$maximum_colors" -lt 1 ] || [ "$maximum_colors" -gt 128 ]; then
     echo "LM_BITMAP_MAX_COLORS must be from 1 through 128" >&2
     exit 2
 fi
+case "$unique_colors" in
+    0|1) ;;
+    *)
+        echo "LM_BITMAP_UNIQUE_COLORS must be 0 or 1" >&2
+        exit 2
+        ;;
+esac
 
 [ -f "$bitmap" ] || {
     echo "bitmap does not exist: $bitmap" >&2
@@ -196,6 +205,9 @@ if [ "$reduction" = "popularity" ]; then
     wine "$helper" "$target_executable" select 0x69,1 >/dev/null 2>&1
     wine "$helper" "$target_executable" select "0x78,$((maximum_colors - 1))" >/dev/null 2>&1
     wine "$helper" "$target_executable" select "0x71,$((priority - 1))" >/dev/null 2>&1
+    if [ "$unique_colors" -eq 0 ]; then
+        wine "$helper" "$target_executable" click 0x6e >/dev/null 2>&1
+    fi
     wine "$helper" "$target_executable" dialog-values \
         >"$output_dir/color-options.txt" 2>/dev/null
     wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
@@ -227,6 +239,7 @@ graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{prin
     printf 'reduction\t%s\n' "$reduction"
     printf 'priority\t%s\n' "$priority"
     printf 'maximum_colors\t%s\n' "$maximum_colors"
+    printf 'unique_colors\t%s\n' "$unique_colors"
     printf 'palette_byte_differences\t%s\n' "$palette_differences"
     printf 'graphics_byte_differences\t%s\n' "$graphics_differences"
     printf 'palette_before_sha256\t%s\n' "$palette_before_sha"

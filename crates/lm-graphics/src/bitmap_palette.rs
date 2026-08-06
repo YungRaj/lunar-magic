@@ -43,6 +43,8 @@ pub struct BitmapPaletteColorOptions {
     pub maximum_colors: usize,
     pub reduction: BitmapPaletteReduction,
     pub priority_level: u8,
+    /// Gives colors farther from reusable and already-selected colors extra admission weight.
+    pub prioritize_unique_colors: bool,
     /// Lunar Magic's first high-color neighborhood reduction pass.
     pub popularity_reduction_method_1: bool,
     /// Lunar Magic's second high-color neighborhood reduction pass.
@@ -68,6 +70,7 @@ impl BitmapPaletteColorOptions {
             maximum_colors: BITMAP_PALETTE_COLORS,
             reduction: BitmapPaletteReduction::MedianCut,
             priority_level: 3,
+            prioritize_unique_colors: true,
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
         }
@@ -280,11 +283,15 @@ fn select_popularity_colors(
             continue;
         }
         let mut score = frequency;
-        let nearest = reusable
-            .iter()
-            .chain(selected.iter().map(|(selected, _)| selected))
-            .map(|candidate| lunar_magic_color_distance(color, *candidate))
-            .min();
+        let nearest = if options.prioritize_unique_colors {
+            reusable
+                .iter()
+                .chain(selected.iter().map(|(selected, _)| selected))
+                .map(|candidate| lunar_magic_color_distance(color, *candidate))
+                .min()
+        } else {
+            None
+        };
         if let Some(mut distance) = nearest {
             for _ in 1..options.priority_level {
                 distance = distance.wrapping_mul(distance);
@@ -1012,6 +1019,7 @@ mod tests {
         options.validate().unwrap();
         assert_eq!(options.maximum_colors, 128);
         assert_eq!(options.priority_level, 3);
+        assert!(options.prioritize_unique_colors);
         assert!(options.popularity_reduction_method_1);
         assert!(!options.popularity_reduction_method_2);
         for row in 0..8 {
@@ -1068,9 +1076,12 @@ mod tests {
         let low = select_popularity_colors(&histogram, Some(&palette), &options).unwrap();
         options.priority_level = 4;
         let high = select_popularity_colors(&histogram, Some(&palette), &options).unwrap();
+        options.prioritize_unique_colors = false;
+        let disabled = select_popularity_colors(&histogram, Some(&palette), &options).unwrap();
 
         assert_eq!(low, vec![Bgr555(1), Bgr555(0x7fff)]);
         assert_eq!(high, vec![Bgr555(0x03e0), Bgr555(1)]);
+        assert_eq!(disabled, vec![Bgr555(1), Bgr555(0x7fff)]);
     }
 
     #[test]
@@ -1197,6 +1208,7 @@ mod tests {
             maximum_colors: BITMAP_PALETTE_COLORS,
             reduction: BitmapPaletteReduction::MedianCut,
             priority_level: 3,
+            prioritize_unique_colors: true,
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
         }

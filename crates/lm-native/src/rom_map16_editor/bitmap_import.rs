@@ -671,6 +671,12 @@ fn bitmap_popularity_reduction_options(
         |ui| {
             changed |= ui
                 .checkbox(
+                    &mut options.prioritize_unique_colors,
+                    "Give higher priority to unique colors",
+                )
+                .changed();
+            changed |= ui
+                .checkbox(
                     &mut options.popularity_reduction_method_1,
                     "Reduce colors, method 1 (for high-color images)",
                 )

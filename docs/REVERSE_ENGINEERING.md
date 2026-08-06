@@ -861,7 +861,11 @@ creation gate and still requires a disposable process with a ROM loaded. It capt
 256-entry RGB32 palette at `00758dd8` and 64-KiB planar graphics cache at
 `0086b7e8` before and after acceptance, records the dialog controls, and restores the guard on every
 exit path. Popularity captures select and record reduction mode, priority 1..4, and maximum colors
-1..128 rather than relying on dialog defaults. Repeated level-105 captures proved palette entry
+1..128 rather than relying on dialog defaults. `HandleBitmapImportOptionsDialog` maps control `$6E`
+to `DAT_005e55ce`; `SelectOptimalColorsFromRgb555Histogram` at `004ebf30` gates its complete
+nearest-color distance weighting on that byte. The Rust Popularity reducer therefore exposes the
+same independent “Give higher priority to unique colors” switch, and the audit captures both its
+checked and unchecked state. Repeated level-105 captures proved palette entry
 `$64` is live animation state: it can change while graphics output remains byte-identical and must
 not be misclassified as a reduction-priority result. A four-color 16×16 oracle converted to exact
 SNES words `$77b4,$7fb6,$7ff9,$7ffe` and

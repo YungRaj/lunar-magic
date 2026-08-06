@@ -4092,3 +4092,10 @@ restored pre-ROM modeless window from supplying stale palette/graphics evidence.
 also drive and record the priority and 1..128 maximum-color controls. Cross-captures identified the
 changing level-105 palette cell `$64` as animation state—not a reduction result—while the converted
 graphics remained byte-identical; parity assertions therefore exclude that false signal.
+
+Popularity reduction now models Lunar Magic's independent unique-color-priority checkbox. The
+native control and global gate are recovered as `$6E`/`DAT_005e55ce`; when disabled, candidate
+scores remain pure histogram frequencies, while enabling it applies the existing level-1..4
+nearest-color weighting. The native Map16 dialog exposes the switch only with Popularity selected,
+and focused coverage proves disabling it removes distance weighting without changing the priority
+value itself.
