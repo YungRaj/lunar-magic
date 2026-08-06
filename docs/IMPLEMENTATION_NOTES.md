@@ -4302,3 +4302,18 @@ domain to an empty definition map or zero-length Sprite Map16 prefix. The worksp
 lossless native pair and reports its appearance, tooltip, and exact loaded-prefix counts. Focused
 tests cover no sidecars, either sidecar independently, Unicode basenames, malformed definitions,
 duplicates, unexpected paths, and sidecars returned without an owning ROM path.
+
+The installed-overworld preview now consumes that retained native pair instead of merely reporting
+it. `ReloadOverworldGraphicsAssets` and `RenderOverworldLinkedTileOverlays` establish three exact
+seven-map cache families: base graphics at `$0000/$0400/.../$1800`, active sprite graphics at
+`$1C00/$1E00/.../$2800`, and animated graphics at `$2A00..$3000`. Rust loads the base words in
+native reverse order 7 through 0, SP1-SP4 from words 11 through 8, and the animated source from
+word 0; `$7F` remains a zero slot. Native placements carry their actual submap through Map16
+expansion, retain all ten tile bits, and raster through the selected global cache with the recovered
+active-palette `$00/$80` color offsets. The same bounded open transaction discovers Lunar Magic's
+nearest `ExternalGraphics` directory, prefers `ExSpritePalette00.mw3` over `.pal`, and loads
+`ExSpriteGFX00.bin`; `$4200` graphics routes and palette bases below `$0400` then resolve through
+those decoded assets without reducing RGB24 colors to BGR555. Internal `$3100/$FFFE` definitions
+continue through the authenticated editor-text cache. `resource_routes_materialize_all_recovered_submap_cache_tables`,
+`resource_raster_retains_ten_bit_tiles_and_external_rgb_assets`, the authentic-ROM overworld open,
+and the full 230-test renderer suite cover this live composition boundary.
