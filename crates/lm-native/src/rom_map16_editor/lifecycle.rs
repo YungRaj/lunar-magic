@@ -52,8 +52,6 @@ impl RomMap16Editor {
                 self.bitmap_converted_texture = None;
                 self.bitmap_preview_zoom = 1;
                 self.bitmap_preview_scroll = egui::Vec2::ZERO;
-                self.bitmap_fixed_palette_entries =
-                    [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
                 self.invalidate();
             }
             Err(error) => self.error = Some(error),
@@ -155,7 +153,6 @@ impl RomMap16Editor {
         self.bitmap_converted_texture = None;
         self.bitmap_preview_zoom = 1;
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
-        self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
         self.complete_template = None;
         self.pending_complete_revision = None;
         self.pending_selected_import = None;

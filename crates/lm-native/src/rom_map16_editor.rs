@@ -135,6 +135,8 @@ pub(crate) struct RomMap16Editor {
     bitmap_loader: DocumentLoader,
     bitmap_clipboard_loader: bitmap_import::BitmapClipboardLoader,
     pending_bitmap_import: Option<bitmap_import::PendingBitmapImport>,
+    /// Last accepted process-local bitmap conversion choices, matching Lunar Magic's globals.
+    bitmap_import_options: Option<lm_app::Map16BitmapImportOptions>,
     complete_loader: DocumentLoader,
     complete_persistence: crate::persistence_worker::PersistenceWorker,
     complete_template: Option<lm_level::Lm16Map16File>,
@@ -157,7 +159,6 @@ pub(crate) struct RomMap16Editor {
     bitmap_converted_texture: Option<egui::TextureHandle>,
     bitmap_preview_zoom: u8,
     bitmap_preview_scroll: egui::Vec2,
-    bitmap_fixed_palette_entries: [bool; lm_graphics::Palette::COLORS_PER_ROW - 1],
 }
 
 impl RomMap16Editor {

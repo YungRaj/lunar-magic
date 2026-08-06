@@ -4137,3 +4137,10 @@ then uses the configured reserved definition only in deduplicated mode. The orig
 all flip orientations when existing-tile optimization is enabled, so the native Rust dialog no
 longer presents a fabricated independent flip toggle. The Wine audit now captures the complete
 Other Options dialog and its control states on every run.
+
+Native bitmap previews now enter Lunar Magic's eight-row color allocator by default; the earlier
+single-row opt-in switch was a Rust-only workflow and is no longer presented as original behavior.
+Every accepted color and Other Options edit is retained in the Map16 editor's process-local state,
+including across Cancel, successful import, and closing/reopening the Map16 window. A newly launched
+preview restores those choices while letting its explicitly captured First Map16 tile replace that
+one global, matching the original dialog's persistent globals without bypassing revision checks.

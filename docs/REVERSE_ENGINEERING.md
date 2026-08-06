@@ -3359,3 +3359,12 @@ places `DAT_005F1A46` at MWL level-header byte 6, while
 `LoadLfix3LevelRuntimeFields`/`WriteLfix3LevelRuntimeFields` prove it is a
 separate current-Lfix3 per-level plane in ROM. Those storage domains must remain
 separate when the remaining controls are made semantic.
+
+The bitmap conversion globals at `$005E55CC..$005E5600`, the palette-entry state map, and the four
+Other Options numeric globals are process state rather than per-import scratch values. Reopening the
+native dialogs restores prior accepted choices. Rust consequently retains the complete native
+bitmap option value in the Map16 editor across preview cancellation, import, and editor reopen. The
+launch request remains authoritative for First Map16 tile because that field is an explicit edit of
+the same global. Native previews also initialize the recovered eight-row color state immediately;
+the former Rust-only single-row mode remains available to portable APIs but is not exposed as an
+original Lunar Magic dialog choice.

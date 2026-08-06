@@ -137,19 +137,25 @@ impl RomMap16Editor {
             height: bitmap.height,
             palette_row: pending.palette_row,
         };
-        self.bitmap_session = Some(
-            if let Some(profile) = workspace.profile.clone() {
-                NativeMap16BitmapImportSession::new(workspace.snapshot.clone(), profile, request)
-            } else {
-                NativeMap16BitmapImportSession::new_smw_us_v1(workspace.snapshot.clone(), request)
-            }
-            .map_err(|error| error.to_string())?,
+        let mut session = if let Some(profile) = workspace.profile.clone() {
+            NativeMap16BitmapImportSession::new(workspace.snapshot.clone(), profile, request)
+        } else {
+            NativeMap16BitmapImportSession::new_smw_us_v1(workspace.snapshot.clone(), request)
+        }
+        .map_err(|error| error.to_string())?;
+        let options = bitmap_options_for_session(
+            self.bitmap_import_options.as_ref(),
+            pending.start_map16_tile,
         );
+        session
+            .set_options(options.clone())
+            .map_err(|error| error.to_string())?;
+        self.bitmap_import_options = Some(options);
+        self.bitmap_session = Some(session);
         self.bitmap_original_texture = None;
         self.bitmap_converted_texture = None;
         self.bitmap_preview_zoom = 1;
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
-        self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
         Ok(())
     }
 
@@ -253,63 +259,28 @@ impl RomMap16Editor {
                         )
                         .changed();
                 });
+                if options.color.is_none() {
+                    options.color = Some(BitmapPaletteColorOptions::lunar_magic_initial());
+                    changed = true;
+                }
                 changed |= bitmap_multi_row_color_options(
                     ui,
-                    &mut options.color,
+                    options
+                        .color
+                        .as_mut()
+                        .expect("native bitmap imports always have color options"),
                     &session.preview().inputs().palette,
                 );
                 if changed {
                     match session.set_options(options.clone()) {
                         Ok(()) => {
+                            self.bitmap_map16_start =
+                                format!("{:04X}", options.map16_allocation_start);
+                            self.bitmap_import_options = Some(options.clone());
                             self.bitmap_converted_texture = None;
                         }
                         Err(error) => self.error = Some(error.to_string()),
                     }
-                }
-                if options.color.is_none() {
-                    ui.collapsing("Single-row fixed colors", |ui| {
-                    ui.label(
-                        "Checked colors remain byte-exact and participate in nearest-color matching.",
-                    );
-                    let palette_row = usize::from(session.preview().inputs().palette_row);
-                    let row = session
-                        .preview()
-                        .inputs()
-                        .palette
-                        .row(palette_row)
-                        .unwrap_or(&[]);
-                    let mut ownership_changed = false;
-                    egui::Grid::new("map16-bitmap-fixed-colors")
-                        .num_columns(5)
-                        .show(ui, |ui| {
-                            for entry in 1..lm_graphics::Palette::COLORS_PER_ROW {
-                                let color = row.get(entry).copied().unwrap_or_default();
-                                let rgb = color.to_rgb8();
-                                let label = egui::RichText::new(format!("{entry:X}: {:04X}", color.0))
-                                    .background_color(egui::Color32::from_rgb(
-                                        rgb.red, rgb.green, rgb.blue,
-                                    ))
-                                    .color(contrasting_text(rgb));
-                                ownership_changed |= ui
-                                    .checkbox(
-                                        &mut self.bitmap_fixed_palette_entries[entry - 1],
-                                        label,
-                                    )
-                                    .changed();
-                                if entry % 5 == 0 {
-                                    ui.end_row();
-                                }
-                            }
-                        });
-                    if ownership_changed {
-                        match session
-                            .set_fixed_palette_entries(self.bitmap_fixed_palette_entries)
-                        {
-                            Ok(()) => self.bitmap_converted_texture = None,
-                            Err(error) => self.error = Some(error.to_string()),
-                        }
-                    }
-                    });
                 }
                 let plan = session.preview().plan();
                 ui.label(format!(
@@ -543,7 +514,6 @@ impl RomMap16Editor {
         self.bitmap_original_texture = None;
         self.bitmap_converted_texture = None;
         self.bitmap_preview_scroll = egui::Vec2::ZERO;
-        self.bitmap_fixed_palette_entries = [false; lm_graphics::Palette::COLORS_PER_ROW - 1];
     }
 }
 
@@ -552,6 +522,22 @@ fn validate_bitmap_revision(current: u64, requested: u64) -> Result<(), String> 
         return Err("the ROM changed while the Map16 bitmap was loading".into());
     }
     Ok(())
+}
+
+/// Reconstructs Lunar Magic's process-global dialog state for a newly opened bitmap preview.
+///
+/// The launch form is an explicit edit of the same native global exposed as "First Map16 tile"
+/// in Other Options, so its request-captured value wins while every other accepted option is
+/// retained across cancel, import, Map16-window close, and the next preview.
+fn bitmap_options_for_session(
+    previous: Option<&lm_app::Map16BitmapImportOptions>,
+    start_map16_tile: usize,
+) -> lm_app::Map16BitmapImportOptions {
+    let mut options = previous
+        .cloned()
+        .unwrap_or_else(lm_app::native_map16_bitmap_import_options);
+    options.map16_allocation_start = start_map16_tile;
+    options
 }
 
 fn capture_bitmap_import(
@@ -582,21 +568,10 @@ fn capture_bitmap_import(
 
 fn bitmap_multi_row_color_options(
     ui: &mut egui::Ui,
-    color_options: &mut Option<BitmapPaletteColorOptions>,
+    options: &mut BitmapPaletteColorOptions,
     palette: &Palette,
 ) -> bool {
-    let mut enabled = color_options.is_some();
-    let mut changed = ui
-        .checkbox(&mut enabled, "Use Lunar Magic multi-row palette allocation")
-        .changed();
-    if enabled && color_options.is_none() {
-        *color_options = Some(BitmapPaletteColorOptions::lunar_magic_initial());
-    } else if !enabled && color_options.is_some() {
-        *color_options = None;
-    }
-    let Some(options) = color_options else {
-        return changed;
-    };
+    let mut changed = false;
     ui.indent("map16-bitmap-multi-row-color-options", |ui| {
         ui.horizontal(|ui| {
             changed |= ui
@@ -927,6 +902,28 @@ mod tests {
             validate_bitmap_revision(18, 17).unwrap_err(),
             "the ROM changed while the Map16 bitmap was loading"
         );
+    }
+
+    #[test]
+    fn native_bitmap_options_start_with_multi_row_colors_and_persist_between_previews() {
+        let first = bitmap_options_for_session(None, 0x2345);
+        assert_eq!(first.map16_allocation_start, 0x2345);
+        assert_eq!(
+            first.color,
+            Some(BitmapPaletteColorOptions::lunar_magic_initial())
+        );
+
+        let mut edited = first;
+        edited.graphics.optimize_new_tiles = false;
+        edited.graphics.allocation_start = 0x2a0;
+        edited.layer_priority = true;
+        edited.color.as_mut().unwrap().maximum_colors = 37;
+        let reopened = bitmap_options_for_session(Some(&edited), 0x3456);
+        assert!(!reopened.graphics.optimize_new_tiles);
+        assert_eq!(reopened.graphics.allocation_start, 0x2a0);
+        assert!(reopened.layer_priority);
+        assert_eq!(reopened.color.as_ref().unwrap().maximum_colors, 37);
+        assert_eq!(reopened.map16_allocation_start, 0x3456);
     }
 
     #[test]

@@ -35,7 +35,7 @@ pub fn native_map16_bitmap_import_options() -> Map16BitmapImportOptions {
             allow_flipped_matches: true,
             blank_tile: Some(NATIVE_MAP16_BITMAP_BLANK_TILE),
         },
-        color: None,
+        color: Some(lm_graphics::BitmapPaletteColorOptions::lunar_magic_initial()),
         deduplicate_map16: true,
         use_reserved_map16_for_blank: true,
         reserved_map16_tile: 0x8000,
@@ -398,6 +398,10 @@ mod tests {
         assert!(options.graphics.optimize_new_tiles);
         assert!(options.graphics.reuse_existing_tiles);
         assert!(options.graphics.allow_flipped_matches);
+        assert_eq!(
+            options.color,
+            Some(lm_graphics::BitmapPaletteColorOptions::lunar_magic_initial())
+        );
         assert!(options.deduplicate_map16);
         assert!(options.use_reserved_map16_for_blank);
         assert_eq!(options.map16_allocation_start, 0x8200);
