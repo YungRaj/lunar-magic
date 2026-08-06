@@ -30,6 +30,11 @@ pub(crate) fn execute_owned_editor_script(
     match editor {
         shell_command::ScriptEditor::NativeAssets => {
             let loaded = crate::native_assets_edit_loader::load(path)?;
+            if !loaded.map16_edits.is_empty() {
+                return Err(
+                    "aggregate Map16 edits do not yet support reclamation manifests".into(),
+                );
+            }
             commit_native_assets(
                 app,
                 &loaded.edits,

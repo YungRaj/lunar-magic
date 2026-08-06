@@ -4,7 +4,7 @@ use crate::{
     shell_command,
 };
 use lm_app::{
-    AppState, LevelController, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit,
+    AppState, EditorMode, LevelController, Map16ControllerEdit, MwlBatchExportMode, NativeLevelEdit,
     OverworldControllerEdit, OverworldLayerId, RevisionProfileControllers,
     SmwMainOverworldLayer2Controller,
     VanillaEntranceController, VanillaEntranceEdit, discover_mwl_directory,
@@ -13,7 +13,7 @@ use lm_app::{
 use lm_level::{LegacyHeaderEdit, MwlFile};
 use lm_project::{
     CompleteOverworldSaveOptions, ExAnimationSaveOptions, GraphicsSaveOptions, LevelSaveOptions,
-    Map16SetSaveOptions, MwlNativeLevel, PaletteSaveOptions,
+    Map16SetSaveOptions, MwlNativeLevel, PaletteSaveOptions, Project, RomMutation,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{RomImage, SnesPointer24};
@@ -97,7 +97,13 @@ pub(crate) fn execute_native_assets_script(
     search: Range<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let loaded = crate::native_assets_edit_loader::load(path)?;
-    commit_native_assets_edits(app, &loaded.edits, loaded.palette_ownership, search)?;
+    commit_native_assets_edits(
+        app,
+        &loaded.edits,
+        &loaded.map16_edits,
+        loaded.palette_ownership,
+        search,
+    )?;
     println!("{}", app.status);
     Ok(())
 }
@@ -314,10 +320,11 @@ fn export_mwl_levels(
 pub(crate) fn commit_native_assets_edits(
     app: &mut AppState,
     edits: &[lm_app::NativeLevelAssetsControllerEdit],
+    map16_edits: &[Map16ControllerEdit],
     palette_ownership: Option<lm_graphics::PaletteOwnership>,
     search: Range<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if edits.is_empty() {
+    if edits.is_empty() && map16_edits.is_empty() {
         return Err("native-assets edit specification contains no domains".into());
     }
     let profiled = app.profiled_controller_snapshot()?;
@@ -328,7 +335,7 @@ pub(crate) fn commit_native_assets_edits(
         profiled.snapshot.identity.internal_header_offset,
     )?;
     let layer2_options = profiled.profile.level_layer2_save_plan(
-        search,
+        search.clone(),
         image.logical_len(),
         profiled.snapshot.identity.internal_header_offset,
     )?;
@@ -348,7 +355,53 @@ pub(crate) fn commit_native_assets_edits(
     } else {
         controller.prepare_commit("Apply native aggregate level-assets edit", &options)?
     };
-    app.dispatch(prepared.into_command())?;
+    if map16_edits.is_empty() {
+        app.dispatch(prepared.into_command())?;
+        return Ok(());
+    }
+
+    // Materialize the level-assets mutation privately before planning Map16. This makes the
+    // second allocator observe every block claimed by the first while the public application
+    // still receives one revision-checked mutation and therefore one undo step.
+    let original = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())?;
+    let original_logical = original.logical_bytes().to_vec();
+    let mapper = profiled.snapshot.identity.mapper;
+    let mut staged = Project::new(original);
+    staged.apply_mutation("Stage aggregate level assets", &prepared.mutation)?;
+
+    let mut map16_snapshot = profiled.snapshot.clone();
+    map16_snapshot.mode = EditorMode::Map16;
+    map16_snapshot.rom_bytes = staged.save_snapshot();
+    let staged_image = RomImage::from_bytes(map16_snapshot.rom_bytes.clone())?;
+    let policy = profiled.profile.allocation_policy_for_rom(
+        search,
+        &staged_image,
+        map16_snapshot.identity.internal_header_offset,
+    )?;
+    let mut map16 = profiled.profile.decode_map16(&map16_snapshot)?;
+    map16.apply_edits(map16_edits)?;
+    let map16_options = Map16SetSaveOptions {
+        graphics_allocation: policy.clone(),
+        acts_like_allocation: policy,
+        previous_graphics: Vec::new(),
+        previous_acts_like: Vec::new(),
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let map16_prepared = map16.prepare_commit(
+        "Stage aggregate Map16 definitions",
+        &map16_options,
+    )?;
+    staged.apply_mutation("Stage aggregate Map16 definitions", &map16_prepared.mutation)?;
+    let combined = RomMutation::between(mapper, &original_logical, staged.rom.logical_bytes())?;
+    app.dispatch(
+        lm_app::PreparedRomCommit {
+            expected_revision: profiled.snapshot.revision,
+            description: "Apply native aggregate level-assets and Map16 edit".into(),
+            mutation: combined,
+        }
+        .into_command(),
+    )?;
     Ok(())
 }
 

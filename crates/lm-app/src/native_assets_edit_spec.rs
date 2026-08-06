@@ -13,6 +13,7 @@ pub struct NativeAssetsEditSpec {
     pub level: Option<PathBuf>,
     pub layer2_objects: Option<PathBuf>,
     pub layer2_tilemap: Option<PathBuf>,
+    pub map16: Option<PathBuf>,
     pub palette: Option<PathBuf>,
     pub exanimation: Option<PathBuf>,
     pub exanimation_features: Option<PathBuf>,
@@ -104,6 +105,7 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
             "level"
                 | "layer2-objects"
                 | "layer2-tilemap"
+                | "map16"
                 | "palette"
                 | "exanimation"
                 | "exanimation-features"
@@ -136,6 +138,7 @@ pub fn parse(input: &str, base: &Path) -> Result<NativeAssetsEditSpec, NativeAss
         level: fields.remove("level"),
         layer2_objects: fields.remove("layer2-objects"),
         layer2_tilemap: fields.remove("layer2-tilemap"),
+        map16: fields.remove("map16"),
         palette: fields.remove("palette"),
         exanimation: fields.remove("exanimation"),
         exanimation_features: fields.remove("exanimation-features"),
@@ -151,7 +154,7 @@ mod tests {
     #[test]
     fn resolves_relative_unicode_paths_and_rejects_duplicates() {
         let spec = parse(
-            "LMNATED1\nlevel=Scripts/Level edits.txt\nlayer2-objects=Layer 2.txt\nexanimation-features=Animation.txt\nexpanded-settings=設定.txt\nsprite-spawn=Spawn.txt\n",
+            "LMNATED1\nlevel=Scripts/Level edits.txt\nlayer2-objects=Layer 2.txt\nmap16=Blocks.txt\nexanimation-features=Animation.txt\nexpanded-settings=設定.txt\nsprite-spawn=Spawn.txt\n",
             Path::new("project"),
         )
         .unwrap();
@@ -172,6 +175,7 @@ mod tests {
             Some(PathBuf::from("project/設定.txt"))
         );
         assert_eq!(spec.sprite_spawn, Some(PathBuf::from("project/Spawn.txt")));
+        assert_eq!(spec.map16, Some(PathBuf::from("project/Blocks.txt")));
         assert_eq!(
             parse("LMNATED1\nlayer2-tilemap=tiles.txt\n", Path::new("project"))
                 .unwrap()

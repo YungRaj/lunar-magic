@@ -57,6 +57,15 @@ boundaries. `help_dialog::tests` proves topic-family coverage, case-insensitive 
 and idempotent reopening without losing the current query or topic. Exact CHM topic enumeration
 and original Lunar Magic navigation behavior remain oracle gaps.
 
+The ROM-backed `LMNATED1` aggregate workflow now includes a `map16=` domain alongside level,
+Layer 2, palette, ExAnimation, expanded settings/ExGFX, and sprite-spawn edits. Level assets are
+materialized privately before Map16 planning so the Map16 allocator observes every newly claimed
+block; both prepared results are then collapsed into one revision-checked ROM mutation, checksum
+repair, history entry, reopen boundary, and undo. The expanded
+`terminal_native_assets_spec_commits_all_domains_as_one_undoable_operation` gate proves the
+custom block and level changes reopen together, undo byte-exactly, and remain failure-atomic when
+a late acts-like cycle rejects after all earlier domains have been prepared.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

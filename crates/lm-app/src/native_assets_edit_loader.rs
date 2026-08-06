@@ -3,20 +3,28 @@
 use crate::{
     editor_shell::read_bounded_utf8, exanimation_edit_script, exanimation_feature_edit_script,
     expanded_settings_edit_script, layer2_object_edit_script, layer2_tilemap_edit_script,
-    level_edit_script, native_assets_edit_spec, palette_edit_script, sprite_spawn_edit_script,
+    level_edit_script, map16_edit_script, native_assets_edit_spec, palette_edit_script,
+    sprite_spawn_edit_script,
 };
-use lm_app::NativeLevelAssetsControllerEdit;
+use lm_app::{Map16ControllerEdit, NativeLevelAssetsControllerEdit};
 use lm_graphics::PaletteOwnership;
 use std::path::Path;
 
 pub(crate) struct LoadedNativeAssetsEdits {
     pub edits: Vec<NativeLevelAssetsControllerEdit>,
+    pub map16_edits: Vec<Map16ControllerEdit>,
     pub palette_ownership: Option<PaletteOwnership>,
 }
 
 pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::error::Error>> {
     let spec = native_assets_edit_spec::read(path)?;
     let mut edits = Vec::new();
+    let map16_edits = if let Some(path) = spec.map16 {
+        let text = read_bounded_utf8(&path, map16_edit_script::MAX_SCRIPT_LEN, "Map16 edit")?;
+        map16_edit_script::parse(&text)?
+    } else {
+        Vec::new()
+    };
     if let Some(path) = spec.level {
         let text = read_bounded_utf8(&path, level_edit_script::MAX_SCRIPT_LEN, "level edit")?;
         edits.push(NativeLevelAssetsControllerEdit::Level(
@@ -137,6 +145,7 @@ pub(crate) fn load(path: &Path) -> Result<LoadedNativeAssetsEdits, Box<dyn std::
     }
     Ok(LoadedNativeAssetsEdits {
         edits,
+        map16_edits,
         palette_ownership: palette_script.map(|script| script.ownership),
     })
 }
@@ -233,6 +242,37 @@ mod tests {
                 },
             ]
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn aggregate_loader_keeps_map16_edits_in_the_cross_domain_plan() {
+        let directory = std::env::temp_dir().join(format!(
+            "lm-native-assets-map16-loader-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("blocks.txt"),
+            "LMM16ED1\nsubtile 01 02 br 1234 10000\n",
+        )
+        .unwrap();
+        let spec = directory.join("aggregate.lmnat");
+        fs::write(&spec, "LMNATED1\nlevel=level.txt\nmap16=blocks.txt\n").unwrap();
+        fs::write(
+            directory.join("level.txt"),
+            "LMLEDIT1\nheader last-screen 1f\n",
+        )
+        .unwrap();
+
+        let loaded = load(&spec).unwrap();
+        assert_eq!(loaded.edits.len(), 1);
+        assert!(matches!(
+            loaded.map16_edits.as_slice(),
+            [Map16ControllerEdit::SetSubtile { address, .. }]
+                if address.page == 1 && address.tile == 2
+        ));
         fs::remove_dir_all(directory).unwrap();
     }
 }
