@@ -186,6 +186,99 @@ mod tests {
         RomImage::from_bytes(bytes).unwrap()
     }
 
+    fn variant_rom(
+        len: usize,
+        title: &[u8; TITLE_LEN],
+        region: u8,
+        map_mode: u8,
+        headered: bool,
+        corrupt_checksum: bool,
+    ) -> RomImage {
+        let mut bytes = vec![0; len];
+        bytes[LOW_HEADER_OFFSET..LOW_HEADER_OFFSET + TITLE_LEN].copy_from_slice(title);
+        bytes[LOW_HEADER_OFFSET + 0x15] = map_mode;
+        bytes[LOW_HEADER_OFFSET + 0x19] = region;
+        let checksum = compute_snes_checksum(&bytes, LOW_HEADER_OFFSET + 0x1c).unwrap();
+        bytes[LOW_HEADER_OFFSET + 0x1c..LOW_HEADER_OFFSET + 0x20]
+            .copy_from_slice(&checksum.encoded());
+        if corrupt_checksum {
+            bytes[0] ^= 1;
+        }
+        if headered {
+            let mut physical = vec![0x5a; crate::COPIER_HEADER_LEN];
+            physical.extend_from_slice(&bytes);
+            RomImage::from_bytes(physical).unwrap()
+        } else {
+            RomImage::from_bytes(bytes).unwrap()
+        }
+    }
+
+    #[test]
+    fn every_supported_identity_variant_is_explicitly_enumerated() {
+        let games = [
+            (SupportedGame::SuperMarioWorld, SMW_TITLE, Region::Japan, 0),
+            (
+                SupportedGame::SuperMarioWorld,
+                SMW_TITLE,
+                Region::NorthAmerica,
+                1,
+            ),
+            (
+                SupportedGame::AllStarsAndWorld,
+                ALL_STARS_WORLD_TITLE,
+                Region::NorthAmerica,
+                1,
+            ),
+        ];
+        let map_modes = [
+            (0x20, Mapper::LoRom),
+            (0x30, Mapper::LoRom),
+            (0x23, Mapper::Sa1),
+            (0x32, Mapper::ExLoRom),
+        ];
+        for (game, title, region, region_byte) in games {
+            for (map_mode, mapper) in map_modes {
+                for headered in [false, true] {
+                    for corrupt_checksum in [false, true] {
+                        let image = variant_rom(
+                            0x8000,
+                            title,
+                            region_byte,
+                            map_mode,
+                            headered,
+                            corrupt_checksum,
+                        );
+                        let identity = detect_identity(&image).unwrap();
+                        assert_eq!(identity.game, game);
+                        assert_eq!(identity.region, region);
+                        assert_eq!(identity.mapper, mapper);
+                        assert_eq!(identity.map_mode, map_mode);
+                        assert_eq!(identity.checksum_matches(), !corrupt_checksum);
+                        assert_eq!(
+                            image.copier_header(),
+                            if headered {
+                                crate::CopierHeader::Present
+                            } else {
+                                crate::CopierHeader::Absent
+                            }
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            detect_identity(&variant_rom(
+                0x8000,
+                ALL_STARS_WORLD_TITLE,
+                0,
+                0x20,
+                false,
+                false,
+            )),
+            Err(IdentityError::UnsupportedRegion(0))
+        );
+    }
+
     #[test]
     fn recognizes_lorom_and_sa1_headers() {
         let lorom = detect_identity(&smw_rom(0x8000, 0x20)).unwrap();
