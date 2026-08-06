@@ -1,7 +1,11 @@
 //! Lunar Magic-compatible color-option primitives for bitmap graphics imports.
 
 use crate::{Bgr555, Palette, QuantizerError, Rgb8, Rgba8, WuQuantizer};
-use std::{cmp::Ordering, collections::BTreeMap, fmt};
+use std::{
+    cmp::{Ordering, Reverse},
+    collections::BTreeMap,
+    fmt,
+};
 
 pub const BITMAP_PALETTE_ROWS: usize = 8;
 pub const BITMAP_PALETTE_COLORS: usize = BITMAP_PALETTE_ROWS * Palette::COLORS_PER_ROW;
@@ -45,6 +49,8 @@ pub struct BitmapPaletteColorOptions {
     pub priority_level: u8,
     /// Gives colors farther from reusable and already-selected colors extra admission weight.
     pub prioritize_unique_colors: bool,
+    /// Keeps the exact-fit allocation pass and skips the weighted partial-set extension pass.
+    pub maintain_detail: bool,
     /// Lunar Magic's first high-color neighborhood reduction pass.
     pub popularity_reduction_method_1: bool,
     /// Lunar Magic's second high-color neighborhood reduction pass.
@@ -71,6 +77,7 @@ impl BitmapPaletteColorOptions {
             reduction: BitmapPaletteReduction::MedianCut,
             priority_level: 3,
             prioritize_unique_colors: true,
+            maintain_detail: false,
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
         }
@@ -471,6 +478,9 @@ pub fn allocate_bitmap_palette_rows(
     let mut rows: [PaletteRowAllocation; BITMAP_PALETTE_ROWS] =
         std::array::from_fn(|row| PaletteRowAllocation::new(row, original, options));
     assign_color_set_records(&mut records, &mut rows)?;
+    if !options.maintain_detail {
+        extend_palette_rows_with_weighted_colors(&mut records, &mut rows)?;
+    }
     for row in &mut rows {
         row.order_assigned_colors();
     }
@@ -608,6 +618,88 @@ fn assign_color_set_records(
             }
         }
     }
+}
+
+fn extend_palette_rows_with_weighted_colors(
+    records: &mut BTreeMap<Vec<u16>, ColorSetRecord>,
+    rows: &mut [PaletteRowAllocation; BITMAP_PALETTE_ROWS],
+) -> Result<(), BitmapPaletteReductionError> {
+    let mut row_order = (0..rows.len()).collect::<Vec<_>>();
+    row_order.sort_by_key(|row| {
+        (
+            Reverse(rows[*row].reusable_count()),
+            Reverse(rows[*row].free_count()),
+            *row,
+        )
+    });
+    for row in row_order {
+        loop {
+            let capacity = rows[row].free_count();
+            if capacity == 0 {
+                break;
+            }
+            let existing = rows[row].colors();
+            let next = records
+                .values()
+                .filter(|record| {
+                    record.assigned_row.is_none()
+                        && record
+                            .colors
+                            .iter()
+                            .any(|color| existing.binary_search(color).is_err())
+                })
+                .max_by(|left, right| {
+                    let left_overlap = left
+                        .colors
+                        .iter()
+                        .filter(|color| existing.binary_search(color).is_ok())
+                        .count();
+                    let right_overlap = right
+                        .colors
+                        .iter()
+                        .filter(|color| existing.binary_search(color).is_ok())
+                        .count();
+                    left_overlap
+                        .cmp(&right_overlap)
+                        .then_with(|| left.aggregate_weight.cmp(&right.aggregate_weight))
+                        .then_with(|| compare_color_set_priority(left, right))
+                })
+                .map(|record| record.colors.clone());
+            let Some(colors) = next else {
+                break;
+            };
+            let record = records
+                .get(&colors)
+                .ok_or_else(|| BitmapPaletteReductionError::UnassignedColorSet(colors.clone()))?;
+            let mut missing = record
+                .colors
+                .iter()
+                .copied()
+                .zip(record.aggregate_weights.iter().copied())
+                .filter(|(color, _)| existing.binary_search(color).is_err())
+                .collect::<Vec<_>>();
+            missing.sort_by_key(|(color, weight)| (Reverse(*weight), *color));
+            let selected = missing
+                .into_iter()
+                .take(capacity)
+                .map(|(color, _)| color)
+                .collect::<Vec<_>>();
+            if selected.is_empty() {
+                break;
+            }
+            rows[row].install(&selected)?;
+            let covered = rows[row].colors();
+            for record in records.values_mut() {
+                if record.assigned_row.is_none() && is_subset(&record.colors, &covered) {
+                    record.assigned_row = Some(row);
+                }
+            }
+            if let Some(record) = records.get_mut(&colors) {
+                record.assigned_row = Some(row);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn assign_tiles_to_lowest_error_rows(
@@ -787,6 +879,20 @@ impl PaletteRowAllocation {
             overlap,
             free_before,
         })
+    }
+
+    fn free_count(&self) -> usize {
+        self.entries
+            .iter()
+            .filter(|entry| matches!(entry, RowEntry::Free))
+            .count()
+    }
+
+    fn reusable_count(&self) -> usize {
+        self.entries
+            .iter()
+            .filter(|entry| matches!(entry, RowEntry::Reusable(_)))
+            .count()
     }
 
     fn install(&mut self, colors: &[u16]) -> Result<(), BitmapPaletteReductionError> {
@@ -1020,6 +1126,7 @@ mod tests {
         assert_eq!(options.maximum_colors, 128);
         assert_eq!(options.priority_level, 3);
         assert!(options.prioritize_unique_colors);
+        assert!(!options.maintain_detail);
         assert!(options.popularity_reduction_method_1);
         assert!(!options.popularity_reduction_method_2);
         for row in 0..8 {
@@ -1209,6 +1316,7 @@ mod tests {
             reduction: BitmapPaletteReduction::MedianCut,
             priority_level: 3,
             prioritize_unique_colors: true,
+            maintain_detail: false,
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
         }
@@ -1302,6 +1410,34 @@ mod tests {
         assert_eq!(allocated.palette.colors[2], blue);
         assert_eq!(allocated.generated_colors, 1);
         assert_eq!(&allocated.indices[..4], &[1, 2, 1, 2]);
+    }
+
+    #[test]
+    fn maintain_detail_skips_weighted_partial_set_extension() {
+        let colors = vec![
+            Bgr555(0x001f),
+            Bgr555(0x03e0),
+            Bgr555(0x7c00),
+            Bgr555(0x7fff),
+        ];
+        let indices = [vec![1; 40], vec![2; 12], vec![3; 8], vec![4; 4]].concat();
+        let reduced = ReducedBitmapPalette { colors, indices };
+        let mut original = palette();
+        original.colors[1] = Bgr555(0x001f);
+        let mut options = reserved_options();
+        options.entries[1] = BitmapPaletteEntryState::Reusable;
+        options.entries[2] = BitmapPaletteEntryState::Free;
+        options.entries[3] = BitmapPaletteEntryState::Free;
+
+        let extended = allocate_bitmap_palette_rows(&reduced, 8, 8, &original, &options).unwrap();
+        assert_eq!(extended.generated_colors, 2);
+        assert!(extended.palette.colors[2..=3].contains(&Bgr555(0x03e0)));
+        assert!(extended.palette.colors[2..=3].contains(&Bgr555(0x7c00)));
+
+        options.maintain_detail = true;
+        let exact_only = allocate_bitmap_palette_rows(&reduced, 8, 8, &original, &options).unwrap();
+        assert_eq!(exact_only.generated_colors, 0);
+        assert_eq!(exact_only.palette, original);
     }
 
     #[test]

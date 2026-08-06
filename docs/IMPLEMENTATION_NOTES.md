@@ -4099,3 +4099,10 @@ scores remain pure histogram frequencies, while enabling it applies the existing
 nearest-color weighting. The native Map16 dialog exposes the switch only with Popularity selected,
 and focused coverage proves disabling it removes distance weighting without changing the priority
 value itself.
+
+Multi-row allocation now includes Lunar Magic's previously missing default weighted partial-set
+extension. After exact-fit sets are exhausted, rows with capacity greedily choose uncovered sets by
+existing-color overlap and aggregate subset weight, then install their highest-weight missing
+colors. The recovered Maintain Detail control skips only this extension pass. A constrained
+four-color/three-slot test proves default allocation fills the two remaining entries, while Maintain
+Detail retains only the reusable exact color; both paths still complete final nearest-row mapping.

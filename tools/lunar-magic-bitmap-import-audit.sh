@@ -11,6 +11,7 @@ usage() {
     echo "  LM_BITMAP_PRIORITY: Popularity priority from 1 through 4 (default: 3)" >&2
     echo "  LM_BITMAP_MAX_COLORS: maximum reduced colors from 1 through 128 (default: 128)" >&2
     echo "  LM_BITMAP_UNIQUE_COLORS: give higher priority to unique colors, 0 or 1 (default: 1)" >&2
+    echo "  LM_BITMAP_MAINTAIN_DETAIL: keep exact bitmap colors until capacity, 0 or 1 (default: 0)" >&2
     exit 2
 }
 
@@ -25,6 +26,7 @@ reduction=${LM_BITMAP_REDUCTION:-median-cut}
 priority=${LM_BITMAP_PRIORITY:-3}
 maximum_colors=${LM_BITMAP_MAX_COLORS:-128}
 unique_colors=${LM_BITMAP_UNIQUE_COLORS:-1}
+maintain_detail=${LM_BITMAP_MAINTAIN_DETAIL:-0}
 helper="$output_dir/bin/wine-window-command.exe"
 paste_log="$output_dir/paste.log"
 paste_pid=
@@ -58,6 +60,13 @@ case "$unique_colors" in
     0|1) ;;
     *)
         echo "LM_BITMAP_UNIQUE_COLORS must be 0 or 1" >&2
+        exit 2
+        ;;
+esac
+case "$maintain_detail" in
+    0|1) ;;
+    *)
+        echo "LM_BITMAP_MAINTAIN_DETAIL must be 0 or 1" >&2
         exit 2
         ;;
 esac
@@ -208,6 +217,9 @@ if [ "$reduction" = "popularity" ]; then
     if [ "$unique_colors" -eq 0 ]; then
         wine "$helper" "$target_executable" click 0x6e >/dev/null 2>&1
     fi
+    if [ "$maintain_detail" -eq 1 ]; then
+        wine "$helper" "$target_executable" click 0x66 >/dev/null 2>&1
+    fi
     wine "$helper" "$target_executable" dialog-values \
         >"$output_dir/color-options.txt" 2>/dev/null
     wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
@@ -240,6 +252,7 @@ graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{prin
     printf 'priority\t%s\n' "$priority"
     printf 'maximum_colors\t%s\n' "$maximum_colors"
     printf 'unique_colors\t%s\n' "$unique_colors"
+    printf 'maintain_detail\t%s\n' "$maintain_detail"
     printf 'palette_byte_differences\t%s\n' "$palette_differences"
     printf 'graphics_byte_differences\t%s\n' "$graphics_differences"
     printf 'palette_before_sha256\t%s\n' "$palette_before_sha"
