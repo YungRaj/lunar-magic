@@ -3391,7 +3391,11 @@ alias: the last screen-map reference wins. Map16 definition `n` uses screen-map 
 only these four words, preserving destination Acts Like values; the alternate path deduplicates
 definitions into blank entries. If enabled, the workflow asks for a `.col`/`.pal` file and
 `LoadPaletteRowFromFile` at `$004765E0` reads exactly `$20` bytes into the selected working palette
-row. Background-page import can additionally paste the resulting index grid into the level.
+row. Background-page optimized import additionally calls `PasteMap16IndexGridIntoLevelLayer` at
+`$00519010` with a 16×16 grid at destination `(0,0)`. The helper accepts dimensions 1..32, rejects
+an index grid without an assignment in active bank `(background_page_bank + 8) * $1000`, masks
+stored words to twelve bits, and addresses the level buffer as
+`((x >> 4) * 31 + y) * 16 + x`. The direct-definition path does not invoke this paste.
 
 The previously unpromoted options callback at `$004E4E00` clarifies the remap ABI. On first open it
 calls `InitializeIdentityTileRemap` at `$004E4DD0`, which fills all 1,024 words at `$00963F78` with

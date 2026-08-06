@@ -386,11 +386,17 @@ impl RomMap16Editor {
                 preview.pending.level,
                 preview.pending.palette_row,
                 row,
-                allocation,
+                allocation.clone(),
             )?)
         } else {
             None
         };
+        let expected_layer2 = stage_background_index_grid(
+            &mut project,
+            preview,
+            allocation,
+            workspace.internal_header + 0x1c,
+        )?;
         project
             .refresh_checksum(workspace.internal_header + 0x1c)
             .map_err(|error| error.to_string())?;
@@ -413,6 +419,18 @@ impl RomMap16Editor {
                 return Err("saved SNES tileset palette did not reopen".into());
             }
         }
+        if let Some((layer2_layout, level_mode, expected)) = expected_layer2 {
+            let reopened = project
+                .load_level_layer2_with_descriptor(
+                    usize::from(preview.pending.level),
+                    level_mode,
+                    layer2_layout,
+                )
+                .map_err(|error| error.to_string())?;
+            if reopened != expected {
+                return Err("saved SNES tileset background index grid did not reopen".into());
+            }
+        }
         let mutation = RomMutation::between(
             workspace.snapshot.identity.mapper,
             &before,
@@ -426,6 +444,105 @@ impl RomMap16Editor {
         }
         .into_command())
     }
+}
+
+fn stage_background_index_grid(
+    project: &mut Project,
+    preview: &SnesTilesetPreview,
+    mut allocation: lm_rats::AllocationPolicy,
+    checksum_field: usize,
+) -> Result<
+    Option<(
+        lm_project::LevelLayer2RomLayout,
+        u8,
+        lm_project::LoadedLevelLayer2,
+    )>,
+    String,
+> {
+    if !(0x80..0x100).contains(&preview.pending.page)
+        || preview.pending.placement
+            != SnesMap16DefinitionPlacement::DeduplicatedIntoBlankDefinitions
+    {
+        return Ok(None);
+    }
+    if preview.assignments.len() != 256 {
+        return Err(format!(
+            "background SNES tileset requires 256 index assignments, got {}",
+            preview.assignments.len()
+        ));
+    }
+    let bank = (preview.pending.page - 0x80) >> 4;
+    let first = (bank + 8) * 0x1000;
+    if !preview.assignments.iter().any(|assignment| {
+        first <= usize::from(*assignment) && usize::from(*assignment) < first + 0x1000
+    }) {
+        return Err(format!(
+            "background index grid has no tile in active bank ${first:04X}–${:04X}",
+            first + 0x0fff
+        ));
+    }
+    let level = usize::from(preview.pending.level);
+    let level_layout = lm_profile::smw_us_v1_vanilla_level_layout();
+    let loaded_level = project
+        .load_level_slot(
+            level,
+            level_layout,
+            &lm_level::SpriteLengthTable::standard(),
+        )
+        .map_err(|error| error.to_string())?;
+    let level_mode = loaded_level.layer1.header.level_mode();
+    let Some(layout) = lm_profile::smw_us_v1_level_layer2_layout(&project.rom, level)
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    if let Some(table) = layout.descriptor_table {
+        let end = table
+            .entries
+            .checked_mul(table.stride)
+            .and_then(|len| table.offset.checked_add(len))
+            .ok_or("Layer 2 descriptor-table range overflow")?;
+        let range = lm_rats::ProtectedRange(table.offset..end);
+        if !allocation
+            .protected
+            .iter()
+            .any(|protected| protected.0.start <= range.0.start && range.0.end <= protected.0.end)
+        {
+            allocation.protected.push(range);
+        }
+    }
+    let mut loaded = project
+        .load_level_layer2_with_descriptor(level, level_mode, layout)
+        .map_err(|error| error.to_string())?;
+    let lm_level::NativeLayer2Data::Tilemap(bytes) = &mut loaded.data else {
+        // Lunar Magic reports "Cannot Modify" here but retains the graphics/Map16 import.
+        return Ok(None);
+    };
+    for y in 0..16 {
+        for x in 0..16 {
+            let storage = lm_level::native_layer2_tilemap_index(x, y)
+                .ok_or("background index-grid coordinate is outside Layer 2")?;
+            let offset = storage * 2;
+            bytes[offset..offset + 2]
+                .copy_from_slice(&(preview.assignments[y * 16 + x] & 0x0fff).to_le_bytes());
+        }
+    }
+    project
+        .save_level_layer2_with_descriptor_and_checksum(
+            level,
+            level_mode,
+            &loaded,
+            layout,
+            &lm_project::LevelLayer2SaveOptions {
+                allocation,
+                previous_block: None,
+                reuse_identical: true,
+                erase_fill: 0xff,
+            },
+            checksum_field,
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(Some((layout, level_mode, loaded)))
 }
 
 fn stage_and_save_palette_row(
@@ -778,6 +895,77 @@ mod tests {
                 .map(|value| lm_graphics::Bgr555(0x1200 | value))
                 .collect::<Vec<_>>()
         );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
+    }
+
+    #[test]
+    fn optimized_background_apply_pastes_the_native_index_grid_into_layer2() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::ShowMap16).unwrap();
+        let mut editor = RomMap16Editor::default();
+        editor.open(&app);
+        let workspace = editor.workspace.as_ref().unwrap();
+        let revision = workspace.controller.revision();
+        let page = (0x80..0x100)
+            .find(|page| {
+                workspace.controller.set().pages[*page]
+                    .tiles
+                    .iter()
+                    .copied()
+                    .any(lm_app::is_lunar_magic_blank_map16_tile)
+            })
+            .unwrap();
+        let target = workspace.controller.set().pages[page].clone();
+        let mut request = pending(SnesMap16DefinitionPlacement::DeduplicatedIntoBlankDefinitions);
+        request.revision = revision;
+        request.page = page;
+        request.level = 0x105;
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([9; 64])],
+        }
+        .encode()
+        .unwrap();
+        let map = (0..0x400)
+            .flat_map(|_| 0x0400_u16.to_le_bytes())
+            .collect::<Vec<_>>();
+        let preview = prepare_preview(request, &graphics, &map, None, &target).unwrap();
+        let assignment = preview.assignments[0];
+        assert!(preview.assignments.iter().all(|value| *value == assignment));
+        editor.snes_tileset_preview = Some(preview);
+        let command = editor
+            .prepare_snes_tileset_graphics_map16_command()
+            .unwrap();
+        app.dispatch(command).unwrap();
+
+        let project = app.project().unwrap();
+        let loaded_level = project
+            .load_level_slot(
+                0x105,
+                lm_profile::smw_us_v1_vanilla_level_layout(),
+                &lm_level::SpriteLengthTable::standard(),
+            )
+            .unwrap();
+        let layout = lm_profile::smw_us_v1_level_layer2_layout(&project.rom, 0x105)
+            .unwrap()
+            .unwrap();
+        let layer2 = project
+            .load_level_layer2(0x105, loaded_level.layer1.header.level_mode(), layout)
+            .unwrap();
+        let lm_level::NativeLayer2Data::Tilemap(bytes) = layer2 else {
+            panic!("level 105 background must be tilemap-backed");
+        };
+        for y in 0..16 {
+            for x in 0..16 {
+                let index = lm_level::native_layer2_tilemap_index(x, y).unwrap() * 2;
+                assert_eq!(
+                    u16::from_le_bytes([bytes[index], bytes[index + 1]]),
+                    assignment & 0x0fff
+                );
+            }
+        }
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
     }

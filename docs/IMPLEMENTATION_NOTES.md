@@ -4178,9 +4178,9 @@ and optional palette-row dialogs. Each accepted request captures the application
 page, and direct/optimized choice before a bounded worker reads the files. Completion rejects stale
 ROM state and builds one retained preview containing decoded graphics, the candidate Map16 page,
 optional palette row, and all 256 global assignments. While loading or previewing, Map16 edits,
-other transfers, commit, and close are gated. The preview deliberately has no partial Apply action:
-publishing it must wait for the cross-domain ROM transaction so graphics, palette, definitions, and
-the optional background index grid can never diverge.
+other transfers, commit, and close are gated. The preview deliberately has no partial Apply action.
+Publishing runs through one cross-domain ROM transaction so graphics, palette, definitions, and
+the optional background index grid cannot diverge.
 
 SNES tileset materialization now accepts the combined native remap offset and one optional 16-entry
 color map. The offset wraps before lookup, while remap destinations remain range-checked. Filtering
@@ -4196,4 +4196,10 @@ tilesets. Duplicate GFX file assignments coalesce when their local writes agree 
 VRAM slots demand nonrepresentable different pixels. Pristine palettes install the recovered custom
 palette runtime inside the same private project before saving the row. Every saved GFX file, palette,
 and Map16 result is reopened before publication; one application Undo restores the complete original
-ROM. Super GFX Bypass and the optional background index-grid paste remain explicit pending routes.
+ROM. For optimized imports into pages `$80..$FF`, the same transaction also reproduces
+`PasteMap16IndexGridIntoLevelLayer`: it requires at least one assignment in the selected active
+`$1000`-tile background bank, masks every assignment to twelve bits, and writes the 16×16 grid at
+the native Layer 2 storage index `((x >> 4) * 31 + y) * 16 + x`. Non-tilemap Layer 2 retains the
+other imported domains, matching Lunar Magic's Cannot Modify path. The save authorizes only the
+exact installed descriptor table, reopens Layer 2, and remains covered by byte-exact Undo. Super
+GFX Bypass remains the explicit pending ownership route.
