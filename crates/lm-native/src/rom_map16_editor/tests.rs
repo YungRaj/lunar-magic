@@ -1,4 +1,41 @@
 use super::*;
+
+#[test]
+fn snes_tileset_options_default_to_optimized_and_survive_editor_reopen() {
+    let mut app = AppState::default();
+    app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+        .unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut editor = RomMap16Editor::default();
+
+    editor.open(&app);
+    assert!(editor.snes_tileset_deduplicate);
+    assert!(!editor.snes_tileset_include_palette);
+    assert_eq!(
+        editor.snes_tileset_color_maps[9],
+        std::array::from_fn(|index| index as u8)
+    );
+
+    editor.snes_tileset_include_palette = true;
+    editor.snes_tileset_palette_row = 7;
+    editor.snes_tileset_deduplicate = false;
+    editor.snes_tileset_graphics_offset = 0x123;
+    editor.snes_tileset_map_offset = 0x234;
+    editor.snes_tileset_color_filter = true;
+    editor.snes_tileset_color_filter_index = 9;
+    editor.snes_tileset_color_maps[9][3] = 0x0e;
+    assert!(editor.request_close(false));
+
+    editor.open(&app);
+    assert!(editor.snes_tileset_include_palette);
+    assert_eq!(editor.snes_tileset_palette_row, 7);
+    assert!(!editor.snes_tileset_deduplicate);
+    assert_eq!(editor.snes_tileset_graphics_offset, 0x123);
+    assert_eq!(editor.snes_tileset_map_offset, 0x234);
+    assert!(editor.snes_tileset_color_filter);
+    assert_eq!(editor.snes_tileset_color_filter_index, 9);
+    assert_eq!(editor.snes_tileset_color_maps[9][3], 0x0e);
+}
 use lm_app::Command;
 use lm_level::{Map16Address, Map16Quadrant, Subtile};
 use lm_profile::load_smw_us_v1_complete_map16;

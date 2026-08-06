@@ -51,15 +51,18 @@ impl RomMap16Editor {
                 self.bitmap_preview_scroll = egui::Vec2::ZERO;
                 self.pending_snes_tileset = None;
                 self.snes_tileset_preview = None;
-                self.snes_tileset_include_palette = false;
-                self.snes_tileset_palette_row = 0;
-                self.snes_tileset_deduplicate = false;
-                self.snes_tileset_graphics_offset = 0;
-                self.snes_tileset_map_offset = 0;
-                self.snes_tileset_color_filter = false;
-                self.snes_tileset_color_filter_index = 0;
-                self.snes_tileset_color_maps =
-                    std::array::from_fn(|_| std::array::from_fn(|index| index as u8));
+                if !self.snes_tileset_options_initialized {
+                    self.snes_tileset_include_palette = false;
+                    self.snes_tileset_palette_row = 0;
+                    self.snes_tileset_deduplicate = true;
+                    self.snes_tileset_graphics_offset = 0;
+                    self.snes_tileset_map_offset = 0;
+                    self.snes_tileset_color_filter = false;
+                    self.snes_tileset_color_filter_index = 0;
+                    self.snes_tileset_color_maps =
+                        std::array::from_fn(|_| std::array::from_fn(|index| index as u8));
+                    self.snes_tileset_options_initialized = true;
+                }
                 self.invalidate();
             }
             Err(error) => self.error = Some(error),

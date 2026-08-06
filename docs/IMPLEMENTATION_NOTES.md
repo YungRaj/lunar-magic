@@ -4220,3 +4220,10 @@ On selected page `$00`, the retained clean run changed 5,491 of 65,536 decoded g
 and exact buffer address. A separate observed optimized failure changed graphics before reporting
 that the page lacked enough blank definitions; the Rust transaction deliberately offers stronger
 failure atomicity rather than reproducing that partial mutation.
+
+The native Map16 editor now also follows the dialog's process-lifetime state boundary. Optimize is
+enabled on the first open, matching the retained original control snapshot, and every accepted
+palette, placement, offset, filter-selector, and 16×16 color-map choice survives closing and
+reopening the Map16 editor. Opening another ROM does not fabricate a fresh original process, so it
+does not reset those choices either. Pending file work and previews remain editor-lifetime state and
+are still cleared at close.

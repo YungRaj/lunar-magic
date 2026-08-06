@@ -161,6 +161,8 @@ pub(crate) struct RomMap16Editor {
     snes_tileset_loader: DocumentLoader,
     pending_snes_tileset: Option<snes_tileset_import::PendingSnesTileset>,
     snes_tileset_preview: Option<snes_tileset_import::SnesTilesetPreview>,
+    /// Lunar Magic keeps these dialog globals for the lifetime of the process.
+    snes_tileset_options_initialized: bool,
     snes_tileset_include_palette: bool,
     snes_tileset_palette_row: u8,
     snes_tileset_deduplicate: bool,
