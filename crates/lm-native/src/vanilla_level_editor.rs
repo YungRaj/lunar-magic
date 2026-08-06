@@ -2356,54 +2356,46 @@ impl VanillaLevelEditor {
                 false,
             );
         }
-        let (hit_layer2, hit) = if !editor_overlays {
-            (
-                ObjectPlacementHits::default(),
-                ObjectPlacementHits::default(),
-            )
-        } else {
-            let layer2_resize_models =
-                self.active_object_resize_models(layer2_records, custom_objects);
-            let layer1_resize_models = self.active_object_resize_models(records, custom_objects);
-            (
-                visibility
-                    .layer2
-                    .then(|| {
-                        draw_object_placement_markers(
-                            painter,
-                            response,
-                            rect,
-                            vertical,
-                            layer2_records,
-                            layer2_placements,
-                            self.selected_layer2_object,
-                            map16_texture,
-                            &layer2_artwork_bounds,
-                            &layer2_resize_models,
-                            cell,
-                        )
-                    })
-                    .unwrap_or_default(),
-                visibility
-                    .layer1
-                    .then(|| {
-                        draw_object_placement_markers(
-                            painter,
-                            response,
-                            rect,
-                            vertical,
-                            records,
-                            placements,
-                            self.selected_object,
-                            map16_texture,
-                            &layer1_artwork_bounds,
-                            &layer1_resize_models,
-                            cell,
-                        )
-                    })
-                    .unwrap_or_default(),
-            )
-        };
+        let layer2_resize_models = self.active_object_resize_models(layer2_records, custom_objects);
+        let layer1_resize_models = self.active_object_resize_models(records, custom_objects);
+        let hit_layer2 = visibility
+            .layer2
+            .then(|| {
+                draw_object_placement_markers(
+                    painter,
+                    response.interact_pointer_pos(),
+                    rect,
+                    vertical,
+                    layer2_records,
+                    layer2_placements,
+                    self.selected_layer2_object,
+                    map16_texture,
+                    &layer2_artwork_bounds,
+                    &layer2_resize_models,
+                    cell,
+                    editor_overlays,
+                )
+            })
+            .unwrap_or_default();
+        let hit = visibility
+            .layer1
+            .then(|| {
+                draw_object_placement_markers(
+                    painter,
+                    response.interact_pointer_pos(),
+                    rect,
+                    vertical,
+                    records,
+                    placements,
+                    self.selected_object,
+                    map16_texture,
+                    &layer1_artwork_bounds,
+                    &layer1_resize_models,
+                    cell,
+                    editor_overlays,
+                )
+            })
+            .unwrap_or_default();
         let sprite_limit = visual_smoke_editor_sprite_limit()
             .unwrap_or(sprite_placements.len())
             .min(sprite_placements.len());
@@ -2494,21 +2486,21 @@ impl VanillaLevelEditor {
                     alternate_vertical_layout,
                 );
             }
-            self.handle_canvas_interaction(
-                response,
-                hit.body,
-                hit.resize,
-                hit_layer2.body,
-                hit_layer2.resize,
-                hit_sprite,
-                layer2_records,
-                records,
-                rect,
-                cell,
-                vertical,
-                visibility,
-            );
         }
+        self.handle_canvas_interaction(
+            response,
+            hit.body,
+            hit.resize,
+            hit_layer2.body,
+            hit_layer2.resize,
+            hit_sprite,
+            layer2_records,
+            records,
+            rect,
+            cell,
+            vertical,
+            visibility,
+        );
     }
 
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
@@ -7251,7 +7243,7 @@ fn draw_foreground_subtile(
 #[allow(clippy::too_many_arguments)]
 fn draw_object_placement_markers(
     painter: &egui::Painter,
-    response: &egui::Response,
+    cursor: Option<egui::Pos2>,
     canvas: egui::Rect,
     vertical: bool,
     records: &[ObjectRecord],
@@ -7261,6 +7253,7 @@ fn draw_object_placement_markers(
     artwork_bounds: &HashMap<usize, egui::Rect>,
     resize_models: &HashMap<usize, lm_render::StandardObjectResizeModel>,
     cell: f32,
+    editor_overlays: bool,
 ) -> ObjectPlacementHits {
     let mut hits = ObjectPlacementHits::default();
     for placement in placements {
@@ -7271,15 +7264,18 @@ fn draw_object_placement_markers(
         let artwork_rect = artwork_bounds.get(&index).copied();
         let object_rect =
             artwork_rect.unwrap_or_else(|| encoded_object_rect(canvas, *placement, vertical, cell));
-        draw_object_marker(
-            painter,
-            map16_texture,
-            object_rect,
-            record,
-            index == selected,
-            artwork_rect.is_some(),
-        );
-        if index == selected
+        if editor_overlays {
+            draw_object_marker(
+                painter,
+                map16_texture,
+                object_rect,
+                record,
+                index == selected,
+                artwork_rect.is_some(),
+            );
+        }
+        if editor_overlays
+            && index == selected
             && let Some(&model) = resize_models.get(&index)
             && let Some(handle) =
                 standard_object_resize_handle(canvas, *placement, record, model, vertical, cell)
@@ -7291,17 +7287,11 @@ fn draw_object_placement_markers(
                 egui::Stroke::new(1.0_f32, egui::Color32::BLACK),
                 egui::StrokeKind::Inside,
             );
-            if response
-                .interact_pointer_pos()
-                .is_some_and(|position| handle.contains(position))
-            {
+            if cursor.is_some_and(|position| handle.contains(position)) {
                 hits.resize = Some(index);
             }
         }
-        if response
-            .interact_pointer_pos()
-            .is_some_and(|position| object_rect.contains(position))
-        {
+        if cursor.is_some_and(|position| object_rect.contains(position)) {
             hits.body = Some(index);
         }
     }
@@ -7713,7 +7703,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 egui::StrokeKind::Inside,
             );
         }
-        if editor_overlays && cursor.is_some_and(|position| interactive_rect.contains(position)) {
+        if cursor.is_some_and(|position| interactive_rect.contains(position)) {
             hit = Some(placement.token_index);
         }
     }
@@ -9523,6 +9513,31 @@ mod tests {
             layer2_tile_at_canvas_position(egui::pos2(513.0, 8.0), canvas, 16.0),
             None
         );
+    }
+
+    #[test]
+    fn game_pixel_mode_keeps_object_canvas_hit_testing_active_without_editor_overlays() {
+        let canvas = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 432.0));
+        let placement = resize_test_placement();
+        let record = ObjectRecord::new(vec![0x00, 0x10, 0x00]).unwrap();
+        let object_rect = encoded_object_rect(canvas, placement, false, ROM_LEVEL_CANVAS_CELL);
+        let context = egui::Context::default();
+        let hits = draw_object_placement_markers(
+            &context.debug_painter(),
+            Some(object_rect.center()),
+            canvas,
+            false,
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&placement),
+            0,
+            None,
+            &HashMap::new(),
+            &HashMap::new(),
+            ROM_LEVEL_CANVAS_CELL,
+            false,
+        );
+        assert_eq!(hits.body, Some(0));
+        assert_eq!(hits.resize, None);
     }
 
     #[test]
@@ -14517,6 +14532,52 @@ mod tests {
             vertical.level_orientation,
             lm_render::StandardLevelOrientation::Vertical
         );
+    }
+
+    #[test]
+    fn game_pixel_mode_keeps_sprite_canvas_hit_testing_active_without_editor_overlays() {
+        let placement = lm_level::NativeSpritePlacement {
+            token_index: 7,
+            first_byte: 0,
+            screen: 0,
+            major: 4,
+            minor: 6,
+            sprite_number: 0x0f,
+            extra_bits: 0,
+        };
+        let target = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(512.0, 432.0));
+        let (tile_x, tile_y) = presented_sprite_tile_coordinates(placement, false);
+        let cursor = target.min
+            + egui::vec2(
+                (f32::from(tile_x) + 0.5) * ROM_LEVEL_CANVAS_CELL,
+                (f32::from(tile_y) + 0.5) * ROM_LEVEL_CANVAS_CELL,
+            );
+        let context = egui::Context::default();
+        let mut hit = None;
+        let _ = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                hit = draw_sprite_placements(SpritePlacementDraw {
+                    painter: ui.painter(),
+                    target,
+                    cell_size: ROM_LEVEL_CANVAS_CELL,
+                    texture: None,
+                    animated_texture: None,
+                    placements: std::slice::from_ref(&placement),
+                    cursor: Some(cursor),
+                    selected: 0,
+                    vertical: false,
+                    level_mode: 0,
+                    sprite_tileset: 0,
+                    sprite_memory_index: 0,
+                    animation_phase: 0,
+                    custom_sprites: None,
+                    custom_map16: None,
+                    external_textures: &HashMap::new(),
+                    editor_overlays: false,
+                });
+            });
+        });
+        assert_eq!(hit, Some(7));
     }
 
     #[test]
