@@ -450,7 +450,7 @@ fn editor_text_definition_index(subtiles: [u16; 4]) -> Option<u8> {
 ///
 /// These definitions are Windows editor artwork, not SNES SP graphics. Lunar Magic materializes
 /// them into its `$880` sidecar tile page after opening a level with sprite previews enabled.
-fn draw_lunar_magic_editor_text_definition(
+pub(crate) fn draw_lunar_magic_editor_text_definition(
     canvas: &mut Canvas,
     definition_index: u8,
     target_x: i32,
@@ -746,7 +746,7 @@ fn draw_subtile_clipped(
     }
 }
 
-fn draw_sprite_subtile_clipped(
+pub(crate) fn draw_sprite_subtile_clipped(
     canvas: &mut Canvas,
     word: u16,
     tiles: &[IndexedTile],

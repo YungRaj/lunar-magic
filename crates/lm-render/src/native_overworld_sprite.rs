@@ -1,5 +1,7 @@
 //! Native `.sscov` display resolution through built-in and `.s16ov` Sprite Map16 definitions.
 
+use crate::{Canvas, native_level_raster};
+use lm_graphics::{IndexedTile, Palette};
 use lm_level::{Map16Tile, S16OvSidecar, Subtile};
 use lm_overworld::{NativeOverworldSpriteDisplay, NativeOverworldSpriteSidecar};
 
@@ -33,9 +35,16 @@ pub enum ResolvedNativeOverworldSpriteElement {
         y: i32,
         text: String,
     },
-    /// The sidecar may legally address Lunar Magic's internal `$C00..$CFF` definitions, or a
-    /// caller may omit a built-in definition. Preserve those references for the editor instead
-    /// of making the sprite disappear.
+    /// Lunar Magic's dynamic editor-only `$C00..$CFF` Sprite Map16 definition cache.
+    EditorTextDefinition {
+        sprite_index: usize,
+        definition_index: u8,
+        x: i32,
+        y: i32,
+        translucent: bool,
+    },
+    /// A caller omitted a built-in definition. Preserve the reference instead of making the
+    /// sprite disappear.
     UnresolvedMap16 {
         sprite_index: usize,
         native_tile: u16,
@@ -102,6 +111,69 @@ pub fn resolve_native_overworld_sprite_elements(
     output
 }
 
+/// Paints resolved native overworld sprite elements in their retained painter order.
+///
+/// Tile translucency uses Lunar Magic's packed-channel average with the existing framebuffer.
+/// Internal `$C00..$CFF` references use the authenticated dynamic editor-text cache; labels use
+/// the authenticated native editor font cache. Unresolved definitions intentionally remain
+/// unpainted so callers can surface them separately.
+pub fn draw_resolved_native_overworld_sprite_elements(
+    canvas: &mut Canvas,
+    elements: &[ResolvedNativeOverworldSpriteElement],
+    ordinary_tiles: &[IndexedTile],
+    animated_tiles: &[IndexedTile],
+    palette: &Palette,
+) {
+    for element in elements {
+        match element {
+            ResolvedNativeOverworldSpriteElement::Tile {
+                tile_number,
+                palette: palette_index,
+                x,
+                y,
+                priority,
+                x_flip,
+                y_flip,
+                translucent,
+                ..
+            } => {
+                let word = tile_number
+                    | (u16::from(*palette_index) << 10)
+                    | (u16::from(*priority) << 13)
+                    | (u16::from(*x_flip) << 14)
+                    | (u16::from(*y_flip) << 15);
+                native_level_raster::draw_sprite_subtile_clipped(
+                    canvas,
+                    word,
+                    if word & 0x0200 != 0 {
+                        animated_tiles
+                    } else {
+                        ordinary_tiles
+                    },
+                    palette,
+                    (*x, *y),
+                    *translucent,
+                );
+            }
+            ResolvedNativeOverworldSpriteElement::Label { x, y, text, .. } => {
+                crate::draw_lunar_magic_editor_label(canvas, text, *x, *y);
+            }
+            ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
+                definition_index,
+                x,
+                y,
+                ..
+            } => native_level_raster::draw_lunar_magic_editor_text_definition(
+                canvas,
+                *definition_index,
+                *x,
+                *y,
+            ),
+            ResolvedNativeOverworldSpriteElement::UnresolvedMap16 { .. } => {}
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn expand_map16(
     output: &mut Vec<ResolvedNativeOverworldSpriteElement>,
@@ -113,6 +185,16 @@ fn expand_map16(
     builtin: &[Map16Tile],
     custom: &S16OvSidecar,
 ) {
+    if (0xc00..=0xcff).contains(&native_tile) {
+        output.push(ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
+            sprite_index,
+            definition_index: native_tile as u8,
+            x,
+            y,
+            translucent,
+        });
+        return;
+    }
     let definition = if usize::from(native_tile) < S16OvSidecar::FIRST_NATIVE_TILE {
         builtin.get(usize::from(native_tile)).copied()
     } else {
@@ -162,6 +244,7 @@ fn push_subtile(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lm_graphics::Bgr555;
     use lm_overworld::{NativeOverworldSpriteAppearance, NativeOverworldSpriteMap16Part};
     use std::collections::BTreeMap;
 
@@ -259,9 +342,9 @@ mod tests {
         ));
         assert_eq!(
             result[8],
-            ResolvedNativeOverworldSpriteElement::UnresolvedMap16 {
+            ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
                 sprite_index: 0,
-                native_tile: 0xc00,
+                definition_index: 0,
                 x: 120,
                 y: 46,
                 translucent: false,
@@ -275,6 +358,63 @@ mod tests {
                 y: 17,
                 text: "Warp".into(),
             }
+        );
+    }
+
+    #[test]
+    fn rasterizes_tiles_translucency_and_internal_editor_text() {
+        let backdrop = crate::Rgba {
+            red: 20,
+            green: 40,
+            blue: 60,
+            alpha: 255,
+        };
+        let mut canvas = Canvas::from_pixels(32, 16, vec![backdrop; 512]).unwrap();
+        let mut pixels = [0; 64];
+        pixels.fill(1);
+        let tile = IndexedTile::new(pixels);
+        let mut colors = vec![Bgr555(0); 256];
+        colors[8 * 16 + 1] = Bgr555(0x001f);
+        let palette = Palette { colors };
+        draw_resolved_native_overworld_sprite_elements(
+            &mut canvas,
+            &[
+                ResolvedNativeOverworldSpriteElement::Tile {
+                    sprite_index: 0,
+                    tile_number: 0,
+                    palette: 0,
+                    x: 0,
+                    y: 0,
+                    priority: false,
+                    x_flip: false,
+                    y_flip: false,
+                    translucent: true,
+                },
+                ResolvedNativeOverworldSpriteElement::EditorTextDefinition {
+                    sprite_index: 0,
+                    definition_index: b'A',
+                    x: 16,
+                    y: 0,
+                    translucent: false,
+                },
+            ],
+            std::slice::from_ref(&tile),
+            &[],
+            &palette,
+        );
+        assert_eq!(
+            canvas.get(0, 0),
+            Some(crate::Rgba {
+                red: 137,
+                green: 20,
+                blue: 30,
+                alpha: 255,
+            })
+        );
+        assert!(
+            (16..32)
+                .flat_map(|x| (0..16).map(move |y| (x, y)))
+                .any(|(x, y)| canvas.get(x, y) != Some(backdrop))
         );
     }
 }

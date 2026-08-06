@@ -4239,4 +4239,6 @@ round-trips the complete semantic value. The portable `LMOWAPP1` format remains 
 stores already-resolved 8×8 tile/palette parts. Native `.s16ov` is now modeled as the distinct
 zero-filled `0x4000`-byte store for eight custom Sprite Map16 pages. Renderer resolution maps native
 indexes `$000..$3FF` through the caller's built-ins and `$400..$BFF` through `.s16ov`, expands all
-four 8×8 quadrants, and preserves labels, translucency, shadows, and unresolved internal indexes.
+four 8×8 quadrants, and preserves labels, translucency, and shadows. The concrete raster route uses
+packed-channel averaging for translucent parts, the authenticated editor font for labels, and the
+authenticated dynamic definition/glyph/palette cache for internal `$C00..$CFF` definitions.

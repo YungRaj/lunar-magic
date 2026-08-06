@@ -72,7 +72,7 @@ pub use native_level_raster::{
 };
 pub use native_overworld_sprite::{
     NativeOverworldSpritePlacement, ResolvedNativeOverworldSpriteElement,
-    resolve_native_overworld_sprite_elements,
+    draw_resolved_native_overworld_sprite_elements, resolve_native_overworld_sprite_elements,
 };
 pub use observe_editor_overlays::observe_editor_overlays;
 pub use observe_layer3_plane::observe_materialized_layer3_plane;
