@@ -17,7 +17,8 @@ Commands and outcomes:
 
 ```text
 cargo test -p lm-app --test level_header_wine -- --ignored --nocapture
-1 passed: lunar_magic_exports_every_rust_legacy_level_header_field
+2 passed: lunar_magic_exports_every_rust_legacy_level_header_field;
+lunar_magic_canonicalizes_every_reserved_mode_without_losing_background_color
 
 cargo test -p lm-app --test expanded_level_mode_wine -- --ignored --nocapture
 1 passed: lunar_magic_exports_rust_persisted_expanded_level_mode

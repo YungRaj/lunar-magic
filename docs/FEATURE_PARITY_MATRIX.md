@@ -68,12 +68,19 @@ custom block, entrance, and level changes reopen together, undo byte-exactly, an
 failure-atomic when a late acts-like cycle or unavailable midway entrance rejects after all earlier
 domains have been prepared.
 
-The 2026-08-05 retained original-editor run in `ORACLE_RUN_LOG.md` executes 21 opt-in Lunar Magic
+The 2026-08-05 retained original-editor run in `ORACLE_RUN_LOG.md` executes 25 opt-in Lunar Magic
 3.63/Wine gates with exact executable and pristine-ROM SHA-256 identities. All passed, including
 the complete 17-test object/sprite/entrance/screen-exit growth and canonicalization suite plus
 legacy headers, expanded level mode, ExAnimation feature options, and support-patch-B/custom-time
 preservation. These results strengthen the affected Oracle gates but do not promote variant or
 original-dialog coverage that those tests do not exercise.
+
+The level-header Wine target now edits and reopens every legacy five-byte-header field, including
+the Layer 1 vertical-scroll selector, plus the sprite header. A second exhaustive gate imports all
+twelve reserved modes `$12–$1D` with varying adjacent background-color bits and requires Lunar
+Magic to re-export mode `$00` while preserving the color exactly. This confirms the recovered
+`LoadLevelModeConfiguration` fallback across the full reserved range rather than one representative
+value; separate scroll/spawn dialogs and broader ROM variants remain open in the aggregate row.
 
 Lunar Magic 3.63 has fixed per-editor keyboard dispatch and shortcut fields inside external-tool
 definitions, but no global keyboard-shortcut configuration workflow. The complete named Ghidra

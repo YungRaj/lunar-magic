@@ -1,7 +1,7 @@
 use lm_app::{AppState, Command, LevelController, NativeLevelEdit, RomExpansionCommand};
 use lm_level::{
-    LegacyHeaderEdit, LevelObjectData, MwlFile, MwlSectionKind, NativeSpriteStream,
-    SpriteLengthTable,
+    Layer1VerticalScrollMode, LegacyHeaderEdit, LevelObjectData, MwlFile, MwlSectionKind,
+    NativeSpriteStream, SpriteLengthTable,
 };
 use lm_project::{LevelSaveOptions, Project};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -37,6 +37,30 @@ fn pristine_smw_us_rom_path(root: &Path) -> PathBuf {
 fn wine_path(path: &Path) -> String {
     let rendered = path.display().to_string().replace('/', r"\");
     format!(r"Z:\{}", rendered.trim_start_matches('\\'))
+}
+
+fn run_lunar_magic_level_command(
+    executable: &Path,
+    command: &str,
+    rom: &Path,
+    mwl: &Path,
+    level: &str,
+) {
+    let output = ProcessCommand::new("wine")
+        .env("WINEDEBUG", "-all")
+        .arg(executable)
+        .arg(command)
+        .arg(wine_path(rom))
+        .arg(wine_path(mwl))
+        .arg(level)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Lunar Magic {command} stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -77,6 +101,9 @@ fn lunar_magic_exports_every_rust_legacy_level_header_field() {
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::SpritePalette(4)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ForegroundPalette(3)),
             NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::ObjectTileset(7)),
+            NativeLevelEdit::LegacyHeader(LegacyHeaderEdit::Layer1VerticalScroll(
+                Layer1VerticalScrollMode::NoScrollAtBottomUnlessFlying,
+            )),
             NativeLevelEdit::SetSpriteHeader(0x0a),
         ])
         .unwrap();
@@ -152,5 +179,62 @@ fn lunar_magic_exports_every_rust_legacy_level_header_field() {
         NativeSpriteStream::parse(&exported_sprites, false, &sprite_lengths).unwrap(),
         expected_sprites
     );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+#[ignore = "requires Wine plus local Lunar Magic 3.63 and a pristine SMW ROM fixture"]
+fn lunar_magic_canonicalizes_every_reserved_mode_without_losing_background_color() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let lunar_magic = root.join("lm363/Lunar Magic.exe");
+    let pristine = pristine_smw_us_rom_path(&root);
+    let directory = std::env::temp_dir().join(format!(
+        "lm-reserved-level-mode-wine-oracle-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir(&directory).unwrap();
+    let edited_rom = directory.join("reserved mode imports.sfc");
+    let baseline_mwl = directory.join("baseline level 105.mwl");
+    fs::copy(&pristine, &edited_rom).unwrap();
+    run_lunar_magic_level_command(
+        &lunar_magic,
+        "-ExportLevel",
+        &edited_rom,
+        &baseline_mwl,
+        "105",
+    );
+    let baseline = MwlFile::decode(&fs::read(&baseline_mwl).unwrap()).unwrap();
+
+    for reserved_mode in 0x12_u8..=0x1d {
+        let background_color = (reserved_mode - 0x12) & 7;
+        let mut injected = baseline.clone();
+        let mut layer1 = injected.payload_section(MwlSectionKind::Layer1).unwrap();
+        layer1.payload[1] = background_color << 5 | reserved_mode;
+        injected
+            .set_payload_section(MwlSectionKind::Layer1, &layer1)
+            .unwrap();
+        let input = directory.join(format!("reserved mode {reserved_mode:02X}.mwl"));
+        let output = directory.join(format!("canonical mode {reserved_mode:02X}.mwl"));
+        fs::write(&input, injected.encode().unwrap()).unwrap();
+
+        run_lunar_magic_level_command(&lunar_magic, "-ImportLevel", &edited_rom, &input, "105");
+        run_lunar_magic_level_command(&lunar_magic, "-ExportLevel", &edited_rom, &output, "105");
+        let exported = MwlFile::decode(&fs::read(output).unwrap()).unwrap();
+        let header = LevelObjectData::parse(
+            &exported
+                .payload_section(MwlSectionKind::Layer1)
+                .unwrap()
+                .payload,
+        )
+        .unwrap()
+        .header;
+        assert_eq!(header.level_mode(), 0, "reserved mode {reserved_mode:#04x}");
+        assert_eq!(
+            header.background_color(),
+            background_color,
+            "reserved mode {reserved_mode:#04x}"
+        );
+    }
     fs::remove_dir_all(directory).unwrap();
 }
