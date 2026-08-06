@@ -14,10 +14,13 @@ pub struct MaterializedSuperGraphicsVram {
 pub fn materialize_super_graphics_vram(
     loaded: &LoadedSuperGraphicsBypass,
 ) -> MaterializedSuperGraphicsVram {
+    // Expanded settings/dialog order is FG1, FG2, FG3, BG1, BG2, BG3. Lunar Magic's 8x8
+    // workspace and native VRAM order place BG1 before FG3.
+    const FOREGROUND_VRAM_ORDER: [usize; 6] = [0, 1, 3, 2, 4, 5];
     MaterializedSuperGraphicsVram {
-        foreground_background: loaded
-            .foreground_background
+        foreground_background: FOREGROUND_VRAM_ORDER
             .iter()
+            .filter_map(|slot| loaded.foreground_background.get(*slot))
             .flat_map(|slot| slot.tiles.iter().cloned())
             .collect(),
         sprites: loaded
@@ -62,8 +65,12 @@ mod tests {
         let vram = materialize_super_graphics_vram(&loaded);
         assert_eq!(vram.foreground_background.len(), 6 * 128);
         assert_eq!(vram.sprites.len(), 4 * 128);
-        assert_eq!(vram.foreground_background[0].pixels()[0], 1);
-        assert_eq!(vram.foreground_background[128].pixels()[0], 2);
+        assert_eq!(
+            (0..6)
+                .map(|slot| vram.foreground_background[slot * 128].pixels()[0])
+                .collect::<Vec<_>>(),
+            [1, 2, 4, 3, 5, 6]
+        );
 
         let definition = Map16Tile {
             top_left: Subtile(0),

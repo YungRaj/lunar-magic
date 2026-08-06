@@ -3397,6 +3397,13 @@ an index grid without an assignment in active bank `(background_page_bank + 8) *
 stored words to twelve bits, and addresses the level buffer as
 `((x >> 4) * 31 + y) * 16 + x`. The direct-definition path does not invoke this paste.
 
+The bundled 8×8 editor documentation closes the imported graphics ownership ambiguity. Its first
+three pages are six `$80`-tile FG/BG slots in VRAM order `FG1, FG2, BG1, FG3, BG2, BG3`; the fourth
+page (`$300..$3FF`) is normally blank and unavailable, while SP1–SP4 occupy the following two pages
+outside this importer workspace. Super GFX Bypass exposes the same six files in dialog order
+`FG1, FG2, FG3, BG1, BG2, BG3`, so materialization swaps the FG3/BG1 positions when constructing
+the native workspace and never attributes the unavailable page to sprite files.
+
 The previously unpromoted options callback at `$004E4E00` clarifies the remap ABI. On first open it
 calls `InitializeIdentityTileRemap` at `$004E4DD0`, which fills all 1,024 words at `$00963F78` with
 their own indexes. Accept stores the two hexadecimal offset controls in `$005E5678` and `$00E27A98`.

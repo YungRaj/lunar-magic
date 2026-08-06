@@ -325,13 +325,14 @@ impl RomMap16Editor {
         project
             .apply_mutation("Stage imported Map16 page", &map16_commit.mutation)
             .map_err(|error| error.to_string())?;
-        let assignments = active_eight_graphics_files(workspace, &project, preview.pending.level)?;
+        let assignments =
+            active_foreground_graphics_files(workspace, &project, preview.pending.level)?;
         let layout = match &workspace.profile {
             Some(profile) => profile.graphics,
             None => lm_profile::smw_us_v1_vanilla_graphics_layout(),
         };
-        let mut baselines = Vec::with_capacity(8);
-        for file in assignments {
+        let mut baselines = Vec::with_capacity(assignments.len());
+        for file in assignments.iter().copied() {
             let mut graphics = project
                 .load_graphics_file(file, layout)
                 .map_err(|error| error.to_string())?;
@@ -346,12 +347,9 @@ impl RomMap16Editor {
             });
             baselines.push(graphics);
         }
-        let baselines: [lm_graphics::GraphicsFile4bpp; 8] = baselines
-            .try_into()
-            .map_err(|_| "active graphics workspace did not contain eight slots")?;
         let staged = lm_app::stage_snes_tileset_graphics_files(
             &preview.materialized,
-            assignments,
+            &assignments,
             &baselines,
         )
         .map_err(|error| error.to_string())?;
@@ -632,11 +630,11 @@ fn stage_and_save_palette_row(
     Ok((layout, palette))
 }
 
-fn active_eight_graphics_files(
+fn active_foreground_graphics_files(
     workspace: &super::Workspace,
     project: &Project,
     level: u16,
-) -> Result<[usize; 8], String> {
+) -> Result<Vec<usize>, String> {
     if let Some(profile) = &workspace.profile
         && (profile.game != lm_rom::SupportedGame::SuperMarioWorld
             || profile.region != lm_rom::Region::NorthAmerica
@@ -662,41 +660,33 @@ fn active_eight_graphics_files(
     let loaded = project
         .load_level_slot(usize::from(level), layout, &lengths)
         .map_err(|error| error.to_string())?;
-    if let Some(profile) = &workspace.profile
-        && let Some(settings_layout) = profile.expanded_settings
+    let settings = if let Some(settings_layout) = workspace
+        .profile
+        .as_ref()
+        .and_then(|profile| profile.expanded_settings)
     {
-        let settings = project
+        project
             .load_expanded_level_settings(usize::from(level), settings_layout)
-            .map_err(|error| error.to_string())?;
-        if lm_level::ExpandedLevelHeader::from(&settings)
-            .super_graphics_bypass()
-            .enabled
-        {
-            return Err(
-                "SNES tileset import into ten-slot Super GFX Bypass is not recovered".into(),
-            );
-        }
+            .map_err(|error| error.to_string())?
+    } else {
+        lm_profile::load_smw_us_v1_expanded_level_settings(project, usize::from(level))
+            .map_err(|error| error.to_string())?
+            .settings
+    };
+    let bypass = lm_level::ExpandedLevelHeader::from(&settings).super_graphics_bypass();
+    if bypass.enabled {
+        // The expanded record follows the dialog's FG1, FG2, FG3, BG1, BG2, BG3 order;
+        // the 8x8 editor and `.set` workspace follow native VRAM order.
+        return Ok([0, 1, 3, 2, 4, 5]
+            .map(|slot| usize::from(bypass.foreground_background[slot]))
+            .into());
     }
     let foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
         &project.rom,
         usize::from(loaded.layer1.header.object_tileset()),
     )
     .map_err(|error| error.to_string())?;
-    let sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
-        &project.rom,
-        usize::from(loaded.layer1.header.sprite_tileset()),
-    )
-    .map_err(|error| error.to_string())?;
-    Ok([
-        foreground[0],
-        foreground[1],
-        foreground[2],
-        foreground[3],
-        sprites[0],
-        sprites[1],
-        sprites[2],
-        sprites[3],
-    ])
+    Ok(foreground.into())
 }
 
 fn prepare_preview(
@@ -894,6 +884,99 @@ mod tests {
             &(0_u16..16)
                 .map(|value| lm_graphics::Bgr555(0x1200 | value))
                 .collect::<Vec<_>>()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
+    }
+
+    #[test]
+    fn native_apply_uses_super_gfx_bypass_in_vram_slot_order() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = lm_rom::RomImage::from_bytes(pristine).unwrap();
+        let mut installed = lm_project::Project::new(image);
+        let map16_plan = lm_profile::smw_us_v1_map16_runtime_installation_plan(
+            installed.rom.logical_bytes(),
+            lm_rats::AllocationPolicy {
+                search: 0x90_000..0x10_0000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff],
+                protected: vec![lm_rats::ProtectedRange(0x7fc0..0x8000)],
+            },
+            0x7fdc,
+        )
+        .unwrap();
+        installed
+            .rom
+            .expand(lm_rom::Mapper::LoRom, 0x10_0000, 0xff)
+            .unwrap();
+        installed
+            .install_relocatable_patch(
+                &lm_profile::smw_us_v1_expanded_settings_installation_plan().unwrap(),
+            )
+            .unwrap();
+        installed.install_relocatable_patch(&map16_plan).unwrap();
+        let settings_layout = lm_profile::smw_us_v1_expanded_settings_layout();
+        let mut header = lm_level::ExpandedLevelHeader::from(
+            installed
+                .load_expanded_level_settings(0x105, settings_layout)
+                .unwrap(),
+        );
+        header
+            .set_super_graphics_bypass(lm_level::SuperGraphicsBypass {
+                enabled: true,
+                // Dialog order: FG1, FG2, FG3, BG1, BG2, BG3.
+                foreground_background: [0x14, 0x17, 0x15, 0x19, 0x14, 0x17],
+                sprites: [0, 1, 0x13, 0x20],
+            })
+            .unwrap();
+        installed
+            .save_expanded_level_settings(
+                0x105,
+                &lm_level::ExpandedLevelSettingsRecord::from(header),
+                settings_layout,
+                0x7fdc,
+            )
+            .unwrap();
+        let original = installed.rom.as_file_bytes().to_vec();
+        let layout = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        let before_fg3 = installed.load_graphics_file(0x15, layout).unwrap();
+
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::ShowMap16).unwrap();
+        let mut editor = RomMap16Editor::default();
+        editor.open(&app);
+        editor.search_start = "80000".into();
+        editor.search_end = format!("{:X}", app.project().unwrap().rom.logical_len());
+        let workspace = editor.workspace.as_ref().unwrap();
+        let mut request = pending(SnesMap16DefinitionPlacement::Direct);
+        request.revision = workspace.controller.revision();
+        request.page = 2;
+        request.level = 0x105;
+        let target = workspace.controller.set().pages[2].clone();
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([0x0e; 64]); 0x101],
+        }
+        .encode()
+        .unwrap();
+        let map = (0..0x400)
+            .flat_map(|_| 0x0100_u16.to_le_bytes())
+            .collect::<Vec<_>>();
+        editor.snes_tileset_preview =
+            Some(prepare_preview(request, &graphics, &map, None, &target).unwrap());
+        let command = editor
+            .prepare_snes_tileset_graphics_map16_command()
+            .unwrap();
+        app.dispatch(command).unwrap();
+
+        let project = app.project().unwrap();
+        assert_eq!(
+            project.load_graphics_file(0x19, layout).unwrap().tiles[0].pixels(),
+            &[0x0e; 64]
+        );
+        assert_eq!(
+            project.load_graphics_file(0x15, layout).unwrap(),
+            before_fg3
         );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);

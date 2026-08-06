@@ -4201,5 +4201,12 @@ ROM. For optimized imports into pages `$80..$FF`, the same transaction also repr
 `$1000`-tile background bank, masks every assignment to twelve bits, and writes the 16×16 grid at
 the native Layer 2 storage index `((x >> 4) * 31 + y) * 16 + x`. Non-tilemap Layer 2 retains the
 other imported domains, matching Lunar Magic's Cannot Modify path. The save authorizes only the
-exact installed descriptor table, reopens Layer 2, and remains covered by byte-exact Undo. Super
-GFX Bypass remains the explicit pending ownership route.
+exact installed descriptor table, reopens Layer 2, and remains covered by byte-exact Undo.
+
+Graphics persistence now follows Lunar Magic's 8×8-editor workspace rather than treating all
+1,024 imported tiles as eight consecutive level files. Tiles `$000..$2FF` own FG/BG slots in VRAM
+order `FG1, FG2, BG1, FG3, BG2, BG3`; legacy levels back the first four, enabled Super GFX Bypass
+backs all six, and the unavailable fourth page `$300..$3FF` owns no file. Installed expanded
+settings are authenticated through their built-in owner even without an external revision profile.
+The bypass record's dialog order is converted to VRAM order before staging, duplicate-file conflict
+checks remain atomic, every changed file reopens, and one Undo restores the combined installed ROM.

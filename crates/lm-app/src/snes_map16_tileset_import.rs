@@ -171,19 +171,27 @@ impl SnesMap16TilesetImport {
     }
 }
 
-/// Overlays only referenced imported graphics onto eight active `$80`-tile GFX/ExGFX slots.
+/// Overlays referenced imported graphics onto the active `$80`-tile FG/BG GFX/ExGFX slots.
+///
+/// Lunar Magic's `.set` workspace places these slots at tiles `$000..$2FF` in VRAM order
+/// `FG1, FG2, BG1, FG3, BG2, BG3`. Legacy levels expose the first four slots; Super GFX Bypass
+/// exposes all six. Tiles `$300..$3FF` are the unavailable fourth 8×8-editor page and therefore
+/// have no backing graphics file here.
 ///
 /// Duplicate file assignments are coalesced. If two VRAM slots backed by the same file request
 /// different pixels for the same local tile, the operation rejects instead of silently choosing a
 /// save order that cannot survive reopen.
 pub fn stage_snes_tileset_graphics_files(
     materialized: &MaterializedSnesMap16Tileset,
-    assignments: [usize; 8],
-    baseline_slots: &[GraphicsFile4bpp; 8],
+    assignments: &[usize],
+    baseline_slots: &[GraphicsFile4bpp],
 ) -> Result<BTreeMap<usize, GraphicsFile4bpp>, SnesMap16TilesetImportError> {
     if materialized.graphics.tiles.len() != TILE_COUNT
         || materialized.referenced_graphics.len() != TILE_COUNT
     {
+        return Err(SnesMap16TilesetImportError::InternalShape);
+    }
+    if assignments.len() != baseline_slots.len() || !matches!(assignments.len(), 4 | 6) {
         return Err(SnesMap16TilesetImportError::InternalShape);
     }
     for (slot, baseline) in baseline_slots.iter().enumerate() {
@@ -196,7 +204,7 @@ pub fn stage_snes_tileset_graphics_files(
     }
     let mut files = BTreeMap::<usize, GraphicsFile4bpp>::new();
     let mut writes = BTreeMap::<(usize, usize), IndexedTile>::new();
-    for destination in 0..TILE_COUNT {
+    for destination in 0..assignments.len() * 0x80 {
         if !materialized.referenced_graphics[destination] {
             continue;
         }
@@ -535,12 +543,12 @@ mod tests {
         let materialized = decoded
             .materialize(&std::array::from_fn(|index| index as u16))
             .unwrap();
-        let baselines: [GraphicsFile4bpp; 8] = std::array::from_fn(|slot| GraphicsFile4bpp {
+        let baselines: [GraphicsFile4bpp; 6] = std::array::from_fn(|slot| GraphicsFile4bpp {
             tiles: vec![IndexedTile::new([slot as u8; 64]); 0x80],
         });
         let staged = stage_snes_tileset_graphics_files(
             &materialized,
-            [0x14, 0x17, 0x1b, 0x15, 0, 1, 0x13, 0x20],
+            &[0x14, 0x17, 0x1b, 0x15, 0x80, 0x81],
             &baselines,
         )
         .unwrap();
@@ -548,10 +556,25 @@ mod tests {
         assert_eq!(staged[&0x14].tiles[0].pixels(), &[6; 64]);
         assert_eq!(staged[&0x14].tiles[1].pixels(), &[0; 64]);
 
+        let unavailable =
+            SnesMap16TilesetImport::decode(&encoded_tile(7), &tilemap(vec![0x0300; 0x400]), None)
+                .unwrap()
+                .materialize(&std::array::from_fn(|index| index as u16))
+                .unwrap();
+        assert!(
+            stage_snes_tileset_graphics_files(
+                &unavailable,
+                &[0x14, 0x17, 0x1b, 0x15, 0x80, 0x81],
+                &baselines,
+            )
+            .unwrap()
+            .is_empty()
+        );
+
         let mut malformed = baselines.clone();
         malformed[0].tiles.pop();
         assert!(matches!(
-            stage_snes_tileset_graphics_files(&materialized, [0, 1, 2, 3, 4, 5, 6, 7], &malformed,),
+            stage_snes_tileset_graphics_files(&materialized, &[0, 1, 2, 3, 4, 5], &malformed,),
             Err(SnesMap16TilesetImportError::GraphicsSlotShape {
                 slot: 0,
                 tiles: 0x7f
@@ -567,11 +590,11 @@ mod tests {
         let mut remap = std::array::from_fn(|index| index as u16);
         remap[0x80] = 0x80;
         let materialized = decoded.materialize(&remap).unwrap();
-        let baselines: [GraphicsFile4bpp; 8] = std::array::from_fn(|_| GraphicsFile4bpp {
+        let baselines: [GraphicsFile4bpp; 6] = std::array::from_fn(|_| GraphicsFile4bpp {
             tiles: vec![IndexedTile::new([0; 64]); 0x80],
         });
         assert_eq!(
-            stage_snes_tileset_graphics_files(&materialized, [5, 5, 2, 3, 4, 6, 7, 8], &baselines,),
+            stage_snes_tileset_graphics_files(&materialized, &[5, 5, 2, 3, 4, 6], &baselines,),
             Err(SnesMap16TilesetImportError::AliasedGraphicsFileConflict { file: 5, tile: 0 })
         );
     }
