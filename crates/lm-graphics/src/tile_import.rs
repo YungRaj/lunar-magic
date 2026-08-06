@@ -17,6 +17,8 @@ pub struct IndexedBitmapImportOptions {
     pub optimize_new_tiles: bool,
     /// Permit horizontal/vertical flipped matches instead of exact matches only.
     pub allow_flipped_matches: bool,
+    /// Route an all-zero source tile directly to this existing tile without allocating or writing.
+    pub blank_tile: Option<usize>,
 }
 
 impl Default for IndexedBitmapImportOptions {
@@ -27,6 +29,7 @@ impl Default for IndexedBitmapImportOptions {
             reuse_existing_tiles: true,
             optimize_new_tiles: true,
             allow_flipped_matches: true,
+            blank_tile: None,
         }
     }
 }
@@ -128,6 +131,14 @@ impl IndexedBitmapImport {
                 limit: allocation_limit,
             });
         }
+        if let Some(blank_tile) = options.blank_tile
+            && blank_tile >= allocation_limit
+        {
+            return Err(BitmapImportError::InvalidBlankTile {
+                tile: blank_tile,
+                limit: allocation_limit,
+            });
+        }
         if let Some((index, value)) = pixels
             .iter()
             .copied()
@@ -148,13 +159,23 @@ impl IndexedBitmapImport {
         for tile_y in 0..height_in_tiles {
             for tile_x in 0..width_in_tiles {
                 let tile = extract_tile(width, pixels, tile_x, tile_y);
-                let equivalent = find_reusable_equivalent(
-                    &staged_graphics,
-                    occupied,
-                    &staged_occupied,
-                    &tile,
-                    options,
-                );
+                let equivalent = options
+                    .blank_tile
+                    .filter(|_| tile.pixels().iter().all(|pixel| *pixel == 0))
+                    .map(|index| EquivalentTile {
+                        index,
+                        x_flip: false,
+                        y_flip: false,
+                    })
+                    .or_else(|| {
+                        find_reusable_equivalent(
+                            &staged_graphics,
+                            occupied,
+                            &staged_occupied,
+                            &tile,
+                            options,
+                        )
+                    });
                 let equivalent = if let Some(equivalent) = equivalent {
                     equivalent
                 } else {
@@ -291,6 +312,10 @@ pub enum BitmapImportError {
         end: usize,
         limit: usize,
     },
+    InvalidBlankTile {
+        tile: usize,
+        limit: usize,
+    },
     TileNumberOutOfRange(usize),
     OnlyProtectedSlotsRemain,
     NoFreeTile,
@@ -384,6 +409,68 @@ mod tests {
     }
 
     #[test]
+    fn configured_blank_tile_bypasses_allocation_and_ownership() {
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([7; 64]), IndexedTile::new([0; 64])],
+        };
+        let ownership = GraphicsOwnership::from_owners(vec![
+            GraphicsTileOwner::Fixed,
+            GraphicsTileOwner::Fixed,
+        ]);
+        let options = IndexedBitmapImportOptions {
+            allocation_start: 0,
+            allocation_end: 2,
+            reuse_existing_tiles: false,
+            optimize_new_tiles: false,
+            allow_flipped_matches: false,
+            blank_tile: Some(1),
+        };
+
+        let result = IndexedBitmapImport::materialize_with_options(
+            8,
+            8,
+            &[0; 64],
+            &graphics,
+            &ownership,
+            &[true, false],
+            options,
+        )
+        .unwrap();
+
+        assert_eq!(result.placements[0].tile, 1);
+        assert_eq!(result.graphics, graphics);
+        assert_eq!(result.occupied, [true, false]);
+    }
+
+    #[test]
+    fn configured_blank_tile_is_bounded_by_the_graphics_workspace() {
+        let graphics = GraphicsFile4bpp {
+            tiles: vec![IndexedTile::new([0; 64])],
+        };
+        let options = IndexedBitmapImportOptions {
+            allocation_end: 1,
+            blank_tile: Some(1),
+            ..IndexedBitmapImportOptions::default()
+        };
+
+        let error = IndexedBitmapImport::materialize_with_options(
+            8,
+            8,
+            &[0; 64],
+            &graphics,
+            &GraphicsOwnership::editable(1),
+            &[false],
+            options,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error,
+            BitmapImportError::InvalidBlankTile { tile: 1, limit: 1 }
+        );
+    }
+
+    #[test]
     fn late_exhaustion_and_malformed_inputs_are_atomic() {
         let graphics = GraphicsFile4bpp {
             tiles: vec![IndexedTile::new([0; 64])],
@@ -455,6 +542,7 @@ mod tests {
                 reuse_existing_tiles: false,
                 optimize_new_tiles: false,
                 allow_flipped_matches: true,
+                blank_tile: None,
             },
         )
         .unwrap();
@@ -480,6 +568,7 @@ mod tests {
                 reuse_existing_tiles: false,
                 optimize_new_tiles: true,
                 allow_flipped_matches: true,
+                blank_tile: None,
             },
         )
         .unwrap();
@@ -505,6 +594,7 @@ mod tests {
                 reuse_existing_tiles: true,
                 optimize_new_tiles: false,
                 allow_flipped_matches: false,
+                blank_tile: None,
             },
         )
         .unwrap();

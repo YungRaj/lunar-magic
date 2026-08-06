@@ -4128,3 +4128,12 @@ modeled separately as Lunar Magic 3.63's checked, disabled, conversion-neutral p
 finds only its dialog load/store references, and the native UI mirrors that disabled state. The
 audit harness now normalizes all persistent checkboxes on every run so prior oracle sessions cannot
 silently contaminate option evidence.
+
+The native bitmap preview now exposes the complete recovered Other Options state: first and blank
+8×8 tile, first and reserved blank Map16 tile, new/existing 8×8 optimization, 16×16 deduplication,
+blank 8×8/16×16 shortcuts, and layer priority. Blank 8×8 inputs can reference the configured fixed
+tile without an allocation or ownership write. Blank 16×16 detection reads actual decoded pixels,
+then uses the configured reserved definition only in deduplicated mode. The original always checks
+all flip orientations when existing-tile optimization is enabled, so the native Rust dialog no
+longer presents a fabricated independent flip toggle. The Wine audit now captures the complete
+Other Options dialog and its control states on every run.

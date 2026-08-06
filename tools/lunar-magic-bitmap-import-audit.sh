@@ -212,6 +212,35 @@ done
 }
 
 restore_guard
+wine "$helper" "$target_executable" click 0x74 >/dev/null 2>&1
+other_dialog_ready=0
+attempt=0
+while [ "$attempt" -lt 200 ]; do
+    if wine "$helper" "$target_executable" list 2>/dev/null |
+        grep -q 'title=Bitmap Pasting Other Options'; then
+        other_dialog_ready=1
+        break
+    fi
+    attempt=$((attempt + 1))
+    sleep 0.025
+done
+[ "$other_dialog_ready" -eq 1 ] || {
+    echo "bitmap other-options dialog was not ready within 5 seconds" >&2
+    exit 1
+}
+wine "$helper" "$target_executable" dialog-values \
+    >"$output_dir/other-options.txt" 2>/dev/null
+wine "$helper" "$target_executable" list '#32770' 2>/dev/null |
+    sed -n '/title=Bitmap Pasting Other Options/,/title=Convert and Paste Bitmap/p' \
+    >"$output_dir/other-options-windows.txt"
+wine "$helper" "$target_executable" click 2 >/dev/null 2>&1
+first_graphics_tile=$(read_value 0x005e55e0 4)
+blank_graphics_tile=$(read_value 0x005e55ec 4)
+first_map16_tile=$(read_value 0x005e55e4 4)
+blank_map16_tile=$(read_value 0x005e55f0 4)
+other_option_flags=$(read_value 0x005e55f4 5)
+layer_priority=$(read_value 0x00e27b31 1)
+
 if [ "$reduction" = "popularity" ] || [ "$maximum_colors" -ne 128 ] ||
     [ "$maintain_detail" -ne 0 ] || [ "$allow_unmarked" -ne 1 ] ||
     [ "$exact_matches" -ne 1 ]; then
@@ -291,6 +320,12 @@ graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{prin
     printf 'maintain_detail\t%s\n' "$maintain_detail"
     printf 'allow_unmarked\t%s\n' "$allow_unmarked"
     printf 'exact_matches\t%s\n' "$exact_matches"
+    printf 'first_graphics_tile_le32\t%s\n' "$first_graphics_tile"
+    printf 'blank_graphics_tile_le32\t%s\n' "$blank_graphics_tile"
+    printf 'first_map16_tile_le32\t%s\n' "$first_map16_tile"
+    printf 'blank_map16_tile_le32\t%s\n' "$blank_map16_tile"
+    printf 'other_option_flags_f4_through_f8\t%s\n' "$other_option_flags"
+    printf 'layer_priority\t%s\n' "$layer_priority"
     printf 'palette_byte_differences\t%s\n' "$palette_differences"
     printf 'graphics_byte_differences\t%s\n' "$graphics_differences"
     printf 'palette_before_sha256\t%s\n' "$palette_before_sha"

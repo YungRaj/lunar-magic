@@ -39,6 +39,12 @@ pub struct Map16BitmapImportOptions {
     pub color: Option<BitmapPaletteColorOptions>,
     /// Reuse an earlier identical imported 16×16 definition instead of allocating another slot.
     pub deduplicate_map16: bool,
+    /// Map an all-blank 16×16 source block directly to `reserved_map16_tile` in deduplicated mode.
+    pub use_reserved_map16_for_blank: bool,
+    /// Global Map16 index excluded from ordinary allocation and optionally used for blank blocks.
+    pub reserved_map16_tile: usize,
+    /// First global Map16 index considered by the native blank-definition scan.
+    pub map16_allocation_start: usize,
     pub layer_priority: bool,
 }
 
@@ -3316,6 +3322,9 @@ mod tests {
                 },
                 color: None,
                 deduplicate_map16: true,
+                use_reserved_map16_for_blank: false,
+                reserved_map16_tile: 0,
+                map16_allocation_start: 0,
                 layer_priority: true,
             },
         )
@@ -3376,6 +3385,9 @@ mod tests {
                 },
                 color: Some(color),
                 deduplicate_map16: true,
+                use_reserved_map16_for_blank: false,
+                reserved_map16_tile: 0,
+                map16_allocation_start: 0,
                 layer_priority: false,
             },
         )

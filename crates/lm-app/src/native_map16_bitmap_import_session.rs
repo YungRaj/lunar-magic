@@ -26,7 +26,6 @@ pub struct NativeMap16BitmapImportSession {
     preview: Map16BitmapImportPreviewState,
     baseline_pages: Vec<lm_level::Map16Page>,
     level: usize,
-    start_map16_tile: usize,
     smw_map16: Option<lm_profile::LoadedSmwUsV1TransferredMap16>,
     smw_secondary_map16: Option<lm_profile::LoadedSmwUsV1SecondaryMap16>,
 }
@@ -96,6 +95,8 @@ impl NativeMap16BitmapImportSession {
                 baseline_pages.len()
             )));
         }
+        let mut options = native_map16_bitmap_import_options();
+        options.map16_allocation_start = request.start_map16_tile;
         let preview = Map16BitmapImportPreviewState::new(
             Map16BitmapImportInputs {
                 pixels: bitmap.pixels,
@@ -109,7 +110,7 @@ impl NativeMap16BitmapImportSession {
                 graphics_ownership: workspace.ownership.clone(),
                 occupied: workspace.occupied.clone(),
             },
-            native_map16_bitmap_import_options(),
+            options,
         )
         .map_err(NativeMap16BitmapImportSessionError::Import)?;
         Ok(Self {
@@ -119,7 +120,6 @@ impl NativeMap16BitmapImportSession {
             preview,
             baseline_pages,
             level: request.level,
-            start_map16_tile: request.start_map16_tile,
             smw_map16: None,
             smw_secondary_map16: None,
         })
@@ -184,6 +184,8 @@ impl NativeMap16BitmapImportSession {
                 baseline_pages.len()
             )));
         }
+        let mut options = native_map16_bitmap_import_options();
+        options.map16_allocation_start = request.start_map16_tile;
         let preview = Map16BitmapImportPreviewState::new(
             Map16BitmapImportInputs {
                 pixels: bitmap.pixels,
@@ -197,7 +199,7 @@ impl NativeMap16BitmapImportSession {
                 graphics_ownership: workspace.ownership.clone(),
                 occupied: workspace.occupied.clone(),
             },
-            native_map16_bitmap_import_options(),
+            options,
         )
         .map_err(NativeMap16BitmapImportSessionError::Import)?;
         Ok(Self {
@@ -207,7 +209,6 @@ impl NativeMap16BitmapImportSession {
             preview,
             baseline_pages,
             level: request.level,
-            start_map16_tile: request.start_map16_tile,
             smw_map16: Some(smw_map16),
             smw_secondary_map16: Some(smw_secondary_map16),
         })
@@ -586,7 +587,7 @@ impl NativeMap16BitmapImportSession {
             .iter()
             .flat_map(|page| page.tiles.iter().copied())
             .collect::<Vec<_>>();
-        let start = self.start_map16_tile;
+        let start = self.preview.options().map16_allocation_start;
         let mode = if self.preview.options().deduplicate_map16 {
             Map16BitmapAllocationMode::Deduplicated
         } else {
@@ -604,28 +605,34 @@ impl NativeMap16BitmapImportSession {
         };
         let reserved_sources = self
             .preview
-            .plan()
-            .map16_tiles
-            .iter()
-            .map(|tile| {
-                [
-                    tile.top_left,
-                    tile.top_right,
-                    tile.bottom_left,
-                    tile.bottom_right,
-                ]
-                .iter()
-                .all(|subtile| {
-                    !self
-                        .preview
-                        .plan()
-                        .occupied
-                        .get(usize::from(subtile.tile_number()))
-                        .copied()
-                        .unwrap_or(false)
-                })
+            .options()
+            .use_reserved_map16_for_blank
+            .then(|| {
+                self.preview
+                    .plan()
+                    .map16_tiles
+                    .iter()
+                    .map(|tile| {
+                        [
+                            tile.top_left,
+                            tile.top_right,
+                            tile.bottom_left,
+                            tile.bottom_right,
+                        ]
+                        .iter()
+                        .all(|subtile| {
+                            self.preview
+                                .plan()
+                                .graphics
+                                .tiles
+                                .get(usize::from(subtile.tile_number()))
+                                .is_some_and(|tile| tile.pixels().iter().all(|pixel| *pixel == 0))
+                        })
+                    })
+                    .collect::<Vec<_>>()
             })
-            .collect::<Vec<_>>();
+            .unwrap_or_default();
+        let reserved_map16_tile = self.preview.options().reserved_map16_tile;
         let allocation = allocate_bitmap_map16_tiles_with_reserved_sources(
             &mut definitions,
             &self.preview.plan().map16_tiles,
@@ -633,7 +640,7 @@ impl NativeMap16BitmapImportSession {
             Map16BitmapAllocationOptions {
                 start,
                 end,
-                reserved: 0x8000,
+                reserved: reserved_map16_tile,
                 mode,
             },
         )

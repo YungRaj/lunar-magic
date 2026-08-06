@@ -197,9 +197,13 @@ mod tests {
                 reuse_existing_tiles: true,
                 optimize_new_tiles: true,
                 allow_flipped_matches: true,
+                blank_tile: None,
             },
             color: None,
             deduplicate_map16: true,
+            use_reserved_map16_for_blank: false,
+            reserved_map16_tile: 0,
+            map16_allocation_start: 0,
             layer_priority: false,
         }
     }

@@ -180,6 +180,7 @@ impl RomMap16Editor {
                     return;
                 };
                 let mut options = session.preview().options();
+                let mut use_blank_graphics = options.graphics.blank_tile.is_some();
                 let mut changed = ui
                     .horizontal_wrapped(|ui| {
                         ui.checkbox(
@@ -193,8 +194,8 @@ impl RomMap16Editor {
                             )
                             .changed()
                             | ui.checkbox(
-                                &mut options.graphics.allow_flipped_matches,
-                                "Reuse flipped matches",
+                                &mut options.use_reserved_map16_for_blank,
+                                "Use reserved Map16 tile for blank blocks",
                             )
                             .changed()
                             | ui.checkbox(
@@ -206,6 +207,52 @@ impl RomMap16Editor {
                                 .changed()
                     })
                     .inner;
+                let blank_toggle_changed = ui
+                    .checkbox(
+                        &mut use_blank_graphics,
+                        "Use configured 8×8 tile for blank source tiles",
+                    )
+                    .changed();
+                if blank_toggle_changed {
+                    options.graphics.blank_tile = use_blank_graphics.then_some(0x0f8);
+                    changed = true;
+                }
+                ui.horizontal(|ui| {
+                    ui.label("First 8×8 tile");
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut options.graphics.allocation_start)
+                                .range(0..=0x2ff)
+                                .hexadecimal(3, false, true),
+                        )
+                        .changed();
+                    if let Some(blank_tile) = options.graphics.blank_tile.as_mut() {
+                        ui.label("Blank 8×8 tile");
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(blank_tile)
+                                    .range(0..=0x2ff)
+                                    .hexadecimal(3, false, true),
+                            )
+                            .changed();
+                    }
+                    ui.label("First Map16 tile");
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut options.map16_allocation_start)
+                                .range(0..=0xffff)
+                                .hexadecimal(4, false, true),
+                        )
+                        .changed();
+                    ui.label("Reserved Map16 tile");
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut options.reserved_map16_tile)
+                                .range(0..=0xffff)
+                                .hexadecimal(4, false, true),
+                        )
+                        .changed();
+                });
                 changed |= bitmap_multi_row_color_options(
                     ui,
                     &mut options.color,

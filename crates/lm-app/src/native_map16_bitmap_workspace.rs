@@ -33,9 +33,13 @@ pub fn native_map16_bitmap_import_options() -> Map16BitmapImportOptions {
             reuse_existing_tiles: true,
             optimize_new_tiles: true,
             allow_flipped_matches: true,
+            blank_tile: Some(NATIVE_MAP16_BITMAP_BLANK_TILE),
         },
         color: None,
         deduplicate_map16: true,
+        use_reserved_map16_for_blank: true,
+        reserved_map16_tile: 0x8000,
+        map16_allocation_start: 0x8200,
         layer_priority: false,
     }
 }
@@ -366,6 +370,39 @@ mod tests {
         .unwrap();
         assert_eq!(usize::from(imported.placements[0].tile), 0x200);
         assert!(imported.occupied[0x200]);
+
+        let blank = IndexedBitmapImport::materialize_with_options(
+            8,
+            8,
+            &[0; IndexedTile::PIXEL_COUNT],
+            &workspace.graphics,
+            &workspace.ownership,
+            &workspace.occupied,
+            native_map16_bitmap_import_options().graphics,
+        )
+        .unwrap();
+        assert_eq!(
+            usize::from(blank.placements[0].tile),
+            NATIVE_MAP16_BITMAP_BLANK_TILE
+        );
+        assert_eq!(blank.graphics, workspace.graphics);
+        assert_eq!(blank.occupied, workspace.occupied);
+    }
+
+    #[test]
+    fn native_options_match_every_recovered_other_options_default() {
+        let options = native_map16_bitmap_import_options();
+        assert_eq!(options.graphics.allocation_start, 0x200);
+        assert_eq!(options.graphics.allocation_end, 0x300);
+        assert_eq!(options.graphics.blank_tile, Some(0x0f8));
+        assert!(options.graphics.optimize_new_tiles);
+        assert!(options.graphics.reuse_existing_tiles);
+        assert!(options.graphics.allow_flipped_matches);
+        assert!(options.deduplicate_map16);
+        assert!(options.use_reserved_map16_for_blank);
+        assert_eq!(options.map16_allocation_start, 0x8200);
+        assert_eq!(options.reserved_map16_tile, 0x8000);
+        assert!(!options.layer_priority);
     }
 
     #[test]
