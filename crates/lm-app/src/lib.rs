@@ -229,7 +229,8 @@ pub use map16_page_document_controller::{
     Map16PageDocumentSaveSnapshot,
 };
 pub use mwl_batch_export::{
-    MwlBatchExportDocument, MwlBatchExportMode, export_smw_us_v1_installed_mwl_batch,
+    MwlBatchExportDocument, MwlBatchExportMode, export_builtin_smw_us_v1_mwl_batch,
+    export_builtin_smw_us_v1_mwl_batch_until, export_smw_us_v1_installed_mwl_batch,
     export_smw_us_v1_installed_mwl_batch_until, mwl_batch_output_path,
     native_level_is_in_expanded_area, publish_mwl_batch_new,
 };
