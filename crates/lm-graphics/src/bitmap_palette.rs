@@ -211,13 +211,16 @@ fn reduce_bitmap_palette_internal(
             }
         }
     };
-    let palette = Palette {
-        colors: colors.clone(),
-    };
-    let mut opaque_indices = palette
+    let opaque_indices = if options.maintain_detail {
+        maintain_detail_palette_indices(&opaque, &colors)?
+    } else {
+        Palette {
+            colors: colors.clone(),
+        }
         .quantize(&opaque)
         .ok_or(BitmapPaletteReductionError::EmptyOpaquePalette)?
-        .into_iter();
+    };
+    let mut opaque_indices = opaque_indices.into_iter();
     let indices = pixels
         .iter()
         .map(|pixel| {
@@ -237,6 +240,77 @@ fn reduce_bitmap_palette_internal(
         return Err(BitmapPaletteReductionError::IndexPlaneMismatch);
     }
     Ok(ReducedBitmapPalette { colors, indices })
+}
+
+fn maintain_detail_palette_indices(
+    opaque: &[Rgb8],
+    colors: &[Bgr555],
+) -> Result<Vec<usize>, BitmapPaletteReductionError> {
+    if colors.is_empty() {
+        return Err(BitmapPaletteReductionError::EmptyOpaquePalette);
+    }
+    let mut sources = opaque
+        .iter()
+        .map(|pixel| lunar_magic_bitmap_color(*pixel).0)
+        .collect::<Vec<_>>();
+    sources.sort_unstable();
+    sources.dedup();
+    let mut source_assignments = BTreeMap::<u16, usize>::new();
+    let mut palette_assigned = vec![false; colors.len()];
+    for (palette_index, color) in colors.iter().enumerate() {
+        if sources.binary_search(&color.0).is_ok() && !source_assignments.contains_key(&color.0) {
+            source_assignments.insert(color.0, palette_index);
+            palette_assigned[palette_index] = true;
+        }
+    }
+    loop {
+        let mut best = None::<(u32, usize, u16)>;
+        for (palette_index, color) in colors.iter().enumerate() {
+            if palette_assigned[palette_index] {
+                continue;
+            }
+            for source in &sources {
+                if source_assignments.contains_key(source) {
+                    continue;
+                }
+                let candidate = (
+                    lunar_magic_color_distance(color.0, *source),
+                    palette_index,
+                    *source,
+                );
+                if best.is_none_or(|current| candidate < current) {
+                    best = Some(candidate);
+                }
+            }
+        }
+        let Some((_, palette_index, source)) = best else {
+            break;
+        };
+        source_assignments.insert(source, palette_index);
+        palette_assigned[palette_index] = true;
+    }
+    for source in sources {
+        source_assignments.entry(source).or_insert_with(|| {
+            colors
+                .iter()
+                .enumerate()
+                .min_by_key(|(palette_index, color)| {
+                    (lunar_magic_color_distance(source, color.0), *palette_index)
+                })
+                .map(|(palette_index, _)| palette_index)
+                .unwrap_or(0)
+        });
+    }
+    opaque
+        .iter()
+        .map(|pixel| {
+            let source = lunar_magic_bitmap_color(*pixel).0;
+            source_assignments
+                .get(&source)
+                .copied()
+                .ok_or(BitmapPaletteReductionError::IndexOverflow)
+        })
+        .collect()
 }
 
 const fn lunar_magic_bitmap_channel(channel: u8) -> u16 {
@@ -1438,6 +1512,21 @@ mod tests {
         let exact_only = allocate_bitmap_palette_rows(&reduced, 8, 8, &original, &options).unwrap();
         assert_eq!(exact_only.generated_colors, 0);
         assert_eq!(exact_only.palette, original);
+    }
+
+    #[test]
+    fn maintain_detail_claims_one_distinct_source_color_per_palette_color() {
+        let opaque = [Bgr555(0).to_rgb8(), Bgr555(2).to_rgb8()];
+        let colors = [Bgr555(0), Bgr555(0x001f)];
+        let detailed = maintain_detail_palette_indices(&opaque, &colors).unwrap();
+        let nearest = Palette {
+            colors: colors.to_vec(),
+        }
+        .quantize(&opaque)
+        .unwrap();
+
+        assert_eq!(nearest, [0, 0]);
+        assert_eq!(detailed, [0, 1]);
     }
 
     #[test]

@@ -4103,6 +4103,9 @@ value itself.
 Multi-row allocation now includes Lunar Magic's previously missing default weighted partial-set
 extension. After exact-fit sets are exhausted, rows with capacity greedily choose uncovered sets by
 existing-color overlap and aggregate subset weight, then install their highest-weight missing
-colors. The recovered Maintain Detail control skips only this extension pass. A constrained
-four-color/three-slot test proves default allocation fills the two remaining entries, while Maintain
-Detail retains only the reusable exact color; both paths still complete final nearest-row mapping.
+colors. The recovered Maintain Detail control skips this extension pass and also changes the earlier
+global index assignment: exact source matches claim reduced-palette indexes first, after which each
+remaining palette color claims its globally nearest unused source color before ordinary nearest
+mapping. A constrained four-color/three-slot test proves default allocation fills the two remaining
+entries while Maintain Detail retains only the reusable exact color, and a separate two-color test
+proves the distinct-source claim prevents both source colors from collapsing to one palette index.
