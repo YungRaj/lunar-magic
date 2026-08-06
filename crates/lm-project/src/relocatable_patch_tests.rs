@@ -1,4 +1,5 @@
 use super::*;
+use crate::GraphicsCompression;
 use lm_rats::parse_at;
 
 fn plan() -> RelocatablePatchPlan {
@@ -118,6 +119,37 @@ fn replacement_reclaims_owned_block_reuses_space_and_undoes_as_one_batch() {
     assert_eq!(project.history.undo_len(), 1);
     project.undo().unwrap();
     assert_eq!(project.rom.logical_bytes(), original);
+}
+
+#[test]
+fn semantic_replacement_reclaims_reuses_and_preserves_history_kind() {
+    let mut bytes = vec![0xff; 0x1_0000];
+    let previous = FreeSpaceAllocator::new(&mut bytes, AllocationPolicy::lorom(0x8000..0x1_0000))
+        .allocate(&[0x44; 0x40])
+        .unwrap();
+    let original = bytes.clone();
+    let mut project = Project::new(RomImage::from_bytes(bytes).unwrap());
+    let kind = EditKind::GraphicsCompressionMigration {
+        source: GraphicsCompression::Lz3,
+        target: GraphicsCompression::Lz2,
+    };
+    let result = project
+        .replace_relocatable_patch_with_kind(
+            &plan(),
+            &RatsOwnershipManifest {
+                owned: vec![previous.clone()],
+                retained: Vec::new(),
+            },
+            0xff,
+            kind,
+        )
+        .unwrap();
+
+    assert_eq!(result.blocks[0].header_offset, previous.header_offset);
+    assert_eq!(project.history.undo_kind(), Some(kind));
+    project.undo().unwrap();
+    assert_eq!(project.rom.logical_bytes(), original);
+    assert_eq!(project.history.redo_kind(), Some(kind));
 }
 
 #[test]

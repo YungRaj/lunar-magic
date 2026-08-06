@@ -33,14 +33,7 @@ impl AppState {
         let checksum_field = identity.internal_header_offset + 0x1c;
         let allocation_range = match source_mode {
             lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original => 0x80_000..logical_len,
-            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3 => {
-                let target_len = match logical_len {
-                    0..0x20_0000 => 0x20_0000,
-                    0x20_0000..0x40_0000 => 0x40_0000,
-                    _ => return Err(AppError::GraphicsCompressionRuntimeUnavailable),
-                };
-                logical_len..target_len
-            }
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3 => 0x80_000..logical_len,
             lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed => {
                 return Err(AppError::GraphicsCompressionRuntimeUnavailable);
             }
@@ -59,24 +52,25 @@ impl AppState {
         ]);
         let plan = match source_mode {
             lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Original => {
-                lm_profile::smw_us_v1_lz2_speed_installation_plan(
+                Some(lm_profile::smw_us_v1_lz2_speed_installation_plan(
                     &project.rom,
                     allocation,
                     checksum_field,
-                )?
+                )?)
             }
-            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3 => {
-                lm_profile::smw_us_v1_lz2_speed_migration_plan(
-                    &project.rom,
-                    allocation,
-                    checksum_field,
-                )?
-            }
+            lm_profile::SmwUsV1GraphicsCompressionMode::Lz3 => None,
             lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed => unreachable!(),
         };
         if source_mode == lm_profile::SmwUsV1GraphicsCompressionMode::Lz3 {
-            project.install_relocatable_patch_with_kind(
-                &plan,
+            let replacement = lm_profile::smw_us_v1_compact_graphics_compression_migration_plan(
+                &project.rom,
+                checksum_field,
+                lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed,
+            )?;
+            project.replace_relocatable_patch_with_kind(
+                &replacement.plan,
+                &replacement.obsolete,
+                0xff,
                 lm_project::EditKind::GraphicsCompressionMigration {
                     source: lm_project::GraphicsCompression::Lz3,
                     target: lm_project::GraphicsCompression::Lz2,
@@ -86,7 +80,10 @@ impl AppState {
                 profile.graphics.compression = lm_project::GraphicsCompression::Lz2;
             }
         } else {
-            project.install_relocatable_patch(&plan)?;
+            project.install_relocatable_patch(
+                plan.as_ref()
+                    .expect("LZ2 Orig selects the runtime-only installation plan"),
+            )?;
         }
         self.advance_project_revision()?;
         let description = "Install SMW US LZ2 Speed graphics runtime".to_owned();

@@ -292,6 +292,31 @@ impl Project {
             .map_err(|error| RelocatablePatchReplacementError::Patch(error.into()))?;
         Ok(result)
     }
+
+    /// Reclaims explicitly owned obsolete blocks and installs their semantic replacement as one
+    /// history operation, preserving `kind` for application-level undo/redo state tracking.
+    pub fn replace_relocatable_patch_with_kind(
+        &mut self,
+        plan: &RelocatablePatchPlan,
+        obsolete: &RatsOwnershipManifest,
+        reclamation_fill: u8,
+        kind: EditKind,
+    ) -> Result<RelocatablePatchResult, RelocatablePatchReplacementError> {
+        let original = self.rom.logical_bytes().to_vec();
+        let reclamation = self
+            .plan_rats_reclamation(obsolete, reclamation_fill)
+            .map_err(RelocatablePatchReplacementError::Reclamation)?;
+        let mut reclaimed = original.clone();
+        for write in reclamation.writes {
+            let end = write.offset + write.bytes.len();
+            reclaimed[write.offset..end].copy_from_slice(&write.bytes);
+        }
+        let (staged, result) = stage_relocatable_patch(&reclaimed, plan)
+            .map_err(RelocatablePatchReplacementError::Patch)?;
+        commit_staged_with_kind(self, plan.description.clone(), &original, &staged, kind)
+            .map_err(|error| RelocatablePatchReplacementError::Patch(error.into()))?;
+        Ok(result)
+    }
 }
 
 fn stage_relocatable_patch(

@@ -355,6 +355,7 @@ mod tests {
                 .unwrap(),
             lm_profile::SmwUsV1GraphicsCompressionMode::Lz2Speed
         );
+        assert_eq!(app.project().unwrap().save_snapshot().len(), original.len());
         assert_eq!(app.project().unwrap().history.undo_len(), 1);
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
