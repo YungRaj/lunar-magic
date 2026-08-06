@@ -1,4 +1,4 @@
-use crate::{NativeSpriteStream, ObjectStream};
+use crate::{LegacyLevelHeader, NativeSpriteStream, ObjectStream};
 
 /// Selects the native level-screen extent used by Lunar Magic's image exporters.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,6 +61,26 @@ pub fn native_level_screen_count(
     u8::try_from(highest.min(31) + 1).unwrap_or(32)
 }
 
+/// Returns the native image extent while honoring the serialized five-bit header field.
+///
+/// Lunar Magic's stored-size exporter reads `LegacyLevelHeader::last_screen`; that value is
+/// independent of object transition records and can deliberately retain an otherwise empty tail.
+/// Auto mode continues to recompute the visible extent from objects and sprites.
+#[must_use]
+pub fn native_level_screen_count_with_header(
+    header: LegacyLevelHeader,
+    objects: &ObjectStream,
+    sprites: &NativeSpriteStream,
+    mode: LevelScreenExtentMode,
+) -> u8 {
+    match mode {
+        LevelScreenExtentMode::Stored => header.last_screen().saturating_add(1),
+        LevelScreenExtentMode::Auto => {
+            native_level_screen_count(objects, sprites, LevelScreenExtentMode::Auto)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +107,34 @@ mod tests {
         assert_eq!(
             native_level_screen_count(&objects, &sprites, LevelScreenExtentMode::Auto),
             6
+        );
+    }
+
+    #[test]
+    fn stored_image_extent_uses_header_instead_of_inferred_transitions() {
+        let header = LegacyLevelHeader::decode(&[0x13, 0, 0, 0, 0]).unwrap();
+        let objects = ObjectStream {
+            records: vec![ObjectRecord::new(vec![0x01, 0x12, 0x10]).unwrap()],
+        };
+        let sprites =
+            NativeSpriteStream::parse(&[0, 0xff], false, &SpriteLengthTable::standard()).unwrap();
+        assert_eq!(
+            native_level_screen_count_with_header(
+                header,
+                &objects,
+                &sprites,
+                LevelScreenExtentMode::Stored,
+            ),
+            20
+        );
+        assert_eq!(
+            native_level_screen_count_with_header(
+                header,
+                &objects,
+                &sprites,
+                LevelScreenExtentMode::Auto,
+            ),
+            1
         );
     }
 

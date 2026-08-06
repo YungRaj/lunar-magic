@@ -1559,9 +1559,13 @@ fn crop_level_image_canvas(
             mode.index
         ));
     }
-    let screens =
-        lm_level::native_level_screen_count(&level.layer1.objects, &level.sprites, extent_mode)
-            .min(mode.editor_major_screens);
+    let screens = lm_level::native_level_screen_count_with_header(
+        level.layer1.header,
+        &level.layer1.objects,
+        &level.sprites,
+        extent_mode,
+    )
+    .min(mode.editor_major_screens);
     let (width, height) = if mode.vertical {
         (canvas.width(), usize::from(screens) * 16 * 16)
     } else {
@@ -3391,7 +3395,7 @@ mod tests {
         LoadedLevelSlot {
             number: 0,
             layer1: LevelObjectData {
-                header: LegacyLevelHeader::decode(&[0, mode, 0, 0, 0]).unwrap(),
+                header: LegacyLevelHeader::decode(&[stored_screen, mode, 0, 0, 0]).unwrap(),
                 objects: ObjectStream {
                     records: vec![
                         ObjectRecord::new(vec![0x01, 0x12, 0x10]).unwrap(),

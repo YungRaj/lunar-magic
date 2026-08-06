@@ -142,7 +142,9 @@ pub use property_editing::{
     LayerDimensions, LegacyHeaderEdit, LevelLayer, LevelPropertyEdit, LevelPropertyEditError,
     TileCoordinate,
 };
-pub use screen_extent::{LevelScreenExtentMode, native_level_screen_count};
+pub use screen_extent::{
+    LevelScreenExtentMode, native_level_screen_count, native_level_screen_count_with_header,
+};
 pub use sprite::{SpriteRecord, SpriteStream, SpriteStreamError};
 pub use sprite_editing::{SpriteEdit, SpriteEditError, SpriteEditLimits};
 pub use sprite_placement::NativeSpritePlacement;
