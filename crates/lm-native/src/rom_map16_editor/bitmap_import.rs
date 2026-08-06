@@ -274,8 +274,6 @@ impl RomMap16Editor {
                 if changed {
                     match session.set_options(options.clone()) {
                         Ok(()) => {
-                            self.bitmap_map16_start =
-                                format!("{:04X}", options.map16_allocation_start);
                             self.bitmap_import_options = Some(options.clone());
                             self.bitmap_converted_texture = None;
                         }
@@ -448,13 +446,6 @@ impl RomMap16Editor {
             });
         });
         ui.small("Enter hexadecimal GFX/ExGFX file numbers. Blank slots cannot store new tiles.");
-        ui.add_enabled_ui(!busy, |ui| {
-            ui.horizontal(|ui| {
-                ui.add(egui::Slider::new(&mut self.bitmap_palette_row, 0..=7).text("Palette row"));
-                ui.label("First Map16 tile");
-                ui.text_edit_singleline(&mut self.bitmap_map16_start);
-            });
-        });
         let supported = self.workspace.is_some();
         if ui
             .add_enabled(
@@ -500,12 +491,16 @@ impl RomMap16Editor {
     }
 
     fn capture_bitmap_import(&self, revision: u64) -> Result<PendingBitmapImport, String> {
+        let start_map16_tile = self
+            .bitmap_import_options
+            .as_ref()
+            .map_or_else(lm_app::native_map16_bitmap_import_options, Clone::clone)
+            .map16_allocation_start;
         capture_bitmap_import(
             revision,
             &self.preview_level,
-            &self.bitmap_map16_start,
+            start_map16_tile,
             [&self.bitmap_extra_slot_4, &self.bitmap_extra_slot_5],
-            self.bitmap_palette_row,
         )
     }
 
@@ -526,9 +521,9 @@ fn validate_bitmap_revision(current: u64, requested: u64) -> Result<(), String> 
 
 /// Reconstructs Lunar Magic's process-global dialog state for a newly opened bitmap preview.
 ///
-/// The launch form is an explicit edit of the same native global exposed as "First Map16 tile"
-/// in Other Options, so its request-captured value wins while every other accepted option is
-/// retained across cancel, import, Map16-window close, and the next preview.
+/// The request captures the process-global First Map16 value before asynchronous bitmap loading;
+/// every other accepted option is retained across cancel, import, Map16-window close, and the next
+/// preview as well.
 fn bitmap_options_for_session(
     previous: Option<&lm_app::Map16BitmapImportOptions>,
     start_map16_tile: usize,
@@ -543,17 +538,14 @@ fn bitmap_options_for_session(
 fn capture_bitmap_import(
     revision: u64,
     level: &str,
-    start_map16_tile: &str,
+    start_map16_tile: usize,
     extra_graphics: [&str; 2],
-    palette_row: u8,
 ) -> Result<PendingBitmapImport, String> {
     let level = u16::from_str_radix(level.trim(), 16)
         .map_err(|_| "bitmap import level must be hexadecimal")?;
     if level > 0x01ff {
         return Err("bitmap import level must be between 000 and 1FF".into());
     }
-    let start_map16_tile = usize::from_str_radix(start_map16_tile.trim(), 16)
-        .map_err(|_| "first Map16 tile must be hexadecimal")?;
     Ok(PendingBitmapImport {
         revision,
         level: usize::from(level),
@@ -562,7 +554,9 @@ fn capture_bitmap_import(
             parse_optional_graphics(extra_graphics[0], "GFX slot 4")?,
             parse_optional_graphics(extra_graphics[1], "GFX slot 5")?,
         ],
-        palette_row,
+        // Native previews always use the eight-row allocator. This compatibility field remains
+        // meaningful only to the portable single-row preparation API.
+        palette_row: 4,
     })
 }
 
@@ -881,18 +875,37 @@ mod tests {
     #[test]
     fn bitmap_request_captures_every_typed_target_before_loading() {
         assert_eq!(
-            capture_bitmap_import(17, " 105 ", " 234 ", [" 7f ", "100"], 6).unwrap(),
+            capture_bitmap_import(17, " 105 ", 0x234, [" 7f ", "100"]).unwrap(),
             PendingBitmapImport {
                 revision: 17,
                 level: 0x105,
                 start_map16_tile: 0x234,
                 extra_graphics: [Some(0x7f), Some(0x100)],
-                palette_row: 6,
+                palette_row: 4,
             }
         );
-        assert!(capture_bitmap_import(17, "200", "234", ["", ""], 6).is_err());
-        assert!(capture_bitmap_import(17, "105", "nope", ["", ""], 6).is_err());
-        assert!(capture_bitmap_import(17, "105", "234", ["xyz", ""], 6).is_err());
+        assert!(capture_bitmap_import(17, "200", 0x234, ["", ""]).is_err());
+        assert!(capture_bitmap_import(17, "105", 0x234, ["xyz", ""]).is_err());
+    }
+
+    #[test]
+    fn first_native_preview_uses_8200_and_later_previews_use_the_retained_option() {
+        let mut editor = RomMap16Editor {
+            preview_level: "105".into(),
+            ..RomMap16Editor::default()
+        };
+        assert_eq!(
+            editor.capture_bitmap_import(7).unwrap().start_map16_tile,
+            0x8200
+        );
+
+        let mut retained = lm_app::native_map16_bitmap_import_options();
+        retained.map16_allocation_start = 0x8345;
+        editor.bitmap_import_options = Some(retained);
+        assert_eq!(
+            editor.capture_bitmap_import(8).unwrap().start_map16_tile,
+            0x8345
+        );
     }
 
     #[test]

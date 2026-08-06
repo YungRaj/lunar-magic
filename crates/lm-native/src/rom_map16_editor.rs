@@ -153,8 +153,6 @@ pub(crate) struct RomMap16Editor {
     bitmap_session: Option<lm_app::NativeMap16BitmapImportSession>,
     bitmap_extra_slot_4: String,
     bitmap_extra_slot_5: String,
-    bitmap_palette_row: u8,
-    bitmap_map16_start: String,
     bitmap_original_texture: Option<egui::TextureHandle>,
     bitmap_converted_texture: Option<egui::TextureHandle>,
     bitmap_preview_zoom: u8,
