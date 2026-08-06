@@ -2546,10 +2546,11 @@ specification, and shell modules. Bounded canonical history retains the exact sp
 interpretation across monotonic undo and redo.
 Native secondary-exit encoding likewise requires all 8,192 records and rejects destination levels,
 screen/X/Y coordinates, or overlapping flag bits that cannot be represented by the six parallel
-planes. Packed MWL exit records use the same checked field boundary and reject indexes above
-`$1FFF`, matching the recovered guard in Lunar Magic's import loop. The retained Wine oracle
-imports and re-exports both endpoint indexes, reopens their installed table values, then proves an
-empty MWL set clears both records and leaves a checksum-valid ROM.
+planes. Packed MWL records retain their complete 16-bit index and opaque byte 7 for lossless file
+editing. Installed binary-MWL import separately matches Lunar Magic: it consumes at most 8,192
+records, skips indexes above `$1FFF`, applies duplicate keys last-wins, and ignores byte 7. The
+retained Wine oracle exercises all four rules, reopens both endpoint indexes from the installed
+table, then proves an empty MWL set clears both records and leaves a checksum-valid ROM.
 
 `LMLEVEL2` is the complete revision-independent semantic level bundle. It includes legacy and
 expanded headers, Layer 1 and Layer 2 objects and raw tilemaps, lossless variable-width sprites,

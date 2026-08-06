@@ -5,7 +5,6 @@ use super::{
 
 impl MwlSecondaryExit {
     pub const ENCODED_LEN: usize = 8;
-    pub const MAX_INDEX: u16 = 0x1fff;
 
     /// Decodes one MWL packed exit and retargets it to the imported level.
     ///
@@ -21,14 +20,8 @@ impl MwlSecondaryExit {
                 target_level,
             ));
         }
-        let index = u16::from_le_bytes([bytes[0], bytes[1]]);
-        if index > Self::MAX_INDEX {
-            return Err(MwlSecondaryExitDecodeError::SecondaryExitIndexOutOfRange(
-                index,
-            ));
-        }
         Ok(Self {
-            index,
+            index: u16::from_le_bytes([bytes[0], bytes[1]]),
             exit: SecondaryExit {
                 destination_level: target_level,
                 position_and_method: bytes[2],
@@ -49,7 +42,6 @@ impl MwlSecondaryExit {
     ///
     /// Rejects any secondary-exit field that cannot be represented by its native bit field.
     pub fn encode(self) -> Result<[u8; Self::ENCODED_LEN], SecondaryExitEncodingError> {
-        validate_index(self.index, 0)?;
         validate_secondary_exit(&self.exit, 0)?;
         let index = self.index.to_le_bytes();
         Ok([
@@ -100,22 +92,11 @@ impl MwlSecondaryExit {
     pub fn encode_all(records: &[Self]) -> Result<Vec<u8>, SecondaryExitEncodingError> {
         let mut bytes = Vec::with_capacity(mwl_secondary_exit_encoded_len(records.len())?);
         for (entry, record) in records.iter().copied().enumerate() {
-            validate_index(record.index, entry)?;
             validate_secondary_exit(&record.exit, entry)?;
             bytes.extend_from_slice(&record.encode()?);
         }
         Ok(bytes)
     }
-}
-
-fn validate_index(index: u16, entry: usize) -> Result<(), SecondaryExitEncodingError> {
-    if index > MwlSecondaryExit::MAX_INDEX {
-        return Err(SecondaryExitEncodingError::SecondaryExitIndexOutOfRange {
-            entry,
-            value: index,
-        });
-    }
-    Ok(())
 }
 
 pub(super) fn mwl_secondary_exit_encoded_len(

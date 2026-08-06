@@ -100,37 +100,60 @@ fn lunar_magic_imports_reexports_and_clears_secondary_exit_boundaries() {
 
     run_lunar_magic(&executable, "-ExportLevel", &rom, &source_mwl);
     let mut edited = decode_level(&source_mwl);
-    let expected = vec![
+    let minimum = MwlSecondaryExit {
+        index: 0,
+        exit: SecondaryExit {
+            destination_level: 0x105,
+            position_and_method: 0x00,
+            screen: 0x00,
+            x: 0x00,
+            y: 0x00,
+            destination_flags: 0x00,
+            x_and_overworld_flags: 0x00,
+            additional_flags: 0x00,
+        },
+        reserved: 0,
+    };
+    let maximum = MwlSecondaryExit {
+        index: 0x1fff,
+        exit: SecondaryExit {
+            destination_level: 0x105,
+            position_and_method: 0xff,
+            screen: 0x1f,
+            x: 0x0f,
+            y: 0x07,
+            destination_flags: 0xf7,
+            x_and_overworld_flags: 0xf0,
+            additional_flags: 0xff,
+        },
+        reserved: 0,
+    };
+    let expected = vec![minimum, maximum];
+    edited.secondary_exits = vec![
+        minimum,
         MwlSecondaryExit {
-            index: 0,
+            index: 0x1fff,
             exit: SecondaryExit {
                 destination_level: 0x105,
-                position_and_method: 0x00,
-                screen: 0x00,
-                x: 0x00,
-                y: 0x00,
-                destination_flags: 0x00,
-                x_and_overworld_flags: 0x00,
-                additional_flags: 0x00,
+                position_and_method: 0x55,
+                ..SecondaryExit::default()
             },
-            reserved: 0,
+            reserved: 0xaa,
         },
         MwlSecondaryExit {
-            index: MwlSecondaryExit::MAX_INDEX,
+            index: 0x2000,
             exit: SecondaryExit {
                 destination_level: 0x105,
-                position_and_method: 0xff,
-                screen: 0x1f,
-                x: 0x0f,
-                y: 0x07,
-                destination_flags: 0xf7,
-                x_and_overworld_flags: 0xf0,
-                additional_flags: 0xff,
+                position_and_method: 0x77,
+                ..SecondaryExit::default()
             },
-            reserved: 0,
+            reserved: 0xbb,
+        },
+        MwlSecondaryExit {
+            reserved: 0xcc,
+            ..maximum
         },
     ];
-    edited.secondary_exits = expected.clone();
     write_level(&edited_mwl, &edited);
 
     run_lunar_magic(&executable, "-ImportLevel", &rom, &edited_mwl);

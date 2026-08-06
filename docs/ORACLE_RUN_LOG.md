@@ -65,11 +65,12 @@ The executable, pristine ROM, and Wine identities are unchanged from the core au
 cargo test -p lm-app --test secondary_exit_wine \
   lunar_magic_imports_reexports_and_clears_secondary_exit_boundaries \
   -- --ignored --exact --nocapture
-1 passed; 0 failed; finished in 46.35s
+1 passed; 0 failed; latest expanded canonicalization run finished in 44.41s
 ```
 
 The gate imported records at both valid table endpoints (`$0000` and `$1FFF`) with minimum and
-maximum packed fields, required exact Lunar Magic re-export, and independently reopened both
-installed ROM-table entries through Rust. It then imported an empty secondary-exit set, required
-Lunar Magic to export an empty set, reopened both endpoint entries as native zero records, and
-verified the final ROM checksum.
+maximum packed fields. Its source also contains a duplicate `$1FFF` record, nonzero byte-7 values,
+and an invalid `$2000` record; Lunar Magic must retain the last valid duplicate, clear byte 7, and
+skip the invalid key. The test independently reopens both installed ROM-table entries through Rust.
+It then imports an empty secondary-exit set, requires Lunar Magic to export an empty set, reopens
+both endpoint entries as native zero records, and verifies the final ROM checksum.

@@ -391,7 +391,7 @@ fn save_mwl_secondary_exits(
             *exit = lm_level::SecondaryExit::default();
         }
     }
-    overlay_mwl_secondary_exits(&mut table.entries, &source.secondary_exits)?;
+    overlay_mwl_secondary_exits(&mut table.entries, &source.secondary_exits);
     let allocation =
         lm_profile::smw_us_v1_secondary_exit_allocation_policy(project.rom.logical_len());
     project
@@ -403,21 +403,80 @@ fn save_mwl_secondary_exits(
 fn overlay_mwl_secondary_exits(
     entries: &mut [lm_level::SecondaryExit],
     records: &[lm_level::MwlSecondaryExit],
-) -> Result<(), NativeLevelAssetsControllerError> {
-    let mut seen = vec![false; entries.len()];
-    for record in records {
+) {
+    for record in records
+        .iter()
+        .take(lm_level::SecondaryExitTable::ENTRY_COUNT)
+    {
         let index = usize::from(record.index);
-        let Some(entry) = entries.get_mut(index) else {
-            return Err(NativeLevelAssetsControllerError::MwlSecondaryExitIndex(
-                index,
-            ));
-        };
-        if std::mem::replace(&mut seen[index], true) {
-            return Err(NativeLevelAssetsControllerError::MwlSecondaryExitDuplicate(
-                index,
-            ));
+        if let Some(entry) = entries.get_mut(index) {
+            *entry = record.exit;
         }
-        *entry = record.exit;
     }
-    Ok(())
+}
+
+#[cfg(test)]
+mod secondary_exit_import_tests {
+    use super::overlay_mwl_secondary_exits;
+    use lm_level::{MwlSecondaryExit, SecondaryExit, SecondaryExitTable};
+
+    #[test]
+    fn binary_mwl_secondary_exit_overlay_skips_bad_keys_and_uses_last_duplicate() {
+        let mut entries = vec![SecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT];
+        let first = SecondaryExit {
+            position_and_method: 1,
+            ..SecondaryExit::default()
+        };
+        let last = SecondaryExit {
+            position_and_method: 2,
+            ..SecondaryExit::default()
+        };
+        overlay_mwl_secondary_exits(
+            &mut entries,
+            &[
+                MwlSecondaryExit {
+                    index: 7,
+                    exit: first,
+                    reserved: 0xaa,
+                },
+                MwlSecondaryExit {
+                    index: 0x2000,
+                    exit: SecondaryExit {
+                        position_and_method: 3,
+                        ..SecondaryExit::default()
+                    },
+                    reserved: 0xbb,
+                },
+                MwlSecondaryExit {
+                    index: 7,
+                    exit: last,
+                    reserved: 0xcc,
+                },
+            ],
+        );
+        assert_eq!(entries[7], last);
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| **entry != SecondaryExit::default())
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn binary_mwl_secondary_exit_overlay_obeys_original_record_count_cap() {
+        let mut entries = vec![SecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT];
+        let mut records = vec![MwlSecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT];
+        records.push(MwlSecondaryExit {
+            index: 9,
+            exit: SecondaryExit {
+                position_and_method: 1,
+                ..SecondaryExit::default()
+            },
+            reserved: 0,
+        });
+        overlay_mwl_secondary_exits(&mut entries, &records);
+        assert_eq!(entries[9], SecondaryExit::default());
+    }
 }
