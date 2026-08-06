@@ -44,6 +44,22 @@ fn layer2_selection_contains(
         && (anchor_y.min(cursor_y)..=anchor_y.max(cursor_y)).contains(&y)
 }
 
+fn select_layer2_tile_cell(
+    panels: &mut AggregatePanels,
+    x: usize,
+    y: usize,
+    index: usize,
+    word: u16,
+    extend: bool,
+) {
+    if !extend || panels.layer2_tile_anchor.is_none() {
+        panels.layer2_tile_anchor = Some((x, y));
+    }
+    panels.layer2_tile_cursor = Some((x, y));
+    panels.layer2_tile_index = index;
+    panels.layer2_tile = format!("{word:04X}");
+}
+
 fn layer2_word_edits(
     fallback_index: usize,
     anchor: Option<(usize, usize)>,
@@ -901,12 +917,7 @@ impl AggregatePanels {
                                 );
                                 if response.clicked() {
                                     let extend = ui.input(|input| input.modifiers.shift);
-                                    if !extend || self.layer2_tile_anchor.is_none() {
-                                        self.layer2_tile_anchor = Some((x, y));
-                                    }
-                                    self.layer2_tile_cursor = Some((x, y));
-                                    self.layer2_tile_index = index;
-                                    self.layer2_tile = format!("{word:04X}");
+                                    select_layer2_tile_cell(self, x, y, index, word, extend);
                                 }
                                 response.on_hover_text(format!(
                                     "Canvas ({x}, {y}) · storage index ${index:03X} · word ${word:04X}"
@@ -1119,5 +1130,154 @@ mod tests {
             );
         }
         assert!(layer2_resize_edits(&bytes, None, None, Layer2ResizeEdge::Right, true).is_err());
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn complete_canvas_gesture_sequence_composes_every_rectangle_tool() {
+        fn encoded(words: &[u16]) -> Vec<u8> {
+            words.iter().flat_map(|word| word.to_le_bytes()).collect()
+        }
+
+        fn apply(words: &mut [u16], edits: &[(usize, u16)]) {
+            for &(index, word) in edits {
+                words[index] = word;
+            }
+        }
+
+        let mut panels = AggregatePanels::default();
+        let mut words = vec![0_u16; 1024];
+        for (offset, word) in [0x1001_u16, 0x2002, 0x3003, 0x4004].into_iter().enumerate() {
+            let x = 2 + offset % 2;
+            let y = 2 + offset / 2;
+            words[lm_level::native_layer2_tilemap_index(x, y).unwrap()] = word;
+        }
+
+        // A click anchors the rectangle; Shift-click extends it and loads that complete word.
+        let first = lm_level::native_layer2_tilemap_index(2, 2).unwrap();
+        select_layer2_tile_cell(&mut panels, 2, 2, first, words[first], false);
+        let last = lm_level::native_layer2_tilemap_index(3, 3).unwrap();
+        select_layer2_tile_cell(&mut panels, 3, 3, last, words[last], true);
+        assert_eq!(panels.layer2_tile_anchor, Some((2, 2)));
+        assert_eq!(panels.layer2_tile_cursor, Some((3, 3)));
+        assert_eq!(panels.layer2_tile_index, last);
+        assert_eq!(panels.layer2_tile, "4004");
+
+        let copied = layer2_selection_words(
+            &encoded(&words),
+            panels.layer2_tile_anchor,
+            panels.layer2_tile_cursor,
+        )
+        .unwrap();
+        assert_eq!(copied, (2, 2, vec![0x1001, 0x2002, 0x3003, 0x4004]));
+
+        // Fill preserves the complete 16-bit word, then paste restores visual row-major data.
+        let fill = layer2_word_edits(
+            panels.layer2_tile_index,
+            panels.layer2_tile_anchor,
+            panels.layer2_tile_cursor,
+            0x8abc,
+        );
+        apply(&mut words, &fill);
+        assert!(
+            layer2_selection_words(
+                &encoded(&words),
+                panels.layer2_tile_anchor,
+                panels.layer2_tile_cursor,
+            )
+            .unwrap()
+            .2
+            .iter()
+            .all(|word| *word == 0x8abc)
+        );
+        apply(
+            &mut words,
+            &layer2_paste_edits(Some((2, 2)), copied.0, copied.1, &copied.2).unwrap(),
+        );
+
+        // Move retains complete words. Resize updates the gesture's live endpoints and repeats
+        // Lunar Magic's normalized 12-bit Map16 pattern.
+        let (edits, anchor, cursor) = layer2_move_edits(
+            &encoded(&words),
+            panels.layer2_tile_anchor,
+            panels.layer2_tile_cursor,
+            1,
+            1,
+        )
+        .unwrap();
+        apply(&mut words, &edits);
+        panels.layer2_tile_anchor = Some(anchor);
+        panels.layer2_tile_cursor = Some(cursor);
+        assert_eq!((anchor, cursor), ((3, 3), (4, 4)));
+        let (edits, anchor, cursor) = layer2_resize_edits(
+            &encoded(&words),
+            panels.layer2_tile_anchor,
+            panels.layer2_tile_cursor,
+            Layer2ResizeEdge::Right,
+            true,
+        )
+        .unwrap();
+        apply(&mut words, &edits);
+        panels.layer2_tile_anchor = Some(anchor);
+        panels.layer2_tile_cursor = Some(cursor);
+        assert_eq!((anchor, cursor), ((3, 3), (5, 4)));
+        assert_eq!(
+            layer2_selection_words(
+                &encoded(&words),
+                panels.layer2_tile_anchor,
+                panels.layer2_tile_cursor,
+            )
+            .unwrap()
+            .2,
+            vec![0x0001, 0x0002, 0x0001, 0x0003, 0x0004, 0x0003]
+        );
+
+        // Cut clears the full resized selection. Pattern flood then consumes the captured copy
+        // through the same recovered 12-bit normalization boundary as resize.
+        apply(
+            &mut words,
+            &layer2_cut_edits(panels.layer2_tile_anchor, panels.layer2_tile_cursor).unwrap(),
+        );
+        assert!(
+            layer2_selection_words(
+                &encoded(&words),
+                panels.layer2_tile_anchor,
+                panels.layer2_tile_cursor,
+            )
+            .unwrap()
+            .2
+            .iter()
+            .all(|word| *word == 0)
+        );
+        let pattern = Layer2FillPattern {
+            width: copied.0,
+            height: copied.1,
+            words: copied.2,
+        };
+        let edits = layer2_pattern_flood_edits(&encoded(&words), Some((3, 3)), &pattern).unwrap();
+        apply(&mut words, &edits);
+        // The zero region reaches the canvas origin, so the captured 2×2 pattern is anchored
+        // there rather than at the clicked cell.
+        assert_eq!(
+            words[lm_level::native_layer2_tilemap_index(3, 3).unwrap()],
+            4
+        );
+        assert_eq!(
+            words[lm_level::native_layer2_tilemap_index(4, 3).unwrap()],
+            3
+        );
+
+        // Ordinary flood uses the cursor's four-connected complete-word region and masks the
+        // chosen replacement to Lunar Magic's 12-bit Map16 namespace.
+        let edits = layer2_flood_edits(&encoded(&words), Some((3, 3)), 0xf321).unwrap();
+        assert!(!edits.is_empty());
+        assert!(edits.iter().all(|(_, word)| *word == 0x0321));
+
+        // A new unmodified click starts a new 1×1 rectangle instead of retaining Shift state.
+        let replacement = lm_level::native_layer2_tilemap_index(7, 8).unwrap();
+        select_layer2_tile_cell(&mut panels, 7, 8, replacement, 0xbeef, false);
+        assert_eq!(panels.layer2_tile_anchor, Some((7, 8)));
+        assert_eq!(panels.layer2_tile_cursor, Some((7, 8)));
+        assert_eq!(panels.layer2_tile, "BEEF");
     }
 }
