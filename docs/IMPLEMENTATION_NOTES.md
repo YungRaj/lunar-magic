@@ -4165,3 +4165,10 @@ one graphics workspace plus one 256-definition page in native 32×32 quadrant ge
 is left as a placeholder because the eventual installed-ROM application must preserve the target
 definition's value. UI loading, allocation, and the multi-domain transaction remain a subsequent
 milestone and are not counted as complete parity yet.
+
+Applying a materialized SNES tileset to a destination page has two explicit modes. Direct mode
+copies only the four graphics words at every index, retaining all 256 destination Acts Like values.
+Optimized mode performs stable first-occurrence deduplication across the imported page, counts exact
+four-word `$1004` blanks on the selected page before writing, and rejects without mutation unless
+every unique definition fits. Unique definitions then occupy blank indexes in ascending order, and
+all 256 sources receive page-qualified global assignments for the later background index-grid paste.

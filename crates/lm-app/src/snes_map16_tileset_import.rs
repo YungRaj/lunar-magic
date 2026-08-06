@@ -4,6 +4,8 @@ use lm_graphics::{Bgr555, GraphicsFile4bpp, IndexedTile};
 use lm_level::{Map16Page, Map16Tile, Subtile};
 use std::fmt;
 
+use crate::is_lunar_magic_blank_map16_tile;
+
 pub const SNES_TILESET_GRAPHICS_LEN: usize = 0x8000;
 pub const SNES_TILESET_MAP_LEN: usize = 0x800;
 pub const SNES_TILESET_PALETTE_ROW_LEN: usize = 0x20;
@@ -20,6 +22,19 @@ pub struct SnesMap16TilesetImport {
 pub struct MaterializedSnesMap16Tileset {
     pub graphics: GraphicsFile4bpp,
     pub page: Map16Page,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SnesMap16DefinitionPlacement {
+    Direct,
+    DeduplicatedIntoBlankDefinitions,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AppliedSnesMap16Page {
+    /// Global Map16 index selected for each of the 256 imported source definitions.
+    pub assignments: Vec<u16>,
+    pub written_definitions: usize,
 }
 
 impl SnesMap16TilesetImport {
@@ -115,6 +130,94 @@ impl SnesMap16TilesetImport {
     }
 }
 
+impl MaterializedSnesMap16Tileset {
+    /// Applies the materialized definitions to one existing page while retaining Acts Like.
+    ///
+    /// The optimized path reproduces Lunar Magic's failure-atomic, page-local stable
+    /// deduplication: equal four-word definitions share the first source's assignment, unique
+    /// definitions occupy blank targets in ascending order, and an insufficient blank count leaves
+    /// the page unchanged. Returned global assignments are the index grid used by the original
+    /// background-page paste path.
+    pub fn apply_to_page(
+        &self,
+        target: &mut Map16Page,
+        page_number: u8,
+        placement: SnesMap16DefinitionPlacement,
+    ) -> Result<AppliedSnesMap16Page, SnesMap16TilesetImportError> {
+        if self.page.tiles.len() != Map16Page::TILE_COUNT
+            || target.tiles.len() != Map16Page::TILE_COUNT
+        {
+            return Err(SnesMap16TilesetImportError::InternalShape);
+        }
+        let page_base = u16::from(page_number) << 8;
+        match placement {
+            SnesMap16DefinitionPlacement::Direct => {
+                for (destination, source) in target.tiles.iter_mut().zip(&self.page.tiles) {
+                    copy_graphics(destination, *source);
+                }
+                Ok(AppliedSnesMap16Page {
+                    assignments: (0_u16..=255).map(|index| page_base | index).collect(),
+                    written_definitions: Map16Page::TILE_COUNT,
+                })
+            }
+            SnesMap16DefinitionPlacement::DeduplicatedIntoBlankDefinitions => {
+                let mut canonical_sources = Vec::with_capacity(Map16Page::TILE_COUNT);
+                let mut source_to_canonical = Vec::with_capacity(Map16Page::TILE_COUNT);
+                for source in &self.page.tiles {
+                    let canonical = canonical_sources
+                        .iter()
+                        .position(|candidate| same_graphics(*candidate, *source))
+                        .unwrap_or_else(|| {
+                            canonical_sources.push(*source);
+                            canonical_sources.len() - 1
+                        });
+                    source_to_canonical.push(canonical);
+                }
+                let blanks: Vec<_> = target
+                    .tiles
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .filter_map(|(index, tile)| {
+                        is_lunar_magic_blank_map16_tile(tile).then_some(index)
+                    })
+                    .collect();
+                if blanks.len() < canonical_sources.len() {
+                    return Err(SnesMap16TilesetImportError::NotEnoughBlankDefinitions {
+                        available: blanks.len(),
+                        needed: canonical_sources.len(),
+                    });
+                }
+                for (&destination, source) in blanks.iter().zip(&canonical_sources) {
+                    copy_graphics(&mut target.tiles[destination], *source);
+                }
+                let assignments = source_to_canonical
+                    .into_iter()
+                    .map(|canonical| page_base | u16::try_from(blanks[canonical]).unwrap())
+                    .collect();
+                Ok(AppliedSnesMap16Page {
+                    assignments,
+                    written_definitions: canonical_sources.len(),
+                })
+            }
+        }
+    }
+}
+
+const fn same_graphics(left: Map16Tile, right: Map16Tile) -> bool {
+    left.top_left.0 == right.top_left.0
+        && left.top_right.0 == right.top_right.0
+        && left.bottom_left.0 == right.bottom_left.0
+        && left.bottom_right.0 == right.bottom_right.0
+}
+
+const fn copy_graphics(target: &mut Map16Tile, source: Map16Tile) {
+    target.top_left = source.top_left;
+    target.top_right = source.top_right;
+    target.bottom_left = source.bottom_left;
+    target.bottom_right = source.bottom_right;
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SnesMap16TilesetImportError {
     GraphicsTooLong(usize),
@@ -122,6 +225,7 @@ pub enum SnesMap16TilesetImportError {
     PaletteRowLength(usize),
     Graphics(String),
     RemapTarget { source: usize, destination: usize },
+    NotEnoughBlankDefinitions { available: usize, needed: usize },
     InternalShape,
 }
 
@@ -136,6 +240,7 @@ impl std::error::Error for SnesMap16TilesetImportError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::LUNAR_MAGIC_BLANK_MAP16_WORD;
 
     fn encoded_tile(fill: u8) -> Vec<u8> {
         GraphicsFile4bpp {
@@ -147,6 +252,21 @@ mod tests {
 
     fn tilemap(words: impl IntoIterator<Item = u16>) -> Vec<u8> {
         words.into_iter().flat_map(u16::to_le_bytes).collect()
+    }
+
+    fn blank_page() -> Map16Page {
+        Map16Page::new(
+            (0_u16..256)
+                .map(|acts_like| Map16Tile {
+                    top_left: Subtile(LUNAR_MAGIC_BLANK_MAP16_WORD),
+                    top_right: Subtile(LUNAR_MAGIC_BLANK_MAP16_WORD),
+                    bottom_left: Subtile(LUNAR_MAGIC_BLANK_MAP16_WORD),
+                    bottom_right: Subtile(LUNAR_MAGIC_BLANK_MAP16_WORD),
+                    acts_like,
+                })
+                .collect(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -209,5 +329,73 @@ mod tests {
         assert!(SnesMap16TilesetImport::decode(&vec![0; 0x8001], &vec![0; 0x800], None).is_err());
         assert!(SnesMap16TilesetImport::decode(&[], &vec![0; 0x7ff], None).is_err());
         assert!(SnesMap16TilesetImport::decode(&[], &vec![0; 0x800], Some(&[0; 31])).is_err());
+    }
+
+    #[test]
+    fn direct_page_application_replaces_only_graphics_and_returns_global_index_grid() {
+        let decoded =
+            SnesMap16TilesetImport::decode(&encoded_tile(3), &tilemap(vec![0x6400; 0x400]), None)
+                .unwrap();
+        let materialized = decoded
+            .materialize(&std::array::from_fn(|index| index as u16))
+            .unwrap();
+        let mut target = blank_page();
+        let result = materialized
+            .apply_to_page(&mut target, 0x82, SnesMap16DefinitionPlacement::Direct)
+            .unwrap();
+        assert_eq!(result.assignments[0], 0x8200);
+        assert_eq!(result.assignments[255], 0x82ff);
+        assert_eq!(result.written_definitions, 256);
+        assert_eq!(target.tiles[17].top_left.0, 0x6400);
+        assert_eq!(target.tiles[17].acts_like, 17);
+    }
+
+    #[test]
+    fn optimized_page_application_is_stable_deduplicated_and_failure_atomic() {
+        let mut words = vec![0_u16; 0x400];
+        // Definition one differs from definition zero in its top-left quadrant only.
+        words[2] = 1;
+        let decoded = SnesMap16TilesetImport::decode(
+            &[encoded_tile(1), encoded_tile(2)].concat(),
+            &tilemap(words),
+            None,
+        )
+        .unwrap();
+        let materialized = decoded
+            .materialize(&std::array::from_fn(|index| index as u16))
+            .unwrap();
+        let mut target = blank_page();
+        target.tiles[0].top_left = Subtile(0x1234);
+        let result = materialized
+            .apply_to_page(
+                &mut target,
+                3,
+                SnesMap16DefinitionPlacement::DeduplicatedIntoBlankDefinitions,
+            )
+            .unwrap();
+        assert_eq!(result.written_definitions, 2);
+        assert_eq!(result.assignments[0], 0x0301);
+        assert_eq!(result.assignments[1], 0x0302);
+        assert_eq!(result.assignments[2], 0x0301);
+        assert_eq!(target.tiles[1].acts_like, 1);
+        assert_eq!(target.tiles[2].acts_like, 2);
+
+        let mut insufficient = blank_page();
+        for tile in insufficient.tiles.iter_mut().skip(1) {
+            tile.top_left = Subtile(0x2222);
+        }
+        let before = insufficient.clone();
+        assert_eq!(
+            materialized.apply_to_page(
+                &mut insufficient,
+                0,
+                SnesMap16DefinitionPlacement::DeduplicatedIntoBlankDefinitions,
+            ),
+            Err(SnesMap16TilesetImportError::NotEnoughBlankDefinitions {
+                available: 1,
+                needed: 2,
+            })
+        );
+        assert_eq!(insufficient, before);
     }
 }

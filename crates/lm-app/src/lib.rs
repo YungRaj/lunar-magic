@@ -309,8 +309,9 @@ pub use smw_map16_controller::{
 };
 pub use snapshot::{ControllerSnapshot, ProfiledControllerSnapshot};
 pub use snes_map16_tileset_import::{
-    MaterializedSnesMap16Tileset, SNES_TILESET_GRAPHICS_LEN, SNES_TILESET_MAP_LEN,
-    SNES_TILESET_PALETTE_ROW_LEN, SnesMap16TilesetImport, SnesMap16TilesetImportError,
+    AppliedSnesMap16Page, MaterializedSnesMap16Tileset, SNES_TILESET_GRAPHICS_LEN,
+    SNES_TILESET_MAP_LEN, SNES_TILESET_PALETTE_ROW_LEN, SnesMap16DefinitionPlacement,
+    SnesMap16TilesetImport, SnesMap16TilesetImportError,
 };
 pub use ssc_sidecar_controller::{
     SscSidecarController, SscSidecarControllerError, SscSidecarSaveSnapshot,
