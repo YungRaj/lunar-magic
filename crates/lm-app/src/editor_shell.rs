@@ -307,8 +307,13 @@ fn export_mwl_levels(
     template: &Path,
     mode: MwlBatchExportMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let profiled = app.profiled_controller_snapshot()?;
-    let documents = export_smw_us_v1_installed_mwl_batch(&profiled, mode)?;
+    let documents = match app.profiled_controller_snapshot() {
+        Ok(profiled) => export_smw_us_v1_installed_mwl_batch(&profiled, mode)?,
+        Err(lm_app::AppError::NoRevisionProfile) => {
+            lm_app::export_builtin_smw_us_v1_mwl_batch(&app.controller_snapshot()?, mode)?
+        }
+        Err(error) => return Err(error.into()),
+    };
     publish_mwl_batch_new(template, &documents)?;
     println!(
         "{} levels have been exported from the ROM using {}",
