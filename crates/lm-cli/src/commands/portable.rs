@@ -136,6 +136,7 @@ fn execute_scene_tilemap(command: &Command) -> Result<bool, Box<dyn std::error::
 
 fn execute_specialized(command: &Command) -> Result<bool, Box<dyn std::error::Error>> {
     Ok(crate::dsc_sidecar::execute_command(command)?
+        || crate::native_overworld_appearance_file::execute_command(command)?
         || crate::native_map16_sidecar::execute_command(command)?
         || crate::lm16_map16_file::execute_command(command)?
         || crate::ownership_file::execute_command(command)?

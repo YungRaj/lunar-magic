@@ -482,6 +482,12 @@ pub enum Command {
         normalized_output: Option<PathBuf>,
         observation: Option<PathBuf>,
     },
+    NativeOverworldAppearanceFile {
+        definitions: PathBuf,
+        sprite_map16: PathBuf,
+        normalized_outputs: Option<(PathBuf, PathBuf)>,
+        observation: Option<PathBuf>,
+    },
     CustomObjectLibrary {
         data: PathBuf,
         descriptions: PathBuf,

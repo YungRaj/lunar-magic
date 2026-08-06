@@ -4274,3 +4274,12 @@ span; add/remove/apply replaces exactly one family in one revision, and canonica
 reversed or out-of-band span without value or history mutation. Map16 composition controls can move
 the selected 16x16 part one position backward or forward in retained painter order. Focused form
 tests load maximum-width range fields without narrowing.
+
+`native-overworld-appearance-file` brings the same lossless pair to the built CLI. It boundedly
+decodes both distinct inputs, optionally publishes canonical `.sscov` and exact-prefix `.s16ov`
+outputs as one create-new batch, and can add one semantic observation to that same atomic group.
+The observation addresses every tooltip flag/text, shadow, label, ordered tile part, signed offset,
+translucency flag, graphics/palette range field, loaded Map16 prefix length, nonzero entry, and exact
+prefix digest. All input/output/observation paths must be pairwise distinct. A built-process test
+round-trips native-only fields through Unicode paths, while malformed or oversized input publishes
+nothing.

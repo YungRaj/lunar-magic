@@ -31,6 +31,7 @@ mod observe_mwl_optional_assets;
 mod observe_native_level;
 mod observe_native_level_assets;
 mod observe_native_map16_sidecar;
+mod observe_native_overworld_appearances;
 mod observe_overworld;
 mod observe_overworld_layer3_settings;
 mod observe_rats;
@@ -96,6 +97,7 @@ pub use observe_mwl_optional_assets::observe_mwl_optional_assets;
 pub use observe_native_level::observe_native_level;
 pub use observe_native_level_assets::observe_native_level_assets;
 pub use observe_native_map16_sidecar::{observe_m16_sidecar, observe_s16_sidecar};
+pub use observe_native_overworld_appearances::observe_native_overworld_appearances;
 pub use observe_overworld::{
     observe_overworld, observe_overworld_messages, observe_overworld_metadata,
     observe_overworld_paths, observe_overworld_sprites,
