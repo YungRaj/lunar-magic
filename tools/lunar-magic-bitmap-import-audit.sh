@@ -20,6 +20,10 @@ usage() {
     echo "  LM_BITMAP_LAYER_PRIORITY: enable imported-tile priority, 0 or 1 (default: 0)" >&2
     echo "  LM_BITMAP_USE_BLANK_8X8: use configured blank 8x8 tile, 0 or 1 (default: 1)" >&2
     echo "  LM_BITMAP_USE_BLANK_16X16: use configured blank 16x16 tile, 0 or 1 (default: 1)" >&2
+    echo "  LM_BITMAP_FIRST_8X8_TILE: hexadecimal first graphics tile (default: 200)" >&2
+    echo "  LM_BITMAP_BLANK_8X8_TILE: hexadecimal blank graphics tile (default: 0F8)" >&2
+    echo "  LM_BITMAP_FIRST_MAP16_TILE: hexadecimal first Map16 tile (default: 8200)" >&2
+    echo "  LM_BITMAP_BLANK_MAP16_TILE: hexadecimal reserved blank Map16 tile (default: 8000)" >&2
     exit 2
 }
 
@@ -43,6 +47,10 @@ optimize_16x16=${LM_BITMAP_OPTIMIZE_16X16:-1}
 layer_priority=${LM_BITMAP_LAYER_PRIORITY:-0}
 use_blank_8x8=${LM_BITMAP_USE_BLANK_8X8:-1}
 use_blank_16x16=${LM_BITMAP_USE_BLANK_16X16:-1}
+first_8x8_tile=${LM_BITMAP_FIRST_8X8_TILE:-200}
+blank_8x8_tile=${LM_BITMAP_BLANK_8X8_TILE:-0F8}
+first_map16_tile=${LM_BITMAP_FIRST_MAP16_TILE:-8200}
+blank_map16_tile=${LM_BITMAP_BLANK_MAP16_TILE:-8000}
 helper="$output_dir/bin/wine-window-command.exe"
 paste_log="$output_dir/paste.log"
 paste_pid=
@@ -110,6 +118,26 @@ for bitmap_other_flag in "$optimize_8x8" "$reuse_existing_8x8" "$optimize_16x16"
             ;;
     esac
 done
+validate_hex_option() {
+    option_name=$1
+    option_value=$2
+    option_maximum=$3
+    case "$option_value" in
+        ''|*[!0-9a-fA-F]*)
+            echo "$option_name must be an unsigned hexadecimal value" >&2
+            exit 2
+            ;;
+    esac
+    option_decimal=$(printf '%d' "0x$option_value")
+    if [ "$option_decimal" -gt "$option_maximum" ]; then
+        echo "$option_name exceeds its native hexadecimal range" >&2
+        exit 2
+    fi
+}
+validate_hex_option LM_BITMAP_FIRST_8X8_TILE "$first_8x8_tile" 767
+validate_hex_option LM_BITMAP_BLANK_8X8_TILE "$blank_8x8_tile" 767
+validate_hex_option LM_BITMAP_FIRST_MAP16_TILE "$first_map16_tile" 65535
+validate_hex_option LM_BITMAP_BLANK_MAP16_TILE "$blank_map16_tile" 65535
 
 [ -f "$bitmap" ] || {
     echo "bitmap does not exist: $bitmap" >&2
@@ -270,16 +298,20 @@ set_checkbox 0x0066 "$optimize_16x16"
 set_checkbox 0x006b "$layer_priority"
 set_checkbox 0x0068 "$use_blank_8x8"
 set_checkbox 0x006d "$use_blank_16x16"
+wine "$helper" "$target_executable" set-text "0x0067,$first_8x8_tile" >/dev/null 2>&1
+wine "$helper" "$target_executable" set-text "0x0069,$blank_8x8_tile" >/dev/null 2>&1
+wine "$helper" "$target_executable" set-text "0x006c,$first_map16_tile" >/dev/null 2>&1
+wine "$helper" "$target_executable" set-text "0x006e,$blank_map16_tile" >/dev/null 2>&1
 wine "$helper" "$target_executable" dialog-values \
     >"$output_dir/other-options.txt" 2>/dev/null
 wine "$helper" "$target_executable" list '#32770' 2>/dev/null |
     sed -n '/title=Bitmap Pasting Other Options/,/title=Convert and Paste Bitmap/p' \
     >"$output_dir/other-options-windows.txt"
 wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
-first_graphics_tile=$(read_value 0x005e55e0 4)
-blank_graphics_tile=$(read_value 0x005e55ec 4)
-first_map16_tile=$(read_value 0x005e55e4 4)
-blank_map16_tile=$(read_value 0x005e55f0 4)
+observed_first_graphics_tile=$(read_value 0x005e55e0 4)
+observed_blank_graphics_tile=$(read_value 0x005e55ec 4)
+observed_first_map16_tile=$(read_value 0x005e55e4 4)
+observed_blank_map16_tile=$(read_value 0x005e55f0 4)
 other_option_flags=$(read_value 0x005e55f4 5)
 observed_layer_priority=$(read_value 0x00e27b31 1)
 
@@ -355,10 +387,14 @@ graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{prin
     printf 'requested_layer_priority\t%s\n' "$layer_priority"
     printf 'use_blank_8x8\t%s\n' "$use_blank_8x8"
     printf 'use_blank_16x16\t%s\n' "$use_blank_16x16"
-    printf 'first_graphics_tile_le32\t%s\n' "$first_graphics_tile"
-    printf 'blank_graphics_tile_le32\t%s\n' "$blank_graphics_tile"
-    printf 'first_map16_tile_le32\t%s\n' "$first_map16_tile"
-    printf 'blank_map16_tile_le32\t%s\n' "$blank_map16_tile"
+    printf 'requested_first_8x8_tile_hex\t%s\n' "$first_8x8_tile"
+    printf 'requested_blank_8x8_tile_hex\t%s\n' "$blank_8x8_tile"
+    printf 'requested_first_map16_tile_hex\t%s\n' "$first_map16_tile"
+    printf 'requested_blank_map16_tile_hex\t%s\n' "$blank_map16_tile"
+    printf 'observed_first_graphics_tile_le32\t%s\n' "$observed_first_graphics_tile"
+    printf 'observed_blank_graphics_tile_le32\t%s\n' "$observed_blank_graphics_tile"
+    printf 'observed_first_map16_tile_le32\t%s\n' "$observed_first_map16_tile"
+    printf 'observed_blank_map16_tile_le32\t%s\n' "$observed_blank_map16_tile"
     printf 'other_option_flags_f4_through_f8\t%s\n' "$other_option_flags"
     printf 'observed_layer_priority\t%s\n' "$observed_layer_priority"
     printf 'palette_byte_differences\t%s\n' "$palette_differences"

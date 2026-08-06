@@ -3374,3 +3374,8 @@ requested Boolean states before accepting Bitmap Pasting Other Options. The reta
 capture observed `DAT_005E55F4..DAT_005E55F8 = 00 00 00 00 00` and
 `DAT_00E27B31 = 01`, directly confirming that each checkbox owns the documented byte and that the
 dialog's OK path persists all six choices before conversion.
+Edit controls `$67/$69/$6C/$6E` own first 8×8, blank 8×8, first Map16, and reserved blank Map16.
+The live `$220/$0F9/$8300/$8001` submission produced globals `$00000220/$000000F9/$00008300/
+$00008001`; the changed graphics digest also proves the first-tile value reached conversion rather
+than merely repainting the dialog. The audit validates the native 10-bit graphics and 16-bit Map16
+ranges before launching Wine and records requested and observed values separately.

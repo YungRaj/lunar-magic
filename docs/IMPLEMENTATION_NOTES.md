@@ -4150,3 +4150,7 @@ photographing the defaults. Its manifest records requested new/existing 8×8 opt
 deduplication, layer priority, and both blank shortcuts alongside the observed five-byte native
 flag block and priority byte. An all-inverted live capture proves all six widgets accepted their
 requested states and the corresponding globals became `00 00 00 00 00` plus priority `01`.
+The same oracle now drives the four bounded hexadecimal edit controls. A nondefault live capture
+submitted first/blank 8×8 values `$220/$0F9` and first/reserved Map16 values `$8300/$8001`; the
+four documented globals reopened as little-endian `00000220`, `000000F9`, `00008300`, and
+`00008001` respectively, and conversion allocated graphics from the requested `$220` boundary.
