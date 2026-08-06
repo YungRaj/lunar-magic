@@ -525,7 +525,7 @@ impl VanillaLevelEditor {
                                 self.object_list(ui);
                                 self.object_editor(ui, custom_objects, custom_map16);
                             });
-                        egui::CollapsingHeader::new("Sprites")
+                        egui::CollapsingHeader::new("Enemies and sprites")
                             .id_salt("vanilla-sprite-tools")
                             .show(ui, |ui| {
                                 self.sprite_list(ui);
@@ -4179,7 +4179,7 @@ impl VanillaLevelEditor {
         };
         let count = controller.level().sprites.tokens.len();
         let placements = controller.level().sprites.native_placements();
-        egui::CollapsingHeader::new(format!("Existing sprite records ({count})"))
+        egui::CollapsingHeader::new(format!("Edit existing enemies and sprites ({count})"))
             .id_salt("vanilla-existing-sprites")
             .default_open(false)
             .show(ui, |ui| {
@@ -4233,7 +4233,7 @@ impl VanillaLevelEditor {
             .controller
             .as_ref()
             .map_or(0, |controller| controller.level().sprites.tokens.len());
-        ui.label("Native sprite stream");
+        ui.label("Enemies and sprites stored in this level");
         self.sprite_catalog(ui);
         self.custom_sprite_catalog(ui, custom_sprites, external_assets, custom_map16);
         self.sprite_form_controls(ui);
@@ -4348,7 +4348,7 @@ impl VanillaLevelEditor {
     }
 
     fn sprite_catalog(&mut self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Add standard sprite visually")
+        egui::CollapsingHeader::new("Add new enemies and sprites")
             .id_salt("vanilla-standard-sprite-catalog")
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
@@ -4421,7 +4421,7 @@ impl VanillaLevelEditor {
         let Some(custom_sprites) = custom_sprites else {
             return;
         };
-        egui::CollapsingHeader::new("Add custom SSC sprite visually")
+        egui::CollapsingHeader::new("Add custom enemies and sprites")
             .id_salt("vanilla-custom-sprite-catalog")
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
