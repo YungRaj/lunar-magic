@@ -5,6 +5,7 @@ mod credits_tilemap_patch;
 mod exanimation_feature_io;
 mod exanimation_io;
 mod exanimation_slot_options_io;
+mod exlorom_conversion;
 mod expanded_level_mode_io;
 mod expanded_settings_io;
 mod graphics_io;
@@ -96,6 +97,7 @@ pub use exanimation_slot_options_io::{
     ExAnimationSlotOptionIoError, ExAnimationSlotOptionRomLayout, ExAnimationSlotOptionSaveOptions,
     LoadedExAnimationSlotOptions,
 };
+pub use exlorom_conversion::{EXLOROM_CONVERSION_TARGET_LEN, ExLoRomConversionError};
 pub use expanded_level_mode_io::{ExpandedLevelModeIoError, ExpandedLevelModeLocator};
 pub use expanded_settings_io::{ExpandedLevelSettingsIoError, ExpandedLevelSettingsLayout};
 pub use graphics_io::{

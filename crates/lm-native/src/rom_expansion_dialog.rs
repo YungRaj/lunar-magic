@@ -1,7 +1,7 @@
 use crate::level_editor_forms;
 use eframe::egui;
 use lm_app::{AppState, Command, RomExpansionCommand};
-use lm_rom::RomImage;
+use lm_rom::{Mapper, RomImage};
 
 const LUNAR_MAGIC_LOROM_TARGETS: [usize; 3] = [0x20_0000, 0x30_0000, 0x40_0000];
 
@@ -11,6 +11,8 @@ pub(crate) struct RomExpansionDialog {
     current_logical_len: usize,
     target: String,
     fill: String,
+    source_mapper: Option<Mapper>,
+    confirm_exlorom: bool,
     error: Option<String>,
 }
 
@@ -20,12 +22,14 @@ impl RomExpansionDialog {
             Ok(snapshot) => match RomImage::from_bytes(snapshot.rom_bytes) {
                 Ok(image) => {
                     self.current_logical_len = image.logical_len();
+                    self.source_mapper = Some(snapshot.identity.mapper);
                     self.target = format!("{:X}", suggested_target(image.logical_len()));
                     // ExpandRomBackingStore at $004A7390 grows the original backing store through
                     // ZeroRomRange. Keep the advanced field visible, but default the installed
                     // workflow to Lunar Magic's exact fill rather than allocator-friendly $FF.
                     self.fill = "00".into();
                     self.open = true;
+                    self.confirm_exlorom = false;
                     self.error = None;
                 }
                 Err(error) => self.error = Some(error.to_string()),
@@ -61,6 +65,28 @@ impl RomExpansionDialog {
                             }
                         }
                     });
+                    ui.separator();
+                    ui.heading("64-Mbit ExLoROM");
+                    ui.label(
+                        "Uses Lunar Magic's recovered mapper conversion, including relocation, \
+                         compatibility metadata, inaccessible-bank locks, and checksum preservation.",
+                    );
+                    let exlorom_eligible = exlorom_eligible(
+                        self.source_mapper,
+                        self.current_logical_len,
+                    );
+                    if ui
+                        .add_enabled(
+                            exlorom_eligible,
+                            egui::Button::new("Convert to 64-Mbit ExLoROM…"),
+                        )
+                        .clicked()
+                    {
+                        self.confirm_exlorom = true;
+                    }
+                    if !exlorom_eligible {
+                        ui.weak("Requires a checksum-valid 512 KiB–4 MiB SMW LoROM.");
+                    }
                     ui.horizontal(|ui| {
                         ui.label("Target");
                         ui.text_edit_singleline(&mut self.target);
@@ -84,6 +110,32 @@ impl RomExpansionDialog {
                     });
                 });
         }
+        if self.confirm_exlorom {
+            egui::Window::new("64 Mbit ExLoROM Expansion Warning")
+                .collapsible(false)
+                .resizable(false)
+                .show(context, |ui| {
+                    ui.colored_label(
+                        egui::Color32::YELLOW,
+                        "This changes the ROM mapper and relocates ROM data.",
+                    );
+                    ui.label(
+                        "Some external patches and tools may not support 64-Mbit ExLoROM files. \
+                         Save a backup before distributing or applying third-party patches.",
+                    );
+                    ui.label("The conversion is a single undoable operation in this editor.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            self.confirm_exlorom = false;
+                        }
+                        if ui.button("Convert ROM").clicked() {
+                            command = Some(Command::ConvertRomTo64MbitExLoRom {
+                                expected_revision: app.project_revision(),
+                            });
+                        }
+                    });
+                });
+        }
         if let Some(error) = self.error.clone() {
             egui::Window::new("ROM expansion error").show(context, |ui| {
                 ui.label(error);
@@ -97,6 +149,7 @@ impl RomExpansionDialog {
 
     pub(crate) fn commit_succeeded(&mut self) {
         self.open = false;
+        self.confirm_exlorom = false;
     }
 }
 
@@ -120,6 +173,10 @@ fn suggested_target(current: usize) -> usize {
         .into_iter()
         .find(|&target| target > current)
         .unwrap_or(current)
+}
+
+fn exlorom_eligible(mapper: Option<Mapper>, logical_len: usize) -> bool {
+    mapper == Some(Mapper::LoRom) && (0x80_000..=0x40_0000).contains(&logical_len)
 }
 
 #[cfg(test)]
@@ -156,5 +213,18 @@ mod tests {
         assert_eq!(dialog.current_logical_len, 0x80_000);
         assert_eq!(dialog.target, "200000");
         assert_eq!(dialog.fill, "00");
+        assert!(exlorom_eligible(
+            dialog.source_mapper,
+            dialog.current_logical_len
+        ));
+    }
+
+    #[test]
+    fn exlorom_action_rejects_wrong_mapper_and_out_of_range_sources() {
+        assert!(exlorom_eligible(Some(Mapper::LoRom), 0x80_000));
+        assert!(exlorom_eligible(Some(Mapper::LoRom), 0x40_0000));
+        assert!(!exlorom_eligible(Some(Mapper::LoRom), 0x40_8000));
+        assert!(!exlorom_eligible(Some(Mapper::ExLoRom), 0x40_0000));
+        assert!(!exlorom_eligible(None, 0x80_000));
     }
 }

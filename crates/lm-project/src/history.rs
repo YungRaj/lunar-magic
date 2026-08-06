@@ -5,6 +5,10 @@ use lm_rom::{COPIER_HEADER_LEN, RomError, RomImage};
 pub enum EditKind {
     #[default]
     Ordinary,
+    MapperConversion {
+        source: lm_rom::Mapper,
+        target: lm_rom::Mapper,
+    },
     GraphicsCompressionMigration {
         source: GraphicsCompression,
         target: GraphicsCompression,

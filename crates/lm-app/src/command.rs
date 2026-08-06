@@ -219,6 +219,10 @@ pub enum Command {
     },
     /// Expands the logical ROM and repairs its checksum as one project history operation.
     ExpandRom(RomExpansionCommand),
+    /// Converts a qualified SMW LoROM using Lunar Magic's recovered 64-Mbit ExLoROM transform.
+    ConvertRomTo64MbitExLoRom {
+        expected_revision: u64,
+    },
     /// Permanently applies Lunar Magic's level-access restriction migration.
     RestrictLevelAccess {
         rev: u64,

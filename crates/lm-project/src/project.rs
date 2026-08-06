@@ -98,9 +98,10 @@ impl Project {
     ///
     /// Returns a ROM error while preserving retryable history state when an edit cannot revert.
     pub fn undo(&mut self) -> Result<bool, lm_rom::RomError> {
+        let kind = self.history.undo_kind();
         let changed = self.history.undo(&mut self.rom)?;
         if changed {
-            self.synchronize_identity_checksums();
+            self.synchronize_identity_after_history(kind);
         }
         Ok(changed)
     }
@@ -111,11 +112,22 @@ impl Project {
     ///
     /// Returns a ROM error while preserving retryable history state when an edit cannot apply.
     pub fn redo(&mut self) -> Result<bool, lm_rom::RomError> {
+        let kind = self.history.redo_kind();
         let changed = self.history.redo(&mut self.rom)?;
         if changed {
-            self.synchronize_identity_checksums();
+            self.synchronize_identity_after_history(kind);
         }
         Ok(changed)
+    }
+
+    fn synchronize_identity_after_history(&mut self, kind: Option<EditKind>) {
+        if matches!(kind, Some(EditKind::MapperConversion { .. }))
+            && let Ok(identity) = detect_identity(&self.rom)
+        {
+            self.identity = Some(identity);
+            return;
+        }
+        self.synchronize_identity_checksums();
     }
 
     /// Applies a group of ROM writes as one atomic, undoable user operation.

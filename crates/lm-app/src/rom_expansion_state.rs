@@ -1,6 +1,31 @@
 use crate::{AppError, AppState, FrontendEffect, RomExpansionCommand};
 
 impl AppState {
+    pub(crate) fn convert_rom_to_64_mbit_exlorom(
+        &mut self,
+        expected_revision: u64,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if expected_revision != self.project_revision {
+            return Err(AppError::StaleProjectRevision {
+                expected: expected_revision,
+                actual: self.project_revision,
+            });
+        }
+        self.ensure_project_revision_capacity()?;
+        self.project
+            .as_mut()
+            .ok_or(AppError::NoProject)?
+            .convert_to_64_mbit_exlorom()?;
+        self.advance_project_revision()?;
+        let description = "Convert ROM to 64-Mbit ExLoROM".to_owned();
+        self.status.clone_from(&description);
+        Ok(vec![FrontendEffect::ProjectChanged {
+            description,
+            mode: self.mode,
+            revision: self.project_revision,
+        }])
+    }
+
     /// Expands the open ROM through the revision-checked project transaction boundary.
     ///
     /// # Errors
@@ -47,6 +72,7 @@ mod tests {
     use super::*;
     use crate::{Command, EditorMode, RomExpansionCommand};
     use lm_rom::{Mapper, RomImage, compute_snes_checksum, detect_identity};
+    use std::{fs, path::PathBuf};
 
     fn fixture(headered: bool) -> Vec<u8> {
         let mut logical = vec![0x31; 0x8000];
@@ -73,6 +99,47 @@ mod tests {
             fill: 0xff,
             checksum_field: 0x7fdc,
         })
+    }
+
+    fn pristine_smw() -> Vec<u8> {
+        fs::read(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("sysLMRestore/smwOrig.smc"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn exlorom_conversion_advances_revision_and_reopens_with_the_target_mapper() {
+        let mut app = AppState::default();
+        app.load_rom(pristine_smw()).unwrap();
+        let effects = app
+            .dispatch(Command::ConvertRomTo64MbitExLoRom {
+                expected_revision: 0,
+            })
+            .unwrap();
+        assert_eq!(effects.len(), 1);
+        assert_eq!(app.project_revision(), 1);
+        assert_eq!(app.project().unwrap().rom.logical_len(), 0x80_0000);
+        assert_eq!(
+            app.project().unwrap().identity.as_ref().unwrap().mapper,
+            Mapper::ExLoRom
+        );
+        let reopened = RomImage::from_bytes(app.project().unwrap().save_snapshot()).unwrap();
+        let identity = detect_identity(&reopened).unwrap();
+        assert_eq!(identity.mapper, Mapper::ExLoRom);
+        assert!(identity.checksum_matches());
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(
+            app.project().unwrap().identity.as_ref().unwrap().mapper,
+            Mapper::LoRom
+        );
+        app.dispatch(Command::Redo).unwrap();
+        assert_eq!(
+            app.project().unwrap().identity.as_ref().unwrap().mapper,
+            Mapper::ExLoRom
+        );
     }
 
     #[test]

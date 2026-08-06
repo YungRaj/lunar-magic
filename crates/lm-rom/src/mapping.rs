@@ -14,7 +14,13 @@ pub const MAPPER_BANK_LEN: usize = 0x8000;
 pub fn mapper_supports_image_len(mapper: Mapper, logical_len: usize) -> bool {
     logical_len != 0
         && logical_len % MAPPER_BANK_LEN == 0
-        && pc_to_snes(mapper, logical_len - 1).is_ok()
+        && match mapper {
+            // A 64-Mbit ExLoROM file physically includes the final two 32-KiB banks even though
+            // CPU banks $7E/$7F are Work RAM and those offsets cannot become payload pointers.
+            // Lunar Magic reserves both physical banks with explicit NULL-bank RATS locks.
+            Mapper::ExLoRom => logical_len <= 0x0080_0000,
+            Mapper::LoRom | Mapper::Sa1 => pc_to_snes(mapper, logical_len - 1).is_ok(),
+        }
 }
 
 /// Converts a 24-bit SNES bus address to a headerless file offset.
@@ -225,9 +231,11 @@ mod tests {
             Mapper::ExLoRom,
             EXLOROM_ADDRESSABLE_LEN
         ));
-        assert!(!mapper_supports_image_len(
+        assert!(mapper_supports_image_len(
             Mapper::ExLoRom,
             EXLOROM_ADDRESSABLE_LEN + MAPPER_BANK_LEN
         ));
+        assert!(mapper_supports_image_len(Mapper::ExLoRom, 0x0080_0000));
+        assert!(!mapper_supports_image_len(Mapper::ExLoRom, 0x0080_8000));
     }
 }
