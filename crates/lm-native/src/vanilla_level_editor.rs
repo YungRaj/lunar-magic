@@ -4197,60 +4197,72 @@ impl VanillaLevelEditor {
             .id_salt("vanilla-existing-sprites")
             .default_open(false)
             .show(ui, |ui| {
-                ui.label(
-                    "Select a picture to edit that existing record, or place another copy of it.",
+                ui.label("Choose a picture, then click the canvas to place a copy in this level.");
+                let selected_placement = placements
+                    .iter()
+                    .find(|placement| placement.token_index == self.selected_sprite);
+                let selected_text = selected_placement.map_or_else(
+                    || "Choose an existing sprite…".to_owned(),
+                    |placement| {
+                        format!(
+                            "${:02X} · record {} · screen {}",
+                            placement.sprite_number, placement.token_index, placement.screen
+                        )
+                    },
                 );
-                egui::ScrollArea::vertical()
-                    .id_salt("vanilla-existing-sprite-picture-list")
-                    .max_height(220.0)
-                    .show(ui, |ui| {
-                        ui.horizontal_wrapped(|ui| {
-                            for placement in &placements {
-                                let index = placement.token_index;
-                                let Some(token) = tokens.get(index) else {
-                                    continue;
-                                };
-                                let form = SpriteForm::from_token(header, Some(token));
-                                let mode = sprite_catalog_preview_mode(
-                                    &form,
-                                    vertical,
-                                    level_mode,
-                                    sprite_tileset,
-                                );
-                                let response = draw_sprite_catalog_entry(
-                                    ui,
-                                    texture.as_ref(),
-                                    animated_texture.as_ref(),
-                                    placement.sprite_number,
-                                    mode,
-                                    index == self.selected_sprite,
-                                )
-                                .on_hover_text(format!(
-                                    "Existing record {index}\nScreen {}, tile ${:X},{}\nClick to select and copy",
-                                    placement.screen,
-                                    placement.major & 0x0f,
-                                    placement.minor
-                                ));
-                                if response.clicked() {
-                                    self.selected_sprite = index;
-                                    self.sprite_form = form;
-                                }
-                            }
-                        });
+                let mut chosen = None;
+                egui::ComboBox::from_id_salt("vanilla-existing-sprite-picture-picker")
+                    .selected_text(selected_text)
+                    .width(ui.available_width().min(320.0))
+                    .show_ui(ui, |ui| {
+                        ui.set_min_width(280.0);
+                        egui::ScrollArea::vertical()
+                            .id_salt("vanilla-existing-sprite-picture-list")
+                            .max_height(280.0)
+                            .show(ui, |ui| {
+                                ui.horizontal_wrapped(|ui| {
+                                    for placement in &placements {
+                                        let index = placement.token_index;
+                                        let Some(token) = tokens.get(index) else {
+                                            continue;
+                                        };
+                                        let form = SpriteForm::from_token(header, Some(token));
+                                        let mode = sprite_catalog_preview_mode(
+                                            &form,
+                                            vertical,
+                                            level_mode,
+                                            sprite_tileset,
+                                        );
+                                        let response = draw_sprite_catalog_entry(
+                                            ui,
+                                            texture.as_ref(),
+                                            animated_texture.as_ref(),
+                                            placement.sprite_number,
+                                            mode,
+                                            index == self.selected_sprite,
+                                        )
+                                        .on_hover_text(format!(
+                                            "Existing record {index}\nScreen {}, tile ${:X},{}\nSelect to place a copy",
+                                            placement.screen,
+                                            placement.major & 0x0f,
+                                            placement.minor
+                                        ));
+                                        if response.clicked() {
+                                            chosen = Some((index, form));
+                                            ui.close_menu();
+                                        }
+                                    }
+                                });
+                            });
                     });
-                let selected_is_record = matches!(
-                    tokens.get(self.selected_sprite),
-                    Some(SpriteToken::Record(_))
-                );
-                if ui
-                    .add_enabled(
-                        selected_is_record,
-                        egui::Button::new("Place a copy on canvas"),
-                    )
-                    .clicked()
-                {
+                if let Some((index, form)) = chosen {
+                    self.selected_sprite = index;
+                    self.sprite_form = form;
                     self.placement_mode = Some(CanvasPlacementMode::Sprite);
                     self.error = None;
+                }
+                if self.placement_mode == Some(CanvasPlacementMode::Sprite) {
+                    ui.label("Placement active: click a destination tile on the canvas.");
                 }
                 egui::CollapsingHeader::new("Raw stream records and control commands")
                     .id_salt("vanilla-existing-sprite-raw-list")
