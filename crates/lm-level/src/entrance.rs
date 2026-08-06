@@ -152,6 +152,7 @@ pub struct SecondaryExitTable {
 pub enum SecondaryExitEncodingError {
     WrongEntryCount { actual: usize, expected: usize },
     SizeOverflow { records: usize },
+    SecondaryExitIndexOutOfRange { entry: usize, value: u16 },
     DestinationLevelOutOfRange { entry: usize, value: u16 },
     ScreenOutOfRange { entry: usize, value: u8 },
     XOutOfRange { entry: usize, value: u8 },
@@ -179,6 +180,7 @@ pub struct MwlSecondaryExit {
 pub enum MwlSecondaryExitDecodeError {
     WrongLength(usize),
     TargetLevelOutOfRange(u16),
+    SecondaryExitIndexOutOfRange(u16),
 }
 
 impl std::fmt::Display for MwlSecondaryExitDecodeError {
@@ -310,6 +312,51 @@ mod tests {
         assert_eq!(
             MwlSecondaryExit::decode(&bytes[..7], 0x105),
             Err(MwlSecondaryExitDecodeError::WrongLength(7))
+        );
+    }
+
+    #[test]
+    fn mwl_secondary_exit_indices_match_lunar_magics_table_boundary() {
+        for index in [0, MwlSecondaryExit::MAX_INDEX] {
+            let record = MwlSecondaryExit {
+                index,
+                ..MwlSecondaryExit::default()
+            };
+            let encoded = record.encode().unwrap();
+            assert_eq!(MwlSecondaryExit::decode(&encoded, 0).unwrap(), record);
+        }
+
+        let invalid = MwlSecondaryExit {
+            index: MwlSecondaryExit::MAX_INDEX + 1,
+            ..MwlSecondaryExit::default()
+        };
+        assert_eq!(
+            invalid.encode(),
+            Err(SecondaryExitEncodingError::SecondaryExitIndexOutOfRange {
+                entry: 0,
+                value: 0x2000,
+            })
+        );
+        assert_eq!(
+            MwlSecondaryExit::decode(&[0x00, 0x20, 0, 0, 0, 0, 0, 0], 0),
+            Err(MwlSecondaryExitDecodeError::SecondaryExitIndexOutOfRange(
+                0x2000
+            ))
+        );
+
+        let records = [
+            MwlSecondaryExit::default(),
+            MwlSecondaryExit {
+                index: 0xffff,
+                ..MwlSecondaryExit::default()
+            },
+        ];
+        assert_eq!(
+            MwlSecondaryExit::encode_all(&records),
+            Err(SecondaryExitEncodingError::SecondaryExitIndexOutOfRange {
+                entry: 1,
+                value: 0xffff,
+            })
         );
     }
 

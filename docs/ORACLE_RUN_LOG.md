@@ -56,3 +56,20 @@ cargo test -p lm-app --test layer3_install_wine -- --ignored --nocapture
 The object-backed Layer 2 oracle edits through the same semantic relocation operation used by the
 native canvas. This regenerates owned screen transitions, including removal of a redundant leading
 screen-zero jump, before Lunar Magic re-exports the exact expected payload.
+
+## 2026-08-05 — Secondary-exit boundary and clear audit
+
+The executable, pristine ROM, and Wine identities are unchanged from the core audit above.
+
+```text
+cargo test -p lm-app --test secondary_exit_wine \
+  lunar_magic_imports_reexports_and_clears_secondary_exit_boundaries \
+  -- --ignored --exact --nocapture
+1 passed; 0 failed; finished in 46.35s
+```
+
+The gate imported records at both valid table endpoints (`$0000` and `$1FFF`) with minimum and
+maximum packed fields, required exact Lunar Magic re-export, and independently reopened both
+installed ROM-table entries through Rust. It then imported an empty secondary-exit set, required
+Lunar Magic to export an empty set, reopened both endpoint entries as native zero records, and
+verified the final ROM checksum.
