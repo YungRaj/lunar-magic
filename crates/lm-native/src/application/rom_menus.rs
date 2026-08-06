@@ -51,6 +51,28 @@ impl NativeApplication {
             "Edit Native Level Assets…",
             "Close Native Level Assets"
         );
+        let batch_export = enabled
+            && (profile || crate::vanilla_level_editor::VanillaLevelEditor::handles(&self.app))
+            && !self.rom_mwl_batch_export_dialog.is_open();
+        if ui
+            .add_enabled(batch_export, egui::Button::new("Export All MWL Levels…"))
+            .clicked()
+        {
+            ui.close_menu();
+            self.rom_mwl_batch_export_dialog
+                .open(&self.app, lm_app::MwlBatchExportMode::All);
+        }
+        if ui
+            .add_enabled(
+                batch_export,
+                egui::Button::new("Export Modified MWL Levels…"),
+            )
+            .clicked()
+        {
+            ui.close_menu();
+            self.rom_mwl_batch_export_dialog
+                .open(&self.app, lm_app::MwlBatchExportMode::Modified);
+        }
         if ui
             .add_enabled(
                 enabled && profile && !self.rom_mwl_batch_import_dialog.is_open(),
