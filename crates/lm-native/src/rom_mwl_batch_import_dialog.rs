@@ -1,3 +1,4 @@
+use crate::document_loader::{BoundedRead, DocumentLoader, LoadedDocument};
 use eframe::egui;
 use lm_app::{AppState, Command};
 use lm_level::MwlFile;
@@ -8,6 +9,11 @@ use std::path::PathBuf;
 struct PendingCommit {
     path: PathBuf,
     level: u16,
+}
+
+struct PendingRead {
+    path: PathBuf,
+    revision: u64,
 }
 
 #[derive(Default)]
@@ -22,6 +28,8 @@ pub(crate) struct RomMwlBatchImportDialog {
     search_end: String,
     active_search: Option<Range<usize>>,
     pending_commit: Option<PendingCommit>,
+    loader: DocumentLoader,
+    pending_read: Option<PendingRead>,
     last_diagnostic: Option<String>,
     error: Option<String>,
 }
@@ -68,6 +76,7 @@ impl RomMwlBatchImportDialog {
 
     pub(crate) fn show(&mut self, context: &egui::Context, app: &AppState) -> Option<Command> {
         let directory = self.directory.clone()?;
+        let loaded = self.loader.show(context);
         let mut start = false;
         let mut close = false;
         let mut cancel = false;
@@ -81,9 +90,14 @@ impl RomMwlBatchImportDialog {
                     self.inserted,
                     self.failed,
                     self.hidden_skipped,
-                    self.paths.len() + usize::from(self.pending_commit.is_some())
+                    self.paths.len()
+                        + usize::from(self.pending_commit.is_some())
+                        + usize::from(self.pending_read.is_some())
                 ));
-                if self.active_search.is_none() && self.pending_commit.is_none() {
+                if self.active_search.is_none()
+                    && self.pending_commit.is_none()
+                    && self.pending_read.is_none()
+                {
                     ui.horizontal(|ui| {
                         ui.label("Allocation search (logical PC hex)");
                         ui.text_edit_singleline(&mut self.search_start);
@@ -106,6 +120,9 @@ impl RomMwlBatchImportDialog {
                         pending.path.display()
                     ));
                 }
+                if let Some(pending) = &self.pending_read {
+                    ui.label(format!("Reading {}", pending.path.display()));
+                }
                 if let Some(diagnostic) = &self.last_diagnostic {
                     ui.label(diagnostic);
                 }
@@ -114,6 +131,7 @@ impl RomMwlBatchImportDialog {
                 }
                 let complete = self.active_search.is_none()
                     && self.pending_commit.is_none()
+                    && self.pending_read.is_none()
                     && (self.paths.is_empty() || self.inserted + self.failed != 0);
                 if (complete || self.total == 0) && ui.button("Close").clicked() {
                     close = true;
@@ -137,57 +155,102 @@ impl RomMwlBatchImportDialog {
             self.active_search = None;
             self.last_diagnostic = Some("Batch import cancelled.".into());
         }
-        if self.active_search.is_some() && self.pending_commit.is_none() {
-            let command = self.prepare_next(app);
+        if let Some(result) = loaded {
+            let command = self.finish_read(app, result);
             context.request_repaint();
             return command;
+        }
+        if self.active_search.is_some()
+            && self.pending_commit.is_none()
+            && self.pending_read.is_none()
+        {
+            self.start_next_read(app);
+            context.request_repaint();
         }
         None
     }
 
-    fn prepare_next(&mut self, app: &AppState) -> Option<Command> {
+    fn start_next_read(&mut self, app: &AppState) {
         let Some(path) = self.paths.pop_front() else {
             self.active_search = None;
             self.last_diagnostic = Some(format!(
                 "{} levels inserted; {} failed; {} hidden files skipped.",
                 self.inserted, self.failed, self.hidden_skipped
             ));
-            return None;
+            return;
         };
-        let result = crate::dialogs::read_regular_bounded(
-            &path,
+        match self.loader.start(vec![BoundedRead::new(
+            path.clone(),
             u64::try_from(MwlFile::MAX_FILE_BYTES).unwrap_or(u64::MAX),
             "complete MWL level",
-        )
-        .map_err(|error| error.to_string())
-        .and_then(|bytes| {
-            let profiled = app
-                .profiled_controller_snapshot()
-                .map_err(|error| error.to_string())?;
-            lm_app::prepare_declared_mwl_import(
-                &profiled,
-                &bytes,
-                self.active_search
-                    .clone()
-                    .ok_or_else(|| "batch import is not active".to_string())?,
-            )
-        });
+        )]) {
+            Ok(()) => {
+                self.pending_read = Some(PendingRead {
+                    path,
+                    revision: app.project_revision(),
+                });
+            }
+            Err(error) => {
+                self.failed += 1;
+                self.last_diagnostic = Some(format!(
+                    "Failed to start reading {}: {error}",
+                    path.display()
+                ));
+            }
+        }
+    }
+
+    fn finish_read(
+        &mut self,
+        app: &AppState,
+        result: Result<LoadedDocument, String>,
+    ) -> Option<Command> {
+        let pending = match self.pending_read.take() {
+            Some(pending) => pending,
+            None => {
+                self.error = Some("MWL loader completed without a pending file".into());
+                return None;
+            }
+        };
+        if self.active_search.is_none() {
+            self.last_diagnostic = Some("Discarded the completed read after cancellation.".into());
+            return None;
+        }
+        let result = result
+            .and_then(|loaded| loaded.into_exact::<1>("complete MWL level"))
+            .and_then(|[(_, bytes)]| {
+                if app.project_revision() != pending.revision {
+                    return Err("the ROM changed while the MWL was loading".into());
+                }
+                let profiled = app
+                    .profiled_controller_snapshot()
+                    .map_err(|error| error.to_string())?;
+                lm_app::prepare_declared_mwl_import(
+                    &profiled,
+                    &bytes,
+                    self.active_search
+                        .clone()
+                        .ok_or_else(|| "batch import is not active".to_string())?,
+                )
+            });
         match result {
             Ok((level, prepared)) => {
                 self.pending_commit = Some(PendingCommit {
-                    path: path.clone(),
+                    path: pending.path.clone(),
                     level,
                 });
                 self.last_diagnostic = Some(format!(
                     "Prepared level {level:03X} from {}",
-                    path.display()
+                    pending.path.display()
                 ));
                 Some(prepared.into_command())
             }
             Err(error) => {
                 self.failed += 1;
-                self.last_diagnostic =
-                    Some(format!("Failed to insert {}: {error}", path.display()));
+                self.last_diagnostic = Some(format!(
+                    "Failed to insert {}: {error}",
+                    pending.path.display()
+                ));
                 None
             }
         }
@@ -225,6 +288,20 @@ impl RomMwlBatchImportDialog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    fn temporary_mwl() -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "lm-batch-import-worker-{}-{}.mwl",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::write(&path, b"bounded worker payload").unwrap();
+        path
+    }
 
     fn pending(level: u16) -> PendingCommit {
         PendingCommit {
@@ -268,5 +345,73 @@ mod tests {
         assert!(dialog.paths.is_empty());
         assert_eq!(dialog.inserted, 0);
         assert_eq!(dialog.failed, 0);
+    }
+
+    #[test]
+    fn next_file_starts_a_revision_bound_nonblocking_read() {
+        let path = temporary_mwl();
+        let mut dialog = RomMwlBatchImportDialog {
+            directory: path.parent().map(PathBuf::from),
+            paths: [path.clone()].into(),
+            active_search: Some(0x80_000..0x10_0000),
+            ..RomMwlBatchImportDialog::default()
+        };
+        let app = AppState::default();
+        dialog.start_next_read(&app);
+        assert!(dialog.loader.is_running());
+        assert_eq!(dialog.pending_read.as_ref().unwrap().path, path);
+        assert_eq!(dialog.pending_read.as_ref().unwrap().revision, 0);
+        assert!(dialog.paths.is_empty());
+        dialog.clear();
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn stale_or_cancelled_worker_completion_never_prepares_a_commit() {
+        let path = PathBuf::from("Level 105.mwl");
+        let loaded = || {
+            Ok(LoadedDocument {
+                files: vec![(path.clone(), b"not decoded before stale rejection".to_vec())],
+            })
+        };
+        let app = AppState::default();
+        let mut stale = RomMwlBatchImportDialog {
+            directory: Some(PathBuf::from("levels")),
+            active_search: Some(0x80_000..0x10_0000),
+            pending_read: Some(PendingRead {
+                path: path.clone(),
+                revision: 1,
+            }),
+            ..RomMwlBatchImportDialog::default()
+        };
+        assert!(stale.finish_read(&app, loaded()).is_none());
+        assert_eq!(stale.failed, 1);
+        assert!(stale.pending_commit.is_none());
+        assert!(
+            stale
+                .last_diagnostic
+                .as_deref()
+                .unwrap()
+                .contains("ROM changed")
+        );
+
+        let mut cancelled = RomMwlBatchImportDialog {
+            directory: Some(PathBuf::from("levels")),
+            pending_read: Some(PendingRead {
+                path: path.clone(),
+                revision: 0,
+            }),
+            ..RomMwlBatchImportDialog::default()
+        };
+        assert!(cancelled.finish_read(&app, loaded()).is_none());
+        assert_eq!(cancelled.failed, 0);
+        assert!(cancelled.pending_commit.is_none());
+        assert!(
+            cancelled
+                .last_diagnostic
+                .as_deref()
+                .unwrap()
+                .contains("cancellation")
+        );
     }
 }

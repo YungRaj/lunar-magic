@@ -412,6 +412,37 @@ mod tests {
     }
 
     #[test]
+    fn custom_palette_legacy_bundle_round_trips_the_exact_mw3_payload() {
+        let mut source = level_105();
+        source.layer1_metadata[0] |= 1;
+        source.palette.colors.rotate_left(17);
+        let bundle =
+            LegacyMwlBundle::from_native(&source, "Level 105", &SpriteLengthTable::standard())
+                .unwrap();
+        assert_eq!(bundle.manifest.layer1.flags & 1, 1);
+        assert_eq!(
+            bundle.manifest.palette_file_name().unwrap(),
+            "Level 105.mw3"
+        );
+        assert_eq!(
+            bundle.palette.as_ref().unwrap().len(),
+            LegacyMwlBundle::PALETTE_BYTES
+        );
+        assert_eq!(
+            bundle.palette.as_ref().unwrap(),
+            &source.palette.encode_snes().unwrap()
+        );
+
+        let mut destination = source.palette.clone();
+        destination.colors.rotate_right(43);
+        let decoded = bundle
+            .decode_native(&SpriteLengthTable::standard(), &destination, true)
+            .unwrap();
+        assert_eq!(decoded.palette, source.palette);
+        assert_ne!(decoded.palette, destination);
+    }
+
+    #[test]
     fn pre_341_layer2_flags_follow_recovered_import_normalization() {
         assert_eq!(normalized_layer2_descriptor(0x0340, 0xff, 1).raw(), 0);
         assert_eq!(normalized_layer2_descriptor(0x0340, 0xff, 0).raw(), 0xf6);

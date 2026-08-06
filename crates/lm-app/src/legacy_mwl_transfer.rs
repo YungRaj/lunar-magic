@@ -133,4 +133,29 @@ mod tests {
         assert_eq!(fs::read(directory.join("Level 105.mw2")).unwrap(), [3]);
         fs::remove_dir_all(directory).unwrap();
     }
+
+    #[test]
+    fn custom_palette_publication_adds_exact_mw3_and_keeps_group_atomic() {
+        let directory = temporary_directory();
+        let manifest = directory.join("Level 105.mwl");
+        let mut value = bundle();
+        value.manifest.layer1.flags |= 1;
+        value.palette = Some(
+            (0..LegacyMwlBundle::PALETTE_BYTES)
+                .map(|index| index as u8)
+                .collect(),
+        );
+        fs::write(directory.join("Level 105.mw3"), b"occupied").unwrap();
+        assert!(publish_legacy_mwl_bundle_new(&manifest, &value).is_err());
+        assert!(!manifest.exists());
+        assert!(!directory.join("Level 105.mw0").exists());
+        fs::remove_file(directory.join("Level 105.mw3")).unwrap();
+
+        publish_legacy_mwl_bundle_new(&manifest, &value).unwrap();
+        assert_eq!(
+            fs::read(directory.join("Level 105.mw3")).unwrap(),
+            value.palette.unwrap()
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
 }
