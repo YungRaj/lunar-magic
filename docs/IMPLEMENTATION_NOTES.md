@@ -4251,3 +4251,10 @@ therefore supports one-step undo. Conversion rejects incomplete geometry, priori
 shadows, text labels, excessive definitions, and tile/coordinate overflow instead of narrowing
 them. Original native pairs resolve `$000..$3FF` through Lunar Magic 3.63's exact embedded
 8,192-byte resource type 500, ID 508, while `$400..$BFF` continues through sibling `.s16ov` data.
+
+`NativeOverworldAppearanceController` now owns `.sscov` and `.s16ov` as one lossless revisioned
+document rather than converting through `LMOWAPP1`. Typed atomic batches replace regular/custom
+tooltips, tile or label appearances, graphics/palette ranges, and any custom Sprite Map16
+definition. Canonical paired reopen validates both files before publication; history restores both
+domains together, and immutable paired save snapshots retain native shadows, translucency, labels,
+priority bits, range kinds, exact custom Map16 words, and the `.s16ov` loaded prefix length.

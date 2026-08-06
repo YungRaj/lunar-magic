@@ -55,6 +55,7 @@ mod native_level_edit_batch;
 mod native_map16_bitmap_import_session;
 mod native_map16_bitmap_workspace;
 mod native_map16_sidecar_controller;
+mod native_overworld_appearance_controller;
 mod navigation_state;
 mod osc_sidecar_controller;
 mod overworld_appearance_document_controller;
@@ -261,6 +262,11 @@ pub use native_map16_bitmap_workspace::{
 pub use native_map16_sidecar_controller::{
     NativeMap16SidecarController, NativeMap16SidecarControllerError, NativeMap16SidecarDocument,
     NativeMap16SidecarDocumentKind, NativeMap16SidecarEdit, NativeMap16SidecarSaveSnapshot,
+};
+pub use native_overworld_appearance_controller::{
+    NativeOverworldAppearanceController, NativeOverworldAppearanceControllerError,
+    NativeOverworldAppearanceEdit, NativeOverworldAppearanceEditError,
+    NativeOverworldAppearanceSaveSnapshot, NativeOverworldAppearanceValue,
 };
 pub use osc_sidecar_controller::{
     OscSidecarController, OscSidecarControllerError, OscSidecarSaveSnapshot,
