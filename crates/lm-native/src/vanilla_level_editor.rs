@@ -489,48 +489,58 @@ impl VanillaLevelEditor {
         let mut pending_command = None;
         ui.horizontal_top(|ui| {
             if self.tools_panel_visible() {
-                ui.allocate_ui_with_layout(
+                // `allocate_ui_with_layout` permits children to enlarge its requested rectangle.
+                // Reserve an exact parent slot first, then paint a clipped child into it so no
+                // expanded catalog can ever alter the canvas allocation beside it.
+                let (tool_rect, _) = ui.allocate_exact_size(
                     egui::vec2(tool_width, workspace_size.y),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        egui::ScrollArea::vertical()
-                            .id_salt("vanilla-level-tool-panel")
-                            .auto_shrink([false, false])
+                    egui::Sense::hover(),
+                );
+                let mut tool_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .id_salt("vanilla-level-tool-panel-fixed")
+                        .max_rect(tool_rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                tool_ui.set_width(tool_width);
+                egui::ScrollArea::vertical()
+                    .id_salt("vanilla-level-tool-panel")
+                    .max_width(tool_width)
+                    .auto_shrink([false, false])
+                    .show(&mut tool_ui, |ui| {
+                        self.show_staged_history(ui);
+                        egui::CollapsingHeader::new("Level and entrance settings")
+                            .id_salt("vanilla-level-settings")
                             .show(ui, |ui| {
-                                self.show_staged_history(ui);
-                                egui::CollapsingHeader::new("Level and entrance settings")
-                                    .id_salt("vanilla-level-settings")
-                                    .show(ui, |ui| {
-                                        self.show_header_editor(ui, object_count, sprite_count);
-                                        if pending_command.is_none() {
-                                            pending_command = self.show_entrance_editor(ui, level);
-                                        }
-                                    });
-                                self.show_layer2_editor(ui, custom_objects, custom_map16);
-                                self.show_map16_preview(ui, object_tileset);
-                                egui::CollapsingHeader::new("Layer 1 objects")
-                                    .id_salt("vanilla-layer1-tools")
-                                    .show(ui, |ui| {
-                                        self.object_list(ui);
-                                        self.object_editor(ui, custom_objects, custom_map16);
-                                    });
-                                egui::CollapsingHeader::new("Sprites")
-                                    .id_salt("vanilla-sprite-tools")
-                                    .show(ui, |ui| {
-                                        self.sprite_list(ui);
-                                        self.sprite_editor(
-                                            ui,
-                                            custom_sprites,
-                                            external_assets,
-                                            custom_map16,
-                                        );
-                                    });
+                                self.show_header_editor(ui, object_count, sprite_count);
                                 if pending_command.is_none() {
-                                    pending_command = self.show_commit_controls(ui, &snapshot);
+                                    pending_command = self.show_entrance_editor(ui, level);
                                 }
                             });
-                    },
-                );
+                        self.show_layer2_editor(ui, custom_objects, custom_map16);
+                        egui::CollapsingHeader::new("Layer 1 objects")
+                            .id_salt("vanilla-layer1-tools")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                self.object_list(ui);
+                                self.object_editor(ui, custom_objects, custom_map16);
+                            });
+                        egui::CollapsingHeader::new("Sprites")
+                            .id_salt("vanilla-sprite-tools")
+                            .show(ui, |ui| {
+                                self.sprite_list(ui);
+                                self.sprite_editor(
+                                    ui,
+                                    custom_sprites,
+                                    external_assets,
+                                    custom_map16,
+                                );
+                            });
+                        self.show_map16_preview(ui, object_tileset);
+                        if pending_command.is_none() {
+                            pending_command = self.show_commit_controls(ui, &snapshot);
+                        }
+                    });
                 ui.separator();
             }
             ui.allocate_ui_with_layout(
@@ -1486,10 +1496,13 @@ impl VanillaLevelEditor {
     #[allow(clippy::too_many_lines)]
     fn show_map16_preview(&mut self, ui: &mut egui::Ui, object_tileset: u8) {
         egui::CollapsingHeader::new(format!(
-            "Pristine Map16 graphics — object tileset {object_tileset:X}"
+            "Graphics reference (not a picker) — tileset {object_tileset:X}"
         ))
-        .default_open(true)
+        .default_open(false)
         .show(ui, |ui| {
+            ui.small(
+                "Reference atlas only. Add level content with the visual Layer 1 object and Sprite catalogs above.",
+            );
             let sprite_tileset = self.form.sprite_tileset;
             if let Some(summary) = self.map16_summary {
                 let files = summary.foreground_files;
@@ -1746,34 +1759,43 @@ impl VanillaLevelEditor {
         };
         let family =
             lm_profile::smw_us_v1_object_family(controller.level().layer1.header.object_tileset());
-        ui.label(format!("Layer 1 objects — {}", family.display_name()));
-        egui::ScrollArea::vertical()
-            .max_height(300.0)
-            .show(ui, |ui| {
-                for (index, record) in controller.level().layer1.objects.records.iter().enumerate()
-                {
-                    let encoded = record
-                        .encoded()
-                        .iter()
-                        .map(|byte| format!("{byte:02X}"))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if ui
-                        .selectable_label(
-                            index == self.selected_object,
-                            format!(
-                                "{index:03}: command {:02X} · {encoded}",
-                                record.command_id()
-                            ),
-                        )
-                        .clicked()
+        let count = controller.level().layer1.objects.records.len();
+        egui::CollapsingHeader::new(format!(
+            "Existing objects ({count}) — {}",
+            family.display_name()
+        ))
+        .id_salt("vanilla-existing-layer1-objects")
+        .default_open(false)
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .max_height(240.0)
+                .show(ui, |ui| {
+                    for (index, record) in
+                        controller.level().layer1.objects.records.iter().enumerate()
                     {
-                        self.selected_object = index;
-                        self.object_form = ObjectForm::from_record(record);
-                        self.object_placement_template = Some(record.clone());
+                        let encoded = record
+                            .encoded()
+                            .iter()
+                            .map(|byte| format!("{byte:02X}"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if ui
+                            .selectable_label(
+                                index == self.selected_object,
+                                format!(
+                                    "{index:03}: command {:02X} · {encoded}",
+                                    record.command_id()
+                                ),
+                            )
+                            .clicked()
+                        {
+                            self.selected_object = index;
+                            self.object_form = ObjectForm::from_record(record);
+                            self.object_placement_template = Some(record.clone());
+                        }
                     }
-                }
-            });
+                });
+        });
     }
 
     #[allow(clippy::too_many_lines)]
@@ -3689,7 +3711,7 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         layer2: bool,
     ) {
-        egui::CollapsingHeader::new("Add standard object visually")
+        egui::CollapsingHeader::new("Add structures and platforms")
             .id_salt(if layer2 {
                 "vanilla-layer2-standard-object-catalog"
             } else {
@@ -3863,7 +3885,7 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         layer2: bool,
     ) {
-        egui::CollapsingHeader::new("Add extended object visually")
+        egui::CollapsingHeader::new("Add blocks, coins, doors, and small objects")
             .id_salt(if layer2 {
                 "vanilla-layer2-extended-object-catalog"
             } else {
@@ -4142,39 +4164,48 @@ impl VanillaLevelEditor {
         let Some(controller) = &self.controller else {
             return;
         };
-        ui.label("Sprites");
+        let count = controller.level().sprites.tokens.len();
         let placements = controller.level().sprites.native_placements();
-        egui::ScrollArea::vertical()
-            .max_height(260.0)
+        egui::CollapsingHeader::new(format!("Existing sprite records ({count})"))
+            .id_salt("vanilla-existing-sprites")
+            .default_open(false)
             .show(ui, |ui| {
-                for (index, token) in controller.level().sprites.tokens.iter().enumerate() {
-                    let text =
-                        SpriteForm::from_token(controller.level().sprites.header, Some(token))
-                            .encoded;
-                    let semantic = placements
-                        .iter()
-                        .find(|placement| placement.token_index == index)
-                        .map_or_else(String::new, |placement| {
-                            format!(
-                                "sprite {:02X} @ {}:{:X},{} · ",
-                                placement.sprite_number,
-                                placement.screen,
-                                placement.major & 0x0f,
-                                placement.minor
+                egui::ScrollArea::vertical()
+                    .max_height(240.0)
+                    .show(ui, |ui| {
+                        for (index, token) in controller.level().sprites.tokens.iter().enumerate() {
+                            let text = SpriteForm::from_token(
+                                controller.level().sprites.header,
+                                Some(token),
                             )
-                        });
-                    if ui
-                        .selectable_label(
-                            index == self.selected_sprite,
-                            format!("{index:03}: {semantic}{text}"),
-                        )
-                        .clicked()
-                    {
-                        self.selected_sprite = index;
-                        self.sprite_form =
-                            SpriteForm::from_token(controller.level().sprites.header, Some(token));
-                    }
-                }
+                            .encoded;
+                            let semantic = placements
+                                .iter()
+                                .find(|placement| placement.token_index == index)
+                                .map_or_else(String::new, |placement| {
+                                    format!(
+                                        "sprite {:02X} @ {}:{:X},{} · ",
+                                        placement.sprite_number,
+                                        placement.screen,
+                                        placement.major & 0x0f,
+                                        placement.minor
+                                    )
+                                });
+                            if ui
+                                .selectable_label(
+                                    index == self.selected_sprite,
+                                    format!("{index:03}: {semantic}{text}"),
+                                )
+                                .clicked()
+                            {
+                                self.selected_sprite = index;
+                                self.sprite_form = SpriteForm::from_token(
+                                    controller.level().sprites.header,
+                                    Some(token),
+                                );
+                            }
+                        }
+                    });
             });
     }
 
