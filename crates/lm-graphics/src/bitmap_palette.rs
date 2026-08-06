@@ -51,6 +51,10 @@ pub struct BitmapPaletteColorOptions {
     pub prioritize_unique_colors: bool,
     /// Keeps the exact-fit allocation pass and skips the weighted partial-set extension pass.
     pub maintain_detail: bool,
+    /// Allows colors in free entries to be replaced by colors generated from the bitmap.
+    pub allow_modifying_unmarked_colors: bool,
+    /// Persistent native preference whose 3.63 control has no processing-path reader.
+    pub prioritize_exact_palette_matches: bool,
     /// Maximum circular HSL240 hue distance when substituting a preserved palette color.
     pub reusable_color_hue_tolerance: u16,
     /// Lunar Magic's first high-color neighborhood reduction pass.
@@ -80,6 +84,8 @@ impl BitmapPaletteColorOptions {
             priority_level: 3,
             prioritize_unique_colors: true,
             maintain_detail: false,
+            allow_modifying_unmarked_colors: true,
+            prioritize_exact_palette_matches: true,
             reusable_color_hue_tolerance: 45,
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
@@ -178,6 +184,9 @@ fn reduce_bitmap_palette_internal(
     options: &BitmapPaletteColorOptions,
 ) -> Result<ReducedBitmapPalette, BitmapPaletteReductionError> {
     options.validate()?;
+    if !options.allow_modifying_unmarked_colors && original.is_none() {
+        return Err(BitmapPaletteReductionError::OriginalPaletteRequired);
+    }
     let mut opaque = Vec::with_capacity(pixels.len());
     for (index, pixel) in pixels.iter().enumerate() {
         match pixel.alpha {
@@ -204,7 +213,12 @@ fn reduce_bitmap_palette_internal(
             .entry(lunar_magic_bitmap_color(*pixel).0)
             .or_default() += 1;
     }
-    let mut colors = if histogram.len() <= options.maximum_colors {
+    let mut colors = if !options.allow_modifying_unmarked_colors {
+        collect_unique_available_palette_colors(
+            original.expect("the no-modification path checked its palette above"),
+            options,
+        )?
+    } else if histogram.len() <= options.maximum_colors {
         histogram.keys().copied().map(Bgr555).collect()
     } else {
         match options.reduction {
@@ -219,7 +233,9 @@ fn reduce_bitmap_palette_internal(
             }
         }
     };
-    if let Some(original) = original {
+    if options.allow_modifying_unmarked_colors
+        && let Some(original) = original
+    {
         substitute_reusable_palette_colors(&mut colors, original, options)?;
     }
     let opaque_indices = if options.maintain_detail {
@@ -251,6 +267,43 @@ fn reduce_bitmap_palette_internal(
         return Err(BitmapPaletteReductionError::IndexPlaneMismatch);
     }
     Ok(ReducedBitmapPalette { colors, indices })
+}
+
+fn collect_unique_available_palette_colors(
+    original: &Palette,
+    options: &BitmapPaletteColorOptions,
+) -> Result<Vec<Bgr555>, BitmapPaletteReductionError> {
+    if original.colors.len() < BITMAP_PALETTE_COLORS {
+        return Err(BitmapPaletteReductionError::PaletteColors(
+            original.colors.len(),
+        ));
+    }
+    let mut colors = options
+        .entries
+        .iter()
+        .zip(&original.colors)
+        .filter_map(|(state, color)| {
+            (*state != BitmapPaletteEntryState::Reserved).then_some(*color)
+        })
+        .collect::<Vec<_>>();
+    let mut compare = 0;
+    while compare < colors.len() {
+        let mut candidate = compare + 1;
+        let mut last = colors.len().saturating_sub(1);
+        while candidate < colors.len() {
+            if colors[compare] == colors[candidate] {
+                colors[candidate] = colors[last];
+                colors.pop();
+                last = last.saturating_sub(1);
+            }
+            candidate += 1;
+        }
+        compare += 1;
+    }
+    if colors.is_empty() {
+        colors.push(Bgr555(0));
+    }
+    Ok(colors)
 }
 
 fn substitute_reusable_palette_colors(
@@ -1248,6 +1301,7 @@ pub enum BitmapPaletteReductionError {
     MaximumColors(usize),
     PriorityLevel(u8),
     HueTolerance(u16),
+    OriginalPaletteRequired,
     FractionalAlpha { index: usize, alpha: u8 },
     Quantizer(QuantizerError),
     EmptyOpaquePalette,
@@ -1293,6 +1347,8 @@ mod tests {
         assert_eq!(options.priority_level, 3);
         assert!(options.prioritize_unique_colors);
         assert!(!options.maintain_detail);
+        assert!(options.allow_modifying_unmarked_colors);
+        assert!(options.prioritize_exact_palette_matches);
         assert_eq!(options.reusable_color_hue_tolerance, 45);
         assert!(options.popularity_reduction_method_1);
         assert!(!options.popularity_reduction_method_2);
@@ -1484,6 +1540,8 @@ mod tests {
             priority_level: 3,
             prioritize_unique_colors: true,
             maintain_detail: false,
+            allow_modifying_unmarked_colors: true,
+            prioritize_exact_palette_matches: true,
             reusable_color_hue_tolerance: 45,
             popularity_reduction_method_1: true,
             popularity_reduction_method_2: false,
@@ -1573,6 +1631,104 @@ mod tests {
         substitute_reusable_palette_colors(&mut colors, &original, &options).unwrap();
 
         assert_eq!(colors, [Bgr555(0x001f)]);
+    }
+
+    #[test]
+    fn disabling_unmarked_color_modification_uses_only_existing_palette_words() {
+        let mut options = reserved_options();
+        options.allow_modifying_unmarked_colors = false;
+        options.entries[1] = BitmapPaletteEntryState::Free;
+        options.entries[17] = BitmapPaletteEntryState::Reusable;
+        let mut original = palette();
+        original.colors[1] = Bgr555(0x001f);
+        original.colors[17] = Bgr555(0x7c00);
+        let pixels = vec![
+            Rgba8 {
+                red: 0,
+                green: 255,
+                blue: 0,
+                alpha: 255,
+            };
+            64
+        ];
+
+        let reduced = reduce_bitmap_palette_with_palette(&pixels, &original, &options).unwrap();
+        assert_eq!(reduced.colors, [Bgr555(0x001f), Bgr555(0x7c00)]);
+        let allocated = allocate_bitmap_palette_rows(&reduced, 8, 8, &original, &options).unwrap();
+
+        assert!(
+            reduced
+                .colors
+                .iter()
+                .all(|color| [Bgr555(0x001f), Bgr555(0x7c00)].contains(color))
+        );
+        assert!(allocated.generated_colors > 0);
+        for (index, (before, after)) in original
+            .colors
+            .iter()
+            .zip(&allocated.palette.colors)
+            .enumerate()
+        {
+            if options.entries[index] == BitmapPaletteEntryState::Reserved {
+                assert_eq!(after, before);
+            } else if before != after {
+                assert!([Bgr555(0x001f), Bgr555(0x7c00)].contains(after));
+            }
+        }
+    }
+
+    #[test]
+    fn no_modification_mode_requires_destination_palette_context() {
+        let mut options = reserved_options();
+        options.allow_modifying_unmarked_colors = false;
+        let error = reduce_bitmap_palette(
+            &[Rgba8 {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 255,
+            }],
+            &options,
+        )
+        .unwrap_err();
+
+        assert_eq!(error, BitmapPaletteReductionError::OriginalPaletteRequired);
+    }
+
+    #[test]
+    fn available_palette_deduplication_uses_native_tail_replacement_order() {
+        let mut options = reserved_options();
+        let mut original = palette();
+        for (index, color) in [1, 2, 1, 4, 5].into_iter().enumerate() {
+            options.entries[index + 1] = BitmapPaletteEntryState::Free;
+            original.colors[index + 1] = Bgr555(color);
+        }
+
+        assert_eq!(
+            collect_unique_available_palette_colors(&original, &options).unwrap(),
+            [Bgr555(1), Bgr555(2), Bgr555(5), Bgr555(4)]
+        );
+    }
+
+    #[test]
+    fn native_exact_match_preference_is_persisted_but_conversion_neutral() {
+        let pixels = [Rgba8 {
+            red: 248,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        }];
+        let original = palette();
+        let mut enabled = BitmapPaletteColorOptions::lunar_magic_initial();
+        let mut disabled = enabled.clone();
+        disabled.prioritize_exact_palette_matches = false;
+
+        assert_eq!(
+            reduce_bitmap_palette_with_palette(&pixels, &original, &enabled).unwrap(),
+            reduce_bitmap_palette_with_palette(&pixels, &original, &disabled).unwrap()
+        );
+        enabled.prioritize_exact_palette_matches = false;
+        assert_eq!(enabled, disabled);
     }
 
     #[test]

@@ -582,6 +582,24 @@ fn bitmap_multi_row_color_options(
         });
         changed |= bitmap_popularity_reduction_options(ui, options);
         changed |= ui
+            .checkbox(
+                &mut options.allow_modifying_unmarked_colors,
+                "Allow modifying colors not marked reserved",
+            )
+            .changed();
+        changed |= ui
+            .add_enabled(
+                false,
+                egui::Checkbox::new(
+                    &mut options.prioritize_exact_palette_matches,
+                    "Prioritize exact existing-palette matches",
+                ),
+            )
+            .on_hover_text(
+                "Lunar Magic 3.63 stores this checked preference, but disables its control and has no conversion-path reader",
+            )
+            .changed();
+        changed |= ui
             .add(
                 egui::Slider::new(&mut options.reusable_color_hue_tolerance, 0..=240)
                     .text("Reusable-color hue tolerance"),

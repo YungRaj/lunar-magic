@@ -4117,3 +4117,14 @@ retires a rejected source color without trying a second candidate, and consumes 
 value only once. The live default at `DAT_005e5600` is 45; the native editor exposes the complete
 0–240 range, where 240 accepts every nearest pair. Focused tests cover close-hue acceptance,
 distant-hue rejection, the unlimited setting, neutral-color bypass, and the native free-entry gate.
+
+The bitmap color model now also carries the native `$74` unmarked-color policy. Disabling it skips
+source quantization and reusable-color substitution, collects every non-reserved destination word,
+and reproduces `CollectUniqueAvailablePaletteColors`' tail-swap duplicate removal. Those existing
+colors may still move through normal free-slot row allocation, as confirmed by a normalized live
+Wine capture; the mode prevents new colors rather than freezing palette indexes. Calling the
+palette-free reduction API in this mode returns a typed missing-context error. Control `$65` is
+modeled separately as Lunar Magic 3.63's checked, disabled, conversion-neutral preference: Ghidra
+finds only its dialog load/store references, and the native UI mirrors that disabled state. The
+audit harness now normalizes all persistent checkboxes on every run so prior oracle sessions cannot
+silently contaminate option evidence.

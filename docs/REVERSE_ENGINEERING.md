@@ -1253,6 +1253,23 @@ against a second preserved color. Rust now reproduces that ordering, one-use-by-
 and exact 0–240 bound before global source-index mapping, and exposes the tolerance in the native
 bitmap-import dialog.
 
+The adjacent “Allow modifying palette colors that aren't marked on right” checkbox is the low bit
+passed from `HandleConvertedBitmapPreviewWindow` and `HandleBitmapImportPreviewDialog` into
+`ProcessBitmapGraphicsImport`. When clear, the quantizer and preserved-color substitution loop are
+skipped. `CollectUniqueAvailablePaletteColors` instead copies every current palette word whose
+state lacks reserved bit `$02`, then removes duplicates with the original's tail-replacement order;
+the ordinary row allocator may still rearrange those existing colors into free slots. A normalized
+live Wine capture with control `$74` clear, Maintain Detail clear, and unique priority set confirms
+this route changes the palette arrangement and graphics while admitting no new reduced color. Rust
+now exposes and implements that exact existing-colors-only policy and requires destination-palette
+context when it is selected.
+
+Control `$65`, “Give priority to exact color matches in existing palette,” is checked and disabled
+in Lunar Magic 3.63. Its byte `DAT_005e55cc` has exactly two references, both in
+`HandleBitmapImportOptionsDialog`: initialization reads it and OK stores the disabled checkbox.
+There is no processing-path reader. Rust therefore retains the checked preference as explicit state,
+renders it disabled, and deliberately leaves conversion unchanged rather than inventing behavior.
+
 The following controller and selection tooling through `004f5990` is now named. This includes the import-preview zoom menu and keyboard hook, the top-level bitmap import workflow, a textual remapping language that can transform graphics indexes, palette rows, Map16 indexes, and secondary-map values, and the custom registered `Lunar Magic 16x16 Tiles` clipboard serializer. Added the exact 0xA0-byte `LunarMagicTileClipboardHeader` with section offsets, selected count, rectangular dimensions, source Map16 index, flags, and explicitly represented reserved regions.
 
 Map16 import/export, history, and visible rendering through `004f9e40` are now named and annotated. Added exact 64-byte `Lm16Map16FileHeader` and `Lm16Map16SectionDirectory` structures for the structured `.map16` format. Added the exact 811,788-byte `Map16UndoSnapshot` and typed its live linked-list globals. Rendering names now distinguish decoded tile composition, Acts Like overlays, selected-tile highlighting, page frames and labels, page boundaries, and bounded versus drag-selection marching ants.
