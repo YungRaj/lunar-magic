@@ -99,6 +99,7 @@ mod shortcut;
 mod smw_main_overworld_layer2_controller;
 mod smw_map16_controller;
 mod snapshot;
+mod snes_map16_tileset_import;
 mod ssc_sidecar_controller;
 pub mod startup_args;
 mod state;
@@ -307,6 +308,10 @@ pub use smw_map16_controller::{
     SmwMap16ControllerError,
 };
 pub use snapshot::{ControllerSnapshot, ProfiledControllerSnapshot};
+pub use snes_map16_tileset_import::{
+    MaterializedSnesMap16Tileset, SNES_TILESET_GRAPHICS_LEN, SNES_TILESET_MAP_LEN,
+    SNES_TILESET_PALETTE_ROW_LEN, SnesMap16TilesetImport, SnesMap16TilesetImportError,
+};
 pub use ssc_sidecar_controller::{
     SscSidecarController, SscSidecarControllerError, SscSidecarSaveSnapshot,
 };

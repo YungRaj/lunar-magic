@@ -3379,3 +3379,16 @@ The live `$220/$0F9/$8300/$8001` submission produced globals `$00000220/$000000F
 $00008001`; the changed graphics digest also proves the first-tile value reached conversion rather
 than merely repainting the dialog. The audit validates the native 10-bit graphics and 16-bit Map16
 ranges before launching Wine and records requested and observed values separately.
+
+`ImportMap16PageFromSnesFiles` at `$004E5390` implements the distinct "SNES GFX Set + SNES
+Screen Tile Map" workflow. For pages below `$100`, it zeroes an `$8000`-byte graphics buffer,
+reads at most that amount, and decodes 1,024 4bpp tiles. It then reads an `$0800`-byte 32×32
+little-endian screen map. Each word's low ten-bit source tile is translated through
+`g_awGraphicsTileRemap`; the referenced decoded graphics tile is copied to that destination and
+the word's `$FC00` attribute bits are retained. Traversal order is significant when remap entries
+alias: the last screen-map reference wins. Map16 definition `n` uses screen-map offsets TL
+`(n >> 4) * $40 + (n & $0F) * 2`, TR `+1`, BL `+$20`, and BR `+$21`. The direct path replaces
+only these four words, preserving destination Acts Like values; the alternate path deduplicates
+definitions into blank entries. If enabled, the workflow asks for a `.col`/`.pal` file and
+`LoadPaletteRowFromFile` at `$004765E0` reads exactly `$20` bytes into the selected working palette
+row. Background-page import can additionally paste the resulting index grid into the level.

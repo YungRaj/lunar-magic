@@ -4155,3 +4155,13 @@ The same oracle now drives the four bounded hexadecimal edit controls. A nondefa
 submitted first/blank 8×8 values `$220/$0F9` and first/reserved Map16 values `$8300/$8001`; the
 four documented globals reopened as little-endian `00000220`, `000000F9`, `00008300`, and
 `00008001` respectively, and conversion allocated graphics from the requested `$220` boundary.
+
+The recovered SNES tileset importer is intentionally separate from legacy `Map16Page.bin` /
+`Map16PageG.bin` transfer. Its pure staging model accepts a short graphics set only by zero-padding
+to the native `$8000`-byte workspace, but requires complete tile-map and optional palette-row files
+instead of reproducing Lunar Magic's unsafe truncated reads. Materialization is side-effect free:
+it applies the caller's complete 1,024-entry graphics remap, preserves tile attributes, and returns
+one graphics workspace plus one 256-definition page in native 32×32 quadrant geometry. Acts Like
+is left as a placeholder because the eventual installed-ROM application must preserve the target
+definition's value. UI loading, allocation, and the multi-domain transaction remain a subsequent
+milestone and are not counted as complete parity yet.
