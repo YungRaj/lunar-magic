@@ -27,6 +27,7 @@ mod native_path;
 mod native_path_file;
 mod native_player_start;
 mod native_special_event_file;
+mod native_sprite_sidecar;
 mod native_warp;
 mod native_warp_file;
 mod path;
@@ -88,6 +89,12 @@ pub use native_path::{
 pub use native_path_file::OverworldPathLinkFileError;
 pub use native_player_start::{NativeOverworldPlayerStartError, NativeOverworldPlayerStarts};
 pub use native_special_event_file::SpecialEventRevealFileError;
+pub use native_sprite_sidecar::{
+    NativeOverworldSpriteAppearance, NativeOverworldSpriteDisplay, NativeOverworldSpriteMap16Part,
+    NativeOverworldSpriteRange, NativeOverworldSpriteSidecar, NativeOverworldSpriteSidecarError,
+    NativeOverworldSpriteTooltip, SSCOV_MAX_ABSOLUTE_OFFSET, SSCOV_MAX_BYTES, SSCOV_MAX_PARTS,
+    SSCOV_MAX_SPRITE_MAP16_TILE,
+};
 pub use native_warp::{
     OverworldWarpEndpoint, OverworldWarpLink, OverworldWarpLinkPlanes, OverworldWarpLinkTable,
     OverworldWarpLinkTableError,

@@ -3424,3 +3424,15 @@ control `$70` for Optimize and initializes it checked. Direct import then copies
 `$00777E58 + page * $800`; selected page comes from `$00E27AE0 >> 4`. The retained page-zero run
 records 5,491 graphics-byte and 1,819 Map16-byte differences and preserves both complete buffers,
 dialog snapshots, and their hashes so the observation can be independently rechecked.
+
+`LoadCustomOverworldSpriteSidecar` at `$005438A0` constructs the ROM-adjacent `.sscov` name and
+accepts an optional UTF-8 BOM. Sprite IDs `$00..$FF` combine with type bit `$10` to address the
+custom `$100..$1FF` namespace. Type bit 1 selects a point-based display definition; bit 0 supplies
+the overworld shadow on those definitions and disables original position-dependent tooltip text on
+description records. Display points are decimal signed X/Y plus hexadecimal Sprite Map16 tile,
+where bit 15 requests translucency and the base tile may not exceed `$CFF`; at most 256 points and
+absolute offsets through `$2FFF` are retained. Positioned `*text*` labels use the same escape
+handling. Sentinel IDs `$10000/$20000` install tile-range mappings through `$BFF` for external
+graphics and palettes. Repeated sprite definitions free and replace the earlier allocation, which
+the Rust ordered-map codec reproduces semantically. The official help independently names `.sscov`
+and `.s16ov`; the prior `.ovssc` ledger spelling was incorrect.

@@ -4227,3 +4227,13 @@ palette, placement, offset, filter-selector, and 16×16 color-map choice survive
 reopening the Map16 editor. Opening another ROM does not fabricate a fresh original process, so it
 does not reset those choices either. Pending file work and previews remain editor-lifetime state and
 are still cleared at close.
+
+The original overworld appearance sidecar is `.sscov`, not `.ovssc`. The official Lunar Magic 3.63
+help and `LoadCustomOverworldSpriteSidecar` agree on a UTF-8, ROM-basename-adjacent text file. Rust
+now models its regular and `$100`-qualified custom sprite IDs, tooltip/position-text flags,
+point-based Sprite Map16 compositions, optional editor shadow, translucent tile bit, positioned text
+labels, and the `$10000`/`$20000` external graphics and palette range records. Decoding accepts the
+native UTF-8 BOM, enforces Lunar Magic's 256-part, signed `$2FFF`, Sprite Map16 `$CFF`, and range
+`$BFF` bounds, and applies later tooltip/appearance lines over earlier definitions. Canonical encode
+round-trips the complete semantic value. The portable `LMOWAPP1` format remains separate because it
+stores already-resolved 8×8 tile/palette parts; native `.s16ov` resolution is the next bridge.
