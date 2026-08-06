@@ -190,6 +190,12 @@ DESTINATION_AND_FLAGS` automation through the same canonical setter as the nativ
 compact/extended shape changes, required flag `$0400`, advance-bit preservation, checksum-valid
 ROM reopen, exact undo, out-of-range screen rejection, and late wrong-record rollback.
 
+Secondary-exit MWL records and installed six-plane tables now use Lunar Magic's complete packed
+coordinate byte: screen occupies bits 0–4 and Y occupies bits 5–7. The model consequently accepts
+screens `$00–$1F`, rejects Y above `$07`, and no longer aliases late screens into Y. The exhaustive
+`every_secondary_screen_and_y_pair_round_trips_in_native_and_mwl_encodings` test covers all 256
+legal pairs, while the complete `lm-level` suite verifies both interchange and ROM-table routes.
+
 The standard/extended-object row now also has canvas-grade `LMLEDIT1 object place` and
 `object relocate-position` automation. Both share native drag/drop's absolute screen, coordinate
 nibbles, and perpendicular-high bit model; regenerate minimal transitions; preserve extensions and

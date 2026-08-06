@@ -72,7 +72,7 @@ mod tests {
             position_and_method: 0x35,
             screen: 7,
             x: 4,
-            y: 8,
+            y: 7,
             destination_flags: 0x61,
             x_and_overworld_flags: 0xd0,
             additional_flags: 0xa5,

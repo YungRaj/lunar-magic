@@ -247,15 +247,42 @@ mod tests {
             SecondaryExit {
                 destination_level: 0x134,
                 position_and_method: 0xa5,
-                screen: 0x0b,
+                screen: 0x1c,
                 x: 7,
-                y: 0x0c,
+                y: 5,
                 destination_flags: 0xe1,
                 x_and_overworld_flags: 0xd0,
                 additional_flags: 0x66,
             }
         );
         assert_eq!(table.encode().unwrap(), bytes);
+    }
+
+    #[test]
+    fn every_secondary_screen_and_y_pair_round_trips_in_native_and_mwl_encodings() {
+        let mut entries = vec![SecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT];
+        for screen in 0..=0x1f {
+            for y in 0..=0x07 {
+                let index = usize::from(screen) * 8 + usize::from(y);
+                entries[index].screen = screen;
+                entries[index].y = y;
+
+                let mwl = MwlSecondaryExit {
+                    index: u16::try_from(index).unwrap(),
+                    exit: entries[index],
+                    reserved: 0,
+                };
+                assert_eq!(
+                    MwlSecondaryExit::decode(&mwl.encode().unwrap(), 0).unwrap(),
+                    mwl
+                );
+            }
+        }
+        let table = SecondaryExitTable { entries };
+        assert_eq!(
+            SecondaryExitTable::decode(&table.encode().unwrap()).unwrap(),
+            table
+        );
     }
 
     #[test]
@@ -329,7 +356,7 @@ mod tests {
                 ..SecondaryExit::default()
             },
             SecondaryExit {
-                screen: 0x10,
+                screen: 0x20,
                 ..SecondaryExit::default()
             },
             SecondaryExit {
@@ -337,7 +364,7 @@ mod tests {
                 ..SecondaryExit::default()
             },
             SecondaryExit {
-                y: 0x10,
+                y: 0x08,
                 ..SecondaryExit::default()
             },
             SecondaryExit {

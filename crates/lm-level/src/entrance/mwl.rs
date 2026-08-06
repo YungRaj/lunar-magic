@@ -25,8 +25,8 @@ impl MwlSecondaryExit {
             exit: SecondaryExit {
                 destination_level: target_level,
                 position_and_method: bytes[2],
-                screen: bytes[3] >> 4,
-                y: bytes[3] & 0x0f,
+                screen: bytes[3] & 0x1f,
+                y: bytes[3] >> 5,
                 x: bytes[5] & 0x0f,
                 destination_flags: bytes[4] & !8,
                 x_and_overworld_flags: bytes[5] & 0xf0,
@@ -48,7 +48,7 @@ impl MwlSecondaryExit {
             index[0],
             index[1],
             self.exit.position_and_method,
-            self.exit.screen << 4 | self.exit.y,
+            self.exit.y << 5 | self.exit.screen,
             self.exit.destination_flags
                 | if self.exit.destination_level & 0x100 != 0 {
                     8

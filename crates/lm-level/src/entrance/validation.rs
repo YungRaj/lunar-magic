@@ -10,32 +10,23 @@ pub(super) fn validate_secondary_exit(
             value: exit.destination_level,
         });
     }
-    for (value, error) in [
-        (
-            exit.screen,
-            SecondaryExitEncodingError::ScreenOutOfRange {
-                entry,
-                value: exit.screen,
-            },
-        ),
-        (
-            exit.x,
-            SecondaryExitEncodingError::XOutOfRange {
-                entry,
-                value: exit.x,
-            },
-        ),
-        (
-            exit.y,
-            SecondaryExitEncodingError::YOutOfRange {
-                entry,
-                value: exit.y,
-            },
-        ),
-    ] {
-        if value > 0x0f {
-            return Err(error);
-        }
+    if exit.screen > 0x1f {
+        return Err(SecondaryExitEncodingError::ScreenOutOfRange {
+            entry,
+            value: exit.screen,
+        });
+    }
+    if exit.x > 0x0f {
+        return Err(SecondaryExitEncodingError::XOutOfRange {
+            entry,
+            value: exit.x,
+        });
+    }
+    if exit.y > 0x07 {
+        return Err(SecondaryExitEncodingError::YOutOfRange {
+            entry,
+            value: exit.y,
+        });
     }
     if exit.destination_flags & 8 != 0 {
         return Err(SecondaryExitEncodingError::DestinationFlagsUseLevelBit {

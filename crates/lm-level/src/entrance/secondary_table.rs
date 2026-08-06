@@ -22,8 +22,8 @@ impl SecondaryExitTable {
                     destination_level: u16::from(plane(0, index))
                         | (u16::from(high_and_flags & 8) << 5),
                     position_and_method: plane(1, index),
-                    screen: plane(2, index) >> 4,
-                    y: plane(2, index) & 0x0f,
+                    screen: plane(2, index) & 0x1f,
+                    y: plane(2, index) >> 5,
                     x: plane(4, index) & 0x0f,
                     destination_flags: high_and_flags & !8,
                     x_and_overworld_flags: plane(4, index) & 0xf0,
@@ -51,7 +51,7 @@ impl SecondaryExitTable {
             validate_secondary_exit(entry, index)?;
             bytes[index] = entry.destination_level.to_le_bytes()[0];
             bytes[Self::ENTRY_COUNT + index] = entry.position_and_method;
-            bytes[Self::ENTRY_COUNT * 2 + index] = entry.screen << 4 | entry.y;
+            bytes[Self::ENTRY_COUNT * 2 + index] = entry.y << 5 | entry.screen;
             bytes[Self::ENTRY_COUNT * 3 + index] = entry.destination_flags
                 | if entry.destination_level & 0x100 != 0 {
                     8
