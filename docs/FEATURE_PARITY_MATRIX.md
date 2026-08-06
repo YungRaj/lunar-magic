@@ -68,6 +68,13 @@ custom block, entrance, and level changes reopen together, undo byte-exactly, an
 failure-atomic when a late acts-like cycle or unavailable midway entrance rejects after all earlier
 domains have been prepared.
 
+The 2026-08-05 retained original-editor run in `ORACLE_RUN_LOG.md` executes 21 opt-in Lunar Magic
+3.63/Wine gates with exact executable and pristine-ROM SHA-256 identities. All passed, including
+the complete 17-test object/sprite/entrance/screen-exit growth and canonicalization suite plus
+legacy headers, expanded level mode, ExAnimation feature options, and support-patch-B/custom-time
+preservation. These results strengthen the affected Oracle gates but do not promote variant or
+original-dialog coverage that those tests do not exercise.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |

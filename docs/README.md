@@ -8,6 +8,7 @@ Use these documents according to what you are trying to do:
 | --- | --- |
 | [Illustrated usage guide](USAGE.md) | Open a ROM, navigate, edit, save, and capture rendering diagnostics |
 | [Feature-parity ledger](FEATURE_PARITY_MATRIX.md) | Product workflows, evidence gates, and remaining parity gaps |
+| [Original-editor oracle run log](ORACLE_RUN_LOG.md) | Reproducible opt-in Lunar Magic/Wine executions and exact input identities |
 | [Portable release bundles](PORTABLE_RELEASES.md) | Reproducible platform archives, checksums, and CI scope |
 | [Architecture](REIMPLEMENTATION_ARCHITECTURE.md) | Crate boundaries, dependency direction, and clean-room design |
 | [Compatibility test matrix](REIMPLEMENTATION_TEST_MATRIX.md) | Required format, transaction, GUI, oracle, and variant coverage |
