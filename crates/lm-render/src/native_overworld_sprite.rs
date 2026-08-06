@@ -1,7 +1,7 @@
 //! Native `.sscov` display resolution through built-in and `.s16ov` Sprite Map16 definitions.
 
-use crate::{Canvas, native_level_raster};
-use lm_graphics::{IndexedTile, Palette};
+use crate::{Canvas, Rgba, native_level_raster};
+use lm_graphics::{ExternalSpriteAssets, IndexedTile, Palette, Rgb8};
 use lm_level::{Map16Tile, NativeMap16SidecarError, S16OvSidecar, Subtile};
 use lm_overworld::{
     NativeOverworldSpriteAppearance, NativeOverworldSpriteDisplay, NativeOverworldSpriteMap16Part,
@@ -509,14 +509,14 @@ pub fn draw_resolved_native_overworld_sprite_elements(
 
 /// Paints native overworld elements from Lunar Magic's materialized global graphics cache.
 ///
-/// Active-palette routes use their recovered color offset. External palette-cache routes are
-/// intentionally left unpainted until their companion palette asset is supplied; this prevents
-/// a visually plausible but incorrect fallback to the active ROM palette.
+/// Active-palette routes use their recovered color offset; external graphics and palette routes
+/// use Lunar Magic's bounded `ExternalGraphics` assets.
 pub fn draw_resolved_native_overworld_sprite_resource_elements(
     canvas: &mut Canvas,
     elements: &[ResolvedNativeOverworldSpriteElement],
     graphics_cache: &[IndexedTile],
     active_palette: &Palette,
+    external_assets: &ExternalSpriteAssets,
 ) {
     for element in elements {
         match element {
@@ -525,7 +525,7 @@ pub fn draw_resolved_native_overworld_sprite_resource_elements(
                 palette: palette_index,
                 x,
                 y,
-                priority,
+                priority: _,
                 x_flip,
                 y_flip,
                 translucent,
@@ -533,23 +533,21 @@ pub fn draw_resolved_native_overworld_sprite_resource_elements(
                 palette_base,
                 active_palette_offset,
                 ..
-            } if *palette_base == NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE => {
-                let Some(tiles) = graphics_cache.get(usize::from(*graphics_base)..) else {
-                    continue;
-                };
-                let word = tile_number
-                    | (u16::from(*palette_index) << 10)
-                    | (u16::from(*priority) << 13)
-                    | (u16::from(*x_flip) << 14)
-                    | (u16::from(*y_flip) << 15);
-                native_level_raster::draw_sprite_subtile_clipped_with_palette_base(
+            } => {
+                draw_resource_subtile(
                     canvas,
-                    word,
-                    tiles,
-                    active_palette,
+                    *tile_number,
+                    *palette_index,
+                    *x_flip,
+                    *y_flip,
                     (*x, *y),
                     *translucent,
-                    usize::from(*active_palette_offset),
+                    *graphics_base,
+                    *palette_base,
+                    *active_palette_offset,
+                    graphics_cache,
+                    active_palette,
+                    external_assets,
                 );
             }
             ResolvedNativeOverworldSpriteElement::Label { x, y, text, .. } => {
@@ -566,10 +564,116 @@ pub fn draw_resolved_native_overworld_sprite_resource_elements(
                 *x,
                 *y,
             ),
-            ResolvedNativeOverworldSpriteElement::Tile { .. }
-            | ResolvedNativeOverworldSpriteElement::UnresolvedMap16 { .. } => {}
+            ResolvedNativeOverworldSpriteElement::UnresolvedMap16 { .. } => {}
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_resource_subtile(
+    canvas: &mut Canvas,
+    tile_number: u16,
+    palette_index: u8,
+    x_flip: bool,
+    y_flip: bool,
+    target: (i32, i32),
+    half_color: bool,
+    graphics_base: u16,
+    palette_base: u16,
+    active_palette_offset: u16,
+    graphics_cache: &[IndexedTile],
+    active_palette: &Palette,
+    external_assets: &ExternalSpriteAssets,
+) {
+    let tile_number = tile_number & 0x03ff;
+    let tile = if graphics_base >= 0x4200 {
+        graphics_base
+            .checked_sub(0x4200)
+            .and_then(|relative| relative.checked_add(0x2000))
+            .and_then(|base| base.checked_add(tile_number))
+            .and_then(|tile| external_assets.graphics_tile(tile))
+    } else {
+        usize::from(graphics_base)
+            .checked_add(usize::from(tile_number))
+            .and_then(|tile| graphics_cache.get(tile))
+    };
+    let Some(tile) = tile else {
+        return;
+    };
+    for y in 0..IndexedTile::HEIGHT {
+        for x in 0..IndexedTile::WIDTH {
+            let source_x = if x_flip {
+                IndexedTile::WIDTH - 1 - x
+            } else {
+                x
+            };
+            let source_y = if y_flip {
+                IndexedTile::HEIGHT - 1 - y
+            } else {
+                y
+            };
+            let Some(color_index) = tile.pixel(source_x, source_y) else {
+                continue;
+            };
+            if color_index == 0 {
+                continue;
+            }
+            let color = if palette_base == NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE {
+                usize::from(active_palette_offset)
+                    .checked_add(usize::from(palette_index) * 16)
+                    .and_then(|base| base.checked_add(usize::from(color_index)))
+                    .and_then(|index| active_palette.colors.get(index))
+                    .map(|color| color.to_rgb8())
+            } else if palette_base < 0x400 {
+                external_assets.palette_color(palette_base, palette_index, color_index)
+            } else {
+                None
+            };
+            let Some(color) = color else {
+                continue;
+            };
+            draw_resource_pixel(canvas, target, x, y, color, half_color);
+        }
+    }
+}
+
+fn draw_resource_pixel(
+    canvas: &mut Canvas,
+    target: (i32, i32),
+    x: usize,
+    y: usize,
+    color: Rgb8,
+    half_color: bool,
+) {
+    let Some(output_x) = target.0.checked_add(i32::try_from(x).unwrap_or(i32::MAX)) else {
+        return;
+    };
+    let Some(output_y) = target.1.checked_add(i32::try_from(y).unwrap_or(i32::MAX)) else {
+        return;
+    };
+    let (Ok(output_x), Ok(output_y)) = (usize::try_from(output_x), usize::try_from(output_y))
+    else {
+        return;
+    };
+    let source = Rgba {
+        red: color.red,
+        green: color.green,
+        blue: color.blue,
+        alpha: 255,
+    };
+    let output = if half_color {
+        let destination = canvas.get(output_x, output_y).unwrap_or_default();
+        Rgba {
+            red: ((u16::from(destination.red & 0xfe) + u16::from(source.red & 0xfe)) >> 1) as u8,
+            green: ((u16::from(destination.green & 0xfe) + u16::from(source.green & 0xfe)) >> 1)
+                as u8,
+            blue: ((u16::from(destination.blue & 0xfe) + u16::from(source.blue & 0xfe)) >> 1) as u8,
+            alpha: 255,
+        }
+    } else {
+        source
+    };
+    canvas.set(output_x, output_y, output);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -762,7 +866,7 @@ impl NativeOverworldSpriteResourceMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lm_graphics::Bgr555;
+    use lm_graphics::{Bgr555, encode_4bpp_tile};
     use lm_overworld::{
         NativeOverworldSpriteAppearance, NativeOverworldSpriteMap16Part, NativeOverworldSpriteRange,
     };
@@ -1088,8 +1192,74 @@ mod tests {
             }],
             &cache,
             &Palette { colors },
+            &ExternalSpriteAssets::default(),
         );
         assert_eq!(canvas.get(0, 0).unwrap().green, 255);
+    }
+
+    #[test]
+    fn resource_raster_retains_ten_bit_tiles_and_external_rgb_assets() {
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let solid = IndexedTile::new([1; IndexedTile::PIXEL_COUNT]);
+        let mut cache = vec![blank; 0x2001];
+        cache[0x2000] = solid.clone();
+        let mut active_colors = vec![Bgr555(0); 256];
+        active_colors[0x81] = Bgr555(0x7c00);
+        let mut external = ExternalSpriteAssets::default();
+        external
+            .set_graphics_slot(0, &encode_4bpp_tile(&solid).unwrap())
+            .unwrap();
+        external.set_rgb_palette(&[0, 0, 0, 12, 34, 56]).unwrap();
+        let elements = [
+            ResolvedNativeOverworldSpriteElement::Tile {
+                sprite_index: 0,
+                tile_number: 0x200,
+                palette: 0,
+                x: 0,
+                y: 0,
+                priority: false,
+                x_flip: false,
+                y_flip: false,
+                translucent: false,
+                graphics_base: 0x1e00,
+                palette_base: NativeOverworldSpriteResourceMap::ACTIVE_PALETTE_BASE,
+                active_palette_offset: 0x80,
+            },
+            ResolvedNativeOverworldSpriteElement::Tile {
+                sprite_index: 1,
+                tile_number: 0,
+                palette: 0,
+                x: 8,
+                y: 0,
+                priority: false,
+                x_flip: false,
+                y_flip: false,
+                translucent: false,
+                graphics_base: 0x4200,
+                palette_base: 0,
+                active_palette_offset: 0x80,
+            },
+        ];
+        let mut canvas = Canvas::try_new(16, 8).unwrap();
+        draw_resolved_native_overworld_sprite_resource_elements(
+            &mut canvas,
+            &elements,
+            &cache,
+            &Palette {
+                colors: active_colors,
+            },
+            &external,
+        );
+        assert_eq!(canvas.get(0, 0).unwrap().blue, 255);
+        assert_eq!(
+            canvas.get(8, 0).unwrap(),
+            Rgba {
+                red: 12,
+                green: 34,
+                blue: 56,
+                alpha: 255,
+            }
+        );
     }
 
     #[test]

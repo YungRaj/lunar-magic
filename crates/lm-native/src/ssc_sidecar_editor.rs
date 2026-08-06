@@ -306,7 +306,7 @@ impl SscSidecarEditor {
     }
 }
 
-fn external_sprite_requests(ssc_path: &Path) -> Vec<BoundedRead> {
+pub(crate) fn external_sprite_requests(ssc_path: &Path) -> Vec<BoundedRead> {
     let Some(parent) = ssc_path.parent() else {
         return Vec::new();
     };
@@ -347,7 +347,7 @@ fn external_sprite_requests(ssc_path: &Path) -> Vec<BoundedRead> {
     requests
 }
 
-fn decode_external_sprite_assets(
+pub(crate) fn decode_external_sprite_assets(
     files: impl Iterator<Item = (PathBuf, Vec<u8>)>,
 ) -> Result<ExternalSpriteAssets, String> {
     let mut assets = ExternalSpriteAssets::default();

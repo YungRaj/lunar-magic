@@ -171,6 +171,9 @@ impl RomOverworldEditor {
                 u64::try_from(lm_level::S16OvSidecar::CAPACITY).unwrap_or(u64::MAX),
                 "ROM-adjacent native overworld Sprite Map16 definitions",
             ));
+            requests.extend(crate::ssc_sidecar_editor::external_sprite_requests(
+                &rom_path.with_extension("sscov"),
+            ));
         }
         match self.loader.start(requests) {
             Ok(()) => {
@@ -325,6 +328,7 @@ fn decode_main_layer2_workspace(
                 &project,
                 lm_profile::smw_us_v1_vanilla_graphics_layout(),
             )?,
+            external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
         },
     })
 }
@@ -361,9 +365,24 @@ fn decode_loaded(
         .map_err(|error| error.to_string())?;
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
-    let assets = decode_overworld_assets(&profiled)?;
+    let mut assets = decode_overworld_assets(&profiled)?;
+    let definitions_path = pending
+        .open
+        .rom_path
+        .as_ref()
+        .map(|path| path.with_extension("sscov"));
+    let map16_path = pending
+        .open
+        .rom_path
+        .as_ref()
+        .map(|path| path.with_extension("s16ov"));
+    let (native_files, external_files): (Vec<_>, Vec<_>) = files.partition(|(path, _)| {
+        Some(path) == definitions_path.as_ref() || Some(path) == map16_path.as_ref()
+    });
     let native_appearances =
-        decode_native_appearance_siblings(pending.open.rom_path.as_deref(), files.collect())?;
+        decode_native_appearance_siblings(pending.open.rom_path.as_deref(), native_files)?;
+    assets.external_sprite_assets =
+        crate::ssc_sidecar_editor::decode_external_sprite_assets(external_files.into_iter())?;
     Ok(Workspace {
         controller,
         profiled,
@@ -445,6 +464,7 @@ fn decode_overworld_assets(
             &project,
             profiled.profile.graphics,
         )?,
+        external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
     })
 }
 

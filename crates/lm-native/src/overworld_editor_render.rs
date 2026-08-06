@@ -7,6 +7,7 @@ pub(crate) struct OverworldAssets {
     pub(crate) map16: Map16SetFile,
     pub(crate) graphics: GraphicsInterchangeFile,
     pub(crate) native_sprite_graphics_cache: Vec<lm_graphics::IndexedTile>,
+    pub(crate) external_sprite_assets: lm_graphics::ExternalSpriteAssets,
 }
 
 pub(crate) fn render_layer_texture(
@@ -96,6 +97,7 @@ pub(crate) fn render_texture(
             &elements,
             &assets.native_sprite_graphics_cache,
             &overworld.data.palette,
+            &assets.external_sprite_assets,
         );
     }
     let mut rgba = Vec::with_capacity(canvas.pixels().len() * 4);

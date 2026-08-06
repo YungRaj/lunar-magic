@@ -49,6 +49,7 @@ pub(super) fn pending_from_loaded(loaded: LoadedDocument) -> Result<PendingOpen,
             graphics: GraphicsInterchangeFile::decode(&graphics_bytes)
                 .map_err(|error| error.to_string())?,
             native_sprite_graphics_cache: Vec::new(),
+            external_sprite_assets: lm_graphics::ExternalSpriteAssets::default(),
         },
         maximum_records: "32".into(),
     })
