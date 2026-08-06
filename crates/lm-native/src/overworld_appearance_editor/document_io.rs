@@ -114,10 +114,12 @@ pub(super) fn decode_native_pair(loaded: LoadedDocument) -> Result<SpriteAppeara
     let definitions = lm_overworld::NativeOverworldSpriteSidecar::decode(&definitions)
         .map_err(|error| error.to_string())?;
     let map16 = S16OvSidecar::decode(&map16).map_err(|error| error.to_string())?;
-    // Exported native pairs own all referenced definitions in `.s16ov`. Original pairs that use
-    // Lunar Magic's built-in `$000..$3FF` pages require a ROM-backed editor and fail explicitly.
-    lm_render::import_native_overworld_appearances(&definitions, &[], &map16)
-        .map_err(|error| error.to_string())
+    lm_render::import_native_overworld_appearances(
+        &definitions,
+        lm_render::lunar_magic_builtin_overworld_sprite_map16(),
+        &map16,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn replacement_edits(
@@ -185,6 +187,30 @@ mod tests {
             ],
         };
         assert_eq!(decode_native_pair(loaded).unwrap(), portable);
+    }
+
+    #[test]
+    fn original_pair_can_resolve_lunar_magics_builtin_sprite_map16_page() {
+        let loaded = LoadedDocument {
+            files: vec![
+                (PathBuf::from("original.sscov"), b"01\t2\t0,0,1\n".to_vec()),
+                (PathBuf::from("original.s16ov"), Vec::new()),
+            ],
+        };
+        let imported = decode_native_pair(loaded).unwrap();
+        let parts = &imported.definition(1).unwrap().parts;
+        assert_eq!(parts.len(), 4);
+        assert_eq!(
+            parts.iter().map(|part| part.tile_index).collect::<Vec<_>>(),
+            [0x26, 0x36, 0x27, 0x37]
+        );
+        assert_eq!(
+            parts
+                .iter()
+                .map(|part| (part.x_offset, part.y_offset, part.palette_index))
+                .collect::<Vec<_>>(),
+            [(0, 0, 1), (8, 0, 1), (0, 8, 1), (8, 8, 1)]
+        );
     }
 
     #[test]

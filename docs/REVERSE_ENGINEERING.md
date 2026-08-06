@@ -3442,3 +3442,12 @@ and `.s16ov`; the prior `.ovssc` ledger spelling was incorrect.
 ROM-adjacent sidecar. This distinguishes it from the larger ordinary `.s16` store. Together with
 the native Sprite Map16 page layout, those bytes supply the eight custom pages `$400..$BFF`; the
 four preceding pages are built in, while `$C00..$CFF` remains Lunar Magic-internal display space.
+
+The built-in source is authenticated by `LoadBuiltInOverworldGraphicsResources` (`004BF9A0`): it
+calls `FindResourceA` with type `500` and ID `508`, then copies exactly `0x2000` bytes into the
+four-word definition table at `00AFF968`. PE resource inspection reports the same 8,192-byte
+payload at RVA `00AB0E6C`; its retained SHA-256 is
+`d23b64559ac8a95d2011842cd4731f29914a45ac94cc74e7beff80ed54037d4b`.
+`RenderOverworldLinkedTileOverlays` (`00541180`) indexes that table with each render-grid node's
+15-bit tile word. Rust therefore resolves `$000..$3FF` from the exact retained resource and
+`$400..$BFF` from `.s16ov`, rather than substituting ordinary level Map16 definitions.

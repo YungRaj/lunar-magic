@@ -4247,6 +4247,7 @@ The portable overworld appearance editor now exposes bounded native-pair import 
 create-new export for `.sscov` plus its same-basename `.s16ov`. Export allocates one custom Sprite
 Map16 definition per exact ordered 2×2 quadrant group; reciprocal import expands those definitions
 back to the original four portable 8×8 parts. Import replaces the open document in one revision and
-therefore supports one-step undo. Conversion rejects incomplete geometry, missing built-in pages,
-priority, translucency, shadows, text labels, excessive definitions, and tile/coordinate overflow
-instead of narrowing them. ROM-backed built-in `$000..$3FF` import remains a separate integration.
+therefore supports one-step undo. Conversion rejects incomplete geometry, priority, translucency,
+shadows, text labels, excessive definitions, and tile/coordinate overflow instead of narrowing
+them. Original native pairs resolve `$000..$3FF` through Lunar Magic 3.63's exact embedded
+8,192-byte resource type 500, ID 508, while `$400..$BFF` continues through sibling `.s16ov` data.

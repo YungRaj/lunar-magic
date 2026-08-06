@@ -10,6 +10,52 @@ use lm_overworld::{
 };
 use std::{collections::BTreeMap, fmt};
 
+const LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES: &[u8; 0x2000] =
+    include_bytes!("assets/lm363-overworld-sprite-map16-builtins.bin");
+static LM363_BUILTIN_OVERWORLD_SPRITE_MAP16: [Map16Tile; 0x400] =
+    decode_builtin_overworld_sprite_map16();
+
+/// Returns Lunar Magic 3.63's exact four built-in overworld Sprite Map16 pages (`$000..$3FF`).
+#[must_use]
+pub const fn lunar_magic_builtin_overworld_sprite_map16() -> &'static [Map16Tile; 0x400] {
+    &LM363_BUILTIN_OVERWORLD_SPRITE_MAP16
+}
+
+const fn decode_builtin_overworld_sprite_map16() -> [Map16Tile; 0x400] {
+    let mut output = [Map16Tile {
+        top_left: Subtile(0),
+        top_right: Subtile(0),
+        bottom_left: Subtile(0),
+        bottom_right: Subtile(0),
+        acts_like: 0,
+    }; 0x400];
+    let mut index = 0;
+    while index < output.len() {
+        let offset = index * Map16Tile::GRAPHICS_LEN;
+        output[index] = Map16Tile {
+            top_left: Subtile(u16::from_le_bytes([
+                LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES[offset],
+                LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES[offset + 1],
+            ])),
+            top_right: Subtile(u16::from_le_bytes([
+                LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES[offset + 2],
+                LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES[offset + 3],
+            ])),
+            bottom_left: Subtile(u16::from_le_bytes([
+                LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES[offset + 4],
+                LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES[offset + 5],
+            ])),
+            bottom_right: Subtile(u16::from_le_bytes([
+                LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES[offset + 6],
+                LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES[offset + 7],
+            ])),
+            acts_like: 0,
+        };
+        index += 1;
+    }
+    output
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NativeOverworldAppearancePair {
     pub definitions: NativeOverworldSpriteSidecar,
@@ -792,5 +838,24 @@ mod tests {
             ),
             Err(NativeOverworldAppearanceConversionError::Label(3))
         ));
+    }
+
+    #[test]
+    fn authenticated_builtin_sprite_map16_cache_decodes_all_four_pages_exactly() {
+        let definitions = lunar_magic_builtin_overworld_sprite_map16();
+        assert_eq!(definitions.len(), 0x400);
+        assert_eq!(
+            definitions[1].encode_graphics(),
+            [0x26, 4, 0x36, 4, 0x27, 4, 0x37, 4]
+        );
+        assert_eq!(definitions[0x3ff].encode_graphics(), [0; 8]);
+        let encoded = definitions
+            .iter()
+            .flat_map(|definition| definition.encode_graphics())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            encoded.as_slice(),
+            LM363_BUILTIN_OVERWORLD_SPRITE_MAP16_BYTES
+        );
     }
 }
