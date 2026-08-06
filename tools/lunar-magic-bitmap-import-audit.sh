@@ -3,8 +3,8 @@ set -eu
 
 usage() {
     echo "usage: tools/lunar-magic-bitmap-import-audit.sh OUTPUT_DIR BITMAP.bmp" >&2
-    echo "  Run only against a disposable Lunar Magic 3.63 process with its modeless" >&2
-    echo "  16x16 Tile Map Editor already open." >&2
+    echo "  Run only against a disposable Lunar Magic 3.63 process with a ROM loaded." >&2
+    echo "  The authenticated Editors -> 16x16 Tile Map command opens the modeless editor." >&2
     echo "  LM_WINE_EXECUTABLE: target process name (default: LMBitmapOracle.exe)" >&2
     echo "  LM_MINGW_CC: 32-bit MinGW compiler (default: i686-w64-mingw32-gcc)" >&2
     exit 2
@@ -67,8 +67,22 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 modeless_handle=$(wine "$helper" "$target_executable" read 0x00a09270,4 2>/dev/null)
+if [ "$modeless_handle" = "00000000" ]; then
+    # HandleLevelEditorCommand routes 0x232f through RestoreOpenAuxiliaryEditorWindows and
+    # ShowMap16EditorDialog. A persisted open flag can outlive its HWND after an abnormal Wine
+    # shutdown; canonicalize that impossible state to closed before issuing the real command.
+    wine "$helper" "$target_executable" write-byte 0x00e27828,0 >/dev/null 2>&1
+    wine "$helper" "$target_executable" post-command 0x232f >/dev/null 2>&1
+    attempt=0
+    while [ "$attempt" -lt 200 ]; do
+        modeless_handle=$(wine "$helper" "$target_executable" read 0x00a09270,4 2>/dev/null)
+        [ "$modeless_handle" != "00000000" ] && break
+        attempt=$((attempt + 1))
+        sleep 0.025
+    done
+fi
 [ "$modeless_handle" != "00000000" ] || {
-    echo "the modeless 16x16 Tile Map Editor is not open" >&2
+    echo "the modeless 16x16 Tile Map Editor did not open within 5 seconds" >&2
     exit 1
 }
 

@@ -849,7 +849,12 @@ were also exercised end to end against a disposable Lunar Magic 3.63 Wine proces
 dispatch requires either editor mode byte `00e277cc == 2` or alternate guard `00e27de5 != 0`;
 setting the former only while posting command `$2276` opens the conversion dialog without changing
 the persistent editor mode. `tools/lunar-magic-bitmap-import-audit.sh` automates that sequence,
-captures the live 256-entry RGB32 palette at `00758dd8` and 64-KiB planar graphics cache at
+opens the modeless Map16 parent through the authenticated main-editor command `$232f` when its HWND
+is absent, and repairs a stale persisted-open byte only in that impossible null-HWND state. Ghidra
+`HandleLevelEditorCommand` at `00492fdf` proves the `$232f` route through
+`RestoreOpenAuxiliaryEditorWindows` and `ShowMap16EditorDialog`; the audit retains a bounded five-second
+creation gate and still requires a disposable process with a ROM loaded. It captures the live
+256-entry RGB32 palette at `00758dd8` and 64-KiB planar graphics cache at
 `0086b7e8` before and after acceptance, records the dialog controls, and restores the guard on every
 exit path. A four-color 16×16 oracle converted to exact SNES words `$77b4,$7fb6,$7ff9,$7ffe` and
 changed 53 graphics bytes beginning with tile `$200`. This proves that even the no-reduction path
