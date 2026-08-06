@@ -227,7 +227,20 @@ fn command_script_edits_builtin_smw_level_without_external_profile() {
     let commands = directory.join("commands.txt");
     let original = pristine_smw_us_rom_bytes();
     fs::write(&input, &original).unwrap();
-    fs::write(&edits, "LMLEDIT1\nheader background-palette 05\n").unwrap();
+    fs::write(
+        &edits,
+        "LMLEDIT1\n\
+         header background-palette 05\n\
+         object clear\n\
+         sprite clear\n\
+         object place 5810bf 00 08 00 true\n\
+         object place 77f402 00 07 06 true\n\
+         object place 72ad22 00 02 02 true\n\
+         sprite place 11d00f 00 05 0017\n\
+         sprite place 711200 00 08 0017\n\
+         sprite place 711200 00 0b 0017\n",
+    )
+    .unwrap();
     fs::write(
         &commands,
         format!(
@@ -263,6 +276,34 @@ fn command_script_edits_builtin_smw_level_without_external_profile() {
         )
         .unwrap();
     assert_eq!(level.layer1.header.background_palette(), 5);
+    assert_eq!(level.layer1.objects.records.len(), 3);
+    assert_eq!(level.layer1.objects.records[0].command_id(), 0x21);
+    assert_eq!(level.layer1.objects.records[0].parameter(), 0xbf);
+    assert!(
+        level
+            .layer1
+            .objects
+            .records
+            .iter()
+            .any(|record| record.command_id() == 0x3f && record.parameter() == 0x02)
+    );
+    assert!(
+        level
+            .layer1
+            .objects
+            .records
+            .iter()
+            .any(|record| record.command_id() == 0x3a && record.parameter() == 0x22)
+    );
+    let sprites = level.sprites.native_placements();
+    assert_eq!(sprites.len(), 3);
+    assert_eq!(
+        sprites
+            .iter()
+            .map(|placement| placement.sprite_number)
+            .collect::<Vec<_>>(),
+        [0x0f, 0x00, 0x00]
+    );
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1207,7 +1248,7 @@ fn command_script_drives_interpretation_bound_native_level_document() {
     .unwrap();
     fs::write(
         &edits,
-        "LMLEDIT1\nheader mode 1f\nsprite-header 44\nobject insert 1 030405\n",
+        "LMLEDIT1\nheader mode 1f\nobject clear\nsprite clear\nsprite-header 44\nobject insert 0 030405\n",
     )
     .unwrap();
     fs::write(
@@ -1235,7 +1276,8 @@ fn command_script_drives_interpretation_bound_native_level_document() {
     let saved = NativeLevelFile::decode(&fs::read(&document).unwrap(), &lengths).unwrap();
     assert_eq!(saved.source_level, 0x105);
     assert_eq!(saved.layer1.header.level_mode(), 0x1f);
-    assert_eq!(saved.layer1.objects.records.len(), 2);
+    assert_eq!(saved.layer1.objects.records.len(), 1);
+    assert!(saved.sprites.tokens.is_empty());
     assert_eq!(saved.sprites.header, 0x44);
     fs::remove_dir_all(directory).unwrap();
 }

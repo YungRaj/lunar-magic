@@ -28,6 +28,30 @@ fn controller() -> NativeLevelDocumentController {
 }
 
 #[test]
+fn clear_both_entity_streams_is_atomic_reopenable_and_undoable() {
+    let original = file();
+    let mut controller = controller();
+    controller
+        .apply_edits(
+            0,
+            &[NativeLevelEdit::ClearObjects, NativeLevelEdit::ClearSprites],
+        )
+        .unwrap();
+    assert!(controller.value().layer1.objects.records.is_empty());
+    assert!(controller.value().sprites.tokens.is_empty());
+    assert_eq!(controller.revision(), 1);
+
+    let snapshot = controller.begin_save().unwrap();
+    let reopened = NativeLevelFile::decode(&snapshot.bytes, controller.sprite_lengths()).unwrap();
+    assert!(reopened.layer1.objects.records.is_empty());
+    assert!(reopened.sprites.tokens.is_empty());
+    controller.cancel_save(snapshot.request_id).unwrap();
+
+    assert!(controller.undo(1).unwrap());
+    assert_eq!(controller.value(), &original);
+}
+
+#[test]
 fn expanded_sprite_relocation_is_one_revision_and_reopens_canonically() {
     let mut value = file();
     value.sprites.expanded = true;

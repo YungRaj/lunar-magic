@@ -200,6 +200,13 @@ nibbles, and perpendicular-high state in the same typed transaction as portable 
 aggregate forms. It preserves custom extensions, rejects native-width changes atomically,
 regenerates transitions, tracks selection across reordering, reopens checksum-valid, and undoes
 the ROM byte-exactly.
+Strict `LMLEDIT1 object clear` and `sprite clear` commands now replace both complete entity streams
+through the shared failure-atomic edit batch, allowing a level to be rebuilt from an empty object
+and sprite layout without raw-file surgery. `parses_atomic_stream_clear_commands`,
+`clear_both_entity_streams_is_atomic_reopenable_and_undoable`,
+`command_script_edits_builtin_smw_level_without_external_profile`, and
+`command_script_drives_interpretation_bound_native_level_document` cover parsing, portable
+save/reopen/undo, and a vanilla-ROM built-process clear-and-repopulate workflow.
 Object-backed Layer 2 now has the parallel strict `LML2OBJ1` aggregate child. It reuses the whole
 typed object grammar, rejects Layer 1 headers/sprites and tilemap-backed levels, carries Layer 2's
 separate allocation plan, and has checksum-valid semantic reopen, late-failure rollback, and exact

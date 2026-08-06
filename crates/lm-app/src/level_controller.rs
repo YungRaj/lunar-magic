@@ -19,7 +19,9 @@ mod commit;
 pub enum NativeLevelEdit {
     LegacyHeader(LegacyHeaderEdit),
     SetCustomTime(Option<CustomTimeSettings>),
+    ClearObjects,
     Objects(Vec<ObjectEdit>),
+    ClearSprites,
     SetSpriteHeader(u8),
     SetSpriteHeaderProperties {
         memory: u8,

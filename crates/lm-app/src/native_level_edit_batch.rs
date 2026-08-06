@@ -41,10 +41,12 @@ pub(crate) fn apply_native_level_edits(
                     .set_custom_time(vertical, *settings)
                     .map_err(|error| LevelControllerError::CustomTimeEdit { command, error })?;
             }
+            NativeLevelEdit::ClearObjects => staged_layer1.objects.records.clear(),
             NativeLevelEdit::Objects(edits) => staged_layer1
                 .objects
                 .apply_edits(edits)
                 .map_err(|error| LevelControllerError::ObjectEdit { command, error })?,
+            NativeLevelEdit::ClearSprites => staged_sprites.tokens.clear(),
             NativeLevelEdit::SetSpriteHeader(header) => staged_sprites.header = *header,
             NativeLevelEdit::SetSpriteHeaderProperties {
                 memory,

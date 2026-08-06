@@ -120,6 +120,7 @@ fn parse_command(line: usize, content: &str) -> Result<NativeLevelEdit, LevelEdi
             CustomTimeSettings::new(hex_word(line, value)?, boolean(line, force_reset)?)
                 .map_err(|error| LevelEditScriptError::CustomTime { line, error })?,
         ))),
+        ["object", "clear"] => Ok(NativeLevelEdit::ClearObjects),
         ["object", "insert", index, bytes] => {
             Ok(NativeLevelEdit::Objects(vec![ObjectEdit::Insert {
                 index: decimal(line, index)?,
@@ -304,6 +305,7 @@ fn parse_sprite_command(
     command: &[&str],
 ) -> Result<NativeLevelEdit, LevelEditScriptError> {
     match command {
+        ["clear"] => Ok(NativeLevelEdit::ClearSprites),
         ["fields", index, y_low, extra_bits, screen, x, sprite_number] => {
             Ok(NativeLevelEdit::SetSpriteFields {
                 index: decimal(line, index)?,
@@ -728,6 +730,14 @@ mod tests {
                     sprite_number: 0x47,
                 },
             }
+        );
+    }
+
+    #[test]
+    fn parses_atomic_stream_clear_commands() {
+        assert_eq!(
+            parse("LMLEDIT1\nobject clear\nsprite clear\n").unwrap(),
+            vec![NativeLevelEdit::ClearObjects, NativeLevelEdit::ClearSprites]
         );
     }
 
