@@ -213,7 +213,9 @@ impl RomGraphicsEditor {
         }
         let rows = workspace.palette.palette.colors.len() / 16;
         let special_graphics_available = pristine_special_graphics(&workspace.profile);
+        let native_exgraphics = supports_native_exgraphics(&workspace.profile, &workspace.image);
         let exgraphics_available = supports_exgraphics(&workspace.profile);
+        let exgraphics_insert_available = exgraphics_available || native_exgraphics;
         let configured_graphics_tools = app
             .external_tools()
             .iter()
@@ -425,7 +427,7 @@ impl RomGraphicsEditor {
                     !stale
                         && !file_work_running
                         && !modified_controller(self.workspace.as_ref())
-                        && exgraphics_available,
+                        && exgraphics_insert_available,
                     egui::Button::new("Insert ExGFX…"),
                 )
                 .on_hover_text("Atomically inserts the canonical ExGFX files found in a directory")
@@ -1117,6 +1119,7 @@ impl RomGraphicsEditor {
             family: "standard",
             description: "Insert all standard GFX files",
             smw_us_v1_special: false,
+            smw_us_v1_exgraphics: false,
             exgraphics_names: false,
         };
         match self.graphics_import.start(source, directory) {
@@ -1176,6 +1179,7 @@ impl RomGraphicsEditor {
             family: "standard",
             description: "Insert AllGFX.bin",
             smw_us_v1_special: false,
+            smw_us_v1_exgraphics: false,
             exgraphics_names: false,
         };
         match self.graphics_import.start_joined(source, path) {
@@ -1247,6 +1251,7 @@ impl RomGraphicsEditor {
             family: "special",
             description: "Insert GFX32/GFX33 files",
             smw_us_v1_special: true,
+            smw_us_v1_exgraphics: false,
             exgraphics_names: false,
         };
         match self.graphics_import.start(source, directory) {
@@ -1306,7 +1311,11 @@ impl RomGraphicsEditor {
         };
         let slots = match graphics_import::enumerate_exgraphics_files(
             &directory,
-            workspace.profile.graphics.pointers.entries,
+            if supports_native_exgraphics(&workspace.profile, &workspace.image) {
+                EXGFX_LIMIT
+            } else {
+                workspace.profile.graphics.pointers.entries
+            },
         ) {
             Ok(slots) => slots,
             Err(error) => {
@@ -1325,6 +1334,7 @@ impl RomGraphicsEditor {
             family: "extended",
             description: "Insert ExGFX files",
             smw_us_v1_special: false,
+            smw_us_v1_exgraphics: supports_native_exgraphics(&workspace.profile, &workspace.image),
             exgraphics_names: true,
         };
         match self.graphics_import.start(source, directory) {
@@ -1352,6 +1362,12 @@ fn pristine_special_graphics(profile: &RevisionProfile) -> bool {
 
 fn supports_exgraphics(profile: &RevisionProfile) -> bool {
     (EXGFX_FIRST + 1..=EXGFX_LIMIT).contains(&profile.graphics.pointers.entries)
+}
+
+fn supports_native_exgraphics(profile: &RevisionProfile, image: &lm_rom::RomImage) -> bool {
+    pristine_special_graphics(profile)
+        && (lm_profile::has_smw_us_v1_4bpp_graphics_prerequisite(image)
+            || lm_profile::probe_smw_us_v1_exgraphics_runtime(image).is_ok())
 }
 
 fn standard_graphics_slots(layout: lm_project::GraphicsRomLayout) -> Vec<usize> {
@@ -1383,7 +1399,7 @@ fn installed_exgraphics_slots(
 mod tests {
     use super::{
         ensure_external_edit_revision, installed_exgraphics_slots, pristine_special_graphics,
-        supports_exgraphics,
+        supports_exgraphics, supports_native_exgraphics,
     };
     use crate::level_graphics_export::legacy_level_graphics_files;
     use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
@@ -1408,6 +1424,23 @@ mod tests {
         profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
         profile.region = lm_rom::Region::Japan;
         assert!(!pristine_special_graphics(&profile));
+    }
+
+    #[test]
+    fn native_first_exgfx_insert_requires_authenticated_four_bpp_prerequisite() {
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = lm_rom::Mapper::LoRom;
+        profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        let mut bytes = vec![0xff; 0x8000];
+        let pristine = RomImage::from_bytes(bytes.clone()).unwrap();
+        assert!(!supports_native_exgraphics(&profile, &pristine));
+        for offset in lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS {
+            bytes[offset] = lm_profile::SMW_US_V1_4BPP_GRAPHICS_MARKER;
+        }
+        let four_bpp = RomImage::from_bytes(bytes).unwrap();
+        assert!(supports_native_exgraphics(&profile, &four_bpp));
+        profile.region = lm_rom::Region::Japan;
+        assert!(!supports_native_exgraphics(&profile, &four_bpp));
     }
 
     #[test]

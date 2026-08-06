@@ -55,6 +55,7 @@ mod secondary_exit_runtime;
 mod separate_midway_install;
 mod shared_palette;
 mod shared_palette_install;
+mod smw_us_v1_exgraphics;
 mod sprite19_fix;
 mod support_patch_b;
 mod text;
@@ -115,8 +116,11 @@ pub use expanded_settings_install::{
     ExpandedSettingsInstallPlanError, SMW_US_V1_CHECKSUM_FIELD,
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END,
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START,
+    SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_END,
+    SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START,
     smw_us_v1_expanded_settings_installation_plan,
     smw_us_v1_expanded_settings_installation_plan_with_overworld_settings,
+    smw_us_v1_gfx_expanded_settings_installation_plan,
 };
 pub use expanded_settings_runtime::{
     ExpandedSettingsEntryContinuation, ExpandedSettingsRelocation,
@@ -412,6 +416,18 @@ pub use shared_palette_install::{
     SMW_US_V1_CUSTOM_PALETTE_POINTER_TABLE_OFFSET, SharedPaletteInstallPlanError,
     smw_us_v1_custom_palette_installation, smw_us_v1_custom_palette_layout,
     smw_us_v1_expanded_shared_palette_installation_plan,
+};
+pub use smw_us_v1_exgraphics::{
+    SMW_US_V1_4BPP_GRAPHICS_MARKER, SMW_US_V1_4BPP_GRAPHICS_MARKER_OFFSETS,
+    SMW_US_V1_EXGFX_EXPANSION_MARKER, SMW_US_V1_EXGFX_EXPANSION_MARKER_OFFSET,
+    SMW_US_V1_EXGFX_LOGICAL_LEN, SMW_US_V1_EXGFX_RUNTIME_HOOK, SMW_US_V1_EXGFX_RUNTIME_HOOK_OFFSET,
+    SMW_US_V1_EXGFX_TABLE_BASE_OPERAND, SMW_US_V1_EXGFX_TABLE_BASE_OPERAND_OFFSET,
+    SMW_US_V1_EXTENDED_EXGFX_POINTER_OFFSET, SMW_US_V1_ORDINARY_EXGFX_POINTER_OFFSET,
+    SMW_US_V1_RESERVED_EXGFX_MARKER, SMW_US_V1_RESERVED_EXGFX_MARKER_OFFSET,
+    SMW_US_V1_RESERVED_EXGFX_POINTER_OFFSET, SmwUsV1ExGraphicsEncoding, SmwUsV1ExGraphicsError,
+    SmwUsV1ExGraphicsPointer, SmwUsV1ExGraphicsRuntimeState,
+    has_smw_us_v1_4bpp_graphics_prerequisite, probe_smw_us_v1_exgraphics_runtime,
+    smw_us_v1_exgraphics_installation_plan, smw_us_v1_exgraphics_pointer,
 };
 pub use sprite19_fix::{
     SMW_US_V1_SPRITE19_FIX_BRANCH_OFFSET, SMW_US_V1_SPRITE19_FIX_HOOK_OFFSET,

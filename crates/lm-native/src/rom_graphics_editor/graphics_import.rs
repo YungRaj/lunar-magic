@@ -21,6 +21,7 @@ pub(super) struct GraphicsImportSource {
     pub(super) family: &'static str,
     pub(super) description: &'static str,
     pub(super) smw_us_v1_special: bool,
+    pub(super) smw_us_v1_exgraphics: bool,
     /// Uses Lunar Magic's `ExGFX` namespace even for reserved files `$60` through `$63`.
     pub(super) exgraphics_names: bool,
 }
@@ -198,7 +199,25 @@ fn prepare_import(
             if cancelled.load(Ordering::Relaxed) {
                 return Ok(None);
             }
-            if source.smw_us_v1_special {
+            if source.smw_us_v1_exgraphics {
+                let files = source
+                    .file_numbers
+                    .iter()
+                    .copied()
+                    .zip(files)
+                    .map(|(number, bytes)| {
+                        u16::try_from(number)
+                            .map(|number| (number, bytes))
+                            .map_err(|_| format!("ExGFX file number {number:X} exceeds $FFFF"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                lm_app::prepare_smw_us_v1_exgraphics_install(
+                    source.expected_revision,
+                    source.image,
+                    &files,
+                )
+                .map(Some)
+            } else if source.smw_us_v1_special {
                 lm_app::prepare_smw_us_v1_special_graphics_import(
                     source.expected_revision,
                     source.image,

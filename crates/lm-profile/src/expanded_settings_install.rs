@@ -14,6 +14,8 @@ use lm_rom::Mapper;
 
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START: usize = 0x08_7ff8;
 pub const SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END: usize = 0x09_0000;
+pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START: usize = 0x08_0028;
+pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_END: usize = 0x08_6e30;
 pub const SMW_US_V1_CHECKSUM_FIELD: usize = 0x00_7fdc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,6 +74,39 @@ pub fn smw_us_v1_expanded_settings_installation_plan()
 /// Propagates the same recovered runtime/fixup validation as the default installation plan.
 pub fn smw_us_v1_expanded_settings_installation_plan_with_overworld_settings(
     overworld: Option<&ExpandedOverworldSettings>,
+) -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
+    smw_us_v1_expanded_settings_installation_plan_for_range(
+        overworld,
+        SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START
+            ..SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END,
+        0xff,
+    )
+}
+
+/// Builds the exact prerequisite route used after Lunar Magic has inserted regular 4bpp GFX.
+///
+/// That workflow leaves a small tagged block at `$080000` and zero-filled expansion space after
+/// it. Lunar Magic places the expanded-settings tag at `$080028`, ending before the fixed ExGFX
+/// pointer domains. Keeping this route separate prevents the `$088000..$08ACFF` extended pointer
+/// table from being mistaken for generic free space.
+///
+/// # Errors
+///
+/// Propagates runtime/fixup validation from the ordinary installation-plan constructor.
+pub fn smw_us_v1_gfx_expanded_settings_installation_plan()
+-> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
+    smw_us_v1_expanded_settings_installation_plan_for_range(
+        None,
+        SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START
+            ..SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_END,
+        0x00,
+    )
+}
+
+fn smw_us_v1_expanded_settings_installation_plan_for_range(
+    overworld: Option<&ExpandedOverworldSettings>,
+    search: std::ops::Range<usize>,
+    expansion_fill: u8,
 ) -> Result<RelocatablePatchPlan, ExpandedSettingsInstallPlanError> {
     // The builder needs well-formed placeholder addresses; every allocation-dependent byte is
     // replaced by a typed transaction fixup before publication.
@@ -141,18 +176,14 @@ pub fn smw_us_v1_expanded_settings_installation_plan_with_overworld_settings(
         description: "install SMW US expanded level settings".into(),
         mapper: Mapper::LoRom,
         allocation: AllocationPolicy {
-            search: SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START
-                ..SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_END,
+            search,
             // Lunar Magic places the tag in the preceding bank's final eight bytes.
             bank_size: None,
-            // Lunar Magic's 4bpp GFX insertion expands a vanilla ROM with zero-filled space.
-            // ExGFX installation immediately reuses that space for this prerequisite, while a
-            // direct expanded-settings install still encounters the usual `$FF` expansion fill.
-            fill_bytes: vec![0xff, 0x00],
+            fill_bytes: vec![expansion_fill],
             protected: Vec::new(),
         },
         checksum_field: SMW_US_V1_CHECKSUM_FIELD,
-        expansion_fill: 0xff,
+        expansion_fill,
         payloads: vec![PatchPayload {
             bytes: allocation.encode(),
             fixups: Vec::new(),
@@ -257,20 +288,23 @@ mod tests {
     }
 
     #[test]
-    fn plan_accepts_lunar_magics_zero_filled_gfx_expansion() {
+    fn post_gfx_plan_uses_the_exact_zero_filled_gap_before_exgfx_tables() {
         let (_, mut before) = fixtures();
         before.expand(Mapper::LoRom, 0x09_0000, 0x00).unwrap();
         let original = before.logical_bytes().to_vec();
         let mut project = Project::new(before);
         let result = project
-            .install_relocatable_patch(&smw_us_v1_expanded_settings_installation_plan().unwrap())
+            .install_relocatable_patch(
+                &smw_us_v1_gfx_expanded_settings_installation_plan().unwrap(),
+            )
             .unwrap();
 
         assert_eq!(
             result.blocks[0].header_offset,
-            SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_SEARCH_START
+            SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START
         );
-        assert_eq!(result.blocks[0].payload.start, 0x08_8000);
+        assert_eq!(result.blocks[0].payload.start, 0x08_0030);
+        assert_eq!(result.blocks[0].payload.end, 0x08_6e30);
         project.undo().unwrap();
         assert_eq!(project.rom.logical_bytes(), original);
     }
