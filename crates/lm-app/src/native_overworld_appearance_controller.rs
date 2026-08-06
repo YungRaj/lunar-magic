@@ -531,6 +531,31 @@ mod tests {
     }
 
     #[test]
+    fn invalid_range_replacement_is_canonically_rejected_without_history() {
+        let mut controller = controller();
+        let before = controller.value().clone();
+        assert!(matches!(
+            controller.apply_edits(
+                0,
+                &[NativeOverworldAppearanceEdit::ReplacePaletteRanges(vec![
+                    NativeOverworldSpriteRange {
+                        kind: 0xffff,
+                        first_tile: 0x900,
+                        last_tile: 0x800,
+                        base: 0xffff,
+                    },
+                ])],
+            ),
+            Err(NativeOverworldAppearanceControllerError::Definitions(
+                NativeOverworldSpriteSidecarError::RangeOutOfBounds { .. }
+            ))
+        ));
+        assert_eq!(controller.value(), &before);
+        assert_eq!(controller.revision(), 0);
+        assert!(!controller.can_undo());
+    }
+
+    #[test]
     fn paired_history_and_save_tokens_retain_native_semantics() {
         let mut controller = controller();
         let original = controller.value().clone();

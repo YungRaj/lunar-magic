@@ -4,7 +4,7 @@ use lm_app::NativeOverworldAppearanceEdit;
 use lm_level::{Map16Tile, Subtile};
 use lm_overworld::{
     NativeOverworldSpriteAppearance, NativeOverworldSpriteDisplay, NativeOverworldSpriteMap16Part,
-    NativeOverworldSpriteTooltip,
+    NativeOverworldSpriteRange, NativeOverworldSpriteTooltip,
 };
 
 #[derive(Default)]
@@ -25,12 +25,16 @@ pub(super) struct NativeAppearanceForm {
     map16_tile: u16,
     map16_words: [u16; 4],
     map16_key: Option<(u64, u16)>,
+    ranges_key: Option<u64>,
+    graphics_ranges: Vec<NativeOverworldSpriteRange>,
+    palette_ranges: Vec<NativeOverworldSpriteRange>,
 }
 
 impl NativeAppearanceForm {
     pub(super) fn invalidate(&mut self) {
         self.key = None;
         self.map16_key = None;
+        self.ranges_key = None;
     }
 
     fn load(&mut self, revision: u64, value: &lm_app::NativeOverworldAppearanceValue) {
@@ -84,6 +88,15 @@ impl NativeAppearanceForm {
         ];
         self.map16_key = Some((revision, self.map16_tile));
     }
+
+    fn load_ranges(&mut self, revision: u64, value: &lm_app::NativeOverworldAppearanceValue) {
+        if self.ranges_key == Some(revision) {
+            return;
+        }
+        self.graphics_ranges = value.definitions.graphics_ranges.clone();
+        self.palette_ranges = value.definitions.palette_ranges.clone();
+        self.ranges_key = Some(revision);
+    }
 }
 
 impl OverworldAppearanceEditor {
@@ -95,6 +108,7 @@ impl OverworldAppearanceEditor {
         let value = controller.value().clone();
         self.native_form.load(revision, &value);
         self.native_form.load_map16(revision, &value);
+        self.native_form.load_ranges(revision, &value);
 
         let mut history = None;
         let mut save = false;
@@ -186,6 +200,29 @@ impl OverworldAppearanceEditor {
                     sprite_id: self.native_form.sprite_id,
                     value,
                 });
+            }
+        });
+
+        ui.group(|ui| {
+            ui.heading("External Graphics and Palette Ranges");
+            ui.label("Ranges retain their native kind, inclusive tile span, base, and file order.");
+            let mut edit = None;
+            Self::native_ranges(
+                ui,
+                "Graphics",
+                &mut self.native_form.graphics_ranges,
+                &mut edit,
+                NativeOverworldAppearanceEdit::ReplaceGraphicsRanges,
+            );
+            Self::native_ranges(
+                ui,
+                "Palette",
+                &mut self.native_form.palette_ranges,
+                &mut edit,
+                NativeOverworldAppearanceEdit::ReplacePaletteRanges,
+            );
+            if let Some(edit) = edit {
+                self.apply_native_edit(edit);
             }
         });
 
@@ -308,6 +345,28 @@ impl OverworldAppearanceEditor {
                     .selected_part
                     .min(self.native_form.parts.len().saturating_sub(1));
             }
+            if ui
+                .add_enabled(
+                    self.native_form.selected_part > 0,
+                    egui::Button::new("Send Backward"),
+                )
+                .clicked()
+            {
+                let selected = self.native_form.selected_part;
+                self.native_form.parts.swap(selected, selected - 1);
+                self.native_form.selected_part -= 1;
+            }
+            if ui
+                .add_enabled(
+                    self.native_form.selected_part + 1 < self.native_form.parts.len(),
+                    egui::Button::new("Bring Forward"),
+                )
+                .clicked()
+            {
+                let selected = self.native_form.selected_part;
+                self.native_form.parts.swap(selected, selected + 1);
+                self.native_form.selected_part += 1;
+            }
         });
         if let Some(part) = self
             .native_form
@@ -327,6 +386,57 @@ impl OverworldAppearanceEditor {
                 );
                 ui.checkbox(&mut part.translucent, "Translucent");
             });
+        }
+    }
+
+    fn native_ranges(
+        ui: &mut egui::Ui,
+        label: &str,
+        ranges: &mut Vec<NativeOverworldSpriteRange>,
+        edit: &mut Option<NativeOverworldAppearanceEdit>,
+        replacement: fn(Vec<NativeOverworldSpriteRange>) -> NativeOverworldAppearanceEdit,
+    ) {
+        ui.horizontal(|ui| {
+            ui.strong(label);
+            if ui.button("Add").clicked() {
+                ranges.push(NativeOverworldSpriteRange {
+                    kind: 0,
+                    first_tile: 0x400,
+                    last_tile: 0x400,
+                    base: 0,
+                });
+            }
+            if ui.button(format!("Apply {label} Ranges")).clicked() {
+                *edit = Some(replacement(ranges.clone()));
+            }
+        });
+        let mut remove = None;
+        for (index, range) in ranges.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label(format!("#{index}"));
+                ui.label("Kind");
+                ui.add(egui::DragValue::new(&mut range.kind).hexadecimal(4, false, true));
+                ui.label("First");
+                ui.add(
+                    egui::DragValue::new(&mut range.first_tile)
+                        .range(0..=0xbff)
+                        .hexadecimal(3, false, true),
+                );
+                ui.label("Last");
+                ui.add(
+                    egui::DragValue::new(&mut range.last_tile)
+                        .range(0..=0xbff)
+                        .hexadecimal(3, false, true),
+                );
+                ui.label("Base");
+                ui.add(egui::DragValue::new(&mut range.base).hexadecimal(4, false, true));
+                if ui.small_button("Remove").clicked() {
+                    remove = Some(index);
+                }
+            });
+        }
+        if let Some(index) = remove {
+            ranges.remove(index);
         }
     }
 
@@ -373,6 +483,30 @@ mod tests {
         assert!(form.parts[0].translucent);
         assert_eq!(form.parts[1].tile, 0xc01);
         assert_eq!(form.map16_words, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn native_form_loads_graphics_and_palette_ranges_without_narrowing() {
+        let controller = NativeOverworldAppearanceController::decode(
+            "sprites.sscov".into(),
+            "sprites.s16ov".into(),
+            b"10000\t12\t400-4FF,1234\n20000\tABCD\t800-BFF,FFFF\n",
+            &[],
+        )
+        .unwrap();
+        let mut form = NativeAppearanceForm::default();
+        form.load_ranges(controller.revision(), controller.value());
+        assert_eq!(
+            form.graphics_ranges,
+            [NativeOverworldSpriteRange {
+                kind: 0x12,
+                first_tile: 0x400,
+                last_tile: 0x4ff,
+                base: 0x1234,
+            }]
+        );
+        assert_eq!(form.palette_ranges[0].kind, 0xabcd);
+        assert_eq!(form.palette_ranges[0].base, 0xffff);
     }
 
     #[test]

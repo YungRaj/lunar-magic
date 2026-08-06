@@ -4267,3 +4267,10 @@ translucency, while the custom definition panel edits all four exact subtile wor
 `$400..$BFF`. Undo/redo spans both files. Save uses the shared paired persistence worker and only
 acknowledges the controller after both existing files have been replaced atomically; a disk reopen
 test compares the complete semantic pair.
+
+The lossless native mode also edits both ordered external-resource range families. Each graphics or
+palette record retains its full 16-bit kind and base plus the inclusive native `$000..$BFF` tile
+span; add/remove/apply replaces exactly one family in one revision, and canonical reopen rejects a
+reversed or out-of-band span without value or history mutation. Map16 composition controls can move
+the selected 16x16 part one position backward or forward in retained painter order. Focused form
+tests load maximum-width range fields without narrowing.
