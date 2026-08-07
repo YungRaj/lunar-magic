@@ -223,7 +223,7 @@ impl RomMap16Editor {
                     options.graphics.blank_tile = use_blank_graphics.then_some(0x0f8);
                     changed = true;
                 }
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("First 8×8 tile");
                     changed |= ui
                         .add(
@@ -438,7 +438,7 @@ impl RomMap16Editor {
             || self.bitmap_clipboard_loader.is_running()
             || self.bitmap_session.is_some();
         ui.add_enabled_ui(!busy, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label("Editable GFX slot 4");
                 ui.text_edit_singleline(&mut self.bitmap_extra_slot_4);
                 ui.label("slot 5");
@@ -567,7 +567,7 @@ fn bitmap_multi_row_color_options(
 ) -> bool {
     let mut changed = false;
     ui.indent("map16-bitmap-multi-row-color-options", |ui| {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             changed |= ui
                 .add(egui::Slider::new(&mut options.maximum_colors, 1..=128).text("Maximum colors"))
                 .changed();
