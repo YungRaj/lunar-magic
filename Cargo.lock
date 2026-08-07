@@ -1675,6 +1675,7 @@ dependencies = [
  "lm-render",
  "lm-rom",
  "lm-title",
+ "png 0.17.16",
  "rfd",
  "tempfile",
 ]

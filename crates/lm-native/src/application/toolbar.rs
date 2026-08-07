@@ -422,6 +422,12 @@ fn toggle_user_toolbar_view_state(
         UserToolbarLocalAction::Sprites => visibility.sprites = !visibility.sprites,
         UserToolbarLocalAction::SpecialWorld => *special_world_passed = !*special_world_passed,
         UserToolbarLocalAction::TileGrid => visibility.tile_grid = !visibility.tile_grid,
+        UserToolbarLocalAction::SurfaceOutline => {
+            visibility.surface_outline = !visibility.surface_outline;
+        }
+        UserToolbarLocalAction::LineGuideOutline => {
+            visibility.line_guide_outline = !visibility.line_guide_outline;
+        }
         UserToolbarLocalAction::ScreenGrid => {
             visibility.screen_overlay =
                 if visibility.screen_overlay == LevelScreenOverlay::ScreenGrid {
@@ -649,6 +655,8 @@ enum UserToolbarLocalAction {
     Sprites,
     SpecialWorld,
     TileGrid,
+    SurfaceOutline,
+    LineGuideOutline,
     ScreenGrid,
     ScreenExits,
     BoundaryGuide,
@@ -668,6 +676,8 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_SPRITES" => UserToolbarLocalAction::Sprites,
         "LM_VIEW_SPECIAL_WORLD" => UserToolbarLocalAction::SpecialWorld,
         "LM_VIEW_TILE_GRID" => UserToolbarLocalAction::TileGrid,
+        "LM_VIEW_SURFACE_OUTLINE" => UserToolbarLocalAction::SurfaceOutline,
+        "LM_VIEW_LINE_GUIDE_OUTLINE" => UserToolbarLocalAction::LineGuideOutline,
         "LM_VIEW_SCREEN_GRID" => UserToolbarLocalAction::ScreenGrid,
         "LM_VIEW_SCREEN_EXITS" => UserToolbarLocalAction::ScreenExits,
         "LM_VIEW_SCREEN_GRID_2" => UserToolbarLocalAction::BoundaryGuide,
@@ -771,6 +781,14 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_TILE_GRID"),
             Some(UserToolbarLocalAction::TileGrid)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_SURFACE_OUTLINE"),
+            Some(UserToolbarLocalAction::SurfaceOutline)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_LINE_GUIDE_OUTLINE"),
+            Some(UserToolbarLocalAction::LineGuideOutline)
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_SCREEN_GRID"),
@@ -940,6 +958,18 @@ mod user_toolbar_tests {
             UserToolbarLocalAction::TileGrid,
         );
         assert!(visibility.tile_grid);
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::SurfaceOutline,
+        );
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::LineGuideOutline,
+        );
+        assert!(visibility.surface_outline);
+        assert!(visibility.line_guide_outline);
         assert_eq!(visibility.screen_overlay, LevelScreenOverlay::None);
         toggle_user_toolbar_view_state(
             &mut visibility,

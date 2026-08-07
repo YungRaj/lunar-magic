@@ -26,6 +26,7 @@ arboard = "3.6.1"
 tempfile = "3"
 directories = "6"
 fs2 = "0.4"
+png = "0.17"
 
 [dev-dependencies]
 lm-oracle = { path = "../lm-oracle" }

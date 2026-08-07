@@ -4462,3 +4462,13 @@ updates on headered and headerless ROMs. Seven sequential transactions install s
 names, and messages, edit player starts, then update each installed variable-sized runtime.
 Settings, names, messages, and starts all reopen exactly from checksum-valid results; physical
 copier framing is preserved, logical outputs match, and seven undos recover each original ROM.
+
+The level renderer now implements Lunar Magic's two independent Map16 outline commands rather than
+approximating them with vector borders. `LM_VIEW_SURFACE_OUTLINE` (`$2410`) and
+`LM_VIEW_LINE_GUIDE_OUTLINE` (`$2411`) toggle the state consumed by the live canvas. PE resource
+500/524 is retained as a compact text-encoded PNG and decoded once into the original 1,808×16 atlas
+of 113 16×16 glyphs, with the original magenta transparency key. Surface lookup reproduces the
+recovered 512-byte initialization table and object-tileset substitutions; line-guide lookup covers
+the vanilla `$76..$99` roots and pristine `$95/$62` conditional. Custom Map16 cells follow bounded
+Acts Like chains to a vanilla root. Both object-stream caches and tilemap-backed Layer 2 composite
+the glyph after the Map16 artwork, matching `RenderMap16TileToPixelBuffer` ordering.

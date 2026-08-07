@@ -102,9 +102,13 @@ Top/Bottom or Left/Right screen regions and hexadecimal labels. `$23F5` now rend
 exclusive screen-exit regions and resolves direct, midway, secondary-level, and overworld labels
 through the detected pristine/installed secondary-exit table. `$23F7` completes the mutually
 exclusive overlay group with the original mode-dependent 256×232, 352×232, and 448×224 boundary
-guide anchored to the level camera. This strengthens the
-Configuration toolbar GUI evidence but does not promote that workflow while the remaining internal
-command table and toolbar variants are incomplete.
+guide anchored to the level camera. The independent `$2410` Surface Outline and `$2411` Line Guide
+Outline names now toggle the exact renderer flags recovered in `HandleLevelEditorCommand`. Rust
+composites PE resource 500/524's 113-glyph atlas over object-backed and tilemap-backed Map16 cells,
+resolves custom Acts Like chains to vanilla roots, uses the recovered 512-entry surface table with
+object-tileset substitutions, and applies the pristine line-guide `$76..$99` lookup. This
+strengthens the Configuration toolbar GUI evidence but does not promote that workflow while the
+remaining internal command table and toolbar variants are incomplete.
 
 ## Workflow ledger
 

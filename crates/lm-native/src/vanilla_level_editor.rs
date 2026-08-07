@@ -353,6 +353,7 @@ pub(crate) struct VanillaLevelEditor {
     error: Option<String>,
     map16_key: Option<(u64, u16, u8, u8, bool, bool)>,
     map16_texture: Option<egui::TextureHandle>,
+    outline_texture: Option<egui::TextureHandle>,
     layer2_map16_texture: Option<egui::TextureHandle>,
     background_map16_texture: Option<egui::TextureHandle>,
     animated_map16_textures: Vec<egui::TextureHandle>,
@@ -450,6 +451,18 @@ impl VanillaLevelEditor {
         self.show_layer2_mode_reset_confirmation(ui.ctx());
 
         ui.heading(format!("Level {level:03X} — built-in SMW editor"));
+        if self.outline_texture.is_none() {
+            match crate::level_outline::atlas_image() {
+                Ok(image) => {
+                    self.outline_texture = Some(ui.ctx().load_texture(
+                        "lunar-magic-level-outline-atlas",
+                        image,
+                        egui::TextureOptions::NEAREST,
+                    ));
+                }
+                Err(error) => self.error = Some(error),
+            }
+        }
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
                 egui::Color32::RED,
@@ -2395,6 +2408,9 @@ impl VanillaLevelEditor {
                 minor_tiles,
                 vertical,
                 game_camera,
+                self.outline_texture.as_ref(),
+                visibility.surface_outline,
+                visibility.line_guide_outline,
             );
         }
         if visibility.layer3
@@ -2439,6 +2455,8 @@ impl VanillaLevelEditor {
                 custom_map16,
                 layer2_map16_texture,
                 layer2_map16_texture_variants,
+                visibility.surface_outline,
+                visibility.line_guide_outline,
             )
         } else {
             HashMap::new()
@@ -2459,6 +2477,8 @@ impl VanillaLevelEditor {
                 custom_map16,
                 map16_texture,
                 map16_texture_variants,
+                visibility.surface_outline,
+                visibility.line_guide_outline,
             )
         } else {
             HashMap::new()
@@ -3574,6 +3594,8 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         texture: Option<&egui::TextureHandle>,
         texture_variants: Option<&[egui::TextureHandle]>,
+        surface_outline: bool,
+        line_guide_outline: bool,
     ) -> HashMap<usize, egui::Rect> {
         let Some(texture) = texture else {
             return HashMap::new();
@@ -3598,6 +3620,9 @@ impl VanillaLevelEditor {
                 custom_map16,
                 foreground_texture: self.foreground_texture.as_ref(),
                 texture_variants,
+                outline_texture: self.outline_texture.as_ref(),
+                surface_outline,
+                line_guide_outline,
             },
         )
     }
@@ -6966,6 +6991,9 @@ fn draw_layer2_tilemap(
     minor_tiles: u16,
     vertical: bool,
     game_camera: Option<(u16, u16)>,
+    outline_texture: Option<&egui::TextureHandle>,
+    surface_outline: bool,
+    line_guide_outline: bool,
 ) {
     if let (Some(texture), Some(camera)) = (background_plane_texture, game_camera) {
         draw_wrapped_background_viewport(painter, target, cell_size, texture, entrance, camera);
@@ -7033,6 +7061,16 @@ fn draw_layer2_tilemap(
                     vanilla_map16_atlas_tint(object_tileset, tile),
                 );
             }
+            draw_map16_outline_tile(
+                painter,
+                outline_texture,
+                cell,
+                tile,
+                object_tileset,
+                custom_map16,
+                surface_outline,
+                line_guide_outline,
+            );
         }
     }
 }
@@ -7365,6 +7403,9 @@ struct OrderedObjectDraw<'a> {
     object_tileset: u8,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
     foreground_texture: Option<&'a egui::TextureHandle>,
+    outline_texture: Option<&'a egui::TextureHandle>,
+    surface_outline: bool,
+    line_guide_outline: bool,
 }
 
 fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
@@ -7554,8 +7595,59 @@ fn draw_standard_object_cache(
                     draw_unresolved_map16_paint(painter, tile_rect, tile);
                 }
             }
+            draw_map16_outline(painter, request, tile_rect, tile);
         }
     }
+}
+
+fn draw_map16_outline(
+    painter: &egui::Painter,
+    request: OrderedObjectDraw<'_>,
+    target: egui::Rect,
+    tile: u16,
+) {
+    draw_map16_outline_tile(
+        painter,
+        request.outline_texture,
+        target,
+        tile,
+        request.object_tileset,
+        request.custom_map16,
+        request.surface_outline,
+        request.line_guide_outline,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_map16_outline_tile(
+    painter: &egui::Painter,
+    texture: Option<&egui::TextureHandle>,
+    target: egui::Rect,
+    tile: u16,
+    object_tileset: u8,
+    custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
+    surface_outline: bool,
+    line_guide_outline: bool,
+) {
+    let Some(texture) = texture else { return };
+    let Some(glyph) = crate::level_outline::glyph_for_tile(
+        tile,
+        object_tileset,
+        custom_map16,
+        surface_outline,
+        line_guide_outline,
+    ) else {
+        return;
+    };
+    const GLYPHS: f32 = 113.0;
+    let left = f32::from(glyph) / GLYPHS;
+    let right = (f32::from(glyph) + 1.0) / GLYPHS;
+    painter.image(
+        texture.id(),
+        target,
+        egui::Rect::from_min_max(egui::pos2(left, 0.0), egui::pos2(right, 1.0)),
+        egui::Color32::WHITE,
+    );
 }
 
 fn map16_texture_for_cell<'a>(
@@ -9702,6 +9794,8 @@ mod tests {
             layer3: false,
             sprites: false,
             tile_grid: false,
+            surface_outline: false,
+            line_guide_outline: false,
             screen_overlay: crate::application::LevelScreenOverlay::None,
         };
         assert!(!placement_mode_visible(

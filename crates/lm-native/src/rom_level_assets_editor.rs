@@ -3225,6 +3225,8 @@ mod tests {
                 layer3: false,
                 sprites: false,
                 tile_grid: false,
+                surface_outline: false,
+                line_guide_outline: false,
                 screen_overlay: crate::application::LevelScreenOverlay::None,
             },
             &layer2,

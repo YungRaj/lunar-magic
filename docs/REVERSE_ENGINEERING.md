@@ -3544,3 +3544,14 @@ and 3 add `$4200`, `$0000`, `$1C00`, and `$2A00`, respectively. An adjusted base
 ranges write one constant route per native Sprite Map16 index, with later records overwriting
 earlier records. `RenderOverworldLinkedTileOverlays` reads both tables before resolving each 8x8
 subtile, so routing belongs to the parent Sprite Map16 reference rather than its subtile number.
+
+`HandleLevelEditorCommand` cases `$5D/$5E`, reached by commands `$2410/$2411`, toggle
+`00E278ED/00E278EE` and invalidate the Map16 viewport. `RenderMap16TileToPixelBuffer` resolves any
+Map16 value above `$1FF` through its Acts Like root, selects the 512-byte surface table at
+`007586E8` or line-guide table at `00770C08`, and alpha-keys a 16×16 glyph from bitmap resource
+500/524. That resource is an exact 1,808×16, 24-bit strip: 113 glyphs, with magenta transparent.
+`InitializeVanillaAnimatedTileOwnershipMap` at `004653B0` is therefore more precisely the surface
+outline lookup initializer; it also installs object-tileset-specific substitutions.
+`InitializeAnimationTriggerIndexMap` at `00465350` is the line-guide lookup initializer: roots
+`$76..$93` map to glyphs `$51..$6E`, `$96..$99` map to `$6F`, and the pristine conditional maps
+root `$95` to `$62`.

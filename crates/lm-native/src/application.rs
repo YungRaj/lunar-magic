@@ -104,6 +104,8 @@ pub(crate) struct LevelViewVisibility {
     pub layer3: bool,
     pub sprites: bool,
     pub tile_grid: bool,
+    pub surface_outline: bool,
+    pub line_guide_outline: bool,
     pub screen_overlay: LevelScreenOverlay,
 }
 
@@ -115,6 +117,8 @@ impl Default for LevelViewVisibility {
             layer3: true,
             sprites: true,
             tile_grid: false,
+            surface_outline: false,
+            line_guide_outline: false,
             screen_overlay: LevelScreenOverlay::None,
         }
     }
