@@ -1,4 +1,7 @@
-use super::{AppState, PendingClose, PendingLoad, RomLevelAssetsEditor, Workspace, egui};
+use super::{
+    AppState, PendingClose, PendingLoad, RomLevelAssetsEditor, Workspace, egui,
+    load_workspace_global_exanimation,
+};
 use crate::document_loader::{BoundedRead, LoadedDocument};
 use lm_app::{PaletteOwnershipFile, RevisionProfileControllers};
 use lm_rom::RomImage;
@@ -183,8 +186,10 @@ fn decode_loaded(
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
     let internal_header = profiled.snapshot.identity.internal_header_offset;
+    let global_exanimation = load_workspace_global_exanimation(&profiled.profile, &image)?;
     Ok(Workspace {
         controller,
+        global_exanimation,
         snapshot: profiled.snapshot,
         profile: profiled.profile,
         source_slot,

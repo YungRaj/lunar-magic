@@ -35,6 +35,7 @@ enum PendingClose {
 
 struct Workspace {
     controller: NativeLevelAssetsController,
+    global_exanimation: Option<lm_graphics::CompactExAnimation>,
     snapshot: lm_app::ControllerSnapshot,
     profile: RevisionProfile,
     source_slot: u16,
@@ -1562,6 +1563,7 @@ fn render_batch_level_canvas(
         .map_err(|error| error.to_string())?;
     let workspace = Workspace {
         controller,
+        global_exanimation: load_workspace_global_exanimation(&source.profile, &source.image)?,
         internal_header: snapshot.identity.internal_header_offset,
         snapshot,
         profile: source.profile.clone(),
@@ -1709,7 +1711,11 @@ fn render_super_graphics_level_canvas(
         &project,
         workspace.profile.graphics,
         animation_options.vanilla_tiles
-            || !workspace.controller.assets().exanimation.records.is_empty(),
+            || !workspace.controller.assets().exanimation.records.is_empty()
+            || workspace
+                .global_exanimation
+                .as_ref()
+                .is_some_and(|animation| !animation.records.is_empty()),
     )?;
     if let Some(phase) = animation_phase {
         if !is_smw_us_v1_profile(&workspace.profile) {
@@ -1737,8 +1743,20 @@ fn render_super_graphics_level_canvas(
                 phase & 7,
             );
         }
+        let global_animation = exanimation_feature_enabled(
+            workspace,
+            lm_graphics::ExAnimationFeature::GlobalExAnimation,
+        )
+        .then_some(workspace.global_exanimation.as_ref())
+        .flatten();
+        let level_animation = exanimation_feature_enabled(
+            workspace,
+            lm_graphics::ExAnimationFeature::LevelExAnimation,
+        )
+        .then_some(&workspace.controller.assets().exanimation);
         if let Some(color) = apply_level_exanimation_preview(
-            &workspace.controller.assets().exanimation,
+            global_animation,
+            level_animation,
             phase,
             &mut vram,
             &special_graphics,
@@ -1853,13 +1871,16 @@ fn render_super_graphics_level_canvas(
 }
 
 fn apply_level_exanimation_preview(
-    animation: &lm_graphics::CompactExAnimation,
+    global_animation: Option<&lm_graphics::CompactExAnimation>,
+    level_animation: Option<&lm_graphics::CompactExAnimation>,
     tick: usize,
     vram: &mut MaterializedSuperGraphicsVram,
     special: &SpecialGraphicsTiles,
     palette: &mut lm_graphics::Palette,
 ) -> Result<Option<lm_graphics::Bgr555>, String> {
-    if animation.records.is_empty() {
+    if level_animation.is_none_or(|animation| animation.records.is_empty())
+        && global_animation.is_none_or(|animation| animation.records.is_empty())
+    {
         return Ok(None);
     }
     const CACHE_TILES: usize = 0x2000;
@@ -1881,33 +1902,47 @@ fn apply_level_exanimation_preview(
     if let Some(gfx32) = special.gfx32.as_deref() {
         copy_tiles_into_cache(&mut cache, GFX32_CACHE_BASE, gfx32)?;
     }
-    let relative_base = RELATIVE_BASES[usize::from(animation.setting & 3)];
     let mut relative_tiles = vram.foreground_background.clone();
     relative_tiles.extend_from_slice(&vram.sprites);
-    let relative_capacity = CACHE_TILES.saturating_sub(relative_base as usize);
-    relative_tiles.truncate(relative_capacity);
-    copy_tiles_into_cache(&mut cache, relative_base as usize, &relative_tiles)?;
-
-    let mut triggers = lm_graphics::ExAnimationTriggerPreviewState::default();
-    for index in 0..16 {
-        if animation.trigger_mask & (1 << index) != 0 {
-            triggers.manual_frames[index] = animation.trigger_values[index];
-            triggers.custom[index] = animation.trigger_values[index] != 0;
-        }
+    let level_relative_base =
+        level_animation.map(|animation| RELATIVE_BASES[usize::from(animation.setting & 3)]);
+    if let Some(base) = level_relative_base {
+        copy_relative_exanimation_tiles(&mut cache, base, &relative_tiles)?;
     }
+    let global_relative_base =
+        global_animation.map(|animation| RELATIVE_BASES[usize::from(animation.setting & 3)]);
+    if let Some(base) = global_relative_base {
+        copy_relative_exanimation_tiles(&mut cache, base, &relative_tiles)?;
+    }
+
+    let mut level_triggers = level_animation
+        .map(exanimation_trigger_preview_state)
+        .unwrap_or_default();
+    let mut global_triggers = global_animation
+        .map(exanimation_trigger_preview_state)
+        .unwrap_or_default();
     let mut state = lm_graphics::CompositeExAnimationPreviewState::new();
-    let mut global_triggers = lm_graphics::ExAnimationTriggerPreviewState::default();
     let mut fixed_color = None;
     for substep in 0..=tick {
         let phase = u8::try_from(substep & 7).expect("three-bit ExAnimation phase");
         for selected in state.process_phase(
-            None,
-            &animation.records,
+            global_animation.map(|animation| animation.records.as_slice()),
+            level_animation.map_or(&[], |animation| animation.records.as_slice()),
             phase,
             true,
             &mut global_triggers,
-            &mut triggers,
+            &mut level_triggers,
         ) {
+            let (animation, relative_base) = match selected.domain {
+                lm_graphics::ExAnimationPreviewDomain::Global => (
+                    global_animation.expect("global selections require a global set"),
+                    global_relative_base.expect("global selections require a relative base"),
+                ),
+                lm_graphics::ExAnimationPreviewDomain::Level => (
+                    level_animation.expect("level selections require a level set"),
+                    level_relative_base.expect("level selections require a relative base"),
+                ),
+            };
             let selected = selected.selected;
             let record = &animation.records[selected.record];
             if record.kind() < 0x13 {
@@ -2005,6 +2040,51 @@ fn copy_tiles_into_cache(
     Ok(())
 }
 
+fn copy_relative_exanimation_tiles(
+    cache: &mut [lm_graphics::IndexedTile],
+    base: u32,
+    tiles: &[lm_graphics::IndexedTile],
+) -> Result<(), String> {
+    let base = usize::try_from(base).map_err(|_| "ExAnimation relative base does not fit")?;
+    let mut tiles = tiles;
+    let capacity = cache.len().saturating_sub(base);
+    if tiles.len() > capacity {
+        tiles = &tiles[..capacity];
+    }
+    copy_tiles_into_cache(cache, base, tiles)
+}
+
+fn exanimation_trigger_preview_state(
+    animation: &lm_graphics::CompactExAnimation,
+) -> lm_graphics::ExAnimationTriggerPreviewState {
+    let mut triggers = lm_graphics::ExAnimationTriggerPreviewState::default();
+    for index in 0..16 {
+        if animation.trigger_mask & (1 << index) != 0 {
+            triggers.manual_frames[index] = animation.trigger_values[index];
+            triggers.custom[index] = animation.trigger_values[index] != 0;
+        }
+    }
+    triggers
+}
+
+fn load_workspace_global_exanimation(
+    profile: &RevisionProfile,
+    image: &lm_rom::RomImage,
+) -> Result<Option<lm_graphics::CompactExAnimation>, String> {
+    let project = lm_project::Project::new(image.clone());
+    match project.load_installed_global_exanimation(
+        profile.exanimation_installation,
+        &profile.exanimation_double_size_modes,
+    ) {
+        Ok(lm_project::InstalledAsset::Present(animation)) => Ok(Some(animation)),
+        Ok(lm_project::InstalledAsset::SubsystemAbsent | lm_project::InstalledAsset::SlotEmpty) => {
+            Ok(None)
+        }
+        Err(lm_project::ExAnimationIoError::GlobalPointerLocatorUnavailable) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 const fn installed_layer2_palette_routing(
     object_backed: bool,
     object_tileset: u8,
@@ -2066,10 +2146,27 @@ fn installed_animation_options(workspace: &Workspace) -> InstalledAnimationOptio
         .exanimation_features()
         .map(|features| features.options);
     let mut options = animation_options_from_features(features);
-    options.custom = features
+    let level_active = features
         .is_none_or(|options| options.enabled(lm_graphics::ExAnimationFeature::LevelExAnimation))
         && !workspace.controller.assets().exanimation.records.is_empty();
+    let global_active = features
+        .is_none_or(|options| options.enabled(lm_graphics::ExAnimationFeature::GlobalExAnimation))
+        && workspace
+            .global_exanimation
+            .as_ref()
+            .is_some_and(|animation| !animation.records.is_empty());
+    options.custom = level_active || global_active;
     options
+}
+
+fn exanimation_feature_enabled(
+    workspace: &Workspace,
+    feature: lm_graphics::ExAnimationFeature,
+) -> bool {
+    workspace
+        .controller
+        .exanimation_features()
+        .is_none_or(|options| options.options.enabled(feature))
 }
 
 fn load_installed_layer3(
@@ -3952,8 +4049,15 @@ mod tests {
             colors: vec![Bgr555(0); 128],
         };
         assert_eq!(
-            apply_level_exanimation_preview(&animation, 1, &mut vram, &special, &mut palette)
-                .unwrap(),
+            apply_level_exanimation_preview(
+                None,
+                Some(&animation),
+                1,
+                &mut vram,
+                &special,
+                &mut palette,
+            )
+            .unwrap(),
             None
         );
         assert_eq!(vram.foreground_background[0].pixels(), &[5; 64]);
@@ -3992,7 +4096,61 @@ mod tests {
         let mut palette = Palette {
             colors: vec![Bgr555(0); 128],
         };
-        apply_level_exanimation_preview(&animation, 8, &mut vram, &special, &mut palette).unwrap();
+        apply_level_exanimation_preview(
+            None,
+            Some(&animation),
+            8,
+            &mut vram,
+            &special,
+            &mut palette,
+        )
+        .unwrap();
+        assert_eq!(palette.colors[2], Bgr555(0x03e0));
+    }
+
+    #[test]
+    fn installed_global_exanimation_runs_before_level_records_on_the_shared_palette() {
+        let blank = lm_graphics::IndexedTile::new([0; 64]);
+        let mut vram = MaterializedSuperGraphicsVram {
+            foreground_background: vec![blank.clone(); 6 * 128],
+            sprites: vec![blank.clone(); 4 * 128],
+        };
+        let special = SpecialGraphicsTiles {
+            gfx33: vec![blank; 0x19],
+            gfx32: None,
+        };
+        let animation = |color: u16| lm_graphics::CompactExAnimation {
+            setting: 0,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: vec![
+                lm_graphics::ExAnimationRecord::new(
+                    0x13,
+                    0,
+                    0,
+                    2,
+                    false,
+                    &color.to_le_bytes(),
+                    false,
+                )
+                .unwrap(),
+            ],
+        };
+        let global = animation(0x001f);
+        let level = animation(0x03e0);
+        let mut palette = Palette {
+            colors: vec![Bgr555(0); 128],
+        };
+        apply_level_exanimation_preview(
+            Some(&global),
+            Some(&level),
+            0,
+            &mut vram,
+            &special,
+            &mut palette,
+        )
+        .unwrap();
         assert_eq!(palette.colors[2], Bgr555(0x03e0));
     }
 

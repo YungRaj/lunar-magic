@@ -3745,5 +3745,8 @@ substep calls `ProcessExAnimationRecordGroup` for the 32-record global array bef
 When global animation is active, the level count is 32; otherwise Lunar Magic passes 64. Rust's
 composite preview state preserves that domain order and those limits while keeping independent
 cursor and trigger state for the two arrays. The installed level preview currently supplies its
-staged level set through this shared state; resolving the lazily loaded ROM-global allocation is the
-remaining provider boundary.
+staged level set through this shared state. The installed global provider follows the selected
+runtime hook already authenticated by the revision profile, changes its chained-operand displacement
+to `$5C`, and treats a masked-zero 24-bit value as Lunar Magic's intentional empty global set.
+Present tagged or bounded payloads decode through the same compact-record limits as per-level data,
+then execute before the staged level records against the same mutable tile and palette cache.
