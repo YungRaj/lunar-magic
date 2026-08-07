@@ -303,6 +303,56 @@ fn installed_empty_global_controller_allocates_the_first_record_transactionally(
 }
 
 #[test]
+fn installed_global_controller_matches_across_copier_header_variants() {
+    fn edit(mut physical: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+        let original = physical.clone();
+        let mut app = AppState::default();
+        app.load_rom(std::mem::take(&mut physical)).unwrap();
+        app.dispatch(Command::ShowExAnimation(1)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut controller =
+            ExAnimationController::decode_global(&snapshot, global_installation(), &MODES).unwrap();
+        controller
+            .apply_edits(&[
+                ExAnimationControllerEdit::SetSetting(7),
+                ExAnimationControllerEdit::SetTrigger {
+                    trigger: 5,
+                    value: Some(0x44),
+                },
+            ])
+            .unwrap();
+        let prepared = controller
+            .prepare_commit(
+                "Variant global ExAnimation",
+                &global_options(0x8000..0x10000),
+            )
+            .unwrap();
+        app.dispatch(prepared.into_command()).unwrap();
+        let changed = app.project().unwrap().save_snapshot();
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+        (changed, controller.animation().encode(&MODES).unwrap())
+    }
+
+    let headerless = global_test_rom();
+    let mut headered = vec![0x5a; 0x200];
+    headered.extend_from_slice(&headerless);
+    let (headerless_changed, expected_animation) = edit(headerless);
+    let (headered_changed, headered_animation) = edit(headered);
+
+    assert_eq!(&headered_changed[..0x200], &[0x5a; 0x200]);
+    assert_eq!(headered_animation, expected_animation);
+    assert_eq!(
+        RomImage::from_bytes(headered_changed)
+            .unwrap()
+            .logical_bytes(),
+        RomImage::from_bytes(headerless_changed)
+            .unwrap()
+            .logical_bytes()
+    );
+}
+
+#[test]
 fn owned_exanimation_commit_reclaims_snapshot_block_and_undo_restores_it() {
     let mut app = AppState::default();
     app.load_rom(test_rom()).unwrap();
