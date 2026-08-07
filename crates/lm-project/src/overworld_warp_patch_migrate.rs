@@ -307,8 +307,10 @@ fn publish_runtime(
     table_offset: usize,
     entries: usize,
 ) -> Result<(), OverworldWarpPatchMigrationError> {
-    let count =
-        u16::try_from(entries).map_err(|_| OverworldWarpPatchMigrationError::LengthOverflow)?;
+    let count = entries
+        .checked_mul(2)
+        .and_then(|value| u16::try_from(value).ok())
+        .ok_or(OverworldWarpPatchMigrationError::LengthOverflow)?;
     runtime[0x10..0x12].copy_from_slice(&count.to_le_bytes());
     let plane_len = entries
         .checked_mul(2)

@@ -96,7 +96,7 @@ pub fn smw_us_v1_overworld_warp_installation_plan(
     let planes = table.encode_planes()?;
     let plane_len = planes.source_vertical.len();
     let mut patch = PATCH_TEMPLATE.to_vec();
-    let count = u16::try_from(table.links.len()).map_err(|_| {
+    let count = u16::try_from(plane_len).map_err(|_| {
         OverworldWarpPatchBuildError::Table(OverworldWarpLinkTableError::TooManyLinks(
             table.links.len(),
         ))

@@ -119,11 +119,11 @@ impl Project {
             })?;
         let marker = [patch[0x3c], patch[0x3d], patch[0x3e], patch[0x3f]];
         let (entries, pointer_offsets, legacy) = if marker == CURRENT_MARKER {
-            (
-                usize::from(u16::from_le_bytes([patch[0x10], patch[0x11]])),
-                [0x17, 0x27, 0x4c, 0x5e],
-                false,
-            )
+            let encoded_len = usize::from(u16::from_le_bytes([patch[0x10], patch[0x11]]));
+            if encoded_len == 0 || encoded_len % 2 != 0 {
+                return Err(OverworldWarpPatchError::InvalidEntryCount(encoded_len));
+            }
+            (encoded_len / 2, [0x17, 0x27, 0x4c, 0x5e], false)
         } else if marker == LEGACY_MARKER {
             let count = usize::from(patch[0x10]);
             (
@@ -206,7 +206,7 @@ mod tests {
             return_address[1],
             return_address[2],
         ]);
-        bytes[patch + 0x10..patch + 0x12].copy_from_slice(&2_u16.to_le_bytes());
+        bytes[patch + 0x10..patch + 0x12].copy_from_slice(&4_u16.to_le_bytes());
         bytes[patch + 0x3c..patch + 0x40].copy_from_slice(&CURRENT_MARKER);
         for (pointer, target) in [0x17, 0x27, 0x4c, 0x5e]
             .into_iter()
@@ -228,6 +228,13 @@ mod tests {
             }
         ));
         assert_eq!(loaded.table.links[1].destination.horizontal_tile, 8);
+
+        bytes[patch + 0x10..patch + 0x12].copy_from_slice(&3_u16.to_le_bytes());
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        assert!(matches!(
+            project.load_overworld_warp_links_detected(locator()),
+            Err(OverworldWarpPatchError::InvalidEntryCount(3))
+        ));
     }
 
     #[test]

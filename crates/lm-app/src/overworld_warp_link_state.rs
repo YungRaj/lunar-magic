@@ -100,8 +100,11 @@ mod tests {
         SMW_US_V1_OVERWORLD_WARP_ENTRY_HOOK_OFFSET, SMW_US_V1_OVERWORLD_WARP_RETURN_HOOK_OFFSET,
     };
     use lm_rats::{AllocationPolicy, FreeSpaceAllocator};
-    use lm_rom::{Mapper, RomImage, compute_snes_checksum, pc_to_snes};
-    use std::path::PathBuf;
+    use lm_rom::{Mapper, RomImage, compute_snes_checksum, detect_identity, pc_to_snes};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
 
     #[test]
     fn native_warp_replacement_is_revisioned_and_undoable() {
@@ -191,6 +194,108 @@ mod tests {
         ));
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), legacy);
+    }
+
+    #[test]
+    fn authentic_navigation_edits_match_across_copier_header_variants() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc");
+        let physical = fs::read(fixture).unwrap();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let variants = [physical, physical_image.logical_bytes().to_vec()];
+        let mut logical_results = Vec::new();
+
+        for original in variants {
+            let original_image = RomImage::from_bytes(original.clone()).unwrap();
+            let original_header = original_image.copier_header_bytes().map(<[u8]>::to_vec);
+            let mut app = AppState::default();
+            app.load_rom(original.clone()).unwrap();
+            let project = app.project().unwrap();
+            let mut paths = project
+                .load_overworld_path_links_detected(
+                    lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                )
+                .unwrap()
+                .table;
+            let original_paths = paths.clone();
+            let mut warps = project
+                .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator())
+                .unwrap()
+                .table;
+            let original_warps = warps.clone();
+            assert!(!paths.links.is_empty());
+            assert_eq!(warps.links.len(), 27);
+            paths.links[0].target.x_tile ^= 1;
+            paths.links[0].destination.x ^= 8;
+            warps.links[0].destination.horizontal_tile ^= 1;
+            warps.links[0].destination.packed_vertical ^= 0x10;
+
+            app.dispatch(Command::ReplaceNativeOverworldPathLinks {
+                rev: 0,
+                table: Box::new(paths.clone()),
+            })
+            .unwrap();
+            app.dispatch(Command::ReplaceNativeOverworldWarpLinks {
+                rev: 1,
+                table: Box::new(warps.clone()),
+            })
+            .unwrap();
+
+            let project = app.project().unwrap();
+            assert_eq!(
+                project
+                    .load_overworld_path_links_detected(
+                        lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                    )
+                    .unwrap()
+                    .table,
+                paths
+            );
+            assert_eq!(
+                project
+                    .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator(),)
+                    .unwrap()
+                    .table,
+                warps
+            );
+            let result = RomImage::from_bytes(project.save_snapshot()).unwrap();
+            assert_eq!(
+                result.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+            assert!(detect_identity(&result).unwrap().checksum_matches());
+            logical_results.push(result.logical_bytes().to_vec());
+
+            app.dispatch(Command::Undo).unwrap();
+            assert_eq!(
+                app.project()
+                    .unwrap()
+                    .load_overworld_warp_links_detected(smw_us_v1_overworld_warp_patch_locator(),)
+                    .unwrap()
+                    .table,
+                original_warps
+            );
+            app.dispatch(Command::Undo).unwrap();
+            assert_eq!(app.project().unwrap().save_snapshot(), original);
+            assert_eq!(
+                app.project()
+                    .unwrap()
+                    .load_overworld_path_links_detected(
+                        lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                    )
+                    .unwrap()
+                    .table,
+                original_paths
+            );
+            app.dispatch(Command::Redo).unwrap();
+            app.dispatch(Command::Redo).unwrap();
+            assert_eq!(
+                app.project().unwrap().rom.logical_bytes(),
+                logical_results.last().unwrap()
+            );
+        }
+        assert_eq!(logical_results[0], logical_results[1]);
     }
 
     fn expanded_table(count: u16) -> OverworldWarpLinkTable {

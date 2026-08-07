@@ -2,13 +2,13 @@
 
 use crate::{OverworldWarpLinkStorage, Project, payload::staging::commit_staged};
 use lm_overworld::{OverworldWarpLinkTable, OverworldWarpLinkTableError};
-use lm_rats::{AllocationError, AllocationPolicy, FreeSpaceAllocator, parse_at};
+use lm_rats::{AllocationError, AllocationPolicy, FreeSpaceAllocator, RatsBlock, scan};
 use lm_rom::{Mapper, RomError, RomImage, compute_snes_checksum, pc_to_snes};
 
 #[derive(Debug)]
 pub enum OverworldWarpPatchSaveError {
     UnsupportedStorage,
-    VanillaSizedTable(usize),
+    InvalidEntryCount(usize),
     NonContiguousPlanes,
     MissingAllocation,
     LengthOverflow,
@@ -58,8 +58,10 @@ impl Project {
     ///
     /// # Errors
     ///
-    /// Requires current patch storage and 28–256 entries. The old four planes must be one exact,
-    /// contiguous RATS allocation authorized by `allocation`; malformed ownership fails closed.
+    /// Requires current patch storage and 1–256 entries. The old four planes may share one exact
+    /// RATS allocation, use Lunar Magic's separate exact per-plane owners, or reside in untagged
+    /// fixed space. Every byte in each reclaimed owner must belong to those planes; non-exclusive
+    /// and unowned source storage is preserved while the authenticated runtime is repointed.
     pub fn save_installed_overworld_warp_links(
         &mut self,
         table: &OverworldWarpLinkTable,
@@ -75,46 +77,42 @@ impl Project {
         else {
             return Err(OverworldWarpPatchSaveError::UnsupportedStorage);
         };
-        if table.links.len() <= 27 {
-            return Err(OverworldWarpPatchSaveError::VanillaSizedTable(
+        if table.links.is_empty() {
+            return Err(OverworldWarpPatchSaveError::InvalidEntryCount(
                 table.links.len(),
             ));
         }
+        let encoded = table.encode_planes()?;
+        let plane_payloads = [
+            encoded.source_vertical.as_slice(),
+            encoded.source_horizontal.as_slice(),
+            encoded.destination_vertical.as_slice(),
+            encoded.destination_horizontal.as_slice(),
+        ];
         let payload = encode_payload(table)?;
         let old_plane_len = planes
             .entries
             .checked_mul(2)
             .ok_or(OverworldWarpPatchSaveError::LengthOverflow)?;
-        if [
+        let original = self.rom.logical_bytes().to_vec();
+        let offsets = [
+            planes.source_vertical_offset,
             planes.source_horizontal_offset,
             planes.destination_vertical_offset,
             planes.destination_horizontal_offset,
-        ] != [
-            planes.source_vertical_offset + old_plane_len,
-            planes.source_vertical_offset + old_plane_len * 2,
-            planes.source_vertical_offset + old_plane_len * 3,
-        ] {
-            return Err(OverworldWarpPatchSaveError::NonContiguousPlanes);
-        }
-        let header_offset = planes
-            .source_vertical_offset
-            .checked_sub(lm_rats::HEADER_LEN)
-            .ok_or(OverworldWarpPatchSaveError::MissingAllocation)?;
-        let original = self.rom.logical_bytes().to_vec();
-        let old = parse_at(&original, header_offset)
-            .map_err(|_| OverworldWarpPatchSaveError::MissingAllocation)?;
-        let expected_old_len = old_plane_len
-            .checked_mul(4)
-            .ok_or(OverworldWarpPatchSaveError::LengthOverflow)?;
-        if old.payload.start != planes.source_vertical_offset
-            || old.payload.len() != expected_old_len
+        ];
+        let old = reclaimable_plane_owners(&original, offsets, old_plane_len)?;
+        if planes.entries == table.links.len()
+            && offsets
+                .into_iter()
+                .zip(plane_payloads)
+                .all(|(offset, expected)| {
+                    original.get(offset..offset + expected.len()) == Some(expected)
+                })
         {
-            return Err(OverworldWarpPatchSaveError::MissingAllocation);
-        }
-        if planes.entries == table.links.len() && original[old.payload.clone()] == payload {
             return Ok(false);
         }
-        let (mut staged, replacement) = replace_with_optional_expansion(
+        let (mut staged, replacement) = replace_owners_with_optional_expansion(
             &original,
             planes.mapper,
             allocation,
@@ -144,27 +142,94 @@ impl Project {
     }
 }
 
-fn replace_with_optional_expansion(
+fn replace_owners_with_optional_expansion(
     original: &[u8],
     mapper: Mapper,
     policy: &AllocationPolicy,
-    old: &lm_rats::RatsBlock,
+    old: &[RatsBlock],
     payload: &[u8],
     fill: u8,
 ) -> Result<(Vec<u8>, lm_rats::RatsBlock), OverworldWarpPatchSaveError> {
     let mut current_policy = policy.clone();
     current_policy.search.end = current_policy.search.end.min(original.len());
     let mut staged = original.to_vec();
-    match FreeSpaceAllocator::new(&mut staged, current_policy).replace(old, payload, fill) {
+    match erase_and_allocate(&mut staged, current_policy, old, payload, fill) {
         Ok(block) => Ok((staged, block)),
         Err(AllocationError::NoSpace { .. }) if policy.search.end > original.len() => {
             let mut expanded = expand_for_policy(original, mapper, policy, fill)?;
-            let block = FreeSpaceAllocator::new(&mut expanded, policy.clone())
-                .replace(old, payload, fill)?;
+            let block = erase_and_allocate(&mut expanded, policy.clone(), old, payload, fill)?;
             Ok((expanded, block))
         }
         Err(error) => Err(error.into()),
     }
+}
+
+fn erase_and_allocate(
+    bytes: &mut [u8],
+    policy: AllocationPolicy,
+    old: &[RatsBlock],
+    payload: &[u8],
+    fill: u8,
+) -> Result<RatsBlock, AllocationError> {
+    let mut allocator = FreeSpaceAllocator::new(bytes, policy);
+    for block in old {
+        allocator.erase(block, fill)?;
+    }
+    allocator.allocate(payload)
+}
+
+fn reclaimable_plane_owners(
+    bytes: &[u8],
+    offsets: [usize; 4],
+    plane_len: usize,
+) -> Result<Vec<RatsBlock>, OverworldWarpPatchSaveError> {
+    let blocks = scan(bytes);
+    let mut owners = Vec::<RatsBlock>::new();
+    let mut ranges = Vec::with_capacity(4);
+    for offset in offsets {
+        let end = offset
+            .checked_add(plane_len)
+            .ok_or(OverworldWarpPatchSaveError::LengthOverflow)?;
+        let containing = blocks
+            .iter()
+            .filter(|block| block.payload.start <= offset && end <= block.payload.end)
+            .collect::<Vec<_>>();
+        match containing.as_slice() {
+            [] => {
+                if blocks
+                    .iter()
+                    .any(|block| block.payload.start < end && offset < block.payload.end)
+                {
+                    return Err(OverworldWarpPatchSaveError::MissingAllocation);
+                }
+            }
+            [owner] => {
+                if !owners.iter().any(|known| known == *owner) {
+                    owners.push((*owner).clone());
+                }
+            }
+            _ => return Err(OverworldWarpPatchSaveError::MissingAllocation),
+        }
+        ranges.push(offset..end);
+    }
+    ranges.sort_by_key(|range| range.start);
+    if ranges.windows(2).any(|pair| pair[0].end > pair[1].start) {
+        return Err(OverworldWarpPatchSaveError::NonContiguousPlanes);
+    }
+    owners.retain(|owner| {
+        let covered = ranges
+            .iter()
+            .filter(|range| owner.payload.start <= range.start && range.end <= owner.payload.end)
+            .collect::<Vec<_>>();
+        covered
+            .first()
+            .is_some_and(|first| first.start == owner.payload.start)
+            && covered
+                .last()
+                .is_some_and(|last| last.end == owner.payload.end)
+            && !covered.windows(2).any(|pair| pair[0].end != pair[1].start)
+    });
+    Ok(owners)
 }
 
 fn encode_payload(table: &OverworldWarpLinkTable) -> Result<Vec<u8>, OverworldWarpPatchSaveError> {
@@ -202,7 +267,10 @@ fn publish_current_patch(
     payload_offset: usize,
     entries: usize,
 ) -> Result<(), OverworldWarpPatchSaveError> {
-    let count = u16::try_from(entries).map_err(|_| OverworldWarpPatchSaveError::LengthOverflow)?;
+    let count = entries
+        .checked_mul(2)
+        .and_then(|value| u16::try_from(value).ok())
+        .ok_or(OverworldWarpPatchSaveError::LengthOverflow)?;
     bytes
         .get_mut(patch_offset + 0x10..patch_offset + 0x12)
         .ok_or(OverworldWarpPatchSaveError::LengthOverflow)?
@@ -306,5 +374,91 @@ mod tests {
         );
         assert!(project.undo().unwrap());
         assert_eq!(project.save_snapshot(), bytes);
+    }
+
+    #[test]
+    fn separate_exact_plane_owners_are_reclaimed_and_republished_atomically() {
+        let policy = AllocationPolicy::lorom(0x1000..0x8000);
+        let mut bytes = vec![0xff; 0x8000];
+        let encoded = table(30).encode_planes().unwrap();
+        let old = {
+            let mut allocator = FreeSpaceAllocator::new(&mut bytes, policy.clone());
+            [
+                allocator.allocate(&encoded.source_vertical).unwrap(),
+                allocator.allocate(&encoded.source_horizontal).unwrap(),
+                allocator.allocate(&encoded.destination_vertical).unwrap(),
+                allocator.allocate(&encoded.destination_horizontal).unwrap(),
+            ]
+        };
+        let patch = 0x300;
+        let patch_pointer = pc_to_snes(Mapper::LoRom, patch).unwrap().to_le_bytes();
+        bytes[0x100..0x104].copy_from_slice(&[
+            0x22,
+            patch_pointer[0],
+            patch_pointer[1],
+            patch_pointer[2],
+        ]);
+        bytes[patch + 0x10..patch + 0x12].copy_from_slice(&60u16.to_le_bytes());
+        bytes[patch + 0x3c..patch + 0x40].copy_from_slice(&[b'L', b'M', 0x10, 0x01]);
+        for (pointer_offset, owner) in [0x17, 0x27, 0x4c, 0x5e].into_iter().zip(&old) {
+            let pointer = pc_to_snes(Mapper::LoRom, owner.payload.start)
+                .unwrap()
+                .to_le_bytes();
+            bytes[patch + pointer_offset..patch + pointer_offset + 3]
+                .copy_from_slice(&pointer[..3]);
+        }
+        let return_pointer = pc_to_snes(Mapper::LoRom, patch + 0x40)
+            .unwrap()
+            .to_le_bytes();
+        bytes[0x110..0x114].copy_from_slice(&[
+            0x22,
+            return_pointer[0],
+            return_pointer[1],
+            return_pointer[2],
+        ]);
+        let locator = OverworldWarpPatchLocator {
+            mapper: Mapper::LoRom,
+            entry_hook_offset: 0x100,
+            return_hook_offset: 0x110,
+            fixed: OverworldWarpLinkRomLayout {
+                mapper: Mapper::LoRom,
+                source_vertical_offset: 0x400,
+                source_horizontal_offset: 0x436,
+                destination_vertical_offset: 0x46c,
+                destination_horizontal_offset: 0x4a2,
+                entries: 27,
+            },
+        };
+        let mut replacement = table(40);
+        replacement.links[0].destination.horizontal_tile ^= 1;
+        let mut project = Project::new(RomImage::from_bytes(bytes.clone()).unwrap());
+        let loaded = project.load_overworld_warp_links_detected(locator).unwrap();
+        assert_eq!(loaded.table, table(30));
+        project
+            .save_installed_overworld_warp_links(
+                &replacement,
+                loaded.storage,
+                &policy,
+                0x7fdc,
+                0xff,
+            )
+            .unwrap();
+        assert_eq!(
+            project
+                .load_overworld_warp_links_detected(locator)
+                .unwrap()
+                .table,
+            replacement
+        );
+        assert!(project.undo().unwrap());
+        assert_eq!(project.save_snapshot(), bytes);
+        assert!(project.redo().unwrap());
+        assert_eq!(
+            project
+                .load_overworld_warp_links_detected(locator)
+                .unwrap()
+                .table,
+            replacement
+        );
     }
 }
