@@ -91,3 +91,17 @@ to reject a partial final object record.
 176cb452f3b71524839f1620f3ab44231e00ae9b5328844f653e4d6e2aab84b7  32-byte unterminated input mw0
 38a203f968425a74bce6345426419a5f01e66eb9c5808423f64ab04e088199a8  canonical 33-byte re-export mw0
 ```
+
+## Standard sprite terminator boundaries
+
+The authentic five-byte standard `.mw2` (`00 70 50 82 FF`) imported without a prompt after one
+zero byte was appended. Re-export discarded that trailing byte and reproduced the authentic
+stream. Removing only the final `FF` likewise imported without a prompt and re-export restored the
+terminator. Rust applies this recovery only after complete standard sprite records; a partial final
+record remains invalid. Expanded two-byte terminator recovery is not claimed by this observation.
+
+```text
+0cc266211abd9fbdc93088697d972f0a0db3688aec55443e7e3463623dbc0b04  six-byte trailing-data input mw2
+6f3e58dbe50babe801916d8b38e3d16b7c0acc2d4260964ccfa498e8264a270e  four-byte unterminated input mw2
+640d08e6bc267e92d441e755bbefca1288d3fc3f45f0ef080bd93ddd6e532faf  canonical five-byte re-export mw2
+```

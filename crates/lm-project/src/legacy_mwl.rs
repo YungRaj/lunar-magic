@@ -148,7 +148,19 @@ impl LegacyMwlBundle {
             NativeLayer2Data::decode_mwl(layer1.header.level_mode(), &self.layer2)?
         };
         let expanded_sprites = self.manifest.sprites.flags & 1 != 0;
-        let sprites = NativeSpriteStream::parse(&self.sprites, expanded_sprites, sprite_lengths)?;
+        let sprites =
+            match NativeSpriteStream::parse(&self.sprites, expanded_sprites, sprite_lengths) {
+                Ok(sprites) => sprites,
+                Err(SpriteStreamError::MissingTerminator) if !expanded_sprites => {
+                    // The legacy reader supplies the one-byte terminator after a complete standard
+                    // sprite stream. Expanded `$FF $FE` recovery is deliberately not inferred from
+                    // this standard-stream observation.
+                    let mut terminated = self.sprites.clone();
+                    terminated.push(0xff);
+                    NativeSpriteStream::parse(&terminated, false, sprite_lengths)?
+                }
+                Err(error) => return Err(error.into()),
+            };
         let requested_custom_palette = self.manifest.layer1.flags & 1 != 0;
         let imported_custom_palette = requested_custom_palette && self.palette.is_some();
         let mut palette = destination_palette.clone();
@@ -681,6 +693,36 @@ mod tests {
                 .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
                 .is_err(),
             "a partial final object must not borrow the synthesized terminator as record data"
+        );
+    }
+
+    #[test]
+    fn legacy_standard_sprites_accept_trailing_bytes_and_supply_a_missing_terminator() {
+        let source = level_000();
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 000", &SpriteLengthTable::standard())
+                .unwrap();
+        assert_eq!(bundle.manifest.sprites.flags & 1, 0);
+        let terminated = bundle.sprites.clone();
+
+        bundle.sprites.extend_from_slice(&[0xaa, 0xbb]);
+        let trailing = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        assert_eq!(trailing.sprites, source.sprites);
+
+        bundle.sprites = terminated[..terminated.len() - 1].to_vec();
+        let unterminated = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        assert_eq!(unterminated.sprites, source.sprites);
+
+        bundle.sprites = terminated[..terminated.len() - 2].to_vec();
+        assert!(
+            bundle
+                .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+                .is_err(),
+            "a partial final sprite must not borrow the synthesized terminator as record data"
         );
     }
 
