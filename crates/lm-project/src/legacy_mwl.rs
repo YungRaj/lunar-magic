@@ -153,13 +153,27 @@ impl LegacyMwlBundle {
         let sprites =
             match NativeSpriteStream::parse(&self.sprites, expanded_sprites, sprite_lengths) {
                 Ok(sprites) => sprites,
-                Err(SpriteStreamError::MissingTerminator) if !expanded_sprites => {
-                    // The legacy reader supplies the one-byte terminator after a complete standard
-                    // sprite stream. Expanded `$FF $FE` recovery is deliberately not inferred from
-                    // this standard-stream observation.
+                Err(SpriteStreamError::MissingTerminator) => {
+                    // The legacy reader supplies the complete terminator after a clean end following
+                    // complete records in either grammar.
                     let mut terminated = self.sprites.clone();
-                    terminated.push(0xff);
-                    NativeSpriteStream::parse(&terminated, false, sprite_lengths)?
+                    if expanded_sprites {
+                        terminated.extend_from_slice(&[0xff, 0xfe]);
+                    } else {
+                        terminated.push(0xff);
+                    }
+                    NativeSpriteStream::parse(&terminated, expanded_sprites, sprite_lengths)?
+                }
+                Err(SpriteStreamError::Truncated { offset })
+                    if expanded_sprites
+                        && offset.checked_add(1) == Some(self.sprites.len())
+                        && self.sprites.get(offset) == Some(&0xff) =>
+                {
+                    // A lone final `$FF` is the observed partial expanded terminator, not a partial
+                    // record: Lunar Magic supplies its missing `$FE` byte.
+                    let mut terminated = self.sprites.clone();
+                    terminated.push(0xfe);
+                    NativeSpriteStream::parse(&terminated, true, sprite_lengths)?
                 }
                 Err(error) => return Err(error.into()),
             };
@@ -749,6 +763,41 @@ mod tests {
                 .unwrap();
         assert_eq!(reexport.manifest.sprites.flags & 1, 1);
         assert_eq!(reexport.sprites, standard_bytes);
+    }
+
+    #[test]
+    fn legacy_expanded_sprites_restore_partial_or_missing_two_byte_terminator() {
+        let source = level_000();
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 000", &SpriteLengthTable::standard())
+                .unwrap();
+        let canonical = vec![0x20, 0xff, 0x02, 0x60, 0x00, 0x47, 0xff, 0xfe];
+        bundle.sprites = canonical.clone();
+        let expected = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap()
+            .sprites;
+        assert!(expected.expanded);
+
+        bundle.sprites = canonical[..canonical.len() - 1].to_vec();
+        let missing_fe = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        assert_eq!(missing_fe.sprites, expected);
+
+        bundle.sprites = canonical[..canonical.len() - 2].to_vec();
+        let missing_pair = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        assert_eq!(missing_pair.sprites, expected);
+
+        bundle.sprites = canonical[..canonical.len() - 3].to_vec();
+        assert!(
+            bundle
+                .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+                .is_err(),
+            "a partial expanded record must not borrow a synthesized terminator"
+        );
     }
 
     #[test]

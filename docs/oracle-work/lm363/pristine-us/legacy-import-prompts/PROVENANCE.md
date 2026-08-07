@@ -98,7 +98,7 @@ The authentic five-byte standard `.mw2` (`00 70 50 82 FF`) imported without a pr
 zero byte was appended. Re-export discarded that trailing byte and reproduced the authentic
 stream. Removing only the final `FF` likewise imported without a prompt and re-export restored the
 terminator. Rust applies this recovery only after complete standard sprite records; a partial final
-record remains invalid. Expanded two-byte terminator recovery is not claimed by this observation.
+record remains invalid.
 
 ```text
 0cc266211abd9fbdc93088697d972f0a0db3688aec55443e7e3463623dbc0b04  six-byte trailing-data input mw2
@@ -125,4 +125,21 @@ Lunar Magic's own re-export from this case.
 640d08e6bc267e92d441e755bbefca1288d3fc3f45f0ef080bd93ddd6e532faf  downgraded re-export mw2
 ab16204f4cc457889d004d0597cd634f4e916e895ce1f6b4de1c53226910c2a7  flag-01 input manifest
 d0623e1a4d729fd504578440729dc11b0cf7cb2786af11ffa5840cbcf8478e4e  flag-01 re-export manifest
+```
+
+## Expanded sprite terminator boundaries
+
+The retained expanded baseline `20 FF 02 60 00 47 FF FE` uses a required upper-Y transition, so
+Lunar Magic cannot downgrade it to standard framing. Import and re-export retained all eight bytes
+exactly.
+
+Removing only `FE` imported without a prompt and restored the complete baseline on re-export.
+Removing both final bytes likewise imported without a prompt and restored `FF FE`. Rust therefore
+supplies the missing suffix only at these two clean framing boundaries; a partial final record or
+malformed control remains invalid.
+
+```text
+6f35f278e221522d75d8fe698e1690679d971985be54904c20a0c909dac0e34b  canonical eight-byte expanded mw2
+03b1a847544720172a85a9b45938a37c9323c9aba2328f3ebab1276d296d9eec  seven-byte missing-FE input mw2
+d85d6890759808af4d739d9b83c6c8ab1634ffd0c80a4c3590ce7dfad4f06008  six-byte missing-pair input mw2
 ```
