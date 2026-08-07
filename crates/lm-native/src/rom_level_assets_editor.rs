@@ -709,14 +709,20 @@ impl RomLevelAssetsEditor {
                 .default_size([900.0, 720.0])
                 .vscroll(true)
                 .show(context, |ui| {
-                    if let Some(ui_command) =
-                        self.contents(ui, project_revision, special_world_passed, visibility)
-                    {
+                    if let Some(ui_command) = self.contents(
+                        ui,
+                        project_revision,
+                        special_world_passed,
+                        visibility,
+                        command.is_some(),
+                    ) {
                         command = Some(ui_command);
                     }
                 });
         }
-        self.show_layer2_mode_reset_confirmation(context, project_revision);
+        if command.is_none() {
+            self.show_layer2_mode_reset_confirmation(context, project_revision);
+        }
         let approved = self.close_confirmation(context);
         self.show_error(context);
         (approved, command)
@@ -728,14 +734,23 @@ impl RomLevelAssetsEditor {
         project_revision: u64,
         special_world_passed: bool,
         visibility: crate::application::LevelViewVisibility,
+        rom_command_pending: bool,
     ) -> Option<Command> {
         let stale = self.workspace.as_ref()?.controller.revision() != project_revision;
         let palette_busy =
             self.palette_loader.is_running() || self.palette_persistence.is_running();
+        let editing_blocked =
+            level_asset_editing_blocked(stale, self.mutation_file_busy(), rom_command_pending);
         if stale {
             ui.colored_label(
                 egui::Color32::YELLOW,
                 "The ROM changed. Close and reopen this workspace before committing.",
+            );
+        }
+        if !stale && editing_blocked {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                "Level import or commit preparation is active; staged editing is temporarily disabled.",
             );
         }
         if let Some(mode) = self
@@ -761,19 +776,13 @@ impl RomLevelAssetsEditor {
         if let Some((can_undo, can_redo, modified)) = history {
             ui.horizontal(|ui| {
                 if ui
-                    .add_enabled(
-                        !stale && !palette_busy && can_undo,
-                        egui::Button::new("Undo"),
-                    )
+                    .add_enabled(!editing_blocked && can_undo, egui::Button::new("Undo"))
                     .clicked()
                 {
                     history_action = Some(true);
                 }
                 if ui
-                    .add_enabled(
-                        !stale && !palette_busy && can_redo,
-                        egui::Button::new("Redo"),
-                    )
+                    .add_enabled(!editing_blocked && can_redo, egui::Button::new("Redo"))
                     .clicked()
                 {
                     history_action = Some(false);
@@ -807,7 +816,7 @@ impl RomLevelAssetsEditor {
             assets: workspace.controller.assets().clone(),
         };
         let edit = ui
-            .add_enabled_ui(!self.palette_loader.is_running(), |ui| {
+            .add_enabled_ui(!editing_blocked, |ui| {
                 self.panels.show(
                     ui,
                     workspace.controller.revision(),
@@ -826,7 +835,7 @@ impl RomLevelAssetsEditor {
             .inner;
         if let Some(edit) = edit {
             match edit {
-                Ok(edit) if !stale => {
+                Ok(edit) if !editing_blocked => {
                     if let Some(workspace) = self.workspace.as_mut() {
                         match workspace
                             .controller
@@ -856,6 +865,13 @@ impl RomLevelAssetsEditor {
                         self.panels.reject_pending_edit();
                         self.error = Some("level-assets workspace is closed".into());
                     }
+                }
+                Ok(_) if !stale => {
+                    self.panels.reject_pending_edit();
+                    self.error = Some(
+                        "level-assets editing is disabled during import or commit preparation"
+                            .into(),
+                    );
                 }
                 Ok(_) => {
                     self.panels.reject_pending_edit();
@@ -1340,7 +1356,7 @@ impl RomLevelAssetsEditor {
         if ui
             .add_enabled(
                 modified
-                    && !stale
+                    && !editing_blocked
                     && !self.manifest_loader.is_running()
                     && !self.image_batch_worker.is_running()
                     && !palette_busy,
@@ -1358,7 +1374,7 @@ impl RomLevelAssetsEditor {
         if ui
             .add_enabled(
                 modified
-                    && !stale
+                    && !editing_blocked
                     && !self.manifest_loader.is_running()
                     && !self.image_batch_worker.is_running()
                     && !palette_busy,
@@ -1378,11 +1394,21 @@ impl RomLevelAssetsEditor {
         None
     }
 
+    fn mutation_file_busy(&self) -> bool {
+        self.palette_loader.is_running()
+            || self.mwl_loader.is_running()
+            || self.legacy_mwl_loader.is_running()
+            || self.manifest_loader.is_running()
+    }
+
     fn show_layer2_mode_reset_confirmation(
         &mut self,
         context: &egui::Context,
         project_revision: u64,
     ) {
+        if self.mutation_file_busy() {
+            return;
+        }
         let Some(pending) = self.pending_layer2_mode_reset.clone() else {
             return;
         };
@@ -1448,6 +1474,14 @@ impl RomLevelAssetsEditor {
         self.bypass_preview.invalidate();
         self.panels.invalidate();
     }
+}
+
+const fn level_asset_editing_blocked(
+    stale: bool,
+    mutation_file_busy: bool,
+    rom_command_pending: bool,
+) -> bool {
+    stale || mutation_file_busy || rom_command_pending
 }
 
 fn layer2_reset_confirmation_is_current(
@@ -3045,6 +3079,31 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_IMAGE_PATH: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn level_import_workers_and_completion_frame_block_staged_edits() {
+        assert!(!level_asset_editing_blocked(false, false, false));
+        assert!(level_asset_editing_blocked(true, false, false));
+        assert!(level_asset_editing_blocked(false, true, false));
+        assert!(level_asset_editing_blocked(false, false, true));
+
+        let mut editor = RomLevelAssetsEditor::default();
+        editor
+            .mwl_loader
+            .start(vec![crate::document_loader::BoundedRead::new(
+                std::env::temp_dir()
+                    .join(format!("lm-missing-level-import-{}", std::process::id())),
+                1,
+                "missing MWL fixture",
+            )])
+            .unwrap();
+        assert!(editor.mutation_file_busy());
+        assert!(level_asset_editing_blocked(
+            false,
+            editor.mutation_file_busy(),
+            false
+        ));
+    }
 
     #[test]
     fn legacy_manifest_compatibility_diagnostics_are_visible_before_sidecar_commit() {
