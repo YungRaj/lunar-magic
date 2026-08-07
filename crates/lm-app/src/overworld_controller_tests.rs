@@ -13,7 +13,7 @@ use lm_project::{
     SpriteRomLayout, SpriteSaveOptions,
 };
 use lm_rats::{AllocationPolicy, ProtectedRange};
-use lm_rom::RomImage;
+use lm_rom::{RomImage, detect_identity};
 
 const MODES: [bool; 256] = [false; 256];
 const POINTERS: [usize; 9] = [
@@ -559,6 +559,85 @@ fn complete_file_replacement_is_atomic_validated_and_slot_agnostic() {
     );
     assert_eq!(controller.data(), &imported);
     assert_ne!(controller.data(), &baseline);
+}
+
+#[test]
+fn complete_file_transfer_commits_every_domain_across_copier_header_variants() {
+    let logical_original = test_rom();
+    let mut headered_original = vec![0x5a; 0x200];
+    headered_original.extend_from_slice(&logical_original);
+    let variants = [logical_original, headered_original];
+    let mut logical_results = Vec::new();
+
+    for original in variants {
+        let original_image = RomImage::from_bytes(original.clone()).unwrap();
+        let original_header = original_image.copier_header_bytes().map(<[u8]>::to_vec);
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::ShowOverworld).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+
+        let mut source = OverworldController::decode(
+            &snapshot,
+            0,
+            layout(),
+            &MODES,
+            PaletteOwnership::editable(16),
+        )
+        .unwrap();
+        source.apply_edits(&every_payload_edit()).unwrap();
+        let exported = CompleteOverworldFile {
+            source_slot: 0x1ff,
+            shape: shape(),
+            data: source.data().clone(),
+        }
+        .encode(&MODES)
+        .unwrap();
+        let imported = CompleteOverworldFile::decode(&exported, 32, &MODES).unwrap();
+        assert_eq!(imported.source_slot, 0x1ff);
+
+        let mut target = OverworldController::decode(
+            &snapshot,
+            0,
+            layout(),
+            &MODES,
+            PaletteOwnership::editable(16),
+        )
+        .unwrap();
+        target.replace_complete_file(&imported, shape()).unwrap();
+        let expected = target.data().clone();
+        let prepared = target
+            .prepare_commit(
+                "Import complete overworld transfer",
+                &save_options(0x8000..0x10000),
+            )
+            .unwrap();
+        app.dispatch(prepared.into_command()).unwrap();
+
+        assert_eq!(
+            app.project()
+                .unwrap()
+                .load_complete_overworld(0, layout(), &MODES)
+                .unwrap(),
+            expected
+        );
+        let result = RomImage::from_bytes(app.project().unwrap().save_snapshot()).unwrap();
+        assert_eq!(
+            result.copier_header_bytes().map(<[u8]>::to_vec),
+            original_header
+        );
+        assert!(detect_identity(&result).unwrap().checksum_matches());
+        logical_results.push(result.logical_bytes().to_vec());
+
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+        app.dispatch(Command::Redo).unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.logical_bytes(),
+            logical_results.last().unwrap()
+        );
+    }
+    assert_eq!(logical_results[0], logical_results[1]);
 }
 
 #[test]

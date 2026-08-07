@@ -40,7 +40,7 @@ impl RomOverworldEditor {
     }
 
     pub(super) fn complete_file_controls(&mut self, ui: &mut egui::Ui, stale: bool, revision: u64) {
-        let busy = self.transfer_loader.is_running() || self.transfer_persistence.is_running();
+        let busy = self.transfer_busy();
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(!stale && !busy, egui::Button::new("Import complete .lmow…"))

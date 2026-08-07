@@ -521,14 +521,22 @@ impl RomOverworldEditor {
                 "The ROM changed; reopen before editing or committing.",
             );
         }
+        let transfer_busy = self.transfer_busy();
+        let editing_blocked = stale || transfer_busy;
+        if transfer_busy {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                "Complete-overworld file transfer is active; editing is temporarily disabled.",
+            );
+        }
         self.complete_file_controls(ui, stale, revision);
         if let Some((appearances, tooltips, map16_bytes)) = native_summary {
             ui.label(format!(
                 "ROM-adjacent native sprite display: {appearances} appearances, {tooltips} tooltips, {map16_bytes} Sprite Map16 bytes"
             ));
         }
-        self.world_canvas(ui, shape, stale);
-        self.layer_tile_controls(ui, shape, stale);
+        self.world_canvas(ui, shape, editing_blocked);
+        self.layer_tile_controls(ui, shape, editing_blocked);
         ui.separator();
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.panel, Panel::Records, "Records");
@@ -550,12 +558,15 @@ impl RomOverworldEditor {
         };
         if let Some(edit) = edit {
             match edit {
-                Ok(edit) if !stale => self.apply(edit),
+                Ok(edit) if !editing_blocked => self.apply(edit),
+                Ok(_) if transfer_busy => {
+                    self.error = Some("overworld editing is disabled during file transfer".into());
+                }
                 Ok(_) => self.error = Some("stale overworld workspace cannot accept edits".into()),
                 Err(error) => self.error = Some(error),
             }
         }
-        self.commit_controls(ui, stale, revision)
+        self.commit_controls(ui, editing_blocked, revision)
     }
 
     fn layer_tile_controls(
@@ -1040,8 +1051,7 @@ impl RomOverworldEditor {
             .workspace
             .as_ref()
             .is_some_and(|value| value.controller.is_modified());
-        let transfer_busy =
-            self.transfer_loader.is_running() || self.transfer_persistence.is_running();
+        let transfer_busy = self.transfer_busy();
         if ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running() && !transfer_busy,
@@ -1083,6 +1093,10 @@ impl RomOverworldEditor {
         if edits.is_empty() {
             return;
         }
+        if self.transfer_busy() {
+            self.error = Some("overworld editing is disabled during file transfer".into());
+            return;
+        }
         let result = if let Some(workspace) = self.workspace.as_mut() {
             workspace
                 .controller
@@ -1102,6 +1116,10 @@ impl RomOverworldEditor {
         } else {
             self.invalidate();
         }
+    }
+
+    fn transfer_busy(&self) -> bool {
+        self.transfer_loader.is_running() || self.transfer_persistence.is_running()
     }
 
     fn load_tile(&mut self) {
@@ -1318,10 +1336,38 @@ fn flood_fill_cells(
 mod canvas_tests {
     use super::{
         MainPathLinkForm, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
-        OverworldPathLink, OverworldPathTarget, flood_fill_cells, grid_line, rectangle_cells,
-        route_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
+        OverworldPathLink, OverworldPathTarget, RomOverworldEditor, flood_fill_cells, grid_line,
+        rectangle_cells, route_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
     };
+    use crate::document_loader::BoundedRead;
     use eframe::egui;
+
+    #[test]
+    fn active_complete_transfer_rejects_direct_mutation_entry_point() {
+        let mut editor = RomOverworldEditor::default();
+        editor
+            .transfer_loader
+            .start(vec![BoundedRead::new(
+                std::env::temp_dir().join(format!(
+                    "lm-missing-overworld-transfer-{}",
+                    std::process::id()
+                )),
+                1,
+                "missing transfer fixture",
+            )])
+            .unwrap();
+        assert!(editor.transfer_busy());
+        editor.apply_many(&[OverworldControllerEdit::SetLayerTile {
+            layer: OverworldLayerId::Layer1,
+            x: 0,
+            y: 0,
+            tile: 1,
+        }]);
+        assert_eq!(
+            editor.error.as_deref(),
+            Some("overworld editing is disabled during file transfer")
+        );
+    }
 
     #[test]
     fn drag_strokes_cover_skipped_grid_cells_in_both_directions() {
