@@ -205,11 +205,21 @@ impl NativeApplication {
                 Some("The user-toolbar view command requires an open level".into());
             return;
         }
-        toggle_user_toolbar_view_state(
-            &mut self.level_view_visibility,
-            &mut self.special_world_passed,
-            action,
-        );
+        match action {
+            UserToolbarLocalAction::ZoomToggle => self.vanilla_level_editor.toolbar_zoom_toggle(),
+            UserToolbarLocalAction::ZoomDefault => self.vanilla_level_editor.toolbar_zoom_default(),
+            UserToolbarLocalAction::ZoomPlus => self
+                .vanilla_level_editor
+                .toolbar_zoom_adjust(ROM_LEVEL_TOOLBAR_ZOOM_STEP),
+            UserToolbarLocalAction::ZoomMinus => self
+                .vanilla_level_editor
+                .toolbar_zoom_adjust(-ROM_LEVEL_TOOLBAR_ZOOM_STEP),
+            _ => toggle_user_toolbar_view_state(
+                &mut self.level_view_visibility,
+                &mut self.special_world_passed,
+                action,
+            ),
+        }
         self.vanilla_level_editor.invalidate_graphics_preview();
         self.rom_level_assets_editor.invalidate_graphics_preview();
     }
@@ -411,6 +421,12 @@ fn toggle_user_toolbar_view_state(
         UserToolbarLocalAction::Layer3 => visibility.layer3 = !visibility.layer3,
         UserToolbarLocalAction::Sprites => visibility.sprites = !visibility.sprites,
         UserToolbarLocalAction::SpecialWorld => *special_world_passed = !*special_world_passed,
+        UserToolbarLocalAction::ZoomToggle
+        | UserToolbarLocalAction::ZoomDefault
+        | UserToolbarLocalAction::ZoomPlus
+        | UserToolbarLocalAction::ZoomMinus => {
+            unreachable!("zoom actions are routed through the level editor")
+        }
     }
 }
 
@@ -607,7 +623,13 @@ enum UserToolbarLocalAction {
     Layer3,
     Sprites,
     SpecialWorld,
+    ZoomToggle,
+    ZoomDefault,
+    ZoomPlus,
+    ZoomMinus,
 }
+
+const ROM_LEVEL_TOOLBAR_ZOOM_STEP: i16 = 100;
 
 fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
     Some(match name {
@@ -616,6 +638,10 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_LAYER_3" => UserToolbarLocalAction::Layer3,
         "LM_VIEW_SPRITES" => UserToolbarLocalAction::Sprites,
         "LM_VIEW_SPECIAL_WORLD" => UserToolbarLocalAction::SpecialWorld,
+        "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
+        "LM_VIEW_ZOOM_DEFAULT" => UserToolbarLocalAction::ZoomDefault,
+        "LM_VIEW_ZOOM_PLUS" => UserToolbarLocalAction::ZoomPlus,
+        "LM_VIEW_ZOOM_MINUS" => UserToolbarLocalAction::ZoomMinus,
         _ => return None,
     })
 }
@@ -692,6 +718,22 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_SPECIAL_WORLD"),
             Some(UserToolbarLocalAction::SpecialWorld)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ZOOM_TOGGLE"),
+            Some(UserToolbarLocalAction::ZoomToggle)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ZOOM_DEFAULT"),
+            Some(UserToolbarLocalAction::ZoomDefault)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ZOOM_PLUS"),
+            Some(UserToolbarLocalAction::ZoomPlus)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ZOOM_MINUS"),
+            Some(UserToolbarLocalAction::ZoomMinus)
         );
     }
 

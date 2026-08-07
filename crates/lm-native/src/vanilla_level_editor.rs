@@ -15,9 +15,10 @@ use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 use std::collections::HashMap;
 
 const ROM_LEVEL_CANVAS_CELL: f32 = 12.0;
-const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 50;
-const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 400;
-const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 25;
+const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 100;
+const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 5_000;
+const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 100;
+const ROM_LEVEL_CANVAS_INITIAL_PREVIOUS_ZOOM: u16 = 200;
 const NATIVE_LEVEL_MINOR_TILES: u16 = 27;
 const VERTICAL_LEVEL_MINOR_TILES: u16 = 32;
 const VANILLA_EMPTY_MAP16_TILE: u16 = 0x25;
@@ -335,6 +336,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
     canvas_zoom_percent: Option<u16>,
+    canvas_previous_zoom_percent: Option<u16>,
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
@@ -2129,7 +2131,11 @@ impl VanillaLevelEditor {
                         if ui.small_button("+").clicked() {
                             zoom = zoom.saturating_add(ROM_LEVEL_CANVAS_ZOOM_STEP);
                         }
-                        self.canvas_zoom_percent = Some(clamp_canvas_zoom(zoom));
+                        let zoom = clamp_canvas_zoom(zoom);
+                        self.canvas_zoom_percent = Some(zoom);
+                        if zoom != 100 {
+                            self.canvas_previous_zoom_percent = Some(zoom);
+                        }
                     })
                 });
         });
@@ -2169,6 +2175,39 @@ impl VanillaLevelEditor {
 
     fn canvas_zoom_percent(&self) -> u16 {
         clamp_canvas_zoom(self.canvas_zoom_percent.unwrap_or(100))
+    }
+
+    pub(crate) fn toolbar_zoom_toggle(&mut self) {
+        let current = self.canvas_zoom_percent();
+        if current == 100 {
+            self.canvas_zoom_percent = Some(clamp_canvas_zoom(
+                self.canvas_previous_zoom_percent
+                    .unwrap_or(ROM_LEVEL_CANVAS_INITIAL_PREVIOUS_ZOOM),
+            ));
+        } else {
+            self.canvas_previous_zoom_percent = Some(current);
+            self.canvas_zoom_percent = Some(100);
+        }
+    }
+
+    pub(crate) fn toolbar_zoom_default(&mut self) {
+        let current = self.canvas_zoom_percent();
+        if current != 100 {
+            self.canvas_previous_zoom_percent = Some(current);
+        }
+        self.canvas_zoom_percent = Some(100);
+    }
+
+    pub(crate) fn toolbar_zoom_adjust(&mut self, delta: i16) {
+        let current = i32::from(self.canvas_zoom_percent());
+        let next = current.saturating_add(i32::from(delta)).clamp(
+            i32::from(ROM_LEVEL_CANVAS_MIN_ZOOM),
+            i32::from(ROM_LEVEL_CANVAS_MAX_ZOOM),
+        ) as u16;
+        self.canvas_zoom_percent = Some(next);
+        if next != 100 {
+            self.canvas_previous_zoom_percent = Some(next);
+        }
     }
 
     fn game_preview_camera_origin(
@@ -13349,6 +13388,24 @@ mod tests {
         assert_eq!(clamp_canvas_zoom(0), ROM_LEVEL_CANVAS_MIN_ZOOM);
         assert_eq!(clamp_canvas_zoom(275), 275);
         assert_eq!(clamp_canvas_zoom(u16::MAX), ROM_LEVEL_CANVAS_MAX_ZOOM);
+    }
+
+    #[test]
+    fn toolbar_zoom_matches_lunar_magic_range_steps_and_previous_toggle() {
+        let mut editor = VanillaLevelEditor::default();
+        assert_eq!(editor.canvas_zoom_percent(), 100);
+        editor.toolbar_zoom_toggle();
+        assert_eq!(editor.canvas_zoom_percent(), 200);
+        editor.toolbar_zoom_adjust(100);
+        assert_eq!(editor.canvas_zoom_percent(), 300);
+        editor.toolbar_zoom_default();
+        assert_eq!(editor.canvas_zoom_percent(), 100);
+        editor.toolbar_zoom_toggle();
+        assert_eq!(editor.canvas_zoom_percent(), 300);
+        editor.toolbar_zoom_adjust(-10_000);
+        assert_eq!(editor.canvas_zoom_percent(), 100);
+        editor.toolbar_zoom_adjust(10_000);
+        assert_eq!(editor.canvas_zoom_percent(), 5_000);
     }
 
     #[test]

@@ -94,8 +94,10 @@ Graphics, and Overworld workflow rows; external-tool shortcuts remain under Conf
 The original-compatible user toolbar now routes `LM_VIEW_LAYER_1`, `LM_VIEW_LAYER_2`,
 `LM_VIEW_LAYER_3`, `LM_VIEW_SPRITES`, and `LM_VIEW_SPECIAL_WORLD` through the authoritative canvas
 visibility and Special World state, invalidating both level-preview paths after each accepted
-toggle. This strengthens the Configuration toolbar GUI evidence but does not promote that workflow
-while the remaining internal command table and toolbar variants are incomplete.
+toggle. Four recovered zoom names also drive the native canvas's exact 100–5000 percent range,
+100-point adjustment, default reset, and remembered nondefault toggle. This strengthens the
+Configuration toolbar GUI evidence but does not promote that workflow while the remaining internal
+command table and toolbar variants are incomplete.
 
 ## Workflow ledger
 

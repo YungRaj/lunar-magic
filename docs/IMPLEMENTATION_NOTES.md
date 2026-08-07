@@ -3162,6 +3162,14 @@ inventing a target, while graphics and palette follow the native menu's slot-zer
 The editor-local `LM_VIEW_LAYER_1`, `LM_VIEW_LAYER_2`, `LM_VIEW_LAYER_3`, `LM_VIEW_SPRITES`, and
 `LM_VIEW_SPECIAL_WORLD` names now toggle the authoritative canvas visibility or Special World
 rendering state and invalidate both level-render preview paths. They reject when no level is open.
+The same local route now covers `LM_VIEW_ZOOM_TOGGLE`, `LM_VIEW_ZOOM_DEFAULT`,
+`LM_VIEW_ZOOM_PLUS`, and `LM_VIEW_ZOOM_MINUS`. Ghidra's `SetUniformEditorZoomPercent` at
+`$0048B6E0`, `CommitEditorZoomChange` at `$0048B600`, and `InitializeEditorZoomState` at
+`$0048B760` prove the 100–5000 percent bounds, normal 100-point adjustment, 100-percent default,
+and initially 200-percent remembered nondefault value. The native canvas stores that previous
+value, so toggling to default and back restores the exact last nondefault zoom. `LM_VIEW_ZOOM`
+still requires the original popup-menu surface and `LM_VIEW_ZOOM_FILTER` still requires modeled
+raster-filter behavior.
 Remaining original names that operate other editor-local modes, dialogs, toggles, clipboard
 payloads, or installers stay explicitly unsupported until their corresponding typed frontend
 action exists.
