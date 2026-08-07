@@ -324,33 +324,59 @@ impl AppState {
         if identity.game != SupportedGame::SuperMarioWorld
             || identity.region != Region::NorthAmerica
             || identity.revision != 0
-            || identity.mapper != Mapper::LoRom
         {
             return Err(AppError::ExpandedExAnimationRuntimeIdentityMismatch);
         }
-        let description = match lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+        let mapper = identity.mapper;
+        let mapper_runtime = lm_profile::smw_us_v1_expanded_exanimation_uses_mapper_runtime(
             project.rom.logical_bytes(),
-        )? {
-            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent => {
-                let plan = lm_profile::smw_us_v1_expanded_exanimation_runtime_installation_plan()?;
-                project.install_relocatable_patch(&plan)?;
-                "Install SMW US expanded ExAnimation runtime"
-            }
-            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks => {
-                let migration = lm_profile::smw_us_v1_legacy_exanimation_hook_migration(
-                    project.rom.logical_bytes(),
-                )?;
-                project.install_relocatable_patch(&migration.plan)?;
-                "Migrate legacy SMW US ExAnimation pointer hooks"
-            }
-            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable => {
-                migrate_legacy_global_exanimations(project)?;
-                "Migrate legacy SMW US global ExAnimation table"
-            }
-            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current => {
-                return Err(AppError::ExpandedExAnimationRuntimeAlreadyInstalled);
-            }
-        };
+            mapper,
+        )?;
+        let description =
+            match lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
+                project.rom.logical_bytes(),
+                mapper,
+                mapper_runtime,
+            )? {
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent => {
+                    let plan = if mapper == Mapper::LoRom {
+                        lm_profile::smw_us_v1_expanded_exanimation_runtime_installation_plan()?
+                    } else {
+                        let search = if mapper == Mapper::ExLoRom {
+                            0x10_0000..0x40_0000
+                        } else {
+                            0x40_0000..project.rom.logical_len()
+                        };
+                        lm_profile::smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
+                            mapper,
+                            lm_rats::AllocationPolicy::lorom(search),
+                            mapper_runtime,
+                        )?
+                    };
+                    project.install_relocatable_patch(&plan)?;
+                    "Install SMW US expanded ExAnimation runtime"
+                }
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks => {
+                    if mapper != Mapper::LoRom {
+                        return Err(AppError::ExpandedExAnimationRuntimeIdentityMismatch);
+                    }
+                    let migration = lm_profile::smw_us_v1_legacy_exanimation_hook_migration(
+                        project.rom.logical_bytes(),
+                    )?;
+                    project.install_relocatable_patch(&migration.plan)?;
+                    "Migrate legacy SMW US ExAnimation pointer hooks"
+                }
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable => {
+                    if mapper != Mapper::LoRom {
+                        return Err(AppError::ExpandedExAnimationRuntimeIdentityMismatch);
+                    }
+                    migrate_legacy_global_exanimations(project)?;
+                    "Migrate legacy SMW US global ExAnimation table"
+                }
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current => {
+                    return Err(AppError::ExpandedExAnimationRuntimeAlreadyInstalled);
+                }
+            };
         self.advance_project_revision()?;
         let description = description.to_owned();
         self.status.clone_from(&description);
@@ -633,7 +659,7 @@ mod tests {
     use super::*;
     use crate::Command;
     use lm_profile::RevisionProfile;
-    use lm_project::{PatchFixup, PatchPayload, PatchWrite};
+    use lm_project::{PatchFixup, PatchPayload, PatchWrite, Project};
     use lm_rats::{HEADER_LEN, make_header};
     use lm_rom::{Mapper, RomImage, pc_to_snes};
     use std::{fs, path::PathBuf};
@@ -678,6 +704,65 @@ mod tests {
             legacy_payload,
         );
         bytes
+    }
+
+    fn mapper_exanimation_fixture(mapper: Mapper, mapper_runtime: bool, headered: bool) -> Vec<u8> {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut logical = match mapper {
+            Mapper::ExLoRom => {
+                let mut project =
+                    Project::open_supported(RomImage::from_bytes(pristine).unwrap()).unwrap();
+                project.convert_to_64_mbit_exlorom().unwrap();
+                project.rom.logical_bytes().to_vec()
+            }
+            Mapper::Sa1 => {
+                let mut image = RomImage::from_bytes(pristine).unwrap();
+                image.write(0x7fd5, &[0x23, 0x34]).unwrap();
+                image.update_snes_checksum(0x7fdc).unwrap();
+                let mut project = Project::open_supported(image).unwrap();
+                project.expand_sa1_rom(lm_project::SA1_6_MIB_LEN).unwrap();
+                project.rom.logical_bytes().to_vec()
+            }
+            Mapper::LoRom => unreachable!("mapper fixture covers expanded mapper families"),
+        };
+        let metadata_base = if mapper == Mapper::ExLoRom {
+            0x40_0000
+        } else {
+            0
+        };
+        let attribution_offset = metadata_base + lm_profile::SMW_US_V1_LM_ATTRIBUTION_OFFSET;
+        logical[attribution_offset
+            ..attribution_offset + lm_rom::LunarMagicRomMetadata::ATTRIBUTION_LEN]
+            .fill(b' ');
+        logical[attribution_offset
+            ..attribution_offset + lm_rom::LunarMagicRomMetadata::SIGNATURE.len()]
+            .copy_from_slice(lm_rom::LunarMagicRomMetadata::SIGNATURE);
+        logical[metadata_base + lm_profile::SMW_US_V1_LM_VRAM_VERSION_OFFSET] = 1;
+        let feature_offset = metadata_base + lm_profile::SMW_US_V1_LM_FEATURE_RECORD_OFFSET;
+        logical[feature_offset..feature_offset + lm_rom::LunarMagicRomMetadata::FEATURE_LEN]
+            .fill(0);
+        let (declaration, enabled) = match mapper {
+            Mapper::ExLoRom => (1 << 1, 1 << 17),
+            Mapper::Sa1 => (1 << 2, 1 << 18),
+            Mapper::LoRom => unreachable!("handled above"),
+        };
+        let bits: u32 = declaration | if mapper_runtime { enabled } else { 0 };
+        logical[feature_offset..feature_offset + 4].copy_from_slice(&bits.to_le_bytes());
+        let mut image = RomImage::from_bytes(logical).unwrap();
+        image.update_snes_checksum(0x7fdc).unwrap();
+        let logical = image.logical_bytes().to_vec();
+        if !headered {
+            return logical;
+        }
+        let mapper_byte = match mapper {
+            Mapper::ExLoRom => 0x32,
+            Mapper::Sa1 => 0x23,
+            Mapper::LoRom => unreachable!("handled above"),
+        };
+        let mut physical =
+            lm_profile::lunar_magic_copier_header(logical.len(), mapper_byte).to_vec();
+        physical.extend(logical);
+        physical
     }
 
     fn fixture(profile: &RevisionProfile) -> Vec<u8> {
@@ -873,6 +958,71 @@ mod tests {
 
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn mapper_expanded_exanimation_install_reopens_preserves_header_and_undoes_exactly() {
+        for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
+            for mapper_runtime in [false, true] {
+                for headered in [false, true] {
+                    let original = mapper_exanimation_fixture(mapper, mapper_runtime, headered);
+                    let original_header = RomImage::from_bytes(original.clone())
+                        .unwrap()
+                        .copier_header_bytes()
+                        .map(<[u8]>::to_vec);
+                    let mut app = AppState::default();
+                    app.load_rom(original.clone()).unwrap();
+                    assert_eq!(
+                        lm_profile::smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                            app.project().unwrap().rom.logical_bytes(),
+                            mapper,
+                        )
+                        .unwrap(),
+                        mapper_runtime
+                    );
+
+                    app.dispatch(Command::InstallExpandedExAnimationRuntime { rev: 0 })
+                        .unwrap();
+                    let project = app.project().unwrap();
+                    assert_eq!(project.history.undo_len(), 1);
+                    let runtime = lm_profile::detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
+                            project.rom.logical_bytes(),
+                            mapper,
+                            mapper_runtime,
+                        )
+                        .unwrap();
+                    assert_eq!(
+                        runtime.payload.len(),
+                        if mapper_runtime { 0xc50 } else { 0xc30 }
+                    );
+                    assert_eq!(
+                        project.rom.copier_header_bytes().map(<[u8]>::to_vec),
+                        original_header
+                    );
+                    let saved = project.save_snapshot();
+                    let mut reopened = AppState::default();
+                    reopened.load_rom(saved).unwrap();
+                    assert_eq!(
+                        reopened
+                            .project()
+                            .unwrap()
+                            .identity
+                            .as_ref()
+                            .unwrap()
+                            .mapper,
+                        mapper
+                    );
+
+                    let revision = app.project_revision();
+                    assert!(matches!(
+                        app.dispatch(Command::InstallExpandedExAnimationRuntime { rev: revision }),
+                        Err(AppError::ExpandedExAnimationRuntimeAlreadyInstalled)
+                    ));
+                    app.dispatch(Command::Undo).unwrap();
+                    assert_eq!(app.project().unwrap().save_snapshot(), original);
+                }
+            }
+        }
     }
 
     #[test]

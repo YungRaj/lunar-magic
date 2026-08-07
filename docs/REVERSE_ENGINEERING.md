@@ -3805,9 +3805,13 @@ graphics helpers, the missing-graphics sentinel, both canonical shared-palette h
 `+$6000` IRAM-adjusted payloads, and the previously omitted `$025E1` NOP pair. Independent current-
 runtime detection resolves every hook with the selected mapper, authenticates exact RATS ownership
 and `$C50` shape, reconstructs the complete relocated core and suffix, and rejects corruption in
-the core, suffix, allocated helper, or fixed writes. ExLoROM and SA-1 tests prove checksum-valid
-publication and byte-exact Undo. Application routing and authentic retained mapper before/after
-fixtures remain the variant gate.
+the core, suffix, allocated helper, or fixed writes. ExLoROM uses the conversion's active relocated
+SMW body at logical `+$400000` for metadata, generation signals, hooks, sentinel, and fixed helper
+payloads; allocations remain in its canonical expanded lower half. The native application selects
+the exact metadata/legacy predicate and complete mapper plan. Eight ExLoROM/SA-1 permutations cover
+the `$C30` and `$C50` forms with and without copier headers, strict current detection, checksum-
+valid save/reopen, duplicate rejection, header preservation, and byte-exact Undo. An authentic
+retained Lunar Magic mapper before/after fixture remains the Oracle gate.
 The fresh installer's core allocation is now recovered byte-for-byte. It concatenates executable
 ranges `$005B5298..$005B5408` (`$170` bytes), `$005B5410..$005B5750` (`$340` bytes), and
 `$005B4B10..$005B5290` (`$780` bytes) into one `$C30`-byte payload; a mapper-specific branch may

@@ -77,6 +77,14 @@ const SA1_CONFIGURATION_PRESENT_BIT: u32 = 1 << 2;
 const EXLOROM_COMPATIBILITY_RUNTIME_BIT: u32 = 1 << 17;
 const SA1_COMPATIBILITY_RUNTIME_BIT: u32 = 1 << 18;
 
+fn mapper_rom_offset(mapper: Mapper, smw_lorom_offset: usize) -> usize {
+    if mapper == Mapper::ExLoRom {
+        0x40_0000 + smw_lorom_offset
+    } else {
+        smw_lorom_offset
+    }
+}
+
 #[derive(Debug)]
 pub enum SmwUsV1ExpandedExAnimationRuntimeDetectError {
     HookRange,
@@ -251,20 +259,22 @@ pub fn smw_us_v1_expanded_exanimation_uses_mapper_runtime(
     if mapper == Mapper::LoRom {
         return Ok(false);
     }
+    let metadata_base = if mapper == Mapper::ExLoRom {
+        0x40_0000
+    } else {
+        0
+    };
+    let attribution_offset = metadata_base + crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET;
+    let vram_offset = metadata_base + crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET;
+    let feature_offset = metadata_base + crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET;
     let attribution = bytes
-        .get(
-            crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
-                ..crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET + LunarMagicRomMetadata::ATTRIBUTION_LEN,
-        )
+        .get(attribution_offset..attribution_offset + LunarMagicRomMetadata::ATTRIBUTION_LEN)
         .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::MetadataPartialInstallation)?;
     let vram = *bytes
-        .get(crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET)
+        .get(vram_offset)
         .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::MetadataPartialInstallation)?;
     let feature = bytes
-        .get(
-            crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET
-                ..crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET + LunarMagicRomMetadata::FEATURE_LEN,
-        )
+        .get(feature_offset..feature_offset + LunarMagicRomMetadata::FEATURE_LEN)
         .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::MetadataPartialInstallation)?;
     let attribution_absent = attribution.iter().all(|byte| *byte == 0xff);
     let record_absent = vram == 0xff && feature.iter().all(|byte| *byte == 0xff);
@@ -291,8 +301,9 @@ pub fn smw_us_v1_expanded_exanimation_uses_mapper_runtime(
     {
         return Ok(bits & enabled != 0);
     }
+    let hook_offset = mapper_rom_offset(mapper, MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET);
     let hook = bytes
-        .get(MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET..MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET + 2)
+        .get(hook_offset..hook_offset + 2)
         .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::MapperCompatibilityHookRange)?;
     Ok(u16::from_le_bytes([hook[0], hook[1]]) > 0x1fff)
 }
@@ -314,8 +325,9 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
     mapper: Mapper,
     mapper_runtime: bool,
 ) -> Result<RatsBlock, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    let core_hook_offset = mapper_rom_offset(mapper, 0x283ad);
     let hook = bytes
-        .get(0x283ad..0x283b2)
+        .get(core_hook_offset..core_hook_offset + 5)
         .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookRange)?;
     if hook[0] != 0x22 || hook[4] != 0xea {
         return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookRange);
@@ -424,9 +436,11 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
         (pointer_hook_target >> 16) as u8,
         0x60,
     ];
-    let shared_a_target = mapped_address(0x77550)
+    let shared_a_offset = mapper_rom_offset(mapper, 0x77550);
+    let shared_b_offset = mapper_rom_offset(mapper, 0x77560);
+    let shared_a_target = mapped_address(shared_a_offset)
         .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?;
-    let shared_b_target = mapped_address(0x77560)
+    let shared_b_target = mapped_address(shared_b_offset)
         .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?;
     let shared_a_hook = [
         0x22,
@@ -449,13 +463,13 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
         add_mapper_iram_word(&mut level_graphics, 1);
     }
     for (offset, expected) in [
-        (0x2390, &pointer_hook[..]),
-        (0x25e1, &[0xea, 0xea][..]),
-        (0x1bcc0, &[0; 0x10][..]),
-        (0x2d8e2, &shared_a_hook[..]),
-        (0x77550, &shared_a[..]),
-        (0x26b8, &shared_b_hook[..]),
-        (0x77560, &shared_b[..]),
+        (mapper_rom_offset(mapper, 0x2390), &pointer_hook[..]),
+        (mapper_rom_offset(mapper, 0x25e1), &[0xea, 0xea][..]),
+        (mapper_rom_offset(mapper, 0x1bcc0), &[0; 0x10][..]),
+        (mapper_rom_offset(mapper, 0x2d8e2), &shared_a_hook[..]),
+        (shared_a_offset, &shared_a[..]),
+        (mapper_rom_offset(mapper, 0x26b8), &shared_b_hook[..]),
+        (shared_b_offset, &shared_b[..]),
     ] {
         if bytes.get(offset..offset + expected.len()) != Some(expected) {
             return Err(
@@ -463,8 +477,20 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
             );
         }
     }
-    authenticate_helper(bytes, mapper, 0x25e3, false, &level_graphics)?;
-    authenticate_helper(bytes, mapper, 0x0a4e, true, &GRAPHICS_RUNTIME)?;
+    authenticate_helper(
+        bytes,
+        mapper,
+        mapper_rom_offset(mapper, 0x25e3),
+        false,
+        &level_graphics,
+    )?;
+    authenticate_helper(
+        bytes,
+        mapper,
+        mapper_rom_offset(mapper, 0x0a4e),
+        true,
+        &GRAPHICS_RUNTIME,
+    )?;
     Ok(runtime)
 }
 
@@ -474,25 +500,46 @@ pub fn probe_smw_us_v1_expanded_exanimation_runtime_generation(
     bytes: &[u8],
 ) -> Result<SmwUsV1ExpandedExAnimationRuntimeGeneration, SmwUsV1ExpandedExAnimationRuntimeDetectError>
 {
+    probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(bytes, Mapper::LoRom, false)
+}
+
+/// Classifies the coordinator state while authenticating the selected mapper/runtime form.
+pub fn probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
+    bytes: &[u8],
+    mapper: Mapper,
+    mapper_runtime: bool,
+) -> Result<SmwUsV1ExpandedExAnimationRuntimeGeneration, SmwUsV1ExpandedExAnimationRuntimeDetectError>
+{
     // `EnsureExpandedExAnimationRuntimeInstalled` tests these two descriptor-selected bytes in
     // this order. The first JSL is shared by the legacy-pointer and current generations, so its
     // owned marker/runtime distinguishes those forms. Never collapse a malformed installed signal
     // into `Absent`.
-    if generation_signal(bytes, 0x2390)? == 0x22 {
-        if crate::smw_us_v1_legacy_exanimation_hook_migration(bytes).is_ok() {
+    if generation_signal(bytes, mapper_rom_offset(mapper, 0x2390))? == 0x22 {
+        if mapper == Mapper::LoRom
+            && crate::smw_us_v1_legacy_exanimation_hook_migration(bytes).is_ok()
+        {
             return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks);
         }
-        detect_smw_us_v1_current_expanded_exanimation_runtime(bytes)?;
+        detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
+            bytes,
+            mapper,
+            mapper_runtime,
+        )?;
         return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Current);
     }
-    if generation_signal(bytes, 0x2418)? == 0x22 {
+    if mapper == Mapper::LoRom && generation_signal(bytes, 0x2418)? == 0x22 {
         detect_smw_us_v1_legacy_global_exanimation_runtime(bytes)?;
         return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable);
     }
-    if bytes.get(0x283ad..0x283b2) == Some(&[0xe2, 0x30, 0x9c, 0x33, 0x19]) {
+    let core_hook = mapper_rom_offset(mapper, 0x283ad);
+    if bytes.get(core_hook..core_hook + 5) == Some(&[0xe2, 0x30, 0x9c, 0x33, 0x19]) {
         return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent);
     }
-    detect_smw_us_v1_current_expanded_exanimation_runtime(bytes)?;
+    detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
+        bytes,
+        mapper,
+        mapper_runtime,
+    )?;
     Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Current)
 }
 
@@ -745,6 +792,8 @@ pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
         add_mapper_iram_word(&mut shared_b, 1);
     }
     let fixed_hook = |offset: usize, expected: &[u8], target: usize| {
+        let offset = mapper_rom_offset(mapper, offset);
+        let target = mapper_rom_offset(mapper, target);
         let mut address = pc_to_snes(mapper, target)
             .expect("SMW fixed helper offsets are representable in every supported mapper");
         if mapper == Mapper::LoRom {
@@ -784,7 +833,7 @@ pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
         ],
         writes: vec![
             payload_hook(
-                0x0002_83ad,
+                mapper_rom_offset(mapper, 0x0002_83ad),
                 &[0xe2, 0x30, 0x9c, 0x33, 0x19],
                 0,
                 0,
@@ -792,15 +841,19 @@ pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
                 encoding,
             ),
             payload_return_hook(
-                0x0000_2390,
+                mapper_rom_offset(mapper, 0x0000_2390),
                 &[0xc2, 0x20, 0xa0, 0x80, 0x8c],
                 0,
                 0x170,
                 encoding,
             ),
-            direct(0x0000_25e1, &[0xa9, 0xef], &[0xea, 0xea]),
+            direct(
+                mapper_rom_offset(mapper, 0x0000_25e1),
+                &[0xa9, 0xef],
+                &[0xea, 0xea],
+            ),
             payload_hook(
-                0x0000_25e3,
+                mapper_rom_offset(mapper, 0x0000_25e3),
                 &[0x01, 0x54, 0x00, 0x00],
                 2,
                 0,
@@ -808,18 +861,30 @@ pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
                 encoding,
             ),
             payload_hook(
-                0x0000_0a4e,
+                mapper_rom_offset(mapper, 0x0000_0a4e),
                 &[0xc2, 0x30, 0xa2, 0xfe, 0x1f],
                 3,
                 0,
                 true,
                 encoding,
             ),
-            direct(0x0001_bcc0, &[0xff; 0x10], &[0; 0x10]),
+            direct(
+                mapper_rom_offset(mapper, 0x0001_bcc0),
+                &[0xff; 0x10],
+                &[0; 0x10],
+            ),
             fixed_hook(0x0002_d8e2, &[0xa5, 0x0e, 0x0a, 0xa8], 0x0007_7550),
-            direct(0x0007_7550, &[0xff; 0x0d], &shared_a),
+            direct(
+                mapper_rom_offset(mapper, 0x0007_7550),
+                &[0xff; 0x0d],
+                &shared_a,
+            ),
             fixed_hook(0x0000_26b8, &[0x84, 0x76, 0x84, 0x89], 0x0007_7560),
-            direct(0x0007_7560, &[0xff; 0x10], &shared_b),
+            direct(
+                mapper_rom_offset(mapper, 0x0007_7560),
+                &[0xff; 0x10],
+                &shared_b,
+            ),
         ],
     })
 }
@@ -902,22 +967,30 @@ mod tests {
     use lm_rom::{RomImage, SnesChecksum, pc_to_snes};
     use std::{fs, path::PathBuf};
 
-    fn mapper_metadata_rom(feature_bits: Option<u32>, hook_word: u16) -> Vec<u8> {
+    fn mapper_metadata_rom(mapper: Mapper, feature_bits: Option<u32>, hook_word: u16) -> Vec<u8> {
         let mut bytes = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes())
             .unwrap()
             .logical_bytes()
             .to_vec();
-        bytes[MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET..MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET + 2]
-            .copy_from_slice(&hook_word.to_le_bytes());
+        let metadata_base = if mapper == Mapper::ExLoRom {
+            bytes.resize(0x50_0000, 0xff);
+            0x40_0000
+        } else {
+            0
+        };
+        let hook_offset = mapper_rom_offset(mapper, MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET);
+        bytes[hook_offset..hook_offset + 2].copy_from_slice(&hook_word.to_le_bytes());
         if let Some(bits) = feature_bits {
-            let attribution = &mut bytes[crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
-                ..crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET + LunarMagicRomMetadata::ATTRIBUTION_LEN];
+            let attribution_offset = metadata_base + crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET;
+            let attribution = &mut bytes
+                [attribution_offset..attribution_offset + LunarMagicRomMetadata::ATTRIBUTION_LEN];
             attribution.fill(b' ');
             attribution[..LunarMagicRomMetadata::SIGNATURE.len()]
                 .copy_from_slice(LunarMagicRomMetadata::SIGNATURE);
-            bytes[crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET] = 1;
-            let feature = &mut bytes[crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET
-                ..crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET + LunarMagicRomMetadata::FEATURE_LEN];
+            bytes[metadata_base + crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET] = 1;
+            let feature_offset = metadata_base + crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET;
+            let feature =
+                &mut bytes[feature_offset..feature_offset + LunarMagicRomMetadata::FEATURE_LEN];
             feature.fill(0);
             feature[..4].copy_from_slice(&bits.to_le_bytes());
         }
@@ -940,42 +1013,42 @@ mod tests {
         ] {
             assert!(
                 !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
-                    &mapper_metadata_rom(Some(declaration), 0xffff),
+                    &mapper_metadata_rom(mapper, Some(declaration), 0xffff),
                     mapper,
                 )
                 .unwrap()
             );
             assert!(
                 smw_us_v1_expanded_exanimation_uses_mapper_runtime(
-                    &mapper_metadata_rom(Some(declaration | enabled), 0),
+                    &mapper_metadata_rom(mapper, Some(declaration | enabled), 0),
                     mapper,
                 )
                 .unwrap()
             );
             assert!(
                 !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
-                    &mapper_metadata_rom(Some(enabled), 0x1fff),
+                    &mapper_metadata_rom(mapper, Some(enabled), 0x1fff),
                     mapper,
                 )
                 .unwrap()
             );
             assert!(
                 smw_us_v1_expanded_exanimation_uses_mapper_runtime(
-                    &mapper_metadata_rom(Some(enabled), 0x2000),
+                    &mapper_metadata_rom(mapper, Some(enabled), 0x2000),
                     mapper,
                 )
                 .unwrap()
             );
             assert!(
                 !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
-                    &mapper_metadata_rom(None, 0x1fff),
+                    &mapper_metadata_rom(mapper, None, 0x1fff),
                     mapper,
                 )
                 .unwrap()
             );
             assert!(
                 smw_us_v1_expanded_exanimation_uses_mapper_runtime(
-                    &mapper_metadata_rom(None, 0x2000),
+                    &mapper_metadata_rom(mapper, None, 0x2000),
                     mapper,
                 )
                 .unwrap()
@@ -984,6 +1057,7 @@ mod tests {
         assert!(
             !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
                 &mapper_metadata_rom(
+                    Mapper::LoRom,
                     Some(
                         EXLOROM_CONFIGURATION_PRESENT_BIT
                             | EXLOROM_COMPATIBILITY_RUNTIME_BIT
@@ -1016,7 +1090,7 @@ mod tests {
                 allocation: AllocationPolicy {
                     search: 0x40_0000..0x41_0000,
                     bank_size: Some(0x8000),
-                    fill_bytes: vec![0xff],
+                    fill_bytes: vec![0x00, 0xff],
                     protected: Vec::new(),
                 },
                 checksum_field: 0x7fdc,
@@ -1081,15 +1155,32 @@ mod tests {
             .logical_bytes()
             .to_vec();
         for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
-            let mut original = pristine.clone();
-            original.resize(0x50_0000, 0xff);
+            let mut original = if mapper == Mapper::ExLoRom {
+                let mut converted = Project::open_supported(
+                    RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap(),
+                )
+                .unwrap();
+                converted.convert_to_64_mbit_exlorom().unwrap();
+                converted.rom.logical_bytes().to_vec()
+            } else {
+                let mut bytes = pristine.clone();
+                bytes.resize(0x50_0000, 0xff);
+                bytes
+            };
+            if mapper == Mapper::Sa1 {
+                original.resize(0x50_0000, 0xff);
+            }
             let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
             let plan = smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
                 mapper,
                 AllocationPolicy {
-                    search: 0x40_0000..0x41_0000,
+                    search: if mapper == Mapper::ExLoRom {
+                        0x10_0000..0x40_0000
+                    } else {
+                        0x40_0000..0x41_0000
+                    },
                     bank_size: Some(0x8000),
-                    fill_bytes: vec![0xff],
+                    fill_bytes: vec![0x00, 0xff],
                     protected: Vec::new(),
                 },
                 true,
@@ -1100,10 +1191,21 @@ mod tests {
             assert_eq!(result.blocks[1].payload.len(), 0x600);
             assert_eq!(result.blocks[2].payload.len(), 0x20);
             assert_eq!(result.blocks[3].payload.len(), 0x30);
-            assert_eq!(project.rom.read(0x25e1, 2).unwrap(), &[0xea, 0xea]);
-            let fixed_a = pc_to_snes(mapper, 0x77550).unwrap().to_le_bytes();
             assert_eq!(
-                project.rom.read(0x2d8e2, 4).unwrap(),
+                project
+                    .rom
+                    .read(mapper_rom_offset(mapper, 0x25e1), 2)
+                    .unwrap(),
+                &[0xea, 0xea]
+            );
+            let fixed_a = pc_to_snes(mapper, mapper_rom_offset(mapper, 0x77550))
+                .unwrap()
+                .to_le_bytes();
+            assert_eq!(
+                project
+                    .rom
+                    .read(mapper_rom_offset(mapper, 0x2d8e2), 4)
+                    .unwrap(),
                 &[0x22, fixed_a[0], fixed_a[1], fixed_a[2]]
             );
             assert_eq!(
@@ -1114,11 +1216,17 @@ mod tests {
                 &(0x0d9b_u16 + 0x6000).to_le_bytes()
             );
             assert_eq!(
-                project.rom.read(0x77553, 2).unwrap(),
+                project
+                    .rom
+                    .read(mapper_rom_offset(mapper, 0x77553), 2)
+                    .unwrap(),
                 &(0x010b_u16 + 0x6000).to_le_bytes()
             );
             assert_eq!(
-                project.rom.read(0x77561, 2).unwrap(),
+                project
+                    .rom
+                    .read(mapper_rom_offset(mapper, 0x77561), 2)
+                    .unwrap(),
                 &(0x13cd_u16 + 0x6000).to_le_bytes()
             );
             assert!(
@@ -1140,7 +1248,7 @@ mod tests {
                 result.blocks[0].payload.start,
                 result.blocks[0].payload.start + 0xc30,
                 result.blocks[2].payload.start,
-                0x25e1,
+                mapper_rom_offset(mapper, 0x25e1),
             ] {
                 let mut corrupt = installed.clone();
                 corrupt[offset] ^= 1;
@@ -1167,18 +1275,43 @@ mod tests {
         .unwrap();
         let retained = RomImage::from_bytes(retained).unwrap();
         for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
-            assert!(
-                !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
-                    retained.logical_bytes(),
-                    mapper
-                )
-                .unwrap()
-            );
+            let mut bytes = retained.logical_bytes().to_vec();
+            if mapper == Mapper::ExLoRom {
+                bytes.resize(0x50_0000, 0xff);
+                let attribution = retained
+                    .read(
+                        crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET,
+                        LunarMagicRomMetadata::ATTRIBUTION_LEN,
+                    )
+                    .unwrap();
+                let record = retained
+                    .read(
+                        crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET,
+                        1 + LunarMagicRomMetadata::FEATURE_LEN,
+                    )
+                    .unwrap();
+                bytes[0x40_0000 + crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
+                    ..0x40_0000 + crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET + attribution.len()]
+                    .copy_from_slice(attribution);
+                bytes[0x40_0000 + crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET
+                    ..0x40_0000 + crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET + record.len()]
+                    .copy_from_slice(record);
+                bytes[0x40_0000 + MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET
+                    ..0x40_0000 + MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET + 2]
+                    .copy_from_slice(
+                        retained
+                            .read(MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET, 2)
+                            .unwrap(),
+                    );
+            }
+            assert!(!smw_us_v1_expanded_exanimation_uses_mapper_runtime(&bytes, mapper).unwrap());
         }
 
-        let mut partial = mapper_metadata_rom(None, 0x2000);
-        partial[crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
-            ..crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET + LunarMagicRomMetadata::SIGNATURE.len()]
+        let mut partial = mapper_metadata_rom(Mapper::ExLoRom, None, 0x2000);
+        partial[0x40_0000 + crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
+            ..0x40_0000
+                + crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
+                + LunarMagicRomMetadata::SIGNATURE.len()]
             .copy_from_slice(LunarMagicRomMetadata::SIGNATURE);
         assert!(matches!(
             smw_us_v1_expanded_exanimation_uses_mapper_runtime(&partial, Mapper::ExLoRom),
