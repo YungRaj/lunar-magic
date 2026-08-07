@@ -86,6 +86,7 @@ fn semantic_record_constructor_validates_destination_and_frames() {
     assert_eq!(record.kind(), 2);
     assert_eq!(record.frame_count_minus_one(), 2);
     assert_eq!(record.size_mode(), 7);
+    assert_eq!(record.trigger(), 7);
     assert_eq!(record.destination(), 0x1234);
     assert!(record.destination_flag());
     assert_eq!(record.frame_bytes(false), [1, 2, 3, 4, 5, 6]);

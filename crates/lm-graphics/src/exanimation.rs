@@ -36,8 +36,14 @@ impl ExAnimationRecord {
     }
 
     #[must_use]
-    pub const fn size_mode(&self) -> u8 {
+    pub const fn trigger(&self) -> u8 {
         self.bytes[2]
+    }
+
+    /// Compatibility alias for the previously misidentified trigger byte.
+    #[must_use]
+    pub const fn size_mode(&self) -> u8 {
+        self.trigger()
     }
 
     #[must_use]
@@ -93,7 +99,7 @@ impl ExAnimationRecord {
     pub fn new(
         kind: u8,
         frame_count_minus_one: u8,
-        size_mode: u8,
+        trigger: u8,
         destination: u16,
         destination_flag: bool,
         frame_bytes: &[u8],
@@ -112,7 +118,7 @@ impl ExAnimationRecord {
         let mut record = Self::inactive();
         record.bytes[0] = kind;
         record.bytes[1] = frame_count_minus_one;
-        record.bytes[2] = size_mode;
+        record.bytes[2] = trigger;
         record.bytes[4..6].copy_from_slice(&destination.to_le_bytes());
         record.bytes[6] = u8::from(destination_flag);
         record.bytes[8..8 + expected].copy_from_slice(frame_bytes);

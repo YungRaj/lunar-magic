@@ -243,7 +243,7 @@ impl MwlOptionalAssetsPanel {
         }
         for (label, field) in [
             ("Kind", &mut self.record.kind),
-            ("Size mode", &mut self.record.size_mode),
+            ("Trigger", &mut self.record.size_mode),
             ("Destination", &mut self.record.destination),
         ] {
             text_field(ui, label, field);

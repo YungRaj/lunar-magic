@@ -266,7 +266,7 @@ impl RomExAnimationEditor {
         ui.heading(format!("Record {:02X}", self.selected_record));
         for (label, field) in [
             ("Kind", &mut self.record.kind),
-            ("Size mode", &mut self.record.size_mode),
+            ("Trigger", &mut self.record.size_mode),
             ("Destination", &mut self.record.destination),
         ] {
             ui.horizontal(|ui| {

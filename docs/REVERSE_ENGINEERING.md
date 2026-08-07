@@ -3685,3 +3685,10 @@ or manual index over 16, 32, or 16 entries, and `$CC..$CF` forward the correspon
 action. Every state-changing action uses redraw mode 4. Rust parses the complete hexadecimal token
 families, retains the same independent arrays and selectors, applies the same wrapping rules, and
 invalidates the graphics preview only for actions that change rendered trigger state.
+
+`ApplyExAnimationDialogToSelectedSlot` at `0040A9C0` writes the Trigger combo selection to record
+byte 2. `ProcessExAnimationRecordGroup` switches on that same byte to select ordinary, POW,
+On/Off, Star, timer, Yoshi coin, manual, custom, or one-shot behavior. The table at `005E77D8`
+does not redefine the byte as a size mode; it reports whether a trigger requires two frame banks.
+Rust now exposes byte 2 as `trigger()` and labels it Trigger in every ExAnimation editor, while
+retaining `size_mode()` only as a source-compatible alias for older callers.

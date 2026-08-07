@@ -103,7 +103,7 @@ impl ExAnimationEditor {
         ui.heading(format!("Record {:02X}", self.selected_record));
         for (label, field) in [
             ("Kind (hex)", &mut self.record.kind),
-            ("Size mode (hex)", &mut self.record.size_mode),
+            ("Trigger (hex)", &mut self.record.size_mode),
             ("Destination (hex)", &mut self.record.destination),
         ] {
             ui.horizontal(|ui| {
