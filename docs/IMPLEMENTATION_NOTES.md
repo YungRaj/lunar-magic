@@ -3155,6 +3155,13 @@ assigns every non-spacer button. Explicit line-five working directories take pre
 are resolved before the direct argument vector reaches the permission prompt. Association-open,
 console-window, multi-instance, close/autorun, and notification lifecycle options remain open.
 
+Internal user-toolbar routing now includes the original open, save/save-as, next/previous level,
+exit, undo/redo, overworld, 8x8 graphics, 16x16 Map16, palette, ExAnimation-slot, and Layer 3 editor
+names. Commands that own a level use the actual active level; Layer 3 rejects without one instead of
+inventing a target, while graphics and palette follow the native menu's slot-zero entry behavior.
+Remaining original names that operate editor-local modes, dialogs, toggles, clipboard payloads, or
+installers stay explicitly unsupported until their corresponding typed frontend action exists.
+
 **Tools → Language** now exposes the active locale and installs standalone `.lmlang` catalogs using
 the canonical `LMLOC001` decoder on the existing bounded, non-blocking document worker. The public
 maximum encoded size exactly covers a valid catalog with the longest locale and every maximum-size

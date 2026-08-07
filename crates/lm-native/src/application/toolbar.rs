@@ -94,14 +94,16 @@ impl NativeApplication {
     ) {
         match &button.target {
             UserToolbarTarget::Spacer => {}
-            UserToolbarTarget::Internal(name) => match user_toolbar_command(name) {
-                Some(command) => self.dispatch(context, command),
-                None => {
-                    self.effects.error = Some(format!(
-                        "User toolbar command {name:?} is not supported by this editor yet"
-                    ))
+            UserToolbarTarget::Internal(name) => {
+                match user_toolbar_command(name, self.app.current_level()) {
+                    Some(command) => self.dispatch(context, command),
+                    None => {
+                        self.effects.error = Some(format!(
+                            "User toolbar command {name:?} is not supported by this editor yet"
+                        ))
+                    }
                 }
-            },
+            }
             UserToolbarTarget::External(command_line) => match split_command_line(command_line) {
                 Ok((executable, arguments)) => {
                     let expanded = arguments
@@ -458,17 +460,22 @@ fn user_toolbar_label(target: &UserToolbarTarget) -> &str {
     }
 }
 
-fn user_toolbar_command(name: &str) -> Option<Command> {
+fn user_toolbar_command(name: &str, current_level: Option<u16>) -> Option<Command> {
     Some(match name {
         "LM_FILE_OPEN_ROM" => Command::Open,
         "LM_FILE_SAVE_BUTTON" | "LM_FILE_SAVE_FILE" => Command::Save,
         "LM_FILE_SAVE_FILE_AS" | "LM_FILE_SAVE_LEVEL_TO_ROM_AS" => Command::SaveAs,
         "LM_FILE_PREVIOUS_LEVEL" => Command::NavigateLevel(LevelNavigationDirection::Back),
         "LM_FILE_NEXT_LEVEL" => Command::NavigateLevel(LevelNavigationDirection::Forward),
+        "LM_FILE_EXIT" => Command::Quit,
         "LM_EDIT_UNDO" => Command::Undo,
         "LM_EDIT_REDO" => Command::Redo,
         "LM_VIEW_OVERWORLD" => Command::ShowOverworld,
         "LM_VIEW_16x16" => Command::ShowMap16,
+        "LM_VIEW_8x8" => Command::ShowGraphics(0),
+        "LM_VIEW_PALETTES" => Command::ShowPalette(0),
+        "LM_KEY_EXANIM_SLOTS" => Command::ShowExAnimation(current_level.unwrap_or(0)),
+        "LM_VIEW_LAYER_3_EDITOR" => Command::ShowLayer3(current_level?),
         _ => return None,
     })
 }
@@ -517,14 +524,27 @@ mod user_toolbar_tests {
     #[test]
     fn original_internal_names_map_to_native_commands() {
         assert_eq!(
-            user_toolbar_command("LM_FILE_OPEN_ROM"),
+            user_toolbar_command("LM_FILE_OPEN_ROM", None),
             Some(Command::Open)
         );
         assert_eq!(
-            user_toolbar_command("LM_VIEW_OVERWORLD"),
+            user_toolbar_command("LM_VIEW_OVERWORLD", None),
             Some(Command::ShowOverworld)
         );
-        assert_eq!(user_toolbar_command("LM_UNKNOWN"), None);
+        assert_eq!(
+            user_toolbar_command("LM_VIEW_8x8", Some(0x105)),
+            Some(Command::ShowGraphics(0))
+        );
+        assert_eq!(
+            user_toolbar_command("LM_KEY_EXANIM_SLOTS", Some(0x105)),
+            Some(Command::ShowExAnimation(0x105))
+        );
+        assert_eq!(
+            user_toolbar_command("LM_VIEW_LAYER_3_EDITOR", Some(0x106)),
+            Some(Command::ShowLayer3(0x106))
+        );
+        assert_eq!(user_toolbar_command("LM_VIEW_LAYER_3_EDITOR", None), None);
+        assert_eq!(user_toolbar_command("LM_UNKNOWN", None), None);
     }
 
     #[test]
