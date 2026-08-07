@@ -118,10 +118,11 @@ impl AppState {
         Ok(())
     }
 
-    pub(crate) fn install_project(&mut self, project: Project, path: Option<PathBuf>) {
+    pub(crate) fn install_project(&mut self, mut project: Project, path: Option<PathBuf>) {
         if let Some(path) = &path {
             self.recent_documents.note(path);
         }
+        project.history.set_limit(self.undo_operation_limit());
         self.project = Some(project);
         self.revision_profile = None;
         self.document_path = path;

@@ -186,6 +186,52 @@ fn test_rom() -> Vec<u8> {
 }
 
 #[test]
+fn lunar_magic_snapshot_limit_persists_across_projects_and_obeys_disabled_boundary() {
+    let mut app = AppState::default();
+    assert_eq!(app.undo_snapshot_limit(), 33);
+    assert_eq!(app.undo_operation_limit(), 32);
+    app.set_undo_snapshot_limit(3).unwrap();
+    app.load_rom(test_rom()).unwrap();
+    assert_eq!(app.project().unwrap().history.limit(), 2);
+
+    for (revision, offset) in [(0, 2), (1, 3), (2, 4)] {
+        app.dispatch(Command::CommitRomWrites {
+            expected_revision: revision,
+            description: format!("history edit {revision}"),
+            writes: vec![lm_project::RomWrite {
+                offset,
+                bytes: vec![revision as u8 + 1],
+            }],
+        })
+        .unwrap();
+    }
+    assert_eq!(app.project().unwrap().history.undo_len(), 2);
+
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().history.redo_len(), 1);
+    app.set_undo_snapshot_limit(1).unwrap();
+    assert_eq!(app.project().unwrap().history.undo_len(), 0);
+    assert_eq!(app.project().unwrap().history.redo_len(), 0);
+    assert_eq!(app.project().unwrap().history.limit(), 0);
+
+    app.dispatch(Command::CommitRomWrites {
+        expected_revision: 4,
+        description: "disabled history edit".into(),
+        writes: vec![lm_project::RomWrite {
+            offset: 5,
+            bytes: vec![9],
+        }],
+    })
+    .unwrap();
+    assert_eq!(app.project().unwrap().history.undo_len(), 0);
+
+    let before = app.undo_snapshot_limit();
+    assert!(app.set_undo_snapshot_limit(52).is_err());
+    assert_eq!(app.undo_snapshot_limit(), before);
+    assert_eq!(app.project().unwrap().history.limit(), 0);
+}
+
+#[test]
 fn crash_recovery_restores_exact_dirty_bytes_level_and_saved_baseline() {
     let original = test_rom();
     let mut app = AppState::default();

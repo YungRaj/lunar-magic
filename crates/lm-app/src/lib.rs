@@ -330,7 +330,7 @@ pub use snes_map16_tileset_import::{
 pub use ssc_sidecar_controller::{
     SscSidecarController, SscSidecarControllerError, SscSidecarSaveSnapshot,
 };
-pub use state::{AppError, AppState};
+pub use state::{AppError, AppState, UndoHistoryLimitError};
 pub use tool_config::{ToolConfig, ToolConfigError};
 pub use toolbar::{ToolbarAction, ToolbarActivation, ToolbarConfig, ToolbarError, ToolbarItem};
 pub use user_toolbar::{

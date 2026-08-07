@@ -81,6 +81,7 @@ mod rom_menus;
 mod rom_windows;
 mod shutdown;
 mod toolbar;
+mod undo_history_settings;
 mod windows;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -133,6 +134,7 @@ pub(crate) struct NativeApplication {
     help_dialog: HelpDialog,
     shortcut_editor: ShortcutEditor,
     toolbar_editor: ToolbarEditor,
+    undo_history_settings: undo_history_settings::UndoHistorySettings,
     user_toolbar: Option<UserToolbar>,
     user_toolbar_images: UserToolbarImageSet,
     main_toolbar_images: MainToolbarImageSet,
@@ -217,6 +219,7 @@ impl NativeApplication {
     const SHORTCUT_STORAGE_KEY: &'static str = "lunar_magic_rust.shortcuts.v1";
     const TOOLBAR_STORAGE_KEY: &'static str = "lunar_magic_rust.toolbar.v1";
     const LOCALIZATION_STORAGE_KEY: &'static str = "lunar_magic_rust.localization.v1";
+    const UNDO_HISTORY_STORAGE_KEY: &'static str = "lunar_magic_rust.undo_history.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -404,6 +407,16 @@ impl NativeApplication {
             };
             if let Err(error) = result {
                 self.effects.error = Some(format!("cannot load language catalog: {error}"));
+            }
+        }
+        if let Some(encoded) = storage.get_string(Self::UNDO_HISTORY_STORAGE_KEY) {
+            let result = undo_history_settings::decode_preference(&encoded).and_then(|limit| {
+                self.app
+                    .set_undo_snapshot_limit(limit)
+                    .map_err(|error| error.to_string())
+            });
+            if let Err(error) = result {
+                self.effects.error = Some(format!("cannot load undo-history preference: {error}"));
             }
         }
     }
@@ -597,6 +610,10 @@ impl eframe::App for NativeApplication {
             |catalog| format!("hex:{}", encode_localization_preference(catalog)),
         );
         storage.set_string(Self::LOCALIZATION_STORAGE_KEY, localization);
+        storage.set_string(
+            Self::UNDO_HISTORY_STORAGE_KEY,
+            undo_history_settings::encode_preference(self.app.undo_snapshot_limit()),
+        );
     }
 
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
@@ -668,6 +685,17 @@ impl eframe::App for NativeApplication {
                     self.app.clear_toolbar();
                     self.app.status = "Restored built-in toolbar".into();
                 }
+            }
+        }
+        if let Some(limit) = self.undo_history_settings.show(context) {
+            match self.app.set_undo_snapshot_limit(limit) {
+                Ok(()) => {
+                    self.app.status = format!(
+                        "Undo history retains {limit} snapshots ({} undo operations)",
+                        limit.saturating_sub(1)
+                    );
+                }
+                Err(error) => self.effects.error = Some(error.to_string()),
             }
         }
         self.show_editor_windows(context);

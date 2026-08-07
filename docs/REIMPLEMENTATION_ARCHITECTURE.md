@@ -251,6 +251,11 @@ This is a behavioral reimplementation plan, not a translation of the Windows exe
   connecting unsaved document revisions to bounded viewport PNGs through the same public adapter.
   Direct selection clears the forward branch, project
   replacement resets the trail, and history navigation emits typed view, viewport, and tool effects.
+- ROM undo history follows Lunar Magic's process-wide `UndoMain` preference rather than the view
+  navigation bound. The persisted 0–51 snapshot count defaults to 33, includes the current baseline,
+  and therefore maps to 0–50 retained operations; both 0 and 1 disable capture. Changing across that
+  disabled boundary clears both history directions, while ordinary reductions prune the oldest
+  entries. New and already-open projects receive the same application preference.
 - Lossless MWL containers have their own revisioned application controller and focused shell
   adapter. Atomic edit batches own only flags, attribution, the recovered level number, or an
   explicitly named opaque section; canonical reopen, immutable save snapshots, stale-token

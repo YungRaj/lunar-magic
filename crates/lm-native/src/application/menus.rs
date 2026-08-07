@@ -363,6 +363,11 @@ impl NativeApplication {
                 ui.close_menu();
                 self.toolbar_editor.open(self.app.toolbar());
             }
+            if ui.button("Undo History…").clicked() {
+                ui.close_menu();
+                self.undo_history_settings
+                    .open(self.app.undo_snapshot_limit());
+            }
             let locale = self.app.localization().map_or_else(
                 || "Built-in English".to_owned(),
                 |catalog| catalog.locale().into(),

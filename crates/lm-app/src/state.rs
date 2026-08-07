@@ -16,6 +16,39 @@ use crate::{
     RevisionProfileError, ShortcutConfig, ShortcutError, ToolbarConfig, ToolbarError,
 };
 
+/// Lunar Magic stores a snapshot-node count, including the current baseline. Values zero and one
+/// both disable undo capture; larger values retain one fewer undoable operations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct UndoHistoryPreference {
+    snapshot_limit: usize,
+}
+
+impl Default for UndoHistoryPreference {
+    fn default() -> Self {
+        Self {
+            snapshot_limit: AppState::DEFAULT_UNDO_SNAPSHOT_LIMIT,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UndoHistoryLimitError {
+    pub actual: usize,
+    pub maximum: usize,
+}
+
+impl std::fmt::Display for UndoHistoryLimitError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "undo snapshot limit {} exceeds Lunar Magic's maximum {}",
+            self.actual, self.maximum
+        )
+    }
+}
+
+impl std::error::Error for UndoHistoryLimitError {}
+
 #[derive(Debug, Default)]
 pub struct AppState {
     pub(crate) project: Option<Project>,
@@ -35,6 +68,7 @@ pub struct AppState {
     pub(crate) next_save_request: u64,
     pub(crate) project_revision: u64,
     pub(crate) level_navigation: LevelNavigationHistory,
+    undo_history: UndoHistoryPreference,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -718,6 +752,44 @@ impl From<lm_overworld::NativeOverworldPlayerStartError> for AppError {
 }
 
 impl AppState {
+    pub const DEFAULT_UNDO_SNAPSHOT_LIMIT: usize = 33;
+    pub const MAX_UNDO_SNAPSHOT_LIMIT: usize = 51;
+
+    #[must_use]
+    pub const fn undo_snapshot_limit(&self) -> usize {
+        self.undo_history.snapshot_limit
+    }
+
+    #[must_use]
+    pub const fn undo_operation_limit(&self) -> usize {
+        self.undo_history.snapshot_limit.saturating_sub(1)
+    }
+
+    /// Applies Lunar Magic's persisted `UndoMain` snapshot limit to the open and future projects.
+    ///
+    /// Crossing either side of the disabled zero/one boundary clears both history directions, as
+    /// the original rebuilds its baseline chain in `ConfigureLevelUndoHistoryLimit`.
+    pub fn set_undo_snapshot_limit(
+        &mut self,
+        snapshot_limit: usize,
+    ) -> Result<(), UndoHistoryLimitError> {
+        if snapshot_limit > Self::MAX_UNDO_SNAPSHOT_LIMIT {
+            return Err(UndoHistoryLimitError {
+                actual: snapshot_limit,
+                maximum: Self::MAX_UNDO_SNAPSHOT_LIMIT,
+            });
+        }
+        let previous = self.undo_history.snapshot_limit;
+        if let Some(project) = self.project.as_mut() {
+            if previous < 2 || snapshot_limit < 2 {
+                project.history.clear();
+            }
+            project.history.set_limit(snapshot_limit.saturating_sub(1));
+        }
+        self.undo_history.snapshot_limit = snapshot_limit;
+        Ok(())
+    }
+
     /// Returns the open project for read-only synchronous inspection.
     ///
     /// Background work should use [`Self::controller_snapshot`] instead so its input carries a
