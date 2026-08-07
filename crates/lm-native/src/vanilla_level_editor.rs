@@ -349,6 +349,7 @@ pub(crate) struct VanillaLevelEditor {
     animation_time_offset_seconds: f64,
     animation_frozen_seconds: f64,
     switch_view_state: lm_render::LunarMagicSwitchViewState,
+    silver_pow_active: bool,
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
@@ -2387,6 +2388,10 @@ impl VanillaLevelEditor {
         }
     }
 
+    pub(crate) fn toolbar_silver_pow_toggle(&mut self) {
+        self.silver_pow_active = !self.silver_pow_active;
+    }
+
     fn game_preview_camera_origin(
         &self,
         major_tiles: u16,
@@ -2713,6 +2718,7 @@ impl VanillaLevelEditor {
                         .as_ref()
                         .map_or(0, |controller| controller.level().sprites.header & 0x3f),
                     animation_phase,
+                    silver_pow_active: self.silver_pow_active,
                     custom_sprites,
                     custom_map16,
                     external_textures: &self.external_sprite_textures,
@@ -4513,12 +4519,13 @@ impl VanillaLevelEditor {
                                             continue;
                                         };
                                         let form = SpriteForm::from_token(header, Some(token));
-                                        let mode = sprite_catalog_preview_mode(
+                                        let mut mode = sprite_catalog_preview_mode(
                                             &form,
                                             vertical,
                                             level_mode,
                                             sprite_tileset,
                                         );
+                                        mode.alternate_display = self.silver_pow_active;
                                         let response = draw_sprite_catalog_entry(
                                             ui,
                                             texture.as_ref(),
@@ -4726,12 +4733,13 @@ impl VanillaLevelEditor {
                             header.level_mode(),
                         )
                     });
-                let mode = sprite_catalog_preview_mode(
+                let mut mode = sprite_catalog_preview_mode(
                     &self.sprite_form,
                     vertical,
                     level_mode,
                     self.form.sprite_tileset,
                 );
+                mode.alternate_display = self.silver_pow_active;
                 let mut chosen = None;
                 egui::ScrollArea::vertical()
                     .id_salt("vanilla-standard-sprite-catalog-scroll")
@@ -8323,6 +8331,7 @@ struct SpritePlacementDraw<'a> {
     sprite_tileset: u8,
     sprite_memory_index: u8,
     animation_phase: u8,
+    silver_pow_active: bool,
     custom_sprites: Option<&'a lm_level::SscResolvedTable>,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
     external_textures: &'a HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
@@ -8346,6 +8355,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         sprite_tileset,
         sprite_memory_index,
         animation_phase,
+        silver_pow_active,
         custom_sprites,
         custom_map16,
         external_textures,
@@ -8382,9 +8392,8 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         });
         let uses_standard = custom_display.is_none();
         let preview = if uses_standard {
-            lm_render::render_lunar_magic_standard_sprite_with_mode(
-                placement.sprite_number,
-                standard_sprite_preview_mode(
+            lm_render::render_lunar_magic_standard_sprite_with_mode(placement.sprite_number, {
+                let mut mode = standard_sprite_preview_mode(
                     placement,
                     vertical,
                     level_mode,
@@ -8392,8 +8401,10 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     sprite_memory_index,
                     animation_phase,
                     standard_8a_count,
-                ),
-            )
+                );
+                mode.alternate_display = silver_pow_active;
+                mode
+            })
         } else {
             custom_preview
         };
@@ -14157,6 +14168,20 @@ mod tests {
     }
 
     #[test]
+    fn toolbar_silver_pow_toggles_default_off_standard_sprite_substitution() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(!editor.silver_pow_active);
+        editor.toolbar_silver_pow_toggle();
+        assert!(editor.silver_pow_active);
+        let mut mode = lm_render::StandardSpritePreviewMode::default();
+        mode.alternate_display = editor.silver_pow_active;
+        let preview = lm_render::render_lunar_magic_standard_sprite_with_mode(0x0c, mode).unwrap();
+        assert_eq!(preview.len(), 1);
+        assert_eq!(preview[0].definition_index, 0x115);
+        assert_eq!((preview[0].x, preview[0].y), (0, 1));
+    }
+
+    #[test]
     fn one_snes_screen_fills_the_available_canvas_pane_and_preserves_zoom() {
         for (available, zoom, expected) in [
             (egui::vec2(800.0, 600.0), 100, 50.0),
@@ -15547,6 +15572,7 @@ mod tests {
                     sprite_tileset: 0,
                     sprite_memory_index: 0,
                     animation_phase: 0,
+                    silver_pow_active: false,
                     custom_sprites: None,
                     custom_map16: None,
                     external_textures: &HashMap::new(),

@@ -3585,3 +3585,11 @@ The four published switch-state names map to `$23FB` through `$23FE` and toggle 
 slots 24 and 25 at `0042AA50` and `0042B440` consume blue and red respectively, filling the encoded
 rectangle with `$06C/$16C` or `$06D/$16D`. Rust exposes the four flags as one typed default-on
 render state and reapplies it to definitions shared by canvas and catalog rendering.
+
+`LM_VIEW_SILVER_POW` maps to `$2405`, whose dispatcher case `$53` toggles default-zero byte
+`00E278DE`, rebuilds the initial ExAnimation frame, and rebuilds sprite previews. That byte is read
+throughout the standard-sprite dispatch cluster; for example `RenderConditionalTiles13And23` at
+`004C3ED0` emits its ordinary `$13/$23` pair while clear and definition `$115` while set. Rust's
+already authenticated standard handlers expose the same branch as `alternate_display`; the native
+editor now supplies the toolbar state consistently to the canvas, existing-sprite picker, and new
+sprite catalog.

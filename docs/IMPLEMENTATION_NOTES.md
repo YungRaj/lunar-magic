@@ -3191,6 +3191,11 @@ The first two select the `$06A/$16A` and `$06B/$16B` forms of extended objects `
 second pair select `$06C/$16C` and `$06D/$16D` for mapped standard-object handlers 24/25. The
 state is applied to both Layer 1/Layer 2 canvas rendering and the standard/extended placement
 catalogs, so the chosen preview is the object that will visibly be placed.
+`LM_VIEW_SILVER_POW` (`$2405`) now drives the default-off Silver POW sprite-preview state used by
+Lunar Magic's standard handlers. The live sprite canvas, existing-sprite picture picker, and new
+sprite catalog all receive the same state. When active, every authenticated conditional handler
+uses definition `$115` at its recovered position; SSC custom displays remain authored displays
+rather than being rewritten as built-in standard sprites.
 `LM_VIEW_TILE_GRID` is separately recovered as command `$2408`. The original command toggles
 `DAT_00E278E5`; `RenderLevelEditorViewportRegion` at `$00453D90` calls
 `DrawLevelMap16ScreenGrid` only while that byte is set, and the pristine executable initializes it

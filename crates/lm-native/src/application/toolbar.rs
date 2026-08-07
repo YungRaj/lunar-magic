@@ -231,6 +231,9 @@ impl NativeApplication {
             UserToolbarLocalAction::RedSwitch => {
                 self.vanilla_level_editor.toolbar_switch_view_toggle(3);
             }
+            UserToolbarLocalAction::SilverPow => {
+                self.vanilla_level_editor.toolbar_silver_pow_toggle();
+            }
             UserToolbarLocalAction::ZoomToggle => self.vanilla_level_editor.toolbar_zoom_toggle(),
             UserToolbarLocalAction::ZoomDefault => self.vanilla_level_editor.toolbar_zoom_default(),
             UserToolbarLocalAction::ZoomPlus => self
@@ -487,6 +490,7 @@ fn toggle_user_toolbar_view_state(
         | UserToolbarLocalAction::YellowSwitch
         | UserToolbarLocalAction::BlueSwitch
         | UserToolbarLocalAction::RedSwitch
+        | UserToolbarLocalAction::SilverPow
         | UserToolbarLocalAction::ZoomDefault
         | UserToolbarLocalAction::ZoomPlus
         | UserToolbarLocalAction::ZoomMinus => {
@@ -703,6 +707,7 @@ enum UserToolbarLocalAction {
     YellowSwitch,
     BlueSwitch,
     RedSwitch,
+    SilverPow,
     ZoomToggle,
     ZoomDefault,
     ZoomPlus,
@@ -733,6 +738,7 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_YELLOW_SWITCH" => UserToolbarLocalAction::YellowSwitch,
         "LM_VIEW_BLUE_SWITCH" => UserToolbarLocalAction::BlueSwitch,
         "LM_VIEW_RED_SWITCH" => UserToolbarLocalAction::RedSwitch,
+        "LM_VIEW_SILVER_POW" => UserToolbarLocalAction::SilverPow,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
         "LM_VIEW_ZOOM_DEFAULT" => UserToolbarLocalAction::ZoomDefault,
         "LM_VIEW_ZOOM_PLUS" => UserToolbarLocalAction::ZoomPlus,
@@ -849,6 +855,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_RED_SWITCH"),
             Some(UserToolbarLocalAction::RedSwitch)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_SILVER_POW"),
+            Some(UserToolbarLocalAction::SilverPow)
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_ZOOM_TOGGLE"),

@@ -106,6 +106,8 @@ This state is consumed consistently by the canvas and all three sprite-list/cata
 four default-on switch view commands now independently select the recovered green, yellow, blue,
 and red conditional Map16 forms on the live Layer 1/Layer 2 canvas and in both object catalogs.
 Ghidra-backed renderer tests cover all eight page-zero/page-one tile choices. The
+default-off `$2405` Silver POW view command now applies the recovered `$115` substitution to every
+conditional standard-sprite handler on the canvas and both standard-sprite picker surfaces. The
 `$2408` tile-grid name
 now controls the original default-off Map16 canvas grid instead of the grid being painted
 unconditionally. The distinct `$23F6` Screen Grid overlay now draws the original orientation-aware
