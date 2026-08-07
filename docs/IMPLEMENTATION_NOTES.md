@@ -3181,7 +3181,16 @@ grid: it outlines and labels each horizontal screen's Top/Bottom regions or each
 Left/Right regions with a two-digit hexadecimal screen number. The native display model therefore
 keeps it as a separate default-off screen-overlay mode and paints those orientation-aware bounded
 regions. A second activation returns to no screen overlay. The mutually exclusive `$23F5` Screen
-Exits and `$23F7` Boundary Guide renderers remain the next two members of this recovered group.
+Exits member is now implemented as well. `DrawLevelScreenExitAnnotations` at `$004525B0` and
+`DrawScreenExitAnnotation` at `$00452240` prove the orientation-aware screen rectangles, red
+outlines, last keyed exit per screen, and exact direct, midway, secondary-slot, resolved
+secondary-destination, and overworld labels. The canvas joins its lossless Layer 1 exit records with
+the existing detected pristine/installed 8,192-entry secondary-exit table; malformed installed
+storage is surfaced rather than silently producing false targets. That immutable table is decoded
+once per ROM revision and reused across level navigation; the exhaustive 512-level materialization
+gate therefore retains bounded load time. `$23F5` and `$23F6` replace one
+another, and activating the current member returns to no screen overlay. `$23F7` Boundary Guide is
+the remaining member of this recovered mutually exclusive group.
 Remaining original names that operate other editor-local modes, dialogs, toggles, clipboard
 payloads, or installers stay explicitly unsupported until their corresponding typed frontend
 action exists.

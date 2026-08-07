@@ -430,6 +430,14 @@ fn toggle_user_toolbar_view_state(
                     LevelScreenOverlay::ScreenGrid
                 };
         }
+        UserToolbarLocalAction::ScreenExits => {
+            visibility.screen_overlay =
+                if visibility.screen_overlay == LevelScreenOverlay::ScreenExits {
+                    LevelScreenOverlay::None
+                } else {
+                    LevelScreenOverlay::ScreenExits
+                };
+        }
         UserToolbarLocalAction::ZoomToggle
         | UserToolbarLocalAction::ZoomDefault
         | UserToolbarLocalAction::ZoomPlus
@@ -634,6 +642,7 @@ enum UserToolbarLocalAction {
     SpecialWorld,
     TileGrid,
     ScreenGrid,
+    ScreenExits,
     ZoomToggle,
     ZoomDefault,
     ZoomPlus,
@@ -651,6 +660,7 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_SPECIAL_WORLD" => UserToolbarLocalAction::SpecialWorld,
         "LM_VIEW_TILE_GRID" => UserToolbarLocalAction::TileGrid,
         "LM_VIEW_SCREEN_GRID" => UserToolbarLocalAction::ScreenGrid,
+        "LM_VIEW_SCREEN_EXITS" => UserToolbarLocalAction::ScreenExits,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
         "LM_VIEW_ZOOM_DEFAULT" => UserToolbarLocalAction::ZoomDefault,
         "LM_VIEW_ZOOM_PLUS" => UserToolbarLocalAction::ZoomPlus,
@@ -755,6 +765,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_SCREEN_GRID"),
             Some(UserToolbarLocalAction::ScreenGrid)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_SCREEN_EXITS"),
+            Some(UserToolbarLocalAction::ScreenExits)
         );
     }
 
@@ -913,6 +927,18 @@ mod user_toolbar_tests {
         );
         assert!(visibility.tile_grid);
         assert_eq!(visibility.screen_overlay, LevelScreenOverlay::None);
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::ScreenGrid,
+        );
+        assert_eq!(visibility.screen_overlay, LevelScreenOverlay::ScreenGrid);
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::ScreenExits,
+        );
+        assert_eq!(visibility.screen_overlay, LevelScreenOverlay::ScreenExits);
         toggle_user_toolbar_view_state(
             &mut visibility,
             &mut special_world,

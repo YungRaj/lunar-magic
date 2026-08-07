@@ -6,10 +6,10 @@ use lm_app::{
 use lm_level::{
     CustomTimeError, CustomTimeSettings, Layer1VerticalScrollMode, LegacyHeaderEdit,
     NativeSpriteRecordFields, ObjectCoordinateNibbles, ObjectEdit, ObjectRecord,
-    SeparateMidwayEntrance, SpriteLengthTable, SpriteToken,
+    SecondaryExitTable, SeparateMidwayEntrance, SpriteLengthTable, SpriteToken,
 };
 use lm_project::LevelSaveOptions;
-use lm_project::VanillaMainEntrance;
+use lm_project::{Project, VanillaMainEntrance};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::{Mapper, Region, RomImage, SnesPointer24, SupportedGame};
 use std::collections::HashMap;
@@ -316,6 +316,9 @@ pub(crate) struct VanillaLevelEditor {
     controller: Option<LevelController>,
     pending_expansion_commit: Option<LevelController>,
     entrance_controller: Option<VanillaEntranceController>,
+    secondary_exits: Option<SecondaryExitTable>,
+    secondary_exits_revision: Option<u64>,
+    secondary_exits_error: Option<String>,
     entrance_form: VanillaMainEntrance,
     midway_form: Option<SeparateMidwayEntrance>,
     midway_install_form: SeparateMidwayEntrance,
@@ -1363,16 +1366,40 @@ impl VanillaLevelEditor {
                     .as_ref()
                     .and_then(VanillaEntranceController::midway_entrance);
                 self.midway_install_form = SeparateMidwayEntrance::default();
-                self.standard_object_map = RomImage::from_bytes(snapshot.rom_bytes.clone())
+                let editor_project = RomImage::from_bytes(snapshot.rom_bytes.clone())
+                    .map(Project::new)
+                    .map_err(|error| error.to_string());
+                if self.secondary_exits_revision != Some(snapshot.revision) {
+                    match editor_project.as_ref() {
+                        Ok(project) => match project.load_secondary_exit_table_detected(
+                            lm_profile::smw_us_v1_secondary_exit_locator(),
+                        ) {
+                            Ok(loaded) => {
+                                self.secondary_exits = Some(loaded.table);
+                                self.secondary_exits_error = None;
+                            }
+                            Err(error) => {
+                                self.secondary_exits = None;
+                                self.secondary_exits_error = Some(error.to_string());
+                            }
+                        },
+                        Err(error) => {
+                            self.secondary_exits = None;
+                            self.secondary_exits_error = Some(error.clone());
+                        }
+                    }
+                    self.secondary_exits_revision = Some(snapshot.revision);
+                }
+                let secondary_exit_error = self.secondary_exits_error.clone();
+                self.standard_object_map = editor_project.as_ref().ok().and_then(|project| {
+                    lm_profile::load_smw_us_v1_standard_object_definition_map(&project.rom).ok()
+                });
+                self.shared_vanilla_background = editor_project
+                    .as_ref()
                     .ok()
-                    .and_then(|rom| {
-                        lm_profile::load_smw_us_v1_standard_object_definition_map(&rom).ok()
-                    });
-                self.shared_vanilla_background = RomImage::from_bytes(snapshot.rom_bytes.clone())
-                    .ok()
-                    .and_then(|rom| {
+                    .and_then(|project| {
                         lm_profile::smw_us_v1_level_uses_shared_background(
-                            &rom,
+                            &project.rom,
                             controller.level().number,
                         )
                         .ok()
@@ -1422,11 +1449,14 @@ impl VanillaLevelEditor {
                     controller.level().sprites.tokens.first(),
                 );
                 self.controller = Some(controller);
-                self.error = entrance_error;
+                self.error = entrance_error.or(secondary_exit_error);
             }
             Err(error) => {
                 self.controller = None;
                 self.entrance_controller = None;
+                self.secondary_exits = None;
+                self.secondary_exits_revision = None;
+                self.secondary_exits_error = None;
                 self.midway_form = None;
                 self.error = Some(error.to_string());
             }
@@ -1439,6 +1469,9 @@ impl VanillaLevelEditor {
         self.controller = None;
         self.pending_expansion_commit = None;
         self.entrance_controller = None;
+        self.secondary_exits = None;
+        self.secondary_exits_revision = None;
+        self.secondary_exits_error = None;
         self.midway_form = None;
         self.midway_install_form = SeparateMidwayEntrance::default();
         self.preview_camera_major_offset = 0;
@@ -2570,6 +2603,18 @@ impl VanillaLevelEditor {
             }
             if visibility.screen_overlay == crate::application::LevelScreenOverlay::ScreenGrid {
                 draw_level_screen_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+            }
+            if visibility.screen_overlay == crate::application::LevelScreenOverlay::ScreenExits {
+                draw_level_screen_exit_annotations(
+                    painter,
+                    rect,
+                    cell,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                    records,
+                    self.secondary_exits.as_ref(),
+                );
             }
             let alternate_vertical_layout =
                 lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout;
@@ -5257,6 +5302,132 @@ fn draw_level_screen_grid(
             label_at,
             egui::Align2::LEFT_TOP,
             region.label,
+            egui::FontId::monospace((cell * 0.75).clamp(8.0, 16.0)),
+            egui::Color32::WHITE,
+        );
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LevelScreenExitAnnotation {
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+    label: String,
+}
+
+fn level_screen_exit_annotations(
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+    records: &[ObjectRecord],
+    secondary_exits: Option<&SecondaryExitTable>,
+) -> Vec<LevelScreenExitAnnotation> {
+    let mut exits = [None; 32];
+    for exit in records.iter().filter_map(ObjectRecord::screen_exit) {
+        exits[usize::from(exit.screen)] = Some(exit.destination_and_flags);
+    }
+    let screens = major_tiles.div_ceil(16).min(32);
+    (0..screens)
+        .map(|screen| {
+            let (x, y, width, height) = if vertical {
+                (
+                    0,
+                    screen * 16,
+                    minor_tiles,
+                    (major_tiles - screen * 16).min(16),
+                )
+            } else {
+                (
+                    screen * 16,
+                    0,
+                    (major_tiles - screen * 16).min(16),
+                    minor_tiles,
+                )
+            };
+            let label = exits[usize::from(screen)].map_or_else(
+                || format!("{screen:02X}"),
+                |destination_and_flags| {
+                    screen_exit_annotation_label(screen, destination_and_flags, secondary_exits)
+                },
+            );
+            LevelScreenExitAnnotation {
+                x,
+                y,
+                width,
+                height,
+                label,
+            }
+        })
+        .collect()
+}
+
+fn screen_exit_annotation_label(
+    screen: u16,
+    destination_and_flags: u16,
+    secondary_exits: Option<&SecondaryExitTable>,
+) -> String {
+    let destination = (destination_and_flags >> 3) & 0x1e00 | destination_and_flags & 0x01ff;
+    if destination_and_flags & 0x0200 != 0 {
+        let resolved = secondary_exits
+            .and_then(|table| table.entries.get(usize::from(destination)))
+            .copied();
+        if resolved.is_some_and(|exit| exit.x_and_overworld_flags & 0x80 != 0) {
+            format!("{screen:02X} : Secondary Exit {destination:X} to OV")
+        } else if let Some(exit) = resolved {
+            format!(
+                "{screen:02X} : Secondary Exit {destination:X} to {:X}",
+                exit.destination_level
+            )
+        } else {
+            format!("{screen:02X} : Secondary Exit {destination:X}")
+        }
+    } else if destination_and_flags & 0x0800 != 0 {
+        format!("{screen:02X} : Midway Exit to Level {destination:X}")
+    } else {
+        format!("{screen:02X} : Exit to Level {destination:X}")
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_level_screen_exit_annotations(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell: f32,
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+    records: &[ObjectRecord],
+    secondary_exits: Option<&SecondaryExitTable>,
+) {
+    let outline = egui::Color32::from_rgb(255, 0, 0);
+    for annotation in
+        level_screen_exit_annotations(major_tiles, minor_tiles, vertical, records, secondary_exits)
+    {
+        let min = canvas.min
+            + egui::vec2(
+                f32::from(annotation.x) * cell,
+                f32::from(annotation.y) * cell,
+            );
+        let rect = egui::Rect::from_min_size(
+            min,
+            egui::vec2(
+                f32::from(annotation.width) * cell,
+                f32::from(annotation.height) * cell,
+            ),
+        )
+        .intersect(canvas);
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.5_f32, outline),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            rect.min + egui::vec2(4.0, 4.0),
+            egui::Align2::LEFT_TOP,
+            annotation.label,
             egui::FontId::monospace((cell * 0.75).clamp(8.0, 16.0)),
             egui::Color32::WHITE,
         );
@@ -13523,6 +13694,48 @@ mod tests {
         assert_eq!(vertical[1].label, "00 : Right");
         assert_eq!(vertical[2].y, 16);
         assert_eq!(vertical[2].label, "01 : Left");
+    }
+
+    #[test]
+    fn screen_exit_annotations_resolve_direct_midway_secondary_and_overworld_targets() {
+        let direct = ObjectRecord::new(vec![0x00, 0x05, 0x00, 0x23]).unwrap();
+        let secondary = ObjectRecord::new(vec![0x01, 0x07, 0x00, 0x01]).unwrap();
+        let midway = ObjectRecord::new(vec![0x02, 0x0d, 0x00, 0x23]).unwrap();
+        let overworld = ObjectRecord::new(vec![0x03, 0x07, 0x00, 0x02]).unwrap();
+        let mut table = SecondaryExitTable {
+            entries: vec![lm_level::SecondaryExit::default(); SecondaryExitTable::ENTRY_COUNT],
+        };
+        table.entries[0x101].destination_level = 0x1ab;
+        table.entries[0x102].x_and_overworld_flags = 0x80;
+        let annotations = level_screen_exit_annotations(
+            64,
+            27,
+            false,
+            &[direct, secondary, midway, overworld],
+            Some(&table),
+        );
+        assert_eq!(annotations[0].label, "00 : Exit to Level 123");
+        assert_eq!(annotations[1].label, "01 : Secondary Exit 101 to 1AB");
+        assert_eq!(annotations[2].label, "02 : Midway Exit to Level 123");
+        assert_eq!(annotations[3].label, "03 : Secondary Exit 102 to OV");
+        assert_eq!((annotations[3].x, annotations[3].height), (48, 27));
+    }
+
+    #[test]
+    fn last_screen_exit_record_wins_and_vertical_regions_follow_screen_rows() {
+        let first = ObjectRecord::new(vec![0x01, 0x04, 0x00, 0x01]).unwrap();
+        let last = ObjectRecord::new(vec![0x01, 0x04, 0x00, 0x02]).unwrap();
+        let annotations = level_screen_exit_annotations(32, 32, true, &[first, last], None);
+        assert_eq!(annotations[1].label, "01 : Exit to Level 2");
+        assert_eq!(
+            (
+                annotations[1].x,
+                annotations[1].y,
+                annotations[1].width,
+                annotations[1].height,
+            ),
+            (0, 16, 32, 16)
+        );
     }
 
     #[test]

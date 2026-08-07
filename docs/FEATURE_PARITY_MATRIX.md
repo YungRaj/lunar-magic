@@ -98,7 +98,9 @@ toggle. Four recovered zoom names also drive the native canvas's exact 100–500
 100-point adjustment, default reset, and remembered nondefault toggle. The `$2408` tile-grid name
 now controls the original default-off Map16 canvas grid instead of the grid being painted
 unconditionally. The distinct `$23F6` Screen Grid overlay now draws the original orientation-aware
-Top/Bottom or Left/Right screen regions and hexadecimal labels. This strengthens the
+Top/Bottom or Left/Right screen regions and hexadecimal labels. `$23F5` now renders mutually
+exclusive screen-exit regions and resolves direct, midway, secondary-level, and overworld labels
+through the detected pristine/installed secondary-exit table. This strengthens the
 Configuration toolbar GUI evidence but does not promote that workflow while the remaining internal
 command table and toolbar variants are incomplete.
 

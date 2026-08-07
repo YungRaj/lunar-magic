@@ -86,6 +86,7 @@ mod windows;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum LevelScreenOverlay {
     None,
+    ScreenExits,
     ScreenGrid,
 }
 
