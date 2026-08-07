@@ -3131,9 +3131,18 @@ generic and sided Ctrl/Shift/Alt names, F1–F24, the available editing/navigati
 digits, and raw equivalent Windows virtual-key codes. The portable `LMSHORT1` key enum appended the
 missing insert/home/end/page/tab/space kinds without changing any existing discriminant. A retained
 LM 3.63 Wine oracle observed the original create a visible 52-button built-in toolbar and distinct
-two-button user toolbar from the committed fixture. Bitmap-strip display, the exhaustive
-internal/options table, mouse/Pause/numpad-operator distinctions, and process notification/lifecycle
-options remain open.
+two-button user toolbar from the committed fixture.
+
+User-toolbar BMPs are loaded through the existing bounded Windows bitmap decoder. The first strip
+height or an effective pre-image `LM_SETIMAGE_SIZE` establishes the square cell; horizontal strips
+are divided exactly, the first RGB pixel is the transparent color key, and textures use nearest
+sampling. The parser records the active image base on every button, including signed indexes and
+`LM_NEWIMAGE`, previous, and global base transitions, so later directives cannot retroactively
+change earlier buttons. Missing/non-regular/oversized/malformed strips and icon-list overflow reject
+the image set without partially publishing textures, while the parsed toolbar and shortcuts remain
+available with textual fallback. Custom built-in `.ff*` strips, executable icon extraction,
+force-image sequencing, the exhaustive internal/options table, mouse/Pause/numpad-operator
+distinctions, and process notification/lifecycle options remain open.
 
 **Tools → Language** now exposes the active locale and installs standalone `.lmlang` catalogs using
 the canonical `LMLOC001` decoder on the existing bounded, non-blocking document worker. The public

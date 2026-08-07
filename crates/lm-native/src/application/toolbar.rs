@@ -32,8 +32,15 @@ impl NativeApplication {
             .as_ref()
             .map(|toolbar| toolbar.buttons.clone())
             .unwrap_or_default();
+        self.user_toolbar_images.ensure_textures(context);
+        let icon_size = self.user_toolbar_images.icon_size().unwrap_or(16.0);
+        let icons = buttons
+            .iter()
+            .map(|button| self.user_toolbar_images.texture_for(button).cloned())
+            .collect::<Vec<_>>();
+        let mut clicked = None;
         ui.horizontal_wrapped(|ui| {
-            for (index, button) in buttons.iter().enumerate() {
+            for (index, (button, icon)) in buttons.iter().zip(&icons).enumerate() {
                 match &button.target {
                     UserToolbarTarget::Spacer => {
                         ui.separator();
@@ -44,13 +51,30 @@ impl NativeApplication {
                         } else {
                             button.tooltip.lines().next().unwrap_or("Tool")
                         };
-                        if ui.button(label).on_hover_text(&button.tooltip).clicked() {
-                            self.activate_user_toolbar_button(context, index, button);
+                        let widget = icon.as_ref().map_or_else(
+                            || egui::Button::new(label),
+                            |texture| {
+                                let image = egui::Image::new((
+                                    texture.id(),
+                                    egui::vec2(icon_size, icon_size),
+                                ));
+                                if button.tooltip.is_empty() {
+                                    egui::Button::image(image)
+                                } else {
+                                    egui::Button::image_and_text(image, label)
+                                }
+                            },
+                        );
+                        if ui.add(widget).on_hover_text(&button.tooltip).clicked() {
+                            clicked = Some(index);
                         }
                     }
                 }
             }
         });
+        if let Some(index) = clicked {
+            self.activate_user_toolbar_button(context, index, &buttons[index]);
+        }
     }
 
     fn activate_user_toolbar_button(

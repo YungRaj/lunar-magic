@@ -335,7 +335,7 @@ pub use tool_config::{ToolConfig, ToolConfigError};
 pub use toolbar::{ToolbarAction, ToolbarActivation, ToolbarConfig, ToolbarError, ToolbarItem};
 pub use user_toolbar::{
     UserToolbar, UserToolbarButton, UserToolbarError, UserToolbarGlobalOption, UserToolbarImage,
-    UserToolbarImageMode, UserToolbarTarget,
+    UserToolbarImageBase, UserToolbarImageMode, UserToolbarTarget,
 };
 pub use vanilla_entrance_controller::{
     VanillaEntranceController, VanillaEntranceControllerError, VanillaEntranceEdit,

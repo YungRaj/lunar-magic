@@ -20,6 +20,14 @@ pub struct UserToolbarImage {
     pub path: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum UserToolbarImageBase {
+    #[default]
+    Global,
+    /// Base at the first image contributed by this entry in [`UserToolbar::images`].
+    Image(usize),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UserToolbarGlobalOption {
     DisplayErrors(Option<u16>),
@@ -42,6 +50,7 @@ pub enum UserToolbarTarget {
 pub struct UserToolbarButton {
     pub target: UserToolbarTarget,
     pub icon: Option<i32>,
+    pub image_base: UserToolbarImageBase,
     pub tooltip: String,
     pub options: Vec<String>,
     pub shortcut: Vec<String>,
@@ -53,6 +62,8 @@ pub struct UserToolbar {
     pub buttons: Vec<UserToolbarButton>,
     pub images: Vec<UserToolbarImage>,
     pub global_options: Vec<UserToolbarGlobalOption>,
+    /// Explicit square icon size retained only when set before the first image, as in LM.
+    pub image_size: Option<u16>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,6 +104,8 @@ impl UserToolbar {
         }
         let mut result = Self::default();
         let mut definition: Option<(usize, Vec<String>)> = None;
+        let mut image_base = UserToolbarImageBase::Global;
+        let mut previous_image_base = image_base;
         for (offset, raw) in text.lines().enumerate() {
             let line_number = offset + 1;
             if raw.len() > MAX_LINE_BYTES {
@@ -106,12 +119,12 @@ impl UserToolbar {
                 continue;
             }
             if line == "***START***" {
-                finish_definition(&mut result, definition.take())?;
+                finish_definition(&mut result, definition.take(), image_base)?;
                 definition = Some((line_number, Vec::new()));
                 continue;
             }
             if line == "***END***" {
-                finish_definition(&mut result, definition.take())?;
+                finish_definition(&mut result, definition.take(), image_base)?;
                 continue;
             }
             if let Some((start, fields)) = &mut definition {
@@ -120,10 +133,16 @@ impl UserToolbar {
                 }
                 fields.push(line.to_owned());
             } else {
-                parse_global(&mut result, line, line_number)?;
+                parse_global(
+                    &mut result,
+                    line,
+                    line_number,
+                    &mut image_base,
+                    &mut previous_image_base,
+                )?;
             }
         }
-        finish_definition(&mut result, definition)?;
+        finish_definition(&mut result, definition, image_base)?;
         Ok(result)
     }
 
@@ -138,6 +157,7 @@ impl UserToolbar {
 fn finish_definition(
     toolbar: &mut UserToolbar,
     definition: Option<(usize, Vec<String>)>,
+    image_base: UserToolbarImageBase,
 ) -> Result<(), UserToolbarError> {
     let Some((start, mut fields)) = definition else {
         return Ok(());
@@ -172,6 +192,7 @@ fn finish_definition(
     toolbar.buttons.push(UserToolbarButton {
         target,
         icon,
+        image_base,
         tooltip,
         options: comma_fields(&fields[2]),
         shortcut: comma_fields(&fields[3]),
@@ -197,6 +218,8 @@ fn parse_global(
     toolbar: &mut UserToolbar,
     line: &str,
     line_number: usize,
+    image_base: &mut UserToolbarImageBase,
+    previous_image_base: &mut UserToolbarImageBase,
 ) -> Result<(), UserToolbarError> {
     let (name, argument) = line
         .split_once(char::is_whitespace)
@@ -212,12 +235,17 @@ fn parse_global(
             if toolbar.images.len() == MAX_IMAGES {
                 return Err(UserToolbarError::TooManyImages);
             }
+            let mode = if name == "LM_ADDIMAGE" {
+                UserToolbarImageMode::Add
+            } else {
+                UserToolbarImageMode::NewBase
+            };
+            if mode == UserToolbarImageMode::NewBase {
+                *previous_image_base = *image_base;
+                *image_base = UserToolbarImageBase::Image(toolbar.images.len());
+            }
             toolbar.images.push(UserToolbarImage {
-                mode: if name == "LM_ADDIMAGE" {
-                    UserToolbarImageMode::Add
-                } else {
-                    UserToolbarImageMode::NewBase
-                },
+                mode,
                 path: unquote(argument).into(),
             });
         }
@@ -230,19 +258,28 @@ fn parse_global(
         "LM_NO_TOOLBAR" => toolbar
             .global_options
             .push(UserToolbarGlobalOption::HideToolbar),
-        "LM_IMAGEBASE_PREVIOUS" => toolbar
-            .global_options
-            .push(UserToolbarGlobalOption::PreviousImageBase),
-        "LM_IMAGEBASE_GLOBAL" => toolbar
-            .global_options
-            .push(UserToolbarGlobalOption::GlobalImageBase),
-        "LM_SETIMAGE_SIZE" => toolbar
-            .global_options
-            .push(UserToolbarGlobalOption::SetImageSize(parse_required_u16(
-                name,
-                argument,
-                line_number,
-            )?)),
+        "LM_IMAGEBASE_PREVIOUS" => {
+            std::mem::swap(image_base, previous_image_base);
+            toolbar
+                .global_options
+                .push(UserToolbarGlobalOption::PreviousImageBase);
+        }
+        "LM_IMAGEBASE_GLOBAL" => {
+            *previous_image_base = *image_base;
+            *image_base = UserToolbarImageBase::Global;
+            toolbar
+                .global_options
+                .push(UserToolbarGlobalOption::GlobalImageBase);
+        }
+        "LM_SETIMAGE_SIZE" => {
+            let size = parse_required_u16(name, argument, line_number)?;
+            if toolbar.images.is_empty() {
+                toolbar.image_size = Some(size);
+            }
+            toolbar
+                .global_options
+                .push(UserToolbarGlobalOption::SetImageSize(size));
+        }
         "LM_USEIMAGE_FORCE" | "LM_USEIMAGE_FORCE_ALL" => {
             toolbar
                 .global_options
@@ -420,5 +457,37 @@ mod tests {
             "External oracle button\nSecond tooltip line"
         );
         assert_eq!(parsed.buttons[2].working_directory.as_deref(), Some("%4"));
+    }
+
+    #[test]
+    fn image_base_directives_are_retained_at_each_button_definition() {
+        let parsed = UserToolbar::parse(
+            "LM_ADDIMAGE \"global.bmp\"\n***START***\nLM_VIEW_16x16\n1,global\n***END***\nLM_NEWIMAGE \"new.bmp\"\n***START***\nLM_VIEW_16x16\n1,new\n***END***\nLM_IMAGEBASE_PREVIOUS\n***START***\nLM_VIEW_16x16\n1,previous\n***END***\nLM_IMAGEBASE_GLOBAL\n***START***\nLM_VIEW_16x16\n1,global again\n***END***",
+        )
+        .unwrap();
+        assert_eq!(
+            parsed
+                .buttons
+                .iter()
+                .map(|button| button.image_base)
+                .collect::<Vec<_>>(),
+            [
+                UserToolbarImageBase::Global,
+                UserToolbarImageBase::Image(1),
+                UserToolbarImageBase::Global,
+                UserToolbarImageBase::Global,
+            ]
+        );
+    }
+
+    #[test]
+    fn image_size_only_takes_effect_before_the_first_image() {
+        let before = UserToolbar::parse("LM_SETIMAGE_SIZE 24\nLM_ADDIMAGE \"a.bmp\"").unwrap();
+        assert_eq!(before.image_size, Some(24));
+        let after = UserToolbar::parse("LM_ADDIMAGE \"a.bmp\"\nLM_SETIMAGE_SIZE 24").unwrap();
+        assert_eq!(after.image_size, None);
+        assert!(after
+            .global_options
+            .contains(&UserToolbarGlobalOption::SetImageSize(24)));
     }
 }

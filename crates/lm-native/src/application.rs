@@ -65,6 +65,7 @@ use crate::{
     shortcut_editor::ShortcutEditor,
     ssc_sidecar_editor::SscSidecarEditor,
     toolbar_editor::{ToolbarEditor, ToolbarEditorResult},
+    user_toolbar_images::UserToolbarImageSet,
     vanilla_graphics_editor::VanillaGraphicsEditor,
     vanilla_level_editor::VanillaLevelEditor,
 };
@@ -111,6 +112,7 @@ pub(crate) struct NativeApplication {
     shortcut_editor: ShortcutEditor,
     toolbar_editor: ToolbarEditor,
     user_toolbar: Option<UserToolbar>,
+    user_toolbar_images: UserToolbarImageSet,
     level_text: String,
     special_world_passed: bool,
     level_view_visibility: LevelViewVisibility,
@@ -222,15 +224,24 @@ impl NativeApplication {
                     .ok_or_else(|| "application executable has no parent directory".to_owned())?
                     .join("usertoolbar.txt");
                 match std::fs::read_to_string(&path) {
-                    Ok(text) => UserToolbar::parse(&text)
-                        .map(Some)
-                        .map_err(|error| format!("cannot parse {}: {error}", path.display())),
+                    Ok(text) => match UserToolbar::parse(&text) {
+                        Ok(toolbar) => Ok(Some((path, toolbar))),
+                        Err(error) => Err(format!("cannot parse {}: {error}", path.display())),
+                    },
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
                     Err(error) => Err(format!("cannot read {}: {error}", path.display())),
                 }
             });
         match result {
-            Ok(toolbar) => self.user_toolbar = toolbar,
+            Ok(Some((path, toolbar))) => {
+                let directory = path.parent().expect("joined toolbar path has a parent");
+                match UserToolbarImageSet::load(directory, &toolbar) {
+                    Ok(images) => self.user_toolbar_images = images,
+                    Err(error) => self.effects.error = Some(error),
+                }
+                self.user_toolbar = Some(toolbar);
+            }
+            Ok(None) => self.user_toolbar = None,
             Err(error) => self.effects.error = Some(error),
         }
     }
