@@ -4337,3 +4337,9 @@ An authentic Lunar Magic level export with a semantic Layer 1 header change cros
 profile-derived transactional import on both headered and headerless copies, retains or omits the
 copier header exactly, repairs each checksum, and yields identical logical ROMs. Existing batch
 export evidence covers all 512 levels across the same two physical forms.
+
+Directory MWL insertion uses that same physical-ROM invariant transaction repeatedly. A retained
+variant gate applies authentic edited levels `$000` and `$001` with a malformed MWL between them,
+proving that a per-file failure changes no bytes and does not prevent the next level from
+committing. Both headered and headerless installed inputs retain their physical framing, finish
+checksum-valid, and converge on the same logical ROM.

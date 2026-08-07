@@ -155,18 +155,7 @@ mod tests {
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn installed_fixture(headered: bool) -> ProfiledControllerSnapshot {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let physical = fs::read(
-            root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
-        )
-        .unwrap();
-        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
-        let rom_bytes = if headered {
-            physical
-        } else {
-            physical_image.logical_bytes().to_vec()
-        };
+    fn installed_profiled(rom_bytes: Vec<u8>, revision: u64) -> ProfiledControllerSnapshot {
         let image = RomImage::from_bytes(rom_bytes.clone()).unwrap();
         let mut profile = lm_profile::test_support::profile();
         profile.mapper = Mapper::LoRom;
@@ -205,7 +194,7 @@ mod tests {
         profile.validate().unwrap();
         ProfiledControllerSnapshot {
             snapshot: ControllerSnapshot {
-                revision: 17,
+                revision,
                 mode: EditorMode::Level(0),
                 identity: detect_identity(&image).unwrap(),
                 document_path: None,
@@ -213,6 +202,48 @@ mod tests {
             },
             profile,
         }
+    }
+
+    fn installed_fixture(headered: bool) -> ProfiledControllerSnapshot {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let physical = fs::read(
+            root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
+        )
+        .unwrap();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        installed_profiled(
+            if headered {
+                physical
+            } else {
+                physical_image.logical_bytes().to_vec()
+            },
+            17,
+        )
+    }
+
+    fn edited_authentic_mwl(level: u16) -> Vec<u8> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let file = MwlFile::decode(
+            &fs::read(root.join(format!(
+                "oracle-work/lm363/pristine-us/levels/Level {level:03X}.mwl"
+            )))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut source =
+            MwlNativeLevel::decode(&file, &SpriteLengthTable::standard(), 32, &[false; 256])
+                .unwrap();
+        let prior_background = source.layer1.header.background_color();
+        source
+            .layer1
+            .header
+            .set_background_color((prior_background + 1) & 7)
+            .unwrap();
+        source
+            .encode(&SpriteLengthTable::standard(), &[false; 256])
+            .unwrap()
+            .encode()
+            .unwrap()
     }
 
     #[test]
@@ -247,32 +278,7 @@ mod tests {
 
     #[test]
     fn installed_binary_mwl_import_is_identical_across_copier_header_variants() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let source_file = MwlFile::decode(
-            &fs::read(root.join(
-                "oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/exported/Level 000.mwl",
-            ))
-            .unwrap(),
-        )
-        .unwrap();
-        let mut source = MwlNativeLevel::decode(
-            &source_file,
-            &SpriteLengthTable::standard(),
-            32,
-            &[false; 256],
-        )
-        .unwrap();
-        let prior_background = source.layer1.header.background_color();
-        source
-            .layer1
-            .header
-            .set_background_color((prior_background + 1) & 7)
-            .unwrap();
-        let encoded = source
-            .encode(&SpriteLengthTable::standard(), &[false; 256])
-            .unwrap()
-            .encode()
-            .unwrap();
+        let encoded = edited_authentic_mwl(0);
 
         let mut results = Vec::new();
         for headered in [true, false] {
@@ -301,5 +307,56 @@ mod tests {
             results.push(project.rom.logical_bytes().to_vec());
         }
         assert_eq!(results[0], results[1]);
+    }
+
+    #[test]
+    fn installed_directory_import_variants_continue_after_failure_and_match_logically() {
+        let inputs = [
+            edited_authentic_mwl(0),
+            b"not an MWL".to_vec(),
+            edited_authentic_mwl(1),
+        ];
+        let mut final_logical = Vec::new();
+        for headered in [true, false] {
+            let mut profiled = installed_fixture(headered);
+            let original_header = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
+                .unwrap()
+                .copier_header_bytes()
+                .map(<[u8]>::to_vec);
+            let mut inserted = 0;
+            let mut failed = 0;
+            for bytes in &inputs {
+                let before = profiled.snapshot.rom_bytes.clone();
+                match prepare_declared_mwl_import(
+                    &profiled,
+                    bytes,
+                    0x080000..RomImage::from_bytes(before.clone()).unwrap().logical_len(),
+                ) {
+                    Ok((level, prepared)) => {
+                        assert_eq!(usize::from(level), inserted);
+                        let mut project = Project::new(RomImage::from_bytes(before).unwrap());
+                        project
+                            .apply_mutation(&prepared.description, &prepared.mutation)
+                            .unwrap();
+                        let revision = profiled.snapshot.revision + 1;
+                        profiled = installed_profiled(project.save_snapshot(), revision);
+                        inserted += 1;
+                    }
+                    Err(_) => {
+                        assert_eq!(profiled.snapshot.rom_bytes, before);
+                        failed += 1;
+                    }
+                }
+            }
+            assert_eq!((inserted, failed), (2, 1));
+            let result = RomImage::from_bytes(profiled.snapshot.rom_bytes).unwrap();
+            assert_eq!(
+                result.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+            assert!(detect_identity(&result).unwrap().checksum_matches());
+            final_logical.push(result.logical_bytes().to_vec());
+        }
+        assert_eq!(final_logical[0], final_logical[1]);
     }
 }
