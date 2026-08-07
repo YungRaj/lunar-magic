@@ -4,6 +4,7 @@ mod allocation;
 mod audit;
 mod copier_header;
 mod credits_tilemap;
+mod exanimation_runtime;
 mod expanded_settings_allocation;
 mod expanded_settings_base;
 mod expanded_settings_hooks;
@@ -93,6 +94,12 @@ pub use credits_tilemap::{
     SMW_US_V1_CREDITS_RECORDS_OFFSET, SMW_US_V1_CREDITS_RUNTIME_OFFSET,
     SMW_US_V1_CREDITS_SEARCH_START, smw_us_v1_credits_allocation_policy,
     smw_us_v1_credits_tilemap_locator, smw_us_v1_legacy_credits_tilemap_layout,
+};
+pub use exanimation_runtime::{
+    EXPANDED_EXANIMATION_POINTER_TABLE_LEN, EXPANDED_EXANIMATION_RUNTIME_CORE_LEN,
+    EXPANDED_EXANIMATION_RUNTIME_OPTIONAL_LEN, ExpandedExAnimationRuntimeError,
+    ExpandedExAnimationRuntimeRelocations, empty_expanded_exanimation_pointer_table,
+    expanded_exanimation_runtime_template, relocate_expanded_exanimation_runtime,
 };
 pub use expanded_settings_allocation::{
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN, SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN,

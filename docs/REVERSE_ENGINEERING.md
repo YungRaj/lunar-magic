@@ -3761,10 +3761,10 @@ edits, treats a zero runtime pointer as a new empty 32-record document, and comm
 runtime-relative pointer with revision checks. Target switching is disabled while the active
 domain is staged, preventing an application commit from silently discarding edits in the other
 domain.
-Because that `$5C` field is itself allocator-dependent mutable ROM state, the profile's ROM-aware
-allocation policy now resolves and protects its complete three-byte operand alongside the existing
-level-table locator, feature-table locator, and allocated tables. This is required before the global
-editor can safely accept a search range that happens to span the installed runtime.
+Because the bank byte at `+$5C` and low word at `+$65` are allocator-dependent mutable ROM state,
+the profile's ROM-aware allocation policy resolves and protects both split operands alongside the
+existing level-table locator, feature-table locator, and allocated tables. This is required before
+the global editor can safely accept a search range that happens to span the installed runtime.
 
 `EnsureExpandedExAnimationRuntimeInstalled` (`0045FD50`) also proves that installed editing is not
 the entire lifecycle surface. It distinguishes a legacy pointer-hook form, a legacy 512-entry
@@ -3774,6 +3774,15 @@ installs the current runtime, converts up to 512 legacy `$23`-byte-record blocks
 payloads, and erases authenticated obsolete storage; the third performs a fresh
 `InstallExpandedExAnimationRuntime`. These installation/migration workflows remain a separate
 implementation gate from editing an already installed current runtime.
+The fresh installer's core allocation is now recovered byte-for-byte. It concatenates executable
+ranges `$005B5298..$005B5408` (`$170` bytes), `$005B5410..$005B5750` (`$340` bytes), and
+`$005B4B10..$005B5290` (`$780` bytes) into one `$C30`-byte payload; a mapper-specific branch may
+append the distinct `$20`-byte range at `$005B5754`. The typed Rust relocation model covers the two
+mapping bytes, eight 24-bit SNES pointers, twelve 16-bit internal-RAM operands, and all 108 local
+address words beginning at payload `+$B4A`. Relocating the complete template to the retained Lunar
+Magic 3.63 allocation at logical ROM `$080549` reproduces every `$C30` payload byte exactly. The
+separate empty `$600`-byte pointer table is also modeled as 512 repetitions of `FF 00 00`; this is
+relocation evidence, not yet a claim that Rust publishes the complete fresh-install transaction.
 `ConvertLegacyExAnimationRecords` (`0045E9C0`) gives the first fully bounded migration model. Each
 legacy record is exactly `$23` bytes: one packed control byte, one destination word, and sixteen
 source words. A zero low nibble is inactive. After decrementing the control byte, its high nibble
