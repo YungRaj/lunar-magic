@@ -3716,3 +3716,10 @@ counts by 32 for complete 4bpp copies or by 16 for 2bpp extraction. In the latte
 4bpp tile yields a low-two-bit tile followed by a high-two-bit tile; kinds `$10..$12` repeat the
 operation into a second destination block at tile `+16`. Rust now materializes these exact tile
 overrides with complete source and destination preflight, preserving atomic failure behavior.
+
+For palette kinds `$13..$15`, the same record loop treats a one-color transfer as a literal BGR555
+word and a wider transfer as a contiguous palette copy. Kinds `$16/$17` write the fixed background
+color instead of a CGRAM entry. Kinds `$18..$1B` rotate the destination range: `$18` right and
+`$1A` left, while `$19/$1B` swap direction under the alternate trigger state. Rust represents
+palette and fixed-color results as distinct transfer variants, validates every source, destination,
+and literal before publication, and emits exact ordered palette overrides for all four rotations.

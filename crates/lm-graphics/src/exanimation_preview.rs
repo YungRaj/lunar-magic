@@ -1,4 +1,6 @@
-use crate::{ExAnimationRecord, IndexedTile, MaterializedTileOverride};
+use crate::{
+    Bgr555, ExAnimationRecord, IndexedTile, MaterializedPaletteOverride, MaterializedTileOverride,
+};
 use std::fmt;
 
 const GRAPHICS_TRANSFER_BYTES: [u16; 19] = [
@@ -47,6 +49,10 @@ pub enum ExAnimationMaterializeError {
     FrameOutOfRange { frame: u16, words: usize },
     SourceOutOfRange { index: usize, len: usize },
     DestinationOverflow,
+    InvalidColor(u16),
+    PaletteSourceOutOfRange { index: usize, len: usize },
+    PaletteDestinationOutOfRange { index: usize, len: usize },
+    UnsupportedPaletteKind(u8),
 }
 
 impl fmt::Display for ExAnimationMaterializeError {
@@ -56,6 +62,12 @@ impl fmt::Display for ExAnimationMaterializeError {
 }
 
 impl std::error::Error for ExAnimationMaterializeError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExAnimationPaletteTransfer {
+    Palette(Vec<MaterializedPaletteOverride>),
+    FixedColor(Bgr555),
+}
 
 #[must_use]
 pub const fn exanimation_trigger_has_second_bank(trigger: u8) -> bool {
@@ -149,6 +161,93 @@ pub fn materialize_exanimation_graphics_transfer(
         )?;
     }
     Ok(overrides)
+}
+
+pub fn materialize_exanimation_palette_transfer(
+    record: &ExAnimationRecord,
+    frame: u16,
+    palette: &[Bgr555],
+    source_color: usize,
+    alternate_bank: bool,
+) -> Result<ExAnimationPaletteTransfer, ExAnimationMaterializeError> {
+    let kind = record.kind();
+    if !(0x13..=0x1b).contains(&kind) {
+        return Err(ExAnimationMaterializeError::UnsupportedPaletteKind(kind));
+    }
+    let destination = record.destination();
+    let first = usize::from(destination & 0xff);
+    let count = usize::from(destination >> 8) + 1;
+
+    if (0x16..=0x17).contains(&kind) {
+        return Ok(ExAnimationPaletteTransfer::FixedColor(valid_color(
+            exanimation_frame_source_word(record, frame)?,
+        )?));
+    }
+
+    let end = first.checked_add(count).ok_or(
+        ExAnimationMaterializeError::PaletteDestinationOutOfRange {
+            index: usize::MAX,
+            len: palette.len(),
+        },
+    )?;
+    if end > palette.len() {
+        return Err(ExAnimationMaterializeError::PaletteDestinationOutOfRange {
+            index: end - 1,
+            len: palette.len(),
+        });
+    }
+
+    let colors = if kind < 0x16 {
+        if count == 1 {
+            vec![valid_color(exanimation_frame_source_word(record, frame)?)?]
+        } else {
+            let source_end = source_color.checked_add(count).ok_or(
+                ExAnimationMaterializeError::PaletteSourceOutOfRange {
+                    index: usize::MAX,
+                    len: palette.len(),
+                },
+            )?;
+            if source_end > palette.len() {
+                return Err(ExAnimationMaterializeError::PaletteSourceOutOfRange {
+                    index: source_end - 1,
+                    len: palette.len(),
+                });
+            }
+            palette[source_color..source_end].to_vec()
+        }
+    } else {
+        let mut colors = palette[first..end].to_vec();
+        if count > 1 {
+            let rotate_right = matches!(kind, 0x18)
+                || (kind == 0x19 && !alternate_bank)
+                || (kind == 0x1b && alternate_bank);
+            if rotate_right {
+                colors.rotate_right(1);
+            } else {
+                colors.rotate_left(1);
+            }
+        }
+        colors
+    };
+    Ok(ExAnimationPaletteTransfer::Palette(
+        colors
+            .into_iter()
+            .enumerate()
+            .map(|(offset, color)| MaterializedPaletteOverride {
+                color_index: u32::try_from(first + offset)
+                    .expect("a validated palette slice index fits u32"),
+                color,
+            })
+            .collect(),
+    ))
+}
+
+fn valid_color(word: u16) -> Result<Bgr555, ExAnimationMaterializeError> {
+    if word & 0x8000 != 0 {
+        Err(ExAnimationMaterializeError::InvalidColor(word))
+    } else {
+        Ok(Bgr555(word))
+    }
 }
 
 fn append_graphics_block(
@@ -468,6 +567,82 @@ mod tests {
         assert_eq!(
             materialize_exanimation_graphics_transfer(&record, 0, &[], 0, 0, false),
             Err(ExAnimationMaterializeError::SourceOutOfRange { index: 0, len: 0 })
+        );
+    }
+
+    #[test]
+    fn palette_copy_direct_color_and_fixed_color_remain_distinct() {
+        let palette = (0..16).map(Bgr555).collect::<Vec<_>>();
+        let direct = ExAnimationRecord::new(0x13, 0, 0, 3, false, &[0x1f, 0], false).unwrap();
+        assert_eq!(
+            materialize_exanimation_palette_transfer(&direct, 0, &palette, 0, false).unwrap(),
+            ExAnimationPaletteTransfer::Palette(vec![MaterializedPaletteOverride {
+                color_index: 3,
+                color: Bgr555(0x001f),
+            }])
+        );
+
+        let copied = ExAnimationRecord::new(0x15, 0, 0, 0x0204, false, &[0, 0], false).unwrap();
+        let ExAnimationPaletteTransfer::Palette(copied) =
+            materialize_exanimation_palette_transfer(&copied, 0, &palette, 8, false).unwrap()
+        else {
+            panic!("kind 15 must target CGRAM");
+        };
+        assert_eq!(
+            copied.iter().map(|entry| entry.color).collect::<Vec<_>>(),
+            [Bgr555(8), Bgr555(9), Bgr555(10)]
+        );
+        assert_eq!(copied[0].color_index, 4);
+
+        let fixed = ExAnimationRecord::new(0x16, 0, 0, 0, false, &[0x10, 0x42], false).unwrap();
+        assert_eq!(
+            materialize_exanimation_palette_transfer(&fixed, 0, &palette, 0, false).unwrap(),
+            ExAnimationPaletteTransfer::FixedColor(Bgr555(0x4210))
+        );
+    }
+
+    #[test]
+    fn palette_rotation_types_follow_normal_and_alternate_directions() {
+        let palette = [Bgr555(1), Bgr555(2), Bgr555(3), Bgr555(4)];
+        for (kind, alternate, expected) in [
+            (0x18, false, [4, 1, 2, 3]),
+            (0x19, false, [4, 1, 2, 3]),
+            (0x19, true, [2, 3, 4, 1]),
+            (0x1a, false, [2, 3, 4, 1]),
+            (0x1b, false, [2, 3, 4, 1]),
+            (0x1b, true, [4, 1, 2, 3]),
+        ] {
+            let record = ExAnimationRecord::new(kind, 0, 0, 0x0300, false, &[], false).unwrap();
+            let ExAnimationPaletteTransfer::Palette(overrides) =
+                materialize_exanimation_palette_transfer(&record, 0, &palette, 0, alternate)
+                    .unwrap()
+            else {
+                panic!("rotation types must target CGRAM");
+            };
+            assert_eq!(
+                overrides
+                    .iter()
+                    .map(|entry| entry.color.0)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn palette_ranges_and_literal_words_are_preflighted() {
+        let palette = [Bgr555(0); 4];
+        let invalid_destination =
+            ExAnimationRecord::new(0x13, 0, 0, 0x0302, false, &[0, 0], false).unwrap();
+        assert_eq!(
+            materialize_exanimation_palette_transfer(&invalid_destination, 0, &palette, 0, false),
+            Err(ExAnimationMaterializeError::PaletteDestinationOutOfRange { index: 5, len: 4 })
+        );
+        let invalid_color =
+            ExAnimationRecord::new(0x13, 0, 0, 0, false, &[0, 0x80], false).unwrap();
+        assert_eq!(
+            materialize_exanimation_palette_transfer(&invalid_color, 0, &palette, 0, false),
+            Err(ExAnimationMaterializeError::InvalidColor(0x8000))
         );
     }
 }

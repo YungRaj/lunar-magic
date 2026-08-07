@@ -45,9 +45,10 @@ pub use exanimation_frames::{
     exanimation_frames,
 };
 pub use exanimation_preview::{
-    ExAnimationMaterializeError, ExAnimationPreviewState, ExAnimationTriggerPreviewState,
-    SelectedExAnimationFrame, exanimation_frame_source_word, exanimation_trigger_has_second_bank,
-    materialize_exanimation_graphics_transfer,
+    ExAnimationMaterializeError, ExAnimationPaletteTransfer, ExAnimationPreviewState,
+    ExAnimationTriggerPreviewState, SelectedExAnimationFrame, exanimation_frame_source_word,
+    exanimation_trigger_has_second_bank, materialize_exanimation_graphics_transfer,
+    materialize_exanimation_palette_transfer,
 };
 pub use exanimation_slot_options::{
     EXANIMATION_LEVEL_SLOT_COUNT, ExAnimationSlotOptionError, ExAnimationSlotOptionTable,
