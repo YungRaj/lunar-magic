@@ -240,6 +240,7 @@ impl RomOverworldEditor {
                     path_form_row(ui, "Target X tile", &mut self.main_path.target_x);
                     path_form_row(ui, "Target Y tile", &mut self.main_path.target_y);
                 });
+            let previous_direction = self.main_path.direction;
             ui.horizontal(|ui| {
                 ui.label("Direction");
                 egui::ComboBox::from_id_salt("playable-overworld-path-direction")
@@ -261,6 +262,12 @@ impl RomOverworldEditor {
                     });
                 ui.checkbox(&mut self.main_path.one_way, "One-way (no return endpoint)");
             });
+            if self.main_path.direction != previous_direction
+                && let Err(error) = self.main_path.reorient_from(previous_direction)
+            {
+                self.main_path.direction = previous_direction;
+                self.error = Some(error);
+            }
             ui.small("Canvas route tools use Lunar Magic's Up, Down, Left, Right order and exact edge offsets.");
             ui.horizontal(|ui| {
                 if ui.button("Reload link").clicked() {
@@ -530,6 +537,37 @@ impl MainPathLinkForm {
                 y_tile: level_editor_forms::parse_hex_u8(&self.target_y, "route target Y")?,
             },
         })
+    }
+
+    fn reorient_from(&mut self, previous: OverworldPathDirection) -> Result<(), String> {
+        let source = OverworldEndpoint {
+            x: level_editor_forms::parse_hex_u16(&self.source_x, "route source X")?,
+            y: level_editor_forms::parse_hex_u16(&self.source_y, "route source Y")?,
+            submap: level_editor_forms::parse_hex_u8(&self.source_submap, "route source submap")?,
+        };
+        let destination = if self.one_way {
+            None
+        } else {
+            Some(OverworldEndpoint {
+                x: level_editor_forms::parse_hex_u16(&self.destination_x, "route destination X")?,
+                y: level_editor_forms::parse_hex_u16(&self.destination_y, "route destination Y")?,
+                submap: level_editor_forms::parse_hex_u8(
+                    &self.destination_submap,
+                    "route destination submap",
+                )?,
+            })
+        };
+        let source = previous.reorient_directional_point(source, self.direction);
+        self.source_x = format!("{:04X}", source.x);
+        self.source_y = format!("{:04X}", source.y);
+        self.source_submap = format!("{:02X}", source.submap);
+        if let Some(destination) = destination {
+            let destination = previous.reorient_directional_point(destination, self.direction);
+            self.destination_x = format!("{:04X}", destination.x);
+            self.destination_y = format!("{:04X}", destination.y);
+            self.destination_submap = format!("{:02X}", destination.submap);
+        }
+        Ok(())
     }
 }
 
@@ -1400,8 +1438,8 @@ fn flood_fill_cells(
 mod canvas_tests {
     use super::{
         MainPathLinkForm, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
-        OverworldPathDirection, OverworldPathLink, OverworldPathTarget, RomOverworldEditor,
-        flood_fill_cells, grid_line, rectangle_cells, route_canvas_endpoint,
+        OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
+        RomOverworldEditor, flood_fill_cells, grid_line, rectangle_cells, route_canvas_endpoint,
         route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
     };
     use crate::document_loader::BoundedRead;
@@ -1540,10 +1578,10 @@ mod canvas_tests {
         let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1024.0, 512.0));
         let position = egui::pos2(320.0, 40.0);
         let cases = [
-            (OverworldPathDirection::Up, (320, 48)),
-            (OverworldPathDirection::Down, (320, 32)),
-            (OverworldPathDirection::Left, (328, 40)),
-            (OverworldPathDirection::Right, (312, 40)),
+            (OverworldPathDirection::Up, (328, 40)),
+            (OverworldPathDirection::Down, (312, 40)),
+            (OverworldPathDirection::Left, (320, 48)),
+            (OverworldPathDirection::Right, (320, 32)),
         ];
         for (direction, (x, y)) in cases {
             assert_eq!(
@@ -1551,6 +1589,96 @@ mod canvas_tests {
                 Some(OverworldEndpoint { x, y, submap: 0 })
             );
         }
+    }
+
+    #[test]
+    fn retained_lm363_left_to_up_one_way_route_transition_is_exact() {
+        let fixture = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/overworld-path-direction/transition.tsv"
+        );
+        let fixture_field = |name: &str, column: usize| {
+            fixture
+                .lines()
+                .find(|line| line.starts_with(name))
+                .unwrap()
+                .split('\t')
+                .nth(column)
+                .unwrap()
+        };
+        let record_hex = |column: usize| {
+            fixture_field("interleaved_record_hex\t", column)
+                .as_bytes()
+                .chunks_exact(2)
+                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(fixture_field("rejection_tile_type\t", 1), "00");
+        assert_eq!(fixture_field("rejection_title\t", 1), "Wrong type of tile!");
+        assert_eq!(
+            fixture_field("rejection_body\t", 1),
+            "An exit tile must be selected to use this."
+        );
+        assert_eq!(
+            fixture_field("rejection_rom_sha256\t", 1),
+            fixture_field("rejection_rom_sha256\t", 2)
+        );
+        let before = OverworldPathLink {
+            source: OverworldEndpoint {
+                x: 0x00d8,
+                y: 0x00a0,
+                submap: 0,
+            },
+            destination: OverworldEndpoint {
+                x: 0x0058,
+                y: 0x0150,
+                submap: 2,
+            },
+            target: OverworldPathTarget {
+                x_tile: 0x05,
+                y_tile: 0x14,
+            },
+        };
+        assert_eq!(
+            &OverworldPathLinkTable {
+                links: vec![before],
+            }
+            .encode_native_file()
+            .unwrap()[12..],
+            record_hex(1)
+        );
+        let mut form = MainPathLinkForm {
+            index: 4,
+            direction: OverworldPathDirection::Left,
+            ..Default::default()
+        };
+        form.set(before);
+        form.one_way = true;
+        form.direction = OverworldPathDirection::Up;
+        form.reorient_from(OverworldPathDirection::Left).unwrap();
+
+        let after = form.parse().unwrap();
+        assert_eq!(
+            after,
+            OverworldPathLink {
+                source: OverworldEndpoint {
+                    x: 0x00e0,
+                    y: 0x0098,
+                    submap: 0,
+                },
+                destination: OverworldEndpoint {
+                    x: 0xffff,
+                    y: 0xffff,
+                    submap: 0xff,
+                },
+                target: before.target,
+            }
+        );
+        assert_eq!(
+            &OverworldPathLinkTable { links: vec![after] }
+                .encode_native_file()
+                .unwrap()[12..],
+            record_hex(2)
+        );
     }
 
     #[test]

@@ -1,0 +1,22 @@
+field	before	after
+dialog	Submap Exit Tile Settings	Submap Exit Tile Settings
+native_link_index	4	4
+source_combo_index	5	5
+direction_combo_index	2	0
+direction	Left	Up
+return_combo_index	6	0
+one_way	false	true
+source_x	00D8	00E0
+source_y	00A0	0098
+source_submap	00	00
+destination_x	0058	FFFF
+destination_y	0150	FFFF
+destination_submap	02	FF
+target_x_tile	05	05
+target_y_tile	14	14
+interleaved_record_hex	a000d8000050015800021405	9800e00000ffffffffff1405
+rejection_selected_index	0000	0000
+rejection_tile_type	00	00
+rejection_title	Wrong type of tile!	Wrong type of tile!
+rejection_body	An exit tile must be selected to use this.	An exit tile must be selected to use this.
+rejection_rom_sha256	7503b8514d8c1221543babcdc01c0ec8f92e8d9db450b7bccbc40e8fb69f12ab	7503b8514d8c1221543babcdc01c0ec8f92e8d9db450b7bccbc40e8fb69f12ab

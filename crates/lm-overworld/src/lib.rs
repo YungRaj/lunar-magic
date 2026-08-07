@@ -85,8 +85,9 @@ pub use native_message_file::{
     encode_native_overworld_message_file,
 };
 pub use native_path::{
-    OverworldPathDirection, OverworldPathLink, OverworldPathLinkPlanes, OverworldPathLinkTable,
-    OverworldPathLinkTableError, OverworldPathTarget,
+    LUNAR_MAGIC_EXIT_TILE_TYPES, OverworldPathDirection, OverworldPathLink,
+    OverworldPathLinkPlanes, OverworldPathLinkTable, OverworldPathLinkTableError,
+    OverworldPathTarget, is_lunar_magic_exit_tile_type,
 };
 pub use native_path_file::OverworldPathLinkFileError;
 pub use native_player_start::{NativeOverworldPlayerStartError, NativeOverworldPlayerStarts};

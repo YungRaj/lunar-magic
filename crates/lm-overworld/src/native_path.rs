@@ -2,6 +2,21 @@
 
 use crate::{FixedTableEncodingError, OverworldEndpoint};
 
+/// Layer 1 tile types accepted by Lunar Magic 3.63's
+/// `ValidateSelectedOverworldWarpTile` predicate.
+pub const LUNAR_MAGIC_EXIT_TILE_TYPES: [u8; 13] = [
+    0x25, 0x40, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x4d, 0x52, 0x53, 0x83,
+];
+
+/// Returns whether a Layer 1 tile type can open Lunar Magic's Submap Exit Tile Settings dialog.
+#[must_use]
+pub const fn is_lunar_magic_exit_tile_type(tile_type: u8) -> bool {
+    matches!(
+        tile_type,
+        0x25 | 0x40 | 0x42 | 0x43 | 0x44 | 0x45 | 0x46 | 0x47 | 0x48 | 0x4d | 0x52 | 0x53 | 0x83
+    )
+}
+
 /// Cardinal choice used by Lunar Magic's native overworld path-link dialog.
 ///
 /// The value is derived from endpoint geometry and is not serialized as an additional ROM field.
@@ -33,15 +48,43 @@ impl OverworldPathDirection {
 
     /// Applies the exact wrapping eight-pixel transform shared by the original dialog's
     /// `EncodeOverworldDirectionalPoint` and `DecodeOverworldDirectionalPoint` helpers.
+    /// Lunar Magic operates on the engine's Y/X planes; these deltas are transposed into this
+    /// module's public semantic X/Y endpoint order.
     #[must_use]
     pub const fn offset_directional_point(self, mut point: OverworldEndpoint) -> OverworldEndpoint {
         match self {
-            Self::Up => point.y = point.y.wrapping_add(8),
-            Self::Down => point.y = point.y.wrapping_sub(8),
-            Self::Left => point.x = point.x.wrapping_add(8),
-            Self::Right => point.x = point.x.wrapping_sub(8),
+            Self::Up => point.x = point.x.wrapping_add(8),
+            Self::Down => point.x = point.x.wrapping_sub(8),
+            Self::Left => point.y = point.y.wrapping_add(8),
+            Self::Right => point.y = point.y.wrapping_sub(8),
         }
         point
+    }
+
+    /// Removes this direction's wrapping eight-pixel edge offset.
+    #[must_use]
+    pub const fn unoffset_directional_point(
+        self,
+        mut point: OverworldEndpoint,
+    ) -> OverworldEndpoint {
+        match self {
+            Self::Up => point.x = point.x.wrapping_sub(8),
+            Self::Down => point.x = point.x.wrapping_add(8),
+            Self::Left => point.y = point.y.wrapping_sub(8),
+            Self::Right => point.y = point.y.wrapping_add(8),
+        }
+        point
+    }
+
+    /// Reorients a stored edge point from this direction to another direction around its
+    /// unchanged tile-center anchor.
+    #[must_use]
+    pub const fn reorient_directional_point(
+        self,
+        point: OverworldEndpoint,
+        destination: Self,
+    ) -> OverworldEndpoint {
+        destination.offset_directional_point(self.unoffset_directional_point(point))
     }
 
     /// Applies the exact opposite sixteen-pixel transform used by the original dialog's
@@ -49,10 +92,10 @@ impl OverworldPathDirection {
     #[must_use]
     pub const fn offset_exit_node(self, mut point: OverworldEndpoint) -> OverworldEndpoint {
         match self {
-            Self::Up => point.y = point.y.wrapping_sub(0x10),
-            Self::Down => point.y = point.y.wrapping_add(0x10),
-            Self::Left => point.x = point.x.wrapping_sub(0x10),
-            Self::Right => point.x = point.x.wrapping_add(0x10),
+            Self::Up => point.x = point.x.wrapping_sub(0x10),
+            Self::Down => point.x = point.x.wrapping_add(0x10),
+            Self::Left => point.y = point.y.wrapping_sub(0x10),
+            Self::Right => point.y = point.y.wrapping_add(0x10),
         }
         point
     }
@@ -239,6 +282,16 @@ impl OverworldPathLinkTable {
 mod tests {
     use super::*;
 
+    #[test]
+    fn lunar_magic_exit_tile_predicate_accepts_exact_recovered_set() {
+        let accepted = (u8::MIN..=u8::MAX)
+            .filter(|tile| is_lunar_magic_exit_tile_type(*tile))
+            .collect::<Vec<_>>();
+        assert_eq!(accepted, LUNAR_MAGIC_EXIT_TILE_TYPES);
+        assert!(!is_lunar_magic_exit_tile_type(0));
+        assert!(!is_lunar_magic_exit_tile_type(0xff));
+    }
+
     fn endpoint(value: u16) -> OverworldEndpoint {
         OverworldEndpoint {
             x: value,
@@ -258,26 +311,26 @@ mod tests {
             (
                 OverworldPathDirection::Up,
                 1,
-                (0x1000, 0x2008),
-                (0x1000, 0x1ff0),
-            ),
-            (
-                OverworldPathDirection::Down,
-                2,
-                (0x1000, 0x1ff8),
-                (0x1000, 0x2010),
-            ),
-            (
-                OverworldPathDirection::Left,
-                3,
                 (0x1008, 0x2000),
                 (0x0ff0, 0x2000),
             ),
             (
-                OverworldPathDirection::Right,
-                4,
+                OverworldPathDirection::Down,
+                2,
                 (0x0ff8, 0x2000),
                 (0x1010, 0x2000),
+            ),
+            (
+                OverworldPathDirection::Left,
+                3,
+                (0x1000, 0x2008),
+                (0x1000, 0x1ff0),
+            ),
+            (
+                OverworldPathDirection::Right,
+                4,
+                (0x1000, 0x1ff8),
+                (0x1000, 0x2010),
             ),
         ];
         for (direction, ordinal, directional, exit) in cases {
@@ -297,14 +350,29 @@ mod tests {
             submap: 0xff,
         };
         assert_eq!(
-            OverworldPathDirection::Up.offset_directional_point(edge).y,
-            7
+            OverworldPathDirection::Up.offset_directional_point(edge).x,
+            8
         );
         assert_eq!(
             OverworldPathDirection::Right
                 .offset_directional_point(edge)
-                .x,
-            0xfff8
+                .y,
+            0xfff7
+        );
+        assert_eq!(
+            OverworldPathDirection::Left.reorient_directional_point(
+                OverworldEndpoint {
+                    x: 0x00d8,
+                    y: 0x00a0,
+                    submap: 0,
+                },
+                OverworldPathDirection::Up,
+            ),
+            OverworldEndpoint {
+                x: 0x00e0,
+                y: 0x0098,
+                submap: 0,
+            }
         );
     }
 

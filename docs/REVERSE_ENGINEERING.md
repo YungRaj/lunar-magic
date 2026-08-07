@@ -2237,8 +2237,11 @@ Y-8, X+8, and X-8 respectively. `EncodeOverworldExitNodeWithDirection` (`0053591
 opposite sixteen-pixel deltas Y-16, Y+16, X-16, and X+16. The dialog derives this direction from
 endpoint geometry, uses an absent all-`$FF` return endpoint for a one-way path, and clears stale
 adjacent source, return, resolved, and preview records before installing a replacement. Rust now
-models the exact ordinals and both transforms as `OverworldPathDirection`; direction remains
-transient editor state so the lossless three-plane ROM format is unchanged.
+models the exact ordinals and both transforms as `OverworldPathDirection`, transposing those raw
+deltas through the native Y/X planes into its public semantic X/Y endpoint order; direction remains
+transient editor state so the lossless three-plane ROM format is unchanged. A retained live Wine
+transition changes native link 4 from Left to Up and one-way: raw source `$00A0,$00D8` becomes
+`$0098,$00E0`, the return endpoint becomes all `$FF`, and both target bytes remain exact.
 
 The expanded form is now reproduced as well. Live Wine inspection resolved descriptor `+0x920` to
 headered physical `$21C35`, hence logical hook `$21A35`; the pristine five bytes are
