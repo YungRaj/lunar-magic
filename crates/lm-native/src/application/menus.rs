@@ -433,7 +433,34 @@ impl NativeApplication {
             let language = self
                 .menu_text(UiTextKey::ToolsLanguageFormat)
                 .replace("{locale}", &locale);
+            let installed = self.installed_localizations.clone();
+            let active_locale = self
+                .app
+                .localization()
+                .map(|catalog| catalog.locale().to_owned());
             ui.menu_button(language, |ui| {
+                for catalog in installed {
+                    if ui
+                        .add_enabled(
+                            !self.configuration_loader.is_running(),
+                            egui::Button::new(&catalog.locale).selected(
+                                active_locale.as_deref() == Some(catalog.locale.as_str()),
+                            ),
+                        )
+                        .clicked()
+                    {
+                        ui.close_menu();
+                        if let Err(error) = self
+                            .configuration_loader
+                            .start_localization_path(catalog.path)
+                        {
+                            self.effects.error = Some(error);
+                        }
+                    }
+                }
+                if !self.installed_localizations.is_empty() {
+                    ui.separator();
+                }
                 if ui
                     .add_enabled(
                         !self.configuration_loader.is_running(),

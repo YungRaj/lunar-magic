@@ -2,7 +2,7 @@ use crate::{
     about_dialog::{AboutDialog, DiagnosticsDialog},
     appearance_editor::AppearanceEditor,
     built_in_runtime_installer::BuiltInRuntimeInstaller,
-    configuration_loader::{ConfigurationLoader, LoadedConfiguration},
+    configuration_loader::{ConfigurationLoader, InstalledLocalization, LoadedConfiguration},
     copier_header_dialog::CopierHeaderDialog,
     custom_object_editor::CustomObjectEditor,
     custom_sprite_editor::CustomSpriteEditor,
@@ -207,6 +207,7 @@ pub(crate) struct NativeApplication {
     recovery_store: RecoveryStore,
     recent_state: Option<lm_app::recent_state_file::RecentStateFile>,
     configuration_loader: ConfigurationLoader,
+    installed_localizations: Vec<InstalledLocalization>,
     profile_loader: crate::profile_loader::ProfileLoader,
     #[cfg(feature = "visual-smoke")]
     visual_smoke_frames: u8,
@@ -240,7 +241,23 @@ impl NativeApplication {
         };
         application.load_main_toolbar_images();
         application.load_user_toolbar();
+        application.load_installed_localizations();
         application
+    }
+
+    fn load_installed_localizations(&mut self) {
+        let result = std::env::current_exe()
+            .map_err(|error| format!("cannot locate application executable: {error}"))
+            .and_then(|path| {
+                let directory = path
+                    .parent()
+                    .ok_or_else(|| "application executable has no parent directory".to_owned())?;
+                ConfigurationLoader::discover_installed_localizations(directory)
+            });
+        match result {
+            Ok(installed) => self.installed_localizations = installed,
+            Err(error) => self.effects.error = Some(error),
+        }
     }
 
     fn load_main_toolbar_images(&mut self) {
@@ -447,6 +464,12 @@ impl NativeApplication {
             if let Err(error) = result {
                 self.effects.error = Some(format!("cannot load language catalog: {error}"));
             }
+        } else if let Some(path) = select_preferred_installed_localization(
+            &self.installed_localizations,
+            system_locale_preferences(),
+        ) && let Err(error) = self.configuration_loader.start_localization_path(path)
+        {
+            self.effects.error = Some(error);
         }
         if let Some(encoded) = storage.get_string(Self::UNDO_HISTORY_STORAGE_KEY) {
             let result = undo_history_settings::decode_preference(&encoded).and_then(|limit| {
@@ -798,6 +821,53 @@ fn decode_toolbar_preference(value: &str) -> Result<ToolbarConfig, String> {
         .map_err(|error| error.to_string())
 }
 
+fn system_locale_preferences() -> Vec<String> {
+    ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .flat_map(|value| value.split(':').map(str::to_owned).collect::<Vec<_>>())
+        .collect()
+}
+
+fn normalize_locale(value: &str) -> Option<String> {
+    let value = value
+        .split(['.', '@'])
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .replace('_', "-");
+    (!value.is_empty() && !value.eq_ignore_ascii_case("C") && !value.eq_ignore_ascii_case("POSIX"))
+        .then(|| value.to_ascii_lowercase())
+}
+
+fn select_preferred_installed_localization(
+    installed: &[InstalledLocalization],
+    preferences: impl IntoIterator<Item = String>,
+) -> Option<std::path::PathBuf> {
+    let preferences = preferences
+        .into_iter()
+        .filter_map(|locale| normalize_locale(&locale))
+        .collect::<Vec<_>>();
+    for preference in &preferences {
+        if let Some(catalog) = installed
+            .iter()
+            .find(|catalog| normalize_locale(&catalog.locale).as_ref() == Some(preference))
+        {
+            return Some(catalog.path.clone());
+        }
+    }
+    for preference in preferences {
+        let language = preference.split('-').next().unwrap_or_default();
+        if let Some(catalog) = installed.iter().find(|catalog| {
+            normalize_locale(&catalog.locale)
+                .is_some_and(|locale| locale.split('-').next() == Some(language))
+        }) {
+            return Some(catalog.path.clone());
+        }
+    }
+    None
+}
+
 fn encode_localization_preference(catalog: &LocalizationCatalog) -> String {
     let bytes = catalog
         .encode()
@@ -907,6 +977,42 @@ mod preference_tests {
         assert!(
             decode_localization_preference(&"00".repeat(LocalizationCatalog::MAX_ENCODED_LEN + 1))
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn installed_language_autodetection_prefers_exact_then_primary_language() {
+        let installed = [
+            InstalledLocalization {
+                locale: "de-DE".into(),
+                path: "de.lmlang".into(),
+            },
+            InstalledLocalization {
+                locale: "fr-CA".into(),
+                path: "fr.lmlang".into(),
+            },
+            InstalledLocalization {
+                locale: "zh-Hant".into(),
+                path: "zh.lmlang".into(),
+            },
+        ];
+        assert_eq!(
+            select_preferred_installed_localization(
+                &installed,
+                ["fr_FR.UTF-8".to_owned(), "de-DE".to_owned()]
+            ),
+            Some("de.lmlang".into())
+        );
+        assert_eq!(
+            select_preferred_installed_localization(&installed, ["fr_FR.UTF-8".to_owned()]),
+            Some("fr.lmlang".into())
+        );
+        assert_eq!(
+            select_preferred_installed_localization(
+                &installed,
+                ["C".to_owned(), "POSIX".to_owned()]
+            ),
+            None
         );
     }
 }

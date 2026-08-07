@@ -6,6 +6,15 @@ use crate::{
 };
 use eframe::egui;
 use lm_app::{FrontendConfig, LocalizationCatalog, ToolConfig};
+use std::path::{Path, PathBuf};
+
+const MAX_INSTALLED_LOCALIZATIONS: usize = 64;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct InstalledLocalization {
+    pub(crate) locale: String,
+    pub(crate) path: PathBuf,
+}
 
 #[derive(Debug)]
 pub(crate) enum LoadedConfiguration {
@@ -75,6 +84,93 @@ impl ConfigurationLoader {
             ),
         )?;
         Ok(true)
+    }
+
+    pub(crate) fn start_localization_path(&mut self, path: PathBuf) -> Result<(), String> {
+        self.start(
+            ConfigurationKind::Localization,
+            BoundedRead::new(
+                path,
+                LocalizationCatalog::MAX_ENCODED_LEN as u64,
+                "installed language catalog",
+            ),
+        )
+    }
+
+    pub(crate) fn discover_installed_localizations(
+        executable_directory: &Path,
+    ) -> Result<Vec<InstalledLocalization>, String> {
+        let directory = executable_directory.join("sysLMLanguage");
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => {
+                return Err(format!(
+                    "cannot enumerate installed language directory {}: {error}",
+                    directory.display()
+                ));
+            }
+        };
+        let mut paths = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                format!(
+                    "cannot enumerate installed language directory {}: {error}",
+                    directory.display()
+                )
+            })?;
+            let file_type = entry
+                .file_type()
+                .map_err(|error| format!("cannot inspect installed language entry: {error}"))?;
+            if !file_type.is_file()
+                || !entry
+                    .path()
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("lmlang"))
+            {
+                continue;
+            }
+            paths.push(entry.path());
+            if paths.len() > MAX_INSTALLED_LOCALIZATIONS {
+                return Err(format!(
+                    "installed language directory exceeds {MAX_INSTALLED_LOCALIZATIONS} catalogs"
+                ));
+            }
+        }
+        paths.sort_by(|left, right| {
+            left.file_name()
+                .cmp(&right.file_name())
+                .then_with(|| left.cmp(right))
+        });
+        let mut installed = Vec::with_capacity(paths.len());
+        for path in paths {
+            let Ok(metadata) = std::fs::metadata(&path) else {
+                continue;
+            };
+            let maximum = LocalizationCatalog::MAX_ENCODED_LEN as u64;
+            if metadata.len() > maximum {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            let Ok(catalog) = LocalizationCatalog::decode(&bytes) else {
+                continue;
+            };
+            installed.push(InstalledLocalization {
+                locale: catalog.locale().to_owned(),
+                path,
+            });
+        }
+        installed.sort_by(|left, right| {
+            left.locale
+                .to_ascii_lowercase()
+                .cmp(&right.locale.to_ascii_lowercase())
+                .then_with(|| left.locale.cmp(&right.locale))
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        Ok(installed)
     }
 
     fn start(&mut self, kind: ConfigurationKind, request: BoundedRead) -> Result<(), String> {
@@ -163,5 +259,71 @@ mod tests {
         let mut group = loaded(ToolConfig::default().encode().unwrap());
         group.files.push((PathBuf::from("extra"), Vec::new()));
         assert!(decode(ConfigurationKind::ExternalTools, group).is_err());
+    }
+
+    fn catalog(locale: &str) -> LocalizationCatalog {
+        LocalizationCatalog::new(
+            locale,
+            lm_app::UiTextKey::ALL.map(|key| (key, format!("{locale}-{key:?}"))),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn installed_catalog_discovery_is_bounded_filtered_and_locale_sorted() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("sysLMLanguage");
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(
+            directory.join("zeta.LMLANG"),
+            catalog("zh-Hant").encode().unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("alpha.lmlang"),
+            catalog("de-DE").encode().unwrap(),
+        )
+        .unwrap();
+        std::fs::write(directory.join("ignored.txt"), b"not a catalog").unwrap();
+        std::fs::create_dir(directory.join("directory.lmlang")).unwrap();
+
+        let installed = ConfigurationLoader::discover_installed_localizations(root.path()).unwrap();
+        assert_eq!(
+            installed
+                .iter()
+                .map(|catalog| catalog.locale.as_str())
+                .collect::<Vec<_>>(),
+            ["de-DE", "zh-Hant"]
+        );
+        assert_eq!(
+            installed[0].path.file_name().unwrap(),
+            std::ffi::OsStr::new("alpha.lmlang")
+        );
+    }
+
+    #[test]
+    fn installed_catalog_discovery_skips_invalid_and_retains_duplicate_locales() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("sysLMLanguage");
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(directory.join("bad.lmlang"), b"not a catalog").unwrap();
+        assert!(
+            ConfigurationLoader::discover_installed_localizations(root.path())
+                .unwrap()
+                .is_empty()
+        );
+
+        std::fs::remove_file(directory.join("bad.lmlang")).unwrap();
+        let encoded = catalog("fr-FR").encode().unwrap();
+        std::fs::write(directory.join("one.lmlang"), &encoded).unwrap();
+        std::fs::write(directory.join("two.lmlang"), &encoded).unwrap();
+        let installed = ConfigurationLoader::discover_installed_localizations(root.path()).unwrap();
+        assert_eq!(installed.len(), 2);
+        assert!(installed.iter().all(|catalog| catalog.locale == "fr-FR"));
+        assert!(
+            ConfigurationLoader::discover_installed_localizations(&root.path().join("absent"))
+                .unwrap()
+                .is_empty()
+        );
     }
 }
