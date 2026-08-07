@@ -3138,6 +3138,45 @@ mod tests {
     }
 
     #[test]
+    fn missing_legacy_palette_surfaces_lunar_magic_fallback_warning() {
+        let manifest = lm_level::LegacyMwlManifest::decode(
+            b"Lunar Magic Version 3.63\n\
+              attribution\n\
+              000 00 00 00 00 00\n\
+              01 000001 level.mw0\n\
+              00 000002 level.mw1\n\
+              00 000003 level.mw2\n",
+        )
+        .unwrap();
+        let mut editor = RomLevelAssetsEditor {
+            pending_legacy_mwl_load: Some(mwl::PendingLegacyMwlLoad::Sidecars {
+                revision: 0,
+                manifest,
+            }),
+            ..RomLevelAssetsEditor::default()
+        };
+        let error = editor
+            .finish_legacy_mwl_load(
+                Ok(crate::document_loader::LoadedDocument {
+                    files: vec![
+                        (std::path::PathBuf::from("level.mw0"), vec![0]),
+                        (std::path::PathBuf::from("level.mw1"), vec![0]),
+                        (std::path::PathBuf::from("level.mw2"), vec![0]),
+                    ],
+                }),
+                0,
+            )
+            .unwrap_err();
+        assert_eq!(error, "workspace is closed");
+        assert_eq!(
+            editor.legacy_mwl_status.as_deref(),
+            Some(
+                "Legacy import compatibility: Couldn't locate the palette file! Switching to non-custom shared palette."
+            )
+        );
+    }
+
+    #[test]
     fn layer2_reset_confirmation_rejects_closed_or_stale_workspaces() {
         assert!(layer2_reset_confirmation_is_current(7, Some(7), 7));
         assert!(!layer2_reset_confirmation_is_current(7, None, 7));

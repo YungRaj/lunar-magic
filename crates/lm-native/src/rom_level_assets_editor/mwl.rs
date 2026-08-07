@@ -223,7 +223,7 @@ impl RomLevelAssetsEditor {
                         .into_iter()
                         .nth(3)
                         .ok_or("legacy MWL palette filename is unavailable")?;
-                    requests.push(BoundedRead::new(
+                    requests.push(BoundedRead::optional(
                         palette_path,
                         u64::try_from(LegacyMwlBundle::PALETTE_BYTES).unwrap_or(u64::MAX),
                         "legacy palette",
@@ -239,10 +239,12 @@ impl RomLevelAssetsEditor {
                     return Err("the ROM changed while the legacy MWL was loading".into());
                 }
                 let loaded = result?;
-                let expected = if manifest.layer1.flags & 1 != 0 { 4 } else { 3 };
-                if loaded.files.len() != expected {
+                let palette_declared = manifest.layer1.flags & 1 != 0;
+                let minimum = 3;
+                let maximum = if palette_declared { 4 } else { 3 };
+                if !(minimum..=maximum).contains(&loaded.files.len()) {
                     return Err(format!(
-                        "legacy MWL loader returned an invalid file group: expected {expected}, got {}",
+                        "legacy MWL loader returned an invalid file group: expected {minimum}..={maximum}, got {}",
                         loaded.files.len()
                     ));
                 }
@@ -250,12 +252,21 @@ impl RomLevelAssetsEditor {
                 let layer1 = payloads.next().ok_or("legacy MWL loader omitted Layer 1")?;
                 let layer2 = payloads.next().ok_or("legacy MWL loader omitted Layer 2")?;
                 let sprites = payloads.next().ok_or("legacy MWL loader omitted sprites")?;
+                let palette = payloads.next();
+                if palette_declared && palette.is_none() {
+                    let warning =
+                        "Couldn't locate the palette file! Switching to non-custom shared palette.";
+                    self.legacy_mwl_status = Some(match self.legacy_mwl_status.take() {
+                        Some(status) => format!("{status}; {warning}"),
+                        None => format!("Legacy import compatibility: {warning}"),
+                    });
+                }
                 let bundle = LegacyMwlBundle {
                     manifest,
                     layer1,
                     layer2,
                     sprites,
-                    palette: payloads.next(),
+                    palette,
                 };
                 let workspace = self.workspace.as_ref().ok_or("workspace is closed")?;
                 if workspace.controller.revision() != revision {

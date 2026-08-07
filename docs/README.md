@@ -20,6 +20,7 @@ Retained oracle provenance:
 - [Credits transfer](oracle-work/lm363/pristine-us/credits-transfer-positive/PROVENANCE.md)
 - [Legacy level 105 transfer](oracle-work/lm363/pristine-us/legacy-level-105/PROVENANCE.md)
 - [Legacy level 000 custom-palette transfer](oracle-work/lm363/pristine-us/legacy-level-000-custom-palette/PROVENANCE.md)
+- [Legacy level import prompts](oracle-work/lm363/pristine-us/legacy-import-prompts/PROVENANCE.md)
 - [Overworld transfer](oracle-work/lm363/pristine-us/overworld-transfer-positive/PROVENANCE.md)
 - [Title-screen transfer](oracle-work/lm363/pristine-us/title-screen-transfer-positive/PROVENANCE.md)
 

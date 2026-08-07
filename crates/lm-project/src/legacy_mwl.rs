@@ -121,20 +121,19 @@ impl LegacyMwlBundle {
         let layer2 = NativeLayer2Data::decode_mwl(layer1.header.level_mode(), &self.layer2)?;
         let expanded_sprites = self.manifest.sprites.flags & 1 != 0;
         let sprites = NativeSpriteStream::parse(&self.sprites, expanded_sprites, sprite_lengths)?;
-        let palette = if self.manifest.layer1.flags & 1 != 0 {
-            let bytes = self
-                .palette
-                .as_deref()
-                .ok_or(LegacyMwlBundleError::MissingPalette)?;
-            if bytes.len() != Self::PALETTE_BYTES {
-                return Err(LegacyMwlBundleError::PaletteShape(bytes.len()));
-            }
-            Palette::decode_snes(bytes).map_err(LegacyMwlBundleError::PaletteShape)?
-        } else {
-            let mut palette = destination_palette.clone();
-            palette.colors.rotate_left(1);
-            palette
-        };
+        let requested_custom_palette = self.manifest.layer1.flags & 1 != 0;
+        let imported_custom_palette = requested_custom_palette && self.palette.is_some();
+        let palette =
+            if let Some(bytes) = self.palette.as_deref().filter(|_| requested_custom_palette) {
+                if bytes.len() != Self::PALETTE_BYTES {
+                    return Err(LegacyMwlBundleError::PaletteShape(bytes.len()));
+                }
+                Palette::decode_snes(bytes).map_err(LegacyMwlBundleError::PaletteShape)?
+            } else {
+                let mut palette = destination_palette.clone();
+                palette.colors.rotate_left(1);
+                palette
+            };
         if palette.colors.len() != 257 {
             return Err(LegacyMwlBundleError::PaletteShape(palette.colors.len() * 2));
         }
@@ -148,6 +147,11 @@ impl LegacyMwlBundle {
             .copied()
             .map(|exit| modern_secondary_exit(exit, &self.manifest))
             .collect();
+        let layer1_flags = if imported_custom_palette {
+            self.manifest.layer1.flags
+        } else {
+            self.manifest.layer1.flags & !1
+        };
         let layer2_descriptor = normalized_layer2_descriptor(
             self.manifest.version,
             self.manifest.layer2.flags,
@@ -160,10 +164,7 @@ impl LegacyMwlBundle {
             flags: MwlFile::default().flags,
             attribution: binary_attribution(&self.manifest.attribution),
             header,
-            layer1_metadata: [
-                u32::from(self.manifest.layer1.flags),
-                self.manifest.layer1.source_address,
-            ],
+            layer1_metadata: [u32::from(layer1_flags), self.manifest.layer1.source_address],
             layer1,
             layer2_descriptor,
             layer2_source_address: self.manifest.layer2.source_address,
@@ -315,7 +316,6 @@ pub enum LegacyMwlBundleError {
     UnsafeBaseName(String),
     SourceAddress { kind: &'static str, address: u32 },
     SidecarTooLarge { kind: &'static str, bytes: usize },
-    MissingPalette,
     PaletteShape(usize),
 }
 
@@ -500,6 +500,26 @@ mod tests {
             .unwrap();
         assert_eq!(decoded.palette, source.palette);
         assert_ne!(decoded.palette, destination);
+    }
+
+    #[test]
+    fn missing_declared_palette_falls_back_to_shared_palette_and_clears_custom_flag() {
+        let mut source = level_105();
+        source.layer1_metadata[0] |= 1;
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 105", &SpriteLengthTable::standard())
+                .unwrap();
+        bundle.palette = None;
+        let mut destination = source.palette.clone();
+        destination.colors.rotate_right(29);
+        let mut expected = destination.clone();
+        expected.colors.rotate_left(1);
+
+        let decoded = bundle
+            .decode_native(&SpriteLengthTable::standard(), &destination, true)
+            .unwrap();
+        assert_eq!(decoded.layer1_metadata[0] & 1, 0);
+        assert_eq!(decoded.palette, expected);
     }
 
     #[test]
