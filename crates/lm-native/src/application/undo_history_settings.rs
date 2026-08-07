@@ -1,5 +1,7 @@
 use eframe::egui;
-use lm_app::AppState;
+use lm_app::{AppState, LocalizationCatalog, UiTextKey};
+
+use crate::frontend_ui::localized_text;
 
 #[derive(Default)]
 pub(super) struct UndoHistorySettings {
@@ -13,32 +15,43 @@ impl UndoHistorySettings {
         self.open = true;
     }
 
-    pub(super) fn show(&mut self, context: &egui::Context) -> Option<usize> {
+    pub(super) fn show(
+        &mut self,
+        context: &egui::Context,
+        catalog: Option<&LocalizationCatalog>,
+    ) -> Option<usize> {
         if !self.open {
             return None;
         }
         let mut accepted = None;
         let mut open = self.open;
         let mut close = false;
-        egui::Window::new("Undo History")
+        egui::Window::new(localized_text(catalog, UiTextKey::UndoHistoryWindowTitle))
             .collapsible(false)
             .resizable(false)
             .open(&mut open)
             .show(context, |ui| {
-                ui.label("Snapshots retained for the level and overworld editors");
+                ui.label(localized_text(
+                    catalog,
+                    UiTextKey::UndoHistorySnapshotsLabel,
+                ));
                 ui.add(
                     egui::DragValue::new(&mut self.draft)
                         .range(0..=AppState::MAX_UNDO_SNAPSHOT_LIMIT),
                 );
-                ui.small(
-                    "0 or 1 disables Undo. Lunar Magic 3.63 defaults to 33 and allows at most 51.",
-                );
+                ui.small(localized_text(catalog, UiTextKey::UndoHistoryHint));
                 ui.horizontal(|ui| {
-                    if ui.button("Apply").clicked() {
+                    if ui
+                        .button(localized_text(catalog, UiTextKey::CommonApply))
+                        .clicked()
+                    {
                         accepted = Some(self.draft);
                         close = true;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui
+                        .button(localized_text(catalog, UiTextKey::CommonCancel))
+                        .clicked()
+                    {
                         close = true;
                     }
                 });

@@ -165,6 +165,25 @@ pub enum UiTextKey {
     EditorExportAllMwl,
     EditorExportModifiedMwl,
     EditorInsertMultipleMwl,
+    RecoveryWindowTitle,
+    RecoveryAvailable,
+    RecoveryCountFormat,
+    RecoveryRevisionFormat,
+    RecoveryLevelFormat,
+    RecoveryRequiresSaveAs,
+    RecoveryCloseCurrent,
+    RecoveryAction,
+    RecoveryDiscard,
+    UnsavedChangesTitle,
+    UnsavedChangesQuestion,
+    CommonCancel,
+    UnsavedDiscard,
+    ErrorWindowTitle,
+    CommonOk,
+    UndoHistoryWindowTitle,
+    UndoHistorySnapshotsLabel,
+    UndoHistoryHint,
+    CommonApply,
 }
 
 impl UiTextKey {
@@ -344,10 +363,37 @@ impl UiTextKey {
             Self::EditorExportAllMwl => "Export All MWL Levels…",
             Self::EditorExportModifiedMwl => "Export Modified MWL Levels…",
             Self::EditorInsertMultipleMwl => "Insert Multiple MWL Levels…",
+            Self::RecoveryWindowTitle => "Recover unsaved ROM",
+            Self::RecoveryAvailable => {
+                "An unsaved ROM snapshot from an interrupted session is available."
+            }
+            Self::RecoveryCountFormat => "Recovery 1 of {count}; remaining snapshots will follow.",
+            Self::RecoveryRevisionFormat => "Revision: {revision}",
+            Self::RecoveryLevelFormat => "Last active level: {level}",
+            Self::RecoveryRequiresSaveAs => {
+                "Recovery opens an unnamed dirty copy and requires Save As."
+            }
+            Self::RecoveryCloseCurrent => "Close the current ROM before recovering this snapshot.",
+            Self::RecoveryAction => "Recover",
+            Self::RecoveryDiscard => "Discard Recovery",
+            Self::UnsavedChangesTitle => "Unsaved changes",
+            Self::UnsavedChangesQuestion => "Discard unsaved changes?",
+            Self::CommonCancel => "Cancel",
+            Self::UnsavedDiscard => "Discard",
+            Self::ErrorWindowTitle => "Error",
+            Self::CommonOk => "OK",
+            Self::UndoHistoryWindowTitle => "Undo History",
+            Self::UndoHistorySnapshotsLabel => {
+                "Snapshots retained for the level and overworld editors"
+            }
+            Self::UndoHistoryHint => {
+                "0 or 1 disables Undo. Lunar Magic 3.63 defaults to 33 and allows at most 51."
+            }
+            Self::CommonApply => "Apply",
         }
     }
 
-    pub const ALL: [Self; 153] = [
+    pub const ALL: [Self; 172] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -501,6 +547,25 @@ impl UiTextKey {
         Self::EditorExportAllMwl,
         Self::EditorExportModifiedMwl,
         Self::EditorInsertMultipleMwl,
+        Self::RecoveryWindowTitle,
+        Self::RecoveryAvailable,
+        Self::RecoveryCountFormat,
+        Self::RecoveryRevisionFormat,
+        Self::RecoveryLevelFormat,
+        Self::RecoveryRequiresSaveAs,
+        Self::RecoveryCloseCurrent,
+        Self::RecoveryAction,
+        Self::RecoveryDiscard,
+        Self::UnsavedChangesTitle,
+        Self::UnsavedChangesQuestion,
+        Self::CommonCancel,
+        Self::UnsavedDiscard,
+        Self::ErrorWindowTitle,
+        Self::CommonOk,
+        Self::UndoHistoryWindowTitle,
+        Self::UndoHistorySnapshotsLabel,
+        Self::UndoHistoryHint,
+        Self::CommonApply,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {

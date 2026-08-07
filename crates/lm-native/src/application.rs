@@ -304,48 +304,87 @@ impl NativeApplication {
         let level = snapshot.level;
         let pending_count = self.recovery_store.pending_count();
         let project_open = self.app.controller_snapshot().is_ok();
-        egui::Window::new("Recover unsaved ROM")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(context, |ui| {
-                ui.label("An unsaved ROM snapshot from an interrupted session is available.");
-                if pending_count > 1 {
-                    ui.label(format!(
-                        "Recovery 1 of {pending_count}; remaining snapshots will follow."
-                    ));
-                }
-                ui.label(format!("Revision: {revision}"));
-                if let Some(level) = level {
-                    ui.label(format!("Last active level: {level:03X}"));
-                }
-                ui.label("Recovery opens an unnamed dirty copy and requires Save As.");
-                if project_open {
-                    ui.label("Close the current ROM before recovering this snapshot.");
-                }
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(!project_open, egui::Button::new("Recover"))
-                        .clicked()
-                    {
-                        let snapshot = self
-                            .recovery_store
-                            .pending_snapshot()
-                            .cloned()
-                            .expect("the recovery prompt owns a pending record");
-                        match self.app.load_recovery(snapshot) {
-                            Ok(()) => {
-                                self.recovery_store.complete_pending_recovery();
-                                self.renderer.invalidate();
-                            }
-                            Err(error) => self.effects.error = Some(error.to_string()),
+        let recovery_available = self.localized(
+            UiTextKey::RecoveryAvailable,
+            UiTextKey::RecoveryAvailable.english(),
+        );
+        let recovery_requires_save_as = self.localized(
+            UiTextKey::RecoveryRequiresSaveAs,
+            UiTextKey::RecoveryRequiresSaveAs.english(),
+        );
+        let recovery_close_current = self.localized(
+            UiTextKey::RecoveryCloseCurrent,
+            UiTextKey::RecoveryCloseCurrent.english(),
+        );
+        let recovery_action = self.localized(
+            UiTextKey::RecoveryAction,
+            UiTextKey::RecoveryAction.english(),
+        );
+        let recovery_discard = self.localized(
+            UiTextKey::RecoveryDiscard,
+            UiTextKey::RecoveryDiscard.english(),
+        );
+        egui::Window::new(self.localized(
+            UiTextKey::RecoveryWindowTitle,
+            UiTextKey::RecoveryWindowTitle.english(),
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(context, |ui| {
+            ui.label(&recovery_available);
+            if pending_count > 1 {
+                ui.label(
+                    self.localized(
+                        UiTextKey::RecoveryCountFormat,
+                        UiTextKey::RecoveryCountFormat.english(),
+                    )
+                    .replace("{count}", &pending_count.to_string()),
+                );
+            }
+            ui.label(
+                self.localized(
+                    UiTextKey::RecoveryRevisionFormat,
+                    UiTextKey::RecoveryRevisionFormat.english(),
+                )
+                .replace("{revision}", &revision.to_string()),
+            );
+            if let Some(level) = level {
+                ui.label(
+                    self.localized(
+                        UiTextKey::RecoveryLevelFormat,
+                        UiTextKey::RecoveryLevelFormat.english(),
+                    )
+                    .replace("{level}", &format!("{level:03X}")),
+                );
+            }
+            ui.label(&recovery_requires_save_as);
+            if project_open {
+                ui.label(&recovery_close_current);
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(!project_open, egui::Button::new(&recovery_action))
+                    .clicked()
+                {
+                    let snapshot = self
+                        .recovery_store
+                        .pending_snapshot()
+                        .cloned()
+                        .expect("the recovery prompt owns a pending record");
+                    match self.app.load_recovery(snapshot) {
+                        Ok(()) => {
+                            self.recovery_store.complete_pending_recovery();
+                            self.renderer.invalidate();
                         }
+                        Err(error) => self.effects.error = Some(error.to_string()),
                     }
-                    if ui.button("Discard Recovery").clicked() {
-                        self.recovery_store.discard_pending();
-                    }
-                });
+                }
+                if ui.button(&recovery_discard).clicked() {
+                    self.recovery_store.discard_pending();
+                }
             });
+        });
     }
 
     pub(crate) fn load_persistent_preferences(&mut self, storage: Option<&dyn eframe::Storage>) {
@@ -445,34 +484,46 @@ impl NativeApplication {
         let Some(confirmation) = self.effects.confirmation else {
             return;
         };
-        egui::Window::new("Unsaved changes")
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-            .show(context, |ui| {
-                ui.label("Discard unsaved changes?");
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.effects.confirmation = None;
-                        if matches!(confirmation, Confirmation::DiscardAndOpen) {
-                            self.effects.cancel_requested_rom_path();
-                        }
+        let question = self.localized(
+            UiTextKey::UnsavedChangesQuestion,
+            UiTextKey::UnsavedChangesQuestion.english(),
+        );
+        let cancel = self.localized(UiTextKey::CommonCancel, UiTextKey::CommonCancel.english());
+        let discard = self.localized(
+            UiTextKey::UnsavedDiscard,
+            UiTextKey::UnsavedDiscard.english(),
+        );
+        egui::Window::new(self.localized(
+            UiTextKey::UnsavedChangesTitle,
+            UiTextKey::UnsavedChangesTitle.english(),
+        ))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(context, |ui| {
+            ui.label(&question);
+            ui.horizontal(|ui| {
+                if ui.button(&cancel).clicked() {
+                    self.effects.confirmation = None;
+                    if matches!(confirmation, Confirmation::DiscardAndOpen) {
+                        self.effects.cancel_requested_rom_path();
                     }
-                    if ui.button("Discard").clicked() {
-                        self.effects.confirmation = None;
-                        let effects = match confirmation {
-                            Confirmation::DiscardAndOpen => self.app.discard_and_request_open(),
-                            Confirmation::DiscardAndClose { quit_after } => {
-                                Ok(self.app.discard_and_close(quit_after))
-                            }
-                        };
-                        match effects {
-                            Ok(effects) => self.effects.handle(&mut self.app, context, effects),
-                            Err(error) => self.effects.error = Some(error.to_string()),
+                }
+                if ui.button(&discard).clicked() {
+                    self.effects.confirmation = None;
+                    let effects = match confirmation {
+                        Confirmation::DiscardAndOpen => self.app.discard_and_request_open(),
+                        Confirmation::DiscardAndClose { quit_after } => {
+                            Ok(self.app.discard_and_close(quit_after))
                         }
+                    };
+                    match effects {
+                        Ok(effects) => self.effects.handle(&mut self.app, context, effects),
+                        Err(error) => self.effects.error = Some(error.to_string()),
                     }
-                });
+                }
             });
+        });
     }
 
     fn synchronize_level_text(&mut self) {
@@ -570,16 +621,20 @@ impl NativeApplication {
         self.effects.show_persistence(context, &mut self.app);
         self.effects.show_external_tools(context, &mut self.app);
         if let Some(error) = self.effects.error.clone() {
-            egui::Window::new("Error")
-                .collapsible(false)
-                .resizable(false)
-                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                .show(context, |ui| {
-                    ui.label(error);
-                    if ui.button("OK").clicked() {
-                        self.effects.error = None;
-                    }
-                });
+            let ok = self.localized(UiTextKey::CommonOk, UiTextKey::CommonOk.english());
+            egui::Window::new(self.localized(
+                UiTextKey::ErrorWindowTitle,
+                UiTextKey::ErrorWindowTitle.english(),
+            ))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(context, |ui| {
+                ui.label(error);
+                if ui.button(&ok).clicked() {
+                    self.effects.error = None;
+                }
+            });
         }
         if self.effects.quit_requested {
             self.stop_user_toolbar_tools_on_close();
@@ -688,7 +743,10 @@ impl eframe::App for NativeApplication {
                 }
             }
         }
-        if let Some(limit) = self.undo_history_settings.show(context) {
+        if let Some(limit) = self
+            .undo_history_settings
+            .show(context, self.app.localization())
+        {
             match self.app.set_undo_snapshot_limit(limit) {
                 Ok(()) => {
                     self.app.status = format!(
