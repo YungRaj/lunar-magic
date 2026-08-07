@@ -3593,3 +3593,11 @@ throughout the standard-sprite dispatch cluster; for example `RenderConditionalT
 already authenticated standard handlers expose the same branch as `alternate_display`; the native
 editor now supplies the toolbar state consistently to the canvas, existing-sprite picker, and new
 sprite catalog.
+
+`LM_VIEW_512HEIGHT_BG` maps to `$2407`; dispatcher case `$55` toggles persisted byte `005E7B0D`
+and redraws without rebuilding level data. `RenderLevelEditorViewportRegion` at `004530A0` uses
+that byte to change the background row modulus from `$1B0` to `$200` pixels.
+`RenderTransparentLevelBackgroundMap16Tile` at `0051D1B0` independently changes its source-row
+divisor from `$1B` to `$20` Map16 rows. Rust therefore applies one default-off presentation flag
+to the composed game-preview plane and the direct Map16 fallback, preserving the 512-pixel
+horizontal period and all authored tilemap bytes.

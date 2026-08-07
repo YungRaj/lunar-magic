@@ -3196,6 +3196,11 @@ Lunar Magic's standard handlers. The live sprite canvas, existing-sprite picture
 sprite catalog all receive the same state. When active, every authenticated conditional handler
 uses definition `$115` at its recovered position; SSC custom displays remain authored displays
 rather than being rewritten as built-in standard sprites.
+`LM_VIEW_512HEIGHT_BG` (`$2407`) now switches the background's vertical source period from the
+original 27 Map16 rows (432 pixels) to the complete 32 rows (512 pixels). The game-camera preview
+uses the same period for both the precomposed background plane and its Map16 fallback, while the
+horizontal period remains 32 columns/512 pixels. The default remains off and the toggle is presentation
+state only; it does not rewrite the level's Layer 2 tilemap.
 `LM_VIEW_TILE_GRID` is separately recovered as command `$2408`. The original command toggles
 `DAT_00E278E5`; `RenderLevelEditorViewportRegion` at `$00453D90` calls
 `DrawLevelMap16ScreenGrid` only while that byte is set, and the pristine executable initializes it

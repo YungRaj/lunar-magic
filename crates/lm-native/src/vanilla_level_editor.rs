@@ -350,6 +350,7 @@ pub(crate) struct VanillaLevelEditor {
     animation_frozen_seconds: f64,
     switch_view_state: lm_render::LunarMagicSwitchViewState,
     silver_pow_active: bool,
+    background_512_height: bool,
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
@@ -2392,6 +2393,10 @@ impl VanillaLevelEditor {
         self.silver_pow_active = !self.silver_pow_active;
     }
 
+    pub(crate) fn toolbar_background_512_height_toggle(&mut self) {
+        self.background_512_height = !self.background_512_height;
+    }
+
     fn game_preview_camera_origin(
         &self,
         major_tiles: u16,
@@ -2544,6 +2549,7 @@ impl VanillaLevelEditor {
                 minor_tiles,
                 vertical,
                 game_camera,
+                self.background_512_height,
                 self.outline_texture.as_ref(),
                 visibility.surface_outline,
                 visibility.line_guide_outline,
@@ -7145,12 +7151,21 @@ fn draw_layer2_tilemap(
     minor_tiles: u16,
     vertical: bool,
     game_camera: Option<(u16, u16)>,
+    background_512_height: bool,
     outline_texture: Option<&egui::TextureHandle>,
     surface_outline: bool,
     line_guide_outline: bool,
 ) {
     if let (Some(texture), Some(camera)) = (background_plane_texture, game_camera) {
-        draw_wrapped_background_viewport(painter, target, cell_size, texture, entrance, camera);
+        draw_wrapped_background_viewport(
+            painter,
+            target,
+            cell_size,
+            texture,
+            entrance,
+            camera,
+            background_512_height,
+        );
         return;
     }
     let (columns, rows) = if vertical {
@@ -7164,7 +7179,15 @@ fn draw_layer2_tilemap(
             let (background_x, background_y) = if shared_background {
                 game_camera.map_or_else(
                     || vanilla_shared_background_coordinates(x, y, entrance),
-                    |camera| vanilla_game_background_coordinates(x, y, entrance, camera),
+                    |camera| {
+                        vanilla_game_background_coordinates(
+                            x,
+                            y,
+                            entrance,
+                            camera,
+                            background_512_height,
+                        )
+                    },
                 )
             } else {
                 (x, y)
@@ -7240,12 +7263,14 @@ fn draw_wrapped_background_viewport(
     texture: &egui::TextureHandle,
     entrance: VanillaMainEntrance,
     camera: (u16, u16),
+    background_512_height: bool,
 ) {
-    const PLANE_PIXELS: i32 = 512;
+    const PLANE_WIDTH_PIXELS: i32 = 512;
     const VIEW_WIDTH: i32 = 256;
     const VIEW_HEIGHT: i32 = 224;
     let layer1_camera = (i32::from(camera.0) * 16, i32::from(camera.1) * 16);
     let (source_x, source_y) = vanilla_layer2_camera_pixels(entrance, layer1_camera);
+    let plane_height_pixels = background_plane_height_pixels(background_512_height);
     let viewport = egui::Rect::from_min_size(
         world.min
             + egui::vec2(
@@ -7259,12 +7284,12 @@ fn draw_wrapped_background_viewport(
     );
     let mut output_y = 0;
     while output_y < VIEW_HEIGHT {
-        let plane_y = (source_y + output_y).rem_euclid(PLANE_PIXELS);
-        let rows = (PLANE_PIXELS - plane_y).min(VIEW_HEIGHT - output_y);
+        let plane_y = (source_y + output_y).rem_euclid(plane_height_pixels);
+        let rows = (plane_height_pixels - plane_y).min(VIEW_HEIGHT - output_y);
         let mut output_x = 0;
         while output_x < VIEW_WIDTH {
-            let plane_x = (source_x + output_x).rem_euclid(PLANE_PIXELS);
-            let columns = (PLANE_PIXELS - plane_x).min(VIEW_WIDTH - output_x);
+            let plane_x = (source_x + output_x).rem_euclid(PLANE_WIDTH_PIXELS);
+            let columns = (PLANE_WIDTH_PIXELS - plane_x).min(VIEW_WIDTH - output_x);
             let target = egui::Rect::from_min_size(
                 viewport.min
                     + egui::vec2(
@@ -7291,6 +7316,10 @@ fn draw_wrapped_background_viewport(
         }
         output_y += rows;
     }
+}
+
+const fn background_plane_height_pixels(background_512_height: bool) -> i32 {
+    if background_512_height { 512 } else { 432 }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -7440,6 +7469,7 @@ fn vanilla_game_background_coordinates(
     layer1_y: usize,
     entrance: VanillaMainEntrance,
     camera: (u16, u16),
+    background_512_height: bool,
 ) -> (usize, usize) {
     let setting = usize::from(entrance.position >> 4);
     let camera_x = usize::from(camera.0);
@@ -7462,7 +7492,8 @@ fn vanilla_game_background_coordinates(
         - i64::try_from(camera_y).unwrap_or_default();
     (
         usize::try_from(source_x.rem_euclid(32)).unwrap_or_default(),
-        usize::try_from(source_y.rem_euclid(32)).unwrap_or_default(),
+        usize::try_from(source_y.rem_euclid(if background_512_height { 32 } else { 27 }))
+            .unwrap_or_default(),
     )
 }
 
@@ -14182,6 +14213,26 @@ mod tests {
     }
 
     #[test]
+    fn toolbar_512_height_background_switches_vertical_wrap_from_27_to_32_tiles() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(!editor.background_512_height);
+        assert_eq!(background_plane_height_pixels(false), 27 * 16);
+        editor.toolbar_background_512_height_toggle();
+        assert!(editor.background_512_height);
+        assert_eq!(background_plane_height_pixels(true), 32 * 16);
+
+        let entrance = VanillaMainEntrance {
+            position: 0x0b,
+            screen_and_method: 0x03,
+            ..VanillaMainEntrance::default()
+        };
+        assert_ne!(
+            vanilla_game_background_coordinates(0, 31, entrance, (0, 0), false).1,
+            vanilla_game_background_coordinates(0, 31, entrance, (0, 0), true).1,
+        );
+    }
+
+    #[test]
     fn one_snes_screen_fills_the_available_canvas_pane_and_preserves_zoom() {
         for (available, zoom, expected) in [
             (egui::vec2(800.0, 600.0), 100, 50.0),
@@ -14400,11 +14451,11 @@ mod tests {
         };
         assert_eq!(game_preview_origin(entrance, 512, 27, false), (0, 12));
         assert_eq!(
-            vanilla_game_background_coordinates(0, 12, entrance, (0, 12)),
+            vanilla_game_background_coordinates(0, 12, entrance, (0, 12), false),
             (0, 12)
         );
         assert_eq!(
-            vanilla_game_background_coordinates(15, 25, entrance, (0, 12)),
+            vanilla_game_background_coordinates(15, 25, entrance, (0, 12), false),
             (15, 25)
         );
     }
