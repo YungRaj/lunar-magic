@@ -3782,10 +3782,16 @@ can materialize the original contiguous `$C30` or `$C50` stack-buffer forms; map
 onto supported mapper identities and its relocation rules remains the installation gate.
 Disassembly at `$0045E519` closes the suffix-specific relocation boundary. When the suffix length
 is nonzero, Lunar Magic writes the mapped allocation address of core `+$C30` into the three-byte
-JSL operand at core `+$78A`, then writes the fixed mapper-compatibility target `$7FC020` into the
-JSL operand at core `+$792`. Rust models both as checked 24-bit values, keeps the ordinary `$C30`
-form unchanged, and rejects either value above the SNES address width. The remaining variant work
-is the larger mapper-conditioned IRAM/WRAM relocation set that precedes those two calls.
+pointer slot at core `+$78A`, then writes the fixed mapper-compatibility target `$7FC020` into the
+pointer slot at core `+$792`. Rust models both as checked 24-bit values, keeps the ordinary `$C30`
+form unchanged, and rejects either value above the SNES address width. The preceding conditional
+pass is now bounded too: after the 108 internal-address fixups, it validates 37 embedded IRAM words
+below `$2000` and adds `$6000`, then validates three compact words below `$0100` and adds `$3000`.
+The first group spans core offsets `$15B..$A5E`; the compact group is `$47C/$78A/$792`, with the
+last two subsequently replaced by the mapped 24-bit suffix/helper pointers. Rust preflights all 40
+values before modifying any byte, reproduces that exact ordering, and rejects a late invalid value
+without a partial transformed payload. The remaining variant work is transactional allocation and
+detector integration across the mapper identities.
 The fresh installer's core allocation is now recovered byte-for-byte. It concatenates executable
 ranges `$005B5298..$005B5408` (`$170` bytes), `$005B5410..$005B5750` (`$340` bytes), and
 `$005B4B10..$005B5290` (`$780` bytes) into one `$C30`-byte payload; a mapper-specific branch may

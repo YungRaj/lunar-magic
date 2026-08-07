@@ -105,11 +105,11 @@ pub use exanimation_runtime::{
     EXPANDED_EXANIMATION_POINTER_TABLE_LEN, EXPANDED_EXANIMATION_RUNTIME_CORE_LEN,
     EXPANDED_EXANIMATION_RUNTIME_OPTIONAL_LEN, ExpandedExAnimationRuntimeError,
     ExpandedExAnimationRuntimeOptionalRelocations, ExpandedExAnimationRuntimeRelocations,
-    OPTIONAL_MAPPING_HELPER_CALL_OFFSET, OPTIONAL_MAPPING_HELPER_SNES_ADDRESS,
-    OPTIONAL_SUFFIX_CALL_OFFSET, empty_expanded_exanimation_pointer_table,
+    OPTIONAL_MAPPING_HELPER_POINTER_OFFSET, OPTIONAL_MAPPING_HELPER_SNES_ADDRESS,
+    OPTIONAL_SUFFIX_POINTER_OFFSET, empty_expanded_exanimation_pointer_table,
     expanded_exanimation_runtime_optional_suffix, expanded_exanimation_runtime_template,
     expanded_exanimation_runtime_template_with_optional_suffix,
-    relocate_expanded_exanimation_runtime,
+    relocate_expanded_exanimation_mapper_iram, relocate_expanded_exanimation_runtime,
     relocate_expanded_exanimation_runtime_with_optional_suffix,
 };
 pub use exanimation_runtime_install::{

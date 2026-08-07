@@ -16,9 +16,15 @@ pub(crate) const IRAM_WORD_OFFSETS: [usize; 12] = [
 pub(crate) const LOCAL_WORD_TABLE_OFFSET: usize = 0xb4a;
 pub(crate) const LOCAL_WORD_TABLE_ENTRIES: usize = 108;
 pub(crate) const TEMPLATE_LOCAL_WORD_BASE: u16 = 0x8000;
-pub const OPTIONAL_SUFFIX_CALL_OFFSET: usize = 0x78a;
-pub const OPTIONAL_MAPPING_HELPER_CALL_OFFSET: usize = 0x792;
+pub const OPTIONAL_SUFFIX_POINTER_OFFSET: usize = 0x78a;
+pub const OPTIONAL_MAPPING_HELPER_POINTER_OFFSET: usize = 0x792;
 pub const OPTIONAL_MAPPING_HELPER_SNES_ADDRESS: u32 = 0x7f_c020;
+const MAPPER_IRAM_WORD_OFFSETS: [usize; 37] = [
+    0x15b, 0x15e, 0x161, 0x166, 0x18a, 0x192, 0x19c, 0x1a4, 0x1ae, 0x1bb, 0x1c2, 0x4d8, 0x4db,
+    0x4de, 0x6b5, 0x70b, 0x714, 0x718, 0x734, 0x743, 0x75a, 0x784, 0x7e6, 0x7f3, 0x870, 0x879,
+    0x8a1, 0x8de, 0x8e2, 0x8e7, 0x8ec, 0x8f1, 0x8f6, 0x8fb, 0x904, 0x975, 0xa5e,
+];
+const MAPPER_IRAM_BYTE_WORD_OFFSETS: [usize; 3] = [0x47c, 0x78a, 0x792];
 
 /// Every runtime-dependent scalar patched by the fresh installer after copying its `$C30` bytes.
 ///
@@ -33,7 +39,7 @@ pub struct ExpandedExAnimationRuntimeRelocations {
     pub local_word_base: u16,
 }
 
-/// The two additional long-call targets installed only in the `$C50` runtime form.
+/// The two additional mapped pointer values installed only in the `$C50` runtime form.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExpandedExAnimationRuntimeOptionalRelocations {
     /// Mapper-encoded SNES address of the appended suffix at allocation `+$C30`.
@@ -59,6 +65,15 @@ pub enum ExpandedExAnimationRuntimeError {
         index: usize,
         base: u16,
         relative: u16,
+    },
+    MapperRuntimeTooShort(usize),
+    MapperIramWordOutOfRange {
+        offset: usize,
+        value: u16,
+    },
+    MapperIramByteWordOutOfRange {
+        offset: usize,
+        value: u16,
     },
 }
 
@@ -132,17 +147,18 @@ pub fn expanded_exanimation_runtime_template_with_optional_suffix(
     Ok(runtime)
 }
 
-/// Applies the two recovered mapper-only JSL relocations to the contiguous `$C50` form.
+/// Applies the two recovered mapper-only 24-bit pointer relocations to the contiguous `$C50` form.
 pub fn relocate_expanded_exanimation_runtime_with_optional_suffix(
     relocations: &ExpandedExAnimationRuntimeRelocations,
     optional: ExpandedExAnimationRuntimeOptionalRelocations,
 ) -> Result<Vec<u8>, ExpandedExAnimationRuntimeError> {
     let mut runtime = relocate_expanded_exanimation_runtime(relocations)?;
+    relocate_expanded_exanimation_mapper_iram(&mut runtime)?;
     runtime.extend(expanded_exanimation_runtime_optional_suffix()?);
     for (index, (offset, value)) in [
-        (OPTIONAL_SUFFIX_CALL_OFFSET, optional.suffix_snes_pointer),
+        (OPTIONAL_SUFFIX_POINTER_OFFSET, optional.suffix_snes_pointer),
         (
-            OPTIONAL_MAPPING_HELPER_CALL_OFFSET,
+            OPTIONAL_MAPPING_HELPER_POINTER_OFFSET,
             optional.mapping_helper_snes_pointer,
         ),
     ]
@@ -158,6 +174,48 @@ pub fn relocate_expanded_exanimation_runtime_with_optional_suffix(
         runtime[offset..offset + 3].copy_from_slice(&value.to_le_bytes()[..3]);
     }
     Ok(runtime)
+}
+
+/// Applies the complete mapper-conditioned IRAM relocation pass recovered from `$0045CF74`
+/// through `$0045E519`.
+///
+/// Lunar Magic first validates every ordinary word as `< $2000` and every compact IRAM word as
+/// `< $0100`, then adds `$6000` or `$3000` respectively. This implementation preflights the whole
+/// family before writing, so a late invalid operand cannot leave a partially transformed runtime.
+pub fn relocate_expanded_exanimation_mapper_iram(
+    runtime: &mut [u8],
+) -> Result<(), ExpandedExAnimationRuntimeError> {
+    if runtime.len() < EXPANDED_EXANIMATION_RUNTIME_CORE_LEN {
+        return Err(ExpandedExAnimationRuntimeError::MapperRuntimeTooShort(
+            runtime.len(),
+        ));
+    }
+    for offset in MAPPER_IRAM_WORD_OFFSETS {
+        let value = u16::from_le_bytes([runtime[offset], runtime[offset + 1]]);
+        if value >= 0x2000 {
+            return Err(ExpandedExAnimationRuntimeError::MapperIramWordOutOfRange {
+                offset,
+                value,
+            });
+        }
+    }
+    for offset in MAPPER_IRAM_BYTE_WORD_OFFSETS {
+        let value = u16::from_le_bytes([runtime[offset], runtime[offset + 1]]);
+        if value >= 0x100 {
+            return Err(
+                ExpandedExAnimationRuntimeError::MapperIramByteWordOutOfRange { offset, value },
+            );
+        }
+    }
+    for offset in MAPPER_IRAM_WORD_OFFSETS {
+        let value = u16::from_le_bytes([runtime[offset], runtime[offset + 1]]) + 0x6000;
+        runtime[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    for offset in MAPPER_IRAM_BYTE_WORD_OFFSETS {
+        let value = u16::from_le_bytes([runtime[offset], runtime[offset + 1]]) + 0x3000;
+        runtime[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    Ok(())
 }
 
 /// Applies all Ghidra-recovered fresh-install relocations to the exact core template.
@@ -293,7 +351,7 @@ mod tests {
             mapping_bytes: [0x12, 0x34],
             snes_pointers: [0x80_8000; SNES_POINTER_OFFSETS.len()],
             iram_words: [0x1234; IRAM_WORD_OFFSETS.len()],
-            local_word_base: 0x9000,
+            local_word_base: 0x1000,
         };
         let ordinary = relocate_expanded_exanimation_runtime(&relocations).unwrap();
         let expanded = relocate_expanded_exanimation_runtime_with_optional_suffix(
@@ -306,16 +364,17 @@ mod tests {
         .unwrap();
         assert_eq!(expanded.len(), 0xc50);
         assert_eq!(
-            &expanded[OPTIONAL_SUFFIX_CALL_OFFSET..OPTIONAL_SUFFIX_CALL_OFFSET + 3],
+            &expanded[OPTIONAL_SUFFIX_POINTER_OFFSET..OPTIONAL_SUFFIX_POINTER_OFFSET + 3],
             &[0x30, 0xc0, 0x40]
         );
         assert_eq!(
-            &expanded[OPTIONAL_MAPPING_HELPER_CALL_OFFSET..OPTIONAL_MAPPING_HELPER_CALL_OFFSET + 3],
+            &expanded[OPTIONAL_MAPPING_HELPER_POINTER_OFFSET
+                ..OPTIONAL_MAPPING_HELPER_POINTER_OFFSET + 3],
             &[0x20, 0xc0, 0x7f]
         );
         assert_ne!(
-            &ordinary[OPTIONAL_SUFFIX_CALL_OFFSET..OPTIONAL_SUFFIX_CALL_OFFSET + 3],
-            &expanded[OPTIONAL_SUFFIX_CALL_OFFSET..OPTIONAL_SUFFIX_CALL_OFFSET + 3]
+            &ordinary[OPTIONAL_SUFFIX_POINTER_OFFSET..OPTIONAL_SUFFIX_POINTER_OFFSET + 3],
+            &expanded[OPTIONAL_SUFFIX_POINTER_OFFSET..OPTIONAL_SUFFIX_POINTER_OFFSET + 3]
         );
         assert!(matches!(
             relocate_expanded_exanimation_runtime_with_optional_suffix(
@@ -326,6 +385,47 @@ mod tests {
                 }
             ),
             Err(ExpandedExAnimationRuntimeError::SnesPointerOutOfRange { index: 8, .. })
+        ));
+    }
+
+    #[test]
+    fn mapper_iram_relocation_is_complete_checked_and_failure_atomic() {
+        let mut runtime = vec![0x00; EXPANDED_EXANIMATION_RUNTIME_CORE_LEN];
+        for (index, offset) in MAPPER_IRAM_WORD_OFFSETS.into_iter().enumerate() {
+            runtime[offset..offset + 2].copy_from_slice(&(0x0100 + index as u16).to_le_bytes());
+        }
+        for (index, offset) in MAPPER_IRAM_BYTE_WORD_OFFSETS.into_iter().enumerate() {
+            runtime[offset..offset + 2].copy_from_slice(&(index as u16).to_le_bytes());
+        }
+        relocate_expanded_exanimation_mapper_iram(&mut runtime).unwrap();
+        for (index, offset) in MAPPER_IRAM_WORD_OFFSETS.into_iter().enumerate() {
+            assert_eq!(
+                u16::from_le_bytes([runtime[offset], runtime[offset + 1]]),
+                0x6100 + index as u16
+            );
+        }
+        for (index, offset) in MAPPER_IRAM_BYTE_WORD_OFFSETS.into_iter().enumerate() {
+            assert_eq!(
+                u16::from_le_bytes([runtime[offset], runtime[offset + 1]]),
+                0x3000 + index as u16
+            );
+        }
+
+        let mut invalid = vec![0x00; EXPANDED_EXANIMATION_RUNTIME_CORE_LEN];
+        let last = *MAPPER_IRAM_WORD_OFFSETS.last().unwrap();
+        invalid[last..last + 2].copy_from_slice(&0x2000u16.to_le_bytes());
+        let before = invalid.clone();
+        assert!(matches!(
+            relocate_expanded_exanimation_mapper_iram(&mut invalid),
+            Err(ExpandedExAnimationRuntimeError::MapperIramWordOutOfRange {
+                offset,
+                value: 0x2000
+            }) if offset == last
+        ));
+        assert_eq!(invalid, before);
+        assert!(matches!(
+            relocate_expanded_exanimation_mapper_iram(&mut [0; 16]),
+            Err(ExpandedExAnimationRuntimeError::MapperRuntimeTooShort(16))
         ));
     }
 
