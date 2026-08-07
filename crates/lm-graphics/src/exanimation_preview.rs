@@ -134,27 +134,21 @@ pub fn resolve_exanimation_graphics_address(
             .checked_add(transfer_bytes)
             .is_none_or(|end| end > context.relative_source_limit_bytes)
         {
-            return Err(
-                ExAnimationMaterializeError::RelativeGraphicsSourceOutOfRange {
-                    source: source_word,
-                    limit_bytes: context.relative_source_limit_bytes,
-                },
-            );
+            0
+        } else {
+            context
+                .relative_source_base_tile
+                .checked_add(u32::from(source_word >> 5))
+                .ok_or(ExAnimationMaterializeError::InvalidGraphicsSource(
+                    source_word,
+                ))?
         }
-        context
-            .relative_source_base_tile
-            .checked_add(u32::from(source_word >> 5))
-            .ok_or(ExAnimationMaterializeError::InvalidGraphicsSource(
-                source_word,
-            ))?
     } else if source_word >= 0x7d00 {
         u32::from((source_word - 0x7d00) >> 5) + 0x600
     } else if source_word >= 0x2000 {
         u32::from((source_word - 0x2000) >> 5) + 0x900
     } else {
-        return Err(ExAnimationMaterializeError::InvalidGraphicsSource(
-            source_word,
-        ));
+        0
     };
 
     let mut destination = u32::from(record.destination());
@@ -795,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    fn graphics_address_validation_rejects_unmapped_and_oversized_ranges() {
+    fn graphics_address_validation_uses_native_zero_source_fallbacks() {
         let unmapped = ExAnimationRecord::new(1, 0, 0, 0, false, &[0xff, 0x1f], false).unwrap();
         assert_eq!(
             resolve_exanimation_graphics_address(
@@ -806,8 +800,10 @@ mod tests {
                     relative_source_base_tile: 0,
                     relative_source_limit_bytes: 0,
                 }
-            ),
-            Err(ExAnimationMaterializeError::InvalidGraphicsSource(0x1fff))
+            )
+            .unwrap()
+            .source_tile,
+            0
         );
         let relative = ExAnimationRecord::new(2, 0, 0, 0, true, &[0xe0, 0], false).unwrap();
         assert_eq!(
@@ -819,13 +815,10 @@ mod tests {
                     relative_source_base_tile: 0,
                     relative_source_limit_bytes: 0x100,
                 }
-            ),
-            Err(
-                ExAnimationMaterializeError::RelativeGraphicsSourceOutOfRange {
-                    source: 0x00e0,
-                    limit_bytes: 0x100,
-                }
             )
+            .unwrap()
+            .source_tile,
+            0
         );
     }
 }

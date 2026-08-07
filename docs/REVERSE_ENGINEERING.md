@@ -3729,4 +3729,13 @@ and `$7D00+` to tile `$600+`. Relative-source records add `source_word / 32` to 
 base after checking the complete transfer against its word limit. Destinations below `$4000` use
 16-byte tile addressing (optionally doubled for 2bpp support), `$4000..$5FFF` map at 8-byte
 granularity to tile `$1C00+`, and `$6000+` map back to tile `$400+`. Rust exposes the same bounded
-address resolver so live preview cannot silently reinterpret invalid source or destination words.
+address resolver. As at `0045A2A2`, an absolute source below `$2000` or a relative transfer beyond
+its setting's limit falls back to working-cache tile zero; invalid destinations remain rejected.
+
+The profile-backed installed-level preview now loads its staged `CompactExAnimation` from the same
+`NativeLevelAssetsController` used by edit, commit, and reopen. It builds Lunar Magic's working
+cache with ordinary FG/BG tiles at `$000`, sprites at `$400`, GFX33 at `$600`, GFX32 at `$900`,
+and the setting-selected relative bank at `$C00/$1000/$1400/$1800`. Records execute in the
+recovered eight-way phase order against one mutable cache, so earlier destinations can feed later
+sources. Tile, palette, and fixed-color transfers are applied to the rendered assets, and a staged
+nonempty level set keeps the preview clock active when the Level ExAnimation feature is enabled.

@@ -124,6 +124,7 @@ struct SpecialGraphicsTiles {
 struct InstalledAnimationOptions {
     vanilla_tiles: bool,
     palette: bool,
+    custom: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -544,7 +545,7 @@ fn inspect_preview_map16_selection(
 
 impl InstalledAnimationOptions {
     const fn active(self) -> bool {
-        self.vanilla_tiles || self.palette
+        self.vanilla_tiles || self.palette || self.custom
     }
 }
 
@@ -554,7 +555,7 @@ fn installed_preview_phases(
     seconds: f64,
 ) -> InstalledPreviewPhases {
     let refresh =
-        (options.active() || has_selection).then(|| installed_preview_animation_phase(seconds));
+        (options.active() || has_selection).then(|| installed_preview_animation_tick(seconds));
     InstalledPreviewPhases {
         refresh,
         assets: options.active().then_some(refresh.unwrap_or(0)),
@@ -1007,6 +1008,7 @@ impl RomLevelAssetsEditor {
             InstalledAnimationOptions {
                 vanilla_tiles: false,
                 palette: false,
+                custom: false,
             },
             installed_animation_options,
         );
@@ -1706,7 +1708,8 @@ fn render_super_graphics_level_canvas(
     let special_graphics = load_profiled_special_graphics(
         &project,
         workspace.profile.graphics,
-        animation_options.vanilla_tiles,
+        animation_options.vanilla_tiles
+            || !workspace.controller.assets().exanimation.records.is_empty(),
     )?;
     if let Some(phase) = animation_phase {
         if !is_smw_us_v1_profile(&workspace.profile) {
@@ -1719,7 +1722,7 @@ fn render_super_graphics_level_canvas(
             crate::vanilla_map16_preview::apply_vanilla_common_animation_frame_with_tiles(
                 &project,
                 &mut vram.foreground_background,
-                phase,
+                phase & 7,
                 header.object_tileset(),
                 &special_graphics.gfx33,
                 special_graphics
@@ -1731,8 +1734,18 @@ fn render_super_graphics_level_canvas(
         if animation_options.palette {
             crate::vanilla_map16_preview::apply_vanilla_editor_palette_animation(
                 &mut palette,
-                phase,
+                phase & 7,
             );
+        }
+        if let Some(color) = apply_level_exanimation_preview(
+            &workspace.controller.assets().exanimation,
+            phase,
+            &mut vram,
+            &special_graphics,
+            &mut palette,
+        )? && let Some(backdrop) = palette.colors.first_mut()
+        {
+            *backdrop = color;
         }
     }
     let map16 = if is_smw_us_v1_profile(&workspace.profile) {
@@ -1839,6 +1852,150 @@ fn render_super_graphics_level_canvas(
     .map(|canvas| (canvas, diagnostics, inspection))
 }
 
+fn apply_level_exanimation_preview(
+    animation: &lm_graphics::CompactExAnimation,
+    tick: usize,
+    vram: &mut MaterializedSuperGraphicsVram,
+    special: &SpecialGraphicsTiles,
+    palette: &mut lm_graphics::Palette,
+) -> Result<Option<lm_graphics::Bgr555>, String> {
+    if animation.records.is_empty() {
+        return Ok(None);
+    }
+    const CACHE_TILES: usize = 0x2000;
+    const GFX33_CACHE_BASE: usize = 0x600;
+    const GFX33_DECODED_BIAS: usize = 0x18;
+    const GFX32_CACHE_BASE: usize = 0x900;
+    const RELATIVE_BASES: [u32; 4] = [0x0c00, 0x1000, 0x1400, 0x1800];
+    let blank = lm_graphics::IndexedTile::new([0; lm_graphics::IndexedTile::PIXEL_COUNT]);
+    let mut cache = vec![blank; CACHE_TILES];
+    copy_tiles_into_cache(&mut cache, 0, &vram.foreground_background)?;
+    copy_tiles_into_cache(&mut cache, 0x400, &vram.sprites)?;
+    if special.gfx33.len() > GFX33_DECODED_BIAS {
+        copy_tiles_into_cache(
+            &mut cache,
+            GFX33_CACHE_BASE,
+            &special.gfx33[GFX33_DECODED_BIAS..],
+        )?;
+    }
+    if let Some(gfx32) = special.gfx32.as_deref() {
+        copy_tiles_into_cache(&mut cache, GFX32_CACHE_BASE, gfx32)?;
+    }
+    let relative_base = RELATIVE_BASES[usize::from(animation.setting & 3)];
+    let mut relative_tiles = vram.foreground_background.clone();
+    relative_tiles.extend_from_slice(&vram.sprites);
+    let relative_capacity = CACHE_TILES.saturating_sub(relative_base as usize);
+    relative_tiles.truncate(relative_capacity);
+    copy_tiles_into_cache(&mut cache, relative_base as usize, &relative_tiles)?;
+
+    let mut triggers = lm_graphics::ExAnimationTriggerPreviewState::default();
+    for index in 0..16 {
+        if animation.trigger_mask & (1 << index) != 0 {
+            triggers.manual_frames[index] = animation.trigger_values[index];
+            triggers.custom[index] = animation.trigger_values[index] != 0;
+        }
+    }
+    let mut state = lm_graphics::ExAnimationPreviewState::new(animation.records.len());
+    let mut fixed_color = None;
+    for substep in 0..=tick {
+        let phase = u8::try_from(substep & 7).expect("three-bit ExAnimation phase");
+        for selected in state.process_phase(&animation.records, phase, true, &mut triggers) {
+            let record = &animation.records[selected.record];
+            if record.kind() < 0x13 {
+                let address = lm_graphics::resolve_exanimation_graphics_address(
+                    record,
+                    selected.frame,
+                    lm_graphics::ExAnimationGraphicsAddressContext {
+                        two_bpp_enabled: (0x0f..=0x12).contains(&record.kind()),
+                        relative_source_base_tile: relative_base,
+                        relative_source_limit_bytes: 0x8000,
+                    },
+                )
+                .map_err(|error| format!("ExAnimation record {}: {error}", selected.record))?;
+                let overrides = lm_graphics::materialize_exanimation_graphics_transfer(
+                    record,
+                    selected.frame,
+                    &cache,
+                    usize::try_from(address.source_tile)
+                        .map_err(|_| "ExAnimation source tile does not fit this platform")?,
+                    address.destination_tile,
+                    address.two_bpp_destination,
+                )
+                .map_err(|error| format!("ExAnimation record {}: {error}", selected.record))?;
+                for entry in overrides {
+                    let destination = usize::try_from(entry.tile_index)
+                        .map_err(|_| "ExAnimation destination tile does not fit this platform")?;
+                    let slot = cache.get_mut(destination).ok_or_else(|| {
+                        format!(
+                            "ExAnimation record {} destination tile {destination:X} is outside the preview cache",
+                            selected.record
+                        )
+                    })?;
+                    *slot = entry.tile;
+                }
+            } else if record.kind() <= 0x1b {
+                let source_color = if record.kind() < 0x18 {
+                    usize::from(
+                        lm_graphics::exanimation_frame_source_word(record, selected.frame)
+                            .map_err(|error| {
+                                format!("ExAnimation record {}: {error}", selected.record)
+                            })?
+                            & 0xff,
+                    )
+                } else {
+                    0
+                };
+                let alternate = selected.frame > u16::from(record.frame_count_minus_one());
+                match lm_graphics::materialize_exanimation_palette_transfer(
+                    record,
+                    selected.frame,
+                    &palette.colors,
+                    source_color,
+                    alternate,
+                )
+                .map_err(|error| format!("ExAnimation record {}: {error}", selected.record))?
+                {
+                    lm_graphics::ExAnimationPaletteTransfer::Palette(overrides) => {
+                        for entry in overrides {
+                            palette.colors[usize::try_from(entry.color_index)
+                                .expect("validated palette index fits usize")] = entry.color;
+                        }
+                    }
+                    lm_graphics::ExAnimationPaletteTransfer::FixedColor(color) => {
+                        fixed_color = Some(color);
+                    }
+                }
+            }
+        }
+    }
+    let foreground_len = vram.foreground_background.len();
+    vram.foreground_background
+        .clone_from_slice(&cache[..foreground_len]);
+    let sprite_len = vram.sprites.len();
+    vram.sprites
+        .clone_from_slice(&cache[0x400..0x400 + sprite_len]);
+    Ok(fixed_color)
+}
+
+fn copy_tiles_into_cache(
+    cache: &mut [lm_graphics::IndexedTile],
+    destination: usize,
+    tiles: &[lm_graphics::IndexedTile],
+) -> Result<(), String> {
+    let end = destination
+        .checked_add(tiles.len())
+        .ok_or_else(|| "ExAnimation cache range overflow".to_owned())?;
+    let cache_len = cache.len();
+    let target = cache.get_mut(destination..end).ok_or_else(|| {
+        format!(
+            "ExAnimation cache has {} tiles; copy requires {destination:X}..{end:X}",
+            cache_len
+        )
+    })?;
+    target.clone_from_slice(tiles);
+    Ok(())
+}
+
 const fn installed_layer2_palette_routing(
     object_backed: bool,
     object_tileset: u8,
@@ -1895,12 +2052,15 @@ fn load_profiled_special_graphics(
 }
 
 fn installed_animation_options(workspace: &Workspace) -> InstalledAnimationOptions {
-    animation_options_from_features(
-        workspace
-            .controller
-            .exanimation_features()
-            .map(|features| features.options),
-    )
+    let features = workspace
+        .controller
+        .exanimation_features()
+        .map(|features| features.options);
+    let mut options = animation_options_from_features(features);
+    options.custom = features
+        .is_none_or(|options| options.enabled(lm_graphics::ExAnimationFeature::LevelExAnimation))
+        && !workspace.controller.assets().exanimation.records.is_empty();
+    options
 }
 
 fn load_installed_layer3(
@@ -2046,6 +2206,7 @@ fn animation_options_from_features(
         palette: features.is_none_or(|options| {
             options.enabled(lm_graphics::ExAnimationFeature::PaletteAnimation)
         }),
+        custom: false,
     }
 }
 
@@ -2062,6 +2223,20 @@ fn installed_preview_animation_phase(seconds: f64) -> usize {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let ticks = (seconds / 0.06).floor() as u64;
     usize::try_from(ticks & 7).expect("three-bit animation phase")
+}
+
+fn installed_preview_animation_tick(seconds: f64) -> usize {
+    if let Ok(tick) = std::env::var("LM_NATIVE_ANIMATION_PHASE")
+        && let Ok(tick) = tick.parse::<usize>()
+    {
+        return tick;
+    }
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return 0;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let ticks = (seconds / 0.06).floor() as u64;
+    usize::try_from(ticks).unwrap_or(usize::MAX)
 }
 
 fn resolve_level_graphics(
@@ -3734,6 +3909,99 @@ mod tests {
         assert_eq!(installed_preview_animation_phase(0.06), 1);
         assert_eq!(installed_preview_animation_phase(0.42), 7);
         assert_eq!(installed_preview_animation_phase(0.48), 0);
+        assert_eq!(installed_preview_animation_tick(f64::NAN), 0);
+        assert_eq!(installed_preview_animation_tick(-1.0), 0);
+        assert_eq!(installed_preview_animation_tick(0.48), 8);
+    }
+
+    #[test]
+    fn installed_level_exanimation_changes_live_vram_and_palette_in_record_phase_order() {
+        let blank = lm_graphics::IndexedTile::new([0; 64]);
+        let mut vram = MaterializedSuperGraphicsVram {
+            foreground_background: vec![blank.clone(); 6 * 128],
+            sprites: vec![blank.clone(); 4 * 128],
+        };
+        let mut gfx32 = vec![blank.clone(); 1];
+        gfx32[0] = lm_graphics::IndexedTile::new([5; 64]);
+        let special = SpecialGraphicsTiles {
+            gfx33: vec![blank; 0x19],
+            gfx32: Some(gfx32),
+        };
+        let animation = lm_graphics::CompactExAnimation {
+            setting: 0,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: vec![
+                lm_graphics::ExAnimationRecord::new(1, 0, 0, 0, false, &[0x00, 0x20], false)
+                    .unwrap(),
+                lm_graphics::ExAnimationRecord::new(0x13, 0, 0, 2, false, &[0x1f, 0x00], false)
+                    .unwrap(),
+            ],
+        };
+        let mut palette = Palette {
+            colors: vec![Bgr555(0); 128],
+        };
+        assert_eq!(
+            apply_level_exanimation_preview(&animation, 1, &mut vram, &special, &mut palette)
+                .unwrap(),
+            None
+        );
+        assert_eq!(vram.foreground_background[0].pixels(), &[5; 64]);
+        assert_eq!(palette.colors[2], Bgr555(0x001f));
+    }
+
+    #[test]
+    fn installed_level_exanimation_advances_past_the_eight_group_scheduler_cycle() {
+        let blank = lm_graphics::IndexedTile::new([0; 64]);
+        let mut vram = MaterializedSuperGraphicsVram {
+            foreground_background: vec![blank.clone(); 6 * 128],
+            sprites: vec![blank.clone(); 4 * 128],
+        };
+        let special = SpecialGraphicsTiles {
+            gfx33: vec![blank; 0x19],
+            gfx32: None,
+        };
+        let animation = lm_graphics::CompactExAnimation {
+            setting: 0,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: vec![
+                lm_graphics::ExAnimationRecord::new(
+                    0x13,
+                    1,
+                    0,
+                    2,
+                    false,
+                    &[0x1f, 0x00, 0xe0, 0x03],
+                    false,
+                )
+                .unwrap(),
+            ],
+        };
+        let mut palette = Palette {
+            colors: vec![Bgr555(0); 128],
+        };
+        apply_level_exanimation_preview(&animation, 8, &mut vram, &special, &mut palette).unwrap();
+        assert_eq!(palette.colors[2], Bgr555(0x03e0));
+    }
+
+    #[test]
+    fn custom_exanimation_keeps_the_preview_clock_active_independently() {
+        let custom_only = InstalledAnimationOptions {
+            vanilla_tiles: false,
+            palette: false,
+            custom: true,
+        };
+        assert_eq!(
+            installed_preview_phases(custom_only, false, 0.12),
+            InstalledPreviewPhases {
+                refresh: Some(2),
+                assets: Some(2),
+                selection: None,
+            }
+        );
     }
 
     #[test]
@@ -3741,6 +4009,7 @@ mod tests {
         let disabled = InstalledAnimationOptions {
             vanilla_tiles: false,
             palette: false,
+            custom: false,
         };
         assert_eq!(
             installed_preview_phases(disabled, false, 0.12),
@@ -3762,6 +4031,7 @@ mod tests {
         let tiles_only = InstalledAnimationOptions {
             vanilla_tiles: true,
             palette: false,
+            custom: false,
         };
         assert_eq!(
             installed_preview_phases(tiles_only, false, 0.12),
