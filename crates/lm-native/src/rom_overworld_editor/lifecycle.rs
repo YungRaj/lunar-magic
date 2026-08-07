@@ -607,6 +607,7 @@ mod tests {
         native_base_graphics_files, native_sprite_graphics_files, parse_slot,
     };
     use lm_graphics::IndexedTile;
+    use lm_rom::RomImage;
     use std::{fs, path::Path};
 
     #[test]
@@ -721,121 +722,149 @@ mod tests {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .join("oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc");
-        let mut app = lm_app::AppState::default();
-        app.load_rom(fs::read(fixture).unwrap()).unwrap();
-        app.dispatch(lm_app::Command::ShowOverworld).unwrap();
-        let mut workspace =
-            decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
-        assert_eq!(
-            (
-                workspace.controller.layer().width,
-                workspace.controller.layer().height,
-            ),
-            (128, 64)
-        );
-        assert_eq!(workspace.assets.map16.set.pages.len(), 0x100);
-        assert_eq!(workspace.assets.graphics.graphics.tiles.len(), 0x200);
-        assert_eq!(
-            workspace.paths.links.len(),
-            workspace.original_paths.links.len()
-        );
-        assert!(!workspace.paths.links.is_empty());
-        let canvas = lm_render::render_smw_overworld_layer2_tilemap(
-            workspace.controller.layer(),
-            &workspace.assets.graphics,
-            &workspace.palette,
-        )
-        .unwrap();
-        assert_eq!((canvas.width(), canvas.height()), (1024, 512));
-        if let Some(path) = std::env::var_os("LM_OVERWORLD_LAYER2_SCREENSHOT_TO") {
-            fs::write(path, lm_render::encode_png(&canvas).unwrap()).unwrap();
-        }
-        assert!(
-            canvas
-                .pixels()
-                .iter()
-                .any(|pixel| { pixel.red != 0 || pixel.green != 0 || pixel.blue != 0 })
-        );
+        let physical = fs::read(fixture).unwrap();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let variants = [physical, physical_image.logical_bytes().to_vec()];
+        let mut logical_results = Vec::new();
+        let mut rendered_pixels = None;
 
-        let original = workspace.controller.layer().tile(12, 9).unwrap();
-        let replacement = original ^ 1;
-        let cells = [(12, 9), (13, 9), (12, 10), (13, 10)];
-        let edits = cells
-            .into_iter()
-            .map(|(x, y)| lm_app::OverworldControllerEdit::SetLayerTile {
-                layer: lm_app::OverworldLayerId::Layer2,
-                x,
-                y,
-                tile: replacement,
-            })
-            .collect::<Vec<_>>();
-        workspace.controller.apply_edits(&edits).unwrap();
-        let command = workspace
-            .controller
-            .prepare_commit(
-                "visual Layer 2 paint regression",
-                lm_rats::AllocationPolicy {
-                    search: 0x0e_0000..0x0f_0000,
-                    bank_size: Some(0x8000),
-                    fill_bytes: vec![0xff, 0],
-                    protected: vec![
-                        lm_rats::ProtectedRange(
-                            lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD
-                                ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD + 2,
-                        ),
-                        lm_rats::ProtectedRange(
-                            lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK
-                                ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK + 1,
-                        ),
-                        lm_rats::ProtectedRange(
-                            lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD
-                                ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD + 2,
-                        ),
-                        lm_rats::ProtectedRange(0x7fdc..0x7fe0),
-                    ],
-                },
+        for original_bytes in variants {
+            let original_image = RomImage::from_bytes(original_bytes.clone()).unwrap();
+            let original_header = original_image.copier_header_bytes().map(<[u8]>::to_vec);
+            let mut app = lm_app::AppState::default();
+            app.load_rom(original_bytes.clone()).unwrap();
+            app.dispatch(lm_app::Command::ShowOverworld).unwrap();
+            let mut workspace =
+                decode_main_layer2_workspace(app.controller_snapshot().unwrap()).unwrap();
+            assert_eq!(
+                (
+                    workspace.controller.layer().width,
+                    workspace.controller.layer().height,
+                ),
+                (128, 64)
+            );
+            assert_eq!(workspace.assets.map16.set.pages.len(), 0x100);
+            assert_eq!(workspace.assets.graphics.graphics.tiles.len(), 0x200);
+            assert_eq!(workspace.paths, workspace.original_paths);
+            assert!(!workspace.paths.links.is_empty());
+            let canvas = lm_render::render_smw_overworld_layer2_tilemap(
+                workspace.controller.layer(),
+                &workspace.assets.graphics,
+                &workspace.palette,
             )
-            .unwrap()
-            .into_command();
-        app.dispatch(command).unwrap();
-        let reopened =
-            lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap()).unwrap();
-        for (x, y) in cells {
-            assert_eq!(reopened.layer.tile(x, y).unwrap(), replacement);
-        }
-        app.dispatch(lm_app::Command::Undo).unwrap();
-        let restored =
-            lm_profile::load_smw_us_v1_main_overworld_layer2(app.project().unwrap()).unwrap();
-        assert_eq!(restored.layer.tile(12, 9).unwrap(), original);
+            .unwrap();
+            assert_eq!((canvas.width(), canvas.height()), (1024, 512));
+            if rendered_pixels.is_none()
+                && let Some(path) = std::env::var_os("LM_OVERWORLD_LAYER2_SCREENSHOT_TO")
+            {
+                fs::write(path, lm_render::encode_png(&canvas).unwrap()).unwrap();
+            }
+            assert!(
+                canvas
+                    .pixels()
+                    .iter()
+                    .any(|pixel| pixel.red != 0 || pixel.green != 0 || pixel.blue != 0)
+            );
+            let pixels = canvas.pixels().to_vec();
+            if let Some(expected) = rendered_pixels.as_ref() {
+                assert_eq!(&pixels, expected);
+            } else {
+                rendered_pixels = Some(pixels);
+            }
 
-        let original_paths = workspace.paths.clone();
-        workspace.paths.links[0].destination.x ^= 1;
-        workspace.paths.links[0].target.x_tile ^= 1;
-        app.dispatch(lm_app::Command::ReplaceNativeOverworldPathLinks {
-            rev: app.project_revision(),
-            table: Box::new(workspace.paths.clone()),
-        })
-        .unwrap();
-        assert_eq!(
-            app.project()
-                .unwrap()
-                .load_overworld_path_links_detected(
-                    lm_profile::smw_us_v1_overworld_path_patch_locator(),
+            let original_tile = workspace.controller.layer().tile(12, 9).unwrap();
+            let replacement = original_tile ^ 1;
+            let cells = [(12, 9), (13, 9), (12, 10), (13, 10)];
+            let edits = cells
+                .into_iter()
+                .map(|(x, y)| lm_app::OverworldControllerEdit::SetLayerTile {
+                    layer: lm_app::OverworldLayerId::Layer2,
+                    x,
+                    y,
+                    tile: replacement,
+                })
+                .collect::<Vec<_>>();
+            workspace.controller.apply_edits(&edits).unwrap();
+            let command = workspace
+                .controller
+                .prepare_commit(
+                    "visual Layer 2 paint regression",
+                    lm_rats::AllocationPolicy {
+                        search: 0x0e_0000..0x0f_0000,
+                        bank_size: Some(0x8000),
+                        fill_bytes: vec![0xff, 0],
+                        protected: vec![
+                            lm_rats::ProtectedRange(
+                                lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD
+                                    ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_LOW_WORD + 2,
+                            ),
+                            lm_rats::ProtectedRange(
+                                lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK
+                                    ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_BANK + 1,
+                            ),
+                            lm_rats::ProtectedRange(
+                                lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD
+                                    ..lm_profile::SMW_US_V1_MAIN_OVERWORLD_LAYER2_HIGH_WORD + 2,
+                            ),
+                            lm_rats::ProtectedRange(0x7fdc..0x7fe0),
+                        ],
+                    },
                 )
                 .unwrap()
-                .table,
-            workspace.paths
-        );
-        app.dispatch(lm_app::Command::Undo).unwrap();
-        assert_eq!(
-            app.project()
-                .unwrap()
-                .load_overworld_path_links_detected(
-                    lm_profile::smw_us_v1_overworld_path_patch_locator(),
-                )
-                .unwrap()
-                .table,
-            original_paths
-        );
+                .into_command();
+            app.dispatch(command).unwrap();
+
+            let original_paths = workspace.paths.clone();
+            workspace.paths.links[0].destination.x ^= 1;
+            workspace.paths.links[0].target.x_tile ^= 1;
+            app.dispatch(lm_app::Command::ReplaceNativeOverworldPathLinks {
+                rev: app.project_revision(),
+                table: Box::new(workspace.paths.clone()),
+            })
+            .unwrap();
+
+            let project = app.project().unwrap();
+            let reopened = lm_profile::load_smw_us_v1_main_overworld_layer2(project).unwrap();
+            for (x, y) in cells {
+                assert_eq!(reopened.layer.tile(x, y).unwrap(), replacement);
+            }
+            assert_eq!(
+                project
+                    .load_overworld_path_links_detected(
+                        lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                    )
+                    .unwrap()
+                    .table,
+                workspace.paths
+            );
+            let result = RomImage::from_bytes(project.save_snapshot()).unwrap();
+            assert_eq!(
+                result.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+            assert!(lm_rom::detect_identity(&result).unwrap().checksum_matches());
+            logical_results.push(result.logical_bytes().to_vec());
+
+            app.dispatch(lm_app::Command::Undo).unwrap();
+            assert_eq!(
+                app.project()
+                    .unwrap()
+                    .load_overworld_path_links_detected(
+                        lm_profile::smw_us_v1_overworld_path_patch_locator(),
+                    )
+                    .unwrap()
+                    .table,
+                original_paths
+            );
+            app.dispatch(lm_app::Command::Undo).unwrap();
+            assert_eq!(app.project().unwrap().save_snapshot(), original_bytes);
+            app.dispatch(lm_app::Command::Redo).unwrap();
+            app.dispatch(lm_app::Command::Redo).unwrap();
+            assert_eq!(
+                app.project().unwrap().rom.logical_bytes(),
+                logical_results.last().unwrap()
+            );
+        }
+        assert_eq!(logical_results[0], logical_results[1]);
     }
 }
