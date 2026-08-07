@@ -332,7 +332,7 @@ impl RomGraphicsEditor {
                 self.begin_direct_external_edit(revision);
             }
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .add_enabled(
                     !stale && !file_work_running,
