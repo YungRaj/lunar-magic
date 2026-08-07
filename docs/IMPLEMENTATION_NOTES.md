@@ -3159,8 +3159,12 @@ Internal user-toolbar routing now includes the original open, save/save-as, next
 exit, undo/redo, overworld, 8x8 graphics, 16x16 Map16, palette, ExAnimation-slot, and Layer 3 editor
 names. Commands that own a level use the actual active level; Layer 3 rejects without one instead of
 inventing a target, while graphics and palette follow the native menu's slot-zero entry behavior.
-Remaining original names that operate editor-local modes, dialogs, toggles, clipboard payloads, or
-installers stay explicitly unsupported until their corresponding typed frontend action exists.
+The editor-local `LM_VIEW_LAYER_1`, `LM_VIEW_LAYER_2`, `LM_VIEW_LAYER_3`, `LM_VIEW_SPRITES`, and
+`LM_VIEW_SPECIAL_WORLD` names now toggle the authoritative canvas visibility or Special World
+rendering state and invalidate both level-render preview paths. They reject when no level is open.
+Remaining original names that operate other editor-local modes, dialogs, toggles, clipboard
+payloads, or installers stay explicitly unsupported until their corresponding typed frontend
+action exists.
 
 User-toolbar process lifecycle now observes exact closed/open document transitions. Per-button
 `LM_AUTORUN_ON_NEW_ROM` enqueues once for each newly opened ROM through the native permission gate,

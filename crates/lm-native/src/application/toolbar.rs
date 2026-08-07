@@ -1,4 +1,4 @@
-use super::NativeApplication;
+use super::{LevelViewVisibility, NativeApplication};
 use crate::frontend_ui;
 use eframe::egui;
 use lm_app::{
@@ -154,6 +154,10 @@ impl NativeApplication {
         match &button.target {
             UserToolbarTarget::Spacer => {}
             UserToolbarTarget::Internal(name) => {
+                if let Some(action) = user_toolbar_local_action(name) {
+                    self.apply_user_toolbar_local_action(action);
+                    return;
+                }
                 match user_toolbar_command(name, self.app.current_level()) {
                     Some(command) => self.dispatch(context, command),
                     None => {
@@ -193,6 +197,21 @@ impl NativeApplication {
                 Err(error) => self.effects.error = Some(error),
             },
         }
+    }
+
+    fn apply_user_toolbar_local_action(&mut self, action: UserToolbarLocalAction) {
+        if self.app.current_level().is_none() {
+            self.effects.error =
+                Some("The user-toolbar view command requires an open level".into());
+            return;
+        }
+        toggle_user_toolbar_view_state(
+            &mut self.level_view_visibility,
+            &mut self.special_world_passed,
+            action,
+        );
+        self.vanilla_level_editor.invalidate_graphics_preview();
+        self.rom_level_assets_editor.invalidate_graphics_preview();
     }
 
     fn handle_frontend_activation(
@@ -381,6 +400,20 @@ fn toolbar_button(
     ui.add_enabled(enabled, button).on_hover_text(label)
 }
 
+fn toggle_user_toolbar_view_state(
+    visibility: &mut LevelViewVisibility,
+    special_world_passed: &mut bool,
+    action: UserToolbarLocalAction,
+) {
+    match action {
+        UserToolbarLocalAction::Layer1 => visibility.layer1 = !visibility.layer1,
+        UserToolbarLocalAction::Layer2 => visibility.layer2 = !visibility.layer2,
+        UserToolbarLocalAction::Layer3 => visibility.layer3 = !visibility.layer3,
+        UserToolbarLocalAction::Sprites => visibility.sprites = !visibility.sprites,
+        UserToolbarLocalAction::SpecialWorld => *special_world_passed = !*special_world_passed,
+    }
+}
+
 fn matching_user_toolbar_buttons(
     toolbar: &lm_app::UserToolbar,
     gestures: &[ShortcutGesture],
@@ -567,6 +600,26 @@ fn user_toolbar_command(name: &str, current_level: Option<u16>) -> Option<Comman
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UserToolbarLocalAction {
+    Layer1,
+    Layer2,
+    Layer3,
+    Sprites,
+    SpecialWorld,
+}
+
+fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
+    Some(match name {
+        "LM_VIEW_LAYER_1" => UserToolbarLocalAction::Layer1,
+        "LM_VIEW_LAYER_2" => UserToolbarLocalAction::Layer2,
+        "LM_VIEW_LAYER_3" => UserToolbarLocalAction::Layer3,
+        "LM_VIEW_SPRITES" => UserToolbarLocalAction::Sprites,
+        "LM_VIEW_SPECIAL_WORLD" => UserToolbarLocalAction::SpecialWorld,
+        _ => return None,
+    })
+}
+
 fn split_command_line(value: &str) -> Result<(String, Vec<String>), String> {
     let mut words = Vec::new();
     let mut word = String::new();
@@ -632,6 +685,14 @@ mod user_toolbar_tests {
         );
         assert_eq!(user_toolbar_command("LM_VIEW_LAYER_3_EDITOR", None), None);
         assert_eq!(user_toolbar_command("LM_UNKNOWN", None), None);
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_LAYER_1"),
+            Some(UserToolbarLocalAction::Layer1)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_SPECIAL_WORLD"),
+            Some(UserToolbarLocalAction::SpecialWorld)
+        );
     }
 
     #[test]
@@ -763,5 +824,27 @@ mod user_toolbar_tests {
             native.effects.external_tools.pending_tool_ids(),
             ["usertoolbar-0"]
         );
+    }
+
+    #[test]
+    fn local_view_actions_toggle_the_same_state_consumed_by_level_rendering() {
+        let mut visibility = LevelViewVisibility::default();
+        let mut special_world = false;
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::Layer1,
+        );
+        assert!(!visibility.layer1);
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::SpecialWorld,
+        );
+        assert!(special_world);
+        let mut native = NativeApplication::default();
+        native.apply_user_toolbar_local_action(UserToolbarLocalAction::Sprites);
+        assert!(native.level_view_visibility.sprites);
+        assert!(native.effects.error.is_some());
     }
 }

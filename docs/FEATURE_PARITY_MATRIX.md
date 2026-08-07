@@ -91,6 +91,12 @@ command or text, and its live top-level window exposes no such menu action. Rust
 denominator. Original fixed-key behavior remains evidence within the affected Level, Map16,
 Graphics, and Overworld workflow rows; external-tool shortcuts remain under Configuration.
 
+The original-compatible user toolbar now routes `LM_VIEW_LAYER_1`, `LM_VIEW_LAYER_2`,
+`LM_VIEW_LAYER_3`, `LM_VIEW_SPRITES`, and `LM_VIEW_SPECIAL_WORLD` through the authoritative canvas
+visibility and Special World state, invalidating both level-preview paths after each accepted
+toggle. This strengthens the Configuration toolbar GUI evidence but does not promote that workflow
+while the remaining internal command table and toolbar variants are incomplete.
+
 ## Workflow ledger
 
 | Area | Original Lunar Magic workflow | Model | Tx | GUI | Oracle | Variants | Status | Primary evidence / next gap |
