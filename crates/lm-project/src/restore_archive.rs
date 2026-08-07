@@ -1730,6 +1730,35 @@ mod tests {
 
     #[test]
     fn authentic_lunar_magic_archive_restores_all_thirteen_associated_files() {
+        let dialog = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/restore-associated-files/dialog-oracle.tsv"
+        );
+        let field = |name: &str, column: usize| {
+            dialog
+                .lines()
+                .find(|line| line.starts_with(name))
+                .unwrap()
+                .split('\t')
+                .nth(column)
+                .unwrap()
+        };
+        assert_eq!(field("command\t", 1), "23B9");
+        assert_eq!(field("record_count\t", 2), "1");
+        assert_eq!(field("selected_record\t", 1), "0");
+        assert_eq!(field("restore_associated_files\t", 2), "true");
+        assert_eq!(field("warning_choice\t", 1), "No");
+        assert_eq!(field("warning_choice\t", 2), "Yes");
+        assert_eq!(
+            field("rom_before_sha256\t", 1),
+            field("rom_after_sha256\t", 1)
+        );
+        assert_eq!(field("archive_after_length\t", 1), "3060");
+        assert_eq!(field("archive_after_length\t", 2), "3343");
+        assert_eq!(field("restored_sidecar_count\t", 1), "0");
+        assert_eq!(
+            field("restored_sidecar_count\t", 2),
+            LUNAR_RESTORE_ASSOCIATED_FILE_COUNT.to_string()
+        );
         let archive = LunarRestoreArchive::decode(include_bytes!(
             "../../../docs/oracle-work/lm363/pristine-us/restore-associated-files/all-sidecars.lrp"
         ))
@@ -1741,25 +1770,29 @@ mod tests {
         );
 
         let restored = archive.restore_associated_files_through(1).unwrap();
-        let expected: [(&str, &[u8]); LUNAR_RESTORE_ASSOCIATED_FILE_COUNT] = [
-            ("msc", include_bytes!("../../lm-rom/Cargo.toml")),
-            ("dsc", include_bytes!("../../lm-snes/Cargo.toml")),
-            ("ssc", include_bytes!("../../lm-rats/Cargo.toml")),
-            ("m16", include_bytes!("../../lm-codec/Cargo.toml")),
-            ("s16", include_bytes!("../../lm-level/Cargo.toml")),
-            ("mwt", include_bytes!("../../lm-graphics/Cargo.toml")),
-            ("mw2", include_bytes!("../../lm-title/Cargo.toml")),
-            ("sscov", include_bytes!("../../lm-overworld/Cargo.toml")),
-            ("s16ov", include_bytes!("../../lm-package/Cargo.toml")),
-            ("lmtbl", include_bytes!("../Cargo.toml")),
-            ("mw0t", include_bytes!("../../lm-render/Cargo.toml")),
-            ("mw0", include_bytes!("../../lm-oracle/Cargo.toml")),
-            ("osc", include_bytes!("../../lm-profile/Cargo.toml")),
+        // These immutable lengths and CRC-32 values describe the source files at capture time.
+        // Do not compare with the live workspace Cargo manifests: unrelated dependency edits must
+        // not invalidate an authentic archived fixture.
+        let expected: [(&str, usize, u32); LUNAR_RESTORE_ASSOCIATED_FILE_COUNT] = [
+            ("msc", 158, 0x8a32_1705),
+            ("dsc", 158, 0xa050_baec),
+            ("ssc", 159, 0x255b_85c6),
+            ("m16", 160, 0xa77e_3dee),
+            ("s16", 160, 0xe6ef_4a61),
+            ("mwt", 163, 0x40a4_7fc7),
+            ("mw2", 192, 0xb600_0a11),
+            ("sscov", 222, 0x83ea_403b),
+            ("s16ov", 241, 0x573e_96ff),
+            ("lmtbl", 454, 0x39b6_8689),
+            ("mw0t", 468, 0x04ef_e88c),
+            ("mw0", 516, 0x87ad_144c),
+            ("osc", 558, 0x8335_067c),
         ];
         assert_eq!(restored.len(), expected.len());
-        for (actual, (extension, bytes)) in restored.iter().zip(expected) {
+        for (actual, (extension, length, crc32)) in restored.iter().zip(expected) {
             assert_eq!(actual.extension, extension);
-            assert_eq!(actual.bytes, bytes);
+            assert_eq!(actual.bytes.len(), length);
+            assert_eq!(restore_crc32(&actual.bytes), crc32);
         }
     }
 

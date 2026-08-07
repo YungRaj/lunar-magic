@@ -42,11 +42,28 @@ Command `$23B8` then opened `Create Full Restore Point`; the accepted descriptio
 `All thirteen compact sidecars`. Lunar Magic published `sysLMRestore/oracle.lrp` without an error
 prompt.
 
+## Original restore dialog
+
+The same isolated setup then drove command `$23B9`, `Restore ROM to Previous State`, using the
+retained archive. The original dialog populated one owner-drawn row with record ID 1, initially had
+no row selected, and defaulted `Restore auxiliary ROM files if present in restore points (.msc,
+.dsc, etc)` on. Selecting row 0 and pressing OK displayed title `WARNING!` and body `THIS WILL
+OVERWRITE YOUR CURRENT ROM AND AUXILIARY FILES!!`, followed by a blank line and `Proceed?`.
+
+Choosing No kept the dialog open with row 0 selected and left both the complete ROM and archive
+SHA-256 unchanged. Choosing Yes closed the open ROM, restored it byte-exactly, published all
+thirteen sidecars with the hashes above, and appended Lunar Magic's successful reversion record:
+the archive grew from 3,060 to 3,343 bytes and changed from SHA-256 `11281c65...781d162` to
+`96af6d8c...f70e0`. `dialog-oracle.tsv` retains the exact complete hashes and observed controls.
+`tools/wine-restore-dialog-oracle.c` performs deterministic record inspection and selection without
+screen-coordinate assumptions.
+
 ## Rust verification
 
 `authentic_lunar_magic_archive_restores_all_thirteen_associated_files` embeds this exact archive,
 validates its header, linked directory, stored checksum, compressed payloads, description, and
 record count, then reconstructs every associated slot through the public Rust reader. Each restored
-byte vector is compared directly with its tracked source file, so slot order, extension identity,
-compression boundaries, stored ranges, and decoded contents are all covered by the normal test
-suite rather than only by this manifest.
+byte vector is compared with its immutable capture-time length and CRC-32, while the table above
+retains its SHA-256. Thus later edits to the source Cargo manifests cannot invalidate the authentic
+fixture, while slot order, extension identity, compression boundaries, stored ranges, and decoded
+contents remain covered by the normal test suite rather than only by this manifest.

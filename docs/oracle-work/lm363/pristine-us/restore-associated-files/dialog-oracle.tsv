@@ -1,0 +1,16 @@
+field	cancel	confirmed_restore
+command	23B9	23B9
+dialog_title	Restore ROM to Previous State	Restore ROM to Previous State
+record_count	1	1
+selected_record	0	0
+selected_record_id	1	1
+restore_associated_files	true	true
+warning_title	WARNING!	WARNING!
+warning_body	THIS WILL OVERWRITE YOUR CURRENT ROM AND AUXILIARY FILES!!\\r\\n\\r\\nProceed?	THIS WILL OVERWRITE YOUR CURRENT ROM AND AUXILIARY FILES!!\\r\\n\\r\\nProceed?
+warning_choice	No	Yes
+rom_before_sha256	5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf	5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf
+rom_after_sha256	5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf	5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf
+archive_before_sha256	11281c65ba9460308a17a5ac6985ae2e036db706c0f2dc74e988f08ab781d162	11281c65ba9460308a17a5ac6985ae2e036db706c0f2dc74e988f08ab781d162
+archive_after_sha256	11281c65ba9460308a17a5ac6985ae2e036db706c0f2dc74e988f08ab781d162	96af6d8c20bf67a210359b210ed0f438bb23e61ffde1ab4b150891cca4af70e0
+archive_after_length	3060	3343
+restored_sidecar_count	0	13

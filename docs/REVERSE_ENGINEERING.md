@@ -802,6 +802,12 @@ Verified symbol coverage after this pass: **1,738 named functions out of 3,912 t
 
 The restore-point list/dialog UI and ExAnimation ROM persistence region through `004b4200` are now labeled. This includes archive list traversal and formatting, save-point selection, restore options and tooltips, ExAnimation engine installation/upgrade, seven level-slot deserialization and serialization, global record storage, packed slot-option flags, allocation cleanup, and coordinated commit behavior.
 
+An isolated Lunar Magic 3.63 command `$23B9` observation now covers that restore dialog itself.
+`HandleRestorePointDialog` (`$004B1990`) initially leaves the single owner-drawn record unselected,
+defaults auxiliary restoration on, and refuses submission until a row is selected. Submission shows
+the destructive `WARNING!` prompt. No preserves the selected dialog and every byte; Yes closes the
+open ROM, restores the ROM and all thirteen files, and appends the successful reversion record.
+
 The 256-byte `RestoreDirectoryRecord` type is now applied to its live global buffer at `00931b48`. The restore archive header storage and all four seven-byte ExAnimation option arrays are also typed, renamed, and plate-commented in the listing.
 
 The `.lrp` reconstruction boundary is now independently authenticated in Rust. The archive begins
