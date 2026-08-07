@@ -3,13 +3,13 @@
 use crate::exanimation_edit_script;
 use lm_app::OverworldControllerEdit;
 use lm_graphics::{Bgr555, PaletteChange, PaletteEntryOwner, PaletteOwnership};
-use lm_overworld::{EventReveal, OverworldEndpoint, OverworldSprite};
+use lm_overworld::{EventReveal, EventRevealTable, OverworldEndpoint, OverworldSprite};
 use std::collections::BTreeSet;
 use std::fmt;
 
 mod values;
 
-use values::{hex, parse_bytes, parse_layer, parse_owner, parse_submap};
+use values::{hex, parse_bytes, parse_layer, parse_owner, parse_submap, signed};
 
 const MAGIC: &str = "LMOWEDT1";
 pub const MAX_SCRIPT_LEN: usize = 256 * 1024;
@@ -193,6 +193,26 @@ fn parse_line(
                 },
             },
         ),
+        ["event-move", first, last, delta_x, delta_y] => {
+            let first = hex::<usize>(line, first)?;
+            let last = hex::<usize>(line, last)?;
+            let start = first.min(last);
+            let end = first.max(last);
+            if end >= EventRevealTable::MAX_ENTRIES {
+                return Err(OverworldEditScriptError::InvalidNumber {
+                    line,
+                    value: format!("{end:x}"),
+                });
+            }
+            push_edit(
+                state,
+                OverworldControllerEdit::RelocateEventReveals {
+                    selection: (start..=end).collect(),
+                    delta_x: signed(line, delta_x)?,
+                    delta_y: signed(line, delta_y)?,
+                },
+            )
+        }
         ["endpoint", index, x, y, submap] => push_edit(
             state,
             OverworldControllerEdit::ReplaceEndpoint {
@@ -251,6 +271,7 @@ fn parse_line(
                     | "palette-owner"
                     | "layer"
                     | "event"
+                    | "event-move"
                     | "endpoint"
                     | "message"
                     | "sprite"
@@ -349,9 +370,17 @@ mod tests {
 
     #[test]
     fn parses_every_complete_overworld_domain() {
-        let script = parse("LMOWEDT1\nslot 0\npalette-owners 10 editable\npalette-owner 2 fixed\nlayer 2 1 2 1234\nevent 0 1 2\nendpoint 0 3 4 5\nmessage 0 1 2 aa\nsprite 0 7 8 9 6 aabb\npalette 3 9234\nanimation trigger 4 aa\n").unwrap();
-        assert_eq!(script.edits.len(), 7);
+        let script = parse("LMOWEDT1\nslot 0\npalette-owners 10 editable\npalette-owner 2 fixed\nlayer 2 1 2 1234\nevent 0 1 2\nevent-move 2 0 -3 4\nendpoint 0 3 4 5\nmessage 0 1 2 aa\nsprite 0 7 8 9 6 aabb\npalette 3 9234\nanimation trigger 4 aa\n").unwrap();
+        assert_eq!(script.edits.len(), 8);
         assert_eq!(script.slot, 0);
+        assert_eq!(
+            script.edits[2],
+            OverworldControllerEdit::RelocateEventReveals {
+                selection: vec![0, 1, 2],
+                delta_x: -3,
+                delta_y: 4,
+            }
+        );
     }
 
     #[test]

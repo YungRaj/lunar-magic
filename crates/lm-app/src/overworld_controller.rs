@@ -38,6 +38,11 @@ pub enum OverworldControllerEdit {
         index: usize,
         reveal: EventReveal,
     },
+    RelocateEventReveals {
+        selection: Vec<usize>,
+        delta_x: i16,
+        delta_y: i16,
+    },
     ReplaceEndpoint {
         index: usize,
         endpoint: OverworldEndpoint,

@@ -1,7 +1,10 @@
 use super::*;
 use crate::{AppError, AppState, Command, FrontendEffect};
 use lm_graphics::{Bgr555, CompactExAnimation, ExAnimationRecord, Palette, PaletteEntryOwner};
-use lm_overworld::{EventRevealTable, OverworldLayer, OverworldMessage, Submap};
+use lm_overworld::{
+    EventRevealTable, OverworldLayer, OverworldMessage, Submap,
+    decode_main_overworld_event_tile_index, encode_main_overworld_event_tile_index,
+};
 use lm_project::{
     CompleteOverworldSaveOptions, EndpointRomLayout, EndpointSaveOptions, EventRevealRomLayout,
     EventRevealSaveOptions, ExAnimationRomLayout, ExAnimationSaveOptions, LevelPointerTable,
@@ -346,6 +349,76 @@ fn multi_cell_layer_gesture_batch_commits_reopens_and_undoes_as_one() {
     let prepared = controller
         .prepare_commit(
             "Paint overworld layer gesture",
+            &save_options(0x8000..0x10000),
+        )
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_complete_overworld(0, layout(), &MODES)
+            .unwrap(),
+        expected
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_complete_overworld(0, layout(), &MODES)
+            .unwrap(),
+        data()
+    );
+    app.dispatch(Command::Redo).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_complete_overworld(0, layout(), &MODES)
+            .unwrap(),
+        expected
+    );
+}
+
+#[test]
+fn event_tile_selection_move_commits_reopens_and_restores_as_one() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    app.dispatch(Command::ShowOverworld).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller = OverworldController::decode(
+        &snapshot,
+        0,
+        layout(),
+        &MODES,
+        PaletteOwnership::editable(16),
+    )
+    .unwrap();
+    let anchor = encode_main_overworld_event_tile_index(20, 30).unwrap() * 2;
+    controller
+        .apply_edits(&[
+            OverworldControllerEdit::ReplaceEventReveal {
+                index: 0,
+                reveal: EventReveal {
+                    source_tile: 1,
+                    destination_tile: anchor,
+                },
+            },
+            OverworldControllerEdit::RelocateEventReveals {
+                selection: vec![0],
+                delta_x: 7,
+                delta_y: -5,
+            },
+        ])
+        .unwrap();
+    assert_eq!(
+        decode_main_overworld_event_tile_index(
+            controller.data().event_reveals.entries[0].destination_tile >> 1
+        ),
+        Some((27, 25))
+    );
+    let expected = controller.data().clone();
+    let prepared = controller
+        .prepare_commit(
+            "Move selected overworld event tiles",
             &save_options(0x8000..0x10000),
         )
         .unwrap();

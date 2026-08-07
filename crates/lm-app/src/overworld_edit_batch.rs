@@ -73,6 +73,19 @@ fn apply_one(
             replace(&mut staged.event_reveals.entries, *index, *reveal)
                 .map_err(|error| OverworldEditBatchError::Edit { command, error })?;
         }
+        OverworldControllerEdit::RelocateEventReveals {
+            selection,
+            delta_x,
+            delta_y,
+        } => {
+            staged
+                .event_reveals
+                .relocate_selection(selection, *delta_x, *delta_y)
+                .map_err(|error| OverworldEditBatchError::Edit {
+                    command,
+                    error: OverworldEditError::EventRevealMove(error),
+                })?;
+        }
         OverworldControllerEdit::ReplaceEndpoint { index, endpoint } => {
             replace(&mut staged.endpoints, *index, *endpoint)
                 .map_err(|error| OverworldEditBatchError::Edit { command, error })?;

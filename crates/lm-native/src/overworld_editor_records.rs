@@ -21,6 +21,10 @@ pub(crate) struct OverworldRecordPanels {
     reveal_index: usize,
     reveal: RevealForm,
     reveal_key: Option<(u64, usize)>,
+    reveal_selection_start: usize,
+    reveal_selection_end: usize,
+    reveal_delta_x: i16,
+    reveal_delta_y: i16,
     endpoint_index: usize,
     endpoint: EndpointForm,
     endpoint_key: Option<(u64, usize)>,
@@ -90,13 +94,54 @@ impl OverworldRecordPanels {
                 ui.text_edit_singleline(field);
             });
         }
-        ui.button("Apply reveal").clicked().then(|| {
-            self.reveal
-                .parse()
-                .map(|reveal| OverworldControllerEdit::ReplaceEventReveal {
+        if ui.button("Apply reveal").clicked() {
+            return Some(self.reveal.parse().map(|reveal| {
+                OverworldControllerEdit::ReplaceEventReveal {
                     index: self.reveal_index,
                     reveal,
-                })
+                }
+            }));
+        }
+        ui.separator();
+        ui.label("Move event-tile selection");
+        let maximum = entries.len() - 1;
+        self.reveal_selection_start = self.reveal_selection_start.min(maximum);
+        self.reveal_selection_end = self.reveal_selection_end.min(maximum);
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::DragValue::new(&mut self.reveal_selection_start)
+                    .range(0..=maximum)
+                    .prefix("First "),
+            );
+            ui.add(
+                egui::DragValue::new(&mut self.reveal_selection_end)
+                    .range(0..=maximum)
+                    .prefix("Last "),
+            );
+        });
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::DragValue::new(&mut self.reveal_delta_x)
+                    .range(-63..=63)
+                    .prefix("X tiles "),
+            );
+            ui.add(
+                egui::DragValue::new(&mut self.reveal_delta_y)
+                    .range(-127..=127)
+                    .prefix("Y tiles "),
+            );
+        });
+        ui.small(
+            "The complete selection uses Lunar Magic's seam-aware shared displacement and 6x6 footprint bounds.",
+        );
+        ui.button("Move selected event tiles").clicked().then(|| {
+            let start = self.reveal_selection_start.min(self.reveal_selection_end);
+            let end = self.reveal_selection_start.max(self.reveal_selection_end);
+            Ok(OverworldControllerEdit::RelocateEventReveals {
+                selection: (start..=end).collect(),
+                delta_x: self.reveal_delta_x,
+                delta_y: self.reveal_delta_y,
+            })
         })
     }
 

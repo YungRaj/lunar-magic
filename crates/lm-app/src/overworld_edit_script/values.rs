@@ -81,3 +81,12 @@ where
             value: value.into(),
         })
 }
+
+pub(super) fn signed(line: usize, value: &str) -> Result<i16, OverworldEditScriptError> {
+    value
+        .parse()
+        .map_err(|_| OverworldEditScriptError::InvalidNumber {
+            line,
+            value: value.into(),
+        })
+}

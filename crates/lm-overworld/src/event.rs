@@ -102,7 +102,185 @@ impl EventRevealTable {
         }
         Ok((sources, destinations))
     }
+
+    /// Moves selected ordinary event-tile records by one shared, seam-aware tile displacement.
+    ///
+    /// Lunar Magic stores each destination as twice an internal main-overworld tile index rather
+    /// than as a row-major coordinate. A normal source expands to a 6x6 event-tile footprint. If
+    /// the requested displacement would put any selected footprint outside the main map, the
+    /// native editor searches X toward zero, then Y toward zero, until the whole selection fits.
+    /// This method reproduces that transaction and never partially moves a selection.
+    ///
+    /// # Errors
+    ///
+    /// Rejects duplicate or out-of-range selection indexes and records whose stored destination
+    /// cannot be decoded as a main-overworld event-tile anchor.
+    pub fn relocate_selection(
+        &mut self,
+        selection: &[usize],
+        requested_x: i16,
+        requested_y: i16,
+    ) -> Result<Option<(i16, i16)>, EventRevealMoveError> {
+        if selection.is_empty() || (requested_x == 0 && requested_y == 0) {
+            return Ok(None);
+        }
+        let mut unique = selection.to_vec();
+        unique.sort_unstable();
+        if let Some(pair) = unique.windows(2).find(|pair| pair[0] == pair[1]) {
+            return Err(EventRevealMoveError::DuplicateIndex(pair[0]));
+        }
+        let mut anchors = Vec::with_capacity(unique.len());
+        for &index in &unique {
+            let reveal = self
+                .entries
+                .get(index)
+                .ok_or(EventRevealMoveError::IndexOutOfBounds {
+                    index,
+                    len: self.entries.len(),
+                })?;
+            let packed = reveal.destination_tile >> 1;
+            let (x, y) = decode_main_overworld_event_tile_index(packed).ok_or(
+                EventRevealMoveError::InvalidDestination {
+                    index,
+                    destination: reveal.destination_tile,
+                },
+            )?;
+            anchors.push((index, x, y));
+        }
+
+        // A displacement beyond the complete map cannot reveal a distinct candidate. Bounding it
+        // here is equivalent to the native endpoint constraint and keeps public callers bounded.
+        let requested_x = requested_x.clamp(-63, 63);
+        let requested_y = requested_y.clamp(-127, 127);
+        let step_x = if requested_x < 0 { 1 } else { -1 };
+        let step_y = if requested_y < 0 { 1 } else { -1 };
+        let mut y = requested_y;
+        while y != step_y {
+            let mut x = requested_x;
+            while x != step_x {
+                let destinations = anchors
+                    .iter()
+                    .map(|&(index, anchor_x, anchor_y)| {
+                        let moved_x = i32::from(anchor_x) + i32::from(x);
+                        let moved_y = i32::from(anchor_y) + i32::from(y);
+                        let moved_x = u8::try_from(moved_x).ok()?;
+                        let moved_y = u8::try_from(moved_y).ok()?;
+                        let packed = encode_main_overworld_event_tile_index(moved_x, moved_y)?;
+                        ordinary_event_footprint_fits(packed).then_some((index, packed << 1))
+                    })
+                    .collect::<Option<Vec<_>>>();
+                if let Some(destinations) = destinations {
+                    if x == 0 && y == 0 {
+                        return Ok(None);
+                    }
+                    let mut staged = self.clone();
+                    for (index, destination_tile) in destinations {
+                        staged.entries[index].destination_tile = destination_tile;
+                    }
+                    *self = staged;
+                    return Ok(Some((x, y)));
+                }
+                x += step_x;
+            }
+            y += step_y;
+        }
+        Ok(None)
+    }
 }
+
+/// Converts Lunar Magic's ordinary main-overworld event coordinate to its internal tile index.
+///
+/// The main map is 64 tiles wide and 128 tiles high. Its two 32-row planes and the seam around row
+/// 64 are stored in the exact order recovered from `ConvertOverworldTileCoordinatesToIndex`.
+#[must_use]
+pub fn encode_main_overworld_event_tile_index(x: u8, y: u8) -> Option<u16> {
+    if x >= 64 || y >= 128 {
+        return None;
+    }
+    let mut stored_y = u16::from(y);
+    if stored_y == 0x40 {
+        stored_y = 0x7f;
+    } else if stored_y > 0x40 {
+        stored_y -= 1;
+    }
+    let mut stored_x = u16::from(x);
+    if stored_y >= 0x40 {
+        stored_x = if stored_x < 2 {
+            stored_x + 0x3e
+        } else {
+            stored_x - 2
+        };
+    }
+    if stored_x > 0x1f {
+        stored_x += 0x3e0;
+    }
+    let index = (((stored_y & !0x1f) + stored_y) * 0x20).checked_add(stored_x)?;
+    (index < 0x2000).then_some(index)
+}
+
+/// Reverses [`encode_main_overworld_event_tile_index`].
+#[must_use]
+pub fn decode_main_overworld_event_tile_index(index: u16) -> Option<(u8, u8)> {
+    if index >= 0x2000 {
+        return None;
+    }
+    let mut low = index & 0x07ff;
+    let right_plane = low > 0x03ff;
+    if right_plane {
+        low -= 0x0400;
+    }
+    let mut y = (index >> 11) * 0x20 + (low >> 5);
+    let mut x = u16::from(right_plane) * 0x20 + (low & 0x1f);
+    if y == 0x7f {
+        y = 0x40;
+    } else if y >= 0x40 {
+        y += 1;
+    }
+    if y >= 0x40 {
+        x = if x < 0x3e { x + 2 } else { x - 0x3e };
+    }
+    Some((u8::try_from(x).ok()?, u8::try_from(y).ok()?))
+}
+
+fn ordinary_event_footprint_fits(index: u16) -> bool {
+    let mut row = u32::from(index) * 2;
+    for _ in 0..6 {
+        let mut destination = row;
+        for _ in 0..6 {
+            if destination >= 0x4000 {
+                return false;
+            }
+            let next = destination + 2;
+            destination = if next & 0x3f == 0 {
+                ((destination + 1) & 0xffc0) + 0x800
+            } else {
+                next
+            };
+        }
+        let next = row + 0x40;
+        row = if next & 0x7c0 == 0 {
+            (row & 0xf83f) + 0x1000
+        } else {
+            next
+        };
+    }
+    true
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventRevealMoveError {
+    DuplicateIndex(usize),
+    IndexOutOfBounds { index: usize, len: usize },
+    InvalidDestination { index: usize, destination: u16 },
+}
+
+impl std::fmt::Display for EventRevealMoveError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "invalid overworld event-tile move: {self:?}")
+    }
+}
+
+impl std::error::Error for EventRevealMoveError {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EventTableError {
@@ -250,6 +428,73 @@ mod tests {
                 tile: 0x800,
             })
         );
+    }
+
+    #[test]
+    fn recovered_main_overworld_event_coordinates_are_bijective() {
+        let mut indexes = std::collections::BTreeSet::new();
+        for y in 0..128 {
+            for x in 0..64 {
+                let index = encode_main_overworld_event_tile_index(x, y).unwrap();
+                assert!(indexes.insert(index), "duplicate {index:04x} for {x},{y}");
+                assert_eq!(decode_main_overworld_event_tile_index(index), Some((x, y)));
+            }
+        }
+        assert_eq!(indexes.len(), 0x2000);
+        assert_eq!(indexes.first(), Some(&0));
+        assert_eq!(indexes.last(), Some(&0x1fff));
+        assert_eq!(encode_main_overworld_event_tile_index(64, 0), None);
+        assert_eq!(encode_main_overworld_event_tile_index(0, 128), None);
+        assert_eq!(decode_main_overworld_event_tile_index(0x2000), None);
+    }
+
+    #[test]
+    fn selection_move_uses_one_constrained_native_displacement_atomically() {
+        let destination = |x, y| encode_main_overworld_event_tile_index(x, y).unwrap() * 2;
+        let mut table = EventRevealTable {
+            entries: vec![
+                EventReveal {
+                    source_tile: 1,
+                    destination_tile: destination(10, 10),
+                },
+                EventReveal {
+                    source_tile: 2,
+                    destination_tile: destination(58, 120),
+                },
+                EventReveal {
+                    source_tile: 3,
+                    destination_tile: destination(20, 20),
+                },
+            ],
+        };
+        let untouched = table.entries[2];
+        // The second footprint crosses Lunar Magic's packed plane boundary for larger deltas. The
+        // native X-first/Y-second search finds (2,3), shared by both selected records.
+        assert_eq!(
+            table.relocate_selection(&[0, 1], 9, 9).unwrap(),
+            Some((2, 3))
+        );
+        assert_eq!(
+            decode_main_overworld_event_tile_index(table.entries[0].destination_tile >> 1),
+            Some((12, 13))
+        );
+        assert_eq!(
+            decode_main_overworld_event_tile_index(table.entries[1].destination_tile >> 1),
+            Some((60, 123))
+        );
+        assert_eq!(table.entries[2], untouched);
+
+        let before = table.clone();
+        assert_eq!(
+            table.relocate_selection(&[0, 0], 1, 1),
+            Err(EventRevealMoveError::DuplicateIndex(0))
+        );
+        assert_eq!(table, before);
+        assert_eq!(
+            table.relocate_selection(&[9], 1, 1),
+            Err(EventRevealMoveError::IndexOutOfBounds { index: 9, len: 3 })
+        );
+        assert_eq!(table, before);
     }
 
     #[test]

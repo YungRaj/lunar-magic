@@ -48,7 +48,9 @@ pub use editing::{
 };
 pub use endpoint::OverworldEndpoint;
 pub use event::{
-    EventId, EventNumberMap, EventReveal, EventRevealTable, EventTableError, EventTileChange,
+    EventId, EventNumberMap, EventReveal, EventRevealMoveError, EventRevealTable, EventTableError,
+    EventTileChange, decode_main_overworld_event_tile_index,
+    encode_main_overworld_event_tile_index,
 };
 pub use event_tilemap::{EventTilemapBufferError, EventTilemapBuffers};
 pub use layer_tilemap::{ExpandedLayerTilemap, ExpandedLayerTilemapError};

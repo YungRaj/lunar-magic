@@ -1,6 +1,6 @@
 use crate::{
-    EventTableError, EventTileChange, OverworldEndpoint, OverworldLayer, OverworldMessage,
-    OverworldSprite, OverworldSpriteError,
+    EventRevealMoveError, EventTableError, EventTileChange, OverworldEndpoint, OverworldLayer,
+    OverworldMessage, OverworldSprite, OverworldSpriteError,
 };
 use std::fmt;
 
@@ -23,6 +23,7 @@ pub enum OverworldEditError {
     },
     Sprite(OverworldSpriteError),
     EventReveal(EventTableError),
+    EventRevealMove(EventRevealMoveError),
 }
 
 impl fmt::Display for OverworldEditError {
@@ -42,6 +43,12 @@ impl From<OverworldSpriteError> for OverworldEditError {
 impl From<EventTableError> for OverworldEditError {
     fn from(error: EventTableError) -> Self {
         Self::EventReveal(error)
+    }
+}
+
+impl From<EventRevealMoveError> for OverworldEditError {
+    fn from(error: EventRevealMoveError) -> Self {
+        Self::EventRevealMove(error)
     }
 }
 
