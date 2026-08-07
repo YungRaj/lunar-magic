@@ -163,6 +163,7 @@ impl BuiltInRuntimeInstaller {
 mod tests {
     use super::*;
     use lm_profile::{smw_us_v1_custom_palette_installation, smw_us_v1_expanded_settings_layout};
+    use lm_rom::{CopierHeader, Mapper, RomImage};
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -419,6 +420,56 @@ mod tests {
         );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn map16_runtime_selection_supports_occupied_expansion_and_both_header_variants() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        for copier_header in [CopierHeader::Absent, CopierHeader::Present] {
+            let mut image = RomImage::from_bytes(pristine.clone()).unwrap();
+            image.expand(Mapper::LoRom, 0x100_000, 0xa5).unwrap();
+            image.update_snes_checksum(0x7fdc).unwrap();
+            image.set_copier_header(copier_header, 0x5a);
+            let original = image.as_file_bytes().to_vec();
+            let original_prefix =
+                (copier_header == CopierHeader::Present).then(|| original[..0x200].to_vec());
+
+            let mut app = AppState::default();
+            app.load_rom(original.clone()).unwrap();
+            let mut installer = BuiltInRuntimeInstaller::default();
+            installer.open(&app);
+            installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::Map16Runtime;
+            let command = installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .prepare(app.project_revision())
+                .unwrap();
+            app.dispatch(command).unwrap();
+
+            let installed = app.project().unwrap();
+            assert_eq!(installed.rom.logical_len(), 0x200_000);
+            assert_eq!(installed.rom.copier_header(), copier_header);
+            if let Some(prefix) = &original_prefix {
+                assert_eq!(&installed.save_snapshot()[..0x200], prefix);
+            }
+            assert_eq!(
+                lm_profile::detect_smw_us_v1_current_map16_runtime(installed.rom.logical_bytes())
+                    .unwrap()
+                    .unwrap()
+                    .payload,
+                0x108000..0x110000
+            );
+            assert!(
+                lm_rom::detect_identity(&installed.rom)
+                    .unwrap()
+                    .checksum_matches()
+            );
+            assert_eq!(installed.history.undo_len(), 1);
+
+            app.dispatch(Command::Undo).unwrap();
+            assert_eq!(app.project().unwrap().save_snapshot(), original);
+        }
     }
 
     #[test]

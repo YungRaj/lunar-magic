@@ -6,8 +6,12 @@ use lm_rom::{IpsError, Mapper, RomError, apply_ips, snes_to_pc};
 use std::{fmt, io::Read};
 
 const FIXED_PATCH_BASE64: &str = include_str!("assets/map16_runtime_fixed.ips.b64");
+#[cfg(test)]
+const STAGE3_TO_STAGE4_ORACLE_IPS_BASE64: &str =
+    include_str!("assets/map16_stage3_to_stage4.ips.b64");
 const AUXILIARY_PAYLOAD_GZIP_BASE64: &str = include_str!("assets/map16_auxiliary.bin.gz.b64");
 const PRISTINE_LOGICAL_LEN: usize = 0x80_000;
+const EXPANDED_LOGICAL_LEN: usize = 0x100_000;
 const AUXILIARY_PAYLOAD_LEN: usize = 0x8000;
 const AUXILIARY_BANK_OPERAND: usize = 0x37_626;
 const STAGED_HOOK_BASE_OFFSET: usize = 0x37_600;
@@ -58,12 +62,17 @@ pub enum SmwUsV1Map16RuntimeGeneration {
 /// Rejects any source that is not the exact pristine logical ROM shape, or malformed embedded
 /// runtime evidence.
 pub fn smw_us_v1_builtin_map16_runtime_installation_plan(
-    pristine: &[u8],
+    source: &[u8],
 ) -> Result<RelocatablePatchPlan, SmwUsV1Map16RuntimeInstallBuildError> {
+    let search_end = match source.len() {
+        PRISTINE_LOGICAL_LEN => EXPANDED_LOGICAL_LEN,
+        EXPANDED_LOGICAL_LEN => 0x200_000,
+        length => return Err(SmwUsV1Map16RuntimeInstallBuildError::PristineLength(length)),
+    };
     smw_us_v1_map16_runtime_installation_plan(
-        pristine,
+        source,
         AllocationPolicy {
-            search: 0x80_000..0x10_0000,
+            search: PRISTINE_LOGICAL_LEN..search_end,
             bank_size: Some(0x8000),
             fill_bytes: vec![0x00, 0xff],
             protected: vec![ProtectedRange(0x7fc0..0x8000)],
@@ -81,6 +90,7 @@ pub enum SmwUsV1Map16RuntimeInstallBuildError {
     Ips(IpsError),
     PatchedLength(usize),
     MissingAuxiliaryBankOperand,
+    MissingAlignedAuxiliarySpace,
 }
 
 #[derive(Debug)]
@@ -562,36 +572,58 @@ impl From<IpsError> for SmwUsV1Map16RuntimeInstallBuildError {
 ///
 /// # Errors
 ///
-/// Rejects a non-pristine-sized source, malformed embedded patch data, an unexpected patched
-/// length, or loss of the recovered auxiliary relocation site.
+/// Rejects a source other than the authenticated 512-KiB or 1-MiB shapes, malformed embedded
+/// patch data, an unexpected patched length, or loss of the recovered auxiliary relocation site.
 pub fn smw_us_v1_map16_runtime_installation_plan(
-    pristine: &[u8],
+    source: &[u8],
     mut allocation: AllocationPolicy,
     checksum_field: usize,
 ) -> Result<RelocatablePatchPlan, SmwUsV1Map16RuntimeInstallBuildError> {
-    if pristine.len() != PRISTINE_LOGICAL_LEN {
+    if !matches!(source.len(), PRISTINE_LOGICAL_LEN | EXPANDED_LOGICAL_LEN) {
         return Err(SmwUsV1Map16RuntimeInstallBuildError::PristineLength(
-            pristine.len(),
+            source.len(),
         ));
     }
     let patch = decode_base64(FIXED_PATCH_BASE64)?;
-    let patched = apply_ips(pristine, &patch)?;
-    if patched.len() != pristine.len() {
+    let patched = apply_ips(source, &patch)?;
+    if patched.len() != source.len() {
         return Err(SmwUsV1Map16RuntimeInstallBuildError::PatchedLength(
             patched.len(),
         ));
     }
     let auxiliary = decode_auxiliary_payload()?;
-    let writes = changed_patch_writes(pristine, &patched, checksum_field)?;
+    let writes = changed_patch_writes(source, &patched, checksum_field)?;
     // Lunar Magic places the eight-byte RATS header immediately before a complete `$8000`-byte
-    // payload bank. The generic allocator's bank constraint includes the header, so reserve the
-    // preceding partial bank explicitly and allocate this one exceptional cross-boundary block
-    // without its ordinary same-bank rule.
-    let first_payload = allocation.search.start + 0x8000;
-    allocation.bank_size = None;
+    // payload bank. The generic allocator's bank constraint includes the header, so reserve each
+    // preceding partial bank explicitly and allocate this exceptional cross-boundary block without
+    // its ordinary same-bank rule. Find the first complete virtual/source fill run explicitly;
+    // protecting only the prefix before that run avoids also protecting an earlier payload bank.
+    let search = allocation.search.clone();
+    let first = search
+        .start
+        .checked_add(0x8000)
+        .ok_or(SmwUsV1Map16RuntimeInstallBuildError::MissingAlignedAuxiliarySpace)?;
+    let last = search
+        .end
+        .checked_sub(AUXILIARY_PAYLOAD_LEN)
+        .ok_or(SmwUsV1Map16RuntimeInstallBuildError::MissingAlignedAuxiliarySpace)?;
+    let payload_start = (first..=last)
+        .step_by(0x8000)
+        .find(|payload_start| {
+            (payload_start - lm_rats::HEADER_LEN..payload_start + AUXILIARY_PAYLOAD_LEN).all(
+                |offset| {
+                    source
+                        .get(offset)
+                        .copied()
+                        .is_none_or(|byte| allocation.fill_bytes.contains(&byte))
+                },
+            )
+        })
+        .ok_or(SmwUsV1Map16RuntimeInstallBuildError::MissingAlignedAuxiliarySpace)?;
     allocation.protected.push(ProtectedRange(
-        allocation.search.start..first_payload - lm_rats::HEADER_LEN,
+        search.start..payload_start - lm_rats::HEADER_LEN,
     ));
+    allocation.bank_size = None;
     Ok(RelocatablePatchPlan {
         description: "Install Lunar Magic Map16 runtime".into(),
         mapper: Mapper::LoRom,
@@ -801,6 +833,36 @@ mod tests {
         assert_eq!(plan.allocation.search, 0x80_000..0x10_0000);
         assert_eq!(plan.checksum_field, crate::SMW_US_V1_CHECKSUM_FIELD);
         assert_eq!(plan.payloads[0].bytes.len(), AUXILIARY_PAYLOAD_LEN);
+    }
+
+    #[test]
+    fn occupied_one_megabyte_source_expands_to_two_and_uses_the_next_auxiliary_bank() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut image = RomImage::from_bytes(original).unwrap();
+        image
+            .expand(Mapper::LoRom, EXPANDED_LOGICAL_LEN, 0xa5)
+            .unwrap();
+        image.update_snes_checksum(0x7fdc).unwrap();
+        let expanded = image.logical_bytes().to_vec();
+
+        let plan = smw_us_v1_builtin_map16_runtime_installation_plan(&expanded).unwrap();
+        assert_eq!(plan.allocation.search, 0x80_000..0x200_000);
+        let mut project = Project::new(RomImage::from_bytes(expanded.clone()).unwrap());
+        let result = project.install_relocatable_patch(&plan).unwrap();
+
+        assert_eq!(project.rom.logical_len(), 0x200_000);
+        assert_eq!(result.blocks[0].header_offset, 0x107ff8);
+        assert_eq!(result.blocks[0].payload, 0x108000..0x110000);
+        assert_eq!(
+            detect_smw_us_v1_current_map16_runtime(project.rom.logical_bytes())
+                .unwrap()
+                .unwrap()
+                .payload,
+            0x108000..0x110000
+        );
+        assert_eq!(project.history.undo_len(), 1);
+        project.undo().unwrap();
+        assert_eq!(project.rom.logical_bytes(), expanded);
     }
 
     #[test]
@@ -1036,29 +1098,43 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires external LM 3.01 and LM 3.63 before/after oracle ROMs"]
     fn external_stage_three_oracle_matches_lunar_magic_upgrade_bytes() {
-        let before = std::fs::read(
-            std::env::var_os("LM_MAP16_STAGE3_BEFORE").expect("LM_MAP16_STAGE3_BEFORE"),
-        )
-        .unwrap();
-        let after = std::fs::read(
-            std::env::var_os("LM_MAP16_STAGE3_AFTER").expect("LM_MAP16_STAGE3_AFTER"),
-        )
-        .unwrap();
-        let before = RomImage::from_bytes(before).unwrap();
-        let after = RomImage::from_bytes(after).unwrap();
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let install = smw_us_v1_builtin_map16_runtime_installation_plan(&original).unwrap();
+        let mut installed = Project::new(RomImage::from_bytes(original).unwrap());
+        installed.install_relocatable_patch(&install).unwrap();
+        let mut stage_three = installed.save_snapshot();
+        stage_three[STAGE_MARKER_OFFSET..STAGE_MARKER_OFFSET + STAGE_THREE_MARKER.len()]
+            .copy_from_slice(&STAGE_THREE_MARKER);
+        stage_three[STAGE_FOUR_HOOK_OFFSET..STAGE_FOUR_HOOK_OFFSET + STAGE_THREE_HOOK.len()]
+            .copy_from_slice(&STAGE_THREE_HOOK);
+        let checksum =
+            compute_snes_checksum(&stage_three, crate::SMW_US_V1_CHECKSUM_FIELD).unwrap();
+        stage_three[crate::SMW_US_V1_CHECKSUM_FIELD..crate::SMW_US_V1_CHECKSUM_FIELD + 4]
+            .copy_from_slice(&checksum.encoded());
+
+        let before = RomImage::from_bytes(stage_three.clone()).unwrap();
         assert_eq!(
             probe_smw_us_v1_map16_runtime_generation(before.logical_bytes()).unwrap(),
             SmwUsV1Map16RuntimeGeneration::StageThreeLegacy
         );
+        let mut physical_before = vec![0; 0x200];
+        physical_before.extend_from_slice(&stage_three);
+        let oracle_patch = decode_base64(STAGE3_TO_STAGE4_ORACLE_IPS_BASE64).unwrap();
+        let oracle_after = apply_ips(&physical_before, &oracle_patch).unwrap();
+        let oracle_after = RomImage::from_bytes(oracle_after).unwrap();
+        assert_eq!(
+            probe_smw_us_v1_map16_runtime_generation(oracle_after.logical_bytes()).unwrap(),
+            SmwUsV1Map16RuntimeGeneration::StageFourCurrent
+        );
+
         let plan = smw_us_v1_stage_three_map16_runtime_migration(before.logical_bytes()).unwrap();
         let mut project = Project::new(before);
         project.install_relocatable_patch(&plan).unwrap();
 
         let editor_only = [
             0x7fdc..0x7fe0,
-            0x7f_08e..0x7f_095,
+            0x7e_ff8..0x7e_fff,
             0x7f_0b6..0x7f_0b8,
             0x7f_0c3..0x7f_0c5,
         ];
@@ -1066,7 +1142,7 @@ mod tests {
             .rom
             .logical_bytes()
             .iter()
-            .zip(after.logical_bytes())
+            .zip(oracle_after.logical_bytes())
             .enumerate()
         {
             if !editor_only.iter().any(|range| range.contains(&offset)) {

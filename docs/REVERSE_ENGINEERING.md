@@ -1420,6 +1420,10 @@ changed only the expected allocation-bank operands (plus ROM size and checksum);
 auxiliary payload was byte-identical. An unchanged complete-container import then isolated the
 runtime itself from secondary user data: its first secondary pointer is fixed storage `$0D9100`,
 the marker is already `$22`, and its sole RATS block is the auxiliary `$8000`-byte payload.
+The Rust installer now accepts both authenticated source shapes, scans real and virtual fill bytes
+for the first bank-aligned auxiliary payload, expands an occupied 1 MiB source to 2 MiB, places its
+RATS header at `$107FF8` and payload at `$108000`, and preserves either copier-header form through
+checksum-valid reopen and byte-exact undo.
 
 The authenticated Rust installer models that result as 302 exact-precondition fixed writes, one
 typed low-bank relocation into an independently allocated auxiliary payload, and regenerated ROM
