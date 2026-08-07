@@ -103,6 +103,9 @@ atlases.
 The `$2404/$2403/$240E` animation commands now pause/resume the shared live preview clock, step one
 60 ms timer tick, and reload preview graphics without falsely resetting the retained frame state.
 This state is consumed consistently by the canvas and all three sprite-list/catalog surfaces. The
+four default-on switch view commands now independently select the recovered green, yellow, blue,
+and red conditional Map16 forms on the live Layer 1/Layer 2 canvas and in both object catalogs.
+Ghidra-backed renderer tests cover all eight page-zero/page-one tile choices. The
 `$2408` tile-grid name
 now controls the original default-off Map16 canvas grid instead of the grid being painted
 unconditionally. The distinct `$23F6` Screen Grid overlay now draws the original orientation-aware

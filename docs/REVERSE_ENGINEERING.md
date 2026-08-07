@@ -3576,3 +3576,12 @@ ExAnimation once and redraws dependent surfaces. Case `$5B` calls
 the loaded graphics caches, and posts a redraw, but does not zero animation counters. Rust
 therefore shares one pausable clock across the canvas and sprite catalogs, advances one 60 ms tick
 for `$2403`, and preserves the frame while rebuilding graphics for `$240E`.
+
+The four published switch-state names map to `$23FB` through `$23FE` and toggle bytes
+`005E7B02` through `005E7B05`; pristine executable data initializes all four bytes to one.
+`PlaceConditionalSingleTilePatternA` at `004251C0` consumes the green byte for extended selector
+`$87`, choosing `$06A` while clear or `$16A` while set. `PlaceConditionalSingleTilePatternB` at
+`004254B0` consumes yellow for selector `$8E`, choosing `$06B/$16B`. Standard-object definition
+slots 24 and 25 at `0042AA50` and `0042B440` consume blue and red respectively, filling the encoded
+rectangle with `$06C/$16C` or `$06D/$16D`. Rust exposes the four flags as one typed default-on
+render state and reapplies it to definitions shared by canvas and catalog rendering.

@@ -348,6 +348,7 @@ pub(crate) struct VanillaLevelEditor {
     animation_last_wall_seconds: f64,
     animation_time_offset_seconds: f64,
     animation_frozen_seconds: f64,
+    switch_view_state: lm_render::LunarMagicSwitchViewState,
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
@@ -2376,6 +2377,16 @@ impl VanillaLevelEditor {
         self.invalidate_graphics_preview();
     }
 
+    pub(crate) fn toolbar_switch_view_toggle(&mut self, switch: u8) {
+        match switch {
+            0 => self.switch_view_state.green = !self.switch_view_state.green,
+            1 => self.switch_view_state.yellow = !self.switch_view_state.yellow,
+            2 => self.switch_view_state.blue = !self.switch_view_state.blue,
+            3 => self.switch_view_state.red = !self.switch_view_state.red,
+            _ => unreachable!("the toolbar exposes exactly four switch-state commands"),
+        }
+    }
+
     fn game_preview_camera_origin(
         &self,
         major_tiles: u16,
@@ -3743,6 +3754,7 @@ impl VanillaLevelEditor {
                 outline_texture: self.outline_texture.as_ref(),
                 surface_outline,
                 line_guide_outline,
+                switch_view_state: self.switch_view_state,
             },
         )
     }
@@ -4007,10 +4019,17 @@ impl VanillaLevelEditor {
                     ui.label("The active standard-object handler map is unavailable.");
                     return;
                 };
-                let Some(definitions) = standard_object_definitions() else {
+                let Some(mut definitions) = standard_object_definitions() else {
                     ui.label("The recovered standard-object definitions are unavailable.");
                     return;
                 };
+                if definitions
+                    .apply_lunar_magic_switch_view_state(self.switch_view_state)
+                    .is_err()
+                {
+                    ui.label("The switch-state object previews are unavailable.");
+                    return;
+                }
                 let selected_command = if layer2 {
                     self.layer2_object_form.command_id
                 } else {
@@ -4178,11 +4197,18 @@ impl VanillaLevelEditor {
                 let object_tileset = self.controller.as_ref().map_or(0, |controller| {
                     controller.level().layer1.header.object_tileset()
                 });
-                let Some(definitions) = standard_object_definitions_for_tileset(object_tileset)
+                let Some(mut definitions) = standard_object_definitions_for_tileset(object_tileset)
                 else {
                     ui.label("The recovered extended-object definitions are unavailable.");
                     return;
                 };
+                if definitions
+                    .apply_lunar_magic_switch_view_state(self.switch_view_state)
+                    .is_err()
+                {
+                    ui.label("The switch-state object previews are unavailable.");
+                    return;
+                }
                 let selectors = extended_object_catalog_selectors(
                     &definitions,
                     &self.extended_object_catalog_filter,
@@ -7526,6 +7552,7 @@ struct OrderedObjectDraw<'a> {
     outline_texture: Option<&'a egui::TextureHandle>,
     surface_outline: bool,
     line_guide_outline: bool,
+    switch_view_state: lm_render::LunarMagicSwitchViewState,
 }
 
 fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
@@ -7552,6 +7579,9 @@ fn draw_ordered_object_tiles(
         )
         .is_err()
         || lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).is_err()
+        || definitions
+            .apply_lunar_magic_switch_view_state(request.switch_view_state)
+            .is_err()
     {
         return artwork_bounds;
     }
@@ -14098,6 +14128,32 @@ mod tests {
             (editor.animation_seconds(30.5) - (1.5 + LUNAR_MAGIC_ANIMATION_TICK_SECONDS)).abs()
                 < 1.0e-9
         );
+    }
+
+    #[test]
+    fn toolbar_switch_commands_toggle_four_independent_default_on_states() {
+        let mut editor = VanillaLevelEditor::default();
+        assert_eq!(
+            editor.switch_view_state,
+            lm_render::LunarMagicSwitchViewState::default()
+        );
+        for switch in 0..4 {
+            editor.toolbar_switch_view_toggle(switch);
+        }
+        assert_eq!(
+            editor.switch_view_state,
+            lm_render::LunarMagicSwitchViewState {
+                green: false,
+                yellow: false,
+                blue: false,
+                red: false,
+            }
+        );
+        editor.toolbar_switch_view_toggle(2);
+        assert!(editor.switch_view_state.blue);
+        assert!(!editor.switch_view_state.green);
+        assert!(!editor.switch_view_state.yellow);
+        assert!(!editor.switch_view_state.red);
     }
 
     #[test]

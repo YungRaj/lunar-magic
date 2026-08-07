@@ -401,6 +401,25 @@ pub struct StandardObjectPaintedCell {
     pub tile: u16,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LunarMagicSwitchViewState {
+    pub green: bool,
+    pub yellow: bool,
+    pub blue: bool,
+    pub red: bool,
+}
+
+impl Default for LunarMagicSwitchViewState {
+    fn default() -> Self {
+        Self {
+            green: true,
+            yellow: true,
+            blue: true,
+            red: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StandardObjectRenderError {
     InvalidCommand(u8),
@@ -596,6 +615,48 @@ impl StandardObjectDefinitionSet {
             .get_mut(usize::from(handler))
             .ok_or(StandardObjectRenderError::InvalidCommand(handler))?;
         *slot = Some(definition);
+        Ok(())
+    }
+
+    /// Applies Lunar Magic's four independent switch-state preview flags.
+    ///
+    /// # Errors
+    ///
+    /// Returns a definition error only if one of the recovered conditional definitions cannot be
+    /// installed.
+    pub fn apply_lunar_magic_switch_view_state(
+        &mut self,
+        state: LunarMagicSwitchViewState,
+    ) -> Result<(), StandardObjectRenderError> {
+        for (selector, active) in [(0x87, state.green), (0x8e, state.yellow)] {
+            self.set_extended(
+                selector,
+                StandardObjectPattern {
+                    width: 1,
+                    height: 1,
+                    tiles: vec![
+                        lunar_magic_conditional_extended_object_tile(selector, active)
+                            .expect("recovered conditional selector"),
+                    ],
+                },
+            )?;
+        }
+        for (handler, active, low_tile) in [(24, state.blue, 0x06c), (25, state.red, 0x06d)] {
+            self.set_handler(
+                handler,
+                StandardObjectDefinition {
+                    pattern: StandardObjectPattern {
+                        width: 1,
+                        height: 1,
+                        tiles: vec![low_tile + if active { 0x100 } else { 0 }],
+                    },
+                    extent: ObjectExtent::SwappedParameterNibbles,
+                    major_expansion: AxisExpansion::Clamp,
+                    minor_expansion: AxisExpansion::Clamp,
+                    renderer: NativeRenderer::Pattern,
+                },
+            )?;
+        }
         Ok(())
     }
 }
@@ -7044,6 +7105,66 @@ mod tests {
             lunar_magic_conditional_extended_object_tile(0x86, false),
             None
         );
+    }
+
+    #[test]
+    fn four_switch_view_flags_independently_select_recovered_conditional_tiles() {
+        let mut definitions = StandardObjectDefinitionSet::empty();
+        install_lunar_magic_shared_extended_objects(&mut definitions).unwrap();
+        install_lunar_magic_shared_standard_objects(&mut definitions).unwrap();
+
+        definitions
+            .apply_lunar_magic_switch_view_state(LunarMagicSwitchViewState {
+                green: false,
+                yellow: true,
+                blue: false,
+                red: true,
+            })
+            .unwrap();
+        assert_eq!(definitions.get_extended(0x87).unwrap().tiles, [0x06a]);
+        assert_eq!(definitions.get_extended(0x8e).unwrap().tiles, [0x16b]);
+
+        for (handler, expected) in [(24, 0x06c), (25, 0x16d)] {
+            let mut handler_map = [0xff; 64];
+            handler_map[1] = handler;
+            let report = render_mapped_standard_object_stream(
+                &ObjectStream {
+                    records: vec![ObjectRecord::new(vec![0, 0x10, 0]).unwrap()],
+                },
+                &definitions,
+                &handler_map,
+                layout(),
+                0x25,
+            )
+            .unwrap();
+            assert_eq!(report.cache.get(layout(), 0, 0).unwrap(), expected);
+        }
+
+        definitions
+            .apply_lunar_magic_switch_view_state(LunarMagicSwitchViewState {
+                green: true,
+                yellow: false,
+                blue: true,
+                red: false,
+            })
+            .unwrap();
+        assert_eq!(definitions.get_extended(0x87).unwrap().tiles, [0x16a]);
+        assert_eq!(definitions.get_extended(0x8e).unwrap().tiles, [0x06b]);
+        for (handler, expected) in [(24, 0x16c), (25, 0x06d)] {
+            let mut handler_map = [0xff; 64];
+            handler_map[1] = handler;
+            let report = render_mapped_standard_object_stream(
+                &ObjectStream {
+                    records: vec![ObjectRecord::new(vec![0, 0x10, 0]).unwrap()],
+                },
+                &definitions,
+                &handler_map,
+                layout(),
+                0x25,
+            )
+            .unwrap();
+            assert_eq!(report.cache.get(layout(), 0, 0).unwrap(), expected);
+        }
     }
 
     #[test]

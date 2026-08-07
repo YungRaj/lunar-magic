@@ -3184,6 +3184,13 @@ tick even while paused. `LM_VIEW_RESET_ANIMATION` (`$240E`) follows the actual d
 than its published name: Lunar Magic reloads the current graphics caches and redraws without
 zeroing its frame counters, so Rust invalidates and rebuilds the preview while preserving the
 shared clock.
+The four switch-state toolbar commands are renderer inputs rather than cosmetic button state.
+`LM_VIEW_GREEN_SWITCH`, `LM_VIEW_YELLOW_SWITCH`, `LM_VIEW_BLUE_SWITCH`, and
+`LM_VIEW_RED_SWITCH` default on independently, matching the executable's four initialized bytes.
+The first two select the `$06A/$16A` and `$06B/$16B` forms of extended objects `$87/$8E`; the
+second pair select `$06C/$16C` and `$06D/$16D` for mapped standard-object handlers 24/25. The
+state is applied to both Layer 1/Layer 2 canvas rendering and the standard/extended placement
+catalogs, so the chosen preview is the object that will visibly be placed.
 `LM_VIEW_TILE_GRID` is separately recovered as command `$2408`. The original command toggles
 `DAT_00E278E5`; `RenderLevelEditorViewportRegion` at `$00453D90` calls
 `DrawLevelMap16ScreenGrid` only while that byte is set, and the pristine executable initializes it
