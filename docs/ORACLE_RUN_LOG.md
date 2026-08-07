@@ -74,3 +74,21 @@ and an invalid `$2000` record; Lunar Magic must retain the last valid duplicate,
 skip the invalid key. The test independently reopens both installed ROM-table entries through Rust.
 It then imports an empty secondary-exit set, requires Lunar Magic to export an empty set, reopens
 both endpoint entries as native zero records, and verifies the final ROM checksum.
+
+## 2026-08-07 — Shared undo-history configuration audit
+
+The executable and pristine ROM hashes match the core audit above. Each original-editor launch used
+an isolated Wine prefix and a unique process name so another Lunar Magic session could not satisfy
+the live-memory observations.
+
+```text
+cargo test -p lm-app --test undo_history_wine \
+  original_lunar_magic_shares_and_clamps_every_undo_history_boundary \
+  -- --ignored --nocapture
+1 passed; 0 failed; finished in 121.16s
+```
+
+The gate proves a fresh prefix applies 33 snapshots to both the level and overworld editors. It then
+sets `UndoMain` to 0, 1, 2, 9, 33, 51, and 52 and reads both original live effective-limit globals.
+Both editors retain every in-range value and independently clamp 52 to 51. Ghidra supplies the
+complementary baseline-counting, disabled-capture, pruning, and reset control-flow evidence.
