@@ -1728,6 +1728,41 @@ mod tests {
     use flate2::{Compression, write::DeflateEncoder};
     use std::io::Write;
 
+    #[test]
+    fn authentic_lunar_magic_archive_restores_all_thirteen_associated_files() {
+        let archive = LunarRestoreArchive::decode(include_bytes!(
+            "../../../docs/oracle-work/lm363/pristine-us/restore-associated-files/all-sidecars.lrp"
+        ))
+        .unwrap();
+        assert_eq!(archive.records.len(), 1);
+        assert_eq!(
+            archive.records[0].description_text(),
+            "All thirteen compact sidecars"
+        );
+
+        let restored = archive.restore_associated_files_through(1).unwrap();
+        let expected: [(&str, &[u8]); LUNAR_RESTORE_ASSOCIATED_FILE_COUNT] = [
+            ("msc", include_bytes!("../../lm-rom/Cargo.toml")),
+            ("dsc", include_bytes!("../../lm-snes/Cargo.toml")),
+            ("ssc", include_bytes!("../../lm-rats/Cargo.toml")),
+            ("m16", include_bytes!("../../lm-codec/Cargo.toml")),
+            ("s16", include_bytes!("../../lm-level/Cargo.toml")),
+            ("mwt", include_bytes!("../../lm-graphics/Cargo.toml")),
+            ("mw2", include_bytes!("../../lm-title/Cargo.toml")),
+            ("sscov", include_bytes!("../../lm-overworld/Cargo.toml")),
+            ("s16ov", include_bytes!("../../lm-package/Cargo.toml")),
+            ("lmtbl", include_bytes!("../Cargo.toml")),
+            ("mw0t", include_bytes!("../../lm-render/Cargo.toml")),
+            ("mw0", include_bytes!("../../lm-oracle/Cargo.toml")),
+            ("osc", include_bytes!("../../lm-profile/Cargo.toml")),
+        ];
+        assert_eq!(restored.len(), expected.len());
+        for (actual, (extension, bytes)) in restored.iter().zip(expected) {
+            assert_eq!(actual.extension, extension);
+            assert_eq!(actual.bytes, bytes);
+        }
+    }
+
     fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
