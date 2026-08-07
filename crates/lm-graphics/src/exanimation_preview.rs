@@ -53,6 +53,9 @@ pub enum ExAnimationMaterializeError {
     PaletteSourceOutOfRange { index: usize, len: usize },
     PaletteDestinationOutOfRange { index: usize, len: usize },
     UnsupportedPaletteKind(u8),
+    InvalidGraphicsSource(u16),
+    InvalidGraphicsDestination(u16),
+    RelativeGraphicsSourceOutOfRange { source: u16, limit_bytes: u32 },
 }
 
 impl fmt::Display for ExAnimationMaterializeError {
@@ -67,6 +70,20 @@ impl std::error::Error for ExAnimationMaterializeError {}
 pub enum ExAnimationPaletteTransfer {
     Palette(Vec<MaterializedPaletteOverride>),
     FixedColor(Bgr555),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExAnimationGraphicsAddressContext {
+    pub two_bpp_enabled: bool,
+    pub relative_source_base_tile: u32,
+    pub relative_source_limit_bytes: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResolvedExAnimationGraphicsAddress {
+    pub source_tile: u32,
+    pub destination_tile: u32,
+    pub two_bpp_destination: bool,
 }
 
 #[must_use]
@@ -94,6 +111,76 @@ pub fn exanimation_frame_source_word(
                 words: bytes.len() / 2,
             })?;
     Ok(u16::from_le_bytes([word[0], word[1]]))
+}
+
+pub fn resolve_exanimation_graphics_address(
+    record: &ExAnimationRecord,
+    frame: u16,
+    context: ExAnimationGraphicsAddressContext,
+) -> Result<ResolvedExAnimationGraphicsAddress, ExAnimationMaterializeError> {
+    let source_word = exanimation_frame_source_word(record, frame)?;
+    let source_tile = if record.destination_flag() {
+        let source_bytes = u32::from(source_word);
+        let transfer_bytes = u32::from(
+            GRAPHICS_TRANSFER_BYTES
+                .get(usize::from(record.kind()))
+                .copied()
+                .filter(|bytes| *bytes != 0)
+                .ok_or(ExAnimationMaterializeError::UnsupportedGraphicsKind(
+                    record.kind(),
+                ))?,
+        );
+        if source_bytes
+            .checked_add(transfer_bytes)
+            .is_none_or(|end| end > context.relative_source_limit_bytes)
+        {
+            return Err(
+                ExAnimationMaterializeError::RelativeGraphicsSourceOutOfRange {
+                    source: source_word,
+                    limit_bytes: context.relative_source_limit_bytes,
+                },
+            );
+        }
+        context
+            .relative_source_base_tile
+            .checked_add(u32::from(source_word >> 5))
+            .ok_or(ExAnimationMaterializeError::InvalidGraphicsSource(
+                source_word,
+            ))?
+    } else if source_word >= 0x7d00 {
+        u32::from((source_word - 0x7d00) >> 5) + 0x600
+    } else if source_word >= 0x2000 {
+        u32::from((source_word - 0x2000) >> 5) + 0x900
+    } else {
+        return Err(ExAnimationMaterializeError::InvalidGraphicsSource(
+            source_word,
+        ));
+    };
+
+    let mut destination = u32::from(record.destination());
+    let mut two_bpp_destination = false;
+    if context.two_bpp_enabled && destination < 0x4000 {
+        destination *= 2;
+        if destination >= 0x4000 {
+            return Err(ExAnimationMaterializeError::InvalidGraphicsDestination(
+                record.destination(),
+            ));
+        }
+        two_bpp_destination = true;
+    }
+    let destination_tile = if destination < 0x4000 {
+        destination >> 4
+    } else if destination < 0x6000 {
+        two_bpp_destination = true;
+        ((destination - 0x4000) >> 3) + 0x1c00
+    } else {
+        ((destination - 0x6000) >> 4) + 0x400
+    };
+    Ok(ResolvedExAnimationGraphicsAddress {
+        source_tile,
+        destination_tile,
+        two_bpp_destination,
+    })
 }
 
 pub fn materialize_exanimation_graphics_transfer(
@@ -643,6 +730,102 @@ mod tests {
         assert_eq!(
             materialize_exanimation_palette_transfer(&invalid_color, 0, &palette, 0, false),
             Err(ExAnimationMaterializeError::InvalidColor(0x8000))
+        );
+    }
+
+    #[test]
+    fn graphics_addresses_cover_absolute_relative_and_two_bpp_regions() {
+        let absolute =
+            ExAnimationRecord::new(1, 0, 0, 0x1230, false, &[0x00, 0x20], false).unwrap();
+        assert_eq!(
+            resolve_exanimation_graphics_address(
+                &absolute,
+                0,
+                ExAnimationGraphicsAddressContext {
+                    two_bpp_enabled: false,
+                    relative_source_base_tile: 0,
+                    relative_source_limit_bytes: 0,
+                }
+            )
+            .unwrap(),
+            ResolvedExAnimationGraphicsAddress {
+                source_tile: 0x900,
+                destination_tile: 0x123,
+                two_bpp_destination: false,
+            }
+        );
+
+        let upper = ExAnimationRecord::new(1, 0, 0, 0x4008, false, &[0, 0x7d], false).unwrap();
+        assert_eq!(
+            resolve_exanimation_graphics_address(
+                &upper,
+                0,
+                ExAnimationGraphicsAddressContext {
+                    two_bpp_enabled: false,
+                    relative_source_base_tile: 0,
+                    relative_source_limit_bytes: 0,
+                }
+            )
+            .unwrap(),
+            ResolvedExAnimationGraphicsAddress {
+                source_tile: 0x600,
+                destination_tile: 0x1c01,
+                two_bpp_destination: true,
+            }
+        );
+
+        let relative = ExAnimationRecord::new(1, 0, 0, 0x0100, true, &[0x40, 0], false).unwrap();
+        assert_eq!(
+            resolve_exanimation_graphics_address(
+                &relative,
+                0,
+                ExAnimationGraphicsAddressContext {
+                    two_bpp_enabled: true,
+                    relative_source_base_tile: 0x80,
+                    relative_source_limit_bytes: 0x100,
+                }
+            )
+            .unwrap(),
+            ResolvedExAnimationGraphicsAddress {
+                source_tile: 0x82,
+                destination_tile: 0x20,
+                two_bpp_destination: true,
+            }
+        );
+    }
+
+    #[test]
+    fn graphics_address_validation_rejects_unmapped_and_oversized_ranges() {
+        let unmapped = ExAnimationRecord::new(1, 0, 0, 0, false, &[0xff, 0x1f], false).unwrap();
+        assert_eq!(
+            resolve_exanimation_graphics_address(
+                &unmapped,
+                0,
+                ExAnimationGraphicsAddressContext {
+                    two_bpp_enabled: false,
+                    relative_source_base_tile: 0,
+                    relative_source_limit_bytes: 0,
+                }
+            ),
+            Err(ExAnimationMaterializeError::InvalidGraphicsSource(0x1fff))
+        );
+        let relative = ExAnimationRecord::new(2, 0, 0, 0, true, &[0xe0, 0], false).unwrap();
+        assert_eq!(
+            resolve_exanimation_graphics_address(
+                &relative,
+                0,
+                ExAnimationGraphicsAddressContext {
+                    two_bpp_enabled: false,
+                    relative_source_base_tile: 0,
+                    relative_source_limit_bytes: 0x100,
+                }
+            ),
+            Err(
+                ExAnimationMaterializeError::RelativeGraphicsSourceOutOfRange {
+                    source: 0x00e0,
+                    limit_bytes: 0x100,
+                }
+            )
         );
     }
 }

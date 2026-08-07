@@ -3723,3 +3723,10 @@ color instead of a CGRAM entry. Kinds `$18..$1B` rotate the destination range: `
 `$1A` left, while `$19/$1B` swap direction under the alternate trigger state. Rust represents
 palette and fixed-color results as distinct transfer variants, validates every source, destination,
 and literal before publication, and emits exact ordered palette overrides for all four rotations.
+
+For absolute graphics sources, the record loop maps words `$2000..$7CFF` to cache tile `$900+`
+and `$7D00+` to tile `$600+`. Relative-source records add `source_word / 32` to the active slot
+base after checking the complete transfer against its word limit. Destinations below `$4000` use
+16-byte tile addressing (optionally doubled for 2bpp support), `$4000..$5FFF` map at 8-byte
+granularity to tile `$1C00+`, and `$6000+` map back to tile `$400+`. Rust exposes the same bounded
+address resolver so live preview cannot silently reinterpret invalid source or destination words.
