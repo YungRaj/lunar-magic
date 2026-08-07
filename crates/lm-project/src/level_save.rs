@@ -654,6 +654,71 @@ mod tests {
     }
 
     #[test]
+    fn screen_exit_edits_reopen_and_undo_across_every_mapper_and_copier_variant() {
+        let mut edited = LoadedLevelSlot {
+            number: 0,
+            layer1: LevelObjectData::parse(&[0, 0, 0, 0, 0, 0x85, 0x0a, 0x00, 0x34, 0xff]).unwrap(),
+            sprites: level().sprites,
+        };
+        let variants = [Mapper::LoRom, Mapper::Sa1, Mapper::ExLoRom];
+
+        for mapper in variants {
+            for requested in [0x0000, 0x1000] {
+                edited.layer1.objects.records[0]
+                    .set_screen_exit(0x1f, requested)
+                    .unwrap();
+                let expected_length = if requested < 0x1000 { 4 } else { 5 };
+                let expected_destination = requested | 0x0400;
+                let mut logical_results = Vec::new();
+
+                for copier_header in [false, true] {
+                    let prefix: Vec<u8> = copier_header
+                        .then(|| (0..0x200).map(|index| (index as u8) ^ 0xa5).collect())
+                        .unwrap_or_default();
+                    let mut physical = prefix.clone();
+                    physical.extend(vec![0xff; 0x8000]);
+                    let mut project = Project::new(RomImage::from_bytes(physical).unwrap());
+                    let before = project.save_snapshot();
+                    let mut variant_layout = layout();
+                    variant_layout.mapper = mapper;
+                    let options = LevelSaveOptions {
+                        layer1_allocation: policy(),
+                        sprite_allocation: policy(),
+                        previous_layer1: None,
+                        previous_sprites: None,
+                        reuse_identical: true,
+                        erase_fill: 0xff,
+                    };
+
+                    project
+                        .save_level_slot(
+                            variant_layout,
+                            &edited,
+                            &SpriteLengthTable::standard(),
+                            &options,
+                        )
+                        .unwrap();
+                    let reopened = project
+                        .load_level_slot(0, variant_layout, &SpriteLengthTable::standard())
+                        .unwrap();
+                    let exit_record = &reopened.layer1.objects.records[0];
+                    let exit = exit_record.screen_exit().unwrap();
+                    assert_eq!(exit_record.encoded().len(), expected_length);
+                    assert_eq!(exit.screen, 0x1f);
+                    assert_eq!(exit.destination_and_flags, expected_destination);
+                    assert_eq!(&project.save_snapshot()[..prefix.len()], prefix);
+                    logical_results.push(project.rom.logical_bytes().to_vec());
+
+                    assert!(project.undo().unwrap());
+                    assert_eq!(project.save_snapshot(), before);
+                }
+
+                assert_eq!(logical_results[0], logical_results[1]);
+            }
+        }
+    }
+
+    #[test]
     fn level_save_supports_sprite_framing_transitions() {
         let lengths = SpriteLengthTable::standard();
         let options = LevelSaveOptions {
