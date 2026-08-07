@@ -262,6 +262,21 @@ impl NativeApplication {
             UserToolbarLocalAction::FiveYoshiCoins => {
                 self.vanilla_level_editor.toolbar_five_yoshi_coins_toggle()
             }
+            UserToolbarLocalAction::CustomTrigger(trigger) => self
+                .vanilla_level_editor
+                .toolbar_custom_trigger_toggle(trigger),
+            UserToolbarLocalAction::OneShotTrigger(trigger) => self
+                .vanilla_level_editor
+                .toolbar_one_shot_trigger_toggle(trigger),
+            UserToolbarLocalAction::ManualTrigger { trigger, delta } => self
+                .vanilla_level_editor
+                .toolbar_manual_trigger_adjust(trigger, delta),
+            UserToolbarLocalAction::TriggerSelection { family, delta } => self
+                .vanilla_level_editor
+                .toolbar_trigger_selection_adjust(family, delta),
+            UserToolbarLocalAction::CurrentTrigger { family, delta } => self
+                .vanilla_level_editor
+                .toolbar_current_trigger_action(family, delta),
             UserToolbarLocalAction::Background512Height => {
                 self.vanilla_level_editor
                     .toolbar_background_512_height_toggle();
@@ -537,6 +552,11 @@ fn toggle_user_toolbar_view_state(
         | UserToolbarLocalAction::HaveStar
         | UserToolbarLocalAction::Time100
         | UserToolbarLocalAction::FiveYoshiCoins
+        | UserToolbarLocalAction::CustomTrigger(_)
+        | UserToolbarLocalAction::OneShotTrigger(_)
+        | UserToolbarLocalAction::ManualTrigger { .. }
+        | UserToolbarLocalAction::TriggerSelection { .. }
+        | UserToolbarLocalAction::CurrentTrigger { .. }
         | UserToolbarLocalAction::Background512Height
         | UserToolbarLocalAction::Translucent
         | UserToolbarLocalAction::ZoomDefault
@@ -766,6 +786,11 @@ enum UserToolbarLocalAction {
     HaveStar,
     Time100,
     FiveYoshiCoins,
+    CustomTrigger(u8),
+    OneShotTrigger(u8),
+    ManualTrigger { trigger: u8, delta: i8 },
+    TriggerSelection { family: u8, delta: i8 },
+    CurrentTrigger { family: u8, delta: i8 },
     Background512Height,
     Translucent,
     ZoomToggle,
@@ -777,6 +802,18 @@ enum UserToolbarLocalAction {
 const ROM_LEVEL_TOOLBAR_ZOOM_STEP: i16 = 100;
 
 fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
+    if let Some(trigger) = hexadecimal_suffix(name, "LM_VIEW_CUSTOM_TRIGGER_", 0x0f) {
+        return Some(UserToolbarLocalAction::CustomTrigger(trigger));
+    }
+    if let Some(trigger) = hexadecimal_suffix(name, "LM_VIEW_ONESHOT_TRIGGER_", 0x1f) {
+        return Some(UserToolbarLocalAction::OneShotTrigger(trigger));
+    }
+    if let Some(trigger) = hexadecimal_suffix(name, "LM_VIEW_MANUAL_TRIGGER_INC_", 0x0f) {
+        return Some(UserToolbarLocalAction::ManualTrigger { trigger, delta: 1 });
+    }
+    if let Some(trigger) = hexadecimal_suffix(name, "LM_VIEW_MANUAL_TRIGGER_DEC_", 0x0f) {
+        return Some(UserToolbarLocalAction::ManualTrigger { trigger, delta: -1 });
+    }
     Some(match name {
         "LM_VIEW_LAYER_1" => UserToolbarLocalAction::Layer1,
         "LM_VIEW_LAYER_2" => UserToolbarLocalAction::Layer2,
@@ -809,6 +846,46 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_HAVE_STAR" => UserToolbarLocalAction::HaveStar,
         "LM_VIEW_TIME_100" => UserToolbarLocalAction::Time100,
         "LM_VIEW_5YOSHI_COINS" => UserToolbarLocalAction::FiveYoshiCoins,
+        "LM_VIEW_CUSTOM_TRIGGER_INC" => UserToolbarLocalAction::TriggerSelection {
+            family: 0,
+            delta: 1,
+        },
+        "LM_VIEW_CUSTOM_TRIGGER_DEC" => UserToolbarLocalAction::TriggerSelection {
+            family: 0,
+            delta: -1,
+        },
+        "LM_VIEW_ONESHOT_TRIGGER_INC" => UserToolbarLocalAction::TriggerSelection {
+            family: 1,
+            delta: 1,
+        },
+        "LM_VIEW_ONESHOT_TRIGGER_DEC" => UserToolbarLocalAction::TriggerSelection {
+            family: 1,
+            delta: -1,
+        },
+        "LM_VIEW_MANUAL_TRIGGER_INC" => UserToolbarLocalAction::TriggerSelection {
+            family: 2,
+            delta: 1,
+        },
+        "LM_VIEW_MANUAL_TRIGGER_DEC" => UserToolbarLocalAction::TriggerSelection {
+            family: 2,
+            delta: -1,
+        },
+        "LM_VIEW_CUSTOM_TRIGGER_CURRENT" => UserToolbarLocalAction::CurrentTrigger {
+            family: 0,
+            delta: 0,
+        },
+        "LM_VIEW_ONESHOT_TRIGGER_CURRENT" => UserToolbarLocalAction::CurrentTrigger {
+            family: 1,
+            delta: 0,
+        },
+        "LM_VIEW_MANUAL_TRIGGER_CURRENT_INC" => UserToolbarLocalAction::CurrentTrigger {
+            family: 2,
+            delta: 1,
+        },
+        "LM_VIEW_MANUAL_TRIGGER_CURRENT_DEC" => UserToolbarLocalAction::CurrentTrigger {
+            family: 2,
+            delta: -1,
+        },
         "LM_VIEW_512HEIGHT_BG" => UserToolbarLocalAction::Background512Height,
         "LM_VIEW_TRANSLUCENT" => UserToolbarLocalAction::Translucent,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
@@ -817,6 +894,15 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_ZOOM_MINUS" => UserToolbarLocalAction::ZoomMinus,
         _ => return None,
     })
+}
+
+fn hexadecimal_suffix(name: &str, prefix: &str, maximum: u8) -> Option<u8> {
+    let suffix = name.strip_prefix(prefix)?;
+    if suffix.is_empty() || suffix.len() > 2 {
+        return None;
+    }
+    let value = u8::from_str_radix(suffix, 16).ok()?;
+    (value <= maximum).then_some(value)
 }
 
 fn split_command_line(value: &str) -> Result<(String, Vec<String>), String> {
@@ -971,6 +1057,47 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_5YOSHI_COINS"),
             Some(UserToolbarLocalAction::FiveYoshiCoins)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_CUSTOM_TRIGGER_A"),
+            Some(UserToolbarLocalAction::CustomTrigger(0x0a))
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ONESHOT_TRIGGER_1F"),
+            Some(UserToolbarLocalAction::OneShotTrigger(0x1f))
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_MANUAL_TRIGGER_INC_F"),
+            Some(UserToolbarLocalAction::ManualTrigger {
+                trigger: 0x0f,
+                delta: 1,
+            })
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_MANUAL_TRIGGER_DEC_0"),
+            Some(UserToolbarLocalAction::ManualTrigger {
+                trigger: 0,
+                delta: -1,
+            })
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ONESHOT_TRIGGER_INC"),
+            Some(UserToolbarLocalAction::TriggerSelection {
+                family: 1,
+                delta: 1,
+            })
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_MANUAL_TRIGGER_CURRENT_DEC"),
+            Some(UserToolbarLocalAction::CurrentTrigger {
+                family: 2,
+                delta: -1,
+            })
+        );
+        assert_eq!(user_toolbar_local_action("LM_VIEW_CUSTOM_TRIGGER_10"), None);
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ONESHOT_TRIGGER_20"),
+            None
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_512HEIGHT_BG"),

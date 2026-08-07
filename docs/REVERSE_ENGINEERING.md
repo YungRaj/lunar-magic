@@ -3677,3 +3677,11 @@ the entire level-editor surface. `ProcessExAnimationRecordGroup` at `00459F60` c
 bytes for trigger types 4, 5/6, and 7/8. Rust retains the three independent default-off preview
 states, invalidates the graphics preview when they change, and exposes the original user-toolbar
 tokens without mutating authored ExAnimation records.
+
+The trigger-preview toolbar command families occupy `$2648..$26A1`. Dispatcher cases `$C2/$C3`
+toggle 16 custom-trigger and 32 one-shot-trigger bytes; `$C4/$C5` increment or decrement one of 16
+manual-trigger frame bytes with byte wrapping. Cases `$C6..$CB` wrap the selected custom, one-shot,
+or manual index over 16, 32, or 16 entries, and `$CC..$CF` forward the corresponding current-index
+action. Every state-changing action uses redraw mode 4. Rust parses the complete hexadecimal token
+families, retains the same independent arrays and selectors, applies the same wrapping rules, and
+invalidates the graphics preview only for actions that change rendered trigger state.

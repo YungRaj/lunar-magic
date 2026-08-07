@@ -350,6 +350,7 @@ pub(crate) struct VanillaLevelEditor {
     animation_frozen_seconds: f64,
     switch_view_state: lm_render::LunarMagicSwitchViewState,
     conditional_view_state: lm_render::LunarMagicConditionalViewState,
+    exanimation_trigger_view_state: ExAnimationTriggerViewState,
     blue_pow_active: bool,
     silver_pow_active: bool,
     background_512_height: bool,
@@ -411,6 +412,34 @@ pub(crate) struct VanillaLevelEditor {
     external_asset_revision: u64,
     external_sprite_textures:
         HashMap<lm_render::RemappedCustomSpritePreviewTile, egui::TextureHandle>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ExAnimationTriggerViewState {
+    custom: [bool; 16],
+    one_shot: [bool; 32],
+    manual_frames: [u8; 16],
+    selected_custom: u8,
+    selected_one_shot: u8,
+    selected_manual: u8,
+}
+
+impl ExAnimationTriggerViewState {
+    fn select_custom(&mut self, delta: i8) {
+        self.selected_custom = wrapping_index(self.selected_custom, delta, 16);
+    }
+
+    fn select_one_shot(&mut self, delta: i8) {
+        self.selected_one_shot = wrapping_index(self.selected_one_shot, delta, 32);
+    }
+
+    fn select_manual(&mut self, delta: i8) {
+        self.selected_manual = wrapping_index(self.selected_manual, delta, 16);
+    }
+}
+
+fn wrapping_index(value: u8, delta: i8, modulus: u8) -> u8 {
+    (i16::from(value) + i16::from(delta)).rem_euclid(i16::from(modulus)) as u8
 }
 
 impl VanillaLevelEditor {
@@ -2471,6 +2500,49 @@ impl VanillaLevelEditor {
         self.conditional_view_state.five_yoshi_coins =
             !self.conditional_view_state.five_yoshi_coins;
         self.invalidate_graphics_preview();
+    }
+
+    pub(crate) fn toolbar_custom_trigger_toggle(&mut self, trigger: u8) {
+        let state = &mut self.exanimation_trigger_view_state.custom[usize::from(trigger & 0x0f)];
+        *state = !*state;
+        self.invalidate_graphics_preview();
+    }
+
+    pub(crate) fn toolbar_one_shot_trigger_toggle(&mut self, trigger: u8) {
+        let state = &mut self.exanimation_trigger_view_state.one_shot[usize::from(trigger & 0x1f)];
+        *state = !*state;
+        self.invalidate_graphics_preview();
+    }
+
+    pub(crate) fn toolbar_manual_trigger_adjust(&mut self, trigger: u8, delta: i8) {
+        let frame =
+            &mut self.exanimation_trigger_view_state.manual_frames[usize::from(trigger & 0x0f)];
+        *frame = frame.wrapping_add_signed(delta);
+        self.invalidate_graphics_preview();
+    }
+
+    pub(crate) fn toolbar_trigger_selection_adjust(&mut self, family: u8, delta: i8) {
+        match family {
+            0 => self.exanimation_trigger_view_state.select_custom(delta),
+            1 => self.exanimation_trigger_view_state.select_one_shot(delta),
+            2 => self.exanimation_trigger_view_state.select_manual(delta),
+            _ => unreachable!("the toolbar exposes exactly three trigger selectors"),
+        }
+    }
+
+    pub(crate) fn toolbar_current_trigger_action(&mut self, family: u8, delta: i8) {
+        match family {
+            0 => self
+                .toolbar_custom_trigger_toggle(self.exanimation_trigger_view_state.selected_custom),
+            1 => self.toolbar_one_shot_trigger_toggle(
+                self.exanimation_trigger_view_state.selected_one_shot,
+            ),
+            2 => self.toolbar_manual_trigger_adjust(
+                self.exanimation_trigger_view_state.selected_manual,
+                delta,
+            ),
+            _ => unreachable!("the toolbar exposes exactly three current-trigger actions"),
+        }
     }
 
     pub(crate) fn toolbar_background_512_height_toggle(&mut self) {
@@ -14595,6 +14667,42 @@ mod tests {
                 (14, egui::Color32::RED),
             ]
         );
+    }
+
+    #[test]
+    fn exanimation_trigger_toolbar_states_match_native_ranges_and_wrapping() {
+        let mut editor = VanillaLevelEditor::default();
+        assert_eq!(
+            editor.exanimation_trigger_view_state,
+            ExAnimationTriggerViewState::default()
+        );
+
+        editor.toolbar_custom_trigger_toggle(0x0a);
+        editor.toolbar_one_shot_trigger_toggle(0x1f);
+        editor.toolbar_manual_trigger_adjust(0x0f, -1);
+        assert!(editor.exanimation_trigger_view_state.custom[0x0a]);
+        assert!(editor.exanimation_trigger_view_state.one_shot[0x1f]);
+        assert_eq!(
+            editor.exanimation_trigger_view_state.manual_frames[0x0f],
+            0xff
+        );
+
+        editor.toolbar_trigger_selection_adjust(0, -1);
+        editor.toolbar_trigger_selection_adjust(1, -1);
+        editor.toolbar_trigger_selection_adjust(2, -1);
+        assert_eq!(editor.exanimation_trigger_view_state.selected_custom, 0x0f);
+        assert_eq!(
+            editor.exanimation_trigger_view_state.selected_one_shot,
+            0x1f
+        );
+        assert_eq!(editor.exanimation_trigger_view_state.selected_manual, 0x0f);
+
+        editor.toolbar_current_trigger_action(0, 0);
+        editor.toolbar_current_trigger_action(1, 0);
+        editor.toolbar_current_trigger_action(2, 1);
+        assert!(editor.exanimation_trigger_view_state.custom[0x0f]);
+        assert!(!editor.exanimation_trigger_view_state.one_shot[0x1f]);
+        assert_eq!(editor.exanimation_trigger_view_state.manual_frames[0x0f], 0);
     }
 
     #[test]
