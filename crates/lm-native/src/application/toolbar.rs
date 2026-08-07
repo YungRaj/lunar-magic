@@ -421,6 +421,7 @@ fn toggle_user_toolbar_view_state(
         UserToolbarLocalAction::Layer3 => visibility.layer3 = !visibility.layer3,
         UserToolbarLocalAction::Sprites => visibility.sprites = !visibility.sprites,
         UserToolbarLocalAction::SpecialWorld => *special_world_passed = !*special_world_passed,
+        UserToolbarLocalAction::TileGrid => visibility.tile_grid = !visibility.tile_grid,
         UserToolbarLocalAction::ZoomToggle
         | UserToolbarLocalAction::ZoomDefault
         | UserToolbarLocalAction::ZoomPlus
@@ -623,6 +624,7 @@ enum UserToolbarLocalAction {
     Layer3,
     Sprites,
     SpecialWorld,
+    TileGrid,
     ZoomToggle,
     ZoomDefault,
     ZoomPlus,
@@ -638,6 +640,7 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_LAYER_3" => UserToolbarLocalAction::Layer3,
         "LM_VIEW_SPRITES" => UserToolbarLocalAction::Sprites,
         "LM_VIEW_SPECIAL_WORLD" => UserToolbarLocalAction::SpecialWorld,
+        "LM_VIEW_TILE_GRID" => UserToolbarLocalAction::TileGrid,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
         "LM_VIEW_ZOOM_DEFAULT" => UserToolbarLocalAction::ZoomDefault,
         "LM_VIEW_ZOOM_PLUS" => UserToolbarLocalAction::ZoomPlus,
@@ -734,6 +737,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_ZOOM_MINUS"),
             Some(UserToolbarLocalAction::ZoomMinus)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_TILE_GRID"),
+            Some(UserToolbarLocalAction::TileGrid)
         );
     }
 
@@ -884,6 +891,13 @@ mod user_toolbar_tests {
             UserToolbarLocalAction::SpecialWorld,
         );
         assert!(special_world);
+        assert!(!visibility.tile_grid);
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::TileGrid,
+        );
+        assert!(visibility.tile_grid);
         let mut native = NativeApplication::default();
         native.apply_user_toolbar_local_action(UserToolbarLocalAction::Sprites);
         assert!(native.level_view_visibility.sprites);

@@ -3224,6 +3224,7 @@ mod tests {
                 layer2: true,
                 layer3: false,
                 sprites: false,
+                tile_grid: false,
             },
             &layer2,
             &layer1,

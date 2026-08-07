@@ -2565,7 +2565,9 @@ impl VanillaLevelEditor {
         // Paint the editor grid after the level artwork. Drawing opaque grid lines underneath
         // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
         if editor_overlays {
-            draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+            if tile_grid_visible(editor_overlays, visibility) {
+                draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+            }
             let alternate_vertical_layout =
                 lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout;
             let level = self.controller.as_ref().map_or(0, |controller| {
@@ -5166,6 +5168,13 @@ fn draw_object_grid(
     for row in 0..=rows {
         draw_grid_line(painter, rect, cell, row, false);
     }
+}
+
+fn tile_grid_visible(
+    editor_overlays: bool,
+    visibility: crate::application::LevelViewVisibility,
+) -> bool {
+    editor_overlays && visibility.tile_grid
 }
 
 fn pasted_text(ui: &egui::Ui) -> Option<String> {
@@ -9377,6 +9386,7 @@ mod tests {
             layer2: true,
             layer3: false,
             sprites: false,
+            tile_grid: false,
         };
         assert!(!placement_mode_visible(
             CanvasPlacementMode::Object,
@@ -13388,6 +13398,15 @@ mod tests {
         assert_eq!(clamp_canvas_zoom(0), ROM_LEVEL_CANVAS_MIN_ZOOM);
         assert_eq!(clamp_canvas_zoom(275), 275);
         assert_eq!(clamp_canvas_zoom(u16::MAX), ROM_LEVEL_CANVAS_MAX_ZOOM);
+    }
+
+    #[test]
+    fn tile_grid_requires_both_the_original_display_flag_and_editor_overlays() {
+        let mut visibility = crate::application::LevelViewVisibility::default();
+        assert!(!tile_grid_visible(true, visibility));
+        visibility.tile_grid = true;
+        assert!(tile_grid_visible(true, visibility));
+        assert!(!tile_grid_visible(false, visibility));
     }
 
     #[test]

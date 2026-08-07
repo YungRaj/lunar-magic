@@ -89,6 +89,7 @@ pub(crate) struct LevelViewVisibility {
     pub layer2: bool,
     pub layer3: bool,
     pub sprites: bool,
+    pub tile_grid: bool,
 }
 
 impl Default for LevelViewVisibility {
@@ -98,6 +99,7 @@ impl Default for LevelViewVisibility {
             layer2: true,
             layer3: true,
             sprites: true,
+            tile_grid: false,
         }
     }
 }

@@ -3170,6 +3170,11 @@ and initially 200-percent remembered nondefault value. The native canvas stores 
 value, so toggling to default and back restores the exact last nondefault zoom. `LM_VIEW_ZOOM`
 still requires the original popup-menu surface and `LM_VIEW_ZOOM_FILTER` still requires modeled
 raster-filter behavior.
+`LM_VIEW_TILE_GRID` is separately recovered as command `$2408`. The original command toggles
+`DAT_00E278E5`; `RenderLevelEditorViewportRegion` at `$00453D90` calls
+`DrawLevelMap16ScreenGrid` only while that byte is set, and the pristine executable initializes it
+to zero. The native view model now carries the same default-off flag, the toolbar name toggles it,
+and the canvas emits its Map16 grid only when both the flag and editor-overlay mode are active.
 Remaining original names that operate other editor-local modes, dialogs, toggles, clipboard
 payloads, or installers stay explicitly unsupported until their corresponding typed frontend
 action exists.
