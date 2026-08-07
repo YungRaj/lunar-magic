@@ -143,9 +143,77 @@ pub fn prepare_declared_mwl_import(
 
 #[cfg(test)]
 mod tests {
-    use super::discover_mwl_directory;
+    use super::{discover_mwl_directory, prepare_declared_mwl_import};
+    use crate::{ControllerSnapshot, EditorMode, ProfiledControllerSnapshot};
+    use lm_level::{MwlFile, SpriteLengthTable};
+    use lm_project::{
+        ExAnimationRomLayout, InstalledExAnimationRomLayout, InstalledLayout, LevelPointerTable,
+        MwlNativeLevel, Project,
+    };
+    use lm_rom::{Mapper, RomImage, detect_identity};
     use std::fs;
+    use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn installed_fixture(headered: bool) -> ProfiledControllerSnapshot {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let physical = fs::read(
+            root.join("oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/after.smc"),
+        )
+        .unwrap();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let rom_bytes = if headered {
+            physical
+        } else {
+            physical_image.logical_bytes().to_vec()
+        };
+        let image = RomImage::from_bytes(rom_bytes.clone()).unwrap();
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = Mapper::LoRom;
+        profile.level = lm_profile::smw_us_v1_vanilla_level_layout();
+        profile.level.sprites = lm_profile::smw_us_v1_sprite_pointer_table(&image).unwrap();
+        profile.layer2 = Some(lm_profile::smw_us_v1_layer2_layout(&image).unwrap());
+        profile.palette = lm_profile::smw_us_v1_custom_palette_layout();
+        profile.palette_installation = InstalledLayout::Unconditional(profile.palette);
+        profile.exanimation = ExAnimationRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: 0x8138b,
+                entries: 0x200,
+                stride: 3,
+            },
+            maximum_records: 32,
+            maximum_encoded_len: 0x8000,
+        };
+        profile.exanimation_installation =
+            InstalledLayout::Unconditional(InstalledExAnimationRomLayout {
+                payload: profile.exanimation,
+                pointer_presence_mask: 0x00ff_0000,
+                pointer_locator: None,
+            });
+        profile.exanimation_feature_installation = InstalledLayout::Absent;
+        profile.expanded_settings = Some(lm_profile::smw_us_v1_expanded_settings_layout());
+        profile.map16.mapper = Mapper::LoRom;
+        profile.graphics.mapper = Mapper::LoRom;
+        profile.overworld.layers.mapper = Mapper::LoRom;
+        profile.overworld.event_reveals.mapper = Mapper::LoRom;
+        profile.overworld.endpoints.mapper = Mapper::LoRom;
+        profile.overworld.messages.mapper = Mapper::LoRom;
+        profile.overworld.sprites.mapper = Mapper::LoRom;
+        profile.overworld.palette.mapper = Mapper::LoRom;
+        profile.overworld.animation.mapper = Mapper::LoRom;
+        profile.validate().unwrap();
+        ProfiledControllerSnapshot {
+            snapshot: ControllerSnapshot {
+                revision: 17,
+                mode: EditorMode::Level(0),
+                identity: detect_identity(&image).unwrap(),
+                document_path: None,
+                rom_bytes,
+            },
+            profile,
+        }
+    }
 
     #[test]
     fn directory_selection_matches_visible_file_contract() {
@@ -175,5 +243,63 @@ mod tests {
         );
         assert_eq!(listing.hidden_skipped, 1);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn installed_binary_mwl_import_is_identical_across_copier_header_variants() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let source_file = MwlFile::decode(
+            &fs::read(root.join(
+                "oracle-work/lm363/pristine-us/mwl-layer3-settings-positive/exported/Level 000.mwl",
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let mut source = MwlNativeLevel::decode(
+            &source_file,
+            &SpriteLengthTable::standard(),
+            32,
+            &[false; 256],
+        )
+        .unwrap();
+        let prior_background = source.layer1.header.background_color();
+        source
+            .layer1
+            .header
+            .set_background_color((prior_background + 1) & 7)
+            .unwrap();
+        let encoded = source
+            .encode(&SpriteLengthTable::standard(), &[false; 256])
+            .unwrap()
+            .encode()
+            .unwrap();
+
+        let mut results = Vec::new();
+        for headered in [true, false] {
+            let profiled = installed_fixture(headered);
+            let original_image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone()).unwrap();
+            let original_header = original_image.copier_header_bytes().map(<[u8]>::to_vec);
+            let (level, prepared) = prepare_declared_mwl_import(
+                &profiled,
+                &encoded,
+                0x080000..original_image.logical_len(),
+            )
+            .unwrap();
+            assert_eq!(level, 0);
+            assert_eq!(prepared.expected_revision, 17);
+            assert!(!prepared.mutation.is_empty());
+
+            let mut project = Project::new(original_image);
+            project
+                .apply_mutation(&prepared.description, &prepared.mutation)
+                .unwrap();
+            assert_eq!(
+                project.rom.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+            assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+            results.push(project.rom.logical_bytes().to_vec());
+        }
+        assert_eq!(results[0], results[1]);
     }
 }

@@ -4331,3 +4331,9 @@ those decoded assets without reducing RGB24 colors to BGR555. Internal `$3100/$F
 continue through the authenticated editor-text cache. `resource_routes_materialize_all_recovered_submap_cache_tables`,
 `resource_raster_retains_ten_bit_tiles_and_external_rgb_assets`, the authentic-ROM overworld open,
 and the full 230-test renderer suite cover this live composition boundary.
+
+Binary MWL import/export is physical-ROM invariant for the supported installed SMW-US runtime.
+An authentic Lunar Magic level export with a semantic Layer 1 header change crosses the
+profile-derived transactional import on both headered and headerless copies, retains or omits the
+copier header exactly, repairs each checksum, and yields identical logical ROMs. Existing batch
+export evidence covers all 512 levels across the same two physical forms.
