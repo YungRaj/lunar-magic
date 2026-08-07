@@ -3747,10 +3747,11 @@ composite preview state preserves that domain order and those limits while keepi
 cursor and trigger state for the two arrays. The installed level preview currently supplies its
 staged level set through this shared state. The installed global provider follows the selected
 runtime hook already authenticated by the revision profile, changes its chained-operand displacement
-to `$5C`, and treats a masked-zero 24-bit value as Lunar Magic's intentional empty global set.
+to the split bank byte at `$5C` and low word at `$65`, and treats their masked-zero combined
+24-bit value as Lunar Magic's intentional empty global set.
 Present tagged or bounded payloads decode through the same compact-record limits as per-level data,
 then execute before the staged level records against the same mutable tile and palette cache. The
-same resolved `$5C` operand is now the publication target for global edits: canonical compact bytes
+same resolved `$5C`/`$65` operand pair is now the publication target for global edits: canonical compact bytes
 are allocated copy-on-write, the runtime pointer and checksum publish in one transaction, optional
 reclamation requires exact prior RATS ownership, and absent or unauthenticated runtimes remain hard
 errors rather than implicit installations.

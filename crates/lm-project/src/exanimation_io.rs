@@ -1,7 +1,7 @@
 use crate::{
     ChainedSnesPointerLocator, InstalledAsset, InstalledLayout, InstalledLayoutError,
-    LevelLoadError, LevelPointerTable, LoadedPayload, PayloadLoadError, PayloadReadPolicy,
-    PayloadReclamation, PayloadSaveError, PayloadSaveRequest, PayloadSaveResult,
+    LevelLoadError, LevelPointerTable, LoadedPayload, PayloadLoadError, PayloadPointer,
+    PayloadReadPolicy, PayloadReclamation, PayloadSaveError, PayloadSaveRequest, PayloadSaveResult,
     PointerLocatorError, Project,
 };
 use lm_graphics::{CompactExAnimation, ExAnimationError};
@@ -124,8 +124,8 @@ impl Project {
     /// hook shared with the per-level pointer-table locator.
     ///
     /// Ghidra's `LoadGlobalExAnimationData` (`0045FDF0`) follows that hook and reads the global
-    /// payload pointer at runtime offset `$5C`. An all-zero selected pointer is an intentional
-    /// empty global set.
+    /// split payload pointer: the bank byte is at runtime offset `$5C` and the low word is at
+    /// `$65`. An all-zero combined pointer is an intentional empty global set.
     ///
     /// # Errors
     ///
@@ -151,7 +151,6 @@ impl Project {
         installation: InstalledLayout<InstalledExAnimationRomLayout>,
         double_size_modes: &[bool],
     ) -> Result<LoadedInstalledGlobalExAnimation, ExAnimationIoError> {
-        const GLOBAL_POINTER_DISPLACEMENT: isize = 0x5c;
         let Some(installed) = installation.resolve(&self.rom)? else {
             return Ok(LoadedInstalledGlobalExAnimation {
                 asset: InstalledAsset::SubsystemAbsent,
@@ -165,13 +164,19 @@ impl Project {
                 installed.pointer_presence_mask,
             ));
         }
-        let mut locator = installed
+        let locator = installed
             .pointer_locator
             .ok_or(ExAnimationIoError::GlobalPointerLocatorUnavailable)?;
-        locator.final_operand_displacement = GLOBAL_POINTER_DISPLACEMENT;
-        let operand = locator.final_operand_offset(&self.rom)?;
-        let bytes = self.rom.read(operand, 3).map_err(PayloadLoadError::Rom)?;
-        let raw = u32::from(bytes[0]) | u32::from(bytes[1]) << 8 | u32::from(bytes[2]) << 16;
+        let (low_word_offset, bank_offset) = global_pointer_offsets(locator, &self.rom)?;
+        let low = self
+            .rom
+            .read(low_word_offset, 2)
+            .map_err(PayloadLoadError::Rom)?;
+        let bank = self
+            .rom
+            .read(bank_offset, 1)
+            .map_err(PayloadLoadError::Rom)?[0];
+        let raw = u32::from(low[0]) | u32::from(low[1]) << 8 | u32::from(bank) << 16;
         if raw & installed.pointer_presence_mask == 0 {
             return Ok(LoadedInstalledGlobalExAnimation {
                 asset: InstalledAsset::SlotEmpty,
@@ -201,7 +206,7 @@ impl Project {
     }
 
     /// Saves Lunar Magic's ROM-global compact `ExAnimation` set through the installed runtime's
-    /// `$5C` payload-pointer field.
+    /// split payload pointer (bank at runtime `+$5C`, low word at `+$65`).
     ///
     /// This refuses to invent the expanded runtime and uses the same checked, copy-on-write RATS
     /// transaction as per-level animation saves.
@@ -500,6 +505,24 @@ fn exanimation_save_request_at_pointer(
     double_size_modes: &[bool],
     options: &ExAnimationSaveOptions,
 ) -> Result<PayloadSaveRequest, ExAnimationIoError> {
+    exanimation_save_request_with_pointer(
+        description,
+        pointer_offset.into(),
+        animation,
+        layout,
+        double_size_modes,
+        options,
+    )
+}
+
+fn exanimation_save_request_with_pointer(
+    description: &str,
+    pointer: PayloadPointer,
+    animation: &CompactExAnimation,
+    layout: ExAnimationRomLayout,
+    double_size_modes: &[bool],
+    options: &ExAnimationSaveOptions,
+) -> Result<PayloadSaveRequest, ExAnimationIoError> {
     validate_size_modes(double_size_modes)?;
     let payload = animation.encode(double_size_modes)?;
     if payload.len() > layout.maximum_encoded_len {
@@ -516,7 +539,7 @@ fn exanimation_save_request_at_pointer(
     Ok(PayloadSaveRequest {
         description: description.into(),
         payload,
-        pointer: pointer_offset.into(),
+        pointer,
         mapper: layout.mapper,
         allocation_policy: options.allocation.clone(),
         previous_block: options.previous_block.clone(),
@@ -533,7 +556,6 @@ fn installed_global_exanimation_save_request(
     double_size_modes: &[bool],
     options: &ExAnimationSaveOptions,
 ) -> Result<PayloadSaveRequest, ExAnimationIoError> {
-    const GLOBAL_POINTER_DISPLACEMENT: isize = 0x5c;
     let installed = installation
         .resolve(rom)?
         .ok_or(InstalledLayoutError::NotInstalled("global ExAnimation"))?;
@@ -542,19 +564,39 @@ fn installed_global_exanimation_save_request(
             installed.pointer_presence_mask,
         ));
     }
-    let mut locator = installed
+    let locator = installed
         .pointer_locator
         .ok_or(ExAnimationIoError::GlobalPointerLocatorUnavailable)?;
-    locator.final_operand_displacement = GLOBAL_POINTER_DISPLACEMENT;
-    let pointer_offset = locator.final_operand_offset(rom)?;
-    exanimation_save_request_at_pointer(
+    let (low_word_offset, bank_offset) = global_pointer_offsets(locator, rom)?;
+    exanimation_save_request_with_pointer(
         "save global ExAnimation",
-        pointer_offset,
+        PayloadPointer::Split {
+            low_word_offset,
+            bank_offset,
+            shared_bank: false,
+        },
         animation,
         installed.payload,
         double_size_modes,
         options,
     )
+}
+
+fn global_pointer_offsets(
+    mut locator: ChainedSnesPointerLocator,
+    rom: &lm_rom::RomImage,
+) -> Result<(usize, usize), PointerLocatorError> {
+    const GLOBAL_BANK_DISPLACEMENT: isize = 0x5c;
+    const GLOBAL_LOW_WORD_DELTA: usize = 9;
+    locator.final_operand_displacement = GLOBAL_BANK_DISPLACEMENT;
+    let bank_offset = locator.final_operand_offset(rom)?;
+    let low_word_offset = bank_offset.checked_add(GLOBAL_LOW_WORD_DELTA).ok_or(
+        PointerLocatorError::DisplacementOverflow {
+            target: bank_offset,
+            displacement: GLOBAL_LOW_WORD_DELTA as isize,
+        },
+    )?;
+    Ok((low_word_offset, bank_offset))
 }
 
 fn validate_size_modes(double_size_modes: &[bool]) -> Result<(), ExAnimationIoError> {
@@ -765,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn installed_global_exanimation_follows_runtime_offset_5c_and_distinguishes_empty() {
+    fn installed_global_exanimation_follows_split_runtime_pointer_and_distinguishes_empty() {
         let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
         let mut concrete = layout();
         concrete.pointers.offset = 0x1000;
@@ -782,10 +824,8 @@ mod tests {
             0x11,
             pc_to_snes(Mapper::LoRom, runtime_target).unwrap(),
         );
-        project
-            .rom
-            .write(runtime_target + 0x5c, &[0, 0, 0])
-            .unwrap();
+        project.rom.write(runtime_target + 0x5c, &[0]).unwrap();
+        project.rom.write(runtime_target + 0x65, &[0, 0]).unwrap();
         let installed = InstalledLayout::Alternatives {
             primary: crate::GatedLayout {
                 marker: crate::InstallationMarker {
@@ -812,7 +852,11 @@ mod tests {
         );
         project
             .rom
-            .write(runtime_target + 0x5c, &payload_pointer)
+            .write(runtime_target + 0x5c, &payload_pointer[2..3])
+            .unwrap();
+        project
+            .rom
+            .write(runtime_target + 0x65, &payload_pointer[..2])
             .unwrap();
         assert_eq!(
             project
@@ -828,7 +872,7 @@ mod tests {
     }
 
     #[test]
-    fn installed_global_exanimation_save_reopens_and_undoes_through_runtime_offset_5c() {
+    fn installed_global_exanimation_save_reopens_and_undoes_through_split_runtime_pointer() {
         let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
         let runtime_target = 0x7000;
         project.rom.write(0x10, &[0x22]).unwrap();
@@ -837,10 +881,8 @@ mod tests {
             0x11,
             pc_to_snes(Mapper::LoRom, runtime_target).unwrap(),
         );
-        project
-            .rom
-            .write(runtime_target + 0x5c, &[0, 0, 0])
-            .unwrap();
+        project.rom.write(runtime_target + 0x5c, &[0]).unwrap();
+        project.rom.write(runtime_target + 0x65, &[0, 0]).unwrap();
         let installed = InstalledLayout::Alternatives {
             primary: crate::GatedLayout {
                 marker: crate::InstallationMarker {
@@ -863,7 +905,8 @@ mod tests {
         let mut save_options = options();
         save_options.allocation.protected = vec![
             ProtectedRange(0x10..0x14),
-            ProtectedRange(runtime_target + 0x5c..runtime_target + 0x5f),
+            ProtectedRange(runtime_target + 0x5c..runtime_target + 0x5d),
+            ProtectedRange(runtime_target + 0x65..runtime_target + 0x67),
             ProtectedRange(0x7fdc..0x7fe0),
         ];
 
@@ -911,6 +954,93 @@ mod tests {
             ]
         );
         assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
+    }
+
+    #[test]
+    #[ignore = "requires retained Lunar Magic 3.63 ExAnimation installation ROM"]
+    fn retained_lunar_magic_runtime_uses_split_empty_global_pointer_and_accepts_save() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../oracle-work/lm363/pristine-us/exanimation-install-positive/after.smc");
+        assert!(path.is_file(), "missing {}", path.display());
+        let mut project = Project::new(RomImage::from_bytes(std::fs::read(path).unwrap()).unwrap());
+        let original = project.save_snapshot();
+        let installed = InstalledLayout::Alternatives {
+            primary: crate::GatedLayout {
+                marker: crate::InstallationMarker {
+                    offset: 0x28_3ad,
+                    expected: 0x22,
+                },
+                layout: InstalledExAnimationRomLayout {
+                    payload: ExAnimationRomLayout {
+                        mapper: Mapper::LoRom,
+                        pointers: LevelPointerTable {
+                            offset: 0,
+                            entries: 0x200,
+                            stride: 3,
+                        },
+                        maximum_records: 0x40,
+                        maximum_encoded_len: 0x8000,
+                    },
+                    pointer_presence_mask: 0x00ff_0000,
+                    pointer_locator: Some(ChainedSnesPointerLocator {
+                        mapper: Mapper::LoRom,
+                        first_operand_offset: 0x28_3ae,
+                        final_operand_displacement: 0xea,
+                    }),
+                },
+            },
+            fallback: None,
+        };
+        let concrete = installed.resolve(&project.rom).unwrap().unwrap();
+        assert_eq!(
+            concrete
+                .resolve(&project.rom)
+                .unwrap()
+                .payload
+                .pointers
+                .offset,
+            0x81_181
+        );
+        assert_eq!(
+            project
+                .load_installed_global_exanimation(installed, &[false; 256])
+                .unwrap(),
+            InstalledAsset::SlotEmpty
+        );
+
+        let options = ExAnimationSaveOptions {
+            allocation: AllocationPolicy {
+                search: 0x90_000..0x98_000,
+                bank_size: Some(0x8000),
+                fill_bytes: vec![0xff, 0],
+                protected: vec![
+                    ProtectedRange(0x28_3ad..0x28_3b2),
+                    ProtectedRange(0x80_549 + 0x5c..0x80_549 + 0x5d),
+                    ProtectedRange(0x80_549 + 0x65..0x80_549 + 0x67),
+                    ProtectedRange(0x7fdc..0x7fe0),
+                ],
+            },
+            previous_block: None,
+            reuse_identical: false,
+            erase_fill: 0xff,
+        };
+        project
+            .save_installed_global_exanimation_with_checksum(
+                &animation(),
+                installed,
+                &[false; 256],
+                0x7fdc,
+                &options,
+            )
+            .unwrap();
+        assert_eq!(
+            project
+                .load_installed_global_exanimation(installed, &[false; 256])
+                .unwrap(),
+            InstalledAsset::Present(animation())
+        );
+        assert!(project.undo().unwrap());
         assert_eq!(project.save_snapshot(), original);
     }
 

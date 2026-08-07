@@ -3821,6 +3821,14 @@ the ROM and history unchanged. Focused tests reopen the migrated semantics and p
 Undo/Redo across LoROM, ExLoROM, SA-1, and headered/headerless physical forms. The surrounding
 fresh runtime installation and separate old pointer-hook rewrite remain distinct open gates.
 
+The retained current runtime also corrected an earlier synthetic-only assumption about global
+storage. `ResolveGraphicsRuntimeDataOffset` (`0045C790`) does not read one contiguous operand at
+`+$5C`: it combines the bank byte there with the low word at `+$65`. Global load/save and exact
+owner reclamation now use that split pointer, and ROM-aware allocation policy protects its one-byte
+and two-byte components independently. The retained Lunar Magic 3.63 installed ROM begins with
+both components zero; a focused live-fixture test recognizes that as empty, allocates and reopens a
+canonical global payload through the split fields, then restores the exact source ROM with Undo.
+
 `InstalledExAnimationFeatureRomLayout` follows the expanded-animation hook's mapped runtime target
 to the feature-table operand. Its installed load/save entry points first resolve Lunar Magic's
 primary/fallback expanded-ExAnimation installation gate, then use the resolved storage. That outer

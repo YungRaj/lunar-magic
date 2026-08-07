@@ -153,8 +153,6 @@ impl RevisionProfile {
                 policy.protected.push(table);
             }
             if let Some(locator) = installed.pointer_locator {
-                let mut global_locator = locator;
-                global_locator.final_operand_displacement = 0x5c;
                 for (domain, offset) in [
                     (
                         "exanimation.locator.first_operand",
@@ -164,12 +162,26 @@ impl RevisionProfile {
                         "exanimation.locator.final_operand",
                         locator.final_operand_offset(rom)?,
                     ),
-                    (
-                        "exanimation.global.final_operand",
-                        global_locator.final_operand_offset(rom)?,
-                    ),
                 ] {
                     let range = protected_range(domain, offset, 3, rom.logical_len())?;
+                    if !policy.protected.contains(&range) {
+                        policy.protected.push(range);
+                    }
+                }
+                let mut global_locator = locator;
+                global_locator.final_operand_displacement = 0x5c;
+                let bank_offset = global_locator.final_operand_offset(rom)?;
+                let low_word_offset =
+                    bank_offset
+                        .checked_add(9)
+                        .ok_or(RevisionAllocationError::RangeOverflow {
+                            domain: "exanimation.global.low_word_operand",
+                        })?;
+                for (domain, offset, len) in [
+                    ("exanimation.global.bank_operand", bank_offset, 1),
+                    ("exanimation.global.low_word_operand", low_word_offset, 2),
+                ] {
+                    let range = protected_range(domain, offset, len, rom.logical_len())?;
                     if !policy.protected.contains(&range) {
                         policy.protected.push(range);
                     }
@@ -642,7 +654,8 @@ mod tests {
         let first_operand = 0x2_8811;
         let runtime = 0x2_c000;
         let final_operand = runtime + 0x46;
-        let global_operand = runtime + 0x5c;
+        let global_bank_operand = runtime + 0x5c;
+        let global_low_word_operand = runtime + 0x65;
         let exanimation_operand = runtime - 0x20;
         let table = 0x2_a001;
         if let lm_project::InstalledLayout::Unconditional(layout) =
@@ -678,7 +691,8 @@ mod tests {
         for range in [
             ProtectedRange(first_operand..first_operand + 3),
             ProtectedRange(final_operand..final_operand + 3),
-            ProtectedRange(global_operand..global_operand + 3),
+            ProtectedRange(global_bank_operand..global_bank_operand + 1),
+            ProtectedRange(global_low_word_operand..global_low_word_operand + 2),
             ProtectedRange(table - 1..table + lm_project::EXANIMATION_FEATURE_LEVEL_COUNT),
         ] {
             assert!(policy.protected.contains(&range), "missing {range:?}");
@@ -744,11 +758,17 @@ mod tests {
             .allocation_policy_for_rom(0x2_8000..0x2_e000, &rom, 0x7fc0)
             .unwrap();
 
-        assert!(policy.protected.contains(&ProtectedRange(
-            fallback_runtime + 0x5c..fallback_runtime + 0x5f
-        )));
-        assert!(!policy.protected.contains(&ProtectedRange(
-            primary_runtime + 0x5c..primary_runtime + 0x5f
-        )));
+        for range in [
+            ProtectedRange(fallback_runtime + 0x5c..fallback_runtime + 0x5d),
+            ProtectedRange(fallback_runtime + 0x65..fallback_runtime + 0x67),
+        ] {
+            assert!(policy.protected.contains(&range));
+        }
+        for range in [
+            ProtectedRange(primary_runtime + 0x5c..primary_runtime + 0x5d),
+            ProtectedRange(primary_runtime + 0x65..primary_runtime + 0x67),
+        ] {
+            assert!(!policy.protected.contains(&range));
+        }
     }
 }
