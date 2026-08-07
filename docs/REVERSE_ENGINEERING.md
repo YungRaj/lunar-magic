@@ -3692,3 +3692,12 @@ On/Off, Star, timer, Yoshi coin, manual, custom, or one-shot behavior. The table
 does not redefine the byte as a size mode; it reports whether a trigger requires two frame banks.
 Rust now exposes byte 2 as `trigger()` and labels it Trigger in every ExAnimation editor, while
 retaining `size_mode()` only as a source-compatible alias for older callers.
+
+`ResetExAnimationRuntimeState` at `0045E900` calls `ReconcileExAnimationTriggerState`, which writes
+`$FF` to every record's hidden cursor byte at offset `$208`. `AdvanceExAnimationFrames` at
+`0045AAC0` processes one of eight interleaved record groups per substep. The recovered record loop
+advances ordinary types cyclically, terminates types `$18..$1B` at `$FF`, selects a second frame
+bank for conditional triggers, forces manual-trigger frames, and consumes one-shot trigger bits
+after their last frame. Rust now has a stateful, resettable `ExAnimationPreviewState` that mirrors
+those cursor, phase, bank-selection, manual, custom, and one-shot rules without storing runtime
+cursor bytes in authored records.

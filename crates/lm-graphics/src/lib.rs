@@ -8,6 +8,7 @@ mod exanimation;
 mod exanimation_features;
 mod exanimation_file;
 mod exanimation_frames;
+mod exanimation_preview;
 mod exanimation_slot_options;
 mod external_sprite_assets;
 mod file;
@@ -42,6 +43,9 @@ pub use exanimation_file::{CompactExAnimationFile, CompactExAnimationFileError};
 pub use exanimation_frames::{
     ExAnimationFrame, ExAnimationFrameEdit, ExAnimationFrameEditError, edit_exanimation_frames,
     exanimation_frames,
+};
+pub use exanimation_preview::{
+    ExAnimationPreviewState, ExAnimationTriggerPreviewState, SelectedExAnimationFrame,
 };
 pub use exanimation_slot_options::{
     EXANIMATION_LEVEL_SLOT_COUNT, ExAnimationSlotOptionError, ExAnimationSlotOptionTable,
