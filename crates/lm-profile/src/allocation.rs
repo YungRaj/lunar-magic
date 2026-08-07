@@ -153,6 +153,8 @@ impl RevisionProfile {
                 policy.protected.push(table);
             }
             if let Some(locator) = installed.pointer_locator {
+                let mut global_locator = locator;
+                global_locator.final_operand_displacement = 0x5c;
                 for (domain, offset) in [
                     (
                         "exanimation.locator.first_operand",
@@ -161,6 +163,10 @@ impl RevisionProfile {
                     (
                         "exanimation.locator.final_operand",
                         locator.final_operand_offset(rom)?,
+                    ),
+                    (
+                        "exanimation.global.final_operand",
+                        global_locator.final_operand_offset(rom)?,
                     ),
                 ] {
                     let range = protected_range(domain, offset, 3, rom.logical_len())?;
@@ -636,6 +642,7 @@ mod tests {
         let first_operand = 0x2_8811;
         let runtime = 0x2_c000;
         let final_operand = runtime + 0x46;
+        let global_operand = runtime + 0x5c;
         let exanimation_operand = runtime - 0x20;
         let table = 0x2_a001;
         if let lm_project::InstalledLayout::Unconditional(layout) =
@@ -671,9 +678,77 @@ mod tests {
         for range in [
             ProtectedRange(first_operand..first_operand + 3),
             ProtectedRange(final_operand..final_operand + 3),
+            ProtectedRange(global_operand..global_operand + 3),
             ProtectedRange(table - 1..table + lm_project::EXANIMATION_FEATURE_LEVEL_COUNT),
         ] {
             assert!(policy.protected.contains(&range), "missing {range:?}");
         }
+    }
+
+    #[test]
+    fn selected_fallback_runtime_protects_its_global_pointer_operand() {
+        let mut profile = crate::test_support::profile();
+        let primary_marker = 0x2_8810;
+        let fallback_marker = 0x2_8820;
+        let primary_runtime: usize = 0x2_b000;
+        let fallback_runtime: usize = 0x2_c000;
+        let fallback_displacement: isize = -0x40;
+        profile.exanimation_installation = lm_project::InstalledLayout::Alternatives {
+            primary: lm_project::GatedLayout {
+                marker: lm_project::InstallationMarker {
+                    offset: primary_marker,
+                    expected: 0x22,
+                },
+                layout: lm_project::InstalledExAnimationRomLayout {
+                    payload: profile.exanimation,
+                    pointer_presence_mask: 0x00ff_ff00,
+                    pointer_locator: Some(lm_project::ChainedSnesPointerLocator {
+                        mapper: profile.mapper,
+                        first_operand_offset: primary_marker + 1,
+                        final_operand_displacement: -0x20,
+                    }),
+                },
+            },
+            fallback: Some(lm_project::GatedLayout {
+                marker: lm_project::InstallationMarker {
+                    offset: fallback_marker,
+                    expected: 0x22,
+                },
+                layout: lm_project::InstalledExAnimationRomLayout {
+                    payload: profile.exanimation,
+                    pointer_presence_mask: 0x00ff_0000,
+                    pointer_locator: Some(lm_project::ChainedSnesPointerLocator {
+                        mapper: profile.mapper,
+                        first_operand_offset: fallback_marker + 1,
+                        final_operand_displacement: fallback_displacement,
+                    }),
+                },
+            }),
+        };
+        let mut rom = lm_rom::RomImage::from_bytes(vec![0xff; 0x3_0000]).unwrap();
+        rom.write(fallback_marker, &[0x22]).unwrap();
+        for (offset, target) in [
+            (fallback_marker + 1, fallback_runtime),
+            (
+                fallback_runtime
+                    .checked_add_signed(fallback_displacement)
+                    .unwrap(),
+                profile.exanimation.pointers.offset,
+            ),
+        ] {
+            let pointer = pc_to_snes(profile.mapper, target).unwrap().to_le_bytes();
+            rom.write(offset, &pointer[..3]).unwrap();
+        }
+
+        let policy = profile
+            .allocation_policy_for_rom(0x2_8000..0x2_e000, &rom, 0x7fc0)
+            .unwrap();
+
+        assert!(policy.protected.contains(&ProtectedRange(
+            fallback_runtime + 0x5c..fallback_runtime + 0x5f
+        )));
+        assert!(!policy.protected.contains(&ProtectedRange(
+            primary_runtime + 0x5c..primary_runtime + 0x5f
+        )));
     }
 }

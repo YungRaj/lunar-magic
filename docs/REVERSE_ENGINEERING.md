@@ -3760,3 +3760,16 @@ edits, treats a zero runtime pointer as a new empty 32-record document, and comm
 runtime-relative pointer with revision checks. Target switching is disabled while the active
 domain is staged, preventing an application commit from silently discarding edits in the other
 domain.
+Because that `$5C` field is itself allocator-dependent mutable ROM state, the profile's ROM-aware
+allocation policy now resolves and protects its complete three-byte operand alongside the existing
+level-table locator, feature-table locator, and allocated tables. This is required before the global
+editor can safely accept a search range that happens to span the installed runtime.
+
+`EnsureExpandedExAnimationRuntimeInstalled` (`0045FD50`) also proves that installed editing is not
+the entire lifecycle surface. It distinguishes a legacy pointer-hook form, a legacy 512-entry
+animation-table form, and no runtime. The first routes through `PatchLegacyExAnimationPointerHooks`
+(`0045E5F0`); the second routes through `MigrateLegacyGlobalExAnimations` (`0045F980`), which
+installs the current runtime, converts up to 512 legacy `$23`-byte-record blocks, reallocates compact
+payloads, and erases authenticated obsolete storage; the third performs a fresh
+`InstallExpandedExAnimationRuntime`. These installation/migration workflows remain a separate
+implementation gate from editing an already installed current runtime.
