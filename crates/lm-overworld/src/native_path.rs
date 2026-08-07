@@ -2,6 +2,62 @@
 
 use crate::{FixedTableEncodingError, OverworldEndpoint};
 
+/// Cardinal choice used by Lunar Magic's native overworld path-link dialog.
+///
+/// The value is derived from endpoint geometry and is not serialized as an additional ROM field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OverworldPathDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl Default for OverworldPathDirection {
+    fn default() -> Self {
+        Self::Up
+    }
+}
+
+impl OverworldPathDirection {
+    /// Original combo-box ordinal passed to Lunar Magic's endpoint helpers.
+    #[must_use]
+    pub const fn lunar_magic_ordinal(self) -> u8 {
+        match self {
+            Self::Up => 1,
+            Self::Down => 2,
+            Self::Left => 3,
+            Self::Right => 4,
+        }
+    }
+
+    /// Applies the exact wrapping eight-pixel transform shared by the original dialog's
+    /// `EncodeOverworldDirectionalPoint` and `DecodeOverworldDirectionalPoint` helpers.
+    #[must_use]
+    pub const fn offset_directional_point(self, mut point: OverworldEndpoint) -> OverworldEndpoint {
+        match self {
+            Self::Up => point.y = point.y.wrapping_add(8),
+            Self::Down => point.y = point.y.wrapping_sub(8),
+            Self::Left => point.x = point.x.wrapping_add(8),
+            Self::Right => point.x = point.x.wrapping_sub(8),
+        }
+        point
+    }
+
+    /// Applies the exact opposite sixteen-pixel transform used by the original dialog's
+    /// `EncodeOverworldExitNodeWithDirection` helper.
+    #[must_use]
+    pub const fn offset_exit_node(self, mut point: OverworldEndpoint) -> OverworldEndpoint {
+        match self {
+            Self::Up => point.y = point.y.wrapping_sub(0x10),
+            Self::Down => point.y = point.y.wrapping_add(0x10),
+            Self::Left => point.x = point.x.wrapping_sub(0x10),
+            Self::Right => point.x = point.x.wrapping_add(0x10),
+        }
+        point
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OverworldPathTarget {
     pub y_tile: u8,
@@ -189,6 +245,67 @@ mod tests {
             y: value + 1,
             submap: u8::try_from(value).unwrap(),
         }
+    }
+
+    #[test]
+    fn lunar_magic_direction_ordinals_and_wrapping_offsets_are_exact() {
+        let origin = OverworldEndpoint {
+            x: 0x1000,
+            y: 0x2000,
+            submap: 6,
+        };
+        let cases = [
+            (
+                OverworldPathDirection::Up,
+                1,
+                (0x1000, 0x2008),
+                (0x1000, 0x1ff0),
+            ),
+            (
+                OverworldPathDirection::Down,
+                2,
+                (0x1000, 0x1ff8),
+                (0x1000, 0x2010),
+            ),
+            (
+                OverworldPathDirection::Left,
+                3,
+                (0x1008, 0x2000),
+                (0x0ff0, 0x2000),
+            ),
+            (
+                OverworldPathDirection::Right,
+                4,
+                (0x0ff8, 0x2000),
+                (0x1010, 0x2000),
+            ),
+        ];
+        for (direction, ordinal, directional, exit) in cases {
+            assert_eq!(direction.lunar_magic_ordinal(), ordinal);
+            let point = direction.offset_directional_point(origin);
+            assert_eq!(
+                (point.x, point.y, point.submap),
+                (directional.0, directional.1, 6)
+            );
+            let point = direction.offset_exit_node(origin);
+            assert_eq!((point.x, point.y, point.submap), (exit.0, exit.1, 6));
+        }
+
+        let edge = OverworldEndpoint {
+            x: 0,
+            y: 0xffff,
+            submap: 0xff,
+        };
+        assert_eq!(
+            OverworldPathDirection::Up.offset_directional_point(edge).y,
+            7
+        );
+        assert_eq!(
+            OverworldPathDirection::Right
+                .offset_directional_point(edge)
+                .x,
+            0xfff8
+        );
     }
 
     #[test]

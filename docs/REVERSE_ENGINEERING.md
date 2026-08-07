@@ -2228,6 +2228,18 @@ record for editing/export, then reconstructs the exact three ROM planes. The pri
 oracle round-trips without differences; direct save stages all planes and checksum together and
 publishes one undo entry.
 
+Live port-8089 revalidation of `OverworldPathLinkDialogProc` (`00537690`) and its four endpoint
+helpers recovers the original directional editing transform without inventing a stored direction
+field. `PopulateOverworldDirectionCombo` (`005362E0`) installs `Up`, `Down`, `Left`, `Right` in
+that exact order, producing ordinals 1 through 4. `EncodeOverworldDirectionalPoint` (`00535850`)
+and `DecodeOverworldDirectionalPoint` (`005358B0`) both apply wrapping endpoint deltas of Y+8,
+Y-8, X+8, and X-8 respectively. `EncodeOverworldExitNodeWithDirection` (`00535910`) applies the
+opposite sixteen-pixel deltas Y-16, Y+16, X-16, and X+16. The dialog derives this direction from
+endpoint geometry, uses an absent all-`$FF` return endpoint for a one-way path, and clears stale
+adjacent source, return, resolved, and preview records before installing a replacement. Rust now
+models the exact ordinals and both transforms as `OverworldPathDirection`; direction remains
+transient editor state so the lossless three-plane ROM format is unchanged.
+
 The expanded form is now reproduced as well. Live Wine inspection resolved descriptor `+0x920` to
 headered physical `$21C35`, hence logical hook `$21A35`; the pristine five bytes are
 `A9 1A 00 85 02`, replaced by `JSL runtime; RTS`. Ghidra's embedded template at `005C36E0` is

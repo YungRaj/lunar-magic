@@ -13,7 +13,8 @@ use lm_app::{
 };
 use lm_graphics::{Palette, PaletteOwnership};
 use lm_overworld::{
-    OverworldEndpoint, OverworldPathLink, OverworldPathLinkTable, OverworldPathTarget,
+    OverworldEndpoint, OverworldPathDirection, OverworldPathLink, OverworldPathLinkTable,
+    OverworldPathTarget,
 };
 use lm_project::{CompleteOverworldFile, CompleteOverworldShape};
 
@@ -86,6 +87,8 @@ struct MainPathLinkForm {
     destination_submap: String,
     target_x: String,
     target_y: String,
+    direction: OverworldPathDirection,
+    one_way: bool,
     loaded: Option<usize>,
 }
 
@@ -237,6 +240,28 @@ impl RomOverworldEditor {
                     path_form_row(ui, "Target X tile", &mut self.main_path.target_x);
                     path_form_row(ui, "Target Y tile", &mut self.main_path.target_y);
                 });
+            ui.horizontal(|ui| {
+                ui.label("Direction");
+                egui::ComboBox::from_id_salt("playable-overworld-path-direction")
+                    .selected_text(match self.main_path.direction {
+                        OverworldPathDirection::Up => "Up",
+                        OverworldPathDirection::Down => "Down",
+                        OverworldPathDirection::Left => "Left",
+                        OverworldPathDirection::Right => "Right",
+                    })
+                    .show_ui(ui, |ui| {
+                        for (direction, label) in [
+                            (OverworldPathDirection::Up, "Up"),
+                            (OverworldPathDirection::Down, "Down"),
+                            (OverworldPathDirection::Left, "Left"),
+                            (OverworldPathDirection::Right, "Right"),
+                        ] {
+                            ui.selectable_value(&mut self.main_path.direction, direction, label);
+                        }
+                    });
+                ui.checkbox(&mut self.main_path.one_way, "One-way (no return endpoint)");
+            });
+            ui.small("Canvas route tools use Lunar Magic's Up, Down, Left, Right order and exact edge offsets.");
             ui.horizontal(|ui| {
                 if ui.button("Reload link").clicked() {
                     self.load_main_path_link();
@@ -459,6 +484,12 @@ impl MainPathLinkForm {
         self.destination_submap = format!("{:02X}", link.destination.submap);
         self.target_x = format!("{:02X}", link.target.x_tile);
         self.target_y = format!("{:02X}", link.target.y_tile);
+        self.one_way = link.destination
+            == (OverworldEndpoint {
+                x: 0xffff,
+                y: 0xffff,
+                submap: 0xff,
+            });
         self.loaded = Some(self.index);
     }
 
@@ -472,13 +503,27 @@ impl MainPathLinkForm {
                     "route source submap",
                 )?,
             },
-            destination: OverworldEndpoint {
-                x: level_editor_forms::parse_hex_u16(&self.destination_x, "route destination X")?,
-                y: level_editor_forms::parse_hex_u16(&self.destination_y, "route destination Y")?,
-                submap: level_editor_forms::parse_hex_u8(
-                    &self.destination_submap,
-                    "route destination submap",
-                )?,
+            destination: if self.one_way {
+                OverworldEndpoint {
+                    x: 0xffff,
+                    y: 0xffff,
+                    submap: 0xff,
+                }
+            } else {
+                OverworldEndpoint {
+                    x: level_editor_forms::parse_hex_u16(
+                        &self.destination_x,
+                        "route destination X",
+                    )?,
+                    y: level_editor_forms::parse_hex_u16(
+                        &self.destination_y,
+                        "route destination Y",
+                    )?,
+                    submap: level_editor_forms::parse_hex_u8(
+                        &self.destination_submap,
+                        "route destination submap",
+                    )?,
+                }
             },
             target: OverworldPathTarget {
                 x_tile: level_editor_forms::parse_hex_u8(&self.target_x, "route target X")?,
@@ -743,8 +788,12 @@ impl RomOverworldEditor {
                             "route source submap",
                         );
                         if let Ok(submap) = submap
-                            && let Some(endpoint) =
-                                route_canvas_endpoint(response.rect, position, submap)
+                            && let Some(endpoint) = route_directional_canvas_endpoint(
+                                response.rect,
+                                position,
+                                submap,
+                                self.main_path.direction,
+                            )
                         {
                             self.main_path.source_x = format!("{:04X}", endpoint.x);
                             self.main_path.source_y = format!("{:04X}", endpoint.y);
@@ -757,12 +806,17 @@ impl RomOverworldEditor {
                             "route destination submap",
                         );
                         if let Ok(submap) = submap
-                            && let Some(endpoint) =
-                                route_canvas_endpoint(response.rect, position, submap)
+                            && let Some(endpoint) = route_directional_canvas_endpoint(
+                                response.rect,
+                                position,
+                                submap,
+                                self.main_path.direction,
+                            )
                         {
                             self.main_path.destination_x = format!("{:04X}", endpoint.x);
                             self.main_path.destination_y = format!("{:04X}", endpoint.y);
                             self.main_path.destination_submap = format!("{:02X}", endpoint.submap);
+                            self.main_path.one_way = false;
                         }
                     }
                     _ => {}
@@ -1256,6 +1310,16 @@ fn route_canvas_endpoint(
     })
 }
 
+fn route_directional_canvas_endpoint(
+    rect: egui::Rect,
+    position: egui::Pos2,
+    selected_submap: u8,
+    direction: OverworldPathDirection,
+) -> Option<OverworldEndpoint> {
+    route_canvas_endpoint(rect, position, selected_submap)
+        .map(|endpoint| direction.offset_directional_point(endpoint))
+}
+
 fn stroke_edits(
     layer: OverworldLayerId,
     cells: &[(usize, usize)],
@@ -1336,8 +1400,9 @@ fn flood_fill_cells(
 mod canvas_tests {
     use super::{
         MainPathLinkForm, OverworldControllerEdit, OverworldEndpoint, OverworldLayerId,
-        OverworldPathLink, OverworldPathTarget, RomOverworldEditor, flood_fill_cells, grid_line,
-        rectangle_cells, route_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
+        OverworldPathDirection, OverworldPathLink, OverworldPathTarget, RomOverworldEditor,
+        flood_fill_cells, grid_line, rectangle_cells, route_canvas_endpoint,
+        route_directional_canvas_endpoint, route_endpoint_canvas_pixel, stroke_edits,
     };
     use crate::document_loader::BoundedRead;
     use eframe::egui;
@@ -1456,6 +1521,36 @@ mod canvas_tests {
         assert_eq!(form.parse().unwrap(), link);
         form.target_x = "100".into();
         assert!(form.parse().is_err());
+
+        form.set(OverworldPathLink {
+            destination: OverworldEndpoint {
+                x: 0xffff,
+                y: 0xffff,
+                submap: 0xff,
+            },
+            ..link
+        });
+        assert!(form.one_way);
+        form.destination_x = "not parsed while one-way".into();
+        assert_eq!(form.parse().unwrap().destination.x, 0xffff);
+    }
+
+    #[test]
+    fn directional_route_canvas_clicks_apply_lunar_magic_edge_offsets() {
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1024.0, 512.0));
+        let position = egui::pos2(320.0, 40.0);
+        let cases = [
+            (OverworldPathDirection::Up, (320, 48)),
+            (OverworldPathDirection::Down, (320, 32)),
+            (OverworldPathDirection::Left, (328, 40)),
+            (OverworldPathDirection::Right, (312, 40)),
+        ];
+        for (direction, (x, y)) in cases {
+            assert_eq!(
+                route_directional_canvas_endpoint(rect, position, 0, direction),
+                Some(OverworldEndpoint { x, y, submap: 0 })
+            );
+        }
     }
 
     #[test]

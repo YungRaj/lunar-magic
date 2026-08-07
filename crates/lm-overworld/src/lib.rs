@@ -85,7 +85,7 @@ pub use native_message_file::{
     encode_native_overworld_message_file,
 };
 pub use native_path::{
-    OverworldPathLink, OverworldPathLinkPlanes, OverworldPathLinkTable,
+    OverworldPathDirection, OverworldPathLink, OverworldPathLinkPlanes, OverworldPathLinkTable,
     OverworldPathLinkTableError, OverworldPathTarget,
 };
 pub use native_path_file::OverworldPathLinkFileError;
