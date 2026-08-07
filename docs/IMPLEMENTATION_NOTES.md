@@ -4349,3 +4349,9 @@ headerless SMW-US ROMs. The same application transaction installs pristine tilem
 the owned expanded form, updates that installed payload a second time, repairs and reopens both
 results, and preserves the physical copier prefix exactly. Both forms converge logically and two
 undo steps restore their exact original physical images.
+
+Credits tilemap replacement has the same explicit physical-ROM proof across its distinct storage
+families. The application expands the original 202-row legacy form into the owned complete
+256-row runtime, updates that owned payload again, repairs and reopens both results, and preserves
+the canonical copier prefix only when present. Headered and headerless results are logically
+identical, and two undo steps restore both original physical images byte-for-byte.
