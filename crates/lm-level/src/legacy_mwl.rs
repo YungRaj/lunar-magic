@@ -149,7 +149,9 @@ impl LegacyMwlManifest {
                 diagnostics.push(LegacyMwlDiagnostic::IgnoredSecondaryExit { line: exit_lines });
                 continue;
             }
-            let index_maximum = if version < 0x0132 { 0x00ff } else { 0x0fff };
+            // Current Lunar Magic exports the complete 13-bit secondary-exit namespace.  The
+            // older four-field form used only one byte and inherits the source level's high bit.
+            let index_maximum = if version < 0x0132 { 0x00ff } else { 0x1fff };
             let Ok(mut index) = parse_hex_u16(fields[0], index_maximum, "secondary exit index")
             else {
                 diagnostics.push(LegacyMwlDiagnostic::IgnoredSecondaryExit { line: exit_lines });

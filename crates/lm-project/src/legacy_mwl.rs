@@ -389,6 +389,66 @@ mod tests {
     }
 
     #[test]
+    fn authentic_custom_palette_legacy_bundle_matches_binary_level_semantics() {
+        let root = root();
+        let binary =
+            std::fs::read(root.join(
+                "oracle-work/lm363/pristine-us/palette-install-positive/exported/Level 000.mwl",
+            ))
+            .unwrap();
+        let file = MwlFile::decode(&binary).unwrap();
+        let source =
+            MwlNativeLevel::decode(&file, &SpriteLengthTable::standard(), 32, &[false; 256])
+                .unwrap();
+        let projected =
+            LegacyMwlBundle::from_native(&source, "Level 000", &SpriteLengthTable::standard())
+                .unwrap();
+        let fixture = root.join("oracle-work/lm363/pristine-us/legacy-level-000-custom-palette");
+        let manifest_bytes = std::fs::read(fixture.join("Level 000.mwl")).unwrap();
+        let report = LegacyMwlManifest::decode_with_diagnostics(&manifest_bytes).unwrap();
+        assert!(report.diagnostics.is_empty());
+        assert_eq!(report.manifest.secondary_exits.len(), 0x1ef3);
+        assert_eq!(
+            report.manifest.secondary_exits.last().unwrap().index,
+            0x1fff
+        );
+        let authentic = LegacyMwlBundle {
+            manifest: report.manifest,
+            layer1: std::fs::read(fixture.join("Level 000.mw0")).unwrap(),
+            layer2: std::fs::read(fixture.join("Level 000.mw1")).unwrap(),
+            sprites: std::fs::read(fixture.join("Level 000.mw2")).unwrap(),
+            palette: Some(std::fs::read(fixture.join("Level 000.mw3")).unwrap()),
+        };
+        let mut destination = source.palette.clone();
+        destination.colors.rotate_left(31);
+        let imported = authentic
+            .decode_native(&SpriteLengthTable::standard(), &destination, true)
+            .unwrap();
+
+        assert_eq!(imported.layer1, source.layer1);
+        assert_eq!(imported.layer2, source.layer2);
+        assert_eq!(imported.sprites, source.sprites);
+        assert_eq!(imported.palette, source.palette);
+        assert_ne!(imported.palette, destination);
+        assert_eq!(
+            projected.layer1,
+            std::fs::read(fixture.join("Level 000.mw0")).unwrap()
+        );
+        assert_eq!(
+            projected.layer2,
+            std::fs::read(fixture.join("Level 000.mw1")).unwrap()
+        );
+        assert_eq!(
+            projected.sprites,
+            std::fs::read(fixture.join("Level 000.mw2")).unwrap()
+        );
+        assert_eq!(
+            projected.palette.unwrap(),
+            std::fs::read(fixture.join("Level 000.mw3")).unwrap()
+        );
+    }
+
+    #[test]
     fn legacy_decode_reconstructs_current_semantics_and_defaults() {
         let source = level_105();
         let bundle =
