@@ -1,9 +1,13 @@
 use super::RomPaletteEditor;
-use crate::{dialogs, document_loader::BoundedRead};
+use crate::{dialogs, document_loader::BoundedRead, persistence_worker::PersistenceTarget};
 use eframe::egui;
 use lm_graphics::{
-    PaletteMaskFile, RawSnesPaletteFile, RgbChannelExpansion, RgbPaletteFile, TplPaletteFile,
+    Bgr555, PaletteChange, PaletteMaskFile, RawSnesPaletteFile, RgbChannelExpansion,
+    RgbPaletteFile, TplPaletteFile,
 };
+
+const PALETTE_ROW_COLORS: usize = 16;
+const PALETTE_ROW_FILE_LEN: usize = PALETTE_ROW_COLORS * 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PendingTransfer {
@@ -25,13 +29,27 @@ impl RomPaletteEditor {
     pub(super) fn poll_transfer_file_io(&mut self, context: &egui::Context, revision: u64) {
         if let Some(result) = self.transfer_loader.show(context) {
             let pending = self.pending_transfer.take();
+            let pending_row_start = self.pending_row_start.take();
             let result = result.and_then(|loaded| {
                 let workspace = self
                     .workspace
                     .as_mut()
                     .ok_or("ROM palette workspace is closed")?;
                 if workspace.controller.revision() != revision {
-                    return Err("the ROM changed while the raw palette was loading".into());
+                    return Err("the ROM changed while the palette transfer was loading".into());
+                }
+                if let Some(start) = pending_row_start {
+                    let mut files = loaded.files.into_iter();
+                    let (_, bytes) = files.next().ok_or("palette-row loader returned no file")?;
+                    if files.next().is_some() {
+                        return Err("palette-row loader returned more than one file".into());
+                    }
+                    let changes = decode_palette_row(&bytes, start)?;
+                    workspace
+                        .controller
+                        .apply_edits(&[lm_app::PaletteControllerEdit::ApplyChanges(changes)])
+                        .map_err(|error| error.to_string())?;
+                    return Ok(());
                 }
                 match decode_import(pending, loaded)? {
                     DecodedImport::Raw(source, mask) => {
@@ -40,7 +58,6 @@ impl RomPaletteEditor {
                             .import_raw_palette(&source, &mask)
                             .map_err(|error| error.to_string())?;
                         self.palette_mask = mask.encode();
-                        Ok(())
                     }
                     DecodedImport::Supported {
                         palette,
@@ -55,9 +72,9 @@ impl RomPaletteEditor {
                             self.rgb_expansion = Some(expansion);
                         }
                         self.palette_mask = mask.encode();
-                        Ok(())
                     }
                 }
+                Ok(())
             });
             if let Err(error) = result {
                 self.error = Some(error);
@@ -79,6 +96,39 @@ impl RomPaletteEditor {
         let busy = self.transfer_loader.is_running()
             || self.transfer_persistence.is_running()
             || self.manifest_loader.is_running();
+        ui.horizontal(|ui| {
+            let row_start = self.selected / PALETTE_ROW_COLORS * PALETTE_ROW_COLORS;
+            let complete_row = self.workspace.as_ref().is_some_and(|workspace| {
+                row_start + PALETTE_ROW_COLORS <= workspace.controller.palette().colors.len()
+            });
+            if ui
+                .add_enabled(
+                    !stale && !busy && complete_row,
+                    egui::Button::new("Import selected row…"),
+                )
+                .clicked()
+                && let Some(path) = dialogs::choose_snes_palette_row()
+            {
+                match self.transfer_loader.start(vec![BoundedRead::new(
+                    path,
+                    PALETTE_ROW_FILE_LEN as u64,
+                    "16-color SNES palette row",
+                )]) {
+                    Ok(()) => self.pending_row_start = Some(row_start),
+                    Err(error) => self.error = Some(error),
+                }
+            }
+            if ui
+                .add_enabled(
+                    !stale && !busy && complete_row,
+                    egui::Button::new("Export selected row…"),
+                )
+                .clicked()
+            {
+                self.start_row_export(revision, row_start);
+            }
+        });
+        ui.small("Row transfer matches Lunar Magic's exact 32-byte, 16-color little-endian SNES format and targets the row selected when loading starts.");
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(!stale && !busy, egui::Button::new("Import raw palette…"))
@@ -188,6 +238,30 @@ impl RomPaletteEditor {
         self.start_palette_export(revision, path, bytes);
     }
 
+    fn start_row_export(&mut self, revision: u64, row_start: usize) {
+        let Some(workspace) = self.workspace.as_ref() else {
+            self.error = Some("ROM palette workspace is closed".into());
+            return;
+        };
+        let bytes = match encode_palette_row(workspace.controller.palette(), row_start) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.error = Some(error);
+                return;
+            }
+        };
+        let Some(path) = dialogs::choose_snes_palette_row_save_path(row_start / PALETTE_ROW_COLORS)
+        else {
+            return;
+        };
+        if let Err(error) =
+            self.transfer_persistence
+                .start(revision, PersistenceTarget::Create(path), bytes)
+        {
+            self.error = Some(error);
+        }
+    }
+
     fn start_tpl_export(&mut self, revision: u64) {
         let Some(workspace) = self.workspace.as_ref() else {
             self.error = Some("ROM palette workspace is closed".into());
@@ -272,6 +346,43 @@ pub(crate) fn encode_raw_export(palette: &lm_graphics::Palette) -> Result<Vec<u8
     }
     .encode()
     .map_err(|error| error.to_string())
+}
+
+pub(crate) fn encode_palette_row(
+    palette: &lm_graphics::Palette,
+    start: usize,
+) -> Result<Vec<u8>, String> {
+    if start % PALETTE_ROW_COLORS != 0 {
+        return Err("palette-row export must start at a 16-color boundary".into());
+    }
+    let colors = palette
+        .colors
+        .get(start..start + PALETTE_ROW_COLORS)
+        .ok_or("selected palette row is incomplete")?;
+    Ok(colors
+        .iter()
+        .flat_map(|color| color.0.to_le_bytes())
+        .collect())
+}
+
+fn decode_palette_row(bytes: &[u8], start: usize) -> Result<Vec<PaletteChange>, String> {
+    if start % PALETTE_ROW_COLORS != 0 {
+        return Err("palette-row import must target a 16-color boundary".into());
+    }
+    if bytes.len() != PALETTE_ROW_FILE_LEN {
+        return Err(format!(
+            "SNES palette row has {} bytes instead of {PALETTE_ROW_FILE_LEN}",
+            bytes.len()
+        ));
+    }
+    Ok(bytes
+        .chunks_exact(2)
+        .enumerate()
+        .map(|(offset, word)| PaletteChange {
+            index: start + offset,
+            color: Bgr555(u16::from_le_bytes([word[0], word[1]])),
+        })
+        .collect())
 }
 
 pub(crate) fn encode_tpl_export(palette: &lm_graphics::Palette) -> Result<Vec<u8>, String> {
@@ -417,6 +528,40 @@ mod tests {
             panic!("raw transfer decodes as raw");
         };
         assert!(selected.entries().iter().all(|entry| *entry == 1));
+    }
+
+    #[test]
+    fn selected_row_transfer_is_exact_little_endian_and_request_targeted() {
+        let palette = Palette {
+            colors: (0_u16..48).map(|word| Bgr555(word | 0x8000)).collect(),
+        };
+        let encoded = encode_palette_row(&palette, 16).unwrap();
+        assert_eq!(encoded.len(), PALETTE_ROW_FILE_LEN);
+        assert_eq!(&encoded[..4], &[0x10, 0x80, 0x11, 0x80]);
+        assert_eq!(&encoded[30..], &[0x1f, 0x80]);
+
+        let changes = decode_palette_row(&encoded, 32).unwrap();
+        assert_eq!(changes.len(), PALETTE_ROW_COLORS);
+        assert_eq!(changes[0].index, 32);
+        assert_eq!(changes[0].color, Bgr555(0x8010));
+        assert_eq!(changes[15].index, 47);
+        assert_eq!(changes[15].color, Bgr555(0x801f));
+    }
+
+    #[test]
+    fn selected_row_transfer_rejects_bad_shape_boundary_and_incomplete_rows() {
+        for (start, bytes) in [(1, vec![0; 32]), (16, vec![0; 31]), (16, vec![0; 33])] {
+            assert!(decode_palette_row(&bytes, start).is_err());
+        }
+        assert!(
+            encode_palette_row(
+                &Palette {
+                    colors: vec![Bgr555(0); 31],
+                },
+                16,
+            )
+            .is_err()
+        );
     }
 
     #[test]

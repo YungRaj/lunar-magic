@@ -49,6 +49,7 @@ pub(crate) struct RomPaletteEditor {
     transfer_loader: DocumentLoader,
     transfer_persistence: crate::persistence_worker::PersistenceWorker,
     pending_transfer: Option<transfer::PendingTransfer>,
+    pending_row_start: Option<usize>,
     rgb_expansion: Option<lm_graphics::RgbChannelExpansion>,
     palette_mask: Vec<u8>,
     palette_mask_edit: bool,

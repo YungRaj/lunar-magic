@@ -41,6 +41,14 @@ pub(crate) fn choose_snes_palette_row() -> Option<PathBuf> {
         .pick_file()
 }
 
+pub(crate) fn choose_snes_palette_row_save_path(row: usize) -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export SNES Palette Row")
+        .add_filter("SNES Palette", &["col", "pal"])
+        .set_file_name(format!("Palette Row {row:X}.col"))
+        .save_file()
+}
+
 pub(crate) fn choose_save_path() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("SNES ROM", &["smc", "sfc"])

@@ -121,6 +121,7 @@ impl RomPaletteEditor {
         self.workspace = None;
         self.pending_load = None;
         self.pending_transfer = None;
+        self.pending_row_start = None;
         self.rgb_expansion = None;
         self.palette_mask.clear();
         self.palette_mask_edit = false;
