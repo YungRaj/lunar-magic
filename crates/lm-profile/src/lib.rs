@@ -109,7 +109,10 @@ pub use exanimation_runtime::{
 };
 pub use exanimation_runtime_install::{
     SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_END,
-    SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_START,
+    SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_START, SmwUsV1ExpandedExAnimationRuntimeDetectError,
+    SmwUsV1ExpandedExAnimationRuntimeGeneration,
+    detect_smw_us_v1_current_expanded_exanimation_runtime,
+    probe_smw_us_v1_expanded_exanimation_runtime_generation,
     smw_us_v1_expanded_exanimation_core_installation_plan,
     smw_us_v1_expanded_exanimation_runtime_installation_plan,
 };

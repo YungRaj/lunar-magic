@@ -1,17 +1,18 @@
 //! Transactional publication of the recovered expanded-ExAnimation fresh runtime family.
 
 use crate::{
-    ExpandedExAnimationRuntimeError, SMW_US_V1_CHECKSUM_FIELD,
-    empty_expanded_exanimation_pointer_table,
+    ExpandedExAnimationRuntimeError, ExpandedExAnimationRuntimeRelocations,
+    SMW_US_V1_CHECKSUM_FIELD, empty_expanded_exanimation_pointer_table,
     exanimation_runtime::{
         IRAM_WORD_OFFSETS, LOCAL_WORD_TABLE_ENTRIES, LOCAL_WORD_TABLE_OFFSET, MAPPING_BYTE_OFFSETS,
         SNES_POINTER_OFFSETS, TEMPLATE_LOCAL_WORD_BASE,
     },
-    expanded_exanimation_runtime_template,
+    expanded_exanimation_runtime_template, relocate_expanded_exanimation_runtime,
 };
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchPlan};
-use lm_rats::AllocationPolicy;
-use lm_rom::Mapper;
+use lm_rats::{AllocationPolicy, HEADER_LEN, HeaderError, RatsBlock, parse_at};
+use lm_rom::{Mapper, RomError, pc_to_snes, snes_to_pc};
+use std::fmt;
 
 /// The first search byte after Lunar Magic's authenticated prerequisite allocations.
 pub const SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_START: usize = 0x0008_0541;
@@ -48,6 +49,286 @@ const SHARED_PALETTE_RUNTIME_A: [u8; 0x0d] = [
 const SHARED_PALETTE_RUNTIME_B: [u8; 0x10] = [
     0x9c, 0xcd, 0x13, 0x64, 0xfe, 0x64, 0xff, 0x84, 0x76, 0x84, 0x89, 0x6b, 0xff, 0xff, 0xff, 0xff,
 ];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SmwUsV1ExpandedExAnimationRuntimeGeneration {
+    Absent,
+    LegacyPointerHooks,
+    Current,
+}
+
+#[derive(Debug)]
+pub enum SmwUsV1ExpandedExAnimationRuntimeDetectError {
+    HookRange,
+    HookAddress(RomError),
+    RuntimeBeforeHeader(usize),
+    RuntimeHeader(HeaderError),
+    RuntimeOwnership {
+        expected: usize,
+        actual: usize,
+    },
+    RuntimeLength(usize),
+    PointerAddress(RomError),
+    PointerBeforeHeader(usize),
+    PointerHeader(HeaderError),
+    PointerOwnership {
+        expected: usize,
+        actual: usize,
+    },
+    PointerLength(usize),
+    Relocation(ExpandedExAnimationRuntimeError),
+    RuntimeMismatch,
+    FixedRangeMismatch {
+        offset: usize,
+    },
+    HelperAddress {
+        offset: usize,
+        source: RomError,
+    },
+    HelperBeforeHeader {
+        offset: usize,
+        target: usize,
+    },
+    HelperHeader {
+        offset: usize,
+        source: HeaderError,
+    },
+    HelperOwnership {
+        offset: usize,
+        expected: usize,
+        actual: usize,
+    },
+    HelperLength {
+        offset: usize,
+        expected: usize,
+        actual: usize,
+    },
+    HelperPayloadMismatch {
+        offset: usize,
+    },
+}
+
+impl fmt::Display for SmwUsV1ExpandedExAnimationRuntimeDetectError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "expanded ExAnimation runtime detection failed: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1ExpandedExAnimationRuntimeDetectError {}
+
+/// Authenticates the complete ordinary-LoROM current runtime family.
+///
+/// Mutable feature/global-pointer operands are retained, while every code byte, fixed relocation,
+/// RATS owner, pointer-table relationship, helper allocation, sentinel, and shared-palette hook is
+/// checked against the recovered Lunar Magic 3.63 family.
+pub fn detect_smw_us_v1_current_expanded_exanimation_runtime(
+    bytes: &[u8],
+) -> Result<RatsBlock, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    let hook = bytes
+        .get(0x283ad..0x283b2)
+        .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookRange)?;
+    if hook[0] != 0x22 || hook[4] != 0xea {
+        return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookRange);
+    }
+    let runtime_offset = mapped_operand(&hook[1..4])
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?;
+    let runtime = owned_block(bytes, runtime_offset).map_err(|error| match error {
+        OwnedBlockError::BeforeHeader => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeBeforeHeader(runtime_offset)
+        }
+        OwnedBlockError::Header(source) => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeHeader(source)
+        }
+        OwnedBlockError::Ownership(actual) => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeOwnership {
+                expected: runtime_offset,
+                actual,
+            }
+        }
+    })?;
+    if runtime.payload.len() != 0xc30 {
+        return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeLength(
+            runtime.payload.len(),
+        ));
+    }
+    let installed = &bytes[runtime.payload.clone()];
+    let pointer_offset = mapped_operand(&installed[0xea..0xed])
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerAddress)?;
+    let pointer = owned_block(bytes, pointer_offset).map_err(|error| match error {
+        OwnedBlockError::BeforeHeader => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerBeforeHeader(pointer_offset)
+        }
+        OwnedBlockError::Header(source) => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerHeader(source)
+        }
+        OwnedBlockError::Ownership(actual) => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerOwnership {
+                expected: pointer_offset,
+                actual,
+            }
+        }
+    })?;
+    if pointer.payload.len() != 0x600 {
+        return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerLength(
+            pointer.payload.len(),
+        ));
+    }
+    let low_bank =
+        |offset| -> Result<u32, RomError> { Ok(pc_to_snes(Mapper::LoRom, offset)? & 0x7f_ffff) };
+    let relocations = ExpandedExAnimationRuntimeRelocations {
+        mapping_bytes: [installed[0x5c], installed[0x66]],
+        snes_pointers: [
+            low_bank(pointer_offset + 1)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerAddress)?,
+            low_bank(pointer_offset)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerAddress)?,
+            low_bank(runtime_offset + 0xb14)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
+            low_bank(runtime_offset + 0xb24)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
+            low_bank(runtime_offset + 0xb1c)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
+            low_bank(runtime_offset + 0xb1c)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
+            low_bank(runtime_offset + 0xb1c)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
+            low_bank(runtime_offset + 0xb1c)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
+        ],
+        iram_words: SMW_US_V1_IRAM_WORDS,
+        local_word_base: low_bank(runtime_offset + 0x4b0)
+            .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?
+            as u16,
+    };
+    let mut expected = relocate_expanded_exanimation_runtime(&relocations)
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::Relocation)?;
+    expected[0x46..0x49].copy_from_slice(&installed[0x46..0x49]);
+    expected[0x65] = installed[0x65];
+    if installed != expected {
+        return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeMismatch);
+    }
+    for (offset, expected) in [
+        (0x1bcc0, &[0; 0x10][..]),
+        (0x2d8e2, &[0x22, 0x50, 0xf5, 0x0e][..]),
+        (0x77550, &SHARED_PALETTE_RUNTIME_A[..]),
+        (0x26b8, &[0x22, 0x60, 0xf5, 0x0e][..]),
+        (0x77560, &SHARED_PALETTE_RUNTIME_B[..]),
+    ] {
+        if bytes.get(offset..offset + expected.len()) != Some(expected) {
+            return Err(
+                SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch { offset },
+            );
+        }
+    }
+    authenticate_helper(bytes, 0x25e3, false, &LEVEL_GRAPHICS_RUNTIME)?;
+    authenticate_helper(bytes, 0x0a4e, true, &GRAPHICS_RUNTIME)?;
+    Ok(runtime)
+}
+
+/// Classifies the three coordinator branches without treating malformed installed signals as
+/// absence.
+pub fn probe_smw_us_v1_expanded_exanimation_runtime_generation(
+    bytes: &[u8],
+) -> Result<SmwUsV1ExpandedExAnimationRuntimeGeneration, SmwUsV1ExpandedExAnimationRuntimeDetectError>
+{
+    if bytes.get(0x283ad..0x283b2) == Some(&[0xe2, 0x30, 0x9c, 0x33, 0x19]) {
+        return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent);
+    }
+    if crate::smw_us_v1_legacy_exanimation_hook_migration(bytes).is_ok() {
+        return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks);
+    }
+    detect_smw_us_v1_current_expanded_exanimation_runtime(bytes)?;
+    Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Current)
+}
+
+#[derive(Debug)]
+enum OwnedBlockError {
+    BeforeHeader,
+    Header(HeaderError),
+    Ownership(usize),
+}
+
+fn owned_block(bytes: &[u8], payload: usize) -> Result<RatsBlock, OwnedBlockError> {
+    let header = payload
+        .checked_sub(HEADER_LEN)
+        .ok_or(OwnedBlockError::BeforeHeader)?;
+    let block = parse_at(bytes, header).map_err(OwnedBlockError::Header)?;
+    if block.payload.start != payload {
+        return Err(OwnedBlockError::Ownership(block.payload.start));
+    }
+    Ok(block)
+}
+
+fn mapped_operand(bytes: &[u8]) -> Result<usize, RomError> {
+    let address = u32::from(bytes[0]) | u32::from(bytes[1]) << 8 | u32::from(bytes[2]) << 16;
+    snes_to_pc(Mapper::LoRom, address)
+}
+
+fn authenticate_helper(
+    bytes: &[u8],
+    hook_offset: usize,
+    trailing_nop: bool,
+    expected: &[u8],
+) -> Result<(), SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    let hook_len = if trailing_nop { 5 } else { 4 };
+    let hook = bytes.get(hook_offset..hook_offset + hook_len).ok_or(
+        SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch {
+            offset: hook_offset,
+        },
+    )?;
+    if hook[0] != 0x22 || trailing_nop && hook[4] != 0xea {
+        return Err(
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::FixedRangeMismatch {
+                offset: hook_offset,
+            },
+        );
+    }
+    let target = mapped_operand(&hook[1..4]).map_err(|source| {
+        SmwUsV1ExpandedExAnimationRuntimeDetectError::HelperAddress {
+            offset: hook_offset,
+            source,
+        }
+    })?;
+    let block = owned_block(bytes, target).map_err(|error| match error {
+        OwnedBlockError::BeforeHeader => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::HelperBeforeHeader {
+                offset: hook_offset,
+                target,
+            }
+        }
+        OwnedBlockError::Header(source) => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::HelperHeader {
+                offset: hook_offset,
+                source,
+            }
+        }
+        OwnedBlockError::Ownership(actual) => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::HelperOwnership {
+                offset: hook_offset,
+                expected: target,
+                actual,
+            }
+        }
+    })?;
+    if block.payload.len() != expected.len() {
+        return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HelperLength {
+            offset: hook_offset,
+            expected: expected.len(),
+            actual: block.payload.len(),
+        });
+    }
+    if &bytes[block.payload] != expected {
+        return Err(
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::HelperPayloadMismatch {
+                offset: hook_offset,
+            },
+        );
+    }
+    Ok(())
+}
 
 /// Builds the recovered ordinary-LoROM fresh runtime allocations and authenticated fixed writes.
 ///
@@ -267,5 +548,58 @@ mod tests {
         ));
         assert_eq!(project.save_snapshot(), original);
         assert!(!project.undo().unwrap());
+    }
+
+    #[test]
+    fn generation_probe_authenticates_generated_and_retained_current_families() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let pristine_image = RomImage::from_bytes(pristine.clone()).unwrap();
+        assert_eq!(
+            probe_smw_us_v1_expanded_exanimation_runtime_generation(pristine_image.logical_bytes())
+                .unwrap(),
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent
+        );
+        let mut generated = Project::new(pristine_image);
+        generated
+            .install_relocatable_patch(
+                &smw_us_v1_expanded_exanimation_runtime_installation_plan().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            probe_smw_us_v1_expanded_exanimation_runtime_generation(generated.rom.logical_bytes())
+                .unwrap(),
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let retained = fs::read(
+            root.join("oracle-work/lm363/pristine-us/exanimation-install-positive/after.smc"),
+        )
+        .unwrap();
+        let retained = RomImage::from_bytes(retained).unwrap();
+        assert_eq!(
+            probe_smw_us_v1_expanded_exanimation_runtime_generation(retained.logical_bytes())
+                .unwrap(),
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+    }
+
+    #[test]
+    fn current_probe_rejects_core_and_dependent_runtime_corruption() {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut project = Project::new(RomImage::from_bytes(pristine).unwrap());
+        project
+            .install_relocatable_patch(
+                &smw_us_v1_expanded_exanimation_runtime_installation_plan().unwrap(),
+            )
+            .unwrap();
+        for offset in [0x80549 + 0x120, 0x81789 + 3, 0x77560 + 5] {
+            let mut corrupt = project.rom.logical_bytes().to_vec();
+            corrupt[offset] ^= 1;
+            assert!(
+                probe_smw_us_v1_expanded_exanimation_runtime_generation(&corrupt).is_err(),
+                "corruption at {offset:#x} was accepted"
+            );
+        }
     }
 }

@@ -3800,6 +3800,12 @@ advances only the marker's generation byte to produce `4C 4D 01 01`. Rust authen
 target, containing RATS owner, payload extent, and marker before constructing three guarded writes.
 Headered and headerless tests prove checksum-valid publication, no allocation or expansion,
 late-change atomicity, and byte-exact undo.
+The generation probe does not reduce current-runtime detection to the `$0283AD` opcode. It resolves
+and authenticates the core and `$600` pointer-table RATS owners, reconstructs every immutable core
+byte from the concrete allocation addresses, retains only the feature/global-pointer operands that
+the editor legitimately mutates, and authenticates both allocated graphics helpers plus the fixed
+sentinel and shared-palette family. Generated and retained Lunar Magic current runtimes pass; core,
+allocated-helper, and fixed-helper corruption each reject instead of falling back to absence.
 `ConvertLegacyExAnimationRecords` (`0045E9C0`) gives the first fully bounded migration model. Each
 legacy record is exactly `$23` bytes: one packed control byte, one destination word, and sixteen
 source words. A zero low nibble is inactive. After decrementing the control byte, its high nibble
