@@ -33,10 +33,21 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) tileset_tiles: usize,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct VanillaAnimationViewState {
     pub(crate) blue_pow_active: bool,
     pub(crate) silver_pow_active: bool,
+    pub(crate) conditional: lm_render::LunarMagicConditionalViewState,
+}
+
+impl Default for VanillaAnimationViewState {
+    fn default() -> Self {
+        Self {
+            blue_pow_active: false,
+            silver_pow_active: false,
+            conditional: lm_render::LunarMagicConditionalViewState::default(),
+        }
+    }
 }
 
 pub(crate) fn compose_native_map16_plane(
@@ -267,16 +278,18 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         )?;
         for screen_variant in 0..4 {
             let screen_map16 = map16_definitions_for_phase(&map16.bytes, screen_variant);
-            animated_images.push(render_map16_definition_atlas(
+            animated_images.push(render_map16_definition_atlas_with_view_state(
                 &screen_map16,
                 &foreground_graphics,
                 &palette,
+                animation_view_state,
             ));
-            animated_layer2_images.push(render_layer2_map16_definition_atlas(
+            animated_layer2_images.push(render_layer2_map16_definition_atlas_with_view_state(
                 &screen_map16,
                 &foreground_graphics,
                 &palette,
                 tileset,
+                animation_view_state,
             ));
         }
         let mut background_image =
@@ -888,9 +901,6 @@ fn vanilla_animation_source_index(
     const TRIGGER_6_TO_13: [u8; 8] = [0, 0, 0, 1, 0, 2, 2, 0];
     const TILESET_OFFSETS: [usize; 14] = [0, 5, 10, 15, 20, 20, 25, 20, 10, 20, 0, 5, 0, 20];
     const REPLACEMENT_BASE: usize = 0x26;
-    const INVISIBLE_POW_OBJECTS_VISIBLE: bool = true;
-    const ON_OFF_SWITCH_ON: bool = true;
-
     match MODE.get(animation_index).copied().unwrap_or_default() {
         2 => {
             animation_index
@@ -903,11 +913,11 @@ fn vanilla_animation_source_index(
             let trigger = TRIGGER_6_TO_13[animation_index - 6];
             let replacement = match trigger {
                 0 if matches!(animation_index, 6 | 7 | 10) => {
-                    INVISIBLE_POW_OBJECTS_VISIBLE || view_state.blue_pow_active
+                    view_state.conditional.invisible_pow_objects || view_state.blue_pow_active
                 }
                 0 => view_state.blue_pow_active,
                 1 => view_state.silver_pow_active,
-                2 => !ON_OFF_SWITCH_ON,
+                2 => !view_state.conditional.on_off_switch_on,
                 _ => false,
             };
             if replacement {
@@ -1120,7 +1130,27 @@ fn render_map16_definition_atlas(
     graphics: &[IndexedTile],
     palette: &Palette,
 ) -> egui::ColorImage {
-    render_map16_definition_atlas_with_layer2_palette(definitions, graphics, palette, false)
+    render_map16_definition_atlas_with_view_state(
+        definitions,
+        graphics,
+        palette,
+        VanillaAnimationViewState::default(),
+    )
+}
+
+fn render_map16_definition_atlas_with_view_state(
+    definitions: &[u8],
+    graphics: &[IndexedTile],
+    palette: &Palette,
+    view_state: VanillaAnimationViewState,
+) -> egui::ColorImage {
+    render_map16_definition_atlas_with_layer2_palette(
+        definitions,
+        graphics,
+        palette,
+        false,
+        view_state,
+    )
 }
 
 fn render_layer2_map16_definition_atlas(
@@ -1132,7 +1162,29 @@ fn render_layer2_map16_definition_atlas(
     // Ghidra RenderLevelEditorViewportRegion @ 00453c0f sets DAT_00600256 for
     // object-backed Layer 2 when the active object tileset is 3. The Map16
     // renderer then adds four palette rows to subtiles using rows 0..3.
-    render_map16_definition_atlas_with_layer2_palette(definitions, graphics, palette, tileset == 3)
+    render_layer2_map16_definition_atlas_with_view_state(
+        definitions,
+        graphics,
+        palette,
+        tileset,
+        VanillaAnimationViewState::default(),
+    )
+}
+
+fn render_layer2_map16_definition_atlas_with_view_state(
+    definitions: &[u8],
+    graphics: &[IndexedTile],
+    palette: &Palette,
+    tileset: u8,
+    view_state: VanillaAnimationViewState,
+) -> egui::ColorImage {
+    render_map16_definition_atlas_with_layer2_palette(
+        definitions,
+        graphics,
+        palette,
+        tileset == 3,
+        view_state,
+    )
 }
 
 fn render_map16_definition_atlas_with_layer2_palette(
@@ -1140,6 +1192,7 @@ fn render_map16_definition_atlas_with_layer2_palette(
     graphics: &[IndexedTile],
     palette: &Palette,
     shift_low_palette_rows: bool,
+    view_state: VanillaAnimationViewState,
 ) -> egui::ColorImage {
     let width = 32 * 16;
     let height = 16 * 16;
@@ -1147,8 +1200,24 @@ fn render_map16_definition_atlas_with_layer2_palette(
     for definition in 0..lm_profile::SMW_US_V1_MAP16_BASE_TILE_COUNT {
         let definition_x = definition % 32 * 16;
         let definition_y = definition / 32 * 16;
+        if view_state.conditional.other_invisible_objects && (0x6f..=0x72).contains(&definition) {
+            draw_other_invisible_object_overlay(
+                &mut rgba,
+                width,
+                definition_x,
+                definition_y,
+                definition - 0x6f,
+            );
+            continue;
+        }
+        let (source_definition, half_blend) = map16_conditional_view_definition(
+            definition,
+            view_state.conditional,
+            view_state.blue_pow_active,
+        );
         for quadrant in 0..4 {
-            let word_offset = definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES + quadrant * 2;
+            let word_offset =
+                source_definition * lm_profile::SMW_US_V1_MAP16_TILE_BYTES + quadrant * 2;
             let word = u16::from_le_bytes([definitions[word_offset], definitions[word_offset + 1]]);
             let tile_number = usize::from(word & 0x03ff);
             let (quadrant_x, quadrant_y) = map16_quadrant_offset(quadrant);
@@ -1166,8 +1235,143 @@ fn render_map16_definition_atlas_with_layer2_palette(
                 (word & 0x4000 != 0, word & 0x8000 != 0),
             );
         }
+        if half_blend {
+            for y in definition_y..definition_y + 16 {
+                for x in definition_x..definition_x + 16 {
+                    let alpha = (y * width + x) * 4 + 3;
+                    if rgba[alpha] != 0 {
+                        rgba[alpha] = 128;
+                    }
+                }
+            }
+        }
     }
     egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
+}
+
+fn draw_other_invisible_object_overlay(
+    rgba: &mut [u8],
+    width: usize,
+    target_x: usize,
+    target_y: usize,
+    overlay: usize,
+) {
+    // PE resource type 500, ID 501 is a 64×16 24bpp strip. Lunar Magic indexes its four
+    // 16×16 cells for Map16 $06F-$072, treats blue as transparent, and half-averages every
+    // remaining pixel over the editor surface. These rows are the exact top-down resource cells.
+    const COLORS: [[u8; 3]; 7] = [
+        [0x00, 0x00, 0x00],
+        [0xf8, 0xf8, 0xf8],
+        [0x00, 0x00, 0xff],
+        [0xff, 0x00, 0x00],
+        [0x00, 0x78, 0x00],
+        [0x00, 0xf8, 0x00],
+        [0x00, 0xb8, 0x00],
+    ];
+    const ROWS: [[&str; 16]; 4] = [
+        [
+            "2222200000022222",
+            "2220000330100222",
+            "2201033330111022",
+            "2011600330111102",
+            "2016510330511102",
+            "0465110330555640",
+            "0465110330551140",
+            "0165110330511110",
+            "0116610330611110",
+            "0114440330441140",
+            "0144000000004440",
+            "2000110110110002",
+            "2201110110111022",
+            "2201111111111022",
+            "2220111111110222",
+            "2222000000002222",
+        ],
+        [
+            "2222200000022222",
+            "2220003333000222",
+            "2201033003301022",
+            "2011600503301102",
+            "2016511103301102",
+            "0465111033055640",
+            "0465110330551140",
+            "0165103301511110",
+            "0116033000011110",
+            "0114033333301140",
+            "0144000000004440",
+            "2000110110110002",
+            "2201110110111022",
+            "2201111111111022",
+            "2220111111110222",
+            "2222000000002222",
+        ],
+        [
+            "2222200000022222",
+            "2220003333000222",
+            "2201033003301022",
+            "2011600503301102",
+            "2016511003301102",
+            "0465110333055640",
+            "0465111003301140",
+            "0165100103301110",
+            "0116033003301110",
+            "0114403333041140",
+            "0144000000004440",
+            "2000110110110002",
+            "2201110110111022",
+            "2201111111111022",
+            "2220111111110222",
+            "2222000000002222",
+        ],
+        [
+            "2222200000022222",
+            "2220040330100222",
+            "2201103330111022",
+            "2011603330111102",
+            "2016033330511102",
+            "0465033330555640",
+            "0460330330551140",
+            "0160333333011110",
+            "0116000330611110",
+            "0114440330441140",
+            "0144000000004440",
+            "2000110110110002",
+            "2201110110111022",
+            "2201111111111022",
+            "2220111111110222",
+            "2222000000002222",
+        ],
+    ];
+    for (y, row) in ROWS[overlay].iter().enumerate() {
+        for (x, value) in row.bytes().enumerate() {
+            let color_index = usize::from(value - b'0');
+            if color_index == 2 {
+                continue;
+            }
+            let output = ((target_y + y) * width + target_x + x) * 4;
+            rgba[output..output + 3].copy_from_slice(&COLORS[color_index]);
+            rgba[output + 3] = 128;
+        }
+    }
+}
+
+const fn map16_conditional_view_definition(
+    definition: usize,
+    view_state: lm_render::LunarMagicConditionalViewState,
+    blue_pow_active: bool,
+) -> (usize, bool) {
+    if view_state.other_invisible_objects {
+        match definition {
+            0x21 | 0x22 => return (0x114, true),
+            0x23 => return (0x113, true),
+            0x24 => return (0x115, true),
+            _ => {}
+        }
+    }
+    if view_state.invisible_pow_objects && !blue_pow_active && matches!(definition, 0x27..=0x2a) {
+        return (definition, true);
+    }
+    (definition, false)
 }
 
 pub(crate) fn render_rom_map16_page(
@@ -1816,7 +2020,75 @@ mod tests {
             ..ordinary
         };
         assert_eq!(vanilla_animation_source_index(9, 0, silver), 0x2f);
+        let mut invisible_off = ordinary;
+        invisible_off.conditional.invisible_pow_objects = false;
+        assert_eq!(vanilla_animation_source_index(6, 0, invisible_off), 6);
+        let mut on_off_clear = ordinary;
+        on_off_clear.conditional.on_off_switch_on = false;
+        assert_eq!(vanilla_animation_source_index(11, 0, on_off_clear), 0x31);
         assert_eq!(vanilla_animation_source_index(14, 6, ordinary), 39);
+    }
+
+    #[test]
+    fn invisible_object_views_select_and_half_blend_the_recovered_map16_definitions() {
+        let ordinary = lm_render::LunarMagicConditionalViewState::default();
+        assert_eq!(
+            map16_conditional_view_definition(0x21, ordinary, false),
+            (0x114, true)
+        );
+        assert_eq!(
+            map16_conditional_view_definition(0x24, ordinary, false),
+            (0x115, true)
+        );
+        assert_eq!(
+            map16_conditional_view_definition(0x27, ordinary, false),
+            (0x27, true)
+        );
+        assert_eq!(
+            map16_conditional_view_definition(0x27, ordinary, true),
+            (0x27, false)
+        );
+        assert_eq!(
+            map16_conditional_view_definition(
+                0x21,
+                lm_render::LunarMagicConditionalViewState {
+                    other_invisible_objects: false,
+                    ..ordinary
+                },
+                false,
+            ),
+            (0x21, false)
+        );
+    }
+
+    #[test]
+    fn other_invisible_overlays_match_the_embedded_resource_color_histogram() {
+        let mut rgba = vec![0; 64 * 16 * 4];
+        for overlay in 0..4 {
+            draw_other_invisible_object_overlay(&mut rgba, 64, overlay * 16, 0, overlay);
+        }
+        let mut histogram = std::collections::BTreeMap::new();
+        let mut transparent = 0;
+        for pixel in rgba.chunks_exact(4) {
+            if pixel[3] == 0 {
+                transparent += 1;
+            } else {
+                assert_eq!(pixel[3], 128);
+                *histogram.entry([pixel[0], pixel[1], pixel[2]]).or_insert(0) += 1;
+            }
+        }
+        assert_eq!(transparent, 192);
+        assert_eq!(
+            histogram,
+            std::collections::BTreeMap::from([
+                ([0x00, 0x00, 0x00], 334),
+                ([0x00, 0x78, 0x00], 55),
+                ([0x00, 0xb8, 0x00], 31),
+                ([0x00, 0xf8, 0x00], 35),
+                ([0xf8, 0xf8, 0xf8], 274),
+                ([0xff, 0x00, 0x00], 103),
+            ])
+        );
     }
 
     #[test]
@@ -1855,6 +2127,7 @@ mod tests {
             VanillaAnimationViewState {
                 blue_pow_active: true,
                 silver_pow_active: false,
+                ..VanillaAnimationViewState::default()
             },
         )
         .unwrap();
@@ -1869,6 +2142,7 @@ mod tests {
             VanillaAnimationViewState {
                 blue_pow_active: false,
                 silver_pow_active: true,
+                ..VanillaAnimationViewState::default()
             },
         )
         .unwrap();

@@ -101,13 +101,14 @@ pub use portable_overworld::{
 pub use portable_palette::{PortablePaletteRenderError, render_portable_palette};
 pub use scene::{Scene, TileInstance, draw_scene};
 pub use standard_object_renderer::{
-    LunarMagicSwitchViewState, STANDARD_OBJECT_COMMANDS, StandardObjectDefinitionSet,
-    StandardObjectPaintedCell, StandardObjectPattern, StandardObjectRenderError,
-    StandardObjectRenderReport, StandardObjectResizeModel,
+    LunarMagicConditionalViewState, LunarMagicSwitchViewState, STANDARD_OBJECT_COMMANDS,
+    StandardObjectDefinitionSet, StandardObjectPaintedCell, StandardObjectPattern,
+    StandardObjectRenderError, StandardObjectRenderReport, StandardObjectResizeModel,
     install_lunar_magic_shared_extended_objects, install_lunar_magic_shared_standard_objects,
     install_lunar_magic_tileset_extended_objects, lunar_magic_conditional_extended_object_tile,
     lunar_magic_shared_extended_object_tile, render_mapped_standard_object_placement,
-    render_mapped_standard_object_stream, render_standard_object_stream,
+    render_mapped_standard_object_placement_with_view_state, render_mapped_standard_object_stream,
+    render_standard_object_stream,
 };
 pub use standard_sprite_renderer::{
     StandardLevelOrientation, StandardSpritePreviewMode, StandardSpritePreviewSource,

@@ -3609,6 +3609,25 @@ ordinary defaults, exposes the two independent POW flags, and authenticates both
 ROM bytes and every selected source index in tests. Raw copier-header containers place these same
 tables 512 bytes later; those container offsets are deliberately not used as logical PCs.
 
+The adjacent user-toolbar name table establishes `LM_VIEW_INVISIBLE`, `LM_VIEW_INVISIBLE_2`,
+`LM_VIEW_LINE_ON`, and `LM_VIEW_CDM16` as commands `$2400`, `$2401`, `$2402`, and `$2409`.
+`CreateMainApplicationMenu` at `00447540` shows their initialized default-on states through bytes
+`005E7B06`–`005E7B09`; `$2402` temporarily inverts its byte while
+`InitializeAnimationTriggerIndexMap` at `00465350` rebuilds the persistent visible lookup, then
+restores the control byte. `RenderMap16TileToPixelBuffer` at `0044EAF0` proves the display rules:
+other-invisible mode maps `$021/$022->$114`, `$023->$113`, and `$024->$115`; Invisible POW mode
+half-blends `$027-$02A` only while Blue POW is clear; and custom DSC flag bits two/four select the
+corresponding display mapping. `$06F-$072` instead select four 16×16 half-blended bitmap cells.
+`LoadEmbeddedLevelEditorBitmapPayloads` at `00498D00` identifies their source as PE resource type
+500, ID 501. Parsing the executable resource directory locates its exact 64×16 24bpp strip; its
+192 blue pixels are the transparent key and the remaining 832 pixels use the recovered six-color
+histogram now authenticated by Rust tests. Finally, `PlaceRectangularLevelObjectTiles` at
+`00421E10` proves that a `$27/$29` Direct Map16 record selects source tile `+$100` while `$2409`
+is active only when both its output-width high bit and source-control high bit are set. Rust keeps
+these as presentation state, applies them to the shared atlas,
+animation selector, and per-object painter path, and never rewrites the authored record merely to
+change the view.
+
 `LM_VIEW_512HEIGHT_BG` maps to `$2407`; dispatcher case `$55` toggles persisted byte `005E7B0D`
 and redraws without rebuilding level data. `RenderLevelEditorViewportRegion` at `004530A0` uses
 that byte to change the background row modulus from `$1B0` to `$200` pixels.

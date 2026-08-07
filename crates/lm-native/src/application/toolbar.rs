@@ -237,6 +237,18 @@ impl NativeApplication {
             UserToolbarLocalAction::BluePow => {
                 self.vanilla_level_editor.toolbar_blue_pow_toggle();
             }
+            UserToolbarLocalAction::InvisiblePowObjects => self
+                .vanilla_level_editor
+                .toolbar_invisible_pow_objects_toggle(),
+            UserToolbarLocalAction::OtherInvisibleObjects => self
+                .vanilla_level_editor
+                .toolbar_other_invisible_objects_toggle(),
+            UserToolbarLocalAction::OnOffSwitch => {
+                self.vanilla_level_editor.toolbar_on_off_switch_toggle();
+            }
+            UserToolbarLocalAction::ConditionalDirectMap16 => self
+                .vanilla_level_editor
+                .toolbar_conditional_direct_map16_toggle(),
             UserToolbarLocalAction::Background512Height => {
                 self.vanilla_level_editor
                     .toolbar_background_512_height_toggle();
@@ -503,6 +515,10 @@ fn toggle_user_toolbar_view_state(
         | UserToolbarLocalAction::RedSwitch
         | UserToolbarLocalAction::SilverPow
         | UserToolbarLocalAction::BluePow
+        | UserToolbarLocalAction::InvisiblePowObjects
+        | UserToolbarLocalAction::OtherInvisibleObjects
+        | UserToolbarLocalAction::OnOffSwitch
+        | UserToolbarLocalAction::ConditionalDirectMap16
         | UserToolbarLocalAction::Background512Height
         | UserToolbarLocalAction::Translucent
         | UserToolbarLocalAction::ZoomDefault
@@ -723,6 +739,10 @@ enum UserToolbarLocalAction {
     RedSwitch,
     SilverPow,
     BluePow,
+    InvisiblePowObjects,
+    OtherInvisibleObjects,
+    OnOffSwitch,
+    ConditionalDirectMap16,
     Background512Height,
     Translucent,
     ZoomToggle,
@@ -757,6 +777,10 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_RED_SWITCH" => UserToolbarLocalAction::RedSwitch,
         "LM_VIEW_SILVER_POW" => UserToolbarLocalAction::SilverPow,
         "LM_VIEW_POW" => UserToolbarLocalAction::BluePow,
+        "LM_VIEW_INVISIBLE" => UserToolbarLocalAction::InvisiblePowObjects,
+        "LM_VIEW_INVISIBLE_2" => UserToolbarLocalAction::OtherInvisibleObjects,
+        "LM_VIEW_LINE_ON" => UserToolbarLocalAction::OnOffSwitch,
+        "LM_VIEW_CDM16" => UserToolbarLocalAction::ConditionalDirectMap16,
         "LM_VIEW_512HEIGHT_BG" => UserToolbarLocalAction::Background512Height,
         "LM_VIEW_TRANSLUCENT" => UserToolbarLocalAction::Translucent,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
@@ -883,6 +907,22 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_POW"),
             Some(UserToolbarLocalAction::BluePow)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_INVISIBLE"),
+            Some(UserToolbarLocalAction::InvisiblePowObjects)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_INVISIBLE_2"),
+            Some(UserToolbarLocalAction::OtherInvisibleObjects)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_LINE_ON"),
+            Some(UserToolbarLocalAction::OnOffSwitch)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_CDM16"),
+            Some(UserToolbarLocalAction::ConditionalDirectMap16)
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_512HEIGHT_BG"),

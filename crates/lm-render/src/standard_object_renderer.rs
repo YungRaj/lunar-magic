@@ -420,6 +420,25 @@ impl Default for LunarMagicSwitchViewState {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LunarMagicConditionalViewState {
+    pub invisible_pow_objects: bool,
+    pub other_invisible_objects: bool,
+    pub on_off_switch_on: bool,
+    pub conditional_direct_map16: bool,
+}
+
+impl Default for LunarMagicConditionalViewState {
+    fn default() -> Self {
+        Self {
+            invisible_pow_objects: true,
+            other_invisible_objects: true,
+            on_off_switch_on: true,
+            conditional_direct_map16: true,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StandardObjectRenderError {
     InvalidCommand(u8),
@@ -741,8 +760,39 @@ pub fn render_mapped_standard_object_placement(
     layout: NativeLevelMap16Layout,
     blank_tile: u16,
 ) -> Result<Option<NativeLevelMap16Cache>, StandardObjectRenderError> {
+    let mut view_state = LunarMagicConditionalViewState::default();
+    // This compatibility entry point renders authored cells without editor-only substitutions.
+    // Native Lunar Magic surfaces call the explicit view-state variant below.
+    view_state.conditional_direct_map16 = false;
+    render_mapped_standard_object_placement_with_view_state(
+        record,
+        placement,
+        definitions,
+        handler_map,
+        layout,
+        blank_tile,
+        view_state,
+    )
+}
+
+/// Expands one positioned object while honoring Lunar Magic's conditional Direct Map16 view.
+///
+/// # Errors
+///
+/// Returns the same typed coordinate/cache errors as
+/// [`render_mapped_standard_object_placement`].
+pub fn render_mapped_standard_object_placement_with_view_state(
+    record: &lm_level::ObjectRecord,
+    placement: lm_level::NativeObjectPlacement,
+    definitions: &StandardObjectDefinitionSet,
+    handler_map: &[u8; 64],
+    layout: NativeLevelMap16Layout,
+    blank_tile: u16,
+    view_state: LunarMagicConditionalViewState,
+) -> Result<Option<NativeLevelMap16Cache>, StandardObjectRenderError> {
     if let Some(fields) = record.direct_map16_fields() {
         let mut cache = NativeLevelMap16Cache::filled(blank_tile);
+        let fields = conditional_direct_map16_fields(record, fields, view_state);
         render_direct_map16_rectangle(&mut cache, layout, placement, fields)?;
         return Ok(Some(cache));
     }
@@ -769,6 +819,26 @@ pub fn render_mapped_standard_object_placement(
         definition,
     )?;
     Ok(Some(cache))
+}
+
+fn conditional_direct_map16_fields(
+    record: &lm_level::ObjectRecord,
+    mut fields: lm_level::DirectMap16Rectangle,
+    view_state: LunarMagicConditionalViewState,
+) -> lm_level::DirectMap16Rectangle {
+    if view_state.conditional_direct_map16
+        && record
+            .encoded()
+            .get(2)
+            .is_some_and(|flags| flags & 0x80 != 0)
+        && record
+            .encoded()
+            .get(3)
+            .is_some_and(|flags| flags & 0x80 != 0)
+    {
+        fields.source_tile = fields.source_tile.saturating_add(0x100);
+    }
+    fields
 }
 
 fn render_standard_object_stream_with_map(
@@ -5254,6 +5324,62 @@ mod tests {
             .unwrap();
             assert_eq!(isolated, report.cache);
         }
+    }
+
+    #[test]
+    fn conditional_direct_map16_view_selects_the_second_definition_bank() {
+        let record = ObjectRecord::new(vec![0x40, 0x70, 0x80, 0xc1, 0x20, 0, 0]).unwrap();
+        let stream = ObjectStream {
+            records: vec![record.clone()],
+        };
+        let placement = stream.native_placements_for_orientation(false)[0];
+        let definitions = StandardObjectDefinitionSet::empty();
+        let handler_map = [0xff; 64];
+        let enabled = render_mapped_standard_object_placement_with_view_state(
+            &record,
+            placement,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+            LunarMagicConditionalViewState::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(enabled.get(layout(), 0, 0).unwrap(), 0x220);
+
+        let disabled = render_mapped_standard_object_placement_with_view_state(
+            &record,
+            placement,
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+            LunarMagicConditionalViewState {
+                conditional_direct_map16: false,
+                ..LunarMagicConditionalViewState::default()
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(disabled.get(layout(), 0, 0).unwrap(), 0x120);
+
+        let ordinary = ObjectRecord::direct_map16_rectangle(0x120, 1, 1).unwrap();
+        let ordinary_stream = ObjectStream {
+            records: vec![ordinary.clone()],
+        };
+        let ordinary_cache = render_mapped_standard_object_placement_with_view_state(
+            &ordinary,
+            ordinary_stream.native_placements_for_orientation(false)[0],
+            &definitions,
+            &handler_map,
+            layout(),
+            0x25,
+            LunarMagicConditionalViewState::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(ordinary_cache.get(layout(), 0, 0).unwrap(), 0x120);
     }
 
     #[test]

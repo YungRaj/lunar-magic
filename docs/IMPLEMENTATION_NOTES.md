@@ -3205,6 +3205,18 @@ the original default-on Invisible POW Objects state. Trigger one remains Silver 
 two remains governed by the separately default-on On/Off state. Both POW flags participate in the
 graphics-preview cache key and rebuild the full foreground/background phase set without modifying
 ROM data.
+The neighboring original-compatible names are now renderer state rather than inert toolbar entries.
+`LM_VIEW_INVISIBLE` (`$2400`) defaults on and half-blends Map16 `$027-$02A` plus trigger-zero
+animation groups 6, 7, and 10 while Blue POW is clear. `LM_VIEW_INVISIBLE_2` (`$2401`) defaults on,
+maps `$021/$022` to `$114`, `$023` to `$113`, and `$024` to `$115`, and draws the four exact
+half-blended overlays for `$06F-$072`. Those overlays were recovered directly from Lunar Magic's
+64×16 24bpp PE resource type 500, ID 501; blue pixels are transparent exactly as in
+`RenderMap16TileToPixelBuffer`. `LM_VIEW_LINE_ON` (`$2402`) controls the visible On/Off trigger-map
+selection used by animation groups 11 and 12. `LM_VIEW_CDM16` (`$2409`) defaults on and adds `$100`
+to the source bank of Direct Map16 `$27/$29` records whose output-width and source-control high
+bits both mark the conditional form. The native canvas routes these
+states through both Layer 1 and object-backed Layer 2 artwork, and includes them in its atlas cache
+key; serialized object bytes remain untouched.
 `LM_VIEW_512HEIGHT_BG` (`$2407`) now switches the background's vertical source period from the
 original 27 Map16 rows (432 pixels) to the complete 32 rows (512 pixels). The game-camera preview
 uses the same period for both the precomposed background plane and its Map16 fallback, while the

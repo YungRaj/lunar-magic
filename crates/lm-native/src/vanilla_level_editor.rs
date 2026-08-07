@@ -349,6 +349,7 @@ pub(crate) struct VanillaLevelEditor {
     animation_time_offset_seconds: f64,
     animation_frozen_seconds: f64,
     switch_view_state: lm_render::LunarMagicSwitchViewState,
+    conditional_view_state: lm_render::LunarMagicConditionalViewState,
     blue_pow_active: bool,
     silver_pow_active: bool,
     background_512_height: bool,
@@ -364,7 +365,17 @@ pub(crate) struct VanillaLevelEditor {
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
-    map16_key: Option<(u64, u16, u8, u8, bool, bool, bool, bool)>,
+    map16_key: Option<(
+        u64,
+        u16,
+        u8,
+        u8,
+        bool,
+        bool,
+        bool,
+        bool,
+        lm_render::LunarMagicConditionalViewState,
+    )>,
     map16_texture: Option<egui::TextureHandle>,
     outline_texture: Option<egui::TextureHandle>,
     layer2_map16_texture: Option<egui::TextureHandle>,
@@ -1633,6 +1644,7 @@ impl VanillaLevelEditor {
             special_world_passed,
             self.blue_pow_active,
             self.silver_pow_active,
+            self.conditional_view_state,
         );
         if self.map16_key == Some(key) {
             return;
@@ -1672,6 +1684,7 @@ impl VanillaLevelEditor {
             crate::vanilla_map16_preview::VanillaAnimationViewState {
                 blue_pow_active: self.blue_pow_active,
                 silver_pow_active: self.silver_pow_active,
+                conditional: self.conditional_view_state,
             },
         ) {
             Ok(preview) => {
@@ -2403,6 +2416,26 @@ impl VanillaLevelEditor {
 
     pub(crate) fn toolbar_blue_pow_toggle(&mut self) {
         self.blue_pow_active = !self.blue_pow_active;
+    }
+
+    pub(crate) fn toolbar_invisible_pow_objects_toggle(&mut self) {
+        self.conditional_view_state.invisible_pow_objects =
+            !self.conditional_view_state.invisible_pow_objects;
+    }
+
+    pub(crate) fn toolbar_other_invisible_objects_toggle(&mut self) {
+        self.conditional_view_state.other_invisible_objects =
+            !self.conditional_view_state.other_invisible_objects;
+    }
+
+    pub(crate) fn toolbar_on_off_switch_toggle(&mut self) {
+        self.conditional_view_state.on_off_switch_on =
+            !self.conditional_view_state.on_off_switch_on;
+    }
+
+    pub(crate) fn toolbar_conditional_direct_map16_toggle(&mut self) {
+        self.conditional_view_state.conditional_direct_map16 =
+            !self.conditional_view_state.conditional_direct_map16;
     }
 
     pub(crate) fn toolbar_background_512_height_toggle(&mut self) {
@@ -3800,6 +3833,7 @@ impl VanillaLevelEditor {
                 surface_outline,
                 line_guide_outline,
                 switch_view_state: self.switch_view_state,
+                conditional_view_state: self.conditional_view_state,
             },
         )
     }
@@ -7629,6 +7663,7 @@ struct OrderedObjectDraw<'a> {
     surface_outline: bool,
     line_guide_outline: bool,
     switch_view_state: lm_render::LunarMagicSwitchViewState,
+    conditional_view_state: lm_render::LunarMagicConditionalViewState,
 }
 
 fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
@@ -7686,7 +7721,10 @@ fn draw_ordered_object_tiles(
                 })
             })
     });
-    let shared_standard_cache = if has_custom_displays {
+    let has_direct_map16 = request.records[..record_limit]
+        .iter()
+        .any(|record| record.direct_map16_fields().is_some());
+    let shared_standard_cache = if has_custom_displays || has_direct_map16 {
         false
     } else {
         request.handler_map.is_some_and(|handler_map| {
@@ -7739,13 +7777,14 @@ fn draw_ordered_object_tiles(
         let Some(handler_map) = request.handler_map else {
             continue;
         };
-        let Ok(Some(cache)) = lm_render::render_mapped_standard_object_placement(
+        let Ok(Some(cache)) = lm_render::render_mapped_standard_object_placement_with_view_state(
             record,
             *placement,
             &definitions,
             handler_map,
             layout,
             VANILLA_EMPTY_MAP16_TILE,
+            request.conditional_view_state,
         ) else {
             continue;
         };
@@ -14257,6 +14296,28 @@ mod tests {
         assert!(!editor.blue_pow_active);
         editor.toolbar_blue_pow_toggle();
         assert!(editor.blue_pow_active);
+    }
+
+    #[test]
+    fn conditional_object_toolbar_states_default_on_and_toggle_independently() {
+        let mut editor = VanillaLevelEditor::default();
+        assert_eq!(
+            editor.conditional_view_state,
+            lm_render::LunarMagicConditionalViewState::default()
+        );
+        editor.toolbar_invisible_pow_objects_toggle();
+        editor.toolbar_other_invisible_objects_toggle();
+        editor.toolbar_on_off_switch_toggle();
+        editor.toolbar_conditional_direct_map16_toggle();
+        assert_eq!(
+            editor.conditional_view_state,
+            lm_render::LunarMagicConditionalViewState {
+                invisible_pow_objects: false,
+                other_invisible_objects: false,
+                on_off_switch_on: false,
+                conditional_direct_map16: false,
+            }
+        );
     }
 
     #[test]

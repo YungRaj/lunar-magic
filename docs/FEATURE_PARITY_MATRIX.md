@@ -112,6 +112,11 @@ selects its authenticated vanilla animation bank. The default-off `$2406` Blue P
 selects the recovered trigger-zero animation groups from the pristine mode/trigger tables while
 retaining the original default-on Invisible POW Objects and On/Off states. Both POW states are part
 of the preview cache key, so toggling either rebuilds every foreground/background animation phase. The
+adjacent default-on `$2400/$2401/$2402/$2409` conditional-view controls are also live: invisible
+POW tiles half-blend until Blue POW is active; other invisible tiles use the exact `$113-$115`
+remaps and four embedded 16×16 overlays; On/Off changes its two trigger groups; and conditional
+Direct Map16 selects the `+$100` definition bank for records carrying both recovered conditional
+bits on Layer 1 and object-backed Layer 2. The
 `$2407` 512-height background command now changes the game-preview vertical wrapping from 27 to 32
 Map16 rows in both composed-plane and direct-Map16 presentation without mutating level data. The
 `$2415` translucent command now half-blends every active editor overlay while leaving level artwork
