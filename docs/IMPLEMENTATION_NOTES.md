@@ -3808,6 +3808,19 @@ ExAnimation runtime installed, then updates the data and SNES checksum in one un
 This is the runtime ensured by `WriteExAnimationFeatureFlag`, not the separate feature-control patch
 installed at `004606b0`.
 
+Legacy expanded ExAnimation data now has the corresponding installation-migration transaction.
+`migrate_legacy_exanimations` resolves the already-installed current pointer table, requires all
+512 destination pointers to be empty, and preloads every old slot before mutation. It applies the
+recovered bank-byte presence rule, `$3F` count mask and 32-record clamp, converts each `$23`-byte
+record, trims only trailing inactive records, and emits current compact payloads with setting zero,
+header value `$FFFF`, and empty trigger configuration. All new RATS allocations and pointers, the
+complete `$600` old pointer table, the `$140` auxiliary table, Lunar Magic's exact count-origin
+`count * $23` source erasures, and checksum repair form one history entry. Source/destination,
+checksum, and duplicate payload overlaps reject before commit; late allocation failure also leaves
+the ROM and history unchanged. Focused tests reopen the migrated semantics and prove exact
+Undo/Redo across LoROM, ExLoROM, SA-1, and headered/headerless physical forms. The surrounding
+fresh runtime installation and separate old pointer-hook rewrite remain distinct open gates.
+
 `InstalledExAnimationFeatureRomLayout` follows the expanded-animation hook's mapped runtime target
 to the feature-table operand. Its installed load/save entry points first resolve Lunar Magic's
 primary/fallback expanded-ExAnimation installation gate, then use the resolved storage. That outer

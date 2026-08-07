@@ -115,8 +115,8 @@ pub use installed_layout::{
     GatedLayout, InstallationMarker, InstalledAsset, InstalledLayout, InstalledLayoutError,
 };
 pub use legacy_exanimation_io::{
-    LEGACY_EXANIMATION_LEVEL_COUNT, LegacyExAnimationIoError, LegacyExAnimationRomLayout,
-    LoadedLegacyExAnimationSlot,
+    LEGACY_EXANIMATION_LEVEL_COUNT, LegacyExAnimationIoError, LegacyExAnimationMigrationLayout,
+    LegacyExAnimationMigrationResult, LegacyExAnimationRomLayout, LoadedLegacyExAnimationSlot,
 };
 pub use legacy_mwl::{LegacyMwlBundle, LegacyMwlBundleError};
 pub use level_access_restriction::{
