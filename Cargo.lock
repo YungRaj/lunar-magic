@@ -1681,6 +1681,7 @@ dependencies = [
  "lm-render",
  "lm-rom",
  "lm-title",
+ "lm-windows",
  "png 0.17.16",
  "rfd",
  "tempfile",
@@ -1777,6 +1778,13 @@ name = "lm-title"
 version = "0.1.0"
 dependencies = [
  "flate2",
+]
+
+[[package]]
+name = "lm-windows"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

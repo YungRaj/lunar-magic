@@ -28,6 +28,9 @@ directories = "6"
 fs2 = "0.4"
 png = "0.17"
 
+[target.'cfg(windows)'.dependencies]
+lm-windows = { path = "../lm-windows" }
+
 [dev-dependencies]
 lm-oracle = { path = "../lm-oracle" }
 lm-profile = { path = "../lm-profile", features = ["test-support"] }

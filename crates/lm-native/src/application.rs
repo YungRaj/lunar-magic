@@ -821,7 +821,22 @@ fn decode_toolbar_preference(value: &str) -> Result<ToolbarConfig, String> {
         .map_err(|error| error.to_string())
 }
 
+#[cfg(windows)]
 fn system_locale_preferences() -> Vec<String> {
+    let preferences = lm_windows::preferred_ui_languages();
+    if preferences.is_empty() {
+        environment_locale_preferences()
+    } else {
+        preferences
+    }
+}
+
+#[cfg(not(windows))]
+fn system_locale_preferences() -> Vec<String> {
+    environment_locale_preferences()
+}
+
+fn environment_locale_preferences() -> Vec<String> {
     ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"]
         .into_iter()
         .filter_map(|name| std::env::var(name).ok())
