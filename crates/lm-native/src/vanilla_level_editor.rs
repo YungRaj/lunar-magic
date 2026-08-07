@@ -349,6 +349,7 @@ pub(crate) struct VanillaLevelEditor {
     animation_time_offset_seconds: f64,
     animation_frozen_seconds: f64,
     switch_view_state: lm_render::LunarMagicSwitchViewState,
+    blue_pow_active: bool,
     silver_pow_active: bool,
     background_512_height: bool,
     translucent_overlays: bool,
@@ -363,7 +364,7 @@ pub(crate) struct VanillaLevelEditor {
     paste_target: Option<EntityPasteTarget>,
     pending_layer2_mode_reset: Option<HeaderForm>,
     error: Option<String>,
-    map16_key: Option<(u64, u16, u8, u8, bool, bool)>,
+    map16_key: Option<(u64, u16, u8, u8, bool, bool, bool, bool)>,
     map16_texture: Option<egui::TextureHandle>,
     outline_texture: Option<egui::TextureHandle>,
     layer2_map16_texture: Option<egui::TextureHandle>,
@@ -1630,6 +1631,8 @@ impl VanillaLevelEditor {
             sprite_tileset,
             game_runtime,
             special_world_passed,
+            self.blue_pow_active,
+            self.silver_pow_active,
         );
         if self.map16_key == Some(key) {
             return;
@@ -1658,7 +1661,7 @@ impl VanillaLevelEditor {
         self.foreground_texture = None;
         self.map16_summary = None;
         self.map16_error = None;
-        match crate::vanilla_map16_preview::render(
+        match crate::vanilla_map16_preview::render_with_animation_view_state(
             snapshot.rom_bytes.clone(),
             level,
             self.controller
@@ -1666,6 +1669,10 @@ impl VanillaLevelEditor {
                 .map_or_default(|controller| controller.level().layer1.header),
             game_runtime,
             special_world_passed,
+            crate::vanilla_map16_preview::VanillaAnimationViewState {
+                blue_pow_active: self.blue_pow_active,
+                silver_pow_active: self.silver_pow_active,
+            },
         ) {
             Ok(preview) => {
                 let background_planes = self
@@ -2392,6 +2399,10 @@ impl VanillaLevelEditor {
 
     pub(crate) fn toolbar_silver_pow_toggle(&mut self) {
         self.silver_pow_active = !self.silver_pow_active;
+    }
+
+    pub(crate) fn toolbar_blue_pow_toggle(&mut self) {
+        self.blue_pow_active = !self.blue_pow_active;
     }
 
     pub(crate) fn toolbar_background_512_height_toggle(&mut self) {
@@ -14238,6 +14249,14 @@ mod tests {
         assert_eq!(preview.len(), 1);
         assert_eq!(preview[0].definition_index, 0x115);
         assert_eq!((preview[0].x, preview[0].y), (0, 1));
+    }
+
+    #[test]
+    fn toolbar_blue_pow_toggles_default_off_animation_view_state() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(!editor.blue_pow_active);
+        editor.toolbar_blue_pow_toggle();
+        assert!(editor.blue_pow_active);
     }
 
     #[test]

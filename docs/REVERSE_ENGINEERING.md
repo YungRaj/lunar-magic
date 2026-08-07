@@ -3592,7 +3592,22 @@ throughout the standard-sprite dispatch cluster; for example `RenderConditionalT
 `004C3ED0` emits its ordinary `$13/$23` pair while clear and definition `$115` while set. Rust's
 already authenticated standard handlers expose the same branch as `alternate_display`; the native
 editor now supplies the toolbar state consistently to the canvas, existing-sprite picker, and new
-sprite catalog.
+sprite catalog. `AdvanceVanillaAnimatedTileGroup` at `00459C80` also consumes this flag when a
+mode-one group's trigger byte is one, so Rust applies it to vanilla animation group 9 as well.
+
+`LM_VIEW_POW` maps to `$2406`; dispatcher case `$54` toggles default-zero byte `00E278DD`, updates
+the menu check, rebuilds the initial animation state, and redraws the dependent editor surfaces.
+`LoadExAnimationFormatState` at `004596F0` loads the pristine mode table and its overlapping trigger
+view. In logical ROM coordinates the 24 mode bytes begin at `$02B96B`; the trigger table base is
+`$02B97D`, making the eight consumed entries for mode-one groups 6–13
+`0,0,0,1,0,2,2,0`. `AdvanceVanillaAnimatedTileGroup` and
+`RenderVanillaAnimationGroupFrame` at `0049DA10` agree on the selector: trigger zero uses Blue POW,
+trigger one uses Silver POW, and trigger two uses the inverted On/Off state. Groups 6, 7, and 10
+also select replacement bank `$26` while default-on Invisible POW Objects byte `005E7B06` is set;
+the executable image initializes that byte and On/Off byte `005E7B08` to one. Rust retains those
+ordinary defaults, exposes the two independent POW flags, and authenticates both the normalized
+ROM bytes and every selected source index in tests. Raw copier-header containers place these same
+tables 512 bytes later; those container offsets are deliberately not used as logical PCs.
 
 `LM_VIEW_512HEIGHT_BG` maps to `$2407`; dispatcher case `$55` toggles persisted byte `005E7B0D`
 and redraws without rebuilding level data. `RenderLevelEditorViewportRegion` at `004530A0` uses

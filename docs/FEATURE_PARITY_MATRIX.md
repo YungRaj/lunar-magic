@@ -107,7 +107,11 @@ four default-on switch view commands now independently select the recovered gree
 and red conditional Map16 forms on the live Layer 1/Layer 2 canvas and in both object catalogs.
 Ghidra-backed renderer tests cover all eight page-zero/page-one tile choices. The
 default-off `$2405` Silver POW view command now applies the recovered `$115` substitution to every
-conditional standard-sprite handler on the canvas and both standard-sprite picker surfaces. The
+conditional standard-sprite handler on the canvas and both standard-sprite picker surfaces, and
+selects its authenticated vanilla animation bank. The default-off `$2406` Blue POW command now
+selects the recovered trigger-zero animation groups from the pristine mode/trigger tables while
+retaining the original default-on Invisible POW Objects and On/Off states. Both POW states are part
+of the preview cache key, so toggling either rebuilds every foreground/background animation phase. The
 `$2407` 512-height background command now changes the game-preview vertical wrapping from 27 to 32
 Map16 rows in both composed-plane and direct-Map16 presentation without mutating level data. The
 `$2415` translucent command now half-blends every active editor overlay while leaving level artwork

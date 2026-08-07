@@ -33,6 +33,12 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) tileset_tiles: usize,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct VanillaAnimationViewState {
+    pub(crate) blue_pow_active: bool,
+    pub(crate) silver_pow_active: bool,
+}
+
 pub(crate) fn compose_native_map16_plane(
     atlas: &egui::ColorImage,
     tilemap: &[u16],
@@ -141,6 +147,25 @@ pub(crate) fn render(
     )
 }
 
+pub(crate) fn render_with_animation_view_state(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    game_runtime: bool,
+    special_world_passed: bool,
+    animation_view_state: VanillaAnimationViewState,
+) -> Result<VanillaMap16Preview, String> {
+    render_with_editor_palette_phase_and_animation_view_state(
+        rom_bytes,
+        level,
+        header,
+        game_runtime,
+        special_world_passed,
+        requested_vanilla_editor_palette_phase(),
+        animation_view_state,
+    )
+}
+
 pub(crate) fn render_with_editor_palette_phase(
     rom_bytes: Vec<u8>,
     level: u16,
@@ -148,6 +173,27 @@ pub(crate) fn render_with_editor_palette_phase(
     game_runtime: bool,
     special_world_passed: bool,
     editor_palette_phase: usize,
+) -> Result<VanillaMap16Preview, String> {
+    render_with_editor_palette_phase_and_animation_view_state(
+        rom_bytes,
+        level,
+        header,
+        game_runtime,
+        special_world_passed,
+        editor_palette_phase,
+        VanillaAnimationViewState::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_with_editor_palette_phase_and_animation_view_state(
+    rom_bytes: Vec<u8>,
+    level: u16,
+    header: LegacyLevelHeader,
+    game_runtime: bool,
+    special_world_passed: bool,
+    editor_palette_phase: usize,
+    animation_view_state: VanillaAnimationViewState,
 ) -> Result<VanillaMap16Preview, String> {
     if editor_palette_phase >= 8 {
         return Err(format!(
@@ -204,9 +250,21 @@ pub(crate) fn render_with_editor_palette_phase(
     let mut animated_background_images = Vec::with_capacity(8);
     for phase in 0..8 {
         let mut foreground_graphics = base_foreground_graphics.clone();
-        apply_vanilla_common_animation_frame(&project, &mut foreground_graphics, phase, tileset)?;
+        apply_vanilla_common_animation_frame_with_view_state(
+            &project,
+            &mut foreground_graphics,
+            phase,
+            tileset,
+            animation_view_state,
+        )?;
         let mut background_graphics = base_background_graphics.clone();
-        apply_vanilla_common_animation_frame(&project, &mut background_graphics, phase, tileset)?;
+        apply_vanilla_common_animation_frame_with_view_state(
+            &project,
+            &mut background_graphics,
+            phase,
+            tileset,
+            animation_view_state,
+        )?;
         for screen_variant in 0..4 {
             let screen_map16 = map16_definitions_for_phase(&map16.bytes, screen_variant);
             animated_images.push(render_map16_definition_atlas(
@@ -668,18 +726,35 @@ pub(crate) fn apply_vanilla_common_animation_frame(
     phase: usize,
     tileset: u8,
 ) -> Result<(), String> {
+    apply_vanilla_common_animation_frame_with_view_state(
+        project,
+        graphics,
+        phase,
+        tileset,
+        VanillaAnimationViewState::default(),
+    )
+}
+
+fn apply_vanilla_common_animation_frame_with_view_state(
+    project: &Project,
+    graphics: &mut [IndexedTile],
+    phase: usize,
+    tileset: u8,
+    view_state: VanillaAnimationViewState,
+) -> Result<(), String> {
     if phase >= 8 {
         return Err(format!(
             "vanilla common animation phase {phase} is outside 0..8"
         ));
     }
-    apply_vanilla_common_animation_phases(
+    apply_vanilla_common_animation_phases_with_view_state(
         project,
         graphics,
         &vanilla_common_animation_phases(phase),
         tileset,
         0,
         false,
+        view_state,
     )
 }
 
@@ -703,6 +778,7 @@ pub(crate) fn apply_vanilla_common_animation_frame_with_tiles(
         tileset,
         0,
         false,
+        VanillaAnimationViewState::default(),
         gfx33_tiles,
         gfx32_tiles,
     )
@@ -747,6 +823,27 @@ fn apply_vanilla_common_animation_phases(
     gfx33_decoded_tile_bias: usize,
     column_major_destinations: bool,
 ) -> Result<(), String> {
+    apply_vanilla_common_animation_phases_with_view_state(
+        project,
+        graphics,
+        phases,
+        tileset,
+        gfx33_decoded_tile_bias,
+        column_major_destinations,
+        VanillaAnimationViewState::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_vanilla_common_animation_phases_with_view_state(
+    project: &Project,
+    graphics: &mut [IndexedTile],
+    phases: &[u8; 19],
+    tileset: u8,
+    gfx33_decoded_tile_bias: usize,
+    column_major_destinations: bool,
+    view_state: VanillaAnimationViewState,
+) -> Result<(), String> {
     let (gfx33_tiles, gfx32_tiles) = load_vanilla_special_animation_tiles(project)?;
     apply_vanilla_common_animation_phases_with_tiles(
         project,
@@ -755,6 +852,7 @@ fn apply_vanilla_common_animation_phases(
         tileset,
         gfx33_decoded_tile_bias,
         column_major_destinations,
+        view_state,
         &gfx33_tiles,
         &gfx32_tiles,
     )
@@ -775,6 +873,53 @@ fn load_vanilla_special_animation_tiles(
     Ok((gfx33_tiles, gfx32_tiles))
 }
 
+fn vanilla_animation_source_index(
+    animation_index: usize,
+    tileset: u8,
+    view_state: VanillaAnimationViewState,
+) -> usize {
+    // LoadExAnimationFormatState @ $004596F0 reads the pristine tables beginning at logical ROM
+    // PCs $02B96B and $02B97D (raw $02BB6B/$02BB7D with a copier header). Only trigger entries
+    // 6..=13 are consumed because those are the
+    // mode-one groups. The editor initializes Invisible POW Objects and On/Off Switch On to one.
+    const MODE: [u8; 24] = [
+        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0,
+    ];
+    const TRIGGER_6_TO_13: [u8; 8] = [0, 0, 0, 1, 0, 2, 2, 0];
+    const TILESET_OFFSETS: [usize; 14] = [0, 5, 10, 15, 20, 20, 25, 20, 10, 20, 0, 5, 0, 20];
+    const REPLACEMENT_BASE: usize = 0x26;
+    const INVISIBLE_POW_OBJECTS_VISIBLE: bool = true;
+    const ON_OFF_SWITCH_ON: bool = true;
+
+    match MODE.get(animation_index).copied().unwrap_or_default() {
+        2 => {
+            animation_index
+                + TILESET_OFFSETS
+                    .get(usize::from(tileset))
+                    .copied()
+                    .unwrap_or_default()
+        }
+        1 => {
+            let trigger = TRIGGER_6_TO_13[animation_index - 6];
+            let replacement = match trigger {
+                0 if matches!(animation_index, 6 | 7 | 10) => {
+                    INVISIBLE_POW_OBJECTS_VISIBLE || view_state.blue_pow_active
+                }
+                0 => view_state.blue_pow_active,
+                1 => view_state.silver_pow_active,
+                2 => !ON_OFF_SWITCH_ON,
+                _ => false,
+            };
+            if replacement {
+                REPLACEMENT_BASE + animation_index
+            } else {
+                animation_index
+            }
+        }
+        _ => animation_index,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn apply_vanilla_common_animation_phases_with_tiles(
     project: &Project,
@@ -783,6 +928,7 @@ fn apply_vanilla_common_animation_phases_with_tiles(
     tileset: u8,
     gfx33_decoded_tile_bias: usize,
     column_major_destinations: bool,
+    view_state: VanillaAnimationViewState,
     gfx33_tiles: &[IndexedTile],
     gfx32_tiles: &[IndexedTile],
 ) -> Result<(), String> {
@@ -790,10 +936,6 @@ fn apply_vanilla_common_animation_phases_with_tiles(
         0x600, 0x640, 0x680, 0x740, 0xea0, 0x800, 0x500, 0x540, 0x580, 0x5c0, 0x780, 0x7c0, 0xda0,
         0x6c0, 0x700, 0x4c0, 0x440, 0x480, 0x400, 0, 0, 0, 0, 0,
     ];
-    const MODE: [u8; 24] = [
-        0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0,
-    ];
-    const TILESET_OFFSETS: [usize; 14] = [0, 5, 10, 15, 20, 20, 25, 20, 10, 20, 0, 5, 0, 20];
     const FRAME_TABLE_OFFSET: usize = 0x2_b999;
     const GFX32_SOURCE_BASE: usize = 0x2000;
     const GFX33_SOURCE_BASE: usize = 0x7d00;
@@ -821,19 +963,7 @@ fn apply_vanilla_common_animation_phases_with_tiles(
                 "vanilla animation group {animation_index} phase {phase} is outside 0..4"
             ));
         }
-        let source_index = if MODE[animation_index] == 2 {
-            animation_index
-                + TILESET_OFFSETS
-                    .get(usize::from(tileset))
-                    .copied()
-                    .unwrap_or_default()
-        } else if MODE[animation_index] == 1 && matches!(animation_index, 6 | 7 | 10) {
-            // Lunar Magic's ordinary editor state enables this control bank
-            // (`DAT_005e7b06 == 1`, source-bank selector $26).
-            0x26 + animation_index
-        } else {
-            animation_index
-        };
+        let source_index = vanilla_animation_source_index(animation_index, tileset, view_state);
         let table_word = source_index * 4 + phase;
         let table_word = legacy_animation_table_word(&project.rom, table_word)?;
         let table_offset = FRAME_TABLE_OFFSET + table_word * 2;
@@ -1658,6 +1788,91 @@ mod tests {
             vanilla_common_animation_phases(2),
             [1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
         );
+    }
+
+    #[test]
+    fn vanilla_pow_animation_sources_follow_lunar_magics_trigger_table() {
+        let ordinary = VanillaAnimationViewState::default();
+        assert_eq!(
+            (6..=13)
+                .map(|index| vanilla_animation_source_index(index, 0, ordinary))
+                .collect::<Vec<_>>(),
+            [0x2c, 0x2d, 8, 9, 0x30, 11, 12, 13]
+        );
+
+        let blue = VanillaAnimationViewState {
+            blue_pow_active: true,
+            ..ordinary
+        };
+        assert_eq!(
+            (6..=13)
+                .map(|index| vanilla_animation_source_index(index, 0, blue))
+                .collect::<Vec<_>>(),
+            [0x2c, 0x2d, 0x2e, 9, 0x30, 11, 12, 0x33]
+        );
+
+        let silver = VanillaAnimationViewState {
+            silver_pow_active: true,
+            ..ordinary
+        };
+        assert_eq!(vanilla_animation_source_index(9, 0, silver), 0x2f);
+        assert_eq!(vanilla_animation_source_index(14, 6, ordinary), 39);
+    }
+
+    #[test]
+    fn pristine_animation_mode_and_trigger_bytes_match_the_recovered_rom_tables() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        assert_eq!(
+            &bytes[0x2_b96b..0x2_b983],
+            &[
+                0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0
+            ]
+        );
+        assert_eq!(&bytes[0x2_b983..0x2_b98b], &[0, 0, 0, 1, 0, 2, 2, 0]);
+    }
+
+    #[test]
+    fn pow_view_states_materialize_distinct_authenticated_vram_groups() {
+        let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
+        let project = Project::new(image);
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let mut ordinary = vec![blank.clone(); 0x800];
+        apply_vanilla_common_animation_frame_with_view_state(
+            &project,
+            &mut ordinary,
+            0,
+            0,
+            VanillaAnimationViewState::default(),
+        )
+        .unwrap();
+
+        let mut blue = vec![blank.clone(); 0x800];
+        apply_vanilla_common_animation_frame_with_view_state(
+            &project,
+            &mut blue,
+            0,
+            0,
+            VanillaAnimationViewState {
+                blue_pow_active: true,
+                silver_pow_active: false,
+            },
+        )
+        .unwrap();
+        assert_ne!(&ordinary[0x58..0x5c], &blue[0x58..0x5c]);
+
+        let mut silver = vec![blank; 0x800];
+        apply_vanilla_common_animation_frame_with_view_state(
+            &project,
+            &mut silver,
+            0,
+            0,
+            VanillaAnimationViewState {
+                blue_pow_active: false,
+                silver_pow_active: true,
+            },
+        )
+        .unwrap();
+        assert_ne!(&ordinary[0x5c..0x60], &silver[0x5c..0x60]);
     }
 
     #[test]

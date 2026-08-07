@@ -234,6 +234,9 @@ impl NativeApplication {
             UserToolbarLocalAction::SilverPow => {
                 self.vanilla_level_editor.toolbar_silver_pow_toggle();
             }
+            UserToolbarLocalAction::BluePow => {
+                self.vanilla_level_editor.toolbar_blue_pow_toggle();
+            }
             UserToolbarLocalAction::Background512Height => {
                 self.vanilla_level_editor
                     .toolbar_background_512_height_toggle();
@@ -499,6 +502,7 @@ fn toggle_user_toolbar_view_state(
         | UserToolbarLocalAction::BlueSwitch
         | UserToolbarLocalAction::RedSwitch
         | UserToolbarLocalAction::SilverPow
+        | UserToolbarLocalAction::BluePow
         | UserToolbarLocalAction::Background512Height
         | UserToolbarLocalAction::Translucent
         | UserToolbarLocalAction::ZoomDefault
@@ -718,6 +722,7 @@ enum UserToolbarLocalAction {
     BlueSwitch,
     RedSwitch,
     SilverPow,
+    BluePow,
     Background512Height,
     Translucent,
     ZoomToggle,
@@ -751,6 +756,7 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_BLUE_SWITCH" => UserToolbarLocalAction::BlueSwitch,
         "LM_VIEW_RED_SWITCH" => UserToolbarLocalAction::RedSwitch,
         "LM_VIEW_SILVER_POW" => UserToolbarLocalAction::SilverPow,
+        "LM_VIEW_POW" => UserToolbarLocalAction::BluePow,
         "LM_VIEW_512HEIGHT_BG" => UserToolbarLocalAction::Background512Height,
         "LM_VIEW_TRANSLUCENT" => UserToolbarLocalAction::Translucent,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
@@ -873,6 +879,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_SILVER_POW"),
             Some(UserToolbarLocalAction::SilverPow)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_POW"),
+            Some(UserToolbarLocalAction::BluePow)
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_512HEIGHT_BG"),

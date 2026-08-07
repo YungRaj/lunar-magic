@@ -3195,7 +3195,16 @@ catalogs, so the chosen preview is the object that will visibly be placed.
 Lunar Magic's standard handlers. The live sprite canvas, existing-sprite picture picker, and new
 sprite catalog all receive the same state. When active, every authenticated conditional handler
 uses definition `$115` at its recovered position; SSC custom displays remain authored displays
-rather than being rewritten as built-in standard sprites.
+rather than being rewritten as built-in standard sprites. The same state now selects trigger-one
+vanilla animation group 9, matching the shared original dispatcher state.
+`LM_VIEW_POW` (`$2406`) now drives the default-off Blue POW animation state. The pristine logical
+ROM mode table at `$02B96B` marks groups 6–13 as conditional, while the trigger entries consumed
+from the table based at `$02B97D` are `0,0,0,1,0,2,2,0`. Blue POW therefore selects replacement
+bank `$26` for trigger-zero groups 8 and 13 in addition to groups 6, 7, and 10 already selected by
+the original default-on Invisible POW Objects state. Trigger one remains Silver POW, and trigger
+two remains governed by the separately default-on On/Off state. Both POW flags participate in the
+graphics-preview cache key and rebuild the full foreground/background phase set without modifying
+ROM data.
 `LM_VIEW_512HEIGHT_BG` (`$2407`) now switches the background's vertical source period from the
 original 27 Map16 rows (432 pixels) to the complete 32 rows (512 pixels). The game-camera preview
 uses the same period for both the precomposed background plane and its Map16 fallback, while the
