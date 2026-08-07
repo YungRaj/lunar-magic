@@ -74,3 +74,20 @@ workspace read ignores trailing Layer 2 bytes.
 f4bb1b6429b9920e4c59d3f9eb5e58b3f2d0e80aeebf49e1dc845ec45124bf2d  2,049-byte input mw1
 67cb940c874127ebca7fdaf0da44e1f683c5040fd36cb746b5222ffd055cfffe  2,048-byte re-export mw1
 ```
+
+## Layer 1 terminator boundaries
+
+An authentic 33-byte `.mw0` extended by one zero byte imported without a prompt. Its re-export was
+the original 33-byte stream, proving bytes after the first `FF` object-stream terminator are
+ignored.
+
+Removing only that final `FF` also imported without a prompt. Re-export restored the missing
+terminator and was byte-identical to the authentic stream. The Rust compatibility path therefore
+supplies a terminator only after parsing reaches the clean end of complete records; it continues
+to reject a partial final object record.
+
+```text
+4d625c7585d008a646542e01c61baba9fe0b38cb914c279adf34534b8bbd7ca7  34-byte trailing-data input mw0
+176cb452f3b71524839f1620f3ab44231e00ae9b5328844f653e4d6e2aab84b7  32-byte unterminated input mw0
+38a203f968425a74bce6345426419a5f01e66eb9c5808423f64ab04e088199a8  canonical 33-byte re-export mw0
+```

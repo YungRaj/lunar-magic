@@ -118,7 +118,19 @@ impl LegacyMwlBundle {
     ) -> Result<MwlNativeLevel, LegacyMwlBundleError> {
         self.manifest.validate()?;
         validate_payloads(&self.layer1, &self.layer2, &self.sprites)?;
-        let layer1 = LevelObjectData::parse(&self.layer1)?;
+        let layer1 = match LevelObjectData::parse(&self.layer1) {
+            Ok(layer1) => layer1,
+            Err(ObjectStreamError::MissingTerminator) => {
+                // Lunar Magic's legacy file reader supplies an end marker after a complete
+                // unterminated `.mw0` stream. Retry only this exact boundary: a genuinely
+                // truncated object record remains an error instead of borrowing the marker as
+                // record data.
+                let mut terminated = self.layer1.clone();
+                terminated.push(0xff);
+                LevelObjectData::parse(&terminated)?
+            }
+            Err(error) => return Err(error.into()),
+        };
         let layer2 = if level_mode_layer2_storage(layer1.header.level_mode())
             == Layer2Storage::CompressedTilemap
             && self.layer2.len() != NATIVE_LAYER2_TILEMAP_LEN
@@ -641,6 +653,35 @@ mod tests {
             .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
             .unwrap();
         assert_eq!(decoded.layer2, NativeLayer2Data::Tilemap(authentic));
+    }
+
+    #[test]
+    fn legacy_layer1_accepts_trailing_bytes_and_supplies_only_a_missing_terminator() {
+        let source = level_000();
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 000", &SpriteLengthTable::standard())
+                .unwrap();
+        let terminated = bundle.layer1.clone();
+
+        bundle.layer1.extend_from_slice(&[0xaa, 0xbb]);
+        let trailing = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        assert_eq!(trailing.layer1, source.layer1);
+
+        bundle.layer1 = terminated[..terminated.len() - 1].to_vec();
+        let unterminated = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        assert_eq!(unterminated.layer1, source.layer1);
+
+        bundle.layer1 = terminated[..terminated.len() - 2].to_vec();
+        assert!(
+            bundle
+                .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+                .is_err(),
+            "a partial final object must not borrow the synthesized terminator as record data"
+        );
     }
 
     #[test]
