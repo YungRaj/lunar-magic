@@ -3781,3 +3781,10 @@ while adjusted low nibbles 1–3 become the three two-word trigger forms. The co
 smallest repeated 1/2/4/8/16-frame period (up to eight two-word frames) before serialization. Rust's
 `convert_legacy_exanimation_records` now reproduces this mapping with the original 32-record clamp,
 strict exact-length input, canonical current records, and exhaustive type/period/trigger tests.
+Disassembly resolves the surrounding legacy storage framing as well. The old table is exactly
+`$600` bytes (512 contiguous three-byte pointers). Presence tests only the pointer's bank byte. A
+present pointer addresses one count byte; the migration masks it with `$3F`, clamps it to `$20`,
+then reads exactly `count * $23` record bytes beginning at the following address. Rust's
+`LegacyExAnimationRomLayout` and `load_legacy_exanimation`/`load_all_legacy_exanimations` implement
+that complete read boundary, including exact table shape, all 512 slots, mapper conversion, bounded
+payload reads, typed failures, and the original empty-pointer rule.

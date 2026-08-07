@@ -12,6 +12,7 @@ mod graphics_io;
 mod graphics_migration;
 mod history;
 mod installed_layout;
+mod legacy_exanimation_io;
 mod legacy_mwl;
 mod level_access_restriction;
 mod level_io;
@@ -112,6 +113,10 @@ pub use graphics_migration::{
 pub use history::{CopierHeaderEdit, Edit, EditBatch, EditKind, History};
 pub use installed_layout::{
     GatedLayout, InstallationMarker, InstalledAsset, InstalledLayout, InstalledLayoutError,
+};
+pub use legacy_exanimation_io::{
+    LEGACY_EXANIMATION_LEVEL_COUNT, LegacyExAnimationIoError, LegacyExAnimationRomLayout,
+    LoadedLegacyExAnimationSlot,
 };
 pub use legacy_mwl::{LegacyMwlBundle, LegacyMwlBundleError};
 pub use level_access_restriction::{
