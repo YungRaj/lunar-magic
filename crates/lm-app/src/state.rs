@@ -107,6 +107,11 @@ pub enum AppError {
     Map16RuntimeDetect(lm_profile::SmwUsV1Map16RuntimeDetectError),
     Map16RuntimeLegacyMigration(lm_profile::SmwUsV1Map16LegacyMigrationBuildError),
     Map16RuntimeStageThreeMigration(lm_profile::SmwUsV1Map16StageThreeMigrationBuildError),
+    ExpandedExAnimationRuntimePlan(lm_profile::ExpandedExAnimationRuntimeError),
+    ExpandedExAnimationRuntimeDetect(lm_profile::SmwUsV1ExpandedExAnimationRuntimeDetectError),
+    ExpandedExAnimationRuntimeLegacyMigration(
+        lm_profile::SmwUsV1LegacyExAnimationHookMigrationError,
+    ),
     Layer2RuntimeMigration(lm_profile::SmwUsV1Layer2Format102MigrationError),
     Layer2RuntimeProbe(lm_profile::SmwUsV1Layer2LayoutError),
     Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError),
@@ -124,6 +129,8 @@ pub enum AppError {
     Lfix3LegacyMigrationRequired,
     Map16RuntimeIdentityMismatch,
     Map16RuntimeAlreadyInstalled,
+    ExpandedExAnimationRuntimeIdentityMismatch,
+    ExpandedExAnimationRuntimeAlreadyInstalled,
     Layer2RuntimeIdentityMismatch,
     Layer2RuntimeAlreadyInstalled,
     Layer2RuntimeLegacyMigrationRequired(lm_profile::SmwUsV1Layer2RuntimeGeneration),
@@ -394,6 +401,24 @@ impl From<lm_profile::SmwUsV1Map16LegacyMigrationBuildError> for AppError {
 impl From<lm_profile::SmwUsV1Map16StageThreeMigrationBuildError> for AppError {
     fn from(value: lm_profile::SmwUsV1Map16StageThreeMigrationBuildError) -> Self {
         Self::Map16RuntimeStageThreeMigration(value)
+    }
+}
+
+impl From<lm_profile::ExpandedExAnimationRuntimeError> for AppError {
+    fn from(value: lm_profile::ExpandedExAnimationRuntimeError) -> Self {
+        Self::ExpandedExAnimationRuntimePlan(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1ExpandedExAnimationRuntimeDetectError> for AppError {
+    fn from(value: lm_profile::SmwUsV1ExpandedExAnimationRuntimeDetectError) -> Self {
+        Self::ExpandedExAnimationRuntimeDetect(value)
+    }
+}
+
+impl From<lm_profile::SmwUsV1LegacyExAnimationHookMigrationError> for AppError {
+    fn from(value: lm_profile::SmwUsV1LegacyExAnimationHookMigrationError) -> Self {
+        Self::ExpandedExAnimationRuntimeLegacyMigration(value)
     }
 }
 
@@ -828,6 +853,9 @@ impl AppState {
             Command::InstallLayer3 { rev } => self.install(rev, true)?,
             Command::InstallLfix3 { rev } => self.install_lfix3(rev)?,
             Command::InstallMap16Runtime { rev } => self.install_map16_runtime(rev)?,
+            Command::InstallExpandedExAnimationRuntime { rev } => {
+                self.install_expanded_exanimation_runtime(rev)?
+            }
             Command::InstallLayer2Runtime { rev } => self.install_layer2_runtime(rev)?,
             Command::InstallSprite19Fix { rev } => self.install_sprite19_fix(rev)?,
             Command::InstallSupportPatchB { rev } => self.install_support_patch_b(rev)?,

@@ -8,6 +8,7 @@ pub(super) enum BuiltInRuntime {
     CompleteLayer3,
     Lfix3Core,
     Map16Runtime,
+    ExpandedExAnimation,
     Layer2Runtime,
     Sprite19Fix,
     SupportPatchB,
@@ -22,6 +23,7 @@ impl BuiltInRuntime {
             Self::CompleteLayer3 => "Complete Layer 3 family (includes expanded settings)",
             Self::Lfix3Core => "Lfix3 core runtime and shared tables",
             Self::Map16Runtime => "Complete Map16 runtime and auxiliary table",
+            Self::ExpandedExAnimation => "Expanded ExAnimation runtime",
             Self::Layer2Runtime => "Layer 2 object-data runtime format $103",
             Self::Sprite19Fix => "Sprite 19 ASM fix",
             Self::SupportPatchB => "Level support patch B (custom time / scroll)",
@@ -45,6 +47,9 @@ impl BuiltInRuntime {
             }
             Self::Map16Runtime => {
                 "Install the recovered fixed Map16 hooks and the relocated 32-KiB auxiliary table."
+            }
+            Self::ExpandedExAnimation => {
+                "Install the recovered expanded ExAnimation core, pointer table, graphics helpers, shared-palette helpers, and fixed hooks as one transaction."
             }
             Self::Layer2Runtime => {
                 "Migrate an authenticated format-$102 Layer 2 pointer/descriptor table and runtime hook to format $103."
@@ -72,6 +77,7 @@ pub(super) struct BuiltInRuntimeWorkspace {
     pub runtime: BuiltInRuntime,
     lfix3_generation: lm_profile::SmwUsV1Lfix3Generation,
     map16_generation: lm_profile::SmwUsV1Map16RuntimeGeneration,
+    exanimation_generation: lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration,
     layer2_generation: lm_profile::SmwUsV1Layer2RuntimeGeneration,
     sprite19_fix_installed: bool,
     support_patch_b_installed: bool,
@@ -103,6 +109,11 @@ impl BuiltInRuntimeWorkspace {
         let map16_generation =
             lm_profile::probe_smw_us_v1_map16_runtime_generation(project.rom.logical_bytes())
                 .map_err(|error| error.to_string())?;
+        let exanimation_generation =
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                project.rom.logical_bytes(),
+            )
+            .map_err(|error| error.to_string())?;
         let layer2_generation = lm_profile::probe_smw_us_v1_layer2_runtime_generation(&project.rom)
             .map_err(|error| error.to_string())?;
         let sprite19_fix_installed =
@@ -123,6 +134,7 @@ impl BuiltInRuntimeWorkspace {
             runtime: BuiltInRuntime::default(),
             lfix3_generation,
             map16_generation,
+            exanimation_generation,
             layer2_generation,
             sprite19_fix_installed,
             support_patch_b_installed,
@@ -141,6 +153,10 @@ impl BuiltInRuntimeWorkspace {
             }
             BuiltInRuntime::Map16Runtime => {
                 self.map16_generation == lm_profile::SmwUsV1Map16RuntimeGeneration::StageFourCurrent
+            }
+            BuiltInRuntime::ExpandedExAnimation => {
+                self.exanimation_generation
+                    == lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
             }
             BuiltInRuntime::Layer2Runtime => {
                 self.layer2_generation
@@ -168,6 +184,10 @@ impl BuiltInRuntimeWorkspace {
                 lm_profile::SmwUsV1Map16RuntimeGeneration::StageOneLegacy
                     | lm_profile::SmwUsV1Map16RuntimeGeneration::StageTwoLegacy
                     | lm_profile::SmwUsV1Map16RuntimeGeneration::StageThreeLegacy
+            ),
+            BuiltInRuntime::ExpandedExAnimation => matches!(
+                self.exanimation_generation,
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks
             ),
             BuiltInRuntime::Layer2Runtime => {
                 matches!(
@@ -207,6 +227,9 @@ impl BuiltInRuntimeWorkspace {
                 }
                 _ => unreachable!(),
             },
+            BuiltInRuntime::ExpandedExAnimation => {
+                "The authenticated legacy ExAnimation pointer fragments will be migrated to the current bank and marker contract while preserving the existing runtime allocation."
+            }
             BuiltInRuntime::Layer2Runtime => match self.layer2_generation {
                 lm_profile::SmwUsV1Layer2RuntimeGeneration::Format100Legacy => {
                     "The authenticated legacy Layer 2 format $100 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
@@ -237,6 +260,9 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::CompleteLayer3 => Command::InstallLayer3 { rev: self.revision },
             BuiltInRuntime::Lfix3Core => Command::InstallLfix3 { rev: self.revision },
             BuiltInRuntime::Map16Runtime => Command::InstallMap16Runtime { rev: self.revision },
+            BuiltInRuntime::ExpandedExAnimation => {
+                Command::InstallExpandedExAnimationRuntime { rev: self.revision }
+            }
             BuiltInRuntime::Layer2Runtime => {
                 if !matches!(
                     self.layer2_generation,
@@ -313,6 +339,11 @@ mod tests {
         assert!(matches!(
             workspace.prepare(app.project_revision()).unwrap(),
             Command::InstallMap16Runtime { rev: 0 }
+        ));
+        workspace.runtime = BuiltInRuntime::ExpandedExAnimation;
+        assert!(matches!(
+            workspace.prepare(app.project_revision()).unwrap(),
+            Command::InstallExpandedExAnimationRuntime { rev: 0 }
         ));
         workspace.runtime = BuiltInRuntime::Sprite19Fix;
         assert!(matches!(

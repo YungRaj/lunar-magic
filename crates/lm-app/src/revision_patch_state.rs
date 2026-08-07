@@ -301,6 +301,56 @@ impl AppState {
         }])
     }
 
+    pub(crate) fn install_expanded_exanimation_runtime(
+        &mut self,
+        expected_revision: u64,
+    ) -> Result<Vec<FrontendEffect>, AppError> {
+        if expected_revision != self.project_revision {
+            return Err(AppError::StaleProjectRevision {
+                expected: expected_revision,
+                actual: self.project_revision,
+            });
+        }
+        self.require_no_pending_save()?;
+        self.ensure_project_revision_capacity()?;
+        let project = self.project.as_mut().ok_or(AppError::NoProject)?;
+        let identity = project.identity.as_ref().ok_or(AppError::NoProject)?;
+        if identity.game != SupportedGame::SuperMarioWorld
+            || identity.region != Region::NorthAmerica
+            || identity.revision != 0
+            || identity.mapper != Mapper::LoRom
+        {
+            return Err(AppError::ExpandedExAnimationRuntimeIdentityMismatch);
+        }
+        let description = match lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+            project.rom.logical_bytes(),
+        )? {
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent => {
+                let plan = lm_profile::smw_us_v1_expanded_exanimation_runtime_installation_plan()?;
+                project.install_relocatable_patch(&plan)?;
+                "Install SMW US expanded ExAnimation runtime"
+            }
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks => {
+                let migration = lm_profile::smw_us_v1_legacy_exanimation_hook_migration(
+                    project.rom.logical_bytes(),
+                )?;
+                project.install_relocatable_patch(&migration.plan)?;
+                "Migrate legacy SMW US ExAnimation pointer hooks"
+            }
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current => {
+                return Err(AppError::ExpandedExAnimationRuntimeAlreadyInstalled);
+            }
+        };
+        self.advance_project_revision()?;
+        let description = description.to_owned();
+        self.status.clone_from(&description);
+        Ok(vec![FrontendEffect::ProjectChanged {
+            description,
+            mode: self.mode,
+            revision: self.project_revision,
+        }])
+    }
+
     pub(crate) fn install_layer2_runtime(
         &mut self,
         expected_revision: u64,
@@ -649,6 +699,41 @@ mod tests {
         );
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), legacy);
+    }
+
+    #[test]
+    fn expanded_exanimation_install_reopens_rejects_duplicate_and_undoes_exactly() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+
+        let effects = app
+            .dispatch(Command::InstallExpandedExAnimationRuntime { rev: 0 })
+            .unwrap();
+        assert_eq!(effects.len(), 1);
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                app.project().unwrap().rom.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+        assert!(
+            lm_rom::SnesChecksum::decode(app.project().unwrap().rom.logical_bytes(), 0x7fdc)
+                .unwrap()
+                .is_complementary()
+        );
+
+        let revision = app.project_revision();
+        assert!(matches!(
+            app.dispatch(Command::InstallExpandedExAnimationRuntime { rev: revision }),
+            Err(AppError::ExpandedExAnimationRuntimeAlreadyInstalled)
+        ));
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
     }
 
     #[test]

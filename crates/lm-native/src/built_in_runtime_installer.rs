@@ -74,6 +74,11 @@ impl BuiltInRuntimeInstaller {
                 );
                 ui.selectable_value(
                     &mut workspace.runtime,
+                    BuiltInRuntime::ExpandedExAnimation,
+                    BuiltInRuntime::ExpandedExAnimation.label(),
+                );
+                ui.selectable_value(
+                    &mut workspace.runtime,
                     BuiltInRuntime::Layer2Runtime,
                     BuiltInRuntime::Layer2Runtime.label(),
                 );
@@ -418,6 +423,57 @@ mod tests {
                 .prepare(app.project_revision())
                 .is_err()
         );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn expanded_exanimation_selection_installs_reopens_and_undoes_exactly() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        let mut installer = BuiltInRuntimeInstaller::default();
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::ExpandedExAnimation;
+        let command = installer
+            .workspace
+            .as_ref()
+            .unwrap()
+            .prepare(app.project_revision())
+            .unwrap();
+        assert!(matches!(
+            command,
+            Command::InstallExpandedExAnimationRuntime { rev: 0 }
+        ));
+        app.dispatch(command).unwrap();
+        installer.commit_succeeded();
+
+        assert_eq!(app.project().unwrap().history.undo_len(), 1);
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                app.project().unwrap().rom.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+        installer.open(&app);
+        installer.workspace.as_mut().unwrap().runtime = BuiltInRuntime::ExpandedExAnimation;
+        assert!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .selection_is_installed()
+        );
+        assert!(
+            installer
+                .workspace
+                .as_ref()
+                .unwrap()
+                .prepare(app.project_revision())
+                .is_err()
+        );
+
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
     }

@@ -86,6 +86,10 @@ pub enum Command {
     InstallMap16Runtime {
         rev: u64,
     },
+    /// Installs the recovered expanded ExAnimation runtime or migrates its legacy pointer hooks.
+    InstallExpandedExAnimationRuntime {
+        rev: u64,
+    },
     /// Migrates an authenticated Lunar Magic Layer 2 format-$102 runtime to format `$103`.
     InstallLayer2Runtime {
         rev: u64,
