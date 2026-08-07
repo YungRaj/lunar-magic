@@ -4343,3 +4343,9 @@ variant gate applies authentic edited levels `$000` and `$001` with a malformed 
 proving that a per-file failure changes no bytes and does not prevent the next level from
 committing. Both headered and headerless installed inputs retain their physical framing, finish
 checksum-valid, and converge on the same logical ROM.
+
+Title-screen tilemap replacement is now explicitly invariant across canonical headered and
+headerless SMW-US ROMs. The same application transaction installs pristine tilemap storage into
+the owned expanded form, updates that installed payload a second time, repairs and reopens both
+results, and preserves the physical copier prefix exactly. Both forms converge logically and two
+undo steps restore their exact original physical images.
