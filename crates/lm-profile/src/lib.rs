@@ -5,6 +5,7 @@ mod audit;
 mod copier_header;
 mod credits_tilemap;
 mod exanimation_runtime;
+mod exanimation_runtime_install;
 mod expanded_settings_allocation;
 mod expanded_settings_base;
 mod expanded_settings_hooks;
@@ -100,6 +101,11 @@ pub use exanimation_runtime::{
     EXPANDED_EXANIMATION_RUNTIME_OPTIONAL_LEN, ExpandedExAnimationRuntimeError,
     ExpandedExAnimationRuntimeRelocations, empty_expanded_exanimation_pointer_table,
     expanded_exanimation_runtime_template, relocate_expanded_exanimation_runtime,
+};
+pub use exanimation_runtime_install::{
+    SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_END,
+    SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_START,
+    smw_us_v1_expanded_exanimation_core_installation_plan,
 };
 pub use expanded_settings_allocation::{
     SMW_US_V1_EXPANDED_SETTINGS_ALLOCATION_LEN, SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN,

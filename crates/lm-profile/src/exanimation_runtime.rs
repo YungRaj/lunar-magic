@@ -7,14 +7,15 @@ pub const EXPANDED_EXANIMATION_RUNTIME_OPTIONAL_LEN: usize = 0x20;
 /// Separately allocated 512-entry, three-byte per-level pointer table.
 pub const EXPANDED_EXANIMATION_POINTER_TABLE_LEN: usize = 0x600;
 
-const MAPPING_BYTE_OFFSETS: [usize; 2] = [0x5c, 0x66];
-const SNES_POINTER_OFFSETS: [usize; 8] = [0xdf, 0xea, 0x5b0, 0x601, 0xa7e, 0xaaa, 0xacf, 0xaf4];
-const IRAM_WORD_OFFSETS: [usize; 12] = [
+pub(crate) const MAPPING_BYTE_OFFSETS: [usize; 2] = [0x5c, 0x66];
+pub(crate) const SNES_POINTER_OFFSETS: [usize; 8] =
+    [0xdf, 0xea, 0x5b0, 0x601, 0xa7e, 0xaaa, 0xacf, 0xaf4];
+pub(crate) const IRAM_WORD_OFFSETS: [usize; 12] = [
     0x550, 0x59b, 0x5bf, 0x5c3, 0x5d6, 0x63e, 0x6c4, 0x79e, 0x7ac, 0x825, 0x833, 0x8b0,
 ];
-const LOCAL_WORD_TABLE_OFFSET: usize = 0xb4a;
-const LOCAL_WORD_TABLE_ENTRIES: usize = 108;
-const TEMPLATE_LOCAL_WORD_BASE: u16 = 0x8000;
+pub(crate) const LOCAL_WORD_TABLE_OFFSET: usize = 0xb4a;
+pub(crate) const LOCAL_WORD_TABLE_ENTRIES: usize = 108;
+pub(crate) const TEMPLATE_LOCAL_WORD_BASE: u16 = 0x8000;
 
 /// Every runtime-dependent scalar patched by the fresh installer after copying its `$C30` bytes.
 ///

@@ -3782,7 +3782,12 @@ mapping bytes, eight 24-bit SNES pointers, twelve 16-bit internal-RAM operands, 
 address words beginning at payload `+$B4A`. Relocating the complete template to the retained Lunar
 Magic 3.63 allocation at logical ROM `$080549` reproduces every `$C30` payload byte exactly. The
 separate empty `$600`-byte pointer table is also modeled as 512 repetitions of `FF 00 00`; this is
-relocation evidence, not yet a claim that Rust publishes the complete fresh-install transaction.
+now published with the core runtime through one typed relocation plan. The plan uses eight
+low-bank 24-bit fixups, 108 low-word local fixups, and the authenticated pristine `$0283AD` hook;
+it reproduces the retained allocation ranges at `$080541..$081179` and `$081179..$081781`, repairs
+the checksum, preserves copier-header framing, rejects a changed hook before expansion or history,
+and undoes byte-for-byte. This core plan intentionally remains separate from the dependent
+graphics/settings allocations; it is not yet the complete fresh-install coordinator.
 `ConvertLegacyExAnimationRecords` (`0045E9C0`) gives the first fully bounded migration model. Each
 legacy record is exactly `$23` bytes: one packed control byte, one destination word, and sixteen
 source words. A zero low nibble is inactive. After decrementing the control byte, its high nibble
