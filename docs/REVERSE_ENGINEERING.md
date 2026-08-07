@@ -3778,8 +3778,14 @@ The optional branch predicate is
 `(DAT_00E278FC && DAT_00E27901) || (DAT_00E278FD && DAT_00E27903)`. A direct Ghidra memory read
 authenticates its `$20` bytes as `A5 03 8D 20 C0 A5 05 8D 22 C0 A5 08 5C 20 C0 7F 4C 4D 00 01`
 followed by twelve `$FF` bytes. Rust now retains that exact suffix as a distinct checked asset and
-can materialize the original contiguous `$C30` or `$C50` stack-buffer forms; mapping the predicate
-onto supported mapper identities and its relocation rules remains the installation gate.
+can materialize the original contiguous `$C30` or `$C50` stack-buffer forms. The open-ROM
+initializer closes the predicate's persisted meaning: ExLoROM declaration bit 1 selects feature
+bit 17, while SA-1 declaration bit 2 selects feature bit 18. If the relevant declaration bit is
+absent, `CheckLegacyRomMappingHook` reads the active SMW-US descriptor's two-byte word at logical
+`$002D2B` and returns true exactly above `$1FFF`. The ROM-aware Rust selector implements both
+metadata paths, the exact legacy threshold, partial-metadata rejection, and the invariant that
+ordinary LoROM never selects the suffix. Transactional mapper placement remains the installation
+gate.
 Disassembly at `$0045E519` closes the suffix-specific relocation boundary. When the suffix length
 is nonzero, Lunar Magic writes the mapped allocation address of core `+$C30` into the three-byte
 pointer slot at core `+$78A`, then writes the fixed mapper-compatibility target `$7FC020` into the

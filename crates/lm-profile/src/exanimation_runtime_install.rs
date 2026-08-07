@@ -11,7 +11,9 @@ use crate::{
 };
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchPlan};
 use lm_rats::{AllocationPolicy, HEADER_LEN, HeaderError, RatsBlock, parse_at};
-use lm_rom::{Mapper, RomError, pc_to_snes, snes_to_pc};
+use lm_rom::{
+    LunarMagicRomMetadata, LunarMagicRomMetadataError, Mapper, RomError, pc_to_snes, snes_to_pc,
+};
 use std::fmt;
 use std::ops::Range;
 
@@ -66,6 +68,12 @@ pub struct SmwUsV1LegacyGlobalExAnimationRuntime {
     pub pointer_table: Range<usize>,
     pub auxiliary_table: Range<usize>,
 }
+
+const MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET: usize = 0x2d2b;
+const EXLOROM_CONFIGURATION_PRESENT_BIT: u32 = 1 << 1;
+const SA1_CONFIGURATION_PRESENT_BIT: u32 = 1 << 2;
+const EXLOROM_COMPATIBILITY_RUNTIME_BIT: u32 = 1 << 17;
+const SA1_COMPATIBILITY_RUNTIME_BIT: u32 = 1 << 18;
 
 #[derive(Debug)]
 pub enum SmwUsV1ExpandedExAnimationRuntimeDetectError {
@@ -147,6 +155,9 @@ pub enum SmwUsV1ExpandedExAnimationRuntimeDetectError {
         first: usize,
         second: usize,
     },
+    MetadataPartialInstallation,
+    Metadata(LunarMagicRomMetadataError),
+    MapperCompatibilityHookRange,
 }
 
 impl fmt::Display for SmwUsV1ExpandedExAnimationRuntimeDetectError {
@@ -159,6 +170,65 @@ impl fmt::Display for SmwUsV1ExpandedExAnimationRuntimeDetectError {
 }
 
 impl std::error::Error for SmwUsV1ExpandedExAnimationRuntimeDetectError {}
+
+/// Reproduces the optional `$C50` runtime predicate initialized while Lunar Magic opens a ROM.
+///
+/// ExLoROM uses feature bit 17 when declaration bit 1 is present; SA-1 uses feature bit 18 when
+/// declaration bit 2 is present. Older metadata omits the declaration, so both mapper families
+/// fall back to the descriptor-selected 16-bit hook word at logical `$002D2B`, where values above
+/// `$1FFF` identify the compatibility mapping. Ordinary LoROM never selects the suffix.
+pub fn smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+    bytes: &[u8],
+    mapper: Mapper,
+) -> Result<bool, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    if mapper == Mapper::LoRom {
+        return Ok(false);
+    }
+    let attribution = bytes
+        .get(
+            crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
+                ..crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET + LunarMagicRomMetadata::ATTRIBUTION_LEN,
+        )
+        .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::MetadataPartialInstallation)?;
+    let vram = *bytes
+        .get(crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET)
+        .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::MetadataPartialInstallation)?;
+    let feature = bytes
+        .get(
+            crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET
+                ..crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET + LunarMagicRomMetadata::FEATURE_LEN,
+        )
+        .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::MetadataPartialInstallation)?;
+    let attribution_absent = attribution.iter().all(|byte| *byte == 0xff);
+    let record_absent = vram == 0xff && feature.iter().all(|byte| *byte == 0xff);
+    let metadata = if attribution_absent && record_absent {
+        None
+    } else if attribution_absent || record_absent {
+        return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::MetadataPartialInstallation);
+    } else {
+        Some(
+            LunarMagicRomMetadata::from_parts(attribution, vram, feature)
+                .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::Metadata)?,
+        )
+    };
+    let (declaration, enabled) = match mapper {
+        Mapper::ExLoRom => (
+            EXLOROM_CONFIGURATION_PRESENT_BIT,
+            EXLOROM_COMPATIBILITY_RUNTIME_BIT,
+        ),
+        Mapper::Sa1 => (SA1_CONFIGURATION_PRESENT_BIT, SA1_COMPATIBILITY_RUNTIME_BIT),
+        Mapper::LoRom => unreachable!("ordinary LoROM returned above"),
+    };
+    if let Some(bits) = metadata.as_ref().map(LunarMagicRomMetadata::feature_bits)
+        && bits & declaration != 0
+    {
+        return Ok(bits & enabled != 0);
+    }
+    let hook = bytes
+        .get(MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET..MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET + 2)
+        .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::MapperCompatibilityHookRange)?;
+    Ok(u16::from_le_bytes([hook[0], hook[1]]) > 0x1fff)
+}
 
 /// Authenticates the complete ordinary-LoROM current runtime family.
 ///
@@ -663,6 +733,130 @@ mod tests {
     use lm_rats::make_header;
     use lm_rom::{RomImage, SnesChecksum, pc_to_snes};
     use std::{fs, path::PathBuf};
+
+    fn mapper_metadata_rom(feature_bits: Option<u32>, hook_word: u16) -> Vec<u8> {
+        let mut bytes = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap()
+            .logical_bytes()
+            .to_vec();
+        bytes[MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET..MAPPER_COMPATIBILITY_HOOK_WORD_OFFSET + 2]
+            .copy_from_slice(&hook_word.to_le_bytes());
+        if let Some(bits) = feature_bits {
+            let attribution = &mut bytes[crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
+                ..crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET + LunarMagicRomMetadata::ATTRIBUTION_LEN];
+            attribution.fill(b' ');
+            attribution[..LunarMagicRomMetadata::SIGNATURE.len()]
+                .copy_from_slice(LunarMagicRomMetadata::SIGNATURE);
+            bytes[crate::SMW_US_V1_LM_VRAM_VERSION_OFFSET] = 1;
+            let feature = &mut bytes[crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET
+                ..crate::SMW_US_V1_LM_FEATURE_RECORD_OFFSET + LunarMagicRomMetadata::FEATURE_LEN];
+            feature.fill(0);
+            feature[..4].copy_from_slice(&bits.to_le_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn mapper_runtime_selector_uses_declared_metadata_bits_and_exact_legacy_threshold() {
+        for (mapper, declaration, enabled) in [
+            (
+                Mapper::ExLoRom,
+                EXLOROM_CONFIGURATION_PRESENT_BIT,
+                EXLOROM_COMPATIBILITY_RUNTIME_BIT,
+            ),
+            (
+                Mapper::Sa1,
+                SA1_CONFIGURATION_PRESENT_BIT,
+                SA1_COMPATIBILITY_RUNTIME_BIT,
+            ),
+        ] {
+            assert!(
+                !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                    &mapper_metadata_rom(Some(declaration), 0xffff),
+                    mapper,
+                )
+                .unwrap()
+            );
+            assert!(
+                smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                    &mapper_metadata_rom(Some(declaration | enabled), 0),
+                    mapper,
+                )
+                .unwrap()
+            );
+            assert!(
+                !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                    &mapper_metadata_rom(Some(enabled), 0x1fff),
+                    mapper,
+                )
+                .unwrap()
+            );
+            assert!(
+                smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                    &mapper_metadata_rom(Some(enabled), 0x2000),
+                    mapper,
+                )
+                .unwrap()
+            );
+            assert!(
+                !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                    &mapper_metadata_rom(None, 0x1fff),
+                    mapper,
+                )
+                .unwrap()
+            );
+            assert!(
+                smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                    &mapper_metadata_rom(None, 0x2000),
+                    mapper,
+                )
+                .unwrap()
+            );
+        }
+        assert!(
+            !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                &mapper_metadata_rom(
+                    Some(
+                        EXLOROM_CONFIGURATION_PRESENT_BIT
+                            | EXLOROM_COMPATIBILITY_RUNTIME_BIT
+                            | SA1_CONFIGURATION_PRESENT_BIT
+                            | SA1_COMPATIBILITY_RUNTIME_BIT,
+                    ),
+                    0xffff,
+                ),
+                Mapper::LoRom,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn retained_metadata_and_partial_metadata_obey_the_mapper_selector_boundary() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let retained = fs::read(
+            root.join("oracle-work/lm363/pristine-us/exanimation-install-positive/after.smc"),
+        )
+        .unwrap();
+        let retained = RomImage::from_bytes(retained).unwrap();
+        for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
+            assert!(
+                !smw_us_v1_expanded_exanimation_uses_mapper_runtime(
+                    retained.logical_bytes(),
+                    mapper
+                )
+                .unwrap()
+            );
+        }
+
+        let mut partial = mapper_metadata_rom(None, 0x2000);
+        partial[crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET
+            ..crate::SMW_US_V1_LM_ATTRIBUTION_OFFSET + LunarMagicRomMetadata::SIGNATURE.len()]
+            .copy_from_slice(LunarMagicRomMetadata::SIGNATURE);
+        assert!(matches!(
+            smw_us_v1_expanded_exanimation_uses_mapper_runtime(&partial, Mapper::ExLoRom),
+            Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::MetadataPartialInstallation)
+        ));
+    }
 
     #[test]
     fn core_plan_matches_retained_allocations_reopens_checksum_and_undoes_exactly() {
