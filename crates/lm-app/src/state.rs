@@ -112,6 +112,7 @@ pub enum AppError {
     ExpandedExAnimationRuntimeLegacyMigration(
         lm_profile::SmwUsV1LegacyExAnimationHookMigrationError,
     ),
+    ExpandedExAnimationLegacyGlobalMigration(lm_project::LegacyExAnimationIoError),
     Layer2RuntimeMigration(lm_profile::SmwUsV1Layer2Format102MigrationError),
     Layer2RuntimeProbe(lm_profile::SmwUsV1Layer2LayoutError),
     Sprite19FixPlan(lm_profile::SmwUsV1Sprite19FixInstallError),
@@ -419,6 +420,12 @@ impl From<lm_profile::SmwUsV1ExpandedExAnimationRuntimeDetectError> for AppError
 impl From<lm_profile::SmwUsV1LegacyExAnimationHookMigrationError> for AppError {
     fn from(value: lm_profile::SmwUsV1LegacyExAnimationHookMigrationError) -> Self {
         Self::ExpandedExAnimationRuntimeLegacyMigration(value)
+    }
+}
+
+impl From<lm_project::LegacyExAnimationIoError> for AppError {
+    fn from(value: lm_project::LegacyExAnimationIoError) -> Self {
+        Self::ExpandedExAnimationLegacyGlobalMigration(value)
     }
 }
 

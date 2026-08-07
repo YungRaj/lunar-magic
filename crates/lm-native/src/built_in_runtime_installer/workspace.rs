@@ -188,6 +188,7 @@ impl BuiltInRuntimeWorkspace {
             BuiltInRuntime::ExpandedExAnimation => matches!(
                 self.exanimation_generation,
                 lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks
+                    | lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable
             ),
             BuiltInRuntime::Layer2Runtime => {
                 matches!(
@@ -227,9 +228,15 @@ impl BuiltInRuntimeWorkspace {
                 }
                 _ => unreachable!(),
             },
-            BuiltInRuntime::ExpandedExAnimation => {
-                "The authenticated legacy ExAnimation pointer fragments will be migrated to the current bank and marker contract while preserving the existing runtime allocation."
-            }
+            BuiltInRuntime::ExpandedExAnimation => match self.exanimation_generation {
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks => {
+                    "The authenticated legacy ExAnimation pointer fragments will be migrated to the current bank and marker contract while preserving the existing runtime allocation."
+                }
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable => {
+                    "The authenticated legacy 512-entry ExAnimation table will be converted into current compact per-level allocations together with the complete current runtime as one undoable transaction."
+                }
+                _ => unreachable!(),
+            },
             BuiltInRuntime::Layer2Runtime => match self.layer2_generation {
                 lm_profile::SmwUsV1Layer2RuntimeGeneration::Format100Legacy => {
                     "The authenticated legacy Layer 2 format $100 pointer table and descriptors will be converted to format $103 together with the exact current runtime hook."
@@ -442,6 +449,22 @@ mod tests {
             ),
         ] {
             workspace.map16_generation = generation;
+            assert!(workspace.migration_description().unwrap().contains(label));
+        }
+
+        workspace.runtime = BuiltInRuntime::ExpandedExAnimation;
+        for (generation, label) in [
+            (
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks,
+                "pointer fragments",
+            ),
+            (
+                lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable,
+                "512-entry",
+            ),
+        ] {
+            workspace.exanimation_generation = generation;
+            assert!(workspace.selection_migrates_legacy_runtime());
             assert!(workspace.migration_description().unwrap().contains(label));
         }
 

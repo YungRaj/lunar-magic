@@ -1,6 +1,12 @@
 use crate::{AppError, AppState, FrontendEffect};
 use lm_profile::RevisionPatchTemplate;
-use lm_rom::{Mapper, Region, SupportedGame};
+use lm_project::{
+    ExAnimationRomLayout, ExAnimationSaveOptions, InstalledExAnimationRomLayout,
+    LegacyExAnimationMigrationLayout, LegacyExAnimationRomLayout, LevelPointerTable,
+    LoadedLegacyExAnimationSlot, RomMutation,
+};
+use lm_rats::ProtectedRange;
+use lm_rom::{Mapper, Region, SnesPointer24, SupportedGame};
 use std::ops::Range;
 
 impl AppState {
@@ -337,6 +343,10 @@ impl AppState {
                 project.install_relocatable_patch(&migration.plan)?;
                 "Migrate legacy SMW US ExAnimation pointer hooks"
             }
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable => {
+                migrate_legacy_global_exanimations(project)?;
+                "Migrate legacy SMW US global ExAnimation table"
+            }
             lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current => {
                 return Err(AppError::ExpandedExAnimationRuntimeAlreadyInstalled);
             }
@@ -527,18 +537,147 @@ impl AppState {
     }
 }
 
+fn migrate_legacy_global_exanimations(project: &mut lm_project::Project) -> Result<(), AppError> {
+    let detected = lm_profile::detect_smw_us_v1_legacy_global_exanimation_runtime(
+        project.rom.logical_bytes(),
+    )?;
+    let legacy = LegacyExAnimationRomLayout {
+        mapper: Mapper::LoRom,
+        pointers: LevelPointerTable {
+            offset: detected.pointer_table.start,
+            entries: 0x200,
+            stride: 3,
+        },
+    };
+    let loaded = project.load_all_legacy_exanimations(legacy)?;
+    let mut protected = vec![
+        ProtectedRange(detected.pointer_table.clone()),
+        ProtectedRange(detected.auxiliary_table.clone()),
+    ];
+    for slot in &loaded {
+        if let LoadedLegacyExAnimationSlot::Present {
+            payload_offset,
+            record_count,
+            ..
+        } = slot
+        {
+            let end = payload_offset.checked_add(1 + record_count * 0x23).ok_or(
+                lm_project::LegacyExAnimationIoError::PayloadOffsetOverflow(*payload_offset),
+            )?;
+            protected.push(ProtectedRange(*payload_offset..end));
+        }
+    }
+
+    let original = project.rom.logical_bytes().to_vec();
+    let mut staged = project.clone();
+    let mut install = lm_profile::smw_us_v1_expanded_exanimation_runtime_installation_plan()?;
+    install.writes[0].expected = original[0x283ad..0x283b2].to_vec();
+    install.allocation.protected.extend(protected);
+    staged.install_relocatable_patch(&install)?;
+
+    let current_runtime = lm_profile::detect_smw_us_v1_current_expanded_exanimation_runtime(
+        staged.rom.logical_bytes(),
+    )?;
+    let operand = &staged.rom.logical_bytes()
+        [current_runtime.payload.start + 0xea..current_runtime.payload.start + 0xed];
+    let current_pointer_table = SnesPointer24::decode(operand)
+        .expect("an exact three-byte runtime operand is a 24-bit pointer")
+        .to_pc(Mapper::LoRom)?;
+    let current = InstalledExAnimationRomLayout {
+        payload: ExAnimationRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: current_pointer_table,
+                entries: 0x200,
+                stride: 3,
+            },
+            maximum_records: 0x40,
+            maximum_encoded_len: 0x8000,
+        },
+        pointer_presence_mask: 0x00ff_0000,
+        pointer_locator: None,
+    };
+    let mut allocation = lm_rats::AllocationPolicy::lorom(
+        lm_profile::SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_START..staged.rom.logical_len(),
+    );
+    allocation.protected.extend(
+        lm_rats::scan(staged.rom.logical_bytes())
+            .into_iter()
+            .map(|block| ProtectedRange(block.full_range())),
+    );
+    let options = ExAnimationSaveOptions {
+        allocation,
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let mut double_size_modes = [false; 256];
+    double_size_modes[1..=3].fill(true);
+    staged.migrate_legacy_exanimations(
+        &LegacyExAnimationMigrationLayout {
+            legacy,
+            current,
+            legacy_auxiliary: detected.auxiliary_table,
+        },
+        &double_size_modes,
+        &options,
+        lm_profile::SMW_US_V1_CHECKSUM_FIELD,
+    )?;
+    let mutation = RomMutation::between(Mapper::LoRom, &original, staged.rom.logical_bytes())?;
+    project.apply_mutation("migrate legacy SMW US global ExAnimation table", &mutation)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Command;
     use lm_profile::RevisionProfile;
     use lm_project::{PatchFixup, PatchPayload, PatchWrite};
+    use lm_rats::{HEADER_LEN, make_header};
     use lm_rom::{Mapper, RomImage, pc_to_snes};
     use std::{fs, path::PathBuf};
 
     fn write_pointer(bytes: &mut [u8], offset: usize, mapper: Mapper, target: usize) {
         bytes[offset..offset + 3]
             .copy_from_slice(&pc_to_snes(mapper, target).unwrap().to_le_bytes()[..3]);
+    }
+
+    fn legacy_global_exanimation_fixture() -> Vec<u8> {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = RomImage::from_bytes(pristine).unwrap();
+        let mut bytes = image.logical_bytes().to_vec();
+        bytes.resize(0x10_0000, 0xff);
+        let runtime_header = 0x8_0000;
+        let runtime_len = 0x200;
+        bytes[runtime_header..runtime_header + HEADER_LEN]
+            .copy_from_slice(&make_header(runtime_len).unwrap());
+        let runtime = runtime_header + HEADER_LEN;
+        bytes[runtime..runtime + runtime_len].fill(0xea);
+        let pointer_table = 0x8_2000;
+        let auxiliary_table = 0x8_3000;
+        let legacy_payload = 0x8_4000;
+        bytes[pointer_table..pointer_table + 0x600].fill(0);
+        bytes[auxiliary_table..auxiliary_table + 0x140].fill(0x5a);
+        bytes[legacy_payload] = 1;
+        let record = &mut bytes[legacy_payload + 1..legacy_payload + 1 + 0x23];
+        record[0] = 0x21;
+        record[1..3].copy_from_slice(&0x4321_u16.to_le_bytes());
+        for word in record[3..].chunks_exact_mut(2) {
+            word.copy_from_slice(&0x1234_u16.to_le_bytes());
+        }
+        write_pointer(&mut bytes, 0x283ae, Mapper::LoRom, runtime);
+        bytes[0x283ad] = 0x22;
+        write_pointer(&mut bytes, runtime + 0x1a, Mapper::LoRom, pointer_table);
+        bytes[0x2418] = 0x22;
+        write_pointer(&mut bytes, 0x2419, Mapper::LoRom, auxiliary_table);
+        write_pointer(
+            &mut bytes,
+            pointer_table + 7 * 3,
+            Mapper::LoRom,
+            legacy_payload,
+        );
+        bytes
     }
 
     fn fixture(profile: &RevisionProfile) -> Vec<u8> {
@@ -734,6 +873,96 @@ mod tests {
 
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn expanded_exanimation_legacy_global_table_migrates_as_one_exact_undo() {
+        let original = legacy_global_exanimation_fixture();
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(&original).unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable
+        );
+        let mut app = AppState::default();
+        app.load_rom(original.clone()).unwrap();
+        app.dispatch(Command::InstallExpandedExAnimationRuntime { rev: 0 })
+            .unwrap();
+        let project = app.project().unwrap();
+        assert_eq!(project.history.undo_len(), 1);
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                project.rom.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+        let runtime = lm_profile::detect_smw_us_v1_current_expanded_exanimation_runtime(
+            project.rom.logical_bytes(),
+        )
+        .unwrap();
+        let pointer = SnesPointer24::decode(
+            &project.rom.logical_bytes()
+                [runtime.payload.start + 0xea..runtime.payload.start + 0xed],
+        )
+        .unwrap()
+        .to_pc(Mapper::LoRom)
+        .unwrap();
+        let layout = ExAnimationRomLayout {
+            mapper: Mapper::LoRom,
+            pointers: LevelPointerTable {
+                offset: pointer,
+                entries: 0x200,
+                stride: 3,
+            },
+            maximum_records: 0x40,
+            maximum_encoded_len: 0x8000,
+        };
+        let mut modes = [false; 256];
+        modes[1..=3].fill(true);
+        let migrated = project.load_exanimation(7, layout, &modes).unwrap();
+        assert_eq!(migrated.records.len(), 1);
+        assert_eq!(migrated.records[0].kind(), 1);
+        assert_eq!(migrated.records[0].destination(), 0x4321);
+        assert_eq!(migrated.records[0].frame_bytes(false), &[0x34, 0x12]);
+        assert!(
+            lm_rom::SnesChecksum::decode(
+                project.rom.logical_bytes(),
+                lm_profile::SMW_US_V1_CHECKSUM_FIELD
+            )
+            .unwrap()
+            .is_complementary()
+        );
+
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), original);
+        assert!(!app.project().unwrap().history.can_undo());
+    }
+
+    #[test]
+    fn legacy_global_migration_preserves_copier_framing_and_rejects_bad_source_atomically() {
+        let logical = legacy_global_exanimation_fixture();
+        let mut headered = vec![0xa5; 0x200];
+        headered.extend_from_slice(&logical);
+        let mut app = AppState::default();
+        app.load_rom(headered.clone()).unwrap();
+        app.dispatch(Command::InstallExpandedExAnimationRuntime { rev: 0 })
+            .unwrap();
+        assert_eq!(
+            app.project().unwrap().rom.copier_header_bytes(),
+            Some(&headered[..0x200])
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), headered);
+
+        let mut malformed = logical;
+        malformed[0x8_2000 + 7 * 3 + 2] = 0x7e;
+        let mut app = AppState::default();
+        app.load_rom(malformed.clone()).unwrap();
+        assert!(
+            app.dispatch(Command::InstallExpandedExAnimationRuntime { rev: 0 })
+                .is_err()
+        );
+        assert_eq!(app.project().unwrap().save_snapshot(), malformed);
+        assert!(!app.project().unwrap().history.can_undo());
     }
 
     #[test]

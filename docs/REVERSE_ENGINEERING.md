@@ -3824,6 +3824,15 @@ byte from the concrete allocation addresses, retains only the feature/global-poi
 the editor legitimately mutates, and authenticates both allocated graphics helpers plus the fixed
 sentinel and shared-palette family. Generated and retained Lunar Magic current runtimes pass; core,
 allocated-helper, and fixed-helper corruption each reject instead of falling back to absence.
+The active SMW-US descriptor also resolves the previously omitted `$1E1` hook to logical `$02390`.
+Fresh installation writes `JSL core+$170; RTS` there; the retained Lunar Magic output and Rust plan
+now match all five bytes, and current-runtime detection authenticates its allocator-dependent target.
+`EnsureExpandedExAnimationRuntimeInstalled` checks that shared pointer/current JSL before descriptor
+`$169` at logical `$02418`. A legacy `$02418` JSL names the obsolete `$140` auxiliary table, while
+the runtime reached through `$0283AD` names the old `$600`/512-entry pointer table at `+$1A`.
+Rust now distinguishes that generation, requires the runtime's exact RATS owner and all three
+non-overlapping storage extents, installs the current runtime, converts every live old slot, erases
+the obsolete tables, repairs the checksum, and collapses the staged result into one exact Undo.
 `ConvertLegacyExAnimationRecords` (`0045E9C0`) gives the first fully bounded migration model. Each
 legacy record is exactly `$23` bytes: one packed control byte, one destination word, and sixteen
 source words. A zero low nibble is inactive. After decrementing the control byte, its high nibble

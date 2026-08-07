@@ -13,6 +13,7 @@ use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, Reloc
 use lm_rats::{AllocationPolicy, HEADER_LEN, HeaderError, RatsBlock, parse_at};
 use lm_rom::{Mapper, RomError, pc_to_snes, snes_to_pc};
 use std::fmt;
+use std::ops::Range;
 
 /// The first search byte after Lunar Magic's authenticated prerequisite allocations.
 pub const SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_START: usize = 0x0008_0541;
@@ -54,7 +55,16 @@ const SHARED_PALETTE_RUNTIME_B: [u8; 0x10] = [
 pub enum SmwUsV1ExpandedExAnimationRuntimeGeneration {
     Absent,
     LegacyPointerHooks,
+    LegacyGlobalTable,
     Current,
+}
+
+/// Authenticated storage resolved by Lunar Magic's legacy-global-table generation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmwUsV1LegacyGlobalExAnimationRuntime {
+    pub runtime: RatsBlock,
+    pub pointer_table: Range<usize>,
+    pub auxiliary_table: Range<usize>,
 }
 
 #[derive(Debug)]
@@ -105,6 +115,37 @@ pub enum SmwUsV1ExpandedExAnimationRuntimeDetectError {
     },
     HelperPayloadMismatch {
         offset: usize,
+    },
+    LegacyGenerationSignalRange {
+        offset: usize,
+    },
+    LegacyGenerationSignalMismatch {
+        offset: usize,
+    },
+    LegacyRuntimeAddress(RomError),
+    LegacyRuntimeBeforeHeader(usize),
+    LegacyRuntimeHeader(HeaderError),
+    LegacyRuntimeOwnership {
+        expected: usize,
+        actual: usize,
+    },
+    LegacyRuntimeTooShort {
+        required: usize,
+        actual: usize,
+    },
+    LegacyPointerAddress(RomError),
+    LegacyPointerRange {
+        offset: usize,
+        len: usize,
+    },
+    LegacyAuxiliaryAddress(RomError),
+    LegacyAuxiliaryRange {
+        offset: usize,
+        len: usize,
+    },
+    LegacyStorageOverlap {
+        first: usize,
+        second: usize,
     },
 }
 
@@ -210,7 +251,17 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime(
     if installed != expected {
         return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeMismatch);
     }
+    let pointer_hook_target = low_bank(runtime_offset + 0x170)
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?;
+    let pointer_hook = [
+        0x22,
+        pointer_hook_target as u8,
+        (pointer_hook_target >> 8) as u8,
+        (pointer_hook_target >> 16) as u8,
+        0x60,
+    ];
     for (offset, expected) in [
+        (0x2390, &pointer_hook[..]),
         (0x1bcc0, &[0; 0x10][..]),
         (0x2d8e2, &[0x22, 0x50, 0xf5, 0x0e][..]),
         (0x77550, &SHARED_PALETTE_RUNTIME_A[..]),
@@ -234,14 +285,139 @@ pub fn probe_smw_us_v1_expanded_exanimation_runtime_generation(
     bytes: &[u8],
 ) -> Result<SmwUsV1ExpandedExAnimationRuntimeGeneration, SmwUsV1ExpandedExAnimationRuntimeDetectError>
 {
+    // `EnsureExpandedExAnimationRuntimeInstalled` tests these two descriptor-selected bytes in
+    // this order. The first JSL is shared by the legacy-pointer and current generations, so its
+    // owned marker/runtime distinguishes those forms. Never collapse a malformed installed signal
+    // into `Absent`.
+    if generation_signal(bytes, 0x2390)? == 0x22 {
+        if crate::smw_us_v1_legacy_exanimation_hook_migration(bytes).is_ok() {
+            return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks);
+        }
+        detect_smw_us_v1_current_expanded_exanimation_runtime(bytes)?;
+        return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Current);
+    }
+    if generation_signal(bytes, 0x2418)? == 0x22 {
+        detect_smw_us_v1_legacy_global_exanimation_runtime(bytes)?;
+        return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable);
+    }
     if bytes.get(0x283ad..0x283b2) == Some(&[0xe2, 0x30, 0x9c, 0x33, 0x19]) {
         return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Absent);
     }
-    if crate::smw_us_v1_legacy_exanimation_hook_migration(bytes).is_ok() {
-        return Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks);
-    }
     detect_smw_us_v1_current_expanded_exanimation_runtime(bytes)?;
     Ok(SmwUsV1ExpandedExAnimationRuntimeGeneration::Current)
+}
+
+/// Resolves and authenticates the storage consumed by `MigrateLegacyGlobalExAnimations`.
+///
+/// The original coordinator selects this generation from the JSL opcode at descriptor entry
+/// `$169` (logical `$02418`). Its operand names the obsolete `$140` auxiliary table. Descriptor
+/// entry `$16A` (logical `$0283AD`) names an owned runtime whose `+$1A` operand names the copied
+/// `$600`, 512-entry legacy pointer table.
+pub fn detect_smw_us_v1_legacy_global_exanimation_runtime(
+    bytes: &[u8],
+) -> Result<SmwUsV1LegacyGlobalExAnimationRuntime, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    if generation_signal(bytes, 0x2418)? != 0x22 {
+        return Err(
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyGenerationSignalMismatch {
+                offset: 0x2418,
+            },
+        );
+    }
+    let auxiliary_offset = mapped_operand(bytes.get(0x2419..0x241c).ok_or(
+        SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyGenerationSignalRange {
+            offset: 0x2419,
+        },
+    )?)
+    .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyAuxiliaryAddress)?;
+    let auxiliary_table = checked_legacy_range(bytes, auxiliary_offset, 0x140, true)?;
+
+    let runtime_hook = bytes.get(0x283ad..0x283b1).ok_or(
+        SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyGenerationSignalRange {
+            offset: 0x283ad,
+        },
+    )?;
+    if runtime_hook[0] != 0x22 {
+        return Err(
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyGenerationSignalMismatch {
+                offset: 0x283ad,
+            },
+        );
+    }
+    let runtime_offset = mapped_operand(&runtime_hook[1..4])
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeAddress)?;
+    let runtime = owned_block(bytes, runtime_offset).map_err(|error| match error {
+        OwnedBlockError::BeforeHeader => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeBeforeHeader(runtime_offset)
+        }
+        OwnedBlockError::Header(source) => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeHeader(source)
+        }
+        OwnedBlockError::Ownership(actual) => {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeOwnership {
+                expected: runtime_offset,
+                actual,
+            }
+        }
+    })?;
+    let required = 0x1d;
+    if runtime.payload.len() < required {
+        return Err(
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeTooShort {
+                required,
+                actual: runtime.payload.len(),
+            },
+        );
+    }
+    let pointer_offset = mapped_operand(&bytes[runtime_offset + 0x1a..runtime_offset + 0x1d])
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyPointerAddress)?;
+    let pointer_table = checked_legacy_range(bytes, pointer_offset, 0x600, false)?;
+
+    for (first, second) in [
+        (&runtime.payload, &pointer_table),
+        (&runtime.payload, &auxiliary_table),
+        (&pointer_table, &auxiliary_table),
+    ] {
+        if first.start < second.end && second.start < first.end {
+            return Err(
+                SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyStorageOverlap {
+                    first: first.start,
+                    second: second.start,
+                },
+            );
+        }
+    }
+    Ok(SmwUsV1LegacyGlobalExAnimationRuntime {
+        runtime,
+        pointer_table,
+        auxiliary_table,
+    })
+}
+
+fn generation_signal(
+    bytes: &[u8],
+    offset: usize,
+) -> Result<u8, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    bytes
+        .get(offset)
+        .copied()
+        .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyGenerationSignalRange { offset })
+}
+
+fn checked_legacy_range(
+    bytes: &[u8],
+    offset: usize,
+    len: usize,
+    auxiliary: bool,
+) -> Result<Range<usize>, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    let range = offset..offset.saturating_add(len);
+    if range.end < offset || bytes.get(range.clone()).is_none() {
+        return Err(if auxiliary {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyAuxiliaryRange { offset, len }
+        } else {
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyPointerRange { offset, len }
+        });
+    }
+    Ok(range)
 }
 
 #[derive(Debug)]
@@ -399,6 +575,7 @@ pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan()
         ],
         writes: vec![
             payload_hook(0x0002_83ad, &[0xe2, 0x30, 0x9c, 0x33, 0x19], 0, true),
+            payload_return_hook(0x0000_2390, &[0xc2, 0x20, 0xa0, 0x80, 0x8c], 0, 0x170),
             payload_hook(0x0000_25e3, &[0x01, 0x54, 0x00, 0x00], 2, false),
             payload_hook(0x0000_0a4e, &[0xc2, 0x30, 0xa2, 0xfe, 0x1f], 3, true),
             direct(0x0001_bcc0, &[0xff; 0x10], &[0; 0x10]),
@@ -451,6 +628,25 @@ fn payload_hook(
     }
 }
 
+fn payload_return_hook(
+    offset: usize,
+    expected: &[u8],
+    target_payload: usize,
+    target_addend: usize,
+) -> PatchWrite {
+    PatchWrite {
+        offset,
+        expected: expected.to_vec(),
+        replacement: vec![0x22, 0, 0, 0, 0x60],
+        fixups: vec![PatchFixup {
+            offset: 1,
+            target_payload,
+            target_addend,
+            encoding: PatchFixupEncoding::Long24LowBank,
+        }],
+    }
+}
+
 fn direct(offset: usize, expected: &[u8], replacement: &[u8]) -> PatchWrite {
     PatchWrite {
         offset,
@@ -464,7 +660,8 @@ fn direct(offset: usize, expected: &[u8], replacement: &[u8]) -> PatchWrite {
 mod tests {
     use super::*;
     use lm_project::{Project, RelocatablePatchError};
-    use lm_rom::{RomImage, SnesChecksum};
+    use lm_rats::make_header;
+    use lm_rom::{RomImage, SnesChecksum, pc_to_snes};
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -593,7 +790,7 @@ mod tests {
                 &smw_us_v1_expanded_exanimation_runtime_installation_plan().unwrap(),
             )
             .unwrap();
-        for offset in [0x80549 + 0x120, 0x81789 + 3, 0x77560 + 5] {
+        for offset in [0x80549 + 0x120, 0x81789 + 3, 0x77560 + 5, 0x2392] {
             let mut corrupt = project.rom.logical_bytes().to_vec();
             corrupt[offset] ^= 1;
             assert!(
@@ -601,5 +798,67 @@ mod tests {
                 "corruption at {offset:#x} was accepted"
             );
         }
+    }
+
+    fn legacy_global_table_rom() -> (Vec<u8>, SmwUsV1LegacyGlobalExAnimationRuntime) {
+        let pristine = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = RomImage::from_bytes(pristine).unwrap();
+        let mut bytes = image.logical_bytes().to_vec();
+        bytes.resize(0x10_0000, 0xff);
+        let runtime_header = 0x8_0000;
+        let runtime_len = 0x200;
+        bytes[runtime_header..runtime_header + HEADER_LEN]
+            .copy_from_slice(&make_header(runtime_len).unwrap());
+        let runtime = runtime_header + HEADER_LEN;
+        bytes[runtime..runtime + runtime_len].fill(0xea);
+        let pointer_table = 0x8_1000;
+        let auxiliary_table = 0x8_2000;
+        bytes[pointer_table..pointer_table + 0x600].fill(0);
+        bytes[auxiliary_table..auxiliary_table + 0x140].fill(0x5a);
+        let low_bank = |offset| pc_to_snes(Mapper::LoRom, offset).unwrap() & 0x7f_ffff;
+        let write_operand = |target: &mut [u8], value: u32| {
+            target.copy_from_slice(&value.to_le_bytes()[..3]);
+        };
+        bytes[0x283ad] = 0x22;
+        write_operand(&mut bytes[0x283ae..0x283b1], low_bank(runtime));
+        write_operand(
+            &mut bytes[runtime + 0x1a..runtime + 0x1d],
+            low_bank(pointer_table),
+        );
+        bytes[0x2418] = 0x22;
+        write_operand(&mut bytes[0x2419..0x241c], low_bank(auxiliary_table));
+        let detected = detect_smw_us_v1_legacy_global_exanimation_runtime(&bytes).unwrap();
+        (bytes, detected)
+    }
+
+    #[test]
+    fn generation_probe_distinguishes_and_resolves_legacy_global_table_storage() {
+        let (bytes, detected) = legacy_global_table_rom();
+        assert_eq!(detected.runtime.payload, 0x8_0008..0x8_0208);
+        assert_eq!(detected.pointer_table, 0x8_1000..0x8_1600);
+        assert_eq!(detected.auxiliary_table, 0x8_2000..0x8_2140);
+        assert_eq!(
+            probe_smw_us_v1_expanded_exanimation_runtime_generation(&bytes).unwrap(),
+            SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable
+        );
+    }
+
+    #[test]
+    fn legacy_global_signal_rejects_unowned_runtime_bad_pointers_and_overlap() {
+        let (mut corrupt, detected) = legacy_global_table_rom();
+        corrupt[detected.runtime.header_offset] ^= 1;
+        assert!(probe_smw_us_v1_expanded_exanimation_runtime_generation(&corrupt).is_err());
+
+        let (mut bad_pointer, detected) = legacy_global_table_rom();
+        bad_pointer[detected.runtime.payload.start + 0x1c] = 0x7e;
+        assert!(probe_smw_us_v1_expanded_exanimation_runtime_generation(&bad_pointer).is_err());
+
+        let (mut overlap, detected) = legacy_global_table_rom();
+        let address = pc_to_snes(Mapper::LoRom, detected.pointer_table.start).unwrap() & 0x7f_ffff;
+        overlap[0x2419..0x241c].copy_from_slice(&address.to_le_bytes()[..3]);
+        assert!(matches!(
+            detect_smw_us_v1_legacy_global_exanimation_runtime(&overlap),
+            Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyStorageOverlap { .. })
+        ));
     }
 }
