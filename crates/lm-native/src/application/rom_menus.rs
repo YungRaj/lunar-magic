@@ -1,19 +1,26 @@
 use super::NativeApplication;
 use crate::rom_overworld_editor::RomOverworldEditor;
 use eframe::egui;
-use lm_app::EditorMode;
+use lm_app::{EditorMode, UiTextKey};
 
 macro_rules! rom_editor_pair {
-    ($ui:expr, $enabled:expr, $editor:expr, $app:expr, $open:literal, $close:literal) => {{
+    ($application:expr, $ui:expr, $enabled:expr, $editor:expr, $app:expr, $name:expr) => {{
+        let editor = $application.menu_text($name);
+        let open = $application
+            .menu_text(UiTextKey::EditorEditFormat)
+            .replace("{editor}", &editor);
+        let close = $application
+            .menu_text(UiTextKey::EditorCloseFormat)
+            .replace("{editor}", &editor);
         if $ui
-            .add_enabled($enabled && !$editor.is_open(), egui::Button::new($open))
+            .add_enabled($enabled && !$editor.is_open(), egui::Button::new(open))
             .clicked()
         {
             $ui.close_menu();
             $editor.open($app);
         }
         if $ui
-            .add_enabled($editor.is_open(), egui::Button::new($close))
+            .add_enabled($editor.is_open(), egui::Button::new(close))
             .clicked()
         {
             $ui.close_menu();
@@ -35,27 +42,30 @@ impl NativeApplication {
         self.global_rom_editor_menu_items(ui, enabled);
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             settings,
             self.rom_expanded_settings_editor,
             &self.app,
-            "Edit Installed Expanded Settings…",
-            "Close Installed Expanded Settings"
+            UiTextKey::EditorInstalledExpandedSettings
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             level,
             self.rom_level_assets_editor,
             &self.app,
-            "Edit Native Level Assets…",
-            "Close Native Level Assets"
+            UiTextKey::EditorNativeLevelAssets
         );
         let batch_export = enabled
             && (profile || crate::vanilla_level_editor::VanillaLevelEditor::handles(&self.app))
             && !self.rom_mwl_batch_export_dialog.is_open();
         if ui
-            .add_enabled(batch_export, egui::Button::new("Export All MWL Levels…"))
+            .add_enabled(
+                batch_export,
+                egui::Button::new(self.menu_text(UiTextKey::EditorExportAllMwl)),
+            )
             .clicked()
         {
             ui.close_menu();
@@ -65,7 +75,7 @@ impl NativeApplication {
         if ui
             .add_enabled(
                 batch_export,
-                egui::Button::new("Export Modified MWL Levels…"),
+                egui::Button::new(self.menu_text(UiTextKey::EditorExportModifiedMwl)),
             )
             .clicked()
         {
@@ -76,7 +86,7 @@ impl NativeApplication {
         if ui
             .add_enabled(
                 enabled && profile && !self.rom_mwl_batch_import_dialog.is_open(),
-                egui::Button::new("Insert Multiple MWL Levels…"),
+                egui::Button::new(self.menu_text(UiTextKey::EditorInsertMultipleMwl)),
             )
             .clicked()
         {
@@ -85,107 +95,107 @@ impl NativeApplication {
         }
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled && matches!(self.app.mode, EditorMode::Map16),
             self.rom_map16_editor,
             &self.app,
-            "Edit Native Map16 Set…",
-            "Close Native Map16 Set"
+            UiTextKey::EditorNativeMap16Set
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled && profile && matches!(self.app.mode, EditorMode::Palette(_)),
             self.rom_palette_editor,
             &self.app,
-            "Edit Native Palette…",
-            "Close Native Palette"
+            UiTextKey::EditorNativePalette
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled && profile && matches!(self.app.mode, EditorMode::Graphics(_)),
             self.rom_graphics_editor,
             &self.app,
-            "Edit Native Graphics…",
-            "Close Native Graphics"
+            UiTextKey::EditorNativeGraphics
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled && profile && matches!(self.app.mode, EditorMode::ExAnimation(_)),
             self.rom_exanimation_editor,
             &self.app,
-            "Edit Native ExAnimation…",
-            "Close Native ExAnimation"
+            UiTextKey::EditorNativeExAnimation
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled
                 && matches!(self.app.mode, EditorMode::Overworld)
                 && (profile || RomOverworldEditor::handles(&self.app)),
             self.rom_overworld_editor,
             &self.app,
-            "Edit Native Overworld…",
-            "Close Native Overworld"
+            UiTextKey::EditorNativeOverworld
         );
     }
 
     fn global_rom_editor_menu_items(&mut self, ui: &mut egui::Ui, enabled: bool) {
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_lunar_magic_metadata_editor,
             &self.app,
-            "Edit Lunar Magic ROM Metadata…",
-            "Close Lunar Magic ROM Metadata"
+            UiTextKey::EditorLunarMagicRomMetadata
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_shared_palette_editor,
             &self.app,
-            "Edit Shared/Custom SMW Palettes…",
-            "Close Shared/Custom SMW Palettes"
+            UiTextKey::EditorSharedCustomSmwPalettes
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_secondary_exit_editor,
             &self.app,
-            "Edit Global Secondary Exits…",
-            "Close Global Secondary Exits"
+            UiTextKey::EditorGlobalSecondaryExits
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_title_recording_editor,
             &self.app,
-            "Edit Title-Screen Recording…",
-            "Close Title-Screen Recording"
+            UiTextKey::EditorTitleScreenRecording
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_title_tilemap_editor,
             &self.app,
-            "Edit Title-Screen Tilemap…",
-            "Close Title-Screen Tilemap"
+            UiTextKey::EditorTitleScreenTilemap
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_credits_tilemap_editor,
             &self.app,
-            "Edit Credits Tilemap…",
-            "Close Credits Tilemap"
+            UiTextKey::EditorCreditsTilemap
         );
         self.overworld_support_rom_editor_menu_items(ui, enabled);
     }
@@ -193,102 +203,102 @@ impl NativeApplication {
     fn overworld_support_rom_editor_menu_items(&mut self, ui: &mut egui::Ui, enabled: bool) {
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_player_start_editor,
             &self.app,
-            "Edit Overworld Player Starts…",
-            "Close Overworld Player Starts"
+            UiTextKey::EditorOverworldPlayerStarts
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_settings_editor,
             &self.app,
-            "Edit Overworld Global Settings…",
-            "Close Overworld Global Settings"
+            UiTextKey::EditorOverworldGlobalSettings
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_event_number_editor,
             &self.app,
-            "Edit Overworld Event-Number Map…",
-            "Close Overworld Event-Number Map"
+            UiTextKey::EditorOverworldEventNumberMap
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_event_reveal_editor,
             &self.app,
-            "Edit Overworld Event Reveals…",
-            "Close Overworld Event Reveals"
+            UiTextKey::EditorOverworldEventReveals
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_event_tilemap_editor,
             &self.app,
-            "Edit Overworld Event Tilemaps…",
-            "Close Overworld Event Tilemaps"
+            UiTextKey::EditorOverworldEventTilemaps
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_level_name_editor,
             &self.app,
-            "Edit Overworld Level Names…",
-            "Close Overworld Level Names"
+            UiTextKey::EditorOverworldLevelNames
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_boss_sequence_editor,
             &self.app,
-            "Edit Boss-Sequence Messages…",
-            "Close Boss-Sequence Messages"
+            UiTextKey::EditorBossSequenceMessages
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_message_editor,
             &self.app,
-            "Edit Overworld Messages…",
-            "Close Overworld Messages"
+            UiTextKey::EditorOverworldMessages
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_path_link_editor,
             &self.app,
-            "Edit Overworld Path Links…",
-            "Close Overworld Path Links"
+            UiTextKey::EditorOverworldPathLinks
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_warp_link_editor,
             &self.app,
-            "Edit Overworld Warp Links…",
-            "Close Overworld Warp Links"
+            UiTextKey::EditorOverworldWarpLinks
         );
         ui.separator();
         rom_editor_pair!(
+            self,
             ui,
             enabled,
             self.rom_overworld_special_event_editor,
             &self.app,
-            "Edit Overworld Special Events…",
-            "Close Overworld Special Events"
+            UiTextKey::EditorOverworldSpecialEvents
         );
     }
 }

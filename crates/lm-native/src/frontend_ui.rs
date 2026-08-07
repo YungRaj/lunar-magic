@@ -257,6 +257,7 @@ mod tests {
         let sources = [
             include_str!("application/menus.rs"),
             include_str!("application/document_menus.rs"),
+            include_str!("application/rom_menus.rs"),
         ]
         .join("\n");
         for literal_widget in [
