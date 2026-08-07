@@ -105,3 +105,24 @@ record remains invalid. Expanded two-byte terminator recovery is not claimed by 
 6f3e58dbe50babe801916d8b38e3d16b7c0acc2d4260964ccfa498e8264a270e  four-byte unterminated input mw2
 640d08e6bc267e92d441e755bbefca1288d3fc3f45f0ef080bd93ddd6e532faf  canonical five-byte re-export mw2
 ```
+
+## Sprite manifest flag versus stream framing
+
+A synthetic but structurally valid legacy bundle set the manifest sprite flag to `01` and changed
+the authentic sprite payload to `20 70 50 82 FF FE`: header bit `$20`, the same complete record,
+and expanded termination. Lunar Magic imported it without a prompt. Because no expanded control
+was semantically needed, re-export applied its independently verified framing downgrade and wrote
+`00 70 50 82 FF`.
+
+Crucially, the re-exported manifest retained sprite flag `01`, and Lunar Magic then imported that
+flag-`01` manifest with its standard-header sidecar without a prompt. Thus the legacy manifest flag
+is preserved opaque metadata; it does not select the sidecar grammar. Header bit `$20` is the
+framing authority. Rust previously treated manifest bit 0 as authoritative and could not import
+Lunar Magic's own re-export from this case.
+
+```text
+12d58b71af6d889e16d2cb2ad41014322a195065e1271abb2eb98c025916069e  expanded-header input mw2
+640d08e6bc267e92d441e755bbefca1288d3fc3f45f0ef080bd93ddd6e532faf  downgraded re-export mw2
+ab16204f4cc457889d004d0597cd634f4e916e895ce1f6b4de1c53226910c2a7  flag-01 input manifest
+d0623e1a4d729fd504578440729dc11b0cf7cb2786af11ffa5840cbcf8478e4e  flag-01 re-export manifest
+```

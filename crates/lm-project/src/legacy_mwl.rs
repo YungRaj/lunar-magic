@@ -81,8 +81,7 @@ impl LegacyMwlBundle {
                 file_name: format!("{base_name}.mw1"),
             },
             sprites: LegacyMwlSidecar {
-                flags: (low_byte(source.sprite_metadata[0]) & !1)
-                    | u8::from(canonical_sprites.expanded),
+                flags: low_byte(source.sprite_metadata[0]),
                 source_address: source.sprite_metadata[1],
                 file_name: format!("{base_name}.mw2"),
             },
@@ -147,7 +146,10 @@ impl LegacyMwlBundle {
         } else {
             NativeLayer2Data::decode_mwl(layer1.header.level_mode(), &self.layer2)?
         };
-        let expanded_sprites = self.manifest.sprites.flags & 1 != 0;
+        let expanded_sprites = self
+            .sprites
+            .first()
+            .is_some_and(|header| NativeSpriteStream::header_uses_expanded_framing(*header));
         let sprites =
             match NativeSpriteStream::parse(&self.sprites, expanded_sprites, sprite_lengths) {
                 Ok(sprites) => sprites,
@@ -205,8 +207,9 @@ impl LegacyMwlBundle {
         );
         Ok(MwlNativeLevel {
             version: self.manifest.version,
-            // The legacy manifest's sprite flag controls only its standalone `.mw2` stream.
-            // Binary MWL container flags are a separate opaque field and have no legacy source.
+            // The legacy manifest's sprite flag is opaque metadata. Framing authority comes from
+            // bit $20 of the standalone `.mw2` header, just as it does in binary MWL payloads.
+            // Binary MWL container flags remain a separate opaque field with no legacy source.
             flags: MwlFile::default().flags,
             attribution: binary_attribution(&self.manifest.attribution),
             header,
@@ -724,6 +727,28 @@ mod tests {
                 .is_err(),
             "a partial final sprite must not borrow the synthesized terminator as record data"
         );
+    }
+
+    #[test]
+    fn legacy_sprite_manifest_flag_is_opaque_and_stream_header_owns_framing() {
+        let source = level_000();
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 000", &SpriteLengthTable::standard())
+                .unwrap();
+        let standard_bytes = bundle.sprites.clone();
+        bundle.manifest.sprites.flags |= 1;
+
+        let decoded = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        assert!(!decoded.sprites.expanded);
+        assert_eq!(decoded.sprite_metadata[0] & 1, 1);
+
+        let reexport =
+            LegacyMwlBundle::from_native(&decoded, "Level 000", &SpriteLengthTable::standard())
+                .unwrap();
+        assert_eq!(reexport.manifest.sprites.flags & 1, 1);
+        assert_eq!(reexport.sprites, standard_bytes);
     }
 
     #[test]
