@@ -36,11 +36,20 @@ impl NativeApplication {
         let icon_size = self.user_toolbar_images.icon_size().unwrap_or(16.0);
         let icons = buttons
             .iter()
-            .map(|button| self.user_toolbar_images.texture_for(button).cloned())
+            .enumerate()
+            .map(|(index, _)| {
+                self.user_toolbar
+                    .as_ref()
+                    .and_then(|toolbar| self.user_toolbar_images.texture_for(toolbar, index))
+                    .cloned()
+            })
             .collect::<Vec<_>>();
         let mut clicked = None;
         ui.horizontal_wrapped(|ui| {
             for (index, (button, icon)) in buttons.iter().zip(&icons).enumerate() {
+                if button.options.iter().any(|option| option == "LM_NO_BUTTON") {
+                    continue;
+                }
                 match &button.target {
                     UserToolbarTarget::Spacer => {
                         ui.separator();
@@ -104,13 +113,11 @@ impl NativeApplication {
                                 tool_id: format!("usertoolbar-{index}"),
                                 executable: expand_lm_placeholders(&executable, &self.app)?.into(),
                                 arguments,
-                                working_directory: button
-                                    .working_directory
-                                    .as_deref()
-                                    .map(|value| {
-                                        expand_lm_placeholders(value, &self.app).map(Into::into)
-                                    })
-                                    .transpose()?,
+                                working_directory: external_working_directory(
+                                    &executable,
+                                    button,
+                                    &self.app,
+                                )?,
                             })
                         });
                     match expanded {
@@ -236,6 +243,39 @@ impl NativeApplication {
             self.handle_frontend_activation(context, activation);
         }
     }
+}
+
+fn external_working_directory(
+    executable: &str,
+    button: &UserToolbarButton,
+    app: &lm_app::AppState,
+) -> Result<Option<std::path::PathBuf>, String> {
+    if let Some(value) = button.working_directory.as_deref() {
+        return expand_lm_placeholders(value, app).map(|value| Some(value.into()));
+    }
+    if button.options.iter().any(|option| option == "LM_DIR_ROM") {
+        return app
+            .document_path
+            .as_deref()
+            .and_then(std::path::Path::parent)
+            .map(std::path::Path::to_path_buf)
+            .map(Some)
+            .ok_or_else(|| "LM_DIR_ROM requires an open ROM".into());
+    }
+    if button.options.iter().any(|option| option == "LM_DIR_LM") {
+        return std::env::current_exe()
+            .map_err(|error| format!("cannot locate application executable: {error}"))
+            .and_then(|path| {
+                path.parent()
+                    .map(std::path::Path::to_path_buf)
+                    .map(Some)
+                    .ok_or_else(|| "application executable has no parent directory".into())
+            });
+    }
+    Ok(std::path::Path::new(executable)
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(std::path::Path::to_path_buf))
 }
 
 fn toolbar_button(
@@ -539,6 +579,28 @@ mod user_toolbar_tests {
         assert_eq!(
             matches.iter().map(|(index, _)| *index).collect::<Vec<_>>(),
             [1, 3]
+        );
+    }
+
+    #[test]
+    fn external_working_directory_matches_original_defaults_and_rom_override() {
+        let app = lm_app::AppState::default();
+        let program =
+            lm_app::UserToolbar::parse("***START***\n\"/opt/tools/editor\" --flag\n***END***")
+                .unwrap();
+        assert_eq!(
+            external_working_directory("/opt/tools/editor", &program.buttons[0], &app).unwrap(),
+            Some(std::path::PathBuf::from("/opt/tools"))
+        );
+        let mut app = lm_app::AppState::default();
+        app.document_path = Some(std::path::PathBuf::from("/tmp/roms/game.smc"));
+        let rom = lm_app::UserToolbar::parse(
+            "***START***\n\"editor\"\nLM_DEFAULT\nLM_DIR_ROM\n***END***",
+        )
+        .unwrap();
+        assert_eq!(
+            external_working_directory("editor", &rom.buttons[0], &app).unwrap(),
+            Some(std::path::PathBuf::from("/tmp/roms"))
         );
     }
 }

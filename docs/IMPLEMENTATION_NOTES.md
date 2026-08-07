@@ -3144,8 +3144,16 @@ available with textual fallback. The main toolbar additionally discovers the doc
 `Lunar Magic.ff4` file, requires its exact 41-square-cell geometry, and uses retained live 3.63
 `TBBUTTON` bitmap indexes 1/3/5/6 for native Open/Save/Undo/Redo. Missing or invalid overrides keep
 the default text controls rather than publishing a partial strip. Other editor-specific `.ff*`
-strips, executable icon extraction, force-image sequencing, the exhaustive internal/options table,
+strips, executable icon extraction, the exhaustive internal/options table,
 mouse/Pause/numpad-operator distinctions, and process notification/lifecycle options remain open.
+
+The first option semantics are now active rather than merely retained strings. `LM_NO_BUTTON`
+hides a control without disabling its shortcut. `LM_USEIMAGE_FORCE` sequentially assigns global
+images to external buttons that would otherwise extract executable icons, and the `_ALL` form
+assigns every non-spacer button. Explicit line-five working directories take precedence; otherwise
+`LM_DIR_ROM`, `LM_DIR_LM`, and the original default/`LM_DIR_PROGRAM` external executable directory
+are resolved before the direct argument vector reaches the permission prompt. Association-open,
+console-window, multi-instance, close/autorun, and notification lifecycle options remain open.
 
 **Tools → Language** now exposes the active locale and installs standalone `.lmlang` catalogs using
 the canonical `LMLOC001` decoder on the existing bounded, non-blocking document worker. The public

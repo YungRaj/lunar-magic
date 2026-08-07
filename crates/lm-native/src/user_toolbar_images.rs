@@ -143,12 +143,18 @@ impl UserToolbarImageSet {
             .collect();
     }
 
-    pub(crate) fn texture_for(&self, button: &UserToolbarButton) -> Option<&egui::TextureHandle> {
-        if !uses_image_list(button) {
+    pub(crate) fn texture_for(
+        &self,
+        toolbar: &UserToolbar,
+        button_index: usize,
+    ) -> Option<&egui::TextureHandle> {
+        let button = toolbar.buttons.get(button_index)?;
+        let forced = forced_image_index(toolbar, button_index);
+        if forced.is_none() && !uses_image_list(button) {
             return None;
         }
-        let relative = isize::try_from(button.icon?).ok()?;
-        let base = match button.image_base {
+        let relative = isize::try_from(forced.map(i32::from).or(button.icon)?).ok()?;
+        let base = match forced.map_or(button.image_base, |_| UserToolbarImageBase::Global) {
             UserToolbarImageBase::Global => 0,
             UserToolbarImageBase::Image(entry) => *self.entry_starts.get(entry)?,
         };
@@ -159,6 +165,33 @@ impl UserToolbarImageSet {
     pub(crate) fn icon_size(&self) -> Option<f32> {
         self.icon_size.map(|size| size as f32)
     }
+}
+
+fn forced_image_index(toolbar: &UserToolbar, button_index: usize) -> Option<u16> {
+    let (all, first) = toolbar
+        .global_options
+        .iter()
+        .find_map(|option| match option {
+            lm_app::UserToolbarGlobalOption::ForceImages { all, first_index } => {
+                Some((*all, first_index.unwrap_or(1)))
+            }
+            _ => None,
+        })?;
+    let eligible = |button: &UserToolbarButton| {
+        !matches!(button.target, UserToolbarTarget::Spacer)
+            && (all
+                || matches!(button.target, UserToolbarTarget::External(_))
+                    && !uses_image_list(button))
+    };
+    let button = toolbar.buttons.get(button_index)?;
+    if !eligible(button) {
+        return None;
+    }
+    let preceding = toolbar.buttons[..button_index]
+        .iter()
+        .filter(|button| eligible(button))
+        .count();
+    first.checked_add(u16::try_from(preceding).ok()?)
 }
 
 fn uses_image_list(button: &UserToolbarButton) -> bool {
@@ -297,7 +330,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            set.texture_for(&toolbar.buttons[0]).unwrap().id(),
+            set.texture_for(&toolbar, 0).unwrap().id(),
             set.textures[1].id()
         );
     }
@@ -334,7 +367,7 @@ mod tests {
         let context = egui::Context::default();
         set.ensure_textures(&context);
         assert_eq!(
-            set.texture_for(&toolbar.buttons[0]).unwrap().id(),
+            set.texture_for(&toolbar, 0).unwrap().id(),
             set.textures[3].id()
         );
     }
@@ -373,5 +406,23 @@ mod tests {
         )
         .unwrap();
         assert!(MainToolbarImageSet::load(directory.path()).is_err());
+    }
+
+    #[test]
+    fn force_image_modes_assign_sequential_global_indexes_to_exact_eligible_buttons() {
+        let external = UserToolbar::parse(
+            "LM_USEIMAGE_FORCE 2\n***START***\n\"one.exe\"\n0,one\n***START***\nLM_VIEW_16x16\n0,internal\n***START***\n\"two.exe\"\n0,two\n***END***",
+        )
+        .unwrap();
+        assert_eq!(forced_image_index(&external, 0), Some(2));
+        assert_eq!(forced_image_index(&external, 1), None);
+        assert_eq!(forced_image_index(&external, 2), Some(3));
+        let all = UserToolbar::parse(
+            "LM_USEIMAGE_FORCE_ALL 4\n***START***\nLM_VIEW_16x16\n0,one\n***START***\nLM_SPACER\n***START***\n\"two.exe\"\n0,two\n***END***",
+        )
+        .unwrap();
+        assert_eq!(forced_image_index(&all, 0), Some(4));
+        assert_eq!(forced_image_index(&all, 1), None);
+        assert_eq!(forced_image_index(&all, 2), Some(5));
     }
 }
