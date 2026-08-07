@@ -3567,3 +3567,12 @@ presentation path distinguishes filtered scaling only after the editor surface i
 rules out per-atlas linear filtering in Rust: Map16, sprite, and outline atlases place unrelated
 cells adjacent to one another and would bleed at their UV boundaries. The native command/check
 state is implemented; exact filtered final-surface presentation remains a compositor task.
+
+The published animation names resolve through the same table to `$2404`, `$2403`, and `$240E`.
+Case `$52` toggles playback byte `005E7B0A`, updates the ExAnimation timer, and pauses or resumes
+LMSW. Case `$51` directly invokes `HandleExAnimationTimerTick` at `0045ACF0`, which advances
+ExAnimation once and redraws dependent surfaces. Case `$5B` calls
+`ReloadCurrentLevelGraphicsAndRedraw` at `00465320`; that function refreshes the palette, decodes
+the loaded graphics caches, and posts a redraw, but does not zero animation counters. Rust
+therefore shares one pausable clock across the canvas and sprite catalogs, advances one 60 ms tick
+for `$2403`, and preserves the frame while rebuilding graphics for `$240E`.

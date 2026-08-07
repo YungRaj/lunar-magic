@@ -20,6 +20,7 @@ const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 5_000;
 const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 100;
 const ROM_LEVEL_CANVAS_INITIAL_PREVIOUS_ZOOM: u16 = 200;
 const ROM_LEVEL_CANVAS_ZOOM_MENU: [u16; 9] = [100, 125, 150, 175, 200, 300, 400, 600, 800];
+const LUNAR_MAGIC_ANIMATION_TICK_SECONDS: f64 = 0.06;
 const NATIVE_LEVEL_MINOR_TILES: u16 = 27;
 const VERTICAL_LEVEL_MINOR_TILES: u16 = 32;
 const VANILLA_EMPTY_MAP16_TILE: u16 = 0x25;
@@ -343,6 +344,10 @@ pub(crate) struct VanillaLevelEditor {
     canvas_previous_zoom_percent: Option<u16>,
     zoom_filter: Option<bool>,
     zoom_popup_open: bool,
+    animation_playing: Option<bool>,
+    animation_last_wall_seconds: f64,
+    animation_time_offset_seconds: f64,
+    animation_frozen_seconds: f64,
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
@@ -1877,7 +1882,7 @@ impl VanillaLevelEditor {
         let object_tileset = self.controller.as_ref().map_or(0, |controller| {
             controller.level().layer1.header.object_tileset()
         });
-        let animation_seconds = ui.input(|input| input.time);
+        let animation_seconds = self.animation_seconds(ui.input(|input| input.time));
         let map16_animation_phase = map16_animation_phase(animation_seconds);
         let animation_phase = sprite_animation_phase(animation_seconds);
         ui.ctx()
@@ -2332,6 +2337,43 @@ impl VanillaLevelEditor {
         if next != 100 {
             self.canvas_previous_zoom_percent = Some(next);
         }
+    }
+
+    fn animation_playing(&self) -> bool {
+        self.animation_playing.unwrap_or(true)
+    }
+
+    fn animation_seconds(&mut self, wall_seconds: f64) -> f64 {
+        self.animation_last_wall_seconds = wall_seconds;
+        if self.animation_playing() {
+            wall_seconds + self.animation_time_offset_seconds
+        } else {
+            self.animation_frozen_seconds
+        }
+    }
+
+    pub(crate) fn toolbar_animation_toggle(&mut self) {
+        if self.animation_playing() {
+            self.animation_frozen_seconds =
+                self.animation_last_wall_seconds + self.animation_time_offset_seconds;
+            self.animation_playing = Some(false);
+        } else {
+            self.animation_time_offset_seconds =
+                self.animation_frozen_seconds - self.animation_last_wall_seconds;
+            self.animation_playing = Some(true);
+        }
+    }
+
+    pub(crate) fn toolbar_animation_step(&mut self) {
+        if self.animation_playing() {
+            self.animation_time_offset_seconds += LUNAR_MAGIC_ANIMATION_TICK_SECONDS;
+        } else {
+            self.animation_frozen_seconds += LUNAR_MAGIC_ANIMATION_TICK_SECONDS;
+        }
+    }
+
+    pub(crate) fn toolbar_animation_reset(&mut self) {
+        self.invalidate_graphics_preview();
     }
 
     fn game_preview_camera_origin(
@@ -4392,6 +4434,8 @@ impl VanillaLevelEditor {
     }
 
     fn sprite_list(&mut self, ui: &mut egui::Ui) {
+        let animation_phase =
+            sprite_animation_phase(self.animation_seconds(ui.input(|input| input.time)));
         let Some(controller) = &self.controller else {
             return;
         };
@@ -4402,9 +4446,7 @@ impl VanillaLevelEditor {
         let texture = self.sprite_texture.clone();
         let animated_texture = self
             .animated_sprite_textures
-            .get(usize::from(sprite_animation_phase(
-                ui.input(|input| input.time),
-            )))
+            .get(usize::from(animation_phase))
             .cloned()
             .or_else(|| texture.clone());
         let level_header = &controller.level().layer1.header;
@@ -4628,6 +4670,8 @@ impl VanillaLevelEditor {
     }
 
     fn sprite_catalog(&mut self, ui: &mut egui::Ui) {
+        let animation_phase =
+            sprite_animation_phase(self.animation_seconds(ui.input(|input| input.time)));
         egui::CollapsingHeader::new("Add new enemies and sprites")
             .id_salt("vanilla-standard-sprite-catalog")
             .show(ui, |ui| {
@@ -4645,9 +4689,7 @@ impl VanillaLevelEditor {
                 let texture = self.sprite_texture.clone();
                 let animated_texture = self
                     .animated_sprite_textures
-                    .get(usize::from(sprite_animation_phase(
-                        ui.input(|input| input.time),
-                    )))
+                    .get(usize::from(animation_phase))
                     .cloned()
                     .or_else(|| texture.clone());
                 let (vertical, level_mode) =
@@ -4698,6 +4740,8 @@ impl VanillaLevelEditor {
         external_assets: &lm_graphics::ExternalSpriteAssets,
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
     ) {
+        let animation_phase =
+            sprite_animation_phase(self.animation_seconds(ui.input(|input| input.time)));
         let Some(custom_sprites) = custom_sprites else {
             return;
         };
@@ -4718,9 +4762,7 @@ impl VanillaLevelEditor {
                 let texture = self.sprite_texture.clone();
                 let animated_texture = self
                     .animated_sprite_textures
-                    .get(usize::from(sprite_animation_phase(
-                        ui.input(|input| input.time),
-                    )))
+                    .get(usize::from(animation_phase))
                     .cloned()
                     .or_else(|| texture.clone());
                 let mut chosen = None;
@@ -14028,6 +14070,34 @@ mod tests {
         assert_eq!(editor.canvas_zoom_percent(), 100);
         editor.toolbar_zoom_adjust(10_000);
         assert_eq!(editor.canvas_zoom_percent(), 5_000);
+    }
+
+    #[test]
+    fn toolbar_animation_commands_pause_step_reload_and_resume_one_shared_clock() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(editor.animation_playing());
+        assert!((editor.animation_seconds(1.0) - 1.0).abs() < f64::EPSILON);
+
+        editor.toolbar_animation_toggle();
+        assert!(!editor.animation_playing());
+        assert!((editor.animation_seconds(10.0) - 1.0).abs() < f64::EPSILON);
+        editor.toolbar_animation_step();
+        assert!(
+            (editor.animation_seconds(20.0) - (1.0 + LUNAR_MAGIC_ANIMATION_TICK_SECONDS)).abs()
+                < f64::EPSILON
+        );
+
+        editor.toolbar_animation_reset();
+        assert!(
+            (editor.animation_seconds(30.0) - (1.0 + LUNAR_MAGIC_ANIMATION_TICK_SECONDS)).abs()
+                < f64::EPSILON
+        );
+        editor.toolbar_animation_toggle();
+        assert!(editor.animation_playing());
+        assert!(
+            (editor.animation_seconds(30.5) - (1.5 + LUNAR_MAGIC_ANIMATION_TICK_SECONDS)).abs()
+                < 1.0e-9
+        );
     }
 
     #[test]

@@ -99,7 +99,11 @@ toggle. Four recovered zoom names also drive the native canvas's exact 100–500
 original nine-choice 100–800 percent popup with in/out and filter controls, while `$2444` defaults
 enabled, toggles the native check state, and invalidates the preview. Exact filtered presentation
 remains open because it must operate on the final composited surface rather than packed source
-atlases. The `$2408` tile-grid name
+atlases.
+The `$2404/$2403/$240E` animation commands now pause/resume the shared live preview clock, step one
+60 ms timer tick, and reload preview graphics without falsely resetting the retained frame state.
+This state is consumed consistently by the canvas and all three sprite-list/catalog surfaces. The
+`$2408` tile-grid name
 now controls the original default-off Map16 canvas grid instead of the grid being painted
 unconditionally. The distinct `$23F6` Screen Grid overlay now draws the original orientation-aware
 Top/Bottom or Left/Right screen regions and hexadecimal labels. `$23F5` now renders mutually

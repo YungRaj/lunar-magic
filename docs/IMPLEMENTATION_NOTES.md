@@ -3176,6 +3176,14 @@ Final-surface filtered presentation remains separate: applying linear sampling d
 packed Map16 and sprite atlases would blend unrelated neighboring atlas cells, while Lunar Magic
 filters the already-composited editor surface. Rust intentionally retains nearest atlas sampling
 until that final-surface compositor stage is available.
+The animation command trio is also live. `LM_VIEW_ANIMATION` (`$2404`) pauses or resumes the one
+clock consumed by the Map16, background, standard-sprite, existing-sprite, and custom-sprite
+catalog previews. Pausing freezes the currently observed frame; resuming preserves it without an
+absolute-time jump. `LM_VIEW_INCREASE_FRAME` (`$2403`) advances one recovered 60 ms editor timer
+tick even while paused. `LM_VIEW_RESET_ANIMATION` (`$240E`) follows the actual dispatcher rather
+than its published name: Lunar Magic reloads the current graphics caches and redraws without
+zeroing its frame counters, so Rust invalidates and rebuilds the preview while preserving the
+shared clock.
 `LM_VIEW_TILE_GRID` is separately recovered as command `$2408`. The original command toggles
 `DAT_00E278E5`; `RenderLevelEditorViewportRegion` at `$00453D90` calls
 `DrawLevelMap16ScreenGrid` only while that byte is set, and the pristine executable initializes it
