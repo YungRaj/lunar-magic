@@ -165,7 +165,27 @@ fn write(offset: usize, expected: &[u8], replacement: &[u8]) -> PatchWrite {
 mod tests {
     use super::*;
     use lm_project::Project;
-    use lm_rom::RomImage;
+    use lm_rom::{RomImage, apply_ips};
+
+    fn decode_hex_fixture(text: &str) -> Vec<u8> {
+        let digits: Vec<_> = text
+            .bytes()
+            .filter(|byte| !byte.is_ascii_whitespace())
+            .collect();
+        assert_eq!(digits.len() % 2, 0);
+        digits
+            .chunks_exact(2)
+            .map(|pair| {
+                let nibble = |byte: u8| match byte {
+                    b'0'..=b'9' => byte - b'0',
+                    b'a'..=b'f' => byte - b'a' + 10,
+                    b'A'..=b'F' => byte - b'A' + 10,
+                    _ => panic!("non-hex fixture byte"),
+                };
+                nibble(pair[0]) << 4 | nibble(pair[1])
+            })
+            .collect()
+    }
 
     #[test]
     fn pristine_and_shared_runtime_paths_install_exactly_and_reject_corruption() {
@@ -218,6 +238,54 @@ mod tests {
         assert_eq!(
             detect_smw_us_v1_sprite19_fix(&shared),
             Err(SmwUsV1Sprite19FixDetectError::InconsistentRuntime)
+        );
+    }
+
+    #[test]
+    fn authentic_lunar_magic_shared_runtime_oracle_requires_only_branch_removal() {
+        let mut shared = crate::test_support::pristine_smw_us_rom_bytes();
+        shared[SMW_US_V1_SPRITE19_FIX_HOOK_OFFSET..SMW_US_V1_SPRITE19_FIX_HOOK_OFFSET + 6]
+            .copy_from_slice(&HOOK_INSTALLED);
+        shared[SMW_US_V1_SPRITE19_FIX_RUNTIME_OFFSET..SMW_US_V1_SPRITE19_FIX_RUNTIME_OFFSET + 0x20]
+            .copy_from_slice(&RUNTIME_INSTALLED);
+        assert_eq!(
+            detect_smw_us_v1_sprite19_fix(&shared).unwrap(),
+            SmwUsV1Sprite19FixState::SharedRuntimeInstalled
+        );
+
+        // The retained IPS uses physical offsets from the canonical-header Wine oracle.
+        let mut physical = vec![0; 0x200];
+        physical.extend_from_slice(&shared);
+        let patch = decode_hex_fixture(include_str!(
+            "fixtures/sprite19_shared_command_26ac.ips.hex"
+        ));
+        let original_after = apply_ips(&physical, &patch).unwrap();
+        let logical_after = &original_after[0x200..];
+
+        assert_eq!(
+            detect_smw_us_v1_sprite19_fix(logical_after).unwrap(),
+            SmwUsV1Sprite19FixState::Installed
+        );
+        assert_eq!(
+            &logical_after[SMW_US_V1_SPRITE19_FIX_HOOK_OFFSET
+                ..SMW_US_V1_SPRITE19_FIX_HOOK_OFFSET + HOOK_INSTALLED.len()],
+            &HOOK_INSTALLED
+        );
+        assert_eq!(
+            &logical_after[SMW_US_V1_SPRITE19_FIX_RUNTIME_OFFSET
+                ..SMW_US_V1_SPRITE19_FIX_RUNTIME_OFFSET + RUNTIME_INSTALLED.len()],
+            &RUNTIME_INSTALLED
+        );
+
+        let plan = smw_us_v1_sprite19_fix_installation_plan(&shared).unwrap();
+        assert_eq!(plan.writes.len(), 1);
+        assert_eq!(plan.writes[0].offset, SMW_US_V1_SPRITE19_FIX_BRANCH_OFFSET);
+        assert_eq!(plan.writes[0].expected, BRANCH_EXPECTED);
+        assert_eq!(plan.writes[0].replacement, BRANCH_INSTALLED);
+        assert_eq!(
+            &logical_after[SMW_US_V1_SPRITE19_FIX_BRANCH_OFFSET
+                ..SMW_US_V1_SPRITE19_FIX_BRANCH_OFFSET + BRANCH_INSTALLED.len()],
+            &plan.writes[0].replacement
         );
     }
 }
