@@ -1,8 +1,12 @@
 use super::NativeApplication;
 use eframe::egui;
-use lm_app::{Command, EditorMode, EmulatorTestRequest, ExternalTool, ProjectStatus};
+use lm_app::{Command, EditorMode, EmulatorTestRequest, ExternalTool, ProjectStatus, UiTextKey};
 
 impl NativeApplication {
+    pub(super) fn menu_text(&self, key: UiTextKey) -> String {
+        self.localized(key, key.english())
+    }
+
     pub(super) fn menu_bar(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
         let capabilities = self.app.capabilities();
         egui::menu::bar(ui, |ui| {
@@ -18,16 +22,19 @@ impl NativeApplication {
     }
 
     fn help_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("Help", |ui| {
-            if ui.button("Help Topics…").clicked() {
+        ui.menu_button(self.menu_text(UiTextKey::MenuHelp), |ui| {
+            if ui.button(self.menu_text(UiTextKey::HelpTopics)).clicked() {
                 ui.close_menu();
                 self.help_dialog.open();
             }
-            if ui.button("Compatibility diagnostics…").clicked() {
+            if ui
+                .button(self.menu_text(UiTextKey::HelpCompatibilityDiagnostics))
+                .clicked()
+            {
                 ui.close_menu();
                 self.diagnostics_dialog.open(&self.app);
             }
-            if ui.button("About Lunar Magic Rust…").clicked() {
+            if ui.button(self.menu_text(UiTextKey::HelpAbout)).clicked() {
                 ui.close_menu();
                 self.about_dialog.open();
             }
@@ -35,29 +42,33 @@ impl NativeApplication {
     }
 
     fn view_menu(&mut self, ui: &mut egui::Ui, status: ProjectStatus) {
-        ui.menu_button("View", |ui| {
+        let layer1 = self.menu_text(UiTextKey::ViewLayer1);
+        let layer2 = self.menu_text(UiTextKey::ViewLayer2);
+        let layer3 = self.menu_text(UiTextKey::ViewLayer3);
+        let sprites = self.menu_text(UiTextKey::ViewLayerSprites);
+        let special_world = self.menu_text(UiTextKey::ViewSpecialWorldPassed);
+        ui.menu_button(self.menu_text(UiTextKey::MenuView), |ui| {
             let enabled =
                 !matches!(status, ProjectStatus::Closed) && self.app.current_level().is_some();
             let mut visibility_changed = false;
             ui.add_enabled_ui(enabled, |ui| {
                 visibility_changed |= ui
-                    .checkbox(&mut self.level_view_visibility.layer1, "Layer 1")
+                    .checkbox(&mut self.level_view_visibility.layer1, layer1.as_str())
                     .changed();
                 visibility_changed |= ui
-                    .checkbox(&mut self.level_view_visibility.layer2, "Layer 2")
+                    .checkbox(&mut self.level_view_visibility.layer2, layer2.as_str())
                     .changed();
                 visibility_changed |= ui
-                    .checkbox(&mut self.level_view_visibility.layer3, "Layer 3")
+                    .checkbox(&mut self.level_view_visibility.layer3, layer3.as_str())
                     .changed();
                 visibility_changed |= ui
-                    .checkbox(&mut self.level_view_visibility.sprites, "Sprites")
+                    .checkbox(&mut self.level_view_visibility.sprites, sprites.as_str())
                     .changed();
             });
             if ui
                 .add_enabled(
                     enabled,
-                    egui::Button::new("Special World Passed Graphics")
-                        .selected(self.special_world_passed),
+                    egui::Button::new(special_world.as_str()).selected(self.special_world_passed),
                 )
                 .clicked()
             {
@@ -73,14 +84,14 @@ impl NativeApplication {
     }
 
     fn file_menu(&mut self, context: &egui::Context, ui: &mut egui::Ui, status: ProjectStatus) {
-        ui.menu_button("File", |ui| {
-            if ui.button("Open…").clicked() {
+        ui.menu_button(self.menu_text(UiTextKey::MenuFile), |ui| {
+            if ui.button(self.menu_text(UiTextKey::FileOpen)).clicked() {
                 ui.close_menu();
                 self.dispatch(context, Command::Open);
             }
             let recent = self.app.recent_documents().paths().to_vec();
             ui.add_enabled_ui(!recent.is_empty(), |ui| {
-                ui.menu_button("Open Recent", |ui| {
+                ui.menu_button(self.menu_text(UiTextKey::FileOpenRecent), |ui| {
                     for path in recent {
                         if ui.button(path.display().to_string()).clicked() {
                             ui.close_menu();
@@ -91,9 +102,9 @@ impl NativeApplication {
             });
             let enabled = !matches!(status, ProjectStatus::Closed);
             for (label, command) in [
-                ("Save", Command::Save),
-                ("Save As…", Command::SaveAs),
-                ("Close", Command::Close),
+                (self.menu_text(UiTextKey::FileSave), Command::Save),
+                (self.menu_text(UiTextKey::FileSaveAs), Command::SaveAs),
+                (self.menu_text(UiTextKey::FileClose), Command::Close),
             ] {
                 if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
                     ui.close_menu();
@@ -101,14 +112,20 @@ impl NativeApplication {
                 }
             }
             if ui
-                .add_enabled(enabled, egui::Button::new("Expand ROM…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(self.menu_text(UiTextKey::FileExpandRom)),
+                )
                 .clicked()
             {
                 ui.close_menu();
                 self.rom_expansion_dialog.open(&self.app);
             }
             if ui
-                .add_enabled(enabled, egui::Button::new("Convert Copier Header…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(self.menu_text(UiTextKey::FileConvertCopierHeader)),
+                )
                 .clicked()
             {
                 ui.close_menu();
@@ -117,7 +134,7 @@ impl NativeApplication {
             if ui
                 .add_enabled(
                     enabled && !self.level_usage_dialog.is_busy(),
-                    egui::Button::new("Analyze Level Usage…"),
+                    egui::Button::new(self.menu_text(UiTextKey::FileAnalyzeLevelUsage)),
                 )
                 .clicked()
             {
@@ -127,7 +144,10 @@ impl NativeApplication {
                 }
             }
             if ui
-                .add_enabled(enabled, egui::Button::new("Restrict Level Access…"))
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(self.menu_text(UiTextKey::FileRestrictLevelAccess)),
+                )
                 .clicked()
             {
                 ui.close_menu();
@@ -137,7 +157,7 @@ impl NativeApplication {
             if ui
                 .add_enabled(
                     enabled && self.app.revision_profile().is_some(),
-                    egui::Button::new("Migrate Graphics Compression…"),
+                    egui::Button::new(self.menu_text(UiTextKey::FileMigrateGraphicsCompression)),
                 )
                 .clicked()
             {
@@ -147,7 +167,7 @@ impl NativeApplication {
             if ui
                 .add_enabled(
                     enabled && !self.built_in_runtime_installer.is_open(),
-                    egui::Button::new("Install Built-in Runtime…"),
+                    egui::Button::new(self.menu_text(UiTextKey::FileInstallBuiltInRuntime)),
                 )
                 .clicked()
             {
@@ -157,7 +177,7 @@ impl NativeApplication {
             if ui
                 .add_enabled(
                     enabled && !self.rats_reclamation_dialog.is_busy(),
-                    egui::Button::new("Reclaim Owned RATS Blocks…"),
+                    egui::Button::new(self.menu_text(UiTextKey::FileReclaimOwnedRatsBlocks)),
                 )
                 .clicked()
             {
@@ -168,7 +188,7 @@ impl NativeApplication {
             }
             self.ips_menu_items(ui, enabled);
             ui.separator();
-            if ui.button("Quit").clicked() {
+            if ui.button(self.menu_text(UiTextKey::FileQuit)).clicked() {
                 ui.close_menu();
                 self.request_quit(context);
             }
@@ -179,7 +199,7 @@ impl NativeApplication {
         if ui
             .add_enabled(
                 matches!(status, ProjectStatus::Closed) && !self.restore_point_dialog.is_busy(),
-                egui::Button::new("Restore ROM from Restore Point…"),
+                egui::Button::new(self.menu_text(UiTextKey::FileRestoreRom)),
             )
             .clicked()
         {
@@ -199,14 +219,17 @@ impl NativeApplication {
         use crate::restore_point_dialog::RestoreAppendMode;
 
         let actions = [
-            ("Create Full Restore Point…", None),
+            (self.menu_text(UiTextKey::FileCreateFullRestore), None),
             (
-                "Append Delta Restore Point…",
+                self.menu_text(UiTextKey::FileAppendDeltaRestore),
                 Some(RestoreAppendMode::Delta),
             ),
-            ("Append Full Restore Point…", Some(RestoreAppendMode::Full)),
             (
-                "Append Automatic Restore Point…",
+                self.menu_text(UiTextKey::FileAppendFullRestore),
+                Some(RestoreAppendMode::Full),
+            ),
+            (
+                self.menu_text(UiTextKey::FileAppendAutomaticRestore),
                 Some(RestoreAppendMode::Automatic),
             ),
         ];
@@ -232,7 +255,7 @@ impl NativeApplication {
         if ui
             .add_enabled(
                 project_open && !self.ips_patch_dialog.is_busy(),
-                egui::Button::new("Apply IPS Patch…"),
+                egui::Button::new(self.menu_text(UiTextKey::FileApplyIpsPatch)),
             )
             .clicked()
         {
@@ -244,7 +267,7 @@ impl NativeApplication {
         if ui
             .add_enabled(
                 !self.ips_create_dialog.is_busy(),
-                egui::Button::new("Create IPS Patch…"),
+                egui::Button::new(self.menu_text(UiTextKey::FileCreateIpsPatch)),
             )
             .clicked()
         {
@@ -261,10 +284,18 @@ impl NativeApplication {
         ui: &mut egui::Ui,
         history: lm_app::HistoryCapabilities,
     ) {
-        ui.menu_button("Edit", |ui| {
+        ui.menu_button(self.menu_text(UiTextKey::MenuEdit), |ui| {
             for (label, enabled, command) in [
-                ("Undo", history.undo, Command::Undo),
-                ("Redo", history.redo, Command::Redo),
+                (
+                    self.menu_text(UiTextKey::EditUndo),
+                    history.undo,
+                    Command::Undo,
+                ),
+                (
+                    self.menu_text(UiTextKey::EditRedo),
+                    history.redo,
+                    Command::Redo,
+                ),
             ] {
                 if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
                     ui.close_menu();
@@ -275,20 +306,38 @@ impl NativeApplication {
     }
 
     fn editors_menu(&mut self, context: &egui::Context, ui: &mut egui::Ui, status: ProjectStatus) {
-        ui.menu_button("Editors", |ui| {
+        ui.menu_button(self.menu_text(UiTextKey::MenuEditors), |ui| {
             let enabled = !matches!(status, ProjectStatus::Closed);
             let level = match self.app.mode {
                 EditorMode::Level(level) | EditorMode::Layer3(level) => level,
                 _ => u16::from_str_radix(self.level_text.trim(), 16).unwrap_or(0),
             };
             for (label, command) in [
-                ("Level", Command::SelectLevel(level)),
-                ("Overworld", Command::ShowOverworld),
-                ("Map16", Command::ShowMap16),
-                ("Graphics", Command::ShowGraphics(0)),
-                ("Palette", Command::ShowPalette(0)),
-                ("ExAnimation", Command::ShowExAnimation(0)),
-                ("Layer 3", Command::ShowLayer3(level)),
+                (
+                    self.menu_text(UiTextKey::ViewLevel),
+                    Command::SelectLevel(level),
+                ),
+                (
+                    self.menu_text(UiTextKey::ViewOverworld),
+                    Command::ShowOverworld,
+                ),
+                (self.menu_text(UiTextKey::ViewMap16), Command::ShowMap16),
+                (
+                    self.menu_text(UiTextKey::ViewGraphics),
+                    Command::ShowGraphics(0),
+                ),
+                (
+                    self.menu_text(UiTextKey::ViewPalette),
+                    Command::ShowPalette(0),
+                ),
+                (
+                    self.menu_text(UiTextKey::ViewExAnimation),
+                    Command::ShowExAnimation(0),
+                ),
+                (
+                    self.menu_text(UiTextKey::ViewLayer3),
+                    Command::ShowLayer3(level),
+                ),
             ] {
                 if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
                     ui.close_menu();
@@ -300,12 +349,12 @@ impl NativeApplication {
     }
 
     fn profile_menu(&mut self, context: &egui::Context, ui: &mut egui::Ui, status: ProjectStatus) {
-        ui.menu_button("Profile", |ui| {
+        ui.menu_button(self.menu_text(UiTextKey::MenuProfile), |ui| {
             let enabled = !matches!(status, ProjectStatus::Closed);
             if ui
                 .add_enabled(
                     enabled && !self.profile_loader.is_running(),
-                    egui::Button::new("Install Revision Profile…"),
+                    egui::Button::new(self.menu_text(UiTextKey::ProfileInstallRevision)),
                 )
                 .clicked()
             {
@@ -317,7 +366,7 @@ impl NativeApplication {
             if ui
                 .add_enabled(
                     self.app.revision_profile().is_some() && !self.profile_loader.is_running(),
-                    egui::Button::new("Clear Profile"),
+                    egui::Button::new(self.menu_text(UiTextKey::ProfileClear)),
                 )
                 .clicked()
             {
@@ -330,7 +379,7 @@ impl NativeApplication {
                 .add_enabled(
                     self.app.revision_profile().is_some()
                         && !self.revision_patch_installer.is_busy(),
-                    egui::Button::new("Install Revision Patch…"),
+                    egui::Button::new(self.menu_text(UiTextKey::ProfileInstallPatch)),
                 )
                 .clicked()
             {
@@ -354,29 +403,41 @@ impl NativeApplication {
     }
 
     fn tools_menu(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
-        ui.menu_button("Tools", |ui| {
-            if ui.button("Keyboard Shortcuts…").clicked() {
+        ui.menu_button(self.menu_text(UiTextKey::MenuTools), |ui| {
+            if ui
+                .button(self.menu_text(UiTextKey::ToolsKeyboardShortcuts))
+                .clicked()
+            {
                 ui.close_menu();
                 self.shortcut_editor.open(self.app.shortcuts());
             }
-            if ui.button("Customize Toolbar…").clicked() {
+            if ui
+                .button(self.menu_text(UiTextKey::ToolsCustomizeToolbar))
+                .clicked()
+            {
                 ui.close_menu();
                 self.toolbar_editor.open(self.app.toolbar());
             }
-            if ui.button("Undo History…").clicked() {
+            if ui
+                .button(self.menu_text(UiTextKey::ToolsUndoHistory))
+                .clicked()
+            {
                 ui.close_menu();
                 self.undo_history_settings
                     .open(self.app.undo_snapshot_limit());
             }
             let locale = self.app.localization().map_or_else(
-                || "Built-in English".to_owned(),
+                || self.menu_text(UiTextKey::ToolsBuiltInEnglish),
                 |catalog| catalog.locale().into(),
             );
-            ui.menu_button(format!("Language ({locale})"), |ui| {
+            let language = self
+                .menu_text(UiTextKey::ToolsLanguageFormat)
+                .replace("{locale}", &locale);
+            ui.menu_button(language, |ui| {
                 if ui
                     .add_enabled(
                         !self.configuration_loader.is_running(),
-                        egui::Button::new("Install Language Catalog…"),
+                        egui::Button::new(self.menu_text(UiTextKey::ToolsInstallLanguage)),
                     )
                     .clicked()
                 {
@@ -388,7 +449,7 @@ impl NativeApplication {
                 if ui
                     .add_enabled(
                         self.app.localization().is_some(),
-                        egui::Button::new("Use Built-in English"),
+                        egui::Button::new(self.menu_text(UiTextKey::ToolsUseBuiltInEnglish)),
                     )
                     .clicked()
                 {
@@ -400,7 +461,7 @@ impl NativeApplication {
             if ui
                 .add_enabled(
                     !self.configuration_loader.is_running(),
-                    egui::Button::new("Install Frontend Configuration…"),
+                    egui::Button::new(self.menu_text(UiTextKey::ToolsInstallFrontendConfiguration)),
                 )
                 .clicked()
             {
@@ -412,7 +473,7 @@ impl NativeApplication {
             if ui
                 .add_enabled(
                     !self.configuration_loader.is_running(),
-                    egui::Button::new("Install Tool Configuration…"),
+                    egui::Button::new(self.menu_text(UiTextKey::ToolsInstallToolConfiguration)),
                 )
                 .clicked()
             {
@@ -436,7 +497,7 @@ impl NativeApplication {
                 .collect::<Vec<_>>();
             if !emulator_tools.is_empty() {
                 ui.separator();
-                ui.menu_button("Test ROM in Emulator", |ui| {
+                ui.menu_button(self.menu_text(UiTextKey::ToolsTestRomInEmulator), |ui| {
                     let enabled = matches!(self.app.mode, lm_app::EditorMode::Level(_))
                         && self.app.project().is_some();
                     for (id, name) in &emulator_tools {
@@ -446,7 +507,10 @@ impl NativeApplication {
                         }
                     }
                     if ui
-                        .add_enabled(enabled, egui::Button::new("Choose Emulator…"))
+                        .add_enabled(
+                            enabled,
+                            egui::Button::new(self.menu_text(UiTextKey::ToolsChooseEmulator)),
+                        )
                         .clicked()
                     {
                         ui.close_menu();
@@ -458,7 +522,10 @@ impl NativeApplication {
                 let enabled =
                     matches!(self.app.mode, EditorMode::Level(_)) && self.app.project().is_some();
                 if ui
-                    .add_enabled(enabled, egui::Button::new("Test ROM in Emulator…"))
+                    .add_enabled(
+                        enabled,
+                        egui::Button::new(self.menu_text(UiTextKey::ToolsTestRomInEmulatorAction)),
+                    )
                     .clicked()
                 {
                     ui.close_menu();

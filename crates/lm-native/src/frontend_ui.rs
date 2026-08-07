@@ -30,27 +30,7 @@ pub(crate) fn show_toolbar(ui: &mut egui::Ui, app: &AppState) -> Option<ToolbarA
 }
 
 pub(crate) const fn default_text(key: UiTextKey) -> &'static str {
-    match key {
-        UiTextKey::AppTitle => "Lunar Magic Rust",
-        UiTextKey::FileOpen => "Open",
-        UiTextKey::FileSave => "Save",
-        UiTextKey::FileSaveAs => "Save As",
-        UiTextKey::FileClose => "Close",
-        UiTextKey::FileQuit => "Quit",
-        UiTextKey::EditUndo => "Undo",
-        UiTextKey::EditRedo => "Redo",
-        UiTextKey::EditCopy => "Copy",
-        UiTextKey::EditCut => "Cut",
-        UiTextKey::EditPaste => "Paste",
-        UiTextKey::ViewLevel => "Level",
-        UiTextKey::ViewOverworld => "Overworld",
-        UiTextKey::ViewMap16 => "Map16",
-        UiTextKey::ViewGraphics => "Graphics",
-        UiTextKey::ViewPalette => "Palette",
-        UiTextKey::ViewExAnimation => "ExAnimation",
-        UiTextKey::StatusReady => "Ready",
-        UiTextKey::ViewLayer3 => "Layer 3",
-    }
+    key.english()
 }
 
 pub(crate) fn shortcut_activation(
@@ -266,5 +246,39 @@ mod tests {
         }
         assert_eq!(default_text(UiTextKey::FileSaveAs), "Save As");
         assert_eq!(default_text(UiTextKey::ViewLayer3), "Layer 3");
+    }
+
+    #[test]
+    fn application_menu_surface_has_no_literal_button_or_menu_labels() {
+        let sources = [
+            include_str!("application/menus.rs"),
+            include_str!("application/document_menus.rs"),
+        ]
+        .join("\n");
+        for literal_widget in [
+            "menu_button(\"",
+            "ui.button(\"",
+            "Button::new(\"",
+            ".checkbox(\"",
+        ] {
+            assert!(
+                !sources.contains(literal_widget),
+                "application menu bypasses typed localization with {literal_widget}"
+            );
+        }
+        for key in [
+            UiTextKey::MenuFile,
+            UiTextKey::MenuEdit,
+            UiTextKey::MenuView,
+            UiTextKey::MenuEditors,
+            UiTextKey::MenuProfile,
+            UiTextKey::MenuTools,
+            UiTextKey::MenuDocuments,
+            UiTextKey::MenuHelp,
+            UiTextKey::DocumentsOpenFormat,
+            UiTextKey::DocumentsCloseFormat,
+        ] {
+            assert!(sources.contains(&format!("UiTextKey::{key:?}")));
+        }
     }
 }

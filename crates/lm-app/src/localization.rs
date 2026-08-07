@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 const MAGIC: &[u8; 8] = b"LMLOC001";
 const MAX_LOCALE_BYTES: usize = 64;
 const MAX_TEXT_BYTES: usize = 4096;
+const LEGACY_CHROME_KEY_COUNT: usize = 19;
 const MAX_ENCODED_BYTES: usize =
     MAGIC.len() + 2 + MAX_LOCALE_BYTES + 2 + UiTextKey::ALL.len() * (1 + 2 + MAX_TEXT_BYTES);
 
@@ -30,10 +31,173 @@ pub enum UiTextKey {
     ViewExAnimation,
     StatusReady,
     ViewLayer3,
+    MenuFile,
+    MenuEdit,
+    MenuView,
+    MenuEditors,
+    MenuProfile,
+    MenuTools,
+    MenuDocuments,
+    MenuHelp,
+    FileOpenRecent,
+    FileExpandRom,
+    FileConvertCopierHeader,
+    FileAnalyzeLevelUsage,
+    FileRestrictLevelAccess,
+    FileRestoreRom,
+    FileCreateFullRestore,
+    FileAppendDeltaRestore,
+    FileAppendFullRestore,
+    FileAppendAutomaticRestore,
+    FileMigrateGraphicsCompression,
+    FileInstallBuiltInRuntime,
+    FileReclaimOwnedRatsBlocks,
+    FileApplyIpsPatch,
+    FileCreateIpsPatch,
+    ViewSpecialWorldPassed,
+    ViewLayer1,
+    ViewLayer2,
+    ViewLayerSprites,
+    ProfileInstallRevision,
+    ProfileClear,
+    ProfileInstallPatch,
+    ToolsKeyboardShortcuts,
+    ToolsCustomizeToolbar,
+    ToolsUndoHistory,
+    ToolsLanguageFormat,
+    ToolsInstallLanguage,
+    ToolsUseBuiltInEnglish,
+    ToolsInstallFrontendConfiguration,
+    ToolsInstallToolConfiguration,
+    ToolsTestRomInEmulator,
+    ToolsChooseEmulator,
+    ToolsTestRomInEmulatorAction,
+    ToolsBuiltInEnglish,
+    HelpTopics,
+    HelpCompatibilityDiagnostics,
+    HelpAbout,
+    DocumentsOpenFormat,
+    DocumentsCloseFormat,
+    DocumentPortablePalette,
+    DocumentPortableGraphics,
+    DocumentPortableMap16Page,
+    DocumentPortableExAnimation,
+    DocumentPortableCompleteLevel,
+    DocumentPortableCompleteOverworld,
+    DocumentPortableOverworldPaths,
+    DocumentPortableOverworldMetadata,
+    DocumentPortableEntityAppearances,
+    DocumentPortableOverworldAppearances,
+    DocumentPortableLayer3,
+    DocumentMwl,
+    DocumentExpandedSettings,
+    DocumentCustomObjectLibrary,
+    DocumentCustomSpriteLibrary,
+    DocumentNativeMap16Sidecar,
+    DocumentDscSidecar,
+    DocumentSscCustomSpriteMetadata,
+    DocumentOscCustomObjectMetadata,
+    DocumentCompleteMap16Set,
+    DocumentNativeLevelStreams,
+    DocumentNativeLevelAssets,
 }
 
 impl UiTextKey {
-    pub const ALL: [Self; 19] = [
+    #[must_use]
+    pub const fn english(self) -> &'static str {
+        match self {
+            Self::AppTitle => "Lunar Magic Rust",
+            Self::FileOpen => "Open",
+            Self::FileSave => "Save",
+            Self::FileSaveAs => "Save As",
+            Self::FileClose => "Close",
+            Self::FileQuit => "Quit",
+            Self::EditUndo => "Undo",
+            Self::EditRedo => "Redo",
+            Self::EditCopy => "Copy",
+            Self::EditCut => "Cut",
+            Self::EditPaste => "Paste",
+            Self::ViewLevel => "Level",
+            Self::ViewOverworld => "Overworld",
+            Self::ViewMap16 => "Map16",
+            Self::ViewGraphics => "Graphics",
+            Self::ViewPalette => "Palette",
+            Self::ViewExAnimation => "ExAnimation",
+            Self::StatusReady => "Ready",
+            Self::ViewLayer3 => "Layer 3",
+            Self::MenuFile => "File",
+            Self::MenuEdit => "Edit",
+            Self::MenuView => "View",
+            Self::MenuEditors => "Editors",
+            Self::MenuProfile => "Profile",
+            Self::MenuTools => "Tools",
+            Self::MenuDocuments => "Documents",
+            Self::MenuHelp => "Help",
+            Self::FileOpenRecent => "Open Recent",
+            Self::FileExpandRom => "Expand ROM…",
+            Self::FileConvertCopierHeader => "Convert Copier Header…",
+            Self::FileAnalyzeLevelUsage => "Analyze Level Usage…",
+            Self::FileRestrictLevelAccess => "Restrict Level Access…",
+            Self::FileRestoreRom => "Restore ROM from Restore Point…",
+            Self::FileCreateFullRestore => "Create Full Restore Point…",
+            Self::FileAppendDeltaRestore => "Append Delta Restore Point…",
+            Self::FileAppendFullRestore => "Append Full Restore Point…",
+            Self::FileAppendAutomaticRestore => "Append Automatic Restore Point…",
+            Self::FileMigrateGraphicsCompression => "Migrate Graphics Compression…",
+            Self::FileInstallBuiltInRuntime => "Install Built-in Runtime…",
+            Self::FileReclaimOwnedRatsBlocks => "Reclaim Owned RATS Blocks…",
+            Self::FileApplyIpsPatch => "Apply IPS Patch…",
+            Self::FileCreateIpsPatch => "Create IPS Patch…",
+            Self::ViewSpecialWorldPassed => "Special World Passed Graphics",
+            Self::ViewLayer1 => "Layer 1",
+            Self::ViewLayer2 => "Layer 2",
+            Self::ViewLayerSprites => "Sprites",
+            Self::ProfileInstallRevision => "Install Revision Profile…",
+            Self::ProfileClear => "Clear Profile",
+            Self::ProfileInstallPatch => "Install Revision Patch…",
+            Self::ToolsKeyboardShortcuts => "Keyboard Shortcuts…",
+            Self::ToolsCustomizeToolbar => "Customize Toolbar…",
+            Self::ToolsUndoHistory => "Undo History…",
+            Self::ToolsLanguageFormat => "Language ({locale})",
+            Self::ToolsInstallLanguage => "Install Language Catalog…",
+            Self::ToolsUseBuiltInEnglish => "Use Built-in English",
+            Self::ToolsInstallFrontendConfiguration => "Install Frontend Configuration…",
+            Self::ToolsInstallToolConfiguration => "Install Tool Configuration…",
+            Self::ToolsTestRomInEmulator => "Test ROM in Emulator",
+            Self::ToolsChooseEmulator => "Choose Emulator…",
+            Self::ToolsTestRomInEmulatorAction => "Test ROM in Emulator…",
+            Self::ToolsBuiltInEnglish => "Built-in English",
+            Self::HelpTopics => "Help Topics…",
+            Self::HelpCompatibilityDiagnostics => "Compatibility diagnostics…",
+            Self::HelpAbout => "About Lunar Magic Rust…",
+            Self::DocumentsOpenFormat => "Open {document}…",
+            Self::DocumentsCloseFormat => "Close {document}",
+            Self::DocumentPortablePalette => "Portable Palette",
+            Self::DocumentPortableGraphics => "Portable Graphics",
+            Self::DocumentPortableMap16Page => "Portable Map16 Page",
+            Self::DocumentPortableExAnimation => "Portable ExAnimation",
+            Self::DocumentPortableCompleteLevel => "Portable Complete Level",
+            Self::DocumentPortableCompleteOverworld => "Portable Complete Overworld",
+            Self::DocumentPortableOverworldPaths => "Portable Overworld Paths",
+            Self::DocumentPortableOverworldMetadata => "Portable Overworld Metadata",
+            Self::DocumentPortableEntityAppearances => "Portable Entity Appearances",
+            Self::DocumentPortableOverworldAppearances => "Portable Overworld Appearances",
+            Self::DocumentPortableLayer3 => "Portable Layer 3",
+            Self::DocumentMwl => "MWL",
+            Self::DocumentExpandedSettings => "Expanded Settings",
+            Self::DocumentCustomObjectLibrary => "Custom Object Library",
+            Self::DocumentCustomSpriteLibrary => "Custom Sprite Library",
+            Self::DocumentNativeMap16Sidecar => "Native Map16 Sidecar",
+            Self::DocumentDscSidecar => "DSC Sidecar",
+            Self::DocumentSscCustomSpriteMetadata => "SSC Custom-Sprite Metadata",
+            Self::DocumentOscCustomObjectMetadata => "OSC Custom-Object Metadata",
+            Self::DocumentCompleteMap16Set => "Complete Map16 Set",
+            Self::DocumentNativeLevelStreams => "Native Level Streams",
+            Self::DocumentNativeLevelAssets => "Native Level Assets",
+        }
+    }
+
+    pub const ALL: [Self; 88] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -53,6 +217,75 @@ impl UiTextKey {
         Self::ViewExAnimation,
         Self::StatusReady,
         Self::ViewLayer3,
+        Self::MenuFile,
+        Self::MenuEdit,
+        Self::MenuView,
+        Self::MenuEditors,
+        Self::MenuProfile,
+        Self::MenuTools,
+        Self::MenuDocuments,
+        Self::MenuHelp,
+        Self::FileOpenRecent,
+        Self::FileExpandRom,
+        Self::FileConvertCopierHeader,
+        Self::FileAnalyzeLevelUsage,
+        Self::FileRestrictLevelAccess,
+        Self::FileRestoreRom,
+        Self::FileCreateFullRestore,
+        Self::FileAppendDeltaRestore,
+        Self::FileAppendFullRestore,
+        Self::FileAppendAutomaticRestore,
+        Self::FileMigrateGraphicsCompression,
+        Self::FileInstallBuiltInRuntime,
+        Self::FileReclaimOwnedRatsBlocks,
+        Self::FileApplyIpsPatch,
+        Self::FileCreateIpsPatch,
+        Self::ViewSpecialWorldPassed,
+        Self::ViewLayer1,
+        Self::ViewLayer2,
+        Self::ViewLayerSprites,
+        Self::ProfileInstallRevision,
+        Self::ProfileClear,
+        Self::ProfileInstallPatch,
+        Self::ToolsKeyboardShortcuts,
+        Self::ToolsCustomizeToolbar,
+        Self::ToolsUndoHistory,
+        Self::ToolsLanguageFormat,
+        Self::ToolsInstallLanguage,
+        Self::ToolsUseBuiltInEnglish,
+        Self::ToolsInstallFrontendConfiguration,
+        Self::ToolsInstallToolConfiguration,
+        Self::ToolsTestRomInEmulator,
+        Self::ToolsChooseEmulator,
+        Self::ToolsTestRomInEmulatorAction,
+        Self::ToolsBuiltInEnglish,
+        Self::HelpTopics,
+        Self::HelpCompatibilityDiagnostics,
+        Self::HelpAbout,
+        Self::DocumentsOpenFormat,
+        Self::DocumentsCloseFormat,
+        Self::DocumentPortablePalette,
+        Self::DocumentPortableGraphics,
+        Self::DocumentPortableMap16Page,
+        Self::DocumentPortableExAnimation,
+        Self::DocumentPortableCompleteLevel,
+        Self::DocumentPortableCompleteOverworld,
+        Self::DocumentPortableOverworldPaths,
+        Self::DocumentPortableOverworldMetadata,
+        Self::DocumentPortableEntityAppearances,
+        Self::DocumentPortableOverworldAppearances,
+        Self::DocumentPortableLayer3,
+        Self::DocumentMwl,
+        Self::DocumentExpandedSettings,
+        Self::DocumentCustomObjectLibrary,
+        Self::DocumentCustomSpriteLibrary,
+        Self::DocumentNativeMap16Sidecar,
+        Self::DocumentDscSidecar,
+        Self::DocumentSscCustomSpriteMetadata,
+        Self::DocumentOscCustomObjectMetadata,
+        Self::DocumentCompleteMap16Set,
+        Self::DocumentNativeLevelStreams,
+        Self::DocumentNativeLevelAssets,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {
@@ -203,7 +436,7 @@ impl LocalizationCatalog {
         }
         let locale = reader.string(MAX_LOCALE_BYTES)?;
         let count = usize::from(reader.u16()?);
-        if count != UiTextKey::ALL.len() {
+        if count != UiTextKey::ALL.len() && count != LEGACY_CHROME_KEY_COUNT {
             return Err(LocalizationError::WrongEntryCount(count));
         }
         let mut entries = BTreeMap::new();
@@ -217,6 +450,16 @@ impl LocalizationCatalog {
         }
         if !reader.is_empty() {
             return Err(LocalizationError::TrailingBytes);
+        }
+        if count == LEGACY_CHROME_KEY_COUNT {
+            for key in UiTextKey::ALL[..LEGACY_CHROME_KEY_COUNT].iter().copied() {
+                if !entries.contains_key(&key) {
+                    return Err(LocalizationError::MissingKey(key));
+                }
+            }
+            for key in UiTextKey::ALL[LEGACY_CHROME_KEY_COUNT..].iter().copied() {
+                entries.insert(key, key.english().into());
+            }
         }
         Self::new(locale, entries)
     }
@@ -306,6 +549,28 @@ mod tests {
                 .encode()
                 .unwrap(),
             bytes
+        );
+    }
+
+    #[test]
+    fn legacy_nineteen_key_catalogs_upgrade_with_english_menu_fallbacks() {
+        let mut bytes = MAGIC.to_vec();
+        write_string(&mut bytes, "de-DE", MAX_LOCALE_BYTES).unwrap();
+        bytes.extend_from_slice(&(LEGACY_CHROME_KEY_COUNT as u16).to_le_bytes());
+        for key in UiTextKey::ALL[..LEGACY_CHROME_KEY_COUNT].iter().copied() {
+            bytes.push(key as u8);
+            write_string(&mut bytes, &format!("alt-{key:?}"), MAX_TEXT_BYTES).unwrap();
+        }
+        let upgraded = LocalizationCatalog::decode(&bytes).unwrap();
+        assert_eq!(upgraded.text(UiTextKey::AppTitle), "alt-AppTitle");
+        assert_eq!(upgraded.text(UiTextKey::MenuFile), "File");
+        assert_eq!(
+            upgraded.text(UiTextKey::HelpCompatibilityDiagnostics),
+            "Compatibility diagnostics…"
+        );
+        assert_eq!(
+            LocalizationCatalog::decode(&upgraded.encode().unwrap()).unwrap(),
+            upgraded
         );
     }
 
