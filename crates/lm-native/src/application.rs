@@ -114,6 +114,7 @@ pub(crate) struct NativeApplication {
     user_toolbar: Option<UserToolbar>,
     user_toolbar_images: UserToolbarImageSet,
     main_toolbar_images: MainToolbarImageSet,
+    user_toolbar_observed_document: Option<std::path::PathBuf>,
     level_text: String,
     special_world_passed: bool,
     level_view_visibility: LevelViewVisibility,
@@ -474,6 +475,7 @@ impl NativeApplication {
     fn prepare_frame(&mut self, context: &egui::Context) {
         self.show_configuration_loader(context);
         self.show_profile_loader(context);
+        self.handle_user_toolbar_document_change(context);
         if !self.shortcut_editor.is_open() && !self.toolbar_editor.is_open() {
             self.handle_shortcuts(context);
         }
@@ -545,6 +547,7 @@ impl NativeApplication {
                 });
         }
         if self.effects.quit_requested {
+            self.stop_user_toolbar_tools_on_close();
             context.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }

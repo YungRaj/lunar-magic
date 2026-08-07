@@ -3162,6 +3162,14 @@ inventing a target, while graphics and palette follow the native menu's slot-zer
 Remaining original names that operate editor-local modes, dialogs, toggles, clipboard payloads, or
 installers stay explicitly unsupported until their corresponding typed frontend action exists.
 
+User-toolbar process lifecycle now observes exact closed/open document transitions. Per-button
+`LM_AUTORUN_ON_NEW_ROM` enqueues once for each newly opened ROM through the native permission gate,
+while global `LM_NO_AUTORUN` suppresses it. `LM_CLOSE_ON_NEW_ROM`, `LM_CLOSE_ON_CLOSE`, and both
+documented `_FORCE_ALL` variants remove matching pending approvals and signal only the corresponding
+running user-toolbar process; the cancellable worker kills and reaps that child. Repeated frames do
+not retrigger autorun. Original cross-process window-message notifications and the opt-out
+`LM_NO_AUTORUN` interaction with programs started before a configuration reload remain to verify.
+
 **Tools → Language** now exposes the active locale and installs standalone `.lmlang` catalogs using
 the canonical `LMLOC001` decoder on the existing bounded, non-blocking document worker. The public
 maximum encoded size exactly covers a valid catalog with the longest locale and every maximum-size

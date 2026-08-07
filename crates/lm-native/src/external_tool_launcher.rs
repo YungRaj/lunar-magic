@@ -29,6 +29,28 @@ pub(crate) struct ExternalToolLauncher {
 }
 
 impl ExternalToolLauncher {
+    #[cfg(test)]
+    pub(crate) fn pending_tool_ids(&self) -> Vec<&str> {
+        self.pending
+            .iter()
+            .map(|pending| pending.invocation.tool_id.as_str())
+            .collect()
+    }
+
+    pub(crate) fn stop_tool(&mut self, tool_id: &str) -> bool {
+        let pending_before = self.pending.len();
+        self.pending
+            .retain(|pending| pending.invocation.tool_id != tool_id);
+        let mut stopped = self.pending.len() != pending_before;
+        if let Some(running) = &self.running
+            && running.tool_id == tool_id
+        {
+            let _ = running.cancel.send(());
+            stopped = true;
+        }
+        stopped
+    }
+
     pub(crate) fn enqueue(&mut self, invocation: ToolInvocation) -> Result<(), String> {
         self.enqueue_pending(PendingTool {
             invocation,
@@ -227,6 +249,18 @@ mod tests {
             Some(&invocation(MAX_PENDING - 1))
         );
         assert!(launcher.running.is_none());
+    }
+
+    #[test]
+    fn stop_tool_removes_only_matching_pending_requests() {
+        let mut launcher = ExternalToolLauncher::default();
+        launcher.enqueue(invocation(1)).unwrap();
+        launcher.enqueue(invocation(2)).unwrap();
+        launcher.enqueue(invocation(1)).unwrap();
+        assert!(launcher.stop_tool("tool-1"));
+        assert_eq!(launcher.pending.len(), 1);
+        assert_eq!(launcher.pending[0].invocation.tool_id, "tool-2");
+        assert!(!launcher.stop_tool("missing"));
     }
 
     #[test]

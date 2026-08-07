@@ -7,6 +7,65 @@ use lm_app::{
 };
 
 impl NativeApplication {
+    pub(super) fn handle_user_toolbar_document_change(&mut self, context: &egui::Context) {
+        let current = self.app.document_path.clone();
+        if current == self.user_toolbar_observed_document {
+            return;
+        }
+        self.user_toolbar_observed_document = current.clone();
+        if current.is_none() {
+            return;
+        }
+        let Some(toolbar) = self.user_toolbar.as_ref() else {
+            return;
+        };
+        let close = toolbar_lifecycle_indexes(
+            toolbar,
+            "LM_CLOSE_ON_NEW_ROM",
+            "LM_CLOSE_ON_NEW_ROM_FORCE_ALL",
+        );
+        let autorun_disabled = toolbar.global_options.iter().any(|option| {
+            matches!(option, lm_app::UserToolbarGlobalOption::Flag(value) if value == "LM_NO_AUTORUN")
+        });
+        let autorun = if autorun_disabled {
+            Vec::new()
+        } else {
+            toolbar_button_indexes_with_option(toolbar, "LM_AUTORUN_ON_NEW_ROM")
+        };
+        for index in close {
+            self.effects
+                .external_tools
+                .stop_tool(&format!("usertoolbar-{index}"));
+        }
+        let buttons = autorun
+            .into_iter()
+            .filter_map(|index| {
+                self.user_toolbar
+                    .as_ref()?
+                    .buttons
+                    .get(index)
+                    .cloned()
+                    .map(|button| (index, button))
+            })
+            .collect::<Vec<_>>();
+        for (index, button) in buttons {
+            self.activate_user_toolbar_button(context, index, &button);
+        }
+    }
+
+    pub(super) fn stop_user_toolbar_tools_on_close(&mut self) {
+        let Some(toolbar) = self.user_toolbar.as_ref() else {
+            return;
+        };
+        for index in
+            toolbar_lifecycle_indexes(toolbar, "LM_CLOSE_ON_CLOSE", "LM_CLOSE_ON_CLOSE_FORCE_ALL")
+        {
+            self.effects
+                .external_tools
+                .stop_tool(&format!("usertoolbar-{index}"));
+        }
+    }
+
     pub(super) fn toolbar(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
         if self.app.toolbar().is_some() {
             if let Some(activation) = frontend_ui::show_toolbar(ui, &self.app) {
@@ -245,6 +304,34 @@ impl NativeApplication {
             self.handle_frontend_activation(context, activation);
         }
     }
+}
+
+fn toolbar_button_indexes_with_option(toolbar: &lm_app::UserToolbar, option: &str) -> Vec<usize> {
+    toolbar
+        .buttons
+        .iter()
+        .enumerate()
+        .filter_map(|(index, button)| {
+            button
+                .options
+                .iter()
+                .any(|value| value == option)
+                .then_some(index)
+        })
+        .collect()
+}
+
+fn toolbar_lifecycle_indexes(
+    toolbar: &lm_app::UserToolbar,
+    option: &str,
+    force_option: &str,
+) -> Vec<usize> {
+    if toolbar.global_options.iter().any(
+        |value| matches!(value, lm_app::UserToolbarGlobalOption::Flag(flag) if flag == force_option),
+    ) {
+        return (0..toolbar.buttons.len()).collect();
+    }
+    toolbar_button_indexes_with_option(toolbar, option)
 }
 
 fn external_working_directory(
@@ -621,6 +708,60 @@ mod user_toolbar_tests {
         assert_eq!(
             external_working_directory("editor", &rom.buttons[0], &app).unwrap(),
             Some(std::path::PathBuf::from("/tmp/roms"))
+        );
+    }
+
+    #[test]
+    fn lifecycle_option_selection_is_exact_and_global_no_autorun_is_retained() {
+        let toolbar = lm_app::UserToolbar::parse(
+            "LM_NO_AUTORUN\n***START***\n\"one\"\nLM_DEFAULT\nLM_AUTORUN_ON_NEW_ROM,LM_CLOSE_ON_CLOSE\n***START***\n\"two\"\nLM_DEFAULT\nLM_CLOSE_ON_NEW_ROM\n***END***",
+        )
+        .unwrap();
+        assert_eq!(
+            toolbar_button_indexes_with_option(&toolbar, "LM_AUTORUN_ON_NEW_ROM"),
+            [0]
+        );
+        assert_eq!(
+            toolbar_button_indexes_with_option(&toolbar, "LM_CLOSE_ON_CLOSE"),
+            [0]
+        );
+        assert_eq!(
+            toolbar_button_indexes_with_option(&toolbar, "LM_CLOSE_ON_NEW_ROM"),
+            [1]
+        );
+        assert!(toolbar.global_options.iter().any(|option| {
+            matches!(option, lm_app::UserToolbarGlobalOption::Flag(value) if value == "LM_NO_AUTORUN")
+        }));
+        let forced = lm_app::UserToolbar::parse(
+            "LM_CLOSE_ON_CLOSE_FORCE_ALL\n***START***\n\"one\"\n***START***\n\"two\"\n***END***",
+        )
+        .unwrap();
+        assert_eq!(
+            toolbar_lifecycle_indexes(&forced, "LM_CLOSE_ON_CLOSE", "LM_CLOSE_ON_CLOSE_FORCE_ALL"),
+            [0, 1]
+        );
+    }
+
+    #[test]
+    fn new_document_transition_enqueues_autorun_once_through_permission_gate() {
+        let mut native = NativeApplication::default();
+        native.user_toolbar = Some(
+            lm_app::UserToolbar::parse(
+                "***START***\n\"/usr/bin/true\"\nLM_DEFAULT\nLM_AUTORUN_ON_NEW_ROM\n***END***",
+            )
+            .unwrap(),
+        );
+        native.app.document_path = Some(std::path::PathBuf::from("/tmp/game.smc"));
+        let context = egui::Context::default();
+        native.handle_user_toolbar_document_change(&context);
+        assert_eq!(
+            native.effects.external_tools.pending_tool_ids(),
+            ["usertoolbar-0"]
+        );
+        native.handle_user_toolbar_document_change(&context);
+        assert_eq!(
+            native.effects.external_tools.pending_tool_ids(),
+            ["usertoolbar-0"]
         );
     }
 }
