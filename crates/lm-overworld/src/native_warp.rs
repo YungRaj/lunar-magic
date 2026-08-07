@@ -206,6 +206,85 @@ mod tests {
     }
 
     #[test]
+    fn retained_lm363_four_plane_warp_transition_and_rejection_are_exact() {
+        let fixture = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/overworld-warp-link/transition.tsv"
+        );
+        let field = |name: &str, column: usize| {
+            fixture
+                .lines()
+                .find(|line| line.starts_with(name))
+                .unwrap()
+                .split('\t')
+                .nth(column)
+                .unwrap()
+        };
+        let decode_hex = |value: &str| {
+            value
+                .as_bytes()
+                .chunks_exact(2)
+                .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let before = OverworldWarpLinkTable::decode_native_warp_file(&decode_hex(field(
+            "native_file_hex\t",
+            1,
+        )))
+        .unwrap();
+        let after = OverworldWarpLinkTable::decode_native_warp_file(&decode_hex(field(
+            "native_file_hex\t",
+            2,
+        )))
+        .unwrap();
+
+        assert_eq!(before.links.len(), 27);
+        assert_eq!(after.links.len(), 27);
+        assert_eq!(
+            before
+                .links
+                .iter()
+                .zip(&after.links)
+                .enumerate()
+                .filter_map(|(index, (before, after))| (before != after).then_some(index))
+                .collect::<Vec<_>>(),
+            [0x01, 0x03, 0x19, 0x1a]
+        );
+        for index in [0x01, 0x03, 0x19, 0x1a] {
+            let row = format!("record_{index:02x}_hex\t");
+            let encoded_before = OverworldWarpLinkTable {
+                links: vec![before.links[index]],
+            }
+            .encode_native_warp_file()
+            .unwrap();
+            let encoded_after = OverworldWarpLinkTable {
+                links: vec![after.links[index]],
+            }
+            .encode_native_warp_file()
+            .unwrap();
+            assert_eq!(&encoded_before[12..], decode_hex(field(&row, 1)));
+            assert_eq!(&encoded_after[12..], decode_hex(field(&row, 2)));
+        }
+        assert_eq!(
+            OverworldWarpReturnChoice::from_lunar_magic_combo_index(27),
+            Some(OverworldWarpReturnChoice::Record(25))
+        );
+        assert_eq!(
+            OverworldWarpReturnChoice::from_lunar_magic_combo_index(28),
+            Some(OverworldWarpReturnChoice::Record(26))
+        );
+        assert_eq!(field("rejection_tile_type\t", 1), "00");
+        assert_eq!(field("rejection_title\t", 1), "Wrong type of tile!");
+        assert_eq!(
+            field("rejection_body\t", 1),
+            "A star, pipe, or exit tile must be selected to use this."
+        );
+        assert_eq!(
+            field("rejection_rom_sha256\t", 1),
+            field("rejection_rom_sha256\t", 2)
+        );
+    }
+
+    #[test]
     fn planes_round_trip_without_normalizing_sentinels() {
         let table = OverworldWarpLinkTable {
             links: vec![

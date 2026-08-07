@@ -2310,6 +2310,15 @@ then subtract two, write the selected tile's display and runtime coordinate enco
 record, and copy them only when the Layer 1 selection bit remains set. Rust models the complete
 combo-index boundary as `OverworldWarpReturnChoice`, including rejection of row 258.
 
+A retained isolated-Wine save now proves that behavior at the four-plane file boundary. Authentic
+Layer 1 records `$003A/$00EB`, both raw type `$82`, open `Link Star and Pipe Tiles`. Replacing the
+default combo rows 3/5 with 27/28 moves the selected pair into native records `$19/$1A`, clears the
+prior owners `$01/$03`, and preserves the other 23 records exactly. Lunar Magic saves a
+checksum-identified 1,049,088-byte ROM; Rust's detected loader exports the complete before/after
+tables into the retained canonical `LMOWWR1` hexadecimal fixture. Selecting record `$0000` (type
+`$00`) instead produces the original `Wrong type of tile!` rejection, and dismissing it plus a save
+leaves the complete successful-ROM SHA-256 unchanged.
+
 The Rust migration boundary upgrades that legacy variant explicitly. It requires the runtime and
 four contiguous planes to be two exact, non-overlapping RATS allocations whose payload starts
 match the hooks and decoded operands. Migration reclaims those blocks only in a staging image,
