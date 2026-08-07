@@ -4361,3 +4361,9 @@ On both headered and headerless pristine ROMs, blank-definition deduplication, r
 publication, background Map16 replacement, palette-row import, and Layer 2 index-grid paste commit
 as one mutation. Every domain reopens exactly, checksums and physical copier framing remain valid,
 the logical outputs match byte-for-byte, and one undo restores each original image.
+
+The complete overworld event workflow is now crossed with both supported physical ROM forms.
+Four sequential application transactions edit the event-number map, install the main reveal table,
+install all special reveals and directions, and install both event tilemap planes. Each domain
+reopens from the final checksum-valid ROM, headered and headerless results match logically while
+retaining their exact copier framing, and four undo steps restore each physical original.

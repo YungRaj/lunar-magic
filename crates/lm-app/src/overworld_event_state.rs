@@ -58,7 +58,12 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::Command;
-    use lm_overworld::EventReveal;
+    use lm_overworld::{EventNumberMap, EventReveal, EventTilemapBuffers, SpecialEventRevealTable};
+    use lm_profile::{
+        load_smw_us_v1_event_tilemaps, smw_us_v1_overworld_event_number_map_locator,
+        smw_us_v1_special_event_reveal_locator,
+    };
+    use lm_rom::{RomImage, detect_identity};
     use std::path::PathBuf;
 
     #[test]
@@ -86,5 +91,110 @@ mod tests {
         app.dispatch(Command::Undo).unwrap();
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().save_snapshot(), original);
+    }
+
+    #[test]
+    fn complete_event_workflow_matches_across_copier_header_variants() {
+        let physical = crate::test_support::pristine_smw_us_rom_bytes();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let variants = [physical, physical_image.logical_bytes().to_vec()];
+        let mut logical_results = Vec::new();
+
+        for original in variants {
+            let original_image = RomImage::from_bytes(original.clone()).unwrap();
+            let original_header = original_image.copier_header_bytes().map(<[u8]>::to_vec);
+            let mut app = AppState::default();
+            app.load_rom(original.clone()).unwrap();
+
+            let mut numbers = EventNumberMap::default();
+            numbers.set(0x7f, 0x31);
+            numbers.set(0xff, 0x62);
+            app.dispatch(Command::ReplaceNativeOverworldEventNumberMap {
+                rev: 0,
+                map: Box::new(numbers.clone()),
+            })
+            .unwrap();
+
+            let reveals = EventRevealTable {
+                entries: (0_u16..200)
+                    .map(|index| EventReveal {
+                        source_tile: index,
+                        destination_tile: index + 0x300,
+                    })
+                    .collect(),
+            };
+            app.dispatch(Command::ReplaceNativeOverworldEventReveals {
+                rev: 1,
+                table: Box::new(reveals.clone()),
+            })
+            .unwrap();
+
+            let mut special = SpecialEventRevealTable::default();
+            for index in 0_u16..24 {
+                special.reveals[usize::from(index)] = EventReveal {
+                    source_tile: index + 0x180,
+                    destination_tile: index + 0x500,
+                };
+                special.directions[usize::from(index)] = (index & 3) as u8;
+            }
+            app.dispatch(Command::ReplaceNativeSpecialEventReveals {
+                rev: 2,
+                table: Box::new(special.clone()),
+            })
+            .unwrap();
+
+            let mut tilemaps = EventTilemapBuffers::default();
+            tilemaps.primary_bytes_mut()[7] = 0x12;
+            tilemaps.secondary_high_bytes_mut()[9] = 0x34;
+            app.dispatch(Command::ReplaceNativeOverworldEventTilemaps {
+                rev: 3,
+                buffers: Box::new(tilemaps.clone()),
+            })
+            .unwrap();
+
+            let project = app.project().unwrap();
+            assert_eq!(
+                project
+                    .load_overworld_event_number_map_detected(
+                        smw_us_v1_overworld_event_number_map_locator()
+                    )
+                    .unwrap()
+                    .map,
+                numbers
+            );
+            assert_eq!(
+                project
+                    .load_overworld_event_reveals_detected(
+                        smw_us_v1_overworld_event_reveal_locator()
+                    )
+                    .unwrap()
+                    .table,
+                reveals
+            );
+            assert_eq!(
+                project
+                    .load_special_event_reveals_detected(smw_us_v1_special_event_reveal_locator())
+                    .unwrap()
+                    .table,
+                special
+            );
+            assert_eq!(
+                load_smw_us_v1_event_tilemaps(project).unwrap().buffers,
+                tilemaps
+            );
+            let result = RomImage::from_bytes(project.save_snapshot()).unwrap();
+            assert_eq!(
+                result.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+            assert!(detect_identity(&result).unwrap().checksum_matches());
+            logical_results.push(result.logical_bytes().to_vec());
+
+            for _ in 0..4 {
+                app.dispatch(Command::Undo).unwrap();
+            }
+            assert_eq!(app.project().unwrap().save_snapshot(), original);
+        }
+        assert_eq!(logical_results[0], logical_results[1]);
     }
 }
