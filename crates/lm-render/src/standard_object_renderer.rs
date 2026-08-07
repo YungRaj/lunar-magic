@@ -430,6 +430,12 @@ pub struct LunarMagicConditionalViewState {
     pub block_contents: bool,
     /// Outlines Map16 cells whose Acts Like behavior can drive a block exit.
     pub block_exits: bool,
+    /// Previews ExAnimation records triggered by having a star.
+    pub have_star: bool,
+    /// Previews ExAnimation records triggered when the timer is at or below 100.
+    pub time_100: bool,
+    /// Previews ExAnimation records triggered after collecting five Yoshi coins.
+    pub five_yoshi_coins: bool,
 }
 
 impl Default for LunarMagicConditionalViewState {
@@ -441,6 +447,9 @@ impl Default for LunarMagicConditionalViewState {
             conditional_direct_map16: true,
             block_contents: false,
             block_exits: false,
+            have_star: false,
+            time_100: false,
+            five_yoshi_coins: false,
         }
     }
 }

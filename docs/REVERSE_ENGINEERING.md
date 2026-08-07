@@ -3645,7 +3645,7 @@ pixel with the packed-channel half average of the saved and drawn surfaces. Rust
 half-opacity painter to the equivalent editor-only overlay calls; artwork and interaction geometry
 remain unchanged.
 
-`LM_VIEW_BLOCK_CONTENTS` maps to `$23FA` and toggles persisted, default-zero byte `00E278E0`.
+`LM_VIEW_BLOCK_CONTENTS` maps to `$2413` and toggles persisted, default-zero byte `00E278E0`.
 `BuildMap16CustomDisplayMappings` at `00465930` resolves each cell's Acts Like root, honors `.dsc`
 alternate mappings, and otherwise selects the recovered built-in definitions and position tables;
 its output retains `$4000/$8000` composition selectors. `RenderLevelEditorViewportRegion` at
@@ -3658,7 +3658,8 @@ renderer before an optional ROM-adjacent sidecar overrides it. Rust retains that
 bank byte-for-byte, including editor-only definitions `$219/$21A`, and builds an animated,
 transparent 32×32 overlay atlas from the current level graphics and palette.
 
-`LM_VIEW_BLOCK_EXITS` is the adjacent default-off view backed by byte `00E278E1`.
+`LM_VIEW_BLOCK_EXITS` maps to `$2412` and is the adjacent default-off view backed by byte
+`00E278E1`.
 `BuildMap16CustomDisplayMappings` sets per-cell flag `$20` for Acts Like roots
 `$01F/$020/$027/$028/$137/$138/$13F`, plus `$09C` only in level mode 1; `.dsc` flag-eight
 records can add the same marker for either the source or resolved root. After all layer artwork,
@@ -3668,3 +3669,11 @@ outer and red inner colors. On a 16×16 cell that routine writes black edge line
 0/3/12/15 and red lines at 1/2/13/14. Rust mirrors the built-in root/mode predicate, resolves
 final object-cache cells rather than historical writes, and paints the same opaque eight-line
 outline only in editor view.
+
+`LM_VIEW_HAVE_STAR`, `LM_VIEW_TIME_100`, and `LM_VIEW_5YOSHI_COINS` map respectively to `$240B`,
+`$240C`, and `$240D`. Dispatcher cases `$58..$5A` toggle default-zero bytes
+`00E27897..00E27899` and request redraw mode 4, which rebuilds the initial ExAnimation frame and
+the entire level-editor surface. `ProcessExAnimationRecordGroup` at `00459F60` consumes these
+bytes for trigger types 4, 5/6, and 7/8. Rust retains the three independent default-off preview
+states, invalidates the graphics preview when they change, and exposes the original user-toolbar
+tokens without mutating authored ExAnimation records.

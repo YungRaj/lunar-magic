@@ -255,6 +255,13 @@ impl NativeApplication {
             UserToolbarLocalAction::BlockExits => {
                 self.vanilla_level_editor.toolbar_block_exits_toggle()
             }
+            UserToolbarLocalAction::HaveStar => {
+                self.vanilla_level_editor.toolbar_have_star_toggle()
+            }
+            UserToolbarLocalAction::Time100 => self.vanilla_level_editor.toolbar_time_100_toggle(),
+            UserToolbarLocalAction::FiveYoshiCoins => {
+                self.vanilla_level_editor.toolbar_five_yoshi_coins_toggle()
+            }
             UserToolbarLocalAction::Background512Height => {
                 self.vanilla_level_editor
                     .toolbar_background_512_height_toggle();
@@ -527,6 +534,9 @@ fn toggle_user_toolbar_view_state(
         | UserToolbarLocalAction::ConditionalDirectMap16
         | UserToolbarLocalAction::BlockContents
         | UserToolbarLocalAction::BlockExits
+        | UserToolbarLocalAction::HaveStar
+        | UserToolbarLocalAction::Time100
+        | UserToolbarLocalAction::FiveYoshiCoins
         | UserToolbarLocalAction::Background512Height
         | UserToolbarLocalAction::Translucent
         | UserToolbarLocalAction::ZoomDefault
@@ -753,6 +763,9 @@ enum UserToolbarLocalAction {
     ConditionalDirectMap16,
     BlockContents,
     BlockExits,
+    HaveStar,
+    Time100,
+    FiveYoshiCoins,
     Background512Height,
     Translucent,
     ZoomToggle,
@@ -793,6 +806,9 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_CDM16" => UserToolbarLocalAction::ConditionalDirectMap16,
         "LM_VIEW_BLOCK_CONTENTS" => UserToolbarLocalAction::BlockContents,
         "LM_VIEW_BLOCK_EXITS" => UserToolbarLocalAction::BlockExits,
+        "LM_VIEW_HAVE_STAR" => UserToolbarLocalAction::HaveStar,
+        "LM_VIEW_TIME_100" => UserToolbarLocalAction::Time100,
+        "LM_VIEW_5YOSHI_COINS" => UserToolbarLocalAction::FiveYoshiCoins,
         "LM_VIEW_512HEIGHT_BG" => UserToolbarLocalAction::Background512Height,
         "LM_VIEW_TRANSLUCENT" => UserToolbarLocalAction::Translucent,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
@@ -943,6 +959,18 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_BLOCK_EXITS"),
             Some(UserToolbarLocalAction::BlockExits)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_HAVE_STAR"),
+            Some(UserToolbarLocalAction::HaveStar)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_TIME_100"),
+            Some(UserToolbarLocalAction::Time100)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_5YOSHI_COINS"),
+            Some(UserToolbarLocalAction::FiveYoshiCoins)
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_512HEIGHT_BG"),

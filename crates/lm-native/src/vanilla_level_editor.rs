@@ -2457,6 +2457,22 @@ impl VanillaLevelEditor {
         self.conditional_view_state.block_exits = !self.conditional_view_state.block_exits;
     }
 
+    pub(crate) fn toolbar_have_star_toggle(&mut self) {
+        self.conditional_view_state.have_star = !self.conditional_view_state.have_star;
+        self.invalidate_graphics_preview();
+    }
+
+    pub(crate) fn toolbar_time_100_toggle(&mut self) {
+        self.conditional_view_state.time_100 = !self.conditional_view_state.time_100;
+        self.invalidate_graphics_preview();
+    }
+
+    pub(crate) fn toolbar_five_yoshi_coins_toggle(&mut self) {
+        self.conditional_view_state.five_yoshi_coins =
+            !self.conditional_view_state.five_yoshi_coins;
+        self.invalidate_graphics_preview();
+    }
+
     pub(crate) fn toolbar_background_512_height_toggle(&mut self) {
         self.background_512_height = !self.background_512_height;
     }
@@ -14547,6 +14563,9 @@ mod tests {
         editor.toolbar_conditional_direct_map16_toggle();
         editor.toolbar_block_contents_toggle();
         editor.toolbar_block_exits_toggle();
+        editor.toolbar_have_star_toggle();
+        editor.toolbar_time_100_toggle();
+        editor.toolbar_five_yoshi_coins_toggle();
         assert_eq!(
             editor.conditional_view_state,
             lm_render::LunarMagicConditionalViewState {
@@ -14556,6 +14575,9 @@ mod tests {
                 conditional_direct_map16: false,
                 block_contents: true,
                 block_exits: true,
+                have_star: true,
+                time_100: true,
+                five_yoshi_coins: true,
             }
         );
         assert_eq!(block_contents_overlay_alpha(0x4104), 192);
