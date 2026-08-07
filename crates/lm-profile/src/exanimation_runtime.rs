@@ -16,6 +16,9 @@ pub(crate) const IRAM_WORD_OFFSETS: [usize; 12] = [
 pub(crate) const LOCAL_WORD_TABLE_OFFSET: usize = 0xb4a;
 pub(crate) const LOCAL_WORD_TABLE_ENTRIES: usize = 108;
 pub(crate) const TEMPLATE_LOCAL_WORD_BASE: u16 = 0x8000;
+pub const OPTIONAL_SUFFIX_CALL_OFFSET: usize = 0x78a;
+pub const OPTIONAL_MAPPING_HELPER_CALL_OFFSET: usize = 0x792;
+pub const OPTIONAL_MAPPING_HELPER_SNES_ADDRESS: u32 = 0x7f_c020;
 
 /// Every runtime-dependent scalar patched by the fresh installer after copying its `$C30` bytes.
 ///
@@ -28,6 +31,15 @@ pub struct ExpandedExAnimationRuntimeRelocations {
     pub iram_words: [u16; IRAM_WORD_OFFSETS.len()],
     /// Low 16 bits of the mapped address for the allocation's internal code base at `+$4B0`.
     pub local_word_base: u16,
+}
+
+/// The two additional long-call targets installed only in the `$C50` runtime form.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExpandedExAnimationRuntimeOptionalRelocations {
+    /// Mapper-encoded SNES address of the appended suffix at allocation `+$C30`.
+    pub suffix_snes_pointer: u32,
+    /// Mapper compatibility entry written by Lunar Magic as `$7FC020`.
+    pub mapping_helper_snes_pointer: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,6 +128,34 @@ pub fn expanded_exanimation_runtime_template_with_optional_suffix(
     let mut runtime = expanded_exanimation_runtime_template()?;
     if include_optional_suffix {
         runtime.extend(expanded_exanimation_runtime_optional_suffix()?);
+    }
+    Ok(runtime)
+}
+
+/// Applies the two recovered mapper-only JSL relocations to the contiguous `$C50` form.
+pub fn relocate_expanded_exanimation_runtime_with_optional_suffix(
+    relocations: &ExpandedExAnimationRuntimeRelocations,
+    optional: ExpandedExAnimationRuntimeOptionalRelocations,
+) -> Result<Vec<u8>, ExpandedExAnimationRuntimeError> {
+    let mut runtime = relocate_expanded_exanimation_runtime(relocations)?;
+    runtime.extend(expanded_exanimation_runtime_optional_suffix()?);
+    for (index, (offset, value)) in [
+        (OPTIONAL_SUFFIX_CALL_OFFSET, optional.suffix_snes_pointer),
+        (
+            OPTIONAL_MAPPING_HELPER_CALL_OFFSET,
+            optional.mapping_helper_snes_pointer,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if value > 0x00ff_ffff {
+            return Err(ExpandedExAnimationRuntimeError::SnesPointerOutOfRange {
+                index: SNES_POINTER_OFFSETS.len() + index,
+                value,
+            });
+        }
+        runtime[offset..offset + 3].copy_from_slice(&value.to_le_bytes()[..3]);
     }
     Ok(runtime)
 }
@@ -245,6 +285,48 @@ mod tests {
             expanded_exanimation_runtime_template_with_optional_suffix(false).unwrap(),
             expanded_exanimation_runtime_template().unwrap()
         );
+    }
+
+    #[test]
+    fn optional_mapper_calls_are_typed_and_do_not_change_the_ordinary_core() {
+        let relocations = ExpandedExAnimationRuntimeRelocations {
+            mapping_bytes: [0x12, 0x34],
+            snes_pointers: [0x80_8000; SNES_POINTER_OFFSETS.len()],
+            iram_words: [0x1234; IRAM_WORD_OFFSETS.len()],
+            local_word_base: 0x9000,
+        };
+        let ordinary = relocate_expanded_exanimation_runtime(&relocations).unwrap();
+        let expanded = relocate_expanded_exanimation_runtime_with_optional_suffix(
+            &relocations,
+            ExpandedExAnimationRuntimeOptionalRelocations {
+                suffix_snes_pointer: 0x40_c030,
+                mapping_helper_snes_pointer: OPTIONAL_MAPPING_HELPER_SNES_ADDRESS,
+            },
+        )
+        .unwrap();
+        assert_eq!(expanded.len(), 0xc50);
+        assert_eq!(
+            &expanded[OPTIONAL_SUFFIX_CALL_OFFSET..OPTIONAL_SUFFIX_CALL_OFFSET + 3],
+            &[0x30, 0xc0, 0x40]
+        );
+        assert_eq!(
+            &expanded[OPTIONAL_MAPPING_HELPER_CALL_OFFSET..OPTIONAL_MAPPING_HELPER_CALL_OFFSET + 3],
+            &[0x20, 0xc0, 0x7f]
+        );
+        assert_ne!(
+            &ordinary[OPTIONAL_SUFFIX_CALL_OFFSET..OPTIONAL_SUFFIX_CALL_OFFSET + 3],
+            &expanded[OPTIONAL_SUFFIX_CALL_OFFSET..OPTIONAL_SUFFIX_CALL_OFFSET + 3]
+        );
+        assert!(matches!(
+            relocate_expanded_exanimation_runtime_with_optional_suffix(
+                &relocations,
+                ExpandedExAnimationRuntimeOptionalRelocations {
+                    suffix_snes_pointer: 0x0100_0000,
+                    mapping_helper_snes_pointer: OPTIONAL_MAPPING_HELPER_SNES_ADDRESS,
+                }
+            ),
+            Err(ExpandedExAnimationRuntimeError::SnesPointerOutOfRange { index: 8, .. })
+        ));
     }
 
     #[test]
