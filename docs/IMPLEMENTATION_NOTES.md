@@ -4355,3 +4355,9 @@ families. The application expands the original 202-row legacy form into the owne
 256-row runtime, updates that owned payload again, repairs and reopens both results, and preserves
 the canonical copier prefix only when present. Headered and headerless results are logically
 identical, and two undo steps restore both original physical images byte-for-byte.
+
+The SNES graphics-set/Map16 importer now has a combined optimized-plus-palette transaction gate.
+On both headered and headerless pristine ROMs, blank-definition deduplication, referenced graphics
+publication, background Map16 replacement, palette-row import, and Layer 2 index-grid paste commit
+as one mutation. Every domain reopens exactly, checksums and physical copier framing remain valid,
+the logical outputs match byte-for-byte, and one undo restores each original image.

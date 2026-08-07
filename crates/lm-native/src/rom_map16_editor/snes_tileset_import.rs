@@ -729,6 +729,7 @@ mod tests {
     use lm_app::{AppState, Command, LUNAR_MAGIC_BLANK_MAP16_WORD};
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_level::{Map16Tile, Subtile};
+    use lm_rom::{RomImage, detect_identity};
 
     fn blank_page() -> Map16Page {
         Map16Page::new(vec![
@@ -1051,5 +1052,126 @@ mod tests {
         }
         app.dispatch(Command::Undo).unwrap();
         assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
+    }
+
+    #[test]
+    fn optimized_palette_apply_matches_across_copier_header_variants() {
+        let physical = crate::test_support::pristine_smw_us_rom_bytes();
+        let physical_image = RomImage::from_bytes(physical.clone()).unwrap();
+        let variants = [physical, physical_image.logical_bytes().to_vec()];
+        let mut logical_results = Vec::new();
+
+        for original in variants {
+            let original_image = RomImage::from_bytes(original.clone()).unwrap();
+            let original_header = original_image.copier_header_bytes().map(<[u8]>::to_vec);
+            let mut app = AppState::default();
+            app.load_rom(original.clone()).unwrap();
+            app.dispatch(Command::ShowMap16).unwrap();
+            let mut editor = RomMap16Editor::default();
+            editor.open(&app);
+            let workspace = editor.workspace.as_ref().unwrap();
+            let page = (0x80..0x100)
+                .find(|page| {
+                    workspace.controller.set().pages[*page]
+                        .tiles
+                        .iter()
+                        .copied()
+                        .any(lm_app::is_lunar_magic_blank_map16_tile)
+                })
+                .unwrap();
+            let target = workspace.controller.set().pages[page].clone();
+            let mut request =
+                pending(SnesMap16DefinitionPlacement::DeduplicatedIntoBlankDefinitions);
+            request.revision = workspace.controller.revision();
+            request.page = page;
+            request.level = 0x105;
+            request.includes_palette = true;
+            request.palette_row = 5;
+            let graphics = GraphicsFile4bpp {
+                tiles: vec![IndexedTile::new([0x0b; 64])],
+            }
+            .encode()
+            .unwrap();
+            let map = (0..0x400)
+                .flat_map(|_| 0x0400_u16.to_le_bytes())
+                .collect::<Vec<_>>();
+            let palette_bytes = (0_u16..16)
+                .flat_map(|value| (0x2200 | value).to_le_bytes())
+                .collect::<Vec<_>>();
+            let preview =
+                prepare_preview(request, &graphics, &map, Some(&palette_bytes), &target).unwrap();
+            let assignment = preview.assignments[0];
+            assert!(preview.assignments.iter().all(|value| *value == assignment));
+            editor.snes_tileset_preview = Some(preview);
+            let command = editor
+                .prepare_snes_tileset_graphics_map16_command()
+                .unwrap();
+            app.dispatch(command).unwrap();
+
+            let project = app.project().unwrap();
+            let result = RomImage::from_bytes(project.save_snapshot()).unwrap();
+            assert_eq!(
+                result.copier_header_bytes().map(<[u8]>::to_vec),
+                original_header
+            );
+            assert!(detect_identity(&result).unwrap().checksum_matches());
+            let map16 = lm_profile::load_smw_us_v1_complete_map16(project).unwrap();
+            let definition =
+                ((usize::from(assignment >> 8) - 0x80) * 256 + usize::from(assignment & 0xff)) * 4;
+            assert_eq!(map16.background.definitions[definition], 0x0400);
+            assert_eq!(
+                project
+                    .load_graphics_file(0x14, lm_profile::smw_us_v1_vanilla_graphics_layout())
+                    .unwrap()
+                    .tiles[0]
+                    .pixels(),
+                &[0x0b; 64]
+            );
+            let palette_layout = lm_profile::smw_us_v1_custom_palette_installation()
+                .resolve(&project.rom)
+                .unwrap()
+                .unwrap();
+            let mut palette = project.load_palette(0x105, palette_layout).unwrap();
+            palette.colors.rotate_left(1);
+            assert_eq!(
+                &palette.colors[5 * 16..6 * 16],
+                &(0_u16..16)
+                    .map(|value| lm_graphics::Bgr555(0x2200 | value))
+                    .collect::<Vec<_>>()
+            );
+            let loaded_level = project
+                .load_level_slot(
+                    0x105,
+                    lm_profile::smw_us_v1_vanilla_level_layout(),
+                    &lm_level::SpriteLengthTable::standard(),
+                )
+                .unwrap();
+            let layer2_layout = lm_profile::smw_us_v1_level_layer2_layout(&project.rom, 0x105)
+                .unwrap()
+                .unwrap();
+            let layer2 = project
+                .load_level_layer2(
+                    0x105,
+                    loaded_level.layer1.header.level_mode(),
+                    layer2_layout,
+                )
+                .unwrap();
+            let lm_level::NativeLayer2Data::Tilemap(bytes) = layer2 else {
+                panic!("level 105 background must be tilemap-backed");
+            };
+            for y in 0..16 {
+                for x in 0..16 {
+                    let index = lm_level::native_layer2_tilemap_index(x, y).unwrap() * 2;
+                    assert_eq!(
+                        u16::from_le_bytes([bytes[index], bytes[index + 1]]),
+                        assignment & 0x0fff
+                    );
+                }
+            }
+            logical_results.push(result.logical_bytes().to_vec());
+            app.dispatch(Command::Undo).unwrap();
+            assert_eq!(app.project().unwrap().rom.as_file_bytes(), original);
+        }
+        assert_eq!(logical_results[0], logical_results[1]);
     }
 }
