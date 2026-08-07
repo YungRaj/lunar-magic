@@ -3709,3 +3709,10 @@ records, `ProcessExAnimationRecordGroup` selects the triggered source by adding
 Rust's shared frame decoder and editor now present each logical frame as `[normal, triggered]` but
 decode and re-encode the authenticated bank-major byte layout, including insert, remove, reorder,
 and replacement operations.
+
+The graphics-transfer size table at `005E78D8` gives byte counts `$20,$40,...,$100,$180,...,$400`
+for kinds 1–E and `$10,$20,$40,$80` for kinds F–12. `ProcessExAnimationRecordGroup` divides those
+counts by 32 for complete 4bpp copies or by 16 for 2bpp extraction. In the latter path each source
+4bpp tile yields a low-two-bit tile followed by a high-two-bit tile; kinds `$10..$12` repeat the
+operation into a second destination block at tile `+16`. Rust now materializes these exact tile
+overrides with complete source and destination preflight, preserving atomic failure behavior.

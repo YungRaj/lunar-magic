@@ -1,4 +1,10 @@
-use crate::ExAnimationRecord;
+use crate::{ExAnimationRecord, IndexedTile, MaterializedTileOverride};
+use std::fmt;
+
+const GRAPHICS_TRANSFER_BYTES: [u16; 19] = [
+    0, 0x20, 0x40, 0x60, 0x80, 0xa0, 0xc0, 0xe0, 0x100, 0x180, 0x200, 0x280, 0x300, 0x380, 0x400,
+    0x10, 0x20, 0x40, 0x80,
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExAnimationTriggerPreviewState {
@@ -33,6 +39,145 @@ impl Default for ExAnimationTriggerPreviewState {
 pub struct SelectedExAnimationFrame {
     pub record: usize,
     pub frame: u16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExAnimationMaterializeError {
+    UnsupportedGraphicsKind(u8),
+    FrameOutOfRange { frame: u16, words: usize },
+    SourceOutOfRange { index: usize, len: usize },
+    DestinationOverflow,
+}
+
+impl fmt::Display for ExAnimationMaterializeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "cannot materialize ExAnimation frame: {self:?}")
+    }
+}
+
+impl std::error::Error for ExAnimationMaterializeError {}
+
+#[must_use]
+pub const fn exanimation_trigger_has_second_bank(trigger: u8) -> bool {
+    matches!(trigger, 1..=5 | 7 | 9..=0x0e | 0x20..=0x2f)
+}
+
+pub fn exanimation_frame_source_word(
+    record: &ExAnimationRecord,
+    frame: u16,
+) -> Result<u16, ExAnimationMaterializeError> {
+    let bytes = record.frame_bytes(exanimation_trigger_has_second_bank(record.trigger()));
+    let offset =
+        usize::from(frame)
+            .checked_mul(2)
+            .ok_or(ExAnimationMaterializeError::FrameOutOfRange {
+                frame,
+                words: bytes.len() / 2,
+            })?;
+    let word =
+        bytes
+            .get(offset..offset + 2)
+            .ok_or(ExAnimationMaterializeError::FrameOutOfRange {
+                frame,
+                words: bytes.len() / 2,
+            })?;
+    Ok(u16::from_le_bytes([word[0], word[1]]))
+}
+
+pub fn materialize_exanimation_graphics_transfer(
+    record: &ExAnimationRecord,
+    frame: u16,
+    source_tiles: &[IndexedTile],
+    source_tile: usize,
+    destination_tile: u32,
+    two_bpp_destination: bool,
+) -> Result<Vec<MaterializedTileOverride>, ExAnimationMaterializeError> {
+    let kind = record.kind();
+    let bytes = GRAPHICS_TRANSFER_BYTES
+        .get(usize::from(kind))
+        .copied()
+        .filter(|bytes| *bytes != 0)
+        .ok_or(ExAnimationMaterializeError::UnsupportedGraphicsKind(kind))?;
+    let _ = exanimation_frame_source_word(record, frame)?;
+    let tile_count = usize::from(if two_bpp_destination {
+        bytes >> 4
+    } else {
+        bytes >> 5
+    });
+    if tile_count == 0 {
+        return Err(ExAnimationMaterializeError::UnsupportedGraphicsKind(kind));
+    }
+
+    let second_block = two_bpp_destination && (0x10..=0x12).contains(&kind);
+    let source_count = if two_bpp_destination {
+        (tile_count + usize::from(second_block) * tile_count).div_ceil(2)
+    } else {
+        tile_count
+    };
+    let source_end = source_tile.checked_add(source_count).ok_or(
+        ExAnimationMaterializeError::SourceOutOfRange {
+            index: usize::MAX,
+            len: source_tiles.len(),
+        },
+    )?;
+    if source_end > source_tiles.len() {
+        return Err(ExAnimationMaterializeError::SourceOutOfRange {
+            index: source_end - 1,
+            len: source_tiles.len(),
+        });
+    }
+
+    let mut overrides = Vec::with_capacity(tile_count * (1 + usize::from(second_block)));
+    append_graphics_block(
+        &mut overrides,
+        source_tiles,
+        source_tile,
+        destination_tile,
+        tile_count,
+        two_bpp_destination,
+    )?;
+    if second_block {
+        append_graphics_block(
+            &mut overrides,
+            source_tiles,
+            source_tile + tile_count.div_ceil(2),
+            destination_tile
+                .checked_add(0x10)
+                .ok_or(ExAnimationMaterializeError::DestinationOverflow)?,
+            tile_count,
+            true,
+        )?;
+    }
+    Ok(overrides)
+}
+
+fn append_graphics_block(
+    output: &mut Vec<MaterializedTileOverride>,
+    source_tiles: &[IndexedTile],
+    source_tile: usize,
+    destination_tile: u32,
+    tile_count: usize,
+    two_bpp: bool,
+) -> Result<(), ExAnimationMaterializeError> {
+    for index in 0..tile_count {
+        let source_index = source_tile + if two_bpp { index / 2 } else { index };
+        let mut tile = source_tiles[source_index].clone();
+        if two_bpp {
+            let shift = (index & 1) * 2;
+            let pixels = std::array::from_fn(|pixel| (tile.pixels()[pixel] >> shift) & 3);
+            tile = IndexedTile::new(pixels);
+        }
+        output.push(MaterializedTileOverride {
+            tile_index: destination_tile
+                .checked_add(
+                    u32::try_from(index)
+                        .map_err(|_| ExAnimationMaterializeError::DestinationOverflow)?,
+                )
+                .ok_or(ExAnimationMaterializeError::DestinationOverflow)?,
+            tile,
+        });
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -279,5 +424,50 @@ mod tests {
         );
         assert!(!triggers.one_shot[0]);
         assert_eq!(state.cursors(), &[0xff]);
+    }
+
+    #[test]
+    fn complete_graphics_types_use_the_authenticated_transfer_sizes() {
+        let record = ExAnimationRecord::new(3, 0, 0, 0, false, &[0, 0], false).unwrap();
+        let source = (0..3)
+            .map(|value| IndexedTile::new([value; 64]))
+            .collect::<Vec<_>>();
+        let overrides =
+            materialize_exanimation_graphics_transfer(&record, 0, &source, 0, 0x120, false)
+                .unwrap();
+        assert_eq!(overrides.len(), 3);
+        assert_eq!(overrides[0].tile_index, 0x120);
+        assert_eq!(overrides[2].tile_index, 0x122);
+        assert_eq!(overrides[2].tile.pixels(), &[2; 64]);
+    }
+
+    #[test]
+    fn two_bpp_types_split_nibbles_and_write_the_second_destination_block() {
+        let record = ExAnimationRecord::new(0x10, 0, 0, 0, false, &[0, 0], false).unwrap();
+        let source = vec![IndexedTile::new([0x0d; 64]), IndexedTile::new([0x06; 64])];
+        let overrides =
+            materialize_exanimation_graphics_transfer(&record, 0, &source, 0, 0x200, true).unwrap();
+        assert_eq!(overrides.len(), 4);
+        assert_eq!(overrides[0].tile_index, 0x200);
+        assert_eq!(overrides[0].tile.pixels(), &[1; 64]);
+        assert_eq!(overrides[1].tile_index, 0x201);
+        assert_eq!(overrides[1].tile.pixels(), &[3; 64]);
+        assert_eq!(overrides[2].tile_index, 0x210);
+        assert_eq!(overrides[2].tile.pixels(), &[2; 64]);
+        assert_eq!(overrides[3].tile_index, 0x211);
+        assert_eq!(overrides[3].tile.pixels(), &[1; 64]);
+    }
+
+    #[test]
+    fn frame_and_source_bounds_fail_before_returning_partial_overrides() {
+        let record = ExAnimationRecord::new(1, 0, 0, 0, false, &[0, 0], false).unwrap();
+        assert_eq!(
+            exanimation_frame_source_word(&record, 1),
+            Err(ExAnimationMaterializeError::FrameOutOfRange { frame: 1, words: 1 })
+        );
+        assert_eq!(
+            materialize_exanimation_graphics_transfer(&record, 0, &[], 0, 0, false),
+            Err(ExAnimationMaterializeError::SourceOutOfRange { index: 0, len: 0 })
+        );
     }
 }
