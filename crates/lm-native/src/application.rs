@@ -666,9 +666,10 @@ impl eframe::App for NativeApplication {
             }
         });
         self.show_confirmation(context);
-        self.about_dialog.show(context);
-        self.diagnostics_dialog.show(context);
-        self.help_dialog.show(context);
+        self.about_dialog.show(context, self.app.localization());
+        self.diagnostics_dialog
+            .show(context, self.app.localization());
+        self.help_dialog.show(context, self.app.localization());
         if let Some(shortcuts) = self.shortcut_editor.show(context) {
             match self.app.set_shortcuts(shortcuts) {
                 Ok(()) => self.app.status = "Updated keyboard shortcuts".into(),

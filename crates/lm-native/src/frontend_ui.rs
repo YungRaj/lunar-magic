@@ -1,8 +1,12 @@
 use eframe::egui;
 use lm_app::{
-    AppState, ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolbarActivation, ToolbarItem,
-    UiTextKey,
+    AppState, LocalizationCatalog, ShortcutGesture, ShortcutKey, ShortcutModifiers,
+    ToolbarActivation, ToolbarItem, UiTextKey,
 };
+
+pub(crate) fn localized_text(catalog: Option<&LocalizationCatalog>, key: UiTextKey) -> String {
+    catalog.map_or_else(|| key.english().into(), |catalog| catalog.text(key).into())
+}
 
 pub(crate) fn show_toolbar(ui: &mut egui::Ui, app: &AppState) -> Option<ToolbarActivation> {
     let toolbar = app.toolbar()?;
@@ -280,5 +284,22 @@ mod tests {
         ] {
             assert!(sources.contains(&format!("UiTextKey::{key:?}")));
         }
+    }
+
+    #[test]
+    fn localized_text_selects_complete_catalog_or_english_fallback() {
+        let catalog = LocalizationCatalog::new(
+            "zz-test",
+            UiTextKey::ALL.map(|key| (key, format!("translated-{key:?}"))),
+        )
+        .unwrap();
+        assert_eq!(
+            localized_text(None, UiTextKey::AboutCopySourceUrl),
+            "Copy source URL"
+        );
+        assert_eq!(
+            localized_text(Some(&catalog), UiTextKey::AboutCopySourceUrl),
+            "translated-AboutCopySourceUrl"
+        );
     }
 }

@@ -1,5 +1,9 @@
 use eframe::egui;
-use lm_app::{AppState, EditorMode, ProfileStatus, ProjectStatus, SaveStatus};
+use lm_app::{
+    AppState, EditorMode, LocalizationCatalog, ProfileStatus, ProjectStatus, SaveStatus, UiTextKey,
+};
+
+use crate::frontend_ui::localized_text;
 
 pub(crate) const PRODUCT_NAME: &str = "Lunar Magic Rust";
 pub(crate) const COMPATIBILITY_TARGET: &str = "Lunar Magic 3.63 workflow compatibility";
@@ -18,29 +22,44 @@ impl AboutDialog {
         self.copied_source = false;
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if !self.open {
             return;
         }
         let mut copied_source = self.copied_source;
-        egui::Window::new(format!("About {PRODUCT_NAME}"))
+        let product = localized_text(catalog, UiTextKey::AppTitle);
+        let title = localized_text(catalog, UiTextKey::AboutWindowTitleFormat)
+            .replace("{product}", &product);
+        egui::Window::new(title)
             .open(&mut self.open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.heading(PRODUCT_NAME);
-                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
-                ui.label("Clean-room Rust reimplementation");
-                ui.label(COMPATIBILITY_TARGET);
-                ui.label(format!("License: {LICENSE}"));
-                ui.hyperlink_to("Source repository", SOURCE_URL);
-                if ui.button("Copy source URL").clicked() {
+                ui.heading(&product);
+                ui.label(
+                    localized_text(catalog, UiTextKey::AboutVersionFormat)
+                        .replace("{version}", env!("CARGO_PKG_VERSION")),
+                );
+                ui.label(localized_text(catalog, UiTextKey::AboutCleanRoomIdentity));
+                ui.label(localized_text(catalog, UiTextKey::AboutCompatibilityTarget));
+                ui.label(
+                    localized_text(catalog, UiTextKey::AboutLicenseFormat)
+                        .replace("{license}", LICENSE),
+                );
+                ui.hyperlink_to(
+                    localized_text(catalog, UiTextKey::AboutSourceRepository),
+                    SOURCE_URL,
+                );
+                if ui
+                    .button(localized_text(catalog, UiTextKey::AboutCopySourceUrl))
+                    .clicked()
+                {
                     ui.ctx().copy_text(SOURCE_URL.into());
                     copied_source = true;
                 }
                 if copied_source {
-                    ui.label("Source URL copied.");
+                    ui.label(localized_text(catalog, UiTextKey::AboutSourceCopied));
                 }
             });
         self.copied_source = copied_source;
@@ -62,30 +81,33 @@ impl DiagnosticsDialog {
         self.report = format!("{}\n\n{}", diagnostic_report(app), compatibility.text);
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if !self.open {
             return;
         }
         let report = self.report.clone();
         let mut copied = self.copied;
-        egui::Window::new("Compatibility diagnostics")
+        egui::Window::new(localized_text(catalog, UiTextKey::DiagnosticsWindowTitle))
             .open(&mut self.open)
             .collapsible(false)
             .resizable(true)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(context, |ui| {
-                ui.label("Path-free build and ROM information for compatibility reports:");
+                ui.label(localized_text(catalog, UiTextKey::DiagnosticsIntroduction));
                 egui::ScrollArea::vertical()
                     .max_height(520.0)
                     .show(ui, |ui| {
                         ui.monospace(&report);
                     });
-                if ui.button("Copy diagnostics").clicked() {
+                if ui
+                    .button(localized_text(catalog, UiTextKey::DiagnosticsCopy))
+                    .clicked()
+                {
                     ui.ctx().copy_text(report.clone());
                     copied = true;
                 }
                 if copied {
-                    ui.label("Diagnostics copied.");
+                    ui.label(localized_text(catalog, UiTextKey::DiagnosticsCopied));
                 }
             });
         self.copied = copied;

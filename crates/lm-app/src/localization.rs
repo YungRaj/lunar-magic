@@ -100,6 +100,42 @@ pub enum UiTextKey {
     DocumentCompleteMap16Set,
     DocumentNativeLevelStreams,
     DocumentNativeLevelAssets,
+    HelpWindowTitle,
+    HelpSearchLabel,
+    HelpRustWorkflowGuides,
+    HelpOriginalCommandIndex,
+    HelpOriginalSection,
+    HelpOriginalRoute,
+    HelpOriginalNotice,
+    HelpNoMatches,
+    AboutWindowTitleFormat,
+    AboutVersionFormat,
+    AboutCleanRoomIdentity,
+    AboutCompatibilityTarget,
+    AboutLicenseFormat,
+    AboutSourceRepository,
+    AboutCopySourceUrl,
+    AboutSourceCopied,
+    DiagnosticsWindowTitle,
+    DiagnosticsIntroduction,
+    DiagnosticsCopy,
+    DiagnosticsCopied,
+    HelpGettingStartedTitle,
+    HelpGettingStartedBody,
+    HelpLevelEditingTitle,
+    HelpLevelEditingBody,
+    HelpEntrancesExitsTitle,
+    HelpEntrancesExitsBody,
+    HelpMap16GraphicsTitle,
+    HelpMap16GraphicsBody,
+    HelpPalettesBackgroundsLayer3Title,
+    HelpPalettesBackgroundsLayer3Body,
+    HelpOverworldEditingTitle,
+    HelpOverworldEditingBody,
+    HelpImportExportRecoveryTitle,
+    HelpImportExportRecoveryBody,
+    HelpCompatibilityDiagnosticsTitle,
+    HelpCompatibilityDiagnosticsBody,
 }
 
 impl UiTextKey {
@@ -194,10 +230,66 @@ impl UiTextKey {
             Self::DocumentCompleteMap16Set => "Complete Map16 Set",
             Self::DocumentNativeLevelStreams => "Native Level Streams",
             Self::DocumentNativeLevelAssets => "Native Level Assets",
+            Self::HelpWindowTitle => "Lunar Magic Rust Help",
+            Self::HelpSearchLabel => "Search:",
+            Self::HelpRustWorkflowGuides => "Rust workflow guides",
+            Self::HelpOriginalCommandIndex => "Lunar Magic 3.63 command index",
+            Self::HelpOriginalSection => "Original Lunar Magic 3.63 help section",
+            Self::HelpOriginalRoute => "Original Lunar Magic 3.63 help route",
+            Self::HelpOriginalNotice => {
+                "This retained index identifies the original workflow without redistributing the proprietary help text. Search the Rust workflow guides for native usage and Compatibility diagnostics for ROM-specific state."
+            }
+            Self::HelpNoMatches => "No help topics match this search.",
+            Self::AboutWindowTitleFormat => "About {product}",
+            Self::AboutVersionFormat => "Version {version}",
+            Self::AboutCleanRoomIdentity => "Clean-room Rust reimplementation",
+            Self::AboutCompatibilityTarget => "Lunar Magic 3.63 workflow compatibility",
+            Self::AboutLicenseFormat => "License: {license}",
+            Self::AboutSourceRepository => "Source repository",
+            Self::AboutCopySourceUrl => "Copy source URL",
+            Self::AboutSourceCopied => "Source URL copied.",
+            Self::DiagnosticsWindowTitle => "Compatibility diagnostics",
+            Self::DiagnosticsIntroduction => {
+                "Path-free build and ROM information for compatibility reports:"
+            }
+            Self::DiagnosticsCopy => "Copy diagnostics",
+            Self::DiagnosticsCopied => "Diagnostics copied.",
+            Self::HelpGettingStartedTitle => "Getting started",
+            Self::HelpGettingStartedBody => {
+                "Open a clean Super Mario World ROM with File > Open. Select a level from the level field, then use the Editors menu to open level, Map16, graphics, palette, ExAnimation, Layer 3, and overworld tools. Save writes the checked in-memory ROM transaction; Save As publishes a new file."
+            }
+            Self::HelpLevelEditingTitle => "Level editing",
+            Self::HelpLevelEditingBody => {
+                "Use the level canvas to select, place, drag, resize, duplicate, and remove objects and sprites. The canvas fits one 256 by 224 SNES screen into the available pane and recomputes its scale when the window changes size. View toggles control Layer 1, Layer 2, Layer 3, and sprites without deleting their data."
+            }
+            Self::HelpEntrancesExitsTitle => "Entrances and exits",
+            Self::HelpEntrancesExitsBody => {
+                "Primary, midway, secondary entrances, and screen exits are edited through their typed forms. Screen and coordinate fields are bounded to their native packed widths. Changes participate in the same undo, redo, checksum, save, and reopen transaction as level objects and sprites."
+            }
+            Self::HelpMap16GraphicsTitle => "Map16 and graphics",
+            Self::HelpMap16GraphicsBody => {
+                "The Map16 editor changes visual quadrants, palette, priority, flips, and acts-like behavior. Graphics and ExGFX tools import, export, decode, and edit the active slots. Super GFX Bypass selects per-level foreground, background, and sprite files; animation options update the live preview."
+            }
+            Self::HelpPalettesBackgroundsLayer3Title => "Palettes, backgrounds, and Layer 3",
+            Self::HelpPalettesBackgroundsLayer3Body => {
+                "Palette editors provide shared and per-level colors with protected ownership checks. Background and Layer 3 editors expose tilemaps, offsets, graphics selection, priority, and composition. Preview and image export use the staged palette and animation phase currently shown in the editor."
+            }
+            Self::HelpOverworldEditingTitle => "Overworld editing",
+            Self::HelpOverworldEditingBody => {
+                "Overworld tools edit Layer 1 paths and events, Layer 2 appearance, level tiles, names, messages, warps, player starts, and special-event state. Each editor stages a checked revision and can be undone before or after saving."
+            }
+            Self::HelpImportExportRecoveryTitle => "Import, export, and recovery",
+            Self::HelpImportExportRecoveryBody => {
+                "Level workflows support one-level MWL transfer, directory batch import, all-level export, and PNG or BMP image export. Restore points preserve ROM and associated files. Crash recovery records unsaved ROM revisions and offers them on the next launch without overwriting the last saved file."
+            }
+            Self::HelpCompatibilityDiagnosticsTitle => "Compatibility diagnostics",
+            Self::HelpCompatibilityDiagnosticsBody => {
+                "Help > Compatibility diagnostics creates a path-free report describing the build, ROM identity, mapper, checksum, revision profile, runtime generations, and current editor state. Copy that report when a ROM or feature behaves differently from Lunar Magic 3.63."
+            }
         }
     }
 
-    pub const ALL: [Self; 88] = [
+    pub const ALL: [Self; 124] = [
         Self::AppTitle,
         Self::FileOpen,
         Self::FileSave,
@@ -286,6 +378,42 @@ impl UiTextKey {
         Self::DocumentCompleteMap16Set,
         Self::DocumentNativeLevelStreams,
         Self::DocumentNativeLevelAssets,
+        Self::HelpWindowTitle,
+        Self::HelpSearchLabel,
+        Self::HelpRustWorkflowGuides,
+        Self::HelpOriginalCommandIndex,
+        Self::HelpOriginalSection,
+        Self::HelpOriginalRoute,
+        Self::HelpOriginalNotice,
+        Self::HelpNoMatches,
+        Self::AboutWindowTitleFormat,
+        Self::AboutVersionFormat,
+        Self::AboutCleanRoomIdentity,
+        Self::AboutCompatibilityTarget,
+        Self::AboutLicenseFormat,
+        Self::AboutSourceRepository,
+        Self::AboutCopySourceUrl,
+        Self::AboutSourceCopied,
+        Self::DiagnosticsWindowTitle,
+        Self::DiagnosticsIntroduction,
+        Self::DiagnosticsCopy,
+        Self::DiagnosticsCopied,
+        Self::HelpGettingStartedTitle,
+        Self::HelpGettingStartedBody,
+        Self::HelpLevelEditingTitle,
+        Self::HelpLevelEditingBody,
+        Self::HelpEntrancesExitsTitle,
+        Self::HelpEntrancesExitsBody,
+        Self::HelpMap16GraphicsTitle,
+        Self::HelpMap16GraphicsBody,
+        Self::HelpPalettesBackgroundsLayer3Title,
+        Self::HelpPalettesBackgroundsLayer3Body,
+        Self::HelpOverworldEditingTitle,
+        Self::HelpOverworldEditingBody,
+        Self::HelpImportExportRecoveryTitle,
+        Self::HelpImportExportRecoveryBody,
+        Self::HelpCompatibilityDiagnosticsTitle,
+        Self::HelpCompatibilityDiagnosticsBody,
     ];
 
     fn from_byte(value: u8) -> Option<Self> {

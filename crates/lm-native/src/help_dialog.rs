@@ -1,46 +1,49 @@
 use eframe::egui;
+use lm_app::{LocalizationCatalog, UiTextKey};
 use std::sync::OnceLock;
+
+use crate::frontend_ui::localized_text;
 
 const ORIGINAL_TOPIC_INDEX: &str = include_str!("lunar_magic_363_help_topics.tsv");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct HelpTopic {
-    pub title: &'static str,
-    pub body: &'static str,
+    pub title: UiTextKey,
+    pub body: UiTextKey,
 }
 
 pub(crate) const HELP_TOPICS: &[HelpTopic] = &[
     HelpTopic {
-        title: "Getting started",
-        body: "Open a clean Super Mario World ROM with File > Open. Select a level from the level field, then use the Editors menu to open level, Map16, graphics, palette, ExAnimation, Layer 3, and overworld tools. Save writes the checked in-memory ROM transaction; Save As publishes a new file.",
+        title: UiTextKey::HelpGettingStartedTitle,
+        body: UiTextKey::HelpGettingStartedBody,
     },
     HelpTopic {
-        title: "Level editing",
-        body: "Use the level canvas to select, place, drag, resize, duplicate, and remove objects and sprites. The canvas fits one 256 by 224 SNES screen into the available pane and recomputes its scale when the window changes size. View toggles control Layer 1, Layer 2, Layer 3, and sprites without deleting their data.",
+        title: UiTextKey::HelpLevelEditingTitle,
+        body: UiTextKey::HelpLevelEditingBody,
     },
     HelpTopic {
-        title: "Entrances and exits",
-        body: "Primary, midway, secondary entrances, and screen exits are edited through their typed forms. Screen and coordinate fields are bounded to their native packed widths. Changes participate in the same undo, redo, checksum, save, and reopen transaction as level objects and sprites.",
+        title: UiTextKey::HelpEntrancesExitsTitle,
+        body: UiTextKey::HelpEntrancesExitsBody,
     },
     HelpTopic {
-        title: "Map16 and graphics",
-        body: "The Map16 editor changes visual quadrants, palette, priority, flips, and acts-like behavior. Graphics and ExGFX tools import, export, decode, and edit the active slots. Super GFX Bypass selects per-level foreground, background, and sprite files; animation options update the live preview.",
+        title: UiTextKey::HelpMap16GraphicsTitle,
+        body: UiTextKey::HelpMap16GraphicsBody,
     },
     HelpTopic {
-        title: "Palettes, backgrounds, and Layer 3",
-        body: "Palette editors provide shared and per-level colors with protected ownership checks. Background and Layer 3 editors expose tilemaps, offsets, graphics selection, priority, and composition. Preview and image export use the staged palette and animation phase currently shown in the editor.",
+        title: UiTextKey::HelpPalettesBackgroundsLayer3Title,
+        body: UiTextKey::HelpPalettesBackgroundsLayer3Body,
     },
     HelpTopic {
-        title: "Overworld editing",
-        body: "Overworld tools edit Layer 1 paths and events, Layer 2 appearance, level tiles, names, messages, warps, player starts, and special-event state. Each editor stages a checked revision and can be undone before or after saving.",
+        title: UiTextKey::HelpOverworldEditingTitle,
+        body: UiTextKey::HelpOverworldEditingBody,
     },
     HelpTopic {
-        title: "Import, export, and recovery",
-        body: "Level workflows support one-level MWL transfer, directory batch import, all-level export, and PNG or BMP image export. Restore points preserve ROM and associated files. Crash recovery records unsaved ROM revisions and offers them on the next launch without overwriting the last saved file.",
+        title: UiTextKey::HelpImportExportRecoveryTitle,
+        body: UiTextKey::HelpImportExportRecoveryBody,
     },
     HelpTopic {
-        title: "Compatibility diagnostics",
-        body: "Help > Compatibility diagnostics creates a path-free report describing the build, ROM identity, mapper, checksum, revision profile, runtime generations, and current editor state. Copy that report when a ROM or feature behaves differently from Lunar Magic 3.63.",
+        title: UiTextKey::HelpCompatibilityDiagnosticsTitle,
+        body: UiTextKey::HelpCompatibilityDiagnosticsBody,
     },
 ];
 
@@ -57,11 +60,11 @@ impl HelpDialog {
         self.open = true;
     }
 
-    pub(crate) fn show(&mut self, context: &egui::Context) {
+    pub(crate) fn show(&mut self, context: &egui::Context, catalog: Option<&LocalizationCatalog>) {
         if !self.open {
             return;
         }
-        let matching = matching_topic_indexes(&self.query);
+        let matching = matching_topic_indexes(&self.query, catalog);
         let matching_original = matching_original_topic_indexes(&self.query);
         if self
             .selected_original
@@ -72,24 +75,24 @@ impl HelpDialog {
         if self.selected_original.is_none() && !matching.contains(&self.selected) {
             self.selected = matching.first().copied().unwrap_or(0);
         }
-        egui::Window::new("Lunar Magic Rust Help")
+        egui::Window::new(localized_text(catalog, UiTextKey::HelpWindowTitle))
             .open(&mut self.open)
             .default_size([760.0, 520.0])
             .resizable(true)
             .show(context, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Search:");
+                    ui.label(localized_text(catalog, UiTextKey::HelpSearchLabel));
                     ui.text_edit_singleline(&mut self.query);
                 });
                 ui.separator();
                 ui.columns(2, |columns| {
                     egui::ScrollArea::vertical().show(&mut columns[0], |ui| {
-                        ui.strong("Rust workflow guides");
-                        for index in matching_topic_indexes(&self.query) {
+                        ui.strong(localized_text(catalog, UiTextKey::HelpRustWorkflowGuides));
+                        for index in matching_topic_indexes(&self.query, catalog) {
                             if ui
                                 .selectable_label(
                                     self.selected_original.is_none() && self.selected == index,
-                                    HELP_TOPICS[index].title,
+                                    localized_text(catalog, HELP_TOPICS[index].title),
                                 )
                                 .clicked()
                             {
@@ -99,7 +102,7 @@ impl HelpDialog {
                         }
                         if !matching_original.is_empty() {
                             ui.separator();
-                            ui.strong("Lunar Magic 3.63 command index");
+                            ui.strong(localized_text(catalog, UiTextKey::HelpOriginalCommandIndex));
                             for index in matching_original_topic_indexes(&self.query) {
                                 let topic = original_topics()[index];
                                 let indent = "  ".repeat(topic.depth.saturating_sub(1));
@@ -109,10 +112,7 @@ impl HelpDialog {
                                     format!("{indent}{}", topic.title)
                                 };
                                 if ui
-                                    .selectable_label(
-                                        self.selected_original == Some(index),
-                                        label,
-                                    )
+                                    .selectable_label(self.selected_original == Some(index), label)
                                     .clicked()
                                 {
                                     self.selected_original = Some(index);
@@ -128,19 +128,19 @@ impl HelpDialog {
                             ui.heading(topic.title);
                             ui.add_space(8.0);
                             if topic.route.is_empty() {
-                                ui.label("Original Lunar Magic 3.63 help section");
+                                ui.label(localized_text(catalog, UiTextKey::HelpOriginalSection));
                             } else {
-                                ui.label("Original Lunar Magic 3.63 help route");
+                                ui.label(localized_text(catalog, UiTextKey::HelpOriginalRoute));
                                 ui.monospace(topic.route);
                             }
                             ui.add_space(8.0);
-                            ui.label("This retained index identifies the original workflow without redistributing the proprietary help text. Search the Rust workflow guides for native usage and Compatibility diagnostics for ROM-specific state.");
+                            ui.label(localized_text(catalog, UiTextKey::HelpOriginalNotice));
                         } else if let Some(topic) = HELP_TOPICS.get(self.selected) {
-                            ui.heading(topic.title);
+                            ui.heading(localized_text(catalog, topic.title));
                             ui.add_space(8.0);
-                            ui.label(topic.body);
+                            ui.label(localized_text(catalog, topic.body));
                         } else {
-                            ui.label("No help topics match this search.");
+                            ui.label(localized_text(catalog, UiTextKey::HelpNoMatches));
                         }
                     });
                 });
@@ -191,15 +191,19 @@ fn matching_original_topic_indexes(query: &str) -> Vec<usize> {
         .collect()
 }
 
-fn matching_topic_indexes(query: &str) -> Vec<usize> {
+fn matching_topic_indexes(query: &str, catalog: Option<&LocalizationCatalog>) -> Vec<usize> {
     let query = query.trim().to_ascii_lowercase();
     HELP_TOPICS
         .iter()
         .enumerate()
         .filter_map(|(index, topic)| {
             (query.is_empty()
-                || topic.title.to_ascii_lowercase().contains(&query)
-                || topic.body.to_ascii_lowercase().contains(&query))
+                || localized_text(catalog, topic.title)
+                    .to_ascii_lowercase()
+                    .contains(&query)
+                || localized_text(catalog, topic.body)
+                    .to_ascii_lowercase()
+                    .contains(&query))
             .then_some(index)
         })
         .collect()
@@ -213,7 +217,7 @@ mod tests {
     fn help_topics_cover_every_primary_editor_family() {
         let corpus = HELP_TOPICS
             .iter()
-            .map(|topic| format!("{} {}", topic.title, topic.body))
+            .map(|topic| format!("{} {}", topic.title.english(), topic.body.english()))
             .collect::<Vec<_>>()
             .join(" ")
             .to_ascii_lowercase();
@@ -235,11 +239,29 @@ mod tests {
 
     #[test]
     fn topic_search_matches_titles_and_bodies_case_insensitively() {
-        let overworld = matching_topic_indexes("OVERWORLD");
+        let overworld = matching_topic_indexes("OVERWORLD", None);
         assert!(overworld.contains(&5));
-        assert!(matching_topic_indexes("checksum").len() >= 2);
-        assert!(matching_topic_indexes("not a real topic").is_empty());
-        assert_eq!(matching_topic_indexes(" ").len(), HELP_TOPICS.len());
+        assert!(matching_topic_indexes("checksum", None).len() >= 2);
+        assert!(matching_topic_indexes("not a real topic", None).is_empty());
+        assert_eq!(matching_topic_indexes(" ", None).len(), HELP_TOPICS.len());
+    }
+
+    #[test]
+    fn topic_search_uses_the_installed_translation() {
+        let catalog = LocalizationCatalog::new(
+            "fr-test",
+            UiTextKey::ALL.map(|key| {
+                let text = if key == UiTextKey::HelpLevelEditingTitle {
+                    "Édition du niveau".into()
+                } else {
+                    format!("traduit-{key:?}")
+                };
+                (key, text)
+            }),
+        )
+        .unwrap();
+        assert_eq!(matching_topic_indexes("NIVEAU", Some(&catalog)), vec![1]);
+        assert!(matching_topic_indexes("Level editing", Some(&catalog)).is_empty());
     }
 
     #[test]
