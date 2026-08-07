@@ -3190,7 +3190,12 @@ storage is surfaced rather than silently producing false targets. That immutable
 once per ROM revision and reused across level navigation; the exhaustive 512-level materialization
 gate therefore retains bounded load time. `$23F5` and `$23F6` replace one
 another, and activating the current member returns to no screen overlay. `$23F7` Boundary Guide is
-the remaining member of this recovered mutually exclusive group.
+now the third member. `DrawLevelBoundaryGuideOverlay` at `$00451EC0` selects 256×232 pixels for
+ordinary/vertical modes, 352×232 for alternate horizontal modes, and 448×224 for alternate
+vertical modes from the same recovered mode flags used by the renderer. The native guide converts
+those exact dimensions to the responsive canvas scale and anchors the outline at the current
+entrance/camera viewport. `LM_VIEW_SCREEN_GRID_2` selects it, another group member replaces it, and
+a second activation clears it, completing the original three-way mutually exclusive display state.
 Remaining original names that operate other editor-local modes, dialogs, toggles, clipboard
 payloads, or installers stay explicitly unsupported until their corresponding typed frontend
 action exists.

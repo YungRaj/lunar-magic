@@ -2616,6 +2616,15 @@ impl VanillaLevelEditor {
                     self.secondary_exits.as_ref(),
                 );
             }
+            if visibility.screen_overlay == crate::application::LevelScreenOverlay::BoundaryGuide {
+                draw_level_boundary_guide(
+                    painter,
+                    rect,
+                    cell,
+                    level_mode,
+                    self.game_preview_camera_origin(major_tiles, minor_tiles, vertical),
+                );
+            }
             let alternate_vertical_layout =
                 lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout;
             let level = self.controller.as_ref().map_or(0, |controller| {
@@ -5432,6 +5441,55 @@ fn draw_level_screen_exit_annotations(
             egui::Color32::WHITE,
         );
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LevelBoundaryGuideGeometry {
+    x_tiles: f32,
+    y_tiles: f32,
+    width_tiles: f32,
+    height_tiles: f32,
+}
+
+fn level_boundary_guide_geometry(level_mode: u8, camera: (u16, u16)) -> LevelBoundaryGuideGeometry {
+    let mode = lm_profile::smw_us_v1_level_mode(level_mode);
+    let (width_pixels, height_pixels) = match (mode.alternate_layer_layout, mode.vertical) {
+        (true, true) => (448.0_f32, 224.0_f32),
+        (true, false) => (352.0_f32, 232.0_f32),
+        _ => (256.0_f32, 232.0_f32),
+    };
+    LevelBoundaryGuideGeometry {
+        x_tiles: f32::from(camera.0),
+        y_tiles: f32::from(camera.1),
+        width_tiles: width_pixels / 16.0,
+        height_tiles: height_pixels / 16.0,
+    }
+}
+
+fn draw_level_boundary_guide(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell: f32,
+    level_mode: u8,
+    camera: (u16, u16),
+) {
+    let geometry = level_boundary_guide_geometry(level_mode, camera);
+    let margin = cell / 4.0;
+    let min = canvas.min
+        + egui::vec2(
+            geometry.x_tiles * cell - margin,
+            geometry.y_tiles * cell - margin,
+        );
+    let size = egui::vec2(
+        geometry.width_tiles * cell + margin * 2.0,
+        geometry.height_tiles * cell + margin * 2.0,
+    );
+    painter.rect_stroke(
+        egui::Rect::from_min_size(min, size).intersect(canvas),
+        0.0,
+        egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(0, 224, 224)),
+        egui::StrokeKind::Inside,
+    );
 }
 
 fn pasted_text(ui: &egui::Ui) -> Option<String> {
@@ -13735,6 +13793,37 @@ mod tests {
                 annotations[1].height,
             ),
             (0, 16, 32, 16)
+        );
+    }
+
+    #[test]
+    fn boundary_guide_uses_recovered_mode_dimensions_and_camera_anchor() {
+        assert_eq!(
+            level_boundary_guide_geometry(0, (3, 4)),
+            LevelBoundaryGuideGeometry {
+                x_tiles: 3.0,
+                y_tiles: 4.0,
+                width_tiles: 16.0,
+                height_tiles: 14.5,
+            }
+        );
+        assert_eq!(
+            level_boundary_guide_geometry(5, (7, 8)),
+            LevelBoundaryGuideGeometry {
+                x_tiles: 7.0,
+                y_tiles: 8.0,
+                width_tiles: 22.0,
+                height_tiles: 14.5,
+            }
+        );
+        assert_eq!(
+            level_boundary_guide_geometry(7, (9, 10)),
+            LevelBoundaryGuideGeometry {
+                x_tiles: 9.0,
+                y_tiles: 10.0,
+                width_tiles: 28.0,
+                height_tiles: 14.0,
+            }
         );
     }
 

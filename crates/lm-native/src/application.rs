@@ -88,6 +88,7 @@ pub(crate) enum LevelScreenOverlay {
     None,
     ScreenExits,
     ScreenGrid,
+    BoundaryGuide,
 }
 
 impl Default for LevelScreenOverlay {

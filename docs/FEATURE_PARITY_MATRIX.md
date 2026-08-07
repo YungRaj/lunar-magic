@@ -100,7 +100,9 @@ now controls the original default-off Map16 canvas grid instead of the grid bein
 unconditionally. The distinct `$23F6` Screen Grid overlay now draws the original orientation-aware
 Top/Bottom or Left/Right screen regions and hexadecimal labels. `$23F5` now renders mutually
 exclusive screen-exit regions and resolves direct, midway, secondary-level, and overworld labels
-through the detected pristine/installed secondary-exit table. This strengthens the
+through the detected pristine/installed secondary-exit table. `$23F7` completes the mutually
+exclusive overlay group with the original mode-dependent 256×232, 352×232, and 448×224 boundary
+guide anchored to the level camera. This strengthens the
 Configuration toolbar GUI evidence but does not promote that workflow while the remaining internal
 command table and toolbar variants are incomplete.
 
