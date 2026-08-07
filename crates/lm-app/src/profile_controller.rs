@@ -143,6 +143,15 @@ pub trait RevisionProfileControllers {
         &self,
         snapshot: &ControllerSnapshot,
     ) -> Result<ExAnimationController, ProfileControllerError>;
+    /// Decodes the installed ROM-global ExAnimation domain selected by this profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns profile identity/validation or installed global animation decoding errors.
+    fn decode_global_exanimation(
+        &self,
+        snapshot: &ControllerSnapshot,
+    ) -> Result<ExAnimationController, ProfileControllerError>;
     /// Decodes the complete native overworld aggregate.
     ///
     /// # Errors
@@ -320,6 +329,19 @@ impl RevisionProfileControllers for RevisionProfile {
             .payload;
         ExAnimationController::decode(snapshot, layout, &self.exanimation_double_size_modes)
             .map_err(ProfileControllerError::ExAnimation)
+    }
+
+    fn decode_global_exanimation(
+        &self,
+        snapshot: &ControllerSnapshot,
+    ) -> Result<ExAnimationController, ProfileControllerError> {
+        validate_snapshot(self, snapshot)?;
+        ExAnimationController::decode_global(
+            snapshot,
+            self.exanimation_installation,
+            &self.exanimation_double_size_modes,
+        )
+        .map_err(ProfileControllerError::ExAnimation)
     }
 
     /// Decodes all modeled overworld domains through one profile and ownership boundary.

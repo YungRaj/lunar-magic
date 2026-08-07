@@ -1,4 +1,4 @@
-use super::{ExAnimationController, ExAnimationControllerError};
+use super::{ExAnimationController, ExAnimationControllerError, ExAnimationControllerTarget};
 use crate::PreparedRomCommit;
 use lm_project::{
     ExAnimationSaveOptions, PayloadReclamation, Project, RatsOwnershipManifest, RomMutation,
@@ -30,16 +30,28 @@ impl ExAnimationController {
             });
         }
         let mut project = Project::new(image);
-        project
-            .save_exanimation_with_checksum(
-                self.slot,
-                &self.animation,
-                self.layout,
-                &self.double_size_modes,
-                self.checksum_field_offset,
-                options,
-            )
-            .map_err(ExAnimationControllerError::Io)?;
+        match self.target {
+            ExAnimationControllerTarget::Level(slot) => project
+                .save_exanimation_with_checksum(
+                    slot,
+                    &self.animation,
+                    self.layout,
+                    &self.double_size_modes,
+                    self.checksum_field_offset,
+                    options,
+                )
+                .map(|_| ()),
+            ExAnimationControllerTarget::Global(installation) => project
+                .save_installed_global_exanimation_with_checksum(
+                    &self.animation,
+                    installation,
+                    &self.double_size_modes,
+                    self.checksum_field_offset,
+                    options,
+                )
+                .map(|_| ()),
+        }
+        .map_err(ExAnimationControllerError::Io)?;
         let mutation =
             RomMutation::between(self.layout.mapper, &before, project.rom.logical_bytes())
                 .map_err(ExAnimationControllerError::Mutation)?;
@@ -76,19 +88,32 @@ impl ExAnimationController {
         let mut options = options.clone();
         options.previous_block.clone_from(&self.previous_block);
         let mut project = Project::new(image);
-        project
-            .save_exanimation_with_checksum_and_reclamation(
-                self.slot,
-                &self.animation,
-                self.layout,
-                &self.double_size_modes,
-                &options,
-                PayloadReclamation {
-                    checksum_field: self.checksum_field_offset,
-                    manifest,
-                },
-            )
-            .map_err(ExAnimationControllerError::Io)?;
+        let reclamation = PayloadReclamation {
+            checksum_field: self.checksum_field_offset,
+            manifest,
+        };
+        match self.target {
+            ExAnimationControllerTarget::Level(slot) => project
+                .save_exanimation_with_checksum_and_reclamation(
+                    slot,
+                    &self.animation,
+                    self.layout,
+                    &self.double_size_modes,
+                    &options,
+                    reclamation,
+                )
+                .map(|_| ()),
+            ExAnimationControllerTarget::Global(installation) => project
+                .save_installed_global_exanimation_with_checksum_and_reclamation(
+                    &self.animation,
+                    installation,
+                    &self.double_size_modes,
+                    &options,
+                    reclamation,
+                )
+                .map(|_| ()),
+        }
+        .map_err(ExAnimationControllerError::Io)?;
         let mutation =
             RomMutation::between(self.layout.mapper, &before, project.rom.logical_bytes())
                 .map_err(ExAnimationControllerError::Mutation)?;

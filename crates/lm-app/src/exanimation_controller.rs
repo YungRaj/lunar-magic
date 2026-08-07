@@ -3,7 +3,10 @@ use lm_graphics::{
     CompactExAnimation, ExAnimationEditError, ExAnimationError, ExAnimationFrame,
     ExAnimationFrameEdit, ExAnimationFrameEditError, ExAnimationRecord, exanimation_frames,
 };
-use lm_project::{ExAnimationIoError, ExAnimationRomLayout, TransactionError};
+use lm_project::{
+    ExAnimationIoError, ExAnimationRomLayout, InstalledExAnimationRomLayout, InstalledLayout,
+    TransactionError,
+};
 use lm_rats::RatsBlock;
 use lm_rom::{Mapper, RomError};
 use std::fmt;
@@ -84,7 +87,7 @@ impl std::error::Error for ExAnimationControllerError {}
 #[derive(Clone, Debug)]
 pub struct ExAnimationController {
     revision: u64,
-    slot: usize,
+    target: ExAnimationControllerTarget,
     layout: ExAnimationRomLayout,
     checksum_field_offset: usize,
     source_file_bytes: Vec<u8>,
@@ -92,6 +95,12 @@ pub struct ExAnimationController {
     baseline: CompactExAnimation,
     animation: CompactExAnimation,
     previous_block: Option<RatsBlock>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ExAnimationControllerTarget {
+    Level(usize),
+    Global(InstalledLayout<InstalledExAnimationRomLayout>),
 }
 
 impl ExAnimationController {

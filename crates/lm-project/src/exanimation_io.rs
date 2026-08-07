@@ -51,6 +51,14 @@ pub struct ExAnimationSaveOptions {
     pub erase_fill: u8,
 }
 
+/// One installed global ExAnimation lookup together with exact tagged-allocation ownership, when
+/// the resolved payload is RATS-backed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoadedInstalledGlobalExAnimation {
+    pub asset: InstalledAsset<CompactExAnimation>,
+    pub block: Option<RatsBlock>,
+}
+
 #[derive(Debug)]
 pub enum ExAnimationIoError {
     Layout(LevelLoadError),
@@ -127,9 +135,28 @@ impl Project {
         installation: InstalledLayout<InstalledExAnimationRomLayout>,
         double_size_modes: &[bool],
     ) -> Result<InstalledAsset<CompactExAnimation>, ExAnimationIoError> {
+        Ok(self
+            .load_installed_global_exanimation_with_ownership(installation, double_size_modes)?
+            .asset)
+    }
+
+    /// Loads ROM-global ExAnimation and retains exact tagged-block ownership for a later checked
+    /// replacement/reclamation transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns a marker, locator, mapping, payload, or compact-animation decoding error.
+    pub fn load_installed_global_exanimation_with_ownership(
+        &self,
+        installation: InstalledLayout<InstalledExAnimationRomLayout>,
+        double_size_modes: &[bool],
+    ) -> Result<LoadedInstalledGlobalExAnimation, ExAnimationIoError> {
         const GLOBAL_POINTER_DISPLACEMENT: isize = 0x5c;
         let Some(installed) = installation.resolve(&self.rom)? else {
-            return Ok(InstalledAsset::SubsystemAbsent);
+            return Ok(LoadedInstalledGlobalExAnimation {
+                asset: InstalledAsset::SubsystemAbsent,
+                block: None,
+            });
         };
         if installed.pointer_presence_mask == 0
             || installed.pointer_presence_mask & !0x00ff_ffff != 0
@@ -146,7 +173,10 @@ impl Project {
         let bytes = self.rom.read(operand, 3).map_err(PayloadLoadError::Rom)?;
         let raw = u32::from(bytes[0]) | u32::from(bytes[1]) << 8 | u32::from(bytes[2]) << 16;
         if raw & installed.pointer_presence_mask == 0 {
-            return Ok(InstalledAsset::SlotEmpty);
+            return Ok(LoadedInstalledGlobalExAnimation {
+                asset: InstalledAsset::SlotEmpty,
+                block: None,
+            });
         }
         validate_size_modes(double_size_modes)?;
         let pointer = lm_rom::SnesPointer24::new(raw)
@@ -159,11 +189,15 @@ impl Project {
                 bank_size: Some(0x8000),
             },
         )?;
-        Ok(InstalledAsset::Present(decode_exanimation_payload(
-            payload,
-            installed.payload,
-            double_size_modes,
-        )?))
+        let block = payload.block.clone();
+        Ok(LoadedInstalledGlobalExAnimation {
+            asset: InstalledAsset::Present(decode_exanimation_payload(
+                payload,
+                installed.payload,
+                double_size_modes,
+            )?),
+            block,
+        })
     }
 
     /// Saves Lunar Magic's ROM-global compact `ExAnimation` set through the installed runtime's
@@ -786,6 +820,11 @@ mod tests {
                 .unwrap(),
             InstalledAsset::Present(animation())
         );
+        let owned = project
+            .load_installed_global_exanimation_with_ownership(installed, &[false; 256])
+            .unwrap();
+        assert_eq!(owned.asset, InstalledAsset::Present(animation()));
+        assert!(owned.block.is_some());
     }
 
     #[test]

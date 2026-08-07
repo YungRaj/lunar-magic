@@ -83,6 +83,45 @@ impl RomExAnimationEditor {
                 _ => None,
             })
         });
+        let (target_label, can_switch, target_modified, global_unavailable) =
+            self.workspace.as_ref().map(|workspace| {
+                (
+                    workspace.target_label(),
+                    workspace.alternate_controller.is_some() && !workspace.controller.is_modified(),
+                    workspace.controller.is_modified(),
+                    workspace.global_unavailable.clone(),
+                )
+            })?;
+        let mut switch_target = false;
+        ui.horizontal(|ui| {
+            ui.heading(target_label);
+            if ui
+                .add_enabled(can_switch, egui::Button::new("Switch level/global domain"))
+                .clicked()
+            {
+                switch_target = true;
+            }
+        });
+        if let Some(error) = global_unavailable {
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                format!("Global ExAnimation is unavailable: {error}"),
+            );
+        }
+        if target_modified {
+            ui.label("Commit or revert this domain before switching level/global targets.");
+        }
+        if switch_target
+            && self
+                .workspace
+                .as_mut()
+                .is_some_and(Workspace::switch_target)
+        {
+            self.selected_record = 0;
+            self.selected_frame = 0;
+            self.invalidate();
+            self.load();
+        }
         let workspace = self.workspace.as_ref()?;
         let stale = workspace.controller.revision() != revision;
         if stale {

@@ -1,8 +1,13 @@
 use super::*;
 use crate::{AppError, AppState, Command, FrontendEffect};
-use lm_project::{ExAnimationSaveOptions, LevelPointerTable, Project, RatsOwnershipManifest};
+use lm_project::{
+    ExAnimationSaveOptions, GatedLayout, InstallationMarker, InstalledExAnimationRomLayout,
+    InstalledLayout, LevelPointerTable, Project, RatsOwnershipManifest,
+};
 use lm_rats::{AllocationPolicy, ProtectedRange};
 use lm_rom::RomImage;
+
+const GLOBAL_RUNTIME: usize = 0x6000;
 
 const MODES: [bool; 256] = [false; 256];
 
@@ -79,6 +84,83 @@ fn options() -> ExAnimationSaveOptions {
     }
 }
 
+fn global_installation() -> InstalledLayout<InstalledExAnimationRomLayout> {
+    InstalledLayout::Alternatives {
+        primary: GatedLayout {
+            marker: InstallationMarker {
+                offset: 0x80,
+                expected: 0x22,
+            },
+            layout: InstalledExAnimationRomLayout {
+                payload: layout(),
+                pointer_presence_mask: 0x00ff_0000,
+                pointer_locator: Some(lm_project::ChainedSnesPointerLocator {
+                    mapper: Mapper::LoRom,
+                    first_operand_offset: 0x81,
+                    final_operand_displacement: -0x20,
+                }),
+            },
+        },
+        fallback: None,
+    }
+}
+
+fn global_options(search: std::ops::Range<usize>) -> ExAnimationSaveOptions {
+    ExAnimationSaveOptions {
+        allocation: AllocationPolicy {
+            search,
+            bank_size: Some(0x8000),
+            fill_bytes: vec![0xff],
+            protected: vec![
+                ProtectedRange(0x80..0x84),
+                ProtectedRange(GLOBAL_RUNTIME + 0x5c..GLOBAL_RUNTIME + 0x5f),
+                ProtectedRange(0x7fdc..0x7fe0),
+            ],
+        },
+        previous_block: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    }
+}
+
+fn global_test_rom() -> Vec<u8> {
+    let mut project = Project::new(RomImage::from_bytes(test_rom()).unwrap());
+    project.rom.write(0x80, &[0x22]).unwrap();
+    let pointer = lm_rom::pc_to_snes(Mapper::LoRom, GLOBAL_RUNTIME)
+        .unwrap()
+        .to_le_bytes();
+    project.rom.write(0x81, &pointer[..3]).unwrap();
+    project
+        .rom
+        .write(GLOBAL_RUNTIME + 0x5c, &[0, 0, 0])
+        .unwrap();
+    project
+        .save_installed_global_exanimation_with_checksum(
+            &animation(),
+            global_installation(),
+            &MODES,
+            0x7fdc,
+            &global_options(0x4000..0x5800),
+        )
+        .unwrap();
+    project.save_snapshot()
+}
+
+fn empty_global_test_rom() -> Vec<u8> {
+    let mut project = Project::new(RomImage::from_bytes(test_rom()).unwrap());
+    project.rom.write(0x80, &[0x22]).unwrap();
+    let pointer = lm_rom::pc_to_snes(Mapper::LoRom, GLOBAL_RUNTIME)
+        .unwrap()
+        .to_le_bytes();
+    project.rom.write(0x81, &pointer[..3]).unwrap();
+    project
+        .rom
+        .write(GLOBAL_RUNTIME + 0x5c, &[0, 0, 0])
+        .unwrap();
+    project.refresh_checksum(0x7fdc).unwrap();
+    project.save_snapshot()
+}
+
 #[test]
 fn edit_expand_dispatch_reload_and_undo_compact_semantics() {
     let mut app = AppState::default();
@@ -143,6 +225,81 @@ fn edit_expand_dispatch_reload_and_undo_compact_semantics() {
     assert_eq!(app.project().unwrap().rom.logical_len(), 0x8000);
     app.dispatch(Command::Redo).unwrap();
     assert_eq!(app.project().unwrap().rom.logical_len(), 0x10000);
+}
+
+#[test]
+fn installed_global_controller_edits_commits_reopens_and_undoes() {
+    let original = global_test_rom();
+    let mut app = AppState::default();
+    app.load_rom(original.clone()).unwrap();
+    app.dispatch(Command::ShowExAnimation(1)).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        ExAnimationController::decode_global(&snapshot, global_installation(), &MODES).unwrap();
+    assert_eq!(controller.animation(), &animation());
+    assert!(controller.previous_block.is_some());
+    controller
+        .apply_edits(&[
+            ExAnimationControllerEdit::SetHeaderValue(0x1234_abcd),
+            ExAnimationControllerEdit::ReplaceRecord {
+                index: 0,
+                record: record(3, 0x20),
+            },
+        ])
+        .unwrap();
+
+    let prepared = controller
+        .prepare_commit("Edit global ExAnimation", &global_options(0x8000..0x10000))
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_installed_global_exanimation(global_installation(), &MODES)
+            .unwrap(),
+        lm_project::InstalledAsset::Present(controller.animation().clone())
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), original);
+}
+
+#[test]
+fn installed_empty_global_controller_allocates_the_first_record_transactionally() {
+    let original = empty_global_test_rom();
+    let mut app = AppState::default();
+    app.load_rom(original.clone()).unwrap();
+    app.dispatch(Command::ShowExAnimation(1)).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        ExAnimationController::decode_global(&snapshot, global_installation(), &MODES).unwrap();
+    assert!(controller.animation().records.is_empty());
+    assert_eq!(controller.previous_block, None);
+    controller
+        .apply_edits(&[
+            ExAnimationControllerEdit::SetSetting(2),
+            ExAnimationControllerEdit::InsertRecord {
+                index: 0,
+                record: record(1, 0x30),
+            },
+        ])
+        .unwrap();
+
+    let prepared = controller
+        .prepare_commit(
+            "Create global ExAnimation",
+            &global_options(0x8000..0x10000),
+        )
+        .unwrap();
+    app.dispatch(prepared.into_command()).unwrap();
+    assert_eq!(
+        app.project()
+            .unwrap()
+            .load_installed_global_exanimation(global_installation(), &MODES)
+            .unwrap(),
+        lm_project::InstalledAsset::Present(controller.animation().clone())
+    );
+    app.dispatch(Command::Undo).unwrap();
+    assert_eq!(app.project().unwrap().save_snapshot(), original);
 }
 
 #[test]

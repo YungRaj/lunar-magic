@@ -31,7 +31,7 @@ impl RomExAnimationEditor {
         let Some(workspace) = &self.workspace else {
             return true;
         };
-        if !workspace.controller.is_modified() {
+        if !workspace.any_modified() {
             self.clear();
             return true;
         }

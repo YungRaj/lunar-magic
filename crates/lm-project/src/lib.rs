@@ -92,7 +92,8 @@ pub use exanimation_feature_io::{
     ResolvedExAnimationFeatureRomLayout,
 };
 pub use exanimation_io::{
-    ExAnimationIoError, ExAnimationRomLayout, ExAnimationSaveOptions, InstalledExAnimationRomLayout,
+    ExAnimationIoError, ExAnimationRomLayout, ExAnimationSaveOptions,
+    InstalledExAnimationRomLayout, LoadedInstalledGlobalExAnimation,
 };
 pub use exanimation_slot_options_io::{
     ExAnimationSlotOptionIoError, ExAnimationSlotOptionRomLayout, ExAnimationSlotOptionSaveOptions,

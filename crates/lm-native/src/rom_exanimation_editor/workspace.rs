@@ -7,6 +7,9 @@ use lm_rom::RomImage;
 
 pub(super) struct Workspace {
     pub(super) controller: ExAnimationController,
+    pub(super) alternate_controller: Option<ExAnimationController>,
+    pub(super) global_unavailable: Option<String>,
+    pub(super) editing_global: bool,
     pub(super) profile: RevisionProfile,
     pub(super) modes: [bool; 256],
     pub(super) slot: u16,
@@ -15,6 +18,34 @@ pub(super) struct Workspace {
 }
 
 impl Workspace {
+    pub(super) fn target_label(&self) -> String {
+        if self.editing_global {
+            "Global ExAnimation".into()
+        } else {
+            format!("Level {:03X} ExAnimation", self.slot)
+        }
+    }
+
+    pub(super) fn switch_target(&mut self) -> bool {
+        if self.controller.is_modified() {
+            return false;
+        }
+        let Some(alternate) = self.alternate_controller.as_mut() else {
+            return false;
+        };
+        std::mem::swap(&mut self.controller, alternate);
+        self.editing_global = !self.editing_global;
+        true
+    }
+
+    pub(super) fn any_modified(&self) -> bool {
+        self.controller.is_modified()
+            || self
+                .alternate_controller
+                .as_ref()
+                .is_some_and(ExAnimationController::is_modified)
+    }
+
     pub(super) fn prepare_commit(
         &self,
         search_start: &str,
@@ -22,10 +53,7 @@ impl Workspace {
     ) -> Result<Command, String> {
         let options = self.save_options(search_start, search_end)?;
         self.controller
-            .prepare_commit(
-                format!("Edit native ExAnimation {:03X}", self.slot),
-                &options,
-            )
+            .prepare_commit(format!("Edit native {}", self.target_label()), &options)
             .map(lm_app::PreparedRomCommit::into_command)
             .map_err(|error| error.to_string())
     }
@@ -39,7 +67,7 @@ impl Workspace {
         let options = self.save_options(search_start, search_end)?;
         self.controller
             .prepare_commit_with_reclamation(
-                format!("Edit and reclaim native ExAnimation {:03X}", self.slot),
+                format!("Edit and reclaim native {}", self.target_label()),
                 &options,
                 manifest,
             )
@@ -77,11 +105,21 @@ pub(super) fn decode(app: &AppState) -> Result<Workspace, String> {
         .profile
         .decode_exanimation(&profiled.snapshot)
         .map_err(|error| error.to_string())?;
+    let (alternate_controller, global_unavailable) = match profiled
+        .profile
+        .decode_global_exanimation(&profiled.snapshot)
+    {
+        Ok(controller) => (Some(controller), None),
+        Err(error) => (None, Some(error.to_string())),
+    };
     let image = RomImage::from_bytes(profiled.snapshot.rom_bytes.clone())
         .map_err(|error| error.to_string())?;
     let modes = profiled.profile.exanimation_double_size_modes;
     Ok(Workspace {
         controller,
+        alternate_controller,
+        global_unavailable,
+        editing_global: false,
         profile: profiled.profile,
         modes,
         slot,

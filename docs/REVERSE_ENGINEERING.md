@@ -3754,3 +3754,9 @@ same resolved `$5C` operand is now the publication target for global edits: cano
 are allocated copy-on-write, the runtime pointer and checksum publish in one transaction, optional
 reclamation requires exact prior RATS ownership, and absent or unauthenticated runtimes remain hard
 errors rather than implicit installations.
+The native ROM ExAnimation editor consumes this boundary directly. It can switch from the selected
+level slot to the global domain, uses the same typed setting, trigger, record, frame, and clipboard
+edits, treats a zero runtime pointer as a new empty 32-record document, and commits through the
+runtime-relative pointer with revision checks. Target switching is disabled while the active
+domain is staged, preventing an application commit from silently discarding edits in the other
+domain.
