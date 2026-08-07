@@ -1,0 +1,314 @@
+1		Introduction to Lunar Magic
+2	html/introduction.htm	What is Lunar Magic?
+2	html/changes.htm	What's new in this version
+2	html/contact_author.htm	Contact information
+2	html/legal_stuff.htm	Legal Notice
+1		Lunar Magic Documentation
+2	html/mouse_behavior.htm	Main Window Mouse Behavior
+2		File Menu
+3	html/file_open_rom.htm	Open ROM
+3	html/file_open_level.htm	Open Level Number
+3	html/file_open_address.htm	Open Level Address
+3	html/file_delete_level.htm	Delete Level from ROM
+3	html/file_save_level.htm	Save Level to ROM
+3	html/file_save_level_as.htm	Save Level to ROM As
+3	html/file_open_next.htm	Open Next Level in ROM
+3	html/file_open_previous.htm	Open Previous Level in ROM
+3	html/file_open_mwl.htm	Open Level From File
+3	html/file_save_mwl.htm	Save Level to File
+3	html/file_save_mwl_as.htm	Save Level to File As
+3		Graphics
+4	html/file_tile_editor_setup.htm	Setup Tile Editor
+4	html/file_extract_gfx.htm	Extract GFX from ROM
+4	html/file_insert_gfx.htm	Insert GFX to ROM
+4	html/file_extract_exgfx.htm	Extract ExGFX from ROM
+4	html/file_insert_exgfx.htm	Insert ExGFX to ROM
+4	html/file_extract_bypass.htm	Extract Old Bypass List from ROM
+4	html/file_insert_bypass.htm	Insert Old Bypass List to ROM
+3		Palettes
+4	html/file_export_palette.htm	Export Level Palette to File
+4	html/file_import_palette.htm	Import Level Palette from File
+4	html/file_extract_palette.htm	Extract Shared Palettes from ROM
+4	html/file_insert_palette.htm	Insert Shared Palettes to ROM
+3		Levels
+4	html/file_export_directory.htm	Export Multiple Levels to Files
+4	html/file_save_directory.htm	Import Multiple Levels from Files
+4	html/file_analyze_levels.htm	Analyze Resources in Levels
+4	html/file_delete_multiple_levels.htm	Delete Multiple Levels from ROM
+4	html/file_clear_level_area.htm	Clear Original Level Data Area
+4	html/file_export_directory_bitmap.htm	Export Multiple Levels to Image Files
+4	html/file_export_bitmap.htm	Export Level to Image File
+3		Emulator
+4	html/file_emulator_run.htm	Run ROM in Emulator
+4	html/file_emulator_setup.htm	Setup Emulator
+4	html/file_simulator_run.htm	Run/Stop Internal Emulator
+4	html/file_simulator_pause.htm	Pause Internal Emulator
+4	html/file_simulator_mute.htm	Mute Internal Emulator
+4	html/file_simulator_F4.htm	Swap F4/Ctrl+F4
+3	html/file_expand_rom.htm	Expand ROM
+3		Restore
+4	html/file_restore_create.htm	Create a Full Restore Point
+4	html/file_restore.htm	Restore ROM to previous state
+4	html/file_restore_create_ips.htm	Create IPS File for this ROM
+4	html/file_restore_apply_ips.htm	Apply IPS File to this ROM
+3	html/file_scan_ROM.htm	Scan ROM
+3	html/file_recent.htm	Recent Files
+3	html/file_exit.htm	Exit
+2		Edit Menu
+3	html/edit_layer_1.htm	Edit Level Layer 1 Mode
+3	html/edit_layer_2.htm	Edit Level Layer 2 Mode
+3	html/edit_sprites.htm	Edit Sprites Mode
+3	html/edit_undo.htm	Undo
+3	html/edit_redo.htm	Redo
+3	html/edit_cut.htm	Cut
+3	html/edit_copy.htm	Copy
+3	html/edit_paste.htm	Paste
+3	html/edit_delete.htm	Delete
+3	html/edit_delete_all.htm	Delete All
+3	html/edit_select_all.htm	Select All
+3	html/edit_insert.htm	Insert Manual
+3	html/edit_edit_manual.htm	Edit Manual
+3	html/edit_bring_to_front.htm	Bring to Front
+3	html/edit_send_to_back.htm	Send to Back
+3	html/edit_bring_forward.htm	Bring Forward
+3	html/edit_send_backward.htm	Send Backward
+3		Object Size
+4	html/edit_object_size.htm	Increase Object Size X
+4	html/edit_object_size.htm	Decrease Object Size X
+4	html/edit_object_size.htm	Increase Object Size Y
+4	html/edit_object_size.htm	Decrease Object Size Y
+3	html/edit_cdm16.htm	Conditional Direct Map16
+3	html/edit_remap_dm16.htm	Remap Direct Map16
+2		View Menu
+3	html/view_layer_1.htm	Layer 1 (Level)
+3	html/view_layer_2.htm	Layer 2 (Level/Image)
+3	html/view_layer_3.htm	Layer 3 (Image)
+3	html/view_sprites.htm	Sprites
+3	html/view_sprite_data.htm	Sprite Data (Hex code)
+3	html/view_screen_exits.htm	Screen Exits
+3	html/view_sub_screen.htm	Sub Screen Boundaries
+3	html/view_game_screen.htm	Game View Screen
+3	html/view_exit_tiles.htm	Exit Enabled Tiles
+3	html/view_surface_outlines.htm	Tile Surface Outlines
+3	html/view_line_guide_outlines.htm	Line Guide Outlines
+3	html/view_tile_grid.htm	Tile Grid
+3	html/view_zoom.htm	Zoom
+3	html/view_level_entrances.htm	Level Entrances
+3	html/view_block_contents.htm	Block Contents
+3	html/view_animation.htm	Animation
+3	html/view_next_frame.htm	Next Animated Frame
+3	html/view_animation_reset.htm	Reset Animations
+3	html/view_exanimation.htm	ExAnimation Triggers
+3	html/view_silver_pow.htm	Silver POW
+3	html/view_pow.htm	POW
+3	html/view_special.htm	Special World Passed
+3	html/view_invisible_pow.htm	Invisible POW Objects
+3	html/view_invisible.htm	Other Invisible Objects
+3	html/view_onoff.htm	On/Off Switch On
+3	html/view_cdm16.htm	Conditional Direct Map16 On
+3	html/view_512_height.htm	512 Height Background
+3	html/view_translucent.htm	Translucent Text and Outlines
+3		Switch Blocks
+4	html/view_switch.htm	Green Switch Blocks
+4	html/view_switch.htm	Yellow Switch Blocks
+4	html/view_switch.htm	Red Switch Blocks
+4	html/view_switch.htm	Blue Switch Blocks
+2		Editors Menu
+3	html/editor_objects.htm	Add Objects Window
+3	html/editor_sprites.htm	Add Sprites Window
+3	html/editor_palette.htm	Palette Editor Window
+3	html/editor_8x8.htm	8x8 Tile Editor Window
+3	html/editor_16x16.htm	16x16 Tile Map Editor Window
+3	html/editor_back.htm	Background Layer 2 Editor Window
+3	html/editor_ov.htm	Overworld Editor Window
+2		Level Menu
+3	html/level_super_bypass.htm	Super GFX Bypass
+3	html/level_layer3_gfx.htm	Layer 3 GFX/Tilemap Bypass
+3		Old GFX Bypass
+4	html/level_bypass_fg.htm	Bypass Standard FG/BG GFX List
+4	html/level_bypass_sp.htm	Bypass Standard SP GFX List
+4	html/level_extend_ani.htm	Extend Animated Tile GFX
+3	html/level_change_graphics.htm	GFX Index in header
+3	html/level_ex20.htm	Edit Level ExAnimated Frames
+3	html/level_ex20_global.htm	Edit Global ExAnimated Frames
+3	html/level_ex20_settings.htm	Edit Animation Settings
+3	html/level_screen_exit.htm	Modify Screen Exits
+3	html/level_main_entrance.htm	Modify Main and Midway Entrance
+3	html/level_second_entrance.htm	Modify Secondary Entrances
+3	html/level_scan_exits.htm	Scan for Undefined Exits
+3	html/level_change_properties.htm	Change Properties in header
+3	html/level_change_sprite.htm	Change Properties in Sprite header
+3	html/level_layer12_settings.htm	Change Layer 1/2 Settings
+3	html/level_layer3_settings.htm	Change Layer 3 Settings
+3	html/level_bypass_music.htm	Change Music & Time Limit Settings
+2		Options Menu
+3	html/option_general.htm	General Options
+3	html/option_toolbar.htm	DPI/Toolbar/Visual Style Options
+3	html/option_restore.htm	Restore Point Options
+3	html/option_animation_rate.htm	Change Animation Rate
+3	html/option_language.htm	Language
+3	html/option_fastrom.htm	Use FastROM Addressing for this ROM
+3	html/option_fastrom_patch.htm	Enable FastROM Speed & Apply Patch
+3	html/option_sa1_ramremap.htm	Use SA-1 RAM Remap for this ROM
+3	html/option_sfx_ramremap.htm	Use Super FX RAM Remap for this ROM
+3	html/option_compression.htm	Compression Options for this ROM
+3	html/option_vram.htm	VRAM Patch Options for this ROM
+2		Help Menu
+3	html/help_contents.htm	Contents
+3	html/help_about.htm	About Lunar Magic
+1		Overworld Editor Documentation
+2	html/ov_intro_main.htm	Overworld Editor Introduction
+2	html/ov_mouse.htm	Overworld Window Mouse Behavior
+2		File Menu
+3	html/ov_file_open_rom.htm	Reload and Discard Unsaved Changes
+3	html/ov_file_save_rom.htm	Save Overworld to ROM
+3	html/ov_file_copy_rom.htm	Copy Overworld to Another ROM
+3		Credits
+4	html/ov_file_load_credits.htm	Load Credits
+4	html/ov_file_save_credits.htm	Save Credits
+3		Title Screen
+4	html/ov_file_load_title_screen.htm	Load Title Screen
+4	html/ov_file_save_title_screen.htm	Save Title Screen
+4	html/ov_file_insert_title_moves.htm	Insert Title Moves Playback ASM & Data
+4	html/ov_file_export_title_moves.htm	Export Title Moves Playback Data
+4	html/ov_file_install_recording.htm	Install Title Moves Recording ASM
+4	html/ov_file_uninstall_recording.htm	Uninstall Title Moves Recording ASM
+3		Layer 3 Level
+4	html/ov_file_load_layer3_level.htm	Load Layer 3 of Level
+4	html/ov_file_save_layer3_level.htm	Save Layer 3 of Level to ROM and ExGFX File
+4	html/ov_file_preview_layer3_level.htm	Preview Layer 3 in Level
+3		Layer 3 Submap
+4	html/ov_file_load_layer3_submap.htm	Load Layer 3 of Submap
+4	html/ov_file_save_layer3_submap.htm	Save Layer 3 of Submap to ROM and ExGFX File
+3	html/ov_file_exit.htm	Exit
+2		Edit Menu
+3	html/ov_edit_16x16.htm	Layer 1 16x16 Editor Mode
+3	html/ov_edit_layer1_event.htm	Layer 1 Event Editor Mode
+3	html/ov_edit_8x8.htm	Layer 2 8x8 Editor Mode
+3	html/ov_edit_layer2_event.htm	Layer 2 Event Editor Mode
+3	html/ov_edit_sprites.htm	Sprite Editor Mode
+3	html/ov_edit_undo.htm	Undo
+3	html/ov_edit_redo.htm	Redo
+3	html/ov_edit_cut.htm	Cut
+3	html/ov_edit_copy.htm	Copy
+3	html/ov_edit_paste.htm	Paste
+3	html/ov_edit_delete.htm	Delete
+3	html/ov_edit_select_all.htm	Select All
+3	html/ov_edit_insert.htm	Insert
+3	html/ov_edit_edit_manual.htm	Edit Manual
+3	html/ov_edit_pal_up.htm	Increase Palette of Event Tiles
+3	html/ov_edit_pal_down.htm	Decrease Palette of Event Tiles
+3	html/ov_edit_increase_z.htm	Increase Event Tile Z Order
+3	html/ov_edit_decrease_z.htm	Decrease Event Tile Z Order
+3	html/ov_edit_next_event.htm	Next Event
+3	html/ov_edit_previous_event.htm	Previous Event
+3	html/ov_edit_next_tile.htm	Next Event Tile
+3	html/ov_edit_previous_tile.htm	Previous Event Tile
+3	html/ov_edit_event_passed.htm	Change Events Passed
+2		View Menu
+3	html/ov_view_level_number.htm	Show Level Numbers
+3	html/ov_view_event_number.htm	Show Event Numbers
+3	html/ov_view_special.htm	Special World Passed Palette
+3	html/ov_view_tile_grid.htm	Tile Grid
+3	html/ov_view_zoom.htm	Zoom
+3	html/ov_view_starpipe_number.htm	Show Star/Pipe/Location Numbers
+3	html/ov_view_exitpath_number.htm	Show Exit Path Numbers
+3	html/ov_view_koopateleport_number.htm	Show Koopa Teleport Numbers
+3	html/ov_view_layer1.htm	Layer 1
+3	html/ov_view_layer2.htm	Layer 2
+3	html/ov_view_sprites.htm	Sprites
+3	html/ov_view_sprite_data.htm	Sprite Data (Hex Code)
+3	html/ov_view_animation.htm	Animation
+3	html/ov_view_next_frame.htm	Next Animated Frame
+3	html/ov_view_animation_reset.htm	Reset Animations
+3	html/ov_view_exanimation.htm	ExAnimation Triggers
+3	html/ov_view_layer1_future.htm	Future Layer 1 Tiles
+3	html/ov_view_static.htm	Static Layer 2 Tiles
+3	html/ov_view_layer1_paths.htm	Layer 1 Mario Paths
+3	html/ov_view_translucent.htm	Make All Mario Paths Translucent
+3	html/ov_view_old_path_tiles.htm	Old Path Tiles C and 13
+3	html/ov_view_next.htm	Highlight Next Event Tiles (Red)
+3	html/ov_view_previous.htm	Highlight Previous Event Tiles (Blue)
+2		Editors Menu
+3	html/ov_editor_palette.htm	Overworld Palette Editor
+3	html/ov_editor_8x8.htm	8x8 Overworld Tile Selector
+3	html/ov_editor_16x16.htm	Layer 1 16x16 Tile Selector
+3	html/ov_editor_event.htm	Layer 2 Event Tile Selector
+2		Overworld Menu
+3	html/ov_overworld_super_bypass.htm	Submap GFX
+3	html/ov_overworld_layer3_gfx.htm	Submap Layer 3 GFX/Tilemap Bypass
+3	html/ov_overworld_ex20.htm	Edit Submap ExAnimated Frames
+3	html/ov_overworld_ex20_global.htm	Edit Global ExAnimated Frames
+3	html/ov_overworld_ex20_settings.htm	Edit Animation Settings
+3	html/ov_overworld_modify_level.htm	Modify Level Tile Settings
+3	html/ov_overworld_destroy_level.htm	Destroy Level Tile Settings
+3	html/ov_overworld_koopateleport.htm	Set Koopa Teleport Here
+3	html/ov_overworld_locationteleport.htm	Set Location Teleport Here
+3		Old Star/Pipe/Exit Dialogs
+4	html/ov_overworld_exit_level.htm	Exit Path Tile Settings
+4	html/ov_overworld_star_level.htm	Star and Pipe Tile Settings
+3	html/ov_overworld_exitstar_link.htm	Link Star/Pipe/Exit Tiles Together
+3	html/ov_overworld_boss_text.htm	Edit Boss Sequence Text
+3	html/ov_overworld_message_box.htm	Edit Message Box Text
+3	html/ov_overworld_level_names.htm	Edit Level Names
+3	html/ov_overworld_boss_levels.htm	Change Boss Sequence Levels
+3	html/ov_overworld_switch_levels.htm	Change Special Message Levels
+3	html/ov_overworld_palette_level.htm	Change Special World Levels
+3	html/ov_overworld_no_auto_move_level.htm	Change No-Auto-Move Levels
+3	html/ov_overworld_sprite_list.htm	Edit Sprite List
+3	html/ov_overworld_reveal_list.htm	Edit Reveal Tile List
+3	html/ov_overworld_music.htm	Edit Submap Music Selection
+3	html/ov_overworld_max_6x6.htm	Change Max Event 6x6 Tile Area
+3	html/ov_overworld_extra_options.htm	Extra Options
+2		Options
+3	html/ov_option_animation_rate.htm	Change Animation Rate
+3	html/ov_overworld_options_move.htm	Allow Move/Copy/etc on Layer 1 Tile Settings
+3	html/ov_options_auto_deselect.htm	Auto-Deselect on Editor Select
+3	html/ov_options_allow_resize_borders.htm	Allow Tile Resize Without Ctrl
+2		Help Menu
+3	html/ov_overworld_help.htm	Contents
+3	html/ov_overworld_help_about.htm	About Overworld Editor
+1		Technical Information
+2	html/info_command_line.htm	Command Line Arguments
+2	html/info_rats_format.htm	RATS (ROM Allocation Tag System)
+2	html/info_64mbit_exlorom.htm	64 Mbit (8 MB) ExLoROM Support
+2	html/info_64mbit_sa1.htm	64 Mbit (8 MB) SA-1 Support
+2	html/info_gfx_format.htm	GFX File Information
+2	html/info_decompress.htm	GFX Decompression Routine Information
+2	html/info_screen_exit_routine.htm	Screen Exit Routine Information
+2	html/info_map16_gameplay.htm	Map16 Gameplay Programming Information
+2	html/info_map16_file_format.htm	.map16 File Format
+2	html/info_custom_toolbar.htm	Custom Toolbar/GUI Images
+2	html/info_custom_tooltip_map16.htm	Custom Tooltips for Direct Map16 Tiles
+2	html/info_custom_tooltip_objects.htm	Custom Tooltips for Objects
+2	html/info_custom_tooltip_sprites.htm	Custom Tooltips for Sprites
+2	html/info_custom_sprite_map16.htm	Custom Map16 for Sprites (Editor Display Only)
+2	html/info_custom_object_collection.htm	Custom Collections of Objects
+2	html/info_custom_sprite_collection.htm	Custom Collections of Sprites
+2	html/info_custom_sprite_size.htm	Custom Sprite List Sizes
+2	html/info_custom_ov_sprite.htm	Custom Overworld Sprites
+2	html/info_custom_ov_sprite_size.htm	Custom Overworld Sprite List Sizes
+2	html/info_custom_music_names.htm	Custom Music Track Names
+2	html/info_custom_ov_path.htm	Custom Overworld Layer 1 Mario Path Images
+2	html/info_table_file.htm	Custom Table File
+2		Custom User Toolbar
+3	html/info_user_toolbar.htm	Custom User Toolbar
+3	html/info_LM_functions.htm	Lunar Magic Function Names
+3	html/info_LM_keyboard.htm	Lunar Magic Keyboard Definitions List
+3	html/info_LM_options_button.htm	Lunar Magic Button Options List
+3	html/info_LM_options_global.htm	Lunar Magic Global Options List
+3	html/info_LM_requests.htm	Lunar Magic Send Requests
+1		Frequently Asked Questions (FAQ)
+2	html/faq_compatible.htm	Is Lunar Magic backwards compatible?
+2	html/faq_gfx.htm	How do I edit the graphics?
+2	html/faq_water.htm	Why is my level filled with water tiles?
+2	html/faq_exit.htm	How do I control where pipes and doors go?
+2	html/faq_one.htm	How do I add one coin/note/whatever block instead of four?
+2	html/faq_sprite_tileset.htm	Why are some sprites glitched in SMW and Lunar Magic?
+2	html/faq_sprite.htm	Why are my sprites glitched in SMW but not in Lunar Magic?
+2	html/faq_write_error.htm	Why do I get a &quot;Could not open ROM for Writing&quot; error message?
+2	html/faq_level_24.htm	Where's the rest of Chocolate Island 2 (level 24)?
+2	html/faq_boss_level.htm	Why can't I edit Boss Monster rooms?
+2	html/faq_ips.htm	How do I create an IPS Patch?
+2	html/faq_no_change.htm	Why are my changes not showing up when I play the game?
+2	html/faq_corrupt_ov.htm	Why is the overworld displaying corrupt path tiles?

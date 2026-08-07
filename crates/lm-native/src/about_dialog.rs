@@ -175,6 +175,28 @@ mod tests {
     }
 
     #[test]
+    fn retained_lunar_magic_about_oracle_matches_the_compatibility_target() {
+        let controls =
+            include_str!("../../../docs/oracle-work/lm363/help-about/about-controls.tsv");
+        for expected in [
+            "008A\tButton\tLunar Magic : Super Mario World Level Editor",
+            "0001\tButton\tOK",
+            "008B\tStatic\thttp://fusoya.eludevisibility.org",
+            "008E\tStatic\tPublic Build x86 --- Dec 25 2025",
+            "008D\tStatic\tVersion 3.63",
+            "0066\tButton\tThird Party Enhancements",
+            "0067\tButton\tLegal Notice",
+        ] {
+            assert!(
+                controls.lines().any(|line| line == expected),
+                "missing {expected}"
+            );
+        }
+        assert!(COMPATIBILITY_TARGET.contains("3.63"));
+        assert_eq!(controls.lines().count(), 8);
+    }
+
+    #[test]
     fn diagnostics_are_bounded_to_non_sensitive_build_identity() {
         let report = diagnostic_report(&AppState::default());
         for field in [
