@@ -1,13 +1,15 @@
 //! Transactional publication of the recovered expanded-ExAnimation fresh runtime family.
 
 use crate::{
-    ExpandedExAnimationRuntimeError, ExpandedExAnimationRuntimeRelocations,
+    ExpandedExAnimationRuntimeError, ExpandedExAnimationRuntimeOptionalRelocations,
+    ExpandedExAnimationRuntimeRelocations, OPTIONAL_MAPPING_HELPER_SNES_ADDRESS,
     SMW_US_V1_CHECKSUM_FIELD, empty_expanded_exanimation_pointer_table,
     exanimation_runtime::{
         IRAM_WORD_OFFSETS, LOCAL_WORD_TABLE_ENTRIES, LOCAL_WORD_TABLE_OFFSET, MAPPING_BYTE_OFFSETS,
         SNES_POINTER_OFFSETS, TEMPLATE_LOCAL_WORD_BASE,
     },
     expanded_exanimation_runtime_template, relocate_expanded_exanimation_runtime,
+    relocate_expanded_exanimation_runtime_with_optional_suffix,
 };
 use lm_project::{PatchFixup, PatchFixupEncoding, PatchPayload, PatchWrite, RelocatablePatchPlan};
 use lm_rats::{AllocationPolicy, HEADER_LEN, HeaderError, RatsBlock, parse_at};
@@ -303,13 +305,22 @@ pub fn smw_us_v1_expanded_exanimation_uses_mapper_runtime(
 pub fn detect_smw_us_v1_current_expanded_exanimation_runtime(
     bytes: &[u8],
 ) -> Result<RatsBlock, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
+    detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(bytes, Mapper::LoRom, false)
+}
+
+/// Authenticates the complete current runtime family for a concrete mapper/runtime form.
+pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
+    bytes: &[u8],
+    mapper: Mapper,
+    mapper_runtime: bool,
+) -> Result<RatsBlock, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
     let hook = bytes
         .get(0x283ad..0x283b2)
         .ok_or(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookRange)?;
     if hook[0] != 0x22 || hook[4] != 0xea {
         return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookRange);
     }
-    let runtime_offset = mapped_operand(&hook[1..4])
+    let runtime_offset = mapped_operand(mapper, &hook[1..4])
         .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?;
     let runtime = owned_block(bytes, runtime_offset).map_err(|error| match error {
         OwnedBlockError::BeforeHeader => {
@@ -325,13 +336,14 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime(
             }
         }
     })?;
-    if runtime.payload.len() != 0xc30 {
+    let required_runtime_len = if mapper_runtime { 0xc50 } else { 0xc30 };
+    if runtime.payload.len() != required_runtime_len {
         return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeLength(
             runtime.payload.len(),
         ));
     }
     let installed = &bytes[runtime.payload.clone()];
-    let pointer_offset = mapped_operand(&installed[0xea..0xed])
+    let pointer_offset = mapped_operand(mapper, &installed[0xea..0xed])
         .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerAddress)?;
     let pointer = owned_block(bytes, pointer_offset).map_err(|error| match error {
         OwnedBlockError::BeforeHeader => {
@@ -352,41 +364,58 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime(
             pointer.payload.len(),
         ));
     }
-    let low_bank =
-        |offset| -> Result<u32, RomError> { Ok(pc_to_snes(Mapper::LoRom, offset)? & 0x7f_ffff) };
+    let mapped_address = |offset| -> Result<u32, RomError> {
+        let address = pc_to_snes(mapper, offset)?;
+        Ok(if mapper == Mapper::LoRom {
+            address & 0x7f_ffff
+        } else {
+            address
+        })
+    };
     let relocations = ExpandedExAnimationRuntimeRelocations {
         mapping_bytes: [installed[0x5c], installed[0x66]],
         snes_pointers: [
-            low_bank(pointer_offset + 1)
+            mapped_address(pointer_offset + 1)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerAddress)?,
-            low_bank(pointer_offset)
+            mapped_address(pointer_offset)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::PointerAddress)?,
-            low_bank(runtime_offset + 0xb14)
+            mapped_address(runtime_offset + 0xb14)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
-            low_bank(runtime_offset + 0xb24)
+            mapped_address(runtime_offset + 0xb24)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
-            low_bank(runtime_offset + 0xb1c)
+            mapped_address(runtime_offset + 0xb1c)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
-            low_bank(runtime_offset + 0xb1c)
+            mapped_address(runtime_offset + 0xb1c)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
-            low_bank(runtime_offset + 0xb1c)
+            mapped_address(runtime_offset + 0xb1c)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
-            low_bank(runtime_offset + 0xb1c)
+            mapped_address(runtime_offset + 0xb1c)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
         ],
         iram_words: SMW_US_V1_IRAM_WORDS,
-        local_word_base: low_bank(runtime_offset + 0x4b0)
+        local_word_base: mapped_address(runtime_offset + 0x4b0)
             .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?
             as u16,
     };
-    let mut expected = relocate_expanded_exanimation_runtime(&relocations)
-        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::Relocation)?;
+    let mut expected = if mapper_runtime {
+        relocate_expanded_exanimation_runtime_with_optional_suffix(
+            &relocations,
+            ExpandedExAnimationRuntimeOptionalRelocations {
+                suffix_snes_pointer: mapped_address(runtime_offset + 0xc30)
+                    .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
+                mapping_helper_snes_pointer: OPTIONAL_MAPPING_HELPER_SNES_ADDRESS,
+            },
+        )
+    } else {
+        relocate_expanded_exanimation_runtime(&relocations)
+    }
+    .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::Relocation)?;
     expected[0x46..0x49].copy_from_slice(&installed[0x46..0x49]);
     expected[0x65] = installed[0x65];
     if installed != expected {
         return Err(SmwUsV1ExpandedExAnimationRuntimeDetectError::RuntimeMismatch);
     }
-    let pointer_hook_target = low_bank(runtime_offset + 0x170)
+    let pointer_hook_target = mapped_address(runtime_offset + 0x170)
         .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?;
     let pointer_hook = [
         0x22,
@@ -395,13 +424,38 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime(
         (pointer_hook_target >> 16) as u8,
         0x60,
     ];
+    let shared_a_target = mapped_address(0x77550)
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?;
+    let shared_b_target = mapped_address(0x77560)
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?;
+    let shared_a_hook = [
+        0x22,
+        shared_a_target as u8,
+        (shared_a_target >> 8) as u8,
+        (shared_a_target >> 16) as u8,
+    ];
+    let shared_b_hook = [
+        0x22,
+        shared_b_target as u8,
+        (shared_b_target >> 8) as u8,
+        (shared_b_target >> 16) as u8,
+    ];
+    let mut shared_a = SHARED_PALETTE_RUNTIME_A;
+    let mut shared_b = SHARED_PALETTE_RUNTIME_B;
+    let mut level_graphics = LEVEL_GRAPHICS_RUNTIME;
+    if mapper_runtime {
+        add_mapper_iram_word(&mut shared_a, 3);
+        add_mapper_iram_word(&mut shared_b, 1);
+        add_mapper_iram_word(&mut level_graphics, 1);
+    }
     for (offset, expected) in [
         (0x2390, &pointer_hook[..]),
+        (0x25e1, &[0xea, 0xea][..]),
         (0x1bcc0, &[0; 0x10][..]),
-        (0x2d8e2, &[0x22, 0x50, 0xf5, 0x0e][..]),
-        (0x77550, &SHARED_PALETTE_RUNTIME_A[..]),
-        (0x26b8, &[0x22, 0x60, 0xf5, 0x0e][..]),
-        (0x77560, &SHARED_PALETTE_RUNTIME_B[..]),
+        (0x2d8e2, &shared_a_hook[..]),
+        (0x77550, &shared_a[..]),
+        (0x26b8, &shared_b_hook[..]),
+        (0x77560, &shared_b[..]),
     ] {
         if bytes.get(offset..offset + expected.len()) != Some(expected) {
             return Err(
@@ -409,8 +463,8 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime(
             );
         }
     }
-    authenticate_helper(bytes, 0x25e3, false, &LEVEL_GRAPHICS_RUNTIME)?;
-    authenticate_helper(bytes, 0x0a4e, true, &GRAPHICS_RUNTIME)?;
+    authenticate_helper(bytes, mapper, 0x25e3, false, &level_graphics)?;
+    authenticate_helper(bytes, mapper, 0x0a4e, true, &GRAPHICS_RUNTIME)?;
     Ok(runtime)
 }
 
@@ -458,11 +512,14 @@ pub fn detect_smw_us_v1_legacy_global_exanimation_runtime(
             },
         );
     }
-    let auxiliary_offset = mapped_operand(bytes.get(0x2419..0x241c).ok_or(
-        SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyGenerationSignalRange {
-            offset: 0x2419,
-        },
-    )?)
+    let auxiliary_offset = mapped_operand(
+        Mapper::LoRom,
+        bytes.get(0x2419..0x241c).ok_or(
+            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyGenerationSignalRange {
+                offset: 0x2419,
+            },
+        )?,
+    )
     .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyAuxiliaryAddress)?;
     let auxiliary_table = checked_legacy_range(bytes, auxiliary_offset, 0x140, true)?;
 
@@ -478,7 +535,7 @@ pub fn detect_smw_us_v1_legacy_global_exanimation_runtime(
             },
         );
     }
-    let runtime_offset = mapped_operand(&runtime_hook[1..4])
+    let runtime_offset = mapped_operand(Mapper::LoRom, &runtime_hook[1..4])
         .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeAddress)?;
     let runtime = owned_block(bytes, runtime_offset).map_err(|error| match error {
         OwnedBlockError::BeforeHeader => {
@@ -503,8 +560,11 @@ pub fn detect_smw_us_v1_legacy_global_exanimation_runtime(
             },
         );
     }
-    let pointer_offset = mapped_operand(&bytes[runtime_offset + 0x1a..runtime_offset + 0x1d])
-        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyPointerAddress)?;
+    let pointer_offset = mapped_operand(
+        Mapper::LoRom,
+        &bytes[runtime_offset + 0x1a..runtime_offset + 0x1d],
+    )
+    .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyPointerAddress)?;
     let pointer_table = checked_legacy_range(bytes, pointer_offset, 0x600, false)?;
 
     for (first, second) in [
@@ -573,13 +633,14 @@ fn owned_block(bytes: &[u8], payload: usize) -> Result<RatsBlock, OwnedBlockErro
     Ok(block)
 }
 
-fn mapped_operand(bytes: &[u8]) -> Result<usize, RomError> {
+fn mapped_operand(mapper: Mapper, bytes: &[u8]) -> Result<usize, RomError> {
     let address = u32::from(bytes[0]) | u32::from(bytes[1]) << 8 | u32::from(bytes[2]) << 16;
-    snes_to_pc(Mapper::LoRom, address)
+    snes_to_pc(mapper, address)
 }
 
 fn authenticate_helper(
     bytes: &[u8],
+    mapper: Mapper,
     hook_offset: usize,
     trailing_nop: bool,
     expected: &[u8],
@@ -597,7 +658,7 @@ fn authenticate_helper(
             },
         );
     }
-    let target = mapped_operand(&hook[1..4]).map_err(|source| {
+    let target = mapped_operand(mapper, &hook[1..4]).map_err(|source| {
         SmwUsV1ExpandedExAnimationRuntimeDetectError::HelperAddress {
             offset: hook_offset,
             source,
@@ -652,23 +713,68 @@ fn authenticate_helper(
 /// Rejects a malformed bundled runtime template before constructing a plan.
 pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan()
 -> Result<RelocatablePatchPlan, ExpandedExAnimationRuntimeError> {
-    Ok(RelocatablePatchPlan {
-        description: "install SMW US v1 expanded ExAnimation runtime".into(),
-        mapper: Mapper::LoRom,
-        allocation: AllocationPolicy::lorom(
+    smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
+        Mapper::LoRom,
+        AllocationPolicy::lorom(
             SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_START
                 ..SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_END,
         ),
+        false,
+    )
+}
+
+/// Builds the complete descriptor-recovered runtime family for a concrete mapper and allocation
+/// policy. The caller must select `mapper_runtime` through
+/// [`smw_us_v1_expanded_exanimation_uses_mapper_runtime`].
+pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
+    mapper: Mapper,
+    allocation: AllocationPolicy,
+    mapper_runtime: bool,
+) -> Result<RelocatablePatchPlan, ExpandedExAnimationRuntimeError> {
+    let encoding = if mapper == Mapper::LoRom {
+        PatchFixupEncoding::Long24LowBank
+    } else {
+        PatchFixupEncoding::Long24
+    };
+    let mut level_graphics = LEVEL_GRAPHICS_RUNTIME.to_vec();
+    let mut shared_a = SHARED_PALETTE_RUNTIME_A.to_vec();
+    let mut shared_b = SHARED_PALETTE_RUNTIME_B.to_vec();
+    if mapper_runtime {
+        add_mapper_iram_word(&mut level_graphics, 1);
+        add_mapper_iram_word(&mut shared_a, 3);
+        add_mapper_iram_word(&mut shared_b, 1);
+    }
+    let fixed_hook = |offset: usize, expected: &[u8], target: usize| {
+        let mut address = pc_to_snes(mapper, target)
+            .expect("SMW fixed helper offsets are representable in every supported mapper");
+        if mapper == Mapper::LoRom {
+            address &= 0x7f_ffff;
+        }
+        direct(
+            offset,
+            expected,
+            &[
+                0x22,
+                address as u8,
+                (address >> 8) as u8,
+                (address >> 16) as u8,
+            ],
+        )
+    };
+    Ok(RelocatablePatchPlan {
+        description: format!("install SMW US v1 {mapper:?} expanded ExAnimation runtime"),
+        mapper,
+        allocation,
         checksum_field: SMW_US_V1_CHECKSUM_FIELD,
         expansion_fill: 0xff,
         payloads: vec![
-            smw_us_v1_expanded_exanimation_runtime_payload(Mapper::LoRom, false)?,
+            smw_us_v1_expanded_exanimation_runtime_payload(mapper, mapper_runtime)?,
             PatchPayload {
                 bytes: empty_expanded_exanimation_pointer_table(),
                 fixups: Vec::new(),
             },
             PatchPayload {
-                bytes: LEVEL_GRAPHICS_RUNTIME.to_vec(),
+                bytes: level_graphics,
                 fixups: Vec::new(),
             },
             PatchPayload {
@@ -677,23 +783,43 @@ pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan()
             },
         ],
         writes: vec![
-            payload_hook(0x0002_83ad, &[0xe2, 0x30, 0x9c, 0x33, 0x19], 0, true),
-            payload_return_hook(0x0000_2390, &[0xc2, 0x20, 0xa0, 0x80, 0x8c], 0, 0x170),
-            payload_hook(0x0000_25e3, &[0x01, 0x54, 0x00, 0x00], 2, false),
-            payload_hook(0x0000_0a4e, &[0xc2, 0x30, 0xa2, 0xfe, 0x1f], 3, true),
+            payload_hook(
+                0x0002_83ad,
+                &[0xe2, 0x30, 0x9c, 0x33, 0x19],
+                0,
+                0,
+                true,
+                encoding,
+            ),
+            payload_return_hook(
+                0x0000_2390,
+                &[0xc2, 0x20, 0xa0, 0x80, 0x8c],
+                0,
+                0x170,
+                encoding,
+            ),
+            direct(0x0000_25e1, &[0xa9, 0xef], &[0xea, 0xea]),
+            payload_hook(
+                0x0000_25e3,
+                &[0x01, 0x54, 0x00, 0x00],
+                2,
+                0,
+                false,
+                encoding,
+            ),
+            payload_hook(
+                0x0000_0a4e,
+                &[0xc2, 0x30, 0xa2, 0xfe, 0x1f],
+                3,
+                0,
+                true,
+                encoding,
+            ),
             direct(0x0001_bcc0, &[0xff; 0x10], &[0; 0x10]),
-            direct(
-                0x0002_d8e2,
-                &[0xa5, 0x0e, 0x0a, 0xa8],
-                &[0x22, 0x50, 0xf5, 0x0e],
-            ),
-            direct(0x0007_7550, &[0xff; 0x0d], &SHARED_PALETTE_RUNTIME_A),
-            direct(
-                0x0000_26b8,
-                &[0x84, 0x76, 0x84, 0x89],
-                &[0x22, 0x60, 0xf5, 0x0e],
-            ),
-            direct(0x0007_7560, &[0xff; 0x10], &SHARED_PALETTE_RUNTIME_B),
+            fixed_hook(0x0002_d8e2, &[0xa5, 0x0e, 0x0a, 0xa8], 0x0007_7550),
+            direct(0x0007_7550, &[0xff; 0x0d], &shared_a),
+            fixed_hook(0x0000_26b8, &[0x84, 0x76, 0x84, 0x89], 0x0007_7560),
+            direct(0x0007_7560, &[0xff; 0x10], &shared_b),
         ],
     })
 }
@@ -712,7 +838,9 @@ fn payload_hook(
     offset: usize,
     expected: &[u8],
     target_payload: usize,
+    target_addend: usize,
     trailing_nop: bool,
+    encoding: PatchFixupEncoding,
 ) -> PatchWrite {
     let mut replacement = vec![0x22, 0, 0, 0];
     if trailing_nop {
@@ -725,8 +853,8 @@ fn payload_hook(
         fixups: vec![PatchFixup {
             offset: 1,
             target_payload,
-            target_addend: 0,
-            encoding: PatchFixupEncoding::Long24LowBank,
+            target_addend,
+            encoding,
         }],
     }
 }
@@ -736,6 +864,7 @@ fn payload_return_hook(
     expected: &[u8],
     target_payload: usize,
     target_addend: usize,
+    encoding: PatchFixupEncoding,
 ) -> PatchWrite {
     PatchWrite {
         offset,
@@ -745,9 +874,15 @@ fn payload_return_hook(
             offset: 1,
             target_payload,
             target_addend,
-            encoding: PatchFixupEncoding::Long24LowBank,
+            encoding,
         }],
     }
+}
+
+fn add_mapper_iram_word(bytes: &mut [u8], offset: usize) {
+    let value = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+    debug_assert!(value < 0x2000);
+    bytes[offset..offset + 2].copy_from_slice(&(value + 0x6000).to_le_bytes());
 }
 
 fn direct(offset: usize, expected: &[u8], replacement: &[u8]) -> PatchWrite {
@@ -940,6 +1075,90 @@ mod tests {
     }
 
     #[test]
+    fn complete_mapper_plans_install_every_helper_checksum_and_exact_undo() {
+        let pristine = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap()
+            .logical_bytes()
+            .to_vec();
+        for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
+            let mut original = pristine.clone();
+            original.resize(0x50_0000, 0xff);
+            let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+            let plan = smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
+                mapper,
+                AllocationPolicy {
+                    search: 0x40_0000..0x41_0000,
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0xff],
+                    protected: Vec::new(),
+                },
+                true,
+            )
+            .unwrap();
+            let result = project.install_relocatable_patch(&plan).unwrap();
+            assert_eq!(result.blocks[0].payload.len(), 0xc50);
+            assert_eq!(result.blocks[1].payload.len(), 0x600);
+            assert_eq!(result.blocks[2].payload.len(), 0x20);
+            assert_eq!(result.blocks[3].payload.len(), 0x30);
+            assert_eq!(project.rom.read(0x25e1, 2).unwrap(), &[0xea, 0xea]);
+            let fixed_a = pc_to_snes(mapper, 0x77550).unwrap().to_le_bytes();
+            assert_eq!(
+                project.rom.read(0x2d8e2, 4).unwrap(),
+                &[0x22, fixed_a[0], fixed_a[1], fixed_a[2]]
+            );
+            assert_eq!(
+                project
+                    .rom
+                    .read(result.blocks[2].payload.start + 1, 2)
+                    .unwrap(),
+                &(0x0d9b_u16 + 0x6000).to_le_bytes()
+            );
+            assert_eq!(
+                project.rom.read(0x77553, 2).unwrap(),
+                &(0x010b_u16 + 0x6000).to_le_bytes()
+            );
+            assert_eq!(
+                project.rom.read(0x77561, 2).unwrap(),
+                &(0x13cd_u16 + 0x6000).to_le_bytes()
+            );
+            assert!(
+                SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc)
+                    .unwrap()
+                    .is_complementary()
+            );
+            assert_eq!(
+                detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
+                    project.rom.logical_bytes(),
+                    mapper,
+                    true,
+                )
+                .unwrap(),
+                result.blocks[0]
+            );
+            let installed = project.rom.logical_bytes().to_vec();
+            for offset in [
+                result.blocks[0].payload.start,
+                result.blocks[0].payload.start + 0xc30,
+                result.blocks[2].payload.start,
+                0x25e1,
+            ] {
+                let mut corrupt = installed.clone();
+                corrupt[offset] ^= 1;
+                assert!(
+                    detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
+                        &corrupt, mapper, true,
+                    )
+                    .is_err(),
+                    "{mapper:?} corruption at {offset:#x} was accepted"
+                );
+            }
+            assert!(project.undo().unwrap());
+            assert_eq!(project.rom.logical_bytes(), original);
+            assert!(!project.undo().unwrap());
+        }
+    }
+
+    #[test]
     fn retained_metadata_and_partial_metadata_obey_the_mapper_selector_boundary() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let retained = fs::read(
@@ -1008,6 +1227,7 @@ mod tests {
             );
             for range in [
                 0x81789..0x817e1,
+                0x25e1..0x25e7,
                 0x1bcc0..0x1bcd0,
                 0x2d8e2..0x2d8e6,
                 0x77550..0x7756d,

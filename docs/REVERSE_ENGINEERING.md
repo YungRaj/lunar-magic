@@ -3800,8 +3800,14 @@ without a partial transformed payload. The relocatable payload builder now carri
 `$C50` form through concrete ExLoROM and SA-1 allocations: all eight external pointers use the
 canonical mapper address rather than LoROM's low-bank mirror, all 108 local words resolve against
 the allocated core, the suffix self-pointer targets the concrete `+$C30`, and direct reconstruction
-matches every installed payload byte. The remaining variant work is mapper-specific fixed/helper
-writes, transactional publication, and current-runtime detector integration.
+matches every installed payload byte. The complete mapper plan now also installs both allocated
+graphics helpers, the missing-graphics sentinel, both canonical shared-palette hooks and their
+`+$6000` IRAM-adjusted payloads, and the previously omitted `$025E1` NOP pair. Independent current-
+runtime detection resolves every hook with the selected mapper, authenticates exact RATS ownership
+and `$C50` shape, reconstructs the complete relocated core and suffix, and rejects corruption in
+the core, suffix, allocated helper, or fixed writes. ExLoROM and SA-1 tests prove checksum-valid
+publication and byte-exact Undo. Application routing and authentic retained mapper before/after
+fixtures remain the variant gate.
 The fresh installer's core allocation is now recovered byte-for-byte. It concatenates executable
 ranges `$005B5298..$005B5408` (`$170` bytes), `$005B5410..$005B5750` (`$340` bytes), and
 `$005B4B10..$005B5290` (`$780` bytes) into one `$C30`-byte payload; a mapper-specific branch may

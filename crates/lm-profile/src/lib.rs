@@ -117,10 +117,12 @@ pub use exanimation_runtime_install::{
     SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_START, SmwUsV1ExpandedExAnimationRuntimeDetectError,
     SmwUsV1ExpandedExAnimationRuntimeGeneration, SmwUsV1LegacyGlobalExAnimationRuntime,
     detect_smw_us_v1_current_expanded_exanimation_runtime,
+    detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper,
     detect_smw_us_v1_legacy_global_exanimation_runtime,
     probe_smw_us_v1_expanded_exanimation_runtime_generation,
     smw_us_v1_expanded_exanimation_core_installation_plan,
     smw_us_v1_expanded_exanimation_runtime_installation_plan,
+    smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper,
     smw_us_v1_expanded_exanimation_runtime_payload,
     smw_us_v1_expanded_exanimation_uses_mapper_runtime,
 };
