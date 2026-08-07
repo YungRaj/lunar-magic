@@ -381,6 +381,7 @@ pub(crate) struct VanillaLevelEditor {
     layer2_map16_texture: Option<egui::TextureHandle>,
     background_map16_texture: Option<egui::TextureHandle>,
     animated_map16_textures: Vec<egui::TextureHandle>,
+    block_contents_textures: Vec<egui::TextureHandle>,
     animated_layer2_map16_textures: Vec<egui::TextureHandle>,
     animated_background_map16_textures: Vec<egui::TextureHandle>,
     animated_background_plane_textures: Vec<egui::TextureHandle>,
@@ -1521,6 +1522,7 @@ impl VanillaLevelEditor {
         self.layer2_map16_texture = None;
         self.background_map16_texture = None;
         self.animated_map16_textures.clear();
+        self.block_contents_textures.clear();
         self.animated_layer2_map16_textures.clear();
         self.animated_background_map16_textures.clear();
         self.animated_background_plane_textures.clear();
@@ -1653,6 +1655,7 @@ impl VanillaLevelEditor {
         self.layer2_map16_texture = None;
         self.background_map16_texture = None;
         self.animated_map16_textures.clear();
+        self.block_contents_textures.clear();
         self.animated_layer2_map16_textures.clear();
         self.animated_background_map16_textures.clear();
         self.animated_background_plane_textures.clear();
@@ -1745,6 +1748,14 @@ impl VanillaLevelEditor {
                     context,
                     &format!("vanilla-map16-{object_tileset:X}-{}", snapshot.revision),
                     preview.animated_images,
+                );
+                self.block_contents_textures = load_animation_textures(
+                    context,
+                    &format!(
+                        "vanilla-block-contents-{object_tileset:X}-{}",
+                        snapshot.revision
+                    ),
+                    preview.block_contents_images,
                 );
                 self.animated_layer2_map16_textures = load_animation_textures(
                     context,
@@ -2438,6 +2449,10 @@ impl VanillaLevelEditor {
             !self.conditional_view_state.conditional_direct_map16;
     }
 
+    pub(crate) fn toolbar_block_contents_toggle(&mut self) {
+        self.conditional_view_state.block_contents = !self.conditional_view_state.block_contents;
+    }
+
     pub(crate) fn toolbar_background_512_height_toggle(&mut self) {
         self.background_512_height = !self.background_512_height;
     }
@@ -2505,6 +2520,7 @@ impl VanillaLevelEditor {
         let map16_texture = map16_texture_variants
             .and_then(|textures| textures.first())
             .or(self.map16_texture.as_ref());
+        let block_contents_texture = self.block_contents_textures.get(animation_phase_index);
         let layer2_map16_texture_variants = self
             .animated_layer2_map16_textures
             .get(map16_variant_start..map16_variant_start + 4);
@@ -2646,6 +2662,7 @@ impl VanillaLevelEditor {
                 custom_map16,
                 layer2_map16_texture,
                 layer2_map16_texture_variants,
+                block_contents_texture,
                 visibility.surface_outline,
                 visibility.line_guide_outline,
             )
@@ -2670,6 +2687,7 @@ impl VanillaLevelEditor {
                 custom_map16,
                 map16_texture,
                 map16_texture_variants,
+                block_contents_texture,
                 visibility.surface_outline,
                 visibility.line_guide_outline,
             )
@@ -3803,6 +3821,7 @@ impl VanillaLevelEditor {
         custom_map16: Option<&lm_app::NativeMap16SidecarDocument>,
         texture: Option<&egui::TextureHandle>,
         texture_variants: Option<&[egui::TextureHandle]>,
+        block_contents_texture: Option<&egui::TextureHandle>,
         surface_outline: bool,
         line_guide_outline: bool,
     ) -> HashMap<usize, egui::Rect> {
@@ -3826,14 +3845,19 @@ impl VanillaLevelEditor {
                 object_tileset: self.controller.as_ref().map_or(0, |controller| {
                     controller.level().layer1.header.object_tileset()
                 }),
+                level_mode: self.controller.as_ref().map_or(0, |controller| {
+                    controller.level().layer1.header.level_mode()
+                }),
                 custom_map16,
                 foreground_texture: self.foreground_texture.as_ref(),
                 texture_variants,
+                block_contents_texture,
                 outline_texture: self.outline_texture.as_ref(),
                 surface_outline,
                 line_guide_outline,
                 switch_view_state: self.switch_view_state,
                 conditional_view_state: self.conditional_view_state,
+                blue_pow_active: self.blue_pow_active,
             },
         )
     }
@@ -7646,6 +7670,7 @@ const fn level_minor_tile_limit(vertical: bool) -> u16 {
 struct OrderedObjectDraw<'a> {
     texture: &'a egui::TextureHandle,
     texture_variants: Option<&'a [egui::TextureHandle]>,
+    block_contents_texture: Option<&'a egui::TextureHandle>,
     target: egui::Rect,
     cell_size: f32,
     major_tiles: u16,
@@ -7657,6 +7682,7 @@ struct OrderedObjectDraw<'a> {
     metadata: Option<&'a lm_level::OscResolvedTable>,
     variant: u8,
     object_tileset: u8,
+    level_mode: u8,
     custom_map16: Option<&'a lm_app::NativeMap16SidecarDocument>,
     foreground_texture: Option<&'a egui::TextureHandle>,
     outline_texture: Option<&'a egui::TextureHandle>,
@@ -7664,6 +7690,7 @@ struct OrderedObjectDraw<'a> {
     line_guide_outline: bool,
     switch_view_state: lm_render::LunarMagicSwitchViewState,
     conditional_view_state: lm_render::LunarMagicConditionalViewState,
+    blue_pow_active: bool,
 }
 
 fn draw_canvas_caption(ui: &mut egui::Ui, vertical: bool) {
@@ -7860,9 +7887,52 @@ fn draw_standard_object_cache(
                     draw_unresolved_map16_paint(painter, tile_rect, tile);
                 }
             }
+            if request.conditional_view_state.block_contents
+                && let Some(texture) = request.block_contents_texture
+            {
+                let mapping = lm_level::lunar_magic_block_contents_mapping(
+                    tile & 0x3fff,
+                    index,
+                    lm_level::DscDisplayContext {
+                        first_feature_enabled: request.blue_pow_active,
+                        first_feature_suppressed: false,
+                        second_feature_enabled: request.conditional_view_state.on_off_switch_on,
+                    },
+                    request.level_mode,
+                );
+                if mapping != 0 {
+                    draw_block_contents_overlay(painter, texture, tile_rect, mapping);
+                }
+            }
             draw_map16_outline(painter, request, tile_rect, tile);
         }
     }
+}
+
+fn draw_block_contents_overlay(
+    painter: &egui::Painter,
+    texture: &egui::TextureHandle,
+    target: egui::Rect,
+    mapping: u16,
+) {
+    let alpha = block_contents_overlay_alpha(mapping);
+    let tint = egui::Color32::from_rgba_premultiplied(alpha - 1, alpha - 1, alpha - 1, alpha);
+    let tile = mapping & 0x3fff;
+    let column = f32::from(tile % 32);
+    let row = f32::from(tile / 32);
+    painter.image(
+        texture.id(),
+        target,
+        egui::Rect::from_min_max(
+            egui::pos2(column / 32.0, row / 32.0),
+            egui::pos2((column + 1.0) / 32.0, (row + 1.0) / 32.0),
+        ),
+        tint,
+    );
+}
+
+const fn block_contents_overlay_alpha(mapping: u16) -> u8 {
+    if mapping & 0x8000 != 0 { 128 } else { 192 }
 }
 
 fn draw_map16_outline(
@@ -14309,6 +14379,7 @@ mod tests {
         editor.toolbar_other_invisible_objects_toggle();
         editor.toolbar_on_off_switch_toggle();
         editor.toolbar_conditional_direct_map16_toggle();
+        editor.toolbar_block_contents_toggle();
         assert_eq!(
             editor.conditional_view_state,
             lm_render::LunarMagicConditionalViewState {
@@ -14316,8 +14387,11 @@ mod tests {
                 other_invisible_objects: false,
                 on_off_switch_on: false,
                 conditional_direct_map16: false,
+                block_contents: true,
             }
         );
+        assert_eq!(block_contents_overlay_alpha(0x4104), 192);
+        assert_eq!(block_contents_overlay_alpha(0x80b8), 128);
     }
 
     #[test]

@@ -9,6 +9,7 @@ pub(crate) struct VanillaMap16Preview {
     pub(crate) layer2_image: egui::ColorImage,
     pub(crate) background_image: egui::ColorImage,
     pub(crate) animated_images: Vec<egui::ColorImage>,
+    pub(crate) block_contents_images: Vec<egui::ColorImage>,
     pub(crate) animated_layer2_images: Vec<egui::ColorImage>,
     pub(crate) animated_background_images: Vec<egui::ColorImage>,
     pub(crate) graphics_files: [usize; 4],
@@ -257,6 +258,7 @@ fn render_with_editor_palette_phase_and_animation_view_state(
     // back into this path corrupts palette and flip attributes.
     let mut animated_foreground_graphics = Vec::with_capacity(8);
     let mut animated_images = Vec::with_capacity(32);
+    let mut block_contents_images = Vec::with_capacity(8);
     let mut animated_layer2_images = Vec::with_capacity(32);
     let mut animated_background_images = Vec::with_capacity(8);
     for phase in 0..8 {
@@ -292,6 +294,10 @@ fn render_with_editor_palette_phase_and_animation_view_state(
                 animation_view_state,
             ));
         }
+        block_contents_images.push(render_default_m16_overlay_atlas(
+            &foreground_graphics,
+            &palette,
+        ));
         let mut background_image =
             render_map16_definition_atlas(&background_map16, &background_graphics, &palette);
         if lm_profile::smw_us_v1_level_mode(header.level_mode()).background_half_color {
@@ -355,6 +361,7 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         layer2_image,
         background_image,
         animated_images,
+        block_contents_images,
         animated_layer2_images,
         animated_background_images,
         foreground_image,
@@ -378,6 +385,42 @@ fn render_with_editor_palette_phase_and_animation_view_state(
         common_tiles: map16.common_tiles,
         tileset_tiles: map16.tileset_tiles,
     })
+}
+
+fn render_default_m16_overlay_atlas(
+    graphics: &[IndexedTile],
+    palette: &Palette,
+) -> egui::ColorImage {
+    // LoadEmbeddedLevelEditorLookupResources @ $00498D90 locks PE resource type 500, ID 502;
+    // ValidateAndInitializeOpenedRom @ $0047BE10 copies all 0x2000 bytes into the active `.m16`
+    // bank before an optional ROM-adjacent sidecar replaces it. Preserve that authenticated bank
+    // verbatim so editor-only definitions such as $219/$21A are available to Block Contents.
+    const DEFINITIONS: &[u8; 0x2000] = include_bytes!("assets/lm363-default-m16.bin");
+    const COLUMNS: usize = 32;
+    const ROWS: usize = 32;
+    const TILE: usize = 16;
+    let width = COLUMNS * TILE;
+    let height = ROWS * TILE;
+    let mut rgba = vec![0; width * height * 4];
+    for definition in 0..COLUMNS * ROWS {
+        let definition_x = definition % COLUMNS * TILE;
+        let definition_y = definition / COLUMNS * TILE;
+        for quadrant in 0..4 {
+            let offset = definition * 8 + quadrant * 2;
+            let word = u16::from_le_bytes([DEFINITIONS[offset], DEFINITIONS[offset + 1]]);
+            let (quadrant_x, quadrant_y) = map16_quadrant_offset(quadrant);
+            draw_subtile(
+                &mut rgba,
+                width,
+                (definition_x + quadrant_x, definition_y + quadrant_y),
+                graphics.get(usize::from(word & 0x03ff)),
+                palette,
+                usize::from(word >> 10 & 7),
+                (word & 0x4000 != 0, word & 0x8000 != 0),
+            );
+        }
+    }
+    egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
 }
 
 fn requested_vanilla_editor_palette_phase() -> usize {
@@ -2058,6 +2101,24 @@ mod tests {
                 false,
             ),
             (0x21, false)
+        );
+    }
+
+    #[test]
+    fn embedded_default_m16_bank_retains_editor_only_block_content_definitions() {
+        const DEFINITIONS: &[u8; 0x2000] = include_bytes!("assets/lm363-default-m16.bin");
+        let words = |tile: usize| &DEFINITIONS[tile * 8..tile * 8 + 8];
+        assert_eq!(
+            words(0x104),
+            [0x27, 0x54, 0x37, 0x54, 0x26, 0x54, 0x36, 0x54]
+        );
+        assert_eq!(
+            words(0x219),
+            [0x49, 0x50, 0x59, 0x50, 0x48, 0x50, 0x58, 0x50]
+        );
+        assert_eq!(
+            words(0x21a),
+            [0xea, 0x00, 0xea, 0x80, 0xea, 0x00, 0xea, 0x80]
         );
     }
 

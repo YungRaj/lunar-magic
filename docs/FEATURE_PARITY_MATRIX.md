@@ -328,6 +328,14 @@ typed packed fields. It shares the two GUI workspaces' transaction, preserves cu
 expanded upper-Y, guards revision-selected record width, follows selection across canonical
 reordering, and has checksum/reopen plus byte-exact ROM-undo evidence.
 
+The level-render presentation surface now includes default-off `LM_VIEW_BLOCK_CONTENTS` (`$23FA`).
+The live canvas resolves the recovered built-in Acts Like and position-dependent mappings, retains
+their native composition selectors, and alpha-composites the authentic type-500/ID-502 default
+M16 definitions after ordinary Map16 artwork. The extracted 8,192-byte bank includes editor-only
+definitions `$219/$21A`; focused tests retain those exact words, the mapping tables, default/toggle
+state, and half/three-quarter composition selection. ROM-adjacent custom M16 replacement of this
+default bank remains part of the broader sidecar/editor integration row.
+
 The Graphics extract/insert row now has exact pristine standard-GFX extraction evidence. The
 installed editor exports all 52 files (`GFX00` through `GFX33`), resolves the two startup streams,
 and applies Lunar Magic's per-file packed-3bpp expansion table plus its legacy fourth-plane

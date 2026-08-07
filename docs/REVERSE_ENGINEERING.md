@@ -3644,3 +3644,16 @@ set it saves the covered background, draws the ordinary overlay, then replaces e
 pixel with the packed-channel half average of the saved and drawn surfaces. Rust scopes a single
 half-opacity painter to the equivalent editor-only overlay calls; artwork and interaction geometry
 remain unchanged.
+
+`LM_VIEW_BLOCK_CONTENTS` maps to `$23FA` and toggles persisted, default-zero byte `00E278E0`.
+`BuildMap16CustomDisplayMappings` at `00465930` resolves each cell's Acts Like root, honors `.dsc`
+alternate mappings, and otherwise selects the recovered built-in definitions and position tables;
+its output retains `$4000/$8000` composition selectors. `RenderLevelEditorViewportRegion` at
+`004530A0` first draws the ordinary Map16 cell, then passes a synthetic one-node display rooted at
+`00836B60` to `RenderM16SidecarObjectsToPixelBuffer` at `0044F670`, proving that contents are a
+transparent editor overlay rather than a replacement Map16 tile. Finally,
+`LoadEmbeddedLevelEditorLookupResources` at `00498D90` locks PE resource type 500, ID 502, and
+`ValidateAndInitializeOpenedRom` copies its exact 0x2000-byte default `.m16` bank into the active
+renderer before an optional ROM-adjacent sidecar overrides it. Rust retains that authenticated
+bank byte-for-byte, including editor-only definitions `$219/$21A`, and builds an animated,
+transparent 32×32 overlay atlas from the current level graphics and palette.

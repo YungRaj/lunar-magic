@@ -114,21 +114,30 @@ fn alternate_or_builtin(
     built_in_mapping(root, position, context)
 }
 
-fn built_in_mapping(root: u16, position: usize, context: DscMaterializationContext) -> u16 {
+/// Resolves Lunar Magic's built-in editor-only block-content display for one Map16 cell.
+///
+/// The returned word retains the native `0x4000`/`0x8000` composition selector. Zero means that
+/// the cell has no built-in content overlay. Custom `.dsc` alternate mappings are resolved by
+/// [`DscResolvedTable::materialize_cells`] before this fallback is reached.
+#[must_use]
+pub fn lunar_magic_block_contents_mapping(
+    root: u16,
+    position: usize,
+    context: DscDisplayContext,
+    level_mode: u8,
+) -> u16 {
     let Some(value) = (match root {
-        0x21 => context.display.second_feature_enabled.then_some(0x1a),
-        0x22 => Some(if context.display.second_feature_enabled {
+        0x21 => context.second_feature_enabled.then_some(0x1a),
+        0x22 => Some(if context.second_feature_enabled {
             0x8100
         } else {
             0
         }),
-        0x29 if !context.display.first_feature_suppressed => {
-            Some(if context.display.first_feature_enabled {
-                0x801a
-            } else {
-                0
-            })
-        }
+        0x29 if !context.first_feature_suppressed => Some(if context.first_feature_enabled {
+            0x801a
+        } else {
+            0
+        }),
         0x111 => Some([0x104, 0x106, 0x105][(position & 0xf) % 3]),
         0x114 => Some(0x96),
         0x117 | 0x11f => Some(0x104),
@@ -144,8 +153,8 @@ fn built_in_mapping(root: u16, position: usize, context: DscMaterializationConte
         0x127 | 0x128 => Some(0x30),
         0x129 => Some(0x80b8),
         0x12d => Some(0x100),
-        0x16a if !matches!(context.level_mode, 4 | 5 | 0x0d) => Some(0x106),
-        0x16b if !matches!(context.level_mode, 4 | 5 | 0x0d) => Some(0x101),
+        0x16a if !matches!(level_mode, 4 | 5 | 0x0d) => Some(0x106),
+        0x16b if !matches!(level_mode, 4 | 5 | 0x0d) => Some(0x101),
         _ => None,
     }) else {
         return 0;
@@ -155,6 +164,10 @@ fn built_in_mapping(root: u16, position: usize, context: DscMaterializationConte
     } else {
         value
     }
+}
+
+fn built_in_mapping(root: u16, position: usize, context: DscMaterializationContext) -> u16 {
+    lunar_magic_block_contents_mapping(root, position, context.display, context.level_mode)
 }
 
 fn map16_tile_count(map16: &Map16Set) -> usize {
@@ -261,6 +274,26 @@ mod tests {
                 .unwrap()
                 .flags,
             [0x20]
+        );
+    }
+
+    #[test]
+    fn public_block_contents_resolver_retains_native_overlay_and_composition_words() {
+        assert_eq!(
+            lunar_magic_block_contents_mapping(0x111, 0, DscDisplayContext::default(), 0),
+            0x4104
+        );
+        assert_eq!(
+            lunar_magic_block_contents_mapping(0x111, 1, DscDisplayContext::default(), 0),
+            0x4106
+        );
+        assert_eq!(
+            lunar_magic_block_contents_mapping(0x129, 0, DscDisplayContext::default(), 0),
+            0x80b8
+        );
+        assert_eq!(
+            lunar_magic_block_contents_mapping(0x16a, 0, DscDisplayContext::default(), 4),
+            0
         );
     }
 

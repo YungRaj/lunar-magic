@@ -426,6 +426,8 @@ pub struct LunarMagicConditionalViewState {
     pub other_invisible_objects: bool,
     pub on_off_switch_on: bool,
     pub conditional_direct_map16: bool,
+    /// Shows editor-only contents over blocks whose Acts Like behavior has a recovered mapping.
+    pub block_contents: bool,
 }
 
 impl Default for LunarMagicConditionalViewState {
@@ -435,6 +437,7 @@ impl Default for LunarMagicConditionalViewState {
             other_invisible_objects: true,
             on_off_switch_on: true,
             conditional_direct_map16: true,
+            block_contents: false,
         }
     }
 }

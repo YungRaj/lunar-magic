@@ -4530,3 +4530,11 @@ recovered 512-byte initialization table and object-tileset substitutions; line-g
 the vanilla `$76..$99` roots and pristine `$95/$62` conditional. Custom Map16 cells follow bounded
 Acts Like chains to a vanilla root. Both object-stream caches and tilemap-backed Layer 2 composite
 the glyph after the Map16 artwork, matching `RenderMap16TileToPixelBuffer` ordering.
+
+The native level canvas now implements the default-off `LM_VIEW_BLOCK_CONTENTS` presentation
+state. Its public materializer exposes Lunar Magic's exact built-in Acts Like/position mapping
+words without discarding `$4000/$8000`, while the compositor draws the mapped definition after the
+ordinary cell through the extracted 8,192-byte default M16 bank. Color-zero pixels remain
+transparent, `$4000` uses the recovered three-quarter source composition, and `$8000` uses the
+half-color path. The user-toolbar name routes to the same state and never mutates authored object
+or Map16 data.

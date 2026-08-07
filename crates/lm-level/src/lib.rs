@@ -57,7 +57,10 @@ pub use custom_sprite_library::{
     CustomSpriteEntry, CustomSpriteLibrary, CustomSpriteLibraryError, MAX_CUSTOM_SPRITE_SIDECAR_LEN,
 };
 pub use dsc_display::{DscDisplayContext, DscDisplayResolution};
-pub use dsc_materialize::{DscMaterialization, DscMaterializationContext, DscMaterializationError};
+pub use dsc_materialize::{
+    DscMaterialization, DscMaterializationContext, DscMaterializationError,
+    lunar_magic_block_contents_mapping,
+};
 pub use dsc_sidecar::{
     DscDescription, DscDirective, DscEntry, DscSidecar, DscSidecarError, MAX_DSC_SOURCE_LEN,
 };
