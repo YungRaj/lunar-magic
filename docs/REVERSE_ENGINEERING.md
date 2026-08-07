@@ -2302,6 +2302,14 @@ are at `+$17/+$27/+$4C/+$5E`. The table allocation is four consecutive `2*N` pla
 variant has an `0xFFFFFFFF` marker, an 8-bit count where zero means 256, and pointer operands at
 `+$14/+$24/+$47/+$59`; it is decoded independently from the current representation.
 
+Instruction-level recovery of `OverworldWarpLinkDialogProc` (`00539CD0`) proves control `$0066`
+has exactly 258 semantic rows. Row 0 is `No Setting / No Return Path Found`; row 1 is `Create a
+one-way link to this tile`; rows 2 through 257 address native records 0 through 255. On OK, every
+choice except row 1 first clears records whose displayed source matches the selected tile. Rows 2+
+then subtract two, write the selected tile's display and runtime coordinate encodings into that
+record, and copy them only when the Layer 1 selection bit remains set. Rust models the complete
+combo-index boundary as `OverworldWarpReturnChoice`, including rejection of row 258.
+
 The Rust migration boundary upgrades that legacy variant explicitly. It requires the runtime and
 four contiguous planes to be two exact, non-overlapping RATS allocations whose payload starts
 match the hooks and decoded operands. Migration reclaims those blocks only in a staging image,

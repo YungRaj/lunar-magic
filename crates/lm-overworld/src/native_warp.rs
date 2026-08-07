@@ -1,5 +1,39 @@
 //! Native overworld warp/exit endpoint tables used by the SMW engine.
 
+/// Semantic choice represented by control `$0066` in Lunar Magic's exit-link dialog.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OverworldWarpReturnChoice {
+    /// Combo row 0: remove any setting associated with the selected tile.
+    NoSetting,
+    /// Combo row 1: retain a one-way exit without creating a return-table record.
+    OneWay,
+    /// Combo rows 2 through 257: use the selected native return-table record.
+    Record(u8),
+}
+
+impl OverworldWarpReturnChoice {
+    /// Decodes the exact owner-drawn combo row used by Lunar Magic 3.63.
+    #[must_use]
+    pub const fn from_lunar_magic_combo_index(index: u16) -> Option<Self> {
+        match index {
+            0 => Some(Self::NoSetting),
+            1 => Some(Self::OneWay),
+            2..=257 => Some(Self::Record((index - 2) as u8)),
+            _ => None,
+        }
+    }
+
+    /// Returns the original owner-drawn combo row.
+    #[must_use]
+    pub const fn lunar_magic_combo_index(self) -> u16 {
+        match self {
+            Self::NoSetting => 0,
+            Self::OneWay => 1,
+            Self::Record(index) => index as u16 + 2,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OverworldWarpEndpoint {
     /// Packed vertical/submap coordinate. Its internal bit fields remain intentionally opaque.
@@ -145,6 +179,31 @@ impl OverworldWarpLinkTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn return_choice_covers_all_258_original_combo_rows_exactly() {
+        assert_eq!(
+            OverworldWarpReturnChoice::from_lunar_magic_combo_index(0),
+            Some(OverworldWarpReturnChoice::NoSetting)
+        );
+        assert_eq!(
+            OverworldWarpReturnChoice::from_lunar_magic_combo_index(1),
+            Some(OverworldWarpReturnChoice::OneWay)
+        );
+        for index in u8::MIN..=u8::MAX {
+            let choice = OverworldWarpReturnChoice::Record(index);
+            assert_eq!(
+                OverworldWarpReturnChoice::from_lunar_magic_combo_index(
+                    choice.lunar_magic_combo_index()
+                ),
+                Some(choice)
+            );
+        }
+        assert_eq!(
+            OverworldWarpReturnChoice::from_lunar_magic_combo_index(258),
+            None
+        );
+    }
 
     #[test]
     fn planes_round_trip_without_normalizing_sentinels() {

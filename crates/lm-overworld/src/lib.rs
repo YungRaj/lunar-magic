@@ -101,7 +101,7 @@ pub use native_sprite_sidecar::{
 };
 pub use native_warp::{
     OverworldWarpEndpoint, OverworldWarpLink, OverworldWarpLinkPlanes, OverworldWarpLinkTable,
-    OverworldWarpLinkTableError,
+    OverworldWarpLinkTableError, OverworldWarpReturnChoice,
 };
 pub use native_warp_file::OverworldWarpLinkFileError;
 pub use path::{OverworldPathGraph, PathDirection, PathEdge, PathGraphError, PathNode};
