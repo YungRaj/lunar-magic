@@ -2193,6 +2193,13 @@ and a neighboring Layer 2 pointer exact. Lunar Magic 3.63 reopens and exports th
 stream, confirming that the recovered descriptor/pointer interpretation and allocation boundary
 agree with the original editor.
 
+The supported runtime-variant boundary is now explicit rather than inferred from format `$103`.
+`every_legacy_generation_migrates_across_both_copier_header_variants` exercises authenticated
+formats `$100`, `$101`, and `$102` with both absent and present copier headers. Each case installs
+the exact `$103` hook, applies its generation-specific descriptor conversion, preserves every byte
+of a present prefix, and traverses byte-exact full-image Undo and Redo. Together with the retained
+current-runtime editor oracle, this covers the supported SMW-US LoROM generation/header product.
+
 The reciprocal authentic Layer 1 lifecycle gate now drives both `RelocateOrdinaryPosition` and
 record removal through the native editor before saving. The recovered relocation algorithm's
 screen-stable reorder and synthesized screen transitions survive Lunar Magic 3.63 reopen/export

@@ -315,7 +315,7 @@ fn read_pointer(bytes: &[u8], offset: usize) -> u32 {
 mod tests {
     use super::*;
     use lm_project::Project;
-    use lm_rom::{RomImage, apply_ips};
+    use lm_rom::{CopierHeader, RomImage, apply_ips};
     use std::{env, fs};
 
     #[test]
@@ -384,6 +384,71 @@ mod tests {
             smw_us_v1_layer2_format_102_migration(&corrupt),
             Err(SmwUsV1Layer2Format102MigrationError::HookMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn every_legacy_generation_migrates_across_both_copier_header_variants() {
+        let generations = [
+            (&FORMAT_100_HOOK, true, "$100"),
+            (&FORMAT_101_HOOK, true, "$101"),
+            (&FORMAT_102_HOOK, false, "$102"),
+        ];
+
+        for (source_hook, normalizes_descriptors, source_format) in generations {
+            for copier_header in [CopierHeader::Absent, CopierHeader::Present] {
+                let mut bytes = vec![0xff; 0x80_000];
+                bytes[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET
+                    ..SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + source_hook.len()]
+                    .copy_from_slice(source_hook);
+                bytes[LAYER1_POINTER_TABLE_OFFSET..LAYER1_POINTER_TABLE_OFFSET + POINTER_TABLE_LEN]
+                    .fill(0);
+                for pointer in bytes
+                    [LAYER2_POINTER_TABLE_OFFSET..LAYER2_POINTER_TABLE_OFFSET + POINTER_TABLE_LEN]
+                    .chunks_exact_mut(3)
+                {
+                    pointer.copy_from_slice(&[0x54, 0xde, 0xff]);
+                }
+                bytes[LAYER2_POINTER_TABLE_OFFSET..LAYER2_POINTER_TABLE_OFFSET + 3]
+                    .copy_from_slice(&[0x00, 0x80, 0x00]);
+                bytes[1] = 0;
+                bytes[SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET] = 0x0f;
+
+                let mut image = RomImage::from_bytes(bytes).unwrap();
+                image.set_copier_header(copier_header, 0xa5);
+                let original = image.as_file_bytes().to_vec();
+                let original_prefix = image.copier_header_bytes().map(<[u8]>::to_vec);
+                let plan = match source_format {
+                    "$100" => smw_us_v1_layer2_format_100_migration(image.logical_bytes()),
+                    "$101" => smw_us_v1_layer2_format_101_migration(image.logical_bytes()),
+                    "$102" => smw_us_v1_layer2_format_102_migration(image.logical_bytes()),
+                    _ => unreachable!(),
+                }
+                .unwrap();
+                let mut project = Project::new(image);
+                project.install_relocatable_patch(&plan).unwrap();
+
+                assert_eq!(project.rom.copier_header(), copier_header);
+                assert_eq!(
+                    project.rom.copier_header_bytes(),
+                    original_prefix.as_deref()
+                );
+                assert_eq!(
+                    &project.rom.logical_bytes()[SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET
+                        ..SMW_US_V1_LEVEL_LAYER2_FORMAT_HOOK_OFFSET + FORMAT_103_HOOK.len()],
+                    &FORMAT_103_HOOK
+                );
+                assert_eq!(
+                    project.rom.logical_bytes()[SMW_US_V1_LEVEL_LAYER2_DESCRIPTOR_TABLE_OFFSET],
+                    if normalizes_descriptors { 0x16 } else { 0x06 }
+                );
+                let migrated = project.rom.as_file_bytes().to_vec();
+
+                assert!(project.undo().unwrap());
+                assert_eq!(project.rom.as_file_bytes(), original);
+                assert!(project.redo().unwrap());
+                assert_eq!(project.rom.as_file_bytes(), migrated);
+            }
+        }
     }
 
     #[test]
