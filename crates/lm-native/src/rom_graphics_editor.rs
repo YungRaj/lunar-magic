@@ -220,8 +220,8 @@ impl RomGraphicsEditor {
             .external_tools()
             .iter()
             .filter(|tool| {
-                tool.uses_argument_placeholder("graphics")
-                    && !tool.uses_working_directory_placeholder("graphics")
+                tool.uses_graphics_editor_argument()
+                    && !tool.uses_graphics_editor_working_directory()
             })
             .map(|tool| (tool.id.clone(), tool.name.clone()))
             .collect::<Vec<_>>();
@@ -982,15 +982,15 @@ impl RomGraphicsEditor {
             ));
             return;
         };
-        if !tool.uses_argument_placeholder("graphics") {
+        if !tool.uses_graphics_editor_argument() {
             self.error = Some(format!(
-                "configured graphics editor {tool_id:?} does not reference {{graphics}}"
+                "configured graphics editor {tool_id:?} does not reference {{graphics}} or %1"
             ));
             return;
         }
-        if tool.uses_working_directory_placeholder("graphics") {
+        if tool.uses_graphics_editor_working_directory() {
             self.error = Some(format!(
-                "configured graphics editor {tool_id:?} cannot use {{graphics}} as its working directory"
+                "configured graphics editor {tool_id:?} cannot use {{graphics}} or %1 as its working directory"
             ));
             return;
         }

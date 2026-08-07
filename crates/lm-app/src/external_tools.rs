@@ -112,6 +112,31 @@ impl ExternalTool {
         })
     }
 
+    /// Expands this tool for the graphics-editor workflow, accepting Lunar Magic's recovered
+    /// `%1` file placeholder as an alias for `{graphics}` in direct argument templates.
+    ///
+    /// Other percent sequences are preserved exactly. The alias is intentionally scoped to this
+    /// workflow so ordinary external tools can continue passing a literal `%1` argument.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExternalToolError`] under the same conditions as [`Self::expand`], including a
+    /// missing staged graphics path.
+    pub fn expand_graphics_editor(
+        &self,
+        context: ToolContext<'_>,
+    ) -> Result<ToolInvocation, ExternalToolError> {
+        let graphics = context
+            .graphics
+            .ok_or(ExternalToolError::MissingValue("graphics"))?
+            .to_string_lossy();
+        let mut invocation = self.expand(context)?;
+        for argument in &mut invocation.arguments {
+            *argument = argument.replace("%1", &graphics);
+        }
+        Ok(invocation)
+    }
+
     /// Reports whether any argument template references `placeholder`.
     ///
     /// Escaped literal braces do not count. Malformed templates are left for [`Self::expand`] to
@@ -123,12 +148,34 @@ impl ExternalTool {
             .any(|template| template_uses_placeholder(template, placeholder))
     }
 
+    /// Reports whether an argument can receive the staged graphics path through either the Rust
+    /// `{graphics}` placeholder or Lunar Magic's recovered `%1` alias.
+    #[must_use]
+    pub fn uses_graphics_editor_argument(&self) -> bool {
+        self.uses_argument_placeholder("graphics")
+            || self
+                .arguments
+                .iter()
+                .any(|template| template.contains("%1"))
+    }
+
     /// Reports whether the working-directory template references `placeholder`.
     #[must_use]
     pub fn uses_working_directory_placeholder(&self, placeholder: &str) -> bool {
         self.working_directory
             .as_deref()
             .is_some_and(|template| template_uses_placeholder(template, placeholder))
+    }
+
+    /// Reports whether the working directory incorrectly references the staged graphics file by
+    /// either supported spelling.
+    #[must_use]
+    pub fn uses_graphics_editor_working_directory(&self) -> bool {
+        self.uses_working_directory_placeholder("graphics")
+            || self
+                .working_directory
+                .as_deref()
+                .is_some_and(|template| template.contains("%1"))
     }
 
     fn validate(&self) -> Result<(), ExternalToolError> {
@@ -350,6 +397,35 @@ mod tests {
             "--input=/tmp/Graphics/ExGFX123.bin"
         );
         assert_eq!(invocation.arguments[1], "{graphics}");
+    }
+
+    #[test]
+    fn graphics_editor_accepts_lunar_magic_percent_one_without_consuming_other_percents() {
+        let mut editor = tool(&["%1", "--input=%1", "%2", "100%"]);
+        editor.working_directory = Some("/tmp".into());
+        assert!(editor.uses_graphics_editor_argument());
+        assert!(!editor.uses_argument_placeholder("graphics"));
+        assert!(!editor.uses_graphics_editor_working_directory());
+        let graphics = Path::new("/tmp/Graphics Files/ExGFX123.bin");
+        let invocation = editor
+            .expand_graphics_editor(ToolContext {
+                rom: None,
+                level: None,
+                graphics: Some(graphics),
+            })
+            .unwrap();
+        assert_eq!(
+            invocation.arguments,
+            [
+                "/tmp/Graphics Files/ExGFX123.bin",
+                "--input=/tmp/Graphics Files/ExGFX123.bin",
+                "%2",
+                "100%"
+            ]
+        );
+
+        editor.working_directory = Some("%1".into());
+        assert!(editor.uses_graphics_editor_working_directory());
     }
 
     #[test]

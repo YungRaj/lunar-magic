@@ -76,20 +76,20 @@ impl ExternalGraphicsEditor {
         bytes: &[u8],
         expected_revision: u64,
     ) -> Result<(), String> {
-        if !tool.uses_argument_placeholder("graphics") {
+        if !tool.uses_graphics_editor_argument() {
             return Err(format!(
-                "configured external tool {:?} does not reference {{graphics}}",
+                "configured external tool {:?} does not reference {{graphics}} or %1",
                 tool.id
             ));
         }
-        if tool.uses_working_directory_placeholder("graphics") {
+        if tool.uses_graphics_editor_working_directory() {
             return Err(format!(
-                "configured external tool {:?} cannot use {{graphics}} as its working directory",
+                "configured external tool {:?} cannot use {{graphics}} or %1 as its working directory",
                 tool.id
             ));
         }
         self.stage_with(file_name, bytes, expected_revision, |_, path| {
-            tool.expand(ToolContext {
+            tool.expand_graphics_editor(ToolContext {
                 graphics: Some(path),
                 ..context
             })
@@ -499,6 +499,29 @@ mod tests {
     }
 
     #[test]
+    fn configured_tool_accepts_lunar_magics_percent_one_graphics_template() {
+        let mut editor = ExternalGraphicsEditor::default();
+        let tool = configured_tool(&["%1", "--unchanged=%2", "--gfx=%1"]);
+        editor
+            .stage_configured(
+                &tool,
+                ToolContext {
+                    rom: Some(Path::new("/tmp/project/game.smc")),
+                    ..ToolContext::default()
+                },
+                "GFX00.bin",
+                &[9; 32],
+                23,
+            )
+            .unwrap();
+        let pending = editor.pending.as_ref().unwrap();
+        let path = pending.path.to_string_lossy();
+        assert_eq!(pending.invocation.arguments[0], path);
+        assert_eq!(pending.invocation.arguments[1], "--unchanged=%2");
+        assert_eq!(pending.invocation.arguments[2], format!("--gfx={path}"));
+    }
+
+    #[test]
     fn configured_template_failure_removes_the_private_workspace() {
         let mut editor = ExternalGraphicsEditor::default();
         let observed = std::cell::RefCell::new(None);
@@ -528,7 +551,10 @@ mod tests {
                 0,
             )
             .unwrap_err();
-        assert!(error.contains("does not reference {graphics}"), "{error}");
+        assert!(
+            error.contains("does not reference {graphics} or %1"),
+            "{error}"
+        );
         assert!(!editor.is_running());
     }
 
@@ -540,7 +566,7 @@ mod tests {
         let error = editor
             .stage_configured(&tool, ToolContext::default(), "GFX00.bin", &[1; 32], 0)
             .unwrap_err();
-        assert!(error.contains("cannot use {graphics}"), "{error}");
+        assert!(error.contains("cannot use {graphics} or %1"), "{error}");
         assert!(!editor.is_running());
     }
 }
