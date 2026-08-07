@@ -8,6 +8,10 @@ pub const LUNAR_MAGIC_EXIT_TILE_TYPES: [u8; 13] = [
     0x25, 0x40, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x4d, 0x52, 0x53, 0x83,
 ];
 
+/// Layer 1 tile types accepted by Lunar Magic 3.63's two-click Link Exit Path Tiles workflow.
+/// This is a separate predicate from [`LUNAR_MAGIC_EXIT_TILE_TYPES`].
+pub const LUNAR_MAGIC_EXIT_PATH_TILE_TYPES: [u8; 4] = [0x5a, 0x5b, 0x5f, 0x82];
+
 /// Returns whether a Layer 1 tile type can open Lunar Magic's Submap Exit Tile Settings dialog.
 #[must_use]
 pub const fn is_lunar_magic_exit_tile_type(tile_type: u8) -> bool {
@@ -15,6 +19,12 @@ pub const fn is_lunar_magic_exit_tile_type(tile_type: u8) -> bool {
         tile_type,
         0x25 | 0x40 | 0x42 | 0x43 | 0x44 | 0x45 | 0x46 | 0x47 | 0x48 | 0x4d | 0x52 | 0x53 | 0x83
     )
+}
+
+/// Returns whether a Layer 1 tile type participates in Lunar Magic's two-click exit-path linker.
+#[must_use]
+pub const fn is_lunar_magic_exit_path_tile_type(tile_type: u8) -> bool {
+    matches!(tile_type, 0x5a | 0x5b | 0x5f | 0x82)
 }
 
 /// Cardinal choice used by Lunar Magic's native overworld path-link dialog.
@@ -290,6 +300,19 @@ mod tests {
         assert_eq!(accepted, LUNAR_MAGIC_EXIT_TILE_TYPES);
         assert!(!is_lunar_magic_exit_tile_type(0));
         assert!(!is_lunar_magic_exit_tile_type(0xff));
+    }
+
+    #[test]
+    fn lunar_magic_exit_path_predicate_is_distinct_and_exact() {
+        let accepted = (u8::MIN..=u8::MAX)
+            .filter(|tile| is_lunar_magic_exit_path_tile_type(*tile))
+            .collect::<Vec<_>>();
+        assert_eq!(accepted, LUNAR_MAGIC_EXIT_PATH_TILE_TYPES);
+        assert!(
+            LUNAR_MAGIC_EXIT_PATH_TILE_TYPES
+                .iter()
+                .all(|tile| !is_lunar_magic_exit_tile_type(*tile))
+        );
     }
 
     fn endpoint(value: u16) -> OverworldEndpoint {

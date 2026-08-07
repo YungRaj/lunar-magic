@@ -2249,6 +2249,16 @@ transient editor state so the lossless three-plane ROM format is unchanged. A re
 transition changes native link 4 from Left to Up and one-way: raw source `$00A0,$00D8` becomes
 `$0098,$00E0`, the return endpoint becomes all `$FF`, and both target bytes remain exact.
 
+The adjacent two-click `Link Exit Path Tiles` workflow does not use that same validation table.
+`ValidateSelectedOverworldExitTile` (`0053A2B0`) disassembles to a stride-two Layer 1 type read at
+`$00B14F68` followed by the independent lookup at `$00B14168`. A live 256-byte read proves that
+lookup accepts exactly types `$5A`, `$5B`, `$5F`, and `$82`; none overlap the thirteen Submap Exit
+Tile Settings types. `HandleOverworldExitTileLinkClick` (`0053A350`) uses the first click to select
+the endpoint family and the second click to open `Link Exit Path Tiles`. Its owner-drawn controls
+retain source index `$0066`, return index `$0069`, and direction `$0068`. The Rust model exposes
+both exact predicates separately so later gesture integration cannot silently route one tile family
+through the other dialog.
+
 The expanded form is now reproduced as well. Live Wine inspection resolved descriptor `+0x920` to
 headered physical `$21C35`, hence logical hook `$21A35`; the pristine five bytes are
 `A9 1A 00 85 02`, replaced by `JSL runtime; RTS`. Ghidra's embedded template at `005C36E0` is
