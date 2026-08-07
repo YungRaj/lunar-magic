@@ -3796,8 +3796,12 @@ below `$2000` and adds `$6000`, then validates three compact words below `$0100`
 The first group spans core offsets `$15B..$A5E`; the compact group is `$47C/$78A/$792`, with the
 last two subsequently replaced by the mapped 24-bit suffix/helper pointers. Rust preflights all 40
 values before modifying any byte, reproduces that exact ordering, and rejects a late invalid value
-without a partial transformed payload. The remaining variant work is transactional allocation and
-detector integration across the mapper identities.
+without a partial transformed payload. The relocatable payload builder now carries that complete
+`$C50` form through concrete ExLoROM and SA-1 allocations: all eight external pointers use the
+canonical mapper address rather than LoROM's low-bank mirror, all 108 local words resolve against
+the allocated core, the suffix self-pointer targets the concrete `+$C30`, and direct reconstruction
+matches every installed payload byte. The remaining variant work is mapper-specific fixed/helper
+writes, transactional publication, and current-runtime detector integration.
 The fresh installer's core allocation is now recovered byte-for-byte. It concatenates executable
 ranges `$005B5298..$005B5408` (`$170` bytes), `$005B5410..$005B5750` (`$340` bytes), and
 `$005B4B10..$005B5290` (`$780` bytes) into one `$C30`-byte payload; a mapper-specific branch may

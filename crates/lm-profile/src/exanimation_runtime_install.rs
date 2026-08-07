@@ -160,6 +160,71 @@ pub enum SmwUsV1ExpandedExAnimationRuntimeDetectError {
     MapperCompatibilityHookRange,
 }
 
+/// Builds the relocatable core payload for either the ordinary `$C30` or mapper-compatible `$C50`
+/// runtime form.
+///
+/// The returned payload retains allocation-dependent fixups. For ExLoROM and SA-1 those pointers
+/// use their canonical mapper addresses; ordinary LoROM retains Lunar Magic's equivalent low-bank
+/// mirror. The mapper form applies the complete 37+3 IRAM pass before adding the suffix, fixes the
+/// suffix self-pointer at `+$78A`, and writes the fixed `$7FC020` helper pointer at `+$792`.
+pub fn smw_us_v1_expanded_exanimation_runtime_payload(
+    mapper: Mapper,
+    mapper_runtime: bool,
+) -> Result<PatchPayload, ExpandedExAnimationRuntimeError> {
+    let mut runtime = expanded_exanimation_runtime_template()?;
+    for offset in MAPPING_BYTE_OFFSETS {
+        runtime[offset] = 0;
+    }
+    for (offset, value) in IRAM_WORD_OFFSETS.into_iter().zip(SMW_US_V1_IRAM_WORDS) {
+        runtime[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    if mapper_runtime {
+        crate::relocate_expanded_exanimation_mapper_iram(&mut runtime)?;
+        runtime.extend(crate::expanded_exanimation_runtime_optional_suffix()?);
+        runtime[crate::OPTIONAL_MAPPING_HELPER_POINTER_OFFSET
+            ..crate::OPTIONAL_MAPPING_HELPER_POINTER_OFFSET + 3]
+            .copy_from_slice(&crate::OPTIONAL_MAPPING_HELPER_SNES_ADDRESS.to_le_bytes()[..3]);
+    }
+
+    let pointer_encoding = if mapper == Mapper::LoRom {
+        PatchFixupEncoding::Long24LowBank
+    } else {
+        PatchFixupEncoding::Long24
+    };
+    let mut fixups = CORE_POINTER_FIXUPS
+        .into_iter()
+        .map(|(offset, target_payload, target_addend)| PatchFixup {
+            offset,
+            target_payload,
+            target_addend,
+            encoding: pointer_encoding,
+        })
+        .collect::<Vec<_>>();
+    for index in 0..LOCAL_WORD_TABLE_ENTRIES {
+        let offset = LOCAL_WORD_TABLE_OFFSET + index * 2;
+        let source = u16::from_le_bytes([runtime[offset], runtime[offset + 1]]);
+        let relative = usize::from(source - TEMPLATE_LOCAL_WORD_BASE);
+        fixups.push(PatchFixup {
+            offset,
+            target_payload: 0,
+            target_addend: 0x4b0 + relative,
+            encoding: PatchFixupEncoding::Low16,
+        });
+    }
+    if mapper_runtime {
+        fixups.push(PatchFixup {
+            offset: crate::OPTIONAL_SUFFIX_POINTER_OFFSET,
+            target_payload: 0,
+            target_addend: crate::EXPANDED_EXANIMATION_RUNTIME_CORE_LEN,
+            encoding: PatchFixupEncoding::Long24,
+        });
+    }
+    Ok(PatchPayload {
+        bytes: runtime,
+        fixups,
+    })
+}
+
 impl fmt::Display for SmwUsV1ExpandedExAnimationRuntimeDetectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -587,35 +652,6 @@ fn authenticate_helper(
 /// Rejects a malformed bundled runtime template before constructing a plan.
 pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan()
 -> Result<RelocatablePatchPlan, ExpandedExAnimationRuntimeError> {
-    let mut runtime = expanded_exanimation_runtime_template()?;
-    for offset in MAPPING_BYTE_OFFSETS {
-        runtime[offset] = 0;
-    }
-    for (offset, value) in IRAM_WORD_OFFSETS.into_iter().zip(SMW_US_V1_IRAM_WORDS) {
-        runtime[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-    }
-
-    let mut fixups = CORE_POINTER_FIXUPS
-        .into_iter()
-        .map(|(offset, target_payload, target_addend)| PatchFixup {
-            offset,
-            target_payload,
-            target_addend,
-            encoding: PatchFixupEncoding::Long24LowBank,
-        })
-        .collect::<Vec<_>>();
-    for index in 0..LOCAL_WORD_TABLE_ENTRIES {
-        let offset = LOCAL_WORD_TABLE_OFFSET + index * 2;
-        let source = u16::from_le_bytes([runtime[offset], runtime[offset + 1]]);
-        let relative = usize::from(source - TEMPLATE_LOCAL_WORD_BASE);
-        fixups.push(PatchFixup {
-            offset,
-            target_payload: 0,
-            target_addend: 0x4b0 + relative,
-            encoding: PatchFixupEncoding::Low16,
-        });
-    }
-
     Ok(RelocatablePatchPlan {
         description: "install SMW US v1 expanded ExAnimation runtime".into(),
         mapper: Mapper::LoRom,
@@ -626,10 +662,7 @@ pub fn smw_us_v1_expanded_exanimation_runtime_installation_plan()
         checksum_field: SMW_US_V1_CHECKSUM_FIELD,
         expansion_fill: 0xff,
         payloads: vec![
-            PatchPayload {
-                bytes: runtime,
-                fixups,
-            },
+            smw_us_v1_expanded_exanimation_runtime_payload(Mapper::LoRom, false)?,
             PatchPayload {
                 bytes: empty_expanded_exanimation_pointer_table(),
                 fixups: Vec::new(),
@@ -828,6 +861,82 @@ mod tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn mapper_runtime_payload_resolves_every_fixup_for_exlorom_and_sa1() {
+        for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
+            let payload = smw_us_v1_expanded_exanimation_runtime_payload(mapper, true).unwrap();
+            assert_eq!(payload.bytes.len(), 0xc50);
+            assert_eq!(payload.fixups.len(), 8 + 108 + 1);
+            assert!(
+                payload.fixups[..8]
+                    .iter()
+                    .all(|fixup| fixup.encoding == PatchFixupEncoding::Long24)
+            );
+            let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x50_0000]).unwrap());
+            let plan = RelocatablePatchPlan {
+                description: format!("test {mapper:?} mapper ExAnimation payload"),
+                mapper,
+                allocation: AllocationPolicy {
+                    search: 0x40_0000..0x41_0000,
+                    bank_size: Some(0x8000),
+                    fill_bytes: vec![0xff],
+                    protected: Vec::new(),
+                },
+                checksum_field: 0x7fdc,
+                expansion_fill: 0xff,
+                payloads: vec![
+                    payload,
+                    PatchPayload {
+                        bytes: empty_expanded_exanimation_pointer_table(),
+                        fixups: Vec::new(),
+                    },
+                    PatchPayload {
+                        bytes: LEVEL_GRAPHICS_RUNTIME.to_vec(),
+                        fixups: Vec::new(),
+                    },
+                    PatchPayload {
+                        bytes: GRAPHICS_RUNTIME.to_vec(),
+                        fixups: Vec::new(),
+                    },
+                ],
+                writes: Vec::new(),
+            };
+            let result = project.install_relocatable_patch(&plan).unwrap();
+            let address = |payload: usize, addend: usize| {
+                pc_to_snes(mapper, result.blocks[payload].payload.start + addend).unwrap()
+            };
+            let core = result.blocks[0].payload.start;
+            let expected = crate::relocate_expanded_exanimation_runtime_with_optional_suffix(
+                &ExpandedExAnimationRuntimeRelocations {
+                    mapping_bytes: [0, 0],
+                    snes_pointers: [
+                        address(1, 1),
+                        address(1, 0),
+                        address(0, 0xb14),
+                        address(0, 0xb24),
+                        address(0, 0xb1c),
+                        address(0, 0xb1c),
+                        address(0, 0xb1c),
+                        address(0, 0xb1c),
+                    ],
+                    iram_words: SMW_US_V1_IRAM_WORDS,
+                    local_word_base: pc_to_snes(mapper, core + 0x4b0).unwrap() as u16,
+                },
+                crate::ExpandedExAnimationRuntimeOptionalRelocations {
+                    suffix_snes_pointer: address(0, 0xc30),
+                    mapping_helper_snes_pointer: crate::OPTIONAL_MAPPING_HELPER_SNES_ADDRESS,
+                },
+            )
+            .unwrap();
+            assert_eq!(project.rom.read(core, 0xc50).unwrap(), expected);
+            assert!(
+                SnesChecksum::decode(project.rom.logical_bytes(), 0x7fdc)
+                    .unwrap()
+                    .is_complementary()
+            );
+        }
     }
 
     #[test]

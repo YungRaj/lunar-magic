@@ -121,6 +121,7 @@ pub use exanimation_runtime_install::{
     probe_smw_us_v1_expanded_exanimation_runtime_generation,
     smw_us_v1_expanded_exanimation_core_installation_plan,
     smw_us_v1_expanded_exanimation_runtime_installation_plan,
+    smw_us_v1_expanded_exanimation_runtime_payload,
     smw_us_v1_expanded_exanimation_uses_mapper_runtime,
 };
 pub use expanded_settings_allocation::{
