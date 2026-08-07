@@ -3701,3 +3701,11 @@ bank for conditional triggers, forces manual-trigger frames, and consumes one-sh
 after their last frame. Rust now has a stateful, resettable `ExAnimationPreviewState` that mirrors
 those cursor, phase, bank-selection, manual, custom, and one-shot rules without storing runtime
 cursor bytes in authored records.
+
+The trigger-width table at `005E77D8` marks triggers 1–5, 7, 9–E, and `$20..$2F`. For those
+records, `ProcessExAnimationRecordGroup` selects the triggered source by adding
+`frame_count_minus_one + 1` to the ordinary frame index before reading the word at record offset
+8. This proves the payload is two contiguous, bank-major source arrays, not adjacent word pairs.
+Rust's shared frame decoder and editor now present each logical frame as `[normal, triggered]` but
+decode and re-encode the authenticated bank-major byte layout, including insert, remove, reorder,
+and replacement operations.

@@ -1,7 +1,7 @@
 use crate::{ExAnimationError, ExAnimationRecord};
 use std::fmt;
 
-/// One frame's one or two source words, as selected by the recovered size-mode table.
+/// One frame's normal source word and, when present, its triggered-bank source word.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExAnimationFrame {
     pub source_words: Vec<u16>,
@@ -62,13 +62,15 @@ pub fn exanimation_frames(
             maximum,
         });
     }
-    Ok(record
+    let words = record
         .frame_bytes(double_size)
-        .chunks_exact(words_per_frame * 2)
+        .chunks_exact(2)
+        .map(|word| u16::from_le_bytes([word[0], word[1]]))
+        .collect::<Vec<_>>();
+    Ok((0..frame_count)
         .map(|frame| ExAnimationFrame {
-            source_words: frame
-                .chunks_exact(2)
-                .map(|word| u16::from_le_bytes([word[0], word[1]]))
+            source_words: (0..words_per_frame)
+                .map(|bank| words[bank * frame_count + frame])
                 .collect(),
         })
         .collect())
@@ -131,13 +133,11 @@ pub fn edit_exanimation_frames(
             maximum,
         });
     }
-    let payload = frames
-        .iter()
-        .flat_map(|frame| {
-            frame
-                .source_words
+    let payload = (0..words_per_frame)
+        .flat_map(|bank| {
+            frames
                 .iter()
-                .flat_map(|word| word.to_le_bytes())
+                .flat_map(move |frame| frame.source_words[bank].to_le_bytes())
         })
         .collect::<Vec<_>>();
     record
@@ -264,6 +264,17 @@ mod tests {
     #[test]
     fn double_word_width_and_late_index_fail_without_touching_input() {
         let original = record(true);
+        assert_eq!(
+            exanimation_frames(&original, true).unwrap(),
+            vec![
+                ExAnimationFrame {
+                    source_words: vec![1, 3],
+                },
+                ExAnimationFrame {
+                    source_words: vec![2, 4],
+                },
+            ]
+        );
         assert!(matches!(
             edit_exanimation_frames(
                 &original,
@@ -280,6 +291,19 @@ mod tests {
             ),
             Err(ExAnimationFrameEditError::FrameIndexOutOfRange { index: 9, .. })
         ));
+
+        let edited = edit_exanimation_frames(
+            &original,
+            true,
+            &[ExAnimationFrameEdit::Replace {
+                index: 0,
+                frame: ExAnimationFrame {
+                    source_words: vec![8, 9],
+                },
+            }],
+        )
+        .unwrap();
+        assert_eq!(&edited.encoded()[8..16], &[8, 0, 2, 0, 9, 0, 4, 0]);
         assert_eq!(original, record(true));
         assert!(matches!(
             edit_exanimation_frames(
