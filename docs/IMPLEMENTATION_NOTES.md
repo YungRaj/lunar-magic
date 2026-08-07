@@ -4367,3 +4367,9 @@ Four sequential application transactions edit the event-number map, install the 
 install all special reveals and directions, and install both event tilemap planes. Each domain
 reopens from the final checksum-valid ROM, headered and headerless results match logically while
 retaining their exact copier framing, and four undo steps restore each physical original.
+
+The complete overworld metadata workflow now covers both installation and installed-runtime
+updates on headered and headerless ROMs. Seven sequential transactions install settings, level
+names, and messages, edit player starts, then update each installed variable-sized runtime.
+Settings, names, messages, and starts all reopen exactly from checksum-valid results; physical
+copier framing is preserved, logical outputs match, and seven undos recover each original ROM.
