@@ -3739,3 +3739,11 @@ and the setting-selected relative bank at `$C00/$1000/$1400/$1800`. Records exec
 recovered eight-way phase order against one mutable cache, so earlier destinations can feed later
 sources. Tile, palette, and fixed-color transfers are applied to the rendered assets, and a staged
 nonempty level set keeps the preview clock active when the Level ExAnimation feature is enabled.
+
+`AdvanceExAnimationFrames` at `0045AAC0` establishes the composite scheduling contract. Each
+substep calls `ProcessExAnimationRecordGroup` for the 32-record global array before the level array.
+When global animation is active, the level count is 32; otherwise Lunar Magic passes 64. Rust's
+composite preview state preserves that domain order and those limits while keeping independent
+cursor and trigger state for the two arrays. The installed level preview currently supplies its
+staged level set through this shared state; resolving the lazily loaded ROM-global allocation is the
+remaining provider boundary.

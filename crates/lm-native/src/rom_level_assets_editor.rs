@@ -1895,11 +1895,20 @@ fn apply_level_exanimation_preview(
             triggers.custom[index] = animation.trigger_values[index] != 0;
         }
     }
-    let mut state = lm_graphics::ExAnimationPreviewState::new(animation.records.len());
+    let mut state = lm_graphics::CompositeExAnimationPreviewState::new();
+    let mut global_triggers = lm_graphics::ExAnimationTriggerPreviewState::default();
     let mut fixed_color = None;
     for substep in 0..=tick {
         let phase = u8::try_from(substep & 7).expect("three-bit ExAnimation phase");
-        for selected in state.process_phase(&animation.records, phase, true, &mut triggers) {
+        for selected in state.process_phase(
+            None,
+            &animation.records,
+            phase,
+            true,
+            &mut global_triggers,
+            &mut triggers,
+        ) {
+            let selected = selected.selected;
             let record = &animation.records[selected.record];
             if record.kind() < 0x13 {
                 let address = lm_graphics::resolve_exanimation_graphics_address(

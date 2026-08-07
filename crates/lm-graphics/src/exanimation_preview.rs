@@ -43,6 +43,18 @@ pub struct SelectedExAnimationFrame {
     pub frame: u16,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExAnimationPreviewDomain {
+    Global,
+    Level,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SelectedCompositeExAnimationFrame {
+    pub domain: ExAnimationPreviewDomain,
+    pub selected: SelectedExAnimationFrame,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExAnimationMaterializeError {
     UnsupportedGraphicsKind(u8),
@@ -411,6 +423,80 @@ impl ExAnimationPreviewState {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompositeExAnimationPreviewState {
+    global: ExAnimationPreviewState,
+    level: ExAnimationPreviewState,
+}
+
+impl CompositeExAnimationPreviewState {
+    pub const GLOBAL_RECORD_LIMIT: usize = 32;
+    pub const LEVEL_RECORD_LIMIT_WITH_GLOBALS: usize = 32;
+    pub const LEVEL_RECORD_LIMIT_WITHOUT_GLOBALS: usize = 64;
+
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            global: ExAnimationPreviewState::new(0),
+            level: ExAnimationPreviewState::new(0),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.global.reset(0);
+        self.level.reset(0);
+    }
+
+    pub fn process_phase(
+        &mut self,
+        global_records: Option<&[ExAnimationRecord]>,
+        level_records: &[ExAnimationRecord],
+        phase: u8,
+        advance: bool,
+        global_triggers: &mut ExAnimationTriggerPreviewState,
+        level_triggers: &mut ExAnimationTriggerPreviewState,
+    ) -> Vec<SelectedCompositeExAnimationFrame> {
+        let global_records =
+            global_records.map(|records| &records[..records.len().min(Self::GLOBAL_RECORD_LIMIT)]);
+        let level_limit = if global_records.is_some() {
+            Self::LEVEL_RECORD_LIMIT_WITH_GLOBALS
+        } else {
+            Self::LEVEL_RECORD_LIMIT_WITHOUT_GLOBALS
+        };
+        let level_records = &level_records[..level_records.len().min(level_limit)];
+        let mut selected = Vec::new();
+        if let Some(records) = global_records {
+            selected.extend(
+                self.global
+                    .process_phase(records, phase, advance, global_triggers)
+                    .into_iter()
+                    .map(|selected| SelectedCompositeExAnimationFrame {
+                        domain: ExAnimationPreviewDomain::Global,
+                        selected,
+                    }),
+            );
+        } else {
+            self.global.reset(0);
+        }
+        selected.extend(
+            self.level
+                .process_phase(level_records, phase, advance, level_triggers)
+                .into_iter()
+                .map(|selected| SelectedCompositeExAnimationFrame {
+                    domain: ExAnimationPreviewDomain::Level,
+                    selected,
+                }),
+        );
+        selected
+    }
+}
+
+impl Default for CompositeExAnimationPreviewState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn select_frame(
     record: &ExAnimationRecord,
     record_index: usize,
@@ -520,6 +606,62 @@ mod tests {
             banks == 2,
         )
         .unwrap()
+    }
+
+    fn empty_record() -> ExAnimationRecord {
+        ExAnimationRecord::new(0, 0, 0, 0, false, &[], false).unwrap()
+    }
+
+    #[test]
+    fn composite_preview_runs_global_before_level_and_applies_native_slot_limits() {
+        let mut globals = vec![empty_record(); 33];
+        globals[0] = record(1, 0, 0);
+        globals[32] = record(1, 0, 0);
+        let mut levels = vec![empty_record(); 41];
+        levels[0] = record(1, 0, 0);
+        levels[40] = record(1, 0, 0);
+        let mut state = CompositeExAnimationPreviewState::new();
+        let mut global_triggers = ExAnimationTriggerPreviewState::default();
+        let mut level_triggers = ExAnimationTriggerPreviewState::default();
+
+        let selected = state.process_phase(
+            Some(&globals),
+            &levels,
+            0,
+            true,
+            &mut global_triggers,
+            &mut level_triggers,
+        );
+        assert_eq!(
+            selected
+                .iter()
+                .map(|entry| (entry.domain, entry.selected.record))
+                .collect::<Vec<_>>(),
+            [
+                (ExAnimationPreviewDomain::Global, 0),
+                (ExAnimationPreviewDomain::Level, 0),
+            ]
+        );
+
+        state.reset();
+        let selected = state.process_phase(
+            None,
+            &levels,
+            0,
+            true,
+            &mut global_triggers,
+            &mut level_triggers,
+        );
+        assert_eq!(
+            selected
+                .iter()
+                .map(|entry| (entry.domain, entry.selected.record))
+                .collect::<Vec<_>>(),
+            [
+                (ExAnimationPreviewDomain::Level, 0),
+                (ExAnimationPreviewDomain::Level, 40),
+            ]
+        );
     }
 
     #[test]

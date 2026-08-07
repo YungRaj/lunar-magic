@@ -45,11 +45,12 @@ pub use exanimation_frames::{
     exanimation_frames,
 };
 pub use exanimation_preview::{
-    ExAnimationGraphicsAddressContext, ExAnimationMaterializeError, ExAnimationPaletteTransfer,
+    CompositeExAnimationPreviewState, ExAnimationGraphicsAddressContext,
+    ExAnimationMaterializeError, ExAnimationPaletteTransfer, ExAnimationPreviewDomain,
     ExAnimationPreviewState, ExAnimationTriggerPreviewState, ResolvedExAnimationGraphicsAddress,
-    SelectedExAnimationFrame, exanimation_frame_source_word, exanimation_trigger_has_second_bank,
-    materialize_exanimation_graphics_transfer, materialize_exanimation_palette_transfer,
-    resolve_exanimation_graphics_address,
+    SelectedCompositeExAnimationFrame, SelectedExAnimationFrame, exanimation_frame_source_word,
+    exanimation_trigger_has_second_bank, materialize_exanimation_graphics_transfer,
+    materialize_exanimation_palette_transfer, resolve_exanimation_graphics_address,
 };
 pub use exanimation_slot_options::{
     EXANIMATION_LEVEL_SLOT_COUNT, ExAnimationSlotOptionError, ExAnimationSlotOptionTable,
