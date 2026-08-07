@@ -3810,8 +3810,20 @@ SMW body at logical `+$400000` for metadata, generation signals, hooks, sentinel
 payloads; allocations remain in its canonical expanded lower half. The native application selects
 the exact metadata/legacy predicate and complete mapper plan. Eight ExLoROM/SA-1 permutations cover
 the `$C30` and `$C50` forms with and without copier headers, strict current detection, checksum-
-valid save/reopen, duplicate rejection, header preservation, and byte-exact Undo. An authentic
-retained Lunar Magic mapper before/after fixture remains the Oracle gate.
+valid save/reopen, duplicate rejection, header preservation, and byte-exact Undo. The authentic
+mapper Oracle is now retained too: Lunar Magic 3.63 command `$23B4` converted the authenticated
+pristine SMW-US ROM to an 8 MiB copier-headered ExLoROM image, then `-ImportLevel` imported the
+active-ExAnimation level fixture. The complete images have SHA-256 values
+`3c8e26cce4ea5d7741e499d4533565229b152ac42450b057ab204fb9f5ebb890` before and
+`76ffb9a832d9b9f984c083f3cdbec025fbb2e1f1f06d98b36ae8ef77df008126` after. A compact
+4,810-byte fixture (decoded SHA-256
+`7c5cbde5431267017daa0fe45c7065d1edae9397f6afd833d89307aaf5190edb`) retains every owned
+runtime-family byte without redistributing either ROM: the `$C30` core at `$200549`, live `$600`
+pointer table at `$201181`, `$20`/`$30` allocated helpers, core and pointer hooks, NOPs, sentinel,
+both shared-palette hooks and payloads, and both allocated-helper hooks.
+`authentic_lunar_magic_exlorom_runtime_family_matches_every_owned_byte` reconstructs each
+allocation-dependent address and requires exact equality across that entire family. Authentic
+legacy-generation migration before/after fixtures remain the Oracle gap.
 The fresh installer's core allocation is now recovered byte-for-byte. It concatenates executable
 ranges `$005B5298..$005B5408` (`$170` bytes), `$005B5410..$005B5750` (`$340` bytes), and
 `$005B4B10..$005B5290` (`$780` bytes) into one `$C30`-byte payload; a mapper-specific branch may

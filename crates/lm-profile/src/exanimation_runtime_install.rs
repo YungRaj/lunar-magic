@@ -962,10 +962,15 @@ fn direct(offset: usize, expected: &[u8], replacement: &[u8]) -> PatchWrite {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use flate2::read::GzDecoder;
     use lm_project::{Project, RelocatablePatchError};
     use lm_rats::make_header;
     use lm_rom::{RomImage, SnesChecksum, pc_to_snes};
-    use std::{fs, path::PathBuf};
+    use std::{fs, io::Read, path::PathBuf};
+
+    const EXLOROM_RUNTIME_ORACLE_GZIP_BASE64: &str =
+        include_str!("assets/exanimation_exlorom_runtime.bin.gz.b64");
 
     fn mapper_metadata_rom(mapper: Mapper, feature_bits: Option<u32>, hook_word: u16) -> Vec<u8> {
         let mut bytes = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes())
@@ -1070,6 +1075,79 @@ mod tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn authentic_lunar_magic_exlorom_runtime_family_matches_every_owned_byte() {
+        // Lunar Magic 3.63 command $23B4 converted the authenticated pristine SMW-US ROM, then
+        // `-ImportLevel` imported the retained active-ExAnimation level. The compact fixture is
+        // the complete runtime family extracted from that before/after result, in the order below.
+        let compressed = STANDARD
+            .decode(EXLOROM_RUNTIME_ORACLE_GZIP_BASE64.trim())
+            .unwrap();
+        let mut oracle = Vec::new();
+        GzDecoder::new(compressed.as_slice())
+            .read_to_end(&mut oracle)
+            .unwrap();
+        assert_eq!(oracle.len(), 4810);
+
+        let mapper = Mapper::ExLoRom;
+        let runtime = 0x20_0549;
+        let pointer = 0x20_1181;
+        let core = &oracle[..0xc30];
+        let address = |offset| pc_to_snes(mapper, offset).unwrap();
+        let relocations = ExpandedExAnimationRuntimeRelocations {
+            mapping_bytes: [core[0x5c], core[0x66]],
+            snes_pointers: [
+                address(pointer + 1),
+                address(pointer),
+                address(runtime + 0xb14),
+                address(runtime + 0xb24),
+                address(runtime + 0xb1c),
+                address(runtime + 0xb1c),
+                address(runtime + 0xb1c),
+                address(runtime + 0xb1c),
+            ],
+            iram_words: SMW_US_V1_IRAM_WORDS,
+            local_word_base: address(runtime + 0x4b0) as u16,
+        };
+        let mut expected_core = relocate_expanded_exanimation_runtime(&relocations).unwrap();
+        expected_core[0x46..0x49].copy_from_slice(&core[0x46..0x49]);
+        expected_core[0x65] = core[0x65];
+        assert_eq!(core, expected_core);
+
+        let mut cursor = 0xc30;
+        let mut take = |length: usize| {
+            let bytes = &oracle[cursor..cursor + length];
+            cursor += length;
+            bytes
+        };
+        let mut expected_pointer_table = empty_expanded_exanimation_pointer_table();
+        expected_pointer_table[..3].copy_from_slice(&address(0x20_17e9).to_le_bytes()[..3]);
+        assert_eq!(take(0x600), expected_pointer_table);
+        assert_eq!(take(0x20), LEVEL_GRAPHICS_RUNTIME);
+        assert_eq!(take(0x30), GRAPHICS_RUNTIME);
+        let hook = |target: usize, trailing_nop: bool| {
+            let address = address(target).to_le_bytes();
+            let mut bytes = vec![0x22, address[0], address[1], address[2]];
+            if trailing_nop {
+                bytes.push(0xea);
+            }
+            bytes
+        };
+        assert_eq!(take(5), hook(runtime, true));
+        let mut pointer_hook = hook(runtime + 0x170, false);
+        pointer_hook.push(0x60);
+        assert_eq!(take(5), pointer_hook);
+        assert_eq!(take(2), [0xea, 0xea]);
+        assert_eq!(take(0x10), [0; 0x10]);
+        assert_eq!(take(4), hook(0x47_7550, false));
+        assert_eq!(take(0x0d), SHARED_PALETTE_RUNTIME_A);
+        assert_eq!(take(4), hook(0x47_7560, false));
+        assert_eq!(take(0x10), SHARED_PALETTE_RUNTIME_B);
+        assert_eq!(take(4), hook(0x20_1789, false));
+        assert_eq!(take(5), hook(0x20_17b1, true));
+        assert_eq!(cursor, oracle.len());
     }
 
     #[test]

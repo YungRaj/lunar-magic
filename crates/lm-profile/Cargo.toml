@@ -20,5 +20,8 @@ lm-rom = { path = "../lm-rom" }
 lm-title = { path = "../lm-title" }
 lm-snes = { path = "../lm-snes" }
 
+[dev-dependencies]
+base64 = "0.22.1"
+
 [lints]
 workspace = true
