@@ -113,6 +113,7 @@ mod title_tilemap_state;
 mod tool_config;
 mod tool_state;
 mod toolbar;
+mod user_toolbar;
 mod vanilla_entrance_controller;
 mod viewport_rendering;
 
@@ -332,6 +333,10 @@ pub use ssc_sidecar_controller::{
 pub use state::{AppError, AppState};
 pub use tool_config::{ToolConfig, ToolConfigError};
 pub use toolbar::{ToolbarAction, ToolbarActivation, ToolbarConfig, ToolbarError, ToolbarItem};
+pub use user_toolbar::{
+    UserToolbar, UserToolbarButton, UserToolbarError, UserToolbarGlobalOption, UserToolbarImage,
+    UserToolbarImageMode, UserToolbarTarget,
+};
 pub use vanilla_entrance_controller::{
     VanillaEntranceController, VanillaEntranceControllerError, VanillaEntranceEdit,
 };

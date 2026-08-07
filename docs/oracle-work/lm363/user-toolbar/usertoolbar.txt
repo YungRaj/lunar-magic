@@ -1,0 +1,18 @@
+LM_DISPLAY_ERRORS 10
+LM_NO_TOOLBAR
+LM_SETIMAGE_SIZE 24
+
+***START***
+LM_SPACER
+***START***
+LM_VIEW_OVERWORLD
+0,Open overworld from oracle toolbar
+LM_DEFAULT
+'o',VK_CONTROL,VK_SHIFT
+***START***
+"notepad.exe" "oracle argument.txt"
+0,External oracle button\nSecond tooltip line
+LM_USEIMAGE_LIST
+'e',VK_CONTROL
+"%4"
+***END***

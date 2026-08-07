@@ -71,6 +71,7 @@ use crate::{
 use eframe::egui;
 use lm_app::{
     AppState, Command, EditorMode, LocalizationCatalog, ShortcutConfig, ToolbarConfig, UiTextKey,
+    UserToolbar,
 };
 
 mod document_menus;
@@ -109,6 +110,7 @@ pub(crate) struct NativeApplication {
     help_dialog: HelpDialog,
     shortcut_editor: ShortcutEditor,
     toolbar_editor: ToolbarEditor,
+    user_toolbar: Option<UserToolbar>,
     level_text: String,
     special_world_passed: bool,
     level_view_visibility: LevelViewVisibility,
@@ -193,7 +195,7 @@ impl NativeApplication {
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
     ) -> Self {
-        match initialized {
+        let mut application = match initialized {
             Ok(initialized) => Self {
                 app: initialized.app,
                 recent_state: initialized.recent_state,
@@ -206,6 +208,30 @@ impl NativeApplication {
                 },
                 ..Self::default()
             },
+        };
+        application.load_user_toolbar();
+        application
+    }
+
+    fn load_user_toolbar(&mut self) {
+        let result = std::env::current_exe()
+            .map_err(|error| format!("cannot locate application executable: {error}"))
+            .and_then(|path| {
+                let path = path
+                    .parent()
+                    .ok_or_else(|| "application executable has no parent directory".to_owned())?
+                    .join("usertoolbar.txt");
+                match std::fs::read_to_string(&path) {
+                    Ok(text) => UserToolbar::parse(&text)
+                        .map(Some)
+                        .map_err(|error| format!("cannot parse {}: {error}", path.display())),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(error) => Err(format!("cannot read {}: {error}", path.display())),
+                }
+            });
+        match result {
+            Ok(toolbar) => self.user_toolbar = toolbar,
+            Err(error) => self.effects.error = Some(error),
         }
     }
 

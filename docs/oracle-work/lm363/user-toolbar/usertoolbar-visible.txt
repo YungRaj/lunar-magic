@@ -1,0 +1,10 @@
+LM_DISPLAY_ERRORS 10
+
+***START***
+LM_SPACER
+***START***
+LM_VIEW_OVERWORLD
+0,Open overworld from oracle toolbar
+LM_DEFAULT
+'o',VK_CONTROL,VK_SHIFT
+***END***

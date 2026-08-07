@@ -3115,9 +3115,19 @@ localization key, exposes every action and text key, supports bounded reorder/re
 and validates the whole layout before replacing the live toolbar. A separate built-in-toolbar action
 restores the native default instead of encoding an invented empty custom layout. Canonical
 `LMTBAR01` bytes persist through native application storage, while configured layouts without a
-localization catalog use a complete English fallback table rather than disappearing. Lunar Magic's
-bitmap/icon editor, separate user toolbar/menu surface, and Wine-observed customization behavior
-remain open parity gates.
+localization catalog use a complete English fallback table rather than disappearing.
+
+The separate original `usertoolbar.txt` surface is now modeled independently rather than being
+conflated with that Rust-only editor. The bounded UTF-8 parser implements Lunar Magic's documented
+five-line definitions, implicit `***START***` termination, spacers, internal and external targets,
+icon/tooltip/options/shortcut/working-directory fields, image-list and base directives, and global
+visibility/configuration flags. The native process discovers the file beside its executable at
+startup, adds a distinct wrapped second toolbar when visible, dispatches the recovered common
+internal names, and routes external argument vectors through the permission-gated shell-free
+launcher after expanding `%1`–`%8` ROM/executable/level context. A retained LM 3.63 Wine oracle
+observed the original create a visible 52-button built-in toolbar and distinct two-button user
+toolbar from the committed fixture. Bitmap-strip display, the exhaustive internal/options table,
+and shortcut override activation remain open.
 
 **Tools → Language** now exposes the active locale and installs standalone `.lmlang` catalogs using
 the canonical `LMLOC001` decoder on the existing bounded, non-blocking document worker. The public
