@@ -34,6 +34,7 @@ pub struct ExpandedExAnimationRuntimeRelocations {
 pub enum ExpandedExAnimationRuntimeError {
     InvalidTemplateHex,
     WrongTemplateLength(usize),
+    WrongOptionalTemplateLength(usize),
     SnesPointerOutOfRange {
         index: usize,
         value: u32,
@@ -81,6 +82,42 @@ pub fn expanded_exanimation_runtime_template() -> Result<Vec<u8>, ExpandedExAnim
             Ok(high << 4 | low)
         })
         .collect()
+}
+
+/// Materializes the exact optional `$20`-byte mapper suffix embedded at executable `$005B5754`.
+///
+/// `InstallExpandedExAnimationRuntime` appends this range after the ordinary `$C30` core when its
+/// mapper-state predicate is true, producing one `$C50` allocation. Keeping it separate prevents
+/// an ordinary LoROM install from silently acquiring mapper-only code and its `LM\0\1` marker.
+pub fn expanded_exanimation_runtime_optional_suffix()
+-> Result<Vec<u8>, ExpandedExAnimationRuntimeError> {
+    let encoded = include_str!("assets/exanimation_runtime_optional.hex");
+    let digits = encoded
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect::<Vec<_>>();
+    if digits.len() != EXPANDED_EXANIMATION_RUNTIME_OPTIONAL_LEN * 2 {
+        return Err(ExpandedExAnimationRuntimeError::WrongOptionalTemplateLength(digits.len() / 2));
+    }
+    digits
+        .chunks_exact(2)
+        .map(|pair| {
+            let high = hex_nibble(pair[0])?;
+            let low = hex_nibble(pair[1])?;
+            Ok(high << 4 | low)
+        })
+        .collect()
+}
+
+/// Reproduces the installer's contiguous stack-buffer order for either `$C30` or `$C50` form.
+pub fn expanded_exanimation_runtime_template_with_optional_suffix(
+    include_optional_suffix: bool,
+) -> Result<Vec<u8>, ExpandedExAnimationRuntimeError> {
+    let mut runtime = expanded_exanimation_runtime_template()?;
+    if include_optional_suffix {
+        runtime.extend(expanded_exanimation_runtime_optional_suffix()?);
+    }
+    Ok(runtime)
 }
 
 /// Applies all Ghidra-recovered fresh-install relocations to the exact core template.
@@ -180,6 +217,34 @@ mod tests {
         let table = empty_expanded_exanimation_pointer_table();
         assert_eq!(table.len(), 0x600);
         assert!(table.chunks_exact(3).all(|pointer| pointer == [0xff, 0, 0]));
+    }
+
+    #[test]
+    fn optional_mapper_suffix_matches_ghidra_and_follows_the_core_exactly() {
+        let suffix = expanded_exanimation_runtime_optional_suffix().unwrap();
+        assert_eq!(suffix.len(), EXPANDED_EXANIMATION_RUNTIME_OPTIONAL_LEN);
+        assert_eq!(
+            suffix,
+            [
+                0xa5, 0x03, 0x8d, 0x20, 0xc0, 0xa5, 0x05, 0x8d, 0x22, 0xc0, 0xa5, 0x08, 0x5c, 0x20,
+                0xc0, 0x7f, 0x4c, 0x4d, 0x00, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff,
+            ]
+        );
+        let combined = expanded_exanimation_runtime_template_with_optional_suffix(true).unwrap();
+        assert_eq!(
+            combined.len(),
+            EXPANDED_EXANIMATION_RUNTIME_CORE_LEN + EXPANDED_EXANIMATION_RUNTIME_OPTIONAL_LEN
+        );
+        assert_eq!(
+            &combined[..EXPANDED_EXANIMATION_RUNTIME_CORE_LEN],
+            expanded_exanimation_runtime_template().unwrap()
+        );
+        assert_eq!(&combined[EXPANDED_EXANIMATION_RUNTIME_CORE_LEN..], suffix);
+        assert_eq!(
+            expanded_exanimation_runtime_template_with_optional_suffix(false).unwrap(),
+            expanded_exanimation_runtime_template().unwrap()
+        );
     }
 
     #[test]

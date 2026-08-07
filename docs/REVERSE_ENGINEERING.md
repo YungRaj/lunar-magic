@@ -3774,6 +3774,12 @@ installs the current runtime, converts up to 512 legacy `$23`-byte-record blocks
 payloads, and erases authenticated obsolete storage; the third performs a fresh
 `InstallExpandedExAnimationRuntime`. These installation/migration workflows remain a separate
 implementation gate from editing an already installed current runtime.
+The optional branch predicate is
+`(DAT_00E278FC && DAT_00E27901) || (DAT_00E278FD && DAT_00E27903)`. A direct Ghidra memory read
+authenticates its `$20` bytes as `A5 03 8D 20 C0 A5 05 8D 22 C0 A5 08 5C 20 C0 7F 4C 4D 00 01`
+followed by twelve `$FF` bytes. Rust now retains that exact suffix as a distinct checked asset and
+can materialize the original contiguous `$C30` or `$C50` stack-buffer forms; mapping the predicate
+onto supported mapper identities and its relocation rules remains the installation gate.
 The fresh installer's core allocation is now recovered byte-for-byte. It concatenates executable
 ranges `$005B5298..$005B5408` (`$170` bytes), `$005B5410..$005B5750` (`$340` bytes), and
 `$005B4B10..$005B5290` (`$780` bytes) into one `$C30`-byte payload; a mapper-specific branch may

@@ -105,7 +105,9 @@ pub use exanimation_runtime::{
     EXPANDED_EXANIMATION_POINTER_TABLE_LEN, EXPANDED_EXANIMATION_RUNTIME_CORE_LEN,
     EXPANDED_EXANIMATION_RUNTIME_OPTIONAL_LEN, ExpandedExAnimationRuntimeError,
     ExpandedExAnimationRuntimeRelocations, empty_expanded_exanimation_pointer_table,
-    expanded_exanimation_runtime_template, relocate_expanded_exanimation_runtime,
+    expanded_exanimation_runtime_optional_suffix, expanded_exanimation_runtime_template,
+    expanded_exanimation_runtime_template_with_optional_suffix,
+    relocate_expanded_exanimation_runtime,
 };
 pub use exanimation_runtime_install::{
     SMW_US_V1_EXPANDED_EXANIMATION_CORE_SEARCH_END,
