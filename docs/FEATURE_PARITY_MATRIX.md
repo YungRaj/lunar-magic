@@ -97,7 +97,8 @@ visibility and Special World state, invalidating both level-preview paths after 
 toggle. Four recovered zoom names also drive the native canvas's exact 100–5000 percent range,
 100-point adjustment, default reset, and remembered nondefault toggle. The `$2408` tile-grid name
 now controls the original default-off Map16 canvas grid instead of the grid being painted
-unconditionally. This strengthens the
+unconditionally. The distinct `$23F6` Screen Grid overlay now draws the original orientation-aware
+Top/Bottom or Left/Right screen regions and hexadecimal labels. This strengthens the
 Configuration toolbar GUI evidence but does not promote that workflow while the remaining internal
 command table and toolbar variants are incomplete.
 

@@ -84,12 +84,25 @@ mod toolbar;
 mod windows;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum LevelScreenOverlay {
+    None,
+    ScreenGrid,
+}
+
+impl Default for LevelScreenOverlay {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct LevelViewVisibility {
     pub layer1: bool,
     pub layer2: bool,
     pub layer3: bool,
     pub sprites: bool,
     pub tile_grid: bool,
+    pub screen_overlay: LevelScreenOverlay,
 }
 
 impl Default for LevelViewVisibility {
@@ -100,6 +113,7 @@ impl Default for LevelViewVisibility {
             layer3: true,
             sprites: true,
             tile_grid: false,
+            screen_overlay: LevelScreenOverlay::None,
         }
     }
 }

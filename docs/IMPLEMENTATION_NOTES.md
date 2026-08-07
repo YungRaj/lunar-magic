@@ -3175,6 +3175,13 @@ raster-filter behavior.
 `DrawLevelMap16ScreenGrid` only while that byte is set, and the pristine executable initializes it
 to zero. The native view model now carries the same default-off flag, the toolbar name toggles it,
 and the canvas emits its Map16 grid only when both the flag and editor-overlay mode are active.
+The separate `LM_VIEW_SCREEN_GRID` name is command `$23F6`, backed by original flag
+`DAT_00E278E6`. `DrawLevelScreenLabelsAndOutlines` at `$004518F0` proves that this is not the tile
+grid: it outlines and labels each horizontal screen's Top/Bottom regions or each vertical screen's
+Left/Right regions with a two-digit hexadecimal screen number. The native display model therefore
+keeps it as a separate default-off screen-overlay mode and paints those orientation-aware bounded
+regions. A second activation returns to no screen overlay. The mutually exclusive `$23F5` Screen
+Exits and `$23F7` Boundary Guide renderers remain the next two members of this recovered group.
 Remaining original names that operate other editor-local modes, dialogs, toggles, clipboard
 payloads, or installers stay explicitly unsupported until their corresponding typed frontend
 action exists.

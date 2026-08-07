@@ -1,4 +1,4 @@
-use super::{LevelViewVisibility, NativeApplication};
+use super::{LevelScreenOverlay, LevelViewVisibility, NativeApplication};
 use crate::frontend_ui;
 use eframe::egui;
 use lm_app::{
@@ -422,6 +422,14 @@ fn toggle_user_toolbar_view_state(
         UserToolbarLocalAction::Sprites => visibility.sprites = !visibility.sprites,
         UserToolbarLocalAction::SpecialWorld => *special_world_passed = !*special_world_passed,
         UserToolbarLocalAction::TileGrid => visibility.tile_grid = !visibility.tile_grid,
+        UserToolbarLocalAction::ScreenGrid => {
+            visibility.screen_overlay =
+                if visibility.screen_overlay == LevelScreenOverlay::ScreenGrid {
+                    LevelScreenOverlay::None
+                } else {
+                    LevelScreenOverlay::ScreenGrid
+                };
+        }
         UserToolbarLocalAction::ZoomToggle
         | UserToolbarLocalAction::ZoomDefault
         | UserToolbarLocalAction::ZoomPlus
@@ -625,6 +633,7 @@ enum UserToolbarLocalAction {
     Sprites,
     SpecialWorld,
     TileGrid,
+    ScreenGrid,
     ZoomToggle,
     ZoomDefault,
     ZoomPlus,
@@ -641,6 +650,7 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_SPRITES" => UserToolbarLocalAction::Sprites,
         "LM_VIEW_SPECIAL_WORLD" => UserToolbarLocalAction::SpecialWorld,
         "LM_VIEW_TILE_GRID" => UserToolbarLocalAction::TileGrid,
+        "LM_VIEW_SCREEN_GRID" => UserToolbarLocalAction::ScreenGrid,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
         "LM_VIEW_ZOOM_DEFAULT" => UserToolbarLocalAction::ZoomDefault,
         "LM_VIEW_ZOOM_PLUS" => UserToolbarLocalAction::ZoomPlus,
@@ -741,6 +751,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_TILE_GRID"),
             Some(UserToolbarLocalAction::TileGrid)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_SCREEN_GRID"),
+            Some(UserToolbarLocalAction::ScreenGrid)
         );
     }
 
@@ -898,6 +912,19 @@ mod user_toolbar_tests {
             UserToolbarLocalAction::TileGrid,
         );
         assert!(visibility.tile_grid);
+        assert_eq!(visibility.screen_overlay, LevelScreenOverlay::None);
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::ScreenGrid,
+        );
+        assert_eq!(visibility.screen_overlay, LevelScreenOverlay::ScreenGrid);
+        toggle_user_toolbar_view_state(
+            &mut visibility,
+            &mut special_world,
+            UserToolbarLocalAction::ScreenGrid,
+        );
+        assert_eq!(visibility.screen_overlay, LevelScreenOverlay::None);
         let mut native = NativeApplication::default();
         native.apply_user_toolbar_local_action(UserToolbarLocalAction::Sprites);
         assert!(native.level_view_visibility.sprites);

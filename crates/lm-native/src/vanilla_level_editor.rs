@@ -2568,6 +2568,9 @@ impl VanillaLevelEditor {
             if tile_grid_visible(editor_overlays, visibility) {
                 draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
             }
+            if visibility.screen_overlay == crate::application::LevelScreenOverlay::ScreenGrid {
+                draw_level_screen_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+            }
             let alternate_vertical_layout =
                 lm_profile::smw_us_v1_level_mode(level_mode).alternate_layer_layout;
             let level = self.controller.as_ref().map_or(0, |controller| {
@@ -5175,6 +5178,89 @@ fn tile_grid_visible(
     visibility: crate::application::LevelViewVisibility,
 ) -> bool {
     editor_overlays && visibility.tile_grid
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LevelScreenGridRegion {
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+    label: String,
+}
+
+fn level_screen_grid_regions(
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+) -> Vec<LevelScreenGridRegion> {
+    let screens = major_tiles.div_ceil(16);
+    let secondary_regions = minor_tiles.div_ceil(16);
+    let mut regions = Vec::with_capacity(usize::from(screens * secondary_regions));
+    for screen in 0..screens {
+        for secondary in 0..secondary_regions {
+            let secondary_start = secondary * 16;
+            let secondary_size = (minor_tiles - secondary_start).min(16);
+            let (x, y, width, height, side) = if vertical {
+                (
+                    secondary_start,
+                    screen * 16,
+                    secondary_size,
+                    (major_tiles - screen * 16).min(16),
+                    if secondary == 0 { "Left" } else { "Right" },
+                )
+            } else {
+                (
+                    screen * 16,
+                    secondary_start,
+                    (major_tiles - screen * 16).min(16),
+                    secondary_size,
+                    if secondary == 0 { "Top" } else { "Bottom" },
+                )
+            };
+            regions.push(LevelScreenGridRegion {
+                x,
+                y,
+                width,
+                height,
+                label: format!("{screen:02X} : {side}"),
+            });
+        }
+    }
+    regions
+}
+
+fn draw_level_screen_grid(
+    painter: &egui::Painter,
+    canvas: egui::Rect,
+    cell: f32,
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+) {
+    let outline = egui::Color32::from_rgb(0, 160, 0);
+    for region in level_screen_grid_regions(major_tiles, minor_tiles, vertical) {
+        let min = canvas.min + egui::vec2(f32::from(region.x) * cell, f32::from(region.y) * cell);
+        let size = egui::vec2(
+            f32::from(region.width) * cell,
+            f32::from(region.height) * cell,
+        );
+        let rect = egui::Rect::from_min_size(min, size).intersect(canvas);
+        painter.rect_stroke(
+            rect,
+            0.0,
+            egui::Stroke::new(1.5_f32, outline),
+            egui::StrokeKind::Inside,
+        );
+        let label_at = rect.min + egui::vec2(4.0, 4.0);
+        painter.text(
+            label_at,
+            egui::Align2::LEFT_TOP,
+            region.label,
+            egui::FontId::monospace((cell * 0.75).clamp(8.0, 16.0)),
+            egui::Color32::WHITE,
+        );
+    }
 }
 
 fn pasted_text(ui: &egui::Ui) -> Option<String> {
@@ -9387,6 +9473,7 @@ mod tests {
             layer3: false,
             sprites: false,
             tile_grid: false,
+            screen_overlay: crate::application::LevelScreenOverlay::None,
         };
         assert!(!placement_mode_visible(
             CanvasPlacementMode::Object,
@@ -13407,6 +13494,35 @@ mod tests {
         visibility.tile_grid = true;
         assert!(tile_grid_visible(true, visibility));
         assert!(!tile_grid_visible(false, visibility));
+    }
+
+    #[test]
+    fn screen_grid_regions_match_horizontal_top_bottom_and_vertical_left_right() {
+        let horizontal = level_screen_grid_regions(32, 27, false);
+        assert_eq!(horizontal.len(), 4);
+        assert_eq!(
+            horizontal[0],
+            LevelScreenGridRegion {
+                x: 0,
+                y: 0,
+                width: 16,
+                height: 16,
+                label: "00 : Top".into(),
+            }
+        );
+        assert_eq!(horizontal[1].y, 16);
+        assert_eq!(horizontal[1].height, 11);
+        assert_eq!(horizontal[1].label, "00 : Bottom");
+        assert_eq!(horizontal[2].x, 16);
+        assert_eq!(horizontal[2].label, "01 : Top");
+
+        let vertical = level_screen_grid_regions(32, 32, true);
+        assert_eq!(vertical.len(), 4);
+        assert_eq!(vertical[0].label, "00 : Left");
+        assert_eq!(vertical[1].x, 16);
+        assert_eq!(vertical[1].label, "00 : Right");
+        assert_eq!(vertical[2].y, 16);
+        assert_eq!(vertical[2].label, "01 : Left");
     }
 
     #[test]
