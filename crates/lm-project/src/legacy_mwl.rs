@@ -123,17 +123,23 @@ impl LegacyMwlBundle {
         let sprites = NativeSpriteStream::parse(&self.sprites, expanded_sprites, sprite_lengths)?;
         let requested_custom_palette = self.manifest.layer1.flags & 1 != 0;
         let imported_custom_palette = requested_custom_palette && self.palette.is_some();
-        let palette =
-            if let Some(bytes) = self.palette.as_deref().filter(|_| requested_custom_palette) {
-                if bytes.len() != Self::PALETTE_BYTES {
-                    return Err(LegacyMwlBundleError::PaletteShape(bytes.len()));
-                }
-                Palette::decode_snes(bytes).map_err(LegacyMwlBundleError::PaletteShape)?
-            } else {
-                let mut palette = destination_palette.clone();
-                palette.colors.rotate_left(1);
-                palette
-            };
+        let mut palette = destination_palette.clone();
+        palette.colors.rotate_left(1);
+        if let Some(bytes) = self.palette.as_deref().filter(|_| requested_custom_palette) {
+            if bytes.len() > Self::MAX_SIDECAR_BYTES {
+                return Err(LegacyMwlBundleError::SidecarTooLarge {
+                    kind: "palette",
+                    bytes: bytes.len(),
+                });
+            }
+            let mut merged = palette.encode_snes()?;
+            if merged.len() != Self::PALETTE_BYTES {
+                return Err(LegacyMwlBundleError::PaletteShape(merged.len()));
+            }
+            let imported = bytes.len().min(Self::PALETTE_BYTES);
+            merged[..imported].copy_from_slice(&bytes[..imported]);
+            palette = Palette::decode_snes(&merged).map_err(LegacyMwlBundleError::PaletteShape)?;
+        }
         if palette.colors.len() != 257 {
             return Err(LegacyMwlBundleError::PaletteShape(palette.colors.len() * 2));
         }
@@ -520,6 +526,57 @@ mod tests {
             .unwrap();
         assert_eq!(decoded.layer1_metadata[0] & 1, 0);
         assert_eq!(decoded.palette, expected);
+    }
+
+    #[test]
+    fn present_partial_palette_overlays_destination_bytes_and_keeps_custom_flag() {
+        let mut source = level_105();
+        source.layer1_metadata[0] |= 1;
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 105", &SpriteLengthTable::standard())
+                .unwrap();
+        let mut destination = source.palette.clone();
+        destination.colors.rotate_right(11);
+        let mut expected = destination.clone();
+        expected.colors.rotate_left(1);
+        let mut expected_bytes = expected.encode_snes().unwrap();
+        expected_bytes[..3].copy_from_slice(&[0x34, 0x12, 0x56]);
+        expected = Palette::decode_snes(&expected_bytes).unwrap();
+        bundle.palette = Some(vec![0x34, 0x12, 0x56]);
+
+        let decoded = bundle
+            .decode_native(&SpriteLengthTable::standard(), &destination, true)
+            .unwrap();
+        assert_eq!(decoded.layer1_metadata[0] & 1, 1);
+        assert_eq!(decoded.palette, expected);
+    }
+
+    #[test]
+    fn present_empty_and_trailing_palette_payloads_match_lunar_magic_reads() {
+        let mut source = level_105();
+        source.layer1_metadata[0] |= 1;
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 105", &SpriteLengthTable::standard())
+                .unwrap();
+        let full = bundle.palette.clone().unwrap();
+        let mut destination = source.palette.clone();
+        destination.colors.rotate_right(7);
+
+        bundle.palette = Some(Vec::new());
+        let empty = bundle
+            .decode_native(&SpriteLengthTable::standard(), &destination, true)
+            .unwrap();
+        let mut expected_empty = destination.clone();
+        expected_empty.colors.rotate_left(1);
+        assert_eq!(empty.layer1_metadata[0] & 1, 1);
+        assert_eq!(empty.palette, expected_empty);
+
+        bundle.palette = Some([full.as_slice(), &[0xaa, 0xbb]].concat());
+        let trailing = bundle
+            .decode_native(&SpriteLengthTable::standard(), &destination, true)
+            .unwrap();
+        assert_eq!(trailing.layer1_metadata[0] & 1, 1);
+        assert_eq!(trailing.palette, source.palette);
     }
 
     #[test]

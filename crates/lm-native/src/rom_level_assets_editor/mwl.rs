@@ -225,7 +225,7 @@ impl RomLevelAssetsEditor {
                         .ok_or("legacy MWL palette filename is unavailable")?;
                     requests.push(BoundedRead::optional(
                         palette_path,
-                        u64::try_from(LegacyMwlBundle::PALETTE_BYTES).unwrap_or(u64::MAX),
+                        u64::try_from(LegacyMwlBundle::MAX_SIDECAR_BYTES).unwrap_or(u64::MAX),
                         "legacy palette",
                     ));
                 }
