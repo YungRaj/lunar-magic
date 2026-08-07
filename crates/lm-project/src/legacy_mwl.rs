@@ -2,9 +2,10 @@ use lm_graphics::{Palette, PaletteEncodingError};
 use lm_level::{
     ExpandedLevelSettingsRecord, Layer2Storage, LegacyMwlError, LegacyMwlManifest,
     LegacyMwlSecondaryExit, LegacyMwlSidecar, LevelEditError, LevelObjectData, MwlFile,
-    MwlLayer2Descriptor, MwlLevelHeaderSection, MwlSecondaryExit, NativeLayer2Data,
-    NativeLayer2Error, NativeSpriteEncodingError, NativeSpriteStream, ObjectStreamError,
-    SecondaryExit, SpriteLengthTable, SpriteStreamError, level_mode_layer2_storage,
+    MwlLayer2Descriptor, MwlLevelHeaderSection, MwlSecondaryExit, NATIVE_LAYER2_TILEMAP_LEN,
+    NativeLayer2Data, NativeLayer2Error, NativeSpriteEncodingError, NativeSpriteStream,
+    ObjectStreamError, SecondaryExit, SpriteLengthTable, SpriteStreamError,
+    level_mode_layer2_storage,
 };
 use std::fmt;
 
@@ -118,7 +119,20 @@ impl LegacyMwlBundle {
         self.manifest.validate()?;
         validate_payloads(&self.layer1, &self.layer2, &self.sprites)?;
         let layer1 = LevelObjectData::parse(&self.layer1)?;
-        let layer2 = NativeLayer2Data::decode_mwl(layer1.header.level_mode(), &self.layer2)?;
+        let layer2 = if level_mode_layer2_storage(layer1.header.level_mode())
+            == Layer2Storage::CompressedTilemap
+            && self.layer2.len() < NATIVE_LAYER2_TILEMAP_LEN
+        {
+            // The legacy importer clears its fixed 0x800-byte background workspace before
+            // reading `.mw1`. A short read therefore retains the supplied prefix and leaves the
+            // unread suffix zeroed. Binary MWL sections remain exact-length validated by
+            // `NativeLayer2Data::decode_mwl`; this recovery belongs only to the legacy sidecar.
+            let mut padded = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
+            padded[..self.layer2.len()].copy_from_slice(&self.layer2);
+            NativeLayer2Data::decode_mwl(layer1.header.level_mode(), &padded)?
+        } else {
+            NativeLayer2Data::decode_mwl(layer1.header.level_mode(), &self.layer2)?
+        };
         let expanded_sprites = self.manifest.sprites.flags & 1 != 0;
         let sprites = NativeSpriteStream::parse(&self.sprites, expanded_sprites, sprite_lengths)?;
         let requested_custom_palette = self.manifest.layer1.flags & 1 != 0;
@@ -369,6 +383,16 @@ mod tests {
         MwlNativeLevel::decode(&file, &SpriteLengthTable::standard(), 32, &[false; 256]).unwrap()
     }
 
+    fn level_000() -> MwlNativeLevel {
+        let bytes =
+            std::fs::read(root().join(
+                "oracle-work/lm363/pristine-us/palette-install-positive/exported/Level 000.mwl",
+            ))
+            .unwrap();
+        let file = MwlFile::decode(&bytes).unwrap();
+        MwlNativeLevel::decode(&file, &SpriteLengthTable::standard(), 32, &[false; 256]).unwrap()
+    }
+
     #[test]
     fn binary_level_projects_to_exact_live_lunar_magic_legacy_files() {
         let bundle =
@@ -577,6 +601,29 @@ mod tests {
             .unwrap();
         assert_eq!(trailing.layer1_metadata[0] & 1, 1);
         assert_eq!(trailing.palette, source.palette);
+    }
+
+    #[test]
+    fn short_legacy_layer2_tilemap_keeps_prefix_and_zero_fills_unread_workspace() {
+        let source = level_000();
+        assert_eq!(
+            level_mode_layer2_storage(source.layer1.header.level_mode()),
+            Layer2Storage::CompressedTilemap
+        );
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 000", &SpriteLengthTable::standard())
+                .unwrap();
+        bundle.layer2 = vec![0xf1, 0x00];
+
+        let decoded = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        let NativeLayer2Data::Tilemap(tilemap) = decoded.layer2 else {
+            panic!("legacy background sidecar decoded as objects");
+        };
+        assert_eq!(tilemap.len(), NATIVE_LAYER2_TILEMAP_LEN);
+        assert_eq!(&tilemap[..2], &[0xf1, 0x00]);
+        assert!(tilemap[2..].iter().all(|byte| *byte == 0));
     }
 
     #[test]

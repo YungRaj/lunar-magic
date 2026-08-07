@@ -51,3 +51,17 @@ bytes are ignored.
 71071d634be0815a7a74fef8fd973091a532db038355b220a6b6a5f654c6107b  overlong input mw3
 43c981cb1409b77459907a2d18d401796eee85f3fe29de030123a10d9afa7a07  overlong re-export mw3
 ```
+
+## Present short Layer 2 tilemap sidecar
+
+For level 000, the authentic 2,048-byte `.mw1` was replaced by only its first two bytes (`F1 00`).
+The file imported without a prompt. A legacy re-export emitted a complete 2,048-byte `.mw1` whose
+first two bytes remained `F1 00` and whose remaining 2,046 bytes were zero. This proves that the
+legacy importer clears its fixed Layer 2 tilemap workspace, performs a partial read into its
+prefix, and retains zeroes for the unread suffix. It does not reject short background sidecars or
+merge their suffix with the destination level's background.
+
+```text
+079950a589d9712d69c276de82c668764cb30dc8940d56fe01d076b333df29b7  two-byte input mw1
+ec8db8ae218504df46a1e6c7b1dc1f6d2a55129f2d836e950e81f22f04281628  2,048-byte re-export mw1
+```
