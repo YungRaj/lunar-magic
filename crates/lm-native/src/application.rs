@@ -65,7 +65,7 @@ use crate::{
     shortcut_editor::ShortcutEditor,
     ssc_sidecar_editor::SscSidecarEditor,
     toolbar_editor::{ToolbarEditor, ToolbarEditorResult},
-    user_toolbar_images::UserToolbarImageSet,
+    user_toolbar_images::{MainToolbarImageSet, UserToolbarImageSet},
     vanilla_graphics_editor::VanillaGraphicsEditor,
     vanilla_level_editor::VanillaLevelEditor,
 };
@@ -113,6 +113,7 @@ pub(crate) struct NativeApplication {
     toolbar_editor: ToolbarEditor,
     user_toolbar: Option<UserToolbar>,
     user_toolbar_images: UserToolbarImageSet,
+    main_toolbar_images: MainToolbarImageSet,
     level_text: String,
     special_world_passed: bool,
     level_view_visibility: LevelViewVisibility,
@@ -211,8 +212,24 @@ impl NativeApplication {
                 ..Self::default()
             },
         };
+        application.load_main_toolbar_images();
         application.load_user_toolbar();
         application
+    }
+
+    fn load_main_toolbar_images(&mut self) {
+        let result = std::env::current_exe()
+            .map_err(|error| format!("cannot locate application executable: {error}"))
+            .and_then(|path| {
+                let directory = path
+                    .parent()
+                    .ok_or_else(|| "application executable has no parent directory".to_owned())?;
+                MainToolbarImageSet::load(directory)
+            });
+        match result {
+            Ok(images) => self.main_toolbar_images = images,
+            Err(error) => self.effects.error = Some(error),
+        }
     }
 
     fn load_user_toolbar(&mut self) {

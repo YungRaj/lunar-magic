@@ -146,22 +146,43 @@ impl NativeApplication {
 
     fn default_toolbar(&mut self, context: &egui::Context, ui: &mut egui::Ui) {
         let capabilities = self.app.capabilities();
+        self.main_toolbar_images.ensure_textures(context);
+        let icon_size = self.main_toolbar_images.icon_size();
+        let open_icon = self.main_toolbar_images.texture(1).cloned();
+        let save_icon = self.main_toolbar_images.texture(3).cloned();
+        let undo_icon = self.main_toolbar_images.texture(5).cloned();
+        let redo_icon = self.main_toolbar_images.texture(6).cloned();
         ui.horizontal(|ui| {
-            if ui.button("Open").clicked() {
+            if toolbar_button(ui, "Open", true, open_icon.as_ref(), icon_size).clicked() {
                 self.dispatch(context, Command::Open);
             }
-            if ui
-                .add_enabled(capabilities.can_save(), egui::Button::new("Save"))
-                .clicked()
+            if toolbar_button(
+                ui,
+                "Save",
+                capabilities.can_save(),
+                save_icon.as_ref(),
+                icon_size,
+            )
+            .clicked()
             {
                 self.dispatch(context, Command::Save);
             }
             ui.separator();
-            for (label, enabled, command) in [
-                ("Undo", capabilities.history.undo, Command::Undo),
-                ("Redo", capabilities.history.redo, Command::Redo),
+            for (label, enabled, command, icon) in [
+                (
+                    "Undo",
+                    capabilities.history.undo,
+                    Command::Undo,
+                    undo_icon.as_ref(),
+                ),
+                (
+                    "Redo",
+                    capabilities.history.redo,
+                    Command::Redo,
+                    redo_icon.as_ref(),
+                ),
             ] {
-                if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+                if toolbar_button(ui, label, enabled, icon, icon_size).clicked() {
                     self.dispatch(context, command);
                 }
             }
@@ -215,6 +236,20 @@ impl NativeApplication {
             self.handle_frontend_activation(context, activation);
         }
     }
+}
+
+fn toolbar_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    enabled: bool,
+    texture: Option<&egui::TextureHandle>,
+    size: f32,
+) -> egui::Response {
+    let button = texture.map_or_else(
+        || egui::Button::new(label),
+        |texture| egui::Button::image(egui::Image::new((texture.id(), egui::vec2(size, size)))),
+    );
+    ui.add_enabled(enabled, button).on_hover_text(label)
 }
 
 fn matching_user_toolbar_buttons(

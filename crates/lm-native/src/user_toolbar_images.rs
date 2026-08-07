@@ -19,6 +19,70 @@ pub(crate) struct UserToolbarImageSet {
     icon_size: Option<usize>,
 }
 
+#[derive(Default)]
+pub(crate) struct MainToolbarImageSet {
+    images: Vec<egui::ColorImage>,
+    textures: Vec<egui::TextureHandle>,
+    icon_size: Option<usize>,
+}
+
+impl MainToolbarImageSet {
+    const IMAGE_COUNT: usize = 41;
+
+    pub(crate) fn load(directory: &Path) -> Result<Self, String> {
+        let path = directory.join("Lunar Magic.ff4");
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let bytes = read_bounded(&path)?;
+        let decoded = decode_map16_bitmap_bmp_image(&bytes).map_err(|error| {
+            format!(
+                "cannot decode custom main toolbar {}: {error}",
+                path.display()
+            )
+        })?;
+        let size = decoded.height;
+        if !(1..=MAX_ICON_SIZE).contains(&size) || decoded.width != Self::IMAGE_COUNT * size {
+            return Err(format!(
+                "custom main toolbar must contain {} square images, got {}x{}",
+                Self::IMAGE_COUNT,
+                decoded.width,
+                decoded.height
+            ));
+        }
+        Ok(Self {
+            images: split_strip(&decoded, size)?,
+            textures: Vec::new(),
+            icon_size: Some(size),
+        })
+    }
+
+    pub(crate) fn ensure_textures(&mut self, context: &egui::Context) {
+        if self.textures.len() != self.images.len() {
+            self.textures = self
+                .images
+                .iter()
+                .enumerate()
+                .map(|(index, image)| {
+                    context.load_texture(
+                        format!("main-toolbar-icon-{index}"),
+                        image.clone(),
+                        egui::TextureOptions::NEAREST,
+                    )
+                })
+                .collect();
+        }
+    }
+
+    pub(crate) fn texture(&self, index: usize) -> Option<&egui::TextureHandle> {
+        self.textures.get(index)
+    }
+
+    pub(crate) fn icon_size(&self) -> f32 {
+        self.icon_size.unwrap_or(16) as f32
+    }
+}
+
 impl UserToolbarImageSet {
     pub(crate) fn load(directory: &Path, toolbar: &UserToolbar) -> Result<Self, String> {
         let mut result = Self {
@@ -288,5 +352,26 @@ mod tests {
         assert!(UserToolbarImageSet::load(directory.path(), &malformed).is_err());
         let missing = UserToolbar::parse("LM_ADDIMAGE \"missing.bmp\"").unwrap();
         assert!(UserToolbarImageSet::load(directory.path(), &missing).is_err());
+    }
+
+    #[test]
+    fn custom_main_toolbar_requires_the_original_41_cell_shape() {
+        let directory = tempfile::tempdir().unwrap();
+        let good = lm_render::Canvas::try_new(41 * 3, 3).unwrap();
+        fs::write(
+            directory.path().join("Lunar Magic.ff4"),
+            lm_render::encode_bmp(&good).unwrap(),
+        )
+        .unwrap();
+        let loaded = MainToolbarImageSet::load(directory.path()).unwrap();
+        assert_eq!(loaded.images.len(), 41);
+        assert_eq!(loaded.icon_size, Some(3));
+        let bad = lm_render::Canvas::try_new(40 * 3, 3).unwrap();
+        fs::write(
+            directory.path().join("Lunar Magic.ff4"),
+            lm_render::encode_bmp(&bad).unwrap(),
+        )
+        .unwrap();
+        assert!(MainToolbarImageSet::load(directory.path()).is_err());
     }
 }

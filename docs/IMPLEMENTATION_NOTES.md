@@ -3140,9 +3140,12 @@ sampling. The parser records the active image base on every button, including si
 `LM_NEWIMAGE`, previous, and global base transitions, so later directives cannot retroactively
 change earlier buttons. Missing/non-regular/oversized/malformed strips and icon-list overflow reject
 the image set without partially publishing textures, while the parsed toolbar and shortcuts remain
-available with textual fallback. Custom built-in `.ff*` strips, executable icon extraction,
-force-image sequencing, the exhaustive internal/options table, mouse/Pause/numpad-operator
-distinctions, and process notification/lifecycle options remain open.
+available with textual fallback. The main toolbar additionally discovers the documented
+`Lunar Magic.ff4` file, requires its exact 41-square-cell geometry, and uses retained live 3.63
+`TBBUTTON` bitmap indexes 1/3/5/6 for native Open/Save/Undo/Redo. Missing or invalid overrides keep
+the default text controls rather than publishing a partial strip. Other editor-specific `.ff*`
+strips, executable icon extraction, force-image sequencing, the exhaustive internal/options table,
+mouse/Pause/numpad-operator distinctions, and process notification/lifecycle options remain open.
 
 **Tools → Language** now exposes the active locale and installs standalone `.lmlang` catalogs using
 the canonical `LMLOC001` decoder on the existing bounded, non-blocking document worker. The public
