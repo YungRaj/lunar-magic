@@ -95,7 +95,11 @@ The original-compatible user toolbar now routes `LM_VIEW_LAYER_1`, `LM_VIEW_LAYE
 `LM_VIEW_LAYER_3`, `LM_VIEW_SPRITES`, and `LM_VIEW_SPECIAL_WORLD` through the authoritative canvas
 visibility and Special World state, invalidating both level-preview paths after each accepted
 toggle. Four recovered zoom names also drive the native canvas's exact 100–5000 percent range,
-100-point adjustment, default reset, and remembered nondefault toggle. The `$2408` tile-grid name
+100-point adjustment, default reset, and remembered nondefault toggle. `$2440` now opens the
+original nine-choice 100–800 percent popup with in/out and filter controls, while `$2444` defaults
+enabled, toggles the native check state, and invalidates the preview. Exact filtered presentation
+remains open because it must operate on the final composited surface rather than packed source
+atlases. The `$2408` tile-grid name
 now controls the original default-off Map16 canvas grid instead of the grid being painted
 unconditionally. The distinct `$23F6` Screen Grid overlay now draws the original orientation-aware
 Top/Bottom or Left/Right screen regions and hexadecimal labels. `$23F5` now renders mutually

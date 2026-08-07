@@ -3168,8 +3168,14 @@ The same local route now covers `LM_VIEW_ZOOM_TOGGLE`, `LM_VIEW_ZOOM_DEFAULT`,
 `$0048B760` prove the 100–5000 percent bounds, normal 100-point adjustment, 100-percent default,
 and initially 200-percent remembered nondefault value. The native canvas stores that previous
 value, so toggling to default and back restores the exact last nondefault zoom. `LM_VIEW_ZOOM`
-still requires the original popup-menu surface and `LM_VIEW_ZOOM_FILTER` still requires modeled
-raster-filter behavior.
+now opens the recovered `$2440` popup surface with the original 100, 125, 150, 175, 200, 300,
+400, 600, and 800 percent radio choices plus zoom-in, zoom-out, and filter controls.
+`LM_VIEW_ZOOM_FILTER` routes command `$2444`, defaults enabled like the executable image, and
+invalidates the level preview when toggled. The native popup and command/check state are complete.
+Final-surface filtered presentation remains separate: applying linear sampling directly to the
+packed Map16 and sprite atlases would blend unrelated neighboring atlas cells, while Lunar Magic
+filters the already-composited editor surface. Rust intentionally retains nearest atlas sampling
+until that final-surface compositor stage is available.
 `LM_VIEW_TILE_GRID` is separately recovered as command `$2408`. The original command toggles
 `DAT_00E278E5`; `RenderLevelEditorViewportRegion` at `$00453D90` calls
 `DrawLevelMap16ScreenGrid` only while that byte is set, and the pristine executable initializes it

@@ -206,6 +206,10 @@ impl NativeApplication {
             return;
         }
         match action {
+            UserToolbarLocalAction::Zoom => self.vanilla_level_editor.toolbar_zoom_popup(),
+            UserToolbarLocalAction::ZoomFilter => {
+                self.vanilla_level_editor.toolbar_zoom_filter_toggle();
+            }
             UserToolbarLocalAction::ZoomToggle => self.vanilla_level_editor.toolbar_zoom_toggle(),
             UserToolbarLocalAction::ZoomDefault => self.vanilla_level_editor.toolbar_zoom_default(),
             UserToolbarLocalAction::ZoomPlus => self
@@ -453,6 +457,8 @@ fn toggle_user_toolbar_view_state(
                 };
         }
         UserToolbarLocalAction::ZoomToggle
+        | UserToolbarLocalAction::Zoom
+        | UserToolbarLocalAction::ZoomFilter
         | UserToolbarLocalAction::ZoomDefault
         | UserToolbarLocalAction::ZoomPlus
         | UserToolbarLocalAction::ZoomMinus => {
@@ -660,6 +666,8 @@ enum UserToolbarLocalAction {
     ScreenGrid,
     ScreenExits,
     BoundaryGuide,
+    Zoom,
+    ZoomFilter,
     ZoomToggle,
     ZoomDefault,
     ZoomPlus,
@@ -681,6 +689,8 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_SCREEN_GRID" => UserToolbarLocalAction::ScreenGrid,
         "LM_VIEW_SCREEN_EXITS" => UserToolbarLocalAction::ScreenExits,
         "LM_VIEW_SCREEN_GRID_2" => UserToolbarLocalAction::BoundaryGuide,
+        "LM_VIEW_ZOOM" => UserToolbarLocalAction::Zoom,
+        "LM_VIEW_ZOOM_FILTER" => UserToolbarLocalAction::ZoomFilter,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
         "LM_VIEW_ZOOM_DEFAULT" => UserToolbarLocalAction::ZoomDefault,
         "LM_VIEW_ZOOM_PLUS" => UserToolbarLocalAction::ZoomPlus,
@@ -761,6 +771,14 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_SPECIAL_WORLD"),
             Some(UserToolbarLocalAction::SpecialWorld)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ZOOM"),
+            Some(UserToolbarLocalAction::Zoom)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_ZOOM_FILTER"),
+            Some(UserToolbarLocalAction::ZoomFilter)
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_ZOOM_TOGGLE"),

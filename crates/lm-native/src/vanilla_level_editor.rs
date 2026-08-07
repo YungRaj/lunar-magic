@@ -19,6 +19,7 @@ const ROM_LEVEL_CANVAS_MIN_ZOOM: u16 = 100;
 const ROM_LEVEL_CANVAS_MAX_ZOOM: u16 = 5_000;
 const ROM_LEVEL_CANVAS_ZOOM_STEP: u16 = 100;
 const ROM_LEVEL_CANVAS_INITIAL_PREVIOUS_ZOOM: u16 = 200;
+const ROM_LEVEL_CANVAS_ZOOM_MENU: [u16; 9] = [100, 125, 150, 175, 200, 300, 400, 600, 800];
 const NATIVE_LEVEL_MINOR_TILES: u16 = 27;
 const VERTICAL_LEVEL_MINOR_TILES: u16 = 32;
 const VANILLA_EMPTY_MAP16_TILE: u16 = 0x25;
@@ -340,6 +341,8 @@ pub(crate) struct VanillaLevelEditor {
     custom_sprite_catalog_filter: String,
     canvas_zoom_percent: Option<u16>,
     canvas_previous_zoom_percent: Option<u16>,
+    zoom_filter: Option<bool>,
+    zoom_popup_open: bool,
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
@@ -463,6 +466,7 @@ impl VanillaLevelEditor {
                 Err(error) => self.error = Some(error),
             }
         }
+        self.show_zoom_popup(ui.ctx());
         let Some(controller) = self.controller.as_ref() else {
             ui.colored_label(
                 egui::Color32::RED,
@@ -2221,6 +2225,80 @@ impl VanillaLevelEditor {
 
     fn canvas_zoom_percent(&self) -> u16 {
         clamp_canvas_zoom(self.canvas_zoom_percent.unwrap_or(100))
+    }
+
+    fn zoom_filter(&self) -> bool {
+        self.zoom_filter.unwrap_or(true)
+    }
+
+    pub(crate) fn toolbar_zoom_popup(&mut self) {
+        self.zoom_popup_open = true;
+    }
+
+    pub(crate) fn toolbar_zoom_filter_toggle(&mut self) {
+        self.zoom_filter = Some(!self.zoom_filter());
+        self.invalidate_graphics_preview();
+    }
+
+    fn toolbar_zoom_set(&mut self, percent: u16) {
+        let percent = clamp_canvas_zoom(percent);
+        self.canvas_zoom_percent = Some(percent);
+        if percent != 100 {
+            self.canvas_previous_zoom_percent = Some(percent);
+        }
+    }
+
+    fn show_zoom_popup(&mut self, context: &egui::Context) {
+        if !self.zoom_popup_open {
+            return;
+        }
+        let mut open = true;
+        let mut selected = None;
+        let mut delta = 0_i16;
+        let mut toggle_filter = false;
+        let filter_enabled = self.zoom_filter();
+        egui::Window::new("Zoom")
+            .id(egui::Id::new("lunar-magic-level-zoom-popup"))
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .show(context, |ui| {
+                for percent in ROM_LEVEL_CANVAS_ZOOM_MENU {
+                    if ui
+                        .selectable_label(
+                            self.canvas_zoom_percent() == percent,
+                            format!("{percent}%"),
+                        )
+                        .clicked()
+                    {
+                        selected = Some(percent);
+                    }
+                }
+                ui.separator();
+                if ui.button("Zoom in").clicked() {
+                    delta = i16::try_from(ROM_LEVEL_CANVAS_ZOOM_STEP).unwrap_or(100);
+                }
+                if ui.button("Zoom out").clicked() {
+                    delta = -i16::try_from(ROM_LEVEL_CANVAS_ZOOM_STEP).unwrap_or(100);
+                }
+                ui.separator();
+                let mut filter = filter_enabled;
+                if ui.checkbox(&mut filter, "Zoom Filter").clicked() {
+                    toggle_filter = true;
+                }
+            });
+        if let Some(percent) = selected {
+            self.toolbar_zoom_set(percent);
+            open = false;
+        } else if delta != 0 {
+            self.toolbar_zoom_adjust(delta);
+            open = false;
+        }
+        if toggle_filter {
+            self.toolbar_zoom_filter_toggle();
+            open = false;
+        }
+        self.zoom_popup_open = open;
     }
 
     pub(crate) fn toolbar_zoom_toggle(&mut self) {
@@ -13924,7 +14002,20 @@ mod tests {
     #[test]
     fn toolbar_zoom_matches_lunar_magic_range_steps_and_previous_toggle() {
         let mut editor = VanillaLevelEditor::default();
+        assert_eq!(
+            ROM_LEVEL_CANVAS_ZOOM_MENU,
+            [100, 125, 150, 175, 200, 300, 400, 600, 800]
+        );
         assert_eq!(editor.canvas_zoom_percent(), 100);
+        assert!(editor.zoom_filter());
+        editor.toolbar_zoom_popup();
+        assert!(editor.zoom_popup_open);
+        editor.toolbar_zoom_filter_toggle();
+        assert!(!editor.zoom_filter());
+        editor.toolbar_zoom_set(125);
+        assert_eq!(editor.canvas_zoom_percent(), 125);
+        editor.toolbar_zoom_set(200);
+        editor.toolbar_zoom_default();
         editor.toolbar_zoom_toggle();
         assert_eq!(editor.canvas_zoom_percent(), 200);
         editor.toolbar_zoom_adjust(100);

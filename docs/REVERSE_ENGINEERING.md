@@ -3555,3 +3555,15 @@ outline lookup initializer; it also installs object-tileset-specific substitutio
 `InitializeAnimationTriggerIndexMap` at `00465350` is the line-guide lookup initializer: roots
 `$76..$93` map to glyphs `$51..$6E`, `$96..$99` map to `$6F`, and the pristine conditional maps
 root `$95` to `$62`.
+
+The remaining level zoom commands are now identified in the internal-name table and central
+dispatcher. `LM_VIEW_ZOOM` maps to `$2440` (case 99) and anchors popup menu `00816B14` at the
+invoking toolbar button. `CreateEditorZoomPopupMenu` at `0048B471` appends nine radio commands
+`$244A..$2452` from `005E7B34`: 100, 125, 150, 175, 200, 300, 400, 600, and 800 percent. It then
+adds `$2448/$2449` zoom adjustment, `$2444` Zoom Filter, and the separate `$2445` automatic state.
+`LM_VIEW_ZOOM_FILTER` maps to `$2444` (case 100), toggles `005E7B0C`, synchronizes its menu check,
+and redraws the level surface. The executable initializes that byte enabled. The renderer's
+presentation path distinguishes filtered scaling only after the editor surface is composed. This
+rules out per-atlas linear filtering in Rust: Map16, sprite, and outline atlases place unrelated
+cells adjacent to one another and would bleed at their UV boundaries. The native command/check
+state is implemented; exact filtered final-surface presentation remains a compositor task.
