@@ -71,8 +71,7 @@ fn marker_flag(
     if !context.special_markers_enabled {
         return 0;
     }
-    let built_in = matches!(root, 0x1f | 0x20 | 0x27 | 0x28 | 0x137 | 0x138 | 0x13f)
-        || root == 0x9c && context.level_mode == 1;
+    let built_in = lunar_magic_block_exit_marker(root, context.level_mode);
     let dsc_marker = table
         .get(root)
         .is_some_and(|entry| entry.native_flags & 8 != 0)
@@ -80,6 +79,16 @@ fn marker_flag(
             .get(source)
             .is_some_and(|entry| entry.native_flags & 8 != 0);
     if built_in || dsc_marker { 0x20 } else { 0 }
+}
+
+/// Returns whether Lunar Magic's Block Exits view outlines an Acts Like root.
+///
+/// Custom `.dsc` marker flags are additive and remain owned by [`DscResolvedTable`]; this helper
+/// exposes the original built-in set used by vanilla level rendering.
+#[must_use]
+pub const fn lunar_magic_block_exit_marker(root: u16, level_mode: u8) -> bool {
+    matches!(root, 0x1f | 0x20 | 0x27 | 0x28 | 0x137 | 0x138 | 0x13f)
+        || root == 0x9c && level_mode == 1
 }
 
 fn alternate_or_builtin(
@@ -295,6 +304,16 @@ mod tests {
             lunar_magic_block_contents_mapping(0x16a, 0, DscDisplayContext::default(), 4),
             0
         );
+    }
+
+    #[test]
+    fn public_block_exit_marker_matches_native_roots_and_mode_exception() {
+        for root in [0x1f, 0x20, 0x27, 0x28, 0x137, 0x138, 0x13f] {
+            assert!(lunar_magic_block_exit_marker(root, 0));
+        }
+        assert!(!lunar_magic_block_exit_marker(0x9c, 0));
+        assert!(lunar_magic_block_exit_marker(0x9c, 1));
+        assert!(!lunar_magic_block_exit_marker(0x21, 1));
     }
 
     #[test]

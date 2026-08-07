@@ -2453,6 +2453,10 @@ impl VanillaLevelEditor {
         self.conditional_view_state.block_contents = !self.conditional_view_state.block_contents;
     }
 
+    pub(crate) fn toolbar_block_exits_toggle(&mut self) {
+        self.conditional_view_state.block_exits = !self.conditional_view_state.block_exits;
+    }
+
     pub(crate) fn toolbar_background_512_height_toggle(&mut self) {
         self.background_512_height = !self.background_512_height;
     }
@@ -2719,6 +2723,40 @@ impl VanillaLevelEditor {
                 vertical,
                 false,
             );
+        }
+        if !game_preview && self.conditional_view_state.block_exits {
+            if visibility.layer2 {
+                draw_block_exit_warnings(
+                    painter,
+                    layer2_target,
+                    cell,
+                    major_tiles,
+                    object_minor_tiles,
+                    vertical,
+                    layer2_records,
+                    layer2_placements,
+                    self.active_standard_object_handler_map(),
+                    self.conditional_view_state,
+                    level_mode,
+                    object_tileset,
+                );
+            }
+            if visibility.layer1 && visual_smoke_editor_layer1() {
+                draw_block_exit_warnings(
+                    painter,
+                    rect,
+                    cell,
+                    major_tiles,
+                    object_minor_tiles,
+                    vertical,
+                    records,
+                    placements,
+                    self.active_standard_object_handler_map(),
+                    self.conditional_view_state,
+                    level_mode,
+                    object_tileset,
+                );
+            }
         }
         let layer2_resize_models = self.active_object_resize_models(layer2_records, custom_objects);
         let layer1_resize_models = self.active_object_resize_models(records, custom_objects);
@@ -7933,6 +7971,134 @@ fn draw_block_contents_overlay(
 
 const fn block_contents_overlay_alpha(mapping: u16) -> u8 {
     if mapping & 0x8000 != 0 { 128 } else { 192 }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_block_exit_warnings(
+    painter: &egui::Painter,
+    target: egui::Rect,
+    cell_size: f32,
+    major_tiles: u16,
+    minor_tiles: u16,
+    vertical: bool,
+    records: &[ObjectRecord],
+    placements: &[lm_level::NativeObjectPlacement],
+    handler_map: Option<&[u8; 64]>,
+    view_state: lm_render::LunarMagicConditionalViewState,
+    level_mode: u8,
+    object_tileset: u8,
+) {
+    let Some(handler_map) = handler_map else {
+        return;
+    };
+    let layout = lm_render::NativeLevelMap16Layout {
+        width: if vertical {
+            usize::from(minor_tiles)
+        } else {
+            usize::from(major_tiles)
+        },
+        height: if vertical {
+            usize::from(major_tiles)
+        } else {
+            usize::from(minor_tiles)
+        },
+        page_stride: 0x1b0,
+        base_cell: 0,
+        vertical,
+    };
+    let mut definitions = lm_render::StandardObjectDefinitionSet::empty();
+    if lm_render::install_lunar_magic_shared_extended_objects(&mut definitions).is_err()
+        || lm_render::install_lunar_magic_tileset_extended_objects(&mut definitions, object_tileset)
+            .is_err()
+        || lm_render::install_lunar_magic_shared_standard_objects(&mut definitions).is_err()
+    {
+        return;
+    }
+    let mut cache = lm_render::NativeLevelMap16Cache::filled(VANILLA_EMPTY_MAP16_TILE);
+    for placement in placements {
+        let Some(record) = records.get(placement.record_index) else {
+            continue;
+        };
+        let Ok(Some(rendered)) = lm_render::render_mapped_standard_object_placement_with_view_state(
+            record,
+            *placement,
+            &definitions,
+            handler_map,
+            layout,
+            VANILLA_EMPTY_MAP16_TILE,
+            view_state,
+        ) else {
+            continue;
+        };
+        cache.overlay_written_cells(&rendered);
+    }
+    for (x, y) in block_exit_warning_cells(&cache, layout, level_mode) {
+        let rect = egui::Rect::from_min_size(
+            target.min
+                + egui::vec2(
+                    f32::from(u16::try_from(x).expect("native level width fits u16")) * cell_size,
+                    f32::from(u16::try_from(y).expect("native level height fits u16")) * cell_size,
+                ),
+            egui::vec2(cell_size, cell_size),
+        );
+        draw_block_exit_outline(painter, rect);
+    }
+}
+
+fn block_exit_warning_cells(
+    cache: &lm_render::NativeLevelMap16Cache,
+    layout: lm_render::NativeLevelMap16Layout,
+    level_mode: u8,
+) -> Vec<(usize, usize)> {
+    let mut cells = Vec::new();
+    for y in 0..layout.height {
+        for x in 0..layout.width {
+            let index = lm_render::NativeLevelMap16Cache::cell_index(layout, x, y);
+            if cache.was_written(index)
+                && cache.cells().get(index).is_some_and(|tile| {
+                    lm_level::lunar_magic_block_exit_marker(tile & 0x3fff, level_mode)
+                })
+            {
+                cells.push((x, y));
+            }
+        }
+    }
+    cells
+}
+
+fn draw_block_exit_outline(painter: &egui::Painter, rect: egui::Rect) {
+    // DrawEditorSelectionOutline @ $00450B30 receives outer color 0 and inner color $FF0000.
+    // For a 16×16 warning cell it writes black lines at offsets 0, 3, 12, and 15 and red lines at
+    // offsets 1, 2, 13, and 14 on both axes. Scale those logical pixels with the canvas cell.
+    let pixel = rect.width().min(rect.height()) / 16.0;
+    for (offset, color) in block_exit_outline_stripes() {
+        let offset = f32::from(offset) * pixel;
+        let vertical = egui::Rect::from_min_size(
+            rect.min + egui::vec2(offset, 0.0),
+            egui::vec2(pixel, rect.height()),
+        );
+        let horizontal = egui::Rect::from_min_size(
+            rect.min + egui::vec2(0.0, offset),
+            egui::vec2(rect.width(), pixel),
+        );
+        painter.rect_filled(vertical, 0.0, color);
+        painter.rect_filled(horizontal, 0.0, color);
+    }
+}
+
+const fn block_exit_outline_stripes() -> [(u8, egui::Color32); 8] {
+    let black = egui::Color32::BLACK;
+    let red = egui::Color32::from_rgb(255, 0, 0);
+    [
+        (0, black),
+        (3, black),
+        (12, black),
+        (15, black),
+        (1, red),
+        (2, red),
+        (13, red),
+        (14, red),
+    ]
 }
 
 fn draw_map16_outline(
@@ -14380,6 +14546,7 @@ mod tests {
         editor.toolbar_on_off_switch_toggle();
         editor.toolbar_conditional_direct_map16_toggle();
         editor.toolbar_block_contents_toggle();
+        editor.toolbar_block_exits_toggle();
         assert_eq!(
             editor.conditional_view_state,
             lm_render::LunarMagicConditionalViewState {
@@ -14388,10 +14555,40 @@ mod tests {
                 on_off_switch_on: false,
                 conditional_direct_map16: false,
                 block_contents: true,
+                block_exits: true,
             }
         );
         assert_eq!(block_contents_overlay_alpha(0x4104), 192);
         assert_eq!(block_contents_overlay_alpha(0x80b8), 128);
+        assert_eq!(
+            block_exit_outline_stripes(),
+            [
+                (0, egui::Color32::BLACK),
+                (3, egui::Color32::BLACK),
+                (12, egui::Color32::BLACK),
+                (15, egui::Color32::BLACK),
+                (1, egui::Color32::RED),
+                (2, egui::Color32::RED),
+                (13, egui::Color32::RED),
+                (14, egui::Color32::RED),
+            ]
+        );
+    }
+
+    #[test]
+    fn block_exit_warnings_use_the_final_written_cell_instead_of_write_history() {
+        let layout = lm_render::NativeLevelMap16Layout {
+            width: 2,
+            height: 1,
+            page_stride: 0x1b0,
+            base_cell: 0,
+            vertical: false,
+        };
+        let mut cache = lm_render::NativeLevelMap16Cache::filled(VANILLA_EMPTY_MAP16_TILE);
+        cache.set(layout, 0, 0, 0x1f).unwrap();
+        cache.set(layout, 0, 0, 0x21).unwrap();
+        cache.set(layout, 1, 0, 0x27).unwrap();
+        assert_eq!(block_exit_warning_cells(&cache, layout, 0), [(1, 0)]);
     }
 
     #[test]

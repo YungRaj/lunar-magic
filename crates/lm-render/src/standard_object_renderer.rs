@@ -428,6 +428,8 @@ pub struct LunarMagicConditionalViewState {
     pub conditional_direct_map16: bool,
     /// Shows editor-only contents over blocks whose Acts Like behavior has a recovered mapping.
     pub block_contents: bool,
+    /// Outlines Map16 cells whose Acts Like behavior can drive a block exit.
+    pub block_exits: bool,
 }
 
 impl Default for LunarMagicConditionalViewState {
@@ -438,6 +440,7 @@ impl Default for LunarMagicConditionalViewState {
             on_off_switch_on: true,
             conditional_direct_map16: true,
             block_contents: false,
+            block_exits: false,
         }
     }
 }

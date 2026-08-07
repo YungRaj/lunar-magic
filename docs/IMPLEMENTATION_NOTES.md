@@ -4538,3 +4538,10 @@ ordinary cell through the extracted 8,192-byte default M16 bank. Color-zero pixe
 transparent, `$4000` uses the recovered three-quarter source composition, and `$8000` uses the
 half-color path. The user-toolbar name routes to the same state and never mutates authored object
 or Map16 data.
+
+The companion default-off `LM_VIEW_BLOCK_EXITS` view runs as a post-artwork cell pass. It uses the
+recovered built-in Acts Like roots and mode-1 exception, collapses painter history to each final
+Map16 value, and draws Lunar Magic's four-pixel black/red/black double outline at logical offsets
+0–3 and 12–15. It intentionally bypasses the general translucent-overlay opacity, matching the
+native routine's temporary flag clear. Custom `.dsc` flag-eight markers remain pending live DSC
+ownership in the installed canvas.

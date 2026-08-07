@@ -252,6 +252,9 @@ impl NativeApplication {
             UserToolbarLocalAction::BlockContents => {
                 self.vanilla_level_editor.toolbar_block_contents_toggle()
             }
+            UserToolbarLocalAction::BlockExits => {
+                self.vanilla_level_editor.toolbar_block_exits_toggle()
+            }
             UserToolbarLocalAction::Background512Height => {
                 self.vanilla_level_editor
                     .toolbar_background_512_height_toggle();
@@ -523,6 +526,7 @@ fn toggle_user_toolbar_view_state(
         | UserToolbarLocalAction::OnOffSwitch
         | UserToolbarLocalAction::ConditionalDirectMap16
         | UserToolbarLocalAction::BlockContents
+        | UserToolbarLocalAction::BlockExits
         | UserToolbarLocalAction::Background512Height
         | UserToolbarLocalAction::Translucent
         | UserToolbarLocalAction::ZoomDefault
@@ -748,6 +752,7 @@ enum UserToolbarLocalAction {
     OnOffSwitch,
     ConditionalDirectMap16,
     BlockContents,
+    BlockExits,
     Background512Height,
     Translucent,
     ZoomToggle,
@@ -787,6 +792,7 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_LINE_ON" => UserToolbarLocalAction::OnOffSwitch,
         "LM_VIEW_CDM16" => UserToolbarLocalAction::ConditionalDirectMap16,
         "LM_VIEW_BLOCK_CONTENTS" => UserToolbarLocalAction::BlockContents,
+        "LM_VIEW_BLOCK_EXITS" => UserToolbarLocalAction::BlockExits,
         "LM_VIEW_512HEIGHT_BG" => UserToolbarLocalAction::Background512Height,
         "LM_VIEW_TRANSLUCENT" => UserToolbarLocalAction::Translucent,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
@@ -933,6 +939,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_BLOCK_CONTENTS"),
             Some(UserToolbarLocalAction::BlockContents)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_BLOCK_EXITS"),
+            Some(UserToolbarLocalAction::BlockExits)
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_512HEIGHT_BG"),

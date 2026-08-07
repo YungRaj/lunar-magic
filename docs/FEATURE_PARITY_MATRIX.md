@@ -335,6 +335,11 @@ M16 definitions after ordinary Map16 artwork. The extracted 8,192-byte bank incl
 definitions `$219/$21A`; focused tests retain those exact words, the mapping tables, default/toggle
 state, and half/three-quarter composition selection. ROM-adjacent custom M16 replacement of this
 default bank remains part of the broader sidecar/editor integration row.
+The adjacent default-off `LM_VIEW_BLOCK_EXITS` state now marks the recovered vanilla Acts Like
+roots and level-mode exception after final-cell painter resolution, with the original opaque
+black/red four-pixel outline. Tests cover the exact root set, mode exception, final-write
+overwrite semantics, default/toggle state, toolbar routing, and eight stripe positions. Custom
+`.dsc` flag-eight markers remain assigned to the broader sidecar/editor integration row.
 
 The Graphics extract/insert row now has exact pristine standard-GFX extraction evidence. The
 installed editor exports all 52 files (`GFX00` through `GFX33`), resolves the two startup streams,

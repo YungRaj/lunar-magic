@@ -3657,3 +3657,14 @@ transparent editor overlay rather than a replacement Map16 tile. Finally,
 renderer before an optional ROM-adjacent sidecar overrides it. Rust retains that authenticated
 bank byte-for-byte, including editor-only definitions `$219/$21A`, and builds an animated,
 transparent 32×32 overlay atlas from the current level graphics and palette.
+
+`LM_VIEW_BLOCK_EXITS` is the adjacent default-off view backed by byte `00E278E1`.
+`BuildMap16CustomDisplayMappings` sets per-cell flag `$20` for Acts Like roots
+`$01F/$020/$027/$028/$137/$138/$13F`, plus `$09C` only in level mode 1; `.dsc` flag-eight
+records can add the same marker for either the source or resolved root. After all layer artwork,
+`DrawInvalidMap16CellWarnings` at `004527C0` scans the final 0x3800-cell buffer, temporarily forces
+translucent-overlay state off, and calls `DrawEditorSelectionOutline` at `00450B30` with black
+outer and red inner colors. On a 16×16 cell that routine writes black edge lines at offsets
+0/3/12/15 and red lines at 1/2/13/14. Rust mirrors the built-in root/mode predicate, resolves
+final object-cache cells rather than historical writes, and paints the same opaque eight-line
+outline only in editor view.
