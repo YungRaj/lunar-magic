@@ -175,10 +175,17 @@ pub struct ExAnimationSet {
 #[path = "exanimation_compact.rs"]
 mod compact;
 
+#[path = "exanimation_legacy.rs"]
+mod legacy;
+
 pub use compact::CompactExAnimation;
 #[cfg(test)]
 use compact::declared_compact_frame_len;
 use compact::{checked_compact_frame_len, compact_frame_len};
+pub use legacy::{
+    LEGACY_EXANIMATION_MAX_RECORDS, LEGACY_EXANIMATION_RECORD_LEN, LegacyExAnimationError,
+    convert_legacy_exanimation_records,
+};
 
 impl ExAnimationSet {
     /// Decodes a fixed number of recovered 0x20a-byte slot records.

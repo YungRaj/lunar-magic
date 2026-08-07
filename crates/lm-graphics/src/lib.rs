@@ -37,7 +37,11 @@ pub use bitmap_palette::{
 pub use color_map::{GraphicsColorMapError, GraphicsColorMapFilters};
 pub use container::{GraphicsFile4bpp, GraphicsFileError, JoinedGraphics};
 pub use editing::ExAnimationEditError;
-pub use exanimation::{CompactExAnimation, ExAnimationError, ExAnimationRecord, ExAnimationSet};
+pub use exanimation::{
+    CompactExAnimation, ExAnimationError, ExAnimationRecord, ExAnimationSet,
+    LEGACY_EXANIMATION_MAX_RECORDS, LEGACY_EXANIMATION_RECORD_LEN, LegacyExAnimationError,
+    convert_legacy_exanimation_records,
+};
 pub use exanimation_features::{ExAnimationFeature, ExAnimationFeatureOptions};
 pub use exanimation_file::{CompactExAnimationFile, CompactExAnimationFileError};
 pub use exanimation_frames::{

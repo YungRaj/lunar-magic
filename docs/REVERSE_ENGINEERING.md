@@ -3773,3 +3773,11 @@ installs the current runtime, converts up to 512 legacy `$23`-byte-record blocks
 payloads, and erases authenticated obsolete storage; the third performs a fresh
 `InstallExpandedExAnimationRuntime`. These installation/migration workflows remain a separate
 implementation gate from editing an already installed current runtime.
+`ConvertLegacyExAnimationRecords` (`0045E9C0`) gives the first fully bounded migration model. Each
+legacy record is exactly `$23` bytes: one packed control byte, one destination word, and sixteen
+source words. A zero low nibble is inactive. After decrementing the control byte, its high nibble
+maps all sixteen old type classes into current kinds `$13/$0F/$01/$10/$11/$02/$03/$04/$05/$06/$07`,
+while adjusted low nibbles 1–3 become the three two-word trigger forms. The converter detects the
+smallest repeated 1/2/4/8/16-frame period (up to eight two-word frames) before serialization. Rust's
+`convert_legacy_exanimation_records` now reproduces this mapping with the original 32-record clamp,
+strict exact-length input, canonical current records, and exhaustive type/period/trigger tests.
