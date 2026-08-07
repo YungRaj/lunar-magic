@@ -198,6 +198,13 @@ fn parse_key(value: &str) -> Result<ShortcutKey, String> {
         "right" => Some(ShortcutKey::ArrowRight),
         "up" => Some(ShortcutKey::ArrowUp),
         "down" => Some(ShortcutKey::ArrowDown),
+        "insert" => Some(ShortcutKey::Insert),
+        "home" => Some(ShortcutKey::Home),
+        "end" => Some(ShortcutKey::End),
+        "pageup" => Some(ShortcutKey::PageUp),
+        "pagedown" => Some(ShortcutKey::PageDown),
+        "tab" => Some(ShortcutKey::Tab),
+        "space" => Some(ShortcutKey::Space),
         _ => None,
     };
     if let Some(key) = named {
@@ -242,6 +249,13 @@ fn format_gesture(gesture: ShortcutGesture) -> String {
         ShortcutKey::ArrowRight => "right".into(),
         ShortcutKey::ArrowUp => "up".into(),
         ShortcutKey::ArrowDown => "down".into(),
+        ShortcutKey::Insert => "insert".into(),
+        ShortcutKey::Home => "home".into(),
+        ShortcutKey::End => "end".into(),
+        ShortcutKey::PageUp => "pageup".into(),
+        ShortcutKey::PageDown => "pagedown".into(),
+        ShortcutKey::Tab => "tab".into(),
+        ShortcutKey::Space => "space".into(),
     });
     parts.join("+")
 }
@@ -270,6 +284,13 @@ mod tests {
             "right",
             "up",
             "down",
+            "insert",
+            "home",
+            "end",
+            "pageup",
+            "pagedown",
+            "tab",
+            "space",
             "primary+É",
         ] {
             let gesture = parse_gesture(value).unwrap();

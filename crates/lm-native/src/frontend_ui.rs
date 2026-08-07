@@ -57,28 +57,37 @@ pub(crate) fn shortcut_activation(
     context: &egui::Context,
     app: &AppState,
 ) -> Option<ToolbarActivation> {
+    shortcut_gestures(context).into_iter().find_map(|gesture| {
+        app.shortcut_action(gesture)
+            .and_then(|action| app.activate_toolbar_action(action))
+    })
+}
+
+pub(crate) fn shortcut_gestures(context: &egui::Context) -> Vec<ShortcutGesture> {
     context.input(|input| {
-        input.events.iter().find_map(|event| {
-            let gesture = match event {
-                egui::Event::Key {
-                    key,
-                    pressed: true,
-                    repeat: false,
-                    modifiers,
-                    ..
-                } => ShortcutGesture {
-                    modifiers: translate_modifiers(*modifiers),
-                    key: translate_key(*key)?,
-                },
-                egui::Event::Text(text) => ShortcutGesture {
-                    modifiers: translate_modifiers(input.modifiers),
-                    key: translate_text_key(text)?,
-                },
-                _ => return None,
-            };
-            app.shortcut_action(gesture)
-                .and_then(|action| app.activate_toolbar_action(action))
-        })
+        input
+            .events
+            .iter()
+            .filter_map(|event| {
+                Some(match event {
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        repeat: false,
+                        modifiers,
+                        ..
+                    } => ShortcutGesture {
+                        modifiers: translate_modifiers(*modifiers),
+                        key: translate_key(*key)?,
+                    },
+                    egui::Event::Text(text) => ShortcutGesture {
+                        modifiers: translate_modifiers(input.modifiers),
+                        key: translate_text_key(text)?,
+                    },
+                    _ => return None,
+                })
+            })
+            .collect()
     })
 }
 
@@ -117,6 +126,13 @@ fn translate_key(key: egui::Key) -> Option<ShortcutKey> {
         Key::ArrowRight => Some(ShortcutKey::ArrowRight),
         Key::ArrowUp => Some(ShortcutKey::ArrowUp),
         Key::ArrowDown => Some(ShortcutKey::ArrowDown),
+        Key::Insert => Some(ShortcutKey::Insert),
+        Key::Home => Some(ShortcutKey::Home),
+        Key::End => Some(ShortcutKey::End),
+        Key::PageUp => Some(ShortcutKey::PageUp),
+        Key::PageDown => Some(ShortcutKey::PageDown),
+        Key::Tab => Some(ShortcutKey::Tab),
+        Key::Space => Some(ShortcutKey::Space),
         _ => translate_alphanumeric_key(key).or_else(|| translate_function_key(key)),
     }
 }

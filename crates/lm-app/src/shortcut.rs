@@ -40,6 +40,13 @@ pub enum ShortcutKey {
     ArrowRight,
     ArrowUp,
     ArrowDown,
+    Insert,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Tab,
+    Space,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -212,6 +219,13 @@ fn encode_key(key: ShortcutKey) -> (u8, u32) {
         ShortcutKey::ArrowRight => (7, 0),
         ShortcutKey::ArrowUp => (8, 0),
         ShortcutKey::ArrowDown => (9, 0),
+        ShortcutKey::Insert => (10, 0),
+        ShortcutKey::Home => (11, 0),
+        ShortcutKey::End => (12, 0),
+        ShortcutKey::PageUp => (13, 0),
+        ShortcutKey::PageDown => (14, 0),
+        ShortcutKey::Tab => (15, 0),
+        ShortcutKey::Space => (16, 0),
     }
 }
 
@@ -223,7 +237,7 @@ fn decode_key(kind: u8, value: u32) -> Result<ShortcutKey, ShortcutError> {
         1 => u8::try_from(value)
             .map(ShortcutKey::Function)
             .map_err(|_| ShortcutError::InvalidFunctionKey(u8::MAX)),
-        2..=9 if value != 0 => Err(ShortcutError::UnknownKey(kind)),
+        2..=16 if value != 0 => Err(ShortcutError::UnknownKey(kind)),
         2 => Ok(ShortcutKey::Backspace),
         3 => Ok(ShortcutKey::Delete),
         4 => Ok(ShortcutKey::Enter),
@@ -232,6 +246,13 @@ fn decode_key(kind: u8, value: u32) -> Result<ShortcutKey, ShortcutError> {
         7 => Ok(ShortcutKey::ArrowRight),
         8 => Ok(ShortcutKey::ArrowUp),
         9 => Ok(ShortcutKey::ArrowDown),
+        10 => Ok(ShortcutKey::Insert),
+        11 => Ok(ShortcutKey::Home),
+        12 => Ok(ShortcutKey::End),
+        13 => Ok(ShortcutKey::PageUp),
+        14 => Ok(ShortcutKey::PageDown),
+        15 => Ok(ShortcutKey::Tab),
+        16 => Ok(ShortcutKey::Space),
         _ => Err(ShortcutError::UnknownKey(kind)),
     }
 }
@@ -330,5 +351,33 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn appended_windows_navigation_keys_round_trip_without_renumbering_legacy_keys() {
+        for key in [
+            ShortcutKey::Insert,
+            ShortcutKey::Home,
+            ShortcutKey::End,
+            ShortcutKey::PageUp,
+            ShortcutKey::PageDown,
+            ShortcutKey::Tab,
+            ShortcutKey::Space,
+        ] {
+            let config = ShortcutConfig {
+                bindings: vec![ShortcutBinding {
+                    gesture: ShortcutGesture {
+                        modifiers: ShortcutModifiers::SECONDARY,
+                        key,
+                    },
+                    action: ToolbarAction::Open,
+                }],
+            };
+            assert_eq!(
+                ShortcutConfig::decode(&config.encode().unwrap()).unwrap(),
+                config
+            );
+        }
+        assert_eq!(encode_key(ShortcutKey::ArrowDown), (9, 0));
     }
 }

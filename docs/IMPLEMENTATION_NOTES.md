@@ -3124,10 +3124,16 @@ icon/tooltip/options/shortcut/working-directory fields, image-list and base dire
 visibility/configuration flags. The native process discovers the file beside its executable at
 startup, adds a distinct wrapped second toolbar when visible, dispatches the recovered common
 internal names, and routes external argument vectors through the permission-gated shell-free
-launcher after expanding `%1`–`%8` ROM/executable/level context. A retained LM 3.63 Wine oracle
-observed the original create a visible 52-button built-in toolbar and distinct two-button user
-toolbar from the committed fixture. Bitmap-strip display, the exhaustive internal/options table,
-and shortcut override activation remain open.
+launcher after expanding `%1`–`%8` ROM/executable/level context. Parsed shortcut overrides are
+active even under `LM_NO_TOOLBAR`, suppress a matching built-in binding, and deliberately dispatch
+every duplicate user assignment like the original. The token bridge covers quoted characters,
+generic and sided Ctrl/Shift/Alt names, F1–F24, the available editing/navigation keys, numpad
+digits, and raw equivalent Windows virtual-key codes. The portable `LMSHORT1` key enum appended the
+missing insert/home/end/page/tab/space kinds without changing any existing discriminant. A retained
+LM 3.63 Wine oracle observed the original create a visible 52-button built-in toolbar and distinct
+two-button user toolbar from the committed fixture. Bitmap-strip display, the exhaustive
+internal/options table, mouse/Pause/numpad-operator distinctions, and process notification/lifecycle
+options remain open.
 
 **Tools → Language** now exposes the active locale and installs standalone `.lmlang` catalogs using
 the canonical `LMLOC001` decoder on the existing bounded, non-blocking document worker. The public

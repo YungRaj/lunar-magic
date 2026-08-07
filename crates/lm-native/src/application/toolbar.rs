@@ -2,8 +2,8 @@ use super::NativeApplication;
 use crate::frontend_ui;
 use eframe::egui;
 use lm_app::{
-    Command, LevelNavigationDirection, ToolInvocation, ToolbarActivation, UserToolbarButton,
-    UserToolbarTarget,
+    Command, LevelNavigationDirection, ShortcutGesture, ShortcutKey, ShortcutModifiers,
+    ToolInvocation, ToolbarActivation, UserToolbarButton, UserToolbarTarget,
 };
 
 impl NativeApplication {
@@ -175,10 +175,134 @@ impl NativeApplication {
     }
 
     pub(super) fn handle_shortcuts(&mut self, context: &egui::Context) {
+        let gestures = frontend_ui::shortcut_gestures(context);
+        let matching = self.user_toolbar.as_ref().map_or_else(Vec::new, |toolbar| {
+            matching_user_toolbar_buttons(toolbar, &gestures)
+        });
+        if !matching.is_empty() {
+            // Lunar Magic lets duplicate user assignments all fire and suppresses its built-in
+            // shortcut whenever at least one user-toolbar assignment matches.
+            for (index, button) in matching {
+                self.activate_user_toolbar_button(context, index, &button);
+            }
+            return;
+        }
         if let Some(activation) = frontend_ui::shortcut_activation(context, &self.app) {
             self.handle_frontend_activation(context, activation);
         }
     }
+}
+
+fn matching_user_toolbar_buttons(
+    toolbar: &lm_app::UserToolbar,
+    gestures: &[ShortcutGesture],
+) -> Vec<(usize, UserToolbarButton)> {
+    toolbar
+        .buttons
+        .iter()
+        .enumerate()
+        .filter(|(_, button)| {
+            user_toolbar_shortcut(&button.shortcut)
+                .is_some_and(|candidate| gestures.contains(&candidate))
+        })
+        .map(|(index, button)| (index, button.clone()))
+        .collect()
+}
+
+fn user_toolbar_shortcut(tokens: &[String]) -> Option<ShortcutGesture> {
+    let mut modifiers = ShortcutModifiers::default();
+    let mut key = None;
+    for token in tokens {
+        match token.as_str() {
+            "VK_CONTROL" | "VK_LCONTROL" | "VK_RCONTROL" => {
+                modifiers = modifiers.union(ShortcutModifiers::SECONDARY);
+            }
+            "VK_SHIFT" | "VK_LSHIFT" | "VK_RSHIFT" => {
+                modifiers = modifiers.union(ShortcutModifiers::SHIFT);
+            }
+            "VK_ALT" | "VK_LALT" | "VK_RALT" => {
+                modifiers = modifiers.union(ShortcutModifiers::ALT);
+            }
+            value => {
+                if key.is_some() {
+                    return None;
+                }
+                key = parse_user_toolbar_key(value);
+                key?;
+            }
+        }
+    }
+    Some(ShortcutGesture {
+        modifiers,
+        key: key?,
+    })
+}
+
+fn parse_user_toolbar_key(value: &str) -> Option<ShortcutKey> {
+    if let Some(character) = value
+        .strip_prefix('\'')
+        .and_then(|value| value.strip_suffix('\''))
+        .and_then(|value| {
+            let mut characters = value.chars();
+            let character = characters.next()?;
+            characters.next().is_none().then_some(character)
+        })
+    {
+        return Some(ShortcutKey::Character(character.to_ascii_lowercase()));
+    }
+    if let Some(number) = value.strip_prefix("VK_F") {
+        let number = number.parse::<u8>().ok()?;
+        return (1..=24)
+            .contains(&number)
+            .then_some(ShortcutKey::Function(number));
+    }
+    Some(match value {
+        "VK_INSERT" => ShortcutKey::Insert,
+        "VK_DELETE" => ShortcutKey::Delete,
+        "VK_HOME" => ShortcutKey::Home,
+        "VK_END" => ShortcutKey::End,
+        "VK_PAGEUP" => ShortcutKey::PageUp,
+        "VK_PAGEDOWN" => ShortcutKey::PageDown,
+        "VK_ESCAPE" => ShortcutKey::Escape,
+        "VK_TAB" => ShortcutKey::Tab,
+        "VK_BACK" => ShortcutKey::Backspace,
+        "VK_RETURN" | "VK_NUMPAD_ENTER" => ShortcutKey::Enter,
+        "VK_UP" => ShortcutKey::ArrowUp,
+        "VK_DOWN" => ShortcutKey::ArrowDown,
+        "VK_LEFT" => ShortcutKey::ArrowLeft,
+        "VK_RIGHT" => ShortcutKey::ArrowRight,
+        "VK_SPACE" => ShortcutKey::Space,
+        value if value.starts_with("VK_NUMPAD") && value.len() == 10 => {
+            ShortcutKey::Character(value.chars().last()?)
+        }
+        value if value.starts_with("0x") || value.starts_with("0X") => {
+            virtual_key(u8::from_str_radix(&value[2..], 16).ok()?)?
+        }
+        _ => return None,
+    })
+}
+
+fn virtual_key(value: u8) -> Option<ShortcutKey> {
+    Some(match value {
+        0x08 => ShortcutKey::Backspace,
+        0x09 => ShortcutKey::Tab,
+        0x0d => ShortcutKey::Enter,
+        0x1b => ShortcutKey::Escape,
+        0x20 => ShortcutKey::Space,
+        0x21 => ShortcutKey::PageUp,
+        0x22 => ShortcutKey::PageDown,
+        0x23 => ShortcutKey::End,
+        0x24 => ShortcutKey::Home,
+        0x25 => ShortcutKey::ArrowLeft,
+        0x26 => ShortcutKey::ArrowUp,
+        0x27 => ShortcutKey::ArrowRight,
+        0x28 => ShortcutKey::ArrowDown,
+        0x2d => ShortcutKey::Insert,
+        0x2e => ShortcutKey::Delete,
+        0x30..=0x39 | 0x41..=0x5a => ShortcutKey::Character(char::from(value).to_ascii_lowercase()),
+        0x70..=0x87 => ShortcutKey::Function(value - 0x6f),
+        _ => return None,
+    })
 }
 
 fn expand_lm_placeholders(value: &str, app: &lm_app::AppState) -> Result<String, String> {
@@ -315,5 +439,47 @@ mod user_toolbar_tests {
         assert!(expand_lm_placeholders("%9", &app).is_err());
         app.document_path = None;
         assert!(expand_lm_placeholders("%1", &app).is_err());
+    }
+
+    #[test]
+    fn original_user_shortcut_tokens_cover_modifiers_named_and_numeric_keys() {
+        assert_eq!(
+            user_toolbar_shortcut(&["'o'".into(), "VK_CONTROL".into(), "VK_SHIFT".into()]),
+            Some(ShortcutGesture {
+                modifiers: ShortcutModifiers::SECONDARY.union(ShortcutModifiers::SHIFT),
+                key: ShortcutKey::Character('o'),
+            })
+        );
+        assert_eq!(
+            parse_user_toolbar_key("VK_F24"),
+            Some(ShortcutKey::Function(24))
+        );
+        assert_eq!(
+            parse_user_toolbar_key("VK_PAGEUP"),
+            Some(ShortcutKey::PageUp)
+        );
+        assert_eq!(parse_user_toolbar_key("0x2E"), Some(ShortcutKey::Delete));
+        assert_eq!(
+            parse_user_toolbar_key("0x41"),
+            Some(ShortcutKey::Character('a'))
+        );
+        assert_eq!(parse_user_toolbar_key("VK_PAUSE"), None);
+        assert!(user_toolbar_shortcut(&["'a'".into(), "'b'".into()]).is_none());
+    }
+
+    #[test]
+    fn hidden_toolbar_shortcuts_match_and_duplicate_assignments_all_survive() {
+        let mut toolbar = lm_app::UserToolbar::parse(include_str!(
+            "../../../../docs/oracle-work/lm363/user-toolbar/usertoolbar.txt"
+        ))
+        .unwrap();
+        assert!(!toolbar.toolbar_visible());
+        toolbar.buttons.push(toolbar.buttons[1].clone());
+        let gesture = user_toolbar_shortcut(&toolbar.buttons[1].shortcut).unwrap();
+        let matches = matching_user_toolbar_buttons(&toolbar, &[gesture]);
+        assert_eq!(
+            matches.iter().map(|(index, _)| *index).collect::<Vec<_>>(),
+            [1, 3]
+        );
     }
 }
