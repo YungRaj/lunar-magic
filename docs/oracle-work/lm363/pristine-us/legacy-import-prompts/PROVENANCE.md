@@ -65,3 +65,12 @@ merge their suffix with the destination level's background.
 079950a589d9712d69c276de82c668764cb30dc8940d56fe01d076b333df29b7  two-byte input mw1
 ec8db8ae218504df46a1e6c7b1dc1f6d2a55129f2d836e950e81f22f04281628  2,048-byte re-export mw1
 ```
+
+An authentic 2,048-byte `.mw1` extended by one zero byte also imported without a prompt. Its
+re-export was byte-identical to the authentic 2,048-byte payload, proving that the same fixed
+workspace read ignores trailing Layer 2 bytes.
+
+```text
+f4bb1b6429b9920e4c59d3f9eb5e58b3f2d0e80aeebf49e1dc845ec45124bf2d  2,049-byte input mw1
+67cb940c874127ebca7fdaf0da44e1f683c5040fd36cb746b5222ffd055cfffe  2,048-byte re-export mw1
+```

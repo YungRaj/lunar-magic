@@ -121,14 +121,16 @@ impl LegacyMwlBundle {
         let layer1 = LevelObjectData::parse(&self.layer1)?;
         let layer2 = if level_mode_layer2_storage(layer1.header.level_mode())
             == Layer2Storage::CompressedTilemap
-            && self.layer2.len() < NATIVE_LAYER2_TILEMAP_LEN
+            && self.layer2.len() != NATIVE_LAYER2_TILEMAP_LEN
         {
             // The legacy importer clears its fixed 0x800-byte background workspace before
-            // reading `.mw1`. A short read therefore retains the supplied prefix and leaves the
-            // unread suffix zeroed. Binary MWL sections remain exact-length validated by
-            // `NativeLayer2Data::decode_mwl`; this recovery belongs only to the legacy sidecar.
+            // reading at most that many `.mw1` bytes. A short read leaves the unread suffix
+            // zeroed, while bytes after the workspace are ignored. Binary MWL sections remain
+            // exact-length validated by `NativeLayer2Data::decode_mwl`; this recovery belongs
+            // only to the legacy sidecar.
             let mut padded = vec![0; NATIVE_LAYER2_TILEMAP_LEN];
-            padded[..self.layer2.len()].copy_from_slice(&self.layer2);
+            let imported = self.layer2.len().min(NATIVE_LAYER2_TILEMAP_LEN);
+            padded[..imported].copy_from_slice(&self.layer2[..imported]);
             NativeLayer2Data::decode_mwl(layer1.header.level_mode(), &padded)?
         } else {
             NativeLayer2Data::decode_mwl(layer1.header.level_mode(), &self.layer2)?
@@ -624,6 +626,21 @@ mod tests {
         assert_eq!(tilemap.len(), NATIVE_LAYER2_TILEMAP_LEN);
         assert_eq!(&tilemap[..2], &[0xf1, 0x00]);
         assert!(tilemap[2..].iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn overlong_legacy_layer2_tilemap_ignores_bytes_after_fixed_workspace() {
+        let source = level_000();
+        let mut bundle =
+            LegacyMwlBundle::from_native(&source, "Level 000", &SpriteLengthTable::standard())
+                .unwrap();
+        let authentic = bundle.layer2.clone();
+        bundle.layer2.extend_from_slice(&[0xaa, 0xbb]);
+
+        let decoded = bundle
+            .decode_native(&SpriteLengthTable::standard(), &source.palette, true)
+            .unwrap();
+        assert_eq!(decoded.layer2, NativeLayer2Data::Tilemap(authentic));
     }
 
     #[test]
