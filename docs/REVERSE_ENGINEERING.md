@@ -3793,6 +3793,13 @@ repairs the checksum, preserves copier-header framing, rejects a changed hook be
 history, and undoes exactly. Earlier general-save prerequisites and the later imported-level
 payload remain separate transactions; the optional mapper-specific `$20` suffix remains a variant
 gate.
+Disassembly also bounds the pointer-hook-only generation exactly. Descriptor entry `$16A`
+identifies the long-call operand whose resolved runtime owns the legacy payload. The migration
+accepts marker `4C 4D 00 01` at runtime `+$169`, writes bank `$10` at `+$92` and `+$118`, and
+advances only the marker's generation byte to produce `4C 4D 01 01`. Rust authenticates the JSL
+target, containing RATS owner, payload extent, and marker before constructing three guarded writes.
+Headered and headerless tests prove checksum-valid publication, no allocation or expansion,
+late-change atomicity, and byte-exact undo.
 `ConvertLegacyExAnimationRecords` (`0045E9C0`) gives the first fully bounded migration model. Each
 legacy record is exactly `$23` bytes: one packed control byte, one destination word, and sixteen
 source words. A zero low nibble is inactive. After decrementing the control byte, its high nibble
