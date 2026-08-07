@@ -3201,6 +3201,12 @@ original 27 Map16 rows (432 pixels) to the complete 32 rows (512 pixels). The ga
 uses the same period for both the precomposed background plane and its Map16 fallback, while the
 horizontal period remains 32 columns/512 pixels. The default remains off and the toggle is presentation
 state only; it does not rewrite the level's Layer 2 tilemap.
+`LM_VIEW_TRANSLUCENT` (`$2415`) now applies one half-opacity presentation state to editor-only
+overlays: object selection/resize geometry, unresolved sprite markers and sprite selections, the
+Map16 and screen grids, exit and boundary annotations, and entrance labels/warnings/markers. Level,
+sprite, and background artwork remain opaque, and game-preview mode continues to omit editor
+overlays entirely. This mirrors the original's save/draw/average operation without changing any
+serialized level state.
 `LM_VIEW_TILE_GRID` is separately recovered as command `$2408`. The original command toggles
 `DAT_00E278E5`; `RenderLevelEditorViewportRegion` at `$00453D90` calls
 `DrawLevelMap16ScreenGrid` only while that byte is set, and the pristine executable initializes it

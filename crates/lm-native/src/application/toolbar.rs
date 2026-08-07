@@ -238,6 +238,10 @@ impl NativeApplication {
                 self.vanilla_level_editor
                     .toolbar_background_512_height_toggle();
             }
+            UserToolbarLocalAction::Translucent => {
+                self.vanilla_level_editor
+                    .toolbar_translucent_overlays_toggle();
+            }
             UserToolbarLocalAction::ZoomToggle => self.vanilla_level_editor.toolbar_zoom_toggle(),
             UserToolbarLocalAction::ZoomDefault => self.vanilla_level_editor.toolbar_zoom_default(),
             UserToolbarLocalAction::ZoomPlus => self
@@ -496,6 +500,7 @@ fn toggle_user_toolbar_view_state(
         | UserToolbarLocalAction::RedSwitch
         | UserToolbarLocalAction::SilverPow
         | UserToolbarLocalAction::Background512Height
+        | UserToolbarLocalAction::Translucent
         | UserToolbarLocalAction::ZoomDefault
         | UserToolbarLocalAction::ZoomPlus
         | UserToolbarLocalAction::ZoomMinus => {
@@ -714,6 +719,7 @@ enum UserToolbarLocalAction {
     RedSwitch,
     SilverPow,
     Background512Height,
+    Translucent,
     ZoomToggle,
     ZoomDefault,
     ZoomPlus,
@@ -746,6 +752,7 @@ fn user_toolbar_local_action(name: &str) -> Option<UserToolbarLocalAction> {
         "LM_VIEW_RED_SWITCH" => UserToolbarLocalAction::RedSwitch,
         "LM_VIEW_SILVER_POW" => UserToolbarLocalAction::SilverPow,
         "LM_VIEW_512HEIGHT_BG" => UserToolbarLocalAction::Background512Height,
+        "LM_VIEW_TRANSLUCENT" => UserToolbarLocalAction::Translucent,
         "LM_VIEW_ZOOM_TOGGLE" => UserToolbarLocalAction::ZoomToggle,
         "LM_VIEW_ZOOM_DEFAULT" => UserToolbarLocalAction::ZoomDefault,
         "LM_VIEW_ZOOM_PLUS" => UserToolbarLocalAction::ZoomPlus,
@@ -870,6 +877,10 @@ mod user_toolbar_tests {
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_512HEIGHT_BG"),
             Some(UserToolbarLocalAction::Background512Height)
+        );
+        assert_eq!(
+            user_toolbar_local_action("LM_VIEW_TRANSLUCENT"),
+            Some(UserToolbarLocalAction::Translucent)
         );
         assert_eq!(
             user_toolbar_local_action("LM_VIEW_ZOOM_TOGGLE"),

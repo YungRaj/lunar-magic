@@ -351,6 +351,7 @@ pub(crate) struct VanillaLevelEditor {
     switch_view_state: lm_render::LunarMagicSwitchViewState,
     silver_pow_active: bool,
     background_512_height: bool,
+    translucent_overlays: bool,
     tools_panel_visible: Option<bool>,
     game_preview: Option<bool>,
     snes_viewport: Option<bool>,
@@ -2397,6 +2398,10 @@ impl VanillaLevelEditor {
         self.background_512_height = !self.background_512_height;
     }
 
+    pub(crate) fn toolbar_translucent_overlays_toggle(&mut self) {
+        self.translucent_overlays = !self.translucent_overlays;
+    }
+
     fn game_preview_camera_origin(
         &self,
         major_tiles: u16,
@@ -2605,6 +2610,8 @@ impl VanillaLevelEditor {
         };
         let game_preview = self.game_preview();
         let editor_overlays = !game_preview && visual_smoke_editor_overlays();
+        let mut overlay_painter = painter.clone();
+        overlay_painter.set_opacity(overlay_opacity(self.translucent_overlays));
         let layer1_artwork_bounds = if visibility.layer1 && visual_smoke_editor_layer1() {
             self.draw_object_artwork(
                 painter,
@@ -2657,7 +2664,7 @@ impl VanillaLevelEditor {
             .layer2
             .then(|| {
                 draw_object_placement_markers(
-                    painter,
+                    &overlay_painter,
                     response.interact_pointer_pos(),
                     rect,
                     vertical,
@@ -2680,7 +2687,7 @@ impl VanillaLevelEditor {
             .layer1
             .then(|| {
                 draw_object_placement_markers(
-                    painter,
+                    &overlay_painter,
                     response.interact_pointer_pos(),
                     rect,
                     vertical,
@@ -2706,6 +2713,7 @@ impl VanillaLevelEditor {
             .then(|| {
                 draw_sprite_placements(SpritePlacementDraw {
                     painter,
+                    overlay_painter: &overlay_painter,
                     target: rect,
                     cell_size: cell,
                     texture: self.sprite_texture.as_ref(),
@@ -2762,14 +2770,28 @@ impl VanillaLevelEditor {
         // transparent Map16 pixels turns SMW's solid backdrop into a misleading checkerboard.
         if editor_overlays {
             if tile_grid_visible(editor_overlays, visibility) {
-                draw_object_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+                draw_object_grid(
+                    &overlay_painter,
+                    rect,
+                    cell,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                );
             }
             if visibility.screen_overlay == crate::application::LevelScreenOverlay::ScreenGrid {
-                draw_level_screen_grid(painter, rect, cell, major_tiles, minor_tiles, vertical);
+                draw_level_screen_grid(
+                    &overlay_painter,
+                    rect,
+                    cell,
+                    major_tiles,
+                    minor_tiles,
+                    vertical,
+                );
             }
             if visibility.screen_overlay == crate::application::LevelScreenOverlay::ScreenExits {
                 draw_level_screen_exit_annotations(
-                    painter,
+                    &overlay_painter,
                     rect,
                     cell,
                     major_tiles,
@@ -2781,7 +2803,7 @@ impl VanillaLevelEditor {
             }
             if visibility.screen_overlay == crate::application::LevelScreenOverlay::BoundaryGuide {
                 draw_level_boundary_guide(
-                    painter,
+                    &overlay_painter,
                     rect,
                     cell,
                     level_mode,
@@ -2794,7 +2816,7 @@ impl VanillaLevelEditor {
                 u16::try_from(controller.level().number).unwrap_or(0)
             });
             draw_primary_entrance_label(
-                painter,
+                &overlay_painter,
                 rect,
                 cell,
                 level,
@@ -2803,7 +2825,7 @@ impl VanillaLevelEditor {
                 alternate_vertical_layout,
             );
             draw_primary_entrance_position_warning(
-                painter,
+                &overlay_painter,
                 rect,
                 cell,
                 self.entrance_form,
@@ -2811,7 +2833,7 @@ impl VanillaLevelEditor {
             );
             if let Some(texture) = self.entrance_texture.as_ref() {
                 draw_primary_entrance_marker(
-                    painter,
+                    &overlay_painter,
                     rect,
                     cell,
                     texture,
@@ -7322,6 +7344,10 @@ const fn background_plane_height_pixels(background_512_height: bool) -> i32 {
     if background_512_height { 512 } else { 432 }
 }
 
+const fn overlay_opacity(translucent: bool) -> f32 {
+    if translucent { 0.5 } else { 1.0 }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_layer3_editor_or_viewport(
     painter: &egui::Painter,
@@ -8350,6 +8376,7 @@ const fn boss_battle_diagnostic_red(row: usize) -> u8 {
 #[derive(Clone, Copy)]
 struct SpritePlacementDraw<'a> {
     painter: &'a egui::Painter,
+    overlay_painter: &'a egui::Painter,
     target: egui::Rect,
     cell_size: f32,
     texture: Option<&'a egui::TextureHandle>,
@@ -8374,6 +8401,7 @@ struct SpritePlacementDraw<'a> {
 fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
     let SpritePlacementDraw {
         painter,
+        overlay_painter,
         target,
         cell_size,
         texture,
@@ -8493,7 +8521,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         } else if editor_overlays
             && should_draw_unresolved_sprite_marker(uses_standard, placement.sprite_number)
         {
-            painter.rect_filled(
+            overlay_painter.rect_filled(
                 marker,
                 marker.width() / 2.0,
                 if placement.token_index == selected {
@@ -8502,7 +8530,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                     egui::Color32::from_rgb(220, 70, 70)
                 },
             );
-            painter.text(
+            overlay_painter.text(
                 marker.center(),
                 egui::Align2::CENTER_CENTER,
                 format!("{:02X}", placement.sprite_number),
@@ -8511,7 +8539,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             );
         }
         if (editor_overlays || selection_visible) && placement.token_index == selected {
-            painter.rect_stroke(
+            overlay_painter.rect_stroke(
                 interactive_rect,
                 marker.width() / 2.0,
                 egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
@@ -14233,6 +14261,16 @@ mod tests {
     }
 
     #[test]
+    fn toolbar_translucent_switch_applies_half_opacity_only_to_editor_overlays() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(!editor.translucent_overlays);
+        assert_eq!(overlay_opacity(editor.translucent_overlays), 1.0);
+        editor.toolbar_translucent_overlays_toggle();
+        assert!(editor.translucent_overlays);
+        assert_eq!(overlay_opacity(editor.translucent_overlays), 0.5);
+    }
+
+    #[test]
     fn one_snes_screen_fills_the_available_canvas_pane_and_preserves_zoom() {
         for (available, zoom, expected) in [
             (egui::vec2(800.0, 600.0), 100, 50.0),
@@ -15611,6 +15649,7 @@ mod tests {
             egui::CentralPanel::default().show(context, |ui| {
                 hit = draw_sprite_placements(SpritePlacementDraw {
                     painter: ui.painter(),
+                    overlay_painter: ui.painter(),
                     target,
                     cell_size: ROM_LEVEL_CANVAS_CELL,
                     texture: None,

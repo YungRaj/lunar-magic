@@ -110,6 +110,8 @@ default-off `$2405` Silver POW view command now applies the recovered `$115` sub
 conditional standard-sprite handler on the canvas and both standard-sprite picker surfaces. The
 `$2407` 512-height background command now changes the game-preview vertical wrapping from 27 to 32
 Map16 rows in both composed-plane and direct-Map16 presentation without mutating level data. The
+`$2415` translucent command now half-blends every active editor overlay while leaving level artwork
+opaque and preserving hit testing. The
 `$2408` tile-grid name
 now controls the original default-off Map16 canvas grid instead of the grid being painted
 unconditionally. The distinct `$23F6` Screen Grid overlay now draws the original orientation-aware

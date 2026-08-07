@@ -3601,3 +3601,12 @@ that byte to change the background row modulus from `$1B0` to `$200` pixels.
 divisor from `$1B` to `$20` Map16 rows. Rust therefore applies one default-off presentation flag
 to the composed game-preview plane and the direct Map16 fallback, preserving the 512-pixel
 horizontal period and all authored tilemap bytes.
+
+`LM_VIEW_TRANSLUCENT` maps to `$2415`; dispatcher case `$62` toggles byte `005E7AD9`, updates its
+check state, and posts a redraw without rebuilding level data. The flag is shared by selection,
+grid, screen-label, exit, warning, entrance, and Map16-page annotation paths.
+`DrawClippedEditorTextWithBackgroundBlend` at `00451540` demonstrates the exact operation: while
+set it saves the covered background, draws the ordinary overlay, then replaces every resulting
+pixel with the packed-channel half average of the saved and drawn surfaces. Rust scopes a single
+half-opacity painter to the equivalent editor-only overlay calls; artwork and interaction geometry
+remain unchanged.
