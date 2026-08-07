@@ -166,6 +166,95 @@ impl Project {
         )?))
     }
 
+    /// Saves Lunar Magic's ROM-global compact `ExAnimation` set through the installed runtime's
+    /// `$5C` payload-pointer field.
+    ///
+    /// This refuses to invent the expanded runtime and uses the same checked, copy-on-write RATS
+    /// transaction as per-level animation saves.
+    ///
+    /// # Errors
+    ///
+    /// Returns a marker, locator, validation, allocation, mapping, or transaction error without
+    /// mutating the project.
+    pub fn save_installed_global_exanimation(
+        &mut self,
+        animation: &CompactExAnimation,
+        installation: InstalledLayout<InstalledExAnimationRomLayout>,
+        double_size_modes: &[bool],
+        options: &ExAnimationSaveOptions,
+    ) -> Result<PayloadSaveResult, ExAnimationIoError> {
+        let request = installed_global_exanimation_save_request(
+            &self.rom,
+            animation,
+            installation,
+            double_size_modes,
+            options,
+        )?;
+        Ok(self.save_tagged_payload(&request)?)
+    }
+
+    /// Saves ROM-global `ExAnimation` and repairs the SNES checksum in the same transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExAnimationIoError`] without mutation when the installed runtime, compact payload,
+    /// allocation, pointer publication, or checksum field is invalid.
+    pub fn save_installed_global_exanimation_with_checksum(
+        &mut self,
+        animation: &CompactExAnimation,
+        installation: InstalledLayout<InstalledExAnimationRomLayout>,
+        double_size_modes: &[bool],
+        checksum_field: usize,
+        options: &ExAnimationSaveOptions,
+    ) -> Result<PayloadSaveResult, ExAnimationIoError> {
+        let request = installed_global_exanimation_save_request(
+            &self.rom,
+            animation,
+            installation,
+            double_size_modes,
+            options,
+        )?;
+        Ok(self
+            .save_tagged_payloads_with_checksum(
+                &request.description,
+                std::slice::from_ref(&request),
+                checksum_field,
+            )?
+            .remove(0))
+    }
+
+    /// Saves and reclaims an exactly owned prior ROM-global animation allocation while repairing
+    /// the checksum atomically.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ExAnimationIoError`] without mutation for invalid installed ownership, encoding,
+    /// allocation, reclamation, pointer, or checksum state.
+    pub fn save_installed_global_exanimation_with_checksum_and_reclamation(
+        &mut self,
+        animation: &CompactExAnimation,
+        installation: InstalledLayout<InstalledExAnimationRomLayout>,
+        double_size_modes: &[bool],
+        options: &ExAnimationSaveOptions,
+        reclamation: PayloadReclamation<'_>,
+    ) -> Result<PayloadSaveResult, ExAnimationIoError> {
+        let request = installed_global_exanimation_save_request(
+            &self.rom,
+            animation,
+            installation,
+            double_size_modes,
+            options,
+        )?;
+        Ok(self
+            .save_tagged_payloads_with_checksum_and_reclamation(
+                &request.description,
+                std::slice::from_ref(&request),
+                reclamation.checksum_field,
+                reclamation.manifest,
+            )?
+            .remove(0))
+    }
+
     /// Resolves the installed hook variant and distinguishes an absent subsystem, empty slot, and
     /// present compact `ExAnimation` payload.
     ///
@@ -359,6 +448,24 @@ pub(crate) fn exanimation_save_request(
     double_size_modes: &[bool],
     options: &ExAnimationSaveOptions,
 ) -> Result<PayloadSaveRequest, ExAnimationIoError> {
+    exanimation_save_request_at_pointer(
+        &format!("save ExAnimation slot {slot:03x}"),
+        layout.pointers.pointer_offset(slot)?,
+        animation,
+        layout,
+        double_size_modes,
+        options,
+    )
+}
+
+fn exanimation_save_request_at_pointer(
+    description: &str,
+    pointer_offset: usize,
+    animation: &CompactExAnimation,
+    layout: ExAnimationRomLayout,
+    double_size_modes: &[bool],
+    options: &ExAnimationSaveOptions,
+) -> Result<PayloadSaveRequest, ExAnimationIoError> {
     validate_size_modes(double_size_modes)?;
     let payload = animation.encode(double_size_modes)?;
     if payload.len() > layout.maximum_encoded_len {
@@ -373,9 +480,9 @@ pub(crate) fn exanimation_save_request(
         return Err(ExAnimationIoError::NonCanonicalAnimation);
     }
     Ok(PayloadSaveRequest {
-        description: format!("save ExAnimation slot {slot:03x}"),
+        description: description.into(),
         payload,
-        pointer: layout.pointers.pointer_offset(slot)?.into(),
+        pointer: pointer_offset.into(),
         mapper: layout.mapper,
         allocation_policy: options.allocation.clone(),
         previous_block: options.previous_block.clone(),
@@ -383,6 +490,37 @@ pub(crate) fn exanimation_save_request(
         maximum_payload_len: layout.maximum_encoded_len,
         erase_fill: options.erase_fill,
     })
+}
+
+fn installed_global_exanimation_save_request(
+    rom: &lm_rom::RomImage,
+    animation: &CompactExAnimation,
+    installation: InstalledLayout<InstalledExAnimationRomLayout>,
+    double_size_modes: &[bool],
+    options: &ExAnimationSaveOptions,
+) -> Result<PayloadSaveRequest, ExAnimationIoError> {
+    const GLOBAL_POINTER_DISPLACEMENT: isize = 0x5c;
+    let installed = installation
+        .resolve(rom)?
+        .ok_or(InstalledLayoutError::NotInstalled("global ExAnimation"))?;
+    if installed.pointer_presence_mask == 0 || installed.pointer_presence_mask & !0x00ff_ffff != 0 {
+        return Err(ExAnimationIoError::InvalidPointerPresenceMask(
+            installed.pointer_presence_mask,
+        ));
+    }
+    let mut locator = installed
+        .pointer_locator
+        .ok_or(ExAnimationIoError::GlobalPointerLocatorUnavailable)?;
+    locator.final_operand_displacement = GLOBAL_POINTER_DISPLACEMENT;
+    let pointer_offset = locator.final_operand_offset(rom)?;
+    exanimation_save_request_at_pointer(
+        "save global ExAnimation",
+        pointer_offset,
+        animation,
+        installed.payload,
+        double_size_modes,
+        options,
+    )
 }
 
 fn validate_size_modes(double_size_modes: &[bool]) -> Result<(), ExAnimationIoError> {
@@ -648,6 +786,93 @@ mod tests {
                 .unwrap(),
             InstalledAsset::Present(animation())
         );
+    }
+
+    #[test]
+    fn installed_global_exanimation_save_reopens_and_undoes_through_runtime_offset_5c() {
+        let mut project = Project::new(RomImage::from_bytes(vec![0xff; 0x8000]).unwrap());
+        let runtime_target = 0x7000;
+        project.rom.write(0x10, &[0x22]).unwrap();
+        write_u24(
+            &mut project.rom,
+            0x11,
+            pc_to_snes(Mapper::LoRom, runtime_target).unwrap(),
+        );
+        project
+            .rom
+            .write(runtime_target + 0x5c, &[0, 0, 0])
+            .unwrap();
+        let installed = InstalledLayout::Alternatives {
+            primary: crate::GatedLayout {
+                marker: crate::InstallationMarker {
+                    offset: 0x10,
+                    expected: 0x22,
+                },
+                layout: InstalledExAnimationRomLayout {
+                    payload: layout(),
+                    pointer_presence_mask: 0x00ff_0000,
+                    pointer_locator: Some(ChainedSnesPointerLocator {
+                        mapper: Mapper::LoRom,
+                        first_operand_offset: 0x11,
+                        final_operand_displacement: -0x20,
+                    }),
+                },
+            },
+            fallback: None,
+        };
+        let original = project.save_snapshot();
+        let mut save_options = options();
+        save_options.allocation.protected = vec![
+            ProtectedRange(0x10..0x14),
+            ProtectedRange(runtime_target + 0x5c..runtime_target + 0x5f),
+            ProtectedRange(0x7fdc..0x7fe0),
+        ];
+
+        project
+            .save_installed_global_exanimation(
+                &animation(),
+                installed,
+                &[false; 256],
+                &save_options,
+            )
+            .unwrap();
+        assert_eq!(
+            project
+                .load_installed_global_exanimation(installed, &[false; 256])
+                .unwrap(),
+            InstalledAsset::Present(animation())
+        );
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
+
+        project
+            .save_installed_global_exanimation_with_checksum(
+                &animation(),
+                installed,
+                &[false; 256],
+                0x7fdc,
+                &save_options,
+            )
+            .unwrap();
+
+        assert_eq!(
+            project
+                .load_installed_global_exanimation(installed, &[false; 256])
+                .unwrap(),
+            InstalledAsset::Present(animation())
+        );
+        let expected = lm_rom::compute_snes_checksum(project.rom.logical_bytes(), 0x7fdc).unwrap();
+        assert_eq!(
+            project.rom.read(0x7fdc, 4).unwrap(),
+            [
+                (expected.complement & 0xff) as u8,
+                (expected.complement >> 8) as u8,
+                (expected.checksum & 0xff) as u8,
+                (expected.checksum >> 8) as u8,
+            ]
+        );
+        assert!(project.history.undo(&mut project.rom).unwrap());
+        assert_eq!(project.save_snapshot(), original);
     }
 
     #[test]
