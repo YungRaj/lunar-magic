@@ -144,6 +144,35 @@ mod tests {
         assert!(!project.history.can_undo());
     }
 
+    #[test]
+    fn exlorom_variant_is_rejected_atomically_instead_of_using_lorom_offsets() {
+        let (mut project, _) = authenticated_project();
+        project.convert_to_64_mbit_exlorom().unwrap();
+        let converted = project.save_snapshot();
+        let history_before = project.history.undo_len();
+
+        let error = project
+            .restrict_level_access(
+                "Wrong mapper must fail",
+                KEYS,
+                smw_us_v1_level_access_restriction_layout(),
+            )
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                error,
+                LevelAccessRestrictionError::MapperMismatch {
+                    expected: Mapper::ExLoRom,
+                    actual: Mapper::LoRom,
+                }
+            ),
+            "unexpected restriction error: {error:?}"
+        );
+        assert_eq!(project.save_snapshot(), converted);
+        assert_eq!(project.history.undo_len(), history_before);
+    }
+
     const fn fnv1a64(bytes: &[u8]) -> u64 {
         let mut hash = 0xcbf2_9ce4_8422_2325;
         let mut index = 0;
