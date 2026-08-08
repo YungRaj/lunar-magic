@@ -53,6 +53,7 @@ struct Workspace {
     internal_cache: Option<crate::vanilla_map16_preview::VanillaInternalGraphicsCache>,
     internal_cache_error: Option<String>,
     internal_cache_special_world: bool,
+    external_sprite_assets: lm_graphics::ExternalSpriteAssets,
 }
 
 enum PendingLoad {
@@ -118,6 +119,7 @@ impl RomGraphicsEditor {
                     &workspace.profile,
                     level,
                     special_world_passed,
+                    Some(&workspace.external_sprite_assets),
                 )
             });
         match result {

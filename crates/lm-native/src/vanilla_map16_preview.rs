@@ -152,7 +152,7 @@ pub(crate) fn load_pristine_internal_graphics_cache(
     let rom = RomImage::from_bytes(rom_bytes).map_err(|error| error.to_string())?;
     let project = Project::new(rom);
     let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
-    let mut cache = vec![blank; INTERNAL_GRAPHICS_CACHE_TILES];
+    let mut cache = vec![blank.clone(); INTERNAL_GRAPHICS_CACHE_TILES];
 
     let foreground_files = lm_profile::smw_us_v1_object_tileset_graphics_files(
         &project.rom,
@@ -248,13 +248,14 @@ pub(crate) fn load_pristine_internal_graphics_cache(
 /// graphics workspace through the active revision profile.
 ///
 /// Unlike the pristine constructor, this resolves an enabled six-slot Super GFX Bypass and the
-/// installed graphics pointer table. Banks owned by ExAnimation or external project files remain
-/// zero until their independent loaders are attached; no unrelated ROM bytes are guessed.
+/// installed graphics pointer table. Optional external project assets populate their recovered
+/// banks; no unrelated ROM bytes are guessed.
 pub(crate) fn load_profiled_internal_graphics_cache(
     image: RomImage,
     profile: &RevisionProfile,
     level: u16,
     special_world_passed: bool,
+    external_sprite_assets: Option<&lm_graphics::ExternalSpriteAssets>,
 ) -> Result<VanillaInternalGraphicsCache, String> {
     let project = Project::new(image.clone());
     let level_layout = profile
@@ -265,7 +266,7 @@ pub(crate) fn load_profiled_internal_graphics_cache(
         .map_err(|error| format!("cannot load level {level:03X} graphics header: {error}"))?;
     let header = loaded_level.layer1.header;
     let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
-    let mut cache = vec![blank; INTERNAL_GRAPHICS_CACHE_TILES];
+    let mut cache = vec![blank.clone(); INTERNAL_GRAPHICS_CACHE_TILES];
 
     let expanded = profile
         .expanded_settings
@@ -319,8 +320,11 @@ pub(crate) fn load_profiled_internal_graphics_cache(
     if special_world_passed && sprite_files.len() >= 2 {
         sprite_files[1] = 0x31;
     }
-    let foreground = load_profiled_graphics_slots(&project, profile.graphics, &foreground_files)?;
-    let sprites = load_profiled_graphics_slots(&project, profile.graphics, &sprite_files)?;
+    let mut foreground =
+        load_profiled_graphics_slots(&project, profile.graphics, &foreground_files)?;
+    foreground.resize_with(6 * LAYER1_SPRITE_SLOT_TILES, || blank.clone());
+    let mut sprites = load_profiled_graphics_slots(&project, profile.graphics, &sprite_files)?;
+    sprites.resize_with(4 * LAYER1_SPRITE_SLOT_TILES, || blank.clone());
     let foreground_len = foreground.len().min(INTERNAL_SPRITE_START);
     cache[..foreground_len].clone_from_slice(&foreground[..foreground_len]);
     let sprite_len = sprites
@@ -350,7 +354,86 @@ pub(crate) fn load_profiled_internal_graphics_cache(
     }
     cache[INTERNAL_LAYER3_START..INTERNAL_LAYER3_START + INTERNAL_LAYER3_TILES]
         .clone_from_slice(&layer3);
+
+    let mut relative_tiles = foreground;
+    relative_tiles.extend(sprites);
+    relative_tiles.truncate(0x400);
+    populate_profiled_exanimation_source_banks(
+        &project,
+        profile,
+        usize::from(level),
+        &relative_tiles,
+        &mut cache,
+    )?;
+    if let Some(assets) = external_sprite_assets {
+        for index in INTERNAL_EXTERNAL_SPRITE_START
+            ..INTERNAL_EXTERNAL_SPRITE_START + INTERNAL_EXTERNAL_SPRITE_TILES
+        {
+            let global = u16::try_from(index).expect("internal cache index fits u16");
+            if let Some(tile) = assets.graphics_tile(global) {
+                cache[index] = tile.clone();
+            }
+        }
+    }
     Ok(VanillaInternalGraphicsCache { tiles: cache })
+}
+
+fn populate_profiled_exanimation_source_banks(
+    project: &Project,
+    profile: &RevisionProfile,
+    level: usize,
+    relative_tiles: &[IndexedTile],
+    cache: &mut [IndexedTile],
+) -> Result<(), String> {
+    let level_animation = project
+        .load_installed_exanimation(
+            level,
+            profile.exanimation_installation,
+            &profile.exanimation_double_size_modes,
+        )
+        .map_err(|error| format!("cannot load level ExAnimation source bank: {error}"))?;
+    let global_animation = match project.load_installed_global_exanimation(
+        profile.exanimation_installation,
+        &profile.exanimation_double_size_modes,
+    ) {
+        Ok(animation) => animation,
+        Err(lm_project::ExAnimationIoError::GlobalPointerLocatorUnavailable) => {
+            lm_project::InstalledAsset::SubsystemAbsent
+        }
+        Err(error) => {
+            return Err(format!(
+                "cannot load global ExAnimation source bank: {error}"
+            ));
+        }
+    };
+    for animation in [level_animation, global_animation] {
+        let lm_project::InstalledAsset::Present(animation) = animation else {
+            continue;
+        };
+        copy_exanimation_relative_bank(&animation, relative_tiles, cache)?;
+    }
+    Ok(())
+}
+
+fn copy_exanimation_relative_bank(
+    animation: &lm_graphics::CompactExAnimation,
+    relative_tiles: &[IndexedTile],
+    cache: &mut [IndexedTile],
+) -> Result<(), String> {
+    let bank = usize::from(animation.setting & 3);
+    let start = INTERNAL_EXANIMATION_START + bank * 0x400;
+    let count = relative_tiles.len().min(0x400);
+    let end = start
+        .checked_add(count)
+        .ok_or_else(|| "ExAnimation source-bank range overflow".to_owned())?;
+    let cache_len = cache.len();
+    let destination = cache.get_mut(start..end).ok_or_else(|| {
+        format!(
+            "internal cache has {cache_len:X} tiles; ExAnimation bank {bank} requires {start:X}..{end:X}"
+        )
+    })?;
+    destination.clone_from_slice(&relative_tiles[..count]);
+    Ok(())
 }
 
 fn load_profiled_graphics_slots(
@@ -2124,7 +2207,9 @@ mod tests {
         profile.sprite_lengths = lm_level::SpriteLengthTable::standard();
         profile.expanded_settings = None;
 
-        let actual = load_profiled_internal_graphics_cache(image, &profile, 0x105, false).unwrap();
+        profile.exanimation_installation = lm_project::InstalledLayout::Absent;
+        let actual =
+            load_profiled_internal_graphics_cache(image, &profile, 0x105, false, None).unwrap();
         assert_eq!(actual.tiles.len(), INTERNAL_GRAPHICS_CACHE_TILES);
         assert_eq!(
             &actual.tiles[INTERNAL_SPRITE_START..INTERNAL_GFX33_START],
@@ -2142,6 +2227,72 @@ mod tests {
             &actual.tiles[INTERNAL_LAYER3_START..INTERNAL_EXTERNAL_SPRITE_START],
             &expected.tiles[INTERNAL_LAYER3_START..INTERNAL_EXTERNAL_SPRITE_START]
         );
+    }
+
+    #[test]
+    fn exanimation_setting_selects_one_exact_relative_source_bank() {
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let source = (0..0x420)
+            .map(|index| IndexedTile::new([u8::try_from(index & 0x0f).unwrap(); 64]))
+            .collect::<Vec<_>>();
+        let mut cache = vec![blank.clone(); INTERNAL_GRAPHICS_CACHE_TILES];
+        let animation = lm_graphics::CompactExAnimation {
+            setting: 6,
+            header_value: 0,
+            trigger_mask: 0,
+            trigger_values: [0; 16],
+            records: Vec::new(),
+        };
+
+        copy_exanimation_relative_bank(&animation, &source, &mut cache).unwrap();
+        let start = INTERNAL_EXANIMATION_START + 2 * 0x400;
+        assert_eq!(&cache[start..start + 0x400], &source[..0x400]);
+        assert!(
+            cache[INTERNAL_EXANIMATION_START..start]
+                .iter()
+                .all(tile_is_blank)
+        );
+        assert!(
+            cache[start + 0x400..INTERNAL_LAYER3_START]
+                .iter()
+                .all(tile_is_blank)
+        );
+    }
+
+    #[test]
+    fn profiled_cache_places_external_sprite_files_at_all_eight_recovered_bases() {
+        let bytes = crate::test_support::pristine_smw_us_rom_bytes();
+        let image = RomImage::from_bytes(bytes).unwrap();
+        let mut profile = lm_profile::test_support::profile();
+        profile.mapper = lm_rom::Mapper::LoRom;
+        profile.level = lm_profile::smw_us_v1_vanilla_level_layout();
+        profile.graphics = lm_profile::smw_us_v1_vanilla_graphics_layout();
+        profile.sprite_lengths = lm_level::SpriteLengthTable::standard();
+        profile.expanded_settings = None;
+        profile.exanimation_installation = lm_project::InstalledLayout::Absent;
+        let mut assets = lm_graphics::ExternalSpriteAssets::default();
+        for slot in 0..lm_graphics::EXTERNAL_SPRITE_GRAPHICS_SLOTS {
+            let tile = IndexedTile::new([u8::try_from(slot + 1).unwrap(); 64]);
+            assets
+                .set_graphics_slot(slot, &lm_graphics::encode_4bpp_tile(&tile).unwrap())
+                .unwrap();
+        }
+
+        let cache =
+            load_profiled_internal_graphics_cache(image, &profile, 0x105, false, Some(&assets))
+                .unwrap();
+        for slot in 0..lm_graphics::EXTERNAL_SPRITE_GRAPHICS_SLOTS {
+            let index = INTERNAL_EXTERNAL_SPRITE_START + slot * 0x400;
+            assert_eq!(
+                cache.tiles[index].pixels(),
+                &[u8::try_from(slot + 1).unwrap(); 64]
+            );
+            assert!(
+                cache.tiles[index + 1..index + 0x400]
+                    .iter()
+                    .all(tile_is_blank)
+            );
+        }
     }
 
     #[test]

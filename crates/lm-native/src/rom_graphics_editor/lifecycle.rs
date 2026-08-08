@@ -1,7 +1,10 @@
 use super::{AppState, PendingClose, PendingLoad, RomGraphicsEditor, Workspace, egui};
 use crate::document_loader::{BoundedRead, LoadedDocument};
 use lm_app::{GraphicsOwnershipFile, RevisionProfileControllers};
-use lm_graphics::{PaletteInterchangeFile, PaletteOwnership};
+use lm_graphics::{
+    EXTERNAL_SPRITE_GRAPHICS_SLOT_MAX_BYTES, EXTERNAL_SPRITE_GRAPHICS_SLOTS,
+    PaletteInterchangeFile, PaletteOwnership,
+};
 use lm_rom::RomImage;
 
 impl RomGraphicsEditor {
@@ -28,12 +31,26 @@ impl RomGraphicsEditor {
         let Some(path) = crate::dialogs::choose_graphics_ownership() else {
             return;
         };
-        let request = BoundedRead::new(
+        let mut requests = vec![BoundedRead::new(
             path,
             u64::try_from(GraphicsOwnershipFile::MAX_FILE_LEN).unwrap_or(u64::MAX),
             "graphics ownership evidence",
-        );
-        match self.loader.start(vec![request]) {
+        )];
+        if let Some(parent) = app
+            .document_path
+            .as_deref()
+            .and_then(std::path::Path::parent)
+        {
+            let directory = parent.join("ExternalGraphics");
+            for slot in 0..EXTERNAL_SPRITE_GRAPHICS_SLOTS {
+                requests.push(BoundedRead::optional(
+                    directory.join(format!("ExSpriteGFX{slot:02X}.bin")),
+                    u64::try_from(EXTERNAL_SPRITE_GRAPHICS_SLOT_MAX_BYTES).unwrap_or(u64::MAX),
+                    format!("external sprite graphics slot {slot:02X}"),
+                ));
+            }
+        }
+        match self.loader.start(requests) {
             Ok(()) => {
                 self.pending_load = Some(PendingLoad::Ownership {
                     profiled,
@@ -183,7 +200,11 @@ fn decode_loaded(
     let lm_app::EditorMode::Graphics(slot) = profiled.snapshot.mode else {
         return Err("select a graphics file before opening the ROM graphics editor".into());
     };
-    let [(_, bytes)] = loaded.into_exact::<1>("graphics ownership")?;
+    let mut files = loaded.files.into_iter();
+    let (_, bytes) = files
+        .next()
+        .ok_or("graphics ownership loader returned no ownership file")?;
+    let external_sprite_assets = crate::ssc_sidecar_editor::decode_external_sprite_assets(files)?;
     let ownership = GraphicsOwnershipFile::decode(&bytes)
         .map_err(|error| error.to_string())?
         .ownership;
@@ -215,6 +236,7 @@ fn decode_loaded(
             &profiled.profile,
             level,
             false,
+            Some(&external_sprite_assets),
         ) {
             Ok(cache) => (Some(cache), None),
             Err(error) => (None, Some(error)),
@@ -232,5 +254,6 @@ fn decode_loaded(
         internal_cache,
         internal_cache_error,
         internal_cache_special_world: false,
+        external_sprite_assets,
     })
 }

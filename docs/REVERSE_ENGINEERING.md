@@ -1731,12 +1731,16 @@ FG/BG `$000-$3FF`, current sprites `$400-$5FF`, GFX33 `$600-$77F`, selected auxi
 Layer 3 banks `$1C00-$1FFF`, and eight `$400`-tile `ExSpriteGFX00-07` banks `$2000-$3FFF`.
 `LoadAnimationAndPlayerGraphicsCaches` proves GFX33 and GFX32 destinations and exact `$180`/`$2E8`
 extents; its four offset/size table entries map the ExAnimation banks. `LoadExternalSpriteGraphicsAndPalette`
-uses the parallel eight-entry table for the final banks. The pristine Rust editor now materializes
-the complete cache with exact ROM-owned banks, zeroes absent auxiliary/ExAnimation/external-file
-banks, retains the original locked default, and consumes Ctrl+Shift+Page Down only from the focused
-tile sheet to expose pages through `$3F` with the original status. The diagnostic view stays
-read-only until installed-bank and transient internal-edit save routing are recovered; those
-remaining mutation paths are not claimed as complete parity.
+uses the parallel eight-entry table for the final banks. The pristine Rust editor materializes the
+complete cache with exact ROM-owned banks, zeroes absent auxiliary/ExAnimation/external-file banks,
+retains the original locked default, and consumes Ctrl+Shift+Page Down only from the focused tile
+sheet to expose pages through `$3F` with the original status. The profile-backed installed editor
+additionally resolves the current level's legacy or six-slot bypass files, installed GFX32/GFX33
+and Layer 3 sources, copies the relative FG/BG/SP source set into each bank selected by active
+level/global ExAnimation, and boundedly reads all present ROM-sibling
+`ExternalGraphics/ExSpriteGFX00–07.bin` files into their eight exact bases. The diagnostic view
+stays read-only until auxiliary-animation selection and transient internal-edit save routing are
+recovered; those remaining mutation paths are not claimed as complete parity.
 The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
 tile-edit selection. `HandleGraphicsEditorWindowMessage` at `005068c0` proves that primary and
