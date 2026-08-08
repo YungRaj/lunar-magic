@@ -221,18 +221,25 @@ while preserving its source and selecting the inserted record. Duplication begin
 secondary press, holds the inserted entity in the original's immediate move-drag state, and applies
 the final bounded position when the secondary button is released, even outside the canvas;
 `right_click_duplication_repositions_objects_and_sprites_without_removing_sources` covers the
-single-selection boundary. Original multi-selection displacement remains incomplete.
+single-selection boundary. Sprite multi-selection remains incomplete.
 
 The recovered multi-selection core now has a typed, failure-atomic foundation. Ghidra
 `ValidateAndSnapSelectedObjectDrag` (`00438DC0`),
 `ReinsertMovedLevelObjectsByTileDelta` (`00438540`), and
 `ClampSelectedSpriteGroupMove` (`004CE610`) prove the shared whole-tile displacement and
-all-members-valid bounds contract. `ObjectStream::duplicate_ordinary_object_group` retains sources,
-relative spacing, extension bytes, selection order, trailing controls, and canonical screen
-transitions while rejecting every malformed or out-of-bounds group without mutation;
+all-members-valid bounds contract. `ObjectStream::duplicate_ordinary_object_group` and
+`relocate_ordinary_object_group` retain sources when cloning, relative spacing, extension bytes,
+selection order, trailing controls, and canonical screen transitions while rejecting every
+malformed or out-of-bounds group without mutation;
 `group_duplication_preserves_sources_relative_delta_and_selection_order` and
-`invalid_group_duplication_is_failure_atomic` cover the boundary. Canvas selection-set wiring and
-the original nearest-valid fallback remain incomplete.
+`invalid_group_duplication_is_failure_atomic`, together with the parallel relocation tests, cover
+the model boundary. Ctrl-modified physical presses now add or remove Layer 1 and object-backed
+Layer 2 members from a domain-exclusive selection set. Unmodified primary drag moves the set with
+one atomic delta; unmodified right press clones the complete set at one anchor-relative tile delta,
+selects the clones, begins the immediate move drag, and applies one atomic release delta.
+`ctrl_object_selection_toggles_members_and_keeps_layer_domains_exclusive` and
+`right_drag_duplicates_and_moves_a_complete_object_group_atomically` cover that native workflow.
+Sprite selection sets and the original nearest-valid fallback remain incomplete.
 
 The sprite row now also covers canonical framing transitions. Semantic native/MWL save paths derive
 legacy versus expanded framing from the actual tokens, synchronize header bit `$20`, and reopen

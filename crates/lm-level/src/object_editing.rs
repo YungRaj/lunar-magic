@@ -91,6 +91,12 @@ pub enum ObjectEdit {
         major_delta: i32,
         minor_delta: i32,
     },
+    /// Translates a positioned selection by one shared native tile delta.
+    RelocateOrdinaryGroup {
+        selected: Vec<usize>,
+        major_delta: i32,
+        minor_delta: i32,
+    },
 }
 
 /// Proven semantic fields of one positioned native object record.
@@ -261,6 +267,14 @@ impl ObjectStream {
                     minor_delta,
                 } => staged
                     .duplicate_ordinary_object_group(selected, *major_delta, *minor_delta)
+                    .map(drop)
+                    .map_err(LevelEditError::ObjectRelocation),
+                ObjectEdit::RelocateOrdinaryGroup {
+                    selected,
+                    major_delta,
+                    minor_delta,
+                } => staged
+                    .relocate_ordinary_object_group(selected, *major_delta, *minor_delta)
                     .map(drop)
                     .map_err(LevelEditError::ObjectRelocation),
             };

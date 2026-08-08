@@ -20,22 +20,30 @@ The live Ghidra service for the authenticated Lunar Magic 3.63 executable was qu
 - `ClampSelectedSpriteGroupMove` at `004CE610` provides the corresponding all-members-valid
   boundary for selected sprites.
 
-The Rust canvas uses its typed insertion-at-position transactions for the supported single active
-selection. An unmodified secondary click duplicates and relocates the selected Layer 1 object,
-object-backed Layer 2 object, or sprite; the inserted record becomes selected and the source remains
-present. Duplication occurs on the physical press, enters a secondary-button move drag immediately,
-and applies the final bounded position on release, including releases outside the canvas. Modified
-secondary clicks remain unconsumed for higher-level gestures.
+The Rust canvas uses Ctrl-modified physical left presses to add or remove Layer 1 or object-backed
+Layer 2 objects from one domain-exclusive selection set. An unmodified press on a selected group
+member preserves the set for dragging. An unmodified secondary press duplicates the complete object
+selection with one anchor-relative tile displacement, selects only the clones, and begins a shared
+move drag immediately; release applies one atomic delta to every clone. Single object, Layer 2
+object, and sprite selections retain their established clone-and-drag route. A failed member bounds
+check publishes neither a partial move nor a partial clone, and releasing outside the canvas clears
+the transient drag without moving the group. Modified secondary clicks remain unconsumed for
+higher-level gestures.
 
 `right_click_duplication_repositions_objects_and_sprites_without_removing_sources` verifies the
-source-preserving clone, exact target cell, selected inserted record, immediate drag state, release
-cleanup, and semantic sprite fields. Multi-selection displacement remains a separate parity
-boundary.
+single-selection source-preserving clone, exact target cell, selected inserted record, immediate
+drag state, release cleanup, and semantic sprite fields.
 
-The orientation-neutral `ObjectStream::duplicate_ordinary_object_group` foundation now clones an
-ordered selection with one shared major/minor tile delta, retains every source and extension byte,
-canonically rebuilds screen transitions once, returns the clone indexes in selection order, and
-rejects empty, duplicate, non-positioned, opaque-control, or any-member-out-of-bounds input without
-changing the stream. `group_duplication_preserves_sources_relative_delta_and_selection_order` and
-`invalid_group_duplication_is_failure_atomic` cover that model/transaction boundary. Canvas
-multi-selection and the original nearest-valid fallback remain the next interaction layer.
+The orientation-neutral `ObjectStream::duplicate_ordinary_object_group` and
+`relocate_ordinary_object_group` operations clone or move an ordered selection with one shared
+major/minor tile delta, retain every source and extension byte when cloning, canonically rebuild
+screen transitions once, return selection indexes in caller order, and reject empty, duplicate,
+non-positioned, opaque-control, or any-member-out-of-bounds input without changing the stream.
+`group_duplication_preserves_sources_relative_delta_and_selection_order`,
+`invalid_group_duplication_is_failure_atomic`,
+`group_relocation_moves_every_member_once_and_tracks_reordered_indexes`, and
+`invalid_group_relocation_is_failure_atomic` cover that model/transaction boundary.
+`ctrl_object_selection_toggles_members_and_keeps_layer_domains_exclusive` and
+`right_drag_duplicates_and_moves_a_complete_object_group_atomically` cover the native selection,
+clone, immediate-drag, release, and source-preservation workflow. Sprite multi-selection and the
+original nearest-valid fallback remain separate interaction boundaries.

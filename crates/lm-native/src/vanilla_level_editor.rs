@@ -312,6 +312,14 @@ enum CanvasEntityShortcut {
     Remove,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CanvasObjectGroupDrag {
+    domain: CanvasEntitySelection,
+    origin_major: i32,
+    origin_minor: i32,
+    secondary: bool,
+}
+
 #[derive(Default)]
 pub(crate) struct VanillaLevelEditor {
     key: Option<EditorKey>,
@@ -326,6 +334,7 @@ pub(crate) struct VanillaLevelEditor {
     midway_install_form: SeparateMidwayEntrance,
     form: HeaderForm,
     selected_object: usize,
+    selected_object_group: Vec<usize>,
     object_form: ObjectForm,
     dragging_object: Option<usize>,
     dragging_layer2_object: Option<usize>,
@@ -339,6 +348,7 @@ pub(crate) struct VanillaLevelEditor {
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
     secondary_duplicate_drag: bool,
+    object_group_drag: Option<CanvasObjectGroupDrag>,
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
     canvas_zoom_percent: Option<u16>,
@@ -408,6 +418,7 @@ pub(crate) struct VanillaLevelEditor {
     selected_layer2_tile: usize,
     layer2_word: u16,
     selected_layer2_object: usize,
+    selected_layer2_object_group: Vec<usize>,
     layer2_object_form: ObjectForm,
     layer2_object_placement_template: Option<ObjectRecord>,
     external_asset_revision: u64,
@@ -1340,6 +1351,9 @@ impl VanillaLevelEditor {
             .cloned();
         self.dragging_object = None;
         self.dragging_layer2_object = None;
+        self.object_group_drag = None;
+        self.selected_object_group.clear();
+        self.selected_layer2_object_group.clear();
         self.resizing_object = None;
         self.resizing_layer2_object = None;
         self.external_sprite_textures.clear();
@@ -1582,6 +1596,9 @@ impl VanillaLevelEditor {
         self.dragging_object = None;
         self.dragging_layer2_object = None;
         self.secondary_duplicate_drag = false;
+        self.object_group_drag = None;
+        self.selected_object_group.clear();
+        self.selected_layer2_object_group.clear();
         self.resizing_object = None;
         self.resizing_layer2_object = None;
         self.canvas_entity_selection = None;
@@ -2863,6 +2880,7 @@ impl VanillaLevelEditor {
                     vertical,
                     layer2_records,
                     layer2_placements,
+                    &self.selected_layer2_object_group,
                     self.selected_layer2_object,
                     map16_texture,
                     &layer2_artwork_bounds,
@@ -2886,6 +2904,7 @@ impl VanillaLevelEditor {
                     vertical,
                     records,
                     placements,
+                    &self.selected_object_group,
                     self.selected_object,
                     map16_texture,
                     &layer1_artwork_bounds,
@@ -3073,11 +3092,13 @@ impl VanillaLevelEditor {
         // pointer motion (especially through remote-desktop clients), which previously made the
         // canvas appear completely inert. The same press also becomes the anchor if egui later
         // promotes the gesture to a drag.
-        let primary_pressed = response.hovered()
-            && response
-                .ctx
-                .input(|input| input.pointer.button_pressed(egui::PointerButton::Primary));
-        let selection_pressed = primary_pressed || response.clicked() || response.drag_started();
+        let (primary_pressed, additive_selection) = response.ctx.input(|input| {
+            (
+                response.hovered() && input.pointer.button_pressed(egui::PointerButton::Primary),
+                input.modifiers.ctrl,
+            )
+        });
+        let selection_pressed = primary_pressed;
         if selection_pressed {
             response.request_focus();
         }
@@ -3140,10 +3161,15 @@ impl VanillaLevelEditor {
             && let Some(index) = hit_object
             && let Some(record) = records.get(index)
         {
-            self.selected_object = index;
-            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
-            self.object_form = ObjectForm::from_record(record);
-            self.object_placement_template = Some(record.clone());
+            if self.update_canvas_object_group(
+                CanvasEntitySelection::Layer1Object,
+                index,
+                additive_selection,
+            ) {
+                self.selected_object = index;
+                self.object_form = ObjectForm::from_record(record);
+                self.object_placement_template = Some(record.clone());
+            }
         }
         if selection_pressed
             && self.placement_mode.is_none()
@@ -3151,10 +3177,15 @@ impl VanillaLevelEditor {
             && let Some(index) = hit_layer2_object
             && let Some(record) = layer2_records.get(index)
         {
-            self.selected_layer2_object = index;
-            self.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
-            self.layer2_object_form = ObjectForm::from_record(record);
-            self.layer2_object_placement_template = Some(record.clone());
+            if self.update_canvas_object_group(
+                CanvasEntitySelection::Layer2Object,
+                index,
+                additive_selection,
+            ) {
+                self.selected_layer2_object = index;
+                self.layer2_object_form = ObjectForm::from_record(record);
+                self.layer2_object_placement_template = Some(record.clone());
+            }
         }
         if response.clicked()
             && hit_object.is_none()
@@ -3175,17 +3206,23 @@ impl VanillaLevelEditor {
             && let Some(index) = hit_sprite
             && let Some(controller) = &self.controller
         {
+            self.selected_object_group.clear();
+            self.selected_layer2_object_group.clear();
             self.selected_sprite = index;
             self.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
             self.sprite_form = SpriteForm::from_token(
                 controller.level().sprites.header,
                 controller.level().sprites.tokens.get(index),
             );
-            if response.drag_started() {
-                self.dragging_sprite = Some(index);
-            }
         }
-        if response.drag_started()
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && !additive_selection
+            && let Some(index) = hit_sprite
+        {
+            self.dragging_sprite = Some(index);
+        }
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && !additive_selection
             && hit_sprite.is_none()
             && let Some(index) = hit_object_resize
         {
@@ -3196,18 +3233,34 @@ impl VanillaLevelEditor {
                 self.object_form = ObjectForm::from_record(record);
                 self.object_placement_template = Some(record.clone());
             }
-        } else if response.drag_started()
+        } else if response.drag_started_by(egui::PointerButton::Primary)
+            && !additive_selection
             && hit_sprite.is_none()
             && let Some(index) = hit_object
             && let Some(record) = records.get(index)
         {
-            self.dragging_object = Some(index);
+            if self.selected_object_group.len() > 1
+                && self.selected_object_group.contains(&index)
+                && let Some(position) = response.interact_pointer_pos()
+                && let Some((origin_major, origin_minor)) =
+                    object_native_position_at_canvas(position, rect, cell, vertical)
+            {
+                self.object_group_drag = Some(CanvasObjectGroupDrag {
+                    domain: CanvasEntitySelection::Layer1Object,
+                    origin_major,
+                    origin_minor,
+                    secondary: false,
+                });
+            } else {
+                self.dragging_object = Some(index);
+            }
             self.selected_object = index;
             self.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
             self.object_form = ObjectForm::from_record(record);
             self.object_placement_template = Some(record.clone());
         }
-        if response.drag_started()
+        if response.drag_started_by(egui::PointerButton::Primary)
+            && !additive_selection
             && hit_sprite.is_none()
             && hit_object.is_none()
             && let Some(index) = hit_layer2_resize
@@ -3219,20 +3272,49 @@ impl VanillaLevelEditor {
                 self.layer2_object_form = ObjectForm::from_record(record);
                 self.layer2_object_placement_template = Some(record.clone());
             }
-        } else if response.drag_started()
+        } else if response.drag_started_by(egui::PointerButton::Primary)
+            && !additive_selection
             && hit_sprite.is_none()
             && hit_object.is_none()
             && let Some(index) = hit_layer2_object
             && let Some(record) = layer2_records.get(index)
         {
-            self.dragging_layer2_object = Some(index);
+            if self.selected_layer2_object_group.len() > 1
+                && self.selected_layer2_object_group.contains(&index)
+                && let Some(position) = response.interact_pointer_pos()
+                && let Some((origin_major, origin_minor)) =
+                    object_native_position_at_canvas(position, rect, cell, vertical)
+            {
+                self.object_group_drag = Some(CanvasObjectGroupDrag {
+                    domain: CanvasEntitySelection::Layer2Object,
+                    origin_major,
+                    origin_minor,
+                    secondary: false,
+                });
+            } else {
+                self.dragging_layer2_object = Some(index);
+            }
             self.selected_layer2_object = index;
             self.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
             self.layer2_object_form = ObjectForm::from_record(record);
             self.layer2_object_placement_template = Some(record.clone());
         }
         if response.drag_stopped_by(egui::PointerButton::Primary) {
-            self.finish_canvas_entity_drag(response.interact_pointer_pos(), rect, cell, vertical);
+            if self.object_group_drag.is_some_and(|drag| !drag.secondary) {
+                self.finish_object_group_drag(
+                    response.interact_pointer_pos(),
+                    rect,
+                    cell,
+                    vertical,
+                );
+            } else {
+                self.finish_canvas_entity_drag(
+                    response.interact_pointer_pos(),
+                    rect,
+                    cell,
+                    vertical,
+                );
+            }
         }
         if self.dragging_object.is_none()
             && self.dragging_layer2_object.is_none()
@@ -3242,6 +3324,76 @@ impl VanillaLevelEditor {
             && let Some(shortcut) = canvas_entity_shortcut(response)
         {
             self.apply_canvas_entity_shortcut(shortcut);
+        }
+    }
+
+    fn update_canvas_object_group(
+        &mut self,
+        domain: CanvasEntitySelection,
+        index: usize,
+        additive: bool,
+    ) -> bool {
+        debug_assert!(matches!(
+            domain,
+            CanvasEntitySelection::Layer1Object | CanvasEntitySelection::Layer2Object
+        ));
+        if !additive
+            && self.canvas_entity_selection == Some(domain)
+            && match domain {
+                CanvasEntitySelection::Layer1Object => {
+                    self.selected_object_group.len() > 1
+                        && self.selected_object_group.contains(&index)
+                }
+                CanvasEntitySelection::Layer2Object => {
+                    self.selected_layer2_object_group.len() > 1
+                        && self.selected_layer2_object_group.contains(&index)
+                }
+                CanvasEntitySelection::Sprite => unreachable!(),
+            }
+        {
+            return true;
+        }
+        if !additive || self.canvas_entity_selection != Some(domain) {
+            self.selected_object_group.clear();
+            self.selected_layer2_object_group.clear();
+            match domain {
+                CanvasEntitySelection::Layer1Object => self.selected_object_group.push(index),
+                CanvasEntitySelection::Layer2Object => {
+                    self.selected_layer2_object_group.push(index);
+                }
+                CanvasEntitySelection::Sprite => unreachable!(),
+            }
+            self.canvas_entity_selection = Some(domain);
+            return true;
+        }
+
+        let group = match domain {
+            CanvasEntitySelection::Layer1Object => &mut self.selected_object_group,
+            CanvasEntitySelection::Layer2Object => &mut self.selected_layer2_object_group,
+            CanvasEntitySelection::Sprite => unreachable!(),
+        };
+        if let Some(position) = group.iter().position(|selected| *selected == index) {
+            group.remove(position);
+            let replacement = group.last().copied();
+            if let Some(replacement) = replacement {
+                match domain {
+                    CanvasEntitySelection::Layer1Object => {
+                        self.selected_object = replacement;
+                        self.reload_object_form();
+                    }
+                    CanvasEntitySelection::Layer2Object => {
+                        self.selected_layer2_object = replacement;
+                        self.reload_layer2_object_form();
+                    }
+                    CanvasEntitySelection::Sprite => unreachable!(),
+                }
+            } else {
+                self.canvas_entity_selection = None;
+            }
+            false
+        } else {
+            group.push(index);
+            true
         }
     }
 
@@ -3373,10 +3525,38 @@ impl VanillaLevelEditor {
         }
         match selection {
             Some(CanvasEntitySelection::Layer1Object) => {
-                self.dragging_object = Some(self.selected_object);
+                if self.selected_object_group.len() > 1 {
+                    let Some((origin_major, origin_minor)) =
+                        object_native_position_at_canvas(position, canvas, cell, vertical)
+                    else {
+                        return;
+                    };
+                    self.object_group_drag = Some(CanvasObjectGroupDrag {
+                        domain: CanvasEntitySelection::Layer1Object,
+                        origin_major,
+                        origin_minor,
+                        secondary: true,
+                    });
+                } else {
+                    self.dragging_object = Some(self.selected_object);
+                }
             }
             Some(CanvasEntitySelection::Layer2Object) => {
-                self.dragging_layer2_object = Some(self.selected_layer2_object);
+                if self.selected_layer2_object_group.len() > 1 {
+                    let Some((origin_major, origin_minor)) =
+                        object_native_position_at_canvas(position, canvas, cell, vertical)
+                    else {
+                        return;
+                    };
+                    self.object_group_drag = Some(CanvasObjectGroupDrag {
+                        domain: CanvasEntitySelection::Layer2Object,
+                        origin_major,
+                        origin_minor,
+                        secondary: true,
+                    });
+                } else {
+                    self.dragging_layer2_object = Some(self.selected_layer2_object);
+                }
             }
             Some(CanvasEntitySelection::Sprite) => {
                 self.dragging_sprite = Some(self.selected_sprite);
@@ -3421,7 +3601,11 @@ impl VanillaLevelEditor {
         cell: f32,
         vertical: bool,
     ) {
-        self.finish_canvas_entity_drag(position, canvas, cell, vertical);
+        if self.object_group_drag.is_some_and(|drag| drag.secondary) {
+            self.finish_object_group_drag(position, canvas, cell, vertical);
+        } else {
+            self.finish_canvas_entity_drag(position, canvas, cell, vertical);
+        }
         self.secondary_duplicate_drag = false;
     }
 
@@ -3437,15 +3621,199 @@ impl VanillaLevelEditor {
     ) {
         match self.canvas_entity_selection {
             Some(CanvasEntitySelection::Layer1Object) => {
-                self.place_object_at_canvas(position, canvas, cell, vertical);
+                if self.selected_object_group.len() > 1 {
+                    self.duplicate_object_group_at(
+                        CanvasEntitySelection::Layer1Object,
+                        position,
+                        canvas,
+                        cell,
+                        vertical,
+                    );
+                } else {
+                    self.place_object_at_canvas(position, canvas, cell, vertical);
+                }
             }
             Some(CanvasEntitySelection::Layer2Object) => {
-                self.place_layer2_object_at_canvas(position, canvas, cell, vertical);
+                if self.selected_layer2_object_group.len() > 1 {
+                    self.duplicate_object_group_at(
+                        CanvasEntitySelection::Layer2Object,
+                        position,
+                        canvas,
+                        cell,
+                        vertical,
+                    );
+                } else {
+                    self.place_layer2_object_at_canvas(position, canvas, cell, vertical);
+                }
             }
             Some(CanvasEntitySelection::Sprite) => {
                 self.place_sprite_at_canvas(position, canvas, cell, vertical);
             }
             None => {}
+        }
+    }
+
+    fn duplicate_object_group_at(
+        &mut self,
+        domain: CanvasEntitySelection,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let Some((target_major, target_minor)) =
+            object_native_position_at_canvas(position, canvas, cell, vertical)
+        else {
+            self.error = Some("object group placement is outside the native level space".into());
+            return;
+        };
+        let selected = match domain {
+            CanvasEntitySelection::Layer1Object => self.selected_object_group.clone(),
+            CanvasEntitySelection::Layer2Object => self.selected_layer2_object_group.clone(),
+            CanvasEntitySelection::Sprite => return,
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let stream = match domain {
+            CanvasEntitySelection::Layer1Object => &controller.level().layer1.objects,
+            CanvasEntitySelection::Layer2Object => {
+                let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() else {
+                    self.error =
+                        Some("the current level does not use object-backed Layer 2".into());
+                    return;
+                };
+                &layer2.objects
+            }
+            CanvasEntitySelection::Sprite => return,
+        };
+        let Some((anchor_major, anchor_minor)) = object_group_anchor(stream, &selected) else {
+            self.error = Some("selected object group contains no visible native placement".into());
+            return;
+        };
+        let major_delta = target_major - anchor_major;
+        let minor_delta = target_minor - anchor_minor;
+        let mut predicted = stream.clone();
+        let cloned =
+            match predicted.duplicate_ordinary_object_group(&selected, major_delta, minor_delta) {
+                Ok(cloned) => cloned,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            };
+        let edit = ObjectEdit::DuplicateOrdinaryGroup {
+            selected,
+            major_delta,
+            minor_delta,
+        };
+        let result = match domain {
+            CanvasEntitySelection::Layer1Object => {
+                controller.apply_edits(&[NativeLevelEdit::Objects(vec![edit])])
+            }
+            CanvasEntitySelection::Layer2Object => controller.apply_layer2_object_edits(&[edit]),
+            CanvasEntitySelection::Sprite => return,
+        };
+        match result {
+            Ok(()) => {
+                match domain {
+                    CanvasEntitySelection::Layer1Object => {
+                        self.selected_object_group = cloned;
+                        self.selected_object = self.selected_object_group[0];
+                        self.reload_object_form();
+                    }
+                    CanvasEntitySelection::Layer2Object => {
+                        self.selected_layer2_object_group = cloned;
+                        self.selected_layer2_object = self.selected_layer2_object_group[0];
+                        self.reload_layer2_object_form();
+                    }
+                    CanvasEntitySelection::Sprite => return,
+                }
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
+    fn finish_object_group_drag(
+        &mut self,
+        position: Option<egui::Pos2>,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let Some(drag) = self.object_group_drag.take() else {
+            return;
+        };
+        let Some((target_major, target_minor)) = position.and_then(|position| {
+            object_native_position_at_canvas(position, canvas, cell, vertical)
+        }) else {
+            return;
+        };
+        let major_delta = target_major - drag.origin_major;
+        let minor_delta = target_minor - drag.origin_minor;
+        if major_delta == 0 && minor_delta == 0 {
+            return;
+        }
+        let selected = match drag.domain {
+            CanvasEntitySelection::Layer1Object => self.selected_object_group.clone(),
+            CanvasEntitySelection::Layer2Object => self.selected_layer2_object_group.clone(),
+            CanvasEntitySelection::Sprite => return,
+        };
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let stream = match drag.domain {
+            CanvasEntitySelection::Layer1Object => &controller.level().layer1.objects,
+            CanvasEntitySelection::Layer2Object => {
+                let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() else {
+                    self.error =
+                        Some("the current level does not use object-backed Layer 2".into());
+                    return;
+                };
+                &layer2.objects
+            }
+            CanvasEntitySelection::Sprite => return,
+        };
+        let mut predicted = stream.clone();
+        let moved =
+            match predicted.relocate_ordinary_object_group(&selected, major_delta, minor_delta) {
+                Ok(moved) => moved,
+                Err(error) => {
+                    self.error = Some(error.to_string());
+                    return;
+                }
+            };
+        let edit = ObjectEdit::RelocateOrdinaryGroup {
+            selected,
+            major_delta,
+            minor_delta,
+        };
+        let result = match drag.domain {
+            CanvasEntitySelection::Layer1Object => {
+                controller.apply_edits(&[NativeLevelEdit::Objects(vec![edit])])
+            }
+            CanvasEntitySelection::Layer2Object => controller.apply_layer2_object_edits(&[edit]),
+            CanvasEntitySelection::Sprite => return,
+        };
+        match result {
+            Ok(()) => {
+                match drag.domain {
+                    CanvasEntitySelection::Layer1Object => {
+                        self.selected_object_group = moved;
+                        self.selected_object = self.selected_object_group[0];
+                        self.reload_object_form();
+                    }
+                    CanvasEntitySelection::Layer2Object => {
+                        self.selected_layer2_object_group = moved;
+                        self.selected_layer2_object = self.selected_layer2_object_group[0];
+                        self.reload_layer2_object_form();
+                    }
+                    CanvasEntitySelection::Sprite => return,
+                }
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
         }
     }
 
@@ -3560,6 +3928,9 @@ impl VanillaLevelEditor {
         ])]) {
             Ok(()) => {
                 self.selected_object = selected;
+                self.selected_object_group.clear();
+                self.selected_object_group.push(selected);
+                self.selected_layer2_object_group.clear();
                 self.reload_object_form();
                 self.placement_mode = None;
                 self.error = None;
@@ -3624,6 +3995,9 @@ impl VanillaLevelEditor {
         }]) {
             Ok(()) => {
                 self.selected_layer2_object = selected;
+                self.selected_layer2_object_group.clear();
+                self.selected_layer2_object_group.push(selected);
+                self.selected_object_group.clear();
                 if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() {
                     self.layer2_object_form =
                         ObjectForm::from_record(&layer2.objects.records[selected]);
@@ -3801,6 +4175,8 @@ impl VanillaLevelEditor {
         ])]) {
             Ok(()) => {
                 self.selected_object = new_index;
+                self.selected_object_group.clear();
+                self.selected_object_group.push(new_index);
                 self.reload_object_form();
                 self.error = None;
             }
@@ -3909,6 +4285,8 @@ impl VanillaLevelEditor {
         }]) {
             Ok(()) => {
                 self.selected_layer2_object = new_index;
+                self.selected_layer2_object_group.clear();
+                self.selected_layer2_object_group.push(new_index);
                 if let Some(lm_level::NativeLayer2Data::Objects(layer2)) = controller.layer2() {
                     let record = &layer2.objects.records[new_index];
                     self.layer2_object_form = ObjectForm::from_record(record);
@@ -7335,6 +7713,40 @@ fn object_placement_at_canvas_position(
     ))
 }
 
+fn object_native_position_at_canvas(
+    position: egui::Pos2,
+    canvas: egui::Rect,
+    cell: f32,
+    vertical: bool,
+) -> Option<(i32, i32)> {
+    if !canvas.contains(position) || !cell.is_finite() || cell <= 0.0 {
+        return None;
+    }
+    let column = ((position.x - canvas.left()) / cell).floor();
+    let row = ((position.y - canvas.top()) / cell).floor();
+    let (major, minor) = if vertical {
+        (row, column)
+    } else {
+        (column, row)
+    };
+    if !(0.0..512.0).contains(&major)
+        || !(0.0..f32::from(level_minor_tile_limit(vertical))).contains(&minor)
+    {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    Some((major as i32, minor as i32))
+}
+
+fn object_group_anchor(stream: &lm_level::ObjectStream, selected: &[usize]) -> Option<(i32, i32)> {
+    stream
+        .native_placements()
+        .into_iter()
+        .filter(|placement| selected.contains(&placement.record_index))
+        .min_by_key(|placement| u16::from(placement.minor).saturating_add(placement.major))
+        .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
+}
+
 fn layer2_tile_at_canvas_position(
     position: egui::Pos2,
     canvas: egui::Rect,
@@ -8569,6 +8981,7 @@ fn draw_object_placement_markers(
     vertical: bool,
     records: &[ObjectRecord],
     placements: &[lm_level::NativeObjectPlacement],
+    selected_group: &[usize],
     selected: usize,
     map16_texture: Option<&egui::TextureHandle>,
     artwork_bounds: &HashMap<usize, egui::Rect>,
@@ -8586,7 +8999,9 @@ fn draw_object_placement_markers(
         let artwork_rect = artwork_bounds.get(&index).copied();
         let object_rect =
             artwork_rect.unwrap_or_else(|| encoded_object_rect(canvas, *placement, vertical, cell));
-        let selected_visible = index == selected && (editor_overlays || selection_visible);
+        let selected_visible = (selected_group.contains(&index)
+            || selected_group.is_empty() && index == selected)
+            && (editor_overlays || selection_visible);
         if editor_overlays || selected_visible {
             draw_object_marker(
                 painter,
@@ -10863,6 +11278,7 @@ mod tests {
             false,
             std::slice::from_ref(&record),
             std::slice::from_ref(&placement),
+            &[],
             0,
             None,
             &HashMap::new(),
@@ -15729,6 +16145,134 @@ mod tests {
             panic!("right-click duplication must select the inserted sprite record");
         };
         assert_eq!(inserted.native_fields().unwrap(), expected_fields);
+    }
+
+    #[test]
+    fn ctrl_object_selection_toggles_members_and_keeps_layer_domains_exclusive() {
+        let mut editor = VanillaLevelEditor::default();
+        assert!(editor.update_canvas_object_group(CanvasEntitySelection::Layer1Object, 3, false,));
+        assert!(editor.update_canvas_object_group(CanvasEntitySelection::Layer1Object, 7, true,));
+        assert_eq!(editor.selected_object_group, vec![3, 7]);
+
+        // An unmodified press on a selected member preserves the group so that the following
+        // physical drag moves the complete selection rather than silently collapsing it.
+        assert!(editor.update_canvas_object_group(CanvasEntitySelection::Layer1Object, 3, false,));
+        assert_eq!(editor.selected_object_group, vec![3, 7]);
+
+        assert!(!editor.update_canvas_object_group(CanvasEntitySelection::Layer1Object, 3, true,));
+        assert_eq!(editor.selected_object_group, vec![7]);
+        assert!(editor.update_canvas_object_group(CanvasEntitySelection::Layer2Object, 11, true,));
+        assert!(editor.selected_object_group.is_empty());
+        assert_eq!(editor.selected_layer2_object_group, vec![11]);
+        assert_eq!(
+            editor.canvas_entity_selection,
+            Some(CanvasEntitySelection::Layer2Object)
+        );
+    }
+
+    #[test]
+    fn right_drag_duplicates_and_moves_a_complete_object_group_atomically() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+        );
+        let original = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .layer1
+            .objects
+            .clone();
+        let placements = original.native_placements();
+        assert!(placements.len() >= 2);
+        let selected = vec![placements[0].record_index, placements[1].record_index];
+        let source_positions: Vec<_> = selected
+            .iter()
+            .map(|index| {
+                let placement = placements
+                    .iter()
+                    .find(|placement| placement.record_index == *index)
+                    .unwrap();
+                (i32::from(placement.major), i32::from(placement.minor))
+            })
+            .collect();
+        let (anchor_major, anchor_minor) = object_group_anchor(&original, &selected).unwrap();
+        let initial_major_delta = if source_positions.iter().all(|(major, _)| *major < 500) {
+            2
+        } else {
+            -2
+        };
+        let initial_minor_delta = if source_positions.iter().all(|(_, minor)| *minor < 24) {
+            1
+        } else {
+            -1
+        };
+        let duplicate_position = egui::pos2(
+            (anchor_major + initial_major_delta) as f32 + 0.5,
+            (anchor_minor + initial_minor_delta) as f32 + 0.5,
+        );
+        editor.selected_object_group = selected.clone();
+        editor.selected_object = selected[0];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer1Object);
+        editor.begin_secondary_duplicate_drag(duplicate_position, canvas, 1.0, false);
+        assert!(editor.secondary_duplicate_drag);
+        assert_eq!(editor.selected_object_group.len(), selected.len());
+        assert!(editor.dragging_object.is_none());
+        assert!(editor.object_group_drag.is_some_and(|drag| drag.secondary));
+
+        let release_position = duplicate_position + egui::vec2(1.0, 1.0);
+        editor.finish_secondary_duplicate_drag(Some(release_position), canvas, 1.0, false);
+        assert!(!editor.secondary_duplicate_drag);
+        assert!(editor.object_group_drag.is_none());
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+
+        let updated = &editor.controller.as_ref().unwrap().level().layer1.objects;
+        assert_eq!(
+            updated.native_placements().len(),
+            original.native_placements().len() + selected.len()
+        );
+        for (ordinal, selected_clone) in editor.selected_object_group.iter().enumerate() {
+            let clone = updated
+                .native_placements()
+                .into_iter()
+                .find(|placement| placement.record_index == *selected_clone)
+                .unwrap();
+            assert_eq!(
+                (i32::from(clone.major), i32::from(clone.minor)),
+                (
+                    source_positions[ordinal].0 + initial_major_delta + 1,
+                    source_positions[ordinal].1 + initial_minor_delta + 1,
+                )
+            );
+        }
+        let updated_placements = updated.native_placements();
+        for (ordinal, source_index) in selected.iter().enumerate() {
+            let source_record = &original.records[*source_index];
+            assert!(updated_placements.iter().any(|placement| {
+                (i32::from(placement.major), i32::from(placement.minor))
+                    == source_positions[ordinal]
+                    && updated.records[placement.record_index].command_id()
+                        == source_record.command_id()
+                    && updated.records[placement.record_index].parameter()
+                        == source_record.parameter()
+            }));
+        }
     }
 
     #[test]

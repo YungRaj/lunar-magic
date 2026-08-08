@@ -241,11 +241,16 @@ impl ObjectStream {
                     minor,
                 });
             }
+            let invalid_target = || ObjectRelocationError::TargetPositionOutOfRange {
+                index,
+                major,
+                minor,
+            };
             let mut record = source.record.clone();
             record
                 .set_coordinate_nibbles(ObjectCoordinateNibbles {
-                    first: u8::try_from(minor & 0x0f).unwrap(),
-                    second: u8::try_from(major & 0x0f).unwrap(),
+                    first: u8::try_from(minor & 0x0f).map_err(|_| invalid_target())?,
+                    second: u8::try_from(major & 0x0f).map_err(|_| invalid_target())?,
                 })
                 .map_err(ObjectRelocationError::Field)?;
             record
@@ -256,7 +261,7 @@ impl ObjectStream {
                 .map_err(ObjectRelocationError::Field)?;
             clones.push(PositionedObject {
                 original_index: first_clone_id + ordinal,
-                screen: u16::try_from(major / 16).unwrap(),
+                screen: u16::try_from(major / 16).map_err(|_| invalid_target())?,
                 record,
             });
         }
@@ -265,6 +270,81 @@ impl ObjectStream {
         positioned.sort_by_key(|object| object.screen);
         let (mut records, selected_indexes) =
             encode_positioned_object_group(positioned, &clone_ids)?;
+        records.extend(trailing_controls);
+        self.records = records;
+        Ok(selected_indexes)
+    }
+
+    /// Translates every selected positioned object by one shared native tile delta.
+    ///
+    /// The complete group is validated and re-encoded once, retaining selection order and making
+    /// any invalid member failure-atomic. Unlike [`Self::duplicate_ordinary_object_group`], this
+    /// moves the selected source records instead of cloning them.
+    ///
+    /// # Errors
+    ///
+    /// Applies the same selection, control, and 512×32 bounds checks as group duplication.
+    pub fn relocate_ordinary_object_group(
+        &mut self,
+        selected: &[usize],
+        major_delta: i32,
+        minor_delta: i32,
+    ) -> Result<Vec<usize>, ObjectRelocationError> {
+        if selected.is_empty() {
+            return Err(ObjectRelocationError::EmptySelection);
+        }
+        let (mut positioned, trailing_controls) = decode_positioned_objects(self)?;
+        let mut seen = std::collections::BTreeSet::new();
+        for index in selected.iter().copied() {
+            if !seen.insert(index) {
+                return Err(ObjectRelocationError::DuplicateSelection(index));
+            }
+            if index >= self.records.len() {
+                return Err(ObjectRelocationError::IndexOutOfBounds {
+                    index,
+                    len: self.records.len(),
+                });
+            }
+            let target = positioned
+                .iter_mut()
+                .find(|object| object.original_index == index)
+                .ok_or(ObjectRelocationError::NotOrdinaryObject(index))?;
+            let coordinates = target.record.coordinate_nibbles();
+            let major = i32::from(target.screen) * 16 + i32::from(coordinates.second) + major_delta;
+            let minor = i32::from(coordinates.first)
+                + if target.record.perpendicular_high_coordinate() {
+                    16
+                } else {
+                    0
+                }
+                + minor_delta;
+            if !(0..512).contains(&major) || !(0..32).contains(&minor) {
+                return Err(ObjectRelocationError::TargetPositionOutOfRange {
+                    index,
+                    major,
+                    minor,
+                });
+            }
+            let invalid_target = || ObjectRelocationError::TargetPositionOutOfRange {
+                index,
+                major,
+                minor,
+            };
+            target.screen = u16::try_from(major / 16).map_err(|_| invalid_target())?;
+            target
+                .record
+                .set_coordinate_nibbles(ObjectCoordinateNibbles {
+                    first: u8::try_from(minor & 0x0f).map_err(|_| invalid_target())?,
+                    second: u8::try_from(major & 0x0f).map_err(|_| invalid_target())?,
+                })
+                .map_err(ObjectRelocationError::Field)?;
+            target
+                .record
+                .set_perpendicular_high_coordinate(minor >= 16)
+                .map_err(ObjectRelocationError::Field)?;
+        }
+        positioned.sort_by_key(|object| object.screen);
+        let (mut records, selected_indexes) = encode_positioned_object_group(positioned, selected)?;
         records.extend(trailing_controls);
         self.records = records;
         Ok(selected_indexes)
@@ -499,6 +579,58 @@ mod tests {
                 major: 520,
                 minor: 3,
             })
+        );
+        assert_eq!(stream, original);
+    }
+
+    #[test]
+    fn group_relocation_moves_every_member_once_and_tracks_reordered_indexes() {
+        let trailing = ObjectRecord::new(vec![7, 5, 0, 0xcb]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![
+                object(false, 1, 2, 0x10),
+                object(true, 3, 4, 0x20),
+                trailing.clone(),
+            ],
+        };
+        let selected = stream
+            .relocate_ordinary_object_group(&[1, 0], 17, 14)
+            .unwrap();
+        assert_eq!(stream.native_placements().len(), 2);
+        assert_eq!(stream.records.last(), Some(&trailing));
+        let placements = stream.native_placements();
+        let first = placements
+            .iter()
+            .find(|placement| placement.record_index == selected[0])
+            .unwrap();
+        assert_eq!((first.major, first.minor), (37, 17));
+        assert_eq!(stream.records[first.record_index].parameter(), 0x20);
+        let second = placements
+            .iter()
+            .find(|placement| placement.record_index == selected[1])
+            .unwrap();
+        assert_eq!((second.major, second.minor), (19, 15));
+        assert_eq!(stream.records[second.record_index].parameter(), 0x10);
+    }
+
+    #[test]
+    fn invalid_group_relocation_is_failure_atomic() {
+        let mut stream = ObjectStream {
+            records: vec![object(false, 1, 2, 0x10), object(true, 3, 4, 0x20)],
+        };
+        let original = stream.clone();
+        assert_eq!(
+            stream.relocate_ordinary_object_group(&[0, 1], -3, 0),
+            Err(ObjectRelocationError::TargetPositionOutOfRange {
+                index: 0,
+                major: -1,
+                minor: 1,
+            })
+        );
+        assert_eq!(stream, original);
+        assert_eq!(
+            stream.relocate_ordinary_object_group(&[1, 1], 0, 0),
+            Err(ObjectRelocationError::DuplicateSelection(1))
         );
         assert_eq!(stream, original);
     }
