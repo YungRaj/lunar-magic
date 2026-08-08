@@ -345,7 +345,12 @@ fn write_low_bank_pointer(
     pc: usize,
 ) -> Result<(), RomError> {
     let mut pointer = pc_to_snes(mapper, pc)?.to_le_bytes();
-    pointer[2] &= 0x7f;
+    // Lunar Magic uses the low-bank mirror for LoROM. Bit 23 is not a mirror on ExLoROM (it
+    // selects the lower versus upper 4 MiB half) or SA-1 (it participates in the mapped bank
+    // range), so clearing it there redirects an otherwise valid freshly allocated plane.
+    if mapper == Mapper::LoRom {
+        pointer[2] &= 0x7f;
+    }
     checked_copy(bytes, offset, &pointer[..3])
 }
 
@@ -360,4 +365,24 @@ fn checked_copy(bytes: &mut [u8], offset: usize, value: &[u8]) -> Result<(), Rom
         })?;
     target.copy_from_slice(value);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn published_plane_pointers_round_trip_without_losing_mapper_significant_banks() {
+        for (mapper, pc) in [
+            (Mapper::LoRom, 0x2_0000),
+            (Mapper::ExLoRom, 0x2_0000),
+            (Mapper::ExLoRom, 0x42_0000),
+            (Mapper::Sa1, 0x2_0000),
+            (Mapper::Sa1, 0x42_0000),
+        ] {
+            let mut bytes = [0_u8; 3];
+            write_low_bank_pointer(&mut bytes, 0, mapper, pc).unwrap();
+            assert_eq!(read_pointer(&bytes, 0, mapper).unwrap(), pc);
+        }
+    }
 }
