@@ -30,6 +30,19 @@ check publishes neither a partial move nor a partial clone, and releasing outsid
 the transient drag without moving the group. Modified secondary clicks remain unconsumed for
 higher-level gestures.
 
+The same authenticated command dispatcher establishes the aggregate keyboard boundary. Its recovered
+command-index table maps `$245D` to `SelectAllLevelObjectsInLayer` (`00436E70`), `$245B` to the
+object/sprite delete branch containing `DeleteSelectedLevelObjects` (`00439260`), and `$245C` to the
+corresponding duplicate branch. Select All walks the active Layer 1 or object-backed Layer 2 list and
+excludes command-zero control nodes. The ignored
+`lunar_magic_select_all_deletes_every_positioned_object_and_preserves_controls` Wine gate executes
+the actual `$245D` then `$245B` commands in Lunar Magic 3.63 on pristine level `$105`, saves, and
+compares Lunar Magic's own before/after MWL exports. Every positioned object is removed, opaque
+controls and every non-object domain remain exact, redundant screen jumps are canonically dropped,
+and the reopened ROM checksum is valid. The native canvas now consumes Ctrl+A in its focused active
+domain and applies Select All, Insert duplicate, and Delete to complete object, Layer 2 object, or
+sprite groups atomically.
+
 `right_click_duplication_repositions_objects_and_sprites_without_removing_sources` verifies the
 single-selection source-preserving clone, exact target cell, selected inserted record, immediate
 drag state, release cleanup, and semantic sprite fields.
@@ -46,6 +59,9 @@ non-positioned, opaque-control, or any-member-out-of-bounds input without changi
 `ctrl_object_selection_toggles_members_and_keeps_layer_domains_exclusive` and
 `right_drag_duplicates_and_moves_a_complete_object_group_atomically` cover the native object
 selection, clone, immediate-drag, release, and source-preservation workflow.
+`object_select_all_shortcut_excludes_controls_and_group_delete_is_atomic` and
+`object_group_shortcuts_duplicate_and_delete_the_complete_selection` bind the recovered aggregate
+command semantics to the native active-domain shortcut workflow.
 
 The matching sprite operation decodes legacy or expanded records once, tracks selected identities
 independently of control-token and canonical sort changes, and rebuilds the minimum upper-Y control
