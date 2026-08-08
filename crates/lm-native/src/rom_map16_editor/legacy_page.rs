@@ -15,9 +15,9 @@ impl RomMap16Editor {
             let pending = self.pending_legacy_page.take();
             let result = result.and_then(|loaded| {
                 let (revision, page) = pending.ok_or("legacy Map16 page request is missing")?;
-                let [(_, acts_like), (_, graphics)] =
+                let [(_, definitions), (_, acts_like)] =
                     loaded.into_exact::<2>("legacy Map16 page pair")?;
-                let imported = decode_legacy_page(&acts_like, &graphics)?;
+                let imported = decode_legacy_page(&definitions, &acts_like)?;
                 let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
                 if workspace.controller.revision() != revision {
                     return Err("the ROM changed while the Map16 page was loading".into());
@@ -62,12 +62,20 @@ impl RomMap16Editor {
                     egui::Button::new("Import legacy page pair…"),
                 )
                 .clicked()
-                && let Some(acts_path) = dialogs::choose_legacy_map16_page_document()
+                && let Some(definitions_path) = dialogs::choose_legacy_map16_page_document()
             {
-                let graphics_path = graphics_sibling(&acts_path);
+                let acts_like_path = g_sibling(&definitions_path);
                 let requests = vec![
-                    BoundedRead::new(acts_path, ACTS_LIKE_LEN as u64, "Map16Page.bin"),
-                    BoundedRead::new(graphics_path, GRAPHICS_LEN as u64, "Map16PageG.bin"),
+                    BoundedRead::new(
+                        definitions_path,
+                        GRAPHICS_LEN as u64,
+                        "Map16Page.bin definitions",
+                    ),
+                    BoundedRead::new(
+                        acts_like_path,
+                        ACTS_LIKE_LEN as u64,
+                        "Map16PageG.bin Acts Like",
+                    ),
                 ];
                 match self.legacy_page_loader.start(requests) {
                     Ok(()) => self.pending_legacy_page = Some((project_revision, self.page)),
@@ -80,7 +88,7 @@ impl RomMap16Editor {
                     egui::Button::new("Export legacy page pair…"),
                 )
                 .clicked()
-                && let Some(acts_path) = dialogs::choose_legacy_map16_page_save_path()
+                && let Some(definitions_path) = dialogs::choose_legacy_map16_page_save_path()
             {
                 let result =
                     self.workspace
@@ -93,14 +101,14 @@ impl RomMap16Editor {
                             encode_legacy_page(page)
                         });
                 match result {
-                    Ok((acts_like, graphics)) => {
-                        let graphics_path = graphics_sibling(&acts_path);
+                    Ok((definitions, acts_like)) => {
+                        let acts_like_path = g_sibling(&definitions_path);
                         if let Err(error) = self.legacy_page_persistence.start_create_pair(
                             project_revision,
-                            acts_path,
+                            definitions_path,
+                            definitions,
+                            acts_like_path,
                             acts_like,
-                            graphics_path,
-                            graphics,
                         ) {
                             self.error = Some(error);
                         }
@@ -110,38 +118,37 @@ impl RomMap16Editor {
             }
         });
         if supported {
-            ui.small("Legacy transfer atomically reads or creates Map16Page.bin (Acts Like) and Map16PageG.bin (definitions) for the selected foreground page.");
+            ui.small("Legacy transfer atomically reads or creates Map16Page.bin (definitions) and Map16PageG.bin (Acts Like) for the selected foreground page.");
         } else {
             ui.small("Legacy page pairs apply only to editable foreground pages 02–7F; built-in pages 00–01 and background pages use other Lunar Magic boundaries.");
         }
     }
 }
 
-fn graphics_sibling(acts_path: &Path) -> PathBuf {
-    let mut name = acts_path.file_stem().map_or_else(
+fn g_sibling(definitions_path: &Path) -> PathBuf {
+    let mut name = definitions_path.file_stem().map_or_else(
         || std::ffi::OsString::from("Map16Page"),
         std::ffi::OsString::from,
     );
     name.push("G.bin");
-    let mut path = acts_path.to_path_buf();
+    let mut path = definitions_path.to_path_buf();
     path.set_file_name(name);
     path
 }
 
-fn decode_legacy_page(acts_like: &[u8], graphics: &[u8]) -> Result<Map16Page, String> {
-    if acts_like.len() != ACTS_LIKE_LEN || graphics.len() != GRAPHICS_LEN {
+fn decode_legacy_page(definitions: &[u8], acts_like: &[u8]) -> Result<Map16Page, String> {
+    if definitions.len() != GRAPHICS_LEN || acts_like.len() != ACTS_LIKE_LEN {
         return Err(format!(
-            "legacy Map16 page requires {ACTS_LIKE_LEN:#x} Acts-Like and {GRAPHICS_LEN:#x} graphics bytes, got {:#x} and {:#x}",
-            acts_like.len(),
-            graphics.len()
+            "legacy Map16 page requires {GRAPHICS_LEN:#x} definition and {ACTS_LIKE_LEN:#x} Acts-Like bytes, got {:#x} and {:#x}",
+            definitions.len(),
+            acts_like.len()
         ));
     }
-    Map16Page::decode(graphics, acts_like).map_err(|error| error.to_string())
+    Map16Page::decode(definitions, acts_like).map_err(|error| error.to_string())
 }
 
 fn encode_legacy_page(page: &Map16Page) -> Result<(Vec<u8>, Vec<u8>), String> {
-    let (graphics, acts_like) = page.encode().map_err(|error| error.to_string())?;
-    Ok((acts_like, graphics))
+    page.encode().map_err(|error| error.to_string())
 }
 
 fn page_replacements(
@@ -191,12 +198,15 @@ mod tests {
     #[test]
     fn legacy_pair_round_trips_exact_plane_shapes_and_order() {
         let expected = page();
-        let (acts_like, graphics) = encode_legacy_page(&expected).unwrap();
+        let (definitions, acts_like) = encode_legacy_page(&expected).unwrap();
         assert_eq!(acts_like.len(), ACTS_LIKE_LEN);
-        assert_eq!(graphics.len(), GRAPHICS_LEN);
-        assert_eq!(decode_legacy_page(&acts_like, &graphics).unwrap(), expected);
+        assert_eq!(definitions.len(), GRAPHICS_LEN);
+        assert_eq!(
+            decode_legacy_page(&definitions, &acts_like).unwrap(),
+            expected
+        );
+        assert_eq!(&definitions[..2], &0_u16.to_le_bytes());
         assert_eq!(&acts_like[..2], &0x0200_u16.to_le_bytes());
-        assert_eq!(&graphics[..2], &0_u16.to_le_bytes());
     }
 
     #[test]
@@ -222,11 +232,11 @@ mod tests {
     #[test]
     fn companion_path_matches_lunar_magic_g_suffix() {
         assert_eq!(
-            graphics_sibling(Path::new("somewhere/Map16Page.bin")),
+            g_sibling(Path::new("somewhere/Map16Page.bin")),
             Path::new("somewhere/Map16PageG.bin")
         );
         assert_eq!(
-            graphics_sibling(Path::new("somewhere/custom.bin")),
+            g_sibling(Path::new("somewhere/custom.bin")),
             Path::new("somewhere/customG.bin")
         );
     }

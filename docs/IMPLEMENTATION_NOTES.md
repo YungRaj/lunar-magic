@@ -1878,8 +1878,8 @@ The ROM Map16 adapter separates packed tile/subtile and clipboard interaction fr
 workspace lifecycle and paired graphics/Acts-Like allocation construction. Normal and reclaiming
 commits therefore share the exact same page-shaped save options and protection policy.
 The same native editor now exposes Lunar Magic's recovered legacy current-page pair for editable
-foreground pages `$02–$7F`. It reads exact `0x200`-byte `Map16Page.bin` Acts-Like data together with
-the automatic same-stem `Map16PageG.bin` sibling containing exactly `0x800` definition bytes. The
+foreground pages `$02–$7F`. It reads exact `0x800`-byte `Map16Page.bin` definition data together with
+the automatic same-stem `Map16PageG.bin` sibling containing exactly `0x200` Acts-Like bytes. The
 selected page and application revision are captured before bounded background loading; completion
 decodes all 256 tiles and submits one complete-page replacement through the existing set-wide graph
 validation. Built-in pages `$00–$01` and background pages reject this foreground-only boundary.

@@ -1286,6 +1286,12 @@ The remaining UTF-8 compatibility wrappers through `004e4b30` are now named: ima
 
 The Map16 file and editor subsystem through `004e7780` is now named and annotated. Recovered file formats include per-page `Map16Page.bin`/`Map16PageG.bin`, complete foreground `Map16FG.bin`/`Map16FGG.bin`, complete background `Map16BG.bin`, and the 0x1C000-byte sprite `.s16` sidecar. The SNES-file importer consumes a 0x8000-byte 4bpp graphics set and 0x800-byte screen map, optionally imports a palette, remaps tile numbers, deduplicates 16x16 definitions, and installs them into blank Map16 slots.
 
+`ImportCurrentMap16PageFiles`/`ExportCurrentMap16PageFiles` at `004E5A60`/`004E5B60` prove the
+legacy page-pair plane names directly: `Map16Page.bin` transfers `0x800` definition bytes from the
+four-subtile buffer, and foreground pages additionally transfer `0x200` Acts-Like bytes through
+`Map16PageG.bin`. The `G` suffix does not identify the graphics plane. Rust's paired worker now
+binds those exact names, lengths, and planes instead of the previously reversed interpretation.
+
 `LoadM16Map16SidecarData` reads one fixed `0x2000`-byte `.m16` block. The `.s16` loader first
 zeros its full `0x1C000`-byte buffer and then reads any available prefix up to that capacity.
 `WriteS16SpriteMap16SidecarFile` scans the buffer as `0x7000` little-endian dwords from the end,
