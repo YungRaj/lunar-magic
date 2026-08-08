@@ -21,6 +21,8 @@ pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_START: usize = 0x08_0028;
 pub const SMW_US_V1_GFX_EXPANDED_SETTINGS_ALLOCATION_END: usize = 0x08_6e30;
 pub const SMW_US_V1_CHECKSUM_FIELD: usize = 0x00_7fdc;
 pub const SMW_US_V1_EXPANDED_SETTINGS_GENERATION_102_MARKER: [u8; 4] = [0x4c, 0x4d, 0x02, 0x01];
+pub const SMW_US_V1_LEGACY_GRAPHICS_GENERATION_100_MARKER_OFFSET: usize = 0x0f_b604;
+pub const SMW_US_V1_LEGACY_GRAPHICS_GENERATION_100_MARKER: [u8; 4] = [0x4c, 0x4d, 0x00, 0x01];
 pub const SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER_OFFSET: usize = 0x06_ff37;
 pub const SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER: [u8; 4] = [0x4c, 0x4d, 0x01, 0x01];
 pub const SMW_US_V1_EXPANDED_SETTINGS_GENERATION_101_ALLOCATION_LEN: usize = 0x6d00;
@@ -39,6 +41,28 @@ pub struct SmwUsV1ExpandedSettingsGeneration101Migration {
     pub plan: RelocatablePatchPlan,
     pub previous_allocation: RatsBlock,
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SmwUsV1ExpandedSettingsGeneration100Migration {
+    pub plan: RelocatablePatchPlan,
+    pub previous_allocation: RatsBlock,
+}
+
+#[derive(Debug)]
+pub enum SmwUsV1ExpandedSettingsGeneration100MigrationError {
+    Legacy(SmwUsV1ExpandedSettingsGeneration101MigrationError),
+}
+
+impl std::fmt::Display for SmwUsV1ExpandedSettingsGeneration100MigrationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "cannot migrate SMW-US expanded settings generation 1.00: {self:?}"
+        )
+    }
+}
+
+impl std::error::Error for SmwUsV1ExpandedSettingsGeneration100MigrationError {}
 
 #[derive(Debug)]
 pub enum SmwUsV1ExpandedSettingsGeneration101MigrationError {
@@ -416,6 +440,49 @@ pub fn smw_us_v1_expanded_settings_generation_101_migration(
     SmwUsV1ExpandedSettingsGeneration101Migration,
     SmwUsV1ExpandedSettingsGeneration101MigrationError,
 > {
+    legacy_expanded_settings_migration(
+        bytes,
+        SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER_OFFSET,
+        SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER,
+        "migrate SMW US expanded settings generation 1.01",
+    )
+}
+
+/// Authenticates and builds the generation-1.00 expanded-header migration.
+///
+/// Lunar Magic 1.71 uses the same `$6D00` owner, relocation operands, and immutable runtime family
+/// as generation 1.01. Its active legacy-graphics marker is instead `LM 00 01` at `$0FB604`.
+/// The original editor classifies both legacy generations through the same reference-normalization
+/// path, so all 512 ordinary records are upgraded identically and the eight later special slots
+/// are initialized from their recovered defaults.
+pub fn smw_us_v1_expanded_settings_generation_100_migration(
+    bytes: &[u8],
+) -> Result<
+    SmwUsV1ExpandedSettingsGeneration100Migration,
+    SmwUsV1ExpandedSettingsGeneration100MigrationError,
+> {
+    let migration = legacy_expanded_settings_migration(
+        bytes,
+        SMW_US_V1_LEGACY_GRAPHICS_GENERATION_100_MARKER_OFFSET,
+        SMW_US_V1_LEGACY_GRAPHICS_GENERATION_100_MARKER,
+        "migrate SMW US expanded settings generation 1.00",
+    )
+    .map_err(SmwUsV1ExpandedSettingsGeneration100MigrationError::Legacy)?;
+    Ok(SmwUsV1ExpandedSettingsGeneration100Migration {
+        plan: migration.plan,
+        previous_allocation: migration.previous_allocation,
+    })
+}
+
+fn legacy_expanded_settings_migration(
+    bytes: &[u8],
+    legacy_marker_offset: usize,
+    legacy_marker: [u8; 4],
+    description: &str,
+) -> Result<
+    SmwUsV1ExpandedSettingsGeneration101Migration,
+    SmwUsV1ExpandedSettingsGeneration101MigrationError,
+> {
     let current_marker = bytes.get(
         SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET
             ..SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET + 4,
@@ -423,10 +490,8 @@ pub fn smw_us_v1_expanded_settings_generation_101_migration(
     if current_marker != Some(&[0xff; 4]) {
         return Err(SmwUsV1ExpandedSettingsGeneration101MigrationError::CurrentMarkerPresent);
     }
-    if bytes.get(
-        SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER_OFFSET
-            ..SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER_OFFSET + 4,
-    ) != Some(&SMW_US_V1_LEGACY_GRAPHICS_GENERATION_101_MARKER)
+    if bytes.get(legacy_marker_offset..legacy_marker_offset + legacy_marker.len())
+        != Some(&legacy_marker)
     {
         return Err(SmwUsV1ExpandedSettingsGeneration101MigrationError::LegacyMarkerMismatch);
     }
@@ -498,7 +563,7 @@ pub fn smw_us_v1_expanded_settings_generation_101_migration(
 
     let mut plan = smw_us_v1_expanded_settings_installation_plan()
         .map_err(SmwUsV1ExpandedSettingsGeneration101MigrationError::Plan)?;
-    plan.description = "migrate SMW US expanded settings generation 1.01".into();
+    plan.description = description.into();
     plan.payloads[0].bytes = allocation.encode();
     for write in &mut plan.writes {
         let source = bytes
@@ -941,6 +1006,29 @@ mod tests {
         assert_eq!(project.rom.logical_bytes(), original);
     }
 
+    #[test]
+    fn irregular_relocation_updates_the_complete_table_low_word() {
+        let (_, mut before) = fixtures();
+        before.expand(Mapper::LoRom, 0x10_0000, 0xff).unwrap();
+        let mut plan = smw_us_v1_expanded_settings_installation_plan().unwrap();
+        plan.allocation.search = 0x09_1234..0x09_803c;
+        let mut project = Project::new(before);
+        let result = project.install_relocatable_patch(&plan).unwrap();
+
+        assert_eq!(result.blocks[0].header_offset, 0x09_1234);
+        let base = pc_to_snes(Mapper::LoRom, result.blocks[0].payload.start).unwrap() & 0x7f_ffff;
+        let table = base + crate::SMW_US_V1_EXPANDED_SETTINGS_PREFIX_LEN as u32;
+        assert_eq!(
+            project.rom.read(0x07_f7f0 + 0x16, 2).unwrap(),
+            &table.to_le_bytes()[..2]
+        );
+        assert!(
+            crate::smw_us_v1_installed_expanded_settings_layout(&project)
+                .unwrap()
+                .is_some()
+        );
+    }
+
     fn generation_102_fixture() -> Vec<u8> {
         let mut bytes = crate::test_support::pristine_smw_us_rom_bytes();
         bytes.resize(0x10_0000, 0xff);
@@ -1093,7 +1181,7 @@ mod tests {
             ));
 
             let mut project = Project::new(image);
-            project
+            let result = project
                 .replace_relocatable_patch(
                     &migration.plan,
                     &RatsOwnershipManifest {
@@ -1103,6 +1191,113 @@ mod tests {
                     0xff,
                 )
                 .unwrap();
+            let installed_base =
+                pc_to_snes(Mapper::LoRom, result.blocks[0].payload.start).unwrap() & 0x7f_ffff;
+            let installed_runtime = ExpandedSettingsRuntimeLayout::smw_us_v1(
+                installed_base,
+                ExpandedSettingsEntryContinuation::Continue,
+            );
+            for write in smw_us_v1_expanded_settings_fixed_writes(installed_runtime).unwrap() {
+                assert_eq!(
+                    project
+                        .rom
+                        .read(write.offset, write.replacement.len())
+                        .unwrap(),
+                    write.replacement,
+                    "current runtime mismatch at {:#08x} for {}",
+                    write.offset,
+                    path.display()
+                );
+            }
+            assert!(
+                crate::smw_us_v1_installed_expanded_settings_layout(&project)
+                    .unwrap()
+                    .is_some()
+            );
+            project.undo().unwrap();
+            assert_eq!(project.rom.as_file_bytes(), before, "{}", path.display());
+        }
+    }
+
+    #[test]
+    fn external_generation_100_oracles_migrate_when_supplied() {
+        let Ok(paths) = std::env::var("LM_EXPANDED_SETTINGS_100_ROMS") else {
+            return;
+        };
+        for path in std::env::split_paths(&paths) {
+            let image = RomImage::from_bytes(fs::read(&path).unwrap()).unwrap();
+            let before = image.as_file_bytes().to_vec();
+            let migration =
+                smw_us_v1_expanded_settings_generation_100_migration(image.logical_bytes())
+                    .unwrap();
+            assert_eq!(migration.previous_allocation.payload.len(), 0x6d00);
+            let allocation =
+                SmwUsV1ExpandedSettingsAllocation::decode(&migration.plan.payloads[0].bytes)
+                    .unwrap();
+            assert_eq!(allocation.records().len(), 0x208);
+            assert_eq!(
+                allocation.record(0x200).unwrap(),
+                &crate::smw_us_v1_default_special_expanded_settings_record()
+            );
+
+            let mut corrupt_marker = image.logical_bytes().to_vec();
+            corrupt_marker[SMW_US_V1_LEGACY_GRAPHICS_GENERATION_100_MARKER_OFFSET + 2] ^= 1;
+            assert!(matches!(
+                smw_us_v1_expanded_settings_generation_100_migration(&corrupt_marker),
+                Err(SmwUsV1ExpandedSettingsGeneration100MigrationError::Legacy(
+                    SmwUsV1ExpandedSettingsGeneration101MigrationError::LegacyMarkerMismatch
+                ))
+            ));
+
+            let mut corrupt_owner = image.logical_bytes().to_vec();
+            corrupt_owner[migration.previous_allocation.header_offset + 6] ^= 1;
+            assert!(matches!(
+                smw_us_v1_expanded_settings_generation_100_migration(&corrupt_owner),
+                Err(SmwUsV1ExpandedSettingsGeneration100MigrationError::Legacy(
+                    SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeHeader(_)
+                ))
+            ));
+
+            let mut corrupt = image.logical_bytes().to_vec();
+            corrupt[0x07_fd80 + 7] ^= 1;
+            assert!(matches!(
+                smw_us_v1_expanded_settings_generation_100_migration(&corrupt),
+                Err(SmwUsV1ExpandedSettingsGeneration100MigrationError::Legacy(
+                    SmwUsV1ExpandedSettingsGeneration101MigrationError::RuntimeDigestMismatch {
+                        offset: 0x07_fd80,
+                    }
+                ))
+            ));
+
+            let mut project = Project::new(image);
+            let result = project
+                .replace_relocatable_patch(
+                    &migration.plan,
+                    &RatsOwnershipManifest {
+                        owned: vec![migration.previous_allocation],
+                        retained: Vec::new(),
+                    },
+                    0xff,
+                )
+                .unwrap();
+            let installed_base =
+                pc_to_snes(Mapper::LoRom, result.blocks[0].payload.start).unwrap() & 0x7f_ffff;
+            let installed_runtime = ExpandedSettingsRuntimeLayout::smw_us_v1(
+                installed_base,
+                ExpandedSettingsEntryContinuation::Continue,
+            );
+            for write in smw_us_v1_expanded_settings_fixed_writes(installed_runtime).unwrap() {
+                assert_eq!(
+                    project
+                        .rom
+                        .read(write.offset, write.replacement.len())
+                        .unwrap(),
+                    write.replacement,
+                    "current runtime mismatch at {:#08x} for {}",
+                    write.offset,
+                    path.display()
+                );
+            }
             assert!(
                 crate::smw_us_v1_installed_expanded_settings_layout(&project)
                     .unwrap()

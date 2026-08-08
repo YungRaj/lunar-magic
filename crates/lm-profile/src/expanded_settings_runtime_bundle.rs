@@ -92,7 +92,7 @@ pub const SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_ALLOCATION_FIXUPS: [ExpandedSettin
         0x172,
         0x16,
         0x2d00,
-        ExpandedSettingsAllocationFixupEncoding::Low8,
+        ExpandedSettingsAllocationFixupEncoding::Low16,
     ),
     allocation_fixup(
         0x172,
