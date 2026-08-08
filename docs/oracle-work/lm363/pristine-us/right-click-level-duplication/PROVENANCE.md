@@ -57,4 +57,17 @@ and Delete removal all share the atomic aggregate transaction.
 `sprite_group_transactions_commit_once_track_order_and_undo_atomically`,
 `right_drag_duplicates_and_moves_a_complete_sprite_group_atomically`, and
 `sprite_group_shortcuts_duplicate_and_delete_the_complete_selection` cover the model, application,
-and native workflow. The original nearest-valid fallback remains a separate interaction boundary.
+and native workflow.
+
+`FindNearestValidTileMoveDelta` at `00438C50` and `FindNearestValidSpriteMoveOffset` at `004CE430`
+recover the final shared-displacement correction order. When one selected reference cell rejects the
+requested delta, Lunar Magic searches the major delta from its request toward zero for the current
+minor delta, then walks the minor delta toward zero and restarts the major search. Zero is rejected
+only as a fallback candidate. After a correction, complete selection validation restarts from the
+first member; failure to find a nonzero candidate restores the drag origin. The native object and
+sprite group clone/move paths now share that exact search and restart contract over the active
+orientation's 512-by-27 or 512-by-32 editor bounds.
+`nearest_valid_group_delta_matches_lunar_magic_search_and_restart_order` covers valid passthrough,
+zero passthrough, nested search order, complete-selection restart, and no-candidate behavior;
+`sprite_group_drag_falls_back_to_the_nearest_shared_in_bounds_delta` binds the correction to the
+aggregate native transaction and selected-index tracking.

@@ -246,7 +246,14 @@ tracks caller order across stable canonical sorting, and rebuilds expanded upper
 `expanded_sprite_group_rebuilds_controls_and_preserves_extensions`,
 `sprite_group_transactions_commit_once_track_order_and_undo_atomically`, and
 `right_drag_duplicates_and_moves_a_complete_sprite_group_atomically` cover that complete native
-route. The original nearest-valid fallback remains incomplete.
+route. Ghidra `FindNearestValidTileMoveDelta` (`00438C50`) and
+`FindNearestValidSpriteMoveOffset` (`004CE430`) recover the remaining correction order: major walks
+toward zero inside each minor step toward zero, zero is excluded only during fallback, and every
+correction restarts validation across the complete set. Object and sprite group clone/move paths now
+share that orientation-bounded search.
+`nearest_valid_group_delta_matches_lunar_magic_search_and_restart_order`
+and `sprite_group_drag_falls_back_to_the_nearest_shared_in_bounds_delta` bind the exact search and
+native transaction boundary.
 
 The sprite row now also covers canonical framing transitions. Semantic native/MWL save paths derive
 legacy versus expanded framing from the actual tokens, synchronize header bit `$20`, and reopen

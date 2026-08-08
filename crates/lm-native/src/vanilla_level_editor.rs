@@ -3836,8 +3836,24 @@ impl VanillaLevelEditor {
             self.error = Some("selected object group contains no visible native placement".into());
             return;
         };
-        let major_delta = target_major - anchor_major;
-        let minor_delta = target_minor - anchor_minor;
+        let requested_major = target_major - anchor_major;
+        let requested_minor = target_minor - anchor_minor;
+        let positions: Vec<_> = stream
+            .native_placements()
+            .into_iter()
+            .filter(|placement| selected.contains(&placement.record_index))
+            .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
+            .collect();
+        let Some((major_delta, minor_delta)) = nearest_valid_group_delta(
+            &positions,
+            requested_major,
+            requested_minor,
+            512,
+            i32::from(level_minor_tile_limit(vertical)),
+        ) else {
+            self.error = Some("no nonzero shared object displacement remains in bounds".into());
+            return;
+        };
         let mut predicted = stream.clone();
         let cloned =
             match predicted.duplicate_ordinary_object_group(&selected, major_delta, minor_delta) {
@@ -3902,8 +3918,24 @@ impl VanillaLevelEditor {
             self.error = Some("selected sprite group contains no visible native placement".into());
             return;
         };
-        let major_delta = target_major - anchor_major;
-        let minor_delta = target_minor - anchor_minor;
+        let requested_major = target_major - anchor_major;
+        let requested_minor = target_minor - anchor_minor;
+        let positions: Vec<_> = stream
+            .native_placements()
+            .into_iter()
+            .filter(|placement| selected.contains(&placement.token_index))
+            .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
+            .collect();
+        let Some((major_delta, minor_delta)) = nearest_valid_group_delta(
+            &positions,
+            requested_major,
+            requested_minor,
+            512,
+            i32::from(level_minor_tile_limit(vertical)),
+        ) else {
+            self.error = Some("no nonzero shared sprite displacement remains in bounds".into());
+            return;
+        };
         let mut predicted = stream.clone();
         let cloned = match predicted.duplicate_record_group(
             &selected,
@@ -3951,9 +3983,9 @@ impl VanillaLevelEditor {
         }) else {
             return;
         };
-        let major_delta = target_major - drag.origin_major;
-        let minor_delta = target_minor - drag.origin_minor;
-        if major_delta == 0 && minor_delta == 0 {
+        let requested_major = target_major - drag.origin_major;
+        let requested_minor = target_minor - drag.origin_minor;
+        if requested_major == 0 && requested_minor == 0 {
             return;
         }
         let selected = match drag.domain {
@@ -3975,6 +4007,23 @@ impl VanillaLevelEditor {
                 &layer2.objects
             }
             CanvasEntitySelection::Sprite => {
+                let positions: Vec<_> = controller
+                    .level()
+                    .sprites
+                    .native_placements()
+                    .into_iter()
+                    .filter(|placement| selected.contains(&placement.token_index))
+                    .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
+                    .collect();
+                let Some((major_delta, minor_delta)) = nearest_valid_group_delta(
+                    &positions,
+                    requested_major,
+                    requested_minor,
+                    512,
+                    i32::from(level_minor_tile_limit(vertical)),
+                ) else {
+                    return;
+                };
                 let mut predicted = controller.level().sprites.clone();
                 let moved = match predicted.relocate_record_group(
                     &selected,
@@ -4007,6 +4056,21 @@ impl VanillaLevelEditor {
                 }
                 return;
             }
+        };
+        let positions: Vec<_> = stream
+            .native_placements()
+            .into_iter()
+            .filter(|placement| selected.contains(&placement.record_index))
+            .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
+            .collect();
+        let Some((major_delta, minor_delta)) = nearest_valid_group_delta(
+            &positions,
+            requested_major,
+            requested_minor,
+            512,
+            i32::from(level_minor_tile_limit(vertical)),
+        ) else {
+            return;
         };
         let mut predicted = stream.clone();
         let moved =
@@ -8000,6 +8064,65 @@ fn sprite_group_anchor(
         .filter(|placement| selected.contains(&placement.token_index))
         .min_by_key(|placement| placement.major.saturating_add(placement.minor))
         .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
+}
+
+fn nearest_valid_group_delta(
+    positions: &[(i32, i32)],
+    requested_major: i32,
+    requested_minor: i32,
+    major_limit: i32,
+    minor_limit: i32,
+) -> Option<(i32, i32)> {
+    let valid = |(major, minor): (i32, i32), major_delta: i32, minor_delta: i32| {
+        (0..major_limit).contains(&(major + major_delta))
+            && (0..minor_limit).contains(&(minor + minor_delta))
+    };
+    if positions
+        .iter()
+        .copied()
+        .all(|position| valid(position, requested_major, requested_minor))
+    {
+        return Some((requested_major, requested_minor));
+    }
+
+    let mut major_delta = requested_major;
+    let mut minor_delta = requested_minor;
+    loop {
+        let offending = positions
+            .iter()
+            .copied()
+            .find(|position| !valid(*position, major_delta, minor_delta))?;
+        let major_step = if major_delta < 0 { 1 } else { -1 };
+        let minor_step = if minor_delta < 0 { 1 } else { -1 };
+        let mut candidate_minor = minor_delta;
+        let mut corrected = None;
+        while candidate_minor != minor_step {
+            let mut candidate_major = major_delta;
+            while candidate_major != major_step {
+                if (candidate_major != 0 || candidate_minor != 0)
+                    && valid(offending, candidate_major, candidate_minor)
+                {
+                    corrected = Some((candidate_major, candidate_minor));
+                    break;
+                }
+                candidate_major += major_step;
+            }
+            if corrected.is_some() {
+                break;
+            }
+            candidate_minor += minor_step;
+        }
+        let corrected = corrected?;
+        major_delta = corrected.0;
+        minor_delta = corrected.1;
+        if positions
+            .iter()
+            .copied()
+            .all(|position| valid(position, major_delta, minor_delta))
+        {
+            return Some((major_delta, minor_delta));
+        }
+    }
 }
 
 fn layer2_tile_at_canvas_position(
@@ -16441,6 +16564,24 @@ mod tests {
     }
 
     #[test]
+    fn nearest_valid_group_delta_matches_lunar_magic_search_and_restart_order() {
+        assert_eq!(
+            nearest_valid_group_delta(&[(510, 0), (0, 25)], 5, 5, 512, 27),
+            Some((1, 1))
+        );
+        assert_eq!(
+            nearest_valid_group_delta(&[(10, 10)], 2, 3, 512, 27),
+            Some((2, 3))
+        );
+        assert_eq!(
+            nearest_valid_group_delta(&[(0, 0)], 0, 0, 512, 27),
+            Some((0, 0))
+        );
+        assert_eq!(nearest_valid_group_delta(&[(0, 0)], -5, 0, 512, 27), None);
+        assert_eq!(nearest_valid_group_delta(&[], 1, 1, 512, 27), Some((1, 1)));
+    }
+
+    #[test]
     fn right_drag_duplicates_and_moves_a_complete_object_group_atomically() {
         let mut app = AppState::default();
         app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
@@ -16652,6 +16793,99 @@ mod tests {
                 ) == source
             }));
         }
+    }
+
+    #[test]
+    fn sprite_group_drag_falls_back_to_the_nearest_shared_in_bounds_delta() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let placements = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements();
+        let selected = vec![placements[0].token_index, placements[1].token_index];
+        let source_positions: Vec<_> = placements
+            .iter()
+            .take(2)
+            .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
+            .collect();
+        let (anchor_major, anchor_minor) = sprite_group_anchor(
+            &editor.controller.as_ref().unwrap().level().sprites,
+            &selected,
+        )
+        .unwrap();
+        let expected_delta = 511
+            - source_positions
+                .iter()
+                .map(|position| position.0)
+                .max()
+                .unwrap();
+        assert!(expected_delta < 511 - anchor_major);
+        editor.selected_sprite_group = selected;
+        editor.selected_sprite = editor.selected_sprite_group[0];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.object_group_drag = Some(CanvasObjectGroupDrag {
+            domain: CanvasEntitySelection::Sprite,
+            origin_major: anchor_major,
+            origin_minor: anchor_minor,
+            secondary: false,
+        });
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+        );
+        editor.finish_object_group_drag(
+            Some(egui::pos2(511.5, anchor_minor as f32 + 0.5)),
+            canvas,
+            1.0,
+            false,
+        );
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        let moved = editor
+            .controller
+            .as_ref()
+            .unwrap()
+            .level()
+            .sprites
+            .native_placements();
+        for (ordinal, selected) in editor.selected_sprite_group.iter().enumerate() {
+            let placement = moved
+                .iter()
+                .find(|placement| placement.token_index == *selected)
+                .unwrap();
+            assert_eq!(
+                i32::from(placement.major),
+                source_positions[ordinal].0 + expected_delta
+            );
+            assert_eq!(i32::from(placement.minor), source_positions[ordinal].1);
+        }
+        assert_eq!(
+            editor
+                .selected_sprite_group
+                .iter()
+                .filter_map(|selected| moved
+                    .iter()
+                    .find(|placement| placement.token_index == *selected))
+                .map(|placement| placement.major)
+                .max(),
+            Some(511)
+        );
     }
 
     #[test]
