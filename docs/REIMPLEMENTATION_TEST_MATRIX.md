@@ -360,11 +360,14 @@ palette shapes or indexes, bit masks, RLE extents/termination, offsets, arithmet
 truncated pixels reject without producing a partial image.
 
 The retained bitmap differential now covers Popularity Method 1, Method 2, neither neighborhood
-method, and Method 1 with Maintain Detail. The Maintain Detail gate proves Lunar Magic prepends a
-zero/transparent sentinel to the reduced-color candidate list and permits it to claim the globally
-nearest unused source color. All four variants match the original palette and complete
-`$000–$2FF` graphics workspace byte-for-byte; `lm-graphics` locks the sentinel, weighted-nearest,
-and distinct-source branches independently.
+method, Method 1 with Maintain Detail, and existing-colors-only conversion. The Maintain Detail
+gate proves Lunar Magic prepends a zero/transparent sentinel to the reduced-color candidate list
+and permits it to claim the globally nearest unused source color. The existing-colors-only gate
+proves retained exact colors do not prevent a later row from being rebuilt, equal-error selection
+prefers exact movable assignments over merely retained words, and duplicate equal entries resolve
+to the later index. All five variants
+match the original palette and complete `$000–$2FF` graphics workspace byte-for-byte;
+`lm-graphics` locks each recovered branch independently.
 
 Structured LM16 Map16 transfer covers both complete and selected-range containers. The compact
 selected form validates the recovered width/height/column/band-relative-row header fields, restores

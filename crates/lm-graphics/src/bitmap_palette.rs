@@ -731,10 +731,14 @@ pub fn allocate_bitmap_palette_rows(
         std::array::from_fn(|row| PaletteRowAllocation::new(row, original, options));
     assign_color_set_records(&mut records, &mut rows)?;
     if !options.maintain_detail {
-        extend_palette_rows_with_weighted_colors(&mut records, &mut rows)?;
+        extend_palette_rows_with_weighted_colors(
+            &mut records,
+            &mut rows,
+            !options.allow_modifying_unmarked_colors,
+        )?;
     }
     for row in &mut rows {
-        row.order_assigned_colors();
+        row.order_assigned_colors(!options.allow_modifying_unmarked_colors);
     }
     let mut palette = original.clone();
     let mut generated_colors = 0;
@@ -746,8 +750,14 @@ pub fn allocate_bitmap_palette_rows(
             }
         }
     }
-    let (indices, tile_rows) =
-        assign_tiles_to_lowest_error_rows(reduced, width, tiles_wide, tiles_high, &rows)?;
+    let (indices, tile_rows) = assign_tiles_to_lowest_error_rows(
+        reduced,
+        width,
+        tiles_wide,
+        tiles_high,
+        &rows,
+        !options.allow_modifying_unmarked_colors,
+    )?;
     Ok(MultiRowBitmapPalette {
         palette,
         indices,
@@ -886,7 +896,7 @@ fn assign_color_set_records(
             let Some(colors) = next else {
                 break;
             };
-            rows[row].install(&colors)?;
+            rows[row].install(&colors, true)?;
             seeded = true;
             let covered = rows[row].colors();
             for record in records.values_mut() {
@@ -903,6 +913,7 @@ fn assign_color_set_records(
 fn extend_palette_rows_with_weighted_colors(
     records: &mut BTreeMap<Vec<u16>, ColorSetRecord>,
     rows: &mut [PaletteRowAllocation; BITMAP_PALETTE_ROWS],
+    revisit_assigned_records: bool,
 ) -> Result<(), BitmapPaletteReductionError> {
     let mut row_order = (0..rows.len()).collect::<Vec<_>>();
     row_order.sort_by_key(|row| {
@@ -922,7 +933,7 @@ fn extend_palette_rows_with_weighted_colors(
             let next = records
                 .values()
                 .filter(|record| {
-                    record.assigned_row.is_none()
+                    (revisit_assigned_records || record.assigned_row.is_none())
                         && record
                             .colors
                             .iter()
@@ -967,7 +978,7 @@ fn extend_palette_rows_with_weighted_colors(
             if selected.is_empty() {
                 break;
             }
-            rows[row].install(&selected)?;
+            rows[row].install(&selected, !revisit_assigned_records)?;
             let covered = rows[row].colors();
             for record in records.values_mut() {
                 if record.assigned_row.is_none() && is_subset(&record.colors, &covered) {
@@ -989,25 +1000,39 @@ fn assign_tiles_to_lowest_error_rows(
     tiles_wide: usize,
     tiles_high: usize,
     rows: &[PaletteRowAllocation; BITMAP_PALETTE_ROWS],
+    prefer_assigned_entries: bool,
 ) -> Result<(Vec<u8>, Vec<u8>), BitmapPaletteReductionError> {
     let mut indices = vec![0; reduced.indices.len()];
     let mut tile_rows = Vec::with_capacity(tiles_wide * tiles_high);
     for tile_y in 0..tiles_high {
         for tile_x in 0..tiles_wide {
-            let mut best: Option<(u64, usize, [u8; 64])> = None;
+            let mut best: Option<(u64, usize, usize, [u8; 64])> = None;
             for row in rows {
-                let Some((error, tile_indices)) =
-                    score_tile_for_row(reduced, width, tile_x, tile_y, row)?
+                let Some((error, assigned_pixels, tile_indices)) = score_tile_for_row(
+                    reduced,
+                    width,
+                    tile_x,
+                    tile_y,
+                    row,
+                    prefer_assigned_entries,
+                )?
                 else {
                     continue;
                 };
-                if best.as_ref().is_none_or(|(best_error, best_row, _)| {
-                    (error, row.row) < (*best_error, *best_row)
-                }) {
-                    best = Some((error, row.row, tile_indices));
+                let assigned_priority = prefer_assigned_entries
+                    .then_some(assigned_pixels)
+                    .unwrap_or(0);
+                if best
+                    .as_ref()
+                    .is_none_or(|(best_error, best_assigned, best_row, _)| {
+                        (error, Reverse(assigned_priority), row.row)
+                            < (*best_error, Reverse(*best_assigned), *best_row)
+                    })
+                {
+                    best = Some((error, assigned_priority, row.row, tile_indices));
                 }
             }
-            let Some((_, row, tile_indices)) = best else {
+            let Some((_, _, row, tile_indices)) = best else {
                 return Err(BitmapPaletteReductionError::NoEligiblePaletteRow {
                     tile: tile_rows.len(),
                 });
@@ -1032,8 +1057,10 @@ fn score_tile_for_row(
     tile_x: usize,
     tile_y: usize,
     row: &PaletteRowAllocation,
-) -> Result<Option<(u64, [u8; 64])>, BitmapPaletteReductionError> {
+    prefer_last_equal_entry: bool,
+) -> Result<Option<(u64, usize, [u8; 64])>, BitmapPaletteReductionError> {
     let mut error = 0_u64;
+    let mut assigned_pixels = 0;
     let mut indices = [0; 64];
     for pixel_y in 0..8 {
         let source_offset = (tile_y * 8 + pixel_y) * width + tile_x * 8;
@@ -1047,14 +1074,17 @@ fn score_tile_for_row(
                 .get(usize::from(source_index) - 1)
                 .ok_or(BitmapPaletteReductionError::ReducedIndex(source_index))?
                 .0;
-            let Some((entry, distance)) = row.nearest(color) else {
+            let Some((entry, distance)) = row.nearest(color, prefer_last_equal_entry) else {
                 return Ok(None);
             };
             indices[pixel_y * 8 + pixel_x] = entry;
             error = error.saturating_add(u64::from(distance));
+            if distance == 0 && matches!(row.entries[usize::from(entry)], RowEntry::Assigned(_)) {
+                assigned_pixels += 1;
+            }
         }
     }
-    Ok(Some((error, indices)))
+    Ok(Some((error, assigned_pixels, indices)))
 }
 
 fn lunar_magic_color_distance(left: u16, right: u16) -> u32 {
@@ -1096,8 +1126,9 @@ fn is_subset(subset: &[u16], superset: &[u16]) -> bool {
 #[derive(Clone, Copy, Debug)]
 enum RowEntry {
     Reserved,
-    Free,
+    Free(Option<u16>),
     Reusable(u16),
+    Retained(u16),
     Assigned(u16),
 }
 
@@ -1117,7 +1148,9 @@ impl PaletteRowAllocation {
         let entries = std::array::from_fn(|entry| {
             let index = row * Palette::COLORS_PER_ROW + entry;
             match options.entries[index] {
-                BitmapPaletteEntryState::Free if entry != 0 => RowEntry::Free,
+                BitmapPaletteEntryState::Free if entry != 0 => RowEntry::Free(
+                    (!options.allow_modifying_unmarked_colors).then_some(original.colors[index].0),
+                ),
                 BitmapPaletteEntryState::Reusable if entry != 0 => {
                     RowEntry::Reusable(original.colors[index].0)
                 }
@@ -1137,7 +1170,7 @@ impl PaletteRowAllocation {
         let free_before = self
             .entries
             .iter()
-            .filter(|entry| matches!(entry, RowEntry::Free))
+            .filter(|entry| matches!(entry, RowEntry::Free(_)))
             .count();
         (colors.len() - overlap <= free_before).then_some(RowScore { overlap })
     }
@@ -1145,7 +1178,7 @@ impl PaletteRowAllocation {
     fn free_count(&self) -> usize {
         self.entries
             .iter()
-            .filter(|entry| matches!(entry, RowEntry::Free))
+            .filter(|entry| matches!(entry, RowEntry::Free(_)))
             .count()
     }
 
@@ -1156,24 +1189,49 @@ impl PaletteRowAllocation {
             .count()
     }
 
-    fn install(&mut self, colors: &[u16]) -> Result<(), BitmapPaletteReductionError> {
+    fn install(
+        &mut self,
+        colors: &[u16],
+        retain_matching_free_colors: bool,
+    ) -> Result<(), BitmapPaletteReductionError> {
+        if retain_matching_free_colors {
+            for color in colors {
+                if self.installed_index_of(*color).is_some() {
+                    continue;
+                }
+                if let Some(entry) = self
+                    .entries
+                    .iter_mut()
+                    .find(|entry| matches!(entry, RowEntry::Free(Some(value)) if value == color))
+                {
+                    *entry = RowEntry::Retained(*color);
+                }
+            }
+        }
         for color in colors {
-            if self.index_of(*color).is_some() {
+            if self.installed_index_of(*color).is_some() {
                 continue;
             }
             let entry = self
                 .entries
                 .iter_mut()
-                .find(|entry| matches!(entry, RowEntry::Free))
+                .find(|entry| matches!(entry, RowEntry::Free(_)))
                 .ok_or(BitmapPaletteReductionError::RowCapacity(self.row))?;
             *entry = RowEntry::Assigned(*color);
         }
         Ok(())
     }
 
-    fn order_assigned_colors(&mut self) {
-        let mut previous = None;
-        let mut entry = 0;
+    fn order_assigned_colors(&mut self, preserve_first: bool) {
+        let first = preserve_first
+            .then(|| {
+                self.entries
+                    .iter()
+                    .position(|entry| assigned_color(*entry).is_some())
+            })
+            .flatten();
+        let mut previous = first.and_then(|entry| assigned_color(self.entries[entry]));
+        let mut entry = first.map_or(0, |entry| entry + 1);
         while entry < self.entries.len() {
             if !matches!(self.entries[entry], RowEntry::Assigned(_)) {
                 entry += 1;
@@ -1231,23 +1289,43 @@ impl PaletteRowAllocation {
         self.entries
             .iter()
             .position(|entry| {
-                matches!(entry, RowEntry::Reusable(value) | RowEntry::Assigned(value) if *value == color)
+                matches!(entry, RowEntry::Free(Some(value)) | RowEntry::Reusable(value) | RowEntry::Retained(value) | RowEntry::Assigned(value) if *value == color)
             })
             .and_then(|entry| u8::try_from(entry).ok())
     }
 
-    fn nearest(&self, color: u16) -> Option<(u8, u32)> {
+    fn installed_index_of(&self, color: u16) -> Option<u8> {
+        self.entries
+            .iter()
+            .position(|entry| {
+                matches!(entry, RowEntry::Reusable(value) | RowEntry::Retained(value) | RowEntry::Assigned(value) if *value == color)
+            })
+            .and_then(|entry| u8::try_from(entry).ok())
+    }
+
+    fn nearest(&self, color: u16, prefer_last_equal_entry: bool) -> Option<(u8, u32)> {
         self.entries
             .iter()
             .enumerate()
             .filter_map(|(entry, candidate)| match candidate {
-                RowEntry::Reusable(value) | RowEntry::Assigned(value) => {
+                RowEntry::Free(Some(value))
+                | RowEntry::Reusable(value)
+                | RowEntry::Retained(value)
+                | RowEntry::Assigned(value) => {
                     let index = u8::try_from(entry).ok()?;
                     Some((index, lunar_magic_color_distance(color, *value)))
                 }
-                RowEntry::Reserved | RowEntry::Free => None,
+                RowEntry::Reserved | RowEntry::Free(None) => None,
             })
-            .min_by_key(|(entry, distance)| (*distance, *entry))
+            .min_by_key(|(entry, distance)| {
+                (
+                    *distance,
+                    prefer_last_equal_entry
+                        .then_some(Reverse(*entry))
+                        .unwrap_or(Reverse(0)),
+                    (!prefer_last_equal_entry).then_some(*entry).unwrap_or(0),
+                )
+            })
     }
 
     fn colors(&self) -> Vec<u16> {
@@ -1255,8 +1333,10 @@ impl PaletteRowAllocation {
             .entries
             .iter()
             .filter_map(|entry| match entry {
-                RowEntry::Reusable(color) | RowEntry::Assigned(color) => Some(*color),
-                RowEntry::Reserved | RowEntry::Free => None,
+                RowEntry::Reusable(color)
+                | RowEntry::Retained(color)
+                | RowEntry::Assigned(color) => Some(*color),
+                RowEntry::Reserved | RowEntry::Free(_) => None,
             })
             .collect::<Vec<_>>();
         colors.sort_unstable();
@@ -1268,7 +1348,9 @@ impl PaletteRowAllocation {
 const fn assigned_color(entry: RowEntry) -> Option<u16> {
     match entry {
         RowEntry::Assigned(color) => Some(color),
-        RowEntry::Reserved | RowEntry::Free | RowEntry::Reusable(_) => None,
+        RowEntry::Reserved | RowEntry::Free(_) | RowEntry::Reusable(_) | RowEntry::Retained(_) => {
+            None
+        }
     }
 }
 
@@ -1898,8 +1980,53 @@ mod tests {
                 RowEntry::Reserved,
             ],
         };
-        row.order_assigned_colors();
+        row.order_assigned_colors(false);
         assert!(matches!(row.entries[1], RowEntry::Assigned(0x0000)));
+    }
+
+    #[test]
+    fn unmarked_mode_rebuilds_a_later_row_from_colors_retained_by_an_earlier_row() {
+        let red = Bgr555(0x001f);
+        let blue = Bgr555(0x7c00);
+        let mut original = palette();
+        original.colors[1] = red;
+        original.colors[2] = blue;
+        original.colors[17] = Bgr555(0x03e0);
+        original.colors[18] = Bgr555(0x7fff);
+        let mut options = reserved_options();
+        options.allow_modifying_unmarked_colors = false;
+        for entry in [1, 2, 17, 18] {
+            options.entries[entry] = BitmapPaletteEntryState::Free;
+        }
+        let reduced = ReducedBitmapPalette {
+            colors: vec![red, blue],
+            indices: (0..64)
+                .map(|pixel| if pixel & 1 == 0 { 1 } else { 2 })
+                .collect(),
+        };
+
+        let allocated = allocate_bitmap_palette_rows(&reduced, 8, 8, &original, &options).unwrap();
+
+        assert_eq!(allocated.palette.colors[1..=2], [red, blue]);
+        assert_eq!(allocated.palette.colors[17..=18], [red, blue]);
+        assert_eq!(allocated.tile_rows, [1]);
+        assert_eq!(&allocated.indices[..4], &[1, 2, 1, 2]);
+    }
+
+    #[test]
+    fn unmarked_mode_uses_the_last_equal_palette_entry() {
+        let color = 0x7393;
+        let row = PaletteRowAllocation {
+            row: 1,
+            entries: std::array::from_fn(|entry| match entry {
+                4 => RowEntry::Assigned(color),
+                12 => RowEntry::Free(Some(color)),
+                _ => RowEntry::Reserved,
+            }),
+        };
+
+        assert_eq!(row.nearest(color, false), Some((4, 0)));
+        assert_eq!(row.nearest(color, true), Some((12, 0)));
     }
 
     #[test]

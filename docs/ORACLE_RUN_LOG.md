@@ -124,3 +124,13 @@ claims the nearest unused bitmap color during Maintain Detail's distinct-source 
 the sentinel to both native nearest mapping and the distinct-source allocator, the complete final
 palette and `$000–$2FF` graphics workspace match exactly. A repeated original capture produced the
 same palette, graphics, and entry-state buffers, ruling out timer or clipboard noise.
+
+A fifth normalized capture clears control `$74`, keeps Maintain Detail clear, and restricts
+conversion to the existing non-reserved palette words. Lunar Magic leaves row 0 byte-identical,
+rebuilds row 1 from the weighted used colors, and emits graphics using that later row. The exact
+differential recovered three coupled details: retained exact matches remain available without
+blocking per-row extension, an equal-error row with exact movable assignments wins over a row that
+only retains those words, and duplicate equal palette words choose the later entry in this mode.
+After reproducing those rules, all 32 active palette words and the complete `$000–$2FF` graphics
+workspace match byte-for-byte. Focused tests independently lock later-row rebuilding and the
+duplicate-entry tie.

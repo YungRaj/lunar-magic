@@ -4391,6 +4391,15 @@ finds only its dialog load/store references, and the native UI mirrors that disa
 audit harness now normalizes all persistent checkboxes on every run so prior oracle sessions cannot
 silently contaminate option evidence.
 
+The full existing-colors-only differential additionally proves that exact colors retained in an
+earlier row do not globally suppress the weighted extension of a later row. Initial exact placement
+keeps matching free words in place, while the later-row pass treats the same source records as
+available again and rearranges only existing words. Final tile assignment prefers exact movable
+assignments over equally accurate retained words and uses the mode's reverse equal-entry scan, so a
+duplicated palette word selects its later index. This closes the observed palette from 24
+different bytes to zero and graphics from 269 different bytes to zero without admitting any new
+color.
+
 The retained bitmap-import capture now also records Lunar Magic's effective 128-byte palette-entry
 map before conversion. The three 16-color Popularity differentials exposed and closed the ordinary
 weighted-RGB555 mapping, exact-row allocation order, subset-weight lifetime, partial-extension

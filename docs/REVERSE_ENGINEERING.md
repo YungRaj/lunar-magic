@@ -1545,6 +1545,15 @@ this route changes the palette arrangement and graphics while admitting no new r
 now exposes and implements that exact existing-colors-only policy and requires destination-palette
 context when it is selected.
 
+The exact fifth differential refines the allocator behavior for that route. A row may retain exact
+matching free words during the first set-assignment pass, but those globally covered records are
+revisited when extending later rows; matching words in the later row are ordinary movable
+assignments rather than fixed retained entries. Final tile scoring prefers a row containing exact
+movable assignments over an equally accurate row that merely retained those words. Within the
+selected row, equal-distance duplicate words resolve to the later entry when control `$74` is
+clear. These rules reproduce all
+32 active palette words and every byte of the `$000–$2FF` planar graphics workspace.
+
 Control `$65`, “Give priority to exact color matches in existing palette,” is checked and disabled
 in Lunar Magic 3.63. Its byte `DAT_005e55cc` has exactly two references, both in
 `HandleBitmapImportOptionsDialog`: initialization reads it and OK stores the disabled checkbox.
