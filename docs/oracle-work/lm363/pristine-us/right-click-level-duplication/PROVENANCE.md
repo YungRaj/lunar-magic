@@ -68,6 +68,15 @@ non-positioned, opaque-control, or any-member-out-of-bounds input without changi
 `invalid_group_duplication_is_failure_atomic`,
 `group_relocation_moves_every_member_once_and_tracks_reordered_indexes`, and
 `invalid_group_relocation_is_failure_atomic` cover that model/transaction boundary.
+
+`object_edits_reopen_and_undo_across_every_supported_identity_mapper_header_and_storage_variant`
+closes the portability boundary with 48 generated, identity-valid cases: SMW-J, SMW-NA, and
+All-Stars+World-NA; LoROM `$20`/`$30`, SA-1 `$23`, and ExLoROM `$32`; absent or exact retained
+copier prefixes; and two independent tagged storage placements. Each case inserts a standard and a
+command-zero extended object, changes the extended selector, relocates the standard object, deletes
+an existing object, saves only Layer 1, and semantically reopens the exact result. The sprite pointer
+and decoded sprite aggregate remain unchanged, the checksum is valid, Undo and Redo reproduce the
+complete physical images, and headered/headerless runs produce identical logical ROMs.
 `ctrl_object_selection_toggles_members_and_keeps_layer_domains_exclusive` and
 `right_drag_duplicates_and_moves_a_complete_object_group_atomically` cover the native object
 selection, clone, immediate-drag, release, and source-preservation workflow.
