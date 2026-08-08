@@ -4364,9 +4364,13 @@ greedily choose uncovered sets by existing-color overlap and aggregate subset we
 missing colors by their direct pixel weights. The recovered Maintain Detail control skips this extension pass and also changes the earlier
 global index assignment: exact source matches claim reduced-palette indexes first, after which each
 remaining palette color claims its globally nearest unused source color before ordinary nearest
-mapping. A constrained four-color/three-slot test proves default allocation fills the two remaining
+mapping. Lunar Magic prepends the zero/transparent sentinel to that candidate list; Maintain Detail
+therefore lets it claim the globally nearest unused source color as index zero. A constrained
+four-color/three-slot test proves default allocation fills the two remaining
 entries while Maintain Detail retains only the reusable exact color, and a separate two-color test
 proves the distinct-source claim prevents both source colors from collapsing to one palette index.
+`maintain_detail_zero_sentinel_claims_the_nearest_unused_source_color` locks the recovered sentinel
+behavior.
 
 Palette-aware bitmap reduction now performs Lunar Magic's preserved-color substitution before
 source pixels are mapped. It greedily selects the globally nearest unmatched reduced/reusable pair,

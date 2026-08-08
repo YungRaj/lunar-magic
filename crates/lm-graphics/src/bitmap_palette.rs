@@ -252,10 +252,7 @@ fn reduce_bitmap_palette_internal(
             } else {
                 opaque_indices
                     .next()
-                    .ok_or(BitmapPaletteReductionError::IndexPlaneMismatch)?
-                    .checked_add(1)
-                    .and_then(|index| u8::try_from(index).ok())
-                    .ok_or(BitmapPaletteReductionError::IndexOverflow)
+                    .ok_or(BitmapPaletteReductionError::IndexPlaneMismatch)
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -268,7 +265,7 @@ fn reduce_bitmap_palette_internal(
 fn nearest_lunar_magic_palette_indices(
     pixels: &[Rgb8],
     colors: &[Bgr555],
-) -> Result<Vec<usize>, BitmapPaletteReductionError> {
+) -> Result<Vec<u8>, BitmapPaletteReductionError> {
     if colors.is_empty() {
         return Err(BitmapPaletteReductionError::EmptyOpaquePalette);
     }
@@ -276,12 +273,16 @@ fn nearest_lunar_magic_palette_indices(
         .iter()
         .map(|pixel| {
             let source = lunar_magic_bitmap_color(*pixel).0;
-            colors
-                .iter()
-                .enumerate()
-                .min_by_key(|(index, color)| (lunar_magic_color_distance(source, color.0), *index))
-                .map(|(index, _)| index)
-                .ok_or(BitmapPaletteReductionError::EmptyOpaquePalette)
+            std::iter::once((0_usize, 0_u16))
+                .chain(
+                    colors
+                        .iter()
+                        .enumerate()
+                        .map(|(index, color)| (index + 1, color.0)),
+                )
+                .min_by_key(|(index, color)| (lunar_magic_color_distance(source, *color), *index))
+                .and_then(|(index, _)| u8::try_from(index).ok())
+                .ok_or(BitmapPaletteReductionError::IndexOverflow)
         })
         .collect()
 }
@@ -406,7 +407,7 @@ fn reusable_color_matches(selected: u16, reusable: u16, hue_tolerance: u16) -> b
 fn maintain_detail_palette_indices(
     opaque: &[Rgb8],
     colors: &[Bgr555],
-) -> Result<Vec<usize>, BitmapPaletteReductionError> {
+) -> Result<Vec<u8>, BitmapPaletteReductionError> {
     if colors.is_empty() {
         return Err(BitmapPaletteReductionError::EmptyOpaquePalette);
     }
@@ -416,17 +417,24 @@ fn maintain_detail_palette_indices(
         .collect::<Vec<_>>();
     sources.sort_unstable();
     sources.dedup();
-    let mut source_assignments = BTreeMap::<u16, usize>::new();
-    let mut palette_assigned = vec![false; colors.len()];
-    for (palette_index, color) in colors.iter().enumerate() {
-        if sources.binary_search(&color.0).is_ok() && !source_assignments.contains_key(&color.0) {
-            source_assignments.insert(color.0, palette_index);
+    let candidates = std::iter::once(0_u16)
+        .chain(colors.iter().map(|color| color.0))
+        .collect::<Vec<_>>();
+    let mut source_assignments = BTreeMap::<u16, u8>::new();
+    let mut palette_assigned = vec![false; candidates.len()];
+    for (palette_index, color) in candidates.iter().copied().enumerate() {
+        if sources.binary_search(&color).is_ok() && !source_assignments.contains_key(&color) {
+            source_assignments.insert(
+                color,
+                u8::try_from(palette_index)
+                    .map_err(|_| BitmapPaletteReductionError::IndexOverflow)?,
+            );
             palette_assigned[palette_index] = true;
         }
     }
     loop {
         let mut best = None::<(u32, usize, u16)>;
-        for (palette_index, color) in colors.iter().enumerate() {
+        for (palette_index, color) in candidates.iter().copied().enumerate() {
             if palette_assigned[palette_index] {
                 continue;
             }
@@ -435,7 +443,7 @@ fn maintain_detail_palette_indices(
                     continue;
                 }
                 let candidate = (
-                    lunar_magic_color_distance(color.0, *source),
+                    lunar_magic_color_distance(color, *source),
                     palette_index,
                     *source,
                 );
@@ -447,18 +455,22 @@ fn maintain_detail_palette_indices(
         let Some((_, palette_index, source)) = best else {
             break;
         };
-        source_assignments.insert(source, palette_index);
+        source_assignments.insert(
+            source,
+            u8::try_from(palette_index).map_err(|_| BitmapPaletteReductionError::IndexOverflow)?,
+        );
         palette_assigned[palette_index] = true;
     }
     for source in sources {
         source_assignments.entry(source).or_insert_with(|| {
-            colors
+            candidates
                 .iter()
+                .copied()
                 .enumerate()
                 .min_by_key(|(palette_index, color)| {
-                    (lunar_magic_color_distance(source, color.0), *palette_index)
+                    (lunar_magic_color_distance(source, *color), *palette_index)
                 })
-                .map(|(palette_index, _)| palette_index)
+                .and_then(|(palette_index, _)| u8::try_from(palette_index).ok())
                 .unwrap_or(0)
         });
     }
@@ -1423,7 +1435,7 @@ mod tests {
         assert!(reduced.colors.contains(&Bgr555::from_rgb8(rgb(red))));
         assert!(reduced.colors.contains(&Bgr555::from_rgb8(rgb(green))));
         assert!(!reduced.colors.contains(&Bgr555::from_rgb8(rgb(blue))));
-        assert!(reduced.indices.iter().all(|index| (1..=2).contains(index)));
+        assert_eq!(reduced.indices, [2, 2, 1, 0]);
     }
 
     #[test]
@@ -1533,15 +1545,11 @@ mod tests {
 
     #[test]
     fn ordinary_source_mapping_uses_native_weighted_rgb555_distance() {
-        let source = Rgb8 {
-            red: 0,
-            green: 0,
-            blue: 0,
-        };
+        let source = Bgr555(0x008c).to_rgb8();
         let colors = [Bgr555(0x0180), Bgr555(0x3004)];
 
-        // Unweighted expanded-RGB distance prefers $0180. Lunar Magic weights red, green, and
-        // blue by 4:3:2 in RGB555 space and therefore selects $3004.
+        // Unweighted expanded-RGB distance prefers $0180. Lunar Magic includes its zero sentinel,
+        // then weights red, green, and blue by 4:3:2 in RGB555 space and selects $3004.
         assert_eq!(
             Palette {
                 colors: colors.to_vec()
@@ -1551,7 +1559,7 @@ mod tests {
         );
         assert_eq!(
             nearest_lunar_magic_palette_indices(&[source], &colors).unwrap(),
-            vec![1]
+            vec![2]
         );
     }
 
@@ -1595,9 +1603,9 @@ mod tests {
             alpha: 0,
         };
         let opaque = Rgba8 {
-            red: 1,
-            green: 2,
-            blue: 3,
+            red: 255,
+            green: 0,
+            blue: 0,
             alpha: 255,
         };
         let reduced = reduce_bitmap_palette(&[transparent, opaque], &options).unwrap();
@@ -1796,8 +1804,8 @@ mod tests {
                 .iter()
                 .all(|color| [Bgr555(0x001f), Bgr555(0x7c00)].contains(color))
         );
-        assert_eq!(reduced.indices, vec![2; 64]);
-        assert_eq!(allocated.tile_rows, vec![1]);
+        assert_eq!(reduced.indices, vec![0; 64]);
+        assert_eq!(allocated.tile_rows, vec![0]);
         assert_eq!(allocated.generated_colors, 0);
         for (index, (before, after)) in original
             .colors
@@ -1965,6 +1973,21 @@ mod tests {
 
         assert_eq!(nearest, [0, 0]);
         assert_eq!(detailed, [0, 1]);
+    }
+
+    #[test]
+    fn maintain_detail_zero_sentinel_claims_the_nearest_unused_source_color() {
+        let colors = [Bgr555(0x1000), Bgr555(0x2000)];
+        let opaque = [
+            colors[0].to_rgb8(),
+            colors[1].to_rgb8(),
+            Bgr555(1).to_rgb8(),
+        ];
+
+        assert_eq!(
+            maintain_detail_palette_indices(&opaque, &colors).unwrap(),
+            [1, 2, 0]
+        );
     }
 
     #[test]

@@ -66,11 +66,13 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
         .iter()
         .zip(expected_graphics)
         .enumerate()
-        .filter_map(|(offset, (rust, original))| (rust != original).then_some(offset))
+        .filter_map(|(offset, (rust, original))| {
+            (rust != original).then_some((offset, *rust, *original))
+        })
         .collect::<Vec<_>>();
     assert!(
         graphics_differences.is_empty(),
-        "the native $000-$2FF graphics workspace has {} differences; first offsets: {:X?}",
+        "the native $000-$2FF graphics workspace has {} differences; first (offset, Rust, original) triples: {:X?}",
         graphics_differences.len(),
         &graphics_differences[..graphics_differences.len().min(16)],
     );

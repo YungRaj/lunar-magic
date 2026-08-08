@@ -116,3 +116,11 @@ lightness/saturation distance weights. The no-neighborhood, method-1, and method
 pass across both active palette rows and the complete graphics workspace. A Method 2 breakpoint
 capture at `004f0269` additionally produced the same 4,096-byte pre-allocation color plane as Rust,
 SHA-256 `07e0db077220846dd17b13b743718152779f79cd5d2034240c944483808fc8d9`.
+
+A fourth capture enables Maintain Detail with Method 1. The first differential exposed one source
+pixel incorrectly retained by Rust. A breakpoint at `$004F0269` showed Lunar Magic's reduced
+candidate count is 17: the requested 16 opaque colors plus a leading zero sentinel. That sentinel
+claims the nearest unused bitmap color during Maintain Detail's distinct-source pass. After adding
+the sentinel to both native nearest mapping and the distinct-source allocator, the complete final
+palette and `$000–$2FF` graphics workspace match exactly. A repeated original capture produced the
+same palette, graphics, and entry-state buffers, ruling out timer or clipboard noise.

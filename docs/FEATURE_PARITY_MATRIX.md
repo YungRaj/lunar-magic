@@ -34,6 +34,12 @@ pixel planes reject before preview construction. This is covered by
 `map16_bitmap_import::tests::bmp_decoder_rejects_malformed_core_headers_palettes_and_pixels`, and
 `rom_map16_editor::bitmap_import::tests::core_header_bmp_reaches_the_native_preview_with_rgb_channels_intact`.
 
+Current bitmap-option oracle evidence covers Popularity Method 1, Method 2, neither neighborhood
+method, and Method 1 with Maintain Detail. All four match Lunar Magic's active palette and complete
+`$000–$2FF` graphics workspace byte-for-byte. The Maintain Detail breakpoint also proves the
+leading zero/transparent sentinel participates in distinct-source assignment. Other bitmap option
+products and complete original interaction coverage remain open.
+
 Current Layer 1 import evidence also distinguishes extent from ordering. MWL import recomputes the
 five-bit stored last-screen field from the highest visible Layer 1 object or sprite, but preserves
 raw backward screen-jump order. `lunar_magic_recomputes_extent_but_preserves_raw_layer1_order`
