@@ -223,6 +223,7 @@ impl RomMap16Editor {
         (approved, command)
     }
     fn contents(&mut self, ui: &mut egui::Ui, project_revision: u64) -> Option<Command> {
+        let commit_shortcut = take_map16_commit_shortcut(ui);
         let pasted = ui.input(|input| {
             input.events.iter().find_map(|event| match event {
                 egui::Event::Paste(text) => Some(text.clone()),
@@ -287,7 +288,7 @@ impl RomMap16Editor {
         );
         self.bitmap_import_controls(ui, edit_blocked, project_revision);
         self.snes_tileset_controls(ui, edit_blocked, project_revision);
-        self.commit_controls(ui, edit_blocked, project_revision)
+        self.commit_controls(ui, edit_blocked, project_revision, commit_shortcut)
     }
     fn visual_page(&mut self, ui: &mut egui::Ui) {
         let changed = ui
@@ -608,6 +609,7 @@ impl RomMap16Editor {
         ui: &mut egui::Ui,
         stale: bool,
         project_revision: u64,
+        commit_shortcut: bool,
     ) -> Option<Command> {
         ui.separator();
         ui.horizontal(|ui| {
@@ -620,12 +622,16 @@ impl RomMap16Editor {
             .workspace
             .as_ref()
             .is_some_and(|w| w.controller.is_modified());
-        if ui
+        let commit_clicked = ui
             .add_enabled(
                 modified && !stale && !self.manifest_loader.is_running(),
-                egui::Button::new("Commit complete Map16 set to ROM"),
+                egui::Button::new("Commit complete Map16 set to ROM").shortcut_text("F9"),
             )
-            .clicked()
+            .clicked();
+        if modified
+            && !stale
+            && !self.manifest_loader.is_running()
+            && (commit_clicked || commit_shortcut)
         {
             match self.prepare_commit() {
                 Ok(command) => {
@@ -742,6 +748,12 @@ impl RomMap16Editor {
     fn invalidate(&mut self) {
         self.loaded = None;
     }
+}
+
+fn take_map16_commit_shortcut(ui: &mut egui::Ui) -> bool {
+    ui.input_mut(|input| {
+        !input.modifiers.any() && input.consume_key(egui::Modifiers::NONE, egui::Key::F9)
+    })
 }
 
 const MAP16_HISTORY_LIMIT: usize = 100;

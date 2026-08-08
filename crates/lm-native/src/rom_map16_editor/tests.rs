@@ -47,6 +47,86 @@ use std::{
 
 static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn original_map16_commit_shortcut_requires_unmodified_f9() {
+    fn observed(modifiers: egui::Modifiers) -> bool {
+        let context = egui::Context::default();
+        let mut taken = false;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key: egui::Key::F9,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    taken = take_map16_commit_shortcut(ui);
+                });
+            },
+        );
+        taken
+    }
+
+    assert!(observed(egui::Modifiers::NONE));
+    for modifiers in [
+        egui::Modifiers::CTRL,
+        egui::Modifiers::SHIFT,
+        egui::Modifiers::ALT,
+        egui::Modifiers::COMMAND,
+    ] {
+        assert!(!observed(modifiers));
+    }
+}
+
+#[test]
+fn unmodified_f9_routes_through_the_existing_map16_commit_transaction() {
+    let mut app = AppState::default();
+    app.load_rom(pristine_fixture()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let project_revision = app.project_revision();
+    let mut editor = RomMap16Editor::default();
+    editor.open(&app);
+    editor.apply(Map16ControllerEdit::SetSubtile {
+        address: Map16Address { page: 2, tile: 3 },
+        quadrant: Map16Quadrant::TopLeft,
+        subtile: Subtile(0x2345),
+        resolution_limit: lm_app::SMW_COMPLETE_MAP16_PAGES * Map16Page::TILE_COUNT,
+    });
+
+    let context = egui::Context::default();
+    let mut command = None;
+    let _ = context.run(
+        egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: egui::Key::F9,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        },
+        |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                let shortcut = take_map16_commit_shortcut(ui);
+                command = editor.commit_controls(ui, false, project_revision, shortcut);
+            });
+        },
+    );
+
+    app.dispatch(command.expect("F9 should prepare the Map16 commit"))
+        .unwrap();
+    let reopened = load_smw_us_v1_complete_map16(app.project().unwrap()).unwrap();
+    let word = (2 * Map16Page::TILE_COUNT + 3) * 4;
+    assert_eq!(reopened.foreground.definitions[word], 0x2345);
+}
+
 fn temporary_path(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "lm-rom-map16-{name}-{}-{}",
