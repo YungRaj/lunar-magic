@@ -341,6 +341,16 @@ pub(crate) fn load_profiled_internal_graphics_cache(
     cache[INTERNAL_GFX32_START..INTERNAL_GFX32_START + gfx32_len]
         .clone_from_slice(&gfx32[..gfx32_len]);
 
+    if let Some(file) = profiled_auxiliary_graphics_file(
+        expanded.as_ref().map(lm_level::ExpandedLevelHeader::from),
+        &loaded_level.layer1.objects,
+    ) {
+        let auxiliary = load_optional_profiled_graphics_file(&project, profile.graphics, file)?;
+        let count = auxiliary.len().min(INTERNAL_AUXILIARY_ANIMATION_TILES);
+        cache[INTERNAL_AUXILIARY_ANIMATION_START..INTERNAL_AUXILIARY_ANIMATION_START + count]
+            .clone_from_slice(&auxiliary[..count]);
+    }
+
     let layer3 = if let Some(settings) = expanded.as_ref() {
         load_layer3_tiles_from_settings(&project, settings, profile.graphics)?
     } else {
@@ -355,16 +365,7 @@ pub(crate) fn load_profiled_internal_graphics_cache(
     cache[INTERNAL_LAYER3_START..INTERNAL_LAYER3_START + INTERNAL_LAYER3_TILES]
         .clone_from_slice(&layer3);
 
-    let mut relative_tiles = foreground;
-    relative_tiles.extend(sprites);
-    relative_tiles.truncate(0x400);
-    populate_profiled_exanimation_source_banks(
-        &project,
-        profile,
-        usize::from(level),
-        &relative_tiles,
-        &mut cache,
-    )?;
+    populate_profiled_exanimation_source_banks(&project, profile.graphics, &mut cache)?;
     if let Some(assets) = external_sprite_assets {
         for index in INTERNAL_EXTERNAL_SPRITE_START
             ..INTERNAL_EXTERNAL_SPRITE_START + INTERNAL_EXTERNAL_SPRITE_TILES
@@ -378,51 +379,86 @@ pub(crate) fn load_profiled_internal_graphics_cache(
     Ok(VanillaInternalGraphicsCache { tiles: cache })
 }
 
+fn profiled_auxiliary_graphics_file(
+    expanded: Option<lm_level::ExpandedLevelHeader>,
+    objects: &lm_level::ObjectStream,
+) -> Option<u16> {
+    if let Some(header) = expanded.filter(|header| header.fields[0] & 0x8000 != 0) {
+        return Some(header.fields[0] & 0x0fff);
+    }
+    objects
+        .records
+        .iter()
+        .filter(|record| matches!(record.command_id(), 0x25 | 0x26))
+        .map(lm_level::ObjectRecord::parameter)
+        .last()
+        .filter(|file| *file != 0)
+        .map(|file| u16::from(file - 1))
+}
+
+fn load_optional_profiled_graphics_file(
+    project: &Project,
+    layout: lm_project::GraphicsRomLayout,
+    file: u16,
+) -> Result<Vec<IndexedTile>, String> {
+    let entries = layout
+        .split_pointer_planes
+        .map_or(layout.pointers.entries, |planes| planes.entries);
+    if usize::from(file) >= entries {
+        return Ok(Vec::new());
+    }
+    let pointer = layout
+        .read_pointer(project, usize::from(file))
+        .map_err(|error| format!("cannot resolve auxiliary GFX{file:02X}: {error}"))?;
+    if pointer.get() == 0 || pointer.get() == 0x00ff_ffff {
+        return Ok(Vec::new());
+    }
+    project
+        .load_super_graphics_file(file, layout)
+        .map(|graphics| graphics.tiles)
+        .map_err(|error| format!("cannot load auxiliary GFX{file:02X}: {error}"))
+}
+
 fn populate_profiled_exanimation_source_banks(
     project: &Project,
-    profile: &RevisionProfile,
-    level: usize,
-    relative_tiles: &[IndexedTile],
+    layout: lm_project::GraphicsRomLayout,
     cache: &mut [IndexedTile],
 ) -> Result<(), String> {
-    let level_animation = project
-        .load_installed_exanimation(
-            level,
-            profile.exanimation_installation,
-            &profile.exanimation_double_size_modes,
-        )
-        .map_err(|error| format!("cannot load level ExAnimation source bank: {error}"))?;
-    let global_animation = match project.load_installed_global_exanimation(
-        profile.exanimation_installation,
-        &profile.exanimation_double_size_modes,
-    ) {
-        Ok(animation) => animation,
-        Err(lm_project::ExAnimationIoError::GlobalPointerLocatorUnavailable) => {
-            lm_project::InstalledAsset::SubsystemAbsent
-        }
-        Err(error) => {
-            return Err(format!(
-                "cannot load global ExAnimation source bank: {error}"
-            ));
-        }
-    };
-    for animation in [level_animation, global_animation] {
-        let lm_project::InstalledAsset::Present(animation) = animation else {
+    let entries = layout
+        .split_pointer_planes
+        .map_or(layout.pointers.entries, |planes| planes.entries);
+    for (bank, file) in (0x60..=0x63).enumerate() {
+        if file >= entries {
             continue;
-        };
-        copy_exanimation_relative_bank(&animation, relative_tiles, cache)?;
+        }
+        let pointer = layout
+            .read_pointer(project, file)
+            .map_err(|error| format!("cannot resolve ExAnimation source GFX{file:02X}: {error}"))?;
+        if pointer.get() == 0 || pointer.get() == 0x00ff_ffff {
+            continue;
+        }
+        let tiles = project
+            .load_super_graphics_file(
+                u16::try_from(file).expect("ExAnimation source file fits u16"),
+                layout,
+            )
+            .map_err(|error| format!("cannot load ExAnimation source GFX{file:02X}: {error}"))?
+            .tiles;
+        copy_exanimation_source_bank(bank, &tiles, cache)?;
     }
     Ok(())
 }
 
-fn copy_exanimation_relative_bank(
-    animation: &lm_graphics::CompactExAnimation,
-    relative_tiles: &[IndexedTile],
+fn copy_exanimation_source_bank(
+    bank: usize,
+    tiles: &[IndexedTile],
     cache: &mut [IndexedTile],
 ) -> Result<(), String> {
-    let bank = usize::from(animation.setting & 3);
+    if bank >= 4 {
+        return Err(format!("ExAnimation source bank {bank} is outside 0..3"));
+    }
     let start = INTERNAL_EXANIMATION_START + bank * 0x400;
-    let count = relative_tiles.len().min(0x400);
+    let count = tiles.len().min(0x400);
     let end = start
         .checked_add(count)
         .ok_or_else(|| "ExAnimation source-bank range overflow".to_owned())?;
@@ -432,7 +468,7 @@ fn copy_exanimation_relative_bank(
             "internal cache has {cache_len:X} tiles; ExAnimation bank {bank} requires {start:X}..{end:X}"
         )
     })?;
-    destination.clone_from_slice(&relative_tiles[..count]);
+    destination.clone_from_slice(&tiles[..count]);
     Ok(())
 }
 
@@ -2230,32 +2266,40 @@ mod tests {
     }
 
     #[test]
-    fn exanimation_setting_selects_one_exact_relative_source_bank() {
+    fn exanimation_source_files_map_to_four_exact_bounded_banks() {
         let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
         let source = (0..0x420)
             .map(|index| IndexedTile::new([u8::try_from(index & 0x0f).unwrap(); 64]))
             .collect::<Vec<_>>();
         let mut cache = vec![blank.clone(); INTERNAL_GRAPHICS_CACHE_TILES];
-        let animation = lm_graphics::CompactExAnimation {
-            setting: 6,
-            header_value: 0,
-            trigger_mask: 0,
-            trigger_values: [0; 16],
-            records: Vec::new(),
-        };
+        for bank in 0..4 {
+            copy_exanimation_source_bank(bank, &source, &mut cache).unwrap();
+            let start = INTERNAL_EXANIMATION_START + bank * 0x400;
+            assert_eq!(&cache[start..start + 0x400], &source[..0x400]);
+        }
+        assert!(copy_exanimation_source_bank(4, &source, &mut cache).is_err());
+    }
 
-        copy_exanimation_relative_bank(&animation, &source, &mut cache).unwrap();
-        let start = INTERNAL_EXANIMATION_START + 2 * 0x400;
-        assert_eq!(&cache[start..start + 0x400], &source[..0x400]);
-        assert!(
-            cache[INTERNAL_EXANIMATION_START..start]
-                .iter()
-                .all(tile_is_blank)
+    #[test]
+    fn auxiliary_cache_file_follows_expanded_header_or_last_legacy_control() {
+        let objects = lm_level::ObjectStream {
+            records: vec![
+                lm_level::ObjectRecord::new(vec![0x40, 0x50, 0x21]).unwrap(),
+                lm_level::ObjectRecord::new(vec![0x40, 0x60, 0x43]).unwrap(),
+            ],
+        };
+        assert_eq!(profiled_auxiliary_graphics_file(None, &objects), Some(0x42));
+
+        let mut expanded = lm_level::ExpandedLevelHeader { fields: [0; 16] };
+        expanded.fields[0] = 0x8000 | 0x345;
+        assert_eq!(
+            profiled_auxiliary_graphics_file(Some(expanded), &objects),
+            Some(0x345)
         );
-        assert!(
-            cache[start + 0x400..INTERNAL_LAYER3_START]
-                .iter()
-                .all(tile_is_blank)
+        expanded.fields[0] = 0x0345;
+        assert_eq!(
+            profiled_auxiliary_graphics_file(Some(expanded), &objects),
+            Some(0x42)
         );
     }
 

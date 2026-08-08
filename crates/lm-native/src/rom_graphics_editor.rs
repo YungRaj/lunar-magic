@@ -14,9 +14,9 @@ use crate::{
         tile_pixel_pointer_action, tile_pointer_action,
     },
     level_graphics_export::{
-        LUNAR_MAGIC_ALL_GFX_FILE_SIZES, LevelGraphicsExportMode, current_level_graphics_files,
-        extracted_graphics_paths, extracted_joined_graphics_paths,
-        take_level_graphics_export_shortcut,
+        CurrentLevelGraphicsAssignments, LUNAR_MAGIC_ALL_GFX_FILE_SIZES, LevelGraphicsExportMode,
+        current_level_graphics_assignments, current_level_graphics_files, extracted_graphics_paths,
+        extracted_joined_graphics_paths, take_level_graphics_export_shortcut,
     },
     native_clipboard,
 };
@@ -133,6 +133,30 @@ impl RomGraphicsEditor {
                 self.internal_cache_unlocked = false;
             }
         }
+    }
+
+    fn synchronize_active_graphics_into_internal_cache(&mut self) -> Result<(), String> {
+        let workspace = self
+            .workspace
+            .as_ref()
+            .ok_or_else(|| "graphics workspace is closed".to_owned())?;
+        let level = workspace
+            .level
+            .ok_or_else(|| "no active level is available".to_owned())?;
+        let assignments = current_level_graphics_assignments(
+            &workspace.image,
+            &workspace.profile,
+            level,
+            workspace.internal_cache_special_world,
+        )?;
+        let file = usize::from(workspace.slot);
+        let tiles = workspace.controller.graphics().tiles.clone();
+        let cache = self
+            .workspace
+            .as_mut()
+            .and_then(|workspace| workspace.internal_cache.as_mut())
+            .ok_or_else(|| "internal graphics cache is unavailable".to_owned())?;
+        overlay_current_graphics_file(cache, &assignments, file, &tiles)
     }
 
     pub(crate) fn show(
@@ -591,7 +615,7 @@ impl RomGraphicsEditor {
                 );
                 return;
             };
-            ui.small("Internal GFX data — diagnostic working cache (read-only until owned-bank save routing is recovered)");
+            ui.small("Internal GFX data — transient working cache; F9 publishes current-level FG/BG/SP slots");
             &cache.tiles
         } else {
             &workspace.controller.graphics().tiles
@@ -685,7 +709,7 @@ impl RomGraphicsEditor {
             })
             .flatten();
         let tile_shift_enabled =
-            !diagnostic && edits_enabled && ownership::is_editable(selected_owner);
+            edits_enabled && (diagnostic || ownership::is_editable(selected_owner));
         let navigation_status = if let Some(navigation) = page_control {
             apply_tile_navigation(&mut self.selected_tile, &responses, tile_count, navigation)
         } else {
@@ -732,8 +756,13 @@ impl RomGraphicsEditor {
         }
         if take_internal_graphics_cache_unlock(ui, self.selected_tile, &responses) {
             if internal_cache_available {
-                self.internal_cache_unlocked = true;
-                self.status.set("Internal GFX data viewing unlocked.");
+                match self.synchronize_active_graphics_into_internal_cache() {
+                    Ok(()) => {
+                        self.internal_cache_unlocked = true;
+                        self.status.set("Internal GFX data viewing unlocked.");
+                    }
+                    Err(error) => self.error = Some(error),
+                }
             } else {
                 self.error = Some(
                     internal_cache_error
@@ -761,7 +790,7 @@ impl RomGraphicsEditor {
             ui,
             self.selected_tile,
             &responses,
-            !diagnostic && edits_enabled && ownership::is_editable(owner),
+            edits_enabled && (diagnostic || ownership::is_editable(owner)),
         );
         self.pending_character_shortcut =
             take_graphics_character_shortcut(ui, self.selected_tile, &responses);
@@ -843,10 +872,36 @@ impl RomGraphicsEditor {
                 return;
             }
         };
-        let raw_4bpp_overrides = slots
+        let mut raw_4bpp_overrides = slots
             .contains(&usize::from(workspace.slot))
             .then(|| vec![(usize::from(workspace.slot), raw)])
             .unwrap_or_default();
+        if self.internal_cache_unlocked {
+            let Some(cache) = workspace.internal_cache.as_ref() else {
+                self.error = Some("internal graphics cache is unavailable".into());
+                return;
+            };
+            let assignments = match current_level_graphics_assignments(
+                &workspace.image,
+                &workspace.profile,
+                level,
+                special_world_passed,
+            ) {
+                Ok(assignments) => assignments,
+                Err(error) => {
+                    self.error = Some(error);
+                    return;
+                }
+            };
+            raw_4bpp_overrides = match internal_cache_level_graphics_overrides(cache, &assignments)
+            {
+                Ok(overrides) => overrides,
+                Err(error) => {
+                    self.error = Some(error);
+                    return;
+                }
+            };
+        }
         let source = graphics_batch::GraphicsBatchSource {
             image: workspace.image.clone(),
             layout: workspace.profile.graphics,
@@ -913,16 +968,17 @@ impl RomGraphicsEditor {
         pasted: Option<&str>,
     ) {
         let diagnostic = self.internal_cache_unlocked;
-        if let Some(text) = pasted.filter(|_| !diagnostic) {
+        if let Some(text) = pasted {
             let target = self
                 .clipboard_paste_target
                 .take()
                 .unwrap_or(self.selected_tile);
-            let target_editable = self
-                .workspace
-                .as_ref()
-                .and_then(|workspace| workspace.controller.ownership().owner(target))
-                .is_some_and(|owner| ownership::is_editable(Some(owner)));
+            let target_editable = diagnostic
+                || self
+                    .workspace
+                    .as_ref()
+                    .and_then(|workspace| workspace.controller.ownership().owner(target))
+                    .is_some_and(|owner| ownership::is_editable(Some(owner)));
             if !stale && target_editable {
                 match native_clipboard::decode_graphics_tile(text) {
                     Ok(tile) => {
@@ -965,8 +1021,8 @@ impl RomGraphicsEditor {
             })
             .flatten();
         let editable = if diagnostic {
-            ui.label("Diagnostic cache tile; saving this bank is not yet enabled.");
-            false
+            ui.label("Internal working-cache tile; edits are transient unless F9 owns its current-level file.");
+            true
         } else {
             ownership::show(ui, owner)
         };
@@ -989,25 +1045,15 @@ impl RomGraphicsEditor {
             .or(clicked_mapping);
         if let Some(mapped) = mapped {
             self.apply_tile(mapped);
-            if let Some(current) = self.workspace.as_ref().and_then(|workspace| {
-                workspace
-                    .controller
-                    .graphics()
-                    .tiles
-                    .get(self.selected_tile)
-            }) {
-                tile = current.clone();
+            if let Some(current) = self.selected_tile_clone() {
+                tile = current;
             }
         }
         if let Some(direction) = self.pending_shift.take() {
             let shifted = tile.shifted_wrapping(direction);
             self.apply_tile(shifted);
-            if let Some(current) = self
-                .workspace
-                .as_ref()
-                .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
-            {
-                tile = current.clone();
+            if let Some(current) = self.selected_tile_clone() {
+                tile = current;
             }
         }
         ui.horizontal(|ui| {
@@ -1037,12 +1083,8 @@ impl RomGraphicsEditor {
                 GraphicsTileTransform::FlipVertical => tile.flipped(false, true),
             };
             self.apply_tile(transformed);
-            if let Some(current) = self
-                .workspace
-                .as_ref()
-                .and_then(|w| w.controller.graphics().tiles.get(self.selected_tile))
-            {
-                tile = current.clone();
+            if let Some(current) = self.selected_tile_clone() {
+                tile = current;
             }
         }
         let (rect, response) = ui.allocate_exact_size(
@@ -1092,6 +1134,23 @@ impl RomGraphicsEditor {
         self.apply_tile_at(self.selected_tile, tile);
     }
     fn apply_tile_at(&mut self, index: usize, tile: IndexedTile) -> bool {
+        if self.internal_cache_unlocked {
+            let Some(cache) = self
+                .workspace
+                .as_mut()
+                .and_then(|workspace| workspace.internal_cache.as_mut())
+            else {
+                self.error = Some("internal graphics cache is unavailable".into());
+                return false;
+            };
+            return match replace_internal_cache_tile(cache, index, tile) {
+                Ok(()) => true,
+                Err(error) => {
+                    self.error = Some(error);
+                    false
+                }
+            };
+        }
         let edit = GraphicsControllerEdit::ApplyChanges(vec![GraphicsTileChange { index, tile }]);
         let Some(workspace) = self.workspace.as_mut() else {
             self.error = Some("graphics workspace is closed".into());
@@ -1105,6 +1164,125 @@ impl RomGraphicsEditor {
             }
         }
     }
+
+    fn selected_tile_clone(&self) -> Option<IndexedTile> {
+        let workspace = self.workspace.as_ref()?;
+        if self.internal_cache_unlocked {
+            workspace
+                .internal_cache
+                .as_ref()?
+                .tiles
+                .get(self.selected_tile)
+                .cloned()
+        } else {
+            workspace
+                .controller
+                .graphics()
+                .tiles
+                .get(self.selected_tile)
+                .cloned()
+        }
+    }
+}
+
+fn replace_internal_cache_tile(
+    cache: &mut crate::vanilla_map16_preview::VanillaInternalGraphicsCache,
+    index: usize,
+    tile: IndexedTile,
+) -> Result<(), String> {
+    let cache_tile = cache
+        .tiles
+        .get_mut(index)
+        .ok_or_else(|| format!("internal graphics tile {index:X} is unavailable"))?;
+    *cache_tile = tile;
+    Ok(())
+}
+
+fn overlay_current_graphics_file(
+    cache: &mut crate::vanilla_map16_preview::VanillaInternalGraphicsCache,
+    assignments: &CurrentLevelGraphicsAssignments,
+    file: usize,
+    tiles: &[IndexedTile],
+) -> Result<(), String> {
+    let destinations = assignments
+        .foreground_background
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(slot, assigned)| (assigned, slot * 0x80))
+        .chain(
+            assignments
+                .sprites
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(slot, assigned)| (assigned, 0x400 + slot * 0x80)),
+        )
+        .filter(|(assigned, _)| *assigned == file)
+        .collect::<Vec<_>>();
+    if destinations.is_empty() {
+        return Ok(());
+    }
+    let source = tiles.get(..0x80).ok_or_else(|| {
+        format!(
+            "active GFX{file:02X} has {} decoded tiles instead of 80",
+            tiles.len()
+        )
+    })?;
+    for (assigned, start) in destinations {
+        let end = start + 0x80;
+        let destination = cache.tiles.get_mut(start..end).ok_or_else(|| {
+            format!(
+                "internal cache does not contain active GFX{assigned:02X} slot {start:X}..{end:X}"
+            )
+        })?;
+        destination.clone_from_slice(source);
+    }
+    Ok(())
+}
+
+fn internal_cache_level_graphics_overrides(
+    cache: &crate::vanilla_map16_preview::VanillaInternalGraphicsCache,
+    assignments: &CurrentLevelGraphicsAssignments,
+) -> Result<Vec<(usize, Vec<u8>)>, String> {
+    let mut overrides = Vec::<(usize, Vec<u8>)>::new();
+    let sources = assignments
+        .foreground_background
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(slot, file)| (file, slot * 0x80))
+        .chain(
+            assignments
+                .sprites
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(slot, file)| (file, 0x400 + slot * 0x80)),
+        );
+    for (file, start) in sources {
+        if file == 0x7f {
+            continue;
+        }
+        let end = start + 0x80;
+        let tiles = cache.tiles.get(start..end).ok_or_else(|| {
+            format!("internal cache does not contain current-level slot {start:X}..{end:X}")
+        })?;
+        let raw = lm_graphics::GraphicsFile4bpp {
+            tiles: tiles.to_vec(),
+        }
+        .encode()
+        .map_err(|error| format!("cannot encode current-level GFX{file:02X}: {error}"))?;
+        if let Some((_, existing)) = overrides
+            .iter_mut()
+            .find(|(existing_file, _)| *existing_file == file)
+        {
+            *existing = raw;
+        } else {
+            overrides.push((file, raw));
+        }
+    }
+    Ok(overrides)
 }
 
 impl RomGraphicsEditor {
@@ -1636,10 +1814,15 @@ fn installed_exgraphics_slots(
 mod tests {
     use super::{
         ensure_external_edit_revision, installed_exgraphics_slots,
-        lunar_magic_standard_graphics_sources, pristine_special_graphics, supports_exgraphics,
-        supports_native_exgraphics,
+        internal_cache_level_graphics_overrides, lunar_magic_standard_graphics_sources,
+        overlay_current_graphics_file, pristine_special_graphics, replace_internal_cache_tile,
+        supports_exgraphics, supports_native_exgraphics,
     };
-    use crate::level_graphics_export::legacy_level_graphics_files;
+    use crate::{
+        level_graphics_export::{CurrentLevelGraphicsAssignments, legacy_level_graphics_files},
+        vanilla_map16_preview::VanillaInternalGraphicsCache,
+    };
+    use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{GraphicsCompression, GraphicsRomLayout, LevelPointerTable};
     use lm_rom::{Mapper, RomImage};
 
@@ -1759,5 +1942,78 @@ mod tests {
             .unwrap(),
             [0x14, 0x17, 0x19, 0x15, 0x00, 0x01, 0x13, 0x22]
         );
+    }
+
+    #[test]
+    fn diagnostic_internal_cache_tile_edits_are_bounded_and_transient() {
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let changed = IndexedTile::new([9; IndexedTile::PIXEL_COUNT]);
+        let mut cache = VanillaInternalGraphicsCache {
+            tiles: vec![blank.clone(); 0x4000],
+        };
+        replace_internal_cache_tile(&mut cache, 0x1800, changed.clone()).unwrap();
+        assert_eq!(cache.tiles[0x1800], changed);
+        assert_eq!(cache.tiles[0x17ff], blank);
+        assert!(replace_internal_cache_tile(&mut cache, 0x4000, blank).is_err());
+    }
+
+    #[test]
+    fn f9_cache_publication_uses_exact_slots_skips_7f_and_last_duplicate_wins() {
+        let mut cache = VanillaInternalGraphicsCache {
+            tiles: (0..0x4000)
+                .map(|index| IndexedTile::new([u8::try_from((index / 0x80) & 0x0f).unwrap(); 64]))
+                .collect(),
+        };
+        cache.tiles[0x400] = IndexedTile::new([0x0e; 64]);
+        let assignments = CurrentLevelGraphicsAssignments {
+            foreground_background: vec![0x14, 0x17, 0x14],
+            sprites: vec![0x20, 0x7f],
+        };
+        let overrides = internal_cache_level_graphics_overrides(&cache, &assignments).unwrap();
+        assert_eq!(
+            overrides.iter().map(|(file, _)| *file).collect::<Vec<_>>(),
+            [0x14, 0x17, 0x20]
+        );
+
+        let expected_duplicate_winner = GraphicsFile4bpp {
+            tiles: cache.tiles[0x100..0x180].to_vec(),
+        }
+        .encode()
+        .unwrap();
+        assert_eq!(overrides[0].1, expected_duplicate_winner);
+
+        let expected_sprite = GraphicsFile4bpp {
+            tiles: cache.tiles[0x400..0x480].to_vec(),
+        }
+        .encode()
+        .unwrap();
+        assert_eq!(overrides[2].1, expected_sprite);
+    }
+
+    #[test]
+    fn diagnostic_unlock_overlays_staged_active_file_into_every_assigned_slot() {
+        let blank = IndexedTile::new([0; IndexedTile::PIXEL_COUNT]);
+        let changed = IndexedTile::new([0x0b; IndexedTile::PIXEL_COUNT]);
+        let mut cache = VanillaInternalGraphicsCache {
+            tiles: vec![blank.clone(); 0x4000],
+        };
+        let assignments = CurrentLevelGraphicsAssignments {
+            foreground_background: vec![0x14, 0x17, 0x14, 0x7f],
+            sprites: vec![0x20, 0x14, 0x13, 0x22],
+        };
+        let staged = vec![changed.clone(); 0x80];
+        overlay_current_graphics_file(&mut cache, &assignments, 0x14, &staged).unwrap();
+        for start in [0x000, 0x100, 0x480] {
+            assert!(
+                cache.tiles[start..start + 0x80]
+                    .iter()
+                    .all(|tile| tile == &changed)
+            );
+        }
+        assert_eq!(cache.tiles[0x080], blank);
+        assert!(
+            overlay_current_graphics_file(&mut cache, &assignments, 0x14, &staged[..0x7f]).is_err()
+        );
+        overlay_current_graphics_file(&mut cache, &assignments, 0x32, &[]).unwrap();
     }
 }

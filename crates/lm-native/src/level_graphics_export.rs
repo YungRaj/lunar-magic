@@ -29,6 +29,11 @@ pub(crate) struct ExtractedJoinedGraphicsPaths {
     pub(crate) required_existing: Vec<PathBuf>,
 }
 
+pub(crate) struct CurrentLevelGraphicsAssignments {
+    pub(crate) foreground_background: Vec<usize>,
+    pub(crate) sprites: Vec<usize>,
+}
+
 pub(crate) const LUNAR_MAGIC_ALL_GFX_FILE_SIZES: [usize; 0x34] = {
     let mut sizes = [0x1000; 0x34];
     sizes[0x27] = 0x0c00;
@@ -167,6 +172,24 @@ pub(crate) fn current_level_graphics_files(
     level: u16,
     special_world_passed: bool,
 ) -> Result<Vec<usize>, String> {
+    let assignments =
+        current_level_graphics_assignments(image, profile, level, special_world_passed)?;
+    Ok(collapse_duplicate_files(
+        assignments
+            .foreground_background
+            .into_iter()
+            .chain(assignments.sprites)
+            .filter(|file| *file != 0x7f)
+            .collect(),
+    ))
+}
+
+pub(crate) fn current_level_graphics_assignments(
+    image: &RomImage,
+    profile: &RevisionProfile,
+    level: u16,
+    special_world_passed: bool,
+) -> Result<CurrentLevelGraphicsAssignments, String> {
     let project = lm_project::Project::new(image.clone());
     let level_layout = profile
         .level_layout_for_rom(image)
@@ -174,7 +197,8 @@ pub(crate) fn current_level_graphics_files(
     let loaded_level = project
         .load_level_slot(usize::from(level), level_layout, &profile.sprite_lengths)
         .map_err(|error| format!("cannot load level {level:03X} graphics settings: {error}"))?;
-    let files = if let Some(settings_layout) = profile.expanded_settings {
+    let (foreground_background, sprites) = if let Some(settings_layout) = profile.expanded_settings
+    {
         let settings = project
             .load_expanded_level_settings(usize::from(level), settings_layout)
             .map_err(|error| {
@@ -182,13 +206,16 @@ pub(crate) fn current_level_graphics_files(
             })?;
         let selection = lm_level::ExpandedLevelHeader::from(&settings).super_graphics_bypass();
         if selection.enabled {
-            level_graphics_files(
-                selection.foreground_background.map(usize::from),
-                selection.sprites.map(usize::from),
-                special_world_passed,
+            let mut sprites = selection.sprites.map(usize::from).to_vec();
+            if special_world_passed {
+                sprites[1] = 0x7f;
+            }
+            (
+                selection.foreground_background.map(usize::from).to_vec(),
+                sprites,
             )
         } else {
-            legacy_level_graphics_files(
+            legacy_level_graphics_assignments(
                 image,
                 profile,
                 loaded_level.layer1.header,
@@ -196,14 +223,51 @@ pub(crate) fn current_level_graphics_files(
             )?
         }
     } else {
-        legacy_level_graphics_files(
+        legacy_level_graphics_assignments(
             image,
             profile,
             loaded_level.layer1.header,
             special_world_passed,
         )?
     };
-    Ok(collapse_duplicate_files(files))
+    Ok(CurrentLevelGraphicsAssignments {
+        foreground_background,
+        sprites,
+    })
+}
+
+fn legacy_level_graphics_assignments(
+    image: &RomImage,
+    profile: &RevisionProfile,
+    header: LegacyLevelHeader,
+    special_world_passed: bool,
+) -> Result<(Vec<usize>, Vec<usize>), String> {
+    if profile.game != SupportedGame::SuperMarioWorld
+        || profile.region != Region::NorthAmerica
+        || profile.revision != 0
+    {
+        return Err(format!(
+            "legacy graphics assignment tables are not recovered for profile {}",
+            profile.name
+        ));
+    }
+    let mut foreground = lm_profile::smw_us_v1_object_tileset_graphics_files(
+        image,
+        usize::from(header.object_tileset()),
+    )
+    .map_err(|error| error.to_string())?
+    .to_vec();
+    foreground.extend([0x7f, 0x7f]);
+    let mut sprites = lm_profile::smw_us_v1_sprite_tileset_graphics_files(
+        image,
+        usize::from(header.sprite_tileset()),
+    )
+    .map_err(|error| error.to_string())?
+    .to_vec();
+    if special_world_passed {
+        sprites[1] = 0x7f;
+    }
+    Ok((foreground, sprites))
 }
 
 pub(crate) fn pristine_current_level_graphics_files(
@@ -424,6 +488,37 @@ mod tests {
             pristine_current_level_graphics_files(&image, 0x105, true).unwrap(),
             [0x14, 0x17, 0x1b, 0x15, 0x00, 0x13, 0x20]
         );
+    }
+
+    #[test]
+    fn legacy_assignments_retain_six_foreground_and_four_sprite_source_slots() {
+        let mut profile = lm_profile::test_support::profile();
+        profile.game = SupportedGame::SuperMarioWorld;
+        profile.region = Region::NorthAmerica;
+        profile.revision = 0;
+        let mut bytes = vec![0; 0x8000];
+        bytes[lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET
+            ..lm_profile::SMW_US_V1_OBJECT_TILESET_GRAPHICS_OFFSET + 4]
+            .copy_from_slice(&[0x14, 0x17, 0x1b, 0x15]);
+        bytes[lm_profile::SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET
+            ..lm_profile::SMW_US_V1_SPRITE_TILESET_GRAPHICS_OFFSET + 4]
+            .copy_from_slice(&[0x00, 0x01, 0x13, 0x20]);
+        let image = RomImage::from_bytes(bytes).unwrap();
+
+        let (foreground, sprites) = legacy_level_graphics_assignments(
+            &image,
+            &profile,
+            LegacyLevelHeader::default(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(foreground, [0x14, 0x17, 0x1b, 0x15, 0x7f, 0x7f]);
+        assert_eq!(sprites, [0x00, 0x01, 0x13, 0x20]);
+
+        let (_, special_world_sprites) =
+            legacy_level_graphics_assignments(&image, &profile, LegacyLevelHeader::default(), true)
+                .unwrap();
+        assert_eq!(special_world_sprites, [0x00, 0x7f, 0x13, 0x20]);
     }
 
     #[test]

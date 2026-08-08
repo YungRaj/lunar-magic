@@ -1730,17 +1730,22 @@ FG/BG `$000-$3FF`, current sprites `$400-$5FF`, GFX33 `$600-$77F`, selected auxi
 `$780-$87F`, GFX32 `$900-$BE7`, four `$400`-tile ExAnimation banks `$C00-$1BFF`, eight `$80`-tile
 Layer 3 banks `$1C00-$1FFF`, and eight `$400`-tile `ExSpriteGFX00-07` banks `$2000-$3FFF`.
 `LoadAnimationAndPlayerGraphicsCaches` proves GFX33 and GFX32 destinations and exact `$180`/`$2E8`
-extents; its four offset/size table entries map the ExAnimation banks. `LoadExternalSpriteGraphicsAndPalette`
+extents. Its four source offsets `$18000/$20000/$28000/$30000` and four `$8000`-byte sizes select
+reserved graphics files GFX60–GFX63 and decode exactly `$400` tiles into each ExAnimation bank;
+they are not relative copies chosen by the active level/global animation setting.
+`LoadExternalSpriteGraphicsAndPalette`
 uses the parallel eight-entry table for the final banks. The pristine Rust editor materializes the
 complete cache with exact ROM-owned banks, zeroes absent auxiliary/ExAnimation/external-file banks,
 retains the original locked default, and consumes Ctrl+Shift+Page Down only from the focused tile
 sheet to expose pages through `$3F` with the original status. The profile-backed installed editor
 additionally resolves the current level's legacy or six-slot bypass files, installed GFX32/GFX33
-and Layer 3 sources, copies the relative FG/BG/SP source set into each bank selected by active
-level/global ExAnimation, and boundedly reads all present ROM-sibling
-`ExternalGraphics/ExSpriteGFX00–07.bin` files into their eight exact bases. The diagnostic view
-stays read-only until auxiliary-animation selection and transient internal-edit save routing are
-recovered; those remaining mutation paths are not claimed as complete parity.
+and Layer 3 sources, loads reserved source files GFX60–GFX63 into the four exact ExAnimation banks,
+selects auxiliary bank `$780-$87F` from expanded-header field 0 when bit `$8000` is set or from the
+last legacy object-control command `$25/$26` parameter minus one, and boundedly reads all present
+ROM-sibling `ExternalGraphics/ExSpriteGFX00–07.bin` files into their eight exact bases. The
+diagnostic cache accepts transient pixel, transform, and typed-paste mutations. Original
+right-click sheet paste still rejects tiles above `$5FF`; F9 persists only the current-level
+FG/BG/SP working buffers described below, leaving edits to all other diagnostic banks transient.
 The same window procedure and `ProcessGraphicsEditorKeyboardInput` at `005059f0` establish the
 status lifecycle. Mouse movement publishes `Tile 0x%X (Address 0x%X)`, `Color %X.`, or the active
 tile-edit selection. `HandleGraphicsEditorWindowMessage` at `005068c0` proves that primary and
@@ -1800,7 +1805,10 @@ for the globally active level, while the installed path additionally honors expa
 bypass records. Both require the complete existing standard file set before staging and publish the
 selected decoded `$1000`-byte replacements as one recoverable group, which is stronger than the
 original per-file truncation on a mid-publication failure. They substitute the active staged slot
-when it belongs to the exported set. A separate visible Rust extraction button retains the useful
+when it belongs to the exported set. Once the diagnostic cache is unlocked, F9 instead encodes the
+exact six FG/BG and four sprite cache slots. Legacy levels retain `$7F` in unused FG/BG slots,
+Special World substitutes `$7F` for SP2, and repeated file IDs use the last visited working buffer,
+matching the original sequential writer. A separate visible Rust extraction button retains the useful
 create-new-directory workflow without claiming the original shortcut. Standard selections resolve
 under the ROM-sibling `Graphics` directory, while selectors `$34+` other than the ignored `$7F`
 resolve to canonical two- or three-digit `ExGFX` names under sibling `ExGraphics`; every selected
