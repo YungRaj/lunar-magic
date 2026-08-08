@@ -277,6 +277,38 @@ fn words_as_bytes(words: &[u16]) -> Vec<u8> {
 
 fn low_bank_pointer(mapper: Mapper, pc: usize) -> Result<Vec<u8>, RomError> {
     let mut bytes = pc_to_snes(mapper, pc)?.to_le_bytes()[..3].to_vec();
-    bytes[2] &= 0x7f;
+    // The low-bank mirror is equivalent only under LoROM. ExLoROM bit 23 selects the ROM half,
+    // and SA-1 uses the full bank value as part of its mapping.
+    if mapper == Mapper::LoRom {
+        bytes[2] &= 0x7f;
+    }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installed_tilemap_pointer_preserves_mapper_significant_high_banks() {
+        for (mapper, pc) in [
+            (Mapper::LoRom, 0x2_0000),
+            (Mapper::ExLoRom, 0x2_0000),
+            (Mapper::ExLoRom, 0x42_0000),
+            (Mapper::Sa1, 0x2_0000),
+            (Mapper::Sa1, 0x42_0000),
+        ] {
+            let pointer = low_bank_pointer(mapper, pc).unwrap();
+            assert_eq!(
+                snes_to_pc(
+                    mapper,
+                    u32::from(pointer[0])
+                        | u32::from(pointer[1]) << 8
+                        | u32::from(pointer[2]) << 16,
+                )
+                .unwrap(),
+                pc
+            );
+        }
+    }
 }
