@@ -1,5 +1,10 @@
-use lm_app::{ControllerSnapshot, EditorMode, OverworldController};
-use lm_graphics::{Bgr555, CompactExAnimation, ExAnimationRecord, Palette, PaletteOwnership};
+use lm_app::{
+    ControllerSnapshot, EditorMode, ExAnimationControllerEdit, OverworldController,
+    OverworldControllerEdit, OverworldLayerId,
+};
+use lm_graphics::{
+    Bgr555, CompactExAnimation, ExAnimationRecord, Palette, PaletteChange, PaletteOwnership,
+};
 use lm_overworld::{
     EventReveal, EventRevealTable, OverworldEndpoint, OverworldLayer, OverworldMessage,
     OverworldSprite, Submap,
@@ -330,6 +335,101 @@ fn edit_variant(physical: Vec<u8>, pointer_base: usize) -> Vec<u8> {
     edited
 }
 
+fn edit_interactively_variant(physical: Vec<u8>, pointer_base: usize) -> Vec<u8> {
+    let original = physical.clone();
+    let image = RomImage::from_bytes(physical.clone()).unwrap();
+    let identity = detect_identity(&image).unwrap();
+    let layout = layout(identity.mapper, pointer_base);
+    let snapshot = ControllerSnapshot {
+        revision: 10,
+        mode: EditorMode::Overworld,
+        identity,
+        document_path: None,
+        rom_bytes: physical.clone(),
+    };
+    let mut controller =
+        OverworldController::decode(&snapshot, 0, layout, &MODES, PaletteOwnership::editable(16))
+            .unwrap();
+    controller
+        .apply_edits(&[
+            OverworldControllerEdit::SetLayerTile {
+                layer: OverworldLayerId::Layer1,
+                x: 0,
+                y: 0,
+                tile: 0x1111,
+            },
+            OverworldControllerEdit::SetLayerTile {
+                layer: OverworldLayerId::Layer2,
+                x: 1,
+                y: 0,
+                tile: 0x2222,
+            },
+            OverworldControllerEdit::ReplaceEventReveal {
+                index: 0,
+                reveal: EventReveal {
+                    source_tile: 9,
+                    destination_tile: 10,
+                },
+            },
+            OverworldControllerEdit::ReplaceEndpoint {
+                index: 0,
+                endpoint: OverworldEndpoint {
+                    x: 9,
+                    y: 10,
+                    submap: 2,
+                },
+            },
+            OverworldControllerEdit::ReplaceMessage {
+                index: 0,
+                message: OverworldMessage::decode(&[0x42; OverworldMessage::ENCODED_LEN]).unwrap(),
+            },
+            OverworldControllerEdit::ReplaceSprite {
+                index: 0,
+                sprite: OverworldSprite {
+                    id: 7,
+                    x: 8,
+                    y: 9,
+                    submap: Submap::StarWorld,
+                    extra: vec![0xcc, 0xdd],
+                },
+            },
+            OverworldControllerEdit::PaletteChanges(vec![PaletteChange {
+                index: 3,
+                color: Bgr555(0x1234),
+            }]),
+            OverworldControllerEdit::Animation(vec![ExAnimationControllerEdit::ReplaceRecord {
+                index: 0,
+                record: animation_record(12),
+            }]),
+        ])
+        .unwrap();
+    let expected = controller.data().clone();
+    let prepared = controller
+        .prepare_commit(
+            "Interactive overworld supported-variant matrix",
+            &options(0x4000..0x7000, pointer_base),
+        )
+        .unwrap();
+    let mut project = Project::new(RomImage::from_bytes(physical).unwrap());
+    project
+        .apply_mutation(
+            "Interactive overworld supported-variant matrix",
+            &prepared.mutation,
+        )
+        .unwrap();
+    assert_eq!(
+        project.load_complete_overworld(0, layout, &MODES).unwrap(),
+        expected
+    );
+    assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+    let edited = project.rom.as_file_bytes().to_vec();
+    assert!(project.undo().unwrap());
+    assert_eq!(project.rom.as_file_bytes(), original);
+    assert!(project.redo().unwrap());
+    assert_eq!(project.rom.as_file_bytes(), edited);
+    edited
+}
+
 #[test]
 fn complete_overworld_transfer_matches_every_supported_identity_and_layout_variant() {
     const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
@@ -347,6 +447,30 @@ fn complete_overworld_transfer_matches_every_supported_identity_and_layout_varia
                 let headered = variant_rom(case, pointer_base, true);
                 let edited_headerless = edit_variant(headerless, pointer_base);
                 let edited_headered = edit_variant(headered, pointer_base);
+                assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
+                assert_eq!(&edited_headered[512..], edited_headerless);
+            }
+        }
+    }
+}
+
+#[test]
+fn interactive_overworld_edits_match_every_supported_identity_and_layout_variant() {
+    const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
+    const ALL_STARS_WORLD: &[u8; 21] = b"ALL_STARS + WORLD    ";
+    let identities = [(SMW, 0), (SMW, 1), (ALL_STARS_WORLD, 1)];
+    for &(title, region) in &identities {
+        for map_mode in [0x20, 0x30, 0x23, 0x32] {
+            for pointer_base in [0x200, 0x400] {
+                let case = IdentityCase {
+                    title,
+                    region,
+                    map_mode,
+                };
+                let headerless = variant_rom(case, pointer_base, false);
+                let headered = variant_rom(case, pointer_base, true);
+                let edited_headerless = edit_interactively_variant(headerless, pointer_base);
+                let edited_headered = edit_interactively_variant(headered, pointer_base);
                 assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
                 assert_eq!(&edited_headered[512..], edited_headerless);
             }
