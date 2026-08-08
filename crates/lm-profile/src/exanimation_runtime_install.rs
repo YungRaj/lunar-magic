@@ -64,7 +64,7 @@ const GENERATION_101_SHARED_PALETTE_RUNTIME_B: [u8; 0x10] = [
 
 const GENERATION_101_CORE_DIGEST: &str =
     "10dbd77a94ddb479cf4ac83360c824ccf97f58dbbc55f61770465369e6cc90e0";
-const GENERATION_101_IRAM_ADDENDS: [u16; 12] = [
+const RUNTIME_IRAM_ADDENDS: [u16; 12] = [
     0x05af, 0x05af, 0x0b4a, 0x05cf, 0x0b82, 0x0b82, 0x0b82, 0x0b82, 0x0b82, 0x0b82, 0x0b82, 0x0b82,
 ];
 
@@ -223,6 +223,14 @@ pub fn smw_us_v1_expanded_exanimation_runtime_payload(
             encoding: pointer_encoding,
         })
         .collect::<Vec<_>>();
+    for (offset, addend) in IRAM_WORD_OFFSETS.into_iter().zip(RUNTIME_IRAM_ADDENDS) {
+        fixups.push(PatchFixup {
+            offset,
+            target_payload: 0,
+            target_addend: usize::from(addend),
+            encoding: PatchFixupEncoding::Low16,
+        });
+    }
     for index in 0..LOCAL_WORD_TABLE_ENTRIES {
         let offset = LOCAL_WORD_TABLE_OFFSET + index * 2;
         let source = u16::from_le_bytes([runtime[offset], runtime[offset + 1]]);
@@ -355,10 +363,7 @@ fn generation_101_core_matches(
     let Ok(runtime_base) = pc_to_snes(Mapper::LoRom, runtime_offset) else {
         return false;
     };
-    for (offset, addend) in IRAM_WORD_OFFSETS
-        .into_iter()
-        .zip(GENERATION_101_IRAM_ADDENDS)
-    {
+    for (offset, addend) in IRAM_WORD_OFFSETS.into_iter().zip(RUNTIME_IRAM_ADDENDS) {
         let expected = (runtime_base as u16).wrapping_add(addend);
         if installed[offset..offset + 2] != expected.to_le_bytes() {
             return false;
@@ -454,6 +459,9 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
             address
         })
     };
+    let runtime_low = mapped_address(runtime_offset)
+        .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?
+        as u16;
     let relocations = ExpandedExAnimationRuntimeRelocations {
         mapping_bytes: [installed[0x5c], installed[0x66]],
         snes_pointers: [
@@ -474,7 +482,7 @@ pub fn detect_smw_us_v1_current_expanded_exanimation_runtime_for_mapper(
             mapped_address(runtime_offset + 0xb1c)
                 .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?,
         ],
-        iram_words: SMW_US_V1_IRAM_WORDS,
+        iram_words: RUNTIME_IRAM_ADDENDS.map(|addend| runtime_low.wrapping_add(addend)),
         local_word_base: mapped_address(runtime_offset + 0x4b0)
             .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::HookAddress)?
             as u16,
@@ -635,8 +643,9 @@ pub fn probe_smw_us_v1_expanded_exanimation_runtime_generation_for_mapper(
 ///
 /// The original coordinator selects this generation from the JSL opcode at descriptor entry
 /// `$169` (logical `$02418`). Its operand names the obsolete `$140` auxiliary table. Descriptor
-/// entry `$16A` (logical `$0283AD`) names an owned runtime whose `+$1A` operand names the copied
-/// `$600`, 512-entry legacy pointer table.
+/// entry `$16A` (logical `$0283AD`) names a runtime contained by one RATS owner whose `+$1A`
+/// operand names the copied `$600`, 512-entry legacy pointer table. Historical 1.6x installations
+/// may place that runtime after other code in the same owner rather than at its payload start.
 pub fn detect_smw_us_v1_legacy_global_exanimation_runtime(
     bytes: &[u8],
 ) -> Result<SmwUsV1LegacyGlobalExAnimationRuntime, SmwUsV1ExpandedExAnimationRuntimeDetectError> {
@@ -672,26 +681,22 @@ pub fn detect_smw_us_v1_legacy_global_exanimation_runtime(
     }
     let runtime_offset = mapped_operand(Mapper::LoRom, &runtime_hook[1..4])
         .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeAddress)?;
-    let runtime = owned_block(bytes, runtime_offset).map_err(|error| match error {
-        OwnedBlockError::BeforeHeader => {
-            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeBeforeHeader(runtime_offset)
-        }
-        OwnedBlockError::Header(source) => {
-            SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeHeader(source)
-        }
-        OwnedBlockError::Ownership(actual) => {
+    let required = 0x1d;
+    let runtime = lm_rats::scan(bytes)
+        .into_iter()
+        .find(|block| block.payload.start <= runtime_offset && runtime_offset < block.payload.end)
+        .ok_or(
             SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeOwnership {
                 expected: runtime_offset,
-                actual,
-            }
-        }
-    })?;
-    let required = 0x1d;
-    if runtime.payload.len() < required {
+                actual: runtime_offset,
+            },
+        )?;
+    let available = runtime.payload.end.saturating_sub(runtime_offset);
+    if available < required {
         return Err(
             SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyRuntimeTooShort {
                 required,
-                actual: runtime.payload.len(),
+                actual: available,
             },
         );
     }
@@ -702,9 +707,9 @@ pub fn detect_smw_us_v1_legacy_global_exanimation_runtime(
     .map_err(SmwUsV1ExpandedExAnimationRuntimeDetectError::LegacyPointerAddress)?;
     let pointer_table = checked_legacy_range(bytes, pointer_offset, 0x600, false)?;
 
+    let runtime_prefix = runtime_offset..runtime_offset + required;
     for (first, second) in [
-        (&runtime.payload, &pointer_table),
-        (&runtime.payload, &auxiliary_table),
+        (&runtime_prefix, &pointer_table),
         (&pointer_table, &auxiliary_table),
     ] {
         if first.start < second.end && second.start < first.end {
@@ -1339,7 +1344,7 @@ mod tests {
         for mapper in [Mapper::ExLoRom, Mapper::Sa1] {
             let payload = smw_us_v1_expanded_exanimation_runtime_payload(mapper, true).unwrap();
             assert_eq!(payload.bytes.len(), 0xc50);
-            assert_eq!(payload.fixups.len(), 8 + 108 + 1);
+            assert_eq!(payload.fixups.len(), 8 + 12 + 108 + 1);
             assert!(
                 payload.fixups[..8]
                     .iter()
@@ -1392,7 +1397,8 @@ mod tests {
                         address(0, 0xb1c),
                         address(0, 0xb1c),
                     ],
-                    iram_words: SMW_US_V1_IRAM_WORDS,
+                    iram_words: RUNTIME_IRAM_ADDENDS
+                        .map(|addend| (address(0, 0) as u16).wrapping_add(addend)),
                     local_word_base: pc_to_snes(mapper, core + 0x4b0).unwrap() as u16,
                 },
                 crate::ExpandedExAnimationRuntimeOptionalRelocations {
@@ -1642,6 +1648,37 @@ mod tests {
             project.undo().unwrap();
             assert_eq!(project.save_snapshot(), original);
         }
+    }
+
+    #[test]
+    fn irregular_core_allocation_relocates_all_twelve_iram_words() {
+        let original = crate::test_support::pristine_smw_us_rom_bytes();
+        let mut project = Project::new(RomImage::from_bytes(original.clone()).unwrap());
+        let plan = smw_us_v1_expanded_exanimation_runtime_installation_plan_for_mapper(
+            Mapper::LoRom,
+            AllocationPolicy::lorom(0x0a_0000..0x10_0000),
+            false,
+        )
+        .unwrap();
+        let result = project.install_relocatable_patch(&plan).unwrap();
+        let runtime = &result.blocks[0];
+        assert_eq!(runtime.header_offset, 0x0a_0000);
+        let runtime_low = pc_to_snes(Mapper::LoRom, runtime.payload.start).unwrap() as u16;
+        for (offset, addend) in IRAM_WORD_OFFSETS.into_iter().zip(RUNTIME_IRAM_ADDENDS) {
+            assert_eq!(
+                project.rom.read(runtime.payload.start + offset, 2).unwrap(),
+                runtime_low.wrapping_add(addend).to_le_bytes(),
+                "IRAM word at core+{offset:#x}"
+            );
+        }
+        assert_eq!(
+            detect_smw_us_v1_current_expanded_exanimation_runtime(project.rom.logical_bytes())
+                .unwrap()
+                .payload,
+            runtime.payload
+        );
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), original);
     }
 
     #[test]

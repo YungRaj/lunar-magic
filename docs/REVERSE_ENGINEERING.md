@@ -3969,6 +3969,16 @@ installs the current runtime, converts up to 512 legacy `$23`-byte-record blocks
 payloads, and erases authenticated obsolete storage; the third performs a fresh
 `InstallExpandedExAnimationRuntime`. These installation/migration workflows remain a separate
 implementation gate from editing an already installed current runtime.
+An authentic Lunar Magic 1.65 legacy-global ROM sharpens the second branch. Its runtime entry at
+logical `$086E10` begins inside the `$140` auxiliary allocation rather than at the owner's payload
+start, and the runtime prefix intentionally overlaps that table before the migration erases it.
+The separate `$600` table contains four populated slots. A reciprocal Lunar Magic 3.63 import
+places the current core at irregular destination `$0A5D51`; all twelve ordinary IRAM operands then
+equal the mapped runtime low word plus `$05AF/$05AF/$0B4A/$05CF/$0B82...`, proving they are
+allocation-relative fixups rather than fixed values from the usual `$080549` placement. Rust now
+models that ownership, overlap, complete fixed-hook replacement, and all twelve relocations; the
+all-512-slot semantic comparison and hashes are retained in
+`docs/oracle-work/expanded-exanimation-legacy-global-165.md`.
 The optional branch predicate is
 `(DAT_00E278FC && DAT_00E27901) || (DAT_00E278FD && DAT_00E27903)`. A direct Ghidra memory read
 authenticates its `$20` bytes as `A5 03 8D 20 C0 A5 05 8D 22 C0 A5 08 5C 20 C0 7F 4C 4D 00 01`

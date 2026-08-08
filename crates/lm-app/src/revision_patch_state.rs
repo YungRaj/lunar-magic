@@ -597,7 +597,9 @@ fn migrate_legacy_global_exanimations(project: &mut lm_project::Project) -> Resu
     let original = project.rom.logical_bytes().to_vec();
     let mut staged = project.clone();
     let mut install = lm_profile::smw_us_v1_expanded_exanimation_runtime_installation_plan()?;
-    install.writes[0].expected = original[0x283ad..0x283b2].to_vec();
+    for write in &mut install.writes {
+        write.expected = original[write.offset..write.offset + write.replacement.len()].to_vec();
+    }
     install.allocation.protected.extend(protected);
     staged.install_relocatable_patch(&install)?;
 
@@ -1113,6 +1115,98 @@ mod tests {
         );
         assert_eq!(app.project().unwrap().save_snapshot(), malformed);
         assert!(!app.project().unwrap().history.can_undo());
+    }
+
+    #[test]
+    fn external_lunar_magic_165_global_exanimations_migrate_reciprocally_when_supplied() {
+        let (Ok(before_path), Ok(after_path)) = (
+            std::env::var("LM_EXPANDED_EXANIMATION_LEGACY_GLOBAL_BEFORE"),
+            std::env::var("LM_EXPANDED_EXANIMATION_LEGACY_GLOBAL_AFTER"),
+        ) else {
+            return;
+        };
+        let before = fs::read(before_path).unwrap();
+        let after = RomImage::from_bytes(fs::read(after_path).unwrap()).unwrap();
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                RomImage::from_bytes(before.clone())
+                    .unwrap()
+                    .logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyGlobalTable
+        );
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                after.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::Current
+        );
+
+        let mut app = AppState::default();
+        app.load_rom(before.clone()).unwrap();
+        app.dispatch(Command::InstallExpandedExAnimationRuntime { rev: 0 })
+            .unwrap();
+        let rust = app.project().unwrap();
+        assert_eq!(rust.history.undo_len(), 1);
+        let rust_runtime = lm_profile::detect_smw_us_v1_current_expanded_exanimation_runtime(
+            rust.rom.logical_bytes(),
+        )
+        .unwrap();
+        let lunar_runtime = lm_profile::detect_smw_us_v1_current_expanded_exanimation_runtime(
+            after.logical_bytes(),
+        )
+        .unwrap();
+        let layout = |image: &RomImage, runtime: &lm_rats::RatsBlock| {
+            let pointer = SnesPointer24::decode(
+                &image.logical_bytes()[runtime.payload.start + 0xea..runtime.payload.start + 0xed],
+            )
+            .unwrap()
+            .to_pc(Mapper::LoRom)
+            .unwrap();
+            ExAnimationRomLayout {
+                mapper: Mapper::LoRom,
+                pointers: LevelPointerTable {
+                    offset: pointer,
+                    entries: 0x200,
+                    stride: 3,
+                },
+                maximum_records: 0x40,
+                maximum_encoded_len: 0x8000,
+            }
+        };
+        let rust_layout = layout(&rust.rom, &rust_runtime);
+        let lunar_layout = layout(&after, &lunar_runtime);
+        let lunar = Project::new(after.clone());
+        let mut modes = [false; 256];
+        modes[1..=3].fill(true);
+        let mut populated = 0usize;
+        for slot in 0..0x200 {
+            let load = |project: &Project, layout: ExAnimationRomLayout| {
+                let pointer = layout.pointers.pointer_offset(slot).unwrap();
+                if project.rom.logical_bytes()[pointer + 2] == 0 {
+                    None
+                } else {
+                    Some(project.load_exanimation(slot, layout, &modes).unwrap())
+                }
+            };
+            let rust_animation = load(rust, rust_layout);
+            let lunar_animation = load(&lunar, lunar_layout);
+            assert_eq!(rust_animation, lunar_animation, "migrated slot {slot:#05x}");
+            populated += usize::from(rust_animation.is_some());
+        }
+        assert!(
+            populated > 0,
+            "legacy oracle has no populated ExAnimation slots"
+        );
+        assert!(
+            lm_rom::detect_identity(&rust.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), before);
     }
 
     #[test]
