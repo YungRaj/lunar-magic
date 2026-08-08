@@ -152,7 +152,15 @@ impl Project {
 }
 
 fn pointer_pc(bytes: &[u8], mapper: Mapper) -> Result<usize, RomError> {
-    let address = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0]) & 0x7f_ffff;
+    let address = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], 0]);
+    // LoROM's installed code commonly publishes the low-bank mirror. ExLoROM uses bit 23 to
+    // distinguish its two 4 MiB halves, while SA-1 uses the full canonical bank range; stripping
+    // that bit for either mapper silently redirects an otherwise valid owned runtime pointer.
+    let address = if mapper == Mapper::LoRom {
+        address & 0x7f_ffff
+    } else {
+        address
+    };
     snes_to_pc(mapper, address)
 }
 
@@ -232,5 +240,18 @@ mod tests {
             pointer_pc(&address.to_le_bytes()[..3], Mapper::LoRom).unwrap(),
             pc
         );
+    }
+
+    #[test]
+    fn pointer_mapping_helper_preserves_mapper_significant_high_bank_bit() {
+        for (mapper, pc) in [
+            (Mapper::ExLoRom, 0x10008),
+            (Mapper::ExLoRom, 0x410008),
+            (Mapper::Sa1, 0x210008),
+            (Mapper::Sa1, 0x410008),
+        ] {
+            let address = pc_to_snes(mapper, pc).unwrap();
+            assert_eq!(pointer_pc(&address.to_le_bytes()[..3], mapper).unwrap(), pc);
+        }
     }
 }
