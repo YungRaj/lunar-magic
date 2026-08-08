@@ -113,6 +113,26 @@ fn first_placement_boundary_bit_is_ignored_but_retained() {
 }
 
 #[test]
+fn original_picker_hides_only_the_unterminated_final_description() {
+    let data = [0, 1, 2, 3, 5, 4, 5, 0xff];
+    let terminated =
+        CustomSpriteLibrary::decode(&data, b"one\ntwo\n", &SpriteLengthTable::standard()).unwrap();
+    assert_eq!(
+        terminated.lunar_magic_picker_entries(),
+        terminated.entries()
+    );
+
+    let unterminated =
+        CustomSpriteLibrary::decode(&data, b"one\ntwo", &SpriteLengthTable::standard()).unwrap();
+    assert_eq!(unterminated.entries().len(), 2);
+    assert_eq!(
+        unterminated.lunar_magic_picker_entries(),
+        &unterminated.entries()[..1]
+    );
+    assert_eq!(unterminated.encode().unwrap().1, b"one\ntwo");
+}
+
+#[test]
 fn checked_encoding_rejects_programmatic_revision_length_mismatch() {
     let mut library = CustomSpriteLibrary::decode(
         &[0, 1, 2, 3, 0xff],

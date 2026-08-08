@@ -94,6 +94,18 @@ impl CustomSpriteLibrary {
         &self.entries
     }
 
+    /// Returns the placements Lunar Magic publishes in its Add Sprites picker.
+    ///
+    /// `PopulateSpritePlacementDescriptionList` commits a row only when it consumes LF. The
+    /// lossless editor retains an unterminated final description, but the original picker omits
+    /// that one tail placement.
+    #[must_use]
+    pub fn lunar_magic_picker_entries(&self) -> &[CustomSpriteEntry] {
+        let hidden_tail =
+            usize::from(!self.description_format.trailing_line_ending && !self.entries.is_empty());
+        &self.entries[..self.entries.len() - hidden_tail]
+    }
+
     #[must_use]
     pub const fn description_format(&self) -> DescriptionFormat {
         self.description_format
