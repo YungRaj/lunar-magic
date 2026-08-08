@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn retained_lunar_magic_map16_editor_oracle_binds_complete_edit_history() {
+    let oracle = include_str!(
+        "../../../../docs/oracle-work/lm363/pristine-us/map16-editor-interaction/oracle.tsv"
+    );
+    let fields = oracle
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_once('\t'))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(fields.get("page"), Some(&"02"));
+    assert_eq!(fields.get("tile"), Some(&"200"));
+    assert_eq!(fields.get("initial_subtiles"), Some(&"192,193,194,195"));
+    assert_eq!(fields.get("initial_acts_like"), Some(&"1F0"));
+    assert_eq!(fields.get("initial_palette_index"), Some(&"3"));
+    assert_eq!(fields.get("initial_priority_index"), Some(&"1"));
+    assert_eq!(fields.get("modified_subtiles"), Some(&"56,345,234,123"));
+    assert_eq!(fields.get("modified_acts_like"), Some(&"130"));
+    assert_eq!(fields.get("modified_palette_index"), Some(&"4"));
+    assert_eq!(fields.get("modified_priority_index"), Some(&"2"));
+    assert_eq!(fields.get("undo_steps"), Some(&"9"));
+    assert_eq!(fields.get("undo_restored_initial"), Some(&"1"));
+    assert_eq!(fields.get("redo_steps"), Some(&"9"));
+    assert_eq!(fields.get("redo_restored_modified"), Some(&"1"));
+}
+
+#[test]
 fn snes_tileset_options_default_to_optimized_and_survive_editor_reopen() {
     let mut app = AppState::default();
     app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())

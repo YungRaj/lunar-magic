@@ -1323,6 +1323,13 @@ to the registered cross-process boundary. Copying vanilla tile `$000` publishes 
 `23 01 67 45 AB 89 EF CD 57 13`, invoking original paste, and copying again returns the same record
 byte-for-byte. This proves both word ordering and Acts Like placement independently of Rust.
 
+The retained `map16-editor-interaction/oracle.tsv` closes the complementary live GUI boundary.
+Command `$232F` opens the modeless dialog; its page field plus actual mouse-move-backed drag selects
+page `$02`, tile `$200`. Four subtile replacements, Acts Like, palette, priority, X flip, and Y flip
+create exactly nine original history records. Nine Undo actions restore all original visible values,
+and nine Redo actions restore all modified values. The flipped quadrant order proves that the
+attribute controls operate on the selected definition rather than merely changing form state.
+
 The modeless editor's later import/export dispatcher is recovered independently at
 `00501550`. Commands `$2266/$2267` export/import the selected compact `.map16` range, while
 `$2268/$2269` export/import the complete `AllMap16.map16` container. `HandleMap16RenderWindow` at

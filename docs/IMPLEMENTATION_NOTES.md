@@ -2219,6 +2219,10 @@ The retained isolated-Wine single-tile oracle independently exercises Lunar Magi
 paste entry points through a second process, proving an exact ten-byte copy and an asymmetric
 paste/copy round trip. The fixture is compiled into the native test suite so documentation drift or
 record-order regressions fail automatically.
+The separate retained Map16 editor interaction oracle drives the original `$232F` dialog through
+page and drag selection, four subtile values, Acts Like, palette, priority, both flips, and the full
+nine-step Undo/Redo cycle. Its fixture is also compiled into the native tests; combined with the
+48-case Rust publication matrix, it closes the core browse/edit workflow's original-behavior gate.
 ExAnimation clipboard support copies one complete fixed record in both portable and ROM-backed
 windows. This retains transfer kind, frame count, size mode, destination/flag, ordinary frame words,
 and every reserved byte rather than reconstructing a record from visible form fields. Paste decodes

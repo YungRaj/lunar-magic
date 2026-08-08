@@ -1,0 +1,15 @@
+field	value
+page	02
+tile	200
+initial_subtiles	192,193,194,195
+initial_acts_like	1F0
+initial_palette_index	3
+initial_priority_index	1
+modified_subtiles	56,345,234,123
+modified_acts_like	130
+modified_palette_index	4
+modified_priority_index	2
+undo_steps	9
+undo_restored_initial	1
+redo_steps	9
+redo_restored_modified	1
