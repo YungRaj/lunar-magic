@@ -1,5 +1,6 @@
 use lm_level::{
-    LevelObjectData, NativeSpriteStream, ObjectCoordinateNibbles, ObjectRecord, SpriteLengthTable,
+    LevelObjectData, NativeSpriteRecordFields, NativeSpriteStream, ObjectCoordinateNibbles,
+    ObjectRecord, SpriteLengthTable, SpriteRecord, SpriteToken,
 };
 use lm_project::{LevelPointerTable, LevelRomLayout, LevelSaveOptions, LoadedLevelSlot, Project};
 use lm_rats::{AllocationPolicy, ProtectedRange};
@@ -231,6 +232,181 @@ fn object_edits_reopen_and_undo_across_every_supported_identity_mapper_header_an
                 let (edited_headerless, level) =
                     edit_variant(headerless, map_mode, storage.clone());
                 let (edited_headered, headered_level) = edit_variant(headered, map_mode, storage);
+                assert_eq!(headered_level, level);
+                assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
+                assert_eq!(&edited_headered[512..], edited_headerless);
+            }
+        }
+    }
+}
+
+fn source_level_with_sprite_framing(expanded: bool) -> LoadedLevelSlot {
+    let mut level = source_level();
+    if expanded {
+        level.sprites = NativeSpriteStream {
+            header: 0x30,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Screen(1),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0x00, 0x00, 0x01],
+                }),
+                SpriteToken::Screen(2),
+                SpriteToken::Record(SpriteRecord {
+                    encoded: vec![0x00, 0x10, 0x02],
+                }),
+            ],
+        };
+    }
+    level
+}
+
+fn edit_sprite_variant(
+    physical: Vec<u8>,
+    expected_map_mode: u8,
+    expanded: bool,
+    storage: std::ops::Range<usize>,
+) -> (Vec<u8>, LoadedLevelSlot) {
+    let original_prefix = physical[..physical.len() % 0x8000].to_vec();
+    let image = RomImage::from_bytes(physical).unwrap();
+    let identity = detect_identity(&image).unwrap();
+    assert_eq!(identity.map_mode, expected_map_mode);
+    assert_eq!(identity.mapper, mapper(expected_map_mode));
+    let mut level_layout = layout(identity.mapper);
+    level_layout.expanded_sprites = expanded;
+    let mut project = Project::new(image);
+    let initial_options = LevelSaveOptions {
+        layer1_allocation: allocation(storage.clone()),
+        sprite_allocation: allocation(storage.clone()),
+        previous_layer1: None,
+        previous_sprites: None,
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    let initial = project
+        .save_level_slot_with_checksum(
+            level_layout,
+            &source_level_with_sprite_framing(expanded),
+            &SpriteLengthTable::standard(),
+            0x7fdc,
+            &initial_options,
+        )
+        .unwrap();
+    let before_edit = project.save_snapshot();
+    let layer1_pointer_before = project.rom.read(0x100, 3).unwrap().to_vec();
+    let mut expected = project
+        .load_level_slot(0, level_layout, &SpriteLengthTable::standard())
+        .unwrap();
+    let lengths = SpriteLengthTable::standard();
+    let selected = expected
+        .sprites
+        .place_record_at_position(
+            SpriteRecord {
+                encoded: vec![0, 0, 0x2a],
+            },
+            1,
+            4,
+            if expanded { 70 } else { 10 },
+            false,
+            &lengths,
+        )
+        .unwrap();
+    let selected = expected
+        .sprites
+        .relocate_record_position(
+            selected,
+            3,
+            7,
+            if expanded { 100 } else { 12 },
+            false,
+            &lengths,
+        )
+        .unwrap();
+    let mut fields = match &expected.sprites.tokens[selected] {
+        SpriteToken::Record(record) => record.native_fields().unwrap(),
+        _ => unreachable!(),
+    };
+    fields.extra_bits = 2;
+    fields.sprite_number = 0x2b;
+    let selected = expected
+        .sprites
+        .set_record_fields(selected, fields, false, &lengths)
+        .unwrap();
+    assert!(matches!(
+        &expected.sprites.tokens[selected],
+        SpriteToken::Record(record)
+            if record.native_fields().unwrap() == NativeSpriteRecordFields {
+                sprite_number: 0x2b,
+                extra_bits: 2,
+                screen: 3,
+                x: 7,
+                y_low: if expanded { 4 } else { 12 },
+            }
+    ));
+    let removed = expected
+        .sprites
+        .tokens
+        .iter()
+        .position(|token| matches!(token, SpriteToken::Record(record) if record.encoded[2] == 0x01))
+        .unwrap();
+    expected.sprites.remove(removed).unwrap();
+    expected
+        .sprites
+        .canonicalize_for_orientation(false)
+        .unwrap();
+
+    let options = LevelSaveOptions {
+        layer1_allocation: initial_options.layer1_allocation,
+        sprite_allocation: allocation(storage),
+        previous_layer1: Some(initial.layer1.block),
+        previous_sprites: Some(initial.sprites.block),
+        reuse_identical: true,
+        erase_fill: 0xff,
+    };
+    project
+        .relocate_level_sprites_with_checksum(level_layout, &expected, &lengths, 0x7fdc, &options)
+        .unwrap();
+    let reopened = project.load_level_slot(0, level_layout, &lengths).unwrap();
+    assert_eq!(reopened, expected);
+    assert_eq!(project.rom.read(0x100, 3).unwrap(), layer1_pointer_before);
+    assert!(detect_identity(&project.rom).unwrap().checksum_matches());
+    assert_eq!(
+        &project.save_snapshot()[..original_prefix.len()],
+        original_prefix
+    );
+    let edited = project.save_snapshot();
+    assert!(project.undo().unwrap());
+    assert_eq!(project.save_snapshot(), before_edit);
+    assert!(project.redo().unwrap());
+    assert_eq!(project.save_snapshot(), edited);
+    (edited, reopened)
+}
+
+#[test]
+fn sprite_edits_reopen_and_undo_across_every_supported_identity_mapper_header_and_framing_variant()
+{
+    const SMW: &[u8; 21] = b"SUPER MARIOWORLD     ";
+    const ALL_STARS_WORLD: &[u8; 21] = b"ALL_STARS + WORLD    ";
+    let identities = [(SMW, 0), (SMW, 1), (ALL_STARS_WORLD, 1)];
+    for &(title, region) in &identities {
+        for map_mode in [0x20, 0x30, 0x23, 0x32] {
+            for expanded in [false, true] {
+                let storage = if expanded {
+                    0x2_0000..0x2_8000
+                } else {
+                    0x1_0000..0x1_8000
+                };
+                let case = IdentityCase {
+                    title,
+                    region,
+                    map_mode,
+                };
+                let headerless = variant_rom(case, false);
+                let headered = variant_rom(case, true);
+                let (edited_headerless, level) =
+                    edit_sprite_variant(headerless, map_mode, expanded, storage.clone());
+                let (edited_headered, headered_level) =
+                    edit_sprite_variant(headered, map_mode, expanded, storage);
                 assert_eq!(headered_level, level);
                 assert_eq!(&edited_headered[..512], &COPIER_PREFIX);
                 assert_eq!(&edited_headered[512..], edited_headerless);
