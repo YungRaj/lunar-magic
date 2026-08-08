@@ -1210,6 +1210,62 @@ mod tests {
     }
 
     #[test]
+    fn external_lunar_magic_170_pointer_hooks_migrate_reciprocally_when_supplied() {
+        let (Ok(before_path), Ok(after_path)) = (
+            std::env::var("LM_EXPANDED_EXANIMATION_LEGACY_POINTER_BEFORE"),
+            std::env::var("LM_EXPANDED_EXANIMATION_LEGACY_POINTER_AFTER"),
+        ) else {
+            return;
+        };
+        let before = fs::read(before_path).unwrap();
+        let before_image = RomImage::from_bytes(before.clone()).unwrap();
+        let after = RomImage::from_bytes(fs::read(after_path).unwrap()).unwrap();
+        assert_eq!(
+            lm_profile::probe_smw_us_v1_expanded_exanimation_runtime_generation(
+                before_image.logical_bytes()
+            )
+            .unwrap(),
+            lm_profile::SmwUsV1ExpandedExAnimationRuntimeGeneration::LegacyPointerHooks
+        );
+        let migration =
+            lm_profile::smw_us_v1_legacy_exanimation_hook_migration(before_image.logical_bytes())
+                .unwrap();
+        let runtime = migration.runtime.payload.start;
+        for (relative, len, write_index) in [(0x92, 1, 0), (0x118, 1, 1), (0x169, 4, 2)] {
+            assert_eq!(
+                &after.logical_bytes()[runtime + relative..runtime + relative + len],
+                &migration.plan.writes[write_index].replacement,
+                "Lunar Magic pointer-hook fragment at runtime +{relative:#x}"
+            );
+        }
+
+        let mut app = AppState::default();
+        app.load_rom(before.clone()).unwrap();
+        app.dispatch(Command::InstallExpandedExAnimationRuntime { rev: 0 })
+            .unwrap();
+        let rust = app.project().unwrap();
+        assert_eq!(rust.history.undo_len(), 1);
+        for (relative, len) in [(0x92, 1), (0x118, 1), (0x169, 4)] {
+            assert_eq!(
+                &rust.rom.logical_bytes()[runtime + relative..runtime + relative + len],
+                &after.logical_bytes()[runtime + relative..runtime + relative + len],
+                "Rust and Lunar Magic pointer-hook fragment at runtime +{relative:#x}"
+            );
+        }
+        assert!(matches!(
+            lm_profile::smw_us_v1_legacy_exanimation_hook_migration(rust.rom.logical_bytes()),
+            Err(lm_profile::SmwUsV1LegacyExAnimationHookMigrationError::MarkerMismatch)
+        ));
+        assert!(
+            lm_rom::detect_identity(&rust.rom)
+                .unwrap()
+                .checksum_matches()
+        );
+        app.dispatch(Command::Undo).unwrap();
+        assert_eq!(app.project().unwrap().save_snapshot(), before);
+    }
+
+    #[test]
     fn application_installs_complete_layer3_family_as_one_revision() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let before = fs::read(

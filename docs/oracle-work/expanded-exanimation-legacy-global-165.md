@@ -58,4 +58,5 @@ the complete original physical ROM with one Undo.
 logical `$0A0008`, checks every relocated word, strictly reopens the runtime, and undoes to the
 byte-exact pristine ROM without depending on the external oracle.
 
-The separate pre-1.01 pointer-hook branch still requires an authentic before/after oracle.
+The separate Lunar Magic 1.70 pointer-hook branch is authenticated by
+`expanded-exanimation-legacy-pointer-170.md`.

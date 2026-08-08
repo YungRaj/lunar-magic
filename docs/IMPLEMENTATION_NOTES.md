@@ -3837,7 +3837,8 @@ complete `$600` old pointer table, the `$140` auxiliary table, Lunar Magic's exa
 checksum, and duplicate payload overlaps reject before commit; late allocation failure also leaves
 the ROM and history unchanged. Focused tests reopen the migrated semantics and prove exact
 Undo/Redo across LoROM, ExLoROM, SA-1, and headered/headerless physical forms. The surrounding
-fresh runtime installation and separate old pointer-hook rewrite remain distinct open gates.
+fresh runtime installation and the separate old pointer-hook rewrite remain distinct workflows;
+both now have retained original-editor evidence.
 
 The retained current runtime also corrected an earlier synthetic-only assumption about global
 storage. `ResolveGraphicsRuntimeDataOffset` (`0045C790`) does not read one contiguous operand at

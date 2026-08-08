@@ -56,6 +56,6 @@ the observed one/two-word frame widths consistently from each tagged compact pay
 populated animation through the production project loader, and semantically re-encodes and decodes
 each value without loss.
 
-This evidence broadens the authenticated current-family variants. It does not close the separate
-legacy migration gate: authentic pre-1.01 pointer-hook and global-table before/after conversion
-fixtures are still required.
+This evidence broadens the authenticated current-family variants. The two separate legacy
+migration branches are authenticated by `expanded-exanimation-legacy-global-165.md` and
+`expanded-exanimation-legacy-pointer-170.md`.
