@@ -241,11 +241,7 @@ fn reduce_bitmap_palette_internal(
     let opaque_indices = if options.maintain_detail {
         maintain_detail_palette_indices(&opaque, &colors)?
     } else {
-        Palette {
-            colors: colors.clone(),
-        }
-        .quantize(&opaque)
-        .ok_or(BitmapPaletteReductionError::EmptyOpaquePalette)?
+        nearest_lunar_magic_palette_indices(&opaque, &colors)?
     };
     let mut opaque_indices = opaque_indices.into_iter();
     let indices = pixels
@@ -267,6 +263,27 @@ fn reduce_bitmap_palette_internal(
         return Err(BitmapPaletteReductionError::IndexPlaneMismatch);
     }
     Ok(ReducedBitmapPalette { colors, indices })
+}
+
+fn nearest_lunar_magic_palette_indices(
+    pixels: &[Rgb8],
+    colors: &[Bgr555],
+) -> Result<Vec<usize>, BitmapPaletteReductionError> {
+    if colors.is_empty() {
+        return Err(BitmapPaletteReductionError::EmptyOpaquePalette);
+    }
+    pixels
+        .iter()
+        .map(|pixel| {
+            let source = lunar_magic_bitmap_color(*pixel).0;
+            colors
+                .iter()
+                .enumerate()
+                .min_by_key(|(index, color)| (lunar_magic_color_distance(source, color.0), *index))
+                .map(|(index, _)| index)
+                .ok_or(BitmapPaletteReductionError::EmptyOpaquePalette)
+        })
+        .collect()
 }
 
 fn collect_unique_available_palette_colors(
@@ -701,7 +718,6 @@ pub fn allocate_bitmap_palette_rows(
     for row in &mut rows {
         row.order_assigned_colors();
     }
-
     let mut palette = original.clone();
     let mut generated_colors = 0;
     for row in &rows {
@@ -775,6 +791,11 @@ fn build_color_set_records(tile_sets: &[TileColorHistogram]) -> BTreeMap<Vec<u16
             *weight += contribution;
         }
     }
+    recompute_color_set_aggregate_weights(&mut records);
+    records
+}
+
+fn recompute_color_set_aggregate_weights(records: &mut BTreeMap<Vec<u16>, ColorSetRecord>) {
     let keys = records.keys().cloned().collect::<Vec<_>>();
     let weights = keys
         .iter()
@@ -800,7 +821,6 @@ fn build_color_set_records(tile_sets: &[TileColorHistogram]) -> BTreeMap<Vec<u16
             record.aggregate_weights = weights;
         }
     }
-    records
 }
 
 fn assign_color_set_records(
@@ -834,6 +854,7 @@ fn assign_color_set_records(
                 record.assigned_row = Some(row);
             }
         }
+        recompute_color_set_aggregate_weights(records);
     }
 }
 
@@ -914,6 +935,7 @@ fn extend_palette_rows_with_weighted_colors(
             if let Some(record) = records.get_mut(&colors) {
                 record.assigned_row = Some(row);
             }
+            recompute_color_set_aggregate_weights(records);
         }
     }
     Ok(())
@@ -1010,9 +1032,19 @@ fn best_palette_row(
             left.overlap
                 .cmp(&right.overlap)
                 .then_with(|| right.free_before.cmp(&left.free_before))
-                .then_with(|| right_row.cmp(left_row))
+                .then_with(|| {
+                    palette_row_tie_priority(*left_row).cmp(&palette_row_tie_priority(*right_row))
+                })
         })
         .map(|(row, _)| row)
+}
+
+fn palette_row_tie_priority(row: usize) -> usize {
+    if row == 0 {
+        0
+    } else {
+        BITMAP_PALETTE_ROWS - row + 1
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1129,6 +1161,7 @@ impl PaletteRowAllocation {
 
     fn order_assigned_colors(&mut self) {
         let mut previous = None;
+        let mut preserve_first_installed = true;
         let mut entry = 0;
         while entry < self.entries.len() {
             if !matches!(self.entries[entry], RowEntry::Assigned(_)) {
@@ -1150,15 +1183,27 @@ impl PaletteRowAllocation {
                     })
                     .min_by_key(|(distance, candidate, _)| (*distance, *candidate))
             } else {
-                candidates
-                    .clone()
-                    .filter_map(|candidate| {
-                        assigned_color(self.entries[candidate]).map(|color| {
-                            let hsl = lunar_magic_hsl240(color);
-                            (u32::from(hsl.saturation), candidate, color)
-                        })
+                let selected = if preserve_first_installed {
+                    candidates.clone().find_map(|candidate| {
+                        assigned_color(self.entries[candidate])
+                            .map(|color| (0_u32, candidate, color))
                     })
-                    .min_by_key(|(saturation, candidate, _)| (*saturation, *candidate))
+                } else {
+                    candidates
+                        .clone()
+                        .filter_map(|candidate| {
+                            assigned_color(self.entries[candidate]).map(|color| {
+                                (
+                                    u32::from(lunar_magic_hsl240(color).lightness),
+                                    candidate,
+                                    color,
+                                )
+                            })
+                        })
+                        .min_by_key(|(lightness, candidate, _)| (*lightness, *candidate))
+                };
+                preserve_first_installed = false;
+                selected
             };
             let Some((_, selected, color)) = selected else {
                 entry += 1;
@@ -1474,6 +1519,45 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_source_mapping_uses_native_weighted_rgb555_distance() {
+        let source = Rgb8 {
+            red: 0,
+            green: 0,
+            blue: 0,
+        };
+        let colors = [Bgr555(0x0180), Bgr555(0x3004)];
+
+        // Unweighted expanded-RGB distance prefers $0180. Lunar Magic weights red, green, and
+        // blue by 4:3:2 in RGB555 space and therefore selects $3004.
+        assert_eq!(
+            Palette {
+                colors: colors.to_vec()
+            }
+            .quantize(&[source]),
+            Some(vec![0])
+        );
+        assert_eq!(
+            nearest_lunar_magic_palette_indices(&[source], &colors).unwrap(),
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn palette_row_zero_is_the_native_exact_tie_sentinel() {
+        let palette = Palette {
+            colors: vec![Bgr555(0); BITMAP_PALETTE_COLORS],
+        };
+        let options = BitmapPaletteColorOptions::lunar_magic_initial();
+        let rows = std::array::from_fn(|row| PaletteRowAllocation::new(row, &palette, &options));
+
+        // Lunar Magic starts with row zero as the result sentinel. The first equally capable
+        // nonzero row replaces it; subsequent exact ties retain that first nonzero row.
+        assert_eq!(best_palette_row(&rows, &[0x1234]), Some(1));
+        assert!(palette_row_tie_priority(1) > palette_row_tie_priority(2));
+        assert!(palette_row_tie_priority(7) > palette_row_tie_priority(0));
+    }
+
+    #[test]
     fn transparency_is_zero_and_fractional_alpha_is_rejected() {
         let options = BitmapPaletteColorOptions::lunar_magic_initial();
         let transparent = Rgba8 {
@@ -1656,7 +1740,7 @@ mod tests {
     }
 
     #[test]
-    fn disabling_unmarked_color_modification_uses_only_existing_palette_words() {
+    fn disabling_unmarked_color_modification_reuses_the_native_nearest_palette_word() {
         let mut options = reserved_options();
         options.allow_modifying_unmarked_colors = false;
         options.entries[1] = BitmapPaletteEntryState::Free;
@@ -1684,7 +1768,9 @@ mod tests {
                 .iter()
                 .all(|color| [Bgr555(0x001f), Bgr555(0x7c00)].contains(color))
         );
-        assert!(allocated.generated_colors > 0);
+        assert_eq!(reduced.indices, vec![2; 64]);
+        assert_eq!(allocated.tile_rows, vec![1]);
+        assert_eq!(allocated.generated_colors, 0);
         for (index, (before, after)) in original
             .colors
             .iter()
@@ -1754,7 +1840,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_row_colors_begin_with_lowest_saturation() {
+    fn generated_row_colors_preserve_the_first_installed_hue_group() {
         let mut row = PaletteRowAllocation {
             row: 0,
             entries: [
@@ -1777,9 +1863,9 @@ mod tests {
             ],
         };
         row.order_assigned_colors();
-        assert!(matches!(row.entries[1], RowEntry::Assigned(0x4210)));
+        assert!(matches!(row.entries[1], RowEntry::Assigned(0x001f)));
         assert!(matches!(row.entries[2], RowEntry::Assigned(0x7c00)));
-        assert!(matches!(row.entries[3], RowEntry::Assigned(0x001f)));
+        assert!(matches!(row.entries[3], RowEntry::Assigned(0x4210)));
     }
 
     #[test]

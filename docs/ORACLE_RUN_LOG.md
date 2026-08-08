@@ -107,9 +107,9 @@ method 1 only, method 2 only, and neither neighborhood method. The original chan
 352, 351, and 374 graphics-cache bytes. The extended harness records controls `$6C` and `$6D` and
 now reloads level `$105` correctly after discarding prior in-memory conversion state.
 
-The new ignored `map16_bitmap_wine_capture` differential gate reconstructs the exact RGB32 palette
-and planar `$000–$2FF` graphics workspace from each capture. All three comparisons currently reject:
-Rust chooses different writable palette entries and encoded graphics. This is retained as a proven
-parity defect, not counted as a passing Oracle or Variants gate. It localizes the remaining defect
-before or within Popularity color selection/row allocation rather than the two optional neighborhood
-passes alone.
+The ignored `map16_bitmap_wine_capture` differential gate reconstructs the active RGB32 palette
+rows, live 128-byte entry-state map, and planar `$000–$2FF` graphics workspace from each capture.
+The no-neighborhood capture now matches exactly after recovering weighted RGB555 source mapping,
+row-zero sentinel tie behavior, aggregate subset weights, and first-installed HSL run ordering.
+Method 1 and method 2 still reject with different selected palettes and encoded graphics. They
+remain proven parity defects and are not counted as passing Oracle or Variants gates.

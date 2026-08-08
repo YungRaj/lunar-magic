@@ -1500,12 +1500,20 @@ packed `$1c00` palette bits and row-aware RGBA preview. Exact priority-level inf
 high-color selection and Wine output equivalence remain oracle gates rather than assumed parity.
 
 The final generated-color ordering is also semantic. `ProcessBitmapGraphicsImport` converts each
-newly assigned SNES color through `ConvertRgbToHsl240` at `004ebc00`, begins each run with the
-lowest-saturation remaining color, and then greedily chooses the nearest remaining color using its
+newly assigned SNES color through `ConvertRgbToHsl240` at `004ebc00`. The first run retains the
+first installed color as its anchor and greedily chooses the nearest remaining color using the
 integer circular-hue/saturation/lightness metric. A hue discontinuity above 45 starts a new run
-unless both colors are near black. The Rust allocator now reproduces the 0–240 integer conversion,
-strict first-entry tie behavior, run restart, and entry swaps before mapping source pixels to row
-indexes; leaving colors in insertion order changes both palette words and encoded graphics.
+unless both colors are near black; subsequent runs begin with the lowest-lightness remaining
+color. The Rust allocator now reproduces the 0–240 integer conversion, first-installed anchor,
+run restart, and entry swaps before mapping source pixels to row indexes; leaving colors in raw
+insertion order changes both palette words and encoded graphics.
+
+`MapRgbPixelsToReducedPalette` uses the same `4R² + 3G² + 2B²` RGB555 distance as final row
+assignment. Expanded-RGB Euclidean quantization is not equivalent. The palette-row chooser scans
+rows 0–7 but uses row zero as its no-result sentinel: an exact row-0/row-1 tie selects row 1, while
+later exact ties retain the first nonzero winner. The bitmap oracle now captures the live 128-byte
+entry-state map at `$009B3F58` before conversion because that effective map can differ from the
+initializer after the user changes per-entry controls.
 
 The earlier preserved-color substitution in `ProcessBitmapGraphicsImport` is now recovered as
 well. When at least one palette entry is free, Lunar Magic repeatedly chooses the globally nearest

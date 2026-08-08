@@ -294,6 +294,7 @@ read_buffer() {
 
 read_buffer 0x00758dd8 1024 "$output_dir/palette-before.rgb32"
 read_buffer 0x0086b7e8 65536 "$output_dir/graphics-before.bin"
+read_buffer 0x009b3f58 128 "$output_dir/palette-entry-states.bin"
 
 bitmap_windows=$(winepath -w "$bitmap")
 wine "$helper" "$target_executable" write-byte 0x00e277cc,2 >/dev/null 2>&1
@@ -417,6 +418,7 @@ palette_before_sha=$(shasum -a 256 "$output_dir/palette-before.rgb32" | awk '{pr
 palette_after_sha=$(shasum -a 256 "$output_dir/palette-after.rgb32" | awk '{print $1}')
 graphics_before_sha=$(shasum -a 256 "$output_dir/graphics-before.bin" | awk '{print $1}')
 graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{print $1}')
+palette_entry_states_sha=$(shasum -a 256 "$output_dir/palette-entry-states.bin" | awk '{print $1}')
 
 {
     printf 'field\tvalue\n'
@@ -454,6 +456,7 @@ graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{prin
     printf 'palette_after_sha256\t%s\n' "$palette_after_sha"
     printf 'graphics_before_sha256\t%s\n' "$graphics_before_sha"
     printf 'graphics_after_sha256\t%s\n' "$graphics_after_sha"
+    printf 'palette_entry_states_sha256\t%s\n' "$palette_entry_states_sha"
 } >"$output_dir/manifest.tsv"
 
 echo "bitmap import audit: $output_dir"

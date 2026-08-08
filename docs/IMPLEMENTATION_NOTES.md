@@ -4386,6 +4386,14 @@ finds only its dialog load/store references, and the native UI mirrors that disa
 audit harness now normalizes all persistent checkboxes on every run so prior oracle sessions cannot
 silently contaminate option evidence.
 
+The retained bitmap-import capture now also records Lunar Magic's effective 128-byte palette-entry
+map before conversion. The exact no-neighborhood Popularity differential exposed and closed four
+allocator gaps: ordinary source pixels use weighted RGB555 distance, row zero is a native result
+sentinel during exact ties, strict-subset weights remain historical after assignment, and HSL row
+ordering anchors its first run to the first installed color before lowest-lightness restarts. The
+active two palette rows and all `$300` native graphics tiles now compare byte-for-byte for that
+variant; the two optional neighborhood variants remain open gates.
+
 The native bitmap preview now exposes the complete recovered Other Options state: first and blank
 8×8 tile, first and reserved blank Map16 tile, new/existing 8×8 optimization, 16×16 deduplication,
 blank 8×8/16×16 shortcuts, and layer priority. Blank 8×8 inputs can reference the configured fixed

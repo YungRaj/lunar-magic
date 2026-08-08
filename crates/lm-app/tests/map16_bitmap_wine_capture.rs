@@ -38,7 +38,7 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
         .map(|tile| tile.pixels().iter().any(|pixel| *pixel != 0))
         .collect::<Vec<_>>();
     let bitmap = decode_map16_bitmap_image(&fs::read(source).unwrap()).unwrap();
-    let options = options_from_manifest(&manifest);
+    let options = options_from_manifest(&manifest, capture_dir);
     let plan = Map16BitmapImportPlan::prepare_with_options(
         Map16BitmapImportRequest {
             pixels: &bitmap.pixels,
@@ -56,25 +56,9 @@ fn lunar_magic_bitmap_capture_matches_rust_palette_and_graphics() {
     )
     .unwrap();
 
-    let color_options = options.color.clone().unwrap();
-    let free_indices = color_options
-        .entries
-        .iter()
-        .enumerate()
-        .filter_map(|(index, state)| (*state == BitmapPaletteEntryState::Free).then_some(index))
-        .collect::<Vec<_>>();
-    let rust_palette = free_indices
-        .iter()
-        .map(|index| plan.palette.colors[*index].to_rgb8())
-        .collect::<Vec<_>>();
-    let original_palette = free_indices
-        .iter()
-        .map(|index| rgb32_color(&palette_after, *index))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        rust_palette, original_palette,
-        "writable palette entries differ"
-    );
+    let rust_palette = plan.palette.colors[..32].to_vec();
+    let original_palette = decode_rgb32_palette(&palette_after).colors[..32].to_vec();
+    assert_eq!(rust_palette, original_palette, "native palette differs");
 
     let rust_graphics = plan.graphics.encode().unwrap();
     let expected_graphics = &graphics_after[..NATIVE_GRAPHICS_BYTES];
@@ -123,7 +107,10 @@ fn hexadecimal(values: &BTreeMap<String, String>, key: &str) -> usize {
     usize::from_str_radix(manifest(values, key), 16).unwrap()
 }
 
-fn options_from_manifest(values: &BTreeMap<String, String>) -> Map16BitmapImportOptions {
+fn options_from_manifest(
+    values: &BTreeMap<String, String>,
+    capture_dir: &Path,
+) -> Map16BitmapImportOptions {
     let mut options = lm_app::native_map16_bitmap_import_options();
     options.graphics.allocation_start = hexadecimal(values, "requested_first_8x8_tile_hex");
     options.graphics.optimize_new_tiles = flag(values, "optimize_8x8");
@@ -137,6 +124,16 @@ fn options_from_manifest(values: &BTreeMap<String, String>) -> Map16BitmapImport
     options.map16_allocation_start = hexadecimal(values, "requested_first_map16_tile_hex");
 
     let mut color = BitmapPaletteColorOptions::lunar_magic_initial();
+    color.entries = fs::read(capture_dir.join("palette-entry-states.bin"))
+        .expect("capture the effective Lunar Magic palette-entry map")
+        .into_iter()
+        .map(|state| match state {
+            0 => BitmapPaletteEntryState::Free,
+            2 => BitmapPaletteEntryState::Reserved,
+            4 => BitmapPaletteEntryState::Reusable,
+            value => panic!("unsupported captured palette-entry state {value:#04x}"),
+        })
+        .collect();
     color.reduction = match manifest(values, "reduction") {
         "median-cut" => BitmapPaletteReduction::MedianCut,
         "popularity" => BitmapPaletteReduction::Popularity,
@@ -166,14 +163,5 @@ fn decode_rgb32_palette(bytes: &[u8]) -> Palette {
                 })
             })
             .collect(),
-    }
-}
-
-fn rgb32_color(bytes: &[u8], index: usize) -> Rgb8 {
-    let offset = index * 4;
-    Rgb8 {
-        red: bytes[offset + 2],
-        green: bytes[offset + 1],
-        blue: bytes[offset],
     }
 }

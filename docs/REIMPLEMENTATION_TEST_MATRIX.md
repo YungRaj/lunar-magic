@@ -1332,9 +1332,12 @@ histogram use Lunar Magic's source-bit-2 five-bit rounding; an exact Rust regres
 four resulting SNES words. The ignored `map16_bitmap_wine_capture` gate now reconstructs the
 original RGB32 palette and full `$000–$2FF` planar graphics workspace from a disposable Wine
 capture. Popularity captures with a 16-color limit and method 1 only, method 2 only, and neither
-neighborhood pass all currently expose different Rust palette selection/row allocation and encoded
-graphics. This is a retained failing compatibility gate; it proves that the broader bitmap-variant
-gap is behavioral rather than merely missing automation.
+neighborhood pass retain the live 128-byte palette-entry map alongside their palette and graphics
+buffers. The no-neighborhood capture now matches Rust exactly across both active palette rows and
+the complete native `$000–$2FF` graphics workspace. Method 1 and method 2 still expose different
+global palette selection and remain retained failing compatibility gates; the passing baseline
+localizes those defects to the optional neighborhood reductions rather than ordinary mapping or
+row allocation.
 
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination
