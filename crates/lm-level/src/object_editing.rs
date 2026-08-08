@@ -85,6 +85,12 @@ pub enum ObjectEdit {
         coordinates: ObjectCoordinateNibbles,
         perpendicular_high: bool,
     },
+    /// Clones a positioned selection and translates every clone by one shared native tile delta.
+    DuplicateOrdinaryGroup {
+        selected: Vec<usize>,
+        major_delta: i32,
+        minor_delta: i32,
+    },
 }
 
 /// Proven semantic fields of one positioned native object record.
@@ -247,6 +253,14 @@ impl ObjectStream {
                         *coordinates,
                         *perpendicular_high,
                     )
+                    .map(drop)
+                    .map_err(LevelEditError::ObjectRelocation),
+                ObjectEdit::DuplicateOrdinaryGroup {
+                    selected,
+                    major_delta,
+                    minor_delta,
+                } => staged
+                    .duplicate_ordinary_object_group(selected, *major_delta, *minor_delta)
                     .map(drop)
                     .map_err(LevelEditError::ObjectRelocation),
             };

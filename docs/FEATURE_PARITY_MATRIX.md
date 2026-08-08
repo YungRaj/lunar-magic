@@ -223,6 +223,17 @@ the final bounded position when the secondary button is released, even outside t
 `right_click_duplication_repositions_objects_and_sprites_without_removing_sources` covers the
 single-selection boundary. Original multi-selection displacement remains incomplete.
 
+The recovered multi-selection core now has a typed, failure-atomic foundation. Ghidra
+`ValidateAndSnapSelectedObjectDrag` (`00438DC0`),
+`ReinsertMovedLevelObjectsByTileDelta` (`00438540`), and
+`ClampSelectedSpriteGroupMove` (`004CE610`) prove the shared whole-tile displacement and
+all-members-valid bounds contract. `ObjectStream::duplicate_ordinary_object_group` retains sources,
+relative spacing, extension bytes, selection order, trailing controls, and canonical screen
+transitions while rejecting every malformed or out-of-bounds group without mutation;
+`group_duplication_preserves_sources_relative_delta_and_selection_order` and
+`invalid_group_duplication_is_failure_atomic` cover the boundary. Canvas selection-set wiring and
+the original nearest-valid fallback remain incomplete.
+
 The sprite row now also covers canonical framing transitions. Semantic native/MWL save paths derive
 legacy versus expanded framing from the actual tokens, synchronize header bit `$20`, and reopen
 through the selected grammar. The live

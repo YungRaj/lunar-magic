@@ -3,10 +3,20 @@ use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ObjectRelocationError {
-    IndexOutOfBounds { index: usize, len: usize },
+    IndexOutOfBounds {
+        index: usize,
+        len: usize,
+    },
+    EmptySelection,
+    DuplicateSelection(usize),
     NotOrdinaryObject(usize),
     UnsupportedControl(usize),
     TargetScreenOutOfRange(u16),
+    TargetPositionOutOfRange {
+        index: usize,
+        major: i32,
+        minor: i32,
+    },
     Field(ObjectFieldError),
 }
 
@@ -173,6 +183,92 @@ impl ObjectStream {
         self.records = records;
         Ok(new_index)
     }
+
+    /// Clones a selected object group and translates every clone by one shared tile delta.
+    ///
+    /// Selection order is retained in the returned indexes while serialization remains stable by
+    /// native screen order. Existing objects are never removed or rewritten except for owned
+    /// screen-transition canonicalization. All clones are validated before publication, making an
+    /// out-of-bounds member or malformed selection failure-atomic.
+    ///
+    /// `major_delta` follows the level's screen axis; `minor_delta` follows its perpendicular
+    /// 32-tile encoded span. Callers map those orientation-neutral axes to X/Y.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an empty or duplicate selection, indexes that do not identify positioned objects,
+    /// opaque interleaved controls, and any translated coordinate outside 512×32 native tiles.
+    pub fn duplicate_ordinary_object_group(
+        &mut self,
+        selected: &[usize],
+        major_delta: i32,
+        minor_delta: i32,
+    ) -> Result<Vec<usize>, ObjectRelocationError> {
+        if selected.is_empty() {
+            return Err(ObjectRelocationError::EmptySelection);
+        }
+        let (mut positioned, trailing_controls) = decode_positioned_objects(self)?;
+        let mut seen = std::collections::BTreeSet::new();
+        let mut clones = Vec::with_capacity(selected.len());
+        let first_clone_id = self.records.len();
+        for (ordinal, index) in selected.iter().copied().enumerate() {
+            if !seen.insert(index) {
+                return Err(ObjectRelocationError::DuplicateSelection(index));
+            }
+            if index >= self.records.len() {
+                return Err(ObjectRelocationError::IndexOutOfBounds {
+                    index,
+                    len: self.records.len(),
+                });
+            }
+            let source = positioned
+                .iter()
+                .find(|object| object.original_index == index)
+                .ok_or(ObjectRelocationError::NotOrdinaryObject(index))?;
+            let coordinates = source.record.coordinate_nibbles();
+            let major = i32::from(source.screen) * 16 + i32::from(coordinates.second) + major_delta;
+            let minor = i32::from(coordinates.first)
+                + if source.record.perpendicular_high_coordinate() {
+                    16
+                } else {
+                    0
+                }
+                + minor_delta;
+            if !(0..512).contains(&major) || !(0..32).contains(&minor) {
+                return Err(ObjectRelocationError::TargetPositionOutOfRange {
+                    index,
+                    major,
+                    minor,
+                });
+            }
+            let mut record = source.record.clone();
+            record
+                .set_coordinate_nibbles(ObjectCoordinateNibbles {
+                    first: u8::try_from(minor & 0x0f).unwrap(),
+                    second: u8::try_from(major & 0x0f).unwrap(),
+                })
+                .map_err(ObjectRelocationError::Field)?;
+            record
+                .set_perpendicular_high_coordinate(minor >= 16)
+                .map_err(ObjectRelocationError::Field)?;
+            record
+                .set_advances_screen(false)
+                .map_err(ObjectRelocationError::Field)?;
+            clones.push(PositionedObject {
+                original_index: first_clone_id + ordinal,
+                screen: u16::try_from(major / 16).unwrap(),
+                record,
+            });
+        }
+        let clone_ids: Vec<_> = clones.iter().map(|object| object.original_index).collect();
+        positioned.extend(clones);
+        positioned.sort_by_key(|object| object.screen);
+        let (mut records, selected_indexes) =
+            encode_positioned_object_group(positioned, &clone_ids)?;
+        records.extend(trailing_controls);
+        self.records = records;
+        Ok(selected_indexes)
+    }
 }
 
 fn decode_positioned_objects(
@@ -214,9 +310,21 @@ fn encode_positioned_objects(
     positioned: Vec<PositionedObject>,
     selected: usize,
 ) -> Result<(Vec<ObjectRecord>, usize), ObjectRelocationError> {
+    let (records, mut selected_indexes) =
+        encode_positioned_object_group(positioned, std::slice::from_ref(&selected))?;
+    let selected_index = selected_indexes
+        .pop()
+        .ok_or(ObjectRelocationError::NotOrdinaryObject(selected))?;
+    Ok((records, selected_index))
+}
+
+fn encode_positioned_object_group(
+    positioned: Vec<PositionedObject>,
+    selected: &[usize],
+) -> Result<(Vec<ObjectRecord>, Vec<usize>), ObjectRelocationError> {
     let mut screen = 0_u16;
     let mut output = Vec::with_capacity(positioned.len());
-    let mut selected_index = None;
+    let mut selected_indexes = vec![None; selected.len()];
     for mut object in positioned {
         let can_advance = object.screen == screen.saturating_add(1);
         let transition = if object.screen == screen {
@@ -235,13 +343,20 @@ fn encode_positioned_objects(
                 .set_advances_screen(false)
                 .map_err(ObjectRelocationError::Field)?;
         }
-        if object.original_index == selected {
-            selected_index = Some(output.len());
+        if let Some(slot) = selected
+            .iter()
+            .position(|selected| *selected == object.original_index)
+        {
+            selected_indexes[slot] = Some(output.len());
         }
         output.push(object.record);
     }
-    let new_index = selected_index.ok_or(ObjectRelocationError::NotOrdinaryObject(selected))?;
-    Ok((output, new_index))
+    let selected_indexes = selected_indexes
+        .into_iter()
+        .zip(selected)
+        .map(|(index, selected)| index.ok_or(ObjectRelocationError::NotOrdinaryObject(*selected)))
+        .collect::<Result<_, _>>()?;
+    Ok((output, selected_indexes))
 }
 
 fn canonical_screen_jump(screen: u16) -> Result<ObjectRecord, ObjectRelocationError> {
@@ -319,6 +434,73 @@ mod tests {
         );
         assert_eq!(stream.records[2].coordinate_nibbles().first, 7);
         assert_eq!(stream.records[2].coordinate_nibbles().second, 8);
+    }
+
+    #[test]
+    fn group_duplication_preserves_sources_relative_delta_and_selection_order() {
+        let trailing = ObjectRecord::new(vec![7, 5, 0, 0xcb]).unwrap();
+        let mut stream = ObjectStream {
+            records: vec![
+                object(false, 1, 2, 0x10),
+                object(true, 3, 4, 0x20),
+                trailing.clone(),
+            ],
+        };
+        let selected = stream
+            .duplicate_ordinary_object_group(&[1, 0], 17, 14)
+            .unwrap();
+        assert_eq!(selected.len(), 2);
+        assert_eq!(stream.records.last(), Some(&trailing));
+        let placements = stream.native_placements();
+        assert!(placements.iter().any(|placement| {
+            placement.major == 2
+                && placement.minor == 1
+                && stream.records[placement.record_index].parameter() == 0x10
+        }));
+        assert!(placements.iter().any(|placement| {
+            placement.major == 20
+                && placement.minor == 3
+                && stream.records[placement.record_index].parameter() == 0x20
+        }));
+        let first = placements
+            .iter()
+            .find(|placement| placement.record_index == selected[0])
+            .unwrap();
+        assert_eq!((first.major, first.minor), (37, 17));
+        assert_eq!(stream.records[first.record_index].parameter(), 0x20);
+        let second = placements
+            .iter()
+            .find(|placement| placement.record_index == selected[1])
+            .unwrap();
+        assert_eq!((second.major, second.minor), (19, 15));
+        assert_eq!(stream.records[second.record_index].parameter(), 0x10);
+    }
+
+    #[test]
+    fn invalid_group_duplication_is_failure_atomic() {
+        let mut stream = ObjectStream {
+            records: vec![object(false, 1, 2, 0x10), object(true, 3, 4, 0x20)],
+        };
+        let original = stream.clone();
+        assert_eq!(
+            stream.duplicate_ordinary_object_group(&[], 1, 1),
+            Err(ObjectRelocationError::EmptySelection)
+        );
+        assert_eq!(stream, original);
+        assert_eq!(
+            stream.duplicate_ordinary_object_group(&[0, 0], 1, 1),
+            Err(ObjectRelocationError::DuplicateSelection(0))
+        );
+        assert_eq!(stream, original);
+        assert_eq!(
+            stream.duplicate_ordinary_object_group(&[0, 1], 500, 0),
+            Err(ObjectRelocationError::TargetPositionOutOfRange {
+                index: 1,
+                major: 520,
+                minor: 3,
+            })
+        );
+        assert_eq!(stream, original);
     }
 
     #[test]
