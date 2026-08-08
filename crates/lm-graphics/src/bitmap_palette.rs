@@ -665,14 +665,15 @@ fn bubble_popularity_color_up(selected: &mut [(u16, u32)], mut index: usize, sco
 
 /// Assigns globally reduced source colors to Lunar Magic's eight 16-color rows.
 ///
-/// Source dimensions must be complete 8×8 tiles. Unique tile color sets are weighted by their
-/// occurrence count plus the count of all subset sets. The allocator repeatedly selects the
-/// highest-weight unassigned set, chooses the capable row with greatest existing-color overlap
-/// (then greatest remaining free capacity and lowest row), installs missing colors in ascending free
-/// entry order, and marks every still-unassigned subset that the resulting row covers. The final
-/// pass independently scores every 8×8 tile against each usable row with Lunar Magic's weighted
-/// RGB555 distance, selects the least-error row, and converts its pixels to that row's nearest
-/// entries. A source color therefore need not have been installed exactly.
+/// Source dimensions must be complete 8×8 tiles. Unique tile color sets retain direct pixel weights
+/// plus aggregate weights from still-unassigned strict subsets. Rows are processed in descending
+/// reusable/free capacity order. Each row is seeded once, then extended only by exact-fit sets with
+/// existing-color overlap; overlap, direct occurrence weight, set length, and first tile occurrence
+/// break ties in that order. The later partial-set pass chooses records by overlap and aggregate
+/// weight, but installs their strongest missing colors by direct weight. The final pass independently
+/// scores every 8×8 tile against each usable row with Lunar Magic's weighted RGB555 distance,
+/// selects the least-error row, and converts its pixels to that row's nearest entries. A source color
+/// therefore need not have been installed exactly.
 ///
 /// Reusable colors retain their exact palette indexes. Reserved entries are neither overwritten
 /// nor candidates. Entry zero remains transparency-only, so an opaque tile requiring more than 15
@@ -806,10 +807,11 @@ fn recompute_color_set_aggregate_weights(records: &mut BTreeMap<Vec<u16>, ColorS
         .iter()
         .map(|key| {
             let mut aggregate = records[key].direct_weights.clone();
-            for subset in keys
-                .iter()
-                .filter(|subset| subset.len() < key.len() && is_subset(subset, key))
-            {
+            for subset in keys.iter().filter(|subset| {
+                subset.len() < key.len()
+                    && records[*subset].assigned_row.is_none()
+                    && is_subset(subset, key)
+            }) {
                 for (color, weight) in subset.iter().zip(&records[subset].direct_weights) {
                     let destination = key
                         .binary_search(color)
@@ -832,35 +834,58 @@ fn assign_color_set_records(
     records: &mut BTreeMap<Vec<u16>, ColorSetRecord>,
     rows: &mut [PaletteRowAllocation; BITMAP_PALETTE_ROWS],
 ) -> Result<(), BitmapPaletteReductionError> {
-    loop {
-        let next = records
-            .values()
-            .filter(|record| {
-                record.assigned_row.is_none() && best_palette_row(rows, &record.colors).is_some()
-            })
-            .max_by(|left, right| compare_color_set_priority(left, right))
-            .map(|record| record.colors.clone());
-        let Some(colors) = next else {
-            return Ok(());
-        };
-        if colors.is_empty() {
-            let record = records
-                .get_mut(&colors)
-                .ok_or_else(|| BitmapPaletteReductionError::UnassignedColorSet(colors.clone()))?;
-            record.assigned_row = Some(0);
-            continue;
-        }
-        let row = best_palette_row(rows, &colors)
-            .ok_or_else(|| BitmapPaletteReductionError::UnassignedColorSet(colors.clone()))?;
-        rows[row].install(&colors)?;
-        let covered = rows[row].colors();
-        for record in records.values_mut() {
-            if record.assigned_row.is_none() && is_subset(&record.colors, &covered) {
-                record.assigned_row = Some(row);
-            }
-        }
-        recompute_color_set_aggregate_weights(records);
+    if let Some(empty) = records.get_mut(&Vec::new()) {
+        empty.assigned_row = Some(0);
     }
+    let mut row_order = (0..rows.len()).collect::<Vec<_>>();
+    row_order.sort_by_key(|row| {
+        (
+            Reverse(rows[*row].reusable_count()),
+            Reverse(rows[*row].free_count()),
+            *row,
+        )
+    });
+    for row in row_order {
+        let mut seeded = false;
+        loop {
+            let next = records
+                .values()
+                .filter_map(|record| {
+                    if record.assigned_row.is_some() || record.colors.is_empty() {
+                        return None;
+                    }
+                    let score = rows[row].score(&record.colors)?;
+                    (!seeded || score.overlap != 0).then_some((record, score))
+                })
+                .max_by(|(left, left_score), (right, right_score)| {
+                    left_score
+                        .overlap
+                        .cmp(&right_score.overlap)
+                        .then_with(|| {
+                            left.direct_weights
+                                .iter()
+                                .sum::<usize>()
+                                .cmp(&right.direct_weights.iter().sum::<usize>())
+                        })
+                        .then_with(|| left.colors.len().cmp(&right.colors.len()))
+                        .then_with(|| right.tiles[0].cmp(&left.tiles[0]))
+                })
+                .map(|(record, _)| record.colors.clone());
+            let Some(colors) = next else {
+                break;
+            };
+            rows[row].install(&colors)?;
+            seeded = true;
+            let covered = rows[row].colors();
+            for record in records.values_mut() {
+                if record.assigned_row.is_none() && is_subset(&record.colors, &covered) {
+                    record.assigned_row = Some(row);
+                }
+            }
+            recompute_color_set_aggregate_weights(records);
+        }
+    }
+    Ok(())
 }
 
 fn extend_palette_rows_with_weighted_colors(
@@ -918,7 +943,7 @@ fn extend_palette_rows_with_weighted_colors(
                 .colors
                 .iter()
                 .copied()
-                .zip(record.aggregate_weights.iter().copied())
+                .zip(record.direct_weights.iter().copied())
                 .filter(|(color, _)| existing.binary_search(color).is_err())
                 .collect::<Vec<_>>();
             missing.sort_by_key(|(color, weight)| (Reverse(*weight), *color));
@@ -1027,31 +1052,6 @@ fn lunar_magic_color_distance(left: u16, right: u16) -> u32 {
     u32::try_from(red * red * 4 + green * green * 3 + blue * blue * 2).unwrap_or(u32::MAX)
 }
 
-fn best_palette_row(
-    rows: &[PaletteRowAllocation; BITMAP_PALETTE_ROWS],
-    colors: &[u16],
-) -> Option<usize> {
-    rows.iter()
-        .filter_map(|row| row.score(colors).map(|score| (row.row, score)))
-        .max_by(|(left_row, left), (right_row, right)| {
-            left.overlap
-                .cmp(&right.overlap)
-                .then_with(|| left.free_before.cmp(&right.free_before))
-                .then_with(|| {
-                    palette_row_tie_priority(*left_row).cmp(&palette_row_tie_priority(*right_row))
-                })
-        })
-        .map(|(row, _)| row)
-}
-
-fn palette_row_tie_priority(row: usize) -> usize {
-    if row == 0 {
-        0
-    } else {
-        BITMAP_PALETTE_ROWS - row + 1
-    }
-}
-
 #[derive(Clone, Debug)]
 struct TileColorHistogram {
     colors: Vec<u16>,
@@ -1071,9 +1071,8 @@ struct ColorSetRecord {
 fn compare_color_set_priority(left: &ColorSetRecord, right: &ColorSetRecord) -> Ordering {
     left.aggregate_weight
         .cmp(&right.aggregate_weight)
-        .then_with(|| left.aggregate_weights.cmp(&right.aggregate_weights))
         .then_with(|| left.colors.len().cmp(&right.colors.len()))
-        .then_with(|| right.colors.cmp(&left.colors))
+        .then_with(|| right.tiles[0].cmp(&left.tiles[0]))
 }
 
 fn is_subset(subset: &[u16], superset: &[u16]) -> bool {
@@ -1099,7 +1098,6 @@ struct PaletteRowAllocation {
 #[derive(Clone, Copy)]
 struct RowScore {
     overlap: usize,
-    free_before: usize,
 }
 
 impl PaletteRowAllocation {
@@ -1129,10 +1127,7 @@ impl PaletteRowAllocation {
             .iter()
             .filter(|entry| matches!(entry, RowEntry::Free))
             .count();
-        (colors.len() - overlap <= free_before).then_some(RowScore {
-            overlap,
-            free_before,
-        })
+        (colors.len() - overlap <= free_before).then_some(RowScore { overlap })
     }
 
     fn free_count(&self) -> usize {
@@ -1561,18 +1556,33 @@ mod tests {
     }
 
     #[test]
-    fn palette_row_zero_is_the_native_exact_tie_sentinel() {
-        let palette = Palette {
-            colors: vec![Bgr555(0); BITMAP_PALETTE_COLORS],
-        };
-        let options = BitmapPaletteColorOptions::lunar_magic_initial();
-        let rows = std::array::from_fn(|row| PaletteRowAllocation::new(row, &palette, &options));
+    fn exact_allocator_finishes_each_palette_row_before_seeding_the_next() {
+        let mut options = reserved_options();
+        options.entries[1] = BitmapPaletteEntryState::Free;
+        options.entries[2] = BitmapPaletteEntryState::Free;
+        options.entries[17] = BitmapPaletteEntryState::Free;
+        let mut rows =
+            std::array::from_fn(|row| PaletteRowAllocation::new(row, &palette(), &options));
+        let tile_sets = [
+            TileColorHistogram {
+                colors: vec![1],
+                weights: vec![64],
+            },
+            TileColorHistogram {
+                colors: vec![1, 2],
+                weights: vec![32, 32],
+            },
+            TileColorHistogram {
+                colors: vec![3],
+                weights: vec![64],
+            },
+        ];
+        let mut records = build_color_set_records(&tile_sets);
 
-        // Lunar Magic starts with row zero as the result sentinel. The first equally capable
-        // nonzero row replaces it; subsequent exact ties retain that first nonzero row.
-        assert_eq!(best_palette_row(&rows, &[0x1234]), Some(1));
-        assert!(palette_row_tie_priority(1) > palette_row_tie_priority(2));
-        assert!(palette_row_tie_priority(7) > palette_row_tie_priority(0));
+        assign_color_set_records(&mut records, &mut rows).unwrap();
+
+        assert_eq!(rows[0].colors(), vec![1, 2]);
+        assert_eq!(rows[1].colors(), vec![3]);
     }
 
     #[test]

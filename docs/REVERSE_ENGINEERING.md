@@ -1027,7 +1027,7 @@ color-set pass, then enters the recovered weighted partial-set extension only wh
 zero. `AggregatePaletteColorSetWeights` (`004ecc80`) folds linked subset weights into their
 supersets, while `ExtendPaletteWithWeightedColorSets` (`004ed000`) repeatedly chooses the uncovered
 set with greatest existing-row overlap and aggregate weight, inserts its strongest missing colors
-up to remaining capacity, and marks covered subsets. Rust now has that default second pass and an
+by direct pixel weight up to remaining capacity, and marks covered subsets. Rust now has that default second pass and an
 independent Maintain Detail switch that skips it. The same byte has an earlier role inside
 `ProcessBitmapGraphicsImport` (`004ef770`): exact source-color matches claim their reduced-palette
 indexes first, then one globally nearest unused source color is claimed for every remaining palette
@@ -1454,10 +1454,12 @@ color sets for each 8×8 source tile; `BuildPaletteColorSetSubsetLinks` and
 at `004ed390` distinguishes free from preserved slots, and `AssignColorsToBestPaletteRow` at
 `004ed4c0` chooses the row with greatest reusable-color overlap, then least required capacity,
 inserts only missing colors into state-zero entries, and returns that row for the tile words.
-`SelectPaletteColorSetsForCapacity` and `ExtendPaletteWithWeightedColorSets` greedily cover the
-highest-weight compatible color sets before `AssignImportedGraphicsToPaletteRows` records one row
-per 8×8 tile. The Rust multi-row model must retain these stages; merely quantizing an entire image
-to one 15-color row is not equivalent.
+`SelectPaletteColorSetsForCapacity` completes each capable row before seeding the next: within a row
+it prefers existing-color overlap, direct occurrence weight, larger sets, and earlier tile
+occurrence. `ExtendPaletteWithWeightedColorSets` then ranks remaining records by overlap and
+aggregate utility but chooses individual inserted colors by direct weight.
+`AssignImportedGraphicsToPaletteRows` finally records one row per 8×8 tile. The Rust multi-row model
+must retain these stages; merely quantizing an entire image to one 15-color row is not equivalent.
 
 The Rust application path now carries that per-8×8 row plane through graphics materialization,
 Map16 construction, and the converted preview. Each of a Map16 definition's four subtile words

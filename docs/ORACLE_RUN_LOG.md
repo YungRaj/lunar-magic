@@ -109,8 +109,10 @@ now reloads level `$105` correctly after discarding prior in-memory conversion s
 
 The ignored `map16_bitmap_wine_capture` differential gate reconstructs the active RGB32 palette
 rows, live 128-byte entry-state map, and planar `$000–$2FF` graphics workspace from each capture.
-The no-neighborhood and method-1 captures now match exactly after recovering weighted RGB555
-source mapping, row-zero sentinel tie behavior, aggregate subset weights, lowest-lightness HSL run
-anchors, and the native lightness/saturation distance weights. A direct method-2 return capture
-also proves its 16 selected colors match Rust exactly. Method 2 still rejects at the downstream
-palette-row allocation and encoded-graphics gate, so that variant remains a proven parity defect.
+All three captures now match exactly after recovering weighted RGB555 source mapping,
+row-at-a-time exact allocation, direct occurrence tie weights, unassigned-subset aggregation,
+direct per-color extension weights, lowest-lightness HSL run anchors, and the native
+lightness/saturation distance weights. The no-neighborhood, method-1, and method-2 variants each
+pass across both active palette rows and the complete graphics workspace. A Method 2 breakpoint
+capture at `004f0269` additionally produced the same 4,096-byte pre-allocation color plane as Rust,
+SHA-256 `07e0db077220846dd17b13b743718152779f79cd5d2034240c944483808fc8d9`.

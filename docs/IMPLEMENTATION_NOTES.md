@@ -4358,9 +4358,10 @@ and focused coverage proves disabling it removes distance weighting without chan
 value itself.
 
 Multi-row allocation now includes Lunar Magic's previously missing default weighted partial-set
-extension. After exact-fit sets are exhausted, rows with capacity greedily choose uncovered sets by
-existing-color overlap and aggregate subset weight, then install their highest-weight missing
-colors. The recovered Maintain Detail control skips this extension pass and also changes the earlier
+extension. Exact-fit allocation completes each row before seeding the next and ranks candidates by
+overlap plus direct occurrence weight. After exact-fit sets are exhausted, rows with capacity
+greedily choose uncovered sets by existing-color overlap and aggregate subset weight, then install
+missing colors by their direct pixel weights. The recovered Maintain Detail control skips this extension pass and also changes the earlier
 global index assignment: exact source matches claim reduced-palette indexes first, after which each
 remaining palette color claims its globally nearest unused source color before ordinary nearest
 mapping. A constrained four-color/three-slot test proves default allocation fills the two remaining
@@ -4387,13 +4388,17 @@ audit harness now normalizes all persistent checkboxes on every run so prior ora
 silently contaminate option evidence.
 
 The retained bitmap-import capture now also records Lunar Magic's effective 128-byte palette-entry
-map before conversion. The exact no-neighborhood and method-1 Popularity differentials exposed and
-closed the ordinary weighted-RGB555 mapping, row-zero sentinel, aggregate subset-weight, and HSL
-ordering gaps. Every HSL run starts at its lowest-lightness color and uses
-`3L² + 2S² + 8H²`, or `3L² + S²` when both saturations are below 16. The active two palette rows
-and all `$300` native graphics tiles now compare byte-for-byte for both variants. A direct return
-capture proves method 2 selects the same 16 colors as Rust; its downstream row allocation remains
-the only failing variant gate.
+map before conversion. The three 16-color Popularity differentials exposed and closed the ordinary
+weighted-RGB555 mapping, exact-row allocation order, subset-weight lifetime, partial-extension
+weight source, and HSL ordering gaps. Exact allocation completes one palette row before seeding the
+next, ranks candidates by existing-color overlap and direct occurrence weight, and excludes already
+covered subsets when recomputing aggregate weights. The partial pass still ranks records by their
+aggregate utility but chooses individual missing colors by direct pixel weight. Every HSL run starts
+at its lowest-lightness color and uses `3L² + 2S² + 8H²`, or `3L² + S²` when both saturations are
+below 16. The active two palette rows and all `$300` native graphics tiles now compare byte-for-byte
+for no-neighborhood, method 1, and method 2 captures. A boundary capture immediately before row
+allocation also proves the Method 2 source-color plane is byte-identical (`07e0db077220846d...`) in
+both implementations, independently localizing and then closing the allocator defect.
 
 The native bitmap preview now exposes the complete recovered Other Options state: first and blank
 8×8 tile, first and reserved blank Map16 tile, new/existing 8×8 optimization, 16×16 deduplication,
