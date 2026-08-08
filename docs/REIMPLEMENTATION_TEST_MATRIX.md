@@ -1327,8 +1327,12 @@ bounded deterministic variance splitter. A disposable-process Wine audit now dri
 clipboard-bitmap dialog, captures its pre/post palette and planar graphics buffers, and verifies
 the conversion guard is restored. Its low-color fixture proves that the fast path and Popularity
 histogram use Lunar Magic's source-bit-2 five-bit rounding; an exact Rust regression covers the
-four resulting SNES words. Automated original-versus-Rust comparison across broader bitmap
-variants remains a compatibility gate.
+four resulting SNES words. The ignored `map16_bitmap_wine_capture` gate now reconstructs the
+original RGB32 palette and full `$000–$2FF` planar graphics workspace from a disposable Wine
+capture. Popularity captures with a 16-color limit and method 1 only, method 2 only, and neither
+neighborhood pass all currently expose different Rust palette selection/row allocation and encoded
+graphics. This is a retained failing compatibility gate; it proves that the broader bitmap-variant
+gap is behavioral rather than merely missing automation.
 
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination

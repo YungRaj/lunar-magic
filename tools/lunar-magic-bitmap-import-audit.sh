@@ -12,6 +12,8 @@ usage() {
     echo "  LM_BITMAP_MAX_COLORS: maximum reduced colors from 1 through 128 (default: 128)" >&2
     echo "  LM_BITMAP_UNIQUE_COLORS: give higher priority to unique colors, 0 or 1 (default: 1)" >&2
     echo "  LM_BITMAP_MAINTAIN_DETAIL: keep exact bitmap colors until capacity, 0 or 1 (default: 0)" >&2
+    echo "  LM_BITMAP_REDUCTION_METHOD_1: first Popularity neighborhood pass, 0 or 1 (default: 1)" >&2
+    echo "  LM_BITMAP_REDUCTION_METHOD_2: second Popularity neighborhood pass, 0 or 1 (default: 0)" >&2
     echo "  LM_BITMAP_ALLOW_UNMARKED: allow changing unreserved palette colors, 0 or 1 (default: 1)" >&2
     echo "  LM_BITMAP_EXACT_MATCHES: disabled native exact-match state; only 1 is accepted" >&2
     echo "  LM_BITMAP_OPTIMIZE_8X8: optimize newly converted 8x8 tiles, 0 or 1 (default: 1)" >&2
@@ -39,6 +41,8 @@ priority=${LM_BITMAP_PRIORITY:-3}
 maximum_colors=${LM_BITMAP_MAX_COLORS:-128}
 unique_colors=${LM_BITMAP_UNIQUE_COLORS:-1}
 maintain_detail=${LM_BITMAP_MAINTAIN_DETAIL:-0}
+reduction_method_1=${LM_BITMAP_REDUCTION_METHOD_1:-1}
+reduction_method_2=${LM_BITMAP_REDUCTION_METHOD_2:-0}
 allow_unmarked=${LM_BITMAP_ALLOW_UNMARKED:-1}
 exact_matches=${LM_BITMAP_EXACT_MATCHES:-1}
 optimize_8x8=${LM_BITMAP_OPTIMIZE_8X8:-1}
@@ -94,6 +98,20 @@ case "$maintain_detail" in
         exit 2
         ;;
 esac
+for reduction_method_flag in "$reduction_method_1" "$reduction_method_2"; do
+    case "$reduction_method_flag" in
+        0|1) ;;
+        *)
+            echo "all LM_BITMAP_REDUCTION_METHOD_* flags must be 0 or 1" >&2
+            exit 2
+            ;;
+    esac
+done
+if [ "$reduction" != "popularity" ] &&
+    { [ "$reduction_method_1" -ne 1 ] || [ "$reduction_method_2" -ne 0 ]; }; then
+    echo "nondefault reduction methods require LM_BITMAP_REDUCTION=popularity" >&2
+    exit 2
+fi
 case "$allow_unmarked" in
     0|1) ;;
     *)
@@ -211,8 +229,36 @@ current_level=$(read_value 0x005e7738 4)
 # A modeless Map16 window restored before ROM loading retains stale palette/graphics buffers.
 # Reload the authenticated current slot through Lunar Magic's own level dialog before observing
 # those buffers. The first two little-endian bytes cover Lunar Magic's 0x000..0x1ff level range.
-current_level_hex=$(printf '%s' "$current_level" | cut -c 3-4)$(printf '%s' "$current_level" | cut -c 1-2)
-wine "$helper" "$target_executable" open-level "$current_level_hex" >/dev/null 2>&1
+current_level_low=$(printf '%s' "$current_level" | cut -c 1-2)
+current_level_high=$(printf '%s' "$current_level" | cut -c 3-4)
+current_level_value=$((0x$current_level_low + 0x$current_level_high * 256))
+current_level_hex=$(printf '%03X' "$current_level_value")
+wine "$helper" "$target_executable" post-command 0x238e >/dev/null 2>&1
+level_dialog_submitted=0
+attempt=0
+while [ "$attempt" -lt 400 ]; do
+    dialog_values=$(wine "$helper" "$target_executable" dialog-values 2>/dev/null |
+        tr -d '\r' || true)
+    if printf '%s\n' "$dialog_values" | grep -q '^button=0x0007 .*title=&No$'; then
+        # A preceding conversion dirties the disposable editor buffers. Discarding them here is
+        # what makes repeated captures begin from the ROM-backed level instead of accumulated
+        # in-memory palette and graphics state.
+        wine "$helper" "$target_executable" click 7 >/dev/null 2>&1
+    fi
+    if wine "$helper" "$target_executable" set-text "0x007f,$current_level_hex" \
+        >/dev/null 2>&1; then
+        wine "$helper" "$target_executable" click 1 >/dev/null 2>&1
+        level_dialog_submitted=1
+        break
+    fi
+    attempt=$((attempt + 1))
+    sleep 0.025
+done
+[ "$level_dialog_submitted" -eq 1 ] || {
+    echo "Lunar Magic did not open the level-number dialog within 10 seconds" >&2
+    exit 1
+}
+sleep 0.25
 refreshed_level=$(read_value 0x005e7738 4)
 [ "$refreshed_level" = "$current_level" ] || {
     echo "Lunar Magic did not reload the current level $current_level_hex" >&2
@@ -316,7 +362,8 @@ other_option_flags=$(read_value 0x005e55f4 5)
 observed_layer_priority=$(read_value 0x00e27b31 1)
 
 if [ "$reduction" = "popularity" ] || [ "$maximum_colors" -ne 128 ] ||
-    [ "$maintain_detail" -ne 0 ] || [ "$allow_unmarked" -ne 1 ] ||
+    [ "$maintain_detail" -ne 0 ] || [ "$reduction_method_1" -ne 1 ] ||
+    [ "$reduction_method_2" -ne 0 ] || [ "$allow_unmarked" -ne 1 ] ||
     [ "$exact_matches" -ne 1 ]; then
     wine "$helper" "$target_executable" click 0x6b >/dev/null 2>&1
     color_dialog_ready=0
@@ -343,6 +390,8 @@ if [ "$reduction" = "popularity" ] || [ "$maximum_colors" -ne 128 ] ||
     wine "$helper" "$target_executable" select "0x71,$((priority - 1))" >/dev/null 2>&1
     set_checkbox 0x006e "$unique_colors"
     set_checkbox 0x0066 "$maintain_detail"
+    set_checkbox 0x006c "$reduction_method_1"
+    set_checkbox 0x006d "$reduction_method_2"
     set_checkbox 0x0074 "$allow_unmarked"
     # Lunar Magic 3.63 renders 0x65 disabled. Record its persistent state but do not fabricate
     # a gesture that the native user cannot perform.
@@ -379,6 +428,8 @@ graphics_after_sha=$(shasum -a 256 "$output_dir/graphics-after.bin" | awk '{prin
     printf 'maximum_colors\t%s\n' "$maximum_colors"
     printf 'unique_colors\t%s\n' "$unique_colors"
     printf 'maintain_detail\t%s\n' "$maintain_detail"
+    printf 'reduction_method_1\t%s\n' "$reduction_method_1"
+    printf 'reduction_method_2\t%s\n' "$reduction_method_2"
     printf 'allow_unmarked\t%s\n' "$allow_unmarked"
     printf 'exact_matches\t%s\n' "$exact_matches"
     printf 'optimize_8x8\t%s\n' "$optimize_8x8"

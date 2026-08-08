@@ -92,3 +92,24 @@ The gate proves a fresh prefix applies 33 snapshots to both the level and overwo
 sets `UndoMain` to 0, 1, 2, 9, 33, 51, and 52 and reads both original live effective-limit globals.
 Both editors retain every in-range value and independently clamp 52 to 51. Ghidra supplies the
 complementary baseline-counting, disabled-capture, pruning, and reset control-flow evidence.
+
+## 2026-08-08 — Map16 Popularity bitmap-import differential audit
+
+- Lunar Magic executable SHA-256:
+  `b64998b637e553c9adb96dd893140b5b8d0303c7a0f46a1fdab5f887a1d46eff`
+- Expanded SMW-US working ROM SHA-256:
+  `73003400046213cfc0b9352a20e80682173d2b023e15e8a826f3dfeff3de81a4`
+- 32×32 BMP source SHA-256:
+  `7665fbb71678b38e73bfa36ac76428457d95e26f67e0ecdace57b4a97d72752b`
+
+Three disposable-process captures used Popularity with a 16-color limit and independently selected
+method 1 only, method 2 only, and neither neighborhood method. The original changed respectively
+352, 351, and 374 graphics-cache bytes. The extended harness records controls `$6C` and `$6D` and
+now reloads level `$105` correctly after discarding prior in-memory conversion state.
+
+The new ignored `map16_bitmap_wine_capture` differential gate reconstructs the exact RGB32 palette
+and planar `$000–$2FF` graphics workspace from each capture. All three comparisons currently reject:
+Rust chooses different writable palette entries and encoded graphics. This is retained as a proven
+parity defect, not counted as a passing Oracle or Variants gate. It localizes the remaining defect
+before or within Popularity color selection/row allocation rather than the two optional neighborhood
+passes alone.
