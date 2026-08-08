@@ -668,9 +668,9 @@ impl RomGraphicsEditor {
                                     let owner = (!diagnostic)
                                         .then(|| workspace.controller.ownership().owner(index))
                                         .flatten();
-                                    if !diagnostic
-                                        && edits_enabled
-                                        && ownership::is_editable(owner)
+                                    if edits_enabled
+                                        && ((diagnostic && diagnostic_sheet_paste_editable(index))
+                                            || (!diagnostic && ownership::is_editable(owner)))
                                         && let Some(tile) = selected_tile.clone()
                                     {
                                         selected_paste = Some((index, tile));
@@ -680,7 +680,9 @@ impl RomGraphicsEditor {
                                     let owner = (!diagnostic)
                                         .then(|| workspace.controller.ownership().owner(index))
                                         .flatten();
-                                    if !diagnostic && edits_enabled && ownership::is_editable(owner)
+                                    if edits_enabled
+                                        && ((diagnostic && diagnostic_sheet_paste_editable(index))
+                                            || (!diagnostic && ownership::is_editable(owner)))
                                     {
                                         self.clipboard_paste_target = Some(index);
                                         ui.ctx()
@@ -1196,6 +1198,10 @@ fn replace_internal_cache_tile(
         .ok_or_else(|| format!("internal graphics tile {index:X} is unavailable"))?;
     *cache_tile = tile;
     Ok(())
+}
+
+const fn diagnostic_sheet_paste_editable(index: usize) -> bool {
+    index <= 0x5ff
 }
 
 fn overlay_current_graphics_file(
@@ -1813,7 +1819,7 @@ fn installed_exgraphics_slots(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_external_edit_revision, installed_exgraphics_slots,
+        diagnostic_sheet_paste_editable, ensure_external_edit_revision, installed_exgraphics_slots,
         internal_cache_level_graphics_overrides, lunar_magic_standard_graphics_sources,
         overlay_current_graphics_file, pristine_special_graphics, replace_internal_cache_tile,
         supports_exgraphics, supports_native_exgraphics,
@@ -1955,6 +1961,14 @@ mod tests {
         assert_eq!(cache.tiles[0x1800], changed);
         assert_eq!(cache.tiles[0x17ff], blank);
         assert!(replace_internal_cache_tile(&mut cache, 0x4000, blank).is_err());
+    }
+
+    #[test]
+    fn diagnostic_sheet_paste_accepts_current_level_cache_only() {
+        assert!(diagnostic_sheet_paste_editable(0x000));
+        assert!(diagnostic_sheet_paste_editable(0x5ff));
+        assert!(!diagnostic_sheet_paste_editable(0x600));
+        assert!(!diagnostic_sheet_paste_editable(0x3fff));
     }
 
     #[test]
