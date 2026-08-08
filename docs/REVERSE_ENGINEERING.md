@@ -2102,6 +2102,15 @@ and masks words 2–10 except non-reference word 8. `NormalizeExpandedLevelHeade
 branches, with exhaustive source/destination-word and untouched-field tests. Whole-ROM migration
 still requires authenticated legacy runtime fixtures and is not inferred from these record rules.
 
+Instruction-level inspection of `CheckLegacyGraphicsTablePatchState` (`004609D0`) and
+`CheckExpandedLevelHeaderPatchState` (`00460A30`) also recovered the previously omitted generation
+publication. Both read four bytes immediately before descriptor `$69` at `$07F15C`, require `LM`
+in the low word, and compare the high word against `$0102` or `$0103`. Current installation writes
+exact bytes `4C 4D 03 01`. That marker is now an expected-byte-guarded member of the atomic runtime
+plan rather than an unowned side effect. The live relocated Wine reciprocal gate and the complete
+fixed-write comparison both now cover it, closing a real byte-level discrepancy in Rust-created
+ROMs.
+
 The pointer installer is now represented as typed, non-installable relocation evidence. The
 recovered `PatchExpandedLevelHeaderTablePointers` loop patches descriptor entries `$35..$39` at
 operand offset `$6C` to fixed runtime entry `$70`. The allocation-dependent portion of

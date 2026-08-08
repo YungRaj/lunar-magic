@@ -182,9 +182,10 @@ pub use expanded_settings_runtime_bundle::{
     ExpandedSettingsAllocationFixup, ExpandedSettingsAllocationFixupEncoding,
     ExpandedSettingsRuntimeBundleError, ExpandedSettingsRuntimeComponent,
     ExpandedSettingsRuntimeLayout, SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_ALLOCATION_FIXUPS,
-    SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_DESTINATIONS, resolve_expanded_settings_runtime_allocation,
-    smw_us_v1_expanded_settings_fixed_writes, smw_us_v1_expanded_settings_runtime_bundle,
-    smw_us_v1_expanded_settings_runtime_writes,
+    SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_DESTINATIONS, SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER,
+    SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET,
+    resolve_expanded_settings_runtime_allocation, smw_us_v1_expanded_settings_fixed_writes,
+    smw_us_v1_expanded_settings_runtime_bundle, smw_us_v1_expanded_settings_runtime_writes,
 };
 pub use graphics_compression_runtime::{
     SMW_US_V1_GRAPHICS_COMPRESSION_HOOK_OFFSET, SMW_US_V1_GRAPHICS_COMPRESSION_METADATA_OFFSET,

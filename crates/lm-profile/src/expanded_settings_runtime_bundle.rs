@@ -25,6 +25,10 @@ pub const SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_DESTINATIONS: [usize; 12] = [
     0x7fb20, 0x7fd80,
 ];
 
+/// Four-byte `LM` generation marker immediately preceding descriptor `$69`.
+pub const SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET: usize = 0x07_f15c;
+pub const SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER: [u8; 4] = [0x4c, 0x4d, 0x03, 0x01];
+
 /// Resolved addresses and destinations required by the twelve-block runtime family.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExpandedSettingsRuntimeLayout {
@@ -322,6 +326,12 @@ pub fn smw_us_v1_expanded_settings_fixed_writes(
     layout: ExpandedSettingsRuntimeLayout,
 ) -> Result<Vec<PatchWrite>, ExpandedSettingsRuntimeBundleError> {
     let mut writes = smw_us_v1_expanded_settings_runtime_writes(layout)?;
+    writes.push(PatchWrite {
+        offset: SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER_OFFSET,
+        expected: vec![0xff; SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER.len()],
+        replacement: SMW_US_V1_EXPANDED_SETTINGS_RUNTIME_MARKER.to_vec(),
+        fixups: Vec::new(),
+    });
     writes.extend(smw_us_v1_expanded_settings_base_writes(layout)?);
     writes.extend(smw_us_v1_expanded_settings_direct_hook_writes(layout)?);
     writes.push(smw_us_v1_expanded_settings_operand_relocation_write(
@@ -473,7 +483,7 @@ mod tests {
         )
         .unwrap();
         let writes = smw_us_v1_expanded_settings_fixed_writes(wine_layout()).unwrap();
-        assert_eq!(writes.len(), 23);
+        assert_eq!(writes.len(), 24);
         assert!(
             writes
                 .windows(2)
