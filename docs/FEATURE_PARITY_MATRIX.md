@@ -217,7 +217,9 @@ duplicate/remove pair restores pristine level `$105` Layer 1 and sprite streams 
 Ghidra `HandleSpriteModeRightButtonDown` (`0048AE80`) and
 `DuplicateSelectedSpritesAtCell` (`004CE840`) establish the matching unmodified right-click
 clone-and-relocate route for sprites. The native canvas now repositions the clone semantically
-while preserving its source and selecting the inserted record;
+while preserving its source and selecting the inserted record. Duplication begins on the physical
+secondary press, holds the inserted entity in the original's immediate move-drag state, and applies
+the final bounded position when the secondary button is released, even outside the canvas;
 `right_click_duplication_repositions_objects_and_sprites_without_removing_sources` covers the
 single-selection boundary. Original multi-selection displacement remains incomplete.
 

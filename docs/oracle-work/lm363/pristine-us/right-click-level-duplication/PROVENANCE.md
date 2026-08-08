@@ -16,8 +16,11 @@ The live Ghidra service for the authenticated Lunar Magic 3.63 executable was qu
 The Rust canvas uses its typed insertion-at-position transactions for the supported single active
 selection. An unmodified secondary click duplicates and relocates the selected Layer 1 object,
 object-backed Layer 2 object, or sprite; the inserted record becomes selected and the source remains
-present. Modified secondary clicks remain unconsumed for higher-level gestures.
+present. Duplication occurs on the physical press, enters a secondary-button move drag immediately,
+and applies the final bounded position on release, including releases outside the canvas. Modified
+secondary clicks remain unconsumed for higher-level gestures.
 
 `right_click_duplication_repositions_objects_and_sprites_without_removing_sources` verifies the
-source-preserving clone, exact target cell, selected inserted record, and semantic sprite fields.
-Multi-selection displacement remains a separate parity boundary.
+source-preserving clone, exact target cell, selected inserted record, immediate drag state, release
+cleanup, and semantic sprite fields. Multi-selection displacement remains a separate parity
+boundary.

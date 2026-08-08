@@ -338,6 +338,7 @@ pub(crate) struct VanillaLevelEditor {
     selected_sprite: usize,
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
+    secondary_duplicate_drag: bool,
     sprite_catalog_filter: String,
     custom_sprite_catalog_filter: String,
     canvas_zoom_percent: Option<u16>,
@@ -1343,6 +1344,7 @@ impl VanillaLevelEditor {
         self.resizing_layer2_object = None;
         self.external_sprite_textures.clear();
         self.dragging_sprite = None;
+        self.secondary_duplicate_drag = false;
     }
 
     #[allow(
@@ -1579,6 +1581,7 @@ impl VanillaLevelEditor {
         self.dragging_sprite = None;
         self.dragging_object = None;
         self.dragging_layer2_object = None;
+        self.secondary_duplicate_drag = false;
         self.resizing_object = None;
         self.resizing_layer2_object = None;
         self.canvas_entity_selection = None;
@@ -3078,8 +3081,16 @@ impl VanillaLevelEditor {
         if selection_pressed {
             response.request_focus();
         }
-        let duplicate_at_pointer =
-            response.secondary_clicked() && response.ctx.input(|input| !input.modifiers.any());
+        let (duplicate_at_pointer, secondary_released) = response.ctx.input(|input| {
+            (
+                response.hovered()
+                    && input.pointer.button_pressed(egui::PointerButton::Secondary)
+                    && !input.modifiers.any(),
+                input
+                    .pointer
+                    .button_released(egui::PointerButton::Secondary),
+            )
+        });
         if duplicate_at_pointer
             && self.placement_mode.is_none()
             && let Some(position) = response.interact_pointer_pos()
@@ -3092,9 +3103,16 @@ impl VanillaLevelEditor {
                 None => false,
             };
             if visible {
-                self.duplicate_canvas_selection_at(position, rect, cell, vertical);
+                self.begin_secondary_duplicate_drag(position, rect, cell, vertical);
                 return;
             }
+        }
+        if secondary_released && self.secondary_duplicate_drag {
+            let position = response
+                .interact_pointer_pos()
+                .or_else(|| response.ctx.pointer_interact_pos());
+            self.finish_secondary_duplicate_drag(position, rect, cell, vertical);
+            return;
         }
         if response.clicked()
             && let Some(mode) = self.placement_mode
@@ -3213,23 +3231,8 @@ impl VanillaLevelEditor {
             self.layer2_object_form = ObjectForm::from_record(record);
             self.layer2_object_placement_template = Some(record.clone());
         }
-        if response.drag_stopped() {
-            let position = response.interact_pointer_pos();
-            if let (Some(index), Some(position)) = (self.resizing_object.take(), position) {
-                self.resize_object_to_canvas(index, position, rect, cell, vertical);
-            } else if let (Some(index), Some(position)) =
-                (self.resizing_layer2_object.take(), position)
-            {
-                self.resize_layer2_object_to_canvas(index, position, rect, cell, vertical);
-            } else if let (Some(index), Some(position)) = (self.dragging_sprite.take(), position) {
-                self.move_sprite_to_canvas(index, position, rect, cell, vertical);
-            } else if let (Some(index), Some(position)) = (self.dragging_object.take(), position) {
-                self.move_object_to_canvas(index, position, rect, cell, vertical);
-            } else if let (Some(index), Some(position)) =
-                (self.dragging_layer2_object.take(), position)
-            {
-                self.move_layer2_object_to_canvas(index, position, rect, cell, vertical);
-            }
+        if response.drag_stopped_by(egui::PointerButton::Primary) {
+            self.finish_canvas_entity_drag(response.interact_pointer_pos(), rect, cell, vertical);
         }
         if self.dragging_object.is_none()
             && self.dragging_layer2_object.is_none()
@@ -3354,6 +3357,72 @@ impl VanillaLevelEditor {
                 }
             }
         }
+    }
+
+    fn begin_secondary_duplicate_drag(
+        &mut self,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let selection = self.canvas_entity_selection;
+        self.duplicate_canvas_selection_at(position, canvas, cell, vertical);
+        if self.error.is_some() {
+            return;
+        }
+        match selection {
+            Some(CanvasEntitySelection::Layer1Object) => {
+                self.dragging_object = Some(self.selected_object);
+            }
+            Some(CanvasEntitySelection::Layer2Object) => {
+                self.dragging_layer2_object = Some(self.selected_layer2_object);
+            }
+            Some(CanvasEntitySelection::Sprite) => {
+                self.dragging_sprite = Some(self.selected_sprite);
+            }
+            None => return,
+        }
+        self.secondary_duplicate_drag = true;
+    }
+
+    fn finish_canvas_entity_drag(
+        &mut self,
+        position: Option<egui::Pos2>,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        if let (Some(index), Some(position)) = (self.resizing_object.take(), position) {
+            self.resize_object_to_canvas(index, position, canvas, cell, vertical);
+        } else if let (Some(index), Some(position)) = (self.resizing_layer2_object.take(), position)
+        {
+            self.resize_layer2_object_to_canvas(index, position, canvas, cell, vertical);
+        } else if let (Some(index), Some(position)) = (self.dragging_sprite.take(), position) {
+            self.move_sprite_to_canvas(index, position, canvas, cell, vertical);
+        } else if let (Some(index), Some(position)) = (self.dragging_object.take(), position) {
+            self.move_object_to_canvas(index, position, canvas, cell, vertical);
+        } else if let (Some(index), Some(position)) = (self.dragging_layer2_object.take(), position)
+        {
+            self.move_layer2_object_to_canvas(index, position, canvas, cell, vertical);
+        } else if position.is_none() {
+            self.dragging_sprite = None;
+            self.dragging_object = None;
+            self.dragging_layer2_object = None;
+            self.resizing_object = None;
+            self.resizing_layer2_object = None;
+        }
+    }
+
+    fn finish_secondary_duplicate_drag(
+        &mut self,
+        position: Option<egui::Pos2>,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        self.finish_canvas_entity_drag(position, canvas, cell, vertical);
+        self.secondary_duplicate_drag = false;
     }
 
     /// Reproduces Lunar Magic's unmodified right-click placement boundary for the one selected
@@ -12255,12 +12324,26 @@ mod tests {
             lm_profile::smw_us_v1_level_mode(controller.level().layer1.header.level_mode()).vertical
         });
         editor.canvas_entity_selection = Some(CanvasEntitySelection::Layer2Object);
-        editor.duplicate_canvas_selection_at(
-            egui::pos2(ROM_LEVEL_CANVAS_CELL * 2.5, ROM_LEVEL_CANVAS_CELL * 3.5),
+        let duplicate_position =
+            egui::pos2(ROM_LEVEL_CANVAS_CELL * 2.5, ROM_LEVEL_CANVAS_CELL * 3.5);
+        editor.begin_secondary_duplicate_drag(
+            duplicate_position,
             canvas,
             ROM_LEVEL_CANVAS_CELL,
             vertical,
         );
+        assert!(editor.secondary_duplicate_drag);
+        assert_eq!(
+            editor.dragging_layer2_object,
+            Some(editor.selected_layer2_object)
+        );
+        editor.finish_secondary_duplicate_drag(
+            Some(duplicate_position),
+            canvas,
+            ROM_LEVEL_CANVAS_CELL,
+            vertical,
+        );
+        assert!(!editor.secondary_duplicate_drag);
         let selected = editor.selected_layer2_object;
         let after_insert = match editor.controller.as_ref().unwrap().layer2().unwrap() {
             lm_level::NativeLayer2Data::Objects(objects) => objects.objects.records.len(),
@@ -15575,7 +15658,11 @@ mod tests {
         let object_target = egui::pos2(36.5, 8.5);
         let (screen, coordinates, perpendicular_high) =
             object_placement_at_canvas_position(object_target, canvas, 1.0, false).unwrap();
-        editor.duplicate_canvas_selection_at(object_target, canvas, 1.0, false);
+        editor.begin_secondary_duplicate_drag(object_target, canvas, 1.0, false);
+        assert!(editor.secondary_duplicate_drag);
+        assert_eq!(editor.dragging_object, Some(editor.selected_object));
+        editor.finish_secondary_duplicate_drag(Some(object_target), canvas, 1.0, false);
+        assert!(!editor.secondary_duplicate_drag);
         let objects = &editor.controller.as_ref().unwrap().level().layer1.objects;
         assert_eq!(objects.native_placements().len(), object_count + 1);
         assert!(objects.records.contains(&source_object));
@@ -15630,7 +15717,11 @@ mod tests {
             },
         )
         .unwrap();
-        editor.duplicate_canvas_selection_at(sprite_target, canvas, 1.0, false);
+        editor.begin_secondary_duplicate_drag(sprite_target, canvas, 1.0, false);
+        assert!(editor.secondary_duplicate_drag);
+        assert_eq!(editor.dragging_sprite, Some(editor.selected_sprite));
+        editor.finish_secondary_duplicate_drag(Some(sprite_target), canvas, 1.0, false);
+        assert!(!editor.secondary_duplicate_drag);
         let sprites = &editor.controller.as_ref().unwrap().level().sprites;
         assert_eq!(sprites.tokens.len(), sprite_count + 1);
         assert!(sprites.tokens.contains(&source_sprite));
