@@ -13,7 +13,8 @@ use crate::{
         tile_coordinate, tile_page_range, tile_pixel_pointer_action, tile_pointer_action,
     },
     level_graphics_export::{
-        LevelGraphicsExportMode, current_level_graphics_files, extracted_graphics_paths,
+        LUNAR_MAGIC_ALL_GFX_FILE_SIZES, LevelGraphicsExportMode, current_level_graphics_files,
+        extracted_graphics_paths, extracted_joined_graphics_paths,
         take_level_graphics_export_shortcut,
     },
     native_clipboard,
@@ -96,6 +97,7 @@ impl RomGraphicsEditor {
         context: &egui::Context,
         app: &AppState,
         special_world_passed: bool,
+        joined_graphics_files: &mut bool,
     ) -> (bool, Option<Command>) {
         let revision = app.project_revision();
         if let Some(result) = self.loader.show(context) {
@@ -178,7 +180,7 @@ impl RomGraphicsEditor {
             egui::Window::new("ROM Graphics Editor")
                 .default_size([780.0, 680.0])
                 .show(context, |ui| {
-                    if let Some(ui_command) = self.contents(ui, app)
+                    if let Some(ui_command) = self.contents(ui, app, joined_graphics_files)
                         && command.is_none()
                     {
                         command = Some(ui_command);
@@ -191,7 +193,12 @@ impl RomGraphicsEditor {
         (approved, command)
     }
 
-    fn contents(&mut self, ui: &mut egui::Ui, app: &AppState) -> Option<Command> {
+    fn contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        app: &AppState,
+        joined_graphics_files: &mut bool,
+    ) -> Option<Command> {
         take_graphics_refresh_shortcut(ui);
         let revision = app.project_revision();
         let pasted = ui.input(|input| {
@@ -286,6 +293,8 @@ impl RomGraphicsEditor {
                 }
             }
         });
+        ui.checkbox(joined_graphics_files, "Use joined AllGFX.bin files")
+            .on_hover_text("Original global joined-GFX mode (command $24BD)");
         self.status.update_palette_hover(
             hovered_color,
             ui.input(|input| input.pointer.delta() != egui::Vec2::ZERO),
@@ -461,6 +470,7 @@ impl RomGraphicsEditor {
                 &palette,
                 !stale && !file_work_running,
                 !stale && !file_work_running && app.current_level().is_some(),
+                *joined_graphics_files,
             );
             self.pixel_editor(
                 &mut columns[1],
@@ -518,6 +528,7 @@ impl RomGraphicsEditor {
         palette: &PaletteInterchangeFile,
         edits_enabled: bool,
         level_export_enabled: bool,
+        joined_graphics_files: bool,
     ) {
         let Some(workspace) = &self.workspace else {
             return;
@@ -670,7 +681,11 @@ impl RomGraphicsEditor {
             self.status.set(status);
         }
         if level_export_enabled && take_level_graphics_export_shortcut(ui) {
-            self.pending_level_graphics_export = Some(LevelGraphicsExportMode::ReplaceExtracted);
+            self.pending_level_graphics_export = Some(if joined_graphics_files {
+                LevelGraphicsExportMode::ReplaceJoined
+            } else {
+                LevelGraphicsExportMode::ReplaceExtracted
+            });
         }
     }
 
@@ -771,6 +786,22 @@ impl RomGraphicsEditor {
                         paths.standard_directory,
                         paths.exgraphics_directory,
                         paths.required_existing,
+                    ),
+                    Err(error) => Err(error),
+                }
+            }
+            LevelGraphicsExportMode::ReplaceJoined => {
+                let Some(rom_path) = app.document_path.as_deref() else {
+                    self.error = Some("the open ROM has no document path".into());
+                    return;
+                };
+                match extracted_joined_graphics_paths(rom_path, &source.file_numbers) {
+                    Ok(paths) => self.graphics_batch.start_replace_joined(
+                        source,
+                        paths.all_gfx_path,
+                        paths.exgraphics_directory,
+                        paths.required_existing,
+                        LUNAR_MAGIC_ALL_GFX_FILE_SIZES.to_vec(),
                     ),
                     Err(error) => Err(error),
                 }

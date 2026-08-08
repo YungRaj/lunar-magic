@@ -78,9 +78,12 @@ impl NativeApplication {
             self.request_quit(context);
         }
         show_rom_editor!(self, context, rom_palette_editor);
-        let (quit, command) =
-            self.rom_graphics_editor
-                .show(context, &self.app, self.special_world_passed);
+        let (quit, command) = self.rom_graphics_editor.show(
+            context,
+            &self.app,
+            self.special_world_passed,
+            &mut self.joined_graphics_files,
+        );
         if let Some(command) = command
             && self.try_dispatch(context, command)
         {

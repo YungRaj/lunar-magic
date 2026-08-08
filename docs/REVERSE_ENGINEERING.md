@@ -1803,6 +1803,17 @@ resolve to canonical two- or three-digit `ExGFX` names under sibling `ExGraphics
 extended destination joins the same preflight and recoverable publication group. Rust's View menu exposes the
 same ephemeral Special World option; pristine and installed previews substitute decoded GFX31 into SP2, and F9
 omits the normal SP2 assignment before stable duplicate collapse just like the native loop.
+When persisted byte `00E278C0` is enabled, the same writer uses `Graphics/AllGFX.bin` instead of the
+52 separate standard files. `HandleLevelEditorCommand` command `$24BD` toggles that byte, and
+`SynchronizeApplicationSettingsRegistry` loads/saves it. `CalculateAllGfxFileOffset` sums the exact
+52-entry DWORD table at `005E8100`; entries `$00..$26` are `$1000`, `$27` is `$0C00`, `$28..$2B`
+are `$0800`, `$2C..$2E` are `$1000`, `$2F` is `$0400`, `$30..$31` are `$0800`, `$32` is `$5D00`,
+and `$33` is `$3000`, for an aggregate `$36D00`. `WriteExtractedGraphicsFileByIndex` opens the
+existing joined file for update, seeks to the summed offset, replaces only the selected range using
+that entry's native length, and continues to route selectors `$34+` to `ExGraphics`; `$7F` remains
+an ignored internal sentinel. Rust exposes and persists the same joined/separate choice, validates
+the exact existing joined shape plus every selected extended destination, patches the selected
+ranges, and publishes AllGFX plus ExGFX replacements as one recoverable group.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
 `006136B8`; its two independent key-state tests do not reject Alt. Zero has no animation
 attribution, `$01-$7F` encode OrigAnim slot minus one,

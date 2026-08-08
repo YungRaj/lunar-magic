@@ -141,6 +141,7 @@ pub(crate) struct NativeApplication {
     user_toolbar_observed_document: Option<std::path::PathBuf>,
     level_text: String,
     special_world_passed: bool,
+    joined_graphics_files: bool,
     level_view_visibility: LevelViewVisibility,
     renderer: NativeRenderState,
     vanilla_graphics_editor: VanillaGraphicsEditor,
@@ -221,6 +222,7 @@ impl NativeApplication {
     const TOOLBAR_STORAGE_KEY: &'static str = "lunar_magic_rust.toolbar.v1";
     const LOCALIZATION_STORAGE_KEY: &'static str = "lunar_magic_rust.localization.v1";
     const UNDO_HISTORY_STORAGE_KEY: &'static str = "lunar_magic_rust.undo_history.v1";
+    const JOINED_GRAPHICS_STORAGE_KEY: &'static str = "lunar_magic_rust.joined_graphics.v1";
 
     pub(crate) fn from_startup(
         initialized: Result<crate::startup::InitializedNative, String>,
@@ -481,6 +483,15 @@ impl NativeApplication {
                 self.effects.error = Some(format!("cannot load undo-history preference: {error}"));
             }
         }
+        if let Some(encoded) = storage.get_string(Self::JOINED_GRAPHICS_STORAGE_KEY) {
+            match decode_joined_graphics_preference(&encoded) {
+                Ok(joined) => self.joined_graphics_files = joined,
+                Err(error) => {
+                    self.effects.error =
+                        Some(format!("cannot load joined-GFX preference: {error}"));
+                }
+            }
+        }
     }
 
     fn dispatch(&mut self, context: &egui::Context, command: Command) {
@@ -701,6 +712,10 @@ impl eframe::App for NativeApplication {
             Self::UNDO_HISTORY_STORAGE_KEY,
             undo_history_settings::encode_preference(self.app.undo_snapshot_limit()),
         );
+        storage.set_string(
+            Self::JOINED_GRAPHICS_STORAGE_KEY,
+            encode_joined_graphics_preference(self.joined_graphics_files),
+        );
     }
 
     fn update(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
@@ -740,9 +755,12 @@ impl eframe::App for NativeApplication {
             {
                 self.dispatch(context, command);
             } else if vanilla_graphics
-                && let Some(command) =
-                    self.vanilla_graphics_editor
-                        .show(ui, &self.app, self.special_world_passed)
+                && let Some(command) = self.vanilla_graphics_editor.show(
+                    ui,
+                    &self.app,
+                    self.special_world_passed,
+                    &mut self.joined_graphics_files,
+                )
             {
                 self.dispatch(context, command);
             } else if !vanilla_level
@@ -816,6 +834,18 @@ fn encode_shortcut_preference(config: &ShortcutConfig) -> String {
 fn decode_shortcut_preference(value: &str) -> Result<ShortcutConfig, String> {
     ShortcutConfig::decode(&decode_hex(value, ShortcutConfig::MAX_ENCODED_LEN)?)
         .map_err(|error| error.to_string())
+}
+
+fn encode_joined_graphics_preference(joined: bool) -> String {
+    if joined { "joined" } else { "separate" }.to_owned()
+}
+
+fn decode_joined_graphics_preference(value: &str) -> Result<bool, String> {
+    match value {
+        "joined" => Ok(true),
+        "separate" => Ok(false),
+        _ => Err("unknown joined-GFX preference version".into()),
+    }
 }
 
 fn encode_toolbar_preference(config: &ToolbarConfig) -> String {
@@ -939,6 +969,15 @@ fn decode_hex(value: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
 mod preference_tests {
     use super::*;
     use lm_app::{ShortcutBinding, ShortcutGesture, ShortcutKey, ShortcutModifiers, ToolbarAction};
+
+    #[test]
+    fn joined_graphics_preference_round_trips_both_original_modes() {
+        assert_eq!(encode_joined_graphics_preference(false), "separate");
+        assert_eq!(encode_joined_graphics_preference(true), "joined");
+        assert!(!decode_joined_graphics_preference("separate").unwrap());
+        assert!(decode_joined_graphics_preference("joined").unwrap());
+        assert!(decode_joined_graphics_preference("true").is_err());
+    }
 
     #[test]
     fn shortcut_preference_round_trips_canonical_configuration() {

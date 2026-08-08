@@ -2158,6 +2158,13 @@ unmodified F9 is the original current-level GFX publication command, not a ROM-c
 Pristine and installed ROM editors route it only through the confirmed replacement workflow above;
 their explicit commit buttons remain a Rust extension. The portable standalone document retains
 F9 for its own document save workflow. Modified F9 combinations remain available to other routing.
+The recovered global `Use joined AllGFX.bin files` option is command `$24BD` and persists across
+application launches. In joined mode, F9 requires exact existing `$36D00`-byte
+`Graphics/AllGFX.bin`, seeks by Lunar Magic's 52-entry native-size table, and replaces only the
+selected standard ranges. Selected ExGFX files retain their sibling `ExGraphics` destinations and
+join the same preflight and recoverable publication; internal selector `$7F` is ignored. The native
+mode checkbox, bounded exact-shape read, prefix-sized range patch, and persistent preference all
+have focused tests.
 The executable's character jump table covers the inclusive `D` through `Y` range twice, for
 uppercase and lowercase input, and maps only five entries: D applies the selected color map, M
 opens the map editor, R rotates the active tile 90 degrees clockwise, X flips horizontally, and Y

@@ -13,7 +13,8 @@ use crate::{
         tile_pixel_pointer_action, tile_pointer_action,
     },
     level_graphics_export::{
-        LevelGraphicsExportMode, extracted_graphics_paths, pristine_current_level_graphics_files,
+        LUNAR_MAGIC_ALL_GFX_FILE_SIZES, LevelGraphicsExportMode, extracted_graphics_paths,
+        extracted_joined_graphics_paths, pristine_current_level_graphics_files,
         take_level_graphics_export_shortcut,
     },
     native_clipboard,
@@ -70,6 +71,7 @@ impl VanillaGraphicsEditor {
         ui: &mut egui::Ui,
         app: &AppState,
         special_world_passed: bool,
+        joined_graphics_files: &mut bool,
     ) -> Option<Command> {
         take_graphics_refresh_shortcut(ui);
         if let Some(result) = self.graphics_batch.show(ui.ctx()) {
@@ -123,6 +125,8 @@ impl VanillaGraphicsEditor {
         {
             self.pending_level_graphics_export = Some(LevelGraphicsExportMode::ChooseNewDirectory);
         }
+        ui.checkbox(joined_graphics_files, "Use joined AllGFX.bin files")
+            .on_hover_text("Original global joined-GFX mode (command $24BD)");
         ui.separator();
         let palette = grayscale_palette();
         let Some(controller) = self.controller.as_ref() else {
@@ -183,6 +187,7 @@ impl VanillaGraphicsEditor {
                 &palette,
                 !file_work_running && !self.internal_cache_unlocked,
                 !file_work_running && app.current_level().is_some(),
+                *joined_graphics_files,
             );
             self.pixel_editor(
                 &mut columns[1],
@@ -312,6 +317,22 @@ impl VanillaGraphicsEditor {
                     Err(error) => Err(error),
                 }
             }
+            LevelGraphicsExportMode::ReplaceJoined => {
+                let Some(rom_path) = app.document_path.as_deref() else {
+                    self.error = Some("the open ROM has no document path".into());
+                    return;
+                };
+                match extracted_joined_graphics_paths(rom_path, &source.file_numbers) {
+                    Ok(paths) => self.graphics_batch.start_replace_joined(
+                        source,
+                        paths.all_gfx_path,
+                        paths.exgraphics_directory,
+                        paths.required_existing,
+                        LUNAR_MAGIC_ALL_GFX_FILE_SIZES.to_vec(),
+                    ),
+                    Err(error) => Err(error),
+                }
+            }
         };
         if let Err(error) = start {
             self.error = Some(error);
@@ -376,6 +397,7 @@ impl VanillaGraphicsEditor {
         palette: &PaletteInterchangeFile,
         edits_enabled: bool,
         level_export_enabled: bool,
+        joined_graphics_files: bool,
     ) {
         let Some(controller) = &self.controller else {
             return;
@@ -522,7 +544,11 @@ impl VanillaGraphicsEditor {
             self.status.set(status);
         }
         if level_export_enabled && take_level_graphics_export_shortcut(ui) {
-            self.pending_level_graphics_export = Some(LevelGraphicsExportMode::ReplaceExtracted);
+            self.pending_level_graphics_export = Some(if joined_graphics_files {
+                LevelGraphicsExportMode::ReplaceJoined
+            } else {
+                LevelGraphicsExportMode::ReplaceExtracted
+            });
         }
     }
 

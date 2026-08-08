@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 pub(crate) enum LevelGraphicsExportMode {
     ChooseNewDirectory,
     ReplaceExtracted,
+    ReplaceJoined,
 }
 
 pub(crate) fn take_level_graphics_export_shortcut(ui: &mut egui::Ui) -> bool {
@@ -21,6 +22,27 @@ pub(crate) struct ExtractedGraphicsPaths {
     pub(crate) exgraphics_directory: PathBuf,
     pub(crate) required_existing: Vec<PathBuf>,
 }
+
+pub(crate) struct ExtractedJoinedGraphicsPaths {
+    pub(crate) all_gfx_path: PathBuf,
+    pub(crate) exgraphics_directory: PathBuf,
+    pub(crate) required_existing: Vec<PathBuf>,
+}
+
+pub(crate) const LUNAR_MAGIC_ALL_GFX_FILE_SIZES: [usize; 0x34] = {
+    let mut sizes = [0x1000; 0x34];
+    sizes[0x27] = 0x0c00;
+    sizes[0x28] = 0x0800;
+    sizes[0x29] = 0x0800;
+    sizes[0x2a] = 0x0800;
+    sizes[0x2b] = 0x0800;
+    sizes[0x2f] = 0x0400;
+    sizes[0x30] = 0x0800;
+    sizes[0x31] = 0x0800;
+    sizes[0x32] = 0x5d00;
+    sizes[0x33] = 0x3000;
+    sizes
+};
 
 pub(crate) fn extracted_graphics_paths(
     rom_path: &Path,
@@ -76,6 +98,64 @@ pub(crate) fn extracted_graphics_paths(
     }
     Ok(ExtractedGraphicsPaths {
         standard_directory: directory,
+        exgraphics_directory,
+        required_existing,
+    })
+}
+
+pub(crate) fn extracted_joined_graphics_paths(
+    rom_path: &Path,
+    file_numbers: &[usize],
+) -> Result<ExtractedJoinedGraphicsPaths, String> {
+    let parent = rom_path
+        .parent()
+        .ok_or("the open ROM path has no parent directory")?;
+    let graphics_directory = parent.join("Graphics");
+    let metadata = std::fs::symlink_metadata(&graphics_directory).map_err(|error| {
+        format!(
+            "the extracted Graphics directory {} is unavailable: {error}",
+            graphics_directory.display()
+        )
+    })?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() {
+        return Err(format!(
+            "the extracted Graphics path must be a directory: {}",
+            graphics_directory.display()
+        ));
+    }
+    let all_gfx_path = graphics_directory.join("AllGFX.bin");
+    let exgraphics_directory = parent.join("ExGraphics");
+    let mut required_existing = vec![all_gfx_path.clone()];
+    if file_numbers
+        .iter()
+        .any(|file| *file >= 0x34 && *file != 0x7f)
+    {
+        let metadata = std::fs::symlink_metadata(&exgraphics_directory).map_err(|error| {
+            format!(
+                "the extracted ExGraphics directory {} is unavailable: {error}",
+                exgraphics_directory.display()
+            )
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() {
+            return Err(format!(
+                "the extracted ExGraphics path must be a directory: {}",
+                exgraphics_directory.display()
+            ));
+        }
+        for file in file_numbers
+            .iter()
+            .copied()
+            .filter(|file| *file >= 0x34 && *file != 0x7f)
+        {
+            let width = if file < 0x100 { 2 } else { 3 };
+            let path = exgraphics_directory.join(format!("ExGFX{file:0width$X}.bin"));
+            if !required_existing.contains(&path) {
+                required_existing.push(path);
+            }
+        }
+    }
+    Ok(ExtractedJoinedGraphicsPaths {
+        all_gfx_path,
         exgraphics_directory,
         required_existing,
     })
@@ -208,7 +288,7 @@ fn collapse_duplicate_files(files: Vec<usize>) -> Vec<usize> {
     let mut seen = std::collections::HashSet::with_capacity(files.len());
     files
         .into_iter()
-        .filter(|file| seen.insert(*file))
+        .filter(|file| *file != 0x7f && seen.insert(*file))
         .collect()
 }
 
@@ -299,6 +379,36 @@ mod tests {
     }
 
     #[test]
+    fn joined_paths_require_allgfx_and_only_selected_extended_files() {
+        let root = std::env::temp_dir().join(format!(
+            "lm-level-allgfx-paths-{}-{}",
+            std::process::id(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(root.join("Graphics")).unwrap();
+        std::fs::create_dir_all(root.join("ExGraphics")).unwrap();
+        let paths =
+            extracted_joined_graphics_paths(&root.join("game.smc"), &[0x14, 0x80, 0x123, 0x7f])
+                .unwrap();
+        assert_eq!(
+            paths.required_existing,
+            [
+                root.join("Graphics/AllGFX.bin"),
+                root.join("ExGraphics/ExGFX80.bin"),
+                root.join("ExGraphics/ExGFX123.bin")
+            ]
+        );
+        assert_eq!(LUNAR_MAGIC_ALL_GFX_FILE_SIZES.len(), 0x34);
+        assert_eq!(LUNAR_MAGIC_ALL_GFX_FILE_SIZES[0x27], 0x0c00);
+        assert_eq!(LUNAR_MAGIC_ALL_GFX_FILE_SIZES[0x32], 0x5d00);
+        assert_eq!(
+            LUNAR_MAGIC_ALL_GFX_FILE_SIZES.iter().sum::<usize>(),
+            0x36d00
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn pristine_level_105_resolves_the_exact_vanilla_fg_bg_and_sprite_set() {
         let image = RomImage::from_bytes(crate::test_support::pristine_smw_us_rom_bytes()).unwrap();
         assert_eq!(
@@ -322,5 +432,10 @@ mod tests {
             collapse_duplicate_files(vec![0x14, 0x17, 0x14, 0x00, 0x17]),
             [0x14, 0x17, 0x00]
         );
+    }
+
+    #[test]
+    fn internal_file_7f_is_ignored_before_publication_like_the_original_writer() {
+        assert_eq!(collapse_duplicate_files(vec![0x7f, 0x14, 0x7f]), [0x14]);
     }
 }

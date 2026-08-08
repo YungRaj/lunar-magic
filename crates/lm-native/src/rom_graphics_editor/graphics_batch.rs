@@ -47,6 +47,12 @@ enum GraphicsExportTarget {
         exgraphics_path: PathBuf,
         required_existing: Vec<PathBuf>,
     },
+    ReplaceJoinedFile {
+        path: PathBuf,
+        exgraphics_path: PathBuf,
+        required_existing: Vec<PathBuf>,
+        file_sizes: Vec<usize>,
+    },
     JoinedFile(PathBuf),
 }
 
@@ -58,7 +64,8 @@ impl GraphicsExportTarget {
             | Self::ReplaceDirectory {
                 standard_path: path,
                 ..
-            } => path,
+            }
+            | Self::ReplaceJoinedFile { path, .. } => path,
         }
     }
 }
@@ -108,6 +115,25 @@ impl GraphicsBatchWorker {
                 standard_path: standard_directory,
                 exgraphics_path: exgraphics_directory,
                 required_existing,
+            },
+        )
+    }
+
+    pub(super) fn start_replace_joined(
+        &mut self,
+        source: GraphicsBatchSource,
+        path: PathBuf,
+        exgraphics_directory: PathBuf,
+        required_existing: Vec<PathBuf>,
+        file_sizes: Vec<usize>,
+    ) -> Result<(), String> {
+        self.start_target(
+            source,
+            GraphicsExportTarget::ReplaceJoinedFile {
+                path,
+                exgraphics_path: exgraphics_directory,
+                required_existing,
+                file_sizes,
             },
         )
     }
@@ -215,14 +241,41 @@ fn export_batch(
     let project = Project::new(source.image);
     if let GraphicsExportTarget::ReplaceDirectory {
         required_existing, ..
+    }
+    | GraphicsExportTarget::ReplaceJoinedFile {
+        required_existing, ..
     } = target
     {
         validate_existing_graphics_set(required_existing)?;
     }
+    let mut joined_replacement = match target {
+        GraphicsExportTarget::ReplaceJoinedFile {
+            path, file_sizes, ..
+        } => {
+            let expected = file_sizes.iter().try_fold(0_usize, |total, size| {
+                total.checked_add(*size).ok_or("AllGFX.bin size overflow")
+            })?;
+            let maximum = u64::try_from(expected).map_err(|_| "AllGFX.bin size overflow")?;
+            let bytes = crate::dialogs::read_regular_bounded(path, maximum, "AllGFX.bin")
+                .map_err(|error| format!("AllGFX.bin: {error}"))?;
+            if bytes.len() != expected {
+                return Err(format!(
+                    "AllGFX.bin has {:#X} bytes instead of the expected {expected:#X}",
+                    bytes.len()
+                ));
+            }
+            Some(bytes)
+        }
+        _ => None,
+    };
     let mut group = matches!(target, GraphicsExportTarget::Directory(_))
         .then_some(lm_app::file_persistence::NewFileGroup::new());
     let mut replacements = Vec::with_capacity(
-        if matches!(target, GraphicsExportTarget::ReplaceDirectory { .. }) {
+        if matches!(
+            target,
+            GraphicsExportTarget::ReplaceDirectory { .. }
+                | GraphicsExportTarget::ReplaceJoinedFile { .. }
+        ) {
             total
         } else {
             0
@@ -331,6 +384,25 @@ fn export_batch(
                 ),
                 bytes,
             )),
+            GraphicsExportTarget::ReplaceJoinedFile {
+                exgraphics_path,
+                file_sizes,
+                ..
+            } => {
+                if !source.exgraphics_names && file_number < 0x34 {
+                    patch_joined_graphics_file(
+                        joined_replacement
+                            .as_mut()
+                            .expect("joined replacement target loads its existing image"),
+                        file_sizes,
+                        file_number,
+                        &bytes,
+                    )?;
+                } else {
+                    replacements
+                        .push((batch_output_path(exgraphics_path, file_number, true), bytes));
+                }
+            }
             GraphicsExportTarget::JoinedFile(_) => joined_files.push(bytes),
         }
         completed.store(index + 1, Ordering::Relaxed);
@@ -346,6 +418,22 @@ fn export_batch(
                 .map_err(|error| error.to_string())?;
         }
         GraphicsExportTarget::ReplaceDirectory { .. } => {
+            let documents = replacements
+                .iter()
+                .map(|(path, bytes)| (path.as_path(), bytes.as_slice()))
+                .collect::<Vec<_>>();
+            lm_app::file_persistence::replace_existing_group(&documents)
+                .map_err(|error| error.to_string())?;
+        }
+        GraphicsExportTarget::ReplaceJoinedFile { path, .. } => {
+            replacements.insert(
+                0,
+                (
+                    path.clone(),
+                    joined_replacement
+                        .expect("joined replacement target retains its patched image"),
+                ),
+            );
             let documents = replacements
                 .iter()
                 .map(|(path, bytes)| (path.as_path(), bytes.as_slice()))
@@ -384,6 +472,39 @@ fn validate_existing_graphics_set(paths: &[PathBuf]) -> Result<(), String> {
             ));
         }
     }
+    Ok(())
+}
+
+fn patch_joined_graphics_file(
+    joined: &mut [u8],
+    file_sizes: &[usize],
+    file_number: usize,
+    decoded_4bpp: &[u8],
+) -> Result<(), String> {
+    let size = *file_sizes
+        .get(file_number)
+        .ok_or_else(|| format!("GFX{file_number:02X} has no declared AllGFX.bin file size"))?;
+    if decoded_4bpp.len() < size {
+        return Err(format!(
+            "GFX{file_number:02X} has {:#X} decoded bytes but AllGFX.bin requires {size:#X}",
+            decoded_4bpp.len()
+        ));
+    }
+    let offset = file_sizes[..file_number]
+        .iter()
+        .try_fold(0_usize, |total, size| total.checked_add(*size))
+        .ok_or("AllGFX.bin offset overflow")?;
+    let end = offset
+        .checked_add(size)
+        .ok_or("AllGFX.bin offset overflow")?;
+    let joined_len = joined.len();
+    let destination = joined.get_mut(offset..end).ok_or_else(|| {
+        format!(
+            "GFX{file_number:02X} range {offset:#X}..{end:#X} exceeds AllGFX.bin length {:#X}",
+            joined_len
+        )
+    })?;
+    destination.copy_from_slice(&decoded_4bpp[..size]);
     Ok(())
 }
 
@@ -493,7 +614,7 @@ mod tests {
     use super::{
         GraphicsBatchEncoding, GraphicsBatchSource, GraphicsExportTarget, RunningBatch,
         batch_output_path, export_batch, lunar_magic_standard_export_bytes,
-        replacement_output_path,
+        patch_joined_graphics_file, replacement_output_path,
     };
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{
@@ -645,7 +766,7 @@ mod tests {
         let cancelled = AtomicBool::new(false);
         assert_eq!(
             export_batch(
-                source,
+                source.clone(),
                 &GraphicsExportTarget::Directory(directory.clone()),
                 &completed,
                 &cancelled,
@@ -780,6 +901,69 @@ mod tests {
             [expected[0].clone(), expected[1].clone()].concat()
         );
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn joined_replacement_patches_declared_ranges_and_preserves_every_other_byte() {
+        let directory = temporary_directory();
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("AllGFX.bin");
+        let (source, expected) = fixture_source();
+        let sizes = expected.iter().map(Vec::len).collect::<Vec<_>>();
+        fs::write(&path, vec![0x7a; sizes.iter().sum()]).unwrap();
+        let target = GraphicsExportTarget::ReplaceJoinedFile {
+            path: path.clone(),
+            exgraphics_path: directory.clone(),
+            required_existing: vec![path.clone()],
+            file_sizes: sizes,
+        };
+        assert_eq!(
+            export_batch(
+                source.clone(),
+                &target,
+                &AtomicUsize::new(0),
+                &AtomicBool::new(false),
+            )
+            .unwrap(),
+            Some(2)
+        );
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            [expected[0].clone(), expected[1].clone()].concat()
+        );
+        let sentinel = vec![0x6b; expected.iter().map(Vec::len).sum()];
+        fs::write(&path, &sentinel).unwrap();
+        let target = GraphicsExportTarget::ReplaceJoinedFile {
+            path: path.clone(),
+            exgraphics_path: directory.clone(),
+            required_existing: vec![path.clone(), directory.join("ExGFX80.bin")],
+            file_sizes: expected.iter().map(Vec::len).collect(),
+        };
+        assert!(
+            export_batch(
+                source,
+                &target,
+                &AtomicUsize::new(0),
+                &AtomicBool::new(false),
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&path).unwrap(), sentinel);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn joined_range_patch_uses_the_original_size_table_prefix_and_bounds() {
+        let mut joined = vec![0x55; 12];
+        patch_joined_graphics_file(&mut joined, &[4, 2, 6], 1, &[1, 2, 3, 4]).unwrap();
+        assert_eq!(
+            joined,
+            [
+                0x55, 0x55, 0x55, 0x55, 1, 2, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55
+            ]
+        );
+        assert!(patch_joined_graphics_file(&mut joined, &[4, 2, 6], 2, &[0; 5]).is_err());
+        assert!(patch_joined_graphics_file(&mut joined, &[4, 2, 6], 3, &[0; 8]).is_err());
     }
 
     #[test]

@@ -168,8 +168,11 @@ preflight. ROM commits remain explicit Rust buttons. The
 portable document retains its independent F9 save. `original_level_graphics_publication_shortcut_is_unmodified_f9`,
 `extracted_graphics_paths_use_the_rom_sibling_directory_and_complete_standard_set`,
 `replacement_batch_requires_the_complete_declared_set_and_replaces_atomically`, and the focused
-grid tests bind this correction. AllGFX-mode publication and retained live Wine interaction remain
-open, so the Graphics workflow remains Partial.
+grid tests bind this correction. Joined mode is now persisted through the recovered `$24BD` option;
+its exact `$36D00` AllGFX shape, 52-entry range table, `$7F` omission, selected-range replacement,
+and grouped ExGFX publication are covered by `joined_paths_require_allgfx_and_only_selected_extended_files`,
+`joined_replacement_patches_declared_ranges_and_preserves_every_other_byte`, and the preference
+round trip. Retained live Wine interaction remains open, so the Graphics workflow remains Partial.
 
 ## Workflow ledger
 
