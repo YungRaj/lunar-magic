@@ -1797,7 +1797,10 @@ bypass records. Both require the complete existing standard file set before stag
 selected decoded `$1000`-byte replacements as one recoverable group, which is stronger than the
 original per-file truncation on a mid-publication failure. They substitute the active staged slot
 when it belongs to the exported set. A separate visible Rust extraction button retains the useful
-create-new-directory workflow without claiming the original shortcut. Rust's View menu exposes the
+create-new-directory workflow without claiming the original shortcut. Standard selections resolve
+under the ROM-sibling `Graphics` directory, while selectors `$34+` other than the ignored `$7F`
+resolve to canonical two- or three-digit `ExGFX` names under sibling `ExGraphics`; every selected
+extended destination joins the same preflight and recoverable publication group. Rust's View menu exposes the
 same ephemeral Special World option; pristine and installed previews substitute decoded GFX31 into SP2, and F9
 omits the normal SP2 assignment before stable duplicate collapse just like the native loop.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at

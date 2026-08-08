@@ -2095,7 +2095,9 @@ Both pristine SMW-US and profile-backed installed ROM editors additionally reser
 for the recovered current-level replacement. They resolve the globally active level independently
 of the selected graphics page, present the native confirmation text, require the ROM-sibling
 `Graphics` directory to contain the complete `GFX00.bin` through `GFX33.bin` standard set, and
-replace only that level's ordered FG/BG and sprite assignments as one recoverable group.
+replace only that level's ordered FG/BG and sprite assignments as one recoverable group. Expanded
+selectors `$34+` except `$7F` use canonical `ExGFX` names in sibling `ExGraphics`; all selected
+extended files must already exist and participate in the same preflight and grouped replacement.
 Expanded Super GFX bypass records contribute six plus four slots; the recovered vanilla SMW-US
 tables contribute four plus four. Repeated filenames are collapsed because publication is a file
 set. Every output is a decoded `$1000`-byte 4bpp GFX/ExGFX file, and the active staged graphics

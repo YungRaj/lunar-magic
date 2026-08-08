@@ -16,7 +16,16 @@ pub(crate) fn take_level_graphics_export_shortcut(ui: &mut egui::Ui) -> bool {
     })
 }
 
-pub(crate) fn extracted_graphics_paths(rom_path: &Path) -> Result<(PathBuf, Vec<PathBuf>), String> {
+pub(crate) struct ExtractedGraphicsPaths {
+    pub(crate) standard_directory: PathBuf,
+    pub(crate) exgraphics_directory: PathBuf,
+    pub(crate) required_existing: Vec<PathBuf>,
+}
+
+pub(crate) fn extracted_graphics_paths(
+    rom_path: &Path,
+    file_numbers: &[usize],
+) -> Result<ExtractedGraphicsPaths, String> {
     let parent = rom_path
         .parent()
         .ok_or("the open ROM path has no parent directory")?;
@@ -33,10 +42,43 @@ pub(crate) fn extracted_graphics_paths(rom_path: &Path) -> Result<(PathBuf, Vec<
             directory.display()
         ));
     }
-    let required = (0..=0x33)
+    let mut required_existing = (0..=0x33)
         .map(|file| directory.join(format!("GFX{file:02X}.bin")))
         .collect::<Vec<_>>();
-    Ok((directory, required))
+    let exgraphics_directory = parent.join("ExGraphics");
+    if file_numbers
+        .iter()
+        .any(|file| *file >= 0x34 && *file != 0x7f)
+    {
+        let metadata = std::fs::symlink_metadata(&exgraphics_directory).map_err(|error| {
+            format!(
+                "the extracted ExGraphics directory {} is unavailable: {error}",
+                exgraphics_directory.display()
+            )
+        })?;
+        if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() {
+            return Err(format!(
+                "the extracted ExGraphics path must be a directory: {}",
+                exgraphics_directory.display()
+            ));
+        }
+        for file in file_numbers
+            .iter()
+            .copied()
+            .filter(|file| *file >= 0x34 && *file != 0x7f)
+        {
+            let width = if file < 0x100 { 2 } else { 3 };
+            let path = exgraphics_directory.join(format!("ExGFX{file:0width$X}.bin"));
+            if !required_existing.contains(&path) {
+                required_existing.push(path);
+            }
+        }
+    }
+    Ok(ExtractedGraphicsPaths {
+        standard_directory: directory,
+        exgraphics_directory,
+        required_existing,
+    })
 }
 
 pub(crate) fn current_level_graphics_files(
@@ -218,11 +260,41 @@ mod tests {
         ));
         let graphics = root.join("Graphics");
         std::fs::create_dir_all(&graphics).unwrap();
-        let (actual_directory, paths) = extracted_graphics_paths(&root.join("game.smc")).unwrap();
-        assert_eq!(actual_directory, graphics);
-        assert_eq!(paths.len(), 0x34);
-        assert_eq!(paths.first().unwrap(), &graphics.join("GFX00.bin"));
-        assert_eq!(paths.last().unwrap(), &graphics.join("GFX33.bin"));
+        let paths = extracted_graphics_paths(&root.join("game.smc"), &[]).unwrap();
+        assert_eq!(paths.standard_directory, graphics);
+        assert_eq!(paths.required_existing.len(), 0x34);
+        assert_eq!(
+            paths.required_existing.first().unwrap(),
+            &graphics.join("GFX00.bin")
+        );
+        assert_eq!(
+            paths.required_existing.last().unwrap(),
+            &graphics.join("GFX33.bin")
+        );
+        assert_eq!(paths.exgraphics_directory, root.join("ExGraphics"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn extracted_bypass_files_use_the_sibling_exgraphics_directory_and_canonical_widths() {
+        let root = std::env::temp_dir().join(format!(
+            "lm-level-exgfx-paths-{}-{}",
+            std::process::id(),
+            NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(root.join("Graphics")).unwrap();
+        std::fs::create_dir_all(root.join("ExGraphics")).unwrap();
+        let paths =
+            extracted_graphics_paths(&root.join("game.smc"), &[0x14, 0x80, 0x123, 0x80, 0x7f])
+                .unwrap();
+        assert_eq!(paths.required_existing.len(), 0x36);
+        assert_eq!(
+            &paths.required_existing[0x34..],
+            &[
+                root.join("ExGraphics/ExGFX80.bin"),
+                root.join("ExGraphics/ExGFX123.bin")
+            ]
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

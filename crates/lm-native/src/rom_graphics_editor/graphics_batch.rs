@@ -43,7 +43,8 @@ struct RunningBatch {
 enum GraphicsExportTarget {
     Directory(PathBuf),
     ReplaceDirectory {
-        path: PathBuf,
+        standard_path: PathBuf,
+        exgraphics_path: PathBuf,
         required_existing: Vec<PathBuf>,
     },
     JoinedFile(PathBuf),
@@ -54,7 +55,10 @@ impl GraphicsExportTarget {
         match self {
             Self::Directory(path)
             | Self::JoinedFile(path)
-            | Self::ReplaceDirectory { path, .. } => path,
+            | Self::ReplaceDirectory {
+                standard_path: path,
+                ..
+            } => path,
         }
     }
 }
@@ -94,13 +98,15 @@ impl GraphicsBatchWorker {
     pub(super) fn start_replace(
         &mut self,
         source: GraphicsBatchSource,
-        directory: PathBuf,
+        standard_directory: PathBuf,
+        exgraphics_directory: PathBuf,
         required_existing: Vec<PathBuf>,
     ) -> Result<(), String> {
         self.start_target(
             source,
             GraphicsExportTarget::ReplaceDirectory {
-                path: directory,
+                standard_path: standard_directory,
+                exgraphics_path: exgraphics_directory,
                 required_existing,
             },
         )
@@ -312,8 +318,17 @@ fn export_batch(
                     )
                     .map_err(|error| format!("GFX{file_number:02X}: {error}"))?;
             }
-            GraphicsExportTarget::ReplaceDirectory { path, .. } => replacements.push((
-                batch_output_path(path, file_number, source.exgraphics_names),
+            GraphicsExportTarget::ReplaceDirectory {
+                standard_path,
+                exgraphics_path,
+                ..
+            } => replacements.push((
+                replacement_output_path(
+                    standard_path,
+                    exgraphics_path,
+                    file_number,
+                    source.exgraphics_names,
+                ),
                 bytes,
             )),
             GraphicsExportTarget::JoinedFile(_) => joined_files.push(bytes),
@@ -450,6 +465,20 @@ fn batch_output_path(directory: &Path, slot: usize, exgraphics: bool) -> PathBuf
     directory.join(graphics_file_name(slot, exgraphics))
 }
 
+fn replacement_output_path(
+    standard_directory: &Path,
+    exgraphics_directory: &Path,
+    slot: usize,
+    exgraphics: bool,
+) -> PathBuf {
+    let directory = if exgraphics || slot >= 0x34 {
+        exgraphics_directory
+    } else {
+        standard_directory
+    };
+    batch_output_path(directory, slot, exgraphics)
+}
+
 fn graphics_file_name(slot: usize, exgraphics: bool) -> String {
     let prefix = if exgraphics || slot >= 0x80 {
         "ExGFX"
@@ -464,6 +493,7 @@ mod tests {
     use super::{
         GraphicsBatchEncoding, GraphicsBatchSource, GraphicsExportTarget, RunningBatch,
         batch_output_path, export_batch, lunar_magic_standard_export_bytes,
+        replacement_output_path,
     };
     use lm_graphics::{GraphicsFile4bpp, IndexedTile};
     use lm_project::{
@@ -573,6 +603,24 @@ mod tests {
     }
 
     #[test]
+    fn replacement_paths_split_standard_and_extended_names_like_lunar_magic() {
+        let standard = Path::new("project/Graphics");
+        let extended = Path::new("project/ExGraphics");
+        assert_eq!(
+            replacement_output_path(standard, extended, 0x14, false),
+            standard.join("GFX14.bin")
+        );
+        assert_eq!(
+            replacement_output_path(standard, extended, 0x80, false),
+            extended.join("ExGFX80.bin")
+        );
+        assert_eq!(
+            replacement_output_path(standard, extended, 0x123, false),
+            extended.join("ExGFX123.bin")
+        );
+    }
+
+    #[test]
     fn cancellation_request_is_shared_with_the_export_worker() {
         let cancelled = Arc::new(AtomicBool::new(false));
         let (_sender, result) = mpsc::channel();
@@ -625,7 +673,8 @@ mod tests {
         let one = required[1].clone();
         let (source, expected) = fixture_source();
         let target = GraphicsExportTarget::ReplaceDirectory {
-            path: directory.clone(),
+            standard_path: directory.clone(),
+            exgraphics_path: directory.clone(),
             required_existing: required.clone(),
         };
         assert_eq!(
@@ -645,7 +694,8 @@ mod tests {
         fs::write(&zero, b"sentinel-zero").unwrap();
         fs::remove_file(required.last().unwrap()).unwrap();
         let target = GraphicsExportTarget::ReplaceDirectory {
-            path: directory.clone(),
+            standard_path: directory.clone(),
+            exgraphics_path: directory.clone(),
             required_existing: required,
         };
         assert!(

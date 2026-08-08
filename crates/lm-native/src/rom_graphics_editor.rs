@@ -765,10 +765,13 @@ impl RomGraphicsEditor {
                     self.error = Some("the open ROM has no document path".into());
                     return;
                 };
-                match extracted_graphics_paths(rom_path) {
-                    Ok((directory, required)) => self
-                        .graphics_batch
-                        .start_replace(source, directory, required),
+                match extracted_graphics_paths(rom_path, &source.file_numbers) {
+                    Ok(paths) => self.graphics_batch.start_replace(
+                        source,
+                        paths.standard_directory,
+                        paths.exgraphics_directory,
+                        paths.required_existing,
+                    ),
                     Err(error) => Err(error),
                 }
             }
