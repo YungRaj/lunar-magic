@@ -668,7 +668,7 @@ fn bubble_popularity_color_up(selected: &mut [(u16, u32)], mut index: usize, sco
 /// Source dimensions must be complete 8×8 tiles. Unique tile color sets are weighted by their
 /// occurrence count plus the count of all subset sets. The allocator repeatedly selects the
 /// highest-weight unassigned set, chooses the capable row with greatest existing-color overlap
-/// (then least remaining free capacity and lowest row), installs missing colors in ascending free
+/// (then greatest remaining free capacity and lowest row), installs missing colors in ascending free
 /// entry order, and marks every still-unassigned subset that the resulting row covers. The final
 /// pass independently scores every 8×8 tile against each usable row with Lunar Magic's weighted
 /// RGB555 distance, selects the least-error row, and converts its pixels to that row's nearest
@@ -1036,7 +1036,7 @@ fn best_palette_row(
         .max_by(|(left_row, left), (right_row, right)| {
             left.overlap
                 .cmp(&right.overlap)
-                .then_with(|| right.free_before.cmp(&left.free_before))
+                .then_with(|| left.free_before.cmp(&right.free_before))
                 .then_with(|| {
                     palette_row_tie_priority(*left_row).cmp(&palette_row_tie_priority(*right_row))
                 })
@@ -1166,7 +1166,6 @@ impl PaletteRowAllocation {
 
     fn order_assigned_colors(&mut self) {
         let mut previous = None;
-        let mut preserve_first_installed = true;
         let mut entry = 0;
         while entry < self.entries.len() {
             if !matches!(self.entries[entry], RowEntry::Assigned(_)) {
@@ -1188,27 +1187,18 @@ impl PaletteRowAllocation {
                     })
                     .min_by_key(|(distance, candidate, _)| (*distance, *candidate))
             } else {
-                let selected = if preserve_first_installed {
-                    candidates.clone().find_map(|candidate| {
-                        assigned_color(self.entries[candidate])
-                            .map(|color| (0_u32, candidate, color))
-                    })
-                } else {
-                    candidates
-                        .clone()
-                        .filter_map(|candidate| {
-                            assigned_color(self.entries[candidate]).map(|color| {
-                                (
-                                    u32::from(lunar_magic_hsl240(color).lightness),
-                                    candidate,
-                                    color,
-                                )
-                            })
+                candidates
+                    .clone()
+                    .filter_map(|candidate| {
+                        assigned_color(self.entries[candidate]).map(|color| {
+                            (
+                                u32::from(lunar_magic_hsl240(color).lightness),
+                                candidate,
+                                color,
+                            )
                         })
-                        .min_by_key(|(lightness, candidate, _)| (*lightness, *candidate))
-                };
-                preserve_first_installed = false;
-                selected
+                    })
+                    .min_by_key(|(lightness, candidate, _)| (*lightness, *candidate))
             };
             let Some((_, selected, color)) = selected else {
                 entry += 1;
@@ -1332,10 +1322,10 @@ fn hsl_ordering_distance(previous: u16, candidate: u16) -> u32 {
     let hue = u32::from(circular_hue_distance(previous.hue, candidate.hue));
     let saturation = u32::from(previous.saturation.abs_diff(candidate.saturation));
     let lightness = u32::from(previous.lightness.abs_diff(candidate.lightness));
-    if previous.lightness < 16 && candidate.lightness < 16 {
-        lightness * lightness + saturation * saturation * 3
+    if previous.saturation < 16 && candidate.saturation < 16 {
+        lightness * lightness * 3 + saturation * saturation
     } else {
-        saturation * saturation * 3 + (lightness * lightness + hue * hue * 4) * 2
+        lightness * lightness * 3 + (saturation * saturation + hue * hue * 4) * 2
     }
 }
 
@@ -1868,14 +1858,14 @@ mod tests {
     }
 
     #[test]
-    fn generated_row_colors_preserve_the_first_installed_hue_group() {
+    fn generated_row_colors_begin_each_hue_run_at_lowest_lightness() {
         let mut row = PaletteRowAllocation {
             row: 0,
             entries: [
                 RowEntry::Reserved,
+                RowEntry::Assigned(0x7fff),
                 RowEntry::Assigned(0x001f),
-                RowEntry::Assigned(0x4210),
-                RowEntry::Assigned(0x7c00),
+                RowEntry::Assigned(0x0000),
                 RowEntry::Reserved,
                 RowEntry::Reserved,
                 RowEntry::Reserved,
@@ -1891,9 +1881,12 @@ mod tests {
             ],
         };
         row.order_assigned_colors();
-        assert!(matches!(row.entries[1], RowEntry::Assigned(0x001f)));
-        assert!(matches!(row.entries[2], RowEntry::Assigned(0x7c00)));
-        assert!(matches!(row.entries[3], RowEntry::Assigned(0x4210)));
+        assert!(matches!(row.entries[1], RowEntry::Assigned(0x0000)));
+    }
+
+    #[test]
+    fn generated_row_hsl_distance_uses_native_lightness_and_saturation_weights() {
+        assert_eq!(hsl_ordering_distance(26151, 25162), 1352);
     }
 
     #[test]

@@ -4387,12 +4387,13 @@ audit harness now normalizes all persistent checkboxes on every run so prior ora
 silently contaminate option evidence.
 
 The retained bitmap-import capture now also records Lunar Magic's effective 128-byte palette-entry
-map before conversion. The exact no-neighborhood Popularity differential exposed and closed four
-allocator gaps: ordinary source pixels use weighted RGB555 distance, row zero is a native result
-sentinel during exact ties, strict-subset weights remain historical after assignment, and HSL row
-ordering anchors its first run to the first installed color before lowest-lightness restarts. The
-active two palette rows and all `$300` native graphics tiles now compare byte-for-byte for that
-variant; the two optional neighborhood variants remain open gates.
+map before conversion. The exact no-neighborhood and method-1 Popularity differentials exposed and
+closed the ordinary weighted-RGB555 mapping, row-zero sentinel, aggregate subset-weight, and HSL
+ordering gaps. Every HSL run starts at its lowest-lightness color and uses
+`3L² + 2S² + 8H²`, or `3L² + S²` when both saturations are below 16. The active two palette rows
+and all `$300` native graphics tiles now compare byte-for-byte for both variants. A direct return
+capture proves method 2 selects the same 16 colors as Rust; its downstream row allocation remains
+the only failing variant gate.
 
 The native bitmap preview now exposes the complete recovered Other Options state: first and blank
 8×8 tile, first and reserved blank Map16 tile, new/existing 8×8 optimization, 16×16 deduplication,

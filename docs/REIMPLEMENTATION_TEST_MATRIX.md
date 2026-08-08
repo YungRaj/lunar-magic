@@ -1333,11 +1333,11 @@ four resulting SNES words. The ignored `map16_bitmap_wine_capture` gate now reco
 original RGB32 palette and full `$000–$2FF` planar graphics workspace from a disposable Wine
 capture. Popularity captures with a 16-color limit and method 1 only, method 2 only, and neither
 neighborhood pass retain the live 128-byte palette-entry map alongside their palette and graphics
-buffers. The no-neighborhood capture now matches Rust exactly across both active palette rows and
-the complete native `$000–$2FF` graphics workspace. Method 1 and method 2 still expose different
-global palette selection and remain retained failing compatibility gates; the passing baseline
-localizes those defects to the optional neighborhood reductions rather than ordinary mapping or
-row allocation.
+buffers. The no-neighborhood and method-1 captures now match Rust exactly across both active
+palette rows and the complete native `$000–$2FF` graphics workspace. A direct return capture also
+proves method 2's 16-color selector output is exact. Method 2 still exposes different downstream
+palette-row allocation and remains a retained failing compatibility gate; the passing variants
+localize that defect beyond global color selection.
 
 Native main event-reveal coverage verifies the two descriptor-derived long operands at logical
 `$25A74/$25A84`, the pristine 112-entry fallback, little-endian source and big-endian destination

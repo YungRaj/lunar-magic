@@ -1502,13 +1502,14 @@ packed `$1c00` palette bits and row-aware RGBA preview. Exact priority-level inf
 high-color selection and Wine output equivalence remain oracle gates rather than assumed parity.
 
 The final generated-color ordering is also semantic. `ProcessBitmapGraphicsImport` converts each
-newly assigned SNES color through `ConvertRgbToHsl240` at `004ebc00`. The first run retains the
-first installed color as its anchor and greedily chooses the nearest remaining color using the
-integer circular-hue/saturation/lightness metric. A hue discontinuity above 45 starts a new run
-unless both colors are near black; subsequent runs begin with the lowest-lightness remaining
-color. The Rust allocator now reproduces the 0–240 integer conversion, first-installed anchor,
-run restart, and entry swaps before mapping source pixels to row indexes; leaving colors in raw
-insertion order changes both palette words and encoded graphics.
+newly assigned SNES color through `ConvertRgbToHsl240` at `004ebc00`. Every run starts with the
+lowest-lightness remaining color and greedily chooses the nearest subsequent color using the
+integer metric `3·Δlightness² + 2·Δsaturation² + 8·Δhue²`. When both colors have saturation below
+16, hue is ignored and the distance becomes `3·Δlightness² + Δsaturation²`. A hue discontinuity
+above 45 starts a new run unless both colors are in that low-saturation band. The Rust allocator
+now reproduces the 0–240 integer conversion, lowest-lightness anchors, run restart, and entry swaps
+before mapping source pixels to row indexes; leaving colors in raw insertion order changes both
+palette words and encoded graphics.
 
 `MapRgbPixelsToReducedPalette` uses the same `4R² + 3G² + 2B²` RGB555 distance as final row
 assignment. Expanded-RGB Euclidean quantization is not equivalent. The palette-row chooser scans
