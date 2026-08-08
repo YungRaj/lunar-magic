@@ -1292,6 +1292,15 @@ four-subtile buffer, and foreground pages additionally transfer `0x200` Acts-Lik
 `Map16PageG.bin`. The `G` suffix does not identify the graphics plane. Rust's paired worker now
 binds those exact names, lengths, and planes instead of the previously reversed interpretation.
 
+The adjacent complete legacy functions establish the same naming rule and exact namespace sizes.
+`ImportAllForegroundMap16Files`/`ExportAllForegroundMap16Files` at `004E5C60`/`004E5D40`
+transfer `0x40000` definition bytes through `Map16FG.bin` and `0x10000` Acts-Like bytes through
+`Map16FGG.bin`; `ImportAllBackgroundMap16File`/`ExportAllBackgroundMap16File` at
+`004E5E20`/`004E5EB0` transfer `0x40000` definition bytes through `Map16BG.bin`. Rust exposes all
+three exact file families as bounded, revision-bound native actions, publishes the foreground pair
+atomically, preserves protected built-in definition words on import, and canonicalizes background
+Acts-Like values to zero.
+
 `LoadM16Map16SidecarData` reads one fixed `0x2000`-byte `.m16` block. The `.s16` loader first
 zeros its full `0x1C000`-byte buffer and then reads any available prefix up to that capacity.
 `WriteS16SpriteMap16SidecarFile` scans the buffer as `0x7000` little-endian dwords from the end,

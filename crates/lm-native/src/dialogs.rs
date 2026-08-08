@@ -396,6 +396,38 @@ pub(crate) fn choose_legacy_map16_page_save_path() -> Option<PathBuf> {
         .save_file()
 }
 
+pub(crate) fn choose_legacy_map16_foreground_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Legacy Foreground Map16 Pair")
+        .add_filter("Lunar Magic Map16FG", &["bin"])
+        .set_file_name("Map16FG.bin")
+        .pick_file()
+}
+
+pub(crate) fn choose_legacy_map16_foreground_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Legacy Foreground Map16 Pair")
+        .add_filter("Lunar Magic Map16FG", &["bin"])
+        .set_file_name("Map16FG.bin")
+        .save_file()
+}
+
+pub(crate) fn choose_legacy_map16_background_document() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Import Legacy Background Map16")
+        .add_filter("Lunar Magic Map16BG", &["bin"])
+        .set_file_name("Map16BG.bin")
+        .pick_file()
+}
+
+pub(crate) fn choose_legacy_map16_background_save_path() -> Option<PathBuf> {
+    rfd::FileDialog::new()
+        .set_title("Export Legacy Background Map16")
+        .add_filter("Lunar Magic Map16BG", &["bin"])
+        .set_file_name("Map16BG.bin")
+        .save_file()
+}
+
 pub(crate) fn choose_complete_overworld_document() -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter("Portable Lunar Magic complete overworld", &["lmow"])

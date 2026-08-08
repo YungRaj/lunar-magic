@@ -35,7 +35,7 @@ impl RomMap16Editor {
                 self.selected_width = "1".into();
                 self.selected_height = "1".into();
                 self.selected_use_file_origin = true;
-                self.pending_legacy_page = None;
+                self.pending_legacy_import = None;
                 self.pending_bitmap_import = None;
                 self.clipboard_paste_target = None;
                 self.rectangle_clipboard_paste_target = None;
@@ -174,7 +174,7 @@ impl RomMap16Editor {
         self.complete_template = None;
         self.pending_complete_revision = None;
         self.pending_selected_import = None;
-        self.pending_legacy_page = None;
+        self.pending_legacy_import = None;
         self.pending_bitmap_import = None;
         self.pending_snes_tileset = None;
         self.snes_tileset_preview = None;

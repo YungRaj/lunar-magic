@@ -150,7 +150,7 @@ pub(crate) struct RomMap16Editor {
     selected_use_file_origin: bool,
     legacy_page_loader: DocumentLoader,
     legacy_page_persistence: crate::persistence_worker::PersistenceWorker,
-    pending_legacy_page: Option<(u64, usize)>,
+    pending_legacy_import: Option<legacy_page::PendingLegacyImport>,
     bitmap_session: Option<lm_app::NativeMap16BitmapImportSession>,
     bitmap_extra_slot_4: String,
     bitmap_extra_slot_5: String,
