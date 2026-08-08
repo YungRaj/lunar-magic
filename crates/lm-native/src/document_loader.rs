@@ -10,6 +10,7 @@ pub(crate) struct BoundedRead {
     pub(crate) maximum: u64,
     pub(crate) description: String,
     optional: bool,
+    prefix: bool,
 }
 
 impl BoundedRead {
@@ -19,6 +20,7 @@ impl BoundedRead {
             maximum,
             description: description.into(),
             optional: false,
+            prefix: false,
         }
     }
 
@@ -29,6 +31,33 @@ impl BoundedRead {
             maximum,
             description: description.into(),
             optional: true,
+            prefix: false,
+        }
+    }
+
+    /// Reads at most `maximum` bytes and ignores a trailing suffix, matching fixed-size C reads.
+    pub(crate) fn prefix(path: PathBuf, maximum: u64, description: impl Into<String>) -> Self {
+        Self {
+            path,
+            maximum,
+            description: description.into(),
+            optional: false,
+            prefix: true,
+        }
+    }
+
+    /// Prefix-reads a sibling when present and omits only a missing path.
+    pub(crate) fn optional_prefix(
+        path: PathBuf,
+        maximum: u64,
+        description: impl Into<String>,
+    ) -> Self {
+        Self {
+            path,
+            maximum,
+            description: description.into(),
+            optional: true,
+            prefix: true,
         }
     }
 }
@@ -87,11 +116,20 @@ impl DocumentLoader {
                 let loaded = requests
                     .into_iter()
                     .map(|request| {
-                        match crate::dialogs::read_regular_bounded(
-                            &request.path,
-                            request.maximum,
-                            &request.description,
-                        ) {
+                        let read = if request.prefix {
+                            crate::dialogs::read_regular_prefix(
+                                &request.path,
+                                request.maximum,
+                                &request.description,
+                            )
+                        } else {
+                            crate::dialogs::read_regular_bounded(
+                                &request.path,
+                                request.maximum,
+                                &request.description,
+                            )
+                        };
+                        match read {
                             Ok(bytes) => Ok(Some((request.path, bytes))),
                             Err(error)
                                 if request.optional
@@ -262,6 +300,32 @@ mod tests {
         assert!(loader.wait_for_test().is_err());
         fs::remove_dir(invalid).unwrap();
         fs::remove_file(required).unwrap();
+    }
+
+    #[test]
+    fn prefix_reads_accept_short_and_trailing_files_and_optional_missing_siblings() {
+        let short = path("prefix-short");
+        let trailing = path("prefix-trailing");
+        let missing = path("prefix-missing");
+        fs::write(&short, [1, 2]).unwrap();
+        fs::write(&trailing, [3, 4, 5, 6]).unwrap();
+        let mut loader = DocumentLoader::default();
+        loader
+            .start(vec![
+                BoundedRead::prefix(short.clone(), 3, "short prefix"),
+                BoundedRead::prefix(trailing.clone(), 3, "trailing prefix"),
+                BoundedRead::optional_prefix(missing, 3, "missing prefix"),
+            ])
+            .unwrap();
+        assert_eq!(
+            loader.wait_for_test().unwrap().files,
+            vec![
+                (short.clone(), vec![1, 2]),
+                (trailing.clone(), vec![3, 4, 5])
+            ]
+        );
+        fs::remove_file(short).unwrap();
+        fs::remove_file(trailing).unwrap();
     }
 
     #[test]

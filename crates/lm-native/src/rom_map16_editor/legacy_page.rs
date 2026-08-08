@@ -1,5 +1,8 @@
 use super::{Map16ControllerEdit, RomMap16Editor};
-use crate::{dialogs, document_loader::BoundedRead};
+use crate::{
+    dialogs,
+    document_loader::{BoundedRead, LoadedDocument},
+};
 use eframe::egui;
 use lm_level::{Map16Address, Map16Page, Map16Tile};
 use std::path::{Path, PathBuf};
@@ -26,33 +29,45 @@ impl RomMap16Editor {
             let pending = self.pending_legacy_import.take();
             let result = result.and_then(|loaded| {
                 let pending = pending.ok_or("legacy Map16 import request is missing")?;
-                let (revision, replacements) = match pending {
-                    PendingLegacyImport::Page { revision, page } => {
-                        let [(_, definitions), (_, acts_like)] =
-                            loaded.into_exact::<2>("legacy Map16 page pair")?;
-                        let imported = decode_legacy_page(&definitions, &acts_like)?;
-                        (revision, page_replacements(page, imported)?)
-                    }
-                    PendingLegacyImport::Foreground { revision } => {
-                        let [(_, definitions), (_, acts_like)] =
-                            loaded.into_exact::<2>("legacy foreground Map16 pair")?;
-                        let workspace =
-                            self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
-                        (
-                            revision,
-                            decode_legacy_foreground(
-                                &definitions,
-                                &acts_like,
-                                workspace.controller.set(),
-                            )?,
-                        )
-                    }
-                    PendingLegacyImport::Background { revision } => {
-                        let [(_, definitions)] =
-                            loaded.into_exact::<1>("legacy background Map16 file")?;
-                        (revision, decode_legacy_background(&definitions)?)
-                    }
-                };
+                let (revision, replacements) =
+                    match pending {
+                        PendingLegacyImport::Page { revision, page } => {
+                            let (definitions, acts_like) =
+                                loaded_legacy_pair(loaded, "legacy Map16 page pair")?;
+                            let workspace =
+                                self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+                            let current =
+                                workspace.controller.set().pages.get(page).ok_or_else(|| {
+                                    format!("Map16 page {page:02X} is unavailable")
+                                })?;
+                            let imported = overlay_legacy_page(&definitions, &acts_like, current)?;
+                            (revision, page_replacements(page, imported)?)
+                        }
+                        PendingLegacyImport::Foreground { revision } => {
+                            let (definitions, acts_like) =
+                                loaded_legacy_pair(loaded, "legacy foreground Map16 pair")?;
+                            let workspace =
+                                self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+                            (
+                                revision,
+                                decode_legacy_foreground(
+                                    &definitions,
+                                    &acts_like,
+                                    workspace.controller.set(),
+                                )?,
+                            )
+                        }
+                        PendingLegacyImport::Background { revision } => {
+                            let [(_, definitions)] =
+                                loaded.into_exact::<1>("legacy background Map16 file")?;
+                            let workspace =
+                                self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
+                            (
+                                revision,
+                                decode_legacy_background(&definitions, workspace.controller.set())?,
+                            )
+                        }
+                    };
                 let workspace = self.workspace.as_ref().ok_or("Map16 workspace is closed")?;
                 if workspace.controller.revision() != revision {
                     return Err("the ROM changed while legacy Map16 data was loading".into());
@@ -100,12 +115,12 @@ impl RomMap16Editor {
             {
                 let acts_like_path = g_sibling(&definitions_path);
                 let requests = vec![
-                    BoundedRead::new(
+                    BoundedRead::prefix(
                         definitions_path,
                         GRAPHICS_LEN as u64,
                         "Map16Page.bin definitions",
                     ),
-                    BoundedRead::new(
+                    BoundedRead::optional_prefix(
                         acts_like_path,
                         ACTS_LIKE_LEN as u64,
                         "Map16PageG.bin Acts Like",
@@ -170,12 +185,12 @@ impl RomMap16Editor {
             {
                 let acts_like_path = g_sibling(&definitions_path);
                 let requests = vec![
-                    BoundedRead::new(
+                    BoundedRead::prefix(
                         definitions_path,
                         FOREGROUND_DEFINITIONS_LEN as u64,
                         "Map16FG.bin definitions",
                     ),
-                    BoundedRead::new(
+                    BoundedRead::optional_prefix(
                         acts_like_path,
                         FOREGROUND_ACTS_LIKE_LEN as u64,
                         "Map16FGG.bin Acts Like",
@@ -221,7 +236,7 @@ impl RomMap16Editor {
                 .clicked()
                 && let Some(path) = dialogs::choose_legacy_map16_background_document()
             {
-                match self.legacy_page_loader.start(vec![BoundedRead::new(
+                match self.legacy_page_loader.start(vec![BoundedRead::prefix(
                     path,
                     BACKGROUND_DEFINITIONS_LEN as u64,
                     "Map16BG.bin definitions",
@@ -286,6 +301,37 @@ fn encode_legacy_page(page: &Map16Page) -> Result<(Vec<u8>, Vec<u8>), String> {
     page.encode().map_err(|error| error.to_string())
 }
 
+fn loaded_legacy_pair(
+    loaded: LoadedDocument,
+    description: &str,
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let mut files = loaded.files.into_iter();
+    let (_, definitions) = files
+        .next()
+        .ok_or_else(|| format!("{description} is missing its definition file"))?;
+    let acts_like = files.next().map(|(_, bytes)| bytes).unwrap_or_default();
+    if files.next().is_some() {
+        return Err(format!("{description} loader returned too many files"));
+    }
+    Ok((definitions, acts_like))
+}
+
+fn overlay_legacy_page(
+    definitions: &[u8],
+    acts_like: &[u8],
+    current: &Map16Page,
+) -> Result<Map16Page, String> {
+    if definitions.len() > GRAPHICS_LEN || acts_like.len() > ACTS_LIKE_LEN {
+        return Err(format!(
+            "legacy Map16 page prefixes exceed {GRAPHICS_LEN:#x} definition or {ACTS_LIKE_LEN:#x} Acts-Like bytes"
+        ));
+    }
+    let (mut merged_definitions, mut merged_acts_like) = encode_legacy_page(current)?;
+    merged_definitions[..definitions.len()].copy_from_slice(definitions);
+    merged_acts_like[..acts_like.len()].copy_from_slice(acts_like);
+    decode_legacy_page(&merged_definitions, &merged_acts_like)
+}
+
 fn encode_legacy_foreground(set: &lm_level::Map16Set) -> Result<(Vec<u8>, Vec<u8>), String> {
     validate_complete_set(set)?;
     let mut definitions = Vec::with_capacity(FOREGROUND_DEFINITIONS_LEN);
@@ -304,22 +350,24 @@ fn decode_legacy_foreground(
     current: &lm_level::Map16Set,
 ) -> Result<Vec<(Map16Address, Map16Tile)>, String> {
     validate_complete_set(current)?;
-    if definitions.len() != FOREGROUND_DEFINITIONS_LEN
-        || acts_like.len() != FOREGROUND_ACTS_LIKE_LEN
+    if definitions.len() > FOREGROUND_DEFINITIONS_LEN || acts_like.len() > FOREGROUND_ACTS_LIKE_LEN
     {
         return Err(format!(
-            "legacy foreground Map16 requires {FOREGROUND_DEFINITIONS_LEN:#x} definition and {FOREGROUND_ACTS_LIKE_LEN:#x} Acts-Like bytes, got {:#x} and {:#x}",
+            "legacy foreground Map16 prefixes exceed {FOREGROUND_DEFINITIONS_LEN:#x} definition or {FOREGROUND_ACTS_LIKE_LEN:#x} Acts-Like bytes, got {:#x} and {:#x}",
             definitions.len(),
             acts_like.len()
         ));
     }
+    let (mut merged_definitions, mut merged_acts_like) = encode_legacy_foreground(current)?;
+    merged_definitions[..definitions.len()].copy_from_slice(definitions);
+    merged_acts_like[..acts_like.len()].copy_from_slice(acts_like);
     let mut replacements = Vec::with_capacity(FOREGROUND_PAGE_LIMIT * Map16Page::TILE_COUNT);
     for page in 0..FOREGROUND_PAGE_LIMIT {
         let definition_offset = page * GRAPHICS_LEN;
         let acts_like_offset = page * ACTS_LIKE_LEN;
         let imported = decode_legacy_page(
-            &definitions[definition_offset..definition_offset + GRAPHICS_LEN],
-            &acts_like[acts_like_offset..acts_like_offset + ACTS_LIKE_LEN],
+            &merged_definitions[definition_offset..definition_offset + GRAPHICS_LEN],
+            &merged_acts_like[acts_like_offset..acts_like_offset + ACTS_LIKE_LEN],
         )?;
         for (tile, mut value) in imported.tiles.into_iter().enumerate() {
             if page < FIRST_EDITABLE_PAGE {
@@ -345,20 +393,25 @@ fn encode_legacy_background(set: &lm_level::Map16Set) -> Result<Vec<u8>, String>
     Ok(definitions)
 }
 
-fn decode_legacy_background(definitions: &[u8]) -> Result<Vec<(Map16Address, Map16Tile)>, String> {
-    if definitions.len() != BACKGROUND_DEFINITIONS_LEN {
+fn decode_legacy_background(
+    definitions: &[u8],
+    current: &lm_level::Map16Set,
+) -> Result<Vec<(Map16Address, Map16Tile)>, String> {
+    if definitions.len() > BACKGROUND_DEFINITIONS_LEN {
         return Err(format!(
-            "legacy background Map16 requires {BACKGROUND_DEFINITIONS_LEN:#x} definition bytes, got {:#x}",
+            "legacy background Map16 prefix exceeds {BACKGROUND_DEFINITIONS_LEN:#x} definition bytes, got {:#x}",
             definitions.len()
         ));
     }
+    let mut merged_definitions = encode_legacy_background(current)?;
+    merged_definitions[..definitions.len()].copy_from_slice(definitions);
     let blank_acts_like = vec![0; ACTS_LIKE_LEN];
     let mut replacements =
         Vec::with_capacity((COMPLETE_PAGE_LIMIT - FOREGROUND_PAGE_LIMIT) * Map16Page::TILE_COUNT);
     for relative_page in 0..(COMPLETE_PAGE_LIMIT - FOREGROUND_PAGE_LIMIT) {
         let definition_offset = relative_page * GRAPHICS_LEN;
         let imported = decode_legacy_page(
-            &definitions[definition_offset..definition_offset + GRAPHICS_LEN],
+            &merged_definitions[definition_offset..definition_offset + GRAPHICS_LEN],
             &blank_acts_like,
         )?;
         let page = FOREGROUND_PAGE_LIMIT + relative_page;
@@ -521,7 +574,7 @@ mod tests {
         assert_eq!(foreground[0].1.top_left, set.pages[0].tiles[0].top_left);
         assert_eq!(foreground[0].1.acts_like, set.pages[0].tiles[0].acts_like);
 
-        let background = decode_legacy_background(&background_definitions).unwrap();
+        let background = decode_legacy_background(&background_definitions, &set).unwrap();
         assert_eq!(
             background.len(),
             (COMPLETE_PAGE_LIMIT - FOREGROUND_PAGE_LIMIT) * Map16Page::TILE_COUNT
@@ -563,9 +616,59 @@ mod tests {
             Subtile(0x2222)
         );
         assert!(
-            decode_legacy_foreground(&definitions[..definitions.len() - 1], &acts_like, &current)
-                .is_err()
+            decode_legacy_foreground(
+                &vec![0; FOREGROUND_DEFINITIONS_LEN + 1],
+                &acts_like,
+                &current,
+            )
+            .is_err()
         );
-        assert!(decode_legacy_background(&vec![0; BACKGROUND_DEFINITIONS_LEN - 1]).is_err());
+        assert!(
+            decode_legacy_background(&vec![0; BACKGROUND_DEFINITIONS_LEN + 1], &current,).is_err()
+        );
+    }
+
+    #[test]
+    fn legacy_prefix_reads_overlay_short_planes_and_missing_g_companions() {
+        let current = complete_set();
+        let mut page_definitions = 0x7777_u16.to_le_bytes().to_vec();
+        page_definitions.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+        let overlaid = overlay_legacy_page(&page_definitions, &[], &current.pages[2]).unwrap();
+        assert_eq!(overlaid.tiles[0].top_left, Subtile(0x7777));
+        assert_eq!(
+            overlaid.tiles[0].acts_like,
+            current.pages[2].tiles[0].acts_like
+        );
+        assert_eq!(overlaid.tiles[1], current.pages[2].tiles[1]);
+
+        let mut foreground_prefix = vec![0; 2 * GRAPHICS_LEN];
+        foreground_prefix.extend_from_slice(&0x2222_u16.to_le_bytes());
+        let foreground = decode_legacy_foreground(&foreground_prefix, &[], &current).unwrap();
+        assert_eq!(
+            foreground[2 * Map16Page::TILE_COUNT].1.top_left,
+            Subtile(0x2222)
+        );
+        assert_eq!(
+            foreground[2 * Map16Page::TILE_COUNT].1.acts_like,
+            current.pages[2].tiles[0].acts_like
+        );
+
+        let background = decode_legacy_background(&0x8888_u16.to_le_bytes(), &current).unwrap();
+        assert_eq!(background[0].1.top_left, Subtile(0x8888));
+        assert_eq!(
+            background[1].1,
+            Map16Tile {
+                acts_like: 0,
+                ..current.pages[0x80].tiles[1]
+            }
+        );
+
+        let loaded = LoadedDocument {
+            files: vec![(PathBuf::from("Map16Page.bin"), vec![1, 2])],
+        };
+        assert_eq!(
+            loaded_legacy_pair(loaded, "page").unwrap(),
+            (vec![1, 2], Vec::new())
+        );
     }
 }

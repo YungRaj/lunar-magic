@@ -1301,6 +1301,13 @@ three exact file families as bounded, revision-bound native actions, publishes t
 atomically, preserves protected built-in definition words on import, and canonicalizes background
 Acts-Like values to zero.
 
+All three import functions call the same `fread`-style wrapper with one fixed-size element. A short
+file therefore overwrites only its available prefix and retains the current buffer suffix; trailing
+bytes are ignored. For page and foreground pairs, a missing `G` companion occurs after the
+definition read and therefore leaves the definition prefix applied while retaining the complete
+current Acts-Like plane. Rust matches those final semantics with bounded prefix reads and one
+revision-checked staged edit, retaining failure atomicity without changing the observable result.
+
 `LoadM16Map16SidecarData` reads one fixed `0x2000`-byte `.m16` block. The `.s16` loader first
 zeros its full `0x1C000`-byte buffer and then reads any available prefix up to that capacity.
 `WriteS16SpriteMap16SidecarFile` scans the buffer as `0x7000` little-endian dwords from the end,

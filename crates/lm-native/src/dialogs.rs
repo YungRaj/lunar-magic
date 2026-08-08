@@ -631,6 +631,31 @@ pub(crate) fn read_regular_bounded(
     Ok(bytes)
 }
 
+pub(crate) fn read_regular_prefix(
+    path: &Path,
+    maximum: u64,
+    description: &str,
+) -> io::Result<Vec<u8>> {
+    let path_metadata = fs::symlink_metadata(path)?;
+    if !path_metadata.file_type().is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{description} is not a regular file"),
+        ));
+    }
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{description} is not a regular file"),
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(maximum).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 #[cfg(test)]
 #[path = "dialogs_tests.rs"]
 mod tests;
