@@ -2678,6 +2678,15 @@ remove, and reorder keep both halves paired and commit only after both encoded s
 canonical semantic observation without
 overwriting either input.
 
+The ignored `custom_object_collection_wine` integration gate now starts authenticated Lunar Magic
+3.63 on a pristine-ROM copy with a Rust-authored multi-object collection, selects the exact custom
+description through the live Add Objects window, synchronizes an unoccluded compositor capture of
+the original preview control, right-clicks the level canvas, saves, and exports both the pristine
+and modified levels through Lunar Magic itself. It requires the two-record placement delta to be
+exactly `[06 06 10]`, `[07 0E 10]`, matching the original's recovered custom-selector and relative-
+coordinate conversion; every other MWL domain, the ROM identity, and the repaired checksum remain
+unchanged. Failure cleanup owns only its nonce-scoped ROM, sidecars, helper, and captures.
+
 Custom sprite-placement libraries use the distinct synchronized `.mw2`/`.mwt` model. The binary
 half retains its one-byte header and groups one or more variable-width sprite records by the
 recovered bit-zero placement boundary. Record sizes come from an explicit 1,024-byte revision
