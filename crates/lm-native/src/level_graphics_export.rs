@@ -438,4 +438,50 @@ mod tests {
     fn internal_file_7f_is_ignored_before_publication_like_the_original_writer() {
         assert_eq!(collapse_duplicate_files(vec![0x7f, 0x14, 0x7f]), [0x14]);
     }
+
+    #[test]
+    fn retained_lunar_magic_f9_oracle_binds_separate_and_joined_publication() {
+        let fixture =
+            include_str!("../../../docs/oracle-work/lm363/pristine-us/level-gfx-f9/oracle.tsv");
+        let fields = fixture
+            .lines()
+            .skip(1)
+            .map(|line| line.split_once('\t').expect("oracle row has two columns"))
+            .collect::<std::collections::HashMap<_, _>>();
+
+        assert_eq!(fields["level"], "105");
+        assert_eq!(fields["graphics_editor_command"], "232A");
+        assert_eq!(fields["shortcut_virtual_key"], "78");
+        assert_eq!(
+            fields["confirmation_title"],
+            "Save level GFX to Graphics folder?"
+        );
+        assert_eq!(
+            fields["separate_assignment_order"],
+            "14,17,1B,15,00,01,13,20"
+        );
+        assert_eq!(fields["separate_unchanged_file_count"], "44");
+        assert_eq!(fields["separate_missing_file"], "GFX33.bin");
+        assert_eq!(fields["separate_missing_changed_file_count"], "0");
+        assert_eq!(fields["joined_toggle_command"], "24BD");
+        assert_eq!(fields["joined_total_size"], "36D00");
+        assert_eq!(
+            usize::from_str_radix(fields["joined_total_size"], 16).unwrap(),
+            LUNAR_MAGIC_ALL_GFX_FILE_SIZES.iter().sum::<usize>()
+        );
+
+        let mut offset = 0usize;
+        let mut recovered_ranges = Vec::new();
+        for (file, size) in LUNAR_MAGIC_ALL_GFX_FILE_SIZES.iter().copied().enumerate() {
+            if [0x00, 0x01, 0x13, 0x14, 0x15, 0x17, 0x1b, 0x20].contains(&file) {
+                recovered_ranges.push(format!("{file:02X}:{offset:05X}:{size:05X}"));
+            }
+            offset += size;
+        }
+        assert_eq!(recovered_ranges.join(","), fields["joined_changed_ranges"]);
+        assert_eq!(
+            fields["joined_observed_sha256"],
+            fields["joined_expected_sha256"]
+        );
+    }
 }

@@ -1814,6 +1814,14 @@ that entry's native length, and continues to route selectors `$34+` to `ExGraphi
 an ignored internal sentinel. Rust exposes and persists the same joined/separate choice, validates
 the exact existing joined shape plus every selected extended destination, patches the selected
 ranges, and publishes AllGFX plus ExGFX replacements as one recoverable group.
+A retained Lunar Magic 3.63 Wine oracle opens the original `Window8x8` through command `$232A` and
+posts F9 directly to that window. With all separate files replaced by equal-length sentinels, level
+`$105` changes exactly `$00,$01,$13,$14,$15,$17,$1B,$20`; removing `GFX33.bin` first produces
+`Couldn't open file!` and changes no file. After `$24BD` enables joined mode, an independently
+constructed expected `AllGFX.bin` that restores only those eight table ranges is byte-identical to
+the observed output. The executable, pristine input, original-expanded ROM, manifests, ranges, and
+hashes are retained under `docs/oracle-work/lm363/pristine-us/level-gfx-f9/` and bound by
+`retained_lunar_magic_f9_oracle_binds_separate_and_joined_publication`.
 With Ctrl+Shift held, `HandleGraphicsEditorWindowMessage` indexes the tile-attribution byte at
 `006136B8`; its two independent key-state tests do not reject Alt. Zero has no animation
 attribution, `$01-$7F` encode OrigAnim slot minus one,
