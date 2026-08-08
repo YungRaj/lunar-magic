@@ -29,6 +29,7 @@ impl RomMap16Editor {
                 self.preview_palette = 0;
                 self.page_texture = None;
                 self.page_texture_key = None;
+                self.page_zoom_percent = 100;
                 self.complete_template = None;
                 self.pending_complete_revision = None;
                 self.pending_selected_import = None;

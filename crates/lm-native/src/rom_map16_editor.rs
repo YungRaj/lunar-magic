@@ -35,6 +35,13 @@ enum Map16GridShortcut {
     ToggleColor,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Map16ZoomShortcut {
+    Reset,
+    Increase,
+    Decrease,
+}
+
 struct Workspace {
     controller: Controller,
     profile: Option<RevisionProfile>,
@@ -144,6 +151,7 @@ pub(crate) struct RomMap16Editor {
     page_texture_key: Option<(usize, u64, u16, u8, u8)>,
     show_grid: bool,
     dark_grid: bool,
+    page_zoom_percent: u16,
     preview_level: String,
     preview_tileset: u8,
     preview_palette: u8,
@@ -272,6 +280,9 @@ impl RomMap16Editor {
         if let Some(shortcut) = take_map16_grid_shortcut(ui) {
             apply_map16_grid_shortcut(&mut self.show_grid, &mut self.dark_grid, shortcut);
         }
+        if let Some(shortcut) = take_map16_zoom_shortcut(ui) {
+            self.page_zoom_percent = map16_zoom_after_shortcut(self.page_zoom_percent, shortcut);
+        }
         if let Some(shortcut) = take_map16_page_shortcut(ui) {
             let next_page = map16_page_after_shortcut(self.page, pages, shortcut);
             if next_page != self.page {
@@ -317,7 +328,7 @@ impl RomMap16Editor {
     }
     fn visual_page(&mut self, ui: &mut egui::Ui) {
         let changed = ui
-            .horizontal(|ui| {
+            .horizontal_wrapped(|ui| {
                 ui.label("Preview level");
                 let level = ui.text_edit_singleline(&mut self.preview_level).changed();
                 let tileset = ui
@@ -331,6 +342,31 @@ impl RomMap16Editor {
                 if ui.button("Grid color").clicked() {
                     self.dark_grid = !self.dark_grid;
                 }
+                if ui.button("−").on_hover_text("Ctrl+Numpad −").clicked() {
+                    self.page_zoom_percent = map16_zoom_after_shortcut(
+                        self.page_zoom_percent,
+                        Map16ZoomShortcut::Decrease,
+                    );
+                }
+                if ui
+                    .button("Reset zoom")
+                    .on_hover_text("Ctrl+Numpad 0")
+                    .clicked()
+                {
+                    self.page_zoom_percent =
+                        map16_zoom_after_shortcut(self.page_zoom_percent, Map16ZoomShortcut::Reset);
+                }
+                if ui.button("+").on_hover_text("Ctrl+Numpad +").clicked() {
+                    self.page_zoom_percent = map16_zoom_after_shortcut(
+                        self.page_zoom_percent,
+                        Map16ZoomShortcut::Increase,
+                    );
+                }
+                ui.add(
+                    egui::Slider::new(&mut self.page_zoom_percent, 100..=5000)
+                        .step_by(100.0)
+                        .suffix("%"),
+                );
                 level || tileset || palette
             })
             .inner;
@@ -389,38 +425,62 @@ impl RomMap16Editor {
             }
             self.page_texture_key = Some(key);
         }
-        let Some(texture) = &self.page_texture else {
+        let Some(texture) = self.page_texture.clone() else {
             return;
         };
-        let response = ui.add(
-            egui::Image::new(texture)
-                .fit_to_exact_size(egui::Vec2::splat(256.0))
-                .sense(egui::Sense::click()),
-        );
-        if self.show_grid {
-            let color = if self.dark_grid {
-                egui::Color32::BLACK
-            } else {
-                egui::Color32::WHITE
-            };
-            for cell in 1..16 {
-                let offset = cell as f32 * 16.0;
-                ui.painter().line_segment(
-                    [
-                        response.rect.left_top() + egui::vec2(offset, 0.0),
-                        response.rect.left_bottom() + egui::vec2(offset, 0.0),
-                    ],
-                    egui::Stroke::new(1.0_f32, color),
+        let zoom = f32::from(self.page_zoom_percent.clamp(100, 5000)) / 100.0;
+        let image_size = egui::Vec2::splat(256.0 * zoom);
+        let show_grid = self.show_grid;
+        let dark_grid = self.dark_grid;
+        let selected_tile = self.tile;
+        let response = egui::ScrollArea::both()
+            .max_height(420.0)
+            .show(ui, |ui| {
+                let response = ui.add(
+                    egui::Image::new(&texture)
+                        .fit_to_exact_size(image_size)
+                        .sense(egui::Sense::click()),
                 );
-                ui.painter().line_segment(
-                    [
-                        response.rect.left_top() + egui::vec2(0.0, offset),
-                        response.rect.right_top() + egui::vec2(0.0, offset),
-                    ],
-                    egui::Stroke::new(1.0_f32, color),
+                let cell_size = response.rect.width() / 16.0;
+                if show_grid {
+                    let color = if dark_grid {
+                        egui::Color32::BLACK
+                    } else {
+                        egui::Color32::WHITE
+                    };
+                    for cell in 1..16 {
+                        let offset = cell as f32 * cell_size;
+                        ui.painter().line_segment(
+                            [
+                                response.rect.left_top() + egui::vec2(offset, 0.0),
+                                response.rect.left_bottom() + egui::vec2(offset, 0.0),
+                            ],
+                            egui::Stroke::new(1.0_f32, color),
+                        );
+                        ui.painter().line_segment(
+                            [
+                                response.rect.left_top() + egui::vec2(0.0, offset),
+                                response.rect.right_top() + egui::vec2(0.0, offset),
+                            ],
+                            egui::Stroke::new(1.0_f32, color),
+                        );
+                    }
+                }
+                let column = f32::from(u8::try_from(selected_tile % 16).unwrap_or(0));
+                let row = f32::from(u8::try_from(selected_tile / 16).unwrap_or(0));
+                let cell = egui::Rect::from_min_size(
+                    response.rect.min + egui::vec2(column * cell_size, row * cell_size),
+                    egui::Vec2::splat(cell_size),
                 );
-            }
-        }
+                ui.painter().rect_stroke(
+                    cell,
+                    0.0,
+                    egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
+                    egui::StrokeKind::Inside,
+                );
+                response
+            })
+            .inner;
         if response.clicked()
             && let Some(position) = response.interact_pointer_pos()
             && let Some(tile) = crate::map16_editor_render::selected_tile(response.rect, position)
@@ -429,20 +489,6 @@ impl RomMap16Editor {
             self.invalidate();
             self.load();
         }
-        let column = self.tile % 16;
-        let row = self.tile / 16;
-        let column = f32::from(u8::try_from(column).unwrap_or(0));
-        let row = f32::from(u8::try_from(row).unwrap_or(0));
-        let cell = egui::Rect::from_min_size(
-            response.rect.min + egui::vec2(column * 16.0, row * 16.0),
-            egui::Vec2::splat(16.0),
-        );
-        ui.painter().rect_stroke(
-            cell,
-            0.0,
-            egui::Stroke::new(2.0_f32, egui::Color32::YELLOW),
-            egui::StrokeKind::Inside,
-        );
         ui.small("Click a rendered 16×16 tile to select it.");
     }
 
@@ -842,6 +888,30 @@ fn take_map16_grid_shortcut(ui: &mut egui::Ui) -> Option<Map16GridShortcut> {
             Some(Map16GridShortcut::Toggle)
         }
     })
+}
+
+fn take_map16_zoom_shortcut(ui: &mut egui::Ui) -> Option<Map16ZoomShortcut> {
+    ui.input_mut(|input| {
+        let modifiers = input.modifiers;
+        let shortcut = if input.consume_key(modifiers, egui::Key::Num0) {
+            Some(Map16ZoomShortcut::Reset)
+        } else if input.consume_key(modifiers, egui::Key::Plus) {
+            Some(Map16ZoomShortcut::Increase)
+        } else if input.consume_key(modifiers, egui::Key::Minus) {
+            Some(Map16ZoomShortcut::Decrease)
+        } else {
+            None
+        };
+        modifiers.ctrl.then_some(shortcut).flatten()
+    })
+}
+
+fn map16_zoom_after_shortcut(current: u16, shortcut: Map16ZoomShortcut) -> u16 {
+    match shortcut {
+        Map16ZoomShortcut::Reset => 100,
+        Map16ZoomShortcut::Increase => current.saturating_add(100).min(5000),
+        Map16ZoomShortcut::Decrease => current.saturating_sub(100).max(100),
+    }
 }
 
 fn apply_map16_grid_shortcut(visible: &mut bool, dark: &mut bool, shortcut: Map16GridShortcut) {

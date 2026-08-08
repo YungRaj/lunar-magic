@@ -47,5 +47,17 @@ mod tests {
             Some(255)
         );
         assert_eq!(selected_tile(rect, egui::Pos2::new(261.1, 100.0)), None);
+
+        let zoomed =
+            egui::Rect::from_min_size(egui::Pos2::new(11.0, 13.0), egui::Vec2::splat(12_800.0));
+        assert_eq!(selected_tile(zoomed, zoomed.min), Some(0));
+        assert_eq!(
+            selected_tile(zoomed, zoomed.min + egui::vec2(12_799.0, 12_799.0)),
+            Some(255)
+        );
+        assert_eq!(
+            selected_tile(zoomed, zoomed.min + egui::vec2(6_401.0, 6_401.0)),
+            Some(136)
+        );
     }
 }

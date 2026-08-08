@@ -1351,6 +1351,14 @@ not reject simultaneous Shift or Alt. The native editor now consumes those exact
 and routes them through the same request-captured ROM revision, staged revision, and Map16 address
 used by its visible Paste Tile action. Non-Ctrl V remains unconsumed.
 
+Cases `$07/$09/$0A` are actual Numpad 0/+/−. They consume the keys in every modifier state but only
+dispatch zoom commands `$2447/$2448/$2449` while Ctrl is down. The command jump table proves reset
+uses the current system-DPI scale, while plus/minus call `SetMap16ZoomPercent` with `+100/-100` and
+the callee clamps the result to 100–5000 percent. Since egui already applies system DPI outside the
+logical canvas, the native adapter represents system reset as 100 logical percent; it otherwise
+retains the exact step and bounds. The rendered texture remains 256×256 pixels, while its scrollable
+presentation, grid, selection outline, and proportional hit testing share the selected scale.
+
 The separate Map16 tile-selector/viewer subsystem through `004e99c0` is now named. It consists of an outer selector window, a scrollable 256x256 tile-view child, and a status bar. Recovered behavior includes DPI-aware percentage scaling, client/outer size calculation, horizontal and vertical scroll state, mouse-wheel page motion, hover and primary/secondary selection highlighting, keyboard page navigation, foreground-page unlocking, palette-context changes, and top-down 32-bit DIB cache creation/rendering/cleanup. Typed and named the current/maximum selector page, selected and hovered absolute tile numbers, palette context, and backing pixel pointer.
 
 The outer Layer 1 selector creator and the beginning of the main level-editor presentation layer through `004eac40` are now named. This includes renderer/file-error reporting, status-bar sizing and DPI handling, horizontal/vertical level-editor scroll state, backing-cache and auxiliary-buffer cleanup, and the toolbar icon system. The toolbar uses a 24-entry command table with parallel enabled/disabled icon arrays, supports an external `Lunar Magic.ff5` bitmap, compressed and built-in fallbacks, per-window DPI scaling, right-to-left mirroring, and a separately rebuilt alternate mode cache.

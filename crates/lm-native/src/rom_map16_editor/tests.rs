@@ -284,6 +284,79 @@ fn ctrl_v_captures_the_current_map16_target_before_requesting_clipboard_data() {
 }
 
 #[test]
+fn original_map16_zoom_shortcuts_require_ctrl_and_preserve_bounds() {
+    fn observed(key: egui::Key, modifiers: egui::Modifiers) -> Option<Map16ZoomShortcut> {
+        let context = egui::Context::default();
+        let mut shortcut = None;
+        let _ = context.run(
+            egui::RawInput {
+                events: vec![egui::Event::Key {
+                    key,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers,
+                }],
+                modifiers,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    shortcut = take_map16_zoom_shortcut(ui);
+                });
+            },
+        );
+        shortcut
+    }
+
+    for modifiers in [
+        egui::Modifiers::CTRL,
+        egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+        egui::Modifiers::CTRL | egui::Modifiers::ALT,
+    ] {
+        assert_eq!(
+            observed(egui::Key::Num0, modifiers),
+            Some(Map16ZoomShortcut::Reset)
+        );
+        assert_eq!(
+            observed(egui::Key::Plus, modifiers),
+            Some(Map16ZoomShortcut::Increase)
+        );
+        assert_eq!(
+            observed(egui::Key::Minus, modifiers),
+            Some(Map16ZoomShortcut::Decrease)
+        );
+    }
+    for key in [egui::Key::Num0, egui::Key::Plus, egui::Key::Minus] {
+        assert_eq!(observed(key, egui::Modifiers::NONE), None);
+    }
+
+    assert_eq!(
+        map16_zoom_after_shortcut(3200, Map16ZoomShortcut::Reset),
+        100
+    );
+    assert_eq!(
+        map16_zoom_after_shortcut(100, Map16ZoomShortcut::Decrease),
+        100
+    );
+    assert_eq!(
+        map16_zoom_after_shortcut(4999, Map16ZoomShortcut::Increase),
+        5000
+    );
+    assert_eq!(
+        map16_zoom_after_shortcut(5000, Map16ZoomShortcut::Increase),
+        5000
+    );
+
+    let mut app = AppState::default();
+    app.load_rom(pristine_fixture()).unwrap();
+    app.dispatch(Command::ShowMap16).unwrap();
+    let mut editor = RomMap16Editor::default();
+    editor.open(&app);
+    assert_eq!(editor.page_zoom_percent, 100);
+}
+
+#[test]
 fn unmodified_f9_routes_through_the_existing_map16_commit_transaction() {
     let mut app = AppState::default();
     app.load_rom(pristine_fixture()).unwrap();
