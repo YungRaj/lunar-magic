@@ -510,6 +510,27 @@ mod tests {
     }
 
     #[test]
+    fn retained_lunar_magic_map16_clipboard_oracle_binds_copy_and_roundtrip() {
+        let oracle = include_str!(
+            "../../../docs/oracle-work/lm363/pristine-us/map16-single-tile-clipboard/oracle.tsv"
+        );
+        let fields = oracle
+            .lines()
+            .skip(1)
+            .filter_map(|line| line.split_once('\t'))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(fields.get("format_name"), Some(&"Lunar Magic 16x16 Tile"));
+        assert_eq!(fields.get("copied_size"), Some(&"10"));
+        assert_eq!(fields.get("copied_bytes"), Some(&"701C721C711C731C0000"));
+        assert_eq!(fields.get("roundtrip_size"), Some(&"10"));
+        assert_eq!(fields.get("roundtrip_bytes"), Some(&"23016745AB89EFCD5713"));
+
+        let roundtrip = [0x23, 0x01, 0x67, 0x45, 0xab, 0x89, 0xef, 0xcd, 0x57, 0x13];
+        let decoded = decode_lunar_magic_map16_tile(&roundtrip).unwrap();
+        assert_eq!(encode_lunar_magic_map16_tile(decoded), roundtrip);
+    }
+
+    #[test]
     fn palette_adapter_requires_exactly_one_color() {
         assert_eq!(
             decode_palette_color(&encode_palette_color(Bgr555(0x1234)).unwrap()).unwrap(),

@@ -1317,6 +1317,12 @@ uninterpreted until their consumers provide stronger evidence.
 
 Map16 rendering is traced from individual flipped 8x8 SNES tile descriptors through the cached 256x256 page bitmap and selected-tile previews. `SelectMap16TileForEditing` at `004e6cd0`, `CopySelectedMap16TileToClipboard` at `004e6dd0`, and `PasteSelectedMap16TileFromClipboard` at `004e6eb0` establish the single-tile clipboard boundary. Copy registers the singular custom format name `Lunar Magic 16x16 Tile` and publishes exactly ten bytes: four little-endian subtile descriptors in top-left, top-right, bottom-left, bottom-right order followed by the little-endian Acts Like value. Paste accepts a global allocation of at least ten bytes and consumes its first ten. The exact `Map16TileClipboardRecord` and the Windows bridge now reproduce that format across the standalone page, complete-set, and ROM Map16 editors while retaining the portable Unicode fallback. The main editor window procedure, keyboard/control handlers, page navigation, import/export shortcuts, attribute flipping, acts-like-cycle detection, selection/paste paths, and cache lifecycle are named. The current page, selected subtiles, acts-like value, selected absolute tile index, and active-selection flag are typed and named.
 
+The retained isolated-Wine `map16-single-tile-clipboard/oracle.tsv` binds those original entry points
+to the registered cross-process boundary. Copying vanilla tile `$000` publishes exactly ten bytes,
+`70 1C 72 1C 71 1C 73 1C 00 00`. Publishing the deliberately asymmetric record
+`23 01 67 45 AB 89 EF CD 57 13`, invoking original paste, and copying again returns the same record
+byte-for-byte. This proves both word ordering and Acts Like placement independently of Rust.
+
 The modeless editor's later import/export dispatcher is recovered independently at
 `00501550`. Commands `$2266/$2267` export/import the selected compact `.map16` range, while
 `$2268/$2269` export/import the complete `AllMap16.map16` container. `HandleMap16RenderWindow` at

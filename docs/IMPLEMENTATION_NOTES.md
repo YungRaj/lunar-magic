@@ -2211,6 +2211,10 @@ registered `Lunar Magic 16x16 Tile` format in the recovered native layout: four 
 subtile words in top-left/top-right/bottom-left/bottom-right order followed by one little-endian
 Acts Like word. Native paste is preferred, requires at least ten bytes, and ignores an allocation
 suffix exactly like the original; the semantic Unicode envelope remains the portable fallback.
+The retained isolated-Wine single-tile oracle independently exercises Lunar Magic's named copy and
+paste entry points through a second process, proving an exact ten-byte copy and an asymmetric
+paste/copy round trip. The fixture is compiled into the native test suite so documentation drift or
+record-order regressions fail automatically.
 ExAnimation clipboard support copies one complete fixed record in both portable and ROM-backed
 windows. This retains transfer kind, frame count, size mode, destination/flag, ordinary frame words,
 and every reserved byte rather than reconstructing a record from visible form fields. Paste decodes
