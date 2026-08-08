@@ -89,10 +89,13 @@ impl CustomObjectEntry {
             return Err(CustomObjectLibraryError::EmptyObjectGroup);
         }
         validate_description(&description)?;
-        for object in &mut objects {
+        for (index, object) in objects.iter_mut().enumerate() {
             object
                 .set_raw_advances_screen(false)
                 .map_err(|_| CustomObjectLibraryError::InvalidGroupBoundary)?;
+            if index != 0 && object.encoded()[0] & 0x10 != 0 {
+                return Err(CustomObjectLibraryError::InvalidGroupBoundary);
+            }
         }
         let object = objects.remove(0);
         Ok(Self {
@@ -309,8 +312,10 @@ impl CustomObjectLibrary {
         for (entry_index, entry) in self.entries.iter().enumerate() {
             for (object_index, object) in entry.objects().enumerate() {
                 let mut object = object.clone();
+                let needs_horizontal_boundary =
+                    entry_index != 0 && object_index == 0 && object.encoded()[0] & 0x10 == 0;
                 object
-                    .set_raw_advances_screen(entry_index != 0 && object_index == 0)
+                    .set_raw_advances_screen(needs_horizontal_boundary)
                     .map_err(|_| CustomObjectLibraryError::InvalidGroupBoundary)?;
                 data.extend_from_slice(object.encoded());
             }

@@ -40,6 +40,30 @@ fn native_group_boundaries_create_multi_object_entries_and_round_trip() {
 }
 
 #[test]
+fn either_native_orientation_screen_bit_starts_a_group_and_round_trips() {
+    let data = [
+        1, 2, 3, 4, 5, 0x01, 0x00, 0x03, 0x13, 0x08, 0x04, // vertical next-screen/group bit
+        0x04, 0x00, 0x03, 0xff,
+    ];
+    let library = CustomObjectLibrary::decode(&data, b"First\nVertical pair\n").unwrap();
+    assert_eq!(library.entries().len(), 2);
+    assert_eq!(library.entries()[0].objects().count(), 1);
+    assert_eq!(library.entries()[1].objects().count(), 2);
+    assert_eq!(library.encode().unwrap().0, data);
+}
+
+#[test]
+fn programmatic_group_rejects_an_ambiguous_vertical_boundary_member() {
+    assert_eq!(
+        CustomObjectEntry::new_group(
+            vec![object(&[1, 0, 3]), object(&[0x12, 8, 4])],
+            "would split in Lunar Magic".into(),
+        ),
+        Err(CustomObjectLibraryError::InvalidGroupBoundary)
+    );
+}
+
+#[test]
 fn every_native_text_framing_variant_round_trips_exactly() {
     for utf8_bom in [false, true] {
         for line_ending in [LineEnding::Lf, LineEnding::CrLf] {

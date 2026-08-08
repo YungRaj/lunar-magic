@@ -47,11 +47,14 @@ pub(super) fn decode_objects(
             .ok_or(CustomObjectLibraryError::MalformedObject { offset })?;
         let mut object = ObjectRecord::new(bytes.to_vec())
             .map_err(|_| CustomObjectLibraryError::MalformedObject { offset })?;
-        let starts_group = object.advances_screen();
+        // Lunar Magic scans both orientation-dependent next-screen bits. `$80` is the horizontal
+        // form; `$10` is the vertical form and remains part of the record's perpendicular
+        // coordinate when the logical group is decoded.
+        let starts_group = object.encoded()[0] & 0x90 != 0;
         if groups.is_empty() || starts_group {
             groups.push(Vec::new());
         }
-        if starts_group {
+        if object.advances_screen() {
             object
                 .set_raw_advances_screen(false)
                 .map_err(|_| CustomObjectLibraryError::InvalidGroupBoundary)?;
