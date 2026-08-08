@@ -195,6 +195,7 @@ fn crc32(bytes: &[u8]) -> u32 {
 mod tests {
     use super::*;
     use lm_render::{Canvas, encode_png};
+    use std::path::PathBuf;
 
     fn evidence(bytes: &[u8], width: &str, height: &str) -> Observation {
         let mut observation = Observation::new();
@@ -242,5 +243,32 @@ mod tests {
             validate_release_render(&trailing, &evidence(&trailing, "1", "1")),
             Err(RenderEvidenceError::TrailingBytes)
         ));
+    }
+
+    #[test]
+    fn retained_legacy_import_dialog_captures_are_hash_and_structure_bound() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/oracle-work/lm363/pristine-us/legacy-import-prompts");
+        for (name, digest) in [
+            (
+                "optional-palette-missing.png",
+                "6067a650c910c7ae151464d6344ebf090b640d7f3f134a2822027047d488bc0f",
+            ),
+            (
+                "required-layer1-missing.png",
+                "233fd519ca61e3c11446e9cb956e3e5003c7aa35f5e85bb93526097dbb00cf99",
+            ),
+            (
+                "required-layer2-missing.png",
+                "62135f1c0338572edeb4c59ac003b9965d46fe5823f05fa569ee09fbefc0449c",
+            ),
+            (
+                "required-sprites-missing.png",
+                "5b6780f05cc60701eb12f44cd903e7a511a30cc115057352f04f01581186130a",
+            ),
+        ] {
+            let bytes = std::fs::read(root.join(name)).unwrap();
+            validate_png(&bytes, digest, 1424, 1296).unwrap();
+        }
     }
 }

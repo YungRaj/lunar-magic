@@ -6,6 +6,13 @@ Wine. The process opened the authenticated `palette-install-positive/after.smc` 
 `0x047C`. Top-level dialog titles and child-static text were enumerated directly from the owning
 process before accepting the prompt.
 
+The two prompting cases were repeated in a uniquely named Lunar Magic 3.63 process inside an
+isolated Wine prefix. macOS captured the complete on-screen Wine window group while each modal was
+still active, after the title and child-static text below had been enumerated from the owning Win32
+process. `retained_legacy_import_dialog_captures_are_hash_and_structure_bound` verifies each
+retained PNG's complete SHA-256 digest, PNG chunk CRCs/order, RGBA format, and 1424-by-1296 capture
+dimensions.
+
 ## Declared custom palette with missing `.mw3`
 
 Input was the retained `legacy-level-000-custom-palette` five-file bundle with only `Level 000.mw3`
@@ -21,7 +28,9 @@ After accepting the prompt, a legacy re-export began its Layer 1 row with flag `
 input's `01` and emitted no `.mw3`. This proves the importer continues with the destination shared
 palette and clears the custom-palette flag; it does not reject the level.
 
-## Missing required Layer 1 sidecar
+![Lunar Magic optional-palette fallback prompt](optional-palette-missing.png)
+
+## Missing required Layer 1, Layer 2, and sprite sidecars
 
 Input was the retained `legacy-level-105` bundle with only `Level 105.mw0` omitted.
 
@@ -31,8 +40,23 @@ message: Level 105.mw0
 button: OK
 ```
 
-The level was not imported. This distinguishes the optional palette fallback from required Layer 1,
-Layer 2, and sprite sidecar failures.
+The run was repeated with only `Level 105.mw1` omitted and then with only `Level 105.mw2` omitted.
+Both produced the same title/button with their respective file name as the complete message. The
+level was not imported in any case. This distinguishes the optional palette fallback from every
+required Layer 1, Layer 2, and sprite sidecar failure.
+
+![Lunar Magic required-Layer-1 rejection prompt](required-layer1-missing.png)
+
+![Lunar Magic required-Layer-2 rejection prompt](required-layer2-missing.png)
+
+![Lunar Magic required-sprite rejection prompt](required-sprites-missing.png)
+
+```text
+6067a650c910c7ae151464d6344ebf090b640d7f3f134a2822027047d488bc0f  optional-palette-missing.png
+233fd519ca61e3c11446e9cb956e3e5003c7aa35f5e85bb93526097dbb00cf99  required-layer1-missing.png
+62135f1c0338572edeb4c59ac003b9965d46fe5823f05fa569ee09fbefc0449c  required-layer2-missing.png
+5b6780f05cc60701eb12f44cd903e7a511a30cc115057352f04f01581186130a  required-sprites-missing.png
+```
 
 ## Present short and overlong palette sidecars
 

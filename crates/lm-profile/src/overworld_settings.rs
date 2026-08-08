@@ -139,16 +139,24 @@ pub fn smw_us_v1_installed_expanded_settings_layout(
     }
     SmwUsV1ExpandedSettingsAllocation::decode(&project.rom.logical_bytes()[block.payload.clone()])?;
 
-    let runtime = ExpandedSettingsRuntimeLayout::smw_us_v1(
-        allocation_base_snes,
+    // Lunar Magic emits two authenticated variants of this runtime family. Level-only installs
+    // preserve the caller's carry state and continue into the surrounding routine; overworld
+    // transfer installs terminate the two entry blocks directly. Their storage and every
+    // allocation-dependent operand are otherwise identical.
+    let runtime_matches = [
         ExpandedSettingsEntryContinuation::Continue,
-    );
-    let runtime_matches = smw_us_v1_expanded_settings_fixed_writes(runtime).is_ok_and(|writes| {
-        writes.iter().all(|write| {
-            project
-                .rom
-                .read(write.offset, write.replacement.len())
-                .is_ok_and(|bytes| bytes == write.replacement)
+        ExpandedSettingsEntryContinuation::Return,
+    ]
+    .into_iter()
+    .any(|continuation| {
+        let runtime = ExpandedSettingsRuntimeLayout::smw_us_v1(allocation_base_snes, continuation);
+        smw_us_v1_expanded_settings_fixed_writes(runtime).is_ok_and(|writes| {
+            writes.iter().all(|write| {
+                project
+                    .rom
+                    .read(write.offset, write.replacement.len())
+                    .is_ok_and(|bytes| bytes == write.replacement)
+            })
         })
     });
     if !runtime_matches {
@@ -403,5 +411,17 @@ mod tests {
                 .load_expanded_level_settings(0, smw_us_v1_expanded_settings_layout())
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn retained_overworld_transfer_rom_authenticates_return_runtime_variant() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes = fs::read(
+            root.join("oracle-work/lm363/pristine-us/overworld-transfer-positive/after.smc"),
+        )
+        .unwrap();
+        let project = Project::new(RomImage::from_bytes(bytes).unwrap());
+        let loaded = load_smw_us_v1_overworld_settings(&project).unwrap();
+        assert!(loaded.installed);
     }
 }
