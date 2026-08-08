@@ -688,6 +688,58 @@ fn failed_and_noop_staged_edits_do_not_create_history() {
 }
 
 #[test]
+fn sprite_group_transactions_commit_once_track_order_and_undo_atomically() {
+    let mut app = AppState::default();
+    app.load_rom(test_rom()).unwrap();
+    let snapshot = app.controller_snapshot().unwrap();
+    let mut controller =
+        LevelController::decode(&snapshot, layout(), &SpriteLengthTable::standard()).unwrap();
+    controller
+        .apply_edits(&[NativeLevelEdit::InsertSprite {
+            index: 1,
+            token: SpriteToken::Record(SpriteRecord {
+                encoded: vec![0x10, 0x11, 2],
+            }),
+        }])
+        .unwrap();
+    let before_group = controller.level().sprites.clone();
+    controller
+        .apply_edits(&[NativeLevelEdit::DuplicateSpriteGroup {
+            selected: vec![1, 0],
+            major_delta: 16,
+            minor_delta: 1,
+        }])
+        .unwrap();
+    assert_eq!(controller.level().sprites.native_placements().len(), 4);
+    assert!(controller.undo());
+    assert_eq!(controller.level().sprites, before_group);
+    assert!(controller.redo());
+    let duplicated = controller.level().sprites.clone();
+    controller
+        .apply_edits(&[NativeLevelEdit::RelocateSpriteGroup {
+            selected: vec![2, 3],
+            major_delta: -1,
+            minor_delta: 1,
+        }])
+        .unwrap();
+    assert_ne!(controller.level().sprites, duplicated);
+    assert!(controller.undo());
+    assert_eq!(controller.level().sprites, duplicated);
+
+    let before_failure = controller.level().clone();
+    assert!(
+        controller
+            .apply_edits(&[NativeLevelEdit::RelocateSpriteGroup {
+                selected: vec![0, 1],
+                major_delta: -512,
+                minor_delta: 0,
+            }])
+            .is_err()
+    );
+    assert_eq!(controller.level(), &before_failure);
+}
+
+#[test]
 fn owned_level_commit_reclaims_both_snapshot_streams_and_undo_restores_them() {
     let (rom, manifest) = tagged_test_rom();
     let mut app = AppState::default();

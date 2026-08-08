@@ -62,6 +62,16 @@ pub enum NativeLevelEdit {
         x: u8,
         y: u16,
     },
+    DuplicateSpriteGroup {
+        selected: Vec<usize>,
+        major_delta: i32,
+        minor_delta: i32,
+    },
+    RelocateSpriteGroup {
+        selected: Vec<usize>,
+        major_delta: i32,
+        minor_delta: i32,
+    },
     RelocateExpandedSprite {
         selected: usize,
         screen: u8,

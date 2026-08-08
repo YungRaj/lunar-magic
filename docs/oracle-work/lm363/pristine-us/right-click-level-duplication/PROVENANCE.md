@@ -44,6 +44,17 @@ non-positioned, opaque-control, or any-member-out-of-bounds input without changi
 `group_relocation_moves_every_member_once_and_tracks_reordered_indexes`, and
 `invalid_group_relocation_is_failure_atomic` cover that model/transaction boundary.
 `ctrl_object_selection_toggles_members_and_keeps_layer_domains_exclusive` and
-`right_drag_duplicates_and_moves_a_complete_object_group_atomically` cover the native selection,
-clone, immediate-drag, release, and source-preservation workflow. Sprite multi-selection and the
-original nearest-valid fallback remain separate interaction boundaries.
+`right_drag_duplicates_and_moves_a_complete_object_group_atomically` cover the native object
+selection, clone, immediate-drag, release, and source-preservation workflow.
+
+The matching sprite operation decodes legacy or expanded records once, tracks selected identities
+independently of control-token and canonical sort changes, and rebuilds the minimum upper-Y control
+stream once after validating every translated member. Custom record extension bytes remain exact.
+Ctrl selection, primary group drag, right-press clone plus immediate group drag, Insert duplication,
+and Delete removal all share the atomic aggregate transaction.
+`legacy_sprite_group_clone_and_move_track_every_reordered_record`,
+`expanded_sprite_group_rebuilds_controls_and_preserves_extensions`,
+`sprite_group_transactions_commit_once_track_order_and_undo_atomically`,
+`right_drag_duplicates_and_moves_a_complete_sprite_group_atomically`, and
+`sprite_group_shortcuts_duplicate_and_delete_the_complete_selection` cover the model, application,
+and native workflow. The original nearest-valid fallback remains a separate interaction boundary.

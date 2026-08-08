@@ -116,6 +116,42 @@ pub(crate) fn apply_native_level_edits(
                     .relocate_record_position(*selected, *screen, *x, *y, vertical, sprite_lengths)
                     .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
             }
+            NativeLevelEdit::DuplicateSpriteGroup {
+                selected,
+                major_delta,
+                minor_delta,
+            } => {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(staged_layer1.header.level_mode()).vertical;
+                staged_sprites
+                    .duplicate_record_group(
+                        selected,
+                        *major_delta,
+                        *minor_delta,
+                        vertical,
+                        sprite_lengths,
+                    )
+                    .map(drop)
+                    .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
+            }
+            NativeLevelEdit::RelocateSpriteGroup {
+                selected,
+                major_delta,
+                minor_delta,
+            } => {
+                let vertical =
+                    lm_profile::smw_us_v1_level_mode(staged_layer1.header.level_mode()).vertical;
+                staged_sprites
+                    .relocate_record_group(
+                        selected,
+                        *major_delta,
+                        *minor_delta,
+                        vertical,
+                        sprite_lengths,
+                    )
+                    .map(drop)
+                    .map_err(|error| LevelControllerError::SpriteEdit { command, error })?;
+            }
             NativeLevelEdit::RelocateExpandedSprite {
                 selected,
                 screen,

@@ -6,15 +6,35 @@ use std::fmt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LevelEditError {
-    IndexOutOfBounds { index: usize, len: usize },
-    LegacyIncompatibleSpriteToken { index: usize },
-    LegacyTerminatorCollision { index: usize },
+    IndexOutOfBounds {
+        index: usize,
+        len: usize,
+    },
+    LegacyIncompatibleSpriteToken {
+        index: usize,
+    },
+    LegacyTerminatorCollision {
+        index: usize,
+    },
     ExpandedSpritePositionSort,
     ExpandedSpriteRelocationRequiresExpanded,
     ExpandedSpriteYOutOfRange(u16),
     LegacySpriteYOutOfRange(u16),
-    InvalidExpandedSpriteControl { index: usize, value: u8 },
-    ShortSpriteRecord { index: usize, len: usize },
+    EmptySpriteSelection,
+    DuplicateSpriteSelection(usize),
+    SpriteGroupTargetOutOfRange {
+        index: usize,
+        major: i32,
+        minor: i32,
+    },
+    InvalidExpandedSpriteControl {
+        index: usize,
+        value: u8,
+    },
+    ShortSpriteRecord {
+        index: usize,
+        len: usize,
+    },
     SpriteField(NativeSpriteFieldError),
     ObjectField(crate::ObjectFieldError),
     ObjectRelocation(crate::ObjectRelocationError),
@@ -256,6 +276,251 @@ impl NativeSpriteStream {
         Ok(selected)
     }
 
+    /// Clones a selected sprite group with one shared orientation-neutral tile delta.
+    ///
+    /// Source records and extension bytes remain present. Legacy screen ordering and expanded
+    /// upper-Y controls are rebuilt exactly once, and returned token indexes follow caller
+    /// selection order.
+    ///
+    /// # Errors
+    ///
+    /// Rejects empty/duplicate/non-record selections, malformed controls or records, width
+    /// changes, and any translated member outside the native coordinate range. Failure leaves the
+    /// stream unchanged.
+    pub fn duplicate_record_group(
+        &mut self,
+        selected: &[usize],
+        major_delta: i32,
+        minor_delta: i32,
+        vertical: bool,
+        lengths: &SpriteLengthTable,
+    ) -> Result<Vec<usize>, LevelEditError> {
+        self.transform_record_group(selected, major_delta, minor_delta, vertical, lengths, true)
+    }
+
+    /// Moves a selected sprite group with one shared orientation-neutral tile delta.
+    ///
+    /// The complete group is validated before one canonical rebuild, so an invalid member cannot
+    /// publish a partial move. Returned token indexes follow caller selection order.
+    ///
+    /// # Errors
+    ///
+    /// Applies the same selection, stream, width, and coordinate checks as group duplication.
+    pub fn relocate_record_group(
+        &mut self,
+        selected: &[usize],
+        major_delta: i32,
+        minor_delta: i32,
+        vertical: bool,
+        lengths: &SpriteLengthTable,
+    ) -> Result<Vec<usize>, LevelEditError> {
+        self.transform_record_group(selected, major_delta, minor_delta, vertical, lengths, false)
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    fn transform_record_group(
+        &mut self,
+        selected: &[usize],
+        major_delta: i32,
+        minor_delta: i32,
+        vertical: bool,
+        lengths: &SpriteLengthTable,
+        duplicate: bool,
+    ) -> Result<Vec<usize>, LevelEditError> {
+        if selected.is_empty() {
+            return Err(LevelEditError::EmptySpriteSelection);
+        }
+        let mut selected_set = std::collections::BTreeSet::new();
+        for index in selected.iter().copied() {
+            if !selected_set.insert(index) {
+                return Err(LevelEditError::DuplicateSpriteSelection(index));
+            }
+            if index >= self.tokens.len() {
+                return Err(LevelEditError::IndexOutOfBounds {
+                    index,
+                    len: self.tokens.len(),
+                });
+            }
+            if !matches!(self.tokens[index], SpriteToken::Record(_)) {
+                return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+            }
+        }
+
+        let mut active_upper_y = 0_u16;
+        let mut records = Vec::with_capacity(self.tokens.len().saturating_add(selected.len()));
+        for (index, token) in self.tokens.iter().enumerate() {
+            match token {
+                SpriteToken::Screen(value) => {
+                    if !self.expanded {
+                        return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+                    }
+                    active_upper_y = u16::from(*value) * 32;
+                }
+                SpriteToken::Control(value) if self.expanded && (0x80..=0xfd).contains(value) => {}
+                SpriteToken::Control(value) if self.expanded => {
+                    return Err(LevelEditError::InvalidExpandedSpriteControl {
+                        index,
+                        value: *value,
+                    });
+                }
+                SpriteToken::Control(_) => {
+                    return Err(LevelEditError::LegacyIncompatibleSpriteToken { index });
+                }
+                SpriteToken::Record(record) => {
+                    let fields =
+                        record
+                            .native_fields()
+                            .map_err(|_| LevelEditError::ShortSpriteRecord {
+                                index,
+                                len: record.encoded.len(),
+                            })?;
+                    records.push(GroupSpriteRecord {
+                        identity: index,
+                        major: u16::from(fields.screen) * 16 + u16::from(fields.x),
+                        minor: active_upper_y + u16::from(fields.y_low),
+                        record: record.clone(),
+                    });
+                }
+            }
+        }
+
+        let clone_identity_base = self.tokens.len();
+        let mut transformed = Vec::with_capacity(selected.len());
+        for (ordinal, selected_index) in selected.iter().copied().enumerate() {
+            let source = records
+                .iter()
+                .find(|record| record.identity == selected_index)
+                .ok_or(LevelEditError::LegacyIncompatibleSpriteToken {
+                    index: selected_index,
+                })?;
+            let major = i32::from(source.major) + major_delta;
+            let minor = i32::from(source.minor) + minor_delta;
+            let minor_limit = if self.expanded { 0x1000 } else { 0x20 };
+            if !(0..0x200).contains(&major) || !(0..minor_limit).contains(&minor) {
+                return Err(LevelEditError::SpriteGroupTargetOutOfRange {
+                    index: selected_index,
+                    major,
+                    minor,
+                });
+            }
+            let mut record = source.record.clone();
+            let mut fields = record
+                .native_fields()
+                .map_err(LevelEditError::SpriteField)?;
+            fields.screen = u8::try_from(major / 16).map_err(|_| {
+                LevelEditError::SpriteGroupTargetOutOfRange {
+                    index: selected_index,
+                    major,
+                    minor,
+                }
+            })?;
+            fields.x = u8::try_from(major % 16).map_err(|_| {
+                LevelEditError::SpriteGroupTargetOutOfRange {
+                    index: selected_index,
+                    major,
+                    minor,
+                }
+            })?;
+            fields.y_low = u8::try_from(minor % 32).map_err(|_| {
+                LevelEditError::SpriteGroupTargetOutOfRange {
+                    index: selected_index,
+                    major,
+                    minor,
+                }
+            })?;
+            record
+                .set_native_fields(fields, lengths)
+                .map_err(LevelEditError::SpriteField)?;
+            transformed.push(GroupSpriteRecord {
+                identity: if duplicate {
+                    clone_identity_base + ordinal
+                } else {
+                    selected_index
+                },
+                major: u16::try_from(major).map_err(|_| {
+                    LevelEditError::SpriteGroupTargetOutOfRange {
+                        index: selected_index,
+                        major,
+                        minor,
+                    }
+                })?,
+                minor: u16::try_from(minor).map_err(|_| {
+                    LevelEditError::SpriteGroupTargetOutOfRange {
+                        index: selected_index,
+                        major,
+                        minor,
+                    }
+                })?,
+                record,
+            });
+        }
+        if duplicate {
+            records.extend(transformed);
+        } else {
+            for replacement in transformed {
+                let Some(target) = records
+                    .iter_mut()
+                    .find(|record| record.identity == replacement.identity)
+                else {
+                    return Err(LevelEditError::LegacyIncompatibleSpriteToken {
+                        index: replacement.identity,
+                    });
+                };
+                *target = replacement;
+            }
+        }
+
+        records.sort_by_key(|record| {
+            (
+                record.major / 16,
+                if self.expanded { record.minor / 32 } else { 0 },
+                if self.expanded && vertical {
+                    record.minor & 0x0f
+                } else {
+                    0
+                },
+            )
+        });
+        let wanted_identities: Vec<_> = if duplicate {
+            (0..selected.len())
+                .map(|ordinal| clone_identity_base + ordinal)
+                .collect()
+        } else {
+            selected.to_vec()
+        };
+        let mut rebuilt = Vec::with_capacity(records.len().saturating_mul(2));
+        let mut emitted_upper_y = 0_u16;
+        let mut selected_indexes = vec![None; wanted_identities.len()];
+        for record in records {
+            let upper_y = record.minor / 32;
+            if self.expanded && upper_y != emitted_upper_y {
+                rebuilt.push(SpriteToken::Screen(u8::try_from(upper_y).map_err(
+                    |_| LevelEditError::ExpandedSpriteYOutOfRange(record.minor),
+                )?));
+                emitted_upper_y = upper_y;
+            }
+            if let Some(ordinal) = wanted_identities
+                .iter()
+                .position(|identity| *identity == record.identity)
+            {
+                selected_indexes[ordinal] = Some(rebuilt.len());
+            }
+            rebuilt.push(SpriteToken::Record(record.record));
+        }
+        self.tokens = rebuilt;
+        self.canonicalize_framing();
+        selected_indexes
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, index)| {
+                index.ok_or(LevelEditError::IndexOutOfBounds {
+                    index: selected[ordinal],
+                    len: self.tokens.len(),
+                })
+            })
+            .collect()
+    }
+
     /// Replaces every proven native base field of one sprite record while preserving its extension
     /// bytes and current expanded upper-Y band. The record is then tracked through Lunar Magic's
     /// legacy or orientation-aware expanded ordering. Returns its resulting token index.
@@ -489,6 +754,14 @@ impl NativeSpriteStream {
         self.expanded = expanded;
         Ok(())
     }
+}
+
+#[derive(Clone)]
+struct GroupSpriteRecord {
+    identity: usize,
+    major: u16,
+    minor: u16,
+    record: crate::SpriteRecord,
 }
 
 fn validate_legacy_token(token: &SpriteToken, index: usize) -> Result<(), LevelEditError> {
@@ -1133,6 +1406,126 @@ mod tests {
                         false,
                         &SpriteLengthTable::standard(),
                     )
+                    .is_err()
+            );
+            assert_eq!(stream, original);
+        }
+    }
+
+    #[test]
+    fn legacy_sprite_group_clone_and_move_track_every_reordered_record() {
+        let lengths = SpriteLengthTable::standard();
+        let mut stream = NativeSpriteStream {
+            header: 0,
+            expanded: false,
+            tokens: vec![sprite_at(0, 2, 0x10), sprite_at(1, 4, 0x20)],
+        };
+        let sources = stream.clone();
+        let clones = stream
+            .duplicate_record_group(&[1, 0], 16, 1, false, &lengths)
+            .unwrap();
+        assert_eq!(clones.len(), 2);
+        assert_eq!(stream.native_placements().len(), 4);
+        for (ordinal, expected) in [(32, 5, 0x20), (16, 3, 0x10)].into_iter().enumerate() {
+            let placement = stream
+                .native_placements()
+                .into_iter()
+                .find(|placement| placement.token_index == clones[ordinal])
+                .unwrap();
+            assert_eq!(
+                (placement.major, placement.minor, placement.sprite_number),
+                expected
+            );
+        }
+        assert!(sources.native_placements().iter().all(|source| {
+            stream.native_placements().iter().any(|current| {
+                (current.major, current.minor, current.sprite_number)
+                    == (source.major, source.minor, source.sprite_number)
+            })
+        }));
+
+        let moved = stream
+            .relocate_record_group(&clones, -2, 2, false, &lengths)
+            .unwrap();
+        for (ordinal, expected) in [(30, 7, 0x20), (14, 5, 0x10)].into_iter().enumerate() {
+            let placement = stream
+                .native_placements()
+                .into_iter()
+                .find(|placement| placement.token_index == moved[ordinal])
+                .unwrap();
+            assert_eq!(
+                (placement.major, placement.minor, placement.sprite_number),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn expanded_sprite_group_rebuilds_controls_and_preserves_extensions() {
+        let mut lengths = SpriteLengthTable::standard();
+        lengths.set(2, 0x42, 5).unwrap();
+        let custom = SpriteToken::Record(SpriteRecord {
+            encoded: vec![0x08, 0x10, 0x42, 0xaa, 0xbb],
+        });
+        let mut stream = NativeSpriteStream {
+            header: 0x20,
+            expanded: true,
+            tokens: vec![
+                SpriteToken::Screen(2),
+                custom,
+                SpriteToken::Screen(1),
+                sprite_at(1, 7, 0x30),
+            ],
+        };
+        let clones = stream
+            .duplicate_record_group(&[1, 3], 1, 32, true, &lengths)
+            .unwrap();
+        assert!(stream.expanded);
+        assert_eq!(clones.len(), 2);
+        let first = stream
+            .native_placements()
+            .into_iter()
+            .find(|placement| placement.token_index == clones[0])
+            .unwrap();
+        assert_eq!((first.major, first.minor), (2, 96));
+        let SpriteToken::Record(record) = &stream.tokens[clones[0]] else {
+            panic!("clone must remain a sprite record");
+        };
+        assert_eq!(&record.encoded[3..], [0xaa, 0xbb]);
+        assert!(
+            stream
+                .tokens
+                .iter()
+                .any(|token| token == &SpriteToken::Screen(3))
+        );
+    }
+
+    #[test]
+    fn sprite_group_failures_leave_legacy_and_expanded_streams_exact() {
+        let lengths = SpriteLengthTable::standard();
+        for mut stream in [
+            NativeSpriteStream {
+                header: 0,
+                expanded: false,
+                tokens: vec![sprite_at(0, 0, 1), sprite_at(1, 1, 2)],
+            },
+            NativeSpriteStream {
+                header: 0x20,
+                expanded: true,
+                tokens: vec![SpriteToken::Screen(2), sprite(1)],
+            },
+        ] {
+            let original = stream.clone();
+            assert!(
+                stream
+                    .duplicate_record_group(&[0, 0], 0, 0, false, &lengths)
+                    .is_err()
+            );
+            assert_eq!(stream, original);
+            let selected = if stream.expanded { vec![1] } else { vec![0, 1] };
+            assert!(
+                stream
+                    .relocate_record_group(&selected, -2, 0, false, &lengths)
                     .is_err()
             );
             assert_eq!(stream, original);

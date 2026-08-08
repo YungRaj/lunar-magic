@@ -221,7 +221,9 @@ while preserving its source and selecting the inserted record. Duplication begin
 secondary press, holds the inserted entity in the original's immediate move-drag state, and applies
 the final bounded position when the secondary button is released, even outside the canvas;
 `right_click_duplication_repositions_objects_and_sprites_without_removing_sources` covers the
-single-selection boundary. Sprite multi-selection remains incomplete.
+single-selection boundary. Ctrl-modified sprite selection now forms the corresponding native set;
+primary drag, right-press clone plus immediate drag, Insert duplication, and Delete removal operate
+on the complete set through one checked transaction.
 
 The recovered multi-selection core now has a typed, failure-atomic foundation. Ghidra
 `ValidateAndSnapSelectedObjectDrag` (`00438DC0`),
@@ -239,7 +241,12 @@ one atomic delta; unmodified right press clones the complete set at one anchor-r
 selects the clones, begins the immediate move drag, and applies one atomic release delta.
 `ctrl_object_selection_toggles_members_and_keeps_layer_domains_exclusive` and
 `right_drag_duplicates_and_moves_a_complete_object_group_atomically` cover that native workflow.
-Sprite selection sets and the original nearest-valid fallback remain incomplete.
+The sprite stream now has the parallel legacy/expanded group transform: it preserves extensions,
+tracks caller order across stable canonical sorting, and rebuilds expanded upper-Y controls once.
+`expanded_sprite_group_rebuilds_controls_and_preserves_extensions`,
+`sprite_group_transactions_commit_once_track_order_and_undo_atomically`, and
+`right_drag_duplicates_and_moves_a_complete_sprite_group_atomically` cover that complete native
+route. The original nearest-valid fallback remains incomplete.
 
 The sprite row now also covers canonical framing transitions. Semantic native/MWL save paths derive
 legacy versus expanded framing from the actual tokens, synchronize header bit `$20`, and reopen

@@ -345,6 +345,7 @@ pub(crate) struct VanillaLevelEditor {
     custom_object_catalog_filter: String,
     object_placement_template: Option<ObjectRecord>,
     selected_sprite: usize,
+    selected_sprite_group: Vec<usize>,
     sprite_form: SpriteForm,
     dragging_sprite: Option<usize>,
     secondary_duplicate_drag: bool,
@@ -1354,6 +1355,7 @@ impl VanillaLevelEditor {
         self.object_group_drag = None;
         self.selected_object_group.clear();
         self.selected_layer2_object_group.clear();
+        self.selected_sprite_group.clear();
         self.resizing_object = None;
         self.resizing_layer2_object = None;
         self.external_sprite_textures.clear();
@@ -1599,6 +1601,7 @@ impl VanillaLevelEditor {
         self.object_group_drag = None;
         self.selected_object_group.clear();
         self.selected_layer2_object_group.clear();
+        self.selected_sprite_group.clear();
         self.resizing_object = None;
         self.resizing_layer2_object = None;
         self.canvas_entity_selection = None;
@@ -2935,6 +2938,7 @@ impl VanillaLevelEditor {
                         .or(self.sprite_texture.as_ref()),
                     placements: &sprite_placements[..sprite_limit],
                     cursor: response.interact_pointer_pos(),
+                    selected_group: &self.selected_sprite_group,
                     selected: self.selected_sprite,
                     vertical,
                     level_mode,
@@ -3206,20 +3210,32 @@ impl VanillaLevelEditor {
             && let Some(index) = hit_sprite
             && let Some(controller) = &self.controller
         {
-            self.selected_object_group.clear();
-            self.selected_layer2_object_group.clear();
-            self.selected_sprite = index;
-            self.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
-            self.sprite_form = SpriteForm::from_token(
-                controller.level().sprites.header,
-                controller.level().sprites.tokens.get(index),
-            );
+            let header = controller.level().sprites.header;
+            let token = controller.level().sprites.tokens.get(index).cloned();
+            if self.update_canvas_sprite_group(index, additive_selection) {
+                self.selected_sprite = index;
+                self.sprite_form = SpriteForm::from_token(header, token.as_ref());
+            }
         }
         if response.drag_started_by(egui::PointerButton::Primary)
             && !additive_selection
             && let Some(index) = hit_sprite
         {
-            self.dragging_sprite = Some(index);
+            if self.selected_sprite_group.len() > 1
+                && self.selected_sprite_group.contains(&index)
+                && let Some(position) = response.interact_pointer_pos()
+                && let Some((origin_major, origin_minor)) =
+                    object_native_position_at_canvas(position, rect, cell, vertical)
+            {
+                self.object_group_drag = Some(CanvasObjectGroupDrag {
+                    domain: CanvasEntitySelection::Sprite,
+                    origin_major,
+                    origin_minor,
+                    secondary: false,
+                });
+            } else {
+                self.dragging_sprite = Some(index);
+            }
         }
         if response.drag_started_by(egui::PointerButton::Primary)
             && !additive_selection
@@ -3319,6 +3335,7 @@ impl VanillaLevelEditor {
         if self.dragging_object.is_none()
             && self.dragging_layer2_object.is_none()
             && self.dragging_sprite.is_none()
+            && self.object_group_drag.is_none()
             && self.resizing_object.is_none()
             && self.resizing_layer2_object.is_none()
             && let Some(shortcut) = canvas_entity_shortcut(response)
@@ -3356,6 +3373,7 @@ impl VanillaLevelEditor {
         if !additive || self.canvas_entity_selection != Some(domain) {
             self.selected_object_group.clear();
             self.selected_layer2_object_group.clear();
+            self.selected_sprite_group.clear();
             match domain {
                 CanvasEntitySelection::Layer1Object => self.selected_object_group.push(index),
                 CanvasEntitySelection::Layer2Object => {
@@ -3393,6 +3411,46 @@ impl VanillaLevelEditor {
             false
         } else {
             group.push(index);
+            true
+        }
+    }
+
+    fn update_canvas_sprite_group(&mut self, index: usize, additive: bool) -> bool {
+        if !additive
+            && self.canvas_entity_selection == Some(CanvasEntitySelection::Sprite)
+            && self.selected_sprite_group.len() > 1
+            && self.selected_sprite_group.contains(&index)
+        {
+            return true;
+        }
+        if !additive || self.canvas_entity_selection != Some(CanvasEntitySelection::Sprite) {
+            self.selected_object_group.clear();
+            self.selected_layer2_object_group.clear();
+            self.selected_sprite_group.clear();
+            self.selected_sprite_group.push(index);
+            self.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+            return true;
+        }
+        if let Some(position) = self
+            .selected_sprite_group
+            .iter()
+            .position(|selected| *selected == index)
+        {
+            self.selected_sprite_group.remove(position);
+            if let Some(replacement) = self.selected_sprite_group.last().copied() {
+                self.selected_sprite = replacement;
+                if let Some(controller) = &self.controller {
+                    self.sprite_form = SpriteForm::from_token(
+                        controller.level().sprites.header,
+                        controller.level().sprites.tokens.get(replacement),
+                    );
+                }
+            } else {
+                self.canvas_entity_selection = None;
+            }
+            false
+        } else {
+            self.selected_sprite_group.push(index);
             true
         }
     }
@@ -3476,6 +3534,47 @@ impl VanillaLevelEditor {
                 }
             }
             (CanvasEntitySelection::Sprite, CanvasEntityShortcut::Duplicate) => {
+                if self.selected_sprite_group.len() > 1 {
+                    let selected = self.selected_sprite_group.clone();
+                    let Some(controller) = self.controller.as_mut() else {
+                        return;
+                    };
+                    let vertical = lm_profile::smw_us_v1_level_mode(
+                        controller.level().layer1.header.level_mode(),
+                    )
+                    .vertical;
+                    let mut predicted = controller.level().sprites.clone();
+                    let clones = match predicted.duplicate_record_group(
+                        &selected,
+                        0,
+                        0,
+                        vertical,
+                        controller.sprite_lengths(),
+                    ) {
+                        Ok(clones) => clones,
+                        Err(error) => {
+                            self.error = Some(error.to_string());
+                            return;
+                        }
+                    };
+                    match controller.apply_edits(&[NativeLevelEdit::DuplicateSpriteGroup {
+                        selected,
+                        major_delta: 0,
+                        minor_delta: 0,
+                    }]) {
+                        Ok(()) => {
+                            self.selected_sprite_group = clones;
+                            self.selected_sprite = self.selected_sprite_group[0];
+                            self.sprite_form = SpriteForm::from_token(
+                                controller.level().sprites.header,
+                                controller.level().sprites.tokens.get(self.selected_sprite),
+                            );
+                            self.error = None;
+                        }
+                        Err(error) => self.error = Some(error.to_string()),
+                    }
+                    return;
+                }
                 let Some(token) = self.controller.as_ref().and_then(|controller| {
                     controller
                         .level()
@@ -3489,6 +3588,33 @@ impl VanillaLevelEditor {
                 self.insert_canvas_sprite_token(token);
             }
             (CanvasEntitySelection::Sprite, CanvasEntityShortcut::Remove) => {
+                if self.selected_sprite_group.len() > 1 {
+                    let mut indexes = self.selected_sprite_group.clone();
+                    indexes.sort_unstable_by(|left, right| right.cmp(left));
+                    let edits: Vec<_> = indexes
+                        .into_iter()
+                        .map(|index| NativeLevelEdit::RemoveSprite { index })
+                        .collect();
+                    let Some(controller) = self.controller.as_mut() else {
+                        return;
+                    };
+                    match controller.apply_edits(&edits) {
+                        Ok(()) => {
+                            self.selected_sprite_group.clear();
+                            self.selected_sprite = self
+                                .selected_sprite
+                                .min(controller.level().sprites.tokens.len().saturating_sub(1));
+                            self.sprite_form = SpriteForm::from_token(
+                                controller.level().sprites.header,
+                                controller.level().sprites.tokens.get(self.selected_sprite),
+                            );
+                            self.canvas_entity_selection = None;
+                            self.error = None;
+                        }
+                        Err(error) => self.error = Some(error.to_string()),
+                    }
+                    return;
+                }
                 let index = self.selected_sprite;
                 let Some(controller) = self.controller.as_mut() else {
                     return;
@@ -3502,6 +3628,7 @@ impl VanillaLevelEditor {
                             controller.level().sprites.header,
                             controller.level().sprites.tokens.get(self.selected_sprite),
                         );
+                        self.selected_sprite_group.clear();
                         self.canvas_entity_selection = None;
                         self.error = None;
                     }
@@ -3559,7 +3686,21 @@ impl VanillaLevelEditor {
                 }
             }
             Some(CanvasEntitySelection::Sprite) => {
-                self.dragging_sprite = Some(self.selected_sprite);
+                if self.selected_sprite_group.len() > 1 {
+                    let Some((origin_major, origin_minor)) =
+                        object_native_position_at_canvas(position, canvas, cell, vertical)
+                    else {
+                        return;
+                    };
+                    self.object_group_drag = Some(CanvasObjectGroupDrag {
+                        domain: CanvasEntitySelection::Sprite,
+                        origin_major,
+                        origin_minor,
+                        secondary: true,
+                    });
+                } else {
+                    self.dragging_sprite = Some(self.selected_sprite);
+                }
             }
             None => return,
         }
@@ -3647,7 +3788,11 @@ impl VanillaLevelEditor {
                 }
             }
             Some(CanvasEntitySelection::Sprite) => {
-                self.place_sprite_at_canvas(position, canvas, cell, vertical);
+                if self.selected_sprite_group.len() > 1 {
+                    self.duplicate_sprite_group_at(position, canvas, cell, vertical);
+                } else {
+                    self.place_sprite_at_canvas(position, canvas, cell, vertical);
+                }
             }
             None => {}
         }
@@ -3735,6 +3880,62 @@ impl VanillaLevelEditor {
         }
     }
 
+    fn duplicate_sprite_group_at(
+        &mut self,
+        position: egui::Pos2,
+        canvas: egui::Rect,
+        cell: f32,
+        vertical: bool,
+    ) {
+        let Some((target_major, target_minor)) =
+            object_native_position_at_canvas(position, canvas, cell, vertical)
+        else {
+            self.error = Some("sprite group placement is outside the native level space".into());
+            return;
+        };
+        let selected = self.selected_sprite_group.clone();
+        let Some(controller) = self.controller.as_mut() else {
+            return;
+        };
+        let stream = &controller.level().sprites;
+        let Some((anchor_major, anchor_minor)) = sprite_group_anchor(stream, &selected) else {
+            self.error = Some("selected sprite group contains no visible native placement".into());
+            return;
+        };
+        let major_delta = target_major - anchor_major;
+        let minor_delta = target_minor - anchor_minor;
+        let mut predicted = stream.clone();
+        let cloned = match predicted.duplicate_record_group(
+            &selected,
+            major_delta,
+            minor_delta,
+            vertical,
+            controller.sprite_lengths(),
+        ) {
+            Ok(cloned) => cloned,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                return;
+            }
+        };
+        match controller.apply_edits(&[NativeLevelEdit::DuplicateSpriteGroup {
+            selected,
+            major_delta,
+            minor_delta,
+        }]) {
+            Ok(()) => {
+                self.selected_sprite_group = cloned;
+                self.selected_sprite = self.selected_sprite_group[0];
+                self.sprite_form = SpriteForm::from_token(
+                    controller.level().sprites.header,
+                    controller.level().sprites.tokens.get(self.selected_sprite),
+                );
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+    }
+
     fn finish_object_group_drag(
         &mut self,
         position: Option<egui::Pos2>,
@@ -3758,7 +3959,7 @@ impl VanillaLevelEditor {
         let selected = match drag.domain {
             CanvasEntitySelection::Layer1Object => self.selected_object_group.clone(),
             CanvasEntitySelection::Layer2Object => self.selected_layer2_object_group.clone(),
-            CanvasEntitySelection::Sprite => return,
+            CanvasEntitySelection::Sprite => self.selected_sprite_group.clone(),
         };
         let Some(controller) = self.controller.as_mut() else {
             return;
@@ -3773,7 +3974,39 @@ impl VanillaLevelEditor {
                 };
                 &layer2.objects
             }
-            CanvasEntitySelection::Sprite => return,
+            CanvasEntitySelection::Sprite => {
+                let mut predicted = controller.level().sprites.clone();
+                let moved = match predicted.relocate_record_group(
+                    &selected,
+                    major_delta,
+                    minor_delta,
+                    vertical,
+                    controller.sprite_lengths(),
+                ) {
+                    Ok(moved) => moved,
+                    Err(error) => {
+                        self.error = Some(error.to_string());
+                        return;
+                    }
+                };
+                match controller.apply_edits(&[NativeLevelEdit::RelocateSpriteGroup {
+                    selected,
+                    major_delta,
+                    minor_delta,
+                }]) {
+                    Ok(()) => {
+                        self.selected_sprite_group = moved;
+                        self.selected_sprite = self.selected_sprite_group[0];
+                        self.sprite_form = SpriteForm::from_token(
+                            controller.level().sprites.header,
+                            controller.level().sprites.tokens.get(self.selected_sprite),
+                        );
+                        self.error = None;
+                    }
+                    Err(error) => self.error = Some(error.to_string()),
+                }
+                return;
+            }
         };
         let mut predicted = stream.clone();
         let moved =
@@ -3841,6 +4074,10 @@ impl VanillaLevelEditor {
         match controller.apply_edits(&[NativeLevelEdit::InsertSprite { index, token }]) {
             Ok(()) => {
                 self.selected_sprite = selected;
+                self.selected_sprite_group.clear();
+                self.selected_sprite_group.push(selected);
+                self.selected_object_group.clear();
+                self.selected_layer2_object_group.clear();
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
                     controller.level().sprites.tokens.get(selected),
@@ -4111,6 +4348,10 @@ impl VanillaLevelEditor {
         }]) {
             Ok(()) => {
                 self.selected_sprite = selected;
+                self.selected_sprite_group.clear();
+                self.selected_sprite_group.push(selected);
+                self.selected_object_group.clear();
+                self.selected_layer2_object_group.clear();
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
                     controller.level().sprites.tokens.get(selected),
@@ -4413,6 +4654,8 @@ impl VanillaLevelEditor {
         }]) {
             Ok(()) => {
                 self.selected_sprite = selected;
+                self.selected_sprite_group.clear();
+                self.selected_sprite_group.push(selected);
                 self.sprite_form = SpriteForm::from_token(
                     controller.level().sprites.header,
                     controller.level().sprites.tokens.get(selected),
@@ -7747,6 +7990,18 @@ fn object_group_anchor(stream: &lm_level::ObjectStream, selected: &[usize]) -> O
         .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
 }
 
+fn sprite_group_anchor(
+    stream: &lm_level::NativeSpriteStream,
+    selected: &[usize],
+) -> Option<(i32, i32)> {
+    stream
+        .native_placements()
+        .into_iter()
+        .filter(|placement| selected.contains(&placement.token_index))
+        .min_by_key(|placement| placement.major.saturating_add(placement.minor))
+        .map(|placement| (i32::from(placement.major), i32::from(placement.minor)))
+}
+
 fn layer2_tile_at_canvas_position(
     position: egui::Pos2,
     canvas: egui::Rect,
@@ -9285,6 +9540,7 @@ struct SpritePlacementDraw<'a> {
     animated_texture: Option<&'a egui::TextureHandle>,
     placements: &'a [lm_level::NativeSpritePlacement],
     cursor: Option<egui::Pos2>,
+    selected_group: &'a [usize],
     selected: usize,
     vertical: bool,
     level_mode: u8,
@@ -9310,6 +9566,7 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
         animated_texture,
         placements,
         cursor,
+        selected_group,
         selected,
         vertical,
         level_mode,
@@ -9426,7 +9683,9 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
             overlay_painter.rect_filled(
                 marker,
                 marker.width() / 2.0,
-                if placement.token_index == selected {
+                if selected_group.contains(&placement.token_index)
+                    || selected_group.is_empty() && placement.token_index == selected
+                {
                     egui::Color32::LIGHT_RED
                 } else {
                     egui::Color32::from_rgb(220, 70, 70)
@@ -9440,7 +9699,10 @@ fn draw_sprite_placements(request: SpritePlacementDraw<'_>) -> Option<usize> {
                 egui::Color32::WHITE,
             );
         }
-        if (editor_overlays || selection_visible) && placement.token_index == selected {
+        if (editor_overlays || selection_visible)
+            && (selected_group.contains(&placement.token_index)
+                || selected_group.is_empty() && placement.token_index == selected)
+        {
             overlay_painter.rect_stroke(
                 interactive_rect,
                 marker.width() / 2.0,
@@ -16168,6 +16430,14 @@ mod tests {
             editor.canvas_entity_selection,
             Some(CanvasEntitySelection::Layer2Object)
         );
+        assert!(editor.update_canvas_sprite_group(5, true));
+        assert!(editor.selected_object_group.is_empty());
+        assert!(editor.selected_layer2_object_group.is_empty());
+        assert_eq!(editor.selected_sprite_group, vec![5]);
+        assert!(editor.update_canvas_sprite_group(9, true));
+        assert_eq!(editor.selected_sprite_group, vec![5, 9]);
+        assert!(!editor.update_canvas_sprite_group(5, true));
+        assert_eq!(editor.selected_sprite_group, vec![9]);
     }
 
     #[test]
@@ -16273,6 +16543,162 @@ mod tests {
                         == source_record.parameter()
             }));
         }
+    }
+
+    #[test]
+    fn right_drag_duplicates_and_moves_a_complete_sprite_group_atomically() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(512.0, f32::from(NATIVE_LEVEL_MINOR_TILES)),
+        );
+        let original = editor.controller.as_ref().unwrap().level().sprites.clone();
+        let placements = original.native_placements();
+        assert!(placements.len() >= 2);
+        let selected = vec![placements[0].token_index, placements[1].token_index];
+        let source_positions: Vec<_> = selected
+            .iter()
+            .map(|index| {
+                let placement = placements
+                    .iter()
+                    .find(|placement| placement.token_index == *index)
+                    .unwrap();
+                (
+                    i32::from(placement.major),
+                    i32::from(placement.minor),
+                    placement.sprite_number,
+                )
+            })
+            .collect();
+        let (anchor_major, anchor_minor) = sprite_group_anchor(&original, &selected).unwrap();
+        let drag_major_delta = if source_positions.iter().all(|(major, _, _)| *major < 511) {
+            1
+        } else {
+            -1
+        };
+        let drag_minor_delta = if source_positions.iter().all(|(_, minor, _)| *minor < 26) {
+            1
+        } else {
+            -1
+        };
+        let duplicate_position = egui::pos2(anchor_major as f32 + 0.5, anchor_minor as f32 + 0.5);
+        editor.selected_sprite_group = selected.clone();
+        editor.selected_sprite = selected[0];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+        editor.begin_secondary_duplicate_drag(duplicate_position, canvas, 1.0, false);
+        assert!(editor.secondary_duplicate_drag);
+        assert_eq!(editor.selected_sprite_group.len(), selected.len());
+        assert!(editor.dragging_sprite.is_none());
+        assert!(
+            editor
+                .object_group_drag
+                .is_some_and(|drag| drag.domain == CanvasEntitySelection::Sprite && drag.secondary)
+        );
+
+        editor.finish_secondary_duplicate_drag(
+            Some(duplicate_position + egui::vec2(drag_major_delta as f32, drag_minor_delta as f32)),
+            canvas,
+            1.0,
+            false,
+        );
+        assert!(!editor.secondary_duplicate_drag);
+        assert!(editor.object_group_drag.is_none());
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+
+        let updated = &editor.controller.as_ref().unwrap().level().sprites;
+        assert_eq!(
+            updated.native_placements().len(),
+            placements.len() + selected.len()
+        );
+        for (ordinal, clone_index) in editor.selected_sprite_group.iter().enumerate() {
+            let clone = updated
+                .native_placements()
+                .into_iter()
+                .find(|placement| placement.token_index == *clone_index)
+                .unwrap();
+            assert_eq!(
+                (
+                    i32::from(clone.major),
+                    i32::from(clone.minor),
+                    clone.sprite_number,
+                ),
+                (
+                    source_positions[ordinal].0 + drag_major_delta,
+                    source_positions[ordinal].1 + drag_minor_delta,
+                    source_positions[ordinal].2,
+                )
+            );
+        }
+        for source in source_positions {
+            assert!(updated.native_placements().iter().any(|placement| {
+                (
+                    i32::from(placement.major),
+                    i32::from(placement.minor),
+                    placement.sprite_number,
+                ) == source
+            }));
+        }
+    }
+
+    #[test]
+    fn sprite_group_shortcuts_duplicate_and_delete_the_complete_selection() {
+        let mut app = AppState::default();
+        app.load_rom(crate::test_support::pristine_smw_us_rom_bytes())
+            .unwrap();
+        app.dispatch(Command::SelectLevel(0x105)).unwrap();
+        let snapshot = app.controller_snapshot().unwrap();
+        let mut editor = VanillaLevelEditor::default();
+        editor.load(
+            &snapshot,
+            EditorKey {
+                revision: snapshot.revision,
+                level: 0x105,
+                sprite_lengths_signature: ssc_sprite_lengths_signature(None),
+            },
+            None,
+        );
+        let original = editor.controller.as_ref().unwrap().level().sprites.clone();
+        let placements = original.native_placements();
+        editor.selected_sprite_group = vec![placements[0].token_index, placements[1].token_index];
+        editor.selected_sprite = editor.selected_sprite_group[0];
+        editor.canvas_entity_selection = Some(CanvasEntitySelection::Sprite);
+
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Duplicate);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        assert_eq!(editor.selected_sprite_group.len(), 2);
+        assert_eq!(
+            editor
+                .controller
+                .as_ref()
+                .unwrap()
+                .level()
+                .sprites
+                .native_placements()
+                .len(),
+            placements.len() + 2
+        );
+        editor.apply_canvas_entity_shortcut(CanvasEntityShortcut::Remove);
+        assert!(editor.error.is_none(), "{:?}", editor.error);
+        assert_eq!(
+            editor.controller.as_ref().unwrap().level().sprites,
+            original
+        );
+        assert!(editor.selected_sprite_group.is_empty());
+        assert_eq!(editor.canvas_entity_selection, None);
     }
 
     #[test]
@@ -16944,6 +17370,7 @@ mod tests {
                     animated_texture: None,
                     placements: std::slice::from_ref(&placement),
                     cursor: Some(cursor),
+                    selected_group: &[],
                     selected: 0,
                     vertical: false,
                     level_mode: 0,
