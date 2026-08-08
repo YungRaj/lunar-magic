@@ -13,6 +13,8 @@ const LUNAR_MAGIC_363_SHA256: &str =
 const PRISTINE_HEADERED_SMW_US_SHA256: &str =
     "5e3d55b019dd012e8db1498dda06b63ad1a304787625402b511e6d525946beaf";
 const DESCRIPTION: &str = "Rust multi-object placement oracle";
+const RETAINED_PREVIEW_SHA256: &str =
+    "cd248183f65b1efbd6eea42714ee0464e23c08e1310f5d17ed00e5da48a9adb5";
 
 struct OracleFixtureCleanup {
     directory: PathBuf,
@@ -78,6 +80,33 @@ fn compile_helper(root: &Path, source: &str, output: &Path, libraries: &[&str]) 
         output.status.success(),
         "{source} compilation failed:\n{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn compile_macos_capture_helper(root: &Path, output: &Path) {
+    let result = Command::new("xcrun")
+        .args(["swiftc"])
+        .arg(root.join("tools/capture-macos-window.swift"))
+        .arg("-o")
+        .arg(output)
+        .args([
+            "-framework",
+            "AppKit",
+            "-framework",
+            "CoreGraphics",
+            "-framework",
+            "ImageIO",
+            "-framework",
+            "ScreenCaptureKit",
+            "-framework",
+            "UniformTypeIdentifiers",
+        ])
+        .output()
+        .expect("cannot launch Swift compiler");
+    assert!(
+        result.status.success(),
+        "macOS capture-helper compilation failed:\n{}",
+        String::from_utf8_lossy(&result.stderr)
     );
 }
 
@@ -179,23 +208,67 @@ fn assert_preview_is_rendered(path: &Path) {
     let required = row_bytes * height.unsigned_abs() as usize;
     assert!(pixels.len() >= required, "preview BMP pixels are truncated");
     let first = &pixels[..bytes_per_pixel];
-    let samples = pixels[..required]
-        .chunks_exact(row_bytes)
-        .flat_map(|row| row[..width as usize * bytes_per_pixel].chunks_exact(bytes_per_pixel));
-    let (different, bright) = samples.fold((0, 0), |(different, bright), pixel| {
-        (
-            different + usize::from(pixel != first),
-            bright + usize::from(pixel[0] > 240 && pixel[1] > 240 && pixel[2] > 240),
-        )
-    });
+    let mut different = 0;
+    let mut gold_columns = vec![0_usize; width as usize];
+    for (y, row) in pixels[..required].chunks_exact(row_bytes).enumerate() {
+        for (x, pixel) in row[..width as usize * bytes_per_pixel]
+            .chunks_exact(bytes_per_pixel)
+            .enumerate()
+        {
+            different += usize::from(pixel != first);
+            if y >= height.unsigned_abs() as usize / 2
+                && pixel[2] > 140
+                && pixel[1] > 70
+                && pixel[0] < 100
+            {
+                gold_columns[x] += 1;
+            }
+        }
+    }
     assert!(
         different >= 16 * 16,
         "Lunar Magic's custom-object preview did not render object artwork"
     );
+    let occupied_columns = gold_columns
+        .iter()
+        .enumerate()
+        .filter_map(|(x, count)| (*count >= 2).then_some(x))
+        .collect::<Vec<_>>();
+    let mut substantial_groups = 0;
+    let mut group_start = None;
+    let mut previous = 0;
+    for x in occupied_columns.into_iter().chain([usize::MAX]) {
+        if let Some(start) = group_start
+            && (x == usize::MAX || x - previous > 8)
+        {
+            substantial_groups += usize::from(previous - start + 1 >= 20);
+            group_start = None;
+        }
+        if x != usize::MAX {
+            group_start.get_or_insert(x);
+            previous = x;
+        }
+    }
     assert!(
-        bright < width as usize * height.unsigned_abs() as usize / 100,
-        "another text-heavy window occluded Lunar Magic's custom-object preview"
+        substantial_groups >= 2,
+        "Lunar Magic's preview did not contain both separated custom-object artworks"
     );
+}
+
+#[test]
+fn retained_custom_object_preview_is_hash_and_structure_bound() {
+    let root = fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
+    let bytes = fs::read(
+        root.join("docs/oracle-work/lm363/pristine-us/custom-object-collection/preview.png"),
+    )
+    .unwrap();
+    assert_eq!(lm_oracle::sha256_hex(&bytes), RETAINED_PREVIEW_SHA256);
+    assert_eq!(bytes.get(..8), Some(b"\x89PNG\r\n\x1a\n".as_slice()));
+    assert_eq!(u32::from_be_bytes(bytes[8..12].try_into().unwrap()), 13);
+    assert_eq!(&bytes[12..16], b"IHDR");
+    assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), 520);
+    assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), 520);
+    assert_eq!(&bytes[24..29], &[8, 6, 0, 0, 0]);
 }
 
 /// Loads a Rust-authored two-object `.mw0`/`.mw0t` collection in Lunar Magic 3.63, binds its
@@ -271,6 +344,8 @@ fn rust_multi_object_collection_reloads_renders_and_places_in_lunar_magic() {
         &oracle_helper,
         &["-luser32"],
     );
+    let capture_helper = directory.join("capture-macos-window");
+    compile_macos_capture_helper(&root, &capture_helper);
 
     let startup_rom = wine_path(&prefix, &rom);
     let mut launcher = Command::new("wine")
@@ -330,27 +405,13 @@ fn rust_multi_object_collection_reloads_renders_and_places_in_lunar_magic() {
         .collect::<Vec<_>>();
     assert_eq!(values.len(), 4);
     assert!(values[0] >= 0 && values[1] >= 0 && values[2] > 0 && values[3] > 0);
-    let activation = Command::new("osascript")
-        .args([
-            "-e",
-            "tell application \"System Events\" to tell process \"wine\" to set frontmost to true",
-            "-e",
-            "tell application \"System Events\" to tell process \"wine\" to perform action \"AXRaise\" of window \"Add Objects Window\"",
-        ])
-        .output()
-        .expect("cannot activate Wine before compositor capture");
-    assert!(
-        activation.status.success(),
-        "cannot activate Wine: {}",
-        String::from_utf8_lossy(&activation.stderr)
-    );
-    thread::sleep(Duration::from_millis(500));
-    let region = format!("-R{},{},{},{}", values[0], values[1], values[2], values[3]);
-    let capture = Command::new("/usr/sbin/screencapture")
-        .args(["-x", &region])
+    let coordinates = values.iter().map(i32::to_string).collect::<Vec<_>>();
+    let capture = Command::new(&capture_helper)
+        .args(["wine", "Add Objects Window"])
+        .args(&coordinates)
         .arg(&preview_png)
         .output()
-        .expect("cannot launch compositor screenshot capture");
+        .expect("cannot launch window-specific compositor capture");
     assert!(
         capture.status.success(),
         "screencapture failed: {}",
