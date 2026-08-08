@@ -1228,6 +1228,17 @@ The live `original_main_midway_dialog_applies_reopens_and_cancels_losslessly` ga
 branches, including the separate-midway enable transition, and binds the resulting main bytes
 `54 13 B7 1A C0 00 5A` and midway bytes `00 E9 0A 4B` to Lunar Magic's own MWL export.
 
+Secondary-exit editor command `$2525` creates dialog resource `$03F1` with callback `$00411790`.
+`PopulateSecondaryExitSelector` (`$00410DB0`) publishes all `$2000` slots;
+`LoadSelectedSecondaryExitIntoDialog` (`$00410F20`) decodes the six planes into the level,
+position, FG/BG, action, and overworld controls; and `ApplyDialogToSelectedSecondaryExit`
+(`$004112B0`) packs them back. Clear Slot calls `$00473B80`. Clear All first obtains the exact
+“Really clear all slots?” confirmation and calls `$00473B60` only when the result is not IDNO.
+The outer command keeps a `$C000`-byte backup and restores it when the dialog does not return IDOK.
+The live dialog gate binds all of those paths. It additionally proves that saving a completely
+empty installed table keeps the first four fixed planes, zeroes them, writes null operands for
+planes four and five, and owns no RATS payload for those null tail planes.
+
 Comparing all 512 pristine MWL exports against the source ROM locates the four vanilla
 main-entrance planes exactly at headerless PC offsets `$2F000`, `$2F200`, `$2F400`, and `$2F600`.
 They correspond to MWL header offsets `2`-`5` for position, vertical settings, screen/method, and

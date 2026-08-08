@@ -147,7 +147,7 @@ impl Project {
             return Err(SecondaryExitPatchError::InstallationRequired);
         };
         let encoded = table.encode()?;
-        let used_len = used_plane_len(&encoded).max(1);
+        let used_len = used_plane_len(&encoded);
         let fixed_prefix = usize::from(used_len <= 0x200) * 4;
         let original = self.rom.logical_bytes().to_vec();
         let mut staged = original.clone();
@@ -166,7 +166,7 @@ impl Project {
                     locator.fixed_planes[plane],
                     &encoded[plane_start..plane_start + 0x200],
                 )?;
-            } else {
+            } else if used_len != 0 {
                 let payload = &encoded[plane_start..plane_start + used_len];
                 let block =
                     FreeSpaceAllocator::new(&mut staged, allocation.clone()).allocate(payload)?;
@@ -176,6 +176,9 @@ impl Project {
         for (plane, offset) in locator.pointer_offsets().into_iter().enumerate() {
             let payload = if plane < fixed_prefix {
                 locator.fixed_planes[plane]
+            } else if used_len == 0 {
+                checked_copy(&mut staged, offset, &[0, 0, 0])?;
+                continue;
             } else {
                 blocks[plane - fixed_prefix].payload.start
             };
@@ -221,7 +224,19 @@ fn load_installed(
     let mut fixed_prefix = 0;
     let mut tagged_len = None;
     for (plane, offset) in locator.pointer_offsets().into_iter().enumerate() {
-        let pc = read_pointer(project.rom.logical_bytes(), offset, locator.mapper)?;
+        let raw_pointer = read_raw_pointer(project.rom.logical_bytes(), offset)?;
+        if raw_pointer == 0 {
+            if fixed_prefix != 4 || plane < 4 || tagged_len.is_some_and(|len| len != 0) {
+                return Err(SecondaryExitPatchError::MixedStorage);
+            }
+            tagged_len = Some(0);
+            payloads.push(Vec::new());
+            continue;
+        }
+        if tagged_len == Some(0) {
+            return Err(SecondaryExitPatchError::MixedStorage);
+        }
+        let pc = snes_to_pc(locator.mapper, raw_pointer)?;
         if plane < 4 && pc == locator.fixed_planes[plane] {
             if !blocks.is_empty() || fixed_prefix != plane {
                 return Err(SecondaryExitPatchError::MixedStorage);
@@ -324,7 +339,12 @@ fn used_plane_len(encoded: &[u8]) -> usize {
         .map_or(0, |index| index + 1)
 }
 
+#[cfg(test)]
 fn read_pointer(bytes: &[u8], offset: usize, mapper: Mapper) -> Result<usize, RomError> {
+    snes_to_pc(mapper, read_raw_pointer(bytes, offset)?)
+}
+
+fn read_raw_pointer(bytes: &[u8], offset: usize) -> Result<u32, RomError> {
     let raw = bytes
         .get(offset..offset + 3)
         .ok_or(RomError::RangeOutOfBounds {
@@ -332,10 +352,7 @@ fn read_pointer(bytes: &[u8], offset: usize, mapper: Mapper) -> Result<usize, Ro
             len: 3,
             image_len: bytes.len(),
         })?;
-    snes_to_pc(
-        mapper,
-        u32::from(raw[0]) | u32::from(raw[1]) << 8 | u32::from(raw[2]) << 16,
-    )
+    Ok(u32::from(raw[0]) | u32::from(raw[1]) << 8 | u32::from(raw[2]) << 16)
 }
 
 fn write_low_bank_pointer(
@@ -370,6 +387,87 @@ fn checked_copy(bytes: &mut [u8], offset: usize, value: &[u8]) -> Result<(), Rom
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lunar_magic_null_tail_pointers_decode_as_empty_installed_planes() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes =
+            std::fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                .unwrap();
+        let image = lm_rom::RomImage::from_bytes(bytes).unwrap();
+        let mut project = Project::new(image);
+        let locator = lm_profile_placeholder_locator();
+        for fixed in locator.fixed_planes {
+            project.rom.write(fixed, &[0; 0x200]).unwrap();
+        }
+        for offset in locator.pointer_offsets()[4..].iter().copied() {
+            project.rom.write(offset, &[0, 0, 0]).unwrap();
+        }
+        let loaded = project.load_secondary_exit_table_detected(locator).unwrap();
+        assert!(
+            loaded
+                .table
+                .entries
+                .iter()
+                .all(|entry| *entry == Default::default())
+        );
+        assert!(matches!(
+            loaded.storage,
+            SecondaryExitStorage::Installed {
+                fixed_prefix_planes: 4,
+                used_len: 0,
+                ref tagged_planes,
+            } if tagged_planes.is_empty()
+        ));
+    }
+
+    #[test]
+    fn clearing_an_installed_table_publishes_lunar_magics_null_tail_representation() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let original =
+            std::fs::read(root.join("oracle-work/lm363/pristine-us/level-save-000/after.smc"))
+                .unwrap();
+        let image = lm_rom::RomImage::from_bytes(original.clone()).unwrap();
+        let image_len = image.logical_len();
+        let mut project = Project::new(image);
+        let locator = lm_profile_placeholder_locator();
+        let cleared = SecondaryExitTable {
+            entries: vec![Default::default(); SecondaryExitTable::ENTRY_COUNT],
+        };
+        project
+            .save_installed_secondary_exit_table(
+                &cleared,
+                locator,
+                &AllocationPolicy::lorom(0x80000..image_len),
+                0x7fdc,
+                0xff,
+            )
+            .unwrap();
+        let reopened = project.load_secondary_exit_table_detected(locator).unwrap();
+        assert_eq!(reopened.table, cleared);
+        assert!(matches!(
+            reopened.storage,
+            SecondaryExitStorage::Installed {
+                fixed_prefix_planes: 4,
+                used_len: 0,
+                ref tagged_planes,
+            } if tagged_planes.is_empty()
+        ));
+        for offset in locator.pointer_offsets()[4..].iter().copied() {
+            assert_eq!(project.rom.read(offset, 3).unwrap(), [0, 0, 0]);
+        }
+        project.undo().unwrap();
+        assert_eq!(project.save_snapshot(), original);
+    }
+
+    fn lm_profile_placeholder_locator() -> SecondaryExitPatchLocator {
+        SecondaryExitPatchLocator {
+            mapper: Mapper::LoRom,
+            first_reader: 0x0006_e190,
+            second_reader: 0x0002_dc80,
+            fixed_planes: [0x0002_f800, 0x0002_fa00, 0x0002_fc00, 0x0002_fe00],
+        }
+    }
 
     #[test]
     fn published_plane_pointers_round_trip_without_losing_mapper_significant_banks() {

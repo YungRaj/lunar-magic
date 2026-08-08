@@ -4149,9 +4149,11 @@ order recovered from Lunar Magic is destination-low, position/method, screen/Y,
 destination-high/flags, X/overworld, and additional flags. `smw-secondary-exit-export/import` and
 `secondary-exit-native-export/import` expose the CLI and application workflows. Detection reads
 pristine SMW's four `$200`-byte tables or LM 3.63's exact reader network, requires RATS ownership
-for every variable plane, and accepts both the four-fixed-plus-two-tagged compact form and the
-all-tagged form. Installed updates trim every plane to one common used length, reclaim only proven
-owners, repair the checksum, semantically reopen, and commit as one undoable revision. Clean-ROM
+for every nonempty variable plane, and accepts the four-fixed-plus-two-tagged compact form, the
+all-tagged form, and Lunar Magic's empty compact form with four fixed zero planes plus two null
+reader pointers. Installed updates trim every plane to one common used length, reclaim only proven
+owners, publish null tail pointers instead of artificial one-byte owners when the table is empty,
+repair the checksum, semantically reopen, and commit as one undoable revision. Clean-ROM
 imports now install the recovered shared Lfix3/secondary-exit runtime in the same transaction. The
 profile owns the `$510`-byte relocatable Lfix3 body, initialized tables, fixed helpers, base and
 extended secondary-exit runtimes, compatibility hooks, and all six reader operands. Tables whose

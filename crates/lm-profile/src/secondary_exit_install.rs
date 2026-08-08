@@ -81,23 +81,26 @@ pub fn smw_us_v1_secondary_exit_installation_plan_from_source(
     plan.description = "install SMW US v1 expanded secondary exits".into();
     let source_encoded = source_table.encode()?;
     let encoded = table.encode()?;
-    let used_len = used_plane_len(&encoded).max(1);
+    let used_len = used_plane_len(&encoded);
     let fixed_prefix = usize::from(used_len <= 0x200) * 4;
     let mut plane_targets = [None; 6];
-    for (plane, plane_target) in plane_targets.iter_mut().enumerate().skip(fixed_prefix) {
-        let start = plane * SecondaryExitTable::ENTRY_COUNT;
-        let target = plan.payloads.len();
-        plan.payloads.push(PatchPayload {
-            bytes: encoded[start..start + used_len].to_vec(),
-            fixups: Vec::new(),
-        });
-        *plane_target = Some(target);
+    if used_len != 0 {
+        for (plane, plane_target) in plane_targets.iter_mut().enumerate().skip(fixed_prefix) {
+            let start = plane * SecondaryExitTable::ENTRY_COUNT;
+            let target = plan.payloads.len();
+            plan.payloads.push(PatchPayload {
+                bytes: encoded[start..start + used_len].to_vec(),
+                fixups: Vec::new(),
+            });
+            *plane_target = Some(target);
+        }
     }
     plan.writes.extend(secondary_fixed_writes(
         &source_encoded,
         &encoded,
         fixed_prefix,
         plane_targets,
+        used_len == 0,
     ));
     plan.allocation =
         AllocationPolicy::lorom(SMW_US_V1_LFIX3_SEARCH_START..SMW_US_V1_LFIX3_SEARCH_END);
@@ -138,6 +141,7 @@ fn secondary_fixed_writes(
     encoded: &[u8],
     fixed_prefix: usize,
     plane_targets: [Option<usize>; 6],
+    null_tail_planes: bool,
 ) -> Vec<PatchWrite> {
     let mut writes = vec![
         direct(
@@ -164,7 +168,7 @@ fn secondary_fixed_writes(
         ),
         reader_write(
             0x0002_dc80,
-            second_reader_template(),
+            second_reader_template(null_tail_planes),
             [3, 4, 5],
             plane_targets,
         ),
@@ -262,11 +266,15 @@ fn reader_write(
     }
 }
 
-fn second_reader_template() -> Vec<u8> {
+fn second_reader_template(null_tail_planes: bool) -> Vec<u8> {
     let mut bytes = smw_us_v1_secondary_exit_second_reader(0x0002_fe00, 0x0002_fe00)
         .expect("fixed LoROM address")
         .to_vec();
     bytes[1..4].copy_from_slice(&[0x00, 0xfe, 0x05]);
+    if null_tail_planes {
+        bytes[6..9].fill(0);
+        bytes[11..14].fill(0);
+    }
     bytes
 }
 
@@ -406,8 +414,9 @@ mod tests {
             reopened.storage,
             SecondaryExitStorage::Installed {
                 fixed_prefix_planes: 4,
-                ..
-            }
+                used_len: 0,
+                tagged_planes,
+            } if tagged_planes.is_empty()
         ));
     }
 
